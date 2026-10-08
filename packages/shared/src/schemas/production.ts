@@ -167,7 +167,6 @@ export const taskMaterialsSchema = z.object({
   version: versionSchema,
 });
 
-
 export const boardQuerySchema = z.object({
   from: dateOnly.optional(),
   to: dateOnly.optional(),

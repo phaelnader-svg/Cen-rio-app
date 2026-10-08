@@ -34,14 +34,14 @@ Data: 08/10/2026
 
 ## 3. Estruturas reutilizadas
 
-| Já existia                                                     | Uso na Fase 6                                                                     |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Sessões de dispositivo, PIN, revogação (Fase 1)                | Login persistente dos quatro tablets; revogação testada de novo                   |
-| Tarefas, motor de liberação, idempotência e bloqueio (Fase 5)  | Ações do tablet; regras de liberação estendidas para materiais por tarefa         |
-| Outbox + hub WebSocket com audiência `user:<id>` e reenvio     | Avisos em tempo real só para o destinatário, recuperados na reconexão             |
-| Anexos privados e `/api/files/:id` (Fase 2)                    | Fotos da tarefa (`PRODUCTION_TASK`) com política própria                          |
-| Prontidão de materiais por linha (Fase 4)                      | Materiais por tarefa (cobertura de cada linha vinculada)                          |
-| Histórico técnico da OS (`service_order_revisions`, Fase 2)    | Histórico técnico no tablet, só com nomes de campos                               |
+| Já existia                                                    | Uso na Fase 6                                                             |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Sessões de dispositivo, PIN, revogação (Fase 1)               | Login persistente dos quatro tablets; revogação testada de novo           |
+| Tarefas, motor de liberação, idempotência e bloqueio (Fase 5) | Ações do tablet; regras de liberação estendidas para materiais por tarefa |
+| Outbox + hub WebSocket com audiência `user:<id>` e reenvio    | Avisos em tempo real só para o destinatário, recuperados na reconexão     |
+| Anexos privados e `/api/files/:id` (Fase 2)                   | Fotos da tarefa (`PRODUCTION_TASK`) com política própria                  |
+| Prontidão de materiais por linha (Fase 4)                     | Materiais por tarefa (cobertura de cada linha vinculada)                  |
+| Histórico técnico da OS (`service_order_revisions`, Fase 2)   | Histórico técnico no tablet, só com nomes de campos                       |
 
 ## 4. Telas implementadas
 
@@ -89,31 +89,31 @@ Data: 08/10/2026
 
 ## 6. APIs novas ou alteradas (`/api/v1`)
 
-| Rota                                              | Permissão                     | Observações                                                                                 |
-| ------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------- |
-| `GET /notifications?unread=&limit=`               | autenticado (próprios)        | `{ items, unread }`                                                                         |
-| `POST /notifications/:id/read`                    | autenticado (próprio)         | Aviso de outra pessoa → 404                                                                 |
-| `POST /notifications/read-all`                    | autenticado                   | Concorrência segura (uma única marcação)                                                    |
-| `PUT /production-tasks/:id/materials`             | `producao.planejar`           | Materiais aprovados da mesma OS; motivo após publicar; reavalia a tarefa                    |
-| `POST /production-tasks/:id/progress` (alterada)  | responsável                   | `note`, `percent`, `step`, `nextStep`, `attachmentIds` (ao menos um)                        |
-| `POST /production-tasks/:id/pause` (alterada)     | responsável                   | `impediment` opcional → `production.task_impediment`                                        |
-| `POST /production-tasks/:id/complete` (alterada)  | responsável                   | `note`/`attachmentIds` só quando a etapa exige                                              |
-| `PUT /production-tasks/:id` (alterada)            | `producao.planejar`           | `completionRequirement`; avisos de reprogramação, prioridade e troca de responsável         |
-| `GET /production-tasks/:id` (alterada)            | gestão ou responsável         | `materialIds`, `taskMaterials`, `technicalHistory`, andamentos estruturados                 |
-| `POST /attachments` (alterada)                    | gestão ou responsável         | Tipo `PRODUCTION_TASK`: o responsável envia durante a execução                              |
-| Modelos (alterada)                                | `producao.planejar`           | `completionRequirement` por etapa                                                           |
+| Rota                                             | Permissão              | Observações                                                                         |
+| ------------------------------------------------ | ---------------------- | ----------------------------------------------------------------------------------- |
+| `GET /notifications?unread=&limit=`              | autenticado (próprios) | `{ items, unread }`                                                                 |
+| `POST /notifications/:id/read`                   | autenticado (próprio)  | Aviso de outra pessoa → 404                                                         |
+| `POST /notifications/read-all`                   | autenticado            | Concorrência segura (uma única marcação)                                            |
+| `PUT /production-tasks/:id/materials`            | `producao.planejar`    | Materiais aprovados da mesma OS; motivo após publicar; reavalia a tarefa            |
+| `POST /production-tasks/:id/progress` (alterada) | responsável            | `note`, `percent`, `step`, `nextStep`, `attachmentIds` (ao menos um)                |
+| `POST /production-tasks/:id/pause` (alterada)    | responsável            | `impediment` opcional → `production.task_impediment`                                |
+| `POST /production-tasks/:id/complete` (alterada) | responsável            | `note`/`attachmentIds` só quando a etapa exige                                      |
+| `PUT /production-tasks/:id` (alterada)           | `producao.planejar`    | `completionRequirement`; avisos de reprogramação, prioridade e troca de responsável |
+| `GET /production-tasks/:id` (alterada)           | gestão ou responsável  | `materialIds`, `taskMaterials`, `technicalHistory`, andamentos estruturados         |
+| `POST /attachments` (alterada)                   | gestão ou responsável  | Tipo `PRODUCTION_TASK`: o responsável envia durante a execução                      |
+| Modelos (alterada)                               | `producao.planejar`    | `completionRequirement` por etapa                                                   |
 
 ## 7. Banco e migrations
 
 Migration nova e aditiva `20261011000000_tablets_notificacoes` (migrations antigas intactas):
 
-| Objeto                         | Conteúdo / garantias                                                                                             |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `notifications`                | Avisos por usuário; `UNIQUE (user_id, dedupe_key)`; índice por usuário/lido/data; CHECKs de texto e leitura      |
-| `production_task_materials`    | Vínculo tarefa ↔ material aprovado (chave composta; cascata se a necessidade for removida)                        |
-| `production_tasks` (+colunas)  | `progress_step`, `progress_next`, `pause_impediment` (CHECK: só em pausada), `completion_requirement`, `completion_note` |
-| `production_template_steps`    | `completion_requirement` (padrão `NENHUM`)                                                                         |
-| `attachment_entity`            | Novo valor `PRODUCTION_TASK`                                                                                      |
+| Objeto                        | Conteúdo / garantias                                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `notifications`               | Avisos por usuário; `UNIQUE (user_id, dedupe_key)`; índice por usuário/lido/data; CHECKs de texto e leitura              |
+| `production_task_materials`   | Vínculo tarefa ↔ material aprovado (chave composta; cascata se a necessidade for removida)                              |
+| `production_tasks` (+colunas) | `progress_step`, `progress_next`, `pause_impediment` (CHECK: só em pausada), `completion_requirement`, `completion_note` |
+| `production_template_steps`   | `completion_requirement` (padrão `NENHUM`)                                                                               |
+| `attachment_entity`           | Novo valor `PRODUCTION_TASK`                                                                                             |
 
 Testado: aplicação do zero (testes e E2E), banco de desenvolvimento migrado e restauração do backup
 com aviso persistente e unicidade preservada.
@@ -128,17 +128,17 @@ autenticado; vincular materiais e definir o registro exigido na conclusão são 
 
 ## 9. Eventos e notificações
 
-| Aviso (tipo)             | Quando                                                                       | Para quem                          |
-| ------------------------ | ---------------------------------------------------------------------------- | ---------------------------------- |
-| Nova tarefa atribuída    | Publicação, inclusão de OS/etapa em semana publicada, troca de responsável   | Novo responsável                   |
-| Tarefa liberada          | Motor de liberação (inclusive na publicação — um único aviso por tarefa)     | Responsável (mesmo se causou)      |
-| Tarefa reprogramada      | Mudança de dia/hora/prazo                                                    | Responsável                        |
-| Prioridade alterada      | Mudança de prioridade                                                        | Responsável                        |
-| Tarefa passada a outro   | Troca de responsável (inclusive troca do principal)                          | Responsável anterior               |
-| Tarefa bloqueada         | Bloqueio manual pelo gestor                                                  | Responsável                        |
-| Tarefa cancelada         | Cancelamento da tarefa ou da OS                                              | Responsável                        |
-| Etapa anterior concluída | Conclusão de uma dependência que ainda não libera a tarefa                   | Responsável da dependente          |
-| OS atualizada            | Alteração técnica da OS (dados, peça, medidas, materiais)                    | Quem tem tarefa aberta na OS       |
+| Aviso (tipo)             | Quando                                                                     | Para quem                     |
+| ------------------------ | -------------------------------------------------------------------------- | ----------------------------- |
+| Nova tarefa atribuída    | Publicação, inclusão de OS/etapa em semana publicada, troca de responsável | Novo responsável              |
+| Tarefa liberada          | Motor de liberação (inclusive na publicação — um único aviso por tarefa)   | Responsável (mesmo se causou) |
+| Tarefa reprogramada      | Mudança de dia/hora/prazo                                                  | Responsável                   |
+| Prioridade alterada      | Mudança de prioridade                                                      | Responsável                   |
+| Tarefa passada a outro   | Troca de responsável (inclusive troca do principal)                        | Responsável anterior          |
+| Tarefa bloqueada         | Bloqueio manual pelo gestor                                                | Responsável                   |
+| Tarefa cancelada         | Cancelamento da tarefa ou da OS                                            | Responsável                   |
+| Etapa anterior concluída | Conclusão de uma dependência que ainda não libera a tarefa                 | Responsável da dependente     |
+| OS atualizada            | Alteração técnica da OS (dados, peça, medidas, materiais)                  | Quem tem tarefa aberta na OS  |
 
 Eventos: `notification.created`/`notification.read` (só `user:<id>`), `production.task_impediment`.
 Sem duplicidade: chave por fato e versão da tarefa; conclusão repetida não cria aviso novo.
@@ -147,25 +147,25 @@ Sem duplicidade: chave por fato e versão da tarefa; conclusão repetida não cr
 
 PLACEHOLDER_TESTS
 
-| Cenário exigido                       | Onde                                                                                                     |
-| ------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| 1. Login persistente                  | `tablets.test.ts` (sessão válida no dia seguinte; revogação → 401), `devices.test.ts`                    |
-| 2. Tela Meu dia                       | `tablets.spec.ts` (tablet e celular)                                                                      |
-| 3. Ordenação por prioridade           | `tablets.test.ts` (em execução → liberada urgente → programada → bloqueada), `shared`                     |
-| 4. Tarefa em execução                 | `tablets.test.ts`, `tablets.spec.ts` (bloco "Em execução")                                                |
-| 5. Tarefa bloqueada                   | `tablets.test.ts`, `production.spec.ts` ("Ainda não liberada — por quê")                                  |
-| 6. Detalhes técnicos                  | `tablets.test.ts` (tecido, espuma, histórico técnico), `tablets.spec.ts`                                  |
-| 7. Proteção de dados financeiros      | `tablets.test.ts` (sem preço/valor/banco; histórico sem valores), `tablets.spec.ts` (sem "R$")            |
-| 8–11. Início, pausa, retomada, conclusão | `tablets.test.ts`, `tablets.spec.ts`, `production.spec.ts`                                             |
-| 12. Registro de andamento             | `tablets.test.ts` (etapa, próximo passo, foto; percentual opcional), `tablets.spec.ts`                    |
-| 13. Notificações persistentes         | `tablets.test.ts` (todos os tipos), backup/restauração                                                    |
-| 14. Leitura de notificações           | `tablets.test.ts` (uma, todas, de outra pessoa → 404), `tablets.spec.ts`                                  |
-| 15. Atualização em tempo real         | `tablets.test.ts` (WebSocket), `tablets.spec.ts` (liberação e aviso no celular sem recarregar)            |
-| 16. Reconexão                         | `tablets.test.ts` (aviso recuperado), `tablets.spec.ts` (queda de rede e reconciliação)                   |
-| 17. Reprogramação pelo gestor         | `tablets.test.ts`, `tablets.spec.ts` (pelo painel → aviso no celular)                                    |
-| 18. Permissões                        | `tablets.test.ts` (ações, detalhe, fotos, materiais de outro → 403), `tablets.spec.ts`                    |
-| 19. Concorrência                      | `tablets.test.ts` ("todas lidas" simultâneas, dois "iniciar"), testes da Fase 5                           |
-| 20. Regressão das Fases 1 a 5         | todas as suítes anteriores executadas e aprovadas                                                         |
+| Cenário exigido                          | Onde                                                                                           |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 1. Login persistente                     | `tablets.test.ts` (sessão válida no dia seguinte; revogação → 401), `devices.test.ts`          |
+| 2. Tela Meu dia                          | `tablets.spec.ts` (tablet e celular)                                                           |
+| 3. Ordenação por prioridade              | `tablets.test.ts` (em execução → liberada urgente → programada → bloqueada), `shared`          |
+| 4. Tarefa em execução                    | `tablets.test.ts`, `tablets.spec.ts` (bloco "Em execução")                                     |
+| 5. Tarefa bloqueada                      | `tablets.test.ts`, `production.spec.ts` ("Ainda não liberada — por quê")                       |
+| 6. Detalhes técnicos                     | `tablets.test.ts` (tecido, espuma, histórico técnico), `tablets.spec.ts`                       |
+| 7. Proteção de dados financeiros         | `tablets.test.ts` (sem preço/valor/banco; histórico sem valores), `tablets.spec.ts` (sem "R$") |
+| 8–11. Início, pausa, retomada, conclusão | `tablets.test.ts`, `tablets.spec.ts`, `production.spec.ts`                                     |
+| 12. Registro de andamento                | `tablets.test.ts` (etapa, próximo passo, foto; percentual opcional), `tablets.spec.ts`         |
+| 13. Notificações persistentes            | `tablets.test.ts` (todos os tipos), backup/restauração                                         |
+| 14. Leitura de notificações              | `tablets.test.ts` (uma, todas, de outra pessoa → 404), `tablets.spec.ts`                       |
+| 15. Atualização em tempo real            | `tablets.test.ts` (WebSocket), `tablets.spec.ts` (liberação e aviso no celular sem recarregar) |
+| 16. Reconexão                            | `tablets.test.ts` (aviso recuperado), `tablets.spec.ts` (queda de rede e reconciliação)        |
+| 17. Reprogramação pelo gestor            | `tablets.test.ts`, `tablets.spec.ts` (pelo painel → aviso no celular)                          |
+| 18. Permissões                           | `tablets.test.ts` (ações, detalhe, fotos, materiais de outro → 403), `tablets.spec.ts`         |
+| 19. Concorrência                         | `tablets.test.ts` ("todas lidas" simultâneas, dois "iniciar"), testes da Fase 5                |
+| 20. Regressão das Fases 1 a 5            | todas as suítes anteriores executadas e aprovadas                                              |
 
 ## 11. Defeitos encontrados e corrigidos
 
