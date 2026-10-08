@@ -11,6 +11,7 @@ export const EVENT_LABEL: Record<string, string> = {
   REPROGRAMADA: 'Reprogramada',
   RESPONSAVEL_ALTERADO: 'Responsável alterado',
   DEPENDENCIAS: 'Dependências alteradas',
+  MATERIAIS: 'Materiais da tarefa alterados',
   BLOQUEIO: 'Bloqueio manual',
   DESBLOQUEIO: 'Bloqueio retirado',
   INICIADA: 'Iniciada',
@@ -39,6 +40,20 @@ export function TaskHistory({ events, large }: { events: TaskEventDto[]; large?:
             )}
           </p>
           {e.note && <p className="text-sm text-ink-soft">{e.note}</p>}
+          {e.extra && (
+            <p className="text-sm text-ink-soft">
+              {[
+                e.extra.percent !== null && e.extra.percent !== undefined
+                  ? `${e.extra.percent}%`
+                  : null,
+                e.extra.step ? `Etapa: ${e.extra.step}` : null,
+                e.extra.nextStep ? `Próximo: ${e.extra.nextStep}` : null,
+                e.extra.attachmentIds?.length ? `${e.extra.attachmentIds.length} foto(s)` : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+          )}
           <p className="text-xs text-ink-muted">
             {formatDateTime(e.createdAt)} · {e.actor ?? 'Sistema'}
           </p>

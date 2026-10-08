@@ -36,7 +36,8 @@ counts() {
     UNION ALL SELECT 'production_plans', count(*) FROM production_plans
     UNION ALL SELECT 'production_tasks', count(*) FROM production_tasks
     UNION ALL SELECT 'production_task_events', count(*) FROM production_task_events
-    UNION ALL SELECT 'production_templates', count(*) FROM production_templates) x"
+    UNION ALL SELECT 'production_templates', count(*) FROM production_templates
+    UNION ALL SELECT 'notifications', count(*) FROM notifications) x"
 }
 
 # Garante dados de referência na origem (seed idempotente + um registro de auditoria).
@@ -119,9 +120,15 @@ WITH p AS (
   SELECT gen_random_uuid(), p.id, so.id, 'PREPARACAO', 'Preparação backup', u.id, 'CONCLUIDA', now(), now(), 100, now()
   FROM p, users u, (SELECT id FROM service_orders ORDER BY created_at DESC LIMIT 1) so
   WHERE u.email = 'backup@teste.local' RETURNING id
+), ev AS (
+  INSERT INTO production_task_events (id, task_id, kind, from_status, to_status)
+  SELECT gen_random_uuid(), t.id, 'CONCLUIDA', 'EM_EXECUCAO', 'CONCLUIDA' FROM t RETURNING task_id
 )
-INSERT INTO production_task_events (id, task_id, kind, from_status, to_status)
-SELECT gen_random_uuid(), t.id, 'CONCLUIDA', 'EM_EXECUCAO', 'CONCLUIDA' FROM t;
+-- Fase 6: aviso persistente ligado à tarefa.
+INSERT INTO notifications (id, user_id, kind, title, body, task_id, dedupe_key)
+SELECT gen_random_uuid(), u.id, 'TAREFA_LIBERADA', 'Tarefa liberada', 'Preparação backup — pode começar.',
+       ev.task_id, 'backup:' || ev.task_id
+FROM ev, users u WHERE u.email = 'backup@teste.local';
 SQL
 
 DATABASE_URL="$SOURCE" STORAGE_DIR="$WORK/none" BACKUP_RETENTION_DAYS=0 bash scripts/backup.sh "$WORK/out" > /dev/null
@@ -145,6 +152,9 @@ if psql "$RESTORE_URL" -qc "DELETE FROM stock_movements" > /dev/null 2>&1; then
 fi
 if psql "$RESTORE_URL" -qc "UPDATE stock_items SET on_hand = -1" > /dev/null 2>&1; then
   echo "✖ Restrição de estoque não negativo ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "INSERT INTO notifications (id, user_id, kind, title, body, dedupe_key) SELECT gen_random_uuid(), user_id, kind, title, body, dedupe_key FROM notifications LIMIT 1" > /dev/null 2>&1; then
+  echo "✖ Unicidade dos avisos (usuário + chave) ausente no banco restaurado" >&2; exit 1
 fi
 if psql "$RESTORE_URL" -qc "DELETE FROM production_task_events" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade do histórico de tarefas ausente no banco restaurado" >&2; exit 1

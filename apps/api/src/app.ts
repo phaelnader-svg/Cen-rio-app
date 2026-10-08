@@ -26,6 +26,7 @@ import { measurementRoutes } from './modules/measurements/routes';
 import { releaseDueTasks } from './modules/production/common';
 import { productionPlanRoutes } from './modules/production/plans';
 import { productionTaskRoutes } from './modules/production/tasks';
+import { notificationRoutes } from './modules/notifications/routes';
 import { leftoverRoutes } from './modules/purchasing/leftovers';
 import { purchaseOrderRoutes } from './modules/purchasing/purchase-orders';
 import { materialReceiptRoutes } from './modules/purchasing/receipts';
@@ -177,6 +178,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(leftoverRoutes);
   await app.register(productionPlanRoutes);
   await app.register(productionTaskRoutes);
+  await app.register(notificationRoutes);
 
   // Presença dos tablets: transições online/offline viram eventos persistentes.
   hub.onPresence((deviceId, online) => {

@@ -91,7 +91,7 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     await evidence(page, '01-planejamento-rascunho');
 
     // Rascunho não aparece nos tablets.
-    await joao.page.getByTestId('tile-tasks').click();
+    // Fase 6: as tarefas ficam direto na tela inicial (Meu dia).
     await expect(joao.page.getByText('Nenhuma tarefa para hoje')).toBeVisible();
 
     // 4. Revisar e publicar.
@@ -108,9 +108,8 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     // 5. Tablets recebem as tarefas sem recarregar; cada um vê só as suas.
     const jt = joao.page;
     const mt = marcio.page;
-    await expect(jt.getByRole('button', { name: new RegExp(prep) })).toBeVisible();
+    await expect(jt.getByRole('button', { name: new RegExp(prep) }).first()).toBeVisible();
     await expect(jt.getByText('Revestimento')).toHaveCount(0);
-    await mt.getByTestId('tile-tasks').click();
     await expect(mt.getByRole('button', { name: /Revestimento/ })).toBeVisible();
     await expect(mt.getByRole('button', { name: new RegExp(prep) })).toHaveCount(0);
     await expect(mt.getByText(/R\$/)).toHaveCount(0);
@@ -133,14 +132,18 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     expect(forbidden.status()).toBe(403);
 
     // 6. João: iniciar, registrar andamento, pausar, retomar e concluir.
-    await jt.getByRole('button', { name: new RegExp(prep) }).click();
+    await jt
+      .getByRole('button', { name: new RegExp(prep) })
+      .first()
+      .click();
     await jt.getByRole('button', { name: 'Iniciar' }).click();
     await expect(jt.getByTestId('my-task-detail')).toContainText('Em execução');
     await jt.getByRole('button', { name: 'Registrar andamento' }).click();
     await jt.getByRole('button', { name: '50%' }).click();
     await jt.getByLabel('Andamento').fill('Estrutura limpa');
     await jt.getByRole('button', { name: 'Registrar', exact: true }).click();
-    await expect(jt.getByText('Último andamento: Estrutura limpa (50%)')).toBeVisible();
+    await expect(jt.getByTestId('last-progress')).toContainText('50%');
+    await expect(jt.getByTestId('last-progress')).toContainText('Estrutura limpa');
     await jt.getByRole('button', { name: 'Pausar', exact: true }).click();
     await jt.getByRole('button', { name: 'Fim do expediente' }).click();
     await expect(jt.getByText('Pausada — Fim do expediente')).toBeVisible();

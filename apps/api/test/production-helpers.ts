@@ -95,3 +95,34 @@ export async function tabletOf(app: App, admin: Client, name: string, pin: strin
 
 export const act = (c: Client, id: string, action: string, body: unknown = {}, key = idemKey()) =>
   c.post(`/api/v1/production-tasks/${id}/${action}`, body, { 'idempotency-key': key });
+
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+/** Envia uma foto (PNG mínimo) como anexo de um registro. */
+export async function uploadPhoto(app: App, client: Client, entityType: string, entityId: string) {
+  const boundary = '----foto';
+  const part = (name: string, value: string) =>
+    `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`;
+  const payload = Buffer.concat([
+    Buffer.from(part('entityType', entityType) + part('entityId', entityId)),
+    Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="f.png"\r\nContent-Type: image/png\r\n\r\n`,
+    ),
+    PNG,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  const res = await app.app.inject({
+    method: 'POST',
+    url: '/api/v1/attachments',
+    headers: {
+      origin: 'http://localhost:3000',
+      cookie: client.cookieHeader,
+      'content-type': `multipart/form-data; boundary=${boundary}`,
+    },
+    payload,
+  });
+  return { status: res.statusCode, body: JSON.parse(res.body) };
+}

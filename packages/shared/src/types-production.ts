@@ -1,6 +1,8 @@
 import type { PieceType, Priority } from './domain';
 import type { MaterialReadiness } from './purchasing-domain';
 import type {
+  CompletionRequirement,
+  NotificationKind,
   PauseReason,
   PlanStatus,
   ProductionActivity,
@@ -25,6 +27,7 @@ export interface ProductionTemplateDto {
     requiresMaterials: boolean;
     optional: boolean;
     dependsOn: number[];
+    completionRequirement: CompletionRequirement;
   }[];
   version: number;
 }
@@ -74,7 +77,17 @@ export interface ProductionTaskDto {
   completedAt: string | null;
   pauseReason: PauseReason | null;
   pauseNote: string | null;
-  lastProgress: { note: string; percent: number | null; at: string } | null;
+  /** Fase 6: pausa que representa impedimento real (base da futura central de atenção). */
+  pauseImpediment: boolean;
+  lastProgress: {
+    note: string | null;
+    percent: number | null;
+    step: string | null;
+    nextStep: string | null;
+    at: string;
+  } | null;
+  /** Fase 6: registro exigido para concluir (só o necessário). */
+  completionRequirement: CompletionRequirement;
   version: number;
 }
 
@@ -86,6 +99,13 @@ export interface TaskEventDto {
   note: string | null;
   actor: string | null;
   createdAt: string;
+  /** Andamento estruturado e fotos do registro (Fase 6). */
+  extra: {
+    percent?: number | null;
+    step?: string | null;
+    nextStep?: string | null;
+    attachmentIds?: string[];
+  } | null;
 }
 
 export interface ProductionTaskDetailDto extends ProductionTaskDto {
@@ -107,6 +127,20 @@ export interface ProductionTaskDetailDto extends ProductionTaskDto {
   };
   /** Materiais aprovados da OS (sem preços). */
   materials: ReadinessLineDto[];
+  /** Fase 6: materiais (requisitos) vinculados a esta tarefa; vazio = depende da OS inteira. */
+  materialIds: string[];
+  /** Fase 6: situação dos materiais desta tarefa. */
+  taskMaterials: 'NAO_EXIGE' | 'DISPONIVEIS' | 'FALTANDO';
+  /** Fase 6: histórico técnico da OS (campos alterados, sem valores comerciais). */
+  technicalHistory: {
+    revision: number;
+    scope: string;
+    itemCode: string | null;
+    fields: string[];
+    reason: string | null;
+    changedBy: string | null;
+    createdAt: string;
+  }[];
   materialsState: MaterialReadiness;
   /** Histórico de produção da OS (todas as tarefas). */
   osTasks: TaskRefDto[];
@@ -184,4 +218,15 @@ export interface PlanCandidateDto {
   technicalLead: { userId: string; displayName: string } | null;
   openTasks: number;
   inPlan: boolean;
+}
+
+export interface NotificationDto {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  taskId: string | null;
+  serviceOrderId: string | null;
+  createdAt: string;
+  readAt: string | null;
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  NotificationDto,
   PlanCandidateDto,
   ProductionPlanDto,
   ProductionTaskDetailDto,
@@ -92,5 +93,14 @@ export const useOsProduction = (serviceOrderId: string, enabled = true) =>
   useQuery({
     queryKey: ['os-production', serviceOrderId],
     queryFn: () => api<ProductionTaskDto[]>(`/api/v1/service-orders/${serviceOrderId}/production`),
+    enabled,
+  });
+
+/** Caixa de notificações do usuário (atualizada em tempo real e recarregada após reconexão). */
+export const useNotifications = (enabled = true) =>
+  useQuery({
+    queryKey: ['notifications'],
+    queryFn: () =>
+      api<{ items: NotificationDto[]; unread: number }>('/api/v1/notifications?limit=50'),
     enabled,
   });

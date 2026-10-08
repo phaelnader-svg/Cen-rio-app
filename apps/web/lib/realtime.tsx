@@ -106,6 +106,10 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     );
   }
   if (t === 'production.template_changed') keys.push(['production-templates']);
+  // Fase 6 — notificações (só chegam ao destinatário). Uma atualização da OS também
+  // recarrega o detalhe técnico aberto no tablet.
+  if (t.startsWith('notification.')) keys.push(['notifications']);
+  if (t === 'notification.created') keys.push(['production-task'], ['my-tasks']);
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }
 

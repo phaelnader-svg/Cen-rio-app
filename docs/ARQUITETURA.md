@@ -283,6 +283,33 @@ Planejamento (rascunho) ─► publicar ─► tarefas BLOQUEADA ─► motor de
 - **Cancelamento de OS** (`protectCancelledServiceOrder`): cancela as tarefas abertas, retira a
   OS dos rascunhos e libera as reservas ativas de estoque, na mesma transação do cancelamento.
 
+### Interface operacional dos tablets e avisos (Fase 6)
+
+- **Meu dia** (`/tablet`): a tela inicial de cada funcionário (Ricardo, Márcio, Thiago, João) mostra
+  a tarefa em execução, a próxima liberada e as tarefas do dia na ordem: em execução → pausadas →
+  liberadas (urgentes primeiro) → programadas → bloqueadas; próximos dias e concluídas hoje. Só as
+  tarefas do próprio usuário (dependências aparecem por nome e responsável, para entender a espera).
+- **Execução simplificada**: Iniciar com um toque no cartão; Concluir com um toque + confirmação
+  (sem formulário) quando a etapa não exige registro. A etapa pode exigir observação ou foto
+  (`completion_requirement`, definido no modelo ou na tarefa) — só então o campo aparece.
+- **Andamento** estruturado (observação, % opcional, etapa atual, próximo passo, fotos da tarefa
+  como anexos `PRODUCTION_TASK`); o histórico guarda cada registro.
+- **Pausa** com motivo rápido e marcação de **impedimento**, que grava `pause_impediment` e o evento
+  `production.task_impediment` — ponto de integração da futura central de atenção (não implementada).
+- **Avisos** (`notifications`): gravados na mesma transação da mudança que os gera, únicos por
+  usuário e chave (`user_id`, `dedupe_key`), com lida/não lida. Tipos: tarefa atribuída, retirada,
+  liberada, reprogramada, prioridade alterada, bloqueada, cancelada, etapa anterior concluída e
+  OS atualizada. Atribuição e liberação na mesma versão geram um único aviso; quem fez a ação não é
+  avisado sobre ela (exceto a liberação da própria próxima tarefa).
+- **Materiais por tarefa** (`production_task_materials`): a tarefa pode ser vinculada a materiais
+  aprovados específicos da OS; então é liberada quando **esses** materiais estão cobertos (ex.: corte
+  com o tecido, enquanto a costura espera o restante), desde que não haja medição ou solicitação
+  pendente. Sem vínculos, continua valendo a OS inteira (regra conservadora da Fase 5). A regra vale
+  no motor de liberação, no `iniciar` e nos conflitos do planejamento.
+- **Sem conexão**: aviso fixo, dados já carregados continuam visíveis e todos os botões de ação ficam
+  desativados (nada é "salvo" localmente); na reconexão o hub reenvia os eventos perdidos e as
+  consultas são recarregadas.
+
 ## 4. Eventos, concorrência e tempo real
 
 **Gravação (outbox).** Toda alteração relevante grava, na mesma transação: os dados, a
@@ -315,6 +342,9 @@ task_resumed/task_completed/task_cancelled`, `production.dependencies_updated`,
 `production.template_changed`) vão para quem vê a produção (`producao.ver`/`producao.planejar`)
 **e** para o responsável da tarefa (`user:<id>`); a liberação de uma tarefa avisa o próximo
 responsável sem recarregar a tela. O tablet de outro funcionário não recebe as tarefas alheias.
+Eventos da Fase 6: `notification.created` e `notification.read` vão **somente** para o usuário
+(`user:<id>`), carregando só o tipo e o id da tarefa; `production.task_impediment` vai para a gestão e
+o responsável.
 
 **Reconexão e reconciliação.**
 
@@ -372,6 +402,13 @@ são usadas como garantia de execução.
   prioridade e próximos dias) e o detalhe com Iniciar, Registrar andamento, Pausar (motivo
   simples), Retomar e Concluir, além de peças, medidas, fotos, materiais (sem preços),
   dependências e histórico.
+- Fase 6: o tablet abre direto no **Meu dia** (cartões com OS, peça, etapa, prioridade, prazo, status,
+  responsável, materiais e motivo da espera; ação rápida no cartão), detalhe técnico (o que fazer,
+  peças com medidas/tecido/espuma e fotos, materiais da tarefa, etapas da OS, dependências, fotos da
+  tarefa, histórico técnico da OS só com nomes de campos e histórico da tarefa), painéis de
+  andamento, pausa e conclusão, caixa de **Avisos** e aviso de **sem conexão**. Funciona em tablet
+  (10–11") e celular. No painel, o detalhe da tarefa ganhou "Materiais desta tarefa" e "Para
+  concluir, exigir"; os modelos, a coluna "Para concluir".
 - PWA: `manifest.webmanifest` (início em `/tablet`), service worker que **nunca** guarda
   respostas da API e mostra página offline quando não há rede.
 - Permissões no frontend só escondem elementos; o servidor sempre decide.

@@ -6,7 +6,6 @@ import clsx from 'clsx';
 import {
   AlertOctagon,
   ArrowLeft,
-  ClipboardCheck,
   Clock3,
   LogOut,
   PackageCheck,
@@ -22,9 +21,23 @@ import { api } from '@/lib/api';
 import { MaterialReceiving } from '@/components/purchasing/material-receiving';
 import { usePendingReceipts } from '@/lib/purchasing';
 import { MyMeasurementDetail, MyMeasurements, useMyOpenCount } from './measurements';
-import { MyTaskDetail, MyTasks, useMyTodayCount } from './tasks';
+import {
+  MyDay,
+  MyTaskDetail,
+  NotificationsButton,
+  NotificationsInbox,
+  OfflineBanner,
+  useMyTodayCount,
+} from './tasks';
 
-type Screen = 'home' | 'sync' | 'measurements' | 'measurement' | 'materials' | 'tasks' | 'task';
+type Screen =
+  | 'home'
+  | 'task'
+  | 'notifications'
+  | 'sync'
+  | 'measurements'
+  | 'measurement'
+  | 'materials';
 
 function useClock(timezone: string) {
   // Renderizado apenas no cliente (após autenticação), sem risco de divergência de hidratação.
@@ -48,13 +61,9 @@ function useClock(timezone: string) {
   };
 }
 
-/** Módulos da produção que chegam nas próximas fases (exibidos como indisponíveis). */
+/** Módulos que chegam nas próximas fases (apenas informativos, sem ação). */
 const UPCOMING = [
-  {
-    icon: Clock3,
-    title: 'Presença',
-    text: 'Botões “Cheguei” e “Encerrar expediente”.',
-  },
+  { icon: Clock3, title: 'Presença', text: 'Botões “Cheguei” e “Encerrar expediente”.' },
   {
     icon: AlertOctagon,
     title: 'Ocorrências',
@@ -62,6 +71,10 @@ const UPCOMING = [
   },
 ];
 
+/**
+ * Tablet individual (Ricardo, Márcio, Thiago, João): a tela inicial é o "Meu dia".
+ * A sessão permanece válida entre expedientes (Fase 1) e pode ser revogada pelo painel.
+ */
 export function TabletHome({ me }: { me: MeDto }) {
   const qc = useQueryClient();
   const [screen, setScreen] = useState<Screen>('home');
@@ -72,12 +85,20 @@ export function TabletHome({ me }: { me: MeDto }) {
   const canMeasure =
     me.permissions.includes('medicoes.extraordinarias') ||
     me.permissions.includes('medicoes.gerenciar');
-  const openCount = useMyOpenCount(canMeasure);
-  const [measurementId, setMeasurementId] = useState<string | null>(null);
-  const pendingMaterials = usePendingReceipts();
   const canExecute = me.permissions.includes('producao.executar');
+  const openCount = useMyOpenCount(canMeasure);
   const todayCount = useMyTodayCount(canExecute);
+  const [measurementId, setMeasurementId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
+  const [taskFrom, setTaskFrom] = useState<Screen>('home');
+  const pendingMaterials = usePendingReceipts();
+
+  const openTask = (id: string, from: Screen = 'home') => {
+    setTaskId(id);
+    setTaskFrom(from);
+    setScreen('task');
+    window.scrollTo({ top: 0 });
+  };
 
   async function logout() {
     setLeaving(true);
@@ -89,202 +110,151 @@ export function TabletHome({ me }: { me: MeDto }) {
     }
   }
 
+  const back = (label: string, to: Screen) => (
+    <BackButton label={label} onClick={() => setScreen(to)} />
+  );
+
   return (
     <div className="flex min-h-dvh flex-col">
       <header
-        className="border-b border-line bg-surface"
+        className="sticky top-0 z-20 border-b border-line bg-surface"
         style={{ borderTop: `8px solid ${color}` }}
       >
-        <div className="flex items-center gap-4 px-6 py-4 sm:px-8">
+        <div className="flex items-center gap-4 px-4 py-3 sm:px-8 sm:py-4">
           <Avatar
             name={me.user.displayName}
             color={color}
             photoUrl={me.employee?.photoUrl}
-            size={60}
+            size={56}
           />
           <div className="min-w-0 flex-1">
             <p className="truncate text-2xl font-semibold tracking-tight" data-testid="tablet-user">
               {me.employee?.displayName ?? me.user.displayName}
             </p>
-            <p className="truncate text-base text-ink-muted">
-              {me.employee?.jobTitle} · {me.device?.name}
+            <p className="truncate text-base text-ink-muted first-letter:uppercase">
+              <span data-testid="tablet-date">{clock.date}</span>
+              <span className="hidden sm:inline"> · {me.device?.name}</span>
             </p>
           </div>
-          <div className="hidden text-right sm:block">
-            <p className="text-3xl font-semibold tabular-nums">{clock.time}</p>
-            <p className="text-sm text-ink-muted first-letter:uppercase">{clock.date}</p>
+          <p className="hidden text-3xl font-semibold tabular-nums sm:block">{clock.time}</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-subtle/60 px-4 py-2.5 sm:px-8">
+          <ConnectionIndicator />
+          <div className="flex flex-wrap items-center gap-2">
+            {canExecute && (
+              <NotificationsButton
+                onClick={() => {
+                  setScreen('notifications');
+                  window.scrollTo({ top: 0 });
+                }}
+              />
+            )}
+            <Button
+              variant="secondary"
+              size="lg"
+              loading={leaving}
+              onClick={() => void logout()}
+              icon={<LogOut className="size-5" aria-hidden />}
+            >
+              Sair
+            </Button>
           </div>
         </div>
-        <div className="flex items-center justify-between gap-3 border-t border-line bg-subtle/60 px-6 py-2.5 sm:px-8">
-          <ConnectionIndicator />
-          <Button
-            variant="secondary"
-            size="lg"
-            loading={leaving}
-            onClick={() => void logout()}
-            icon={<LogOut className="size-5" aria-hidden />}
-          >
-            Sair
-          </Button>
-        </div>
+        <OfflineBanner />
       </header>
 
-      <main className="flex-1 px-6 py-8 sm:px-8">
+      <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">
         {screen === 'home' ? (
           <>
-            <h1 className="sr-only">Início</h1>
-            <ul className="grid gap-5 md:grid-cols-2">
-              {canExecute && (
-                <li className="md:col-span-2">
-                  <button
-                    type="button"
-                    onClick={() => setScreen('tasks')}
-                    data-testid="tile-tasks"
-                    className={clsx(
-                      'flex w-full items-center gap-5 rounded-2xl border border-line bg-surface p-6 text-left shadow-[var(--shadow-card)] transition',
-                      'hover:border-brand-200 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]',
-                    )}
-                  >
-                    <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700">
-                      <ClipboardCheck className="size-8" aria-hidden />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-2xl font-semibold">Minhas tarefas</span>
-                      <span className="mt-1 block text-base text-ink-muted">
-                        Serviços programados para você hoje, por prioridade.
-                      </span>
-                    </span>
-                    {todayCount !== undefined && (
-                      <span
-                        className={clsx(
-                          'grid min-w-14 place-items-center rounded-2xl px-3 py-2 text-2xl font-semibold tabular-nums',
-                          todayCount ? 'bg-brand-700 text-white' : 'bg-subtle text-ink-muted',
-                        )}
-                        aria-label={`${todayCount} tarefa(s) para hoje`}
-                        data-testid="tasks-count"
-                      >
-                        {todayCount}
-                      </span>
-                    )}
-                  </button>
-                </li>
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">
+              {canExecute ? 'Meu dia' : 'Início'}
+              {canExecute && todayCount !== undefined && (
+                <span className="ml-3 align-middle text-base font-normal text-ink-muted">
+                  <span data-testid="tasks-count">{todayCount}</span> tarefa(s) para hoje
+                </span>
               )}
+            </h1>
+            {canExecute && <MyDay onOpen={(id) => openTask(id, 'home')} />}
+
+            <h2 className={clsx('mb-3 text-lg font-semibold text-ink-soft', canExecute && 'mt-10')}>
+              {canExecute ? 'Outras atividades' : 'Atividades'}
+            </h2>
+            <ul className="grid gap-4 md:grid-cols-2">
               {canMeasure && (
-                <li className="md:col-span-2">
-                  <button
-                    type="button"
+                <li>
+                  <Tile
                     onClick={() => setScreen('measurements')}
-                    data-testid="tile-measurements"
-                    className={clsx(
-                      'flex w-full items-center gap-5 rounded-2xl border border-line bg-surface p-6 text-left shadow-[var(--shadow-card)] transition',
-                      'hover:border-brand-200 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]',
-                    )}
-                  >
-                    <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700">
-                      <Ruler className="size-8" aria-hidden />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-2xl font-semibold">Medições atribuídas</span>
-                      <span className="mt-1 block text-base text-ink-muted">
-                        Medir peças, informar tecidos, espumas e materiais e enviar ao gestor.
-                      </span>
-                    </span>
-                    {openCount !== undefined && (
-                      <span
-                        className={clsx(
-                          'grid min-w-14 place-items-center rounded-2xl px-3 py-2 text-2xl font-semibold tabular-nums',
-                          openCount ? 'bg-brand-700 text-white' : 'bg-subtle text-ink-muted',
-                        )}
-                        aria-label={`${openCount} medição(ões) para fazer`}
-                        data-testid="measurements-count"
-                      >
-                        {openCount}
-                      </span>
-                    )}
-                  </button>
+                    testId="tile-measurements"
+                    icon={<Ruler className="size-7" aria-hidden />}
+                    title="Medições atribuídas"
+                    text="Medir peças e informar materiais."
+                    count={openCount}
+                    countTestId="measurements-count"
+                    countLabel="medição(ões) para fazer"
+                  />
                 </li>
               )}
-              <li className="md:col-span-2">
-                <button
-                  type="button"
+              <li>
+                <Tile
                   onClick={() => setScreen('materials')}
-                  data-testid="tile-materials"
-                  className={clsx(
-                    'flex w-full items-center gap-5 rounded-2xl border border-line bg-surface p-6 text-left shadow-[var(--shadow-card)] transition',
-                    'hover:border-brand-200 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]',
-                  )}
-                >
-                  <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-bronze-100 text-bronze-600">
-                    <PackageCheck className="size-8" aria-hidden />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-2xl font-semibold">Recebimento de materiais</span>
-                    <span className="mt-1 block text-base text-ink-muted">
-                      Conferir e registrar tecidos, espumas e materiais que chegaram.
-                    </span>
-                  </span>
-                  {pendingMaterials.data && (
-                    <span
-                      className={clsx(
-                        'grid min-w-14 place-items-center rounded-2xl px-3 py-2 text-2xl font-semibold tabular-nums',
-                        pendingMaterials.data.length
-                          ? 'bg-bronze-600 text-white'
-                          : 'bg-subtle text-ink-muted',
-                      )}
-                      aria-label={`${pendingMaterials.data.length} pedido(s) aguardando chegada`}
-                      data-testid="materials-count"
-                    >
-                      {pendingMaterials.data.length}
-                    </span>
-                  )}
-                </button>
+                  testId="tile-materials"
+                  icon={<PackageCheck className="size-7" aria-hidden />}
+                  title="Recebimento de materiais"
+                  text="Conferir e registrar o que chegou."
+                  count={pendingMaterials.data?.length}
+                  countTestId="materials-count"
+                  countLabel="pedido(s) aguardando chegada"
+                  tone="bronze"
+                />
               </li>
+              {canSync && (
+                <li>
+                  <Tile
+                    onClick={() => setScreen('sync')}
+                    icon={<RadioTower className="size-7" aria-hidden />}
+                    title="Teste de sincronização"
+                    text="Confirme que o tablet recebe as atualizações."
+                  />
+                </li>
+              )}
               {UPCOMING.map((m) => (
                 <li key={m.title}>
                   <div
                     aria-disabled="true"
-                    className="flex h-full min-h-40 items-start gap-5 rounded-2xl border border-dashed border-line-strong bg-surface/60 p-6"
+                    className="flex h-full items-start gap-4 rounded-2xl border border-dashed border-line-strong bg-surface/60 p-5"
                   >
-                    <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-subtle text-ink-muted">
-                      <m.icon className="size-7" aria-hidden />
+                    <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-subtle text-ink-muted">
+                      <m.icon className="size-6" aria-hidden />
                     </span>
                     <div>
-                      <p className="text-xl font-semibold text-ink-soft">{m.title}</p>
-                      <p className="mt-1 text-base text-ink-muted">{m.text}</p>
-                      <p className="mt-3 inline-block rounded-full bg-subtle px-3 py-1 text-sm font-medium text-ink-muted">
+                      <p className="text-lg font-semibold text-ink-soft">{m.title}</p>
+                      <p className="text-base text-ink-muted">{m.text}</p>
+                      <p className="mt-2 inline-block rounded-full bg-subtle px-3 py-1 text-sm font-medium text-ink-muted">
                         Disponível na próxima fase
                       </p>
                     </div>
                   </div>
                 </li>
               ))}
-              {canSync && (
-                <li className="md:col-span-2">
-                  <button
-                    type="button"
-                    onClick={() => setScreen('sync')}
-                    className={clsx(
-                      'flex w-full items-center gap-5 rounded-2xl border border-line bg-surface p-6 text-left shadow-[var(--shadow-card)] transition',
-                      'hover:border-brand-200 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]',
-                    )}
-                  >
-                    <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700">
-                      <RadioTower className="size-7" aria-hidden />
-                    </span>
-                    <span>
-                      <span className="block text-xl font-semibold">Teste de sincronização</span>
-                      <span className="mt-1 block text-base text-ink-muted">
-                        Confirme que este tablet recebe as atualizações do painel em tempo real.
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              )}
             </ul>
+          </>
+        ) : screen === 'task' && taskId ? (
+          <>
+            {back(
+              taskFrom === 'notifications' ? 'Voltar aos avisos' : 'Voltar ao Meu dia',
+              taskFrom,
+            )}
+            <MyTaskDetail key={taskId} id={taskId} />
+          </>
+        ) : screen === 'notifications' ? (
+          <>
+            {back('Voltar ao Meu dia', 'home')}
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Avisos</h1>
+            <NotificationsInbox onOpenTask={(id) => openTask(id, 'notifications')} />
           </>
         ) : screen === 'measurements' ? (
           <>
-            <BackButton label="Voltar ao início" onClick={() => setScreen('home')} />
+            {back('Voltar ao início', 'home')}
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">Medições atribuídas</h1>
             <MyMeasurements
               onOpen={(id) => {
@@ -293,31 +263,15 @@ export function TabletHome({ me }: { me: MeDto }) {
               }}
             />
           </>
-        ) : screen === 'tasks' ? (
-          <>
-            <BackButton label="Voltar ao início" onClick={() => setScreen('home')} />
-            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Minhas tarefas</h1>
-            <MyTasks
-              onOpen={(id) => {
-                setTaskId(id);
-                setScreen('task');
-              }}
-            />
-          </>
-        ) : screen === 'task' && taskId ? (
-          <>
-            <BackButton label="Voltar às tarefas" onClick={() => setScreen('tasks')} />
-            <MyTaskDetail key={taskId} id={taskId} />
-          </>
         ) : screen === 'materials' ? (
           <>
-            <BackButton label="Voltar ao início" onClick={() => setScreen('home')} />
+            {back('Voltar ao início', 'home')}
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">Recebimento de materiais</h1>
             <MaterialReceiving large />
           </>
         ) : screen === 'measurement' && measurementId ? (
           <>
-            <BackButton label="Voltar às medições" onClick={() => setScreen('measurements')} />
+            {back('Voltar às medições', 'measurements')}
             <MyMeasurementDetail
               key={measurementId}
               id={measurementId}
@@ -326,13 +280,76 @@ export function TabletHome({ me }: { me: MeDto }) {
           </>
         ) : (
           <>
-            <BackButton label="Voltar ao início" onClick={() => setScreen('home')} />
+            {back('Voltar ao início', 'home')}
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">Teste de sincronização</h1>
             <SyncPanel large />
           </>
         )}
       </main>
     </div>
+  );
+}
+
+function Tile({
+  onClick,
+  testId,
+  icon,
+  title,
+  text,
+  count,
+  countTestId,
+  countLabel,
+  tone = 'brand',
+}: {
+  onClick: () => void;
+  testId?: string;
+  icon: React.ReactNode;
+  title: string;
+  text: string;
+  count?: number;
+  countTestId?: string;
+  countLabel?: string;
+  tone?: 'brand' | 'bronze';
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testId}
+      className={clsx(
+        'flex h-full w-full items-center gap-4 rounded-2xl border border-line bg-surface p-5 text-left shadow-[var(--shadow-card)] transition',
+        'hover:border-brand-200 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]',
+      )}
+    >
+      <span
+        className={clsx(
+          'grid size-14 shrink-0 place-items-center rounded-2xl',
+          tone === 'brand' ? 'bg-brand-50 text-brand-700' : 'bg-bronze-100 text-bronze-600',
+        )}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-xl font-semibold">{title}</span>
+        <span className="mt-0.5 block text-base text-ink-muted">{text}</span>
+      </span>
+      {count !== undefined && (
+        <span
+          className={clsx(
+            'grid min-w-12 place-items-center rounded-2xl px-3 py-2 text-xl font-semibold tabular-nums',
+            count
+              ? tone === 'brand'
+                ? 'bg-brand-700 text-white'
+                : 'bg-bronze-600 text-white'
+              : 'bg-subtle text-ink-muted',
+          )}
+          aria-label={`${count} ${countLabel ?? ''}`}
+          data-testid={countTestId}
+        >
+          {count}
+        </span>
+      )}
+    </button>
   );
 }
 

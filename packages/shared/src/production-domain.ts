@@ -84,6 +84,40 @@ export const PAUSE_REASON_LABEL: Record<PauseReason, string> = {
   OUTRO: 'Outro motivo',
 };
 
+/** Fase 6: registro exigido para concluir (por regra técnica da etapa); padrão: nenhum. */
+export const COMPLETION_REQUIREMENTS = ['NENHUM', 'OBSERVACAO', 'FOTO'] as const;
+export type CompletionRequirement = (typeof COMPLETION_REQUIREMENTS)[number];
+export const COMPLETION_REQUIREMENT_LABEL: Record<CompletionRequirement, string> = {
+  NENHUM: 'Nenhum registro',
+  OBSERVACAO: 'Observação de conclusão',
+  FOTO: 'Foto da tarefa concluída',
+};
+
+/** Fase 6: notificações persistentes dos tablets. */
+export const NOTIFICATION_KINDS = [
+  'TAREFA_ATRIBUIDA',
+  'TAREFA_REMOVIDA',
+  'PRIORIDADE_ALTERADA',
+  'TAREFA_LIBERADA',
+  'TAREFA_REPROGRAMADA',
+  'TAREFA_BLOQUEADA',
+  'TAREFA_CANCELADA',
+  'DEPENDENCIA_CONCLUIDA',
+  'OS_ATUALIZADA',
+] as const;
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
+export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
+  TAREFA_ATRIBUIDA: 'Nova tarefa atribuída',
+  TAREFA_REMOVIDA: 'Tarefa passada para outra pessoa',
+  PRIORIDADE_ALTERADA: 'Prioridade alterada',
+  TAREFA_LIBERADA: 'Tarefa liberada',
+  TAREFA_REPROGRAMADA: 'Tarefa reprogramada',
+  TAREFA_BLOQUEADA: 'Tarefa bloqueada pelo gestor',
+  TAREFA_CANCELADA: 'Tarefa cancelada',
+  DEPENDENCIA_CONCLUIDA: 'Etapa anterior concluída',
+  OS_ATUALIZADA: 'OS atualizada',
+};
+
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;
 export type PlanStatus = (typeof PLAN_STATUSES)[number];
 

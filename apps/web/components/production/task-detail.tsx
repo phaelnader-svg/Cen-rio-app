@@ -1,7 +1,9 @@
 'use client';
 
-import type { Priority, ProductionTaskDetailDto } from '@cenario/shared';
+import type { CompletionRequirement, Priority, ProductionTaskDetailDto } from '@cenario/shared';
 import {
+  COMPLETION_REQUIREMENTS,
+  COMPLETION_REQUIREMENT_LABEL,
   LINE_STAGE_LABEL,
   PAUSE_REASON_LABEL,
   PRIORITIES,
@@ -34,6 +36,7 @@ import { useSend } from './use-send';
 export function TaskAdminDetail({ id }: { id: string }) {
   const q = useTask(id);
   const [editing, setEditing] = useState(false);
+  const [linking, setLinking] = useState(false);
   const [deps, setDeps] = useState(false);
   const [action, setAction] = useState<'cancel' | 'block' | null>(null);
   const { m, error } = useSend();
@@ -180,8 +183,24 @@ export function TaskAdminDetail({ id }: { id: string }) {
           </Section>
           <Section
             title="Materiais"
-            actions={t.requiresMaterials ? <ReadinessBadge state={t.materialsState} /> : undefined}
+            actions={
+              <>
+                {t.requiresMaterials && <ReadinessBadge state={t.materialsState} />}
+                {t.can.manage && waiting && t.materials.length > 0 && (
+                  <Button size="sm" variant="secondary" onClick={() => setLinking(true)}>
+                    Materiais desta tarefa
+                  </Button>
+                )}
+              </>
+            }
           >
+            {t.requiresMaterials && (
+              <p className="mb-2 text-sm text-ink-soft" data-testid="task-materials-rule">
+                {t.materialIds.length
+                  ? `Liberação por tarefa: depende de ${t.materialIds.length} material(is) vinculado(s) — ${t.taskMaterials === 'DISPONIVEIS' ? 'disponíveis' : 'faltando'}.`
+                  : 'Sem vínculo: depende de todos os materiais da OS (regra conservadora).'}
+              </p>
+            )}
             {!t.requiresMaterials && (
               <p className="mb-2 text-sm text-ink-muted">
                 Esta etapa não exige materiais reservados.
@@ -193,6 +212,11 @@ export function TaskAdminDetail({ id }: { id: string }) {
               <ul className="space-y-1.5 text-sm">
                 {t.materials.map((l) => (
                   <li key={l.requirementId}>
+                    {t.materialIds.includes(l.requirementId) && (
+                      <span className="mr-1 rounded bg-brand-50 px-1.5 text-xs font-semibold text-brand-700">
+                        desta tarefa
+                      </span>
+                    )}
                     <span className="font-medium">{specText(l)}</span>
                     <span className="text-ink-muted">
                       {' '}
@@ -208,6 +232,9 @@ export function TaskAdminDetail({ id }: { id: string }) {
           </Section>
         </div>
       </div>
+      {linking && (
+        <MaterialsDialog task={t} published={published} onClose={() => setLinking(false)} />
+      )}
       {editing && (
         <EditTaskDialog task={t} published={published} onClose={() => setEditing(false)} />
       )}
@@ -279,6 +306,7 @@ function EditTaskDialog({
     dueDate: task.dueDate ?? '',
     instructions: task.instructions ?? '',
     requiresMaterials: task.requiresMaterials,
+    completionRequirement: task.completionRequirement,
     reason: '',
   });
   const { m, error } = useSend(onClose);
@@ -309,6 +337,7 @@ function EditTaskDialog({
                       dueDate: f.dueDate || null,
                       instructions: f.instructions,
                       requiresMaterials: f.requiresMaterials,
+                      completionRequirement: f.completionRequirement,
                       reason: published ? f.reason : undefined,
                       version: task.version,
                     },
@@ -397,6 +426,23 @@ function EditTaskDialog({
             onChange={(e) => setF({ ...f, requiresMaterials: e.target.checked })}
           />
         </div>
+        <Field label="Para concluir, exigir" className="sm:col-span-2">
+          {(p) => (
+            <Select
+              {...p}
+              value={f.completionRequirement}
+              onChange={(e) =>
+                setF({ ...f, completionRequirement: e.target.value as CompletionRequirement })
+              }
+            >
+              {COMPLETION_REQUIREMENTS.map((c) => (
+                <option key={c} value={c}>
+                  {COMPLETION_REQUIREMENT_LABEL[c]}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
         <Field label="Instruções" className="sm:col-span-2">
           {(p) => (
             <Textarea
@@ -477,6 +523,82 @@ function ReasonDialog({
       <Field label="Motivo" required>
         {(p) => <Input {...p} value={reason} onChange={(e) => setReason(e.target.value)} />}
       </Field>
+    </Dialog>
+  );
+}
+
+/** Vincula a tarefa a materiais aprovados da OS (liberação por tarefa). */
+function MaterialsDialog({
+  task,
+  published,
+  onClose,
+}: {
+  task: ProductionTaskDetailDto;
+  published: boolean;
+  onClose: () => void;
+}) {
+  const [sel, setSel] = useState(new Set(task.materialIds));
+  const [reason, setReason] = useState('');
+  const { m, error } = useSend(onClose);
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Materiais de ${task.code}`}
+      description="Marque os materiais de que esta etapa depende. Ela só é liberada quando eles estiverem disponíveis; sem nenhum marcado, depende de todos os materiais da OS."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            loading={m.isPending}
+            onClick={() =>
+              m.mutate({
+                run: () =>
+                  api(`/api/v1/production-tasks/${task.id}/materials`, {
+                    method: 'PUT',
+                    body: {
+                      requirementIds: [...sel],
+                      reason: published ? reason : undefined,
+                      version: task.version,
+                    },
+                  }),
+                ok: 'Materiais da tarefa salvos.',
+              })
+            }
+          >
+            Salvar
+          </Button>
+        </>
+      }
+    >
+      {error && (
+        <Alert tone="danger" className="mb-3">
+          {error}
+        </Alert>
+      )}
+      <div className="space-y-2">
+        {task.materials.map((l) => (
+          <Checkbox
+            key={l.requirementId}
+            label={specText(l)}
+            description={`${qtyText(l.need, l.unit)} · ${LINE_STAGE_LABEL[l.stage]}`}
+            checked={sel.has(l.requirementId)}
+            onChange={(e) => {
+              const n = new Set(sel);
+              if (e.target.checked) n.add(l.requirementId);
+              else n.delete(l.requirementId);
+              setSel(n);
+            }}
+          />
+        ))}
+      </div>
+      {published && (
+        <Field label="Motivo da alteração" required className="mt-4">
+          {(p) => <Input {...p} value={reason} onChange={(e) => setReason(e.target.value)} />}
+        </Field>
+      )}
     </Dialog>
   );
 }

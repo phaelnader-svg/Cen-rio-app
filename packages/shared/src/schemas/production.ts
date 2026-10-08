@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { PIECE_TYPES, PRIORITIES } from '../domain';
 import {
+  COMPLETION_REQUIREMENTS,
   PAUSE_REASONS,
   PRODUCTION_ACTIVITIES,
   TASK_ROLES,
@@ -33,6 +34,7 @@ export const templateStepSchema = z.object({
   optional: z.boolean().default(false),
   /** Posições (1, 2, …) das etapas anteriores de que esta depende. */
   dependsOn: z.array(z.number().int().min(1)).max(20).default([]),
+  completionRequirement: z.enum(COMPLETION_REQUIREMENTS).default('NENHUM'),
 });
 
 export const templateSchema = z
@@ -103,6 +105,7 @@ export const updateTaskSchema = z.object({
   dueDate: dateOnly.nullable().optional(),
   instructions: optionalText(2000),
   requiresMaterials: z.boolean().optional(),
+  completionRequirement: z.enum(COMPLETION_REQUIREMENTS).optional(),
   /** Obrigatório depois da publicação (histórico da revisão). */
   reason: optionalText(500),
   version: versionSchema,
@@ -125,16 +128,45 @@ export const taskReasonSchema = z.object({ reason: reason(), version: versionSch
 // ─────────────────────────── Execução ───────────────────────────
 
 export const pauseTaskSchema = z
-  .object({ reason: z.enum(PAUSE_REASONS), note: optionalText(300) })
+  .object({
+    reason: z.enum(PAUSE_REASONS),
+    note: optionalText(300),
+    /** Impedimento real (preparado para a futura central de atenção). */
+    impediment: z.boolean().default(false),
+  })
   .refine((v) => v.reason !== 'OUTRO' || Boolean(v.note), {
     message: 'Descreva o motivo.',
     path: ['note'],
   });
 
-export const progressTaskSchema = z.object({
-  note: trimmed(2, 500, 'Andamento'),
-  percent: z.number().int().min(0).max(100).nullable().optional(),
+export const progressTaskSchema = z
+  .object({
+    note: optionalText(500),
+    percent: z.number().int().min(0).max(100).nullable().optional(),
+    step: optionalText(200),
+    nextStep: optionalText(200),
+    /** Fotos já enviadas (anexos da tarefa) que acompanham este registro. */
+    attachmentIds: z.array(idSchema).max(10).default([]),
+  })
+  .refine(
+    (v) =>
+      Boolean(v.note || v.step || v.nextStep || v.attachmentIds.length) ||
+      (v.percent !== undefined && v.percent !== null),
+    { message: 'Informe ao menos uma observação, etapa, percentual ou foto.', path: ['note'] },
+  );
+
+/** Conclusão: só exige o que a etapa pede (observação ou foto); tarefas comuns não exigem nada. */
+export const completeTaskSchema = z
+  .object({ note: optionalText(500), attachmentIds: z.array(idSchema).max(10).default([]) })
+  .default({ attachmentIds: [] });
+
+/** Materiais aprovados da OS dos quais a tarefa depende (liberação por tarefa). */
+export const taskMaterialsSchema = z.object({
+  requirementIds: z.array(idSchema).max(50),
+  reason: optionalText(500),
+  version: versionSchema,
 });
+
 
 export const boardQuerySchema = z.object({
   from: dateOnly.optional(),

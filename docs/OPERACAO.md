@@ -78,6 +78,19 @@ Mudanças de regra a comunicar: cancelar uma OS agora também cancela as tarefas
 abertas e libera as reservas de estoque da OS; a prontidão "Programação" da OS passa a refletir
 tarefas em planejamento publicado. A API libera, a cada 30 s, as tarefas cujo horário chegou.
 
+## Atualização da Fase 5 para a Fase 6
+
+A migration `20261011000000_tablets_notificacoes` é aditiva: cria `notifications` (avisos por usuário,
+únicos por chave) e `production_task_materials` (materiais por tarefa), acrescenta às tarefas os campos
+de andamento estruturado (`progress_step`, `progress_next`), `pause_impediment`,
+`completion_requirement` e `completion_note`, `completion_requirement` às etapas dos modelos e o tipo
+de anexo `PRODUCTION_TASK`. Nada existente é apagado; tarefas e modelos existentes ficam com
+"nenhum registro" exigido na conclusão. Procedimento: backup (`pnpm backup`) → `pnpm db:migrate` →
+reiniciar API e web.
+
+Mudanças a comunicar: o tablet abre direto no "Meu dia" (o bloco "Minhas tarefas" deixou de existir);
+os avisos aparecem no botão "Avisos" do cabeçalho; sem conexão, os botões de ação ficam desativados.
+
 ## Backup e restauração
 
 ```bash

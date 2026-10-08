@@ -4,6 +4,7 @@ import {
   anyPermissionAudience,
   evaluateRelease,
   formatServiceOrderItemCode,
+  q3,
   localParts,
   taskCode,
   type EventType,
@@ -18,6 +19,7 @@ import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
+import { notify, taskNotice } from '../notifications/notify';
 import { onReadinessChanged, readinessOf } from '../purchasing/common';
 
 // ─────────────────────────── Acesso ───────────────────────────
@@ -144,10 +146,17 @@ export function toTaskDto(t: TaskRow, timeZone: string): ProductionTaskDto {
     completedAt: t.completedAt?.toISOString() ?? null,
     pauseReason: t.pauseReason,
     pauseNote: t.pauseNote,
-    lastProgress:
-      t.progressNote && t.progressAt
-        ? { note: t.progressNote, percent: t.progressPercent, at: t.progressAt.toISOString() }
-        : null,
+    pauseImpediment: t.pauseImpediment,
+    lastProgress: t.progressAt
+      ? {
+          note: t.progressNote,
+          percent: t.progressPercent,
+          step: t.progressStep,
+          nextStep: t.progressNext,
+          at: t.progressAt.toISOString(),
+        }
+      : null,
+    completionRequirement: t.completionRequirement,
     version: t.version,
   };
 }
@@ -225,6 +234,39 @@ export async function domainTaskEvent(
   });
 }
 
+// ─────────────────────────── Materiais por tarefa (Fase 6) ───────────────────────────
+
+type Readiness = Awaited<ReturnType<typeof readinessOf>>;
+
+/**
+ * Materiais de uma tarefa. Sem vínculos, vale a prontidão da OS inteira
+ * (comportamento conservador da Fase 5). Com vínculos, bastam os materiais
+ * vinculados estarem cobertos (recebidos/reservados) — desde que não haja
+ * medição ou solicitação pendente na OS (que poderia criar novas necessidades).
+ */
+export async function taskMaterialsReady(
+  db: Tx | PrismaClient,
+  task: { id: string; serviceOrderId: string; requiresMaterials: boolean },
+  cache = new Map<string, Readiness>(),
+): Promise<boolean> {
+  if (!task.requiresMaterials) return true;
+  let r = cache.get(task.serviceOrderId);
+  if (!r) {
+    r = await readinessOf(db, task.serviceOrderId);
+    cache.set(task.serviceOrderId, r);
+  }
+  const links = await db.productionTaskMaterial.findMany({
+    where: { taskId: task.id },
+    select: { requirementId: true },
+  });
+  if (!links.length) return r.state === 'COMPLETO';
+  if (r.openMeasurements + r.pendingRequests > 0) return false;
+  return links.every((l) => {
+    const line = r.lines.find((x) => x.requirementId === l.requirementId);
+    return Boolean(line) && q3(line!.covered) >= q3(line!.need);
+  });
+}
+
 // ─────────────────────────── Liberação ───────────────────────────
 
 /**
@@ -241,7 +283,7 @@ export async function reevaluateTasks(
 ) {
   if (!taskIds.length) return;
   await lockTasks(tx, taskIds);
-  const materials = new Map<string, boolean>();
+  const readiness = new Map<string, Readiness>();
   for (const id of [...new Set(taskIds)].sort()) {
     const t = await tx.productionTask.findUnique({
       where: { id },
@@ -257,16 +299,7 @@ export async function reevaluateTasks(
       },
     });
     if (!t || !(TASK_WAITING as readonly string[]).includes(t.status)) continue;
-    let materialsReady = true;
-    if (t.requiresMaterials) {
-      if (!materials.has(t.serviceOrderId)) {
-        materials.set(
-          t.serviceOrderId,
-          (await readinessOf(tx, t.serviceOrderId)).state === 'COMPLETO',
-        );
-      }
-      materialsReady = materials.get(t.serviceOrderId)!;
-    }
+    const materialsReady = await taskMaterialsReady(tx, t, readiness);
     const items = t.serviceOrderItemId
       ? t.serviceOrder.items.filter((i) => i.id === t.serviceOrderItemId)
       : t.serviceOrder.items;
@@ -305,6 +338,9 @@ export async function reevaluateTasks(
       to: result.status,
       changes: { blockers: result.blockers },
     });
+    if (result.status === 'LIBERADA') {
+      await notify(tx, actor, taskNotice(updated, 'TAREFA_LIBERADA', 'pode começar.'));
+    }
     await domainTaskEvent(
       tx,
       actor,

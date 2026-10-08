@@ -22,6 +22,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
+import { notify } from '../notifications/notify';
 import { protectCancelledServiceOrder } from '../production/cancellation';
 import { readinessOf } from '../purchasing/common';
 import { idParams, toEmployeeSummary } from '../presenters';
@@ -213,6 +214,28 @@ async function recordChange(
     },
     audience: AUDIENCE,
   });
+  // Fase 6: mudança técnica avisa quem tem tarefa publicada e aberta nesta OS.
+  if (entry.scope !== 'CRIACAO' && entry.scope !== 'CANCELAMENTO') {
+    const open = await tx.productionTask.findMany({
+      where: {
+        serviceOrderId: so.id,
+        assigneeUserId: { not: null },
+        status: { in: ['BLOQUEADA', 'PROGRAMADA', 'LIBERADA', 'EM_EXECUCAO', 'PAUSADA'] },
+      },
+      select: { assigneeUserId: true },
+    });
+    await notify(
+      tx,
+      actor,
+      [...new Set(open.map((t) => t.assigneeUserId!))].map((userId) => ({
+        userId,
+        kind: 'OS_ATUALIZADA' as const,
+        dedupeKey: `OS_ATUALIZADA:${so.id}:${revision}`,
+        body: entry.summary,
+        serviceOrderId: so.id,
+      })),
+    );
+  }
 }
 
 /** Dia da semana (0 = domingo) no fuso da empresa. */

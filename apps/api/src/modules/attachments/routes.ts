@@ -19,6 +19,7 @@ import {
   VIEW_PERMISSIONS,
   allowed,
   entityExists,
+  uploadableAsTaskAssignee,
   viewableAsMeasurementAssignee,
 } from './policy';
 
@@ -73,7 +74,15 @@ export async function attachmentRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const upload = await readImageUpload(request, env.MAX_UPLOAD_MB);
       const fields = uploadFields.parse(upload.fields);
-      if (!allowed(request.auth!.permissions, MANAGE_PERMISSIONS[fields.entityType]))
+      if (
+        !allowed(request.auth!.permissions, MANAGE_PERMISSIONS[fields.entityType]) &&
+        !(await uploadableAsTaskAssignee(
+          prisma,
+          request.auth!.userId,
+          fields.entityType,
+          fields.entityId,
+        ))
+      )
         throw Errors.forbidden();
       if (!(await entityExists(prisma, fields.entityType, fields.entityId)))
         throw Errors.notFound('Registro');
@@ -121,7 +130,8 @@ export async function attachmentRoutes(app: FastifyInstance) {
               entityId: fields.entityId,
               attachmentId: a.id,
             },
-            audience: anyPermissionAudience(...VIEW_PERMISSIONS[fields.entityType]),
+            // Quem enviou (ex.: responsável pela tarefa no tablet) também atualiza a galeria.
+            audience: `${anyPermissionAudience(...VIEW_PERMISSIONS[fields.entityType])}|user:${request.auth!.userId}`,
           });
           return a;
         });

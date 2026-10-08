@@ -113,6 +113,21 @@
 - Início e conclusão são idempotentes (`Idempotency-Key`) e usam bloqueio de linha; histórico de
   tarefas e revisões de planejamento são imutáveis (triggers).
 
+### Tablets e avisos (Fase 6)
+
+- Avisos são do usuário autenticado: listar, marcar como lido e "todos lidos" agem só nos próprios
+  (aviso de outra pessoa responde 404, sem revelar que existe); eventos `notification.*` vão só para
+  `user:<id>` e não carregam texto do aviso.
+- Fotos da tarefa (`PRODUCTION_TASK`): enviadas pelo responsável enquanto executa (em execução ou
+  pausada) e vistas por ele e pela gestão; quem não é responsável recebe 403. Fotos citadas num
+  andamento ou conclusão precisam pertencer à própria tarefa.
+- O detalhe do tablet mostra o histórico técnico da OS apenas com os **nomes** dos campos alterados
+  (lista permitida de campos técnicos), sem valores antigos/novos; nenhum preço, valor, condição de
+  pagamento ou dado bancário (testado).
+- Vincular materiais à tarefa exige `producao.planejar`, aceita só materiais aprovados da mesma OS e
+  nunca libera uma tarefa sem os materiais vinculados cobertos (verificado também no `iniciar`).
+- Sem conexão, o tablet desativa as ações em vez de simular gravações.
+
 ## Proteções de requisição
 
 - **CSRF / WebSocket entre sites:** métodos que alteram estado e o upgrade do WebSocket exigem

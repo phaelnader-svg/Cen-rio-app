@@ -33,9 +33,15 @@ export async function registerDevice(page: Page, name: string, employee: string)
 }
 
 /** Abre um "tablet" (contexto de navegador separado, 1280x800 com toque), vincula e entra. */
-export async function openTablet(browser: Browser, code: string, pin: string) {
+export async function openTablet(
+  browser: Browser,
+  code: string,
+  pin: string,
+  device: { width: number; height: number; isMobile?: boolean } = { width: 1280, height: 800 },
+) {
   const context = await browser.newContext({
-    viewport: { width: 1280, height: 800 },
+    viewport: { width: device.width, height: device.height },
+    isMobile: device.isMobile ?? false,
     hasTouch: true,
   });
   const page = await context.newPage();

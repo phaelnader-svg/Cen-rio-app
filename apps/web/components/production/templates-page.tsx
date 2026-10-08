@@ -1,12 +1,15 @@
 'use client';
 
 import type {
+  CompletionRequirement,
   PieceType,
   ProductionActivity,
   ProductionTemplateDto,
   TaskRole,
 } from '@cenario/shared';
 import {
+  COMPLETION_REQUIREMENTS,
+  COMPLETION_REQUIREMENT_LABEL,
   PIECE_TYPES,
   PIECE_TYPE_LABEL,
   PRODUCTION_ACTIVITIES,
@@ -32,6 +35,7 @@ interface StepDraft {
   requiresMaterials: boolean;
   optional: boolean;
   dependsOn: number[];
+  completionRequirement: CompletionRequirement;
 }
 interface Draft {
   name: string;
@@ -51,6 +55,7 @@ const fromDto = (t: ProductionTemplateDto): Draft => ({
     requiresMaterials: s.requiresMaterials,
     optional: s.optional,
     dependsOn: s.dependsOn,
+    completionRequirement: s.completionRequirement,
   })),
 });
 
@@ -89,6 +94,7 @@ export function ProductionTemplatesPage() {
                 requiresMaterials: false,
                 optional: false,
                 dependsOn: [],
+                completionRequirement: 'NENHUM',
               },
             ],
           }}
@@ -203,7 +209,7 @@ function TemplateEditor({
           />
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
+          <table className="w-full min-w-[1080px] text-sm">
             <thead className="text-left text-xs text-ink-muted uppercase">
               <tr>
                 <th className="px-2 py-1">#</th>
@@ -213,6 +219,7 @@ function TemplateEditor({
                 <th className="px-2 py-1">Depende de</th>
                 <th className="px-2 py-1">Materiais</th>
                 <th className="px-2 py-1">Opcional</th>
+                <th className="px-2 py-1">Para concluir</th>
                 <th className="px-2 py-1" />
               </tr>
             </thead>
@@ -289,6 +296,24 @@ function TemplateEditor({
                       onChange={(e) => setStep(i, { optional: e.target.checked })}
                     />
                   </td>
+                  <td className="px-2 py-1.5">
+                    <Select
+                      className="h-8 py-0"
+                      aria-label={`Registro para concluir a etapa ${i + 1}`}
+                      value={s.completionRequirement}
+                      onChange={(e) =>
+                        setStep(i, {
+                          completionRequirement: e.target.value as CompletionRequirement,
+                        })
+                      }
+                    >
+                      {COMPLETION_REQUIREMENTS.map((c) => (
+                        <option key={c} value={c}>
+                          {COMPLETION_REQUIREMENT_LABEL[c]}
+                        </option>
+                      ))}
+                    </Select>
+                  </td>
                   <td className="px-2 py-1.5 whitespace-nowrap">
                     <Button
                       size="sm"
@@ -346,6 +371,7 @@ function TemplateEditor({
                       requiresMaterials: false,
                       optional: false,
                       dependsOn: [],
+                      completionRequirement: 'NENHUM',
                     },
                   ],
                 })

@@ -81,6 +81,7 @@ model User {
   assignedTasks      ProductionTask[]         @relation("TaskAssignee")
   completedTasks     ProductionTask[]         @relation("TaskCompletedBy")
   taskEvents         ProductionTaskEvent[]    @relation("TaskEventActor")
+  notifications      Notification[]           @relation("UserNotifications")
 
   @@map("users")
 }
@@ -775,6 +776,7 @@ model ServiceOrder {
 
   productionPlanItems ProductionPlanItem[]
   productionTasks     ProductionTask[]
+  notifications       Notification[]
 
   @@index([orderId])
   @@index([customerId])
@@ -889,6 +891,7 @@ model MaterialRequirement {
   allocations         PurchaseAllocation[]
   reservations        StockReservation[]
   transfersIn         MaterialLeftoverTransfer[]
+  productionTasks     ProductionTaskMaterial[]
 
   @@index([serviceOrderId])
   @@map("material_requirements")
@@ -900,6 +903,7 @@ enum AttachmentEntity {
   RECEIPT
   SERVICE_ORDER
   SERVICE_ORDER_ITEM
+  PRODUCTION_TASK
 
   @@map("attachment_entity")
 }
@@ -1535,15 +1539,17 @@ model ProductionTemplate {
 }
 
 model ProductionTemplateStep {
-  id                String             @id @default(uuid()) @db.Uuid
-  templateId        String             @map("template_id") @db.Uuid
-  position          Int
-  activity          ProductionActivity
-  name              String             @db.VarChar(80)
-  role              TaskRole           @default(APOIO)
-  requiresMaterials Boolean            @default(false) @map("requires_materials")
-  optional          Boolean            @default(false)
-  dependsOn         Int[]              @map("depends_on")
+  id                    String                @id @default(uuid()) @db.Uuid
+  templateId            String                @map("template_id") @db.Uuid
+  position              Int
+  activity              ProductionActivity
+  name                  String                @db.VarChar(80)
+  role                  TaskRole              @default(APOIO)
+  requiresMaterials     Boolean               @default(false) @map("requires_materials")
+  optional              Boolean               @default(false)
+  dependsOn             Int[]                 @map("depends_on")
+  /// Fase 6: registro exigido para concluir a tarefa gerada por esta etapa.
+  completionRequirement CompletionRequirement @default(NENHUM) @map("completion_requirement")
 
   template ProductionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
@@ -1612,46 +1618,54 @@ model ProductionPlanRevision {
 
 /// Tarefa individual de produção (TP-00001).
 model ProductionTask {
-  id                 String             @id @default(uuid()) @db.Uuid
-  number             Int                @unique @default(autoincrement())
-  planId             String?            @map("plan_id") @db.Uuid
-  serviceOrderId     String             @map("service_order_id") @db.Uuid
-  serviceOrderItemId String?            @map("service_order_item_id") @db.Uuid
-  activity           ProductionActivity
-  title              String             @db.VarChar(120)
-  role               TaskRole           @default(APOIO)
-  assigneeUserId     String?            @map("assignee_user_id") @db.Uuid
-  priority           Priority           @default(NORMAL)
-  sequence           Int                @default(0)
-  scheduledAt        DateTime?          @map("scheduled_at") @db.Timestamptz(3)
-  dueDate            DateTime?          @map("due_date") @db.Date
-  instructions       String?            @db.VarChar(2000)
-  requiresMaterials  Boolean            @default(false) @map("requires_materials")
-  status             TaskStatus         @default(RASCUNHO)
-  blockers           String[]           @default([])
-  blockedReason      String?            @map("blocked_reason") @db.VarChar(500)
-  startedAt          DateTime?          @map("started_at") @db.Timestamptz(3)
-  completedAt        DateTime?          @map("completed_at") @db.Timestamptz(3)
-  completedById      String?            @map("completed_by_id") @db.Uuid
-  completedDeviceId  String?            @map("completed_device_id") @db.Uuid
-  pauseReason        PauseReason?       @map("pause_reason")
-  pauseNote          String?            @map("pause_note") @db.VarChar(300)
-  progressNote       String?            @map("progress_note") @db.VarChar(500)
-  progressPercent    Int?               @map("progress_percent")
-  progressAt         DateTime?          @map("progress_at") @db.Timestamptz(3)
-  cancelReason       String?            @map("cancel_reason") @db.VarChar(500)
-  version            Int                @default(1)
-  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                    String                @id @default(uuid()) @db.Uuid
+  number                Int                   @unique @default(autoincrement())
+  planId                String?               @map("plan_id") @db.Uuid
+  serviceOrderId        String                @map("service_order_id") @db.Uuid
+  serviceOrderItemId    String?               @map("service_order_item_id") @db.Uuid
+  activity              ProductionActivity
+  title                 String                @db.VarChar(120)
+  role                  TaskRole              @default(APOIO)
+  assigneeUserId        String?               @map("assignee_user_id") @db.Uuid
+  priority              Priority              @default(NORMAL)
+  sequence              Int                   @default(0)
+  scheduledAt           DateTime?             @map("scheduled_at") @db.Timestamptz(3)
+  dueDate               DateTime?             @map("due_date") @db.Date
+  instructions          String?               @db.VarChar(2000)
+  requiresMaterials     Boolean               @default(false) @map("requires_materials")
+  status                TaskStatus            @default(RASCUNHO)
+  blockers              String[]              @default([])
+  blockedReason         String?               @map("blocked_reason") @db.VarChar(500)
+  startedAt             DateTime?             @map("started_at") @db.Timestamptz(3)
+  completedAt           DateTime?             @map("completed_at") @db.Timestamptz(3)
+  completedById         String?               @map("completed_by_id") @db.Uuid
+  completedDeviceId     String?               @map("completed_device_id") @db.Uuid
+  pauseReason           PauseReason?          @map("pause_reason")
+  pauseNote             String?               @map("pause_note") @db.VarChar(300)
+  progressNote          String?               @map("progress_note") @db.VarChar(500)
+  progressPercent       Int?                  @map("progress_percent")
+  progressAt            DateTime?             @map("progress_at") @db.Timestamptz(3)
+  cancelReason          String?               @map("cancel_reason") @db.VarChar(500)
+  /// Fase 6: andamento estruturado (etapa atual e próximo passo) e pausa por impedimento real.
+  progressStep          String?               @map("progress_step") @db.VarChar(200)
+  progressNext          String?               @map("progress_next") @db.VarChar(200)
+  pauseImpediment       Boolean               @default(false) @map("pause_impediment")
+  completionRequirement CompletionRequirement @default(NENHUM) @map("completion_requirement")
+  completionNote        String?               @map("completion_note") @db.VarChar(500)
+  version               Int                   @default(1)
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  plan             ProductionPlan?       @relation(fields: [planId], references: [id], onDelete: Restrict)
-  serviceOrder     ServiceOrder          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
-  serviceOrderItem ServiceOrderItem?     @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
-  assignee         User?                 @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: Restrict)
-  completedBy      User?                 @relation("TaskCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
-  dependsOn        TaskDependency[]      @relation("TaskDependsOn")
-  dependents       TaskDependency[]      @relation("TaskDependents")
+  plan             ProductionPlan?          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  serviceOrder     ServiceOrder             @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  serviceOrderItem ServiceOrderItem?        @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  assignee         User?                    @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: Restrict)
+  completedBy      User?                    @relation("TaskCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  dependsOn        TaskDependency[]         @relation("TaskDependsOn")
+  dependents       TaskDependency[]         @relation("TaskDependents")
   events           ProductionTaskEvent[]
+  materials        ProductionTaskMaterial[]
+  notifications    Notification[]
 
   @@index([assigneeUserId, status])
   @@index([serviceOrderId])
@@ -1692,4 +1706,50 @@ model ProductionTaskEvent {
 
   @@index([taskId, createdAt])
   @@map("production_task_events")
+}
+
+/// Fase 6: registro exigido para concluir uma tarefa (somente o necessário).
+enum CompletionRequirement {
+  NENHUM
+  OBSERVACAO
+  FOTO
+
+  @@map("completion_requirement")
+}
+
+/// Fase 6: materiais aprovados da OS dos quais uma tarefa depende (liberação por tarefa).
+/// Sem vínculos, a tarefa que exige materiais continua dependendo da OS inteira (conservador).
+model ProductionTaskMaterial {
+  taskId        String   @map("task_id") @db.Uuid
+  requirementId String   @map("requirement_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  task        ProductionTask      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  requirement MaterialRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, requirementId])
+  @@index([requirementId])
+  @@map("production_task_materials")
+}
+
+/// Fase 6: notificações persistentes por usuário (tablets e painel), sem duplicidade.
+model Notification {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  kind           String    @db.VarChar(40)
+  title          String    @db.VarChar(80)
+  body           String    @db.VarChar(300)
+  taskId         String?   @map("task_id") @db.Uuid
+  serviceOrderId String?   @map("service_order_id") @db.Uuid
+  dedupeKey      String    @map("dedupe_key") @db.VarChar(160)
+  readAt         DateTime? @map("read_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user         User            @relation("UserNotifications", fields: [userId], references: [id], onDelete: Restrict)
+  task         ProductionTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  serviceOrder ServiceOrder?   @relation(fields: [serviceOrderId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
 }

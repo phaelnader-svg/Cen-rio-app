@@ -26,6 +26,7 @@ import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
+import { notify, taskNotice } from '../notifications/notify';
 import { readinessOf } from '../purchasing/common';
 import {
   MANAGEMENT,
@@ -37,6 +38,7 @@ import {
   reevaluateTasks,
   taskEvent,
   taskInclude,
+  taskMaterialsReady,
   toTaskDto,
 } from './common';
 
@@ -189,9 +191,13 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
     include: taskInclude,
     orderBy: [{ serviceOrderId: 'asc' }, { sequence: 'asc' }, { number: 'asc' }],
   });
+  const readinessCache = new Map<string, Awaited<ReturnType<typeof readinessOf>>>();
   const states = new Map<string, Awaited<ReturnType<typeof readinessOf>>['state']>();
-  for (const it of plan.items)
-    states.set(it.serviceOrderId, (await readinessOf(db, it.serviceOrderId)).state);
+  for (const it of plan.items) {
+    const r = await readinessOf(db, it.serviceOrderId);
+    readinessCache.set(it.serviceOrderId, r);
+    states.set(it.serviceOrderId, r.state);
+  }
   const weekStart = dateOnly(plan.weekStart)!;
   const weekEnd = addDays(weekStart, 6);
   const dtos = tasks.map((t) => toTaskDto(t, timezone));
@@ -241,7 +247,14 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
       }
     }
     const it = plan.items.find((i) => i.serviceOrderId === t.serviceOrder.id);
-    if (t.requiresMaterials && states.get(t.serviceOrder.id) !== 'COMPLETO') {
+    if (
+      t.requiresMaterials &&
+      !(await taskMaterialsReady(
+        db,
+        { id: t.id, serviceOrderId: t.serviceOrder.id, requiresMaterials: true },
+        readinessCache,
+      ))
+    ) {
       conflicts.push({
         kind: 'MATERIAIS',
         message: `${t.code} (${t.serviceOrder.code}) exige materiais, que ainda não estão completos — ficará bloqueada.`,
@@ -359,6 +372,7 @@ async function generateTasks(
           priority,
           sequence: item.position * 100 + step.position,
           requiresMaterials: step.requiresMaterials,
+          completionRequirement: step.completionRequirement,
           scheduledAt,
         },
       });
@@ -388,11 +402,48 @@ async function assertPrincipal(
 }
 
 /** Publica os eventos de atribuição para os responsáveis das tarefas indicadas. */
-export async function announceAssignments(tx: Tx, actor: ActorContext, ids: string[]) {
+export async function announceAssignments(
+  tx: Tx,
+  actor: ActorContext,
+  ids: string[],
+  /** Publicação da semana: um aviso-resumo por pessoa em vez de um por tarefa. */
+  publication?: { planId: string; weekStart: string },
+) {
   const tasks = await tx.productionTask.findMany({
     where: { id: { in: ids }, assigneeUserId: { not: null } },
+    orderBy: [{ scheduledAt: 'asc' }, { sequence: 'asc' }],
   });
   for (const t of tasks) await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_ASSIGNED, t);
+  if (publication) {
+    const byUser = new Map<string, typeof tasks>();
+    for (const t of tasks)
+      byUser.set(t.assigneeUserId!, [...(byUser.get(t.assigneeUserId!) ?? []), t]);
+    for (const [userId, list] of byUser) {
+      const released = list.filter((t) => t.status === 'LIBERADA').length;
+      await notify(tx, actor, [
+        {
+          userId,
+          kind: 'TAREFA_ATRIBUIDA',
+          dedupeKey: `PUBLICACAO:${publication.planId}:${userId}`,
+          body: `Programação da semana de ${publication.weekStart.split('-').reverse().join('/')} publicada: ${list.length} tarefa(s) para você${released ? `, ${released} liberada(s) para começar` : ''}.`,
+          taskId: list.find((t) => t.status === 'LIBERADA')?.id ?? list[0]!.id,
+          serviceOrderId: list[0]!.serviceOrderId,
+        },
+      ]);
+    }
+    return;
+  }
+  for (const t of tasks) {
+    await notify(
+      tx,
+      actor,
+      taskNotice(
+        t,
+        'TAREFA_ATRIBUIDA',
+        t.status === 'LIBERADA' ? 'liberada para começar.' : 'programada para você.',
+      ),
+    );
+  }
 }
 
 // ─────────────────────────── Rotas ───────────────────────────
@@ -420,6 +471,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         requiresMaterials: s.requiresMaterials,
         optional: s.optional,
         dependsOn: s.dependsOn,
+        completionRequirement: s.completionRequirement,
       })),
   });
 
@@ -756,6 +808,11 @@ export async function productionPlanRoutes(app: FastifyInstance) {
             },
           });
           if (t.status !== 'RASCUNHO' && t.assigneeUserId !== principal) {
+            await notify(
+              tx,
+              actor,
+              taskNotice(t, 'TAREFA_REMOVIDA', 'passou para outro responsável.'),
+            );
             await taskEvent(tx, actor, null, t, {
               kind: 'RESPONSAVEL_ALTERADO',
               note: input.reason ?? null,
@@ -862,6 +919,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           tx,
           actor,
           tasks.map((t) => t.id),
+          { planId: id, weekStart: dateOnly(plan.weekStart)! },
         );
       });
       return loadPlan(prisma, id);

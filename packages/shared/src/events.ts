@@ -72,6 +72,10 @@ export const EVENT_TYPES = {
   PRODUCTION_TASK_COMPLETED: 'production.task_completed',
   PRODUCTION_TASK_CANCELLED: 'production.task_cancelled',
   PRODUCTION_DEPENDENCIES_UPDATED: 'production.dependencies_updated',
+  // Fase 6
+  PRODUCTION_TASK_IMPEDIMENT: 'production.task_impediment',
+  NOTIFICATION_CREATED: 'notification.created',
+  NOTIFICATION_READ: 'notification.read',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

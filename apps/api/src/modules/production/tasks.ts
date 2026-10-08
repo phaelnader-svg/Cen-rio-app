@@ -1,6 +1,7 @@
 import {
   EVENT_TYPES,
   PRINCIPAL_ACTIVITIES,
+  PRIORITY_LABEL,
   PRODUCTION_ACTIVITY_LABEL,
   RELEASE_BLOCKER_LABEL,
   TASK_WAITING,
@@ -11,8 +12,10 @@ import {
   findCycle,
   formatServiceOrderItemCode,
   localParts,
+  completeTaskSchema,
   pauseTaskSchema,
   progressTaskSchema,
+  taskMaterialsSchema,
   taskCode,
   taskDependenciesSchema,
   taskReasonSchema,
@@ -27,6 +30,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { Errors } from '../../lib/errors';
 import { parseDateOnly } from '../commercial/common';
 import { idParams } from '../presenters';
+import { notify, taskNotice } from '../notifications/notify';
 import { readinessOf } from '../purchasing/common';
 import {
   EXECUTE,
@@ -41,16 +45,60 @@ import {
   reevaluateTasks,
   taskEvent,
   taskInclude,
+  taskMaterialsReady,
   toTaskDto,
 } from './common';
 import { announceAssignments, assertWorker, reviseIfPublished } from './plans';
 
 const deviceOf = (request: FastifyRequest) => request.auth?.deviceId ?? null;
 
+/** Campos técnicos da OS que podem aparecer no histórico do tablet. */
+const TECHNICAL_FIELDS = new Set([
+  'description',
+  'quantity',
+  'serviceType',
+  'fabricName',
+  'fabricColor',
+  'fabricReference',
+  'foamSpecs',
+  'technicalNotes',
+  'technicalInstructions',
+  'measurements',
+  'measurementNotes',
+  'promisedDate',
+  'priority',
+  'technicalLeadId',
+  'notes',
+  'added',
+  'removed',
+  'status',
+]);
+
+function eventExtra(kind: string, changes: Prisma.JsonValue | null) {
+  if (!changes || typeof changes !== 'object' || Array.isArray(changes)) return null;
+  const c = changes as Record<string, unknown>;
+  if (kind !== 'ANDAMENTO' && kind !== 'CONCLUIDA') return null;
+  return {
+    percent: typeof c.percent === 'number' ? c.percent : null,
+    step: typeof c.step === 'string' ? c.step : null,
+    nextStep: typeof c.nextStep === 'string' ? c.nextStep : null,
+    attachmentIds: Array.isArray(c.attachmentIds) ? (c.attachmentIds as string[]) : [],
+  };
+}
+
 async function loadTask(db: Tx | PrismaClient, id: string) {
   const t = await db.productionTask.findUnique({ where: { id }, include: taskInclude });
   if (!t) throw Errors.notFound('Tarefa');
   return t;
+}
+
+/** As fotos citadas num registro precisam ser anexos desta tarefa. */
+async function assertTaskPhotos(tx: Tx, taskId: string, ids: string[]) {
+  if (!ids.length) return;
+  const found = await tx.attachment.count({
+    where: { id: { in: ids }, entityType: 'PRODUCTION_TASK', entityId: taskId, deletedAt: null },
+  });
+  if (found !== new Set(ids).size) throw Errors.business('Foto não pertence a esta tarefa.');
 }
 
 /** Corte e costura do sofá ficam com o tapeceiro principal da OS na semana. */
@@ -233,6 +281,9 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         ...(input.requiresMaterials !== undefined
           ? { requiresMaterials: input.requiresMaterials }
           : {}),
+        ...(input.completionRequirement
+          ? { completionRequirement: input.completionRequirement }
+          : {}),
         version: { increment: 1 },
       };
       await assertPrincipalRule(tx, {
@@ -249,6 +300,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           'scheduledAt',
           'dueDate',
           'requiresMaterials',
+          'completionRequirement',
           'title',
         ] as const) {
           const a = t[k] instanceof Date ? (t[k] as Date).toISOString() : t[k];
@@ -270,6 +322,42 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         await reevaluateTasks(tx, actor, [id]);
         if (changes.assigneeUserId) await announceAssignments(tx, actor, [id]);
         const after = await tx.productionTask.findUniqueOrThrow({ where: { id } });
+        // Avisos ao funcionário: quem saiu da tarefa, reprogramação e prioridade.
+        if (changes.assigneeUserId && t.assigneeUserId) {
+          await notify(
+            tx,
+            actor,
+            taskNotice(t, 'TAREFA_REMOVIDA', 'passou para outro responsável.'),
+          );
+        }
+        if (!changes.assigneeUserId) {
+          const { timezone } = await company(tx);
+          const when = after.scheduledAt ? localParts(after.scheduledAt, timezone) : null;
+          if (changes.scheduledAt || changes.dueDate) {
+            await notify(
+              tx,
+              actor,
+              taskNotice(
+                after,
+                'TAREFA_REPROGRAMADA',
+                when
+                  ? `agora em ${when.date.split('-').reverse().join('/')} às ${when.time}.`
+                  : 'sem horário definido.',
+              ),
+            );
+          }
+          if (changes.priority) {
+            await notify(
+              tx,
+              actor,
+              taskNotice(
+                after,
+                'PRIORIDADE_ALTERADA',
+                `prioridade ${PRIORITY_LABEL[after.priority].toLowerCase()}.`,
+              ),
+            );
+          }
+        }
         await domainTaskEvent(
           tx,
           actor,
@@ -335,6 +423,76 @@ export async function productionTaskRoutes(app: FastifyInstance) {
     },
   );
 
+  /**
+   * Fase 6: materiais aprovados de que a tarefa depende. Com vínculos, a tarefa é
+   * liberada quando ESSES materiais estão cobertos (ex.: corte só com o tecido);
+   * sem vínculos, continua dependendo da OS inteira. Nunca começa sem eles.
+   */
+  app.put(
+    '/api/v1/production-tasks/:id/materials',
+    { config: { access: PLAN } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const input = taskMaterialsSchema.parse(request.body);
+      const actor = actorFrom(request);
+      await prisma.$transaction(async (tx) => {
+        await lockTasks(tx, [id]);
+        const t = await tx.productionTask.findUnique({ where: { id } });
+        if (!t) throw Errors.notFound('Tarefa');
+        if (t.version !== input.version) throw Errors.versionConflict(t.version);
+        if (!(TASK_WAITING as readonly string[]).includes(t.status) && t.status !== 'RASCUNHO') {
+          throw Errors.business(
+            'Só tarefas que ainda não começaram podem ter os materiais alterados.',
+          );
+        }
+        const ids = [...new Set(input.requirementIds)];
+        const valid = await tx.materialRequirement.count({
+          where: {
+            id: { in: ids },
+            serviceOrderId: t.serviceOrderId,
+            origin: 'SOLICITACAO_APROVADA',
+          },
+        });
+        if (valid !== ids.length) {
+          throw Errors.business('Use somente materiais aprovados desta OS.');
+        }
+        const before = await tx.productionTaskMaterial.findMany({ where: { taskId: id } });
+        await tx.productionTaskMaterial.deleteMany({ where: { taskId: id } });
+        if (ids.length) {
+          await tx.productionTaskMaterial.createMany({
+            data: ids.map((requirementId) => ({ taskId: id, requirementId })),
+          });
+        }
+        await tx.productionTask.update({
+          where: { id },
+          // Vincular materiais implica exigir materiais.
+          data: { ...(ids.length ? { requiresMaterials: true } : {}), version: { increment: 1 } },
+        });
+        if (t.status !== 'RASCUNHO') {
+          await taskEvent(tx, actor, null, t, {
+            kind: 'MATERIAIS',
+            note: input.reason ?? null,
+            changes: { from: before.map((b) => b.requirementId), to: ids },
+          });
+          await reviseIfPublished(
+            tx,
+            request,
+            t.planId,
+            input.reason,
+            `materiais de ${taskCode(t.number)}`,
+          );
+          await reevaluateTasks(tx, actor, [id]);
+          const after = await tx.productionTask.findUniqueOrThrow({ where: { id } });
+          await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_DEPENDENCIES_UPDATED, after, {
+            changed: ['materials'],
+          });
+        }
+      });
+      const { timezone } = await company(prisma);
+      return toTaskDto(await loadTask(prisma, id), timezone);
+    },
+  );
+
   async function adminTransition(request: FastifyRequest, kind: 'cancel' | 'block' | 'unblock') {
     const { id } = idParams.parse(request.params);
     const input =
@@ -358,8 +516,14 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         }
         const u = await tx.productionTask.update({
           where: { id },
-          data: { status: 'CANCELADA', cancelReason: input.reason, version: { increment: 1 } },
+          data: {
+            status: 'CANCELADA',
+            cancelReason: input.reason,
+            pauseImpediment: false,
+            version: { increment: 1 },
+          },
         });
+        await notify(tx, actor, taskNotice(u, 'TAREFA_CANCELADA', input.reason));
         await taskEvent(tx, actor, null, t, {
           kind: 'CANCELADA',
           from: t.status,
@@ -394,6 +558,10 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         kind: kind === 'block' ? 'BLOQUEIO' : 'DESBLOQUEIO',
         note: input.reason,
       });
+      if (kind === 'block') {
+        const b = await tx.productionTask.findUniqueOrThrow({ where: { id } });
+        await notify(tx, actor, taskNotice(b, 'TAREFA_BLOQUEADA', input.reason));
+      }
       await reevaluateTasks(tx, actor, [id]);
     });
     if (kind === 'cancel' && !(await prisma.productionTask.findUnique({ where: { id } })))
@@ -511,7 +679,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         throw Errors.forbidden('Esta tarefa é de outra pessoa.');
       }
       const { timezone } = await company(prisma);
-      const [events, so, readiness, osTasks] = await Promise.all([
+      const [events, so, readiness, osTasks, links, revisions] = await Promise.all([
         prisma.productionTaskEvent.findMany({
           where: { taskId: id },
           include: { actor: { select: { displayName: true } } },
@@ -533,8 +701,23 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           },
           orderBy: [{ sequence: 'asc' }, { number: 'asc' }],
         }),
+        prisma.productionTaskMaterial.findMany({
+          where: { taskId: id },
+          select: { requirementId: true },
+        }),
+        prisma.serviceOrderRevision.findMany({
+          where: { serviceOrderId: t.serviceOrderId, scope: { not: 'CRIACAO' } },
+          include: { changedBy: { select: { displayName: true } } },
+          orderBy: { revision: 'desc' },
+          take: 30,
+        }),
       ]);
       const own = t.assigneeUserId === me && request.auth!.permissions.has('producao.executar');
+      const materialIds = links.map((l) => l.requirementId);
+      const itemCode = (itemId: string | null) => {
+        const it = itemId ? so.items.find((i) => i.id === itemId) : null;
+        return it ? formatServiceOrderItemCode(so.number, it.position) : null;
+      };
       return {
         ...toTaskDto(t, timezone),
         events: events.map((e) => ({
@@ -545,6 +728,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           note: e.note,
           actor: e.actor?.displayName ?? (e.actorId ? null : 'Sistema'),
           createdAt: e.createdAt.toISOString(),
+          extra: eventExtra(e.kind, e.changes),
         })),
         serviceOrderInfo: {
           technicalInstructions: so.technicalInstructions,
@@ -565,6 +749,25 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         },
         materials: readiness.lines,
         materialsState: readiness.state,
+        materialIds,
+        taskMaterials: !t.requiresMaterials
+          ? 'NAO_EXIGE'
+          : (await taskMaterialsReady(prisma, t, new Map([[t.serviceOrderId, readiness]])))
+            ? 'DISPONIVEIS'
+            : 'FALTANDO',
+        // Só os nomes dos campos alterados (sem valores): nada comercial chega ao tablet.
+        technicalHistory: revisions.map((r) => ({
+          revision: r.revision,
+          scope: r.scope,
+          itemCode: itemCode(r.itemId),
+          fields:
+            r.changes && typeof r.changes === 'object' && !Array.isArray(r.changes)
+              ? Object.keys(r.changes as object).filter((k) => TECHNICAL_FIELDS.has(k))
+              : [],
+          reason: r.reason,
+          changedBy: r.changedBy?.displayName ?? null,
+          createdAt: r.createdAt.toISOString(),
+        })),
         osTasks: osTasks.map((x) => ({
           id: x.id,
           code: taskCode(x.number),
@@ -595,6 +798,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
     const { id } = idParams.parse(request.params);
     const pause = action === 'pause' ? pauseTaskSchema.parse(request.body) : null;
     const progress = action === 'progress' ? progressTaskSchema.parse(request.body) : null;
+    const completion = action === 'complete' ? completeTaskSchema.parse(request.body ?? {}) : null;
     const actor = actorFrom(request);
     const device = deviceOf(request);
     await prisma.$transaction(async (tx) => {
@@ -637,8 +841,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           dependenciesDone: t.dependsOn.every(
             (d) => d.dependsOn.status === 'CONCLUIDA' || d.dependsOn.status === 'CANCELADA',
           ),
-          materialsReady:
-            !t.requiresMaterials || (await readinessOf(tx, t.serviceOrderId)).state === 'COMPLETO',
+          materialsReady: await taskMaterialsReady(tx, t),
           requiresMaterials: t.requiresMaterials,
           manuallyBlocked: Boolean(t.blockedReason),
           scheduledAt: t.scheduledAt,
@@ -677,6 +880,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
             status: 'PAUSADA',
             pauseReason: pause!.reason,
             pauseNote: pause!.note ?? null,
+            pauseImpediment: pause!.impediment,
             version: { increment: 1 },
           },
         });
@@ -685,9 +889,19 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           from: 'EM_EXECUCAO',
           to: 'PAUSADA',
           note: pause!.note ?? pause!.reason,
-          changes: { reason: pause!.reason },
+          changes: { reason: pause!.reason, impediment: pause!.impediment },
         });
-        await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_PAUSED, u);
+        await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_PAUSED, u, {
+          reason: pause!.reason,
+          impediment: pause!.impediment,
+        });
+        // Impedimento real: evento próprio, pronto para a futura central de atenção (Fase 7+).
+        if (pause!.impediment) {
+          await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_IMPEDIMENT, u, {
+            reason: pause!.reason,
+            note: pause!.note ?? null,
+          });
+        }
         return;
       }
       if (action === 'resume') {
@@ -700,6 +914,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
             status: 'EM_EXECUCAO',
             pauseReason: null,
             pauseNote: null,
+            pauseImpediment: false,
             version: { increment: 1 },
           },
         });
@@ -715,19 +930,27 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         if (t.status !== 'EM_EXECUCAO' && t.status !== 'PAUSADA') {
           throw Errors.business('Registre andamento de tarefas iniciadas.');
         }
+        await assertTaskPhotos(tx, id, progress!.attachmentIds);
         const u = await tx.productionTask.update({
           where: { id },
           data: {
-            progressNote: progress!.note,
+            progressNote: progress!.note ?? null,
             progressPercent: progress!.percent ?? t.progressPercent,
+            progressStep: progress!.step ?? null,
+            progressNext: progress!.nextStep ?? null,
             progressAt: now,
             version: { increment: 1 },
           },
         });
         await taskEvent(tx, actor, device, t, {
           kind: 'ANDAMENTO',
-          note: progress!.note,
-          changes: { percent: progress!.percent ?? null },
+          note: progress!.note ?? null,
+          changes: {
+            percent: progress!.percent ?? null,
+            step: progress!.step ?? null,
+            nextStep: progress!.nextStep ?? null,
+            attachmentIds: progress!.attachmentIds,
+          },
         });
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_PROGRESS, u);
         return;
@@ -736,6 +959,17 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       if (t.status === 'CONCLUIDA') return; // conclusão repetida: sem novos eventos nem liberações
       if (t.status !== 'EM_EXECUCAO')
         throw Errors.business('Só tarefas em execução podem ser concluídas.');
+      // Registro adicional só quando a etapa exige (regra técnica definida pelo gestor).
+      if (t.completionRequirement === 'OBSERVACAO' && !completion!.note) {
+        throw Errors.business('Esta tarefa exige uma observação de conclusão.');
+      }
+      await assertTaskPhotos(tx, id, completion!.attachmentIds);
+      if (t.completionRequirement === 'FOTO') {
+        const photos = await tx.attachment.count({
+          where: { entityType: 'PRODUCTION_TASK', entityId: id, deletedAt: null },
+        });
+        if (photos === 0) throw Errors.business('Esta tarefa exige uma foto antes de concluir.');
+      }
       const u = await tx.productionTask.update({
         where: { id },
         data: {
@@ -743,6 +977,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           completedAt: now,
           completedById: actor.userId,
           completedDeviceId: device,
+          completionNote: completion!.note ?? null,
           progressPercent: 100,
           version: { increment: 1 },
         },
@@ -751,6 +986,10 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         kind: 'CONCLUIDA',
         from: 'EM_EXECUCAO',
         to: 'CONCLUIDA',
+        note: completion!.note ?? null,
+        changes: completion!.attachmentIds.length
+          ? { attachmentIds: completion!.attachmentIds }
+          : undefined,
       });
       await audit(tx, actor, {
         action: 'production.task_completed',
@@ -766,6 +1005,24 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         t.dependents.map((d) => d.taskId),
         now,
       );
+      // Quem depende desta e ainda não foi liberado fica sabendo do avanço
+      // (os liberados já recebem "Tarefa liberada" do motor de liberação).
+      const dependents = await tx.productionTask.findMany({
+        where: { id: { in: t.dependents.map((d) => d.taskId) } },
+      });
+      for (const d of dependents) {
+        if (d.status === 'LIBERADA' || !d.assigneeUserId) continue;
+        await notify(tx, actor, [
+          {
+            userId: d.assigneeUserId,
+            kind: 'DEPENDENCIA_CONCLUIDA',
+            dedupeKey: `DEPENDENCIA_CONCLUIDA:${d.id}:${id}`,
+            body: `${taskCode(d.number)} · ${d.title} — ${t.title} foi concluída.`,
+            taskId: d.id,
+            serviceOrderId: d.serviceOrderId,
+          },
+        ]);
+      }
     });
     const { timezone } = await company(prisma);
     return toTaskDto(await loadTask(prisma, id), timezone);

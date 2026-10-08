@@ -78,6 +78,8 @@ describe('Banco de dados e migrations', () => {
       'production_tasks',
       'production_task_dependencies',
       'production_task_events',
+      'production_task_materials',
+      'notifications',
     ]) {
       expect(names).toContain(t);
     }

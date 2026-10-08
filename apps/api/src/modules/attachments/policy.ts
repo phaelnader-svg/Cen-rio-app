@@ -8,6 +8,7 @@ export const VIEW_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   RECEIPT: ['pedidos.ver', 'recebimentos.registrar', 'os.ver'],
   SERVICE_ORDER: ['os.ver'],
   SERVICE_ORDER_ITEM: ['os.ver'],
+  PRODUCTION_TASK: ['producao.ver', 'producao.planejar'],
 };
 
 /** Quem pode ENVIAR/REMOVER fotos de cada tipo de registro. */
@@ -17,6 +18,7 @@ export const MANAGE_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   RECEIPT: ['recebimentos.registrar'],
   SERVICE_ORDER: ['os.gerenciar'],
   SERVICE_ORDER_ITEM: ['os.gerenciar'],
+  PRODUCTION_TASK: ['producao.planejar'],
 };
 
 export function allowed(perms: ReadonlySet<Permission>, list: Permission[]): boolean {
@@ -39,6 +41,8 @@ export async function entityExists(
       return (await db.serviceOrder.count({ where: { id } })) > 0;
     case 'SERVICE_ORDER_ITEM':
       return (await db.serviceOrderItem.count({ where: { id } })) > 0;
+    case 'PRODUCTION_TASK':
+      return (await db.productionTask.count({ where: { id } })) > 0;
   }
 }
 
@@ -52,6 +56,14 @@ export async function viewableAsMeasurementAssignee(
   type: AttachmentEntity,
   id: string,
 ): Promise<boolean> {
+  // Fase 6: fotos da própria tarefa (andamento/conclusão).
+  if (type === 'PRODUCTION_TASK') {
+    return (
+      (await db.productionTask.count({
+        where: { id, assigneeUserId: userId, status: { not: 'RASCUNHO' } },
+      })) > 0
+    );
+  }
   if (type !== 'SERVICE_ORDER' && type !== 'SERVICE_ORDER_ITEM') return false;
   const serviceOrderId =
     type === 'SERVICE_ORDER'
@@ -68,4 +80,22 @@ export async function viewableAsMeasurementAssignee(
     where: { serviceOrderId, assigneeUserId: userId, status: { notIn: ['RASCUNHO', 'CANCELADA'] } },
   });
   return tasks > 0;
+}
+
+/**
+ * Fase 6: o responsável envia fotos da própria tarefa enquanto a executa
+ * (em execução ou pausada) — sem permissão geral de anexos.
+ */
+export async function uploadableAsTaskAssignee(
+  db: PrismaClient | Tx,
+  userId: string,
+  type: AttachmentEntity,
+  id: string,
+): Promise<boolean> {
+  if (type !== 'PRODUCTION_TASK') return false;
+  return (
+    (await db.productionTask.count({
+      where: { id, assigneeUserId: userId, status: { in: ['EM_EXECUCAO', 'PAUSADA'] } },
+    })) > 0
+  );
 }

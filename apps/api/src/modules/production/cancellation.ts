@@ -10,6 +10,7 @@ import {
   num,
   refreshReadiness,
 } from '../purchasing/common';
+import { notify, taskNotice } from '../notifications/notify';
 import { domainTaskEvent, lockTasks, taskEvent } from './common';
 
 /**
@@ -41,9 +42,11 @@ export async function protectCancelledServiceOrder(
       data: {
         status: 'CANCELADA',
         cancelReason: `OS cancelada: ${reason}`.slice(0, 500),
+        pauseImpediment: false,
         version: { increment: 1 },
       },
     });
+    await notify(tx, actor, taskNotice(u, 'TAREFA_CANCELADA', `OS cancelada: ${reason}`));
     await taskEvent(tx, actor, null, t, {
       kind: 'CANCELADA',
       from: t.status,
