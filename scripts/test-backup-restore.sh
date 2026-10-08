@@ -39,7 +39,12 @@ counts() {
     UNION ALL SELECT 'production_templates', count(*) FROM production_templates
     UNION ALL SELECT 'notifications', count(*) FROM notifications
     UNION ALL SELECT 'operational_attendances', count(*) FROM operational_attendances
-    UNION ALL SELECT 'attendance_corrections', count(*) FROM attendance_corrections) x"
+    UNION ALL SELECT 'attendance_corrections', count(*) FROM attendance_corrections
+    UNION ALL SELECT 'employee_skills', count(*) FROM employee_skills
+    UNION ALL SELECT 'help_requests', count(*) FROM help_requests
+    UNION ALL SELECT 'help_request_events', count(*) FROM help_request_events
+    UNION ALL SELECT 'reschedule_proposals', count(*) FROM reschedule_proposals
+    UNION ALL SELECT 'planning_actions', count(*) FROM planning_actions) x"
 }
 
 # Garante dados de referência na origem (seed idempotente + um registro de auditoria).
@@ -145,6 +150,27 @@ INSERT INTO attendance_corrections (id, attendance_id, action, after)
 SELECT gen_random_uuid(), a.id, 'CHEGADA', '{"situation":"PRESENTE"}'::jsonb FROM a;
 SQL
 
+# Dados fictícios da Fase 8 (pedido de ajuda com histórico, proposta e ação do planejamento).
+psql "$SOURCE" -q -v ON_ERROR_STOP=1 > /dev/null <<'SQL'
+WITH t AS (
+  SELECT t.id, t.service_order_id, t.assignee_user_id FROM production_tasks t
+  WHERE t.title = 'Preparação backup' ORDER BY t.created_at DESC LIMIT 1
+), h AS (
+  INSERT INTO help_requests (id, task_id, service_order_id, requester_user_id, kind, estimated_minutes, urgent, justification, status, cancelled_at, cancel_reason, updated_at)
+  SELECT gen_random_uuid(), t.id, t.service_order_id, t.assignee_user_id, 'PARAFUSAR', 20, true, 'Teste de backup', 'CANCELADA', now(), 'Backup', now() FROM t
+  RETURNING id
+), ev AS (
+  INSERT INTO help_request_events (id, help_request_id, kind, to_status, note)
+  SELECT gen_random_uuid(), h.id, 'SOLICITADA', 'PENDENTE', 'Backup' FROM h RETURNING help_request_id
+), p AS (
+  INSERT INTO reschedule_proposals (id, kind, status, situation, problem, affected_task_ids, alternatives, proposed_alternative_id, dedupe_key, help_request_id, updated_at)
+  SELECT gen_random_uuid(), 'AJUDA_URGENTE', 'PENDENTE', 'Backup', 'Backup', ARRAY[]::uuid[], '[]'::jsonb, 'AGUARDAR', 'backup:' || ev.help_request_id, ev.help_request_id, now() FROM ev
+  RETURNING id
+)
+INSERT INTO planning_actions (id, kind, automatic, proposal_id, reason)
+SELECT gen_random_uuid(), 'PROPOSTA_CRIADA', true, p.id, 'Backup' FROM p;
+SQL
+
 DATABASE_URL="$SOURCE" STORAGE_DIR="$WORK/none" BACKUP_RETENTION_DAYS=0 bash scripts/backup.sh "$WORK/out" > /dev/null
 DIR="$(ls -d "$WORK"/out/cenario-*)"
 psql "$BASE/postgres" -qc "DROP DATABASE IF EXISTS $RESTORE_DB" > /dev/null
@@ -172,6 +198,15 @@ if psql "$RESTORE_URL" -qc "INSERT INTO notifications (id, user_id, kind, title,
 fi
 if psql "$RESTORE_URL" -qc "DELETE FROM attendance_corrections" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade do histórico de presença ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "DELETE FROM planning_actions" > /dev/null 2>&1; then
+  echo "✖ Trigger de imutabilidade do histórico do planejamento ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "UPDATE help_request_events SET note = 'x'" > /dev/null 2>&1; then
+  echo "✖ Trigger de imutabilidade do histórico de ajuda ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "UPDATE help_requests SET urgent = true, justification = null" > /dev/null 2>&1; then
+  echo "✖ Regra de justificativa da ajuda urgente ausente no banco restaurado" >&2; exit 1
 fi
 if psql "$RESTORE_URL" -qc "DELETE FROM production_task_events" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade do histórico de tarefas ausente no banco restaurado" >&2; exit 1

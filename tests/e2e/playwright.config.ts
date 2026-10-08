@@ -38,6 +38,8 @@ export default defineConfig({
         ALLOWED_ORIGINS: origin,
         LOG_LEVEL: 'warn',
         STORAGE_DIR: '../../storage-e2e',
+        // Fase 8: relógio de teste (só aceito com APP_ENV=test) — presença em qualquer horário.
+        ENABLE_TEST_CLOCK: 'true',
       },
     },
     {

@@ -119,6 +119,14 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     );
   }
   if (t === 'notification.created') keys.push(['production-task'], ['my-tasks']);
+  // Fase 8 — ajuda, reprogramação e histórico do planejamento.
+  if (t.startsWith('help.') || t.startsWith('production.task_')) {
+    keys.push(['help-requests'], ['help-request'], ['my-help'], ['skills'], ['alternatives']);
+  }
+  if (t.startsWith('help.') || t.startsWith('reschedule.') || t.startsWith('planning.')) {
+    keys.push(['reschedule-proposals'], ['planning-actions'], ['my-tasks'], ['production-board']);
+  }
+  if (t.startsWith('attendance.')) keys.push(['reschedule-proposals'], ['help-requests']);
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }
 

@@ -343,6 +343,58 @@ jornada, folha, descontos nem penalidades.
   andamento.
 - Relógio injetável (`setAttendanceClock`) usado só pelos testes para fixar 8h30/9h30.
 
+### Distribuição de ajudantes e reprogramação (Fase 8)
+
+Regras **determinísticas e auditáveis** (sem IA generativa); módulo `modules/help`.
+
+- **Competências** (`employee_skills`, PK funcionário + competência): parafusar, movimentar,
+  auxiliar montagem, virar/posicionar, apoio geral, desmontagem, preparação, cabeceiras, reparos,
+  instalações, inspeção e corte/costura. Semeadas por função (ajudante; cabeceiras/qualidade =
+  ajudante + especialidades; tapeceiro = corte/costura) e ajustadas pelo gestor.
+- **Pedido de ajuda** (`help_requests`, AJ-00001): tarefa e OS, quem pediu, tipo, duração estimada
+  (sugestão por tipo, ajustável), urgente (+ justificativa obrigatória — CHECK no banco),
+  observação, status (pendente, atribuída, em execução, concluída, cancelada, escalada), ajudante,
+  tarefa de apoio, datas e versão. Índice único parcial impede dois pedidos abertos da mesma
+  pessoa na mesma tarefa. Histórico imutável em `help_request_events` (com a avaliação dos
+  candidatos de cada tentativa).
+- **Tarefa de apoio**: `production_tasks` com `activity = APOIO`, `support_for_task_id` (tarefa
+  principal) e `estimated_minutes`. Nasce liberada para o ajudante, sem dependência com a
+  principal (trabalho simultâneo na mesma OS); concluir o apoio conclui o pedido, nunca a principal.
+- **Motor de seleção** (`evaluateCandidates` + `pickCandidate`): para cada pessoa da equipe (exceto
+  quem pede) registra motivos de exclusão — sem competência, não confirmou chegada, ausente,
+  atividade externa, expediente encerrado, ocupado (tarefa em execução), ocupado com tarefa
+  importante (ALTA/URGENTE ou apoio), tarefa prioritária programada na janela do apoio ou urgente
+  aguardando — e uma pontuação de impacto: +10 especialidade preservada (cabeceiras/reparos/
+  inspeção), +5 por tarefa própria na janela, +3 se há tarefa liberada esperando, +2 por tarefa
+  pausada. Escolhe o menor impacto; empate por nome. Assim, em condições iguais, o apoio geral vai
+  para o João e o Thiago fica preservado. Atribuições são serializadas (advisory lock global) —
+  dois pedidos simultâneos nunca pegam o mesmo ajudante.
+- **Fila** (`processHelpQueue`): urgentes primeiro, depois por chegada; reavaliada após chegada,
+  saída, início/pausa/conclusão de tarefa, decisão do gestor, mudança de competências e a cada
+  30 s. Sem ajudante: o solicitante é avisado uma vez; passado o limite (5 min urgente, 20 min
+  normal) o gestor recebe **um** alerta de risco de atraso. Nenhuma previsão de disponibilidade é
+  inventada. Pedido urgente sem ninguém livre, mas com alguém em tarefa não crítica, vira uma
+  **proposta** ao gestor (interromper ou aguardar) — nunca interrompe sozinho; se o gestor
+  rejeitar, o pedido volta à fila e não é escalado de novo.
+- **Reprogramação simples automática** (registrada em `planning_actions`, imutável):
+  (a) tarefa liberada/programada que fica bloqueada — ou pausada por impedimento — de quem está
+  presente: indica outra tarefa já liberada da mesma pessoa ou **antecipa** a próxima tarefa pronta
+  de hoje (mesmo responsável, sem bloqueio técnico, materiais e dependências ok; antecipar não
+  compromete prazo); nunca inicia nada e não mexe no andamento; (b) ausência **confirmada**:
+  tarefas de apoio de prioridade até normal, sem prazo hoje e sem bloqueio técnico passam para
+  alguém presente, livre e capacitado. Toda mudança gera evento na tarefa, revisão da programação
+  publicada (`reviseIfPublishedBy`) e aviso.
+- **Reprogramação crítica** (`reschedule_proposals`, RP-00001): situação, problema, tarefas
+  afetadas, alternativas (ações + impactos + crítica/recomendada) e ação proposta; deduplicada
+  por fato (`dedupe_key`). Ausência presumida → recomenda aguardar (nada é transferido); ausência
+  confirmada → redistribuir, trocar o tapeceiro principal (crítica), reprogramar para o próximo dia
+  útil (crítica se compromete prazo interno ou entrega ao cliente) ou manter. O gestor aprova,
+  ajusta (responsável/data/hora, com motivo) ou rejeita; nada é aplicado antes. A chegada da pessoa
+  torna as propostas pendentes da ausência **sem efeito** (sem duplicar).
+- **Relógio de teste** (`/api/test/clock`, `/api/test/attendance/check`): só registrado com
+  `ENABLE_TEST_CLOCK=true` em `APP_ENV=test` (a validação do ambiente recusa o contrário). Desloca
+  apenas o relógio operacional da aplicação; o relógio do servidor e do banco não mudam.
+
 ## 4. Eventos, concorrência e tempo real
 
 **Gravação (outbox).** Toda alteração relevante grava, na mesma transação: os dados, a
@@ -382,6 +434,13 @@ Eventos da Fase 7: `attendance.arrived`, `attendance.late`, `attendance.absence_
 `attendance.absence_confirmed`, `attendance.corrected`, `attendance.departed`,
 `attendance.availability_changed` e `attendance.production_impact_detected` vão para quem vê a
 presença (`presenca.ver`/`presenca.gerenciar`) e para o próprio funcionário — nunca para os colegas.
+Eventos da Fase 8: `help.requested`, `help.assigned`, `help.queued`, `help.escalated`,
+`help.cancelled`, `help.started` e `help.completed` vão para a gestão (`producao.ver`/
+`producao.planejar`), quem pediu e o ajudante; `help.skills_changed`, `reschedule.proposed`,
+`reschedule.decided` e `planning.action_recorded` só para a gestão. Os avisos persistentes
+(ajuda solicitada/atribuída/em espera/cancelada/concluída, reprogramação pendente/aprovada/
+automática/rejeitada e tarefa alternativa liberada) usam `notification.created` com chave de
+deduplicação — o mesmo fato nunca gera dois avisos.
 
 **Reconexão e reconciliação.**
 
@@ -451,6 +510,14 @@ são usadas como garantia de execução.
   execução. No painel, `/painel/presenca` (Presença da equipe: situação, chegada, atraso, tarefa
   atual e próxima, saída, alertas, histórico, registros do gestor e impacto na produção), sino de
   **avisos** no cabeçalho e os novos horários em Empresa.
+- Fase 8: no tablet, **Solicitar ajudante** e **Preciso de ajuda agora** no detalhe da tarefa
+  própria (tipo em botões grandes, duração sugerida com ajuste, justificativa no urgente),
+  acompanhamento e cancelamento do pedido, "Meus pedidos de ajuda" no Meu dia, selo "Apoio para
+  …" nas tarefas de apoio e "Enquanto isso, você pode fazer" (tarefas alternativas) quando a tarefa
+  está bloqueada ou parada por impedimento. No painel, `/painel/ajuda` (pedidos por status com a
+  avaliação dos candidatos), `/painel/reprogramacao` (propostas, decisão e histórico de alterações)
+  e `/painel/competencias`; aviso de decisões pendentes no quadro e no planejamento. A Presença da
+  equipe passa a abrir no "hoje" do servidor.
 - PWA: `manifest.webmanifest` (início em `/tablet`), service worker que **nunca** guarda
   respostas da API e mostra página offline quando não há rede.
 - Permissões no frontend só escondem elementos; o servidor sempre decide.
@@ -461,6 +528,7 @@ A fundação já acomoda: funcionários e funções da oficina (tapeceiros, cabe
 ajudante) e concessões individuais (ex.: tapeceiro autorizado a medir); tablets individuais
 com sessão permanente; parâmetros de expediente (botão "Cheguei" 8h30, alerta 9h30
 configurável, sem efeito trabalhista); dia de programação e de medição (sextas); eventos e
-consumidores para reprogramação automática, distribuição de ajuda e central de atenção.
+consumidores para a central de atenção. A distribuição de ajuda e a reprogramação foram
+implementadas na Fase 8.
 A equipe de logística terceirizada (André e Izaías) ainda não tem acesso — será tratada no
 módulo de logística.

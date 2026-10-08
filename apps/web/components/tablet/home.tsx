@@ -80,6 +80,8 @@ export function TabletHome({ me }: { me: MeDto }) {
     me.permissions.includes('medicoes.extraordinarias') ||
     me.permissions.includes('medicoes.gerenciar');
   const canExecute = me.permissions.includes('producao.executar');
+  // Fase 8: quem pede ajuda nas próprias tarefas (tapeceiros e cabeceiras).
+  const canAskHelp = me.permissions.includes('ajuda.solicitar');
   // Presença operacional (Fase 7): quem registra a própria chegada e saída.
   const canPresence =
     me.permissions.includes('presenca.registrar') && !me.permissions.includes('presenca.gerenciar');
@@ -182,7 +184,7 @@ export function TabletHome({ me }: { me: MeDto }) {
                 />
               </div>
             )}
-            {canExecute && <MyDay onOpen={(id) => openTask(id, 'home')} />}
+            {canExecute && <MyDay onOpen={(id) => openTask(id, 'home')} canAskHelp={canAskHelp} />}
 
             <h2 className={clsx('mb-3 text-lg font-semibold text-ink-soft', canExecute && 'mt-10')}>
               {canExecute ? 'Outras atividades' : 'Atividades'}
@@ -252,7 +254,12 @@ export function TabletHome({ me }: { me: MeDto }) {
               taskFrom === 'notifications' ? 'Voltar aos avisos' : 'Voltar ao Meu dia',
               taskFrom,
             )}
-            <MyTaskDetail key={taskId} id={taskId} />
+            <MyTaskDetail
+              key={taskId}
+              id={taskId}
+              canAskHelp={canAskHelp}
+              onOpen={(id) => openTask(id, taskFrom)}
+            />
           </>
         ) : screen === 'depart' && attendance.data ? (
           <>

@@ -13,7 +13,8 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { PriorityBadge } from '@/components/commercial/badges';
 import { Input, Select } from '@/components/ui/field';
-import { Alert, Avatar, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
+import { HelpAndRescheduleBanner } from '@/components/help/pages';
+import { Alert, Avatar, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { addDays, formatDay, todayIso } from '@/lib/commercial';
 import { useCan, useMe } from '@/lib/hooks';
 import { useBoard, useWorkers } from '@/lib/production';
@@ -96,6 +97,7 @@ export function ProductionBoardPage() {
           ) : undefined
         }
       />
+      <HelpAndRescheduleBanner />
       <Card className="mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="text-sm">
           <span className="mb-1 block text-ink-muted">De</span>
@@ -221,6 +223,11 @@ export function BoardRow({ t }: { t: ProductionTaskDto }) {
           <span className="font-medium">{t.title}</span>
           <TaskStatusBadge status={t.status} />
           {t.priority !== 'NORMAL' && <PriorityBadge priority={t.priority} />}
+          {t.supportFor && (
+            <Badge tone="brand">
+              Apoio para {t.supportFor.requester ?? 'colega'} · {t.supportFor.code}
+            </Badge>
+          )}
         </span>
         <span className="mt-0.5 block text-xs text-ink-muted">
           {t.code} · {t.serviceOrder.code}

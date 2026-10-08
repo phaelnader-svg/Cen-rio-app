@@ -217,8 +217,11 @@ test.describe.serial('Fase 6 — interface operacional dos tablets', () => {
     await dialog.getByLabel('Motivo da alteração').fill('Cliente antecipou a entrega');
     await dialog.getByRole('button', { name: 'Salvar' }).click();
     await expect(dialog).toHaveCount(0);
-    await expect(mt.getByTestId('notification-PRIORIDADE_ALTERADA')).toBeVisible();
-    await expect(mt.getByTestId('notification-TAREFA_REPROGRAMADA')).toBeVisible();
+    // Só os avisos desta tarefa (o spec da Fase 5 deixa outro aviso de prioridade para o Márcio).
+    const ofRev = (kind: string) =>
+      mt.getByTestId(`notification-${kind}`).filter({ hasText: 'Revestimento do encosto' });
+    await expect(ofRev('PRIORIDADE_ALTERADA')).toBeVisible();
+    await expect(ofRev('TAREFA_REPROGRAMADA')).toBeVisible();
     await mt.getByRole('button', { name: /Marcar todos como lidos/ }).click();
     await expect(mt.getByTestId('notifications-unread')).toHaveCount(0);
     await mt.getByRole('button', { name: 'Voltar ao Meu dia' }).click();

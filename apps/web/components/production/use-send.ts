@@ -16,6 +16,14 @@ export const PRODUCTION_KEYS = [
   'my-tasks',
   'os-production',
   'service-order',
+  // Fase 8 — ajuda e reprogramação
+  'my-help',
+  'help-requests',
+  'help-request',
+  'reschedule-proposals',
+  'planning-actions',
+  'skills',
+  'alternatives',
 ];
 
 /** Mutação genérica da produção: executa, invalida as consultas e mostra o erro. */

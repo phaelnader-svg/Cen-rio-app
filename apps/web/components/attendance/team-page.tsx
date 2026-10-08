@@ -35,14 +35,16 @@ export function TeamAttendancePage() {
   const me = useMe();
   const can = useCan();
   const today = todayIso(me.data?.company.timezone);
-  const [date, setDate] = useState(today);
+  // Sem data escolhida, vale o "hoje" do servidor (relógio operacional da empresa).
+  const [picked, setPicked] = useState<string | null>(null);
   const [employeeId, setEmployeeId] = useState('');
-  const q = useTeamAttendance(date, employeeId || undefined);
+  const q = useTeamAttendance(picked ?? undefined, employeeId || undefined);
+  const date = picked ?? q.data?.date ?? today;
   const impacts = useAttendanceImpacts(date, employeeId || undefined);
   const [acting, setActing] = useState<AttendanceDayDto | null>(null);
   const [historyOf, setHistoryOf] = useState<AttendanceDayDto | null>(null);
   const manage = can('presenca.gerenciar');
-  const allMembers = useTeamAttendance(date);
+  const allMembers = useTeamAttendance(picked ?? undefined);
 
   const counts = new Map<string, number>();
   for (const d of q.data?.days ?? [])
@@ -60,7 +62,7 @@ export function TeamAttendancePage() {
           <Input
             type="date"
             value={date}
-            onChange={(e) => e.target.value && setDate(e.target.value)}
+            onChange={(e) => e.target.value && setPicked(e.target.value)}
           />
         </label>
         <label className="text-sm">

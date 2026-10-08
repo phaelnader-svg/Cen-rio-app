@@ -244,7 +244,7 @@ export const PERMISSIONS = {
   },
   'ajuda.solicitar': {
     group: 'producao',
-    label: 'Solicitar ajudante',
+    label: 'Pedir ajuda nas próprias tarefas',
     description:
       'Pedir apoio (normal ou urgente) nas próprias tarefas em andamento, consultar e cancelar os próprios pedidos.',
   },

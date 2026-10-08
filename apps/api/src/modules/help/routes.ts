@@ -12,6 +12,7 @@ import {
   createHelpRequestSchema,
   helpListQuerySchema,
   helpRequestCode,
+  localParts,
   planningActionsQuerySchema,
   proposalCode,
   proposalListQuerySchema,
@@ -323,8 +324,9 @@ export async function helpRoutes(app: FastifyInstance) {
 
   /** Meus pedidos (abertos e os encerrados de hoje). */
   app.get('/api/v1/help-requests/mine', { config: { access: MINE } }, async (request) => {
-    const cfg = await attendanceConfig(prisma);
-    const startOfToday = zonedDateTime(cfg.today, '00:00', cfg.timezone);
+    // `updatedAt` é gravado pelo relógio do servidor: compara com o início do dia real.
+    const { timezone } = await company(prisma);
+    const startOfToday = zonedDateTime(localParts(new Date(), timezone).date, '00:00', timezone);
     const rows = await prisma.helpRequest.findMany({
       where: {
         requesterUserId: request.auth!.userId,

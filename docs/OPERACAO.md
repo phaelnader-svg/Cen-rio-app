@@ -103,6 +103,22 @@ Rotina nova: a cada minuto, a API verifica ausências presumidas (só em dia út
 configurado). Em Empresa, "Início previsto do expediente" (antes rotulado "“Cheguei” a partir de")
 passa a ser o horário de referência do atraso; a janela do "Cheguei" é o novo campo.
 
+## Atualização da Fase 7 para a Fase 8
+
+A migration `20261013000000_ajuda_reprogramacao` é aditiva: cria `employee_skills`,
+`help_requests`, `help_request_events` (imutável), `reschedule_proposals` e `planning_actions`
+(imutável), acrescenta `estimated_minutes` e `support_for_task_id` às tarefas, concede
+`ajuda.solicitar` ao Gestor, aos tapeceiros e a cabeceiras/qualidade e semeia as competências
+iniciais por função. Nada é apagado. Procedimento: backup (`pnpm backup`) → `pnpm db:migrate` →
+reiniciar API e web.
+
+Rotinas novas: a cada 30 s a API reavalia a fila de ajuda (atribui quando alguém fica livre e avisa
+o gestor de pedidos esperando demais). A verificação de ausência presumida passa a gerar uma
+proposta de reprogramação (só sugestão) quando a pessoa tinha tarefas no dia.
+
+Variável nova: `ENABLE_TEST_CLOCK` (padrão `false`). **Nunca** definir fora dos testes — a API
+recusa iniciar com ela fora de `APP_ENV=test`.
+
 ## Backup e restauração
 
 ```bash

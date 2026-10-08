@@ -48,6 +48,7 @@ import { formatDay } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useMyTasks, useNotifications, useTask } from '@/lib/production';
 import { useRealtime } from '@/lib/realtime';
+import { AlternativeTasks, HelpPanel, MyOpenHelp, SupportInfo } from './help';
 
 const DONE = ['CONCLUIDA', 'CANCELADA'];
 const isOpen = (t: ProductionTaskDto) => !DONE.includes(t.status);
@@ -114,7 +115,13 @@ export function NotificationsButton({ onClick }: { onClick: () => void }) {
  * Tela "Meu dia": tarefa em execução, próxima liberada e as tarefas de hoje na ordem
  * de prioridade (em execução → liberadas urgentes → liberadas → programadas → bloqueadas).
  */
-export function MyDay({ onOpen }: { onOpen: (id: string) => void }) {
+export function MyDay({
+  onOpen,
+  canAskHelp,
+}: {
+  onOpen: (id: string) => void;
+  canAskHelp?: boolean;
+}) {
   const q = useMyTasks();
   if (q.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
@@ -146,6 +153,8 @@ export function MyDay({ onOpen }: { onOpen: (id: string) => void }) {
           testId="next-task"
         />
       </section>
+
+      {canAskHelp && <MyOpenHelp />}
 
       <section>
         <h2 className="mb-3 text-xl font-semibold">Tarefas de hoje ({open.length})</h2>
@@ -360,6 +369,7 @@ export function TaskCard({
               {t.pauseImpediment ? ' (impedimento)' : ''}
             </span>
           )}
+          <SupportInfo t={t} />
         </span>
         <ChevronRight className="mt-1 size-6 shrink-0 text-ink-muted" aria-hidden />
       </button>
@@ -428,7 +438,15 @@ function QuickAction({ t }: { t: ProductionTaskDto }) {
 // ─────────────────────────── Detalhe ───────────────────────────
 
 /** Detalhe da tarefa: ações grandes e informações técnicas (sem valores comerciais). */
-export function MyTaskDetail({ id, onOpen }: { id: string; onOpen?: (id: string) => void }) {
+export function MyTaskDetail({
+  id,
+  onOpen,
+  canAskHelp,
+}: {
+  id: string;
+  onOpen?: (id: string) => void;
+  canAskHelp?: boolean;
+}) {
   const q = useTask(id);
   const online = useOnline();
   const { m, error } = useSend();
@@ -486,6 +504,7 @@ export function MyTaskDetail({ id, onOpen }: { id: string; onOpen?: (id: string)
           {t.dueDate && <span className="text-ink-muted">Prazo {formatDay(t.dueDate)}</span>}
           <MaterialsIndicator state={t.taskMaterials} />
         </div>
+        <SupportInfo t={t} large />
       </div>
 
       {error && <Alert tone="danger">{error}</Alert>}
@@ -564,6 +583,9 @@ export function MyTaskDetail({ id, onOpen }: { id: string; onOpen?: (id: string)
             </p>
           )}
       </div>
+
+      {canAskHelp && (t.can.start || t.can.progress) && <HelpPanel t={t} />}
+      <AlternativeTasks t={t} onOpen={onOpen} />
 
       {panel === 'complete' && (
         <CompletePanel

@@ -171,6 +171,20 @@
   funções, dispositivos, sessões, configurações), com diferenças antes/depois sem dados
   sensíveis, IP e autor.
 
+## Ajuda e reprogramação (Fase 8)
+
+- Pedir ajuda exige `ajuda.solicitar` (tapeceiros e cabeceiras) e só vale na **própria** tarefa
+  liberada ou em andamento (nunca numa tarefa de apoio); cancelar, só o próprio solicitante (antes
+  de o apoio começar) ou o gestor. Ajudante e solicitante veem o pedido; no tablet, a avaliação
+  dos colegas não é exposta.
+- Fila, propostas, histórico e competências são do painel (`producao.ver`/`producao.planejar`);
+  decidir propostas, reavaliar a fila e alterar competências exigem `producao.planejar`.
+- Nenhuma mudança crítica é aplicada sem aprovação; decisões usam versão (409) e bloqueio da
+  proposta; repetir com a mesma chave de idempotência não duplica.
+- Relógio de teste: só existe com `ENABLE_TEST_CLOCK=true` **e** `APP_ENV=test`; em qualquer outro
+  ambiente a API recusa iniciar com a variável e as rotas nem são registradas. Mesmo em teste,
+  só o gestor (`presenca.gerenciar`, sessão do painel) o controla.
+
 ## Segredos e ambientes
 
 - Segredos apenas por variáveis de ambiente; `.env` não é versionado.

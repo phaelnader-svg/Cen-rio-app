@@ -34,6 +34,7 @@ import { ReadinessBadge } from '@/components/purchasing/badges';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Checkbox, Field, Input, Select } from '@/components/ui/field';
+import { HelpAndRescheduleBanner } from '@/components/help/pages';
 import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { addDays, formatDay, todayIso } from '@/lib/commercial';
@@ -67,6 +68,7 @@ export function ProductionPlanningPage() {
           </Link>
         }
       />
+      <HelpAndRescheduleBanner />
       <Card className="mb-6 flex flex-wrap items-center gap-3 p-4">
         <Button
           variant="secondary"
