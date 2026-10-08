@@ -51,7 +51,7 @@ test.describe('Painel administrativo', () => {
   test('validação no formulário de empresa e salvamento com versão', async ({ page }) => {
     await loginAdmin(page);
     await page.goto('/painel/empresa');
-    const alert = page.getByLabel('Alerta de ausência às');
+    const alert = page.getByLabel('Ausência presumida às');
     await alert.fill('08:00');
     await page.getByRole('button', { name: 'Salvar' }).click();
     await expect(page.getByText('O limite de alerta de chegada deve ser posterior')).toBeVisible();

@@ -166,7 +166,8 @@ test.describe.serial('Fase 7 — presença operacional', () => {
       await evidence(mt, '01-tablet-cheguei');
       await mt.getByTestId('arrive-button').click();
       await expect(mt.getByTestId('presence-status')).toContainText('Presente desde');
-      await expect(row('Márcio')).toContainText('Presente e disponível');
+      // Disponível, ou ocupado se ainda tiver tarefa em execução de specs anteriores.
+      await expect(row('Márcio')).toContainText(/Presente e (disponível|ocupado)/);
       await expect(row('Márcio')).not.toContainText('Atraso');
       await evidence(mt, '02-tablet-presente');
 
