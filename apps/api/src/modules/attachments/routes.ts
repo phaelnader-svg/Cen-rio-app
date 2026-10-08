@@ -14,7 +14,13 @@ import { readImageUpload } from '../../core/storage/upload';
 import { sha256Hex } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
 import { idParams } from '../presenters';
-import { MANAGE_PERMISSIONS, VIEW_PERMISSIONS, allowed, entityExists } from './policy';
+import {
+  MANAGE_PERMISSIONS,
+  VIEW_PERMISSIONS,
+  allowed,
+  entityExists,
+  viewableAsMeasurementAssignee,
+} from './policy';
 
 const listQuery = z.object({
   entityType: z.enum(ATTACHMENT_ENTITIES),
@@ -36,8 +42,12 @@ export async function attachmentRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/attachments', { config: { access: { session: 'any' } } }, async (request) => {
     const q = listQuery.parse(request.query);
-    if (!allowed(request.auth!.permissions, VIEW_PERMISSIONS[q.entityType]))
+    if (
+      !allowed(request.auth!.permissions, VIEW_PERMISSIONS[q.entityType]) &&
+      !(await viewableAsMeasurementAssignee(prisma, request.auth!.userId, q.entityType, q.entityId))
+    ) {
       throw Errors.forbidden();
+    }
     const rows = await prisma.attachment.findMany({
       where: { entityType: q.entityType, entityId: q.entityId, deletedAt: null },
       include: { file: true, createdBy: { select: { displayName: true } } },

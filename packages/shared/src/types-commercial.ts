@@ -206,6 +206,11 @@ export interface MaterialRequirementDto {
   sourcing: MaterialSourcing;
   notes: string | null;
   createdAt: string;
+  /** PREVISAO_MANUAL (não conferida) ou SOLICITACAO_APROVADA (conferida na Fase 3). */
+  origin: 'PREVISAO_MANUAL' | 'SOLICITACAO_APROVADA';
+  color: string | null;
+  foamDensity: string | null;
+  thicknessCm: number | null;
 }
 
 export type ReadinessState = 'OK' | 'PENDENTE' | 'FASE_FUTURA';

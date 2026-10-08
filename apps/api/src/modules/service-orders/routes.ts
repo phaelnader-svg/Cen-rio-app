@@ -111,10 +111,14 @@ export async function loadServiceOrderDto(
       kind: m.kind,
       description: m.description,
       quantity: m.quantity ? Number(m.quantity) : null,
-      unit: m.unit,
+      unit: m.unitCode ?? m.unit,
       sourcing: m.sourcing,
       notes: m.notes,
       createdAt: m.createdAt.toISOString(),
+      origin: m.origin,
+      color: m.color,
+      foamDensity: m.foamDensity,
+      thicknessCm: m.thicknessCm ? Number(m.thicknessCm) : null,
     })),
     // Prontidão para produção: apenas informativa. Nenhuma combinação libera o
     // início da produção nesta fase (depende da programação — fases futuras).
@@ -527,9 +531,9 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
   app.put(
     '/api/v1/service-orders/:id/items/:itemId/measurements',
     {
-      config: {
-        access: { session: 'any', anyPermissions: ['os.gerenciar', 'medicoes.extraordinarias'] },
-      },
+      // Fase 3: tapeceiros medem somente pelas medições atribuídas (/api/v1/measurements);
+      // o registro direto ficou restrito ao gestor.
+      config: { access: { session: 'WEB', permissions: ['os.gerenciar'] } },
     },
     async (request) => {
       const { id, itemId } = itemParams.parse(request.params);
@@ -634,6 +638,11 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
           where: { id: materialId, serviceOrderId: id },
         });
         if (!m) throw Errors.notFound('Material');
+        if (m.origin === 'SOLICITACAO_APROVADA') {
+          throw Errors.business(
+            'Material aprovado em solicitação só muda pela revisão da medição (reabrir aprovação).',
+          );
+        }
         await tx.materialRequirement.delete({ where: { id: materialId } });
         await tx.serviceOrder.update({ where: { id }, data: { updatedAt: new Date() } });
         await recordChange(tx, request, so, revision, {

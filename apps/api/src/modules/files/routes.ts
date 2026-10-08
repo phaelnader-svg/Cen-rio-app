@@ -2,7 +2,7 @@ import type { AttachmentEntity } from '@cenario/shared';
 import type { PrismaClient, StoredFile } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Errors } from '../../lib/errors';
-import { VIEW_PERMISSIONS, allowed } from '../attachments/policy';
+import { VIEW_PERMISSIONS, allowed, viewableAsMeasurementAssignee } from '../attachments/policy';
 import { idParams } from '../presenters';
 
 /**
@@ -19,7 +19,11 @@ const READ_POLICIES: Record<
   attachment: async (request, file, prisma) => {
     const a = await prisma.attachment.findUnique({ where: { fileId: file.id } });
     if (!a || a.deletedAt || !request.auth) return false;
-    return allowed(request.auth.permissions, VIEW_PERMISSIONS[a.entityType as AttachmentEntity]);
+    const type = a.entityType as AttachmentEntity;
+    return (
+      allowed(request.auth.permissions, VIEW_PERMISSIONS[type]) ||
+      viewableAsMeasurementAssignee(prisma, request.auth.userId, type, a.entityId)
+    );
   },
 };
 

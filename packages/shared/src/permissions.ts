@@ -161,8 +161,28 @@ export const PERMISSIONS = {
   },
   'medicoes.extraordinarias': {
     group: 'servicos',
-    label: 'Registrar medições extraordinárias',
-    description: 'Registrar medidas fora da rotina do gestor (delegação a tapeceiro autorizado).',
+    label: 'Executar medições atribuídas',
+    description:
+      'Tapeceiro autorizado: executa as medições que o gestor lhe atribuir (somente as próprias).',
+  },
+  'medicoes.gerenciar': {
+    group: 'servicos',
+    label: 'Gerenciar e delegar medições',
+    description:
+      'Criar medições (rotina de sexta e extraordinárias), atribuir responsáveis e cancelar.',
+    critical: true,
+  },
+  'materiais.ver': {
+    group: 'servicos',
+    label: 'Ver solicitações e lista de materiais',
+    description: 'Consultar solicitações de materiais, planejamento de sexta e lista consolidada.',
+  },
+  'materiais.aprovar': {
+    group: 'servicos',
+    label: 'Revisar e aprovar materiais',
+    description:
+      'Revisar quantidades, aprovar para compra ou devolver para correção. Aprovar não significa comprar.',
+    critical: true,
   },
   'auditoria.ver': {
     group: 'sistema',

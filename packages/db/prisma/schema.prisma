@@ -57,6 +57,11 @@ model User {
   serviceOrderRevisions  ServiceOrderRevision[]
   attachments            Attachment[]
 
+  assignedMeasurements  Measurement[]         @relation("MeasurementAssignee")
+  requestedMeasurements Measurement[]         @relation("MeasurementRequestedBy")
+  measurementRevisions  MeasurementRevision[]
+  reviewedRequests      MaterialRequest[]     @relation("MaterialRequestReviewedBy")
+
   @@map("users")
 }
 
@@ -300,7 +305,7 @@ model DomainEvent {
   aggregateId   String   @map("aggregate_id") @db.VarChar(64)
   payload       Json
   /// Quem pode receber em tempo real: 'all', 'permission:<p>' ou 'user:<id>'.
-  audience      String   @default("all") @db.VarChar(120)
+  audience      String   @default("all") @db.VarChar(400)
   actorUserId   String?  @map("actor_user_id") @db.Uuid
   requestId     String?  @map("request_id") @db.VarChar(64)
   occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
@@ -734,6 +739,7 @@ model ServiceOrder {
   items         ServiceOrderItem[]
   revisions     ServiceOrderRevision[]
   materials     MaterialRequirement[]
+  measurements  Measurement[]
 
   @@index([orderId])
   @@index([customerId])
@@ -766,10 +772,13 @@ model ServiceOrderItem {
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  serviceOrder ServiceOrder          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
-  orderItem    CommercialOrderItem   @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
-  measuredBy   User?                 @relation("ItemMeasuredBy", fields: [measuredById], references: [id], onDelete: SetNull)
-  materials    MaterialRequirement[]
+  serviceOrder      ServiceOrder          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  orderItem         CommercialOrderItem   @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  measuredBy        User?                 @relation("ItemMeasuredBy", fields: [measuredById], references: [id], onDelete: SetNull)
+  materials         MaterialRequirement[]
+  measurementTasks  Measurement[]
+  measurementPieces MeasurementPiece[]
+  requestItems      MaterialRequestItem[]
 
   @@unique([serviceOrderId, position])
   @@index([orderItemId])
@@ -824,8 +833,22 @@ model MaterialRequirement {
   notes              String?          @db.VarChar(500)
   createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  serviceOrder     ServiceOrder      @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
-  serviceOrderItem ServiceOrderItem? @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  // Fase 3: necessidades aprovadas a partir de solicitações de material.
+  /// PREVISAO_MANUAL (Fase 2, não conferida) ou SOLICITACAO_APROVADA (conferida pelo gestor).
+  origin                MaterialRequirementOrigin @default(PREVISAO_MANUAL)
+  materialRequestItemId String?                   @unique @map("material_request_item_id") @db.Uuid
+  unitCode              MaterialUnit?             @map("unit_code")
+  color                 String?                   @db.VarChar(60)
+  reference             String?                   @db.VarChar(80)
+  foamDensity           String?                   @map("foam_density") @db.VarChar(30)
+  thicknessCm           Decimal?                  @map("thickness_cm") @db.Decimal(8, 2)
+  lengthCm              Decimal?                  @map("length_cm") @db.Decimal(8, 2)
+  widthCm               Decimal?                  @map("width_cm") @db.Decimal(8, 2)
+  approvedAt            DateTime?                 @map("approved_at") @db.Timestamptz(3)
+
+  serviceOrder        ServiceOrder         @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  serviceOrderItem    ServiceOrderItem?    @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  materialRequestItem MaterialRequestItem? @relation(fields: [materialRequestItemId], references: [id], onDelete: Restrict)
 
   @@index([serviceOrderId])
   @@map("material_requirements")
@@ -857,4 +880,164 @@ model Attachment {
 
   @@index([entityType, entityId])
   @@map("attachments")
+}
+
+// ═══════════════════════ FASE 3 — Medições e solicitações de materiais ═══════════════════════
+
+enum MaterialRequirementOrigin {
+  PREVISAO_MANUAL
+  SOLICITACAO_APROVADA
+
+  @@map("material_requirement_origin")
+}
+
+enum MeasurementStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
+
+  @@map("measurement_status")
+}
+
+enum MaterialRequestStatus {
+  RASCUNHO
+  ENVIADA
+  EM_REVISAO
+  APROVADA
+  DEVOLVIDA
+  CANCELADA
+
+  @@map("material_request_status")
+}
+
+enum MaterialUnit {
+  METRO
+  METRO_QUADRADO
+  PLACA
+  PECA
+  UNIDADE
+  EMBALAGEM
+
+  @@map("material_unit")
+}
+
+/// Tarefa de medição (rotina de sexta ou extraordinária) de uma OS ou peça.
+/// Não inicia produção: apenas registra medidas e necessidades de material.
+model Measurement {
+  id                 String            @id @default(uuid()) @db.Uuid
+  number             Int               @unique @default(autoincrement())
+  serviceOrderId     String            @map("service_order_id") @db.Uuid
+  /// Peça específica; nulo = OS inteira.
+  serviceOrderItemId String?           @map("service_order_item_id") @db.Uuid
+  kind               MeasurementKind
+  status             MeasurementStatus @default(PENDENTE)
+  assigneeUserId     String            @map("assignee_user_id") @db.Uuid
+  requestedById      String?           @map("requested_by_id") @db.Uuid
+  requestedAt        DateTime          @default(now()) @map("requested_at") @db.Timestamptz(3)
+  dueDate            DateTime          @map("due_date") @db.Date
+  reason             String?           @db.VarChar(500)
+  notes              String?           @db.VarChar(2000)
+  startedAt          DateTime?         @map("started_at") @db.Timestamptz(3)
+  completedAt        DateTime?         @map("completed_at") @db.Timestamptz(3)
+  cancelledAt        DateTime?         @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason       String?           @map("cancel_reason") @db.VarChar(500)
+  version            Int               @default(1)
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  serviceOrder     ServiceOrder          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  serviceOrderItem ServiceOrderItem?     @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  assignee         User                  @relation("MeasurementAssignee", fields: [assigneeUserId], references: [id], onDelete: Restrict)
+  requestedBy      User?                 @relation("MeasurementRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
+  pieces           MeasurementPiece[]
+  request          MaterialRequest?
+  revisions        MeasurementRevision[]
+
+  @@index([assigneeUserId, status])
+  @@index([serviceOrderId])
+  @@index([status, dueDate])
+  @@map("measurements")
+}
+
+/// Medidas de cada peça registradas na medição.
+model MeasurementPiece {
+  measurementId      String  @map("measurement_id") @db.Uuid
+  serviceOrderItemId String  @map("service_order_item_id") @db.Uuid
+  /// [{ label, valueCm }]
+  dimensions         Json    @default("[]")
+  notes              String? @db.VarChar(1000)
+
+  measurement      Measurement      @relation(fields: [measurementId], references: [id], onDelete: Cascade)
+  serviceOrderItem ServiceOrderItem @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+
+  @@id([measurementId, serviceOrderItemId])
+  @@map("measurement_pieces")
+}
+
+/// Solicitação de materiais gerada pela medição (uma por medição).
+/// "Aprovada" = quantidades conferidas pelo gestor; NÃO é compra nem recebimento.
+model MaterialRequest {
+  id            String                @id @default(uuid()) @db.Uuid
+  measurementId String                @unique @map("measurement_id") @db.Uuid
+  status        MaterialRequestStatus @default(RASCUNHO)
+  submittedAt   DateTime?             @map("submitted_at") @db.Timestamptz(3)
+  reviewedById  String?               @map("reviewed_by_id") @db.Uuid
+  approvedAt    DateTime?             @map("approved_at") @db.Timestamptz(3)
+  returnReason  String?               @map("return_reason") @db.VarChar(500)
+  version       Int                   @default(1)
+  createdAt     DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  measurement Measurement           @relation(fields: [measurementId], references: [id], onDelete: Restrict)
+  reviewedBy  User?                 @relation("MaterialRequestReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  items       MaterialRequestItem[]
+
+  @@index([status])
+  @@map("material_requests")
+}
+
+model MaterialRequestItem {
+  id                 String           @id @default(uuid()) @db.Uuid
+  requestId          String           @map("request_id") @db.Uuid
+  position           Int
+  serviceOrderItemId String?          @map("service_order_item_id") @db.Uuid
+  kind               MaterialKind
+  sourcing           MaterialSourcing
+  description        String           @db.VarChar(160)
+  color              String?          @db.VarChar(60)
+  reference          String?          @db.VarChar(80)
+  foamDensity        String?          @map("foam_density") @db.VarChar(30)
+  thicknessCm        Decimal?         @map("thickness_cm") @db.Decimal(8, 2)
+  lengthCm           Decimal?         @map("length_cm") @db.Decimal(8, 2)
+  widthCm            Decimal?         @map("width_cm") @db.Decimal(8, 2)
+  quantity           Decimal          @db.Decimal(12, 3)
+  unit               MaterialUnit
+  notes              String?          @db.VarChar(500)
+
+  request          MaterialRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  serviceOrderItem ServiceOrderItem?    @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  requirement      MaterialRequirement?
+
+  @@unique([requestId, position])
+  @@map("material_request_items")
+}
+
+/// Histórico imutável da medição e da solicitação (com cópia dos itens a cada envio/revisão).
+model MeasurementRevision {
+  id            String   @id @default(uuid()) @db.Uuid
+  measurementId String   @map("measurement_id") @db.Uuid
+  kind          String   @db.VarChar(40)
+  fromStatus    String?  @map("from_status") @db.VarChar(40)
+  toStatus      String?  @map("to_status") @db.VarChar(40)
+  note          String?  @db.VarChar(500)
+  changes       Json?
+  actorId       String?  @map("actor_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  measurement Measurement @relation(fields: [measurementId], references: [id], onDelete: Restrict)
+  actor       User?       @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([measurementId, createdAt])
+  @@map("measurement_revisions")
 }

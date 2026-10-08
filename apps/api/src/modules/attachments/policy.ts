@@ -41,3 +41,26 @@ export async function entityExists(
       return (await db.serviceOrderItem.count({ where: { id } })) > 0;
   }
 }
+
+/**
+ * Quem executa uma medição atribuída pode ver as fotos da OS correspondente
+ * (mesmo sem permissão geral de ver OS).
+ */
+export async function viewableAsMeasurementAssignee(
+  db: PrismaClient | Tx,
+  userId: string,
+  type: AttachmentEntity,
+  id: string,
+): Promise<boolean> {
+  if (type !== 'SERVICE_ORDER' && type !== 'SERVICE_ORDER_ITEM') return false;
+  const serviceOrderId =
+    type === 'SERVICE_ORDER'
+      ? id
+      : (await db.serviceOrderItem.findUnique({ where: { id }, select: { serviceOrderId: true } }))
+          ?.serviceOrderId;
+  if (!serviceOrderId) return false;
+  const count = await db.measurement.count({
+    where: { serviceOrderId, assigneeUserId: userId, status: { not: 'CANCELADA' } },
+  });
+  return count > 0;
+}

@@ -412,7 +412,7 @@ describe('Ordem de serviço técnica', () => {
     expect(results.map((r) => r.status).sort()).toEqual([201, 422]);
   });
 
-  it('permissões: ver OS não permite alterar; medição extraordinária delegável', async () => {
+  it('permissões: ver OS não permite alterar; medição direta só pelo gestor', async () => {
     const { admin, order, sofa } = await scenario();
     await admin.post(
       '/api/v1/receipts',
@@ -450,17 +450,14 @@ describe('Ordem de serviço técnica', () => {
         )
       ).status,
     ).toBe(403);
-    const m = await viewer.put(
+    // Fase 3: o registro direto de medidas ficou exclusivo do gestor; tapeceiros
+    // autorizados medem apenas pelas medições atribuídas (ver measurements.test.ts).
+    const direct = await viewer.put(
       `/api/v1/service-orders/${so.id}/items/${so.items[0].id}/measurements`,
-      {
-        measurements: [{ label: 'Altura', valueCm: 80 }],
-        version: so.items[0].version,
-      },
+      { measurements: [{ label: 'Altura', valueCm: 80 }], version: so.items[0].version },
     );
-    expect(m.status).toBe(200);
-    expect(m.body.items[0].measurementKind).toBe('EXTRAORDINARIA');
-    expect(m.body.items[0].measuredBy).toBe('tecnico');
-    // O detalhe da OS não expõe dados pessoais do cliente.
+    expect(direct.status).toBe(403);
+    const m = await viewer.get(`/api/v1/service-orders/${so.id}`);
     expect(Object.keys(m.body.customer).sort()).toEqual(['id', 'kind', 'name', 'tradeName']);
   });
 });

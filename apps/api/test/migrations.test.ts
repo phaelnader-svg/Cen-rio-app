@@ -51,6 +51,12 @@ describe('Banco de dados e migrations', () => {
       'service_order_revisions',
       'material_requirements',
       'attachments',
+      // Fase 3
+      'measurements',
+      'measurement_pieces',
+      'material_requests',
+      'material_request_items',
+      'measurement_revisions',
     ]) {
       expect(names).toContain(t);
     }

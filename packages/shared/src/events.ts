@@ -32,6 +32,17 @@ export const EVENT_TYPES = {
   SERVICE_ORDER_CREATED: 'service_order.created',
   SERVICE_ORDER_UPDATED: 'service_order.updated',
   ATTACHMENT_CHANGED: 'attachment.changed',
+  MEASUREMENT_ASSIGNED: 'measurement.assigned',
+  MEASUREMENT_STARTED: 'measurement.started',
+  MEASUREMENT_UPDATED: 'measurement.updated',
+  MEASUREMENT_COMPLETED: 'measurement.completed',
+  MEASUREMENT_CANCELLED: 'measurement.cancelled',
+  MATERIAL_REQUEST_SUBMITTED: 'material_request.submitted',
+  MATERIAL_REQUEST_IN_REVIEW: 'material_request.in_review',
+  MATERIAL_REQUEST_REVISED: 'material_request.revised',
+  MATERIAL_REQUEST_APPROVED: 'material_request.approved',
+  MATERIAL_REQUEST_RETURNED: 'material_request.returned',
+  MATERIAL_REQUEST_REOPENED: 'material_request.reopened',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

@@ -21,6 +21,8 @@ import { auditRoutes } from './modules/audit/routes';
 import { attachmentRoutes } from './modules/attachments/routes';
 import { authRoutes } from './modules/auth/routes';
 import { customerRoutes } from './modules/customers/routes';
+import { materialRoutes } from './modules/materials/routes';
+import { measurementRoutes } from './modules/measurements/routes';
 import { orderRoutes } from './modules/orders/routes';
 import { pickupRoutes } from './modules/pickups/routes';
 import { receiptRoutes } from './modules/receipts/routes';
@@ -148,6 +150,9 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(receiptRoutes);
   await app.register(serviceOrderRoutes);
   await app.register(attachmentRoutes);
+  // Fase 3 — medições e solicitações de materiais
+  await app.register(measurementRoutes);
+  await app.register(materialRoutes);
 
   // Presença dos tablets: transições online/offline viram eventos persistentes.
   hub.onPresence((deviceId, online) => {
