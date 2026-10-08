@@ -119,6 +119,18 @@ proposta de reprogramação (só sugestão) quando a pessoa tinha tarefas no dia
 Variável nova: `ENABLE_TEST_CLOCK` (padrão `false`). **Nunca** definir fora dos testes — a API
 recusa iniciar com ela fora de `APP_ENV=test`.
 
+## Atualização da Fase 8 para a Fase 9
+
+A migration `20261014000000_central_atencao` é aditiva: cria `production_issues` (sem exclusão) e
+`production_issue_events` (imutável), acrescenta `issue_id` às tarefas e às propostas, o tipo de
+anexo `PRODUCTION_ISSUE` e as permissões `ocorrencias.registrar` (oficina e gestor),
+`ocorrencias.ver` e `ocorrencias.gerenciar` (gestor). Nada é apagado. Procedimento: backup
+(`pnpm backup`) → `pnpm db:migrate` → reiniciar API e web.
+
+Rotina: junto com a fila de ajuda (a cada 30 s), a API avisa prazos de resolução vencendo e
+invalida propostas de bloqueio que perderam o sentido. A central de atenção fica em
+`/painel/atencao`.
+
 ## Backup e restauração
 
 ```bash

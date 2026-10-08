@@ -185,6 +185,20 @@
   ambiente a API recusa iniciar com a variável e as rotas nem são registradas. Mesmo em teste,
   só o gestor (`presenca.gerenciar`, sessão do painel) o controla.
 
+## Ocorrências e central de atenção (Fase 9)
+
+- `ocorrencias.registrar` (oficina): abrir ocorrência só nas **próprias** tarefas; acompanhar as
+  próprias; cancelar só a própria e ainda aberta (engano). Fotos: quem registrou ou quem resolve
+  (arquivos privados, mesma rota de anexos).
+- `ocorrencias.ver` / `ocorrencias.gerenciar` (gestor, sessão do painel): central, lista, impactos;
+  delegar, verificar/confirmar, reabrir e cancelar (motivo obrigatório). Quem resolve registra
+  ações e a solução, mas **não** confirma a resolução. Ninguém encerra ocorrência de terceiros
+  sem a permissão.
+- Ocorrências não podem ser excluídas (trigger) e o histórico é imutável; decisões usam versão
+  (409) e bloqueio de linha; abertura idempotente e sem duplicar a mesma ocorrência aberta.
+- Escolha manual do ajudante exige `producao.planejar`; atribuições impossíveis são recusadas e o
+  conflito precisa de aprovação explícita registrada.
+
 ## Segredos e ambientes
 
 - Segredos apenas por variáveis de ambiente; `.env` não é versionado.

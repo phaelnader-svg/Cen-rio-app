@@ -802,7 +802,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         can: {
           start: own && t.status === 'LIBERADA',
           pause: own && t.status === 'EM_EXECUCAO',
-          resume: own && t.status === 'PAUSADA',
+          // Fase 9: não retoma enquanto uma ocorrência aberta impede a tarefa.
+          resume: own && t.status === 'PAUSADA' && !(await hasBlockingIssue(prisma, t.id)),
           progress: own && (t.status === 'EM_EXECUCAO' || t.status === 'PAUSADA'),
           complete: own && t.status === 'EM_EXECUCAO',
           manage: canManage(request),

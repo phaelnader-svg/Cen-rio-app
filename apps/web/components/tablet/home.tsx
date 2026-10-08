@@ -82,6 +82,8 @@ export function TabletHome({ me }: { me: MeDto }) {
   const canExecute = me.permissions.includes('producao.executar');
   // Fase 8: quem pede ajuda nas próprias tarefas (tapeceiros e cabeceiras).
   const canAskHelp = me.permissions.includes('ajuda.solicitar');
+  // Fase 9: "Tenho um problema" nas próprias tarefas.
+  const reportUserId = me.permissions.includes('ocorrencias.registrar') ? me.user.id : null;
   // Presença operacional (Fase 7): quem registra a própria chegada e saída.
   const canPresence =
     me.permissions.includes('presenca.registrar') && !me.permissions.includes('presenca.gerenciar');
@@ -184,7 +186,13 @@ export function TabletHome({ me }: { me: MeDto }) {
                 />
               </div>
             )}
-            {canExecute && <MyDay onOpen={(id) => openTask(id, 'home')} canAskHelp={canAskHelp} />}
+            {canExecute && (
+              <MyDay
+                onOpen={(id) => openTask(id, 'home')}
+                canAskHelp={canAskHelp}
+                reportUserId={reportUserId}
+              />
+            )}
 
             <h2 className={clsx('mb-3 text-lg font-semibold text-ink-soft', canExecute && 'mt-10')}>
               {canExecute ? 'Outras atividades' : 'Atividades'}
@@ -258,6 +266,7 @@ export function TabletHome({ me }: { me: MeDto }) {
               key={taskId}
               id={taskId}
               canAskHelp={canAskHelp}
+              reportUserId={reportUserId}
               onOpen={(id) => openTask(id, taskFrom)}
             />
           </>

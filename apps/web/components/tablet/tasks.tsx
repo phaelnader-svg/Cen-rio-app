@@ -49,6 +49,7 @@ import { formatDateTime } from '@/lib/format';
 import { useMyTasks, useNotifications, useTask } from '@/lib/production';
 import { useRealtime } from '@/lib/realtime';
 import { AlternativeTasks, HelpPanel, MyOpenHelp, SupportInfo } from './help';
+import { IssueInfo, MyOpenIssues, ProblemPanel } from './issues';
 
 const DONE = ['CONCLUIDA', 'CANCELADA'];
 const isOpen = (t: ProductionTaskDto) => !DONE.includes(t.status);
@@ -118,9 +119,12 @@ export function NotificationsButton({ onClick }: { onClick: () => void }) {
 export function MyDay({
   onOpen,
   canAskHelp,
+  reportUserId,
 }: {
   onOpen: (id: string) => void;
   canAskHelp?: boolean;
+  /** Fase 9: quem registra problemas (mostra os próprios ainda abertos). */
+  reportUserId?: string | null;
 }) {
   const q = useMyTasks();
   if (q.isPending) return <Spinner />;
@@ -155,6 +159,7 @@ export function MyDay({
       </section>
 
       {canAskHelp && <MyOpenHelp />}
+      {reportUserId && <MyOpenIssues userId={reportUserId} />}
 
       <section>
         <h2 className="mb-3 text-xl font-semibold">Tarefas de hoje ({open.length})</h2>
@@ -370,6 +375,7 @@ export function TaskCard({
             </span>
           )}
           <SupportInfo t={t} />
+          <IssueInfo t={t} />
         </span>
         <ChevronRight className="mt-1 size-6 shrink-0 text-ink-muted" aria-hidden />
       </button>
@@ -442,10 +448,13 @@ export function MyTaskDetail({
   id,
   onOpen,
   canAskHelp,
+  reportUserId,
 }: {
   id: string;
   onOpen?: (id: string) => void;
   canAskHelp?: boolean;
+  /** Fase 9: usuário que pode registrar problemas nas próprias tarefas. */
+  reportUserId?: string | null;
 }) {
   const q = useTask(id);
   const online = useOnline();
@@ -505,6 +514,7 @@ export function MyTaskDetail({
           <MaterialsIndicator state={t.taskMaterials} />
         </div>
         <SupportInfo t={t} large />
+        <IssueInfo t={t} large />
       </div>
 
       {error && <Alert tone="danger">{error}</Alert>}
@@ -586,6 +596,7 @@ export function MyTaskDetail({
 
       {canAskHelp && (t.can.start || t.can.progress) && <HelpPanel t={t} />}
       <AlternativeTasks t={t} onOpen={onOpen} />
+      {reportUserId && t.assignee?.userId === reportUserId && !t.issueFor && <ProblemPanel t={t} />}
 
       {panel === 'complete' && (
         <CompletePanel
@@ -960,7 +971,9 @@ function CompletePanel({
       )}
       {needsNote && (
         <label className="mt-4 block">
-          <span className="mb-1 block text-base font-semibold">Observação de conclusão</span>
+          <span className="mb-1 block text-base font-semibold">
+            {t.issueFor ? 'Resultado (o que foi feito)' : 'Observação de conclusão'}
+          </span>
           <input
             className="h-16 w-full rounded-2xl border border-line-strong px-4 text-lg"
             value={note}

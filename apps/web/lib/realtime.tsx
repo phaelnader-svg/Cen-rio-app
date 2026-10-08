@@ -127,6 +127,25 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     keys.push(['reschedule-proposals'], ['planning-actions'], ['my-tasks'], ['production-board']);
   }
   if (t.startsWith('attendance.')) keys.push(['reschedule-proposals'], ['help-requests']);
+  // Fase 9 — ocorrências e central de atenção (exceções vindas de vários módulos).
+  if (t.startsWith('issue.')) {
+    keys.push(
+      ['issues'],
+      ['issue'],
+      ['my-issues'],
+      ['issue-impacts'],
+      ['my-tasks'],
+      ['production-task'],
+    );
+  }
+  if (
+    ['issue.', 'help.', 'reschedule.', 'attendance.', 'production.task_'].some((p) =>
+      t.startsWith(p),
+    )
+  ) {
+    keys.push(['attention'], ['help-candidates']);
+  }
+  if (t === 'attachment.changed') keys.push(['issue']);
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }
 

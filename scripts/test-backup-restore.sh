@@ -44,7 +44,9 @@ counts() {
     UNION ALL SELECT 'help_requests', count(*) FROM help_requests
     UNION ALL SELECT 'help_request_events', count(*) FROM help_request_events
     UNION ALL SELECT 'reschedule_proposals', count(*) FROM reschedule_proposals
-    UNION ALL SELECT 'planning_actions', count(*) FROM planning_actions) x"
+    UNION ALL SELECT 'planning_actions', count(*) FROM planning_actions
+    UNION ALL SELECT 'production_issues', count(*) FROM production_issues
+    UNION ALL SELECT 'production_issue_events', count(*) FROM production_issue_events) x"
 }
 
 # Garante dados de referência na origem (seed idempotente + um registro de auditoria).
@@ -171,6 +173,20 @@ INSERT INTO planning_actions (id, kind, automatic, proposal_id, reason)
 SELECT gen_random_uuid(), 'PROPOSTA_CRIADA', true, p.id, 'Backup' FROM p;
 SQL
 
+# Dados fictícios da Fase 9 (ocorrência com histórico imutável).
+psql "$SOURCE" -q -v ON_ERROR_STOP=1 > /dev/null <<'SQL'
+WITH t AS (
+  SELECT t.id, t.service_order_id, t.assignee_user_id FROM production_tasks t
+  WHERE t.title = 'Preparação backup' ORDER BY t.created_at DESC LIMIT 1
+), i AS (
+  INSERT INTO production_issues (id, kind, impact, blocks_task, description, task_id, service_order_id, reporter_user_id, updated_at)
+  SELECT gen_random_uuid(), 'TECNICO', 'IMPEDIDO', true, 'Máquina fictícia do backup', t.id, t.service_order_id, t.assignee_user_id, now() FROM t
+  RETURNING id
+)
+INSERT INTO production_issue_events (id, issue_id, kind, to_status, note)
+SELECT gen_random_uuid(), i.id, 'ABERTA', 'ABERTA', 'Backup' FROM i;
+SQL
+
 DATABASE_URL="$SOURCE" STORAGE_DIR="$WORK/none" BACKUP_RETENTION_DAYS=0 bash scripts/backup.sh "$WORK/out" > /dev/null
 DIR="$(ls -d "$WORK"/out/cenario-*)"
 psql "$BASE/postgres" -qc "DROP DATABASE IF EXISTS $RESTORE_DB" > /dev/null
@@ -198,6 +214,12 @@ if psql "$RESTORE_URL" -qc "INSERT INTO notifications (id, user_id, kind, title,
 fi
 if psql "$RESTORE_URL" -qc "DELETE FROM attendance_corrections" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade do histórico de presença ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "DELETE FROM production_issue_events" > /dev/null 2>&1; then
+  echo "✖ Trigger de imutabilidade do histórico das ocorrências ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "DELETE FROM production_issues" > /dev/null 2>&1; then
+  echo "✖ Proteção contra exclusão de ocorrências ausente no banco restaurado" >&2; exit 1
 fi
 if psql "$RESTORE_URL" -qc "DELETE FROM planning_actions" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade do histórico do planejamento ausente no banco restaurado" >&2; exit 1

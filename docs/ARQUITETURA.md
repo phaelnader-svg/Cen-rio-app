@@ -395,6 +395,55 @@ Regras **determinísticas e auditáveis** (sem IA generativa); módulo `modules/
   `ENABLE_TEST_CLOCK=true` em `APP_ENV=test` (a validação do ambiente recusa o contrário). Desloca
   apenas o relógio operacional da aplicação; o relógio do servidor e do banco não mudam.
 
+### Central de atenção, ocorrências e delegação de soluções (Fase 9)
+
+Módulo `modules/issues`; regras determinísticas e auditáveis.
+
+- **Ocorrência** (`production_issues`, OC-00001): tipo (falta de material, problema técnico, outro
+  impedimento), impacto (impedido; continua com dificuldade; faz outra atividade), `blocks_task`
+  (CHECK: só a dificuldade não impede), prioridade inicial (alta se impede; urgente se a tarefa
+  é urgente), descrição, tarefa e OS, quem registrou e o dispositivo (automáticos), material
+  (necessidade da OS, item de estoque ou descrição + quantidade e unidade), responsável pela
+  solução, tarefa de resolução atual, competência exigida, prazo de resolução, resultado,
+  resolução/cancelamento (com motivo) e reaberturas. **Nunca é apagada** (trigger) e o histórico
+  `production_issue_events` é imutável. Fotos: anexos `PRODUCTION_ISSUE` (arquivos privados).
+- **Estados**: aberta → atribuída → em resolução → aguardando verificação → resolvida; cancelada;
+  reaberta (de resolvida/cancelada, com motivo). Transições validadas (`ISSUE_TRANSITIONS`).
+  Concluir a tarefa de resolução **nunca** resolve: leva a "aguardando verificação"; só quem tem
+  `ocorrencias.gerenciar` confirma (ou recusa — volta a aberta).
+- **Impedimento**: bloqueio total / outra atividade pausam a tarefa em execução (motivo "outro",
+  impedimento, andamento preservado) ou bloqueiam a que aguardava início — o motor de liberação
+  ganhou o bloqueador `OCORRENCIA` (`hasBlockingIssue`), também conferido ao iniciar e ao retomar.
+  Só a etapa é afetada, nunca a OS inteira. Dificuldade mantém a tarefa e registra o risco.
+- **Tarefas afetadas** (`impactOf`): a tarefa e, em cadeia, as dependentes (responsáveis e prazos);
+  risco de prazo quando há prazo interno até amanhã, entrega ao cliente em até 2 dias ou tarefa
+  urgente.
+- **Delegação**: tarefa de resolução separada (`production_tasks.issue_id`, atividade "outra",
+  exige o resultado ao concluir) para João, Thiago, Ricardo, Márcio ou o próprio gestor;
+  competência exigida conferida, ausente/externo/encerrado recusado, conflito (ocupado, tarefa
+  prioritária nas próximas 2 h, sem chegada) exige confirmação explícita e fica registrado como
+  impacto. Entra na programação publicada como **revisão** (`reviseIfPublishedBy`, a mesma fonte
+  das revisões), assim como a tarefa de apoio da Fase 8.
+- **Confirmação**: falta de material só é resolvida com a necessidade da OS coberta (recebida/
+  reservada) ou com reserva ativa do item de estoque; depois a tarefa é reavaliada (liberada se
+  nada mais a impede; pausada → aviso "tarefa desbloqueada", sem retomar sozinha) e as
+  dependentes também. Material que fica disponível com a ocorrência aberta a leva para
+  verificação. Nenhuma compra é criada automaticamente.
+- **Propostas**: `BLOQUEIO` (ocorrência que impede com prazo em risco, dependentes de outras
+  pessoas ou tarefa importante; ou tarefa bloqueada com prazo em risco) — aguardar ou reprogramar a
+  tarefa e as dependentes; `CONFLITO` (pedido de ajuda esperando além do limite quando alguém
+  poderia ser liberado; o pedido segue na fila). Ambas deduplicadas e invalidadas quando perdem
+  o sentido (ocorrência encerrada, tarefa liberada, ajudante atribuído).
+- **Central de atenção** (`GET /attention`): só exceções — ocorrências, ajuda atrasada/escalada,
+  propostas pendentes, ausências com impacto (um item por pessoa), pausa por impedimento sem
+  ocorrência e prazos vencidos/bloqueios com prazo; um item por fato (`key`), categorias crítico,
+  ação necessária, atenção e informativo, filtros por categoria, tipo, situação, funcionário,
+  responsável, OS e data.
+- **Escolha manual do ajudante** (Fase 8 + 9): candidatos avaliados agora; impossível recusado,
+  conflito com aprovação explícita; histórico com a avaliação e "Manual: gestor escolheu…".
+- Rotina: a cada 30 s, depois da fila de ajuda, `processIssueRisks` avisa (uma vez) prazos de
+  resolução vencendo/vencidos e revalida as propostas de bloqueio.
+
 ## 4. Eventos, concorrência e tempo real
 
 **Gravação (outbox).** Toda alteração relevante grava, na mesma transação: os dados, a
@@ -441,6 +490,12 @@ Eventos da Fase 8: `help.requested`, `help.assigned`, `help.queued`, `help.escal
 (ajuda solicitada/atribuída/em espera/cancelada/concluída, reprogramação pendente/aprovada/
 automática/rejeitada e tarefa alternativa liberada) usam `notification.created` com chave de
 deduplicação — o mesmo fato nunca gera dois avisos.
+Eventos da Fase 9: `issue.opened`, `issue.assigned`, `issue.updated`,
+`issue.verification_requested`, `issue.resolved`, `issue.reopened`, `issue.cancelled` e
+`issue.risk` vão para quem vê ocorrências (`ocorrencias.ver`/`ocorrencias.gerenciar`), quem
+registrou e quem resolve — nunca para os demais colegas. Avisos novos: ocorrência aberta,
+atribuída, prazo em risco, solução concluída, verificação necessária, resolvida, cancelada,
+reaberta e tarefa desbloqueada.
 
 **Reconexão e reconciliação.**
 
@@ -518,6 +573,13 @@ são usadas como garantia de execução.
   avaliação dos candidatos), `/painel/reprogramacao` (propostas, decisão e histórico de alterações)
   e `/painel/competencias`; aviso de decisões pendentes no quadro e no planejamento. A Presença da
   equipe passa a abrir no "hoje" do servidor.
+- Fase 9: no tablet, **Tenho um problema** no detalhe da tarefa própria (falta de material com
+  material, quantidade e unidade; problema técnico; outro impedimento só com descrição e "consegue
+  continuar?"; foto opcional), situação dos problemas registrados e a tarefa de resolução com o
+  problema descrito (resultado obrigatório ao concluir). No painel, `/painel/atencao` (Central de
+  atenção com contadores e filtros), `/painel/ocorrencias/[id]` (detalhe, tarefas afetadas, fotos,
+  histórico, delegar, registrar ação/solução, verificar, reabrir, cancelar) e a escolha manual do
+  ajudante em Pedidos de ajuda.
 - PWA: `manifest.webmanifest` (início em `/tablet`), service worker que **nunca** guarda
   respostas da API e mostra página offline quando não há rede.
 - Permissões no frontend só escondem elementos; o servidor sempre decide.

@@ -42,6 +42,12 @@ export interface NavItem {
 
 export const NAV: NavItem[] = [
   { href: '/painel', label: 'Início', icon: LayoutDashboard },
+  {
+    href: '/painel/atencao',
+    label: 'Central de atenção',
+    icon: Siren,
+    anyOf: ['ocorrencias.ver', 'ocorrencias.gerenciar'],
+  },
   { href: '/painel/funcionarios', label: 'Funcionários', icon: Users, anyOf: ['funcionarios.ver'] },
   {
     href: '/painel/funcoes',
@@ -167,7 +173,6 @@ export const NAV: NavItem[] = [
 
 /** Módulos das próximas fases: exibidos como indisponíveis (sem link). */
 export const UPCOMING: { label: string; icon: LucideIcon }[] = [
-  { label: 'Central de atenção', icon: Siren },
   { label: 'Qualidade', icon: BadgeCheck },
   { label: 'Entregas', icon: PackageOpen },
 ];

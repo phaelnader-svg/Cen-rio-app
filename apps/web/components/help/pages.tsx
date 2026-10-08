@@ -26,6 +26,7 @@ import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/component
 import { Tabs } from '@/components/ui/tabs';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
+import { useHelpCandidates } from '@/lib/issues';
 import {
   useHelpRequest,
   useHelpRequests,
@@ -248,6 +249,9 @@ function HelpDetailDialog({ id, onClose }: { id: string; onClose: () => void }) 
               </li>
             ))}
           </ol>
+          {(r.status === 'PENDENTE' || r.status === 'ESCALADA') && can('producao.planejar') && (
+            <ManualHelper id={r.id} version={r.version} />
+          )}
           {cancellable && can('producao.planejar') && (
             <div className="flex flex-wrap items-end gap-3 border-t border-line pt-4">
               <Field label="Motivo do cancelamento (opcional)" className="min-w-64 flex-1">
@@ -810,5 +814,89 @@ export function HelpAndRescheduleBanner() {
         </Link>
       )}
     </Card>
+  );
+}
+
+/**
+ * Fase 9 — escolha manual do ajudante: candidatos avaliados agora (competência, presença,
+ * ocupação, agenda). Impossível não aparece como opção; conflito pede aprovação explícita.
+ */
+function ManualHelper({ id, version }: { id: string; version: number }) {
+  const q = useHelpCandidates(id);
+  const { m, error } = useSend();
+  const [confirm, setConfirm] = useState<{ userId: string; name: string } | null>(null);
+  const [note, setNote] = useState('');
+  const IMPOSSIBLE = ['SEM_COMPETENCIA', 'NAO_CONFIRMOU', 'AUSENTE', 'EXTERNO', 'ENCERRADO'];
+  const choose = (userId: string, confirmConflict: boolean) =>
+    m.mutate({
+      run: () =>
+        api(`/api/v1/help-requests/${id}/assign`, {
+          method: 'POST',
+          body: { helperUserId: userId, confirmConflict, note: note || undefined, version },
+          idempotencyKey: newIdempotencyKey(),
+        }),
+      ok: 'Ajudante escolhido.',
+    });
+  return (
+    <div className="space-y-2 border-t border-line pt-4" data-testid="manual-helper">
+      <p className="font-semibold">Escolher o ajudante manualmente</p>
+      {!q.data ? (
+        <Spinner />
+      ) : (
+        <ul className="space-y-2">
+          {q.data.candidates.map((c) => {
+            const impossible = c.reasons.some((x) => IMPOSSIBLE.includes(x));
+            const conflict = !c.eligible && !impossible;
+            return (
+              <li
+                key={c.userId}
+                className="flex flex-wrap items-center gap-3 rounded-xl border border-line p-3 text-sm"
+              >
+                <span className="font-semibold">{c.name}</span>
+                {c.eligible ? (
+                  <Badge tone="ok">Livre · impacto {c.score}</Badge>
+                ) : (
+                  <span className={impossible ? 'text-ink-muted' : 'text-warn-600'}>
+                    {c.reasons.map((x) => CANDIDATE_REASONS[x]).join(', ')}
+                  </span>
+                )}
+                {!impossible && (
+                  <Button
+                    size="sm"
+                    className="ml-auto"
+                    variant={conflict ? 'secondary' : 'primary'}
+                    loading={m.isPending}
+                    onClick={() =>
+                      conflict
+                        ? setConfirm({ userId: c.userId, name: c.name })
+                        : choose(c.userId, false)
+                    }
+                  >
+                    Escolher {c.name}
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {confirm && (
+        <Alert tone="warn" title={`${confirm.name} tem conflito`}>
+          <p>Explique por que aprova o conflito (fica registrado como impacto).</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Motivo" />
+            <Button
+              variant="danger"
+              disabled={note.trim().length < 3}
+              loading={m.isPending}
+              onClick={() => choose(confirm.userId, true)}
+            >
+              Aprovar e atribuir
+            </Button>
+          </div>
+        </Alert>
+      )}
+      {error && <Alert tone="danger">{error}</Alert>}
+    </div>
   );
 }

@@ -3,11 +3,11 @@
 Sistema de gestão de produção da **Cenário Estofados** — painel administrativo do gestor e
 interface de produção para os tablets da oficina, sincronizados em tempo real.
 
-> **Status: Fase 8 concluída.** Fases 1–6 (fundação, comercial e OS, medições, compras e estoque,
-> planejamento e motor de produção, tablets com Meu dia e avisos), Fase 7 (presença operacional) e
-> Fase 8 (pedidos de ajuda com distribuição automática de ajudantes, reprogramação simples
-> automática e propostas críticas para o gestor aprovar). Central de atenção, qualidade e entregas
-> são das próximas fases.
+> **Status: Fase 9 concluída.** Fases 1–6 (fundação, comercial e OS, medições, compras e estoque,
+> planejamento e motor de produção, tablets com Meu dia e avisos), Fase 7 (presença operacional),
+> Fase 8 (ajuda e reprogramação) e Fase 9 (central de atenção, ocorrências registradas no tablet,
+> delegação de soluções com verificação e propostas de bloqueio e conflito). Qualidade final e
+> entregas são das próximas fases.
 
 ## Documentação
 
@@ -24,6 +24,7 @@ interface de produção para os tablets da oficina, sincronizados em tempo real.
 | [docs/FASE-6-RELATORIO.md](docs/FASE-6-RELATORIO.md) | Entregáveis da Fase 6, APIs, testes executados e pendências   |
 | [docs/FASE-7-RELATORIO.md](docs/FASE-7-RELATORIO.md) | Entregáveis da Fase 7, APIs, testes executados e pendências   |
 | [docs/FASE-8-RELATORIO.md](docs/FASE-8-RELATORIO.md) | Entregáveis da Fase 8, APIs, testes executados e pendências   |
+| [docs/FASE-9-RELATORIO.md](docs/FASE-9-RELATORIO.md) | Entregáveis da Fase 9, APIs, testes executados e pendências   |
 
 ## Requisitos
 

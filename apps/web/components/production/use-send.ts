@@ -24,6 +24,13 @@ export const PRODUCTION_KEYS = [
   'planning-actions',
   'skills',
   'alternatives',
+  // Fase 9 — ocorrências e central de atenção
+  'attention',
+  'issues',
+  'issue',
+  'my-issues',
+  'issue-impacts',
+  'help-candidates',
 ];
 
 /** Mutação genérica da produção: executa, invalida as consultas e mostra o erro. */
