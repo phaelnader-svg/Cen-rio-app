@@ -91,6 +91,18 @@ reiniciar API e web.
 Mudanças a comunicar: o tablet abre direto no "Meu dia" (o bloco "Minhas tarefas" deixou de existir);
 os avisos aparecem no botão "Avisos" do cabeçalho; sem conexão, os botões de ação ficam desativados.
 
+## Atualização da Fase 6 para a Fase 7
+
+A migration `20261012000000_presenca_operacional` é aditiva: cria `operational_attendances`,
+`attendance_corrections` (imutável) e `attendance_impacts`, acrescenta à empresa
+`arrival_window_start` (07:00) e `late_alert_minutes` (15) e concede `presenca.ver` e
+`presenca.gerenciar` ao Gestor e `presenca.registrar` às funções da oficina. Nada é apagado.
+Procedimento: backup (`pnpm backup`) → `pnpm db:migrate` → reiniciar API e web.
+
+Rotina nova: a cada minuto, a API verifica ausências presumidas (só em dia útil e depois do limite
+configurado). Em Empresa, "Início previsto do expediente" (antes rotulado "“Cheguei” a partir de")
+passa a ser o horário de referência do atraso; a janela do "Cheguei" é o novo campo.
+
 ## Backup e restauração
 
 ```bash

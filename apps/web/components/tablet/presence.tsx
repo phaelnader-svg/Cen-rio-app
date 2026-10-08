@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Alert, Spinner } from '@/components/ui/misc';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { useMyAttendance } from '@/lib/attendance';
-import { formatTime } from '@/lib/format';
+import { formatHourMinute } from '@/lib/format';
 import { useOnline } from './tasks';
 
 const ABSENT = ['AUSENCIA_CONFIRMADA', 'AUSENCIA_JUSTIFICADA', 'ATESTADO', 'FOLGA', 'FERIAS'];
@@ -125,8 +125,8 @@ export function PresenceCard({ onDepart }: { onDepart: () => void }) {
       <div className="min-w-0 flex-1">
         <p className="text-lg font-semibold" data-testid="presence-status">
           {day.situation === 'ENCERRADO'
-            ? `Expediente encerrado às ${formatTime(day.departedAt!)}`
-            : `Presente desde ${formatTime(day.arrivedAt!)}`}
+            ? `Expediente encerrado às ${formatHourMinute(day.departedAt!)}`
+            : `Presente desde ${formatHourMinute(day.arrivedAt!)}`}
         </p>
         <p className="mt-0.5 flex flex-wrap items-center gap-2 text-base text-ink-muted">
           <span

@@ -128,6 +128,23 @@
   nunca libera uma tarefa sem os materiais vinculados cobertos (verificado também no `iniciar`).
 - Sem conexão, o tablet desativa as ações em vez de simular gravações.
 
+### Presença operacional (Fase 7)
+
+| Ação                                                                            | Quem pode                                              |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Confirmar a própria chegada e encerrar o próprio expediente                     | `presenca.registrar` (tapeceiro, cabeceiras, ajudante) |
+| Ver presença da equipe, alertas, impactos e histórico                           | `presenca.ver` (ou `presenca.gerenciar`)               |
+| Confirmar ausência, registrar situações especiais, corrigir, encaminhar alertas | `presenca.gerenciar` (crítica) — padrão: só o Gestor   |
+
+- As rotas do funcionário não recebem identificador de pessoa: valem sempre para o usuário da
+  sessão (o tablet vinculado), com horário do servidor e dispositivo registrados. Ninguém registra
+  presença de outro.
+- Toda correção exige justificativa; o histórico (`attendance_corrections`) é imutável no banco.
+- Atestado é só o fato informado: não há campo para CID, diagnóstico ou outro dado médico.
+- Não há GPS, reconhecimento facial nem câmeras; a presença operacional não é prova de jornada.
+- Confirmações repetidas ou simultâneas não duplicam (bloqueio por funcionário/dia + chave única +
+  idempotência).
+
 ## Proteções de requisição
 
 - **CSRF / WebSocket entre sites:** métodos que alteram estado e o upgrade do WebSocket exigem

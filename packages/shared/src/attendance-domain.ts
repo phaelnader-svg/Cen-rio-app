@@ -97,7 +97,11 @@ export const ATTENDANCE_ACTION_LABEL: Record<AttendanceAction, string> = {
 };
 
 /** Itens que o gestor acompanha (impactos de ausência e pendências de encerramento). */
-export const IMPACT_KINDS = ['TAREFA_DO_AUSENTE', 'DEPENDENTE_AFETADA', 'ANDAMENTO_PENDENTE'] as const;
+export const IMPACT_KINDS = [
+  'TAREFA_DO_AUSENTE',
+  'DEPENDENTE_AFETADA',
+  'ANDAMENTO_PENDENTE',
+] as const;
 export type ImpactKind = (typeof IMPACT_KINDS)[number];
 export const IMPACT_KIND_LABEL: Record<ImpactKind, string> = {
   TAREFA_DO_AUSENTE: 'Tarefa do funcionário ausente',

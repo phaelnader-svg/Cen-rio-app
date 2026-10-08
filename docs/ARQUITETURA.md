@@ -310,6 +310,39 @@ Planejamento (rascunho) ─► publicar ─► tarefas BLOQUEADA ─► motor de
   desativados (nada é "salvo" localmente); na reconexão o hub reenvia os eventos perdidos e as
   consultas são recarregadas.
 
+### Presença operacional e disponibilidade (Fase 7)
+
+Presença **operacional** para organizar a produção — não é registro de ponto, não calcula
+jornada, folha, descontos nem penalidades.
+
+- **Registro do dia** (`operational_attendances`, único por funcionário e data operacional no fuso
+  da empresa): situação (presente, ausência presumida/confirmada/justificada, atestado informado,
+  folga, férias, trabalho externo, encerrado), chegada (horário do servidor, quem, dispositivo,
+  "no horário"/"atraso"/"após ausência presumida", minutos de atraso), saída (antecipada ou não,
+  observação) e a disponibilidade atual. CHECKs garantem a coerência (ex.: encerrado exige saída;
+  saída depois da chegada).
+- **Histórico imutável** (`attendance_corrections`, trigger): cada chegada, saída, ausência
+  presumida e registro do gestor guarda o estado anterior e o novo, com justificativa, autor e
+  dispositivo. Correções nunca apagam o original.
+- **Configuração** (empresa): janela do "Cheguei" (07:00), início previsto (08:30), ausência
+  presumida (09:30), fim do expediente (18:00), tolerância para avisar atraso (15 min) e dias úteis.
+- **Equipe**: funcionários ativos com `presenca.registrar` e sem `presenca.gerenciar` (Ricardo,
+  Márcio, Thiago e João; o gestor não registra presença).
+- **Ausência presumida** (`detectAbsences`, a cada 60 s, idempotente): em dia útil, depois do
+  limite, quem não confirmou chegada nem tem situação registrada vira "ausência presumida"; o
+  sistema identifica as tarefas do dia da pessoa e, em cadeia, as que dependem delas (com
+  responsáveis e prazos) em `attendance_impacts` e avisa o gestor uma vez por pessoa. Nada é
+  cancelado ou transferido (redistribuição é da Fase 8). A chegada posterior encerra esses alertas.
+- **Disponibilidade** (derivada): não confirmou, presente e disponível, presente e ocupado (tarefa em
+  execução), em pausa (tarefa pausada durante o dia), atividade externa, ausência presumida,
+  ausência confirmada, expediente encerrado. Recalculada a cada chegada/saída/registro e a cada
+  início/pausa/retomada/conclusão de tarefa; muda → `attendance.availability_changed`.
+- **Encerrar expediente**: registra a saída (nunca bloqueada por falta de informação), grava o
+  andamento informado, pausa as tarefas em execução (motivo "fim do expediente", andamento
+  preservado) e gera pendência `ANDAMENTO_PENDENTE` + aviso ao gestor para as que ficaram sem
+  andamento.
+- Relógio injetável (`setAttendanceClock`) usado só pelos testes para fixar 8h30/9h30.
+
 ## 4. Eventos, concorrência e tempo real
 
 **Gravação (outbox).** Toda alteração relevante grava, na mesma transação: os dados, a
@@ -345,6 +378,10 @@ responsável sem recarregar a tela. O tablet de outro funcionário não recebe a
 Eventos da Fase 6: `notification.created` e `notification.read` vão **somente** para o usuário
 (`user:<id>`), carregando só o tipo e o id da tarefa; `production.task_impediment` vai para a gestão e
 o responsável.
+Eventos da Fase 7: `attendance.arrived`, `attendance.late`, `attendance.absence_suspected`,
+`attendance.absence_confirmed`, `attendance.corrected`, `attendance.departed`,
+`attendance.availability_changed` e `attendance.production_impact_detected` vão para quem vê a
+presença (`presenca.ver`/`presenca.gerenciar`) e para o próprio funcionário — nunca para os colegas.
 
 **Reconexão e reconciliação.**
 
@@ -409,6 +446,11 @@ são usadas como garantia de execução.
   andamento, pausa e conclusão, caixa de **Avisos** e aviso de **sem conexão**. Funciona em tablet
   (10–11") e celular. No painel, o detalhe da tarefa ganhou "Materiais desta tarefa" e "Para
   concluir, exigir"; os modelos, a coluna "Para concluir".
+- Fase 7: no tablet, cartão de presença no topo do "Meu dia" ("Cheguei" em destaque; depois, a
+  situação e "Encerrar expediente") e a tela de encerramento com o andamento de cada tarefa em
+  execução. No painel, `/painel/presenca` (Presença da equipe: situação, chegada, atraso, tarefa
+  atual e próxima, saída, alertas, histórico, registros do gestor e impacto na produção), sino de
+  **avisos** no cabeçalho e os novos horários em Empresa.
 - PWA: `manifest.webmanifest` (início em `/tablet`), service worker que **nunca** guarda
   respostas da API e mostra página offline quando não há rede.
 - Permissões no frontend só escondem elementos; o servidor sempre decide.

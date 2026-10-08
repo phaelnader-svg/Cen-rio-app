@@ -251,7 +251,8 @@ export const PERMISSIONS = {
   'presenca.ver': {
     group: 'presenca',
     label: 'Ver presença da equipe',
-    description: 'Consultar chegadas, atrasos operacionais, ausências, disponibilidade e impactos na produção.',
+    description:
+      'Consultar chegadas, atrasos operacionais, ausências, disponibilidade e impactos na produção.',
   },
   'presenca.gerenciar': {
     group: 'presenca',

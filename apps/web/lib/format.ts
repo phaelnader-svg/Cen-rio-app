@@ -18,6 +18,17 @@ export function formatTime(iso: string | Date): string {
   return time.format(typeof iso === 'string' ? new Date(iso) : iso);
 }
 
+const hourMinute = new Intl.DateTimeFormat('pt-BR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  timeZone: 'America/Sao_Paulo',
+});
+
+/** Hora e minuto (HH:MM) — presença operacional. */
+export function formatHourMinute(iso: string | Date): string {
+  return hourMinute.format(typeof iso === 'string' ? new Date(iso) : iso);
+}
+
 export function relativeTime(iso: string | null | undefined): string {
   if (!iso) return 'nunca';
   const diff = Date.now() - new Date(iso).getTime();

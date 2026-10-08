@@ -37,7 +37,9 @@ counts() {
     UNION ALL SELECT 'production_tasks', count(*) FROM production_tasks
     UNION ALL SELECT 'production_task_events', count(*) FROM production_task_events
     UNION ALL SELECT 'production_templates', count(*) FROM production_templates
-    UNION ALL SELECT 'notifications', count(*) FROM notifications) x"
+    UNION ALL SELECT 'notifications', count(*) FROM notifications
+    UNION ALL SELECT 'operational_attendances', count(*) FROM operational_attendances
+    UNION ALL SELECT 'attendance_corrections', count(*) FROM attendance_corrections) x"
 }
 
 # Garante dados de referência na origem (seed idempotente + um registro de auditoria).
@@ -130,6 +132,18 @@ SELECT gen_random_uuid(), u.id, 'TAREFA_LIBERADA', 'Tarefa liberada', 'Preparaç
        ev.task_id, 'backup:' || ev.task_id
 FROM ev, users u WHERE u.email = 'backup@teste.local';
 SQL
+# Dados fictícios da Fase 7 (presença operacional com histórico imutável).
+psql "$SOURCE" -q -v ON_ERROR_STOP=1 > /dev/null <<'SQL'
+WITH e AS (
+  SELECT e.id FROM employees e JOIN users u ON u.id = e.user_id WHERE u.email = 'backup@teste.local' LIMIT 1
+), a AS (
+  INSERT INTO operational_attendances (id, employee_id, date, situation, arrived_at, arrival_kind, late_minutes, availability, updated_at)
+  SELECT gen_random_uuid(), e.id, date '2031-01-06' + (random() * 5000)::int, 'PRESENTE', now(), 'ATRASO', 12, 'DISPONIVEL', now() FROM e
+  RETURNING id
+)
+INSERT INTO attendance_corrections (id, attendance_id, action, after)
+SELECT gen_random_uuid(), a.id, 'CHEGADA', '{"situation":"PRESENTE"}'::jsonb FROM a;
+SQL
 
 DATABASE_URL="$SOURCE" STORAGE_DIR="$WORK/none" BACKUP_RETENTION_DAYS=0 bash scripts/backup.sh "$WORK/out" > /dev/null
 DIR="$(ls -d "$WORK"/out/cenario-*)"
@@ -155,6 +169,9 @@ if psql "$RESTORE_URL" -qc "UPDATE stock_items SET on_hand = -1" > /dev/null 2>&
 fi
 if psql "$RESTORE_URL" -qc "INSERT INTO notifications (id, user_id, kind, title, body, dedupe_key) SELECT gen_random_uuid(), user_id, kind, title, body, dedupe_key FROM notifications LIMIT 1" > /dev/null 2>&1; then
   echo "✖ Unicidade dos avisos (usuário + chave) ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "DELETE FROM attendance_corrections" > /dev/null 2>&1; then
+  echo "✖ Trigger de imutabilidade do histórico de presença ausente no banco restaurado" >&2; exit 1
 fi
 if psql "$RESTORE_URL" -qc "DELETE FROM production_task_events" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade do histórico de tarefas ausente no banco restaurado" >&2; exit 1

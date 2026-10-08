@@ -24,7 +24,7 @@ import { Alert, Avatar, Card, EmptyState, PageHeader, Spinner } from '@/componen
 import { api } from '@/lib/api';
 import { useAttendanceHistory, useAttendanceImpacts, useTeamAttendance } from '@/lib/attendance';
 import { formatDay, todayIso } from '@/lib/commercial';
-import { formatDateTime, formatTime } from '@/lib/format';
+import { formatDateTime, formatHourMinute } from '@/lib/format';
 import { useCan, useMe } from '@/lib/hooks';
 
 /**
@@ -154,7 +154,7 @@ export function TeamAttendancePage() {
                       {d.arrivedAt ? (
                         <>
                           <span className="font-medium tabular-nums">
-                            {formatTime(d.arrivedAt)}
+                            {formatHourMinute(d.arrivedAt)}
                           </span>
                           {d.arrivalKind && d.arrivalKind !== 'NO_HORARIO' && (
                             <span className="block text-xs text-warn-600" data-testid="late">
@@ -184,7 +184,7 @@ export function TeamAttendancePage() {
                     <td className="px-4 py-3">
                       {d.departedAt ? (
                         <>
-                          <span className="tabular-nums">{formatTime(d.departedAt)}</span>
+                          <span className="tabular-nums">{formatHourMinute(d.departedAt)}</span>
                           {d.earlyDeparture && (
                             <span className="block text-xs text-warn-600">Saída antecipada</span>
                           )}
@@ -290,7 +290,10 @@ function ImpactRow({
         >
           {IMPACT_KIND_LABEL[i.kind]}
         </span>
-        <span className="font-medium">{i.employee.displayName}</span>
+        <span className="font-medium">
+          {i.kind === 'ANDAMENTO_PENDENTE' ? '' : 'Ausente: '}
+          {i.employee.displayName}
+        </span>
         <Link
           href={`/painel/producao/tarefas/${i.task.id}`}
           className="text-brand-700 hover:underline"
@@ -495,9 +498,9 @@ function HistoryDialog({ day, onClose }: { day: AttendanceDayDto; onClose: () =>
               <p className="font-semibold">
                 {formatDay(d.date, true)} ·{' '}
                 {d.situation ? ATTENDANCE_SITUATION_LABEL[d.situation] : 'Sem registro'}
-                {d.arrivedAt ? ` · chegada ${formatTime(d.arrivedAt)}` : ''}
+                {d.arrivedAt ? ` · chegada ${formatHourMinute(d.arrivedAt)}` : ''}
                 {d.lateMinutes ? ` (${d.lateMinutes} min)` : ''}
-                {d.departedAt ? ` · saída ${formatTime(d.departedAt)}` : ''}
+                {d.departedAt ? ` · saída ${formatHourMinute(d.departedAt)}` : ''}
               </p>
               <ul className="mt-1 space-y-1 border-l-2 border-line pl-3 text-sm">
                 {d.history.map((h) => (
