@@ -20,6 +20,7 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     browser,
   }) => {
     test.setTimeout(150_000);
+    await page.setViewportSize({ width: 1680, height: 1000 });
     await loginAdmin(page);
     const so = await openServiceOrder(page, 'Cliente Produção E2E');
     const sofa = so.items[0]!.code;
@@ -28,7 +29,11 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     // Tablets do João (apoio) e do Márcio (tapeceiro principal), cada um com sua sessão.
     await setPin(page, 'João', '591837');
     await setPin(page, 'Márcio', '736204');
-    const joao = await openTablet(browser, await registerDevice(page, 'Tablet João', 'João'), '591837');
+    const joao = await openTablet(
+      browser,
+      await registerDevice(page, 'Tablet João', 'João'),
+      '591837',
+    );
     const marcio = await openTablet(
       browser,
       await registerDevice(page, 'Tablet Márcio', 'Márcio'),
@@ -48,10 +53,14 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
       .getByRole('button', { name: 'Adicionar à semana' })
       .click();
     const add = page.getByRole('dialog');
-    await add.getByLabel('Tapeceiro principal (sofá)').selectOption({ label: 'Márcio' });
+    await add
+      .getByLabel('Tapeceiro principal (sofá)')
+      .selectOption({ label: 'Márcio — Tapeceiro' });
     await add.getByLabel('Começar em').fill(today());
     await add.getByRole('button', { name: 'Adicionar', exact: true }).click();
-    await expect(page.getByTestId(`plan-tasks-${so.code}`)).toContainText(`Corte de tecido — ${sofa}`);
+    await expect(page.getByTestId(`plan-tasks-${so.code}`)).toContainText(
+      `Corte de tecido — ${sofa}`,
+    );
     // Corte e costura ficam com o principal; apoio sem distribuição automática.
     await expect(page.getByLabel(`Responsável de Corte de tecido — ${sofa}`)).toHaveValue(/.+/);
     await expect(page.getByLabel(`Responsável de ${prep}`)).toHaveValue('');
@@ -111,9 +120,7 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     await expect(mt.getByRole('button', { name: 'Iniciar' })).toHaveCount(0);
 
     // Márcio não consegue agir na tarefa do João (verificação no backend).
-    const plan = await (
-      await page.request.get(`/api/v1/production-plans?week=${today()}`)
-    ).json();
+    const plan = await (await page.request.get(`/api/v1/production-plans?week=${today()}`)).json();
     const detail = await (await page.request.get(`/api/v1/production-plans/${plan[0].id}`)).json();
     const prepTask = detail.tasks.find((t: { title: string }) => t.title === prep);
     const forbidden = await mt.request.post(`/api/v1/production-tasks/${prepTask.id}/start`, {
@@ -132,15 +139,15 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     await jt.getByRole('button', { name: 'Registrar andamento' }).click();
     await jt.getByRole('button', { name: '50%' }).click();
     await jt.getByLabel('Andamento').fill('Estrutura limpa');
-    await jt.getByRole('button', { name: 'Registrar' }).click();
+    await jt.getByRole('button', { name: 'Registrar', exact: true }).click();
     await expect(jt.getByText('Último andamento: Estrutura limpa (50%)')).toBeVisible();
-    await jt.getByRole('button', { name: 'Pausar' }).click();
+    await jt.getByRole('button', { name: 'Pausar', exact: true }).click();
     await jt.getByRole('button', { name: 'Fim do expediente' }).click();
     await expect(jt.getByText('Pausada — Fim do expediente')).toBeVisible();
     await evidence(jt, '04-tablet-joao-pausada');
     await jt.getByRole('button', { name: 'Retomar' }).click();
     await expect(jt.getByTestId('my-task-detail')).toContainText('Em execução');
-    await jt.getByRole('button', { name: 'Concluir' }).click();
+    await jt.getByRole('button', { name: 'Concluir', exact: true }).click();
     await expect(jt.getByTestId('confirm-complete')).toContainText('Revestimento (Márcio)');
     await jt.getByRole('button', { name: 'Sim, concluir' }).click();
     await expect(jt.getByTestId('my-task-detail')).toContainText('Concluída');

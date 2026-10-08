@@ -27,8 +27,6 @@ beforeAll(async () => {
 afterAll(() => app.close());
 beforeEach(resetDatabase);
 
-type Admin = Awaited<ReturnType<typeof loginAdmin>>;
-
 /** Sofá com Ricardo como principal e João no apoio; publica a semana. */
 async function publishedSofa(materials: 'none' | 'missing' | 'complete', date = day(-1)) {
   const admin = await loginAdmin(app);
