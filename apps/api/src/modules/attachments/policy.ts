@@ -62,5 +62,10 @@ export async function viewableAsMeasurementAssignee(
   const count = await db.measurement.count({
     where: { serviceOrderId, assigneeUserId: userId, status: { not: 'CANCELADA' } },
   });
-  return count > 0;
+  if (count > 0) return true;
+  // Fase 5: quem tem tarefa de produção publicada da OS também vê as fotos.
+  const tasks = await db.productionTask.count({
+    where: { serviceOrderId, assigneeUserId: userId, status: { notIn: ['RASCUNHO', 'CANCELADA'] } },
+  });
+  return tasks > 0;
 }

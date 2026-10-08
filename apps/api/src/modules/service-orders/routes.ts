@@ -22,6 +22,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
+import { protectCancelledServiceOrder } from '../production/cancellation';
 import { readinessOf } from '../purchasing/common';
 import { idParams, toEmployeeSummary } from '../presenters';
 import {
@@ -70,6 +71,14 @@ export async function loadServiceOrderDto(
   if (!so) throw Errors.notFound('Ordem de serviço');
   const measuredCount = so.items.filter((i) => measurementsOf(i.measurements).length > 0).length;
   const materialsState = (await readinessOf(db, id)).state;
+  // Fase 5: programada quando há tarefa ativa em planejamento publicado.
+  const scheduled = await db.productionTask.count({
+    where: {
+      serviceOrderId: id,
+      plan: { status: 'PUBLICADO' },
+      status: { notIn: ['RASCUNHO', 'CANCELADA'] },
+    },
+  });
   return {
     id: so.id,
     number: so.number,
@@ -122,15 +131,15 @@ export async function loadServiceOrderDto(
       foamDensity: m.foamDensity,
       thicknessCm: m.thicknessCm ? Number(m.thicknessCm) : null,
     })),
-    // Prontidão para produção: apenas informativa. Nenhuma combinação libera o
-    // início da produção nesta fase (depende da programação — fases futuras).
+    // Prontidão para produção: apenas informativa. O início é decidido tarefa a
+    // tarefa pelo motor de liberação (Fase 5), nunca pela OS como um todo.
     readiness: {
       measurements: so.items.length > 0 && measuredCount === so.items.length ? 'OK' : 'PENDENTE',
       technicalLead: so.technicalLeadId ? 'OK' : 'PENDENTE',
       // Fase 4: calculada a partir de solicitações, compras, recebimentos e reservas.
       materials: materialsState === 'COMPLETO' ? 'OK' : 'PENDENTE',
       materialsState,
-      scheduling: 'FASE_FUTURA',
+      scheduling: scheduled > 0 ? 'OK' : 'PENDENTE',
       canStartProduction: false,
     },
     cancelledAt: so.cancelledAt?.toISOString() ?? null,
@@ -690,6 +699,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         action: 'service_order.cancelled',
       });
       await emitOrderEvent(tx, request, before.orderId);
+      await protectCancelledServiceOrder(tx, actor, id, input.reason);
     });
     return loadServiceOrderDto(prisma, id);
   });

@@ -479,6 +479,13 @@ export async function readinessOf(db: Tx | PrismaClient, serviceOrderId: string)
  * alteração) e publica `material.readiness_changed` quando muda. Nunca libera
  * produção, cria tarefas ou altera datas.
  */
+/** Ouvintes de mudança de prontidão (a produção reavalia as tarefas que exigem materiais). */
+type ReadinessListener = (tx: Tx, actor: ActorContext, serviceOrderId: string) => Promise<void>;
+const readinessListeners: ReadinessListener[] = [];
+export function onReadinessChanged(listener: ReadinessListener) {
+  if (!readinessListeners.includes(listener)) readinessListeners.push(listener);
+}
+
 export async function refreshReadiness(tx: Tx, actor: ActorContext, serviceOrderIds: string[]) {
   for (const id of [...new Set(serviceOrderIds)].sort()) {
     const so = await tx.serviceOrder.findUnique({
@@ -504,6 +511,7 @@ export async function refreshReadiness(tx: Tx, actor: ActorContext, serviceOrder
       },
       audience: READINESS_AUDIENCE,
     });
+    for (const l of readinessListeners) await l(tx, actor, id);
   }
 }
 

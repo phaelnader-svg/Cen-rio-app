@@ -43,6 +43,7 @@ import { useCan } from '@/lib/hooks';
 import { useEmployees } from '@/lib/queries';
 import { CreateMeasurementDialog } from '@/components/measurements/create-dialog';
 import { OsMaterialsOverview } from '@/components/purchasing/os-materials';
+import { OsProduction } from '@/components/production/os-production';
 import { MeasurementList } from '@/components/measurements/measurements-page';
 import { useMeasurements } from '@/lib/measurements';
 import { PriorityBadge, ServiceOrderStatusBadge } from './badges';
@@ -134,6 +135,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
   const manage = can('os.gerenciar') && open;
   // Registro direto de medidas: somente gestão (o fluxo normal é a medição atribuída).
   const canMeasure = can('os.gerenciar') && open;
+  const canProduction = can('producao.ver') || can('producao.planejar');
   const canRequestMeasurement = can('medicoes.gerenciar') && open;
 
   return (
@@ -199,12 +201,12 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           { key: 'materiais', label: 'Materiais', count: s.materials.length },
           { key: 'fotos', label: 'Fotografias' },
           { key: 'historico', label: 'Histórico', count: revisions.data?.length },
-          { key: 'programacao', label: 'Programação', disabledNote: FUTURE },
-          { key: 'producao', label: 'Produção', disabledNote: FUTURE },
+          ...(canProduction ? [{ key: 'producao', label: 'Produção' }] : []),
           { key: 'qualidade', label: 'Qualidade', disabledNote: FUTURE },
           { key: 'entrega', label: 'Entrega', disabledNote: FUTURE },
         ]}
       >
+        {tab === 'producao' && canProduction && <OsProduction serviceOrderId={s.id} />}
         {tab === 'resumo' && (
           <div className="grid gap-6 lg:grid-cols-5">
             <Section title="Dados gerais" className="lg:col-span-3">
@@ -266,7 +268,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 <ReadinessRow
                   label="Programação"
                   state={s.readiness.scheduling}
-                  hint="Programação semanal (sextas) — fase futura."
+                  hint="Tarefas incluídas em planejamento semanal publicado."
                 />
               </ul>
               <p className="mt-3 rounded-lg bg-subtle px-3 py-2 text-xs text-ink-soft">

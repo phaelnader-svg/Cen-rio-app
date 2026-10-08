@@ -57,6 +57,21 @@ export const EVENT_TYPES = {
   MATERIAL_SHORTAGE_DETECTED: 'material.shortage_detected',
   MATERIAL_READINESS_CHANGED: 'material.readiness_changed',
   LEFTOVER_CHANGED: 'leftover.changed',
+  PRODUCTION_TEMPLATE_CHANGED: 'production.template_changed',
+  PRODUCTION_PLAN_CREATED: 'production.plan_created',
+  PRODUCTION_PLAN_UPDATED: 'production.plan_updated',
+  PRODUCTION_PLAN_PUBLISHED: 'production.plan_published',
+  PRODUCTION_PLAN_REVISED: 'production.plan_revised',
+  PRODUCTION_TASK_ASSIGNED: 'production.task_assigned',
+  PRODUCTION_TASK_RELEASED: 'production.task_released',
+  PRODUCTION_TASK_BLOCKED: 'production.task_blocked',
+  PRODUCTION_TASK_STARTED: 'production.task_started',
+  PRODUCTION_TASK_PROGRESS: 'production.task_progress',
+  PRODUCTION_TASK_PAUSED: 'production.task_paused',
+  PRODUCTION_TASK_RESUMED: 'production.task_resumed',
+  PRODUCTION_TASK_COMPLETED: 'production.task_completed',
+  PRODUCTION_TASK_CANCELLED: 'production.task_cancelled',
+  PRODUCTION_DEPENDENCIES_UPDATED: 'production.dependencies_updated',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

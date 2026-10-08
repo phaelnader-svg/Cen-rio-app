@@ -19,3 +19,6 @@ export * from './types-measurements';
 export * from './purchasing-domain';
 export * from './schemas/purchasing';
 export * from './types-purchasing';
+export * from './production-domain';
+export * from './schemas/production';
+export * from './types-production';

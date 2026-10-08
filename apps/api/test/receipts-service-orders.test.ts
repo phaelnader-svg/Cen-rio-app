@@ -252,7 +252,7 @@ describe('Ordem de serviço técnica', () => {
       // Fase 4: prontidão de materiais calculada a partir dos registros (antes: FASE_FUTURA).
       materials: 'PENDENTE',
       materialsState: 'SEM_LEVANTAMENTO',
-      scheduling: 'FASE_FUTURA',
+      scheduling: 'PENDENTE', // Fase 5: OK somente com tarefa em planejamento publicado.
       canStartProduction: false,
     });
 

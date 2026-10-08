@@ -25,6 +25,7 @@ import {
   Truck,
   BadgeCheck,
   Users,
+  Workflow,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -78,6 +79,24 @@ export const NAV: NavItem[] = [
     anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
   },
   {
+    href: '/painel/producao/planejamento',
+    label: 'Planejamento de produção',
+    icon: CalendarRange,
+    anyOf: ['producao.planejar'],
+  },
+  {
+    href: '/painel/producao',
+    label: 'Quadro de produção',
+    icon: Hammer,
+    anyOf: ['producao.ver', 'producao.planejar'],
+  },
+  {
+    href: '/painel/producao/modelos',
+    label: 'Modelos de produção',
+    icon: Workflow,
+    anyOf: ['producao.ver', 'producao.planejar'],
+  },
+  {
     href: '/painel/materiais',
     label: 'Materiais aprovados',
     icon: Layers,
@@ -120,8 +139,6 @@ export const NAV: NavItem[] = [
 
 /** Módulos das próximas fases: exibidos como indisponíveis (sem link). */
 export const UPCOMING: { label: string; icon: LucideIcon }[] = [
-  { label: 'Programação semanal', icon: CalendarRange },
-  { label: 'Produção', icon: Hammer },
   { label: 'Central de atenção', icon: Siren },
   { label: 'Qualidade', icon: BadgeCheck },
   { label: 'Entregas', icon: PackageOpen },

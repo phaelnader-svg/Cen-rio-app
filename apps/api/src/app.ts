@@ -23,6 +23,9 @@ import { authRoutes } from './modules/auth/routes';
 import { customerRoutes } from './modules/customers/routes';
 import { materialRoutes } from './modules/materials/routes';
 import { measurementRoutes } from './modules/measurements/routes';
+import { releaseDueTasks } from './modules/production/common';
+import { productionPlanRoutes } from './modules/production/plans';
+import { productionTaskRoutes } from './modules/production/tasks';
 import { leftoverRoutes } from './modules/purchasing/leftovers';
 import { purchaseOrderRoutes } from './modules/purchasing/purchase-orders';
 import { materialReceiptRoutes } from './modules/purchasing/receipts';
@@ -172,6 +175,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(materialReceiptRoutes);
   await app.register(stockRoutes);
   await app.register(leftoverRoutes);
+  await app.register(productionPlanRoutes);
+  await app.register(productionTaskRoutes);
 
   // Presença dos tablets: transições online/offline viram eventos persistentes.
   hub.onPresence((deviceId, online) => {
@@ -196,6 +201,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   });
 
   let maintenanceTimer: NodeJS.Timeout | null = null;
+  let releaseTimer: NodeJS.Timeout | null = null;
   let started = false;
 
   return {
@@ -217,10 +223,20 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           15 * 60_000,
         );
         maintenanceTimer.unref();
+        // Fase 5: libera as tarefas cujo horário programado chegou (idempotente).
+        releaseTimer = setInterval(
+          () =>
+            void releaseDueTasks(prisma).catch((err: unknown) =>
+              app.log.warn({ err }, 'Falha ao liberar tarefas programadas'),
+            ),
+          30_000,
+        );
+        releaseTimer.unref();
       }
     },
     async close() {
       if (maintenanceTimer) clearInterval(maintenanceTimer);
+      if (releaseTimer) clearInterval(releaseTimer);
       processor.stop();
       hub.stop();
       await feed.stop();

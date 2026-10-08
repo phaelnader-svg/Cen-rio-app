@@ -108,10 +108,9 @@ test.describe.serial('Fase 4 — compras, recebimento e estoque', () => {
     await expect(page.getByTestId('os-readiness-state')).toHaveText('Completo');
     await expect(page.getByText('não autorizam o início da produção')).toBeVisible();
     await expect(page.getByRole('button', { name: /produção/i })).toHaveCount(0);
-    await expect(page.getByRole('tab', { name: /Produção/ })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    // Fase 5: a aba Produção existe, mas material completo não cria tarefas.
+    await page.getByRole('tab', { name: /Produção/ }).click();
+    await expect(page.getByText('Nenhuma tarefa programada')).toBeVisible();
     await tablet.context.close();
   });
 });

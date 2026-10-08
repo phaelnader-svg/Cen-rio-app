@@ -65,6 +65,19 @@ a prontidão "Materiais" da OS deixou de ser "fase futura". Pendência registrad
 recebimento **de peças de clientes** (Fase 2) continua não implementado — não confundir com o
 estorno de recebimento de materiais.
 
+## Atualização da Fase 4 para a Fase 5
+
+A migration `20261010000000_producao` é aditiva: cria modelos de produção, planejamentos,
+itens, revisões, tarefas, dependências e eventos de tarefa (com CHECKs e triggers de
+imutabilidade), insere os três modelos padrão (sofá, cabeceira, cadeira/poltrona) e concede ao
+Gestor `producao.ver`, `producao.planejar` e `producao.executar`, e às funções Tapeceiro,
+Cabeceiras/Qualidade e Ajudante `producao.executar`. Nada existente é apagado.
+Procedimento: backup (`pnpm backup`) → `pnpm db:migrate` → reiniciar API e web.
+
+Mudanças de regra a comunicar: cancelar uma OS agora também cancela as tarefas de produção
+abertas e libera as reservas de estoque da OS; a prontidão "Programação" da OS passa a refletir
+tarefas em planejamento publicado. A API libera, a cada 30 s, as tarefas cujo horário chegou.
+
 ## Backup e restauração
 
 ```bash

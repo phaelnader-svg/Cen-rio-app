@@ -82,8 +82,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       </div>
       <ul className="space-y-0.5 px-3">
         {items.map((item) => {
+          // Item ativo: o de prefixo mais longo (ex.: /painel/producao/planejamento).
+          const matches = (href: string) =>
+            href === '/painel' ? pathname === '/painel' : pathname.startsWith(href);
           const active =
-            item.href === '/painel' ? pathname === '/painel' : pathname.startsWith(item.href);
+            matches(item.href) &&
+            !items.some((o) => o.href.length > item.href.length && matches(o.href));
           return (
             <li key={item.href}>
               <Link

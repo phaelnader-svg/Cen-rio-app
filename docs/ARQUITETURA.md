@@ -237,9 +237,51 @@ Necessidade aprovada (Fase 3) ─► Pedido de compra (rascunho → confirmado p
   solicitações pendentes, compras confirmadas, recebidos conformes, reservas e transferências —
   nunca marcada à mão. Recalculada na mesma transação de cada alteração relevante (inclusive
   medições/aprovações da Fase 3); a mudança publica `material.readiness_changed`.
-  `canStartProduction` continua `false` e não existe rota de início de produção.
+  Material completo não inicia produção: o início é decidido tarefa a tarefa pelo motor de
+  liberação da Fase 5 (`canStartProduction` da OS continua `false`).
 - **Sobras** ficam na OS de origem; transferência só com `estoque.autorizar`, motivo e
   especificação compatível (tecido de outra referência/cor é recusado).
+
+### Motor de produção e planejamento semanal (Fase 5)
+
+```
+Planejamento (rascunho) ─► publicar ─► tarefas BLOQUEADA ─► motor de liberação ─► PROGRAMADA / LIBERADA
+   OS + modelo + ajustes      revisão 1          │                 ▲   (OS ativa, peça recebida,
+                                                  │                 │    publicada, responsável,
+   alterações após publicar ─► nova revisão       │                 │    dependências, materiais,
+   (snapshot imutável: quem, quando, motivo)      ▼                 │    sem bloqueio, horário)
+                                  tablet: Iniciar → Andamento/Pausar/Retomar → Concluir
+                                                                    │
+                                    conclusão ─► reavalia as dependentes na mesma transação
+```
+
+- **Planejamento** (`production_plans`, uma por semana — segunda-feira, CHECK no banco): rascunho
+  → publicado. Sexta é o dia padrão (`planningWeekday` da empresa), mas qualquer dia é aceito e a
+  revisão registra `off_schedule`. Depois de publicado, toda alteração (responsável, horário,
+  prioridade, dependências, inclusão/retirada de etapa ou OS) exige motivo e grava uma
+  `production_plan_revisions` com o _snapshot_ anterior (imutável por trigger).
+- **Modelos** (`production_templates` + `production_template_steps`): etapas sugeridas por tipo
+  de peça (sofá, cabeceira, cadeira/poltrona), com papel (principal/apoio), exigência de
+  materiais, etapa opcional e dependências por posição (somente de etapas anteriores). Ao incluir
+  uma OS, as tarefas são geradas por peça; etapas opcionais não são criadas para fabricação e as
+  dependências são refeitas transitivamente. O gestor retira, inclui e reorganiza etapas em cada OS.
+- **Tarefas** (`production_tasks`, código `TP-00001`): estados `RASCUNHO` (só no planejamento não
+  publicado), `BLOQUEADA`, `PROGRAMADA`, `LIBERADA`, `EM_EXECUCAO`, `PAUSADA`, `CONCLUIDA`,
+  `CANCELADA`; motivos de bloqueio em `blockers`. CHECKs garantem consistência (iniciada exige
+  responsável e início; concluída exige término; progresso 0–100). Eventos de tarefa
+  (`production_task_events`) são imutáveis.
+- **DAG explícito** (`task_dependencies`): várias dependências por tarefa, só dentro da mesma OS,
+  ciclos recusados (`findCycle`). Dependência cancelada conta como satisfeita.
+- **Responsável principal**: cada OS com sofá exige um tapeceiro principal; corte de tecido e
+  costura ficam obrigatoriamente com ele. Ajudantes são atribuídos explicitamente (não há
+  distribuição automática). A conclusão de uma tarefa de apoio nunca conclui a principal.
+- **Motor de liberação** (`reevaluateTasks` em `modules/production/common.ts`): única via que muda
+  BLOQUEADA/PROGRAMADA/LIBERADA. Roda ao publicar, ao alterar a tarefa, ao concluir/cancelar uma
+  dependência, ao mudar a prontidão de materiais (`onReadinessChanged`) e a cada 30 s
+  (`releaseDueTasks`, para horários que chegaram). O `start` refaz toda a verificação no banco,
+  sob bloqueio da linha — o estado salvo e o tablet não são confiáveis por si.
+- **Cancelamento de OS** (`protectCancelledServiceOrder`): cancela as tarefas abertas, retira a
+  OS dos rascunhos e libera as reservas ativas de estoque, na mesma transação do cancelamento.
 
 ## 4. Eventos, concorrência e tempo real
 
@@ -267,6 +309,12 @@ Eventos da Fase 4: `purchase_order.confirmed/cancelled`, `material.received`,
 pedidos a receber); `supplier.changed`, `purchase_order.created/updated`, `stock.*`,
 `leftover.changed`, `material.shortage_detected` (estoque mínimo ou divergência) e
 `material.readiness_changed` vão para a gestão. Nenhum payload leva preços.
+Eventos da Fase 5 (`production.plan_created/plan_updated/plan_published/plan_revised`,
+`production.task_assigned/task_released/task_blocked/task_started/task_progress/task_paused/
+task_resumed/task_completed/task_cancelled`, `production.dependencies_updated`,
+`production.template_changed`) vão para quem vê a produção (`producao.ver`/`producao.planejar`)
+**e** para o responsável da tarefa (`user:<id>`); a liberação de uma tarefa avisa o próximo
+responsável sem recarregar a tela. O tablet de outro funcionário não recebe as tarefas alheias.
 
 **Reconexão e reconciliação.**
 
@@ -316,6 +364,14 @@ são usadas como garantia de execução.
   `/painel/estoque` (materiais, movimentações, reservas, sobras), `/painel/prontidao` e a aba
   Materiais da OS. No tablet, **Recebimento de materiais** usa o mesmo componente
   (`components/purchasing/material-receiving.tsx`) em modo ampliado.
+- Fase 5: `/painel/producao/planejamento` (planejamento semanal: OS candidatas, responsáveis,
+  dias/horários, dependências, conflitos, publicação e revisões), `/painel/producao` (quadro por
+  funcionário, OS, etapa, status ou dia), `/painel/producao/tarefas/[id]` (detalhe com
+  reprogramar, dependências, bloquear/desbloquear, cancelar e histórico),
+  `/painel/producao/modelos` e a aba **Produção** da OS. No tablet, **Minhas tarefas** (hoje por
+  prioridade e próximos dias) e o detalhe com Iniciar, Registrar andamento, Pausar (motivo
+  simples), Retomar e Concluir, além de peças, medidas, fotos, materiais (sem preços),
+  dependências e histórico.
 - PWA: `manifest.webmanifest` (início em `/tablet`), service worker que **nunca** guarda
   respostas da API e mostra página offline quando não há rede.
 - Permissões no frontend só escondem elementos; o servidor sempre decide.

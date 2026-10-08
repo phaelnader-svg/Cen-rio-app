@@ -93,6 +93,19 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     keys.push(['suppliers'], ...purchasing);
   if (t.startsWith('measurement.') || t.startsWith('material_request.'))
     keys.push(['needs'], ['readiness'], ['os-readiness']);
+  // Fase 5 — produção
+  if (t.startsWith('production.') || t === 'material.readiness_changed') {
+    keys.push(
+      ['production-plans'],
+      ['production-plan'],
+      ['production-candidates'],
+      ['production-board'],
+      ['production-task'],
+      ['my-tasks'],
+      ['os-production'],
+    );
+  }
+  if (t === 'production.template_changed') keys.push(['production-templates']);
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }
 

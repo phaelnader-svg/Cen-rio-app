@@ -74,6 +74,14 @@ model User {
   createdLeftovers        MaterialLeftover[]         @relation("LeftoverCreatedBy")
   authorizedLeftoverMoves MaterialLeftoverTransfer[] @relation("LeftoverTransferAuthorizedBy")
 
+  createdPlans       ProductionPlan[]         @relation("PlanCreatedBy")
+  publishedPlans     ProductionPlan[]         @relation("PlanPublishedBy")
+  principalPlanItems ProductionPlanItem[]     @relation("PlanItemPrincipal")
+  planRevisions      ProductionPlanRevision[] @relation("PlanRevisionCreatedBy")
+  assignedTasks      ProductionTask[]         @relation("TaskAssignee")
+  completedTasks     ProductionTask[]         @relation("TaskCompletedBy")
+  taskEvents         ProductionTaskEvent[]    @relation("TaskEventActor")
+
   @@map("users")
 }
 
@@ -765,6 +773,9 @@ model ServiceOrder {
   leftoversOut        MaterialLeftoverTransfer[] @relation("LeftoverTransferFrom")
   leftoversIn         MaterialLeftoverTransfer[] @relation("LeftoverTransferTo")
 
+  productionPlanItems ProductionPlanItem[]
+  productionTasks     ProductionTask[]
+
   @@index([orderId])
   @@index([customerId])
   @@index([status])
@@ -803,6 +814,8 @@ model ServiceOrderItem {
   measurementTasks  Measurement[]
   measurementPieces MeasurementPiece[]
   requestItems      MaterialRequestItem[]
+
+  productionTasks ProductionTask[]
 
   @@unique([serviceOrderId, position])
   @@index([orderItemId])
@@ -1449,4 +1462,234 @@ model MaterialLeftoverTransfer {
 
   @@index([toRequirementId])
   @@map("material_leftover_transfers")
+}
+
+// ─────────────────────────── Fase 5: motor de produção ───────────────────────────
+
+enum ProductionActivity {
+  DESMONTAGEM
+  PREPARACAO
+  PREPARACAO_MDF
+  CORTE_TECIDO
+  CORTE_ESPUMA
+  CORTE
+  COSTURA
+  REVESTIMENTO
+  MONTAGEM
+  ACABAMENTO
+  APOIO
+  OUTRA
+
+  @@map("production_activity")
+}
+
+enum TaskStatus {
+  RASCUNHO
+  BLOQUEADA
+  PROGRAMADA
+  LIBERADA
+  EM_EXECUCAO
+  PAUSADA
+  CONCLUIDA
+  CANCELADA
+
+  @@map("task_status")
+}
+
+enum TaskRole {
+  PRINCIPAL
+  APOIO
+
+  @@map("task_role")
+}
+
+enum PauseReason {
+  FIM_EXPEDIENTE
+  AGUARDANDO_ORIENTACAO
+  INTERRUPCAO_PROGRAMADA
+  OUTRO
+
+  @@map("pause_reason")
+}
+
+enum PlanStatus {
+  RASCUNHO
+  PUBLICADO
+
+  @@map("plan_status")
+}
+
+/// Modelo configurável de etapas por tipo de peça (sugestão inicial; cada OS pode ser adaptada).
+model ProductionTemplate {
+  id         String      @id @default(uuid()) @db.Uuid
+  name       String      @db.VarChar(80)
+  pieceTypes PieceType[] @map("piece_types")
+  active     Boolean     @default(true)
+  version    Int         @default(1)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  steps ProductionTemplateStep[]
+
+  @@map("production_templates")
+}
+
+model ProductionTemplateStep {
+  id                String             @id @default(uuid()) @db.Uuid
+  templateId        String             @map("template_id") @db.Uuid
+  position          Int
+  activity          ProductionActivity
+  name              String             @db.VarChar(80)
+  role              TaskRole           @default(APOIO)
+  requiresMaterials Boolean            @default(false) @map("requires_materials")
+  optional          Boolean            @default(false)
+  dependsOn         Int[]              @map("depends_on")
+
+  template ProductionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, position])
+  @@map("production_template_steps")
+}
+
+/// Planejamento semanal de produção (um por semana; segunda-feira como referência).
+model ProductionPlan {
+  id            String     @id @default(uuid()) @db.Uuid
+  weekStart     DateTime   @unique @map("week_start") @db.Date
+  status        PlanStatus @default(RASCUNHO)
+  /// Número da última revisão publicada (0 = nunca publicado).
+  revision      Int        @default(0)
+  notes         String?    @db.VarChar(1000)
+  createdById   String?    @map("created_by_id") @db.Uuid
+  publishedAt   DateTime?  @map("published_at") @db.Timestamptz(3)
+  publishedById String?    @map("published_by_id") @db.Uuid
+  version       Int        @default(1)
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy   User?                    @relation("PlanCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  publishedBy User?                    @relation("PlanPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+  items       ProductionPlanItem[]
+  tasks       ProductionTask[]
+  revisions   ProductionPlanRevision[]
+
+  @@map("production_plans")
+}
+
+/// OS selecionada para a semana, com o tapeceiro principal e a prioridade.
+model ProductionPlanItem {
+  id              String   @id @default(uuid()) @db.Uuid
+  planId          String   @map("plan_id") @db.Uuid
+  serviceOrderId  String   @map("service_order_id") @db.Uuid
+  principalUserId String?  @map("principal_user_id") @db.Uuid
+  priority        Priority @default(NORMAL)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  plan         ProductionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  serviceOrder ServiceOrder   @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  principal    User?          @relation("PlanItemPrincipal", fields: [principalUserId], references: [id], onDelete: Restrict)
+
+  @@unique([planId, serviceOrderId])
+  @@map("production_plan_items")
+}
+
+/// Revisão publicada (imutável): cópia completa das tarefas, quem publicou e por quê.
+model ProductionPlanRevision {
+  id          String   @id @default(uuid()) @db.Uuid
+  planId      String   @map("plan_id") @db.Uuid
+  revision    Int
+  reason      String?  @db.VarChar(500)
+  offSchedule Boolean  @default(false) @map("off_schedule")
+  snapshot    Json
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  plan      ProductionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  createdBy User?          @relation("PlanRevisionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([planId, revision])
+  @@map("production_plan_revisions")
+}
+
+/// Tarefa individual de produção (TP-00001).
+model ProductionTask {
+  id                 String             @id @default(uuid()) @db.Uuid
+  number             Int                @unique @default(autoincrement())
+  planId             String?            @map("plan_id") @db.Uuid
+  serviceOrderId     String             @map("service_order_id") @db.Uuid
+  serviceOrderItemId String?            @map("service_order_item_id") @db.Uuid
+  activity           ProductionActivity
+  title              String             @db.VarChar(120)
+  role               TaskRole           @default(APOIO)
+  assigneeUserId     String?            @map("assignee_user_id") @db.Uuid
+  priority           Priority           @default(NORMAL)
+  sequence           Int                @default(0)
+  scheduledAt        DateTime?          @map("scheduled_at") @db.Timestamptz(3)
+  dueDate            DateTime?          @map("due_date") @db.Date
+  instructions       String?            @db.VarChar(2000)
+  requiresMaterials  Boolean            @default(false) @map("requires_materials")
+  status             TaskStatus         @default(RASCUNHO)
+  blockers           String[]           @default([])
+  blockedReason      String?            @map("blocked_reason") @db.VarChar(500)
+  startedAt          DateTime?          @map("started_at") @db.Timestamptz(3)
+  completedAt        DateTime?          @map("completed_at") @db.Timestamptz(3)
+  completedById      String?            @map("completed_by_id") @db.Uuid
+  completedDeviceId  String?            @map("completed_device_id") @db.Uuid
+  pauseReason        PauseReason?       @map("pause_reason")
+  pauseNote          String?            @map("pause_note") @db.VarChar(300)
+  progressNote       String?            @map("progress_note") @db.VarChar(500)
+  progressPercent    Int?               @map("progress_percent")
+  progressAt         DateTime?          @map("progress_at") @db.Timestamptz(3)
+  cancelReason       String?            @map("cancel_reason") @db.VarChar(500)
+  version            Int                @default(1)
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  plan             ProductionPlan?       @relation(fields: [planId], references: [id], onDelete: Restrict)
+  serviceOrder     ServiceOrder          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  serviceOrderItem ServiceOrderItem?     @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  assignee         User?                 @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: Restrict)
+  completedBy      User?                 @relation("TaskCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  dependsOn        TaskDependency[]      @relation("TaskDependsOn")
+  dependents       TaskDependency[]      @relation("TaskDependents")
+  events           ProductionTaskEvent[]
+
+  @@index([assigneeUserId, status])
+  @@index([serviceOrderId])
+  @@index([planId])
+  @@index([status, scheduledAt])
+  @@map("production_tasks")
+}
+
+/// Dependência explícita: `taskId` só começa depois de `dependsOnId` concluída (grafo acíclico).
+model TaskDependency {
+  taskId      String   @map("task_id") @db.Uuid
+  dependsOnId String   @map("depends_on_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  task      ProductionTask @relation("TaskDependsOn", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOn ProductionTask @relation("TaskDependents", fields: [dependsOnId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, dependsOnId])
+  @@index([dependsOnId])
+  @@map("production_task_dependencies")
+}
+
+/// Histórico imutável de cada tarefa (criação, publicação, liberação, execução, revisões).
+model ProductionTaskEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  taskId     String   @map("task_id") @db.Uuid
+  kind       String   @db.VarChar(40)
+  fromStatus String?  @map("from_status") @db.VarChar(20)
+  toStatus   String?  @map("to_status") @db.VarChar(20)
+  note       String?  @db.VarChar(500)
+  changes    Json?
+  actorId    String?  @map("actor_id") @db.Uuid
+  deviceId   String?  @map("device_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  task  ProductionTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor User?          @relation("TaskEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+  @@map("production_task_events")
 }

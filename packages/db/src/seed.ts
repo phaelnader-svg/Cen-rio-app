@@ -11,7 +11,12 @@
  *   o gestor define os PINs pelo painel.
  */
 import { hash } from '@node-rs/argon2';
-import { DEFAULT_ROLES, GESTOR_ROLE_KEY, passwordPolicySchema } from '@cenario/shared';
+import {
+  DEFAULT_PRODUCTION_TEMPLATES,
+  DEFAULT_ROLES,
+  GESTOR_ROLE_KEY,
+  passwordPolicySchema,
+} from '@cenario/shared';
 import { createPrismaClient } from './index';
 
 const ARGON2_OPTIONS = { memoryCost: 19456, timeCost: 2, parallelism: 1 } as const;
@@ -164,6 +169,26 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
         });
         log(`✔ Funcionário ${member.displayName} cadastrado (sem PIN).`);
       }
+    }
+
+    // Fase 5: modelos de produção iniciais (somente se ainda não houver nenhum).
+    if ((await prisma.productionTemplate.count()) === 0) {
+      for (const t of DEFAULT_PRODUCTION_TEMPLATES) {
+        await prisma.productionTemplate.create({
+          data: {
+            name: t.name,
+            pieceTypes: t.pieceTypes as never,
+            steps: {
+              create: t.steps.map((s, i) => ({
+                ...s,
+                dependsOn: [...s.dependsOn],
+                position: i + 1,
+              })),
+            },
+          },
+        });
+      }
+      log('✔ Modelos de produção iniciais criados.');
     }
   } finally {
     await prisma.$disconnect();

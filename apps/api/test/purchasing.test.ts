@@ -839,9 +839,10 @@ describe('Prontidão, integridade com a Fase 3 e permissões', () => {
     await receive(admin, po.id, [ok(po.items[0].id, 12)]);
     const os = (await admin.get(`/api/v1/service-orders/${so.id}`)).body;
     expect(os.readiness).toMatchObject({ materials: 'OK', canStartProduction: false });
-    // Não há rota de início de produção, e nada foi criado além do material.
-    const routes = app.app.printRoutes();
-    expect(routes).not.toMatch(/produc|production|start-production/i);
+    // Material completo não inicia produção: nenhuma tarefa nem plano é criado
+    // automaticamente (Fase 5 exige planejamento publicado pelo gestor).
+    expect(await db().productionTask.count({ where: { serviceOrderId: so.id } })).toBe(0);
+    expect(await db().productionPlanItem.count({ where: { serviceOrderId: so.id } })).toBe(0);
     const changes = await db().domainEvent.findMany({
       where: { type: 'material.readiness_changed', aggregateId: so.id },
       orderBy: { seq: 'asc' },

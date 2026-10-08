@@ -70,6 +70,14 @@ describe('Banco de dados e migrations', () => {
       'stock_reservations',
       'material_leftovers',
       'material_leftover_transfers',
+      'production_templates',
+      'production_template_steps',
+      'production_plans',
+      'production_plan_items',
+      'production_plan_revisions',
+      'production_tasks',
+      'production_task_dependencies',
+      'production_task_events',
     ]) {
       expect(names).toContain(t);
     }

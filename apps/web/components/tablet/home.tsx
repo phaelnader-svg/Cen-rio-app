@@ -22,8 +22,9 @@ import { api } from '@/lib/api';
 import { MaterialReceiving } from '@/components/purchasing/material-receiving';
 import { usePendingReceipts } from '@/lib/purchasing';
 import { MyMeasurementDetail, MyMeasurements, useMyOpenCount } from './measurements';
+import { MyTaskDetail, MyTasks, useMyTodayCount } from './tasks';
 
-type Screen = 'home' | 'sync' | 'measurements' | 'measurement' | 'materials';
+type Screen = 'home' | 'sync' | 'measurements' | 'measurement' | 'materials' | 'tasks' | 'task';
 
 function useClock(timezone: string) {
   // Renderizado apenas no cliente (após autenticação), sem risco de divergência de hidratação.
@@ -50,11 +51,6 @@ function useClock(timezone: string) {
 /** Módulos da produção que chegam nas próximas fases (exibidos como indisponíveis). */
 const UPCOMING = [
   {
-    icon: ClipboardCheck,
-    title: 'Minhas tarefas',
-    text: 'Serviços programados para você, etapas e pedidos de ajuda.',
-  },
-  {
     icon: Clock3,
     title: 'Presença',
     text: 'Botões “Cheguei” e “Encerrar expediente”.',
@@ -79,6 +75,9 @@ export function TabletHome({ me }: { me: MeDto }) {
   const openCount = useMyOpenCount(canMeasure);
   const [measurementId, setMeasurementId] = useState<string | null>(null);
   const pendingMaterials = usePendingReceipts();
+  const canExecute = me.permissions.includes('producao.executar');
+  const todayCount = useMyTodayCount(canExecute);
+  const [taskId, setTaskId] = useState<string | null>(null);
 
   async function logout() {
     setLeaving(true);
@@ -135,6 +134,41 @@ export function TabletHome({ me }: { me: MeDto }) {
           <>
             <h1 className="sr-only">Início</h1>
             <ul className="grid gap-5 md:grid-cols-2">
+              {canExecute && (
+                <li className="md:col-span-2">
+                  <button
+                    type="button"
+                    onClick={() => setScreen('tasks')}
+                    data-testid="tile-tasks"
+                    className={clsx(
+                      'flex w-full items-center gap-5 rounded-2xl border border-line bg-surface p-6 text-left shadow-[var(--shadow-card)] transition',
+                      'hover:border-brand-200 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]',
+                    )}
+                  >
+                    <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700">
+                      <ClipboardCheck className="size-8" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-2xl font-semibold">Minhas tarefas</span>
+                      <span className="mt-1 block text-base text-ink-muted">
+                        Serviços programados para você hoje, por prioridade.
+                      </span>
+                    </span>
+                    {todayCount !== undefined && (
+                      <span
+                        className={clsx(
+                          'grid min-w-14 place-items-center rounded-2xl px-3 py-2 text-2xl font-semibold tabular-nums',
+                          todayCount ? 'bg-brand-700 text-white' : 'bg-subtle text-ink-muted',
+                        )}
+                        aria-label={`${todayCount} tarefa(s) para hoje`}
+                        data-testid="tasks-count"
+                      >
+                        {todayCount}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              )}
               {canMeasure && (
                 <li className="md:col-span-2">
                   <button
@@ -258,6 +292,22 @@ export function TabletHome({ me }: { me: MeDto }) {
                 setScreen('measurement');
               }}
             />
+          </>
+        ) : screen === 'tasks' ? (
+          <>
+            <BackButton label="Voltar ao início" onClick={() => setScreen('home')} />
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Minhas tarefas</h1>
+            <MyTasks
+              onOpen={(id) => {
+                setTaskId(id);
+                setScreen('task');
+              }}
+            />
+          </>
+        ) : screen === 'task' && taskId ? (
+          <>
+            <BackButton label="Voltar às tarefas" onClick={() => setScreen('tasks')} />
+            <MyTaskDetail key={taskId} id={taskId} />
           </>
         ) : screen === 'materials' ? (
           <>

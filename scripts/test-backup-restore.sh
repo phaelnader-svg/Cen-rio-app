@@ -32,7 +32,11 @@ counts() {
     UNION ALL SELECT 'purchase_order_items', count(*) FROM purchase_order_items
     UNION ALL SELECT 'material_receipts', count(*) FROM material_receipts
     UNION ALL SELECT 'stock_items', count(*) FROM stock_items
-    UNION ALL SELECT 'stock_movements', count(*) FROM stock_movements) x"
+    UNION ALL SELECT 'stock_movements', count(*) FROM stock_movements
+    UNION ALL SELECT 'production_plans', count(*) FROM production_plans
+    UNION ALL SELECT 'production_tasks', count(*) FROM production_tasks
+    UNION ALL SELECT 'production_task_events', count(*) FROM production_task_events
+    UNION ALL SELECT 'production_templates', count(*) FROM production_templates) x"
 }
 
 # Garante dados de referência na origem (seed idempotente + um registro de auditoria).
@@ -104,6 +108,21 @@ WITH s AS (
 INSERT INTO stock_movements (id, stock_item_id, type, quantity, balance_after, reserved_after, material_receipt_line_id)
 SELECT gen_random_uuid(), it.stock_item_id, 'ENTRADA_COMPRA', 3, 3, 0, ln.id FROM it, ln;
 SQL
+# Dados fictícios da Fase 5 (planejamento publicado → tarefa concluída → evento imutável).
+psql "$SOURCE" -q -v ON_ERROR_STOP=1 > /dev/null <<'SQL'
+WITH p AS (
+  INSERT INTO production_plans (id, week_start, status, revision, published_at, updated_at)
+  VALUES (gen_random_uuid(), date '2031-01-06' + 7 * (random() * 5000)::int, 'PUBLICADO', 1, now(), now())
+  RETURNING id
+), t AS (
+  INSERT INTO production_tasks (id, plan_id, service_order_id, activity, title, assignee_user_id, status, started_at, completed_at, progress_percent, updated_at)
+  SELECT gen_random_uuid(), p.id, so.id, 'PREPARACAO', 'Preparação backup', u.id, 'CONCLUIDA', now(), now(), 100, now()
+  FROM p, users u, (SELECT id FROM service_orders ORDER BY created_at DESC LIMIT 1) so
+  WHERE u.email = 'backup@teste.local' RETURNING id
+)
+INSERT INTO production_task_events (id, task_id, kind, from_status, to_status)
+SELECT gen_random_uuid(), t.id, 'CONCLUIDA', 'EM_EXECUCAO', 'CONCLUIDA' FROM t;
+SQL
 
 DATABASE_URL="$SOURCE" STORAGE_DIR="$WORK/none" BACKUP_RETENTION_DAYS=0 bash scripts/backup.sh "$WORK/out" > /dev/null
 DIR="$(ls -d "$WORK"/out/cenario-*)"
@@ -126,6 +145,12 @@ if psql "$RESTORE_URL" -qc "DELETE FROM stock_movements" > /dev/null 2>&1; then
 fi
 if psql "$RESTORE_URL" -qc "UPDATE stock_items SET on_hand = -1" > /dev/null 2>&1; then
   echo "✖ Restrição de estoque não negativo ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "DELETE FROM production_task_events" > /dev/null 2>&1; then
+  echo "✖ Trigger de imutabilidade do histórico de tarefas ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "UPDATE production_tasks SET progress_percent = 150" > /dev/null 2>&1; then
+  echo "✖ Restrição de progresso das tarefas ausente no banco restaurado" >&2; exit 1
 fi
 if psql "$RESTORE_URL" -qc "DELETE FROM measurement_revisions" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade do histórico de medições ausente no banco restaurado" >&2; exit 1

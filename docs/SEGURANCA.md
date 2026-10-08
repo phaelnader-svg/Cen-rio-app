@@ -98,6 +98,21 @@
 - Operações de recebimento, reserva, estorno, ajuste, transferência, criação e confirmação de
   pedido são idempotentes e usam bloqueio de linha; o banco impede estoque negativo.
 
+### Produção (Fase 5)
+
+| Ação                                                                                                                    | Quem pode                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Ver planejamentos, quadro de produção, modelos e tarefas de todos                                                       | `producao.ver` (ou `producao.planejar`)                                                     |
+| Criar/publicar planejamento; alterar responsável, horário, prioridade, dependências; bloquear, cancelar; editar modelos | `producao.planejar` (crítica) — padrão: só o Gestor                                         |
+| Ver as próprias tarefas e iniciar, registrar andamento, pausar, retomar e concluir                                      | `producao.executar` (tapeceiro, cabeceiras/qualidade, ajudante) — **somente o responsável** |
+
+- Toda ação de execução confere no servidor que a tarefa é do usuário autenticado (403 caso
+  contrário); ninguém altera a tarefa de outra pessoa, nem o gestor executa pelo funcionário.
+- O detalhe da tarefa no tablet não traz valores, condições de pagamento nem preços (testado).
+- O responsável por uma tarefa publicada pode ver as fotos da OS correspondente.
+- Início e conclusão são idempotentes (`Idempotency-Key`) e usam bloqueio de linha; histórico de
+  tarefas e revisões de planejamento são imutáveis (triggers).
+
 ## Proteções de requisição
 
 - **CSRF / WebSocket entre sites:** métodos que alteram estado e o upgrade do WebSocket exigem

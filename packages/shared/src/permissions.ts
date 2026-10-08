@@ -20,6 +20,7 @@ export const PERMISSION_GROUPS = {
   logistica: 'Retiradas e recebimentos',
   servicos: 'Ordens de serviço',
   compras: 'Compras e estoque',
+  producao: 'Produção',
   sistema: 'Sistema',
 } as const;
 
@@ -222,6 +223,24 @@ export const PERMISSIONS = {
       'Estornar recebimentos de materiais e transferir sobras de tecido entre OS (gestor).',
     critical: true,
   },
+  'producao.ver': {
+    group: 'producao',
+    label: 'Ver produção',
+    description: 'Consultar o planejamento semanal, o quadro de produção e as tarefas de todos.',
+  },
+  'producao.planejar': {
+    group: 'producao',
+    label: 'Planejar e reprogramar produção',
+    description:
+      'Criar e publicar o planejamento semanal, definir responsáveis, prioridades, horários e dependências, bloquear e cancelar tarefas (gestor).',
+    critical: true,
+  },
+  'producao.executar': {
+    group: 'producao',
+    label: 'Executar tarefas de produção',
+    description:
+      'Ver as próprias tarefas e a OS correspondente; iniciar, pausar, retomar, registrar andamento e concluir as próprias tarefas.',
+  },
   'auditoria.ver': {
     group: 'sistema',
     label: 'Ver auditoria',
@@ -271,7 +290,7 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     name: 'Tapeceiro',
     description: 'Corte, costura e montagem. Cada sofá tem um tapeceiro principal.',
     system: true,
-    permissions: ['producao.acessar', 'sincronizacao.diagnosticar'],
+    permissions: ['producao.acessar', 'producao.executar', 'sincronizacao.diagnosticar'],
   },
   {
     key: 'cabeceiras_qualidade',
@@ -279,14 +298,14 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     description:
       'Fabricação de cabeceiras, reparos, preparação, instalações e inspeção final de qualidade.',
     system: true,
-    permissions: ['producao.acessar', 'sincronizacao.diagnosticar'],
+    permissions: ['producao.acessar', 'producao.executar', 'sincronizacao.diagnosticar'],
   },
   {
     key: 'ajudante',
     name: 'Ajudante',
     description: 'Desmontagem, preparação e apoio à produção.',
     system: true,
-    permissions: ['producao.acessar', 'sincronizacao.diagnosticar'],
+    permissions: ['producao.acessar', 'producao.executar', 'sincronizacao.diagnosticar'],
   },
 ];
 

@@ -3,11 +3,12 @@
 Sistema de gestão de produção da **Cenário Estofados** — painel administrativo do gestor e
 interface de produção para os tablets da oficina, sincronizados em tempo real.
 
-> **Status: Fase 4 concluída.** Fase 1 (fundação), Fase 2 (clientes, pedidos, retiradas,
-> recebimento de peças e OS), Fase 3 (medições e solicitações de materiais) e Fase 4 (compras,
-> fornecedores, recebimento de materiais, estoque híbrido, sobras e prontidão de materiais).
-> Programação semanal, produção, central de atenção, qualidade, entregas e presença são das
-> próximas fases e aparecem como indisponíveis.
+> **Status: Fase 5 concluída.** Fase 1 (fundação), Fase 2 (clientes, pedidos, retiradas,
+> recebimento de peças e OS), Fase 3 (medições e solicitações de materiais), Fase 4 (compras,
+> fornecedores, recebimento de materiais, estoque híbrido, sobras e prontidão de materiais) e
+> Fase 5 (planejamento semanal, modelos de produção, motor de liberação de tarefas e "Minhas
+> tarefas" nos tablets). Central de atenção, qualidade, entregas e presença são das próximas
+> fases e aparecem como indisponíveis.
 
 ## Documentação
 
@@ -20,6 +21,7 @@ interface de produção para os tablets da oficina, sincronizados em tempo real.
 | [docs/FASE-2-RELATORIO.md](docs/FASE-2-RELATORIO.md) | Entregáveis da Fase 2, APIs, testes executados e pendências   |
 | [docs/FASE-3-RELATORIO.md](docs/FASE-3-RELATORIO.md) | Entregáveis da Fase 3, APIs, testes executados e pendências   |
 | [docs/FASE-4-RELATORIO.md](docs/FASE-4-RELATORIO.md) | Entregáveis da Fase 4, APIs, testes executados e pendências   |
+| [docs/FASE-5-RELATORIO.md](docs/FASE-5-RELATORIO.md) | Entregáveis da Fase 5, APIs, testes executados e pendências   |
 
 ## Requisitos
 
