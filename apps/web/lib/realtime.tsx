@@ -71,6 +71,28 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
       ['service-order'],
     );
   }
+  // Fase 4 — compras, recebimento, estoque e prontidão
+  const purchasing = [
+    ['needs'],
+    ['purchase-orders'],
+    ['purchase-order'],
+    ['pending-receipts'],
+    ['stock-items'],
+    ['stock-movements'],
+    ['stock-reservations'],
+    ['leftovers'],
+    ['readiness'],
+    ['os-readiness'],
+    ['service-order'],
+  ];
+  if (
+    ['supplier.', 'purchase_order.', 'material.', 'material_receipt.', 'stock.', 'leftover.'].some(
+      (p) => t.startsWith(p),
+    )
+  )
+    keys.push(['suppliers'], ...purchasing);
+  if (t.startsWith('measurement.') || t.startsWith('material_request.'))
+    keys.push(['needs'], ['readiness'], ['os-readiness']);
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }
 

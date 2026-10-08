@@ -1,3 +1,4 @@
+import type { MaterialReadiness } from './purchasing-domain';
 import type {
   AttachmentEntity,
   CustomerKind,
@@ -219,6 +220,8 @@ export interface ServiceOrderReadinessDto {
   measurements: ReadinessState;
   technicalLead: ReadinessState;
   materials: ReadinessState;
+  /** Prontidão detalhada de materiais (Fase 4). */
+  materialsState: MaterialReadiness;
   scheduling: ReadinessState;
   /** Sempre false nesta fase: a produção só começa pela programação (fases futuras). */
   canStartProduction: false;

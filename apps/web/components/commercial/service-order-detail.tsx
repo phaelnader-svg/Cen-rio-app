@@ -15,6 +15,7 @@ import {
   MATERIAL_KIND_LABEL,
   MATERIAL_SOURCINGS,
   MATERIAL_SOURCING_LABEL,
+  MATERIAL_READINESS_LABEL,
   MATERIAL_UNIT_LABEL,
   MEASUREMENT_KIND_LABEL,
   PIECE_TYPE_LABEL,
@@ -41,6 +42,7 @@ import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { useEmployees } from '@/lib/queries';
 import { CreateMeasurementDialog } from '@/components/measurements/create-dialog';
+import { OsMaterialsOverview } from '@/components/purchasing/os-materials';
 import { MeasurementList } from '@/components/measurements/measurements-page';
 import { useMeasurements } from '@/lib/measurements';
 import { PriorityBadge, ServiceOrderStatusBadge } from './badges';
@@ -259,7 +261,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 <ReadinessRow
                   label="Materiais"
                   state={s.readiness.materials}
-                  hint="Compras e estoque — próxima fase. A chegada de material não antecipa a produção."
+                  hint={`${MATERIAL_READINESS_LABEL[s.readiness.materialsState]} — compras, recebimentos e reservas. Material completo não antecipa a produção.`}
                 />
                 <ReadinessRow
                   label="Programação"
@@ -354,7 +356,14 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           </ul>
         )}
 
-        {tab === 'materiais' && <MaterialsTab so={s} manage={manage} />}
+        {tab === 'materiais' && (
+          <div className="space-y-8">
+            {(can('os.ver') || can('estoque.ver') || can('compras.ver')) && (
+              <OsMaterialsOverview serviceOrderId={s.id} />
+            )}
+            <MaterialsTab so={s} manage={manage} />
+          </div>
+        )}
 
         {tab === 'fotos' && (
           <Section title="Fotografias da OS">
@@ -892,11 +901,10 @@ function MaterialsTab({ so, manage }: { so: ServiceOrderDto; manage: boolean }) 
   });
   return (
     <div className="space-y-6">
-      <Alert tone="info" title="Materiais da OS">
-        Materiais aprovados vêm das medições conferidas pelo gestor (aprovado para compra não
-        significa comprado nem recebido). Compras, estoque e conferência de chegada serão liberados
-        na próxima fase. Tecidos são sempre comprados especificamente para a OS; a chegada de
-        materiais não antecipa a programação.
+      <Alert tone="info" title="Solicitações e previsões">
+        Materiais aprovados vêm das medições conferidas pelo gestor e seguem para Compras. Tecidos
+        são sempre comprados especificamente para a OS; a chegada de materiais não antecipa a
+        programação.
       </Alert>
       {canSeeMeasurements && (
         <div>
@@ -908,7 +916,7 @@ function MaterialsTab({ so, manage }: { so: ServiceOrderDto; manage: boolean }) 
           )}
         </div>
       )}
-      <Section title="Materiais previstos" bodyClassName="p-0">
+      <Section title="Solicitados e previstos" bodyClassName="p-0">
         {so.materials.length === 0 ? (
           <EmptyState title="Nenhum material previsto" />
         ) : (

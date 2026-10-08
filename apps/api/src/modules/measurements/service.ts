@@ -19,6 +19,7 @@ import { appendEvent } from '../../core/events/append';
 import { loadUserPermissions } from '../../core/permissions';
 import { Errors } from '../../lib/errors';
 import { dateOnly, serviceOrderCode, toCustomerSummary } from '../commercial/common';
+import { refreshReadiness } from '../purchasing/common';
 
 export const MANAGER_PERMS: Permission[] = [
   'medicoes.gerenciar',
@@ -269,6 +270,8 @@ export async function record(
     where: { id: m.id },
     include: { request: true },
   });
+  // Fase 4: medições e aprovações mudam a prontidão de materiais da OS.
+  await refreshReadiness(tx, actor, [current.serviceOrderId]);
   await appendEvent(tx, actor, {
     type: entry.event,
     aggregateType: 'measurement',

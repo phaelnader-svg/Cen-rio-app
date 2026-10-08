@@ -51,6 +51,20 @@ permissão **Executar medições atribuídas** (Funcionários → Editar → Per
 Mudança de regra: o registro direto de medidas na OS passa a ser exclusivo do painel com
 `os.gerenciar`; tapeceiros medem pela área **Medições atribuídas** do tablet.
 
+## Atualização da Fase 3 para a Fase 4
+
+A migration `20261009000000_compras_estoque` é aditiva: cria fornecedores, pedidos de compra,
+recebimentos de materiais, estornos, estoque (catálogo, movimentações, reservas) e sobras; acrescenta
+`service_orders.materials_readiness` (padrão `SEM_LEVANTAMENTO`; o valor exibido é sempre
+recalculado) e concede ao Gestor `compras.*` e `estoque.*`. Nada existente é apagado.
+Procedimento: backup (`pnpm backup`) → `pnpm db:migrate` → reiniciar API e web.
+
+Mudanças de regra a comunicar: depois de existir compra, reserva ou transferência ligada a uma
+solicitação aprovada, ela não pode mais ser reaberta pela tela de medições (ajuste pelas compras);
+a prontidão "Materiais" da OS deixou de ser "fase futura". Pendência registrada: estorno de
+recebimento **de peças de clientes** (Fase 2) continua não implementado — não confundir com o
+estorno de recebimento de materiais.
+
 ## Backup e restauração
 
 ```bash

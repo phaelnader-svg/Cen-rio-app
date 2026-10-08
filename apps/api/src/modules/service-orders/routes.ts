@@ -22,6 +22,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
+import { readinessOf } from '../purchasing/common';
 import { idParams, toEmployeeSummary } from '../presenters';
 import {
   can,
@@ -68,6 +69,7 @@ export async function loadServiceOrderDto(
   const so = await db.serviceOrder.findUnique({ where: { id }, include: fullInclude });
   if (!so) throw Errors.notFound('Ordem de serviço');
   const measuredCount = so.items.filter((i) => measurementsOf(i.measurements).length > 0).length;
+  const materialsState = (await readinessOf(db, id)).state;
   return {
     id: so.id,
     number: so.number,
@@ -125,7 +127,9 @@ export async function loadServiceOrderDto(
     readiness: {
       measurements: so.items.length > 0 && measuredCount === so.items.length ? 'OK' : 'PENDENTE',
       technicalLead: so.technicalLeadId ? 'OK' : 'PENDENTE',
-      materials: 'FASE_FUTURA',
+      // Fase 4: calculada a partir de solicitações, compras, recebimentos e reservas.
+      materials: materialsState === 'COMPLETO' ? 'OK' : 'PENDENTE',
+      materialsState,
       scheduling: 'FASE_FUTURA',
       canStartProduction: false,
     },

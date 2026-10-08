@@ -43,6 +43,20 @@ export const EVENT_TYPES = {
   MATERIAL_REQUEST_APPROVED: 'material_request.approved',
   MATERIAL_REQUEST_RETURNED: 'material_request.returned',
   MATERIAL_REQUEST_REOPENED: 'material_request.reopened',
+  SUPPLIER_CHANGED: 'supplier.changed',
+  PURCHASE_ORDER_CREATED: 'purchase_order.created',
+  PURCHASE_ORDER_UPDATED: 'purchase_order.updated',
+  PURCHASE_ORDER_CONFIRMED: 'purchase_order.confirmed',
+  PURCHASE_ORDER_CANCELLED: 'purchase_order.cancelled',
+  MATERIAL_PARTIALLY_RECEIVED: 'material.partially_received',
+  MATERIAL_RECEIVED: 'material.received',
+  MATERIAL_RECEIPT_REVERSED: 'material_receipt.reversed',
+  STOCK_RESERVED: 'stock.reserved',
+  STOCK_RELEASED: 'stock.released',
+  STOCK_MOVED: 'stock.moved',
+  MATERIAL_SHORTAGE_DETECTED: 'material.shortage_detected',
+  MATERIAL_READINESS_CHANGED: 'material.readiness_changed',
+  LEFTOVER_CHANGED: 'leftover.changed',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

@@ -9,7 +9,7 @@ import {
   ClipboardCheck,
   Clock3,
   LogOut,
-  PackageSearch,
+  PackageCheck,
   RadioTower,
   Ruler,
 } from 'lucide-react';
@@ -19,9 +19,11 @@ import { SyncPanel } from '@/components/sync-panel';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/misc';
 import { api } from '@/lib/api';
+import { MaterialReceiving } from '@/components/purchasing/material-receiving';
+import { usePendingReceipts } from '@/lib/purchasing';
 import { MyMeasurementDetail, MyMeasurements, useMyOpenCount } from './measurements';
 
-type Screen = 'home' | 'sync' | 'measurements' | 'measurement';
+type Screen = 'home' | 'sync' | 'measurements' | 'measurement' | 'materials';
 
 function useClock(timezone: string) {
   // Renderizado apenas no cliente (após autenticação), sem risco de divergência de hidratação.
@@ -58,11 +60,6 @@ const UPCOMING = [
     text: 'Botões “Cheguei” e “Encerrar expediente”.',
   },
   {
-    icon: PackageSearch,
-    title: 'Materiais',
-    text: 'Conferência de recebimento e falta de materiais.',
-  },
-  {
     icon: AlertOctagon,
     title: 'Ocorrências',
     text: 'Registro de impedimentos para a central de atenção.',
@@ -81,6 +78,7 @@ export function TabletHome({ me }: { me: MeDto }) {
     me.permissions.includes('medicoes.gerenciar');
   const openCount = useMyOpenCount(canMeasure);
   const [measurementId, setMeasurementId] = useState<string | null>(null);
+  const pendingMaterials = usePendingReceipts();
 
   async function logout() {
     setLeaving(true);
@@ -172,6 +170,41 @@ export function TabletHome({ me }: { me: MeDto }) {
                   </button>
                 </li>
               )}
+              <li className="md:col-span-2">
+                <button
+                  type="button"
+                  onClick={() => setScreen('materials')}
+                  data-testid="tile-materials"
+                  className={clsx(
+                    'flex w-full items-center gap-5 rounded-2xl border border-line bg-surface p-6 text-left shadow-[var(--shadow-card)] transition',
+                    'hover:border-brand-200 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]',
+                  )}
+                >
+                  <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-bronze-100 text-bronze-600">
+                    <PackageCheck className="size-8" aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-2xl font-semibold">Recebimento de materiais</span>
+                    <span className="mt-1 block text-base text-ink-muted">
+                      Conferir e registrar tecidos, espumas e materiais que chegaram.
+                    </span>
+                  </span>
+                  {pendingMaterials.data && (
+                    <span
+                      className={clsx(
+                        'grid min-w-14 place-items-center rounded-2xl px-3 py-2 text-2xl font-semibold tabular-nums',
+                        pendingMaterials.data.length
+                          ? 'bg-bronze-600 text-white'
+                          : 'bg-subtle text-ink-muted',
+                      )}
+                      aria-label={`${pendingMaterials.data.length} pedido(s) aguardando chegada`}
+                      data-testid="materials-count"
+                    >
+                      {pendingMaterials.data.length}
+                    </span>
+                  )}
+                </button>
+              </li>
               {UPCOMING.map((m) => (
                 <li key={m.title}>
                   <div
@@ -225,6 +258,12 @@ export function TabletHome({ me }: { me: MeDto }) {
                 setScreen('measurement');
               }}
             />
+          </>
+        ) : screen === 'materials' ? (
+          <>
+            <BackButton label="Voltar ao início" onClick={() => setScreen('home')} />
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Recebimento de materiais</h1>
+            <MaterialReceiving large />
           </>
         ) : screen === 'measurement' && measurementId ? (
           <>

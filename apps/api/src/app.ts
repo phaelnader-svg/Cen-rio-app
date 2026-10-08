@@ -6,7 +6,7 @@ import websocket from '@fastify/websocket';
 import { EVENT_TYPES } from '@cenario/shared';
 import { createPrismaClient, type PrismaClient } from '@cenario/db';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { Env } from './config/env';
 import { appendEvent } from './core/events/append';
 import { EventFeed } from './core/events/feed';
@@ -23,6 +23,11 @@ import { authRoutes } from './modules/auth/routes';
 import { customerRoutes } from './modules/customers/routes';
 import { materialRoutes } from './modules/materials/routes';
 import { measurementRoutes } from './modules/measurements/routes';
+import { leftoverRoutes } from './modules/purchasing/leftovers';
+import { purchaseOrderRoutes } from './modules/purchasing/purchase-orders';
+import { materialReceiptRoutes } from './modules/purchasing/receipts';
+import { stockRoutes } from './modules/purchasing/stock';
+import { supplierRoutes } from './modules/purchasing/suppliers';
 import { orderRoutes } from './modules/orders/routes';
 import { pickupRoutes } from './modules/pickups/routes';
 import { receiptRoutes } from './modules/receipts/routes';
@@ -122,6 +127,15 @@ export async function buildApp(options: BuildOptions): Promise<App> {
     timeWindow: '1 minute',
     // O WebSocket tem controle próprio; limitar o upgrade atrapalharia reconexões.
     allowList: (request) => request.url === '/api/realtime',
+    // Atrás do proxy do Next todos os navegadores chegam do mesmo IP: o limite é por sessão
+    // (cookie de sessão ou de dispositivo), com o IP apenas como alternativa.
+    keyGenerator: (request) => {
+      const c = request.cookies ?? {};
+      const token = c[ctx.cookies.session] ?? c[ctx.cookies.device];
+      return token
+        ? `s:${createHash('sha256').update(token).digest('hex').slice(0, 32)}`
+        : request.ip;
+    },
   });
   await app.register(multipart, {
     limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: 1, fields: 5 },
@@ -153,6 +167,11 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   // Fase 3 — medições e solicitações de materiais
   await app.register(measurementRoutes);
   await app.register(materialRoutes);
+  await app.register(supplierRoutes);
+  await app.register(purchaseOrderRoutes);
+  await app.register(materialReceiptRoutes);
+  await app.register(stockRoutes);
+  await app.register(leftoverRoutes);
 
   // Presença dos tablets: transições online/offline viram eventos persistentes.
   hub.onPresence((deviceId, online) => {

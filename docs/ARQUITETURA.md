@@ -71,6 +71,17 @@ mantendo a mesma origem para o navegador.
 | `modules/measurements` | Medições (rotina de sexta e extraordinárias), atribuição/delegação, rascunho, envio, revisão, aprovação, devolução, reabertura, histórico. |
 | `modules/materials`    | Lista consolidada de materiais aprovados (tela, cópia e CSV) e planejamento de sexta.                                                      |
 
+**Módulos da Fase 4** (rotas em `/api/v1`, pasta `modules/purchasing`):
+
+| Arquivo              | Responsabilidade                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `suppliers.ts`       | Cadastro simples de fornecedores.                                                                                     |
+| `purchase-orders.ts` | Central de compras (necessidades aprovadas), pedidos de compra, confirmação/cancelamento, excedente autorizado.       |
+| `receipts.ts`        | Recebimento de materiais com conferência e divergências, reserva automática na chegada, estorno compensatório.        |
+| `stock.ts`           | Catálogo de materiais comuns, saldos, ajustes, saídas, movimentações e reservas por OS.                               |
+| `leftovers.ts`       | Sobras por OS, transferência autorizada, prontidão de materiais (lista e por OS).                                     |
+| `common.ts`          | Bloqueios, alteração de saldo validada, cálculo do andamento de cada necessidade e da prontidão (`refreshReadiness`). |
+
 Novos módulos entram como novas pastas em `modules/`, novas permissões no catálogo
 `packages/shared/src/permissions.ts` e novos tipos de evento em `packages/shared/src/events.ts`.
 
@@ -123,6 +134,24 @@ Restrições no banco: unidade compatível com o tipo (tecido em metros; espuma 
 ou m²), quantidade > 0 e inteira fora de m/m², tecido sempre `EXCLUSIVO_OS`, motivo obrigatório
 na extraordinária, coerência de cancelamento/conclusão, versões positivas.
 
+**Fase 4** (migration `20261009000000_compras_estoque`, aditiva):
+
+| Tabela                                                            | Finalidade                                                                                                          |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `suppliers`                                                       | Fornecedores (nome, contato, categorias).                                                                           |
+| `purchase_orders`, `purchase_order_items`, `purchase_allocations` | Pedido de compra (`CP-`), itens com preço em centavos e **origem** de cada quantidade (necessidade aprovada da OS). |
+| `purchase_order_history`                                          | Histórico imutável do pedido.                                                                                       |
+| `material_receipts`, `material_receipt_lines`                     | Recebimento (`RM-`) imutável: recebido conforme × com problema, conferência e divergência.                          |
+| `material_receipt_reversals`                                      | Estornos (lançamentos compensatórios) com motivo, responsável e impacto.                                            |
+| `stock_items`, `stock_movements`, `stock_reservations`            | Catálogo de materiais comuns (`MT-`), saldo físico/reservado, movimentações imutáveis e reservas por OS.            |
+| `material_leftovers`, `material_leftover_transfers`               | Sobras da OS de origem e transferências autorizadas (imutáveis).                                                    |
+| `service_orders.materials_readiness`                              | Última prontidão calculada (para detectar mudanças e publicar eventos).                                             |
+
+Restrições no banco: estoque nunca negativo e reservado ≤ físico; tecido não entra no catálogo
+comum e só é comprado como exclusivo da OS; item exclusivo sempre com OS e item de estoque sempre
+com material do catálogo; recebido líquido ≤ pedido + excedente autorizado; inteiros fora de
+m/m²; sinal da movimentação coerente com o tipo; triggers de imutabilidade.
+
 Pedidos, retiradas e OS guardam **cópia** do endereço combinado; números legíveis (`PC-`,
 `RT-`, `RC-`, `OS-`) vêm de sequências do banco (podem ter lacunas após transações desfeitas).
 
@@ -131,7 +160,7 @@ restrições adicionais em SQL (registro único de configurações, e-mails min�
 status×credencial do dispositivo, vínculo sessão×dispositivo, triggers de imutabilidade e de
 notificação de eventos).
 
-Entidades das próximas fases (compras, estoque completo, programação, tarefas, ocorrências, presença,
+Entidades das próximas fases (programação, tarefas, ocorrências, presença,
 qualidade, entregas) **não** foram criadas.
 
 ### Fluxo comercial → oficina (Fase 2)
@@ -182,6 +211,36 @@ Peça recebida (OS aberta) ─► Medição atribuída ─► Em andamento (rasc
   (sempre o tecido) só se somam dentro da mesma OS; materiais comuns de estoque somam entre OS
   por especificação + unidade, preservando a origem (OS, peça, medição) de cada quantidade.
 
+### Compras, recebimento e estoque híbrido (Fase 4)
+
+```
+Necessidade aprovada (Fase 3) ─► Pedido de compra (rascunho → confirmado pelo gestor)
+        │                                   │
+        │          tecido / exclusivo ──────┼──► recebido e conferido = da OS (nunca de outra)
+        │          material comum ──────────┴──► entra no estoque ─► reserva para as OS de origem
+        └────────────────────────────────────────────────► prontidão de materiais da OS
+```
+
+- **Compras** só a partir de necessidades **aprovadas** de OS abertas, sem comprar mais que o
+  aprovado (bloqueio das necessidades). Tecido/exclusivo: uma OS por linha. Materiais comuns:
+  uma linha consolidada com várias origens; o material do catálogo é localizado (ou criado) pela
+  especificação.
+- **Recebimento** por qualquer funcionário (painel ou tablet), sem preços: só o recebido
+  conforme e conferido conta; o restante vira divergência. Acima do pedido só com excedente
+  autorizado pelo gestor. Bloqueio do pedido e dos itens impede recebimento duplicado.
+- **Estoque**: `changeStock` altera saldo físico/reservado de um material bloqueado e grava a
+  movimentação; duas OS nunca reservam a mesma quantidade. Ao receber uma compra consolidada, o
+  que entrou é reservado para as OS de origem (na ordem das origens).
+- **Estorno**: lançamento compensatório (o recebimento original não muda); recusado se deixaria
+  o estoque negativo ou abaixo do reservado.
+- **Prontidão** (`readinessOf`/`refreshReadiness`): calculada a partir de medições abertas,
+  solicitações pendentes, compras confirmadas, recebidos conformes, reservas e transferências —
+  nunca marcada à mão. Recalculada na mesma transação de cada alteração relevante (inclusive
+  medições/aprovações da Fase 3); a mudança publica `material.readiness_changed`.
+  `canStartProduction` continua `false` e não existe rota de início de produção.
+- **Sobras** ficam na OS de origem; transferência só com `estoque.autorizar`, motivo e
+  especificação compatível (tecido de outra referência/cor é recusado).
+
 ## 4. Eventos, concorrência e tempo real
 
 **Gravação (outbox).** Toda alteração relevante grava, na mesma transação: os dados, a
@@ -203,6 +262,11 @@ Eventos da Fase 3 (`measurement.assigned/started/updated/completed/cancelled`,
 `material_request.submitted/in_review/revised/approved/returned/reopened`) vão para a gestão
 (`medicoes.gerenciar`, `materiais.ver`, `materiais.aprovar`) **e** para o usuário responsável
 (`user:<id>`) — o tablet de outro tapeceiro não os recebe.
+Eventos da Fase 4: `purchase_order.confirmed/cancelled`, `material.received`,
+`material.partially_received`, `material_receipt.reversed` vão para todos (os tablets mostram os
+pedidos a receber); `supplier.changed`, `purchase_order.created/updated`, `stock.*`,
+`leftover.changed`, `material.shortage_detected` (estoque mínimo ou divergência) e
+`material.readiness_changed` vão para a gestão. Nenhum payload leva preços.
 
 **Reconexão e reconciliação.**
 
@@ -247,6 +311,11 @@ são usadas como garantia de execução.
   `/painel/planejamento` (checklist de sexta) e `/painel/materiais` (lista consolidada, cópia,
   CSV). No tablet, a área **Medições atribuídas** usa o mesmo editor em etapas
   (`components/measurements/measurement-editor.tsx`) em modo ampliado.
+- Fase 4: `/painel/compras` (a comprar e pedidos), `/painel/compras/novo`,
+  `/painel/compras/[id]`, `/painel/fornecedores`, `/painel/recebimento-materiais`,
+  `/painel/estoque` (materiais, movimentações, reservas, sobras), `/painel/prontidao` e a aba
+  Materiais da OS. No tablet, **Recebimento de materiais** usa o mesmo componente
+  (`components/purchasing/material-receiving.tsx`) em modo ampliado.
 - PWA: `manifest.webmanifest` (início em `/tablet`), service worker que **nunca** guarda
   respostas da API e mostra página offline quando não há rede.
 - Permissões no frontend só escondem elementos; o servidor sempre decide.

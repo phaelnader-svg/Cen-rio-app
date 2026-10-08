@@ -1,22 +1,24 @@
 'use client';
 
-import type { ConsolidatedLine } from '@cenario/shared';
+import type { ConsolidatedLine, PurchaseNeedDto } from '@cenario/shared';
 import {
   MATERIAL_KIND_LABEL,
   MATERIAL_UNIT_LABEL,
+  consolidateMaterials,
   describeMaterial,
   formatQuantity,
 } from '@cenario/shared';
 import clsx from 'clsx';
 import { CheckCircle2, Circle, Clock3 } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Section } from '@/components/commercial/section';
 import { Input } from '@/components/ui/field';
-import { Alert, Badge, Card, PageHeader, Spinner } from '@/components/ui/misc';
+import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { addDays, formatDay, todayIso } from '@/lib/commercial';
-import { useMe } from '@/lib/hooks';
+import { useCan, useMe } from '@/lib/hooks';
 import { usePlanning } from '@/lib/measurements';
+import { useNeeds } from '@/lib/purchasing';
 import { MeasurementList } from './measurements-page';
 
 type CheckState = 'ok' | 'pending' | 'future';
@@ -65,6 +67,35 @@ function CheckItem({
   );
 }
 
+/** Comprado/recebido por linha consolidada (mesma chave da consolidação da Fase 3). */
+function purchaseProgress(needs: PurchaseNeedDto[]) {
+  const input = (field: 'purchased' | 'received') =>
+    needs.map((n) => ({
+      kind: n.kind,
+      sourcing: n.sourcing,
+      description: n.description,
+      color: n.color,
+      reference: n.reference,
+      foamDensity: n.foamDensity,
+      thicknessCm: n.thicknessCm,
+      lengthCm: n.lengthCm,
+      widthCm: n.widthCm,
+      unit: n.unit,
+      quantity: n[field],
+      serviceOrder: { id: n.serviceOrder.id, code: n.serviceOrder.code },
+      itemCode: n.itemCode,
+      measurementCode: null,
+    }));
+  const out = new Map<string, { purchased: number; received: number }>();
+  for (const l of consolidateMaterials(input('purchased')))
+    out.set(l.key, { purchased: l.totalQuantity, received: 0 });
+  for (const l of consolidateMaterials(input('received'))) {
+    const cur = out.get(l.key) ?? { purchased: 0, received: 0 };
+    out.set(l.key, { ...cur, received: l.totalQuantity });
+  }
+  return out;
+}
+
 interface MaterialRow {
   line: ConsolidatedLine;
   requested: number | null;
@@ -90,6 +121,15 @@ export function PlanningPage() {
   const [to, setTo] = useState('');
   const plan = usePlanning(from || undefined, to || undefined);
   const period = plan.data?.period;
+  // Fase 4: comprado e recebido vêm dos pedidos de compra reais (sem estados fictícios).
+  const can = useCan();
+  const canBuy = can('compras.ver');
+  const needs = useNeeds(false, canBuy);
+  const progress = useMemo(() => purchaseProgress(needs.data ?? []), [needs.data]);
+  const toBuy = (needs.data ?? []).filter((n) => n.pendingToBuy > 0).length;
+  const toReceive = (needs.data ?? []).filter(
+    (n) => n.pendingToBuy <= 0 && n.received < n.purchased,
+  ).length;
 
   return (
     <>
@@ -198,9 +238,16 @@ export function PlanningPage() {
               />
               <CheckItem
                 testId="check-purchase"
-                state="future"
+                state={!canBuy ? 'future' : toBuy || toReceive ? 'pending' : 'ok'}
                 title="Compra e recebimento dos materiais"
-                detail="Disponível na Fase 4 (compras e estoque)."
+                detail={
+                  !canBuy
+                    ? 'Sem acesso à central de compras.'
+                    : toBuy || toReceive
+                      ? `${toBuy} material(is) a comprar · ${toReceive} aguardando chegada`
+                      : 'Tudo comprado e recebido'
+                }
+                href={canBuy ? '/painel/compras' : undefined}
               />
             </ul>
           </Section>
@@ -208,6 +255,7 @@ export function PlanningPage() {
           <Section title="Materiais das OS abertas" bodyClassName="p-0">
             <PlanningMaterials
               rows={mergeLines(plan.data.materials.requested, plan.data.materials.approved)}
+              progress={canBuy ? progress : null}
             />
           </Section>
           {plan.data.awaitingApproval.length > 0 && (
@@ -228,7 +276,13 @@ export function PlanningPage() {
   );
 }
 
-function PlanningMaterials({ rows }: { rows: MaterialRow[] }) {
+function PlanningMaterials({
+  rows,
+  progress,
+}: {
+  rows: MaterialRow[];
+  progress: Map<string, { purchased: number; received: number }> | null;
+}) {
   if (rows.length === 0)
     return <p className="p-5 text-sm text-ink-muted">Nenhum material solicitado ou aprovado.</p>;
   const qty = (v: number | null, unit: ConsolidatedLine['unit']) =>
@@ -263,11 +317,15 @@ function PlanningMaterials({ rows }: { rows: MaterialRow[] }) {
               <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
                 {qty(approved, line.unit)}
               </td>
-              <td className="px-4 py-2.5 text-right">
-                <Badge>Fase 4</Badge>
+              <td className="px-4 py-2.5 text-right tabular-nums">
+                {progress
+                  ? qty(progress.get(line.key)?.purchased ?? 0, line.unit)
+                  : qty(null, line.unit)}
               </td>
-              <td className="px-4 py-2.5 text-right">
-                <Badge>Fase 4</Badge>
+              <td className="px-4 py-2.5 text-right tabular-nums">
+                {progress
+                  ? qty(progress.get(line.key)?.received ?? 0, line.unit)
+                  : qty(null, line.unit)}
               </td>
             </tr>
           ))}
@@ -275,8 +333,8 @@ function PlanningMaterials({ rows }: { rows: MaterialRow[] }) {
       </table>
       <p className="border-t border-line px-4 py-2.5 text-xs text-ink-muted">
         “Solicitado” = enviado e ainda em conferência. “Aprovado” = quantidades conferidas pelo
-        gestor (não significa comprado nem recebido). Compra e recebimento serão registrados na Fase
-        4.
+        gestor (não significa comprado nem recebido). “Comprado” = pedidos confirmados; “Recebido” =
+        chegada conferida (Compras e Recebimento de materiais).
       </p>
     </div>
   );

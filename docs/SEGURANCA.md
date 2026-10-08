@@ -78,6 +78,26 @@
 - Criação e aprovação exigem `Idempotency-Key`; todas as mudanças usam `version` e bloqueio de
   linha (decisões simultâneas: só uma vence, as outras recebem 409).
 
+### Compras, estoque e recebimento (Fase 4)
+
+| Ação                                                              | Quem pode                                                                    |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Ver central de compras, pedidos, **preços** e fornecedores        | `compras.ver` (também `compras.gerenciar`/`compras.aprovar` acessam a lista) |
+| Cadastrar fornecedores, montar pedidos (rascunho) e preços        | `compras.gerenciar` (crítica)                                                |
+| Confirmar/cancelar pedidos, autorizar recebimento acima do pedido | `compras.aprovar` (crítica) — padrão: só o Gestor                            |
+| Registrar recebimento de materiais                                | **qualquer funcionário autenticado** (painel ou tablet), sem acesso a preços |
+| Ver estoque, movimentações, reservas, sobras e prontidão          | `estoque.ver` (prontidão também com `os.ver`/`compras.ver`)                  |
+| Catálogo, ajustes, saídas, reservas e registro de sobras          | `estoque.gerenciar` (crítica)                                                |
+| Estornar recebimentos e transferir sobras entre OS                | `estoque.autorizar` (crítica) — padrão: só o Gestor                          |
+
+- A lista de pedidos a receber (`/material-receipts/pending`) e o recebimento devolvem só
+  especificação e quantidades — nunca preços, totais ou condições (testado).
+- Preços nos DTOs só aparecem com `compras.ver`; eventos de tempo real não carregam valores.
+- Recebimentos, estornos, movimentações, transferências e histórico de compras são imutáveis
+  (triggers); correções somente por lançamento compensatório.
+- Operações de recebimento, reserva, estorno, ajuste, transferência, criação e confirmação de
+  pedido são idempotentes e usam bloqueio de linha; o banco impede estoque negativo.
+
 ## Proteções de requisição
 
 - **CSRF / WebSocket entre sites:** métodos que alteram estado e o upgrade do WebSocket exigem

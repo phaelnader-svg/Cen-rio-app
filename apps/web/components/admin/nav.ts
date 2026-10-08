@@ -1,6 +1,11 @@
 import type { Permission } from '@cenario/shared';
 import {
+  Boxes,
   Building2,
+  ListChecks,
+  PackagePlus,
+  ShoppingCart,
+  Store,
   Contact,
   PackageCheck,
   PackageOpen,
@@ -12,7 +17,6 @@ import {
   FileSignature,
   Hammer,
   LayoutDashboard,
-  PackageSearch,
   RadioTower,
   ScrollText,
   ShieldCheck,
@@ -79,6 +83,31 @@ export const NAV: NavItem[] = [
     icon: Layers,
     anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
   },
+  {
+    href: '/painel/compras',
+    label: 'Compras',
+    icon: ShoppingCart,
+    anyOf: ['compras.ver', 'compras.gerenciar', 'compras.aprovar'],
+  },
+  {
+    href: '/painel/fornecedores',
+    label: 'Fornecedores',
+    icon: Store,
+    anyOf: ['compras.ver', 'compras.gerenciar'],
+  },
+  { href: '/painel/recebimento-materiais', label: 'Recebimento de materiais', icon: PackagePlus },
+  {
+    href: '/painel/estoque',
+    label: 'Estoque',
+    icon: Boxes,
+    anyOf: ['estoque.ver', 'estoque.gerenciar', 'compras.ver'],
+  },
+  {
+    href: '/painel/prontidao',
+    label: 'Prontidão de materiais',
+    icon: ListChecks,
+    anyOf: ['os.ver', 'estoque.ver', 'compras.ver', 'materiais.ver'],
+  },
   { href: '/painel/empresa', label: 'Empresa', icon: Building2, anyOf: ['empresa.ver'] },
   { href: '/painel/auditoria', label: 'Auditoria', icon: ScrollText, anyOf: ['auditoria.ver'] },
   {
@@ -91,7 +120,6 @@ export const NAV: NavItem[] = [
 
 /** Módulos das próximas fases: exibidos como indisponíveis (sem link). */
 export const UPCOMING: { label: string; icon: LucideIcon }[] = [
-  { label: 'Compras e estoque', icon: PackageSearch },
   { label: 'Programação semanal', icon: CalendarRange },
   { label: 'Produção', icon: Hammer },
   { label: 'Central de atenção', icon: Siren },

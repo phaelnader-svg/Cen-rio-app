@@ -836,6 +836,23 @@ export async function measurementRoutes(app: FastifyInstance) {
       return decision(request, id, input.version, async (tx, m) => {
         if (m.request!.status !== 'APROVADA')
           throw Errors.business('Só solicitações aprovadas podem ser reabertas.');
+        // Fase 4: depois de comprar/reservar, a aprovação não pode mais ser desfeita aqui.
+        const itemIds = m.request!.items.map((i) => i.id);
+        const linked = await tx.materialRequirement.count({
+          where: {
+            materialRequestItemId: { in: itemIds },
+            OR: [
+              { allocations: { some: {} } },
+              { reservations: { some: {} } },
+              { transfersIn: { some: {} } },
+            ],
+          },
+        });
+        if (linked > 0) {
+          throw Errors.business(
+            'Há compras, reservas ou transferências vinculadas a estes materiais; a aprovação não pode ser reaberta. Ajuste pelas compras.',
+          );
+        }
         const removed = await tx.materialRequirement.deleteMany({
           where: { materialRequestItemId: { in: m.request!.items.map((i) => i.id) } },
         });

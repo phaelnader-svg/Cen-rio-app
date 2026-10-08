@@ -62,6 +62,18 @@ model User {
   measurementRevisions  MeasurementRevision[]
   reviewedRequests      MaterialRequest[]     @relation("MaterialRequestReviewedBy")
 
+  stockMovements          StockMovement[]            @relation("StockMovementActor")
+  createdReservations     StockReservation[]         @relation("ReservationCreatedBy")
+  closedReservations      StockReservation[]         @relation("ReservationClosedBy")
+  createdPurchaseOrders   PurchaseOrder[]            @relation("PurchaseOrderCreatedBy")
+  confirmedPurchaseOrders PurchaseOrder[]            @relation("PurchaseOrderConfirmedBy")
+  cancelledPurchaseOrders PurchaseOrder[]            @relation("PurchaseOrderCancelledBy")
+  purchaseOrderHistory    PurchaseOrderHistory[]     @relation("PurchaseOrderHistoryActor")
+  materialReceipts        MaterialReceipt[]          @relation("MaterialReceiptReceivedBy")
+  receiptReversals        MaterialReceiptReversal[]  @relation("ReceiptReversalAuthorizedBy")
+  createdLeftovers        MaterialLeftover[]         @relation("LeftoverCreatedBy")
+  authorizedLeftoverMoves MaterialLeftoverTransfer[] @relation("LeftoverTransferAuthorizedBy")
+
   @@map("users")
 }
 
@@ -741,6 +753,18 @@ model ServiceOrder {
   materials     MaterialRequirement[]
   measurements  Measurement[]
 
+  // Fase 4: prontidão de materiais (calculada a partir dos registros; não libera produção).
+  materialsReadiness   MaterialReadiness @default(SEM_LEVANTAMENTO) @map("materials_readiness")
+  materialsReadinessAt DateTime?         @map("materials_readiness_at") @db.Timestamptz(3)
+
+  stockMovements      StockMovement[]
+  stockReservations   StockReservation[]
+  purchaseItems       PurchaseOrderItem[]
+  purchaseAllocations PurchaseAllocation[]
+  leftovers           MaterialLeftover[]
+  leftoversOut        MaterialLeftoverTransfer[] @relation("LeftoverTransferFrom")
+  leftoversIn         MaterialLeftoverTransfer[] @relation("LeftoverTransferTo")
+
   @@index([orderId])
   @@index([customerId])
   @@index([status])
@@ -846,9 +870,12 @@ model MaterialRequirement {
   widthCm               Decimal?                  @map("width_cm") @db.Decimal(8, 2)
   approvedAt            DateTime?                 @map("approved_at") @db.Timestamptz(3)
 
-  serviceOrder        ServiceOrder         @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
-  serviceOrderItem    ServiceOrderItem?    @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
-  materialRequestItem MaterialRequestItem? @relation(fields: [materialRequestItemId], references: [id], onDelete: Restrict)
+  serviceOrder        ServiceOrder               @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  serviceOrderItem    ServiceOrderItem?          @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  materialRequestItem MaterialRequestItem?       @relation(fields: [materialRequestItemId], references: [id], onDelete: Restrict)
+  allocations         PurchaseAllocation[]
+  reservations        StockReservation[]
+  transfersIn         MaterialLeftoverTransfer[]
 
   @@index([serviceOrderId])
   @@map("material_requirements")
@@ -1040,4 +1067,386 @@ model MeasurementRevision {
 
   @@index([measurementId, createdAt])
   @@map("measurement_revisions")
+}
+
+// ─────────────────────────── Fase 4: compras, recebimento e estoque ───────────────────────────
+
+enum PurchaseOrderStatus {
+  RASCUNHO
+  CONFIRMADO
+  PARCIALMENTE_RECEBIDO
+  RECEBIDO
+  CANCELADO
+
+  @@map("purchase_order_status")
+}
+
+enum ReceiptIssue {
+  INCORRETO
+  DANIFICADO
+  INCOMPLETO
+  OUTRO
+
+  @@map("receipt_issue")
+}
+
+enum StockMovementType {
+  ENTRADA_COMPRA
+  ESTORNO_RECEBIMENTO
+  SAIDA_OS
+  AJUSTE_ENTRADA
+  AJUSTE_SAIDA
+
+  @@map("stock_movement_type")
+}
+
+enum ReservationStatus {
+  ATIVA
+  CONSUMIDA
+  LIBERADA
+
+  @@map("reservation_status")
+}
+
+enum LeftoverCondition {
+  BOA
+  AVARIADA
+
+  @@map("leftover_condition")
+}
+
+enum LeftoverStatus {
+  DISPONIVEL
+  ESGOTADA
+  DESCARTADA
+
+  @@map("leftover_status")
+}
+
+enum MaterialReadiness {
+  SEM_LEVANTAMENTO
+  AGUARDANDO_APROVACAO
+  AGUARDANDO_COMPRA
+  AGUARDANDO_RECEBIMENTO
+  PARCIALMENTE_DISPONIVEL
+  COMPLETO
+  COM_DIVERGENCIA
+
+  @@map("material_readiness")
+}
+
+/// Fornecedor (cadastro simples; sem contratos nem avaliações).
+model Supplier {
+  id          String         @id @default(uuid()) @db.Uuid
+  name        String         @db.VarChar(160)
+  contactName String?        @map("contact_name") @db.VarChar(120)
+  phone       String?        @db.VarChar(30)
+  email       String?        @db.VarChar(160)
+  address     String?        @db.VarChar(300)
+  categories  MaterialKind[]
+  notes       String?        @db.VarChar(1000)
+  active      Boolean        @default(true)
+  version     Int            @default(1)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  purchaseOrders PurchaseOrder[]
+
+  @@index([name])
+  @@map("suppliers")
+}
+
+/// Material comum do catálogo (espumas, MDF, ferragens…), com saldo físico e reservado.
+/// Tecido não entra no estoque comum: é sempre da OS que o comprou.
+model StockItem {
+  id          String       @id @default(uuid()) @db.Uuid
+  number      Int          @unique @default(autoincrement())
+  kind        MaterialKind
+  description String       @db.VarChar(160)
+  foamDensity String?      @map("foam_density") @db.VarChar(30)
+  thicknessCm Decimal?     @map("thickness_cm") @db.Decimal(8, 2)
+  lengthCm    Decimal?     @map("length_cm") @db.Decimal(8, 2)
+  widthCm     Decimal?     @map("width_cm") @db.Decimal(8, 2)
+  unit        MaterialUnit
+  /// Especificação normalizada: impede dois cadastros do mesmo material.
+  specKey     String       @unique @map("spec_key") @db.VarChar(400)
+  onHand      Decimal      @default(0) @map("on_hand") @db.Decimal(12, 3)
+  reserved    Decimal      @default(0) @db.Decimal(12, 3)
+  minQuantity Decimal?     @map("min_quantity") @db.Decimal(12, 3)
+  location    String?      @db.VarChar(120)
+  notes       String?      @db.VarChar(500)
+  active      Boolean      @default(true)
+  version     Int          @default(1)
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  movements     StockMovement[]
+  reservations  StockReservation[]
+  purchaseItems PurchaseOrderItem[]
+
+  @@map("stock_items")
+}
+
+/// Movimentação de estoque (imutável). `quantity` com sinal; saldo após o lançamento.
+model StockMovement {
+  id                    String            @id @default(uuid()) @db.Uuid
+  stockItemId           String            @map("stock_item_id") @db.Uuid
+  type                  StockMovementType
+  quantity              Decimal           @db.Decimal(12, 3)
+  balanceAfter          Decimal           @map("balance_after") @db.Decimal(12, 3)
+  reservedAfter         Decimal           @map("reserved_after") @db.Decimal(12, 3)
+  serviceOrderId        String?           @map("service_order_id") @db.Uuid
+  materialReceiptLineId String?           @map("material_receipt_line_id") @db.Uuid
+  reservationId         String?           @map("reservation_id") @db.Uuid
+  reason                String?           @db.VarChar(500)
+  actorId               String?           @map("actor_id") @db.Uuid
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  stockItem    StockItem            @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+  serviceOrder ServiceOrder?        @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  receiptLine  MaterialReceiptLine? @relation(fields: [materialReceiptLineId], references: [id], onDelete: Restrict)
+  reservation  StockReservation?    @relation(fields: [reservationId], references: [id], onDelete: Restrict)
+  actor        User?                @relation("StockMovementActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([stockItemId, createdAt])
+  @@index([serviceOrderId])
+  @@map("stock_movements")
+}
+
+/// Reserva de material comum para uma OS (impede que duas OS usem a mesma quantidade).
+model StockReservation {
+  id                    String            @id @default(uuid()) @db.Uuid
+  stockItemId           String            @map("stock_item_id") @db.Uuid
+  serviceOrderId        String            @map("service_order_id") @db.Uuid
+  materialRequirementId String?           @map("material_requirement_id") @db.Uuid
+  quantity              Decimal           @db.Decimal(12, 3)
+  status                ReservationStatus @default(ATIVA)
+  notes                 String?           @db.VarChar(300)
+  createdById           String?           @map("created_by_id") @db.Uuid
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  closedAt              DateTime?         @map("closed_at") @db.Timestamptz(3)
+  closedById            String?           @map("closed_by_id") @db.Uuid
+  closeReason           String?           @map("close_reason") @db.VarChar(500)
+  version               Int               @default(1)
+
+  stockItem    StockItem            @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+  serviceOrder ServiceOrder         @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  requirement  MaterialRequirement? @relation(fields: [materialRequirementId], references: [id], onDelete: Restrict)
+  createdBy    User?                @relation("ReservationCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  closedBy     User?                @relation("ReservationClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
+  movements    StockMovement[]
+
+  @@index([serviceOrderId])
+  @@index([stockItemId, status])
+  @@index([materialRequirementId])
+  @@map("stock_reservations")
+}
+
+/// Pedido de compra (CP-00001). Preços em centavos; sem pagamentos.
+model PurchaseOrder {
+  id            String              @id @default(uuid()) @db.Uuid
+  number        Int                 @unique @default(autoincrement())
+  supplierId    String?             @map("supplier_id") @db.Uuid
+  status        PurchaseOrderStatus @default(RASCUNHO)
+  expectedDate  DateTime?           @map("expected_date") @db.Date
+  notes         String?             @db.VarChar(2000)
+  createdById   String?             @map("created_by_id") @db.Uuid
+  confirmedAt   DateTime?           @map("confirmed_at") @db.Timestamptz(3)
+  confirmedById String?             @map("confirmed_by_id") @db.Uuid
+  cancelledAt   DateTime?           @map("cancelled_at") @db.Timestamptz(3)
+  cancelledById String?             @map("cancelled_by_id") @db.Uuid
+  cancelReason  String?             @map("cancel_reason") @db.VarChar(500)
+  version       Int                 @default(1)
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  supplier    Supplier?              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  createdBy   User?                  @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  confirmedBy User?                  @relation("PurchaseOrderConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  cancelledBy User?                  @relation("PurchaseOrderCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  items       PurchaseOrderItem[]
+  history     PurchaseOrderHistory[]
+  receipts    MaterialReceipt[]
+
+  @@index([status])
+  @@index([supplierId])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id               String           @id @default(uuid()) @db.Uuid
+  purchaseOrderId  String           @map("purchase_order_id") @db.Uuid
+  position         Int
+  kind             MaterialKind
+  sourcing         MaterialSourcing
+  description      String           @db.VarChar(160)
+  color            String?          @db.VarChar(60)
+  reference        String?          @db.VarChar(80)
+  foamDensity      String?          @map("foam_density") @db.VarChar(30)
+  thicknessCm      Decimal?         @map("thickness_cm") @db.Decimal(8, 2)
+  lengthCm         Decimal?         @map("length_cm") @db.Decimal(8, 2)
+  widthCm          Decimal?         @map("width_cm") @db.Decimal(8, 2)
+  unit             MaterialUnit
+  quantity         Decimal          @db.Decimal(12, 3)
+  /// Recebimento acima do pedido autorizado explicitamente pelo gestor.
+  extraAuthorized  Decimal          @default(0) @map("extra_authorized") @db.Decimal(12, 3)
+  /// Recebido conforme, líquido de estornos (mantido na mesma transação).
+  receivedQuantity Decimal          @default(0) @map("received_quantity") @db.Decimal(12, 3)
+  unitPriceCents   Int?             @map("unit_price_cents")
+  serviceOrderId   String?          @map("service_order_id") @db.Uuid
+  stockItemId      String?          @map("stock_item_id") @db.Uuid
+  notes            String?          @db.VarChar(500)
+
+  purchaseOrder PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  serviceOrder  ServiceOrder?         @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  stockItem     StockItem?            @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+  allocations   PurchaseAllocation[]
+  receiptLines  MaterialReceiptLine[]
+
+  @@unique([purchaseOrderId, position])
+  @@index([serviceOrderId])
+  @@map("purchase_order_items")
+}
+
+/// Origem da quantidade comprada: necessidade aprovada de uma OS (preservada na compra consolidada).
+model PurchaseAllocation {
+  id                    String   @id @default(uuid()) @db.Uuid
+  purchaseOrderItemId   String   @map("purchase_order_item_id") @db.Uuid
+  materialRequirementId String   @map("material_requirement_id") @db.Uuid
+  serviceOrderId        String   @map("service_order_id") @db.Uuid
+  quantity              Decimal  @db.Decimal(12, 3)
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  item         PurchaseOrderItem   @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Cascade)
+  requirement  MaterialRequirement @relation(fields: [materialRequirementId], references: [id], onDelete: Restrict)
+  serviceOrder ServiceOrder        @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+
+  @@unique([purchaseOrderItemId, materialRequirementId])
+  @@index([materialRequirementId])
+  @@index([serviceOrderId])
+  @@map("purchase_allocations")
+}
+
+/// Histórico imutável do pedido de compra.
+model PurchaseOrderHistory {
+  id              String   @id @default(uuid()) @db.Uuid
+  purchaseOrderId String   @map("purchase_order_id") @db.Uuid
+  kind            String   @db.VarChar(40)
+  note            String?  @db.VarChar(500)
+  changes         Json?
+  actorId         String?  @map("actor_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  actor         User?         @relation("PurchaseOrderHistoryActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([purchaseOrderId, createdAt])
+  @@map("purchase_order_history")
+}
+
+/// Recebimento de materiais (RM-00001), imutável; correções por estorno.
+model MaterialReceipt {
+  id              String   @id @default(uuid()) @db.Uuid
+  number          Int      @unique @default(autoincrement())
+  purchaseOrderId String   @map("purchase_order_id") @db.Uuid
+  receivedAt      DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
+  receivedById    String   @map("received_by_id") @db.Uuid
+  deviceId        String?  @map("device_id") @db.Uuid
+  notes           String?  @db.VarChar(1000)
+
+  purchaseOrder PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  receivedBy    User                  @relation("MaterialReceiptReceivedBy", fields: [receivedById], references: [id], onDelete: Restrict)
+  lines         MaterialReceiptLine[]
+
+  @@index([purchaseOrderId])
+  @@map("material_receipts")
+}
+
+model MaterialReceiptLine {
+  id                  String        @id @default(uuid()) @db.Uuid
+  receiptId           String        @map("receipt_id") @db.Uuid
+  purchaseOrderItemId String        @map("purchase_order_item_id") @db.Uuid
+  acceptedQuantity    Decimal       @map("accepted_quantity") @db.Decimal(12, 3)
+  rejectedQuantity    Decimal       @default(0) @map("rejected_quantity") @db.Decimal(12, 3)
+  specConfirmed       Boolean       @map("spec_confirmed")
+  issue               ReceiptIssue?
+  issueNote           String?       @map("issue_note") @db.VarChar(500)
+
+  receipt   MaterialReceipt           @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  item      PurchaseOrderItem         @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Restrict)
+  reversals MaterialReceiptReversal[]
+  movements StockMovement[]
+
+  @@index([purchaseOrderItemId])
+  @@map("material_receipt_lines")
+}
+
+/// Estorno (lançamento compensatório) de parte do recebido conforme. Imutável.
+model MaterialReceiptReversal {
+  id             String   @id @default(uuid()) @db.Uuid
+  receiptLineId  String   @map("receipt_line_id") @db.Uuid
+  quantity       Decimal  @db.Decimal(12, 3)
+  reason         String   @db.VarChar(500)
+  authorizedById String   @map("authorized_by_id") @db.Uuid
+  impact         Json?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  line         MaterialReceiptLine @relation(fields: [receiptLineId], references: [id], onDelete: Restrict)
+  authorizedBy User                @relation("ReceiptReversalAuthorizedBy", fields: [authorizedById], references: [id], onDelete: Restrict)
+
+  @@index([receiptLineId])
+  @@map("material_receipt_reversals")
+}
+
+/// Sobra de material após o uso. Tecido continua da OS de origem; só sai por transferência autorizada.
+model MaterialLeftover {
+  id              String            @id @default(uuid()) @db.Uuid
+  serviceOrderId  String            @map("service_order_id") @db.Uuid
+  kind            MaterialKind
+  description     String            @db.VarChar(160)
+  color           String?           @db.VarChar(60)
+  reference       String?           @db.VarChar(80)
+  foamDensity     String?           @map("foam_density") @db.VarChar(30)
+  thicknessCm     Decimal?          @map("thickness_cm") @db.Decimal(8, 2)
+  quantity        Decimal           @db.Decimal(12, 3)
+  initialQuantity Decimal           @map("initial_quantity") @db.Decimal(12, 3)
+  unit            MaterialUnit
+  location        String            @db.VarChar(120)
+  condition       LeftoverCondition
+  reusable        Boolean
+  status          LeftoverStatus    @default(DISPONIVEL)
+  notes           String?           @db.VarChar(500)
+  createdById     String?           @map("created_by_id") @db.Uuid
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version         Int               @default(1)
+
+  serviceOrder ServiceOrder               @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  createdBy    User?                      @relation("LeftoverCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  transfers    MaterialLeftoverTransfer[]
+
+  @@index([serviceOrderId])
+  @@map("material_leftovers")
+}
+
+/// Transferência de sobra entre OS — sempre autorizada pelo gestor (imutável).
+model MaterialLeftoverTransfer {
+  id                 String   @id @default(uuid()) @db.Uuid
+  leftoverId         String   @map("leftover_id") @db.Uuid
+  fromServiceOrderId String   @map("from_service_order_id") @db.Uuid
+  toServiceOrderId   String   @map("to_service_order_id") @db.Uuid
+  toRequirementId    String?  @map("to_requirement_id") @db.Uuid
+  quantity           Decimal  @db.Decimal(12, 3)
+  reason             String   @db.VarChar(500)
+  authorizedById     String   @map("authorized_by_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  leftover         MaterialLeftover     @relation(fields: [leftoverId], references: [id], onDelete: Restrict)
+  fromServiceOrder ServiceOrder         @relation("LeftoverTransferFrom", fields: [fromServiceOrderId], references: [id], onDelete: Restrict)
+  toServiceOrder   ServiceOrder         @relation("LeftoverTransferTo", fields: [toServiceOrderId], references: [id], onDelete: Restrict)
+  toRequirement    MaterialRequirement? @relation(fields: [toRequirementId], references: [id], onDelete: Restrict)
+  authorizedBy     User                 @relation("LeftoverTransferAuthorizedBy", fields: [authorizedById], references: [id], onDelete: Restrict)
+
+  @@index([toRequirementId])
+  @@map("material_leftover_transfers")
 }

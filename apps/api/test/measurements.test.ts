@@ -505,7 +505,9 @@ describe('Revisão, aprovação e devolução', () => {
     expect(needs.map((n) => Number(n.quantity)).sort()).toEqual([13.5, 2]);
     const os = (await admin.get(`/api/v1/service-orders/${so.id}`)).body;
     expect(os.readiness.canStartProduction).toBe(false);
-    expect(os.readiness.materials).toBe('FASE_FUTURA');
+    // Fase 4: a prontidão de materiais passou a ser calculada (aprovado ≠ comprado).
+    expect(os.readiness.materials).toBe('PENDENTE');
+    expect(os.readiness.materialsState).toBe('AGUARDANDO_COMPRA');
     // Aprovado não pode ser alterado silenciosamente.
     expect(
       (

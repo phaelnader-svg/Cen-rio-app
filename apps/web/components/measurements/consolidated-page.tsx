@@ -8,6 +8,7 @@ import {
   formatQuantity,
 } from '@cenario/shared';
 import { Copy, Download, PackageSearch } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 import { Section } from '@/components/commercial/section';
 import { Button } from '@/components/ui/button';
@@ -107,8 +108,11 @@ export function ConsolidatedPage() {
         )}
       </Card>
       <Alert tone="info" className="mb-6">
-        Aprovado para compra não significa comprado nem recebido. O registro de compras e a
-        conferência de chegada entram na Fase 4.
+        Aprovado para compra não significa comprado nem recebido. Compre pela central de{' '}
+        <Link href="/painel/compras" className="font-medium text-brand-700 hover:underline">
+          Compras
+        </Link>
+        ; a chegada é conferida em Recebimento de materiais.
       </Alert>
       {list.isPending ? (
         <Spinner />

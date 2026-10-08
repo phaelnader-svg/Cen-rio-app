@@ -19,6 +19,7 @@ export const PERMISSION_GROUPS = {
   comercial: 'Clientes e pedidos',
   logistica: 'Retiradas e recebimentos',
   servicos: 'Ordens de serviço',
+  compras: 'Compras e estoque',
   sistema: 'Sistema',
 } as const;
 
@@ -182,6 +183,43 @@ export const PERMISSIONS = {
     label: 'Revisar e aprovar materiais',
     description:
       'Revisar quantidades, aprovar para compra ou devolver para correção. Aprovar não significa comprar.',
+    critical: true,
+  },
+  'compras.ver': {
+    group: 'compras',
+    label: 'Ver compras e fornecedores',
+    description: 'Consultar a central de compras, pedidos de compra, preços e fornecedores.',
+  },
+  'compras.gerenciar': {
+    group: 'compras',
+    label: 'Preparar pedidos de compra',
+    description: 'Cadastrar fornecedores e montar pedidos de compra (rascunho) com preços.',
+    critical: true,
+  },
+  'compras.aprovar': {
+    group: 'compras',
+    label: 'Confirmar e cancelar compras',
+    description:
+      'Confirmar ou cancelar pedidos de compra e autorizar recebimento acima do pedido (gestor).',
+    critical: true,
+  },
+  'estoque.ver': {
+    group: 'compras',
+    label: 'Ver estoque e prontidão de materiais',
+    description: 'Consultar estoque, movimentações, reservas, sobras e prontidão de materiais.',
+  },
+  'estoque.gerenciar': {
+    group: 'compras',
+    label: 'Movimentar estoque',
+    description:
+      'Cadastrar materiais, reservar para OS, liberar, dar saída, ajustar e registrar sobras.',
+    critical: true,
+  },
+  'estoque.autorizar': {
+    group: 'compras',
+    label: 'Autorizar estornos e transferências',
+    description:
+      'Estornar recebimentos de materiais e transferir sobras de tecido entre OS (gestor).',
     critical: true,
   },
   'auditoria.ver': {

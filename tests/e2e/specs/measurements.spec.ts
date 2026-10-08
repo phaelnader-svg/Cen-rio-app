@@ -211,10 +211,10 @@ test.describe.serial('Fase 3 — medições e solicitações de materiais', () =
     expect(csv.status()).toBe(200);
     expect(await csv.text()).toContain(`Linho Bege;12;metros;${so.code}`);
 
-    // Planejamento de sexta: compra e recebimento não são simulados.
+    // Planejamento de sexta: compra e recebimento vêm de registros reais (Fase 4) — nada comprado ainda.
     await page.goto('/painel/planejamento');
-    await expect(page.getByTestId('check-purchase')).toHaveAttribute('data-state', 'future');
-    await expect(page.getByTestId('planning-materials')).toContainText('Fase 4');
+    await expect(page.getByTestId('check-purchase')).toHaveAttribute('data-state', 'pending');
+    await expect(page.getByTestId('check-purchase')).toContainText('a comprar');
 
     // OS mostra o material como aprovado (não como comprado).
     await page.goto(`/painel/os/${so.id}`);

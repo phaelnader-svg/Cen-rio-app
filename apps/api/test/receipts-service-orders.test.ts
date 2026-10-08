@@ -249,7 +249,9 @@ describe('Ordem de serviço técnica', () => {
     expect(so.body.readiness).toEqual({
       measurements: 'PENDENTE',
       technicalLead: 'OK',
-      materials: 'FASE_FUTURA',
+      // Fase 4: prontidão de materiais calculada a partir dos registros (antes: FASE_FUTURA).
+      materials: 'PENDENTE',
+      materialsState: 'SEM_LEVANTAMENTO',
       scheduling: 'FASE_FUTURA',
       canStartProduction: false,
     });

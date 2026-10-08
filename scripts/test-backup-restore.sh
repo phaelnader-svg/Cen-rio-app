@@ -26,7 +26,13 @@ counts() {
     UNION ALL SELECT 'measurements', count(*) FROM measurements
     UNION ALL SELECT 'material_requests', count(*) FROM material_requests
     UNION ALL SELECT 'material_request_items', count(*) FROM material_request_items
-    UNION ALL SELECT 'measurement_revisions', count(*) FROM measurement_revisions) x"
+    UNION ALL SELECT 'measurement_revisions', count(*) FROM measurement_revisions
+    UNION ALL SELECT 'suppliers', count(*) FROM suppliers
+    UNION ALL SELECT 'purchase_orders', count(*) FROM purchase_orders
+    UNION ALL SELECT 'purchase_order_items', count(*) FROM purchase_order_items
+    UNION ALL SELECT 'material_receipts', count(*) FROM material_receipts
+    UNION ALL SELECT 'stock_items', count(*) FROM stock_items
+    UNION ALL SELECT 'stock_movements', count(*) FROM stock_movements) x"
 }
 
 # Garante dados de referência na origem (seed idempotente + um registro de auditoria).
@@ -72,6 +78,32 @@ WITH so AS (
 INSERT INTO measurement_revisions (id, measurement_id, kind, to_status)
 SELECT gen_random_uuid(), rq.measurement_id, 'ENVIADA', 'ENVIADA' FROM rq, it;
 SQL
+# Dados fictícios da Fase 4 (fornecedor → compra de estoque → recebimento → movimentação).
+psql "$SOURCE" -q > /dev/null <<'SQL'
+WITH s AS (
+  INSERT INTO suppliers (id, name, updated_at) VALUES (gen_random_uuid(), 'Fornecedor Fictício Backup', now()) RETURNING id
+), si AS (
+  INSERT INTO stock_items (id, kind, description, unit, spec_key, on_hand, reserved, updated_at)
+  VALUES (gen_random_uuid(), 'OUTRO', 'Grampos backup', 'EMBALAGEM', 'OUTRO|grampos backup|' || gen_random_uuid(), 3, 0, now())
+  RETURNING id
+), po AS (
+  INSERT INTO purchase_orders (id, supplier_id, status, confirmed_at, updated_at)
+  SELECT gen_random_uuid(), s.id, 'RECEBIDO', now(), now() FROM s RETURNING id
+), it AS (
+  INSERT INTO purchase_order_items (id, purchase_order_id, position, kind, sourcing, description, unit, quantity, received_quantity, unit_price_cents, stock_item_id)
+  SELECT gen_random_uuid(), po.id, 1, 'OUTRO', 'ESTOQUE', 'Grampos backup', 'EMBALAGEM', 3, 3, 1890, si.id FROM po, si
+  RETURNING id, purchase_order_id, stock_item_id
+), rc AS (
+  INSERT INTO material_receipts (id, purchase_order_id, received_by_id)
+  SELECT gen_random_uuid(), it.purchase_order_id, u.id FROM it, users u WHERE u.email = 'backup@teste.local'
+  RETURNING id
+), ln AS (
+  INSERT INTO material_receipt_lines (id, receipt_id, purchase_order_item_id, accepted_quantity, spec_confirmed)
+  SELECT gen_random_uuid(), rc.id, it.id, 3, true FROM rc, it RETURNING id
+)
+INSERT INTO stock_movements (id, stock_item_id, type, quantity, balance_after, reserved_after, material_receipt_line_id)
+SELECT gen_random_uuid(), it.stock_item_id, 'ENTRADA_COMPRA', 3, 3, 0, ln.id FROM it, ln;
+SQL
 
 DATABASE_URL="$SOURCE" STORAGE_DIR="$WORK/none" BACKUP_RETENTION_DAYS=0 bash scripts/backup.sh "$WORK/out" > /dev/null
 DIR="$(ls -d "$WORK"/out/cenario-*)"
@@ -88,6 +120,12 @@ echo "restaurado: $B"
   || { echo "✖ Marcador de auditoria ausente" >&2; exit 1; }
 if psql "$RESTORE_URL" -qc "DELETE FROM receipts" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade de recebimentos ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "DELETE FROM stock_movements" > /dev/null 2>&1; then
+  echo "✖ Trigger de imutabilidade das movimentações de estoque ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "UPDATE stock_items SET on_hand = -1" > /dev/null 2>&1; then
+  echo "✖ Restrição de estoque não negativo ausente no banco restaurado" >&2; exit 1
 fi
 if psql "$RESTORE_URL" -qc "DELETE FROM measurement_revisions" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade do histórico de medições ausente no banco restaurado" >&2; exit 1

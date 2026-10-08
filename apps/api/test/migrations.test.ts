@@ -57,6 +57,19 @@ describe('Banco de dados e migrations', () => {
       'material_requests',
       'material_request_items',
       'measurement_revisions',
+      'suppliers',
+      'purchase_orders',
+      'purchase_order_items',
+      'purchase_allocations',
+      'purchase_order_history',
+      'material_receipts',
+      'material_receipt_lines',
+      'material_receipt_reversals',
+      'stock_items',
+      'stock_movements',
+      'stock_reservations',
+      'material_leftovers',
+      'material_leftover_transfers',
     ]) {
       expect(names).toContain(t);
     }
