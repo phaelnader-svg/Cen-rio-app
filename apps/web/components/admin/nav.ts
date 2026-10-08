@@ -25,6 +25,8 @@ import {
   Siren,
   TabletSmartphone,
   Truck,
+  Undo2,
+  Wallet,
   BadgeCheck,
   UserCheck,
   UserCog,
@@ -156,6 +158,24 @@ export const NAV: NavItem[] = [
     anyOf: ['os.ver', 'estoque.ver', 'compras.ver', 'materiais.ver'],
   },
   {
+    href: '/painel/qualidade',
+    label: 'Qualidade',
+    icon: BadgeCheck,
+    anyOf: ['qualidade.gerenciar'],
+  },
+  {
+    href: '/painel/entregas',
+    label: 'Expedição e entregas',
+    icon: PackageOpen,
+    anyOf: ['entregas.ver', 'entregas.gerenciar'],
+  },
+  {
+    href: '/painel/devolucoes',
+    label: 'Devoluções',
+    icon: Undo2,
+    anyOf: ['devolucoes.gerenciar'],
+  },
+  {
     href: '/painel/presenca',
     label: 'Presença da equipe',
     icon: UserCheck,
@@ -173,6 +193,5 @@ export const NAV: NavItem[] = [
 
 /** Módulos das próximas fases: exibidos como indisponíveis (sem link). */
 export const UPCOMING: { label: string; icon: LucideIcon }[] = [
-  { label: 'Qualidade', icon: BadgeCheck },
-  { label: 'Entregas', icon: PackageOpen },
+  { label: 'Financeiro', icon: Wallet },
 ];

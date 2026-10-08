@@ -7,6 +7,7 @@ import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/mi
 import { usePendingReceipts, useReceipts } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
+import { ReceiptCorrectionButton } from '@/components/quality/returns-page';
 import { OrderStatusBadge } from './badges';
 import type { OrderStatus } from '@cenario/shared';
 
@@ -97,10 +98,22 @@ export function ReceiptsPage() {
                 </p>
                 <p className="mt-0.5 text-ink-muted">
                   {r.lines
-                    .map((l) => `${l.quantity}× ${l.description} → ${l.location}`)
+                    .map(
+                      (l) =>
+                        `${l.quantity}× ${l.description} → ${l.location}${l.correctedQuantity !== null ? ` (corrigido para ${l.correctedQuantity})` : ''}`,
+                    )
                     .join(' · ')}
                   {r.receivedBy ? ` · ${r.receivedBy.displayName}` : ''}
                 </p>
+                {can('devolucoes.gerenciar') && (
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {r.lines.map((l) => (
+                      <span key={l.id} className="inline-flex items-center gap-1 text-ink-muted">
+                        {l.description}: <ReceiptCorrectionButton line={l} />
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {r.divergences && <p className="text-warn-600">Divergências: {r.divergences}</p>}
               </li>
             ))}

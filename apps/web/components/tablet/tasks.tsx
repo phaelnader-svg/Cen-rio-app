@@ -50,6 +50,7 @@ import { useMyTasks, useNotifications, useTask } from '@/lib/production';
 import { useRealtime } from '@/lib/realtime';
 import { AlternativeTasks, HelpPanel, MyOpenHelp, SupportInfo } from './help';
 import { IssueInfo, MyOpenIssues, ProblemPanel } from './issues';
+import { PackagingPanel, QualityInfo } from './quality';
 
 const DONE = ['CONCLUIDA', 'CANCELADA'];
 const isOpen = (t: ProductionTaskDto) => !DONE.includes(t.status);
@@ -376,6 +377,7 @@ export function TaskCard({
           )}
           <SupportInfo t={t} />
           <IssueInfo t={t} />
+          <QualityInfo t={t} />
         </span>
         <ChevronRight className="mt-1 size-6 shrink-0 text-ink-muted" aria-hidden />
       </button>
@@ -395,7 +397,10 @@ function QuickAction({ t }: { t: ProductionTaskDto }) {
     const timer = window.setTimeout(() => setConfirm(false), 5000);
     return () => window.clearTimeout(timer);
   }, [confirm]);
-  const simpleComplete = t.status === 'EM_EXECUCAO' && t.completionRequirement === 'NENHUM';
+  const simpleComplete =
+    t.status === 'EM_EXECUCAO' &&
+    t.completionRequirement === 'NENHUM' &&
+    t.activity !== 'EMBALAGEM';
   if (t.status !== 'LIBERADA' && !simpleComplete) return null;
   const run = (path: 'start' | 'complete', ok: string) =>
     m.mutate(
@@ -515,6 +520,7 @@ export function MyTaskDetail({
         </div>
         <SupportInfo t={t} large />
         <IssueInfo t={t} large />
+        <QualityInfo t={t} large />
       </div>
 
       {error && <Alert tone="danger">{error}</Alert>}
@@ -594,6 +600,9 @@ export function MyTaskDetail({
           )}
       </div>
 
+      {t.qualityFor?.kind === 'EMBALAGEM' && t.qualityFor.packagingId && (
+        <PackagingPanel packagingId={t.qualityFor.packagingId} />
+      )}
       {canAskHelp && (t.can.start || t.can.progress) && <HelpPanel t={t} />}
       <AlternativeTasks t={t} onOpen={onOpen} />
       {reportUserId && t.assignee?.userId === reportUserId && !t.issueFor && <ProblemPanel t={t} />}

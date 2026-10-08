@@ -444,6 +444,77 @@ Módulo `modules/issues`; regras determinísticas e auditáveis.
 - Rotina: a cada 30 s, depois da fila de ajuda, `processIssueRisks` avisa (uma vez) prazos de
   resolução vencendo/vencidos e revalida as propostas de bloqueio.
 
+### Qualidade, embalagem, expedição e logística (Fase 10)
+
+Módulo `modules/quality` (`common`, `inspections`, `packaging`, `shipping`, `logistics`,
+`returns`, `attention`, `routes`); regras puras em `packages/shared/src/quality-domain.ts`.
+
+- **Unidade**: a peça da OS (`service_order_items`). Etapa derivada `fulfillment_stage`
+  (`computeStage`): em produção → aguardando inspeção → em inspeção → em correção → aguardando
+  embalagem → em embalagem → bloqueio de expedição → pronta para entrega → entrega agendada → em
+  transporte → entregue (ou devolvida/cancelada). Recalculada do banco a cada mudança
+  (`refreshItemStage`), com evento `item.stage_changed` e histórico em `quality_events` (imutável).
+- **Tarefas obrigatórias** de uma peça: as da peça e as da OS inteira, exceto apoio, resolução de
+  ocorrência, correção e embalagem (canceladas e rascunhos não contam). Quando todas concluem
+  (`qualityTaskClosed`, chamado no concluir/cancelar de tarefa), nasce a **inspeção**
+  (`quality_inspections`, IQ-00001, rodada 1). Etapa nova concluída depois da aprovação invalida a
+  aprovação.
+- **Inspetor**: o definido em `company_settings.quality_inspector_user_id`; sem definição, quem
+  tem a competência `INSPECAO` e a permissão `qualidade.inspecionar` (Thiago). Ausente (folga,
+  férias, ausência), executor do serviço ou não definido → a inspeção fica sem inspetor, com o
+  motivo, e o gestor é avisado para designar um substituto autorizado ou aprovar diretamente.
+  `canDecideInspection`: gestor sempre; inspetor designado só se não executou o serviço, salvo
+  autorização explícita do gestor (`executor_authorized_by_id`, auditada).
+- **Checklist**: modelos `quality_templates`/`quality_template_items` por tipo de peça; cada item
+  pode valer só para alguns tipos de serviço (`checklistFor` — sem itens irrelevantes). A inspeção
+  guarda a própria cópia (`quality_inspection_items`), bloqueada por trigger após a decisão.
+- **Aprovação**: checklist obrigatório conferido e conforme, produção concluída, sem correção
+  aberta e com a versão técnica da peça igual à da inspeção; grava inspetor, data/hora,
+  dispositivo, `item_version` e a revisão técnica da OS (`os_revision`).
+- **Reprovação**: motivo + ao menos um item não conforme; cria a tarefa `CORRECAO` (ligada por
+  `inspection_id`, prioridade alta, responsável = principal da peça ou o escolhido), revisa a
+  programação publicada (`reviseIfPublishedBy`) e registra no histórico do planejamento.
+  Inspeções decididas não mudam nem são apagadas (triggers). Correções encerradas → nova
+  inspeção (rodada + 1, `CORRECAO_CONCLUIDA`); nada é aprovado automaticamente.
+- **Alteração técnica** (`core/item-changes.ts`): mudança de especificação da peça (revisão
+  `ITEM`) ou novas medidas (revisão `MEDICAO`) invalidam a aprovação (`INVALIDADA`, motivo),
+  invalidam a embalagem (tarefa cancelada), devolvem a entrega confirmada a provisória e criam a
+  rodada `ALTERACAO_TECNICA`. Inspeção ainda aberta é cancelada e recriada com a versão nova.
+- **Embalagem** (`packaging_records`, EB-00001): só nasce de uma aprovação; tarefa `EMBALAGEM`
+  distribuída pelo motor da Fase 8 (`evaluateCandidates`, competência de apoio geral; João antes
+  do Thiago por preservar a especialidade); sem ninguém disponível, aguarda o gestor (o tapeceiro
+  só com autorização explícita). Concluída por rota própria (proteção, local, observações, fotos),
+  que exige a aprovação vigente — o "Concluir" genérico recusa tarefas de embalagem.
+- **Localizações** (`item_locations`, configuráveis) e movimentações (`item_location_events`,
+  imutáveis), registradas na embalagem, saída, entrega e quando informadas; etiqueta/QR em texto
+  (`CENARIO:PECA:OS-00001/1`) sem hardware.
+- **Pronto para entrega** (`deliveryReadiness`): tarefas obrigatórias concluídas, inspeção final
+  aprovada, nenhuma correção pendente, embalagem concluída e sem ocorrência logística que bloqueie
+  a expedição. Avisa o gestor uma vez por embalagem; nunca agenda.
+- **Entregas** (`deliveries`, EN-00001; `delivery_items` com índice único parcial — uma peça em uma
+  só entrega ativa; `delivery_events` imutável): só `entregas.gerenciar` agenda; definitiva só com
+  todas as peças prontas; provisória para peças não liberadas (sem confirmação ao cliente).
+  Execução: saída → chegada → peça a peça (entregue, divergência, não entregue) → instalação →
+  conclusão; tentativa frustrada (tentativas + 1, ocorrência, peças voltam à expedição);
+  reagendamento pelo gestor. Agenda agrupada por data e região (cidade/bairro) sem rota inventada.
+- **Logística terceirizada**: função `logistica_terceirizada` (`producao.acessar` +
+  `logistica.executar`), André e Izaías cadastrados sem PIN; entram por PIN num dispositivo
+  vinculado, veem só `GET /logistics/jobs` (visão restrita `LogisticsJobDto`, sem valores).
+  Retiradas da Fase 2 ganham `logistics_user_id` e passos "saída"/"retirada realizada".
+- **Ocorrências logísticas** (`logistics_occurrences`, OL-00001, sem exclusão; histórico
+  imutável): cliente indisponível, peça danificada, endereço incorreto, atraso, instalação
+  incompleta, divergência, outro; responsável, situação e histórico; peça danificada e divergência
+  bloqueiam a expedição. Integradas à central de atenção (tipos `QUALIDADE` e `LOGISTICA`).
+- **Devoluções** (`piece_returns`, DV-00001): linhas por item do pedido (peças de OS inteiras e/ou
+  peças recebidas fora de OS); confirmação encerra tarefas, inspeções, embalagens e entregas da
+  peça, marca `DEVOLVIDA`, soma `returned_quantity` e, se a OS fica sem peças, cancela a OS com a
+  proteção da Fase 5 (tarefas e reservas). O recebimento original nunca é apagado.
+- **Correção de recebimento** (`receipt_corrections`, imutável): o recebimento continua imutável;
+  a correção ajusta `received_quantity` só quando não deixa peças em OS ou devolvidas sem
+  cobertura (`receiptCorrectionProblem`).
+- **OS cancelada**: inspeções e embalagens abertas são canceladas e a peça sai das entregas
+  (listener `onServiceOrderCancelled`).
+
 ## 4. Eventos, concorrência e tempo real
 
 **Gravação (outbox).** Toda alteração relevante grava, na mesma transação: os dados, a
@@ -580,6 +651,17 @@ são usadas como garantia de execução.
   atenção com contadores e filtros), `/painel/ocorrencias/[id]` (detalhe, tarefas afetadas, fotos,
   histórico, delegar, registrar ação/solução, verificar, reabrir, cancelar) e a escolha manual do
   ajudante em Pedidos de ajuda.
+- Fase 10: no tablet, **Inspeções** (Thiago: OS, peça, serviço, prazo, prioridade, checklist com
+  "conforme / não conforme / não se aplica", defeitos, fotos, histórico de produção, aprovar e
+  reprovar com motivo), informações da correção (defeitos) na tarefa do tapeceiro e **Concluir
+  embalagem** (proteção, local, fotos) na tarefa de embalagem; André e Izaías veem só **Minhas
+  entregas e retiradas** (saída, chegada, peça a peça, instalação, tentativa frustrada,
+  ocorrência). No painel, `/painel/qualidade` (inspeções, histórico, embalagens com designação,
+  checklists, inspetor principal e localizações), `/painel/qualidade/inspecoes/[id]` (designar
+  substituto/autorizar executor, decidir, fotos), `/painel/entregas` (agenda por data e região,
+  prontas para entrega com agendamento definitivo ou provisório, expedição com localização e
+  ocorrências), `/painel/entregas/[id]`, `/painel/entregas/ocorrencias/[id]`,
+  `/painel/devolucoes` e "Corrigir" nas linhas de Recebimentos.
 - PWA: `manifest.webmanifest` (início em `/tablet`), service worker que **nunca** guarda
   respostas da API e mostra página offline quando não há rede.
 - Permissões no frontend só escondem elementos; o servidor sempre decide.
@@ -592,5 +674,5 @@ com sessão permanente; parâmetros de expediente (botão "Cheguei" 8h30, alerta
 configurável, sem efeito trabalhista); dia de programação e de medição (sextas); eventos e
 consumidores para a central de atenção. A distribuição de ajuda e a reprogramação foram
 implementadas na Fase 8.
-A equipe de logística terceirizada (André e Izaías) ainda não tem acesso — será tratada no
-módulo de logística.
+A equipe de logística terceirizada (André e Izaías) passou a ter acesso restrito na Fase 10
+(só as próprias retiradas e entregas, sem dados comerciais).

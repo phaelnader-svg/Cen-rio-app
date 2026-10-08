@@ -46,7 +46,16 @@ counts() {
     UNION ALL SELECT 'reschedule_proposals', count(*) FROM reschedule_proposals
     UNION ALL SELECT 'planning_actions', count(*) FROM planning_actions
     UNION ALL SELECT 'production_issues', count(*) FROM production_issues
-    UNION ALL SELECT 'production_issue_events', count(*) FROM production_issue_events) x"
+    UNION ALL SELECT 'production_issue_events', count(*) FROM production_issue_events
+    UNION ALL SELECT 'quality_templates', count(*) FROM quality_templates
+    UNION ALL SELECT 'quality_inspections', count(*) FROM quality_inspections
+    UNION ALL SELECT 'quality_inspection_items', count(*) FROM quality_inspection_items
+    UNION ALL SELECT 'quality_events', count(*) FROM quality_events
+    UNION ALL SELECT 'item_locations', count(*) FROM item_locations
+    UNION ALL SELECT 'deliveries', count(*) FROM deliveries
+    UNION ALL SELECT 'delivery_items', count(*) FROM delivery_items
+    UNION ALL SELECT 'delivery_events', count(*) FROM delivery_events
+    UNION ALL SELECT 'logistics_occurrences', count(*) FROM logistics_occurrences) x"
 }
 
 # Garante dados de referência na origem (seed idempotente + um registro de auditoria).
@@ -187,6 +196,42 @@ INSERT INTO production_issue_events (id, issue_id, kind, to_status, note)
 SELECT gen_random_uuid(), i.id, 'ABERTA', 'ABERTA', 'Backup' FROM i;
 SQL
 
+# Dados fictícios da Fase 10 (peça → inspeção reprovada → entrega com evento e ocorrência).
+psql "$SOURCE" -q -v ON_ERROR_STOP=1 > /dev/null <<'SQL'
+WITH so AS (
+  SELECT s.id, s.customer_id, oi.id AS order_item_id FROM service_orders s
+  JOIN commercial_orders o ON o.id = s.order_id
+  JOIN commercial_order_items oi ON oi.order_id = o.id
+  WHERE o.contracted_service = 'Teste de backup' ORDER BY s.created_at DESC LIMIT 1
+), it AS (
+  INSERT INTO service_order_items (id, service_order_id, order_item_id, position, piece_type, description, quantity, service_type, updated_at)
+  SELECT gen_random_uuid(), so.id, so.order_item_id, 1 + (random() * 100000)::int, 'SOFA', 'Sofá backup', 1, 'REFORMA_COMPLETA', now() FROM so
+  RETURNING id, service_order_id
+), qi AS (
+  INSERT INTO quality_inspections (id, service_order_item_id, service_order_id, round, reason, status, item_version, decided_at, decided_by_id, decision_note, updated_at)
+  SELECT gen_random_uuid(), it.id, it.service_order_id, 1, 'PRODUCAO_CONCLUIDA', 'REPROVADA', 1, now(), u.id, 'Costura solta (backup)', now()
+  FROM it, users u WHERE u.email = 'backup@teste.local' RETURNING id, service_order_item_id
+), qii AS (
+  INSERT INTO quality_inspection_items (id, inspection_id, position, label, result, note)
+  SELECT gen_random_uuid(), qi.id, 1, 'Costuras', 'NAO_CONFORME', 'Ponto solto' FROM qi RETURNING inspection_id
+), qe AS (
+  INSERT INTO quality_events (id, service_order_item_id, inspection_id, kind, note)
+  SELECT gen_random_uuid(), qi.service_order_item_id, qi.id, 'REPROVADA', 'Backup' FROM qi, qii RETURNING service_order_item_id
+), d AS (
+  INSERT INTO deliveries (id, customer_id, address_snapshot, scheduled_date, status, updated_at)
+  SELECT gen_random_uuid(), so.customer_id, '{"street":"Rua Fictícia","number":"1","city":"Cidade","state":"SP"}'::jsonb, current_date, 'PROVISORIA', now() FROM so
+  RETURNING id
+), di AS (
+  INSERT INTO delivery_items (delivery_id, service_order_item_id)
+  SELECT d.id, qe.service_order_item_id FROM d, qe RETURNING delivery_id
+), de AS (
+  INSERT INTO delivery_events (id, delivery_id, kind, to_status)
+  SELECT gen_random_uuid(), di.delivery_id, 'PRE_AGENDADA', 'PROVISORIA' FROM di RETURNING delivery_id
+)
+INSERT INTO logistics_occurrences (id, kind, delivery_id, description, updated_at)
+SELECT gen_random_uuid(), 'ENDERECO_INCORRETO', de.delivery_id, 'Número errado (backup)', now() FROM de;
+SQL
+
 DATABASE_URL="$SOURCE" STORAGE_DIR="$WORK/none" BACKUP_RETENTION_DAYS=0 bash scripts/backup.sh "$WORK/out" > /dev/null
 DIR="$(ls -d "$WORK"/out/cenario-*)"
 psql "$BASE/postgres" -qc "DROP DATABASE IF EXISTS $RESTORE_DB" > /dev/null
@@ -220,6 +265,18 @@ if psql "$RESTORE_URL" -qc "DELETE FROM production_issue_events" > /dev/null 2>&
 fi
 if psql "$RESTORE_URL" -qc "DELETE FROM production_issues" > /dev/null 2>&1; then
   echo "✖ Proteção contra exclusão de ocorrências ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "UPDATE quality_inspections SET status = 'APROVADA', os_revision = 0" > /dev/null 2>&1; then
+  echo "✖ Proteção da inspeção decidida ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "DELETE FROM quality_events" > /dev/null 2>&1; then
+  echo "✖ Trigger de imutabilidade do histórico de qualidade ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "DELETE FROM deliveries" > /dev/null 2>&1; then
+  echo "✖ Proteção contra exclusão de entregas ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "DELETE FROM logistics_occurrences" > /dev/null 2>&1; then
+  echo "✖ Proteção contra exclusão de ocorrências logísticas ausente no banco restaurado" >&2; exit 1
 fi
 if psql "$RESTORE_URL" -qc "DELETE FROM planning_actions" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade do histórico do planejamento ausente no banco restaurado" >&2; exit 1

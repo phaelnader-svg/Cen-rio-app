@@ -31,6 +31,21 @@ export const PRODUCTION_KEYS = [
   'my-issues',
   'issue-impacts',
   'help-candidates',
+  // Fase 10 — qualidade, embalagem e entregas
+  'inspections',
+  'inspection',
+  'packaging',
+  'pieces',
+  'piece',
+  'deliveries',
+  'delivery',
+  'logistics-jobs',
+  'logistics-occurrences',
+  'logistics-occurrence',
+  'returns',
+  'locations',
+  'quality-templates',
+  'quality-settings',
 ];
 
 /** Mutação genérica da produção: executa, invalida as consultas e mostra o erro. */

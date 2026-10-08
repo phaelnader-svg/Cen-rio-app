@@ -105,12 +105,18 @@ test.describe.serial('Tablets, sessões e sincronização', () => {
     await expect(list).toContainText('Sinal de teste nº 3');
     await expect(list.getByText('recuperado após reconexão')).toHaveCount(2);
     await expect(tablet.page.getByTestId('sync-replayed')).toHaveText('2');
-    // O tablet alcança (ou passa) a última sequência vista pelo painel: eventos de fundo
-    // (presença, dispositivos) podem chegar a um e não ao outro entre as duas leituras.
-    const panelSeq = Number(await page.getByTestId('sync-last-seq').textContent());
+    // O tablet alcança o último sinal perdido. (Painel e tablet recebem audiências diferentes —
+    // presença, dispositivos —, então o "último seq" de cada um não precisa ser igual.)
+    const lastMissed = Number(
+      await page
+        .getByTestId('sync-signals')
+        .locator('[data-seq]')
+        .filter({ hasText: 'Sinal de teste nº 3' })
+        .getAttribute('data-seq'),
+    );
     await expect
       .poll(async () => Number(await tablet.page.getByTestId('sync-last-seq').textContent()))
-      .toBeGreaterThanOrEqual(panelSeq);
+      .toBeGreaterThanOrEqual(lastMissed);
     await tablet.context.close();
   });
 

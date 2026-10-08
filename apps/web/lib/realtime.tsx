@@ -146,6 +146,33 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     keys.push(['attention'], ['help-candidates']);
   }
   if (t === 'attachment.changed') keys.push(['issue']);
+  // Fase 10 — qualidade, embalagem, expedição, entregas, logística e devoluções.
+  const quality = [
+    ['inspections'],
+    ['inspection'],
+    ['packaging'],
+    ['pieces'],
+    ['piece'],
+    ['deliveries'],
+    ['delivery'],
+    ['logistics-jobs'],
+    ['logistics-occurrences'],
+    ['logistics-occurrence'],
+    ['returns'],
+    ['locations'],
+    ['attention'],
+  ];
+  if (
+    ['quality.', 'packaging.', 'item.', 'delivery.', 'logistics.', 'return.'].some((p) =>
+      t.startsWith(p),
+    ) ||
+    t.startsWith('production.task_') ||
+    t === 'pickup.updated' ||
+    t === 'pickup.status_changed'
+  )
+    keys.push(...quality, ['my-tasks'], ['production-task']);
+  if (t === 'notification.created') keys.push(['inspections'], ['packaging'], ['logistics-jobs']);
+  if (t === 'quality.template_changed') keys.push(['quality-templates']);
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }
 

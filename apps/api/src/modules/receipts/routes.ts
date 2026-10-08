@@ -41,7 +41,8 @@ const fullInclude = {
       orderItem: true,
       corrections: { orderBy: { createdAt: 'desc' as const }, take: 1 },
     },
-    orderBy: { orderItem: { position: 'asc' as const } } },
+    orderBy: { orderItem: { position: 'asc' as const } },
+  },
 } satisfies Prisma.ReceiptInclude;
 
 async function loadReceiptDto(db: PrismaClient | Tx, id: string): Promise<ReceiptDto> {

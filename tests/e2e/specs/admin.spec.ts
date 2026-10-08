@@ -20,8 +20,15 @@ test.describe('Painel administrativo', () => {
     await loginAdmin(page);
     await expect(page.getByRole('heading', { name: /Bom dia|Boa tarde|Boa noite/ })).toBeVisible();
     // módulos futuros aparecem como indisponíveis, sem link
-    await expect(page.getByLabel('Módulos ainda não disponíveis')).toContainText('Qualidade');
-    await expect(page.getByRole('link', { name: 'Qualidade' })).toHaveCount(0);
+    await expect(page.getByLabel('Módulos ainda não disponíveis')).toContainText('Financeiro');
+    await expect(page.getByRole('link', { name: 'Financeiro' })).toHaveCount(0);
+    // Liberados na Fase 10:
+    await expect(
+      page.getByRole('navigation').getByRole('link', { name: 'Qualidade' }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('navigation').getByRole('link', { name: 'Expedição e entregas' }),
+    ).toBeVisible();
     // Liberado na Fase 9:
     await expect(
       page.getByRole('navigation').getByRole('link', { name: 'Central de atenção' }),

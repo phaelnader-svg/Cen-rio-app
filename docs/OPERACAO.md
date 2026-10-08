@@ -131,6 +131,22 @@ Rotina: junto com a fila de ajuda (a cada 30 s), a API avisa prazos de resoluç�
 invalida propostas de bloqueio que perderam o sentido. A central de atenção fica em
 `/painel/atencao`.
 
+## Atualização da Fase 9 para a Fase 10
+
+A migration `20261015000000_qualidade_logistica` é aditiva: cria inspeções, checklists,
+embalagens, localizações (8 iniciais), entregas, ocorrências logísticas, devoluções e correções de
+recebimento (com triggers de imutabilidade e de não exclusão); acrescenta a etapa da peça
+(`fulfillment_stage`), a localização atual, `returned_quantity`, `logistics_user_id` nas retiradas,
+`quality_inspector_user_id` nas configurações, as atividades `CORRECAO`/`EMBALAGEM`, os tipos de
+anexo da Fase 10, a função `logistica_terceirizada` e as permissões novas (gestor recebe todas;
+"Cabeceiras, reparos e qualidade" recebe `qualidade.inspecionar`). Nada é apagado.
+Procedimento: backup (`pnpm backup`) → `pnpm db:migrate` → `pnpm db:seed` (cria os checklists
+iniciais e André e Izaías sem PIN, se ainda não existirem) → reiniciar API e web.
+
+Depois: definir o PIN de André e Izaías no painel e vincular um dispositivo (celular) para cada um
+com "restringir ao funcionário". O inspetor principal pode ser fixado em Qualidade → "Inspetor e
+localizações".
+
 ## Backup e restauração
 
 ```bash

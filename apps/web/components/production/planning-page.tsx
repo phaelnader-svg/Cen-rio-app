@@ -12,7 +12,7 @@ import type {
 import {
   PRIORITIES,
   PRIORITY_LABEL,
-  PRODUCTION_ACTIVITIES,
+  PLANNABLE_ACTIVITIES,
   PRODUCTION_ACTIVITY_LABEL,
   mondayOf,
 } from '@cenario/shared';
@@ -658,7 +658,7 @@ function ItemSection({
               value={activity}
               onChange={(e) => setActivity(e.target.value as ProductionActivity)}
             >
-              {PRODUCTION_ACTIVITIES.map((a) => (
+              {PLANNABLE_ACTIVITIES.map((a) => (
                 <option key={a} value={a}>
                   {PRODUCTION_ACTIVITY_LABEL[a]}
                 </option>

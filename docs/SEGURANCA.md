@@ -199,6 +199,28 @@
 - Escolha manual do ajudante exige `producao.planejar`; atribuições impossíveis são recusadas e o
   conflito precisa de aprovação explícita registrada.
 
+## Qualidade, entregas e logística (Fase 10)
+
+- `qualidade.inspecionar` (Thiago; concessão individual para substitutos): ver só as inspeções
+  designadas a si, conferir, fotografar, aprovar e reprovar. Quem executou o serviço **não**
+  aprova sem autorização explícita do gestor (auditada); outros funcionários recebem 403.
+- `qualidade.gerenciar` (gestor, painel): todas as inspeções, aprovação direta, designação de
+  substituto, checklists, inspetor principal, localizações e distribuição da embalagem (tapeceiro
+  só com autorização explícita).
+- `entregas.ver` / `entregas.gerenciar`: consultar / agendar, confirmar, reagendar e cancelar
+  entregas e tratar ocorrências logísticas — **exclusivo do gestor**.
+- `logistica.executar` (André e Izaías, função própria sem acesso ao painel nem à produção): vê só
+  as retiradas e entregas atribuídas a si, numa visão restrita (endereço, contato operacional,
+  peças, data, horário, instruções, situação) — sem valores, margens ou dados comerciais; registra
+  saída, chegada, peças, instalação, tentativa frustrada e ocorrências apenas do que é seu.
+- `devolucoes.gerenciar` (gestor): devoluções e correção de recebimento (com justificativa).
+- Imutabilidade no banco: inspeções decididas, checklist decidido, eventos de qualidade,
+  localização, entrega e ocorrência, correções de recebimento; inspeções, embalagens, entregas,
+  ocorrências e devoluções não podem ser excluídas (triggers). Concorrência por versão (409) e
+  bloqueio de linha; ações repetíveis com chave de idempotência.
+- Fotos (inspeção, embalagem, entrega, ocorrência logística) seguem a política de anexos privados:
+  inspetor designado, quem embala e o responsável pela entrega, além do gestor.
+
 ## Segredos e ambientes
 
 - Segredos apenas por variáveis de ambiente; `.env` não é versionado.

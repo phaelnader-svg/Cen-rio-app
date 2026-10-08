@@ -3,7 +3,15 @@
 import type { MeDto } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { AlertOctagon, ArrowLeft, LogOut, PackageCheck, RadioTower, Ruler } from 'lucide-react';
+import {
+  AlertOctagon,
+  ArrowLeft,
+  BadgeCheck,
+  LogOut,
+  PackageCheck,
+  RadioTower,
+  Ruler,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ConnectionIndicator } from '@/components/connection-indicator';
 import { SyncPanel } from '@/components/sync-panel';
@@ -14,7 +22,9 @@ import { MaterialReceiving } from '@/components/purchasing/material-receiving';
 import { usePendingReceipts } from '@/lib/purchasing';
 import { useMyAttendance } from '@/lib/attendance';
 import { MyMeasurementDetail, MyMeasurements, useMyOpenCount } from './measurements';
+import { LogisticsJobs } from './logistics';
 import { DepartScreen, PresenceCard } from './presence';
+import { InspectionDetail, MyInspections, useMyInspectionCount } from './quality';
 import {
   MyDay,
   MyTaskDetail,
@@ -32,7 +42,9 @@ type Screen =
   | 'measurements'
   | 'measurement'
   | 'materials'
-  | 'depart';
+  | 'depart'
+  | 'inspections'
+  | 'inspection';
 
 function useClock(timezone: string) {
   // Renderizado apenas no cliente (após autenticação), sem risco de divergência de hidratação.
@@ -93,7 +105,12 @@ export function TabletHome({ me }: { me: MeDto }) {
   const [measurementId, setMeasurementId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [taskFrom, setTaskFrom] = useState<Screen>('home');
-  const pendingMaterials = usePendingReceipts();
+  // Fase 10: inspeções de qualidade (Thiago) e logística (André, Izaías).
+  const canInspect = me.permissions.includes('qualidade.inspecionar');
+  const logisticsOnly = me.permissions.includes('logistica.executar') && !canExecute;
+  const inspectionCount = useMyInspectionCount(canInspect);
+  const [inspectionId, setInspectionId] = useState<string | null>(null);
+  const pendingMaterials = usePendingReceipts(!logisticsOnly);
 
   const openTask = (id: string, from: Screen = 'home') => {
     setTaskId(id);
@@ -143,7 +160,7 @@ export function TabletHome({ me }: { me: MeDto }) {
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-subtle/60 px-4 py-2.5 sm:px-8">
           <ConnectionIndicator />
           <div className="flex flex-wrap items-center gap-2">
-            {canExecute && (
+            {(canExecute || logisticsOnly) && (
               <NotificationsButton
                 onClick={() => {
                   setScreen('notifications');
@@ -166,7 +183,14 @@ export function TabletHome({ me }: { me: MeDto }) {
       </header>
 
       <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">
-        {screen === 'home' ? (
+        {screen === 'home' && logisticsOnly ? (
+          <>
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">
+              Minhas entregas e retiradas
+            </h1>
+            <LogisticsJobs />
+          </>
+        ) : screen === 'home' ? (
           <>
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">
               {canExecute ? 'Meu dia' : 'Início'}
@@ -198,6 +222,20 @@ export function TabletHome({ me }: { me: MeDto }) {
               {canExecute ? 'Outras atividades' : 'Atividades'}
             </h2>
             <ul className="grid gap-4 md:grid-cols-2">
+              {canInspect && (
+                <li>
+                  <Tile
+                    onClick={() => setScreen('inspections')}
+                    testId="tile-inspections"
+                    icon={<BadgeCheck className="size-7" aria-hidden />}
+                    title="Inspeções"
+                    text="Conferir peças prontas, aprovar ou reprovar."
+                    count={inspectionCount}
+                    countTestId="inspections-count"
+                    countLabel="inspeção(ões) aguardando"
+                  />
+                </li>
+              )}
               {canMeasure && (
                 <li>
                   <Tile
@@ -268,6 +306,27 @@ export function TabletHome({ me }: { me: MeDto }) {
               canAskHelp={canAskHelp}
               reportUserId={reportUserId}
               onOpen={(id) => openTask(id, taskFrom)}
+            />
+          </>
+        ) : screen === 'inspections' ? (
+          <>
+            {back('Voltar ao início', 'home')}
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Inspeções</h1>
+            <MyInspections
+              onOpen={(id) => {
+                setInspectionId(id);
+                setScreen('inspection');
+                window.scrollTo({ top: 0 });
+              }}
+            />
+          </>
+        ) : screen === 'inspection' && inspectionId ? (
+          <>
+            {back('Voltar às inspeções', 'inspections')}
+            <InspectionDetail
+              key={inspectionId}
+              id={inspectionId}
+              onDone={() => window.scrollTo({ top: 0 })}
             />
           </>
         ) : screen === 'depart' && attendance.data ? (

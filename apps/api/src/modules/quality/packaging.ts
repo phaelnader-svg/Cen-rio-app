@@ -323,7 +323,9 @@ export async function packagingStarted(tx: Tx, actor: ActorContext, taskId: stri
   if (!p || p.status !== 'PENDENTE') return;
   const u = await tx.packagingRecord.update({
     where: { id: p.id },
-    data: { status: 'EM_ANDAMENTO', startedAt: new Date(), version: { increment: 1 } },
+    // Efeito do "Iniciar" da tarefa (não é edição do registro): a versão não muda, para não
+    // invalidar a tela de conclusão que o próprio responsável já tem aberta.
+    data: { status: 'EM_ANDAMENTO', startedAt: new Date() },
   });
   await packagingEvent(tx, actor, u);
   await refreshItemStage(tx, actor, p.serviceOrderItemId);

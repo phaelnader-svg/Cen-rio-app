@@ -12,7 +12,7 @@ import {
   COMPLETION_REQUIREMENT_LABEL,
   PIECE_TYPES,
   PIECE_TYPE_LABEL,
-  PRODUCTION_ACTIVITIES,
+  PLANNABLE_ACTIVITIES,
   PRODUCTION_ACTIVITY_LABEL,
   TASK_ROLES,
   TASK_ROLE_LABEL,
@@ -235,7 +235,7 @@ function TemplateEditor({
                         setStep(i, { activity: e.target.value as ProductionActivity })
                       }
                     >
-                      {PRODUCTION_ACTIVITIES.map((a) => (
+                      {PLANNABLE_ACTIVITIES.map((a) => (
                         <option key={a} value={a}>
                           {PRODUCTION_ACTIVITY_LABEL[a]}
                         </option>

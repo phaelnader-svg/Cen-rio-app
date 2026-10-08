@@ -51,10 +51,11 @@ export const useSuppliers = (enabled = true) =>
     enabled,
   });
 
-export const usePendingReceipts = () =>
+export const usePendingReceipts = (enabled = true) =>
   useQuery({
     queryKey: ['pending-receipts'],
     queryFn: () => api<PendingMaterialReceiptDto[]>('/api/v1/material-receipts/pending'),
+    enabled,
   });
 
 export const useStockItems = (enabled = true) =>
