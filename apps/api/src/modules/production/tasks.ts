@@ -31,6 +31,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { Errors } from '../../lib/errors';
 import { parseDateOnly } from '../commercial/common';
 import { idParams } from '../presenters';
+import { refreshAvailabilityOfUser } from '../attendance/common';
 import { notify, taskNotice } from '../notifications/notify';
 import { readinessOf } from '../purchasing/common';
 import {
@@ -1025,6 +1026,10 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         ]);
       }
     });
+    // Fase 7: disponibilidade operacional de quem executa (ocupado, em pausa, disponível).
+    if (action !== 'progress') {
+      await prisma.$transaction((tx) => refreshAvailabilityOfUser(tx, actor, request.auth!.userId));
+    }
     const { timezone } = await company(prisma);
     return toTaskDto(await loadTask(prisma, id), timezone);
   }

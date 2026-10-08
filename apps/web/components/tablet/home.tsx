@@ -3,15 +3,7 @@
 import type { MeDto } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import {
-  AlertOctagon,
-  ArrowLeft,
-  Clock3,
-  LogOut,
-  PackageCheck,
-  RadioTower,
-  Ruler,
-} from 'lucide-react';
+import { AlertOctagon, ArrowLeft, LogOut, PackageCheck, RadioTower, Ruler } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ConnectionIndicator } from '@/components/connection-indicator';
 import { SyncPanel } from '@/components/sync-panel';
@@ -20,7 +12,9 @@ import { Avatar } from '@/components/ui/misc';
 import { api } from '@/lib/api';
 import { MaterialReceiving } from '@/components/purchasing/material-receiving';
 import { usePendingReceipts } from '@/lib/purchasing';
+import { useMyAttendance } from '@/lib/attendance';
 import { MyMeasurementDetail, MyMeasurements, useMyOpenCount } from './measurements';
+import { DepartScreen, PresenceCard } from './presence';
 import {
   MyDay,
   MyTaskDetail,
@@ -37,7 +31,8 @@ type Screen =
   | 'sync'
   | 'measurements'
   | 'measurement'
-  | 'materials';
+  | 'materials'
+  | 'depart';
 
 function useClock(timezone: string) {
   // Renderizado apenas no cliente (após autenticação), sem risco de divergência de hidratação.
@@ -63,7 +58,6 @@ function useClock(timezone: string) {
 
 /** Módulos que chegam nas próximas fases (apenas informativos, sem ação). */
 const UPCOMING = [
-  { icon: Clock3, title: 'Presença', text: 'Botões “Cheguei” e “Encerrar expediente”.' },
   {
     icon: AlertOctagon,
     title: 'Ocorrências',
@@ -86,6 +80,10 @@ export function TabletHome({ me }: { me: MeDto }) {
     me.permissions.includes('medicoes.extraordinarias') ||
     me.permissions.includes('medicoes.gerenciar');
   const canExecute = me.permissions.includes('producao.executar');
+  // Presença operacional (Fase 7): quem registra a própria chegada e saída.
+  const canPresence =
+    me.permissions.includes('presenca.registrar') && !me.permissions.includes('presenca.gerenciar');
+  const attendance = useMyAttendance(canPresence);
   const openCount = useMyOpenCount(canMeasure);
   const todayCount = useMyTodayCount(canExecute);
   const [measurementId, setMeasurementId] = useState<string | null>(null);
@@ -174,6 +172,16 @@ export function TabletHome({ me }: { me: MeDto }) {
                 </span>
               )}
             </h1>
+            {canPresence && (
+              <div className="mb-8">
+                <PresenceCard
+                  onDepart={() => {
+                    setScreen('depart');
+                    window.scrollTo({ top: 0 });
+                  }}
+                />
+              </div>
+            )}
             {canExecute && <MyDay onOpen={(id) => openTask(id, 'home')} />}
 
             <h2 className={clsx('mb-3 text-lg font-semibold text-ink-soft', canExecute && 'mt-10')}>
@@ -245,6 +253,11 @@ export function TabletHome({ me }: { me: MeDto }) {
               taskFrom,
             )}
             <MyTaskDetail key={taskId} id={taskId} />
+          </>
+        ) : screen === 'depart' && attendance.data ? (
+          <>
+            {back('Voltar ao Meu dia', 'home')}
+            <DepartScreen data={attendance.data} onDone={() => setScreen('home')} />
           </>
         ) : screen === 'notifications' ? (
           <>

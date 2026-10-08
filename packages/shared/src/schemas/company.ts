@@ -63,10 +63,18 @@ export const companySettingsSchema = z
     workdayStart: timeSchema,
     arrivalAlertAt: timeSchema,
     workdayEnd: timeSchema,
+    /** Fase 7: início da janela do botão "Cheguei". */
+    arrivalWindowStart: timeSchema.default('07:00'),
+    /** Fase 7: atraso (min) a partir do qual o gestor é avisado. */
+    lateAlertMinutes: z.number().int().min(0).max(240).default(15),
     workingDays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
     planningWeekday: z.number().int().min(0).max(6),
     measurementWeekday: z.number().int().min(0).max(6),
     version: z.number().int().min(1),
+  })
+  .refine((v) => toMinutes(v.arrivalWindowStart) <= toMinutes(v.workdayStart), {
+    message: 'A janela do “Cheguei” deve começar até o início previsto do expediente.',
+    path: ['arrivalWindowStart'],
   })
   .refine((v) => toMinutes(v.arrivalAlertAt) > toMinutes(v.workdayStart), {
     message: 'O limite de alerta de chegada deve ser posterior ao início do expediente.',

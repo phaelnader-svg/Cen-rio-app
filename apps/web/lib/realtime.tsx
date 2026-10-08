@@ -109,6 +109,15 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   // Fase 6 — notificações (só chegam ao destinatário). Uma atualização da OS também
   // recarrega o detalhe técnico aberto no tablet.
   if (t.startsWith('notification.')) keys.push(['notifications']);
+  // Fase 7 — presença operacional (e disponibilidade, que depende das tarefas).
+  if (t.startsWith('attendance.') || t.startsWith('production.task_')) {
+    keys.push(
+      ['attendance-me'],
+      ['attendance-team'],
+      ['attendance-impacts'],
+      ['attendance-history'],
+    );
+  }
   if (t === 'notification.created') keys.push(['production-task'], ['my-tasks']);
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }

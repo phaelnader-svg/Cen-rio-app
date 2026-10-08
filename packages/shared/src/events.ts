@@ -76,6 +76,15 @@ export const EVENT_TYPES = {
   PRODUCTION_TASK_IMPEDIMENT: 'production.task_impediment',
   NOTIFICATION_CREATED: 'notification.created',
   NOTIFICATION_READ: 'notification.read',
+  // Fase 7 — presença operacional
+  ATTENDANCE_ARRIVED: 'attendance.arrived',
+  ATTENDANCE_LATE: 'attendance.late',
+  ATTENDANCE_ABSENCE_SUSPECTED: 'attendance.absence_suspected',
+  ATTENDANCE_ABSENCE_CONFIRMED: 'attendance.absence_confirmed',
+  ATTENDANCE_CORRECTED: 'attendance.corrected',
+  ATTENDANCE_DEPARTED: 'attendance.departed',
+  ATTENDANCE_AVAILABILITY_CHANGED: 'attendance.availability_changed',
+  ATTENDANCE_PRODUCTION_IMPACT_DETECTED: 'attendance.production_impact_detected',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

@@ -8,6 +8,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { BrandMark } from '@/components/brand';
 import { ConnectionIndicator } from '@/components/connection-indicator';
+import { PanelNotifications } from './panel-notifications';
 import { Button } from '@/components/ui/button';
 import { Alert, Avatar, Spinner } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
@@ -202,7 +203,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               <Menu className="size-5" aria-hidden />
             </button>
             <p className="truncate text-sm font-medium text-ink-muted">{data.company.tradeName}</p>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              <PanelNotifications />
               <ConnectionIndicator compact />
             </div>
           </header>

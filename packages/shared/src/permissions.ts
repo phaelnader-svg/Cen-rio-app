@@ -21,6 +21,7 @@ export const PERMISSION_GROUPS = {
   servicos: 'Ordens de serviço',
   compras: 'Compras e estoque',
   producao: 'Produção',
+  presenca: 'Presença operacional',
   sistema: 'Sistema',
 } as const;
 
@@ -241,6 +242,24 @@ export const PERMISSIONS = {
     description:
       'Ver as próprias tarefas e a OS correspondente; iniciar, pausar, retomar, registrar andamento e concluir as próprias tarefas.',
   },
+  'presenca.registrar': {
+    group: 'presenca',
+    label: 'Registrar a própria presença',
+    description:
+      'Confirmar a própria chegada ("Cheguei") e encerrar o próprio expediente no tablet. Presença operacional, não é registro de ponto.',
+  },
+  'presenca.ver': {
+    group: 'presenca',
+    label: 'Ver presença da equipe',
+    description: 'Consultar chegadas, atrasos operacionais, ausências, disponibilidade e impactos na produção.',
+  },
+  'presenca.gerenciar': {
+    group: 'presenca',
+    label: 'Corrigir presença e registrar situações',
+    description:
+      'Confirmar ausências, registrar folgas, férias, ausências justificadas, atestados informados, trabalho externo e corrigir registros (com justificativa e histórico).',
+    critical: true,
+  },
   'auditoria.ver': {
     group: 'sistema',
     label: 'Ver auditoria',
@@ -290,7 +309,12 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     name: 'Tapeceiro',
     description: 'Corte, costura e montagem. Cada sofá tem um tapeceiro principal.',
     system: true,
-    permissions: ['producao.acessar', 'producao.executar', 'sincronizacao.diagnosticar'],
+    permissions: [
+      'producao.acessar',
+      'producao.executar',
+      'presenca.registrar',
+      'sincronizacao.diagnosticar',
+    ],
   },
   {
     key: 'cabeceiras_qualidade',
@@ -298,14 +322,24 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     description:
       'Fabricação de cabeceiras, reparos, preparação, instalações e inspeção final de qualidade.',
     system: true,
-    permissions: ['producao.acessar', 'producao.executar', 'sincronizacao.diagnosticar'],
+    permissions: [
+      'producao.acessar',
+      'producao.executar',
+      'presenca.registrar',
+      'sincronizacao.diagnosticar',
+    ],
   },
   {
     key: 'ajudante',
     name: 'Ajudante',
     description: 'Desmontagem, preparação e apoio à produção.',
     system: true,
-    permissions: ['producao.acessar', 'producao.executar', 'sincronizacao.diagnosticar'],
+    permissions: [
+      'producao.acessar',
+      'producao.executar',
+      'presenca.registrar',
+      'sincronizacao.diagnosticar',
+    ],
   },
 ];
 

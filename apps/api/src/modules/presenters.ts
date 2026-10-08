@@ -104,6 +104,7 @@ export async function buildMe(
       workdayStart: company?.workdayStart ?? '08:30',
       arrivalAlertAt: company?.arrivalAlertAt ?? '09:30',
       workdayEnd: company?.workdayEnd ?? '18:00',
+      arrivalWindowStart: company?.arrivalWindowStart ?? '07:00',
     },
   };
 }

@@ -23,6 +23,7 @@ export interface MeDto {
     workdayStart: string;
     arrivalAlertAt: string;
     workdayEnd: string;
+    arrivalWindowStart: string;
   };
 }
 
@@ -105,6 +106,8 @@ export interface CompanySettingsDto {
   workdayStart: string;
   arrivalAlertAt: string;
   workdayEnd: string;
+  arrivalWindowStart: string;
+  lateAlertMinutes: number;
   workingDays: number[];
   planningWeekday: number;
   measurementWeekday: number;

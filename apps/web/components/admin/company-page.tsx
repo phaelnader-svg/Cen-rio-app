@@ -159,9 +159,32 @@ export function CompanyPage() {
             desconto automaticamente.
           </p>
           <div className="grid gap-4 sm:grid-cols-3">
-            {text('workdayStart', '“Cheguei” a partir de', { type: 'time' })}
-            {text('arrivalAlertAt', 'Alerta de ausência às', { type: 'time' })}
+            {text('arrivalWindowStart', '“Cheguei” disponível a partir de', { type: 'time' })}
+            {text('workdayStart', 'Início previsto do expediente', {
+              type: 'time',
+              hint: 'Chegada depois deste horário registra atraso operacional.',
+            })}
+            {text('arrivalAlertAt', 'Ausência presumida às', {
+              type: 'time',
+              hint: 'Sem confirmação até aqui: alerta ao gestor (não é falta).',
+            })}
             {text('workdayEnd', 'Fim do expediente', { type: 'time' })}
+            <Field
+              label="Avisar o gestor de atraso a partir de (min)"
+              error={errors.lateAlertMinutes}
+            >
+              {(p) => (
+                <Input
+                  {...p}
+                  type="number"
+                  min={0}
+                  max={240}
+                  disabled={!editable}
+                  value={String(form.lateAlertMinutes)}
+                  onChange={(e) => set('lateAlertMinutes', Number(e.target.value))}
+                />
+              )}
+            </Field>
           </div>
           <fieldset className="mt-5">
             <legend className="label">Dias de trabalho</legend>

@@ -319,7 +319,11 @@ describe('Avisos (notificações)', () => {
     // Ninguém é avisado da própria ação (o gestor não recebe avisos do que fez).
     expect(
       await db().notification.count({
-        where: { userId: (await admin.get('/api/auth/me')).body.user.id },
+        where: {
+          userId: (await admin.get('/api/auth/me')).body.user.id,
+          // Alertas de presença (Fase 7, verificação periódica) não são avisos de produção.
+          kind: { notIn: ['AUSENCIA_PRESUMIDA', 'ATRASO_OPERACIONAL', 'CHEGADA_APOS_AUSENCIA'] },
+        },
       }),
     ).toBe(0);
   });

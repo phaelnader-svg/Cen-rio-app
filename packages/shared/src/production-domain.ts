@@ -104,6 +104,15 @@ export const NOTIFICATION_KINDS = [
   'TAREFA_CANCELADA',
   'DEPENDENCIA_CONCLUIDA',
   'OS_ATUALIZADA',
+  // Fase 7 — presença operacional
+  'CHEGADA_CONFIRMADA',
+  'ATRASO_OPERACIONAL',
+  'AUSENCIA_PRESUMIDA',
+  'AUSENCIA_CONFIRMADA',
+  'CHEGADA_APOS_AUSENCIA',
+  'EXPEDIENTE_ENCERRADO',
+  'TAREFA_PENDENTE_ENCERRAMENTO',
+  'PRESENCA_ALTERADA',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -116,6 +125,14 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   TAREFA_CANCELADA: 'Tarefa cancelada',
   DEPENDENCIA_CONCLUIDA: 'Etapa anterior concluída',
   OS_ATUALIZADA: 'OS atualizada',
+  CHEGADA_CONFIRMADA: 'Chegada confirmada',
+  ATRASO_OPERACIONAL: 'Atraso operacional',
+  AUSENCIA_PRESUMIDA: 'Ausência presumida',
+  AUSENCIA_CONFIRMADA: 'Ausência confirmada',
+  CHEGADA_APOS_AUSENCIA: 'Chegada após ausência presumida',
+  EXPEDIENTE_ENCERRADO: 'Expediente encerrado',
+  TAREFA_PENDENTE_ENCERRAMENTO: 'Tarefa pendente ao encerrar',
+  PRESENCA_ALTERADA: 'Presença alterada pelo gestor',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

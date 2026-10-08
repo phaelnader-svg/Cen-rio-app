@@ -74,14 +74,19 @@ model User {
   createdLeftovers        MaterialLeftover[]         @relation("LeftoverCreatedBy")
   authorizedLeftoverMoves MaterialLeftoverTransfer[] @relation("LeftoverTransferAuthorizedBy")
 
-  createdPlans       ProductionPlan[]         @relation("PlanCreatedBy")
-  publishedPlans     ProductionPlan[]         @relation("PlanPublishedBy")
-  principalPlanItems ProductionPlanItem[]     @relation("PlanItemPrincipal")
-  planRevisions      ProductionPlanRevision[] @relation("PlanRevisionCreatedBy")
-  assignedTasks      ProductionTask[]         @relation("TaskAssignee")
-  completedTasks     ProductionTask[]         @relation("TaskCompletedBy")
-  taskEvents         ProductionTaskEvent[]    @relation("TaskEventActor")
-  notifications      Notification[]           @relation("UserNotifications")
+  createdPlans              ProductionPlan[]         @relation("PlanCreatedBy")
+  publishedPlans            ProductionPlan[]         @relation("PlanPublishedBy")
+  principalPlanItems        ProductionPlanItem[]     @relation("PlanItemPrincipal")
+  planRevisions             ProductionPlanRevision[] @relation("PlanRevisionCreatedBy")
+  assignedTasks             ProductionTask[]         @relation("TaskAssignee")
+  completedTasks            ProductionTask[]         @relation("TaskCompletedBy")
+  taskEvents                ProductionTaskEvent[]    @relation("TaskEventActor")
+  notifications             Notification[]           @relation("UserNotifications")
+  attendanceArrivals        OperationalAttendance[]  @relation("AttendanceArrivalBy")
+  attendanceDepartures      OperationalAttendance[]  @relation("AttendanceDepartureBy")
+  attendanceCorrections     AttendanceCorrection[]   @relation("AttendanceCorrectionActor")
+  attendanceImpacts         AttendanceImpact[]       @relation("AttendanceImpactAffected")
+  attendanceImpactsResolved AttendanceImpact[]       @relation("AttendanceImpactResolvedBy")
 
   @@map("users")
 }
@@ -103,11 +108,12 @@ model Employee {
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  user            User           @relation(fields: [userId], references: [id], onDelete: Restrict)
-  photo           StoredFile?    @relation("EmployeePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
+  user            User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  photo           StoredFile?             @relation("EmployeePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
   assignedDevices Device[]
-  receipts        Receipt[]      @relation("ReceiptReceivedBy")
-  leadOf          ServiceOrder[] @relation("ServiceOrderTechnicalLead")
+  receipts        Receipt[]               @relation("ReceiptReceivedBy")
+  leadOf          ServiceOrder[]          @relation("ServiceOrderTechnicalLead")
+  attendances     OperationalAttendance[]
 
   @@index([active])
   @@map("employees")
@@ -279,6 +285,10 @@ model CompanySettings {
   /// Limite para alerta de indisponibilidade operacional presumida (HH:MM).
   arrivalAlertAt     String   @default("09:30") @map("arrival_alert_at") @db.Char(5)
   workdayEnd         String   @default("18:00") @map("workday_end") @db.Char(5)
+  /// Fase 7: início da janela em que o botão "Cheguei" aceita confirmação (HH:MM).
+  arrivalWindowStart String   @default("07:00") @map("arrival_window_start") @db.Char(5)
+  /// Fase 7: atraso (minutos) a partir do qual o gestor é avisado.
+  lateAlertMinutes   Int      @default(15) @map("late_alert_minutes")
   /// Dias úteis (0 = domingo ... 6 = sábado).
   workingDays        Int[]    @default([1, 2, 3, 4, 5]) @map("working_days")
   /// Dia habitual de programação da semana seguinte.
@@ -1656,16 +1666,17 @@ model ProductionTask {
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  plan             ProductionPlan?          @relation(fields: [planId], references: [id], onDelete: Restrict)
-  serviceOrder     ServiceOrder             @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
-  serviceOrderItem ServiceOrderItem?        @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
-  assignee         User?                    @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: Restrict)
-  completedBy      User?                    @relation("TaskCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
-  dependsOn        TaskDependency[]         @relation("TaskDependsOn")
-  dependents       TaskDependency[]         @relation("TaskDependents")
-  events           ProductionTaskEvent[]
-  materials        ProductionTaskMaterial[]
-  notifications    Notification[]
+  plan              ProductionPlan?          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  serviceOrder      ServiceOrder             @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  serviceOrderItem  ServiceOrderItem?        @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  assignee          User?                    @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: Restrict)
+  completedBy       User?                    @relation("TaskCompletedBy", fields: [completedById], references: [id], onDelete: SetNull)
+  dependsOn         TaskDependency[]         @relation("TaskDependsOn")
+  dependents        TaskDependency[]         @relation("TaskDependents")
+  events            ProductionTaskEvent[]
+  materials         ProductionTaskMaterial[]
+  notifications     Notification[]
+  attendanceImpacts AttendanceImpact[]
 
   @@index([assigneeUserId, status])
   @@index([serviceOrderId])
@@ -1752,4 +1763,112 @@ model Notification {
   @@unique([userId, dedupeKey])
   @@index([userId, readAt, createdAt])
   @@map("notifications")
+}
+
+// ─────────────────────────── Presença operacional (Fase 7) ───────────────────────────
+
+enum AttendanceSituation {
+  PRESENTE
+  AUSENCIA_PRESUMIDA
+  AUSENCIA_CONFIRMADA
+  AUSENCIA_JUSTIFICADA
+  ATESTADO
+  FOLGA
+  FERIAS
+  TRABALHO_EXTERNO
+  ENCERRADO
+
+  @@map("attendance_situation")
+}
+
+enum ArrivalKind {
+  NO_HORARIO
+  ATRASO
+  APOS_AUSENCIA_PRESUMIDA
+
+  @@map("arrival_kind")
+}
+
+/// Presença operacional de um funcionário num dia (organização da produção; NÃO é ponto
+/// eletrônico nem prova de jornada). Um registro por funcionário e data operacional.
+model OperationalAttendance {
+  id                String              @id @default(uuid()) @db.Uuid
+  employeeId        String              @map("employee_id") @db.Uuid
+  /// Data operacional no fuso da empresa.
+  date              DateTime            @db.Date
+  situation         AttendanceSituation
+  arrivedAt         DateTime?           @map("arrived_at") @db.Timestamptz(3)
+  arrivalKind       ArrivalKind?        @map("arrival_kind")
+  lateMinutes       Int                 @default(0) @map("late_minutes")
+  /// Quem registrou a chegada (o próprio funcionário ou o gestor em correção) e de qual dispositivo.
+  arrivalById       String?             @map("arrival_by_id") @db.Uuid
+  arrivalDeviceId   String?             @map("arrival_device_id") @db.Uuid
+  departedAt        DateTime?           @map("departed_at") @db.Timestamptz(3)
+  departureById     String?             @map("departure_by_id") @db.Uuid
+  departureDeviceId String?             @map("departure_device_id") @db.Uuid
+  earlyDeparture    Boolean             @default(false) @map("early_departure")
+  departureNote     String?             @map("departure_note") @db.VarChar(500)
+  presumedAbsentAt  DateTime?           @map("presumed_absent_at") @db.Timestamptz(3)
+  /// Atividade externa ou justificativa (texto livre curto; sem dados médicos).
+  note              String?             @db.VarChar(300)
+  availability      String              @default("NAO_CONFIRMOU") @db.VarChar(30)
+  availabilityAt    DateTime            @default(now()) @map("availability_at") @db.Timestamptz(3)
+  version           Int                 @default(1)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  employee    Employee               @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  arrivalBy   User?                  @relation("AttendanceArrivalBy", fields: [arrivalById], references: [id], onDelete: SetNull)
+  departureBy User?                  @relation("AttendanceDepartureBy", fields: [departureById], references: [id], onDelete: SetNull)
+  corrections AttendanceCorrection[]
+  impacts     AttendanceImpact[]
+
+  @@unique([employeeId, date])
+  @@index([date, situation])
+  @@map("operational_attendances")
+}
+
+/// Histórico imutável de cada registro de presença (chegada, saída, ausência presumida,
+/// correções e justificativas do gestor), com o estado anterior e o novo.
+model AttendanceCorrection {
+  id           String   @id @default(uuid()) @db.Uuid
+  attendanceId String   @map("attendance_id") @db.Uuid
+  action       String   @db.VarChar(40)
+  reason       String?  @db.VarChar(300)
+  before       Json?
+  after        Json
+  actorId      String?  @map("actor_id") @db.Uuid
+  deviceId     String?  @map("device_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  attendance OperationalAttendance @relation(fields: [attendanceId], references: [id], onDelete: Restrict)
+  actor      User?                 @relation("AttendanceCorrectionActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([attendanceId, createdAt])
+  @@map("attendance_corrections")
+}
+
+/// Impactos identificados (tarefas do ausente e dependentes) e pendências de encerramento.
+/// Só identifica e apresenta: nada é cancelado ou transferido automaticamente.
+model AttendanceImpact {
+  id             String    @id @default(uuid()) @db.Uuid
+  attendanceId   String    @map("attendance_id") @db.Uuid
+  taskId         String    @map("task_id") @db.Uuid
+  kind           String    @db.VarChar(30)
+  affectedUserId String?   @map("affected_user_id") @db.Uuid
+  dueDate        DateTime? @map("due_date") @db.Date
+  detail         String    @db.VarChar(300)
+  detectedAt     DateTime  @default(now()) @map("detected_at") @db.Timestamptz(3)
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(3)
+  resolvedById   String?   @map("resolved_by_id") @db.Uuid
+  resolution     String?   @db.VarChar(300)
+
+  attendance   OperationalAttendance @relation(fields: [attendanceId], references: [id], onDelete: Restrict)
+  task         ProductionTask        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  affectedUser User?                 @relation("AttendanceImpactAffected", fields: [affectedUserId], references: [id], onDelete: SetNull)
+  resolvedBy   User?                 @relation("AttendanceImpactResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@unique([attendanceId, taskId, kind])
+  @@index([detectedAt])
+  @@map("attendance_impacts")
 }
