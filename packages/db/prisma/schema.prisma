@@ -20,54 +20,68 @@ datasource db {
 
 /// Identidade de acesso. Credenciais ficam aqui; dados da pessoa ficam em Employee.
 model User {
-  id                 String    @id @default(uuid()) @db.Uuid
+  id                   String    @id @default(uuid()) @db.Uuid
   /// E-mail de acesso ao painel (opcional). Sempre armazenado em minúsculas.
-  email              String?   @unique @db.VarChar(254)
-  passwordHash       String?   @map("password_hash")
+  email                String?   @unique @db.VarChar(254)
+  passwordHash         String?   @map("password_hash")
   /// PIN de 6 dígitos para os tablets (hash argon2id).
-  pinHash            String?   @map("pin_hash")
-  displayName        String    @map("display_name") @db.VarChar(60)
-  active             Boolean   @default(true)
-  lastLoginAt        DateTime? @map("last_login_at") @db.Timestamptz(3)
+  pinHash              String?   @map("pin_hash")
+  displayName          String    @map("display_name") @db.VarChar(60)
+  active               Boolean   @default(true)
+  lastLoginAt          DateTime? @map("last_login_at") @db.Timestamptz(3)
   credentialsChangedAt DateTime? @map("credentials_changed_at") @db.Timestamptz(3)
-  version            Int       @default(1)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version              Int       @default(1)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  employee         Employee?
-  roles            UserRole[]
-  permissions      UserPermission[]
-  sessions         Session[]         @relation("SessionUser")
-  revokedSessions  Session[]         @relation("SessionRevokedBy")
-  auditLogs        AuditLog[]
-  idempotencyKeys  IdempotencyKey[]
-  uploadedFiles    StoredFile[]
-  createdDevices   Device[]          @relation("DeviceCreatedBy")
-  revokedDevices   Device[]          @relation("DeviceRevokedBy")
+  employee        Employee?
+  roles           UserRole[]
+  permissions     UserPermission[]
+  sessions        Session[]        @relation("SessionUser")
+  revokedSessions Session[]        @relation("SessionRevokedBy")
+  auditLogs       AuditLog[]
+  idempotencyKeys IdempotencyKey[]
+  uploadedFiles   StoredFile[]
+  createdDevices  Device[]         @relation("DeviceCreatedBy")
+  revokedDevices  Device[]         @relation("DeviceRevokedBy")
+
+  createdCustomers       Customer[]             @relation("CustomerCreatedBy")
+  createdOrders          CommercialOrder[]      @relation("OrderCreatedBy")
+  cancelledOrders        CommercialOrder[]      @relation("OrderCancelledBy")
+  createdPickups         PickupRequest[]        @relation("PickupCreatedBy")
+  pickupEvents           PickupEvent[]
+  registeredReceipts     Receipt[]              @relation("ReceiptRegisteredBy")
+  createdServiceOrders   ServiceOrder[]         @relation("ServiceOrderCreatedBy")
+  cancelledServiceOrders ServiceOrder[]         @relation("ServiceOrderCancelledBy")
+  measuredItems          ServiceOrderItem[]     @relation("ItemMeasuredBy")
+  serviceOrderRevisions  ServiceOrderRevision[]
+  attachments            Attachment[]
 
   @@map("users")
 }
 
 /// Pessoa que atua na empresa (gestor, tapeceiros, ajudante...).
 model Employee {
-  id               String    @id @default(uuid()) @db.Uuid
-  userId           String    @unique @map("user_id") @db.Uuid
-  fullName         String    @map("full_name") @db.VarChar(120)
-  displayName      String    @map("display_name") @db.VarChar(40)
-  jobTitle         String    @map("job_title") @db.VarChar(80)
-  responsibilities String?   @db.VarChar(500)
-  phone            String?   @db.VarChar(30)
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @unique @map("user_id") @db.Uuid
+  fullName         String   @map("full_name") @db.VarChar(120)
+  displayName      String   @map("display_name") @db.VarChar(40)
+  jobTitle         String   @map("job_title") @db.VarChar(80)
+  responsibilities String?  @db.VarChar(500)
+  phone            String?  @db.VarChar(30)
   /// Cor de identificação visual nos tablets e no painel (#RRGGBB).
-  color            String    @db.Char(7)
-  photoFileId      String?   @unique @map("photo_file_id") @db.Uuid
-  active           Boolean   @default(true)
-  version          Int       @default(1)
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  color            String   @db.Char(7)
+  photoFileId      String?  @unique @map("photo_file_id") @db.Uuid
+  active           Boolean  @default(true)
+  version          Int      @default(1)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  user            User        @relation(fields: [userId], references: [id], onDelete: Restrict)
-  photo           StoredFile? @relation("EmployeePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
+  user            User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  photo           StoredFile?    @relation("EmployeePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
   assignedDevices Device[]
+  receipts        Receipt[]      @relation("ReceiptReceivedBy")
+  leadOf          ServiceOrder[] @relation("ServiceOrderTechnicalLead")
 
   @@index([active])
   @@map("employees")
@@ -212,11 +226,11 @@ model Session {
 
 /// Controle persistente contra abuso de autenticação (por conta, IP ou dispositivo).
 model AuthThrottle {
-  key          String    @id @db.VarChar(200)
-  failures     Int       @default(0)
-  windowStart  DateTime  @default(now()) @map("window_start") @db.Timestamptz(3)
-  lockedUntil  DateTime? @map("locked_until") @db.Timestamptz(3)
-  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  key         String    @id @db.VarChar(200)
+  failures    Int       @default(0)
+  windowStart DateTime  @default(now()) @map("window_start") @db.Timestamptz(3)
+  lockedUntil DateTime? @map("locked_until") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([updatedAt])
   @@map("auth_throttle")
@@ -352,8 +366,495 @@ model StoredFile {
   createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz(3)
 
-  uploadedBy    User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  employeePhoto Employee? @relation("EmployeePhoto")
+  uploadedBy    User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  employeePhoto Employee?   @relation("EmployeePhoto")
+  attachment    Attachment?
 
   @@map("stored_files")
+}
+
+// ═══════════════════════════ FASE 2 — Comercial e oficina ═══════════════════════════
+
+enum CustomerKind {
+  PF
+  PJ
+
+  @@map("customer_kind")
+}
+
+/// Cliente (pessoa física ou jurídica). Dados pessoais restritos por permissão.
+model Customer {
+  id          String       @id @default(uuid()) @db.Uuid
+  kind        CustomerKind
+  name        String       @db.VarChar(160)
+  tradeName   String?      @map("trade_name") @db.VarChar(160)
+  /// CPF/CNPJ somente dígitos. Único quando informado (duplicidade evidente).
+  document    String?      @db.VarChar(14)
+  phone       String?      @db.VarChar(13)
+  whatsapp    String?      @db.VarChar(13)
+  email       String?      @db.VarChar(254)
+  notes       String?      @db.VarChar(2000)
+  /// Texto normalizado (sem acentos, minúsculo) para pesquisa.
+  searchText  String       @map("search_text") @db.VarChar(800)
+  active      Boolean      @default(true)
+  version     Int          @default(1)
+  createdById String?      @map("created_by_id") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy     User?             @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  addresses     CustomerAddress[]
+  orders        CommercialOrder[]
+  serviceOrders ServiceOrder[]
+
+  @@index([phone])
+  @@index([whatsapp])
+  @@index([email])
+  @@map("customers")
+}
+
+model CustomerAddress {
+  id         String    @id @default(uuid()) @db.Uuid
+  customerId String    @map("customer_id") @db.Uuid
+  label      String    @db.VarChar(40)
+  street     String    @db.VarChar(160)
+  number     String    @db.VarChar(20)
+  complement String?   @db.VarChar(80)
+  district   String?   @db.VarChar(80)
+  city       String    @db.VarChar(80)
+  state      String    @db.Char(2)
+  postalCode String?   @map("postal_code") @db.Char(8)
+  reference  String?   @db.VarChar(200)
+  isPrimary  Boolean   @default(false) @map("is_primary")
+  /// Endereços não são apagados (pedidos guardam cópia), apenas arquivados.
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  orders   CommercialOrder[]
+  pickups  PickupRequest[]
+
+  @@index([customerId])
+  @@map("customer_addresses")
+}
+
+enum CommercialOrderStatus {
+  AGUARDANDO_RETIRADA
+  RETIRADA_AGENDADA
+  RECEBIDO_PARCIAL
+  RECEBIDO
+  CANCELADO
+
+  @@map("commercial_order_status")
+}
+
+enum PieceType {
+  SOFA
+  POLTRONA
+  CADEIRA
+  CABECEIRA
+  CANTO_ALEMAO
+  PUFE
+  BANCO
+  COLCHAO
+  OUTRO
+
+  @@map("piece_type")
+}
+
+/// Pedido comercial: criado após a aprovação do cliente; organiza a retirada e preserva a venda.
+model CommercialOrder {
+  id                    String                @id @default(uuid()) @db.Uuid
+  number                Int                   @unique @default(autoincrement())
+  customerId            String                @map("customer_id") @db.Uuid
+  pickupAddressId       String?               @map("pickup_address_id") @db.Uuid
+  /// Cópia do endereço no momento do pedido (preserva o combinado).
+  pickupAddressSnapshot Json?                 @map("pickup_address_snapshot")
+  contractedService     String                @map("contracted_service") @db.VarChar(300)
+  description           String?               @db.VarChar(2000)
+  agreedValueCents      Int?                  @map("agreed_value_cents")
+  paymentTerms          String?               @map("payment_terms") @db.VarChar(1000)
+  notes                 String?               @db.VarChar(2000)
+  status                CommercialOrderStatus @default(AGUARDANDO_RETIRADA)
+  cancelledAt           DateTime?             @map("cancelled_at") @db.Timestamptz(3)
+  cancelledById         String?               @map("cancelled_by_id") @db.Uuid
+  cancelReason          String?               @map("cancel_reason") @db.VarChar(500)
+  version               Int                   @default(1)
+  createdById           String?               @map("created_by_id") @db.Uuid
+  createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer      Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  pickupAddress CustomerAddress?      @relation(fields: [pickupAddressId], references: [id], onDelete: Restrict)
+  createdBy     User?                 @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  cancelledBy   User?                 @relation("OrderCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  items         CommercialOrderItem[]
+  pickups       PickupRequest[]
+  receipts      Receipt[]
+  serviceOrders ServiceOrder[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([createdAt(sort: Desc)])
+  @@map("commercial_orders")
+}
+
+model CommercialOrderItem {
+  id               String    @id @default(uuid()) @db.Uuid
+  orderId          String    @map("order_id") @db.Uuid
+  position         Int
+  pieceType        PieceType @map("piece_type")
+  description      String    @db.VarChar(300)
+  quantity         Int
+  /// Mantido pelo registro de recebimentos (nunca maior que a quantidade).
+  receivedQuantity Int       @default(0) @map("received_quantity")
+  notes            String?   @db.VarChar(500)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order             CommercialOrder     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  pickupItems       PickupRequestItem[]
+  receiptLines      ReceiptLine[]
+  serviceOrderItems ServiceOrderItem[]
+
+  @@unique([orderId, position])
+  @@map("commercial_order_items")
+}
+
+enum PickupStatus {
+  AGUARDANDO_AGENDAMENTO
+  AGENDADA
+  EM_EXECUCAO
+  RETIRADA_REALIZADA
+  RECEBIDA_NA_OFICINA
+  CANCELADA
+  COM_OCORRENCIA
+
+  @@map("pickup_status")
+}
+
+enum PickupTeam {
+  LOGISTICA_TERCEIRIZADA
+  EQUIPE_PROPRIA
+
+  @@map("pickup_team")
+}
+
+/// Solicitação de retirada (preparada para integração futura com a logística terceirizada).
+model PickupRequest {
+  id                String       @id @default(uuid()) @db.Uuid
+  number            Int          @unique @default(autoincrement())
+  orderId           String       @map("order_id") @db.Uuid
+  addressId         String?      @map("address_id") @db.Uuid
+  addressSnapshot   Json?        @map("address_snapshot")
+  scheduledDate     DateTime?    @map("scheduled_date") @db.Date
+  windowStart       String?      @map("window_start") @db.Char(5)
+  windowEnd         String?      @map("window_end") @db.Char(5)
+  team              PickupTeam   @default(LOGISTICA_TERCEIRIZADA)
+  teamNotes         String?      @map("team_notes") @db.VarChar(200)
+  instructions      String?      @db.VarChar(1000)
+  /// Protocolo/identificador no sistema da logística (integração futura).
+  externalReference String?      @map("external_reference") @db.VarChar(80)
+  status            PickupStatus @default(AGUARDANDO_AGENDAMENTO)
+  version           Int          @default(1)
+  createdById       String?      @map("created_by_id") @db.Uuid
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order     CommercialOrder     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  address   CustomerAddress?    @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  createdBy User?               @relation("PickupCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items     PickupRequestItem[]
+  events    PickupEvent[]
+  receipts  Receipt[]
+
+  @@index([orderId])
+  @@index([status])
+  @@index([scheduledDate])
+  @@map("pickup_requests")
+}
+
+model PickupRequestItem {
+  pickupId    String @map("pickup_id") @db.Uuid
+  orderItemId String @map("order_item_id") @db.Uuid
+  quantity    Int
+
+  pickup    PickupRequest       @relation(fields: [pickupId], references: [id], onDelete: Cascade)
+  orderItem CommercialOrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  @@id([pickupId, orderItemId])
+  @@map("pickup_request_items")
+}
+
+enum EventSource {
+  MANUAL
+  SISTEMA
+  INTEGRACAO
+
+  @@map("event_source")
+}
+
+/// Linha do tempo da retirada (confirmações manuais agora; integração no futuro).
+model PickupEvent {
+  id           String        @id @default(uuid()) @db.Uuid
+  pickupId     String        @map("pickup_id") @db.Uuid
+  kind         String        @db.VarChar(40)
+  fromStatus   PickupStatus? @map("from_status")
+  toStatus     PickupStatus? @map("to_status")
+  note         String?       @db.VarChar(1000)
+  source       EventSource   @default(MANUAL)
+  recordedById String?       @map("recorded_by_id") @db.Uuid
+  occurredAt   DateTime      @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  pickup     PickupRequest @relation(fields: [pickupId], references: [id], onDelete: Cascade)
+  recordedBy User?         @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([pickupId, occurredAt])
+  @@map("pickup_events")
+}
+
+enum ReceiptOrigin {
+  RETIRADA
+  ENTREGUE_PELO_CLIENTE
+
+  @@map("receipt_origin")
+}
+
+enum PieceCondition {
+  BOA
+  REGULAR
+  DANIFICADA
+
+  @@map("piece_condition")
+}
+
+/// Recebimento físico das peças na oficina (pode ser parcial).
+model Receipt {
+  id                   String        @id @default(uuid()) @db.Uuid
+  number               Int           @unique @default(autoincrement())
+  orderId              String        @map("order_id") @db.Uuid
+  pickupId             String?       @map("pickup_id") @db.Uuid
+  origin               ReceiptOrigin
+  receivedAt           DateTime      @map("received_at") @db.Timestamptz(3)
+  receivedByEmployeeId String?       @map("received_by_employee_id") @db.Uuid
+  registeredById       String?       @map("registered_by_id") @db.Uuid
+  divergences          String?       @db.VarChar(2000)
+  notes                String?       @db.VarChar(2000)
+  createdAt            DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order        CommercialOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  pickup       PickupRequest?  @relation(fields: [pickupId], references: [id], onDelete: Restrict)
+  receivedBy   Employee?       @relation("ReceiptReceivedBy", fields: [receivedByEmployeeId], references: [id], onDelete: SetNull)
+  registeredBy User?           @relation("ReceiptRegisteredBy", fields: [registeredById], references: [id], onDelete: SetNull)
+  lines        ReceiptLine[]
+
+  @@index([orderId])
+  @@index([receivedAt(sort: Desc)])
+  @@map("receipts")
+}
+
+model ReceiptLine {
+  id             String         @id @default(uuid()) @db.Uuid
+  receiptId      String         @map("receipt_id") @db.Uuid
+  orderItemId    String         @map("order_item_id") @db.Uuid
+  quantity       Int
+  condition      PieceCondition
+  conditionNotes String?        @map("condition_notes") @db.VarChar(500)
+  location       String         @db.VarChar(80)
+
+  receipt   Receipt             @relation(fields: [receiptId], references: [id], onDelete: Restrict)
+  orderItem CommercialOrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  @@unique([receiptId, orderItemId])
+  @@index([orderItemId])
+  @@map("receipt_lines")
+}
+
+enum ServiceOrderStatus {
+  ABERTA
+  CANCELADA
+
+  @@map("service_order_status")
+}
+
+enum Priority {
+  BAIXA
+  NORMAL
+  ALTA
+  URGENTE
+
+  @@map("priority")
+}
+
+enum ServiceType {
+  REFORMA_COMPLETA
+  TROCA_DE_TECIDO
+  TROCA_DE_ESPUMA
+  REPARO
+  FABRICACAO
+  INSTALACAO
+  OUTRO
+
+  @@map("service_type")
+}
+
+enum MeasurementKind {
+  ROTINA
+  EXTRAORDINARIA
+
+  @@map("measurement_kind")
+}
+
+/// Ordem de serviço técnica: só existe para peças efetivamente recebidas.
+model ServiceOrder {
+  id                    String             @id @default(uuid()) @db.Uuid
+  number                Int                @unique @default(autoincrement())
+  orderId               String             @map("order_id") @db.Uuid
+  customerId            String             @map("customer_id") @db.Uuid
+  status                ServiceOrderStatus @default(ABERTA)
+  technicalInstructions String?            @map("technical_instructions") @db.VarChar(4000)
+  notes                 String?            @db.VarChar(2000)
+  promisedDate          DateTime?          @map("promised_date") @db.Date
+  priority              Priority           @default(NORMAL)
+  technicalLeadId       String?            @map("technical_lead_id") @db.Uuid
+  cancelledAt           DateTime?          @map("cancelled_at") @db.Timestamptz(3)
+  cancelledById         String?            @map("cancelled_by_id") @db.Uuid
+  cancelReason          String?            @map("cancel_reason") @db.VarChar(500)
+  version               Int                @default(1)
+  createdById           String?            @map("created_by_id") @db.Uuid
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order         CommercialOrder        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customer      Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  technicalLead Employee?              @relation("ServiceOrderTechnicalLead", fields: [technicalLeadId], references: [id], onDelete: SetNull)
+  createdBy     User?                  @relation("ServiceOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  cancelledBy   User?                  @relation("ServiceOrderCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  items         ServiceOrderItem[]
+  revisions     ServiceOrderRevision[]
+  materials     MaterialRequirement[]
+
+  @@index([orderId])
+  @@index([customerId])
+  @@index([status])
+  @@map("service_orders")
+}
+
+/// Peça (ou conjunto de peças idênticas) da OS, com identificação individual (código OS-xxxxx/n).
+model ServiceOrderItem {
+  id               String           @id @default(uuid()) @db.Uuid
+  serviceOrderId   String           @map("service_order_id") @db.Uuid
+  orderItemId      String           @map("order_item_id") @db.Uuid
+  position         Int
+  pieceType        PieceType        @map("piece_type")
+  description      String           @db.VarChar(300)
+  quantity         Int
+  serviceType      ServiceType      @map("service_type")
+  fabricName       String?          @map("fabric_name") @db.VarChar(120)
+  fabricColor      String?          @map("fabric_color") @db.VarChar(80)
+  fabricReference  String?          @map("fabric_reference") @db.VarChar(80)
+  foamSpecs        String?          @map("foam_specs") @db.VarChar(500)
+  technicalNotes   String?          @map("technical_notes") @db.VarChar(2000)
+  /// Lista de medidas [{ label, valueCm }].
+  measurements     Json             @default("[]")
+  measurementNotes String?          @map("measurement_notes") @db.VarChar(1000)
+  measuredAt       DateTime?        @map("measured_at") @db.Timestamptz(3)
+  measuredById     String?          @map("measured_by_id") @db.Uuid
+  measurementKind  MeasurementKind? @map("measurement_kind")
+  version          Int              @default(1)
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  serviceOrder ServiceOrder          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  orderItem    CommercialOrderItem   @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  measuredBy   User?                 @relation("ItemMeasuredBy", fields: [measuredById], references: [id], onDelete: SetNull)
+  materials    MaterialRequirement[]
+
+  @@unique([serviceOrderId, position])
+  @@index([orderItemId])
+  @@map("service_order_items")
+}
+
+/// Histórico técnico da OS (imutável): cada alteração gera uma revisão numerada.
+model ServiceOrderRevision {
+  id             String   @id @default(uuid()) @db.Uuid
+  serviceOrderId String   @map("service_order_id") @db.Uuid
+  revision       Int
+  scope          String   @db.VarChar(20)
+  itemId         String?  @map("item_id") @db.Uuid
+  changes        Json
+  reason         String?  @db.VarChar(300)
+  changedById    String?  @map("changed_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  serviceOrder ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  changedBy    User?        @relation(fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@unique([serviceOrderId, revision])
+  @@map("service_order_revisions")
+}
+
+enum MaterialKind {
+  TECIDO
+  ESPUMA
+  OUTRO
+
+  @@map("material_kind")
+}
+
+enum MaterialSourcing {
+  EXCLUSIVO_OS
+  ESTOQUE
+
+  @@map("material_sourcing")
+}
+
+/// Necessidade de material da OS (estrutura preparatória para compras/estoque — Fase 3).
+/// Tecido é sempre de compra exclusiva da OS. Não dispara produção.
+model MaterialRequirement {
+  id                 String           @id @default(uuid()) @db.Uuid
+  serviceOrderId     String           @map("service_order_id") @db.Uuid
+  serviceOrderItemId String?          @map("service_order_item_id") @db.Uuid
+  kind               MaterialKind
+  description        String           @db.VarChar(200)
+  quantity           Decimal?         @db.Decimal(12, 3)
+  unit               String?          @db.VarChar(20)
+  sourcing           MaterialSourcing
+  notes              String?          @db.VarChar(500)
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  serviceOrder     ServiceOrder      @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  serviceOrderItem ServiceOrderItem? @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+
+  @@index([serviceOrderId])
+  @@map("material_requirements")
+}
+
+enum AttachmentEntity {
+  COMMERCIAL_ORDER
+  PICKUP
+  RECEIPT
+  SERVICE_ORDER
+  SERVICE_ORDER_ITEM
+
+  @@map("attachment_entity")
+}
+
+/// Vínculo entre arquivo privado (stored_files) e um registro do fluxo.
+model Attachment {
+  id          String           @id @default(uuid()) @db.Uuid
+  fileId      String           @unique @map("file_id") @db.Uuid
+  entityType  AttachmentEntity @map("entity_type")
+  entityId    String           @map("entity_id") @db.Uuid
+  caption     String?          @db.VarChar(200)
+  createdById String?          @map("created_by_id") @db.Uuid
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  deletedAt   DateTime?        @map("deleted_at") @db.Timestamptz(3)
+
+  file      StoredFile @relation(fields: [fileId], references: [id], onDelete: Restrict)
+  createdBy User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@map("attachments")
 }

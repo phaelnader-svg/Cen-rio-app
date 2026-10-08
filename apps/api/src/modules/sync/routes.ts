@@ -1,4 +1,4 @@
-import { EVENT_TYPES, eventsSinceSchema, syncSignalSchema } from '@cenario/shared';
+import { EVENT_TYPES, audienceAllows, eventsSinceSchema, syncSignalSchema } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
 import { actorFrom } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
@@ -64,17 +64,22 @@ export async function syncRoutes(app: FastifyInstance) {
   app.get('/api/sync/events', { config: { access: { session: 'any' } } }, async (request) => {
     const q = eventsSinceSchema.parse(request.query);
     const auth = request.auth!;
-    const audiences = [
-      'all',
-      `user:${auth.userId}`,
-      ...[...auth.permissions].map((p) => `permission:${p}`),
-    ];
-    const rows = await prisma.domainEvent.findMany({
-      where: { seq: { gt: BigInt(q.since) }, audience: { in: audiences } },
-      orderBy: { seq: 'asc' },
-      take: q.limit + 1,
-    });
-    const page = rows.slice(0, q.limit);
-    return { events: page.map(toRealtimeEvent), hasMore: rows.length > q.limit };
+    // A audiência pode combinar várias regras ("a|b"); o filtro é feito aqui,
+    // em lotes, para que eventos invisíveis não reduzam a página devolvida.
+    const visible: Awaited<ReturnType<typeof prisma.domainEvent.findMany>> = [];
+    let cursor = BigInt(q.since);
+    let exhausted = false;
+    while (visible.length <= q.limit && !exhausted) {
+      const batch = await prisma.domainEvent.findMany({
+        where: { seq: { gt: cursor } },
+        orderBy: { seq: 'asc' },
+        take: 500,
+      });
+      exhausted = batch.length < 500;
+      for (const e of batch) if (audienceAllows(e.audience, auth)) visible.push(e);
+      if (batch.length) cursor = batch[batch.length - 1]!.seq;
+    }
+    const page = visible.slice(0, q.limit);
+    return { events: page.map(toRealtimeEvent), hasMore: visible.length > q.limit };
   });
 }

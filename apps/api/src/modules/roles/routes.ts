@@ -1,4 +1,5 @@
 import {
+  ALL_PERMISSIONS,
   EVENT_TYPES,
   GESTOR_ROLE_KEY,
   PERMISSIONS,
@@ -37,7 +38,10 @@ function toRoleDto(r: RoleWithRelations): RoleDto {
     description: r.description,
     system: r.system,
     locked: r.key === GESTOR_ROLE_KEY,
-    permissions: r.permissions.map((p) => p.permission).filter(isPermission),
+    permissions:
+      r.key === GESTOR_ROLE_KEY
+        ? [...ALL_PERMISSIONS]
+        : r.permissions.map((p) => p.permission).filter(isPermission),
     memberCount: r._count.users,
     version: r.version,
   };

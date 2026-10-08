@@ -36,6 +36,21 @@ describe('Banco de dados e migrations', () => {
       'idempotency_keys',
       'auth_throttle',
       'stored_files',
+      // Fase 2
+      'customers',
+      'customer_addresses',
+      'commercial_orders',
+      'commercial_order_items',
+      'pickup_requests',
+      'pickup_request_items',
+      'pickup_events',
+      'receipts',
+      'receipt_lines',
+      'service_orders',
+      'service_order_items',
+      'service_order_revisions',
+      'material_requirements',
+      'attachments',
     ]) {
       expect(names).toContain(t);
     }
@@ -74,6 +89,31 @@ describe('Banco de dados e migrations', () => {
     ).rejects.toThrow();
     await expect(
       db().companySettings.update({ where: { id: 1 }, data: { workdayStart: '25:00' } }),
+    ).rejects.toThrow();
+  });
+
+  it('Fase 2: restrições impedem recebimento acima do pedido e tecido fora da OS', async () => {
+    const customer = await db().customer.create({
+      data: { kind: 'PF', name: 'Teste', searchText: 'teste' },
+    });
+    const order = await db().commercialOrder.create({
+      data: {
+        customerId: customer.id,
+        contractedService: 'Teste',
+        items: { create: { position: 1, pieceType: 'SOFA', description: 'Sofá', quantity: 1 } },
+      },
+      include: { items: true },
+    });
+    await expect(
+      db().commercialOrderItem.update({
+        where: { id: order.items[0]!.id },
+        data: { receivedQuantity: 2 },
+      }),
+    ).rejects.toThrow();
+    await expect(
+      db().customer.create({
+        data: { kind: 'PF', name: 'Doc', searchText: 'doc', document: '123' },
+      }),
     ).rejects.toThrow();
   });
 

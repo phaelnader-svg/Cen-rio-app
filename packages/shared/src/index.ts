@@ -9,3 +9,7 @@ export * from './schemas/devices';
 export * from './schemas/company';
 export * from './schemas/sync';
 export * from './types';
+export * from './domain';
+export * from './documents';
+export * from './schemas/commercial';
+export * from './types-commercial';

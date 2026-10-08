@@ -169,6 +169,12 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
       ...(access.permissions ?? []),
     ];
     const missing = required.filter((p) => !auth.permissions.has(p));
+    if (
+      access.anyPermissions?.length &&
+      !access.anyPermissions.some((p) => auth.permissions.has(p))
+    ) {
+      missing.push(...access.anyPermissions);
+    }
     if (missing.length > 0) {
       request.log.info({ missing, userId: auth.userId }, 'Acesso negado por permissão');
       throw Errors.forbidden();

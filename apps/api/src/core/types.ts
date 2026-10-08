@@ -31,7 +31,10 @@ export type AccessRule =
   | { device: true }
   | {
       session: 'any' | SessionKind;
+      /** Todas obrigatórias. */
       permissions?: readonly Permission[];
+      /** Basta possuir uma delas (avaliado além de `permissions`). */
+      anyPermissions?: readonly Permission[];
       /**
        * Dispensa a permissão de ambiente (painel/produção). Usado apenas em rotas
        * que precisam funcionar para qualquer sessão válida (ex.: /auth/me, logout).

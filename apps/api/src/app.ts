@@ -18,7 +18,13 @@ import type { AppContext } from './core/types';
 import { createTokenHasher } from './lib/crypto';
 import { LOG_REDACT_PATHS } from './lib/log-redaction';
 import { auditRoutes } from './modules/audit/routes';
+import { attachmentRoutes } from './modules/attachments/routes';
 import { authRoutes } from './modules/auth/routes';
+import { customerRoutes } from './modules/customers/routes';
+import { orderRoutes } from './modules/orders/routes';
+import { pickupRoutes } from './modules/pickups/routes';
+import { receiptRoutes } from './modules/receipts/routes';
+import { serviceOrderRoutes } from './modules/service-orders/routes';
 import { companyRoutes } from './modules/company/routes';
 import { deviceRoutes } from './modules/devices/routes';
 import { employeeRoutes } from './modules/employees/routes';
@@ -135,6 +141,13 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(syncRoutes);
   await app.register(fileRoutes);
   await app.register(realtimeRoutes);
+  // Fase 2 — fluxo comercial → oficina (API versionada /api/v1)
+  await app.register(customerRoutes);
+  await app.register(orderRoutes);
+  await app.register(pickupRoutes);
+  await app.register(receiptRoutes);
+  await app.register(serviceOrderRoutes);
+  await app.register(attachmentRoutes);
 
   // Presença dos tablets: transições online/offline viram eventos persistentes.
   hub.onPresence((deviceId, online) => {

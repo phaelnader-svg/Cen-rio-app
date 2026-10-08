@@ -16,6 +16,9 @@ export const PERMISSION_GROUPS = {
   seguranca: 'Funções e segurança',
   dispositivos: 'Dispositivos e sessões',
   empresa: 'Empresa',
+  comercial: 'Clientes e pedidos',
+  logistica: 'Retiradas e recebimentos',
+  servicos: 'Ordens de serviço',
   sistema: 'Sistema',
 } as const;
 
@@ -94,6 +97,72 @@ export const PERMISSIONS = {
     label: 'Configurar empresa',
     description: 'Alterar dados e parâmetros operacionais da empresa.',
     critical: true,
+  },
+  'clientes.ver': {
+    group: 'comercial',
+    label: 'Ver clientes',
+    description: 'Consultar clientes, incluindo documentos, contatos e endereços (dados pessoais).',
+  },
+  'clientes.gerenciar': {
+    group: 'comercial',
+    label: 'Gerenciar clientes',
+    description: 'Cadastrar e editar clientes e seus endereços.',
+    critical: true,
+  },
+  'pedidos.ver': {
+    group: 'comercial',
+    label: 'Ver pedidos comerciais',
+    description: 'Consultar pedidos, peças e situação (sem valores).',
+  },
+  'pedidos.gerenciar': {
+    group: 'comercial',
+    label: 'Criar e editar pedidos',
+    description: 'Criar pedidos comerciais e alterar suas informações.',
+    critical: true,
+  },
+  'pedidos.valores': {
+    group: 'comercial',
+    label: 'Ver e alterar valores',
+    description: 'Ver e alterar valor negociado e condições comerciais.',
+    critical: true,
+  },
+  'pedidos.cancelar': {
+    group: 'comercial',
+    label: 'Cancelar pedidos',
+    description: 'Cancelar pedidos comerciais.',
+    critical: true,
+  },
+  'retiradas.ver': {
+    group: 'logistica',
+    label: 'Ver retiradas',
+    description: 'Consultar solicitações e agenda de retiradas (endereço e contato do cliente).',
+  },
+  'retiradas.gerenciar': {
+    group: 'logistica',
+    label: 'Solicitar e agendar retiradas',
+    description: 'Criar, agendar, reagendar e registrar o andamento das retiradas.',
+    critical: true,
+  },
+  'recebimentos.registrar': {
+    group: 'logistica',
+    label: 'Registrar recebimento de peças',
+    description: 'Registrar a chegada física das peças na oficina, com conferência.',
+  },
+  'os.ver': {
+    group: 'servicos',
+    label: 'Ver ordens de serviço',
+    description: 'Consultar ordens de serviço e especificações técnicas.',
+  },
+  'os.gerenciar': {
+    group: 'servicos',
+    label: 'Criar e alterar ordens de serviço',
+    description: 'Criar OS após o recebimento e alterar informações técnicas.',
+    critical: true,
+  },
+  'medicoes.extraordinarias': {
+    group: 'servicos',
+    label: 'Registrar medições extraordinárias',
+    description: 'Registrar medidas fora da rotina do gestor (delegação a tapeceiro autorizado).',
   },
   'auditoria.ver': {
     group: 'sistema',

@@ -1,5 +1,6 @@
 import {
   EVENT_TYPES,
+  audienceAllows,
   MAX_REPLAY_EVENTS,
   type ClientMessage,
   type Permission,
@@ -261,12 +262,7 @@ export class RealtimeHub {
   }
 
   private canSee(conn: Connection, audience: string): boolean {
-    if (audience === 'all') return true;
-    if (audience.startsWith('permission:')) {
-      return conn.permissions.has(audience.slice('permission:'.length) as Permission);
-    }
-    if (audience.startsWith('user:')) return conn.userId === audience.slice('user:'.length);
-    return false;
+    return audienceAllows(audience, conn);
   }
 
   private handleControlEvent(event: DomainEvent): void {

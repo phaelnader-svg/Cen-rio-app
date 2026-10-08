@@ -20,6 +20,18 @@ export const EVENT_TYPES = {
   SESSION_REVOKED: 'session.revoked',
   COMPANY_SETTINGS_UPDATED: 'company.settings_updated',
   SYNC_SIGNAL: 'sync.signal',
+  CUSTOMER_CREATED: 'customer.created',
+  CUSTOMER_UPDATED: 'customer.updated',
+  ORDER_CREATED: 'order.created',
+  ORDER_UPDATED: 'order.updated',
+  ORDER_CANCELLED: 'order.cancelled',
+  PICKUP_CREATED: 'pickup.created',
+  PICKUP_UPDATED: 'pickup.updated',
+  PICKUP_STATUS_CHANGED: 'pickup.status_changed',
+  RECEIPT_REGISTERED: 'receipt.registered',
+  SERVICE_ORDER_CREATED: 'service_order.created',
+  SERVICE_ORDER_UPDATED: 'service_order.updated',
+  ATTACHMENT_CHANGED: 'attachment.changed',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];
@@ -29,8 +41,28 @@ export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];
  * - `all`: qualquer sessão autenticada.
  * - `permission:<p>`: apenas sessões com a permissão.
  * - `user:<id>`: apenas sessões do usuário.
+ * Várias audiências podem ser combinadas com `|` (basta atender a uma).
  */
-export type EventAudience = 'all' | `permission:${string}` | `user:${string}`;
+type SingleAudience = 'all' | `permission:${string}` | `user:${string}`;
+export type EventAudience = SingleAudience | `${SingleAudience}|${string}`;
+
+/** Monta uma audiência "qualquer uma destas permissões". */
+export function anyPermissionAudience(...permissions: string[]): EventAudience {
+  return permissions.map((p) => `permission:${p}`).join('|') as EventAudience;
+}
+
+/** Verifica se um destinatário atende à audiência do evento. */
+export function audienceAllows(
+  audience: string,
+  who: { userId: string; permissions: ReadonlySet<string> },
+): boolean {
+  return audience.split('|').some((a) => {
+    if (a === 'all') return true;
+    if (a.startsWith('permission:')) return who.permissions.has(a.slice('permission:'.length));
+    if (a.startsWith('user:')) return who.userId === a.slice('user:'.length);
+    return false;
+  });
+}
 
 export interface RealtimeEvent<T = unknown> {
   /** Sequência global (string para preservar precisão de bigint). */
