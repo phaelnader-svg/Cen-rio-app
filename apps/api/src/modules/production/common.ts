@@ -5,7 +5,9 @@ import {
   evaluateRelease,
   formatServiceOrderItemCode,
   q3,
+  issueCode,
   localParts,
+  type IssueKind,
   taskCode,
   type EventType,
   type ProductionTaskDto,
@@ -82,6 +84,15 @@ export const taskInclude = {
   dependents: { include: { task: { select: refSelect } } },
   supportFor: {
     select: { id: true, number: true, title: true, assignee: { select: { displayName: true } } },
+  },
+  issue: {
+    select: {
+      id: true,
+      number: true,
+      kind: true,
+      description: true,
+      reporter: { select: { displayName: true } },
+    },
   },
 } as const;
 export type TaskRow = Prisma.ProductionTaskGetPayload<{ include: typeof taskInclude }>;
@@ -167,6 +178,15 @@ export function toTaskDto(t: TaskRow, timeZone: string): ProductionTaskDto {
           code: taskCode(t.supportFor.number),
           title: t.supportFor.title,
           requester: t.supportFor.assignee?.displayName ?? null,
+        }
+      : null,
+    issueFor: t.issue
+      ? {
+          id: t.issue.id,
+          code: issueCode(t.issue.number),
+          kind: t.issue.kind as IssueKind,
+          description: t.issue.description,
+          reporter: t.issue.reporter.displayName,
         }
       : null,
     version: t.version,
@@ -281,6 +301,19 @@ export async function taskMaterialsReady(
 
 // ─────────────────────────── Liberação ───────────────────────────
 
+/** Fase 9: ocorrência aberta que impede a tarefa (bloqueio total ou "faz outra atividade"). */
+export async function hasBlockingIssue(db: Tx | PrismaClient, taskId: string) {
+  return (
+    (await db.productionIssue.count({
+      where: {
+        taskId,
+        blocksTask: true,
+        status: { in: ['ABERTA', 'ATRIBUIDA', 'EM_RESOLUCAO', 'AGUARDANDO_VERIFICACAO'] },
+      },
+    })) > 0
+  );
+}
+
 type BlockedTask = Prisma.ProductionTaskGetPayload<object>;
 type BlockedListener = (tx: Tx, actor: ActorContext, task: BlockedTask) => Promise<void>;
 const blockedListeners: BlockedListener[] = [];
@@ -327,6 +360,7 @@ export async function reevaluateTasks(
     });
     if (!t || !(TASK_WAITING as readonly string[]).includes(t.status)) continue;
     const materialsReady = await taskMaterialsReady(tx, t, readiness);
+    const openIssue = await hasBlockingIssue(tx, t.id);
     const items = t.serviceOrderItemId
       ? t.serviceOrder.items.filter((i) => i.id === t.serviceOrderItemId)
       : t.serviceOrder.items;
@@ -334,7 +368,7 @@ export async function reevaluateTasks(
       osActive: t.serviceOrder.status === 'ABERTA',
       pieceReceived: items.length > 0 && items.every((i) => i.orderItem.receivedQuantity > 0),
       // Tarefa de apoio (Fase 8) nasce de uma tarefa principal já liberada.
-      published: t.plan?.status === 'PUBLICADO' || Boolean(t.supportForTaskId),
+      published: t.plan?.status === 'PUBLICADO' || Boolean(t.supportForTaskId || t.issueId),
       assigned: Boolean(t.assigneeUserId),
       // Etapa cancelada (não aplicável) não segura as seguintes.
       dependenciesDone: t.dependsOn.every(
@@ -343,6 +377,7 @@ export async function reevaluateTasks(
       materialsReady,
       requiresMaterials: t.requiresMaterials,
       manuallyBlocked: Boolean(t.blockedReason),
+      openIssue,
       scheduledAt: t.scheduledAt,
       now,
     });

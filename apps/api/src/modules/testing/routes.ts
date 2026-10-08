@@ -4,6 +4,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { detectAbsences } from '../attendance/absence';
 import { clock, setAttendanceClock } from '../attendance/common';
 import { processHelpQueue } from '../help/queue';
+import { processIssueRisks } from '../issues/service';
 
 /**
  * Fase 8 — relógio de teste. Registrado somente com ENABLE_TEST_CLOCK=true e APP_ENV=test
@@ -37,5 +38,6 @@ export async function testClockRoutes(app: FastifyInstance) {
   app.post('/api/test/attendance/check', { config: { access: ACCESS } }, async () => ({
     flagged: await detectAbsences(prisma),
     assigned: await processHelpQueue(prisma),
+    issueRisks: await processIssueRisks(prisma),
   }));
 }

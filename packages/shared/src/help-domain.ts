@@ -228,6 +228,8 @@ export const PLANNING_ACTION_KINDS = [
   'PROPOSTA_APROVADA',
   'PROPOSTA_REJEITADA',
   'PROPOSTA_OBSOLETA',
+  // Fase 9
+  'RESOLUCAO_ATRIBUIDA',
 ] as const;
 export type PlanningActionKind = (typeof PLANNING_ACTION_KINDS)[number];
 export const PLANNING_ACTION_LABEL: Record<PlanningActionKind, string> = {
@@ -241,4 +243,5 @@ export const PLANNING_ACTION_LABEL: Record<PlanningActionKind, string> = {
   PROPOSTA_APROVADA: 'Reprogramação aprovada e aplicada',
   PROPOSTA_REJEITADA: 'Reprogramação rejeitada',
   PROPOSTA_OBSOLETA: 'Proposta sem efeito',
+  RESOLUCAO_ATRIBUIDA: 'Solução de ocorrência delegada',
 };

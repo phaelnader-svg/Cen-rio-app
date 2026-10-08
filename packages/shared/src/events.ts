@@ -97,6 +97,15 @@ export const EVENT_TYPES = {
   RESCHEDULE_PROPOSED: 'reschedule.proposed',
   RESCHEDULE_DECIDED: 'reschedule.decided',
   PLANNING_ACTION_RECORDED: 'planning.action_recorded',
+  // Fase 9 — ocorrências e central de atenção
+  ISSUE_OPENED: 'issue.opened',
+  ISSUE_ASSIGNED: 'issue.assigned',
+  ISSUE_UPDATED: 'issue.updated',
+  ISSUE_VERIFICATION_REQUESTED: 'issue.verification_requested',
+  ISSUE_RESOLVED: 'issue.resolved',
+  ISSUE_REOPENED: 'issue.reopened',
+  ISSUE_CANCELLED: 'issue.cancelled',
+  ISSUE_RISK: 'issue.risk',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

@@ -9,6 +9,7 @@ import {
 } from '@cenario/shared';
 import type { PrismaClient, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
+import { Errors } from '../../lib/errors';
 import type { ActorContext } from '../../core/types';
 import { clock, notifyManagers } from '../attendance/common';
 import { notify } from '../notifications/notify';
@@ -24,7 +25,7 @@ import {
   reasonText,
   type HelpRow,
 } from './engine';
-import { proposeUrgentInterruption } from './reschedule';
+import { obsoleteProposals, proposeUrgentInterruption } from './reschedule';
 
 /** Serializa as atribuições (duas solicitações simultâneas nunca pegam o mesmo ajudante). */
 export async function lockAssignments(tx: Tx) {
@@ -179,7 +180,25 @@ export async function tryAssign(tx: Tx, actor: ActorContext, requestId: string, 
         ? `; ${others.map((c) => `${c.name}: ${c.eligible ? `impacto ${c.score}` : reasonText(c)}`).join('; ')}`
         : ''
     }).`;
-    return assignTo(tx, SYSTEM, req, best.userId, best.name, now, evaluation, note, true);
+    const assigned = await assignTo(
+      tx,
+      SYSTEM,
+      req,
+      best.userId,
+      best.name,
+      now,
+      evaluation,
+      note,
+      true,
+    );
+    // Fase 9: a proposta de conflito (risco de atraso) perde o efeito com a atribuição.
+    await obsoleteProposals(
+      tx,
+      SYSTEM,
+      { helpRequestId: req.id },
+      `${helpRequestCode(req.number)} atribuída automaticamente a ${best.name}.`,
+    );
+    return assigned;
   }
   // Urgente: encaminha ao gestor uma única vez (se ele rejeitar, o pedido segue na fila).
   const escalatedBefore = await tx.rescheduleProposal.count({ where: { helpRequestId: req.id } });
@@ -266,6 +285,32 @@ async function runQueue(prisma: PrismaClient, now: Date) {
         kind: 'RISCO_ATRASO',
         note: `Aguardando há ${minutes} min (limite ${limit} min): gestor avisado.`,
       });
+      // Fase 9: falta de ajudante com risco de atraso → proposta de CONFLITO ao gestor,
+      // quando alguém poderia ser liberado (nada é interrompido sem aprovação).
+      const locked = await lockHelpRequest(tx, w.id);
+      if (
+        locked?.status === 'PENDENTE' &&
+        !(await tx.rescheduleProposal.count({ where: { helpRequestId: w.id } }))
+      ) {
+        const { candidates, interruptible } = await evaluateCandidates(
+          tx,
+          {
+            requesterUserId: w.requesterUserId,
+            skill: HELP_KIND_SKILL[w.kind as HelpKind],
+            estimatedMinutes: w.estimatedMinutes,
+          },
+          now,
+        );
+        if (interruptible.length)
+          await proposeUrgentInterruption(
+            tx,
+            SYSTEM,
+            locked,
+            interruptible,
+            { at: now.toISOString(), candidates },
+            'ATRASO',
+          );
+      }
       await notifyManagers(
         tx,
         SYSTEM,
@@ -276,5 +321,75 @@ async function runQueue(prisma: PrismaClient, now: Date) {
       );
     });
   }
+  return assigned;
+}
+
+const IMPOSSIBLE = ['SEM_COMPETENCIA', 'NAO_CONFIRMOU', 'AUSENTE', 'EXTERNO', 'ENCERRADO'];
+
+/**
+ * Fase 9 — escolha manual do ajudante pelo gestor. Atribuições impossíveis (sem competência,
+ * ausente, sem chegada, externo, encerrado) são recusadas; conflito (ocupado, tarefa
+ * importante, agenda) exige aprovação explícita e o impacto fica registrado. O histórico
+ * guarda a avaliação, como na escolha automática.
+ */
+export async function manualAssign(
+  tx: Tx,
+  actor: ActorContext,
+  requestId: string,
+  input: { helperUserId: string; confirmConflict: boolean; note?: string | null; version?: number },
+  now = clock(),
+) {
+  await lockAssignments(tx);
+  const req = await lockHelpRequest(tx, requestId);
+  if (!req) throw Errors.notFound('Pedido de ajuda');
+  if (input.version !== undefined && req.version !== input.version)
+    throw Errors.versionConflict(req.version);
+  if (req.status !== 'PENDENTE' && req.status !== 'ESCALADA')
+    throw Errors.business('Este pedido já tem ajudante ou foi encerrado.');
+  const { candidates } = await evaluateCandidates(
+    tx,
+    {
+      requesterUserId: req.requesterUserId,
+      skill: HELP_KIND_SKILL[req.kind as HelpKind],
+      estimatedMinutes: req.estimatedMinutes,
+    },
+    now,
+  );
+  const c = candidates.find((x) => x.userId === input.helperUserId);
+  if (!c) throw Errors.business('Escolha alguém da equipe da oficina (não quem pediu).');
+  const impossible = c.reasons.filter((r) => IMPOSSIBLE.includes(r));
+  if (impossible.length)
+    throw Errors.business(
+      `${c.name} não pode ajudar agora: ${reasonText({ ...c, reasons: impossible })}.`,
+    );
+  const conflicts = c.reasons.filter((r) => !IMPOSSIBLE.includes(r));
+  if (conflicts.length && !input.confirmConflict)
+    throw Errors.conflict(
+      `${c.name} tem conflito: ${reasonText({ ...c, reasons: conflicts })}. Confirme para atribuir mesmo assim.`,
+      { reasons: conflicts, notes: c.notes },
+    );
+  const impact = conflicts.length
+    ? ` Conflito aprovado: ${reasonText({ ...c, reasons: conflicts })}${c.notes.length ? ` (${c.notes.join('; ')})` : ''}${input.note ? ` — ${input.note}` : ''}.`
+    : input.note
+      ? ` ${input.note}`
+      : '';
+  const note = `Manual: gestor escolheu ${c.name}.${impact}`;
+  const assigned = await assignTo(
+    tx,
+    actor,
+    req,
+    c.userId,
+    c.name,
+    now,
+    { at: now.toISOString(), candidates, manual: true },
+    note,
+    false,
+  );
+  await obsoleteProposals(
+    tx,
+    actor,
+    { helpRequestId: req.id },
+    `${helpRequestCode(req.number)}: ajudante escolhido manualmente (${c.name}).`,
+  );
   return assigned;
 }

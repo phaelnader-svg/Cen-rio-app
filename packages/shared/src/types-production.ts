@@ -1,3 +1,4 @@
+import type { IssueKind } from './issue-domain';
 import type { PieceType, Priority } from './domain';
 import type { MaterialReadiness } from './purchasing-domain';
 import type {
@@ -91,6 +92,14 @@ export interface ProductionTaskDto {
   /** Fase 8: duração estimada (apoios) e vínculo da tarefa de apoio com a tarefa principal. */
   estimatedMinutes: number | null;
   supportFor: { id: string; code: string; title: string; requester: string | null } | null;
+  /** Fase 9: tarefa de resolução de uma ocorrência. */
+  issueFor: {
+    id: string;
+    code: string;
+    kind: IssueKind;
+    description: string;
+    reporter: string;
+  } | null;
   version: number;
 }
 

@@ -43,6 +43,7 @@ import {
   canViewAll,
   company,
   domainTaskEvent,
+  hasBlockingIssue,
   lockTasks,
   reevaluateTasks,
   taskEvent,
@@ -54,6 +55,13 @@ import { announceAssignments, assertWorker, reviseIfPublished } from './plans';
 import { cancelHelpForClosedTask, processHelpQueue } from '../help/queue';
 import { supportCancelled, supportCompleted, supportStarted } from '../help/support';
 import { suggestAlternative } from '../help/reschedule';
+import {
+  actionCancelled,
+  actionCompleted,
+  actionProgress,
+  actionStarted,
+  originalTaskClosed,
+} from '../issues/service';
 
 const deviceOf = (request: FastifyRequest) => request.auth?.deviceId ?? null;
 
@@ -546,6 +554,9 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         // Fase 8: apoio cancelado encerra o pedido; tarefa principal cancelada cancela os pedidos.
         if (t.supportForTaskId) await supportCancelled(tx, actor, t.id, input.reason);
         else await cancelHelpForClosedTask(tx, actor, t.id);
+        // Fase 9: resolução cancelada → ocorrência volta a aguardar delegação.
+        if (t.issueId) await actionCancelled(tx, actor, t.id, input.reason);
+        else await originalTaskClosed(tx, actor, t.id, 'CANCELADA');
         await reevaluateTasks(
           tx,
           actor,
@@ -849,7 +860,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         const check = evaluateRelease({
           osActive: true,
           pieceReceived: items.length > 0 && items.every((i) => i.orderItem.receivedQuantity > 0),
-          published: t.plan?.status === 'PUBLICADO' || Boolean(t.supportForTaskId),
+          published: t.plan?.status === 'PUBLICADO' || Boolean(t.supportForTaskId || t.issueId),
           assigned: true,
           dependenciesDone: t.dependsOn.every(
             (d) => d.dependsOn.status === 'CONCLUIDA' || d.dependsOn.status === 'CANCELADA',
@@ -857,6 +868,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           materialsReady: await taskMaterialsReady(tx, t),
           requiresMaterials: t.requiresMaterials,
           manuallyBlocked: Boolean(t.blockedReason),
+          openIssue: await hasBlockingIssue(tx, t.id),
           scheduledAt: t.scheduledAt,
           now,
         });
@@ -882,6 +894,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         });
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_STARTED, u);
         if (t.supportForTaskId) await supportStarted(tx, actor, t.id, now);
+        if (t.issueId) await actionStarted(tx, actor, t.id);
         return;
       }
       if (action === 'pause') {
@@ -924,6 +937,11 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         if (t.status === 'EM_EXECUCAO') return;
         if (t.status !== 'PAUSADA')
           throw Errors.business('Só tarefas pausadas podem ser retomadas.');
+        // Fase 9: não retoma enquanto a ocorrência que a impede não for resolvida.
+        if (await hasBlockingIssue(tx, t.id))
+          throw Errors.business(
+            'Há uma ocorrência aberta impedindo esta tarefa: aguarde a resolução confirmada.',
+          );
         const u = await tx.productionTask.update({
           where: { id },
           data: {
@@ -969,6 +987,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           },
         });
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_PROGRESS, u);
+        if (t.issueId) await actionProgress(tx, actor, t.id, progress!.note ?? null);
         return;
       }
       // Conclusão
@@ -1018,6 +1037,9 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       // concluir a principal cancela pedidos que nem começaram.
       if (t.supportForTaskId) await supportCompleted(tx, actor, t.id, now);
       else await cancelHelpForClosedTask(tx, actor, t.id);
+      // Fase 9: concluir a resolução NÃO encerra a ocorrência — vai para verificação.
+      if (t.issueId) await actionCompleted(tx, actor, t.id, completion!.note ?? null);
+      else await originalTaskClosed(tx, actor, t.id, 'CONCLUIDA');
       // Reavalia as dependentes (bloqueadas): as elegíveis são liberadas e o responsável é avisado.
       await reevaluateTasks(
         tx,

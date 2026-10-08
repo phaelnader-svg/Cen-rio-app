@@ -7,6 +7,8 @@ import {
   TASK_WAITING,
   adjustProposalSchema,
   approveProposalSchema,
+  manualHelpAssignSchema,
+  HELP_KIND_SKILL,
   cancelHelpRequestSchema,
   compareTasks,
   createHelpRequestSchema,
@@ -42,7 +44,8 @@ import { notify } from '../notifications/notify';
 import { idParams } from '../presenters';
 import { EXECUTE, company, taskInclude, toTaskDto } from '../production/common';
 import { HELP_AUDIENCE, helpDomainEvent, helpEvent } from './engine';
-import { cancelHelp, lockHelpRequest, processHelpQueue, tryAssign } from './queue';
+import { cancelHelp, lockHelpRequest, manualAssign, processHelpQueue, tryAssign } from './queue';
+import { evaluateCandidates } from './engine';
 import { decideProposal } from './reschedule';
 
 // ─────────────────────────── Acesso ───────────────────────────
@@ -392,6 +395,35 @@ export async function helpRoutes(app: FastifyInstance) {
           input.reason ? `${input.reason} (${who}).` : `cancelado pelo ${who}.`,
         );
       });
+      return (await loadHelp(prisma, id, true)).dto;
+    },
+  );
+
+  /** Fase 9: candidatos avaliados agora (para a escolha manual do ajudante). */
+  app.get('/api/v1/help-requests/:id/candidates', { config: { access: PLAN } }, async (request) => {
+    const { id } = idParams.parse(request.params);
+    const req = await prisma.helpRequest.findUnique({ where: { id } });
+    if (!req) throw Errors.notFound('Pedido de ajuda');
+    const { candidates } = await prisma.$transaction((tx) =>
+      evaluateCandidates(tx, {
+        requesterUserId: req.requesterUserId,
+        skill: HELP_KIND_SKILL[req.kind as HelpKind],
+        estimatedMinutes: req.estimatedMinutes,
+      }),
+    );
+    return { candidates };
+  });
+
+  /** Fase 9: escolha manual do ajudante (validada; conflito exige aprovação explícita). */
+  app.post(
+    '/api/v1/help-requests/:id/assign',
+    { config: { access: PLAN, idempotent: true } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const input = manualHelpAssignSchema.parse(request.body);
+      const actor = actorFrom(request);
+      await prisma.$transaction((tx) => manualAssign(tx, actor, id, input));
+      await requeue();
       return (await loadHelp(prisma, id, true)).dto;
     },
   );

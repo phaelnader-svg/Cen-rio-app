@@ -248,6 +248,24 @@ export const PERMISSIONS = {
     description:
       'Pedir apoio (normal ou urgente) nas próprias tarefas em andamento, consultar e cancelar os próprios pedidos.',
   },
+  'ocorrencias.registrar': {
+    group: 'producao',
+    label: 'Registrar problemas nas próprias tarefas',
+    description:
+      'Abrir ocorrência (falta de material, problema técnico ou outro impedimento) nas próprias tarefas, com foto opcional, e acompanhá-la.',
+  },
+  'ocorrencias.ver': {
+    group: 'producao',
+    label: 'Ver central de atenção',
+    description: 'Consultar a central de atenção, as ocorrências, seus impactos e o histórico.',
+  },
+  'ocorrencias.gerenciar': {
+    group: 'producao',
+    label: 'Delegar e encerrar ocorrências',
+    description:
+      'Atribuir a solução, confirmar ou recusar a resolução, reabrir e cancelar ocorrências (com motivo) e escolher o ajudante manualmente (gestor).',
+    critical: true,
+  },
   'presenca.registrar': {
     group: 'presenca',
     label: 'Registrar a própria presença',
@@ -319,6 +337,7 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
+      'ocorrencias.registrar',
       'ajuda.solicitar',
       'presenca.registrar',
       'sincronizacao.diagnosticar',
@@ -333,6 +352,7 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
+      'ocorrencias.registrar',
       'ajuda.solicitar',
       'presenca.registrar',
       'sincronizacao.diagnosticar',
@@ -346,6 +366,7 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
+      'ocorrencias.registrar',
       'presenca.registrar',
       'sincronizacao.diagnosticar',
     ],

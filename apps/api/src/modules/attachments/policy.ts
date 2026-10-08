@@ -9,6 +9,7 @@ export const VIEW_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   SERVICE_ORDER: ['os.ver'],
   SERVICE_ORDER_ITEM: ['os.ver'],
   PRODUCTION_TASK: ['producao.ver', 'producao.planejar'],
+  PRODUCTION_ISSUE: ['ocorrencias.ver', 'ocorrencias.gerenciar'],
 };
 
 /** Quem pode ENVIAR/REMOVER fotos de cada tipo de registro. */
@@ -19,6 +20,7 @@ export const MANAGE_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   SERVICE_ORDER: ['os.gerenciar'],
   SERVICE_ORDER_ITEM: ['os.gerenciar'],
   PRODUCTION_TASK: ['producao.planejar'],
+  PRODUCTION_ISSUE: ['ocorrencias.gerenciar'],
 };
 
 export function allowed(perms: ReadonlySet<Permission>, list: Permission[]): boolean {
@@ -43,6 +45,8 @@ export async function entityExists(
       return (await db.serviceOrderItem.count({ where: { id } })) > 0;
     case 'PRODUCTION_TASK':
       return (await db.productionTask.count({ where: { id } })) > 0;
+    case 'PRODUCTION_ISSUE':
+      return (await db.productionIssue.count({ where: { id } })) > 0;
   }
 }
 
@@ -56,6 +60,14 @@ export async function viewableAsMeasurementAssignee(
   type: AttachmentEntity,
   id: string,
 ): Promise<boolean> {
+  // Fase 9: fotos da ocorrência — quem registrou e quem resolve.
+  if (type === 'PRODUCTION_ISSUE') {
+    return (
+      (await db.productionIssue.count({
+        where: { id, OR: [{ reporterUserId: userId }, { assigneeUserId: userId }] },
+      })) > 0
+    );
+  }
   // Fase 6: fotos da própria tarefa (andamento/conclusão).
   if (type === 'PRODUCTION_TASK') {
     return (
@@ -92,6 +104,18 @@ export async function uploadableAsTaskAssignee(
   type: AttachmentEntity,
   id: string,
 ): Promise<boolean> {
+  // Fase 9: evidência da ocorrência aberta — quem registrou ou quem está resolvendo.
+  if (type === 'PRODUCTION_ISSUE') {
+    return (
+      (await db.productionIssue.count({
+        where: {
+          id,
+          status: { in: ['ABERTA', 'ATRIBUIDA', 'EM_RESOLUCAO', 'AGUARDANDO_VERIFICACAO'] },
+          OR: [{ reporterUserId: userId }, { assigneeUserId: userId }],
+        },
+      })) > 0
+    );
+  }
   if (type !== 'PRODUCTION_TASK') return false;
   return (
     (await db.productionTask.count({

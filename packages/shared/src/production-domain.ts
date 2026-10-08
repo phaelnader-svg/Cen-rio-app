@@ -124,6 +124,16 @@ export const NOTIFICATION_KINDS = [
   'REPROGRAMACAO_AUTOMATICA',
   'REPROGRAMACAO_REJEITADA',
   'TAREFA_ALTERNATIVA_LIBERADA',
+  // Fase 9 — ocorrências
+  'OCORRENCIA_ABERTA',
+  'OCORRENCIA_ATRIBUIDA',
+  'OCORRENCIA_PRAZO_RISCO',
+  'SOLUCAO_CONCLUIDA',
+  'VERIFICACAO_NECESSARIA',
+  'OCORRENCIA_RESOLVIDA',
+  'OCORRENCIA_CANCELADA',
+  'OCORRENCIA_REABERTA',
+  'TAREFA_DESBLOQUEADA',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -154,6 +164,15 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   REPROGRAMACAO_AUTOMATICA: 'Reprogramação automática',
   REPROGRAMACAO_REJEITADA: 'Reprogramação rejeitada',
   TAREFA_ALTERNATIVA_LIBERADA: 'Tarefa alternativa liberada',
+  OCORRENCIA_ABERTA: 'Ocorrência aberta',
+  OCORRENCIA_ATRIBUIDA: 'Ocorrência atribuída a você',
+  OCORRENCIA_PRAZO_RISCO: 'Prazo de resolução em risco',
+  SOLUCAO_CONCLUIDA: 'Solução concluída',
+  VERIFICACAO_NECESSARIA: 'Verificação necessária',
+  OCORRENCIA_RESOLVIDA: 'Ocorrência resolvida',
+  OCORRENCIA_CANCELADA: 'Ocorrência cancelada',
+  OCORRENCIA_REABERTA: 'Ocorrência reaberta',
+  TAREFA_DESBLOQUEADA: 'Tarefa desbloqueada',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;
@@ -176,6 +195,7 @@ export const RELEASE_BLOCKERS = [
   'DEPENDENCIAS',
   'MATERIAIS',
   'BLOQUEIO',
+  'OCORRENCIA',
 ] as const;
 export type ReleaseBlocker = (typeof RELEASE_BLOCKERS)[number];
 export const RELEASE_BLOCKER_LABEL: Record<ReleaseBlocker, string> = {
@@ -186,6 +206,7 @@ export const RELEASE_BLOCKER_LABEL: Record<ReleaseBlocker, string> = {
   DEPENDENCIAS: 'Aguardando etapas anteriores',
   MATERIAIS: 'Materiais não disponíveis/reservados',
   BLOQUEIO: 'Bloqueada pelo gestor',
+  OCORRENCIA: 'Ocorrência aberta impede a tarefa',
 };
 
 export interface ReleaseInput {
@@ -198,6 +219,8 @@ export interface ReleaseInput {
   materialsReady: boolean;
   requiresMaterials: boolean;
   manuallyBlocked: boolean;
+  /** Fase 9: ocorrência aberta que impede a tarefa. */
+  openIssue?: boolean;
   scheduledAt: Date | null;
   now: Date;
 }
@@ -219,6 +242,7 @@ export function evaluateRelease(i: ReleaseInput): {
   if (!i.dependenciesDone) blockers.push('DEPENDENCIAS');
   if (i.requiresMaterials && !i.materialsReady) blockers.push('MATERIAIS');
   if (i.manuallyBlocked) blockers.push('BLOQUEIO');
+  if (i.openIssue) blockers.push('OCORRENCIA');
   if (blockers.length) return { status: 'BLOQUEADA', blockers };
   if (!i.scheduledAt || i.scheduledAt.getTime() > i.now.getTime()) {
     return { status: 'PROGRAMADA', blockers };

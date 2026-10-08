@@ -20,6 +20,7 @@ import type { ActorContext } from '../../core/types';
 import { attendanceConfig, clock, dbDate, team } from '../attendance/common';
 import { notify } from '../notifications/notify';
 import { domainTaskEvent, taskEvent } from '../production/common';
+import { reviseIfPublishedBy } from '../production/plans';
 
 /**
  * Fase 8 — motor de distribuição de ajudantes. Regras determinísticas e auditáveis
@@ -290,6 +291,14 @@ export async function assignTo(
   await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_ASSIGNED, support, {}, [
     req.requesterUserId,
   ]);
+  // Fase 9: a tarefa de apoio entra na programação publicada como nova revisão (uma só fonte).
+  await reviseIfPublishedBy(
+    tx,
+    actor,
+    task.planId,
+    `Apoio ${helpRequestCode(req.number)} de ${helperName} para ${requester.displayName} (${req.estimatedMinutes} min). Impacto: ${helperName} fica ocupado durante o apoio; ${taskCode(task.number)} segue com ${requester.displayName}.`,
+    `nova tarefa de apoio ${taskCode(support.number)}`,
+  );
   const updated = await tx.helpRequest.update({
     where: { id: req.id },
     data: {

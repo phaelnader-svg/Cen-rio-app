@@ -186,6 +186,7 @@ export const ATTACHMENT_ENTITIES = [
   'SERVICE_ORDER',
   'SERVICE_ORDER_ITEM',
   'PRODUCTION_TASK',
+  'PRODUCTION_ISSUE',
 ] as const;
 export type AttachmentEntity = (typeof ATTACHMENT_ENTITIES)[number];
 

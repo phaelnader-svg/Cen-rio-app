@@ -93,6 +93,11 @@ model User {
   helpEvents                HelpRequestEvent[]       @relation("HelpEventActor")
   proposalsDecided          RescheduleProposal[]     @relation("ProposalDecidedBy")
   planningActions           PlanningAction[]         @relation("PlanningActionActor")
+  issuesReported            ProductionIssue[]        @relation("IssueReporter")
+  issuesAssigned            ProductionIssue[]        @relation("IssueAssignee")
+  issuesResolved            ProductionIssue[]        @relation("IssueResolvedBy")
+  issuesCancelled           ProductionIssue[]        @relation("IssueCancelledBy")
+  issueEvents               ProductionIssueEvent[]   @relation("IssueEventActor")
 
   @@map("users")
 }
@@ -795,6 +800,7 @@ model ServiceOrder {
   productionTasks     ProductionTask[]
   notifications       Notification[]
   helpRequests        HelpRequest[]
+  issues              ProductionIssue[]
 
   @@index([orderId])
   @@index([customerId])
@@ -910,6 +916,7 @@ model MaterialRequirement {
   reservations        StockReservation[]
   transfersIn         MaterialLeftoverTransfer[]
   productionTasks     ProductionTaskMaterial[]
+  issues              ProductionIssue[]
 
   @@index([serviceOrderId])
   @@map("material_requirements")
@@ -922,6 +929,7 @@ enum AttachmentEntity {
   SERVICE_ORDER
   SERVICE_ORDER_ITEM
   PRODUCTION_TASK
+  PRODUCTION_ISSUE
 
   @@map("attachment_entity")
 }
@@ -1218,6 +1226,7 @@ model StockItem {
   movements     StockMovement[]
   reservations  StockReservation[]
   purchaseItems PurchaseOrderItem[]
+  issues        ProductionIssue[]
 
   @@map("stock_items")
 }
@@ -1673,6 +1682,8 @@ model ProductionTask {
   /// Fase 8: duração estimada e vínculo da tarefa de apoio com a tarefa principal.
   estimatedMinutes      Int?                  @map("estimated_minutes")
   supportForTaskId      String?               @map("support_for_task_id") @db.Uuid
+  /// Fase 9: tarefa de resolução de uma ocorrência (separada da tarefa de produção original).
+  issueId               String?               @map("issue_id") @db.Uuid
   version               Int                   @default(1)
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -1692,9 +1703,13 @@ model ProductionTask {
   supportTasks      ProductionTask[]         @relation("SupportFor")
   helpRequests      HelpRequest[]            @relation("HelpRequestTask")
   helpSupport       HelpRequest?             @relation("HelpRequestSupportTask")
+  issues            ProductionIssue[]        @relation("IssueTask")
+  issueAction       ProductionIssue?         @relation("IssueActionTask")
+  issue             ProductionIssue?         @relation("IssueActions", fields: [issueId], references: [id], onDelete: Restrict)
 
   @@index([assigneeUserId, status])
   @@index([supportForTaskId])
+  @@index([issueId])
   @@index([serviceOrderId])
   @@index([planId])
   @@index([status, scheduledAt])
@@ -2006,6 +2021,8 @@ model RescheduleProposal {
   dedupeKey             String         @unique @map("dedupe_key") @db.VarChar(160)
   attendanceId          String?        @map("attendance_id") @db.Uuid
   helpRequestId         String?        @map("help_request_id") @db.Uuid
+  /// Fase 9: ocorrência que originou a proposta de bloqueio.
+  issueId               String?        @map("issue_id") @db.Uuid
   decidedById           String?        @map("decided_by_id") @db.Uuid
   decidedAt             DateTime?      @map("decided_at") @db.Timestamptz(3)
   decisionNote          String?        @map("decision_note") @db.VarChar(500)
@@ -2015,6 +2032,7 @@ model RescheduleProposal {
 
   attendance  OperationalAttendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
   helpRequest HelpRequest?           @relation(fields: [helpRequestId], references: [id], onDelete: SetNull)
+  issue       ProductionIssue?       @relation(fields: [issueId], references: [id], onDelete: SetNull)
   decidedBy   User?                  @relation("ProposalDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
@@ -2040,4 +2058,96 @@ model PlanningAction {
   @@index([createdAt])
   @@index([taskId])
   @@map("planning_actions")
+}
+
+// ─────────────────────────── Ocorrências e central de atenção (Fase 9) ───────────────────────────
+
+enum IssueStatus {
+  ABERTA
+  ATRIBUIDA
+  EM_RESOLUCAO
+  AGUARDANDO_VERIFICACAO
+  RESOLVIDA
+  CANCELADA
+
+  @@map("issue_status")
+}
+
+/// Ocorrência (impedimento) registrada no tablet ou pelo gestor (OC-00001). Nunca é apagada:
+/// encerra como resolvida ou cancelada (com motivo) e pode ser reaberta (com motivo).
+model ProductionIssue {
+  id                    String        @id @default(uuid()) @db.Uuid
+  number                Int           @unique @default(autoincrement())
+  kind                  String        @db.VarChar(20)
+  status                IssueStatus   @default(ABERTA)
+  impact                String        @db.VarChar(20)
+  /// Impede a tarefa (bloqueio total ou "faz outra atividade"): a tarefa só volta com a resolução.
+  blocksTask            Boolean       @map("blocks_task")
+  priority              Priority      @default(NORMAL)
+  description           String        @db.VarChar(1000)
+  taskId                String        @map("task_id") @db.Uuid
+  serviceOrderId        String        @map("service_order_id") @db.Uuid
+  reporterUserId        String        @map("reporter_user_id") @db.Uuid
+  reporterDeviceId      String?       @map("reporter_device_id") @db.Uuid
+  // Falta de material (nada é comprado automaticamente).
+  materialRequirementId String?       @map("material_requirement_id") @db.Uuid
+  stockItemId           String?       @map("stock_item_id") @db.Uuid
+  materialDescription   String?       @map("material_description") @db.VarChar(200)
+  materialQuantity      Decimal?      @map("material_quantity") @db.Decimal(12, 3)
+  materialUnit          MaterialUnit? @map("material_unit")
+  // Delegação.
+  assigneeUserId        String?       @map("assignee_user_id") @db.Uuid
+  actionTaskId          String?       @unique @map("action_task_id") @db.Uuid
+  requiredSkill         String?       @map("required_skill") @db.VarChar(30)
+  dueAt                 DateTime?     @map("due_at") @db.Timestamptz(3)
+  riskAlertedAt         DateTime?     @map("risk_alerted_at") @db.Timestamptz(3)
+  resultNote            String?       @map("result_note") @db.VarChar(1000)
+  resolvedAt            DateTime?     @map("resolved_at") @db.Timestamptz(3)
+  resolvedById          String?       @map("resolved_by_id") @db.Uuid
+  cancelledAt           DateTime?     @map("cancelled_at") @db.Timestamptz(3)
+  cancelledById         String?       @map("cancelled_by_id") @db.Uuid
+  cancelReason          String?       @map("cancel_reason") @db.VarChar(500)
+  reopenCount           Int           @default(0) @map("reopen_count")
+  version               Int           @default(1)
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  task         ProductionTask         @relation("IssueTask", fields: [taskId], references: [id], onDelete: Restrict)
+  actionTask   ProductionTask?        @relation("IssueActionTask", fields: [actionTaskId], references: [id], onDelete: SetNull)
+  serviceOrder ServiceOrder           @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  reporter     User                   @relation("IssueReporter", fields: [reporterUserId], references: [id], onDelete: Restrict)
+  assignee     User?                  @relation("IssueAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  resolvedBy   User?                  @relation("IssueResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  cancelledBy  User?                  @relation("IssueCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  requirement  MaterialRequirement?   @relation(fields: [materialRequirementId], references: [id], onDelete: Restrict)
+  stockItem    StockItem?             @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+  events       ProductionIssueEvent[]
+  proposals    RescheduleProposal[]
+  actionTasks  ProductionTask[]       @relation("IssueActions")
+
+  @@index([status, createdAt])
+  @@index([taskId, status])
+  @@index([assigneeUserId, status])
+  @@index([serviceOrderId])
+  @@map("production_issues")
+}
+
+/// Histórico imutável da ocorrência (abertura, atribuições, ações, verificação, reabertura...).
+model ProductionIssueEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  issueId    String   @map("issue_id") @db.Uuid
+  kind       String   @db.VarChar(30)
+  fromStatus String?  @map("from_status") @db.VarChar(30)
+  toStatus   String?  @map("to_status") @db.VarChar(30)
+  note       String?  @db.VarChar(1000)
+  data       Json?
+  actorId    String?  @map("actor_id") @db.Uuid
+  deviceId   String?  @map("device_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  issue ProductionIssue @relation(fields: [issueId], references: [id], onDelete: Restrict)
+  actor User?           @relation("IssueEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([issueId, createdAt])
+  @@map("production_issue_events")
 }

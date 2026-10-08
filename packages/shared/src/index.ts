@@ -28,3 +28,6 @@ export * from './types-attendance';
 export * from './help-domain';
 export * from './schemas/help';
 export * from './types-help';
+export * from './issue-domain';
+export * from './schemas/issue';
+export * from './types-issue';

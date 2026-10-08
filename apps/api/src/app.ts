@@ -30,6 +30,8 @@ import { notificationRoutes } from './modules/notifications/routes';
 import { detectAbsences } from './modules/attendance/absence';
 import { attendanceRoutes } from './modules/attendance/routes';
 import { helpRoutes } from './modules/help/routes';
+import { issueRoutes } from './modules/issues/routes';
+import { processIssueRisks } from './modules/issues/service';
 import { processHelpQueue } from './modules/help/queue';
 import { testClockRoutes } from './modules/testing/routes';
 import { leftoverRoutes } from './modules/purchasing/leftovers';
@@ -186,6 +188,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(notificationRoutes);
   await app.register(attendanceRoutes);
   await app.register(helpRoutes);
+  await app.register(issueRoutes);
   // Relógio de teste: só existe com ENABLE_TEST_CLOCK (validado para APP_ENV=test).
   if (env.ENABLE_TEST_CLOCK && env.APP_ENV === 'test') await app.register(testClockRoutes);
 
@@ -257,9 +260,10 @@ export async function buildApp(options: BuildOptions): Promise<App> {
         // Fase 8: fila de ajuda (atribuição quando alguém fica livre e alerta de atraso).
         helpTimer = setInterval(
           () =>
-            void processHelpQueue(prisma).catch((err: unknown) =>
-              app.log.warn({ err }, 'Falha ao processar a fila de ajuda'),
-            ),
+            void processHelpQueue(prisma)
+              // Fase 9: prazos de resolução das ocorrências e propostas sem sentido.
+              .then(() => processIssueRisks(prisma))
+              .catch((err: unknown) => app.log.warn({ err }, 'Falha ao processar a fila de ajuda')),
           30_000,
         );
         helpTimer.unref();

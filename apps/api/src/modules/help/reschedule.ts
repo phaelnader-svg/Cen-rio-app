@@ -258,7 +258,7 @@ onTaskBlocked(async (tx, actor, blocked) => {
 
 // ─────────────────────────── Propostas ───────────────────────────
 
-async function createProposal(
+export async function createProposal(
   tx: Tx,
   actor: ActorContext,
   p: {
@@ -272,6 +272,7 @@ async function createProposal(
     dedupeKey: string;
     attendanceId?: string | null;
     helpRequestId?: string | null;
+    issueId?: string | null;
   },
 ) {
   const created = await tx.rescheduleProposal.createMany({
@@ -287,6 +288,7 @@ async function createProposal(
         dedupeKey: p.dedupeKey,
         attendanceId: p.attendanceId ?? null,
         helpRequestId: p.helpRequestId ?? null,
+        issueId: p.issueId ?? null,
         createdAt: clock(),
       },
     ],
@@ -334,7 +336,10 @@ export async function proposeUrgentInterruption(
   req: HelpRow,
   interruptible: { userId: string; taskId: string }[],
   evaluation: unknown,
+  /** Fase 9: pedido normal esperando além do limite → proposta de CONFLITO (risco de atraso). */
+  mode: 'URGENTE' | 'ATRASO' = 'URGENTE',
 ) {
+  const late = mode === 'ATRASO';
   const tasks = await tx.productionTask.findMany({
     where: { id: { in: interruptible.map((i) => i.taskId) } },
     include: { assignee: { select: { displayName: true } } },
@@ -365,22 +370,45 @@ export async function proposeUrgentInterruption(
       id: 'AGUARDAR',
       title: 'Manter na fila até alguém ficar livre',
       actions: [],
-      impacts: [`${requester.displayName} continua aguardando ajuda.`],
+      impacts: [
+        `${requester.displayName} continua aguardando ajuda${late ? ' — a tarefa pode atrasar' : ''}.`,
+      ],
       critical: false,
       recommended: false,
     },
   ];
+  const waited = Math.floor((clock().getTime() - req.createdAt.getTime()) / 60_000);
   const proposal = await createProposal(tx, actor, {
-    kind: 'AJUDA_URGENTE',
+    kind: late ? 'CONFLITO' : 'AJUDA_URGENTE',
     critical: true,
-    situation: `${requester.displayName} pediu ajuda urgente (${helpRequestCode(req.number)}): ${req.justification ?? ''}`,
-    problem: `Nenhum ajudante livre para a ajuda urgente de ${requester.displayName}; atender exige interromper uma tarefa em andamento.`,
+    situation: late
+      ? `${requester.displayName} aguarda ajudante há ${waited} min (${helpRequestCode(req.number)}).`
+      : `${requester.displayName} pediu ajuda urgente (${helpRequestCode(req.number)}): ${req.justification ?? ''}`,
+    problem: late
+      ? `Falta de ajudante com risco de atraso para ${requester.displayName}; atender exige interromper uma tarefa em andamento.`
+      : `Nenhum ajudante livre para a ajuda urgente de ${requester.displayName}; atender exige interromper uma tarefa em andamento.`,
     affectedTaskIds: [req.taskId, ...sorted.map((t) => t.id)],
     alternatives,
     proposedAlternativeId: alternatives[0]!.id,
-    dedupeKey: `AJUDA_URGENTE:${req.id}`,
+    dedupeKey: late ? `CONFLITO_AJUDA:${req.id}` : `AJUDA_URGENTE:${req.id}`,
     helpRequestId: req.id,
   });
+  if (late) {
+    // O pedido continua na fila: se alguém ficar livre antes, é atribuído e a proposta perde o efeito.
+    await helpEvent(tx, actor, req, {
+      kind: 'CONFLITO_PROPOSTO',
+      note: `Espera além do limite: ${proposal ? proposalCode(proposal.number) : 'proposta'} enviada ao gestor (nada foi interrompido).`,
+      evaluation,
+    });
+    await planningAction(tx, actor, {
+      kind: 'PROPOSTA_CRIADA',
+      automatic: true,
+      reason: `${helpRequestCode(req.number)} com risco de atraso: proposta de conflito ao gestor.`,
+      helpRequestId: req.id,
+      proposalId: proposal?.id ?? null,
+    });
+    return req;
+  }
   const u = await tx.helpRequest.update({
     where: { id: req.id },
     data: { status: 'ESCALADA', escalatedAt: clock(), version: { increment: 1 } },
@@ -732,7 +760,7 @@ async function applyAction(tx: Tx, actor: ActorContext, a: ProposalAction, reaso
         reason: 'INTERRUPCAO_PROGRAMADA',
       });
       const req = await tx.helpRequest.findUniqueOrThrow({ where: { id: a.helpRequestId! } });
-      if (req.status !== 'ESCALADA') {
+      if (req.status !== 'ESCALADA' && req.status !== 'PENDENTE') {
         throw Errors.business('O pedido de ajuda já foi resolvido ou cancelado.');
       }
       const helper = await tx.user.findUniqueOrThrow({ where: { id: t.assigneeUserId! } });
