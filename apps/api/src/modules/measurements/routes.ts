@@ -383,13 +383,16 @@ export async function measurementRoutes(app: FastifyInstance) {
   // ─────────────────────────── Execução (responsável) ───────────────────────────
 
   /** Garante que só o responsável (ou o gestor) altere a medição. */
+  /**
+   * Só quem recebeu a medição a executa — inclusive o gestor: ninguém altera a
+   * medição de outra pessoa. Depois do envio, o gestor ajusta pela revisão auditada.
+   */
   function assertExecutor(request: FastifyRequest, m: { assigneeUserId: string }) {
     const actor = actorOf(request);
-    if (isManager(actor)) return;
     if (m.assigneeUserId !== actor.userId) {
       throw Errors.forbidden('Esta medição está atribuída a outra pessoa.');
     }
-    if (!actor.permissions.has('medicoes.extraordinarias')) {
+    if (!isManager(actor) && !actor.permissions.has('medicoes.extraordinarias')) {
       throw Errors.forbidden('Você não está autorizado a executar medições.');
     }
   }

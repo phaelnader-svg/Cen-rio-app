@@ -1,4 +1,4 @@
-# Segurança — Cenário Gestão (Fase 1)
+# Segurança — Cenário Gestão
 
 ## Autenticação
 
@@ -56,6 +56,27 @@
   valores (`pedidos.valores`), cancela pedidos (`pedidos.cancelar`), agenda retiradas
   (`retiradas.gerenciar`) e cria/altera OS (`os.gerenciar`). A função Gestor sempre tem o
   catálogo completo (garantido em tempo de execução, além da migração de dados).
+
+### Medições e materiais (Fase 3)
+
+| Ação                                                             | Quem pode                                                                                       |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Criar, reatribuir e cancelar medições; rotina de sexta           | `medicoes.gerenciar` (crítica) — painel                                                         |
+| Executar medição (rascunho, envio, correção e reenvio)           | **somente o responsável atribuído**, com `medicoes.extraordinarias` ou `medicoes.gerenciar`     |
+| Ver todas as medições, planejamento e lista consolidada          | `medicoes.gerenciar`, `materiais.ver` ou `materiais.aprovar` — painel                           |
+| Iniciar revisão, ajustar quantidades, aprovar, devolver, reabrir | `materiais.aprovar` (crítica) — painel                                                          |
+| Registro direto de medidas na OS (fora do fluxo de medição)      | `os.gerenciar` em sessão do painel (antes da Fase 3 também aceitava `medicoes.extraordinarias`) |
+
+- Um executor só lê as medições atribuídas a ele (403 nas demais) e as fotos da OS dessas
+  medições; o tablet não recebe valores, condições comerciais, documentos nem contatos do
+  cliente (testado).
+- Nem o gestor altera a medição de outra pessoa: depois do envio, qualquer ajuste é feito pela
+  revisão, com motivo obrigatório e cópia "antes/depois" no histórico imutável
+  (`measurement_revisions`, protegido por trigger).
+- Solicitação aprovada não muda em silêncio: só por **reabertura** com motivo, que também
+  retira as necessidades aprovadas da OS.
+- Criação e aprovação exigem `Idempotency-Key`; todas as mudanças usam `version` e bloqueio de
+  linha (decisões simultâneas: só uma vence, as outras recebem 409).
 
 ## Proteções de requisição
 

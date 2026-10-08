@@ -3,10 +3,12 @@
 Sistema de gestão de produção da **Cenário Estofados** — painel administrativo do gestor e
 interface de produção para os tablets da oficina, sincronizados em tempo real.
 
-> **Status: Fase 2 concluída.** Fase 1 (fundação: pessoas, permissões, dispositivos, sessões,
+> **Status: Fase 3 concluída.** Fase 1 (fundação: pessoas, permissões, dispositivos, sessões,
 > auditoria, eventos e tempo real) + Fase 2 (clientes, pedidos comerciais, retiradas,
-> recebimento físico e OS técnica). Materiais e compras, programação, produção, central de
-> atenção, qualidade, entregas e presença são das próximas fases e aparecem como indisponíveis.
+> recebimento físico e OS técnica) + Fase 3 (medições de sexta e extraordinárias, solicitações
+> de materiais com revisão/aprovação, planejamento de sexta e lista consolidada). Compras e
+> estoque, programação, produção, central de atenção, qualidade, entregas e presença são das
+> próximas fases e aparecem como indisponíveis.
 
 ## Documentação
 
@@ -16,6 +18,8 @@ interface de produção para os tablets da oficina, sincronizados em tempo real.
 | [docs/SEGURANCA.md](docs/SEGURANCA.md)               | Autenticação, sessões, permissões, proteções e riscos aceitos |
 | [docs/OPERACAO.md](docs/OPERACAO.md)                 | Ambientes, variáveis, deploy, backup e restauração            |
 | [docs/FASE-1-RELATORIO.md](docs/FASE-1-RELATORIO.md) | Entregáveis da Fase 1, APIs, testes executados e pendências   |
+| [docs/FASE-2-RELATORIO.md](docs/FASE-2-RELATORIO.md) | Entregáveis da Fase 2, APIs, testes executados e pendências   |
+| [docs/FASE-3-RELATORIO.md](docs/FASE-3-RELATORIO.md) | Entregáveis da Fase 3, APIs, testes executados e pendências   |
 
 ## Requisitos
 

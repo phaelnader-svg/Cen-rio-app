@@ -147,6 +147,13 @@ describe('Medição extraordinária delegada', () => {
       version: m.version,
     });
     expect(intrude.status).toBe(403);
+    // Nem o gestor altera a medição de outra pessoa (ele reatribui, cancela ou revisa após o envio).
+    const managerIntrude = await admin.put(`/api/v1/measurements/${m.id}/draft`, {
+      items: [fabric()],
+      version: m.version,
+    });
+    expect(managerIntrude.status).toBe(403);
+    expect((await admin.get(`/api/v1/measurements/${m.id}`)).body.can.edit).toBe(false);
 
     // Detalhe no tablet: dados técnicos, sem valores comerciais.
     const detail = await ricardo.tablet.get(`/api/v1/measurements/${m.id}`);

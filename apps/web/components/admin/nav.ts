@@ -4,7 +4,10 @@ import {
   Contact,
   PackageCheck,
   PackageOpen,
+  CalendarCheck,
   CalendarRange,
+  Layers,
+  Ruler,
   ClipboardList,
   FileSignature,
   Hammer,
@@ -58,6 +61,24 @@ export const NAV: NavItem[] = [
     anyOf: ['recebimentos.registrar', 'pedidos.ver'],
   },
   { href: '/painel/os', label: 'Ordens de serviço', icon: ClipboardList, anyOf: ['os.ver'] },
+  {
+    href: '/painel/medicoes',
+    label: 'Medições',
+    icon: Ruler,
+    anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
+  },
+  {
+    href: '/painel/planejamento',
+    label: 'Planejamento de sexta',
+    icon: CalendarCheck,
+    anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
+  },
+  {
+    href: '/painel/materiais',
+    label: 'Materiais aprovados',
+    icon: Layers,
+    anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
+  },
   { href: '/painel/empresa', label: 'Empresa', icon: Building2, anyOf: ['empresa.ver'] },
   { href: '/painel/auditoria', label: 'Auditoria', icon: ScrollText, anyOf: ['auditoria.ver'] },
   {
@@ -70,7 +91,7 @@ export const NAV: NavItem[] = [
 
 /** Módulos das próximas fases: exibidos como indisponíveis (sem link). */
 export const UPCOMING: { label: string; icon: LucideIcon }[] = [
-  { label: 'Materiais e compras', icon: PackageSearch },
+  { label: 'Compras e estoque', icon: PackageSearch },
   { label: 'Programação semanal', icon: CalendarRange },
   { label: 'Produção', icon: Hammer },
   { label: 'Central de atenção', icon: Siren },

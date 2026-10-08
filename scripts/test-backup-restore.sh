@@ -22,7 +22,11 @@ counts() {
     UNION ALL SELECT 'customers', count(*) FROM customers UNION ALL SELECT 'commercial_orders', count(*) FROM commercial_orders
     UNION ALL SELECT 'pickup_events', count(*) FROM pickup_events UNION ALL SELECT 'receipts', count(*) FROM receipts
     UNION ALL SELECT 'service_orders', count(*) FROM service_orders
-    UNION ALL SELECT 'service_order_revisions', count(*) FROM service_order_revisions) x"
+    UNION ALL SELECT 'service_order_revisions', count(*) FROM service_order_revisions
+    UNION ALL SELECT 'measurements', count(*) FROM measurements
+    UNION ALL SELECT 'material_requests', count(*) FROM material_requests
+    UNION ALL SELECT 'material_request_items', count(*) FROM material_request_items
+    UNION ALL SELECT 'measurement_revisions', count(*) FROM measurement_revisions) x"
 }
 
 # Garante dados de referência na origem (seed idempotente + um registro de auditoria).
@@ -48,6 +52,26 @@ WITH c AS (
 INSERT INTO receipt_lines (id, receipt_id, order_item_id, quantity, condition, location)
 SELECT gen_random_uuid(), r.id, i.id, 1, 'BOA', 'Teste' FROM r, i;
 SQL
+# Dados fictícios da Fase 3 (OS → medição → solicitação com tecido → histórico).
+psql "$SOURCE" -q > /dev/null <<'SQL'
+WITH so AS (
+  INSERT INTO service_orders (id, order_id, customer_id, updated_at)
+  SELECT gen_random_uuid(), o.id, o.customer_id, now() FROM commercial_orders o
+  WHERE o.contracted_service = 'Teste de backup' ORDER BY o.created_at DESC LIMIT 1 RETURNING id
+), m AS (
+  INSERT INTO measurements (id, service_order_id, kind, status, assignee_user_id, due_date, completed_at, updated_at)
+  SELECT gen_random_uuid(), so.id, 'ROTINA', 'CONCLUIDA', u.id, current_date, now(), now()
+  FROM so, users u WHERE u.email = 'backup@teste.local' RETURNING id
+), rq AS (
+  INSERT INTO material_requests (id, measurement_id, status, submitted_at, updated_at)
+  SELECT gen_random_uuid(), m.id, 'ENVIADA', now(), now() FROM m RETURNING id, measurement_id
+), it AS (
+  INSERT INTO material_request_items (id, request_id, position, kind, sourcing, description, quantity, unit)
+  SELECT gen_random_uuid(), rq.id, 1, 'TECIDO', 'EXCLUSIVO_OS', 'Linho fictício', 12.5, 'METRO' FROM rq RETURNING id
+)
+INSERT INTO measurement_revisions (id, measurement_id, kind, to_status)
+SELECT gen_random_uuid(), rq.measurement_id, 'ENVIADA', 'ENVIADA' FROM rq, it;
+SQL
 
 DATABASE_URL="$SOURCE" STORAGE_DIR="$WORK/none" BACKUP_RETENTION_DAYS=0 bash scripts/backup.sh "$WORK/out" > /dev/null
 DIR="$(ls -d "$WORK"/out/cenario-*)"
@@ -65,6 +89,11 @@ echo "restaurado: $B"
 if psql "$RESTORE_URL" -qc "DELETE FROM receipts" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade de recebimentos ausente no banco restaurado" >&2; exit 1
 fi
+if psql "$RESTORE_URL" -qc "DELETE FROM measurement_revisions" > /dev/null 2>&1; then
+  echo "✖ Trigger de imutabilidade do histórico de medições ausente no banco restaurado" >&2; exit 1
+fi
+[[ "$(psql "$RESTORE_URL" -At -c "SELECT quantity FROM material_request_items WHERE description = 'Linho fictício' LIMIT 1")" == "12.500" ]] \
+  || { echo "✖ Quantidade decimal não preservada" >&2; exit 1; }
 if psql "$RESTORE_URL" -qc "DELETE FROM audit_logs" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade ausente no banco restaurado" >&2; exit 1
 fi

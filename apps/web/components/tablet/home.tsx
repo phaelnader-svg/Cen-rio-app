@@ -11,6 +11,7 @@ import {
   LogOut,
   PackageSearch,
   RadioTower,
+  Ruler,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ConnectionIndicator } from '@/components/connection-indicator';
@@ -18,8 +19,9 @@ import { SyncPanel } from '@/components/sync-panel';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/misc';
 import { api } from '@/lib/api';
+import { MyMeasurementDetail, MyMeasurements, useMyOpenCount } from './measurements';
 
-type Screen = 'home' | 'sync';
+type Screen = 'home' | 'sync' | 'measurements' | 'measurement';
 
 function useClock(timezone: string) {
   // Renderizado apenas no cliente (após autenticação), sem risco de divergência de hidratação.
@@ -74,6 +76,11 @@ export function TabletHome({ me }: { me: MeDto }) {
   const clock = useClock(me.company.timezone);
   const color = me.employee?.color ?? '#1d4a45';
   const canSync = me.permissions.includes('sincronizacao.diagnosticar');
+  const canMeasure =
+    me.permissions.includes('medicoes.extraordinarias') ||
+    me.permissions.includes('medicoes.gerenciar');
+  const openCount = useMyOpenCount(canMeasure);
+  const [measurementId, setMeasurementId] = useState<string | null>(null);
 
   async function logout() {
     setLeaving(true);
@@ -130,6 +137,41 @@ export function TabletHome({ me }: { me: MeDto }) {
           <>
             <h1 className="sr-only">Início</h1>
             <ul className="grid gap-5 md:grid-cols-2">
+              {canMeasure && (
+                <li className="md:col-span-2">
+                  <button
+                    type="button"
+                    onClick={() => setScreen('measurements')}
+                    data-testid="tile-measurements"
+                    className={clsx(
+                      'flex w-full items-center gap-5 rounded-2xl border border-line bg-surface p-6 text-left shadow-[var(--shadow-card)] transition',
+                      'hover:border-brand-200 hover:shadow-[var(--shadow-pop)] active:scale-[0.99]',
+                    )}
+                  >
+                    <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700">
+                      <Ruler className="size-8" aria-hidden />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-2xl font-semibold">Medições atribuídas</span>
+                      <span className="mt-1 block text-base text-ink-muted">
+                        Medir peças, informar tecidos, espumas e materiais e enviar ao gestor.
+                      </span>
+                    </span>
+                    {openCount !== undefined && (
+                      <span
+                        className={clsx(
+                          'grid min-w-14 place-items-center rounded-2xl px-3 py-2 text-2xl font-semibold tabular-nums',
+                          openCount ? 'bg-brand-700 text-white' : 'bg-subtle text-ink-muted',
+                        )}
+                        aria-label={`${openCount} medição(ões) para fazer`}
+                        data-testid="measurements-count"
+                      >
+                        {openCount}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              )}
               {UPCOMING.map((m) => (
                 <li key={m.title}>
                   <div
@@ -173,22 +215,48 @@ export function TabletHome({ me }: { me: MeDto }) {
               )}
             </ul>
           </>
+        ) : screen === 'measurements' ? (
+          <>
+            <BackButton label="Voltar ao início" onClick={() => setScreen('home')} />
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Medições atribuídas</h1>
+            <MyMeasurements
+              onOpen={(id) => {
+                setMeasurementId(id);
+                setScreen('measurement');
+              }}
+            />
+          </>
+        ) : screen === 'measurement' && measurementId ? (
+          <>
+            <BackButton label="Voltar às medições" onClick={() => setScreen('measurements')} />
+            <MyMeasurementDetail
+              key={measurementId}
+              id={measurementId}
+              onBack={() => setScreen('measurements')}
+            />
+          </>
         ) : (
           <>
-            <Button
-              variant="ghost"
-              size="lg"
-              className="mb-4 -ml-3"
-              onClick={() => setScreen('home')}
-              icon={<ArrowLeft className="size-5" aria-hidden />}
-            >
-              Voltar ao início
-            </Button>
+            <BackButton label="Voltar ao início" onClick={() => setScreen('home')} />
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">Teste de sincronização</h1>
             <SyncPanel large />
           </>
         )}
       </main>
     </div>
+  );
+}
+
+function BackButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="lg"
+      className="mb-4 -ml-3"
+      onClick={onClick}
+      icon={<ArrowLeft className="size-5" aria-hidden />}
+    >
+      {label}
+    </Button>
   );
 }

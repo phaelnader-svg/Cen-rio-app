@@ -3,6 +3,7 @@
 import type {
   MaterialKind,
   MaterialSourcing,
+  MaterialUnit,
   Priority,
   ReadinessState,
   ServiceOrderDto,
@@ -14,6 +15,7 @@ import {
   MATERIAL_KIND_LABEL,
   MATERIAL_SOURCINGS,
   MATERIAL_SOURCING_LABEL,
+  MATERIAL_UNIT_LABEL,
   MEASUREMENT_KIND_LABEL,
   PIECE_TYPE_LABEL,
   PRIORITIES,
@@ -30,7 +32,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Select, Textarea } from '@/components/ui/field';
-import { Alert, Avatar, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
+import { Alert, Avatar, Badge, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, errorMessage } from '@/lib/api';
@@ -38,6 +40,9 @@ import { formatDay, useServiceOrder, useServiceOrderRevisions } from '@/lib/comm
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { useEmployees } from '@/lib/queries';
+import { CreateMeasurementDialog } from '@/components/measurements/create-dialog';
+import { MeasurementList } from '@/components/measurements/measurements-page';
+import { useMeasurements } from '@/lib/measurements';
 import { PriorityBadge, ServiceOrderStatusBadge } from './badges';
 import { PhotoGallery } from './photo-gallery';
 import { BackLink, Detail, Section } from './section';
@@ -118,13 +123,16 @@ export function ServiceOrderDetail({ id }: { id: string }) {
   const [editItem, setEditItem] = useState<ServiceOrderItemDto | null>(null);
   const [measureItem, setMeasureItem] = useState<ServiceOrderItemDto | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [requestMeasurement, setRequestMeasurement] = useState(false);
 
   if (so.isPending) return <Spinner />;
   if (so.isError) return <Alert tone="danger">{so.error.message}</Alert>;
   const s = so.data;
   const open = s.status === 'ABERTA';
   const manage = can('os.gerenciar') && open;
-  const canMeasure = (can('os.gerenciar') || can('medicoes.extraordinarias')) && open;
+  // Registro direto de medidas: somente gestão (o fluxo normal é a medição atribuída).
+  const canMeasure = can('os.gerenciar') && open;
+  const canRequestMeasurement = can('medicoes.gerenciar') && open;
 
   return (
     <>
@@ -133,22 +141,34 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         title={s.code}
         description={`${s.customer.name} · pedido ${s.order.code} · criada em ${formatDateTime(s.createdAt)}${s.createdBy ? ` por ${s.createdBy}` : ''}`}
         actions={
-          manage && (
+          (manage || canRequestMeasurement) && (
             <>
-              <Button
-                variant="secondary"
-                icon={<Pencil className="size-4" aria-hidden />}
-                onClick={() => setEditing(true)}
-              >
-                Editar dados gerais
-              </Button>
-              <Button
-                variant="ghost"
-                icon={<Ban className="size-4" aria-hidden />}
-                onClick={() => setCancelling(true)}
-              >
-                Cancelar OS
-              </Button>
+              {canRequestMeasurement && (
+                <Button
+                  icon={<Ruler className="size-4" aria-hidden />}
+                  onClick={() => setRequestMeasurement(true)}
+                >
+                  Solicitar medição
+                </Button>
+              )}
+              {manage && (
+                <>
+                  <Button
+                    variant="secondary"
+                    icon={<Pencil className="size-4" aria-hidden />}
+                    onClick={() => setEditing(true)}
+                  >
+                    Editar dados gerais
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    icon={<Ban className="size-4" aria-hidden />}
+                    onClick={() => setCancelling(true)}
+                  >
+                    Cancelar OS
+                  </Button>
+                </>
+              )}
             </>
           )
         }
@@ -383,6 +403,15 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         <MeasureDialog so={s} item={measureItem} onClose={() => setMeasureItem(null)} />
       )}
       {cancelling && <CancelDialog so={s} onClose={() => setCancelling(false)} />}
+      {requestMeasurement && (
+        <CreateMeasurementDialog
+          target={{
+            serviceOrder: { id: s.id, code: s.code },
+            items: s.items.map((i) => ({ id: i.id, code: i.code, description: i.description })),
+          }}
+          onClose={() => setRequestMeasurement(false)}
+        />
+      )}
     </>
   );
 }
@@ -809,6 +838,10 @@ function MeasureDialog({
 }
 
 function MaterialsTab({ so, manage }: { so: ServiceOrderDto; manage: boolean }) {
+  const can = useCan();
+  const canSeeMeasurements =
+    can('medicoes.gerenciar') || can('materiais.ver') || can('materiais.aprovar');
+  const measurements = useMeasurements({ serviceOrderId: so.id }, canSeeMeasurements);
   const qc = useQueryClient();
   const toast = useToast();
   const [kind, setKind] = useState<MaterialKind>('TECIDO');
@@ -859,11 +892,22 @@ function MaterialsTab({ so, manage }: { so: ServiceOrderDto; manage: boolean }) 
   });
   return (
     <div className="space-y-6">
-      <Alert tone="info" title="Estrutura preparatória">
-        Registre aqui os materiais previstos para a OS. Compras, estoque e conferência de chegada
-        serão liberados na próxima fase. Tecidos são sempre comprados especificamente para a OS; a
-        chegada de materiais não antecipa a programação.
+      <Alert tone="info" title="Materiais da OS">
+        Materiais aprovados vêm das medições conferidas pelo gestor (aprovado para compra não
+        significa comprado nem recebido). Compras, estoque e conferência de chegada serão liberados
+        na próxima fase. Tecidos são sempre comprados especificamente para a OS; a chegada de
+        materiais não antecipa a programação.
       </Alert>
+      {canSeeMeasurements && (
+        <div>
+          <h2 className="mb-2 font-semibold">Medições desta OS</h2>
+          {measurements.data ? (
+            <MeasurementList rows={measurements.data} empty="Nenhuma medição solicitada." />
+          ) : (
+            <Spinner />
+          )}
+        </div>
+      )}
       <Section title="Materiais previstos" bodyClassName="p-0">
         {so.materials.length === 0 ? (
           <EmptyState title="Nenhum material previsto" />
@@ -873,16 +917,28 @@ function MaterialsTab({ so, manage }: { so: ServiceOrderDto; manage: boolean }) 
               <li key={mt.id} className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
                 <span className="font-medium">{MATERIAL_KIND_LABEL[mt.kind]}</span>
                 <span className="flex-1">
-                  {mt.description}
+                  {[
+                    mt.description,
+                    mt.foamDensity,
+                    mt.thicknessCm ? `${String(mt.thicknessCm).replace('.', ',')} cm` : null,
+                    mt.color,
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
                   {mt.quantity
-                    ? ` · ${String(mt.quantity).replace('.', ',')} ${mt.unit ?? ''}`
+                    ? ` · ${String(mt.quantity).replace('.', ',')} ${(mt.unit && MATERIAL_UNIT_LABEL[mt.unit as MaterialUnit]) ?? mt.unit ?? ''}`
                     : ''}
                   {mt.serviceOrderItemId
                     ? ` · ${so.items.find((i) => i.id === mt.serviceOrderItemId)?.code ?? ''}`
                     : ''}
                 </span>
                 <span className="text-ink-muted">{MATERIAL_SOURCING_LABEL[mt.sourcing]}</span>
-                {manage && (
+                {mt.origin === 'SOLICITACAO_APROVADA' ? (
+                  <Badge tone="ok">Aprovado para compra</Badge>
+                ) : (
+                  <Badge>Previsão manual</Badge>
+                )}
+                {manage && mt.origin !== 'SOLICITACAO_APROVADA' && (
                   <Button
                     size="sm"
                     variant="ghost"

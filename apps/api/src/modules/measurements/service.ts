@@ -157,7 +157,7 @@ export async function loadDetail(
   const active = m.status === 'PENDENTE' || m.status === 'EM_ANDAMENTO';
   const reqEditable =
     !m.request || m.request.status === 'RASCUNHO' || m.request.status === 'DEVOLVIDA';
-  const canExecute = (own && actor.permissions.has('medicoes.extraordinarias')) || manager;
+  const canExecute = own && (manager || actor.permissions.has('medicoes.extraordinarias'));
   const targetItems = m.serviceOrderItemId
     ? m.serviceOrder.items.filter((i) => i.id === m.serviceOrderItemId)
     : m.serviceOrder.items;

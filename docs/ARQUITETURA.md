@@ -64,6 +64,13 @@ mantendo a mesma origem para o navegador.
 | `modules/attachments`    | Fotografias dos registros, com política de acesso por tipo de registro.                   |
 | `modules/commercial`     | Utilitários comuns (números legíveis, cópia de endereço, situação derivada do pedido).    |
 
+**Módulos da Fase 3** (rotas em `/api/v1`):
+
+| Pasta                  | Responsabilidade                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `modules/measurements` | Medições (rotina de sexta e extraordinárias), atribuição/delegação, rascunho, envio, revisão, aprovação, devolução, reabertura, histórico. |
+| `modules/materials`    | Lista consolidada de materiais aprovados (tela, cópia e CSV) e planejamento de sexta.                                                      |
+
 Novos módulos entram como novas pastas em `modules/`, novas permissões no catálogo
 `packages/shared/src/permissions.ts` e novos tipos de evento em `packages/shared/src/events.ts`.
 
@@ -102,6 +109,20 @@ versão futura incompatível receberá `/api/v2` em paralelo.
 | `material_requirements`                                            | Materiais previstos por OS (estrutura para Fase 3; tecido sempre `EXCLUSIVO_OS` por restrição no banco).                                         |
 | `attachments`                                                      | Vínculo de fotos (`stored_files`) aos registros.                                                                                                 |
 
+**Fase 3** (migration `20261008200000_medicoes_materiais`, aditiva):
+
+| Tabela                                        | Finalidade                                                                                                                                                                                   |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `measurements`                                | Tarefa de medição (`MD-00001`): OS, peça opcional, tipo, responsável, quem pediu, prazo, motivo, situação, início/conclusão/cancelamento, `version`. Uma ativa por peça/OS (índice parcial). |
+| `measurement_pieces`                          | Medidas por peça (rascunho do executor), copiadas para a OS no envio.                                                                                                                        |
+| `material_requests`, `material_request_items` | Solicitação de materiais (1:1 com a medição) e itens estruturados: tecido, espuma, outros; quantidade `NUMERIC(12,3)`, unidade, densidade/espessura/dimensões. Sem preço nem fornecedor.     |
+| `measurement_revisions`                       | Histórico **imutável** (trigger) com cópia dos itens a cada envio, revisão, aprovação, devolução e reabertura.                                                                               |
+| `material_requirements` (ampliada)            | Recebe as necessidades **aprovadas** (`origin = SOLICITACAO_APROVADA`, vínculo único ao item da solicitação) — base para compras na Fase 4.                                                  |
+
+Restrições no banco: unidade compatível com o tipo (tecido em metros; espuma em placas, peças
+ou m²), quantidade > 0 e inteira fora de m/m², tecido sempre `EXCLUSIVO_OS`, motivo obrigatório
+na extraordinária, coerência de cancelamento/conclusão, versões positivas.
+
 Pedidos, retiradas e OS guardam **cópia** do endereço combinado; números legíveis (`PC-`,
 `RT-`, `RC-`, `OS-`) vêm de sequências do banco (podem ter lacunas após transações desfeitas).
 
@@ -110,7 +131,7 @@ restrições adicionais em SQL (registro único de configurações, e-mails min�
 status×credencial do dispositivo, vínculo sessão×dispositivo, triggers de imutabilidade e de
 notificação de eventos).
 
-Entidades das próximas fases (compras, estoque, programação, tarefas, ocorrências, presença,
+Entidades das próximas fases (compras, estoque completo, programação, tarefas, ocorrências, presença,
 qualidade, entregas) **não** foram criadas.
 
 ### Fluxo comercial → oficina (Fase 2)
@@ -131,8 +152,35 @@ Cliente ─► Pedido comercial ─► Retirada (agenda + linha do tempo) ─►
   (mesmo bloqueio). Antes do recebimento, a criação é recusada (422).
 - **Medições:** de rotina quando o gestor (`os.gerenciar`) mede no dia configurado (sexta);
   caso contrário — ou por tapeceiro com `medicoes.extraordinarias` — extraordinária.
+  _(Fase 3: o registro direto na OS passou a ser exclusivo do painel com `os.gerenciar`; o
+  tapeceiro mede pela medição atribuída.)_
 - **Prontidão para produção** é apenas informativa; `canStartProduction` é sempre `false`
   nesta fase. Não existe rota que inicie produção, e materiais previstos não disparam nada.
+
+### Medições e solicitações de materiais (Fase 3)
+
+```
+Peça recebida (OS aberta) ─► Medição atribuída ─► Em andamento (rascunho) ─► Concluída + Solicitação enviada
+                                                                                   │
+                                     Devolvida (motivo) ◄── Em revisão (gestor) ◄──┘
+                                          │                     │
+                                          └── corrigida e reenviada   └─► Aprovada para compra ─► necessidades aprovadas da OS
+```
+
+- **Rotina de sexta:** atribuída a quem tem `medicoes.gerenciar` (gestor), com prazo no dia de
+  medição configurado. **Extraordinária:** exige motivo e pode ser delegada a quem tem
+  `medicoes.extraordinarias` ("Executar medições atribuídas").
+- **Só o responsável executa** (inclusive o gestor: ninguém altera a medição de outra pessoa).
+  O gestor reatribui, cancela ou, após o envio, ajusta as quantidades pela revisão auditada.
+- **Envio** conclui a tarefa, copia as medidas para as peças da OS (com revisão `MEDICAO` no
+  histórico técnico) e envia a solicitação. **Aprovação** (`materiais.aprovar`) significa
+  apenas "quantidades conferidas": materializa as necessidades da OS; não registra compra nem
+  recebimento e não libera produção (`canStartProduction` continua `false`).
+- **Reabertura** de uma aprovação volta para revisão e remove as necessidades aprovadas
+  (nunca há alteração silenciosa de solicitação aprovada).
+- **Consolidação** (`consolidateMaterials`, função pura testada): itens de compra exclusiva
+  (sempre o tecido) só se somam dentro da mesma OS; materiais comuns de estoque somam entre OS
+  por especificação + unidade, preservando a origem (OS, peça, medição) de cada quantidade.
 
 ## 4. Eventos, concorrência e tempo real
 
@@ -151,6 +199,10 @@ registra recebimentos). Tablets não recebem eventos administrativos. Eventos da
 (`customer.*`, `order.*`, `pickup.*`, `receipt.registered`, `service_order.*`,
 `attachment.changed`) carregam apenas identificadores, números e situações — nunca valores,
 documentos, telefones ou endereços; o cliente recarrega os dados pela API com suas permissões.
+Eventos da Fase 3 (`measurement.assigned/started/updated/completed/cancelled`,
+`material_request.submitted/in_review/revised/approved/returned/reopened`) vão para a gestão
+(`medicoes.gerenciar`, `materiais.ver`, `materiais.aprovar`) **e** para o usuário responsável
+(`user:<id>`) — o tablet de outro tapeceiro não os recebe.
 
 **Reconexão e reconciliação.**
 
@@ -190,6 +242,11 @@ são usadas como garantia de execução.
 - `/tablet`: vinculação por código, escolha do funcionário, teclado de PIN, tela inicial com
   identificação visual (cor/foto), relógio, indicador de conexão e áreas preparadas para
   tarefas, presença, materiais e ocorrências. Botões grandes para tablets de 10–11".
+- Fase 3: `/painel/medicoes` (aguardando medição, lista com filtros, aguardando revisão),
+  `/painel/medicoes/[id]` (ações de gestão e revisão, totais por OS, histórico),
+  `/painel/planejamento` (checklist de sexta) e `/painel/materiais` (lista consolidada, cópia,
+  CSV). No tablet, a área **Medições atribuídas** usa o mesmo editor em etapas
+  (`components/measurements/measurement-editor.tsx`) em modo ampliado.
 - PWA: `manifest.webmanifest` (início em `/tablet`), service worker que **nunca** guarda
   respostas da API e mostra página offline quando não há rede.
 - Permissões no frontend só escondem elementos; o servidor sempre decide.

@@ -37,6 +37,20 @@ permissões. Procedimento: backup (`pnpm backup`) → `pnpm db:migrate` → rein
 Funções de produção não recebem permissões comerciais automaticamente: o gestor concede o
 que for necessário (ex.: `recebimentos.registrar` para quem confere a chegada de peças).
 
+## Atualização da Fase 2 para a Fase 3
+
+A migration `20261008200000_medicoes_materiais` é aditiva: cria as tabelas de medições e
+solicitações, amplia `material_requirements` com colunas opcionais (origem, unidade
+estruturada, cor, referência, densidade, dimensões, aprovação), amplia
+`domain_events.audience` para 400 caracteres e concede à função Gestor as permissões
+`medicoes.gerenciar`, `materiais.ver` e `materiais.aprovar`. Nenhum dado existente é apagado.
+Procedimento: backup (`pnpm backup`) → `pnpm db:migrate` → reiniciar API e web.
+
+Depois da atualização, o gestor concede aos tapeceiros que podem receber medições delegadas a
+permissão **Executar medições atribuídas** (Funcionários → Editar → Permissões adicionais).
+Mudança de regra: o registro direto de medidas na OS passa a ser exclusivo do painel com
+`os.gerenciar`; tapeceiros medem pela área **Medições atribuídas** do tablet.
+
 ## Backup e restauração
 
 ```bash

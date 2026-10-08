@@ -59,6 +59,18 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     keys.push(...flow, ['customer']);
   if (t.startsWith('service_order.')) keys.push(['service-orders'], ['service-order'], ...flow);
   if (t === 'attachment.changed') keys.push(['attachments']);
+  // Fase 3 — medições e solicitações de materiais
+  if (t.startsWith('measurement.') || t.startsWith('material_request.')) {
+    keys.push(
+      ['measurements'],
+      ['measurement'],
+      ['my-measurements'],
+      ['measurements-awaiting'],
+      ['planning'],
+      ['consolidated'],
+      ['service-order'],
+    );
+  }
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }
 
