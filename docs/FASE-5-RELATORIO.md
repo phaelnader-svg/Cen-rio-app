@@ -8,9 +8,8 @@ Data: 08/10/2026
 | ------------------------------ | ------------------------------------------------------------------------------- |
 | Branch                         | `claude/cenario-gestao-fase-1-zf3bj2` (branch designada para o desenvolvimento) |
 | SHA inicial (fim da Fase 4)    | `ec72d74` (igual ao `origin` no início)                                         |
-| Commit intermediário           | `7025c47` (código em andamento, enviado ao `origin`)                            |
-| Commit da Fase 5               | `__CODE_SHA__` (banco, API, telas, testes e documentação)                       |
-| SHA final do código verificado | `__CODE_SHA__` — este relatório é o commit seguinte                             |
+| Commits da Fase 5              | `7025c47`, `cb6679c`, `ab65be6`, `2a9f235` (banco, API, telas, testes, docs)    |
+| SHA final do código verificado | `2a9f235` — este relatório é o commit seguinte                                  |
 
 ## 2. Estado inicial do repositório
 
@@ -193,7 +192,18 @@ durante a liberação).
 
 ## 12. Testes e resultados (08/10/2026, PostgreSQL 16 real)
 
-**TESTS**
+| Suíte                                                          | Resultado                                                                    |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| API — integração (Vitest, 19 arquivos)                         | **142/142** (130 das Fases 1–4 + 12 novos: 10 de produção + 2 de tempo real) |
+| Pacote compartilhado — unitários                               | **29/29** (24 + 5 novos)                                                     |
+| Web — unitários                                                | **6/6**                                                                      |
+| E2E Playwright (build de produção, painel e tablets separados) | **13/13** (12 das Fases 1–4 + 1 novo com painel e dois tablets)              |
+| Backup + restauração (agora com dados da Fase 5)               | **aprovado**                                                                 |
+| Prettier, ESLint, typecheck dos 5 pacotes, build de produção   | **sem erros** (`pnpm check` com saída 0)                                     |
+
+Depois do `pnpm check`, só mudaram specs E2E e a tabela do planejamento (`planning-page.tsx`):
+o E2E completo foi executado de novo (13/13) e a tabela foi revalidada com typecheck, lint,
+Prettier e o E2E de produção.
 
 | Cenário exigido                    | Onde                                                                                                                                       |
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
