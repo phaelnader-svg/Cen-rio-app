@@ -500,12 +500,14 @@ function ItemSection({
     >
       <div className="overflow-x-auto">
         <table
-          className="w-full min-w-[1080px] text-sm"
+          className="w-full min-w-[1200px] text-sm"
           data-testid={`plan-tasks-${item.serviceOrder.code}`}
         >
           <thead className="bg-subtle/60 text-left text-xs text-ink-muted uppercase">
             <tr>
-              <th className="px-3 py-2 font-semibold">Tarefa</th>
+              <th className="sticky left-0 z-10 min-w-56 bg-subtle px-3 py-2 font-semibold">
+                Tarefa
+              </th>
               <th className="px-3 py-2 font-semibold">Responsável</th>
               <th className="px-3 py-2 font-semibold">Dia</th>
               <th className="px-3 py-2 font-semibold">Hora</th>
@@ -527,7 +529,7 @@ function ItemSection({
                   data-testid={`plan-task-${t.title}`}
                   className={t.status === 'CANCELADA' ? 'opacity-50' : undefined}
                 >
-                  <td className="px-3 py-2">
+                  <td className="sticky left-0 z-10 min-w-56 bg-surface px-3 py-2 shadow-[1px_0_0_var(--color-line)]">
                     <Link
                       href={`/painel/producao/tarefas/${t.id}`}
                       className="font-medium hover:underline"
@@ -542,7 +544,7 @@ function ItemSection({
                   <td className="px-3 py-2">
                     <Select
                       aria-label={`Responsável de ${t.title}`}
-                      className="h-9 py-0 text-sm"
+                      className="h-9 min-w-32 py-0 text-sm"
                       disabled={locked}
                       value={t.assignee?.userId ?? ''}
                       onChange={(e) => put(t, { assigneeUserId: e.target.value || null })}
@@ -590,7 +592,7 @@ function ItemSection({
                   <td className="px-3 py-2">
                     <Select
                       aria-label={`Prioridade de ${t.title}`}
-                      className="h-9 py-0 text-sm"
+                      className="h-9 min-w-28 py-0 text-sm"
                       disabled={locked}
                       value={t.priority}
                       onChange={(e) => put(t, { priority: e.target.value })}
