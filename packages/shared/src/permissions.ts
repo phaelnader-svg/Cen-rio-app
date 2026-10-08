@@ -242,6 +242,12 @@ export const PERMISSIONS = {
     description:
       'Ver as próprias tarefas e a OS correspondente; iniciar, pausar, retomar, registrar andamento e concluir as próprias tarefas.',
   },
+  'ajuda.solicitar': {
+    group: 'producao',
+    label: 'Solicitar ajudante',
+    description:
+      'Pedir apoio (normal ou urgente) nas próprias tarefas em andamento, consultar e cancelar os próprios pedidos.',
+  },
   'presenca.registrar': {
     group: 'presenca',
     label: 'Registrar a própria presença',
@@ -313,6 +319,7 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
+      'ajuda.solicitar',
       'presenca.registrar',
       'sincronizacao.diagnosticar',
     ],
@@ -326,6 +333,7 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
+      'ajuda.solicitar',
       'presenca.registrar',
       'sincronizacao.diagnosticar',
     ],

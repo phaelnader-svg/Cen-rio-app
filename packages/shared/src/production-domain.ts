@@ -113,6 +113,17 @@ export const NOTIFICATION_KINDS = [
   'EXPEDIENTE_ENCERRADO',
   'TAREFA_PENDENTE_ENCERRAMENTO',
   'PRESENCA_ALTERADA',
+  // Fase 8 — ajuda e reprogramação
+  'AJUDA_SOLICITADA',
+  'AJUDA_ATRIBUIDA',
+  'AJUDA_EM_ESPERA',
+  'AJUDA_CANCELADA',
+  'AJUDA_CONCLUIDA',
+  'REPROGRAMACAO_PENDENTE',
+  'REPROGRAMACAO_APROVADA',
+  'REPROGRAMACAO_AUTOMATICA',
+  'REPROGRAMACAO_REJEITADA',
+  'TAREFA_ALTERNATIVA_LIBERADA',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -133,6 +144,16 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   EXPEDIENTE_ENCERRADO: 'Expediente encerrado',
   TAREFA_PENDENTE_ENCERRAMENTO: 'Tarefa pendente ao encerrar',
   PRESENCA_ALTERADA: 'Presença alterada pelo gestor',
+  AJUDA_SOLICITADA: 'Ajuda solicitada',
+  AJUDA_ATRIBUIDA: 'Ajuda atribuída',
+  AJUDA_EM_ESPERA: 'Ajuda em espera',
+  AJUDA_CANCELADA: 'Ajuda cancelada',
+  AJUDA_CONCLUIDA: 'Apoio concluído',
+  REPROGRAMACAO_PENDENTE: 'Reprogramação aguardando decisão',
+  REPROGRAMACAO_APROVADA: 'Reprogramação aprovada',
+  REPROGRAMACAO_AUTOMATICA: 'Reprogramação automática',
+  REPROGRAMACAO_REJEITADA: 'Reprogramação rejeitada',
+  TAREFA_ALTERNATIVA_LIBERADA: 'Tarefa alternativa liberada',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

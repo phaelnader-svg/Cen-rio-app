@@ -41,9 +41,22 @@ const envSchema = z
     MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(50).default(5),
     /** Desativa tarefas em segundo plano (útil em testes). */
     DISABLE_BACKGROUND_JOBS: bool.default(false),
+    /**
+     * Fase 8: relógio de teste controlável (E2E de presença em qualquer horário). Só é
+     * aceito com APP_ENV=test; não altera o relógio do servidor, apenas o relógio
+     * operacional da aplicação, e suas rotas nem são registradas fora de teste.
+     */
+    ENABLE_TEST_CLOCK: bool.default(false),
   })
   .superRefine((env, ctx) => {
     const strict = env.APP_ENV === 'production' || env.APP_ENV === 'staging';
+    if (env.ENABLE_TEST_CLOCK && (env.APP_ENV !== 'test' || env.NODE_ENV === 'production')) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['ENABLE_TEST_CLOCK'],
+        message: 'ENABLE_TEST_CLOCK só é permitido com APP_ENV=test (nunca em produção).',
+      });
+    }
     if (strict && !env.COOKIE_SECURE) {
       ctx.addIssue({
         code: 'custom',

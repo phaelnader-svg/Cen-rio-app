@@ -85,6 +85,18 @@ export const EVENT_TYPES = {
   ATTENDANCE_DEPARTED: 'attendance.departed',
   ATTENDANCE_AVAILABILITY_CHANGED: 'attendance.availability_changed',
   ATTENDANCE_PRODUCTION_IMPACT_DETECTED: 'attendance.production_impact_detected',
+  // Fase 8 — ajuda e reprogramação
+  HELP_REQUESTED: 'help.requested',
+  HELP_ASSIGNED: 'help.assigned',
+  HELP_QUEUED: 'help.queued',
+  HELP_ESCALATED: 'help.escalated',
+  HELP_CANCELLED: 'help.cancelled',
+  HELP_STARTED: 'help.started',
+  HELP_COMPLETED: 'help.completed',
+  EMPLOYEE_SKILLS_CHANGED: 'help.skills_changed',
+  RESCHEDULE_PROPOSED: 'reschedule.proposed',
+  RESCHEDULE_DECIDED: 'reschedule.decided',
+  PLANNING_ACTION_RECORDED: 'planning.action_recorded',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

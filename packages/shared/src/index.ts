@@ -25,3 +25,6 @@ export * from './types-production';
 export * from './attendance-domain';
 export * from './schemas/attendance';
 export * from './types-attendance';
+export * from './help-domain';
+export * from './schemas/help';
+export * from './types-help';

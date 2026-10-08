@@ -80,6 +80,9 @@ export const taskInclude = {
   assignee: { select: { id: true, displayName: true, employee: { select: { color: true } } } },
   dependsOn: { include: { dependsOn: { select: refSelect } } },
   dependents: { include: { task: { select: refSelect } } },
+  supportFor: {
+    select: { id: true, number: true, title: true, assignee: { select: { displayName: true } } },
+  },
 } as const;
 export type TaskRow = Prisma.ProductionTaskGetPayload<{ include: typeof taskInclude }>;
 
@@ -157,6 +160,15 @@ export function toTaskDto(t: TaskRow, timeZone: string): ProductionTaskDto {
         }
       : null,
     completionRequirement: t.completionRequirement,
+    estimatedMinutes: t.estimatedMinutes,
+    supportFor: t.supportFor
+      ? {
+          id: t.supportFor.id,
+          code: taskCode(t.supportFor.number),
+          title: t.supportFor.title,
+          requester: t.supportFor.assignee?.displayName ?? null,
+        }
+      : null,
     version: t.version,
   };
 }
@@ -269,6 +281,20 @@ export async function taskMaterialsReady(
 
 // ─────────────────────────── Liberação ───────────────────────────
 
+type BlockedTask = Prisma.ProductionTaskGetPayload<object>;
+type BlockedListener = (tx: Tx, actor: ActorContext, task: BlockedTask) => Promise<void>;
+const blockedListeners: BlockedListener[] = [];
+/**
+ * Fase 8: avisa quando uma tarefa que aguardava início fica bloqueada (ou é pausada por
+ * impedimento), para sugerir/antecipar outra tarefa do mesmo funcionário.
+ */
+export function onTaskBlocked(listener: BlockedListener) {
+  blockedListeners.push(listener);
+}
+export async function emitTaskBlocked(tx: Tx, actor: ActorContext, task: BlockedTask) {
+  for (const l of blockedListeners) await l(tx, actor, task);
+}
+
 /**
  * Reavalia (com bloqueio) as tarefas que aguardam início e grava a transição
  * Bloqueada ⇄ Programada ⇄ Liberada quando muda, com histórico e evento. É a
@@ -284,6 +310,7 @@ export async function reevaluateTasks(
   if (!taskIds.length) return;
   await lockTasks(tx, taskIds);
   const readiness = new Map<string, Readiness>();
+  const blocked: BlockedTask[] = [];
   for (const id of [...new Set(taskIds)].sort()) {
     const t = await tx.productionTask.findUnique({
       where: { id },
@@ -306,7 +333,8 @@ export async function reevaluateTasks(
     const result = evaluateRelease({
       osActive: t.serviceOrder.status === 'ABERTA',
       pieceReceived: items.length > 0 && items.every((i) => i.orderItem.receivedQuantity > 0),
-      published: t.plan?.status === 'PUBLICADO',
+      // Tarefa de apoio (Fase 8) nasce de uma tarefa principal já liberada.
+      published: t.plan?.status === 'PUBLICADO' || Boolean(t.supportForTaskId),
       assigned: Boolean(t.assigneeUserId),
       // Etapa cancelada (não aplicável) não segura as seguintes.
       dependenciesDone: t.dependsOn.every(
@@ -341,6 +369,8 @@ export async function reevaluateTasks(
     if (result.status === 'LIBERADA') {
       await notify(tx, actor, taskNotice(updated, 'TAREFA_LIBERADA', 'pode começar.'));
     }
+    const wasReady = t.status === 'LIBERADA' || t.status === 'PROGRAMADA';
+    if (result.status === 'BLOQUEADA' && wasReady) blocked.push(updated);
     await domainTaskEvent(
       tx,
       actor,
@@ -353,6 +383,7 @@ export async function reevaluateTasks(
       { from: t.status, blockers: result.blockers },
     );
   }
+  for (const b of blocked) await emitTaskBlocked(tx, actor, b);
 }
 
 /** Tarefas que aguardam início de uma OS (para reavaliar após mudanças na OS/materiais). */

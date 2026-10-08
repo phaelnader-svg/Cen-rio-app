@@ -87,6 +87,12 @@ model User {
   attendanceCorrections     AttendanceCorrection[]   @relation("AttendanceCorrectionActor")
   attendanceImpacts         AttendanceImpact[]       @relation("AttendanceImpactAffected")
   attendanceImpactsResolved AttendanceImpact[]       @relation("AttendanceImpactResolvedBy")
+  skillsGranted             EmployeeSkill[]          @relation("SkillGrantedBy")
+  helpRequested             HelpRequest[]            @relation("HelpRequester")
+  helpGiven                 HelpRequest[]            @relation("HelpHelper")
+  helpEvents                HelpRequestEvent[]       @relation("HelpEventActor")
+  proposalsDecided          RescheduleProposal[]     @relation("ProposalDecidedBy")
+  planningActions           PlanningAction[]         @relation("PlanningActionActor")
 
   @@map("users")
 }
@@ -114,6 +120,7 @@ model Employee {
   receipts        Receipt[]               @relation("ReceiptReceivedBy")
   leadOf          ServiceOrder[]          @relation("ServiceOrderTechnicalLead")
   attendances     OperationalAttendance[]
+  skills          EmployeeSkill[]
 
   @@index([active])
   @@map("employees")
@@ -787,6 +794,7 @@ model ServiceOrder {
   productionPlanItems ProductionPlanItem[]
   productionTasks     ProductionTask[]
   notifications       Notification[]
+  helpRequests        HelpRequest[]
 
   @@index([orderId])
   @@index([customerId])
@@ -1662,6 +1670,9 @@ model ProductionTask {
   pauseImpediment       Boolean               @default(false) @map("pause_impediment")
   completionRequirement CompletionRequirement @default(NENHUM) @map("completion_requirement")
   completionNote        String?               @map("completion_note") @db.VarChar(500)
+  /// Fase 8: duração estimada e vínculo da tarefa de apoio com a tarefa principal.
+  estimatedMinutes      Int?                  @map("estimated_minutes")
+  supportForTaskId      String?               @map("support_for_task_id") @db.Uuid
   version               Int                   @default(1)
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -1677,8 +1688,13 @@ model ProductionTask {
   materials         ProductionTaskMaterial[]
   notifications     Notification[]
   attendanceImpacts AttendanceImpact[]
+  supportFor        ProductionTask?          @relation("SupportFor", fields: [supportForTaskId], references: [id], onDelete: Restrict)
+  supportTasks      ProductionTask[]         @relation("SupportFor")
+  helpRequests      HelpRequest[]            @relation("HelpRequestTask")
+  helpSupport       HelpRequest?             @relation("HelpRequestSupportTask")
 
   @@index([assigneeUserId, status])
+  @@index([supportForTaskId])
   @@index([serviceOrderId])
   @@index([planId])
   @@index([status, scheduledAt])
@@ -1822,6 +1838,7 @@ model OperationalAttendance {
   departureBy User?                  @relation("AttendanceDepartureBy", fields: [departureById], references: [id], onDelete: SetNull)
   corrections AttendanceCorrection[]
   impacts     AttendanceImpact[]
+  proposals   RescheduleProposal[]
 
   @@unique([employeeId, date])
   @@index([date, situation])
@@ -1871,4 +1888,156 @@ model AttendanceImpact {
   @@unique([attendanceId, taskId, kind])
   @@index([detectedAt])
   @@map("attendance_impacts")
+}
+
+// ─────────────────────────── Ajuda e reprogramação (Fase 8) ───────────────────────────
+
+/// Competências cadastradas pelo gestor (base da seleção de ajudantes).
+model EmployeeSkill {
+  employeeId  String   @map("employee_id") @db.Uuid
+  skill       String   @db.VarChar(30)
+  grantedById String?  @map("granted_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  employee  Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  grantedBy User?    @relation("SkillGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@id([employeeId, skill])
+  @@index([skill])
+  @@map("employee_skills")
+}
+
+enum HelpStatus {
+  PENDENTE
+  ATRIBUIDA
+  EM_EXECUCAO
+  CONCLUIDA
+  CANCELADA
+  ESCALADA
+
+  @@map("help_status")
+}
+
+/// Solicitação de ajuda de um tapeceiro numa tarefa própria. A ajuda vira uma tarefa de
+/// apoio separada (nunca conclui a tarefa principal).
+model HelpRequest {
+  id               String     @id @default(uuid()) @db.Uuid
+  number           Int        @unique @default(autoincrement())
+  taskId           String     @map("task_id") @db.Uuid
+  serviceOrderId   String     @map("service_order_id") @db.Uuid
+  requesterUserId  String     @map("requester_user_id") @db.Uuid
+  kind             String     @db.VarChar(30)
+  estimatedMinutes Int        @map("estimated_minutes")
+  urgent           Boolean    @default(false)
+  justification    String?    @db.VarChar(300)
+  note             String?    @db.VarChar(300)
+  status           HelpStatus @default(PENDENTE)
+  helperUserId     String?    @map("helper_user_id") @db.Uuid
+  supportTaskId    String?    @unique @map("support_task_id") @db.Uuid
+  assignedAt       DateTime?  @map("assigned_at") @db.Timestamptz(3)
+  escalatedAt      DateTime?  @map("escalated_at") @db.Timestamptz(3)
+  delayAlertedAt   DateTime?  @map("delay_alerted_at") @db.Timestamptz(3)
+  completedAt      DateTime?  @map("completed_at") @db.Timestamptz(3)
+  cancelledAt      DateTime?  @map("cancelled_at") @db.Timestamptz(3)
+  cancelledById    String?    @map("cancelled_by_id") @db.Uuid
+  cancelReason     String?    @map("cancel_reason") @db.VarChar(300)
+  version          Int        @default(1)
+  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  task         ProductionTask       @relation("HelpRequestTask", fields: [taskId], references: [id], onDelete: Restrict)
+  supportTask  ProductionTask?      @relation("HelpRequestSupportTask", fields: [supportTaskId], references: [id], onDelete: SetNull)
+  serviceOrder ServiceOrder         @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  requester    User                 @relation("HelpRequester", fields: [requesterUserId], references: [id], onDelete: Restrict)
+  helper       User?                @relation("HelpHelper", fields: [helperUserId], references: [id], onDelete: SetNull)
+  events       HelpRequestEvent[]
+  proposals    RescheduleProposal[]
+
+  @@index([status, urgent, createdAt])
+  @@index([requesterUserId, createdAt])
+  @@index([helperUserId, status])
+  @@map("help_requests")
+}
+
+/// Histórico imutável de cada solicitação (inclui a avaliação dos candidatos).
+model HelpRequestEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  helpRequestId String   @map("help_request_id") @db.Uuid
+  kind          String   @db.VarChar(30)
+  fromStatus    String?  @map("from_status") @db.VarChar(20)
+  toStatus      String?  @map("to_status") @db.VarChar(20)
+  note          String?  @db.VarChar(500)
+  evaluation    Json?
+  actorId       String?  @map("actor_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  helpRequest HelpRequest @relation(fields: [helpRequestId], references: [id], onDelete: Restrict)
+  actor       User?       @relation("HelpEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([helpRequestId, createdAt])
+  @@map("help_request_events")
+}
+
+enum ProposalStatus {
+  PENDENTE
+  APROVADA
+  AJUSTADA
+  REJEITADA
+  OBSOLETA
+
+  @@map("proposal_status")
+}
+
+/// Proposta de reprogramação que exige decisão do gestor (nada é aplicado antes).
+model RescheduleProposal {
+  id                    String         @id @default(uuid()) @db.Uuid
+  number                Int            @unique @default(autoincrement())
+  kind                  String         @db.VarChar(30)
+  status                ProposalStatus @default(PENDENTE)
+  critical              Boolean        @default(true)
+  situation             String         @db.VarChar(500)
+  problem               String         @db.VarChar(500)
+  affectedTaskIds       String[]       @map("affected_task_ids") @db.Uuid
+  alternatives          Json
+  proposedAlternativeId String         @map("proposed_alternative_id") @db.VarChar(40)
+  chosenAlternativeId   String?        @map("chosen_alternative_id") @db.VarChar(40)
+  appliedActions        Json?          @map("applied_actions")
+  /// Evita propostas duplicadas para o mesmo fato (ex.: ausência + tarefa).
+  dedupeKey             String         @unique @map("dedupe_key") @db.VarChar(160)
+  attendanceId          String?        @map("attendance_id") @db.Uuid
+  helpRequestId         String?        @map("help_request_id") @db.Uuid
+  decidedById           String?        @map("decided_by_id") @db.Uuid
+  decidedAt             DateTime?      @map("decided_at") @db.Timestamptz(3)
+  decisionNote          String?        @map("decision_note") @db.VarChar(500)
+  version               Int            @default(1)
+  createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  attendance  OperationalAttendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  helpRequest HelpRequest?           @relation(fields: [helpRequestId], references: [id], onDelete: SetNull)
+  decidedBy   User?                  @relation("ProposalDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("reschedule_proposals")
+}
+
+/// Histórico imutável de toda alteração automática ou aprovada do planejamento.
+model PlanningAction {
+  id            String   @id @default(uuid()) @db.Uuid
+  kind          String   @db.VarChar(30)
+  automatic     Boolean
+  taskId        String?  @map("task_id") @db.Uuid
+  helpRequestId String?  @map("help_request_id") @db.Uuid
+  proposalId    String?  @map("proposal_id") @db.Uuid
+  reason        String   @db.VarChar(500)
+  before        Json?
+  after         Json?
+  actorId       String?  @map("actor_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor User? @relation("PlanningActionActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([taskId])
+  @@map("planning_actions")
 }

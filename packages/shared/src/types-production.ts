@@ -88,6 +88,9 @@ export interface ProductionTaskDto {
   } | null;
   /** Fase 6: registro exigido para concluir (só o necessário). */
   completionRequirement: CompletionRequirement;
+  /** Fase 8: duração estimada (apoios) e vínculo da tarefa de apoio com a tarefa principal. */
+  estimatedMinutes: number | null;
+  supportFor: { id: string; code: string; title: string; requester: string | null } | null;
   version: number;
 }
 

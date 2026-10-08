@@ -29,6 +29,9 @@ import { productionTaskRoutes } from './modules/production/tasks';
 import { notificationRoutes } from './modules/notifications/routes';
 import { detectAbsences } from './modules/attendance/absence';
 import { attendanceRoutes } from './modules/attendance/routes';
+import { helpRoutes } from './modules/help/routes';
+import { processHelpQueue } from './modules/help/queue';
+import { testClockRoutes } from './modules/testing/routes';
 import { leftoverRoutes } from './modules/purchasing/leftovers';
 import { purchaseOrderRoutes } from './modules/purchasing/purchase-orders';
 import { materialReceiptRoutes } from './modules/purchasing/receipts';
@@ -182,6 +185,9 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(productionTaskRoutes);
   await app.register(notificationRoutes);
   await app.register(attendanceRoutes);
+  await app.register(helpRoutes);
+  // Relógio de teste: só existe com ENABLE_TEST_CLOCK (validado para APP_ENV=test).
+  if (env.ENABLE_TEST_CLOCK && env.APP_ENV === 'test') await app.register(testClockRoutes);
 
   // Presença dos tablets: transições online/offline viram eventos persistentes.
   hub.onPresence((deviceId, online) => {
@@ -208,6 +214,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   let maintenanceTimer: NodeJS.Timeout | null = null;
   let releaseTimer: NodeJS.Timeout | null = null;
   let absenceTimer: NodeJS.Timeout | null = null;
+  let helpTimer: NodeJS.Timeout | null = null;
   let started = false;
 
   return {
@@ -247,12 +254,22 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           60_000,
         );
         absenceTimer.unref();
+        // Fase 8: fila de ajuda (atribuição quando alguém fica livre e alerta de atraso).
+        helpTimer = setInterval(
+          () =>
+            void processHelpQueue(prisma).catch((err: unknown) =>
+              app.log.warn({ err }, 'Falha ao processar a fila de ajuda'),
+            ),
+          30_000,
+        );
+        helpTimer.unref();
       }
     },
     async close() {
       if (maintenanceTimer) clearInterval(maintenanceTimer);
       if (releaseTimer) clearInterval(releaseTimer);
       if (absenceTimer) clearInterval(absenceTimer);
+      if (helpTimer) clearInterval(helpTimer);
       processor.stop();
       hub.stop();
       await feed.stop();

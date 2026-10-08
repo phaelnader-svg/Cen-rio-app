@@ -51,6 +51,9 @@ import {
   toTaskDto,
 } from './common';
 import { announceAssignments, assertWorker, reviseIfPublished } from './plans';
+import { cancelHelpForClosedTask, processHelpQueue } from '../help/queue';
+import { supportCancelled, supportCompleted, supportStarted } from '../help/support';
+import { suggestAlternative } from '../help/reschedule';
 
 const deviceOf = (request: FastifyRequest) => request.auth?.deviceId ?? null;
 
@@ -540,6 +543,9 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           `cancelamento de ${taskCode(t.number)}`,
         );
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_CANCELLED, u);
+        // Fase 8: apoio cancelado encerra o pedido; tarefa principal cancelada cancela os pedidos.
+        if (t.supportForTaskId) await supportCancelled(tx, actor, t.id, input.reason);
+        else await cancelHelpForClosedTask(tx, actor, t.id);
         await reevaluateTasks(
           tx,
           actor,
@@ -566,6 +572,11 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       }
       await reevaluateTasks(tx, actor, [id]);
     });
+    if (kind === 'cancel') {
+      await processHelpQueue(prisma).catch((err: unknown) =>
+        request.log.warn({ err }, 'Falha ao reavaliar a fila de ajuda'),
+      );
+    }
     if (kind === 'cancel' && !(await prisma.productionTask.findUnique({ where: { id } })))
       return { deleted: true };
     const { timezone } = await company(prisma);
@@ -838,7 +849,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         const check = evaluateRelease({
           osActive: true,
           pieceReceived: items.length > 0 && items.every((i) => i.orderItem.receivedQuantity > 0),
-          published: t.plan?.status === 'PUBLICADO',
+          published: t.plan?.status === 'PUBLICADO' || Boolean(t.supportForTaskId),
           assigned: true,
           dependenciesDone: t.dependsOn.every(
             (d) => d.dependsOn.status === 'CONCLUIDA' || d.dependsOn.status === 'CANCELADA',
@@ -870,6 +881,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           to: 'EM_EXECUCAO',
         });
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_STARTED, u);
+        if (t.supportForTaskId) await supportStarted(tx, actor, t.id, now);
         return;
       }
       if (action === 'pause') {
@@ -903,6 +915,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
             reason: pause!.reason,
             note: pause!.note ?? null,
           });
+          // Fase 8: impedimento real → indica/antecipa outra tarefa do mesmo funcionário.
+          await suggestAlternative(tx, actor, u);
         }
         return;
       }
@@ -1000,6 +1014,10 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         summary: `Tarefa ${taskCode(t.number)} (${t.title}) concluída.`,
       });
       await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_COMPLETED, u);
+      // Fase 8: concluir o apoio encerra o pedido (a tarefa principal segue independente);
+      // concluir a principal cancela pedidos que nem começaram.
+      if (t.supportForTaskId) await supportCompleted(tx, actor, t.id, now);
+      else await cancelHelpForClosedTask(tx, actor, t.id);
       // Reavalia as dependentes (bloqueadas): as elegíveis são liberadas e o responsável é avisado.
       await reevaluateTasks(
         tx,
@@ -1029,6 +1047,10 @@ export async function productionTaskRoutes(app: FastifyInstance) {
     // Fase 7: disponibilidade operacional de quem executa (ocupado, em pausa, disponível).
     if (action !== 'progress') {
       await prisma.$transaction((tx) => refreshAvailabilityOfUser(tx, actor, request.auth!.userId));
+      // Fase 8: quem ficou livre pode atender a fila de ajuda.
+      await processHelpQueue(prisma).catch((err: unknown) =>
+        request.log.warn({ err }, 'Falha ao reavaliar a fila de ajuda'),
+      );
     }
     const { timezone } = await company(prisma);
     return toTaskDto(await loadTask(prisma, id), timezone);

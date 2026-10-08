@@ -16,6 +16,7 @@ import {
   refreshAvailability,
   team,
 } from './common';
+import { analyzeAbsence } from '../help/reschedule';
 
 const SYSTEM: ActorContext = { userId: null, sessionId: null, ip: null, requestId: null };
 
@@ -113,6 +114,8 @@ export async function detectAbsences(prisma: PrismaClient, now = clock()) {
         }`,
       );
       await refreshAvailability(tx, SYSTEM, e.id, now);
+      // Fase 8: sugestões de redistribuição ao gestor (nada é transferido na ausência presumida).
+      if (impact.own > 0) await analyzeAbsence(tx, SYSTEM, row.id, 'PRESUMIDA');
       return true;
     });
     if (changed) flagged += 1;

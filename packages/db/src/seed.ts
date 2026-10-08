@@ -14,6 +14,7 @@ import { hash } from '@node-rs/argon2';
 import {
   DEFAULT_PRODUCTION_TEMPLATES,
   DEFAULT_ROLES,
+  DEFAULT_ROLE_SKILLS,
   GESTOR_ROLE_KEY,
   passwordPolicySchema,
 } from '@cenario/shared';
@@ -169,6 +170,22 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
         });
         log(`✔ Funcionário ${member.displayName} cadastrado (sem PIN).`);
       }
+    }
+
+    // Fase 8: competências iniciais por função (só para quem ainda não tem nenhuma).
+    const employees = await prisma.employee.findMany({
+      where: { skills: { none: {} } },
+      include: { user: { include: { roles: { include: { role: { select: { key: true } } } } } } },
+    });
+    for (const e of employees) {
+      const skills = new Set(
+        e.user.roles.flatMap((r) => (r.role.key ? (DEFAULT_ROLE_SKILLS[r.role.key] ?? []) : [])),
+      );
+      if (!skills.size) continue;
+      await prisma.employeeSkill.createMany({
+        data: [...skills].map((skill) => ({ employeeId: e.id, skill })),
+        skipDuplicates: true,
+      });
     }
 
     // Fase 5: modelos de produção iniciais (somente se ainda não houver nenhum).

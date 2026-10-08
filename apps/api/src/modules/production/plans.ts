@@ -107,6 +107,17 @@ export async function reviseIfPublished(
   reason: string | null | undefined,
   summary: string,
 ) {
+  await reviseIfPublishedBy(tx, actorFrom(request), planId, reason, summary);
+}
+
+/** Mesma revisão, para mudanças sem requisição (automáticas ou aprovadas pelo gestor — Fase 8). */
+export async function reviseIfPublishedBy(
+  tx: Tx,
+  actor: ActorContext,
+  planId: string | null,
+  reason: string | null | undefined,
+  summary: string,
+) {
   if (!planId) return;
   const plan = await lockPlan(tx, planId);
   if (plan.status !== 'PUBLICADO') return;
@@ -116,14 +127,13 @@ export async function reviseIfPublished(
       'Informe o motivo da alteração da programação publicada.',
     );
   }
-  const actor = actorFrom(request);
   const { planningWeekday, timezone } = await company(tx);
   const revision = plan.revision + 1;
   await tx.productionPlanRevision.create({
     data: {
       planId,
       revision,
-      reason,
+      reason: reason.slice(0, 500),
       offSchedule: weekdayIn(timezone) !== planningWeekday,
       snapshot: (await snapshot(tx, planId)) as Prisma.InputJsonValue,
       createdById: actor.userId,

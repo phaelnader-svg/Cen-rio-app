@@ -27,6 +27,8 @@ import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { notify } from '../notifications/notify';
 import { idParams } from '../presenters';
 import { domainTaskEvent, lockTasks, taskEvent } from '../production/common';
+import { processHelpQueue } from '../help/queue';
+import { analyzeAbsence, obsoleteProposals } from '../help/reschedule';
 import {
   MANAGE,
   MANAGERS_AUDIENCE,
@@ -47,6 +49,16 @@ import {
 } from './common';
 
 const deviceOf = (request: FastifyRequest) => request.auth?.deviceId ?? null;
+
+/** Situações em que a pessoa não estará na oficina hoje (Fase 8: análise de reprogramação). */
+const ABSENT_ACTIONS: readonly string[] = [
+  'CONFIRMAR_AUSENCIA',
+  'AUSENCIA_JUSTIFICADA',
+  'ATESTADO',
+  'FOLGA',
+  'FERIAS',
+  'TRABALHO_EXTERNO',
+];
 
 async function myEmployee(tx: Tx | FastifyInstance['ctx']['prisma'], userId: string) {
   const e = await tx.employee.findUnique({ where: { userId } });
@@ -73,6 +85,11 @@ async function resolveOpenImpacts(
 
 export async function attendanceRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
+  /** Fase 8: chegada, encerramento e situações mudam quem pode ajudar. */
+  const requeue = () =>
+    processHelpQueue(prisma).catch((err: unknown) =>
+      app.log.warn({ err }, 'Falha ao reavaliar a fila de ajuda'),
+    );
 
   // ─────────────────────────── Funcionário (tablet) ───────────────────────────
 
@@ -187,6 +204,13 @@ export async function attendanceRoutes(app: FastifyInstance) {
         ]);
         if (presumed) {
           await resolveOpenImpacts(tx, actor, row.id, `${e.displayName} chegou às ${cfg.now}.`);
+          // Fase 8: a chegada torna sem efeito as propostas da ausência presumida.
+          await obsoleteProposals(
+            tx,
+            actor,
+            { attendanceId: row.id },
+            `${e.displayName} chegou às ${cfg.now}.`,
+          );
           await notifyManagers(
             tx,
             actor,
@@ -205,6 +229,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
         }
         await refreshAvailability(tx, actor, e.id, now);
       });
+      await requeue();
       return myAttendance(userId);
     },
   );
@@ -370,6 +395,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
         ]);
         await refreshAvailability(tx, actor, e.id, now);
       });
+      await requeue();
       return myAttendance(userId);
     },
   );
@@ -579,8 +605,29 @@ export async function attendanceRoutes(app: FastifyInstance) {
           body: `${brDate(input.date)}: ${ATTENDANCE_ACTION_LABEL[input.action]} — ${input.reason}`,
         },
       ]);
-      if (input.date === cfg.today) await refreshAvailability(tx, actor, e.id);
+      if (input.date === cfg.today) {
+        await refreshAvailability(tx, actor, e.id);
+        // Fase 8: ausência (confirmada, justificada, folga, férias, externo) → análise de
+        // reprogramação; chegada registrada → propostas da ausência perdem o efeito.
+        if (ABSENT_ACTIONS.includes(input.action)) {
+          await obsoleteProposals(
+            tx,
+            actor,
+            { attendanceId: row.id, dedupeKey: { endsWith: ':PRESUMIDA' } },
+            `${ATTENDANCE_ACTION_LABEL[input.action]} registrada pelo gestor.`,
+          );
+          await analyzeAbsence(tx, actor, row.id, 'CONFIRMADA');
+        } else if (row.arrivedAt && row.situation === 'PRESENTE') {
+          await obsoleteProposals(
+            tx,
+            actor,
+            { attendanceId: row.id },
+            `${ATTENDANCE_ACTION_LABEL[input.action]}: ${e.displayName} está presente.`,
+          );
+        }
+      }
     });
+    await requeue();
     const row = await prisma.operationalAttendance.findUniqueOrThrow({
       where: { employeeId_date: { employeeId: e.id, date: dbDate(input.date) } },
     });
