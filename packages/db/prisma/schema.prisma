@@ -98,6 +98,18 @@ model User {
   issuesResolved            ProductionIssue[]        @relation("IssueResolvedBy")
   issuesCancelled           ProductionIssue[]        @relation("IssueCancelledBy")
   issueEvents               ProductionIssueEvent[]   @relation("IssueEventActor")
+  inspectionsAssigned       QualityInspection[]      @relation("InspectionInspector")
+  inspectionsDecided        QualityInspection[]      @relation("InspectionDecidedBy")
+  qualityEvents             QualityEvent[]           @relation("QualityEventActor")
+  packagingAssigned         PackagingRecord[]        @relation("PackagingAssignee")
+  locationEvents            ItemLocationEvent[]      @relation("LocationEventActor")
+  deliveriesResponsible     Delivery[]               @relation("DeliveryResponsible")
+  deliveriesCreated         Delivery[]               @relation("DeliveryCreatedBy")
+  deliveryEvents            DeliveryEvent[]          @relation("DeliveryEventActor")
+  pickupsLogistics          PickupRequest[]          @relation("PickupLogisticsUser")
+  logisticsResponsible      LogisticsOccurrence[]    @relation("LogisticsResponsible")
+  logisticsReported         LogisticsOccurrence[]    @relation("LogisticsReportedBy")
+  returnsResponsible        PieceReturn[]            @relation("ReturnResponsible")
 
   @@map("users")
 }
@@ -311,6 +323,9 @@ model CompanySettings {
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   updatedById        String?  @map("updated_by_id") @db.Uuid
 
+  /// Fase 10: inspetor principal da qualidade (vazio = quem tem a competência de inspeção).
+  qualityInspectorUserId String? @map("quality_inspector_user_id") @db.Uuid
+
   @@map("company_settings")
 }
 
@@ -455,6 +470,8 @@ model Customer {
   orders        CommercialOrder[]
   serviceOrders ServiceOrder[]
 
+  deliveries Delivery[]
+
   @@index([phone])
   @@index([whatsapp])
   @@index([email])
@@ -482,6 +499,8 @@ model CustomerAddress {
   customer Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
   orders   CommercialOrder[]
   pickups  PickupRequest[]
+
+  deliveries Delivery[]
 
   @@index([customerId])
   @@map("customer_addresses")
@@ -542,6 +561,8 @@ model CommercialOrder {
   receipts      Receipt[]
   serviceOrders ServiceOrder[]
 
+  pieceReturns PieceReturn[]
+
   @@index([customerId])
   @@index([status])
   @@index([createdAt(sort: Desc)])
@@ -565,6 +586,10 @@ model CommercialOrderItem {
   pickupItems       PickupRequestItem[]
   receiptLines      ReceiptLine[]
   serviceOrderItems ServiceOrderItem[]
+
+  /// Fase 10: peças devolvidas ao cliente (confirmadas).
+  returnedQuantity Int               @default(0) @map("returned_quantity")
+  returnLines      PieceReturnLine[]
 
   @@unique([orderId, position])
   @@map("commercial_order_items")
@@ -616,6 +641,11 @@ model PickupRequest {
   items     PickupRequestItem[]
   events    PickupEvent[]
   receipts  Receipt[]
+
+  /// Fase 10: responsável logístico (equipe terceirizada ou própria).
+  logisticsUserId String?               @map("logistics_user_id") @db.Uuid
+  logisticsUser   User?                 @relation("PickupLogisticsUser", fields: [logisticsUserId], references: [id], onDelete: SetNull)
+  occurrences     LogisticsOccurrence[]
 
   @@index([orderId])
   @@index([status])
@@ -714,6 +744,8 @@ model ReceiptLine {
   receipt   Receipt             @relation(fields: [receiptId], references: [id], onDelete: Restrict)
   orderItem CommercialOrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
 
+  corrections ReceiptCorrection[]
+
   @@unique([receiptId, orderItemId])
   @@index([orderItemId])
   @@map("receipt_lines")
@@ -802,6 +834,8 @@ model ServiceOrder {
   helpRequests        HelpRequest[]
   issues              ProductionIssue[]
 
+  inspections QualityInspection[]
+
   @@index([orderId])
   @@index([customerId])
   @@index([status])
@@ -842,6 +876,17 @@ model ServiceOrderItem {
   requestItems      MaterialRequestItem[]
 
   productionTasks ProductionTask[]
+
+  /// Fase 10: etapa da peça no fluxo produção → qualidade → embalagem → entrega (derivada).
+  fulfillmentStage     String                @default("EM_PRODUCAO") @map("fulfillment_stage") @db.VarChar(30)
+  currentLocationId    String?               @map("current_location_id") @db.Uuid
+  currentLocation      ItemLocation?         @relation(fields: [currentLocationId], references: [id], onDelete: SetNull)
+  inspections          QualityInspection[]
+  qualityEvents        QualityEvent[]
+  packaging            PackagingRecord[]
+  locationEvents       ItemLocationEvent[]
+  deliveryItems        DeliveryItem[]
+  logisticsOccurrences LogisticsOccurrence[]
 
   @@unique([serviceOrderId, position])
   @@index([orderItemId])
@@ -930,6 +975,10 @@ enum AttachmentEntity {
   SERVICE_ORDER_ITEM
   PRODUCTION_TASK
   PRODUCTION_ISSUE
+  QUALITY_INSPECTION
+  PACKAGING
+  DELIVERY
+  LOGISTICS_OCCURRENCE
 
   @@map("attachment_entity")
 }
@@ -1510,6 +1559,8 @@ enum ProductionActivity {
   ACABAMENTO
   APOIO
   OUTRA
+  CORRECAO
+  EMBALAGEM
 
   @@map("production_activity")
 }
@@ -1684,6 +1735,8 @@ model ProductionTask {
   supportForTaskId      String?               @map("support_for_task_id") @db.Uuid
   /// Fase 9: tarefa de resolução de uma ocorrência (separada da tarefa de produção original).
   issueId               String?               @map("issue_id") @db.Uuid
+  /// Fase 10: correção ou embalagem ligada a uma inspeção de qualidade.
+  inspectionId          String?               @map("inspection_id") @db.Uuid
   version               Int                   @default(1)
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -1706,10 +1759,13 @@ model ProductionTask {
   issues            ProductionIssue[]        @relation("IssueTask")
   issueAction       ProductionIssue?         @relation("IssueActionTask")
   issue             ProductionIssue?         @relation("IssueActions", fields: [issueId], references: [id], onDelete: Restrict)
+  inspection        QualityInspection?       @relation("InspectionTasks", fields: [inspectionId], references: [id], onDelete: Restrict)
+  packagingRecord   PackagingRecord?         @relation("PackagingTask")
 
   @@index([assigneeUserId, status])
   @@index([supportForTaskId])
   @@index([issueId])
+  @@index([inspectionId])
   @@index([serviceOrderId])
   @@index([planId])
   @@index([status, scheduledAt])
@@ -2150,4 +2206,414 @@ model ProductionIssueEvent {
 
   @@index([issueId, createdAt])
   @@map("production_issue_events")
+}
+
+// ─────────────────────────── Qualidade, embalagem e logística (Fase 10) ───────────────────────────
+
+enum InspectionStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  APROVADA
+  REPROVADA
+  INVALIDADA
+  CANCELADA
+
+  @@map("inspection_status")
+}
+
+/// Modelo de checklist de inspeção por tipo de peça (configurável pelo gestor).
+model QualityTemplate {
+  id         String      @id @default(uuid()) @db.Uuid
+  name       String      @db.VarChar(80)
+  pieceTypes PieceType[] @map("piece_types")
+  active     Boolean     @default(true)
+  version    Int         @default(1)
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  items       QualityTemplateItem[]
+  inspections QualityInspection[]
+
+  @@map("quality_templates")
+}
+
+model QualityTemplateItem {
+  id           String        @id @default(uuid()) @db.Uuid
+  templateId   String        @map("template_id") @db.Uuid
+  position     Int
+  label        String        @db.VarChar(120)
+  guidance     String?       @db.VarChar(300)
+  required     Boolean       @default(true)
+  /// Tipos de serviço em que o item se aplica (vazio = todos): não exige o irrelevante.
+  serviceTypes ServiceType[] @map("service_types")
+
+  template QualityTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, position])
+  @@map("quality_template_items")
+}
+
+/// Inspeção de qualidade de uma peça (IQ-00001). Rodadas: 1ª após a produção, nova após correção
+/// ou alteração técnica. Decisões nunca são apagadas.
+model QualityInspection {
+  id                     String           @id @default(uuid()) @db.Uuid
+  number                 Int              @unique @default(autoincrement())
+  serviceOrderItemId     String           @map("service_order_item_id") @db.Uuid
+  serviceOrderId         String           @map("service_order_id") @db.Uuid
+  templateId             String?          @map("template_id") @db.Uuid
+  round                  Int
+  reason                 String           @db.VarChar(30)
+  status                 InspectionStatus @default(PENDENTE)
+  inspectorUserId        String?          @map("inspector_user_id") @db.Uuid
+  /// Por que precisa de substituto (inspetor ausente ou executou o serviço).
+  substituteReason       String?          @map("substitute_reason") @db.VarChar(300)
+  executorAuthorizedById String?          @map("executor_authorized_by_id") @db.Uuid
+  priority               Priority         @default(NORMAL)
+  dueDate                DateTime?        @map("due_date") @db.Date
+  itemVersion            Int              @map("item_version")
+  osRevision             Int?             @map("os_revision")
+  previousInspectionId   String?          @map("previous_inspection_id") @db.Uuid
+  startedAt              DateTime?        @map("started_at") @db.Timestamptz(3)
+  decidedAt              DateTime?        @map("decided_at") @db.Timestamptz(3)
+  decidedById            String?          @map("decided_by_id") @db.Uuid
+  decidedDeviceId        String?          @map("decided_device_id") @db.Uuid
+  decisionNote           String?          @map("decision_note") @db.VarChar(1000)
+  invalidatedAt          DateTime?        @map("invalidated_at") @db.Timestamptz(3)
+  invalidReason          String?          @map("invalid_reason") @db.VarChar(500)
+  version                Int              @default(1)
+  createdAt              DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  serviceOrderItem ServiceOrderItem        @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  serviceOrder     ServiceOrder            @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  template         QualityTemplate?        @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  inspector        User?                   @relation("InspectionInspector", fields: [inspectorUserId], references: [id], onDelete: SetNull)
+  decidedBy        User?                   @relation("InspectionDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+  items            QualityInspectionItem[]
+  tasks            ProductionTask[]        @relation("InspectionTasks")
+  packaging        PackagingRecord?
+
+  @@unique([serviceOrderItemId, round])
+  @@index([status, createdAt])
+  @@index([inspectorUserId, status])
+  @@map("quality_inspections")
+}
+
+model QualityInspectionItem {
+  id           String    @id @default(uuid()) @db.Uuid
+  inspectionId String    @map("inspection_id") @db.Uuid
+  position     Int
+  label        String    @db.VarChar(120)
+  guidance     String?   @db.VarChar(300)
+  required     Boolean   @default(true)
+  /// OK, NAO_CONFORME ou NAO_SE_APLICA (null = não conferido).
+  result       String?   @db.VarChar(20)
+  note         String?   @db.VarChar(500)
+  checkedAt    DateTime? @map("checked_at") @db.Timestamptz(3)
+  checkedById  String?   @map("checked_by_id") @db.Uuid
+
+  inspection QualityInspection @relation(fields: [inspectionId], references: [id], onDelete: Restrict)
+
+  @@unique([inspectionId, position])
+  @@map("quality_inspection_items")
+}
+
+/// Histórico imutável da peça no fluxo de qualidade, embalagem e expedição.
+model QualityEvent {
+  id                 String   @id @default(uuid()) @db.Uuid
+  serviceOrderItemId String   @map("service_order_item_id") @db.Uuid
+  inspectionId       String?  @map("inspection_id") @db.Uuid
+  kind               String   @db.VarChar(40)
+  note               String?  @db.VarChar(1000)
+  data               Json?
+  actorId            String?  @map("actor_id") @db.Uuid
+  deviceId           String?  @map("device_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  serviceOrderItem ServiceOrderItem @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  actor            User?            @relation("QualityEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([serviceOrderItemId, createdAt])
+  @@map("quality_events")
+}
+
+enum PackagingStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+  INVALIDADA
+  CANCELADA
+
+  @@map("packaging_status")
+}
+
+/// Embalagem (EB-00001): só existe a partir de uma inspeção aprovada.
+model PackagingRecord {
+  id                      String          @id @default(uuid()) @db.Uuid
+  number                  Int             @unique @default(autoincrement())
+  serviceOrderItemId      String          @map("service_order_item_id") @db.Uuid
+  serviceOrderId          String          @map("service_order_id") @db.Uuid
+  inspectionId            String          @unique @map("inspection_id") @db.Uuid
+  taskId                  String?         @unique @map("task_id") @db.Uuid
+  status                  PackagingStatus @default(PENDENTE)
+  assigneeUserId          String?         @map("assignee_user_id") @db.Uuid
+  tapeceiroAuthorizedById String?         @map("tapeceiro_authorized_by_id") @db.Uuid
+  protection              String?         @db.VarChar(30)
+  locationId              String?         @map("location_id") @db.Uuid
+  notes                   String?         @db.VarChar(500)
+  startedAt               DateTime?       @map("started_at") @db.Timestamptz(3)
+  completedAt             DateTime?       @map("completed_at") @db.Timestamptz(3)
+  completedById           String?         @map("completed_by_id") @db.Uuid
+  invalidatedAt           DateTime?       @map("invalidated_at") @db.Timestamptz(3)
+  invalidReason           String?         @map("invalid_reason") @db.VarChar(500)
+  version                 Int             @default(1)
+  createdAt               DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  serviceOrderItem ServiceOrderItem  @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  inspection       QualityInspection @relation(fields: [inspectionId], references: [id], onDelete: Restrict)
+  task             ProductionTask?   @relation("PackagingTask", fields: [taskId], references: [id], onDelete: SetNull)
+  assignee         User?             @relation("PackagingAssignee", fields: [assigneeUserId], references: [id], onDelete: SetNull)
+  location         ItemLocation?     @relation(fields: [locationId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([serviceOrderItemId])
+  @@map("packaging_records")
+}
+
+/// Localizações internas configuráveis (recebimento, mesa de produção, expedição...).
+model ItemLocation {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique @db.VarChar(30)
+  label     String   @db.VarChar(80)
+  position  Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  items     ServiceOrderItem[]
+  events    ItemLocationEvent[]
+  packaging PackagingRecord[]
+
+  @@map("item_locations")
+}
+
+/// Movimentações registradas da peça (imutável; não exige cada pequeno deslocamento).
+model ItemLocationEvent {
+  id                 String   @id @default(uuid()) @db.Uuid
+  serviceOrderItemId String   @map("service_order_item_id") @db.Uuid
+  locationId         String   @map("location_id") @db.Uuid
+  note               String?  @db.VarChar(300)
+  actorId            String?  @map("actor_id") @db.Uuid
+  deviceId           String?  @map("device_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  serviceOrderItem ServiceOrderItem @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  location         ItemLocation     @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  actor            User?            @relation("LocationEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([serviceOrderItemId, createdAt])
+  @@map("item_location_events")
+}
+
+enum DeliveryStatus {
+  PROVISORIA
+  AGENDADA
+  EM_TRANSPORTE
+  NO_DESTINO
+  CONCLUIDA
+  FRUSTRADA
+  CANCELADA
+
+  @@map("delivery_status")
+}
+
+/// Entrega (EN-00001) combinada pelo gestor; provisória não é confirmada ao cliente.
+model Delivery {
+  id                   String         @id @default(uuid()) @db.Uuid
+  number               Int            @unique @default(autoincrement())
+  customerId           String         @map("customer_id") @db.Uuid
+  addressId            String?        @map("address_id") @db.Uuid
+  addressSnapshot      Json           @map("address_snapshot")
+  contactName          String?        @map("contact_name") @db.VarChar(120)
+  contactPhone         String?        @map("contact_phone") @db.VarChar(30)
+  scheduledDate        DateTime       @map("scheduled_date") @db.Date
+  windowStart          String?        @map("window_start") @db.Char(5)
+  windowEnd            String?        @map("window_end") @db.Char(5)
+  team                 PickupTeam     @default(EQUIPE_PROPRIA)
+  responsibleUserId    String?        @map("responsible_user_id") @db.Uuid
+  requiresInstallation Boolean        @default(false) @map("requires_installation")
+  instructions         String?        @db.VarChar(1000)
+  notes                String?        @db.VarChar(1000)
+  status               DeliveryStatus @default(PROVISORIA)
+  attempts             Int            @default(0)
+  departedAt           DateTime?      @map("departed_at") @db.Timestamptz(3)
+  arrivedAt            DateTime?      @map("arrived_at") @db.Timestamptz(3)
+  installedAt          DateTime?      @map("installed_at") @db.Timestamptz(3)
+  installationNote     String?        @map("installation_note") @db.VarChar(1000)
+  completedAt          DateTime?      @map("completed_at") @db.Timestamptz(3)
+  completionNote       String?        @map("completion_note") @db.VarChar(1000)
+  cancelReason         String?        @map("cancel_reason") @db.VarChar(500)
+  version              Int            @default(1)
+  createdById          String?        @map("created_by_id") @db.Uuid
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer    Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  address     CustomerAddress?      @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  responsible User?                 @relation("DeliveryResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  createdBy   User?                 @relation("DeliveryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items       DeliveryItem[]
+  events      DeliveryEvent[]
+  occurrences LogisticsOccurrence[]
+
+  @@index([scheduledDate])
+  @@index([status])
+  @@index([responsibleUserId, status])
+  @@map("deliveries")
+}
+
+model DeliveryItem {
+  deliveryId         String    @map("delivery_id") @db.Uuid
+  serviceOrderItemId String    @map("service_order_item_id") @db.Uuid
+  /// Uma peça só fica em uma entrega ativa (índice único parcial).
+  active             Boolean   @default(true)
+  /// PENDENTE, ENTREGUE, DIVERGENTE ou NAO_ENTREGUE.
+  status             String    @default("PENDENTE") @db.VarChar(20)
+  note               String?   @db.VarChar(500)
+  deliveredAt        DateTime? @map("delivered_at") @db.Timestamptz(3)
+
+  delivery         Delivery         @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  serviceOrderItem ServiceOrderItem @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+
+  @@id([deliveryId, serviceOrderItemId])
+  @@index([serviceOrderItemId])
+  @@map("delivery_items")
+}
+
+/// Histórico imutável da entrega (agendamento, saída, chegada, entrega, instalação, tentativa).
+model DeliveryEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  deliveryId String   @map("delivery_id") @db.Uuid
+  kind       String   @db.VarChar(40)
+  fromStatus String?  @map("from_status") @db.VarChar(20)
+  toStatus   String?  @map("to_status") @db.VarChar(20)
+  note       String?  @db.VarChar(1000)
+  data       Json?
+  actorId    String?  @map("actor_id") @db.Uuid
+  deviceId   String?  @map("device_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  delivery Delivery @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  actor    User?    @relation("DeliveryEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([deliveryId, createdAt])
+  @@map("delivery_events")
+}
+
+/// Ocorrência logística (OL-00001): cliente indisponível, peça danificada, endereço incorreto...
+model LogisticsOccurrence {
+  id                 String    @id @default(uuid()) @db.Uuid
+  number             Int       @unique @default(autoincrement())
+  kind               String    @db.VarChar(30)
+  deliveryId         String?   @map("delivery_id") @db.Uuid
+  pickupId           String?   @map("pickup_id") @db.Uuid
+  serviceOrderItemId String?   @map("service_order_item_id") @db.Uuid
+  description        String    @db.VarChar(1000)
+  /// Impede a expedição da peça até resolver (peça danificada, divergência).
+  blocksShipping     Boolean   @default(false) @map("blocks_shipping")
+  status             String    @default("ABERTA") @db.VarChar(20)
+  responsibleUserId  String?   @map("responsible_user_id") @db.Uuid
+  reportedById       String?   @map("reported_by_id") @db.Uuid
+  deviceId           String?   @map("device_id") @db.Uuid
+  resolution         String?   @db.VarChar(1000)
+  resolvedAt         DateTime? @map("resolved_at") @db.Timestamptz(3)
+  resolvedById       String?   @map("resolved_by_id") @db.Uuid
+  cancelReason       String?   @map("cancel_reason") @db.VarChar(500)
+  version            Int       @default(1)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  delivery    Delivery?                  @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  pickup      PickupRequest?             @relation(fields: [pickupId], references: [id], onDelete: Restrict)
+  item        ServiceOrderItem?          @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  responsible User?                      @relation("LogisticsResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  reportedBy  User?                      @relation("LogisticsReportedBy", fields: [reportedById], references: [id], onDelete: SetNull)
+  events      LogisticsOccurrenceEvent[]
+
+  @@index([status, createdAt])
+  @@map("logistics_occurrences")
+}
+
+model LogisticsOccurrenceEvent {
+  id           String   @id @default(uuid()) @db.Uuid
+  occurrenceId String   @map("occurrence_id") @db.Uuid
+  kind         String   @db.VarChar(30)
+  fromStatus   String?  @map("from_status") @db.VarChar(20)
+  toStatus     String?  @map("to_status") @db.VarChar(20)
+  note         String?  @db.VarChar(1000)
+  actorId      String?  @map("actor_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  occurrence LogisticsOccurrence @relation(fields: [occurrenceId], references: [id], onDelete: Restrict)
+
+  @@index([occurrenceId, createdAt])
+  @@map("logistics_occurrence_events")
+}
+
+/// Devolução de peças ao cliente (DV-00001): registrada e confirmada; nunca apaga o recebimento.
+model PieceReturn {
+  id                String    @id @default(uuid()) @db.Uuid
+  number            Int       @unique @default(autoincrement())
+  orderId           String    @map("order_id") @db.Uuid
+  status            String    @default("REGISTRADA") @db.VarChar(20)
+  reason            String    @db.VarChar(500)
+  responsibleUserId String?   @map("responsible_user_id") @db.Uuid
+  returnDate        DateTime  @map("return_date") @db.Date
+  confirmedAt       DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  confirmedById     String?   @map("confirmed_by_id") @db.Uuid
+  confirmationNote  String?   @map("confirmation_note") @db.VarChar(500)
+  cancelledAt       DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason      String?   @map("cancel_reason") @db.VarChar(500)
+  version           Int       @default(1)
+  createdById       String?   @map("created_by_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order       CommercialOrder   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  responsible User?             @relation("ReturnResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
+  lines       PieceReturnLine[]
+
+  @@index([orderId])
+  @@map("piece_returns")
+}
+
+model PieceReturnLine {
+  returnId            String   @map("return_id") @db.Uuid
+  orderItemId         String   @map("order_item_id") @db.Uuid
+  quantity            Int
+  /// Peças de OS devolvidas inteiras (as demais vêm das não alocadas em OS).
+  serviceOrderItemIds String[] @map("service_order_item_ids") @db.Uuid
+
+  pieceReturn PieceReturn         @relation(fields: [returnId], references: [id], onDelete: Restrict)
+  orderItem   CommercialOrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+
+  @@id([returnId, orderItemId])
+  @@map("piece_return_lines")
+}
+
+/// Correção auditável de recebimento físico (o recebimento original é imutável).
+model ReceiptCorrection {
+  id               String   @id @default(uuid()) @db.Uuid
+  receiptLineId    String   @map("receipt_line_id") @db.Uuid
+  orderItemId      String   @map("order_item_id") @db.Uuid
+  previousQuantity Int      @map("previous_quantity")
+  newQuantity      Int      @map("new_quantity")
+  reason           String   @db.VarChar(500)
+  actorId          String?  @map("actor_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  receiptLine ReceiptLine @relation(fields: [receiptLineId], references: [id], onDelete: Restrict)
+
+  @@index([receiptLineId])
+  @@map("receipt_corrections")
 }

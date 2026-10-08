@@ -1,4 +1,5 @@
 import {
+  inspectionCode,
   EVENT_TYPES,
   TASK_WAITING,
   anyPermissionAudience,
@@ -94,6 +95,19 @@ export const taskInclude = {
       reporter: { select: { displayName: true } },
     },
   },
+  inspection: {
+    select: {
+      id: true,
+      number: true,
+      decisionNote: true,
+      items: {
+        where: { result: 'NAO_CONFORME' },
+        select: { label: true, note: true },
+        orderBy: { position: 'asc' },
+      },
+    },
+  },
+  packagingRecord: { select: { id: true } },
 } as const;
 export type TaskRow = Prisma.ProductionTaskGetPayload<{ include: typeof taskInclude }>;
 
@@ -189,6 +203,17 @@ export function toTaskDto(t: TaskRow, timeZone: string): ProductionTaskDto {
           reporter: t.issue.reporter.displayName,
         }
       : null,
+    qualityFor:
+      t.inspection && (t.activity === 'CORRECAO' || t.activity === 'EMBALAGEM')
+        ? {
+            inspectionId: t.inspection.id,
+            code: inspectionCode(t.inspection.number),
+            kind: t.activity,
+            note: t.activity === 'CORRECAO' ? t.inspection.decisionNote : null,
+            defects: t.activity === 'CORRECAO' ? t.inspection.items : [],
+            packagingId: t.packagingRecord?.id ?? null,
+          }
+        : null,
     version: t.version,
   };
 }
@@ -368,7 +393,9 @@ export async function reevaluateTasks(
       osActive: t.serviceOrder.status === 'ABERTA',
       pieceReceived: items.length > 0 && items.every((i) => i.orderItem.receivedQuantity > 0),
       // Tarefa de apoio (Fase 8) nasce de uma tarefa principal já liberada.
-      published: t.plan?.status === 'PUBLICADO' || Boolean(t.supportForTaskId || t.issueId),
+      published:
+        t.plan?.status === 'PUBLICADO' ||
+        Boolean(t.supportForTaskId || t.issueId || t.inspectionId),
       assigned: Boolean(t.assigneeUserId),
       // Etapa cancelada (não aplicável) não segura as seguintes.
       dependenciesDone: t.dependsOn.every(

@@ -18,6 +18,7 @@ import {
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { emitItemTechnicalChange } from '../../core/item-changes';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { diffObjects } from '../../lib/diff';
@@ -182,6 +183,15 @@ async function recordChange(
     | 'SERVICE_ORDER_UPDATED'] = EVENT_TYPES.SERVICE_ORDER_UPDATED,
 ) {
   const actor = actorFrom(request);
+  // Fase 10: alteração técnica da peça → a qualidade reavalia a aprovação (regra explícita).
+  if ((entry.scope === 'ITEM' || entry.scope === 'MEDICAO') && entry.itemId) {
+    await emitItemTechnicalChange(tx, actor, {
+      itemId: entry.itemId,
+      serviceOrderId: so.id,
+      scope: entry.scope,
+      summary: entry.summary,
+    });
+  }
   await tx.serviceOrderRevision.create({
     data: {
       serviceOrderId: so.id,
@@ -325,7 +335,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         quantity: i.quantity,
         receivedQuantity: i.receivedQuantity,
         inServiceOrders: alloc.inServiceOrders(i.id),
-        available: i.receivedQuantity - alloc.inServiceOrders(i.id),
+        available: i.receivedQuantity - i.returnedQuantity - alloc.inServiceOrders(i.id),
       })),
     };
   });
@@ -392,7 +402,8 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         for (const [orderItemId, qty] of requested) {
           const item = order.items.find((i) => i.id === orderItemId);
           if (!item) throw Errors.validation(undefined, 'Peça não pertence a este pedido.');
-          const available = item.receivedQuantity - alloc.inServiceOrders(item.id);
+          const available =
+            item.receivedQuantity - item.returnedQuantity - alloc.inServiceOrders(item.id);
           if (qty > available) {
             throw Errors.business(
               available <= 0

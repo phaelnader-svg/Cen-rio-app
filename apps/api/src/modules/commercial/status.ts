@@ -53,7 +53,11 @@ export async function itemAllocations(tx: Tx, orderId: string) {
     }),
     tx.serviceOrderItem.groupBy({
       by: ['orderItemId'],
-      where: { serviceOrder: { orderId, status: 'ABERTA' } },
+      // Fase 10: peças devolvidas ao cliente deixam de ocupar a OS.
+      where: {
+        serviceOrder: { orderId, status: 'ABERTA' },
+        fulfillmentStage: { not: 'DEVOLVIDA' },
+      },
       _sum: { quantity: true },
     }),
   ]);

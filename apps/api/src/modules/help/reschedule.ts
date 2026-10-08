@@ -57,6 +57,8 @@ export const ACTIVITY_SKILL: Record<ProductionActivity, Skill> = {
   REVESTIMENTO: 'CORTE_COSTURA',
   MONTAGEM: 'CORTE_COSTURA',
   ACABAMENTO: 'CORTE_COSTURA',
+  CORRECAO: 'CORTE_COSTURA',
+  EMBALAGEM: 'APOIO_GERAL',
 };
 
 /** Próximo dia útil (ISO) depois de `date`. */

@@ -80,6 +80,23 @@ describe('Banco de dados e migrations', () => {
       'production_task_events',
       'production_task_materials',
       'notifications',
+      // Fase 10
+      'quality_templates',
+      'quality_template_items',
+      'quality_inspections',
+      'quality_inspection_items',
+      'quality_events',
+      'packaging_records',
+      'item_locations',
+      'item_location_events',
+      'deliveries',
+      'delivery_items',
+      'delivery_events',
+      'logistics_occurrences',
+      'logistics_occurrence_events',
+      'piece_returns',
+      'piece_return_lines',
+      'receipt_corrections',
     ]) {
       expect(names).toContain(t);
     }
@@ -149,10 +166,13 @@ describe('Banco de dados e migrations', () => {
   it('seed é idempotente e não cria credenciais para a equipe', async () => {
     const { runSeed } = await import('@cenario/db/seed');
     await runSeed({ withTeam: true, log: () => undefined });
-    expect(await db().role.count()).toBe(4);
-    expect(await db().employee.count()).toBe(5);
+    // Fase 10: + função de logística terceirizada, André e Izaías (sem credenciais).
+    expect(await db().role.count()).toBe(5);
+    expect(await db().employee.count()).toBe(7);
     const team = await db().user.findMany({ where: { email: null } });
-    expect(team).toHaveLength(4);
+    expect(team).toHaveLength(6);
+    expect(await db().qualityTemplate.count()).toBe(4);
+    expect(await db().itemLocation.count()).toBe(8);
     expect(team.every((u) => u.pinHash === null && u.passwordHash === null)).toBe(true);
   });
 });

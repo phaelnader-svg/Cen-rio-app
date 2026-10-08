@@ -105,9 +105,12 @@ test.describe.serial('Tablets, sessões e sincronização', () => {
     await expect(list).toContainText('Sinal de teste nº 3');
     await expect(list.getByText('recuperado após reconexão')).toHaveCount(2);
     await expect(tablet.page.getByTestId('sync-replayed')).toHaveText('2');
-    await expect(tablet.page.getByTestId('sync-last-seq')).toHaveText(
-      (await page.getByTestId('sync-last-seq').textContent())!,
-    );
+    // O tablet alcança (ou passa) a última sequência vista pelo painel: eventos de fundo
+    // (presença, dispositivos) podem chegar a um e não ao outro entre as duas leituras.
+    const panelSeq = Number(await page.getByTestId('sync-last-seq').textContent());
+    await expect
+      .poll(async () => Number(await tablet.page.getByTestId('sync-last-seq').textContent()))
+      .toBeGreaterThanOrEqual(panelSeq);
     await tablet.context.close();
   });
 

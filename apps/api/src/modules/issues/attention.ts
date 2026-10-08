@@ -25,6 +25,7 @@ import type { FastifyInstance } from 'fastify';
 import { attendanceConfig, clock, dbDate } from '../attendance/common';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { WAIT_ALERT_MINUTES } from '../help/engine';
+import { qualityAttention } from '../quality/attention';
 import { OPEN_STATUSES, VIEW, issueDto, issueInclude } from './common';
 
 const addDays = (iso: string, n: number) => {
@@ -252,6 +253,10 @@ export async function attentionRoutes(app: FastifyInstance) {
           link: `/painel/producao/tarefas/${t.id}`,
         });
       }
+
+      // Fase 10: qualidade (inspeção sem inspetor, correções, embalagem sem responsável, peças
+      // prontas sem entrega) e logística (ocorrências, entregas frustradas).
+      items.push(...(await qualityAttention(prisma, realToday)));
 
       // Filtros.
       const dayOf = (iso: string) => localParts(new Date(iso), cfg.timezone).date;

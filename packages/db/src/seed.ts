@@ -12,10 +12,13 @@
  */
 import { hash } from '@node-rs/argon2';
 import {
+  DEFAULT_LOCATIONS,
   DEFAULT_PRODUCTION_TEMPLATES,
+  DEFAULT_QUALITY_TEMPLATES,
   DEFAULT_ROLES,
   DEFAULT_ROLE_SKILLS,
   GESTOR_ROLE_KEY,
+  LOGISTICS_ROLE_KEY,
   passwordPolicySchema,
 } from '@cenario/shared';
 import { createPrismaClient } from './index';
@@ -56,6 +59,15 @@ const TEAM = [
     color: '#7C3AED',
     roleKey: 'ajudante',
   },
+] as const;
+
+/**
+ * Fase 10: logística terceirizada (sem credenciais). Não executam tarefas de produção nem
+ * registram presença: o gestor define o PIN e vincula um dispositivo para cada um.
+ */
+const LOGISTICS = [
+  { fullName: 'André', displayName: 'André', color: '#0891B2' },
+  { fullName: 'Izaías', displayName: 'Izaías', color: '#BE185D' },
 ] as const;
 
 export async function runSeed(options: { withTeam?: boolean; log?: (m: string) => void } = {}) {
@@ -172,6 +184,31 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
       }
     }
 
+    // Fase 10: André e Izaías (logística terceirizada), sem PIN.
+    if (options.withTeam ?? process.env.SEED_TEAM !== 'false') {
+      const role = await prisma.role.findUniqueOrThrow({ where: { key: LOGISTICS_ROLE_KEY } });
+      for (const member of LOGISTICS) {
+        if (await prisma.employee.findFirst({ where: { displayName: member.displayName } }))
+          continue;
+        await prisma.$transaction(async (tx) => {
+          const user = await tx.user.create({
+            data: { displayName: member.displayName, roles: { create: { roleId: role.id } } },
+          });
+          await tx.employee.create({
+            data: {
+              userId: user.id,
+              fullName: member.fullName,
+              displayName: member.displayName,
+              jobTitle: 'Logística terceirizada',
+              responsibilities: 'Retiradas e entregas atribuídas pelo gestor.',
+              color: member.color,
+            },
+          });
+        });
+        log(`✔ Logística ${member.displayName} cadastrada (sem PIN).`);
+      }
+    }
+
     // Fase 8: competências iniciais por função (só para quem ainda não tem nenhuma).
     const employees = await prisma.employee.findMany({
       where: { skills: { none: {} } },
@@ -207,6 +244,32 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
       }
       log('✔ Modelos de produção iniciais criados.');
     }
+
+    // Fase 10: checklists de qualidade e localizações internas iniciais.
+    if ((await prisma.qualityTemplate.count()) === 0) {
+      for (const t of DEFAULT_QUALITY_TEMPLATES) {
+        await prisma.qualityTemplate.create({
+          data: {
+            name: t.name,
+            pieceTypes: [...t.pieceTypes],
+            items: {
+              create: t.items.map((item, i) => ({
+                position: i + 1,
+                label: item.label,
+                guidance: item.guidance ?? null,
+                required: item.required ?? true,
+                serviceTypes: [...(item.serviceTypes ?? [])],
+              })),
+            },
+          },
+        });
+      }
+      log('✔ Checklists de qualidade iniciais criados.');
+    }
+    await prisma.itemLocation.createMany({
+      data: DEFAULT_LOCATIONS.map((l, i) => ({ key: l.key, label: l.label, position: i + 1 })),
+      skipDuplicates: true,
+    });
   } finally {
     await prisma.$disconnect();
   }

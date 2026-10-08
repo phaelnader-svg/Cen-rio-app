@@ -3,6 +3,7 @@ import { PIECE_TYPES, PRIORITIES } from '../domain';
 import {
   COMPLETION_REQUIREMENTS,
   PAUSE_REASONS,
+  PLANNABLE_ACTIVITIES,
   PRODUCTION_ACTIVITIES,
   TASK_ROLES,
   TASK_STATUSES,
@@ -27,7 +28,7 @@ const csv = <T extends readonly [string, ...string[]]>(values: T) =>
 // ─────────────────────────── Modelos ───────────────────────────
 
 export const templateStepSchema = z.object({
-  activity: z.enum(PRODUCTION_ACTIVITIES),
+  activity: z.enum(PLANNABLE_ACTIVITIES),
   name: trimmed(2, 80, 'Nome da etapa'),
   role: z.enum(TASK_ROLES).default('APOIO'),
   requiresMaterials: z.boolean().default(false),
@@ -80,7 +81,7 @@ export const updatePlanItemSchema = z.object({
 export const createTaskSchema = z.object({
   serviceOrderId: idSchema,
   serviceOrderItemId: idSchema.nullable().optional(),
-  activity: z.enum(PRODUCTION_ACTIVITIES),
+  activity: z.enum(PLANNABLE_ACTIVITIES),
   title: optionalText(120),
   role: z.enum(TASK_ROLES).default('APOIO'),
   assigneeUserId: idSchema.nullable().optional(),

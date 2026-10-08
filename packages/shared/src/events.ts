@@ -106,6 +106,20 @@ export const EVENT_TYPES = {
   ISSUE_REOPENED: 'issue.reopened',
   ISSUE_CANCELLED: 'issue.cancelled',
   ISSUE_RISK: 'issue.risk',
+  // Fase 10 — qualidade, embalagem, expedição e logística
+  INSPECTION_CREATED: 'quality.inspection_created',
+  INSPECTION_UPDATED: 'quality.inspection_updated',
+  INSPECTION_APPROVED: 'quality.inspection_approved',
+  INSPECTION_REJECTED: 'quality.inspection_rejected',
+  INSPECTION_INVALIDATED: 'quality.inspection_invalidated',
+  QUALITY_TEMPLATE_CHANGED: 'quality.template_changed',
+  PACKAGING_UPDATED: 'packaging.updated',
+  ITEM_STAGE_CHANGED: 'item.stage_changed',
+  ITEM_LOCATION_CHANGED: 'item.location_changed',
+  DELIVERY_UPDATED: 'delivery.updated',
+  LOGISTICS_OCCURRENCE_UPDATED: 'logistics.occurrence_updated',
+  PIECE_RETURN_UPDATED: 'return.updated',
+  RECEIPT_CORRECTED: 'receipt.corrected',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

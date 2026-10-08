@@ -32,6 +32,8 @@ import { Errors } from '../../lib/errors';
 import { parseDateOnly } from '../commercial/common';
 import { idParams } from '../presenters';
 import { refreshAvailabilityOfUser } from '../attendance/common';
+import { qualityTaskClosed } from '../quality/inspections';
+import { packagingStarted } from '../quality/packaging';
 import { notify, taskNotice } from '../notifications/notify';
 import { readinessOf } from '../purchasing/common';
 import {
@@ -557,6 +559,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         // Fase 9: resolução cancelada → ocorrência volta a aguardar delegação.
         if (t.issueId) await actionCancelled(tx, actor, t.id, input.reason);
         else await originalTaskClosed(tx, actor, t.id, 'CANCELADA');
+        // Fase 10: correção/embalagem cancelada ou etapa obrigatória encerrada.
+        await qualityTaskClosed(tx, actor, t.id, 'CANCELADA');
         await reevaluateTasks(
           tx,
           actor,
@@ -805,7 +809,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           // Fase 9: não retoma enquanto uma ocorrência aberta impede a tarefa.
           resume: own && t.status === 'PAUSADA' && !(await hasBlockingIssue(prisma, t.id)),
           progress: own && (t.status === 'EM_EXECUCAO' || t.status === 'PAUSADA'),
-          complete: own && t.status === 'EM_EXECUCAO',
+          complete: own && t.status === 'EM_EXECUCAO' && t.activity !== 'EMBALAGEM',
           manage: canManage(request),
         },
       };
@@ -861,7 +865,9 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         const check = evaluateRelease({
           osActive: true,
           pieceReceived: items.length > 0 && items.every((i) => i.orderItem.receivedQuantity > 0),
-          published: t.plan?.status === 'PUBLICADO' || Boolean(t.supportForTaskId || t.issueId),
+          published:
+            t.plan?.status === 'PUBLICADO' ||
+            Boolean(t.supportForTaskId || t.issueId || t.inspectionId),
           assigned: true,
           dependenciesDone: t.dependsOn.every(
             (d) => d.dependsOn.status === 'CONCLUIDA' || d.dependsOn.status === 'CANCELADA',
@@ -896,6 +902,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_STARTED, u);
         if (t.supportForTaskId) await supportStarted(tx, actor, t.id, now);
         if (t.issueId) await actionStarted(tx, actor, t.id);
+        if (t.activity === 'EMBALAGEM') await packagingStarted(tx, actor, t.id);
         return;
       }
       if (action === 'pause') {
@@ -993,6 +1000,11 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       }
       // Conclusão
       if (t.status === 'CONCLUIDA') return; // conclusão repetida: sem novos eventos nem liberações
+      // Fase 10: a embalagem conclui pela tela própria (proteção, local e aprovação vigente).
+      if (t.activity === 'EMBALAGEM')
+        throw Errors.business(
+          'Conclua a embalagem pela tela de embalagem (proteção usada e local da peça).',
+        );
       if (t.status !== 'EM_EXECUCAO')
         throw Errors.business('Só tarefas em execução podem ser concluídas.');
       // Registro adicional só quando a etapa exige (regra técnica definida pelo gestor).
@@ -1041,6 +1053,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       // Fase 9: concluir a resolução NÃO encerra a ocorrência — vai para verificação.
       if (t.issueId) await actionCompleted(tx, actor, t.id, completion!.note ?? null);
       else await originalTaskClosed(tx, actor, t.id, 'CONCLUIDA');
+      // Fase 10: produção concluída → inspeção; correção concluída → nova inspeção.
+      await qualityTaskClosed(tx, actor, t.id, 'CONCLUIDA');
       // Reavalia as dependentes (bloqueadas): as elegíveis são liberadas e o responsável é avisado.
       await reevaluateTasks(
         tx,

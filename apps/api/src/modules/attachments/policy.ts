@@ -10,6 +10,10 @@ export const VIEW_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   SERVICE_ORDER_ITEM: ['os.ver'],
   PRODUCTION_TASK: ['producao.ver', 'producao.planejar'],
   PRODUCTION_ISSUE: ['ocorrencias.ver', 'ocorrencias.gerenciar'],
+  QUALITY_INSPECTION: ['qualidade.gerenciar', 'entregas.ver', 'entregas.gerenciar'],
+  PACKAGING: ['qualidade.gerenciar', 'entregas.ver', 'entregas.gerenciar'],
+  DELIVERY: ['entregas.ver', 'entregas.gerenciar'],
+  LOGISTICS_OCCURRENCE: ['entregas.ver', 'entregas.gerenciar'],
 };
 
 /** Quem pode ENVIAR/REMOVER fotos de cada tipo de registro. */
@@ -21,6 +25,10 @@ export const MANAGE_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   SERVICE_ORDER_ITEM: ['os.gerenciar'],
   PRODUCTION_TASK: ['producao.planejar'],
   PRODUCTION_ISSUE: ['ocorrencias.gerenciar'],
+  QUALITY_INSPECTION: ['qualidade.gerenciar'],
+  PACKAGING: ['qualidade.gerenciar'],
+  DELIVERY: ['entregas.gerenciar'],
+  LOGISTICS_OCCURRENCE: ['entregas.gerenciar'],
 };
 
 export function allowed(perms: ReadonlySet<Permission>, list: Permission[]): boolean {
@@ -47,6 +55,14 @@ export async function entityExists(
       return (await db.productionTask.count({ where: { id } })) > 0;
     case 'PRODUCTION_ISSUE':
       return (await db.productionIssue.count({ where: { id } })) > 0;
+    case 'QUALITY_INSPECTION':
+      return (await db.qualityInspection.count({ where: { id } })) > 0;
+    case 'PACKAGING':
+      return (await db.packagingRecord.count({ where: { id } })) > 0;
+    case 'DELIVERY':
+      return (await db.delivery.count({ where: { id } })) > 0;
+    case 'LOGISTICS_OCCURRENCE':
+      return (await db.logisticsOccurrence.count({ where: { id } })) > 0;
   }
 }
 
@@ -60,6 +76,9 @@ export async function viewableAsMeasurementAssignee(
   type: AttachmentEntity,
   id: string,
 ): Promise<boolean> {
+  // Fase 10: fotos da qualidade e da logística — inspetor, quem embala, quem entrega.
+  const own = await viewableAsQualityParticipant(db, userId, type, id);
+  if (own !== null) return own;
   // Fase 9: fotos da ocorrência — quem registrou e quem resolve.
   if (type === 'PRODUCTION_ISSUE') {
     return (
@@ -104,6 +123,9 @@ export async function uploadableAsTaskAssignee(
   type: AttachmentEntity,
   id: string,
 ): Promise<boolean> {
+  // Fase 10: inspetor (inspeção aberta), quem embala, quem executa a entrega.
+  const own = await viewableAsQualityParticipant(db, userId, type, id, true);
+  if (own !== null) return own;
   // Fase 9: evidência da ocorrência aberta — quem registrou ou quem está resolvendo.
   if (type === 'PRODUCTION_ISSUE') {
     return (
@@ -122,4 +144,68 @@ export async function uploadableAsTaskAssignee(
       where: { id, assigneeUserId: userId, status: { in: ['EM_EXECUCAO', 'PAUSADA'] } },
     })) > 0
   );
+}
+
+/**
+ * Fase 10: participação direta (null = não é um tipo da Fase 10).
+ * - inspeção: o inspetor designado (envio só com a inspeção aberta);
+ * - embalagem: quem embala (envio enquanto não concluída);
+ * - entrega e ocorrência logística: o responsável pela entrega (e quem registrou a ocorrência).
+ */
+async function viewableAsQualityParticipant(
+  db: PrismaClient | Tx,
+  userId: string,
+  type: AttachmentEntity,
+  id: string,
+  upload = false,
+): Promise<boolean | null> {
+  switch (type) {
+    case 'QUALITY_INSPECTION':
+      return (
+        (await db.qualityInspection.count({
+          where: {
+            id,
+            inspectorUserId: userId,
+            ...(upload ? { status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } } : {}),
+          },
+        })) > 0
+      );
+    case 'PACKAGING':
+      return (
+        (await db.packagingRecord.count({
+          where: {
+            id,
+            assigneeUserId: userId,
+            ...(upload ? { status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } } : {}),
+          },
+        })) > 0
+      );
+    case 'DELIVERY':
+      return (
+        (await db.delivery.count({
+          where: {
+            id,
+            responsibleUserId: userId,
+            status: upload
+              ? { in: ['AGENDADA', 'EM_TRANSPORTE', 'NO_DESTINO'] }
+              : { not: 'PROVISORIA' },
+          },
+        })) > 0
+      );
+    case 'LOGISTICS_OCCURRENCE':
+      return (
+        (await db.logisticsOccurrence.count({
+          where: {
+            id,
+            OR: [
+              { reportedById: userId },
+              { responsibleUserId: userId },
+              { delivery: { responsibleUserId: userId } },
+            ],
+          },
+        })) > 0
+      );
+    default:
+      return null;
+  }
 }

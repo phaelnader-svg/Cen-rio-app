@@ -142,6 +142,8 @@ export interface PickupDto {
 }
 
 export interface ReceiptLineDto {
+  /** Fase 10: identificação da linha (correção auditável). */
+  id: string;
   orderItemId: string;
   pieceType: PieceType;
   description: string;
@@ -149,6 +151,8 @@ export interface ReceiptLineDto {
   condition: PieceCondition;
   conditionNotes: string | null;
   location: string;
+  /** Fase 10: quantidade vigente após correção (null = sem correção; o original é imutável). */
+  correctedQuantity: number | null;
 }
 
 export interface ReceiptDto {

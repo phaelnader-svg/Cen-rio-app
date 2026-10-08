@@ -22,6 +22,7 @@ export const PERMISSION_GROUPS = {
   compras: 'Compras e estoque',
   producao: 'Produção',
   presenca: 'Presença operacional',
+  qualidade: 'Qualidade e expedição',
   sistema: 'Sistema',
 } as const;
 
@@ -266,6 +267,44 @@ export const PERMISSIONS = {
       'Atribuir a solução, confirmar ou recusar a resolução, reabrir e cancelar ocorrências (com motivo) e escolher o ajudante manualmente (gestor).',
     critical: true,
   },
+  'qualidade.inspecionar': {
+    group: 'qualidade',
+    label: 'Inspecionar peças',
+    description:
+      'Ver as inspeções designadas, conferir o checklist, registrar fotos e observações, aprovar ou reprovar (com motivo). Quem executou o serviço não aprova sem autorização do gestor.',
+  },
+  'qualidade.gerenciar': {
+    group: 'qualidade',
+    label: 'Gerenciar qualidade e embalagem',
+    description:
+      'Consultar todas as inspeções, aprovar diretamente, designar substitutos, autorizar o executor, acompanhar correções, configurar checklists e localizações e distribuir embalagens (gestor).',
+    critical: true,
+  },
+  'entregas.ver': {
+    group: 'qualidade',
+    label: 'Ver expedição e entregas',
+    description: 'Consultar peças prontas, a agenda de entregas e as ocorrências logísticas.',
+  },
+  'entregas.gerenciar': {
+    group: 'qualidade',
+    label: 'Agendar e confirmar entregas',
+    description:
+      'Agendar, pré-agendar, confirmar, reprogramar e cancelar entregas, atribuir retiradas e entregas à logística e tratar ocorrências logísticas (exclusivo do gestor).',
+    critical: true,
+  },
+  'logistica.executar': {
+    group: 'qualidade',
+    label: 'Executar retiradas e entregas atribuídas',
+    description:
+      'Ver apenas as próprias retiradas e entregas (endereço, contato, peças, data, horário, instruções) e registrar saída, chegada, entrega, instalação e ocorrências. Sem valores comerciais.',
+  },
+  'devolucoes.gerenciar': {
+    group: 'qualidade',
+    label: 'Devoluções e correção de recebimento',
+    description:
+      'Registrar e confirmar devoluções de peças ao cliente e corrigir recebimentos físicos com justificativa (gestor).',
+    critical: true,
+  },
   'presenca.registrar': {
     group: 'presenca',
     label: 'Registrar a própria presença',
@@ -319,6 +358,8 @@ export interface DefaultRoleDefinition {
 }
 
 export const GESTOR_ROLE_KEY = 'gestor';
+/** André e Izaías (logística terceirizada): entram por PIN num dispositivo vinculado. */
+export const LOGISTICS_ROLE_KEY = 'logistica_terceirizada';
 
 export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
   {
@@ -352,6 +393,7 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
+      'qualidade.inspecionar',
       'ocorrencias.registrar',
       'ajuda.solicitar',
       'presenca.registrar',
@@ -370,6 +412,14 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
       'presenca.registrar',
       'sincronizacao.diagnosticar',
     ],
+  },
+  {
+    key: LOGISTICS_ROLE_KEY,
+    name: 'Logística terceirizada',
+    description:
+      'Retiradas e entregas atribuídas: endereço, contato operacional, peças, data, horário e instruções. Sem valores comerciais.',
+    system: true,
+    permissions: ['producao.acessar', 'logistica.executar'],
   },
 ];
 

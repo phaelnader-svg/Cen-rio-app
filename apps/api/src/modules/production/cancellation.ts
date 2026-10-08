@@ -13,6 +13,18 @@ import {
 import { notify, taskNotice } from '../notifications/notify';
 import { domainTaskEvent, lockTasks, taskEvent } from './common';
 
+type CancelListener = (
+  tx: Tx,
+  actor: ActorContext,
+  serviceOrderId: string,
+  reason: string,
+) => Promise<void>;
+const cancelListeners: CancelListener[] = [];
+/** Fase 10: qualidade, embalagem e entregas reagem ao cancelamento da OS. */
+export function onServiceOrderCancelled(listener: CancelListener) {
+  cancelListeners.push(listener);
+}
+
 /**
  * Proteção mínima (pendência das Fases 2/4) ao cancelar uma OS, na mesma transação:
  * - tarefas de produção ainda não concluídas são canceladas (nenhuma execução de OS cancelada);
@@ -91,4 +103,5 @@ export async function protectCancelledServiceOrder(
     });
   }
   await refreshReadiness(tx, actor, [serviceOrderId]);
+  for (const l of cancelListeners) await l(tx, actor, serviceOrderId, reason);
 }

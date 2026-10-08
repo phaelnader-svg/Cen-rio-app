@@ -36,7 +36,12 @@ const fullInclude = {
   pickup: { select: { id: true, number: true } },
   receivedBy: true,
   registeredBy: { select: { displayName: true } },
-  lines: { include: { orderItem: true }, orderBy: { orderItem: { position: 'asc' as const } } },
+  lines: {
+    include: {
+      orderItem: true,
+      corrections: { orderBy: { createdAt: 'desc' as const }, take: 1 },
+    },
+    orderBy: { orderItem: { position: 'asc' as const } } },
 } satisfies Prisma.ReceiptInclude;
 
 async function loadReceiptDto(db: PrismaClient | Tx, id: string): Promise<ReceiptDto> {
@@ -56,6 +61,7 @@ async function loadReceiptDto(db: PrismaClient | Tx, id: string): Promise<Receip
     divergences: r.divergences,
     notes: r.notes,
     lines: r.lines.map((l) => ({
+      id: l.id,
       orderItemId: l.orderItemId,
       pieceType: l.orderItem.pieceType,
       description: l.orderItem.description,
@@ -63,6 +69,7 @@ async function loadReceiptDto(db: PrismaClient | Tx, id: string): Promise<Receip
       condition: l.condition,
       conditionNotes: l.conditionNotes,
       location: l.location,
+      correctedQuantity: l.corrections[0]?.newQuantity ?? null,
     })),
     createdAt: r.createdAt.toISOString(),
   };

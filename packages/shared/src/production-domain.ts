@@ -19,6 +19,9 @@ export const PRODUCTION_ACTIVITIES = [
   'ACABAMENTO',
   'APOIO',
   'OUTRA',
+  // Fase 10 — correção após reprovação e embalagem após aprovação (ligadas à inspeção).
+  'CORRECAO',
+  'EMBALAGEM',
 ] as const;
 export type ProductionActivity = (typeof PRODUCTION_ACTIVITIES)[number];
 export const PRODUCTION_ACTIVITY_LABEL: Record<ProductionActivity, string> = {
@@ -34,7 +37,27 @@ export const PRODUCTION_ACTIVITY_LABEL: Record<ProductionActivity, string> = {
   ACABAMENTO: 'Acabamento',
   APOIO: 'Apoio',
   OUTRA: 'Outra atividade',
+  CORRECAO: 'Correção (qualidade)',
+  EMBALAGEM: 'Embalagem',
 };
+/**
+ * Atividades que o gestor programa em modelos e tarefas manuais. Correção e embalagem só nascem
+ * do fluxo de qualidade (ligadas à inspeção), nunca avulsas.
+ */
+export const PLANNABLE_ACTIVITIES = [
+  'DESMONTAGEM',
+  'PREPARACAO',
+  'PREPARACAO_MDF',
+  'CORTE_TECIDO',
+  'CORTE_ESPUMA',
+  'CORTE',
+  'COSTURA',
+  'REVESTIMENTO',
+  'MONTAGEM',
+  'ACABAMENTO',
+  'APOIO',
+  'OUTRA',
+] as const satisfies readonly ProductionActivity[];
 /** Corte e costura do sofá são do tapeceiro principal. */
 export const PRINCIPAL_ACTIVITIES: readonly ProductionActivity[] = ['CORTE_TECIDO', 'COSTURA'];
 
@@ -134,6 +157,20 @@ export const NOTIFICATION_KINDS = [
   'OCORRENCIA_CANCELADA',
   'OCORRENCIA_REABERTA',
   'TAREFA_DESBLOQUEADA',
+  // Fase 10 — qualidade, embalagem e entregas
+  'INSPECAO_PENDENTE',
+  'INSPECAO_ATRIBUIDA',
+  'SERVICO_REPROVADO',
+  'CORRECAO_ATRIBUIDA',
+  'CORRECAO_CONCLUIDA',
+  'NOVA_INSPECAO',
+  'APROVACAO_INVALIDADA',
+  'EMBALAGEM_LIBERADA',
+  'PRONTO_ENTREGA',
+  'ENTREGA_AGENDADA',
+  'ENTREGA_ATRIBUIDA',
+  'ENTREGA_CONCLUIDA',
+  'OCORRENCIA_LOGISTICA',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -173,6 +210,19 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   OCORRENCIA_CANCELADA: 'Ocorrência cancelada',
   OCORRENCIA_REABERTA: 'Ocorrência reaberta',
   TAREFA_DESBLOQUEADA: 'Tarefa desbloqueada',
+  INSPECAO_PENDENTE: 'Inspeção pendente',
+  INSPECAO_ATRIBUIDA: 'Inspeção atribuída a você',
+  SERVICO_REPROVADO: 'Serviço reprovado na inspeção',
+  CORRECAO_ATRIBUIDA: 'Correção atribuída',
+  CORRECAO_CONCLUIDA: 'Correção concluída',
+  NOVA_INSPECAO: 'Nova inspeção',
+  APROVACAO_INVALIDADA: 'Aprovação invalidada por alteração técnica',
+  EMBALAGEM_LIBERADA: 'Embalagem liberada',
+  PRONTO_ENTREGA: 'Serviço pronto para entrega',
+  ENTREGA_AGENDADA: 'Entrega agendada',
+  ENTREGA_ATRIBUIDA: 'Entrega ou retirada atribuída',
+  ENTREGA_CONCLUIDA: 'Entrega concluída',
+  OCORRENCIA_LOGISTICA: 'Ocorrência logística',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

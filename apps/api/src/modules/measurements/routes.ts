@@ -18,6 +18,7 @@ import {
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { emitItemTechnicalChange } from '../../core/item-changes';
 import { actorFrom } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { loadUserPermissions } from '../../core/permissions';
@@ -570,6 +571,13 @@ export async function measurementRoutes(app: FastifyInstance) {
                 measurementKind: m.kind,
                 version: { increment: 1 },
               },
+            });
+            // Fase 10: novas medidas = alteração técnica (reverificação de qualidade).
+            await emitItemTechnicalChange(tx, actor, {
+              itemId: p.serviceOrderItemId,
+              serviceOrderId: so.id,
+              scope: 'MEDICAO',
+              summary: `Medidas atualizadas pela medição ${measurementCode(m.number)}.`,
             });
           }
           const last = await tx.serviceOrderRevision.aggregate({

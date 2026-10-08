@@ -31,3 +31,6 @@ export * from './types-help';
 export * from './issue-domain';
 export * from './schemas/issue';
 export * from './types-issue';
+export * from './quality-domain';
+export * from './schemas/quality';
+export * from './types-quality';

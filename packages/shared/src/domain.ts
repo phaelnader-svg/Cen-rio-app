@@ -187,6 +187,10 @@ export const ATTACHMENT_ENTITIES = [
   'SERVICE_ORDER_ITEM',
   'PRODUCTION_TASK',
   'PRODUCTION_ISSUE',
+  'QUALITY_INSPECTION',
+  'PACKAGING',
+  'DELIVERY',
+  'LOGISTICS_OCCURRENCE',
 ] as const;
 export type AttachmentEntity = (typeof ATTACHMENT_ENTITIES)[number];
 
