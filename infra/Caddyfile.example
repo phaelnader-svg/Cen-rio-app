@@ -1,0 +1,29 @@
+# Exemplo de proxy reverso para homologação/produção (Caddy 2).
+# - HTTPS automático.
+# - /api/* (incluindo o WebSocket /api/realtime) vai DIRETO para a API, que
+#   recebe o IP real do cliente em X-Forwarded-For (defina TRUST_PROXY=loopback
+#   ou o IP deste proxy na API).
+# - Todo o restante vai para o Next.js.
+# Ajuste o domínio; nenhum domínio real foi configurado nesta fase.
+
+gestao.exemplo.com.br {
+	encode zstd gzip
+
+	@api path /api/*
+	handle @api {
+		reverse_proxy 127.0.0.1:4000
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	request_body {
+		max_size 10MB
+	}
+}

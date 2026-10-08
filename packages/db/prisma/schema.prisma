@@ -1,0 +1,359 @@
+// Cenário Gestão — esquema do banco de dados (Fase 1: fundação).
+//
+// Convenções:
+// - Tabelas e colunas em snake_case no banco; modelos em PascalCase no código.
+// - Identificadores UUID.
+// - Entidades editáveis têm coluna `version` para controle otimista de concorrência.
+// - Toda alteração relevante gera registro de auditoria e evento de domínio na
+//   mesma transação.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── Identidade ───────────────────────────────
+
+/// Identidade de acesso. Credenciais ficam aqui; dados da pessoa ficam em Employee.
+model User {
+  id                 String    @id @default(uuid()) @db.Uuid
+  /// E-mail de acesso ao painel (opcional). Sempre armazenado em minúsculas.
+  email              String?   @unique @db.VarChar(254)
+  passwordHash       String?   @map("password_hash")
+  /// PIN de 6 dígitos para os tablets (hash argon2id).
+  pinHash            String?   @map("pin_hash")
+  displayName        String    @map("display_name") @db.VarChar(60)
+  active             Boolean   @default(true)
+  lastLoginAt        DateTime? @map("last_login_at") @db.Timestamptz(3)
+  credentialsChangedAt DateTime? @map("credentials_changed_at") @db.Timestamptz(3)
+  version            Int       @default(1)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  employee         Employee?
+  roles            UserRole[]
+  permissions      UserPermission[]
+  sessions         Session[]         @relation("SessionUser")
+  revokedSessions  Session[]         @relation("SessionRevokedBy")
+  auditLogs        AuditLog[]
+  idempotencyKeys  IdempotencyKey[]
+  uploadedFiles    StoredFile[]
+  createdDevices   Device[]          @relation("DeviceCreatedBy")
+  revokedDevices   Device[]          @relation("DeviceRevokedBy")
+
+  @@map("users")
+}
+
+/// Pessoa que atua na empresa (gestor, tapeceiros, ajudante...).
+model Employee {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @unique @map("user_id") @db.Uuid
+  fullName         String    @map("full_name") @db.VarChar(120)
+  displayName      String    @map("display_name") @db.VarChar(40)
+  jobTitle         String    @map("job_title") @db.VarChar(80)
+  responsibilities String?   @db.VarChar(500)
+  phone            String?   @db.VarChar(30)
+  /// Cor de identificação visual nos tablets e no painel (#RRGGBB).
+  color            String    @db.Char(7)
+  photoFileId      String?   @unique @map("photo_file_id") @db.Uuid
+  active           Boolean   @default(true)
+  version          Int       @default(1)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user            User        @relation(fields: [userId], references: [id], onDelete: Restrict)
+  photo           StoredFile? @relation("EmployeePhoto", fields: [photoFileId], references: [id], onDelete: SetNull)
+  assignedDevices Device[]
+
+  @@index([active])
+  @@map("employees")
+}
+
+// ─────────────────────────── Funções e permissões ───────────────────────────
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  /// Chave estável das funções padrão (null para funções criadas pelo gestor).
+  key         String?  @unique @db.VarChar(60)
+  name        String   @unique @db.VarChar(60)
+  description String?  @db.VarChar(300)
+  /// Funções do sistema não podem ser excluídas.
+  system      Boolean  @default(false)
+  version     Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@map("roles")
+}
+
+model RolePermission {
+  roleId     String @map("role_id") @db.Uuid
+  permission String @db.VarChar(80)
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permission])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+/// Concessões individuais além das funções (ex.: medição extraordinária autorizada).
+model UserPermission {
+  userId     String @map("user_id") @db.Uuid
+  permission String @db.VarChar(80)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, permission])
+  @@map("user_permissions")
+}
+
+// ─────────────────────────── Dispositivos e sessões ───────────────────────────
+
+enum DeviceKind {
+  TABLET
+  COMPUTADOR
+  CELULAR
+
+  @@map("device_kind")
+}
+
+enum DeviceStatus {
+  PENDING_PAIRING
+  ACTIVE
+  REVOKED
+
+  @@map("device_status")
+}
+
+model Device {
+  id                   String       @id @default(uuid()) @db.Uuid
+  name                 String       @unique @db.VarChar(60)
+  kind                 DeviceKind   @default(TABLET)
+  location             String?      @db.VarChar(80)
+  status               DeviceStatus @default(PENDING_PAIRING)
+  assignedEmployeeId   String?      @map("assigned_employee_id") @db.Uuid
+  restrictToAssigned   Boolean      @default(true) @map("restrict_to_assigned")
+  /// Hash SHA-256 da credencial do dispositivo (o valor bruto fica só no cookie do tablet).
+  credentialHash       String?      @unique @map("credential_hash") @db.Char(64)
+  /// Hash SHA-256 do código de vinculação de uso único.
+  pairingCodeHash      String?      @unique @map("pairing_code_hash") @db.Char(64)
+  pairingCodeExpiresAt DateTime?    @map("pairing_code_expires_at") @db.Timestamptz(3)
+  pairedAt             DateTime?    @map("paired_at") @db.Timestamptz(3)
+  revokedAt            DateTime?    @map("revoked_at") @db.Timestamptz(3)
+  revokedById          String?      @map("revoked_by_id") @db.Uuid
+  lastSeenAt           DateTime?    @map("last_seen_at") @db.Timestamptz(3)
+  lastIp               String?      @map("last_ip") @db.VarChar(64)
+  userAgent            String?      @map("user_agent") @db.VarChar(300)
+  createdById          String?      @map("created_by_id") @db.Uuid
+  version              Int          @default(1)
+  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  assignedEmployee Employee? @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  createdBy        User?     @relation("DeviceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  revokedBy        User?     @relation("DeviceRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+  sessions         Session[]
+
+  @@index([status])
+  @@map("devices")
+}
+
+enum SessionKind {
+  WEB
+  DEVICE
+
+  @@map("session_kind")
+}
+
+model Session {
+  id            String      @id @default(uuid()) @db.Uuid
+  /// Hash SHA-256 do token de sessão; o token bruto existe apenas no cookie httpOnly.
+  tokenHash     String      @unique @map("token_hash") @db.Char(64)
+  kind          SessionKind
+  userId        String      @map("user_id") @db.Uuid
+  deviceId      String?     @map("device_id") @db.Uuid
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt    DateTime    @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt     DateTime    @map("expires_at") @db.Timestamptz(3)
+  revokedAt     DateTime?   @map("revoked_at") @db.Timestamptz(3)
+  revokedReason String?     @map("revoked_reason") @db.VarChar(40)
+  revokedById   String?     @map("revoked_by_id") @db.Uuid
+  ipAddress     String?     @map("ip_address") @db.VarChar(64)
+  userAgent     String?     @map("user_agent") @db.VarChar(300)
+
+  user      User    @relation("SessionUser", fields: [userId], references: [id], onDelete: Cascade)
+  device    Device? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  revokedBy User?   @relation("SessionRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+
+  @@index([userId, revokedAt])
+  @@index([deviceId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Controle persistente contra abuso de autenticação (por conta, IP ou dispositivo).
+model AuthThrottle {
+  key          String    @id @db.VarChar(200)
+  failures     Int       @default(0)
+  windowStart  DateTime  @default(now()) @map("window_start") @db.Timestamptz(3)
+  lockedUntil  DateTime? @map("locked_until") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([updatedAt])
+  @@map("auth_throttle")
+}
+
+// ─────────────────────────────── Empresa ───────────────────────────────
+
+/// Configurações da empresa (registro único, id = 1).
+model CompanySettings {
+  id                 Int      @id @default(1)
+  tradeName          String   @map("trade_name") @db.VarChar(120)
+  legalName          String?  @map("legal_name") @db.VarChar(160)
+  document           String?  @db.VarChar(20)
+  phone              String?  @db.VarChar(30)
+  email              String?  @db.VarChar(254)
+  address            String?  @db.VarChar(240)
+  timezone           String   @default("America/Sao_Paulo") @db.VarChar(64)
+  /// Horário a partir do qual o botão "Cheguei" é exibido (HH:MM).
+  workdayStart       String   @default("08:30") @map("workday_start") @db.Char(5)
+  /// Limite para alerta de indisponibilidade operacional presumida (HH:MM).
+  arrivalAlertAt     String   @default("09:30") @map("arrival_alert_at") @db.Char(5)
+  workdayEnd         String   @default("18:00") @map("workday_end") @db.Char(5)
+  /// Dias úteis (0 = domingo ... 6 = sábado).
+  workingDays        Int[]    @default([1, 2, 3, 4, 5]) @map("working_days")
+  /// Dia habitual de programação da semana seguinte.
+  planningWeekday    Int      @default(5) @map("planning_weekday")
+  /// Dia habitual de medição de tecidos e espumas.
+  measurementWeekday Int      @default(5) @map("measurement_weekday")
+  version            Int      @default(1)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedById        String?  @map("updated_by_id") @db.Uuid
+
+  @@map("company_settings")
+}
+
+// ─────────────────────────── Auditoria e eventos ───────────────────────────
+
+/// Registro imutável de ações críticas (UPDATE/DELETE bloqueados por trigger).
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  sessionId   String?  @map("session_id") @db.Uuid
+  action      String   @db.VarChar(80)
+  entityType  String   @map("entity_type") @db.VarChar(60)
+  entityId    String?  @map("entity_id") @db.VarChar(64)
+  summary     String   @db.VarChar(300)
+  /// Diferenças antes/depois, sem dados sensíveis.
+  changes     Json?
+  ipAddress   String?  @map("ip_address") @db.VarChar(64)
+  requestId   String?  @map("request_id") @db.VarChar(64)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([entityType, entityId])
+  @@index([actorUserId])
+  @@map("audit_logs")
+}
+
+/// Eventos de domínio persistentes (outbox). `seq` define a ordem global.
+model DomainEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  seq           BigInt   @unique @default(autoincrement())
+  type          String   @db.VarChar(80)
+  aggregateType String   @map("aggregate_type") @db.VarChar(60)
+  aggregateId   String   @map("aggregate_id") @db.VarChar(64)
+  payload       Json
+  /// Quem pode receber em tempo real: 'all', 'permission:<p>' ou 'user:<id>'.
+  audience      String   @default("all") @db.VarChar(120)
+  actorUserId   String?  @map("actor_user_id") @db.Uuid
+  requestId     String?  @map("request_id") @db.VarChar(64)
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([aggregateType, aggregateId])
+  @@index([occurredAt])
+  @@map("domain_events")
+}
+
+/// Posição de cada consumidor de eventos (automações). Processamento ordenado,
+/// pelo menos uma vez, com repetição após falha.
+model EventConsumer {
+  name           String    @id @db.VarChar(80)
+  lastSeq        BigInt    @default(0) @map("last_seq")
+  failedAttempts Int       @default(0) @map("failed_attempts")
+  lastError      String?   @map("last_error") @db.VarChar(1000)
+  nextAttemptAt  DateTime? @map("next_attempt_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("event_consumers")
+}
+
+/// Chaves de idempotência para operações sensíveis.
+model IdempotencyKey {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  key            String   @db.VarChar(100)
+  scope          String   @db.VarChar(160)
+  requestHash    String   @map("request_hash") @db.Char(64)
+  /// null enquanto a operação está em andamento.
+  responseStatus Int?     @map("response_status")
+  responseBody   Json?    @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+// ─────────────────────────────── Arquivos ───────────────────────────────
+
+enum FileVisibility {
+  PRIVATE
+
+  @@map("file_visibility")
+}
+
+/// Metadados de arquivos privados (fotos e documentos). O conteúdo fica no
+/// armazenamento privado e só é servido por rota autenticada.
+model StoredFile {
+  id           String         @id @default(uuid()) @db.Uuid
+  storageKey   String         @unique @map("storage_key") @db.VarChar(200)
+  purpose      String         @db.VarChar(40)
+  originalName String         @map("original_name") @db.VarChar(200)
+  mimeType     String         @map("mime_type") @db.VarChar(100)
+  sizeBytes    Int            @map("size_bytes")
+  sha256       String         @db.Char(64)
+  visibility   FileVisibility @default(PRIVATE)
+  uploadedById String?        @map("uploaded_by_id") @db.Uuid
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz(3)
+
+  uploadedBy    User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  employeePhoto Employee? @relation("EmployeePhoto")
+
+  @@map("stored_files")
+}

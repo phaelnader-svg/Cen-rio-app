@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cenario
+          POSTGRES_PASSWORD: cenario_ci
+          POSTGRES_DB: cenario_dev
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cenario" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://cenario:cenario_ci@localhost:5432/cenario_dev
+      TEST_DATABASE_URL: postgresql://cenario:cenario_ci@localhost:5432/cenario_test
+      E2E_DATABASE_URL: postgresql://cenario:cenario_ci@localhost:5432/cenario_e2e_test
+      TOKEN_HASH_SECRET: ci-only-secret-ci-only-secret-ci-only-secret
+      ALLOWED_ORIGINS: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Bancos de teste
+        run: |
+          psql "postgresql://cenario:cenario_ci@localhost:5432/postgres" -c "CREATE DATABASE cenario_test"
+          psql "postgresql://cenario:cenario_ci@localhost:5432/postgres" -c "CREATE DATABASE cenario_e2e_test"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm test:backup
+      - run: pnpm --filter @cenario/e2e exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: tests/e2e/playwright-report

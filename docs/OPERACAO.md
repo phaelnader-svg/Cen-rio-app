@@ -1,0 +1,58 @@
+# Operação — Cenário Gestão
+
+## Ambientes
+
+| `APP_ENV`     | Uso                      | Exigências da API                                   |
+| ------------- | ------------------------ | --------------------------------------------------- |
+| `development` | Máquina do desenvolvedor | —                                                   |
+| `test`        | Testes automatizados     | Bancos com `test` no nome, apagados a cada execução |
+| `staging`     | Homologação              | HTTPS, `COOKIE_SECURE=true`, `NODE_ENV=production`  |
+| `production`  | Produção                 | Idem; banco, segredos e armazenamento próprios      |
+
+Cada ambiente tem seu **próprio** banco, `TOKEN_HASH_SECRET` e `STORAGE_DIR`. Nunca reutilize
+segredos entre ambientes. Todas as variáveis estão descritas em `.env.example`.
+
+## Deploy (referência — nenhum deploy foi feito nesta fase)
+
+1. `pnpm install --frozen-lockfile`
+2. `pnpm db:migrate` (aplica migrations pendentes; nunca use `migrate dev`/`reset` fora do
+   desenvolvimento)
+3. API: `pnpm --filter @cenario/api build` e `node apps/api/dist/server.js` (com as variáveis do
+   ambiente).
+4. Web: `API_INTERNAL_URL=<url interna da API> pnpm --filter @cenario/web build` e
+   `pnpm --filter @cenario/web start`. **O `API_INTERNAL_URL` é gravado no build.**
+5. Proxy reverso com HTTPS encaminhando `/api/*` (incluindo WebSocket) direto à API e o resto
+   ao Next.js — exemplo em `infra/Caddyfile.example`. Defina `TRUST_PROXY` na API.
+6. Verificação: `GET /api/health` (processo) e `GET /api/ready` (banco).
+
+A API encerra com segurança em `SIGTERM` (fecha conexões e tarefas em até 10 s). Várias
+instâncias da API podem rodar juntas: eventos circulam pelo PostgreSQL e as tarefas de fundo
+usam bloqueios no banco.
+
+## Backup e restauração
+
+```bash
+pnpm backup                           # usa DATABASE_URL e STORAGE_DIR; grava em ./backups
+bash scripts/backup.sh /caminho/seguro
+bash scripts/restore.sh backups/cenario-production-20261008T000000Z \
+  --target postgresql://…/banco_destino --storage ./storage --yes
+pnpm test:backup                      # teste automático de backup + restauração
+```
+
+- O backup contém o banco (formato custom do `pg_dump`, verificado após a geração), os arquivos
+  privados e checksums SHA-256. Retenção padrão: 30 dias (`BACKUP_RETENTION_DAYS`).
+- A restauração exige destino explícito e `--yes`, confere os checksums e roda numa única
+  transação.
+- Após restaurar, os clientes conectados recebem `resync.required` e recarregam os dados.
+- Recomendação: agendar `scripts/backup.sh` diariamente (cron/systemd) e copiar o diretório
+  para um local externo criptografado; testar a restauração mensalmente.
+
+## Rotina de manutenção automática
+
+A cada 15 min (uma instância por vez): remove chaves de idempotência expiradas, contadores de
+login antigos e sessões encerradas há mais de 90 dias. Auditoria e eventos não são apagados.
+
+## Logs
+
+JSON estruturado no stdout (um objeto por linha, com `requestId`). Em desenvolvimento com
+terminal interativo, saída formatada. Nível por `LOG_LEVEL`.

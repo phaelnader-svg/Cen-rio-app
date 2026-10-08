@@ -1,0 +1,22 @@
+# PostgreSQL local para desenvolvimento (opcional — também é possível usar um
+# PostgreSQL 16 instalado na máquina). Não use estas credenciais fora do ambiente local.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cenario
+      POSTGRES_PASSWORD: cenario_dev
+      POSTGRES_DB: cenario_dev
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres-init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cenario -d cenario_dev']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

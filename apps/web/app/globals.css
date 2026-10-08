@@ -1,0 +1,84 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+
+  /* Superfícies e texto (tons neutros quentes) */
+  --color-canvas: #f6f5f2;
+  --color-surface: #ffffff;
+  --color-subtle: #f1efea;
+  --color-line: #e4e1da;
+  --color-line-strong: #cfcac0;
+  --color-ink: #1d2523;
+  --color-ink-soft: #4a5552;
+  --color-ink-muted: #7a8481;
+
+  /* Marca: verde petróleo profundo + bronze (couro/estofado) */
+  --color-brand-50: #eef5f4;
+  --color-brand-100: #d6e7e4;
+  --color-brand-200: #aed0ca;
+  --color-brand-500: #2f6f68;
+  --color-brand-600: #245a54;
+  --color-brand-700: #1d4a45;
+  --color-brand-800: #173b37;
+  --color-bronze-100: #f5ebdf;
+  --color-bronze-500: #a8743f;
+  --color-bronze-600: #8d5f31;
+
+  /* Estados */
+  --color-ok-50: #ecf7f0;
+  --color-ok-600: #1f7a46;
+  --color-warn-50: #fdf5e6;
+  --color-warn-600: #a15c07;
+  --color-danger-50: #fdeeee;
+  --color-danger-600: #b42323;
+  --color-danger-700: #911b1b;
+  --color-info-50: #eef3fb;
+  --color-info-600: #2c5ea8;
+
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+  --shadow-card: 0 1px 2px rgb(29 37 35 / 0.04), 0 1px 3px rgb(29 37 35 / 0.06);
+  --shadow-pop: 0 10px 30px rgb(29 37 35 / 0.12), 0 2px 6px rgb(29 37 35 / 0.06);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-brand-500);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  dialog::backdrop {
+    background: rgb(29 37 35 / 0.45);
+    backdrop-filter: blur(2px);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-surface shadow-[var(--shadow-card)];
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-ink-soft;
+  }
+  .input {
+    @apply block w-full rounded-xl border border-line-strong bg-surface px-3.5 py-2.5 text-[15px] text-ink placeholder:text-ink-muted transition outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100 disabled:bg-subtle disabled:text-ink-muted aria-[invalid=true]:border-danger-600 aria-[invalid=true]:ring-danger-50;
+  }
+}
