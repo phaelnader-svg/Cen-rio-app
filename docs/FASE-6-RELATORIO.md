@@ -8,8 +8,8 @@ Data: 08/10/2026
 | ------------------------------ | ------------------------------------------------------------------------------- |
 | Branch                         | `claude/cenario-gestao-fase-1-zf3bj2` (branch designada para o desenvolvimento) |
 | SHA inicial (fim da Fase 5)    | `437615b` (relatório) — último código da Fase 5: `2a9f235`                      |
-| Commit da Fase 6               | PLACEHOLDER_SHA (banco, API, telas, testes e documentação)                      |
-| SHA final do código verificado | PLACEHOLDER_SHA — este relatório é o commit seguinte                            |
+| Commits da Fase 6              | `b9bb760`, `5c20ae8`, `6570d87` (banco, API, telas, testes, documentação)       |
+| SHA final do código verificado | `6570d87` — este relatório é o commit seguinte (só docs e capturas)             |
 
 ## 2. Estado inicial
 
@@ -128,24 +128,34 @@ autenticado; vincular materiais e definir o registro exigido na conclusão são 
 
 ## 9. Eventos e notificações
 
-| Aviso (tipo)             | Quando                                                                     | Para quem                     |
-| ------------------------ | -------------------------------------------------------------------------- | ----------------------------- |
-| Nova tarefa atribuída    | Publicação, inclusão de OS/etapa em semana publicada, troca de responsável | Novo responsável              |
-| Tarefa liberada          | Motor de liberação (inclusive na publicação — um único aviso por tarefa)   | Responsável (mesmo se causou) |
-| Tarefa reprogramada      | Mudança de dia/hora/prazo                                                  | Responsável                   |
-| Prioridade alterada      | Mudança de prioridade                                                      | Responsável                   |
-| Tarefa passada a outro   | Troca de responsável (inclusive troca do principal)                        | Responsável anterior          |
-| Tarefa bloqueada         | Bloqueio manual pelo gestor                                                | Responsável                   |
-| Tarefa cancelada         | Cancelamento da tarefa ou da OS                                            | Responsável                   |
-| Etapa anterior concluída | Conclusão de uma dependência que ainda não libera a tarefa                 | Responsável da dependente     |
-| OS atualizada            | Alteração técnica da OS (dados, peça, medidas, materiais)                  | Quem tem tarefa aberta na OS  |
+| Aviso (tipo)             | Quando                                                                                                                     | Para quem                     |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| Nova tarefa atribuída    | Publicação e OS incluída em semana publicada (**um resumo por pessoa**); etapa avulsa ou troca de responsável (por tarefa) | Novo responsável              |
+| Tarefa liberada          | Motor de liberação (inclusive na publicação — um único aviso por tarefa)                                                   | Responsável (mesmo se causou) |
+| Tarefa reprogramada      | Mudança de dia/hora/prazo                                                                                                  | Responsável                   |
+| Prioridade alterada      | Mudança de prioridade                                                                                                      | Responsável                   |
+| Tarefa passada a outro   | Troca de responsável (inclusive troca do principal)                                                                        | Responsável anterior          |
+| Tarefa bloqueada         | Bloqueio manual pelo gestor                                                                                                | Responsável                   |
+| Tarefa cancelada         | Cancelamento da tarefa ou da OS                                                                                            | Responsável                   |
+| Etapa anterior concluída | Conclusão de uma dependência que ainda não libera a tarefa                                                                 | Responsável da dependente     |
+| OS atualizada            | Alteração técnica da OS (dados, peça, medidas, materiais)                                                                  | Quem tem tarefa aberta na OS  |
 
 Eventos: `notification.created`/`notification.read` (só `user:<id>`), `production.task_impediment`.
 Sem duplicidade: chave por fato e versão da tarefa; conclusão repetida não cria aviso novo.
 
 ## 10. Testes e resultados (08/10/2026, PostgreSQL 16 real)
 
-PLACEHOLDER_TESTS
+| Suíte                                                          | Resultado                                                                |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| API — integração (Vitest, 20 arquivos)                         | **152/152** (142 das Fases 1–5 + 10 novos em `tablets.test.ts`)          |
+| Pacote compartilhado — unitários                               | **33/33** (29 + 4 novos)                                                 |
+| Web — unitários                                                | **6/6**                                                                  |
+| E2E Playwright (build de produção; painel + 2 tablets/celular) | **14/14** (13 das Fases 1–5 + 1 novo: tablet 1280×800 e celular 390×844) |
+| Backup + restauração (agora com aviso persistente da Fase 6)   | **aprovado**                                                             |
+| Prettier, ESLint, typecheck dos 5 pacotes, build de produção   | **sem erros** (`pnpm check` com saída 0, no código `6570d87`)            |
+
+O E2E completo e o `pnpm check` finais foram executados no mesmo código (`6570d87`); o teste de
+backup foi executado depois da última mudança de banco/script da fase.
 
 | Cenário exigido                          | Onde                                                                                           |
 | ---------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -169,7 +179,24 @@ PLACEHOLDER_TESTS
 
 ## 11. Defeitos encontrados e corrigidos
 
-PLACEHOLDER_DEFECTS
+1. **Avisos em excesso** (encontrado nas capturas): a publicação gerava um "Nova tarefa atribuída" por
+   tarefa (9 para o Márcio), escondendo os avisos úteis. Agora publicação e inclusão de OS numa
+   semana publicada geram um **resumo por pessoa** ("Programação … publicada: N tarefa(s) para você,
+   M liberada(s)"), e "Tarefa liberada" continua individual para o que já pode começar. Testado.
+2. **Liberação causada pelo próprio funcionário não avisava**: a regra "quem fez a ação não é
+   avisado" impedia o João de receber "Tarefa liberada" da própria próxima tarefa. A liberação passou
+   a avisar sempre o responsável.
+3. **Título próprio escondido no cartão** (E2E completo): o ajuste que evitava repetir "Preparação —
+   OS-…/1" escondia também títulos dados pelo gestor ("Revestimento do encosto"). Agora títulos
+   gerados mostram etapa e peça; títulos próprios viram o destaque.
+4. **Código do motivo no histórico**: a pausa sem observação gravava `AGUARDANDO_ORIENTACAO` como
+   nota; passa a gravar o texto em português, e o histórico traduz registros antigos.
+5. **Versão desatualizada no E2E**: cancelar a desmontagem reavalia a preparação (nova versão); o
+   teste passou a reler a tarefa antes de alterá-la (comportamento correto do sistema).
+6. **Typecheck do `pnpm check` inicial**: os primeiros arquivos novos (ainda não ligados) foram criados
+   antes de rodar a verificação de partida; registrado na seção 2, testes executados à parte.
+7. Asserções da Fase 5 ajustadas à nova tela inicial (sem bloco "Minhas tarefas"; cartões duplicados
+   em "Próxima tarefa liberada" e na lista; último andamento estruturado).
 
 ## 12. Pendências
 
