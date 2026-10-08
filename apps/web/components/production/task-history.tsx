@@ -1,5 +1,10 @@
 import type { TaskEventDto, TaskRefDto } from '@cenario/shared';
-import { TASK_STATUS_LABEL, type TaskStatus } from '@cenario/shared';
+import {
+  PAUSE_REASON_LABEL,
+  TASK_STATUS_LABEL,
+  type PauseReason,
+  type TaskStatus,
+} from '@cenario/shared';
 import clsx from 'clsx';
 import { formatDateTime } from '@/lib/format';
 
@@ -39,7 +44,12 @@ export function TaskHistory({ events, large }: { events: TaskEventDto[]; large?:
               </span>
             )}
           </p>
-          {e.note && <p className="text-sm text-ink-soft">{e.note}</p>}
+          {e.note && (
+            <p className="text-sm text-ink-soft">
+              {/* Pausas antigas gravavam o código do motivo. */}
+              {PAUSE_REASON_LABEL[e.note as PauseReason] ?? e.note}
+            </p>
+          )}
           {e.extra && (
             <p className="text-sm text-ink-soft">
               {[

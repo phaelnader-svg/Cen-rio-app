@@ -324,6 +324,24 @@ describe('Avisos (notificações)', () => {
     ).toBe(0);
   });
 
+  it('OS incluída numa semana publicada gera um aviso-resumo por pessoa, não um por tarefa', async () => {
+    const { admin, plan, marcio, doPublish } = await scenario('complete');
+    await doPublish();
+    const before = (await notices(marcio)).length;
+    const { so: so2 } = await serviceOrderWith(admin, 'none', 'Cliente Inclusão');
+    const r = await addOs(admin, plan.id, {
+      serviceOrderId: so2.id,
+      principalUserId: marcio,
+      date: day(1),
+      reason: 'Encaixe na semana',
+    });
+    expect(r.status).toBe(201);
+    const added = (await notices(marcio)).slice(before);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ kind: 'TAREFA_ATRIBUIDA' });
+    expect(added[0]!.body).toMatch(/incluída na programação da semana: \d+ tarefa\(s\) para você/);
+  });
+
   it('tempo real e reconexão: avisos chegam só ao destinatário e são recuperados', async () => {
     const { admin, tJoao, tMarcio, doPublish } = await scenario('complete');
     const wJoao = track(await WsClient.connect(app, tJoao));

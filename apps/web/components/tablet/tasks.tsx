@@ -252,6 +252,10 @@ function MaterialsIndicator({ state }: { state: 'NAO_EXIGE' | 'DISPONIVEIS' | 'F
   );
 }
 
+const generatedTitle = (t: ProductionTaskDto) =>
+  t.title === PRODUCTION_ACTIVITY_LABEL[t.activity] ||
+  Boolean(t.serviceOrderItem && t.title.endsWith(` — ${t.serviceOrderItem.code}`));
+
 /** Motivo de espera em linguagem simples. */
 function waitingText(t: ProductionTaskDto) {
   if (t.status === 'PROGRAMADA' && t.scheduledDate)
@@ -305,12 +309,18 @@ export function TaskCard({
             {t.serviceOrderItem && <span>· {t.serviceOrderItem.code}</span>}
             <span>· {t.code}</span>
           </span>
+          {/* Título gerado pelo modelo ("Etapa — OS-xxxxx/n"): mostra etapa e peça; título
+              próprio dado pelo gestor vira o destaque, com a etapa abaixo. */}
           <span className={clsx('mt-1 block font-semibold', highlight ? 'text-2xl' : 'text-xl')}>
-            {PRODUCTION_ACTIVITY_LABEL[t.activity]}
-            {t.serviceOrderItem ? ` — ${t.serviceOrderItem.description}` : ''}
+            {generatedTitle(t)
+              ? `${PRODUCTION_ACTIVITY_LABEL[t.activity]}${t.serviceOrderItem ? ` — ${t.serviceOrderItem.description}` : ''}`
+              : t.title}
           </span>
-          {!compact && !t.title.startsWith(PRODUCTION_ACTIVITY_LABEL[t.activity]) && (
-            <span className="mt-0.5 block truncate text-base text-ink-muted">{t.title}</span>
+          {!generatedTitle(t) && (
+            <span className="mt-0.5 block truncate text-base text-ink-muted">
+              {PRODUCTION_ACTIVITY_LABEL[t.activity]}
+              {t.serviceOrderItem ? ` — ${t.serviceOrderItem.description}` : ''}
+            </span>
           )}
           <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
             <TaskStatusBadge status={t.status} />

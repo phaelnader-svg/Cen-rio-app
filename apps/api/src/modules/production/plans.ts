@@ -406,15 +406,18 @@ export async function announceAssignments(
   tx: Tx,
   actor: ActorContext,
   ids: string[],
-  /** Publicação da semana: um aviso-resumo por pessoa em vez de um por tarefa. */
-  publication?: { planId: string; weekStart: string },
+  /**
+   * Várias tarefas de uma vez (publicação da semana ou OS incluída numa semana publicada):
+   * um aviso-resumo por pessoa em vez de um por tarefa.
+   */
+  summary?: { key: string; lead: string },
 ) {
   const tasks = await tx.productionTask.findMany({
     where: { id: { in: ids }, assigneeUserId: { not: null } },
     orderBy: [{ scheduledAt: 'asc' }, { sequence: 'asc' }],
   });
   for (const t of tasks) await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_ASSIGNED, t);
-  if (publication) {
+  if (summary) {
     const byUser = new Map<string, typeof tasks>();
     for (const t of tasks)
       byUser.set(t.assigneeUserId!, [...(byUser.get(t.assigneeUserId!) ?? []), t]);
@@ -424,8 +427,8 @@ export async function announceAssignments(
         {
           userId,
           kind: 'TAREFA_ATRIBUIDA',
-          dedupeKey: `PUBLICACAO:${publication.planId}:${userId}`,
-          body: `Programação da semana de ${publication.weekStart.split('-').reverse().join('/')} publicada: ${list.length} tarefa(s) para você${released ? `, ${released} liberada(s) para começar` : ''}.`,
+          dedupeKey: `${summary.key}:${userId}`,
+          body: `${summary.lead}: ${list.length} tarefa(s) para você${released ? `, ${released} liberada(s) para começar` : ''}.`,
           taskId: list.find((t) => t.status === 'LIBERADA')?.id ?? list[0]!.id,
           serviceOrderId: list[0]!.serviceOrderId,
         },
@@ -746,7 +749,10 @@ export async function productionPlanRoutes(app: FastifyInstance) {
             `inclusão da ${serviceOrderCode(so.number)}`,
           );
           await reevaluateTasks(tx, actor, created);
-          await announceAssignments(tx, actor, created);
+          await announceAssignments(tx, actor, created, {
+            key: `INCLUSAO:${id}:${so.id}`,
+            lead: `${serviceOrderCode(so.number)} incluída na programação da semana`,
+          });
         } else {
           await appendEvent(tx, actor, {
             type: EVENT_TYPES.PRODUCTION_PLAN_UPDATED,
@@ -919,7 +925,10 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           tx,
           actor,
           tasks.map((t) => t.id),
-          { planId: id, weekStart: dateOnly(plan.weekStart)! },
+          {
+            key: `PUBLICACAO:${id}`,
+            lead: `Programação da semana de ${dateOnly(plan.weekStart)!.split('-').reverse().join('/')} publicada`,
+          },
         );
       });
       return loadPlan(prisma, id);

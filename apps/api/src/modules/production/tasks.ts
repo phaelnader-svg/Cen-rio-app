@@ -1,6 +1,7 @@
 import {
   EVENT_TYPES,
   PRINCIPAL_ACTIVITIES,
+  PAUSE_REASON_LABEL,
   PRIORITY_LABEL,
   PRODUCTION_ACTIVITY_LABEL,
   RELEASE_BLOCKER_LABEL,
@@ -888,7 +889,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           kind: 'PAUSADA',
           from: 'EM_EXECUCAO',
           to: 'PAUSADA',
-          note: pause!.note ?? pause!.reason,
+          note: pause!.note ?? PAUSE_REASON_LABEL[pause!.reason],
           changes: { reason: pause!.reason, impediment: pause!.impediment },
         });
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_PAUSED, u, {
