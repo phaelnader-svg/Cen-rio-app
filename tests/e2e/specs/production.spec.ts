@@ -31,12 +31,12 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     await setPin(page, 'Márcio', '736204');
     const joao = await openTablet(
       browser,
-      await registerDevice(page, 'Tablet João', 'João'),
+      await registerDevice(page, 'Tablet João (produção)', 'João'),
       '591837',
     );
     const marcio = await openTablet(
       browser,
-      await registerDevice(page, 'Tablet Márcio', 'Márcio'),
+      await registerDevice(page, 'Tablet Márcio (produção)', 'Márcio'),
       '736204',
     );
     await expect(joao.page.getByTestId('tasks-count')).toHaveText('0');

@@ -98,7 +98,7 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     await page.getByLabel('Cor').first().fill('Areia');
     await page.getByRole('button', { name: 'Criar OS' }).click();
     await expect(page.getByRole('heading', { name: /^OS-\d{5}$/ })).toBeVisible();
-    await expect(page.getByTestId('readiness')).toContainText('Fase futura');
+    await expect(page.getByTestId('readiness')).toContainText('Programação · Pendente'); // Fase 5: sem planejamento publicado;
 
     // 6. Alteração técnica com histórico
     await page.getByRole('tab', { name: /Peças e especificações/ }).click();

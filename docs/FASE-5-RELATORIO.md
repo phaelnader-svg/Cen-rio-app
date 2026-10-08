@@ -231,9 +231,12 @@ durante a liberação).
    corrigido para a OS real, com 200 para o responsável e 403 para quem não tem tarefa na OS.
 4. **Teste de backup**: o planejamento fictício colidia com a semana existente no banco de
    origem (semana única) sem falhar o script; agora usa uma semana distante e `ON_ERROR_STOP`.
-5. Asserções que mudaram por regra desta fase (não são defeitos): teste da Fase 4 "sem rota de
+5. **Nome de dispositivo repetido no E2E**: o novo E2E cadastrava "Tablet Márcio", nome já usado
+   por `tablet-sync.spec.ts` (nomes são únicos), e aquele teste falhava ao gerar o código. O novo
+   E2E passou a usar "Tablet João (produção)" e "Tablet Márcio (produção)".
+6. Asserções que mudaram por regra desta fase (não são defeitos): teste da Fase 4 "sem rota de
    produção", E2E da Fase 4 "aba Produção bloqueada", E2E da Fase 1 "Programação semanal
-   indisponível" e o valor `FASE_FUTURA` da programação da OS — atualizados com justificativa.
+   indisponível" e o valor `FASE_FUTURA` da programação da OS (teste da Fase 2 e E2E comercial) — atualizados com justificativa.
 
 ## 14. Pendências e riscos
 
