@@ -37,6 +37,26 @@
 - Função Gestor protegida (sempre com todas as permissões); o sistema nunca fica sem um gestor
   ativo com acesso ao painel; ninguém desativa a si mesmo.
 
+### Dados pessoais e comerciais (Fase 2)
+
+| Dado                                                                      | Quem vê                                                                                                                          |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Cadastro completo do cliente (CPF/CNPJ, contatos, endereços, observações) | `clientes.ver`                                                                                                                   |
+| Resumo do cliente (nome, tipo) para selecionar em pedidos                 | `clientes.ver` ou `pedidos.gerenciar`                                                                                            |
+| Endereços do cliente                                                      | `clientes.ver`, `pedidos.gerenciar` ou `retiradas.gerenciar`                                                                     |
+| Valor negociado e condições comerciais                                    | `pedidos.valores` (ocultos na resposta; quem não tem a permissão também não consegue alterá-los)                                 |
+| Telefone/WhatsApp na retirada                                             | `retiradas.ver` (necessário para a operação)                                                                                     |
+| Pendências de recebimento                                                 | `recebimentos.registrar` — sem valores, documentos ou contatos                                                                   |
+| OS                                                                        | `os.ver` — cliente apenas pelo nome                                                                                              |
+| Fotografias                                                               | Permissão de leitura do registro de origem (pedido, retirada, recebimento, OS); envio exige a permissão de gestão correspondente |
+
+- Auditoria de clientes não copia o CPF/CNPJ (registra apenas que mudou).
+- Eventos de tempo real não carregam dados pessoais nem valores.
+- Somente quem tem as permissões específicas cria pedidos (`pedidos.gerenciar`), altera
+  valores (`pedidos.valores`), cancela pedidos (`pedidos.cancelar`), agenda retiradas
+  (`retiradas.gerenciar`) e cria/altera OS (`os.gerenciar`). A função Gestor sempre tem o
+  catálogo completo (garantido em tempo de execução, além da migração de dados).
+
 ## Proteções de requisição
 
 - **CSRF / WebSocket entre sites:** métodos que alteram estado e o upgrade do WebSocket exigem

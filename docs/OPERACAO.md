@@ -29,6 +29,14 @@ A API encerra com segurança em `SIGTERM` (fecha conexões e tarefas em até 10 
 instâncias da API podem rodar juntas: eventos circulam pelo PostgreSQL e as tarefas de fundo
 usam bloqueios no banco.
 
+## Atualização da Fase 1 para a Fase 2
+
+A migration `20261008100000_comercial_oficina` é aditiva (só cria tabelas, índices,
+restrições e triggers; não altera dados existentes) e concede à função Gestor as novas
+permissões. Procedimento: backup (`pnpm backup`) → `pnpm db:migrate` → reiniciar API e web.
+Funções de produção não recebem permissões comerciais automaticamente: o gestor concede o
+que for necessário (ex.: `recebimentos.registrar` para quem confere a chegada de peças).
+
 ## Backup e restauração
 
 ```bash
@@ -40,7 +48,8 @@ pnpm test:backup                      # teste automático de backup + restauraç
 ```
 
 - O backup contém o banco (formato custom do `pg_dump`, verificado após a geração), os arquivos
-  privados e checksums SHA-256. Retenção padrão: 30 dias (`BACKUP_RETENTION_DAYS`).
+  privados (fotos de funcionários e dos registros) e checksums SHA-256. O teste automático
+  restaura também dados da Fase 2 (cliente, pedido, recebimento) e confere a imutabilidade. Retenção padrão: 30 dias (`BACKUP_RETENTION_DAYS`).
 - A restauração exige destino explícito e `--yes`, confere os checksums e roda numa única
   transação.
 - Após restaurar, os clientes conectados recebem `resync.required` e recarregam os dados.

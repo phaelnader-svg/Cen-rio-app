@@ -21,9 +21,13 @@ test.describe('Painel administrativo', () => {
     await expect(page.getByRole('heading', { name: /Bom dia|Boa tarde|Boa noite/ })).toBeVisible();
     // módulos futuros aparecem como indisponíveis, sem link
     await expect(page.getByLabel('Módulos ainda não disponíveis')).toContainText(
-      'Ordens de serviço',
+      'Programação semanal',
     );
-    await expect(page.getByRole('link', { name: 'Ordens de serviço' })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Programação semanal' })).toHaveCount(0);
+    // Liberado na Fase 2:
+    await expect(
+      page.getByRole('navigation').getByRole('link', { name: 'Ordens de serviço' }),
+    ).toBeVisible();
 
     await page
       .getByRole('navigation')

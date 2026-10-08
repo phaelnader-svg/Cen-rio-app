@@ -2,6 +2,10 @@
 
 import {
   Activity,
+  ClipboardList,
+  FileSignature,
+  PackageCheck,
+  Truck,
   ArrowRight,
   CheckCircle2,
   Lock,
@@ -13,6 +17,7 @@ import Link from 'next/link';
 import { Avatar, Badge, Card, Spinner } from '@/components/ui/misc';
 import { relativeTime } from '@/lib/format';
 import { useCan, useMe } from '@/lib/hooks';
+import { todayIso, useOrders, usePickups, useServiceOrders } from '@/lib/commercial';
 import { useDevices, useEmployees, useRecentAudit, useSessions } from '@/lib/queries';
 import { useRealtime } from '@/lib/realtime';
 import { UPCOMING } from './nav';
@@ -66,6 +71,11 @@ export function Dashboard() {
   const devices = useDevices(can('dispositivos.ver'));
   const sessions = useSessions(can('sessoes.ver'));
   const audit = useRecentAudit(6, can('auditoria.ver'));
+  const today = todayIso(me.data?.company.timezone);
+  const pickupsToday = usePickups({ from: today, to: today }, can('retiradas.ver'));
+  const awaiting = useOrders({ status: 'AGUARDANDO_RETIRADA' }, can('pedidos.ver'));
+  const partial = useOrders({ status: 'RECEBIDO_PARCIAL' }, can('pedidos.ver'));
+  const openOs = useServiceOrders({ status: 'ABERTA' }, can('os.ver'));
 
   const activeEmployees = employees.data?.filter((e) => e.active) ?? [];
   const withPin = activeEmployees.filter((e) => e.hasPin).length;
@@ -74,7 +84,7 @@ export function Dashboard() {
   const tabletSessions = sessions.data?.filter((s) => s.kind === 'DEVICE').length ?? 0;
   const webSessions = sessions.data?.filter((s) => s.kind === 'WEB').length ?? 0;
 
-  const today = new Intl.DateTimeFormat('pt-BR', {
+  const todayLabel = new Intl.DateTimeFormat('pt-BR', {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
@@ -84,11 +94,60 @@ export function Dashboard() {
   return (
     <div className="space-y-8">
       <div>
-        <p className="text-sm font-medium text-ink-muted first-letter:uppercase">{today}</p>
+        <p className="text-sm font-medium text-ink-muted first-letter:uppercase">{todayLabel}</p>
         <h1 className="mt-1 text-3xl font-semibold tracking-tight">
           {greeting()}, {me.data?.user.displayName}.
         </h1>
       </div>
+
+      {(can('retiradas.ver') || can('pedidos.ver') || can('os.ver')) && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="flow-stats">
+          {can('retiradas.ver') && (
+            <Stat
+              href="/painel/retiradas"
+              icon={<Truck className="size-4" aria-hidden />}
+              label="Retiradas de hoje"
+              value={
+                pickupsToday.data
+                  ? pickupsToday.data.filter((p) => p.status !== 'CANCELADA').length
+                  : '—'
+              }
+              detail={
+                pickupsToday.data
+                  ? `${pickupsToday.data.filter((p) => p.status === 'COM_OCORRENCIA').length} com ocorrência`
+                  : ''
+              }
+            />
+          )}
+          {can('pedidos.ver') && (
+            <>
+              <Stat
+                href="/painel/pedidos"
+                icon={<FileSignature className="size-4" aria-hidden />}
+                label="Aguardando retirada"
+                value={awaiting.data?.total ?? '—'}
+                detail="pedidos sem retirada agendada"
+              />
+              <Stat
+                href="/painel/recebimentos"
+                icon={<PackageCheck className="size-4" aria-hidden />}
+                label="Recebidos parcialmente"
+                value={partial.data?.total ?? '—'}
+                detail="pedidos com peças pendentes"
+              />
+            </>
+          )}
+          {can('os.ver') && (
+            <Stat
+              href="/painel/os"
+              icon={<ClipboardList className="size-4" aria-hidden />}
+              label="OS abertas"
+              value={openOs.data?.total ?? '—'}
+              detail="aguardando as próximas fases"
+            />
+          )}
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {can('funcionarios.ver') && (
@@ -214,11 +273,15 @@ export function Dashboard() {
           <Card className="p-5">
             <h2 className="font-semibold">Implantação</h2>
             <p className="mt-1 text-sm text-ink-muted">
-              Fase 1 (fundação) em uso. Os módulos abaixo serão liberados nas próximas fases.
+              Fases 1 e 2 em uso. Os módulos abaixo serão liberados nas próximas fases.
             </p>
             <p className="mt-4 flex items-center gap-2 text-sm font-medium text-ok-600">
               <CheckCircle2 className="size-4" aria-hidden /> Pessoas, acessos, dispositivos e
               sincronização
+            </p>
+            <p className="mt-1 flex items-center gap-2 text-sm font-medium text-ok-600">
+              <CheckCircle2 className="size-4" aria-hidden /> Clientes, pedidos, retiradas,
+              recebimentos e OS
             </p>
             <ul className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
               {UPCOMING.map((m) => (

@@ -185,6 +185,15 @@ describe('Solicitação de retirada', () => {
     ]);
   });
 
+  it('filtros com valores inválidos são rejeitados com 400 (não 500)', async () => {
+    const admin = await loginAdmin(app);
+    expect((await admin.get('/api/v1/orders?status=XYZ')).status).toBe(400);
+    expect((await admin.get('/api/v1/pickups?status=AGENDADA,XYZ')).status).toBe(400);
+    expect((await admin.get('/api/v1/service-orders?status=XYZ')).status).toBe(400);
+    expect((await admin.get('/api/v1/pickups?from=2026-13-45')).status).toBe(400);
+    expect((await admin.get('/api/v1/pickups?status=AGENDADA,EM_EXECUCAO')).status).toBe(200);
+  });
+
   it('sem permissão de retiradas não há acesso à agenda', async () => {
     const admin = await loginAdmin(app);
     const u = await panelUserWith(app, admin, 'semretirada', ['pedidos.ver']);

@@ -1,6 +1,9 @@
 import type { Permission } from '@cenario/shared';
 import {
   Building2,
+  Contact,
+  PackageCheck,
+  PackageOpen,
   CalendarRange,
   ClipboardList,
   FileSignature,
@@ -40,6 +43,21 @@ export const NAV: NavItem[] = [
     icon: TabletSmartphone,
     anyOf: ['dispositivos.ver', 'sessoes.ver'],
   },
+  { href: '/painel/clientes', label: 'Clientes', icon: Contact, anyOf: ['clientes.ver'] },
+  {
+    href: '/painel/pedidos',
+    label: 'Pedidos comerciais',
+    icon: FileSignature,
+    anyOf: ['pedidos.ver'],
+  },
+  { href: '/painel/retiradas', label: 'Retiradas', icon: Truck, anyOf: ['retiradas.ver'] },
+  {
+    href: '/painel/recebimentos',
+    label: 'Recebimentos',
+    icon: PackageCheck,
+    anyOf: ['recebimentos.registrar', 'pedidos.ver'],
+  },
+  { href: '/painel/os', label: 'Ordens de serviço', icon: ClipboardList, anyOf: ['os.ver'] },
   { href: '/painel/empresa', label: 'Empresa', icon: Building2, anyOf: ['empresa.ver'] },
   { href: '/painel/auditoria', label: 'Auditoria', icon: ScrollText, anyOf: ['auditoria.ver'] },
   {
@@ -52,12 +70,10 @@ export const NAV: NavItem[] = [
 
 /** Módulos das próximas fases: exibidos como indisponíveis (sem link). */
 export const UPCOMING: { label: string; icon: LucideIcon }[] = [
-  { label: 'Pedidos e contratos', icon: FileSignature },
-  { label: 'Ordens de serviço', icon: ClipboardList },
   { label: 'Materiais e compras', icon: PackageSearch },
   { label: 'Programação semanal', icon: CalendarRange },
   { label: 'Produção', icon: Hammer },
   { label: 'Central de atenção', icon: Siren },
   { label: 'Qualidade', icon: BadgeCheck },
-  { label: 'Entregas', icon: Truck },
+  { label: 'Entregas', icon: PackageOpen },
 ];

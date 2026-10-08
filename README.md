@@ -3,10 +3,10 @@
 Sistema de gestão de produção da **Cenário Estofados** — painel administrativo do gestor e
 interface de produção para os tablets da oficina, sincronizados em tempo real.
 
-> **Status: Fase 1 — Fundação concluída.** Pessoas, funções e permissões, dispositivos,
-> sessões, configurações da empresa, auditoria, eventos persistentes e sincronização em tempo
-> real. Os módulos operacionais (pedidos, OS, materiais, programação, produção, qualidade,
-> entregas, presença) são das próximas fases e aparecem na interface como indisponíveis.
+> **Status: Fase 2 concluída.** Fase 1 (fundação: pessoas, permissões, dispositivos, sessões,
+> auditoria, eventos e tempo real) + Fase 2 (clientes, pedidos comerciais, retiradas,
+> recebimento físico e OS técnica). Materiais e compras, programação, produção, central de
+> atenção, qualidade, entregas e presença são das próximas fases e aparecem como indisponíveis.
 
 ## Documentação
 

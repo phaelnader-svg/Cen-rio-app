@@ -44,6 +44,21 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   if (t.startsWith('device.')) keys.push(['devices'], ['sessions'], ['tablet-status']);
   if (t.startsWith('session.')) keys.push(['sessions'], ['devices']);
   if (t.startsWith('company.')) keys.push(['company'], ['me']);
+  // Fase 2 — fluxo comercial → oficina
+  const flow = [
+    ['orders'],
+    ['order'],
+    ['pickups'],
+    ['pickup'],
+    ['receipts'],
+    ['receipts-pending'],
+    ['so-available'],
+  ];
+  if (t.startsWith('customer.')) keys.push(['customers'], ['customer'], ['customer-lookup']);
+  if (t.startsWith('order.') || t.startsWith('pickup.') || t.startsWith('receipt.'))
+    keys.push(...flow, ['customer']);
+  if (t.startsWith('service_order.')) keys.push(['service-orders'], ['service-order'], ...flow);
+  if (t === 'attachment.changed') keys.push(['attachments']);
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }
 

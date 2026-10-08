@@ -139,7 +139,7 @@ export async function orderRoutes(app: FastifyInstance) {
     const q = orderQuerySchema.parse(request.query);
     const numberMatch = q.q?.match(/^(?:pc-?)?0*(\d{1,9})$/i);
     const where: Prisma.CommercialOrderWhereInput = {
-      ...(q.status ? { status: q.status as CommercialOrder['status'] } : {}),
+      ...(q.status ? { status: q.status } : {}),
       ...(q.customerId ? { customerId: q.customerId } : {}),
       ...(q.q
         ? {

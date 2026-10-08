@@ -2,6 +2,8 @@ import { z } from 'zod';
 import {
   BR_STATES,
   CUSTOMER_KINDS,
+  ORDER_STATUSES,
+  SERVICE_ORDER_STATUSES,
   MATERIAL_KINDS,
   MATERIAL_SOURCINGS,
   PICKUP_STATUSES,
@@ -162,7 +164,7 @@ export const cancelOrderSchema = z.object({
 
 export const orderQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
-  status: z.string().max(40).optional(),
+  status: z.enum(ORDER_STATUSES).optional(),
   customerId: idSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
@@ -223,7 +225,13 @@ export const pickupTransitionSchema = z.object({
 });
 
 export const pickupQuerySchema = z.object({
-  status: z.string().max(40).optional(),
+  /** Uma ou mais situações separadas por vírgula. */
+  status: z
+    .string()
+    .max(200)
+    .transform((v) => v.split(',').filter(Boolean))
+    .pipe(z.array(z.enum(PICKUP_STATUSES)))
+    .optional(),
   from: dateOnly.optional(),
   to: dateOnly.optional(),
   orderId: idSchema.optional(),
@@ -346,7 +354,7 @@ export type MaterialRequirementInput = z.input<typeof materialRequirementSchema>
 
 export const serviceOrderQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
-  status: z.string().max(40).optional(),
+  status: z.enum(SERVICE_ORDER_STATUSES).optional(),
   orderId: idSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),

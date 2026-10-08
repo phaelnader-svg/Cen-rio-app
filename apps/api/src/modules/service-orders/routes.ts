@@ -213,7 +213,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     const q = serviceOrderQuerySchema.parse(request.query);
     const numberMatch = q.q?.match(/^(?:os-?)?0*(\d{1,9})$/i);
     const where: Prisma.ServiceOrderWhereInput = {
-      ...(q.status ? { status: q.status as 'ABERTA' | 'CANCELADA' } : {}),
+      ...(q.status ? { status: q.status } : {}),
       ...(q.orderId ? { orderId: q.orderId } : {}),
       ...(q.q
         ? {

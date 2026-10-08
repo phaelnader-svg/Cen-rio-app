@@ -157,7 +157,7 @@ export async function pickupRoutes(app: FastifyInstance) {
     const q = pickupQuerySchema.parse(request.query);
     const rows = await prisma.pickupRequest.findMany({
       where: {
-        ...(q.status ? { status: { in: q.status.split(',') as PickupStatus[] } } : {}),
+        ...(q.status?.length ? { status: { in: q.status } } : {}),
         ...(q.orderId ? { orderId: q.orderId } : {}),
         ...(q.from || q.to
           ? {

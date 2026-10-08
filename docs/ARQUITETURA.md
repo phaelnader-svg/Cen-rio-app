@@ -52,9 +52,25 @@ mantendo a mesma origem para o navegador.
 | `core/maintenance.ts`      | Limpeza periódica (chaves de idempotência, contadores, sessões antigas).                                                                                                                                                                 |
 | `modules/*`                | `auth`, `tablet`, `employees`, `roles`, `devices`, `sessions`, `company`, `audit`, `sync`, `files`, `health`, `realtime`.                                                                                                                |
 
-Novos módulos (pedidos, OS, materiais…) entram como novas pastas em `modules/`, novas
-permissões no catálogo `packages/shared/src/permissions.ts` e novos tipos de evento em
-`packages/shared/src/events.ts`.
+**Módulos da Fase 2** (rotas versionadas em `/api/v1`):
+
+| Pasta                    | Responsabilidade                                                                          |
+| ------------------------ | ----------------------------------------------------------------------------------------- |
+| `modules/customers`      | Clientes PF/PJ, endereços (arquivados, nunca apagados), pesquisa, duplicidade, histórico. |
+| `modules/orders`         | Pedido comercial e peças; valores restritos; cancelamento.                                |
+| `modules/pickups`        | Solicitação, agenda e linha do tempo das retiradas (máquina de estados).                  |
+| `modules/receipts`       | Recebimento físico (parcial ou completo) com proteção contra duplicidade.                 |
+| `modules/service-orders` | OS técnica, itens individualizados, medições, materiais previstos, histórico técnico.     |
+| `modules/attachments`    | Fotografias dos registros, com política de acesso por tipo de registro.                   |
+| `modules/commercial`     | Utilitários comuns (números legíveis, cópia de endereço, situação derivada do pedido).    |
+
+Novos módulos entram como novas pastas em `modules/`, novas permissões no catálogo
+`packages/shared/src/permissions.ts` e novos tipos de evento em `packages/shared/src/events.ts`.
+
+**Versionamento da API.** As rotas de domínio criadas a partir da Fase 2 ficam em `/api/v1/…`.
+As rotas de infraestrutura da Fase 1 (`/api/auth`, `/api/tablet`, `/api/realtime`, cadastros
+de pessoas e dispositivos) permanecem sem prefixo para não quebrar clientes existentes; uma
+versão futura incompatível receberá `/api/v2` em paralelo.
 
 ## 3. Modelo de dados (Fase 1)
 
@@ -74,13 +90,49 @@ permissões no catálogo `packages/shared/src/permissions.ts` e novos tipos de e
 | `idempotency_keys`               | Respostas de operações idempotentes (24 h).                                        |
 | `stored_files`                   | Metadados de arquivos privados.                                                    |
 
-Migration única versionada: `packages/db/prisma/migrations/20261008000000_fundacao`, com
+**Fase 2** (migration `20261008100000_comercial_oficina`, puramente aditiva):
+
+| Tabela                                                             | Finalidade                                                                                                                                       |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `customers`, `customer_addresses`                                  | Clientes e endereços de atendimento (CPF/CNPJ único quando informado; um endereço principal).                                                    |
+| `commercial_orders`, `commercial_order_items`                      | Pedido comercial, peças e quantidades recebidas (`recebido ≤ quantidade` no banco).                                                              |
+| `pickup_requests`, `pickup_request_items`, `pickup_events`         | Retiradas, peças a retirar e linha do tempo imutável. Campo `external_reference` e origem `INTEGRACAO` preparados para a logística terceirizada. |
+| `receipts`, `receipt_lines`                                        | Recebimentos físicos (imutáveis) com condição, localização e divergências.                                                                       |
+| `service_orders`, `service_order_items`, `service_order_revisions` | OS técnica, itens com código individual (`OS-00012/3`), medições e histórico técnico imutável.                                                   |
+| `material_requirements`                                            | Materiais previstos por OS (estrutura para Fase 3; tecido sempre `EXCLUSIVO_OS` por restrição no banco).                                         |
+| `attachments`                                                      | Vínculo de fotos (`stored_files`) aos registros.                                                                                                 |
+
+Pedidos, retiradas e OS guardam **cópia** do endereço combinado; números legíveis (`PC-`,
+`RT-`, `RC-`, `OS-`) vêm de sequências do banco (podem ter lacunas após transações desfeitas).
+
+Migration da Fase 1: `packages/db/prisma/migrations/20261008000000_fundacao`, com
 restrições adicionais em SQL (registro único de configurações, e-mails minúsculos, coerência
 status×credencial do dispositivo, vínculo sessão×dispositivo, triggers de imutabilidade e de
 notificação de eventos).
 
-Entidades das próximas fases (clientes, pedidos, OS, materiais, estoque, programação,
-tarefas, ocorrências, presença, qualidade, entregas) **não** foram criadas.
+Entidades das próximas fases (compras, estoque, programação, tarefas, ocorrências, presença,
+qualidade, entregas) **não** foram criadas.
+
+### Fluxo comercial → oficina (Fase 2)
+
+```
+Cliente ─► Pedido comercial ─► Retirada (agenda + linha do tempo) ─► Recebimento físico ─► OS técnica
+                │                       │                                  │
+                └── situação derivada ◄─┴──────── peças recebidas ─────────┘
+```
+
+- **Situação do pedido** é calculada (aguardando retirada → retirada agendada → recebido
+  parcialmente → recebido), exceto o cancelamento (manual, com motivo).
+- **Retirada:** transições manuais validadas; "Recebida na oficina" só pelo recebimento físico.
+- **Recebimento:** bloqueia as linhas do pedido (`FOR UPDATE`), confere o saldo pendente por
+  peça e só então grava; o banco também impede ultrapassar a quantidade. Recebimentos
+  simultâneos do mesmo saldo: um é aceito, os demais recebem 409.
+- **OS técnica:** só aceita quantidades efetivamente recebidas e ainda não alocadas em OS ativa
+  (mesmo bloqueio). Antes do recebimento, a criação é recusada (422).
+- **Medições:** de rotina quando o gestor (`os.gerenciar`) mede no dia configurado (sexta);
+  caso contrário — ou por tapeceiro com `medicoes.extraordinarias` — extraordinária.
+- **Prontidão para produção** é apenas informativa; `canStartProduction` é sempre `false`
+  nesta fase. Não existe rota que inicie produção, e materiais previstos não disparam nada.
 
 ## 4. Eventos, concorrência e tempo real
 
@@ -93,8 +145,12 @@ evento confirmado depois de outro com `seq` maior.
 escuta (`LISTEN`) e, como contingência, varre `seq > último` a cada 2 s; assim nenhuma
 notificação perdida causa perda de evento, e várias instâncias funcionam juntas.
 
-**Audiência.** Cada evento declara quem pode recebê-lo: `all`, `permission:<p>` ou `user:<id>`.
-Tablets não recebem eventos administrativos.
+**Audiência.** Cada evento declara quem pode recebê-lo: `all`, `permission:<p>` ou `user:<id>`,
+combináveis com `|` (basta atender a uma — ex.: recebimentos interessam a quem vê pedidos _ou_
+registra recebimentos). Tablets não recebem eventos administrativos. Eventos da Fase 2
+(`customer.*`, `order.*`, `pickup.*`, `receipt.registered`, `service_order.*`,
+`attachment.changed`) carregam apenas identificadores, números e situações — nunca valores,
+documentos, telefones ou endereços; o cliente recarrega os dados pela API com suas permissões.
 
 **Reconexão e reconciliação.**
 
