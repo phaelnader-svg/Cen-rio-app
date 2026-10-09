@@ -6,7 +6,11 @@
 #   vm.sh gerar-env            # lê os segredos (Secret Manager) e grava /run/cenario/env (memória, 600)
 #   vm.sh iniciar              # sobe a pilha (baixa as imagens da etiqueta configurada)
 #   vm.sh status               # contêineres, memória e disco
-#   vm.sh saude                # verificação completa (HTTPS, proxy, API, banco, backup, disco, certificado)
+#   vm.sh saude                # verificação completa (HTTPS, proxy com a senha real → cookie → /entrar,
+#                              # API, banco, backup, disco, certificado)
+#   vm.sh aplicar-config       # valida o Caddyfile e recria SÓ o proxy (banco, API e web intocados)
+#   vm.sh diagnosticar-acesso [horas]  # SÓ LEITURA: por que um navegador não chega à tela de entrada
+#                              # (senha do proxy × hash em uso, fluxo completo, tentativas no log do Caddy)
 #   vm.sh semear               # seed inicial (gestor de teste, equipe fictícia, checklists) — uma vez
 #   vm.sh backup               # backup imediato + envio ao bucket
 #   vm.sh enviar-backups       # envia ao bucket os backups ainda não enviados (usado pelo timer diário)
@@ -134,6 +138,115 @@ status() {
 }
 
 # Verificação de saúde completa. Sai com código 1 se algo crítico falhar.
+# Senha do proxy em texto (só para testes internos; NUNCA impressa). Secret Manager ou, em teste
+# local, o arquivo CENARIO_PROXY_SENHA_ARQ.
+senha_proxy() {
+  if [[ -n "${CENARIO_PROXY_SENHA_ARQ:-}" ]]; then cat "$CENARIO_PROXY_SENHA_ARQ"
+  else gcloud secrets versions access latest --secret=homolog-proxy-password --project="$PROJECT"; fi
+}
+
+# Percorre o fluxo do navegador sem nunca imprimir segredos:
+#   sem credencial → 401 · senha do proxy → Set-Cookie do proxy · com esse cookie → /entrar.
+# Imprime linhas "✔ …"/"✘ …". Uso: fluxo_navegador <base> <opções do curl…>
+fluxo_navegador() {
+  local base="$1"; shift
+  local res=("$@") d r cod senha usuario="${HOMOLOG_BASIC_USER:-$BASIC_USER}"
+  d="$(mktemp -d)"; chmod 700 "$d"
+  senha="$(senha_proxy 2>/dev/null)" || senha=""
+  if [[ -z "$senha" ]]; then echo "✘ senha do proxy não lida (Secret Manager)"; rm -rf "$d"; return 0; fi
+  senha="${senha//\\/\\\\}"; senha="${senha//\"/\\\"}"
+  printf 'user = "%s:%s"\n' "$usuario" "$senha" > "$d/cred"; senha=""
+  r="$(curl -s -o /dev/null -D "$d/h0" -w '%{http_code}' "${res[@]}" "$base/" || true)"
+  if [[ "$r" == 401 ]] && grep -qi '^www-authenticate: basic' "$d/h0"; then echo "✔ sem credencial: 401 com pedido de senha (Basic)"
+  else echo "✘ sem credencial respondeu $r (esperado 401 + WWW-Authenticate)"; fi
+  if grep -qi '^alt-svc:.*h3' "$d/h0"; then echo "✘ o proxy anuncia HTTP/3 (Alt-Svc h3), mas UDP 443 não está publicado nem liberado"
+  else echo "✔ sem anúncio de HTTP/3 (só TCP)"; fi
+  cod="$(curl -s -o /dev/null -D "$d/h1" -c "$d/jar" -K "$d/cred" -w '%{http_code}' "${res[@]}" "$base/" || true)"
+  if [[ "$cod" =~ ^(200|30[1278])$ ]] && grep -qi '^set-cookie: cenario_homolog=' "$d/h1"; then
+    echo "✔ senha do proxy ($usuario) aceita: $cod e cookie do proxy gravado"
+  else echo "✘ senha do proxy ($usuario) recusada ou sem cookie: HTTP $cod — o hash no Caddy não corresponde ao segredo atual (rode: vm.sh gerar-env && vm.sh iniciar)"; fi
+  rm -f "$d/cred"
+  r="$(curl -s -L -b "$d/jar" -o "$d/pag" -w '%{http_code} %{url_effective}' "${res[@]}" "$base/entrar" || true)"
+  if [[ "$r" == "200 "* ]] && grep -q 'Entrar' "$d/pag" && grep -q '/_next/static/' "$d/pag"; then echo "✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)"
+  else echo "✘ com o cookie do proxy: /entrar respondeu ${r%% *}"; fi
+  local js; js="$(grep -o '/_next/static/[^"]*\.js' "$d/pag" | head -1)"
+  if [[ -n "$js" ]]; then
+    r="$(curl -s -b "$d/jar" -o /dev/null -w '%{http_code}' "${res[@]}" "$base$js" || true)"
+    if [[ "$r" == 200 ]]; then echo "✔ JavaScript da tela carrega com o cookie ($js: 200)"; else echo "✘ JavaScript da tela: $r"; fi
+  fi
+  rm -rf "$d"
+}
+
+# Diagnóstico de acesso (SÓ LEITURA, nada é reiniciado e nenhum segredo é impresso):
+# configuração, segredo do proxy × hash em uso, fluxo do navegador e as últimas tentativas
+# registradas pelo Caddy (status, se o navegador enviou senha/cookie, navegador).
+diagnosticar_acesso() {
+  need_env
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
+  local horas="${1:-24}" base="https://$HOMOLOG_DOMAIN" res=(--resolve "$HOMOLOG_DOMAIN:443:127.0.0.1")
+  [[ -n "${CENARIO_CACERT:-}" ]] && res+=(--cacert "$CENARIO_CACERT")
+  echo "== Configuração"
+  echo "• domínio: $HOMOLOG_DOMAIN · usuário do proxy: $HOMOLOG_BASIC_USER (minúsculo, sem acento)"
+  local s; s="$(senha_proxy 2>/dev/null)" || s=""
+  if [[ -n "$s" ]]; then
+    local extras=""
+    [[ "$s" =~ [[:space:]] ]] && extras+=" espaço/quebra de linha;"
+    [[ "$s" == *$'\r'* ]] && extras+=" retorno de carro (\\r);"
+    if (LC_ALL=C; [[ "$s" =~ [^\ -~] ]]); then extras+=" caracteres fora do ASCII;"; fi
+    echo "• segredo homolog-proxy-password: ${#s} caracteres;${extras:- só caracteres imprimíveis comuns}"
+  else echo "✘ segredo homolog-proxy-password não lido"; fi
+  s=""
+  echo "• /run/cenario/env gerado em: $(date -u -r "$ENV_FILE" +%FT%TZ) (o hash da senha do proxy é calculado nesse momento)"
+  echo "== Fluxo do navegador (de dentro da VM)"
+  fluxo_navegador "$base" "${res[@]}"
+  echo "== Tentativas registradas pelo Caddy nas últimas ${horas} h"
+  local id; id="$(compose ps -q caddy 2>/dev/null || true)"
+  [[ -n "$id" ]] || { echo "✘ contêiner caddy não encontrado"; return 0; }
+  docker logs --since "${horas}h" "$id" 2>&1 | grep '"http.log.access' | resumir_acessos
+}
+
+# Lê linhas de log de acesso do Caddy (JSON) e resume, sem valores de cabeçalhos (o Caddy já
+# registra Authorization e Cookie como REDACTED; aqui só se mostra se foram enviados).
+resumir_acessos() {
+  local l st uri met ua nav auth ck uid ts n=0 fora=0 safari401a=0 safari401s=0 safariok=0 ultimas=()
+  while IFS= read -r l; do
+    [[ "$l" =~ \"status\":([0-9]+) ]] && st="${BASH_REMATCH[1]}" || continue
+    [[ "$l" =~ \"uri\":\"([^\"]*)\" ]] && uri="${BASH_REMATCH[1]}" || uri="?"
+    [[ "$l" =~ \"method\":\"([A-Z]+)\" ]] && met="${BASH_REMATCH[1]}" || met="?"
+    [[ "$l" =~ \"User-Agent\":\[\"([^\"]*)\" ]] && ua="${BASH_REMATCH[1]}" || ua=""
+    [[ "$l" =~ \"user_id\":\"([^\"]*)\" ]] && uid="${BASH_REMATCH[1]}" || uid=""
+    [[ "$l" =~ \"ts\":([0-9]+) ]] && ts="$(date -u -d "@${BASH_REMATCH[1]}" +%m-%dT%H:%M:%S)" || ts="?"
+    [[ "$l" == *'"Authorization":["REDACTED"]'* ]] && auth=senha || auth=-
+    [[ "$l" == *'"Cookie":["REDACTED"]'* ]] && ck=cookie || ck=-
+    case "$ua" in
+      *curl*) fora=$((fora + 1)); continue ;; # testes internos (saude/diagnóstico)
+      *CriOS*|*FxiOS*|*EdgiOS*|*Chrome*|*Android*) nav=outro ;;
+      *Safari*|*iPhone*|*iPad*|*Macintosh*) nav=Safari ;;
+      *) nav=outro ;;
+    esac
+    n=$((n + 1))
+    if [[ "$nav" == Safari ]]; then
+      if [[ "$st" == 401 && "$auth" == senha ]]; then safari401a=$((safari401a + 1))
+      elif [[ "$st" == 401 ]]; then safari401s=$((safari401s + 1))
+      elif [[ "$st" =~ ^[23] ]]; then safariok=$((safariok + 1)); fi
+    fi
+    ultimas+=("$ts $st $met ${uri:0:60} · $auth · $ck · ${uid:-} · $nav")
+  done
+  echo "• $n requisições de navegadores (+ $fora de testes internos)"
+  echo "• Safari: $safariok aceitas · $safari401a recusadas COM senha enviada · $safari401s pedidos de senha (sem credencial)"
+  echo "• últimas (hora UTC · status · método · caminho · senha enviada? · cookie? · usuário aceito · navegador):"
+  local i ini=$(( ${#ultimas[@]} > 25 ? ${#ultimas[@]} - 25 : 0 ))
+  for (( i = ini; i < ${#ultimas[@]}; i++ )); do echo "    ${ultimas[$i]}"; done
+  echo "== Leitura"
+  if (( n == 0 )); then echo "• nenhum acesso de navegador chegou ao Caddy no período (DNS, rede ou HTTP/3 no aparelho)"
+  elif (( safari401a > 0 && safariok == 0 )); then echo "• o Safari ENVIOU usuário/senha e o proxy RECUSOU: credencial do proxy errada (usuário 'homologacao' + senha do proxy, não a do gestor) ou hash desatualizado"
+  elif (( safariok > 0 )); then echo "• o Safari passou pelo proxy; se a tela não abriu, veja os status != 2xx/3xx acima"
+  else echo "• o Safari só recebeu pedidos de senha (diálogo cancelado ou sem resposta)"; fi
+}
+
 saude() {
   need_env
   set -a
@@ -160,6 +273,11 @@ saude() {
   [[ "$r" == *ready* ]] && ok "HTTPS + API + banco: $r" || ruim "API não pronta: $r"
   r="$(curl -s -o /dev/null -w '%{http_code}' "${res[@]}" -H "@$hdr" "$base/entrar" || true)"
   [[ "$r" == 200 ]] && ok "web (tela de entrada): $r" || ruim "web respondeu $r"
+  # O caminho REAL do navegador: senha do proxy → cookie → /entrar (o teste acima entra direto
+  # com o cookie e não comprova que a senha do proxy funciona).
+  local linha; while IFS= read -r linha; do
+    case "$linha" in "✔ "*) ok "${linha#✔ }" ;; "✘ "*) ruim "${linha#✘ }" ;; *) echo "$linha" ;; esac
+  done < <(fluxo_navegador "$base" "${res[@]}")
   local fim; fim="$(echo | openssl s_client -connect 127.0.0.1:443 -servername "$HOMOLOG_DOMAIN" 2>/dev/null \
     | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2 || true)"
   if [[ -n "$fim" ]]; then
@@ -181,6 +299,27 @@ saude() {
 }
 
 semear() { need_env; compose exec -T api pnpm db:seed; }
+
+# Aplica uma mudança no Caddyfile recriando SÓ o proxy (banco, API, web e dados intocados; os
+# certificados ficam no volume caddy_data). Valida a configuração antes; segredos vão ao
+# contêiner por nome de variável (nunca nos argumentos).
+aplicar_config() {
+  need_portao
+  need_env
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
+  if ! docker run --rm -v "$DIR/infra/homolog/Caddyfile.homolog:/etc/caddy/Caddyfile:ro" \
+    -e HOMOLOG_DOMAIN -e HOMOLOG_BASIC_USER -e HOMOLOG_BASIC_HASH -e HOMOLOG_GATE_TOKEN \
+    caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then
+    echo "✘ Caddyfile inválido: nada foi alterado no proxy em execução." >&2; return 1
+  fi
+  log "Caddyfile válido. Recriando só o proxy (caddy)…"
+  compose up -d --no-deps --force-recreate caddy
+  sleep 5
+  saude
+}
 
 backup() {
   need_env
@@ -348,6 +487,9 @@ case "${1:-}" in
   iniciar) iniciar ;;
   status) status ;;
   saude) saude ;;
+  diagnosticar-acesso) diagnosticar_acesso "${2:-24}" ;;
+  aplicar-config) aplicar_config ;;
+  resumir-acessos) resumir_acessos ;; # lê o log de acesso do Caddy da entrada padrão (usado nos testes)
   semear) semear ;;
   backup) backup ;;
   enviar-backups) enviar_backups ;;

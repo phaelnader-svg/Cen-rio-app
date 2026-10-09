@@ -196,4 +196,21 @@ touch "$R/etc/cenario/publicacao-autorizada"
 rodaS "$TMP/d5.out" FALSO_SWAP=1
 afirma "$CHAMADAS" "systemctl restart cenario-homolog.service"
 
+echo "E. diagnóstico de acesso: leitura do log do Caddy (linhas sintéticas, valores já REDACTED)"
+L() { printf '{"level":"info","ts":%s,"logger":"http.log.access.log0","msg":"handled request","request":{"method":"GET","uri":"%s","headers":{"User-Agent":["%s"]%s}},"user_id":"%s","status":%s}\n' "$@"; }
+SAF='Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1'
+AUT=',"Authorization":["REDACTED"]'; CK=',"Cookie":["REDACTED"]'
+{ L 1791566000 / "$SAF" "" "" 401; L 1791566001 / "$SAF" "$AUT" "" 401; L 1791566002 / "$SAF" "$AUT" "" 401; L 1791566003 /entrar "curl/8.5.0" "$CK" "" 200; } > "$TMP/log-recusa"
+bash "$VMSH" resumir-acessos < "$TMP/log-recusa" > "$TMP/e1.out" 2>&1
+afirma "$TMP/e1.out" "Safari: 0 aceitas · 2 recusadas COM senha enviada · 1 pedidos de senha"
+afirma "$TMP/e1.out" "o Safari ENVIOU usuário/senha e o proxy RECUSOU"
+afirma "$TMP/e1.out" "(+ 1 de testes internos)"
+nega "$TMP/e1.out" "REDACTED"
+{ L 1791566000 / "$SAF" "" "" 401; L 1791566001 / "$SAF" "$AUT" homologacao 307; L 1791566002 /entrar "$SAF" "$AUT$CK" "" 200; } > "$TMP/log-ok"
+bash "$VMSH" resumir-acessos < "$TMP/log-ok" > "$TMP/e2.out" 2>&1
+afirma "$TMP/e2.out" "Safari: 2 aceitas · 0 recusadas"
+afirma "$TMP/e2.out" "o Safari passou pelo proxy"
+: > "$TMP/log-vazio"; bash "$VMSH" resumir-acessos < "$TMP/log-vazio" > "$TMP/e3.out" 2>&1
+afirma "$TMP/e3.out" "nenhum acesso de navegador chegou ao Caddy"
+
 echo; if (( FALHAS == 0 )); then echo "RESULTADO: todos os cenários OK"; else echo "RESULTADO: $FALHAS falha(s)"; exit 1; fi

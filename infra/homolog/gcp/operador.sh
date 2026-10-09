@@ -12,6 +12,10 @@
 #                                        # limpa a tela em seguida (nunca em logs, relatórios ou pipes)
 #   operador.sh trazer-backup <nome>     # copia um backup do bucket para a VM (teste de restauração)
 #   operador.sh saude                    # executa a verificação de saúde dentro da VM
+#   operador.sh acesso [horas]           # diagnóstico do acesso pelo navegador (só leitura, sem segredos;
+#                                        # usa o vm.sh deste commit, sem alterar a VM)
+#   operador.sh atualizar-config         # leva à VM a configuração deste commit (infra/homolog) e
+#                                        # recria SÓ o proxy; cópia anterior guardada para reversão
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 
@@ -70,6 +74,29 @@ atualizar() {
   ssh_vm "sudo /opt/cenario/infra/homolog/gcp/vm.sh atualizar $tag"
 }
 
+# Leva à VM SÓ os arquivos de configuração e operação (infra/homolog + scripts de backup) do
+# commit atual, guarda a cópia anterior e recria apenas o proxy. Não troca imagens, não mexe no
+# banco nem em migrations. Reversão: a cópia /opt/cenario.anterior-<data> + "vm.sh aplicar-config".
+atualizar_config() {
+  [[ -z "$(git status --porcelain -- infra/homolog scripts/backup.sh scripts/restore.sh)" ]] \
+    || { echo "Há mudanças não commitadas em infra/homolog ou scripts/: faça commit antes." >&2; exit 2; }
+  local commit; commit="$(git rev-parse --short=12 HEAD)"
+  confirma "copiar a configuração do commit $commit para /opt/cenario e recriar SÓ o proxy (banco, API e web intocados)"
+  local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+  git archive --format=tar.gz -o "$tmp/config.tgz" HEAD infra/homolog scripts/backup.sh scripts/restore.sh
+  gcloud compute scp "$tmp/config.tgz" "$VM:/tmp/cenario-config.tgz" --zone="$ZONE" --project="$PROJECT" --tunnel-through-iap
+  ssh_vm "sudo CENARIO_COMMIT=$commit bash -s" <<'REMOTO'
+set -euo pipefail
+copia="/opt/cenario.anterior-$(date -u +%Y%m%dT%H%M%S.%NZ)"
+cp -a /opt/cenario "$copia" && echo "cópia anterior: $copia"
+tar -xzf /tmp/cenario-config.tgz -C /opt/cenario
+echo "$CENARIO_COMMIT" > /opt/cenario/VERSAO
+chmod 755 /opt/cenario/infra/homolog/gcp/*.sh
+rm -f /tmp/cenario-config.tgz
+/opt/cenario/infra/homolog/gcp/vm.sh aplicar-config
+REMOTO
+}
+
 # Exibe UMA credencial de teste (fictícia, só da homologação) no terminal e apaga a tela depois.
 # Recusa se a entrada ou a saída não forem um terminal interativo (pipe, arquivo, "tee", script
 # automático, relatório): assim o valor não cai em logs. Nenhum outro comando exibe segredos.
@@ -119,5 +146,9 @@ case "${1:-}" in
   senhas) echo "Removido (exibia segredos em sequência). Use: operador.sh mostrar-credencial proxy|gestor" >&2; exit 2 ;;
   trazer-backup) trazer_backup "${2:-}" ;;
   saude) ssh_vm "sudo /opt/cenario/infra/homolog/gcp/vm.sh saude" ;;
+  acesso) h="${2:-24}"; [[ "$h" =~ ^[0-9]+$ ]] || { echo "Uso: operador.sh acesso [horas]" >&2; exit 2; }
+    # O vm.sh deste commit vai pela entrada padrão: nada é gravado na VM.
+    ssh_vm "sudo bash -s -- diagnosticar-acesso $h" < infra/homolog/gcp/vm.sh ;;
+  atualizar-config) atualizar_config ;;
   *) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 2 ;;
 esac

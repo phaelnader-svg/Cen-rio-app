@@ -11,6 +11,16 @@
 # Variáveis (vindas do Secret Manager, nunca do Git): HOMOLOG_DOMAIN, HOMOLOG_BASIC_USER,
 # HOMOLOG_BASIC_HASH (bcrypt, `caddy hash-password`), HOMOLOG_GATE_TOKEN (hexadecimal aleatório).
 
+# Só HTTP/1.1 e HTTP/2 (TCP). O HTTP/3 usa UDP 443, que NÃO está publicado (Docker publica só
+# 443/tcp) nem liberado no firewall (tcp:80,tcp:443). Com HTTP/3 ligado, o Caddy anunciava
+# "Alt-Svc: h3" em toda resposta e o Safari, que guarda esse anúncio por 30 dias, tentava QUIC
+# num caminho inexistente antes de voltar ao TCP.
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
 (cenario_app) {
 	encode zstd gzip
 
@@ -49,6 +59,22 @@
 			header Set-Cookie "cenario_homolog={$HOMOLOG_GATE_TOKEN}; Path=/; Max-Age=2592000; Secure; HttpOnly; SameSite=Lax"
 			import cenario_app
 		}
+	}
+
+	# 401 com explicação (sem segredos). Sem corpo, o Safari mostra uma página em branco quando a
+	# senha é recusada ou o diálogo é cancelado. O cabeçalho WWW-Authenticate do basic_auth é mantido.
+	handle_errors 401 {
+		header Content-Type "text/html; charset=utf-8"
+		header Cache-Control "no-store"
+		respond <<HTML
+			<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Acesso restrito · Homologação</title></head>
+			<body style="font-family:-apple-system,system-ui,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1rem;line-height:1.5;color:#1d2b2a">
+			<h1 style="font-size:1.3rem">Homologação do Cenário Gestão — acesso restrito</h1>
+			<p>Esta primeira janela pede o <strong>usuário e a senha do proxy de homologação</strong>. Não use aqui o e-mail nem a senha do gestor: eles são pedidos depois, na tela de entrada do sistema.</p>
+			<p>O usuário diferencia maiúsculas de minúsculas e não tem acento.</p>
+			<p><a href="/">Tentar de novo</a></p>
+			</body></html>
+			HTML 401
 	}
 
 	log {
