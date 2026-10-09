@@ -6,6 +6,8 @@ import {
   localParts,
   mondayOf,
   PLAN_MODE_LABEL,
+  STEP_CLASS_ROLE,
+  classifyStep,
   publishPlanSchema,
   taskCode,
   templateSchema,
@@ -27,6 +29,7 @@ import { loadUserPermissions } from '../../core/permissions';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { now as clockNow } from '../../core/clock';
+import { distributeServiceOrder } from './distribution';
 import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
 import { notify, taskNotice } from '../notifications/notify';
@@ -499,6 +502,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         optional: s.optional,
         dependsOn: s.dependsOn,
         completionRequirement: s.completionRequirement,
+        stepClass: s.stepClass,
       })),
   });
 
@@ -542,8 +546,18 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         ).id;
       }
       for (const [i, s] of input.steps.entries()) {
+        // Evolução Fase 3: classe explícita ou derivada (atividade + papel concordantes); a
+        // tapeçaria é sempre do responsável principal (titular da peça).
+        const stepClass =
+          s.stepClass === undefined ? classifyStep(s.activity, s.role) : s.stepClass;
         await tx.productionTemplateStep.create({
-          data: { ...s, templateId: templateId!, position: i + 1 },
+          data: {
+            ...s,
+            stepClass,
+            role: stepClass ? STEP_CLASS_ROLE[stepClass] : s.role,
+            templateId: templateId!,
+            position: i + 1,
+          },
         });
       }
       await audit(tx, actor, {
@@ -738,7 +752,11 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           const lead = await tx.employee.findUnique({ where: { id: so.technicalLeadId } });
           principal = lead?.userId ?? null;
         }
-        await assertPrincipal(tx, principal, hasSofa);
+        // Fila semanal (Fase 3): titular por peça; sem titular = pendência visível, não bloqueio.
+        if (plan.mode !== 'FILA_SEMANAL') await assertPrincipal(tx, principal, hasSofa);
+        else if (principal) await assertWorker(tx, principal, 'Tapeceiro principal');
+        if (plan.mode !== 'FILA_SEMANAL' && input.pieces.length)
+          throw Errors.business('Titular por peça vale para planejamentos em fila semanal.');
         const priority = input.priority ?? so.priority;
         await tx.productionPlanItem.create({
           data: { planId: id, serviceOrderId: so.id, principalUserId: principal, priority },
@@ -749,9 +767,22 @@ export async function productionPlanRoutes(app: FastifyInstance) {
             'No planejamento em fila semanal as tarefas não têm data nem horário.',
           );
         const scheduledAt = input.date ? zonedDateTime(input.date, workdayStart, timezone) : null;
-        const created = input.generate
-          ? await generateTasks(tx, id, so, principal, priority, scheduledAt)
-          : [];
+        const created =
+          plan.mode === 'FILA_SEMANAL'
+            ? (
+                await distributeServiceOrder(tx, actor, {
+                  planId: id,
+                  serviceOrderId: so.id,
+                  priority,
+                  proposedUpholsterer: principal,
+                  pieces: input.pieces,
+                  reason: input.reason,
+                  generate: input.generate,
+                })
+              ).created
+            : input.generate
+              ? await generateTasks(tx, id, so, principal, priority, scheduledAt)
+              : [];
         await audit(tx, actor, {
           action: 'production.plan_item_added',
           entityType: 'production_plan',
@@ -817,11 +848,17 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         if (!item || item.planId !== id) throw Errors.notFound('OS do planejamento');
         const principal =
           input.principalUserId === undefined ? item.principalUserId : input.principalUserId;
-        await assertPrincipal(
-          tx,
-          principal,
-          item.serviceOrder.items.some((i) => i.pieceType === 'SOFA'),
-        );
+        const planRow = await tx.productionPlan.findUniqueOrThrow({ where: { id } });
+        if (planRow.mode === 'FILA_SEMANAL' && principal !== item.principalUserId)
+          throw Errors.business(
+            'No planejamento em fila o titular é definido por peça: use "Titular da peça" (troca exige motivo).',
+          );
+        if (planRow.mode !== 'FILA_SEMANAL')
+          await assertPrincipal(
+            tx,
+            principal,
+            item.serviceOrder.items.some((i) => i.pieceType === 'SOFA'),
+          );
         await tx.productionPlanItem.update({
           where: { id: itemId },
           data: { principalUserId: principal, priority: input.priority ?? item.priority },
@@ -839,12 +876,17 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           await tx.productionTask.update({
             where: { id: t.id },
             data: {
-              assigneeUserId: principal,
+              // Fila: só a prioridade acompanha; o responsável segue o titular de cada peça.
+              ...(planRow.mode === 'FILA_SEMANAL' ? {} : { assigneeUserId: principal }),
               ...(input.priority ? { priority: input.priority } : {}),
               version: { increment: 1 },
             },
           });
-          if (t.status !== 'RASCUNHO' && t.assigneeUserId !== principal) {
+          if (
+            planRow.mode !== 'FILA_SEMANAL' &&
+            t.status !== 'RASCUNHO' &&
+            t.assigneeUserId !== principal
+          ) {
             await notify(
               tx,
               actor,

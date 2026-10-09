@@ -1,6 +1,8 @@
 import {
   EVENT_TYPES,
+  ACTIVITY_STEP_CLASS,
   PRINCIPAL_ACTIVITIES,
+  STEP_CLASS_ROLE,
   PAUSE_REASON_LABEL,
   PRIORITY_LABEL,
   PRODUCTION_ACTIVITY_LABEL,
@@ -58,6 +60,7 @@ import { announceAssignments, assertWorker, reviseIfPublished } from './plans';
 import { cancelHelpForClosedTask, processHelpQueue } from '../help/queue';
 import { supportCancelled, supportCompleted, supportStarted } from '../help/support';
 import { suggestAlternative } from '../help/reschedule';
+import { assertUpholstererRule } from './distribution';
 import {
   actionCancelled,
   actionCompleted,
@@ -262,6 +265,13 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         if (input.assigneeUserId) await assertWorker(tx, input.assigneeUserId);
         if (plan.mode === 'FILA_SEMANAL') rejectTimeInQueue(input);
         const piece = item.serviceOrder.items.find((i) => i.id === input.serviceOrderItemId);
+        // Evolução Fase 3 (fila): etapa avulsa também é classificada; tapeçaria de peça com
+        // titular vai ao titular (outra pessoa é recusada).
+        const stepClass =
+          plan.mode === 'FILA_SEMANAL' ? (ACTIVITY_STEP_CLASS[input.activity] ?? null) : null;
+        const assigneeUserId =
+          input.assigneeUserId ??
+          (stepClass === 'TAPECARIA' && piece?.upholstererUserId ? piece.upholstererUserId : null);
         const data = {
           planId,
           serviceOrderId: input.serviceOrderId,
@@ -270,8 +280,9 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           title:
             input.title ??
             `${PRODUCTION_ACTIVITY_LABEL[input.activity]}${piece ? ` — ${formatServiceOrderItemCode(item.serviceOrder.number, piece.position)}` : ''}`,
-          role: input.role,
-          assigneeUserId: input.assigneeUserId ?? null,
+          role: stepClass ? STEP_CLASS_ROLE[stepClass] : input.role,
+          assigneeUserId,
+          stepClass,
           priority: input.priority,
           sequence: (piece?.position ?? 0) * 100 + 50,
           scheduledAt: await scheduledFrom(tx, input.date, input.time, null),
@@ -281,6 +292,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           status: plan.status === 'PUBLICADO' ? ('BLOQUEADA' as const) : ('RASCUNHO' as const),
         };
         await assertPrincipalRule(tx, data);
+        await assertUpholstererRule(tx, data);
         const t = await tx.productionTask.create({ data });
         await setDependencies(tx, t, input.dependsOn);
         if (plan.status === 'PUBLICADO') {
@@ -348,6 +360,11 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         version: { increment: 1 },
       };
       await assertPrincipalRule(tx, {
+        ...t,
+        assigneeUserId:
+          input.assigneeUserId !== undefined ? input.assigneeUserId : t.assigneeUserId,
+      });
+      await assertUpholstererRule(tx, {
         ...t,
         assigneeUserId:
           input.assigneeUserId !== undefined ? input.assigneeUserId : t.assigneeUserId,

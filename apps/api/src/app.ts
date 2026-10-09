@@ -27,6 +27,7 @@ import { releaseDueTasks } from './modules/production/common';
 import { productionPlanRoutes } from './modules/production/plans';
 import { productionTaskRoutes } from './modules/production/tasks';
 import { productionQueueRoutes } from './modules/production/queue';
+import { productionDistributionRoutes } from './modules/production/distribution';
 import { notificationRoutes } from './modules/notifications/routes';
 import { detectAbsences } from './modules/attendance/absence';
 import { attendanceRoutes } from './modules/attendance/routes';
@@ -189,6 +190,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(productionPlanRoutes);
   await app.register(productionTaskRoutes);
   await app.register(productionQueueRoutes);
+  await app.register(productionDistributionRoutes);
   await app.register(notificationRoutes);
   await app.register(attendanceRoutes);
   await app.register(helpRoutes);
