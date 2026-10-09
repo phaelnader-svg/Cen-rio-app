@@ -111,6 +111,12 @@ model User {
   logisticsReported         LogisticsOccurrence[]    @relation("LogisticsReportedBy")
   returnsResponsible        PieceReturn[]            @relation("ReturnResponsible")
 
+  // Fase 11: financeiro operacional.
+  commercialAdjustments CommercialAdjustment[] @relation("CommercialAdjustmentBy")
+  productionPayables    ProductionPayable[]    @relation("ProductionPayableProfessional")
+  financialAdjustments  FinancialAdjustment[]  @relation("FinancialAdjustmentBy")
+  teamMonthlyCosts      TeamMonthlyCost[]      @relation("TeamMonthlyCostUser")
+
   @@map("users")
 }
 
@@ -326,6 +332,10 @@ model CompanySettings {
   /// Fase 10: inspetor principal da qualidade (vazio = quem tem a competência de inspeção).
   qualityInspectorUserId String? @map("quality_inspector_user_id") @db.Uuid
 
+  // Fase 11: financeiro operacional.
+  /// Alíquota estimada de tributos sobre a receita (pontos-base; 600 = 6%). Vazio = não configurada.
+  taxRateBps Int? @map("tax_rate_bps")
+
   @@map("company_settings")
 }
 
@@ -472,6 +482,9 @@ model Customer {
 
   deliveries Delivery[]
 
+  // Fase 11: financeiro operacional.
+  receivables CustomerReceivable[]
+
   @@index([phone])
   @@index([whatsapp])
   @@index([email])
@@ -563,6 +576,10 @@ model CommercialOrder {
 
   pieceReturns PieceReturn[]
 
+  // Fase 11: financeiro operacional.
+  adjustments CommercialAdjustment[]
+  receivables CustomerReceivable[]
+
   @@index([customerId])
   @@index([status])
   @@index([createdAt(sort: Desc)])
@@ -646,6 +663,9 @@ model PickupRequest {
   logisticsUserId String?               @map("logistics_user_id") @db.Uuid
   logisticsUser   User?                 @relation("PickupLogisticsUser", fields: [logisticsUserId], references: [id], onDelete: SetNull)
   occurrences     LogisticsOccurrence[]
+
+  // Fase 11: financeiro operacional.
+  logisticsCosts LogisticsCost[]
 
   @@index([orderId])
   @@index([status])
@@ -836,6 +856,14 @@ model ServiceOrder {
 
   inspections QualityInspection[]
 
+  // Fase 11: financeiro operacional.
+  /// Receita atribuída à OS pelo gestor (vazio = proporcional às peças do pedido).
+  revenueCents         Int?                      @map("revenue_cents")
+  receivables          CustomerReceivable[]
+  costs                ServiceOrderCost[]
+  productionPayables   ProductionPayable[]
+  logisticsAllocations LogisticsCostAllocation[]
+
   @@index([orderId])
   @@index([customerId])
   @@index([status])
@@ -887,6 +915,9 @@ model ServiceOrderItem {
   locationEvents       ItemLocationEvent[]
   deliveryItems        DeliveryItem[]
   logisticsOccurrences LogisticsOccurrence[]
+
+  // Fase 11: financeiro operacional.
+  productionPayables ProductionPayable[]
 
   @@unique([serviceOrderId, position])
   @@index([orderItemId])
@@ -979,6 +1010,7 @@ enum AttachmentEntity {
   PACKAGING
   DELIVERY
   LOGISTICS_OCCURRENCE
+  FINANCE_PAYABLE
 
   @@map("attachment_entity")
 }
@@ -1243,6 +1275,9 @@ model Supplier {
   updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   purchaseOrders PurchaseOrder[]
+
+  // Fase 11: financeiro operacional.
+  payables AccountPayable[]
 
   @@index([name])
   @@map("suppliers")
@@ -2466,6 +2501,9 @@ model Delivery {
   events      DeliveryEvent[]
   occurrences LogisticsOccurrence[]
 
+  // Fase 11: financeiro operacional.
+  logisticsCosts LogisticsCost[]
+
   @@index([scheduledDate])
   @@index([status])
   @@index([responsibleUserId, status])
@@ -2616,4 +2654,349 @@ model ReceiptCorrection {
 
   @@index([receiptLineId])
   @@map("receipt_corrections")
+}
+
+// ─────────────────────────── Financeiro operacional (Fase 11) ───────────────────────────
+
+/// Ajuste comercial autorizado do valor do pedido (desconto, acréscimo, ajuste) — imutável.
+model CommercialAdjustment {
+  id             String   @id @default(uuid()) @db.Uuid
+  orderId        String   @map("order_id") @db.Uuid
+  /// DESCONTO (negativo), ACRESCIMO (positivo) ou AJUSTE (com sinal).
+  kind           String   @db.VarChar(20)
+  amountCents    Int      @map("amount_cents")
+  reason         String   @db.VarChar(500)
+  authorizedById String   @map("authorized_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  order        CommercialOrder @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  authorizedBy User            @relation("CommercialAdjustmentBy", fields: [authorizedById], references: [id], onDelete: Restrict)
+
+  @@index([orderId, createdAt])
+  @@map("commercial_adjustments")
+}
+
+/// Conta a receber (RC-00001) do cliente, por pedido (e opcionalmente OS).
+model CustomerReceivable {
+  id             String    @id @default(uuid()) @db.Uuid
+  number         Int       @unique @default(autoincrement())
+  customerId     String    @map("customer_id") @db.Uuid
+  orderId        String    @map("order_id") @db.Uuid
+  serviceOrderId String?   @map("service_order_id") @db.Uuid
+  description    String    @db.VarChar(200)
+  amountCents    Int       @map("amount_cents")
+  receivedCents  Int       @default(0) @map("received_cents")
+  dueDate        DateTime  @map("due_date") @db.Date
+  /// PIX, DINHEIRO, CARTAO_CREDITO, CARTAO_DEBITO, BOLETO, TRANSFERENCIA, CHEQUE, OUTRO.
+  expectedMethod String    @map("expected_method") @db.VarChar(20)
+  /// ABERTO, PARCIAL, RECEBIDO, CANCELADO.
+  status         String    @default("ABERTO") @db.VarChar(20)
+  notes          String?   @db.VarChar(1000)
+  cancelReason   String?   @map("cancel_reason") @db.VarChar(500)
+  cancelledAt    DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  version        Int       @default(1)
+  createdById    String?   @map("created_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer     Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  order        CommercialOrder   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  serviceOrder ServiceOrder?     @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  payments     CustomerPayment[]
+
+  @@index([orderId])
+  @@index([status, dueDate])
+  @@map("customer_receivables")
+}
+
+/// Recebimento (parcial ou total) de uma conta a receber — imutável; estorno por lançamento.
+model CustomerPayment {
+  id           String   @id @default(uuid()) @db.Uuid
+  receivableId String   @map("receivable_id") @db.Uuid
+  amountCents  Int      @map("amount_cents")
+  receivedAt   DateTime @map("received_at") @db.Date
+  method       String   @db.VarChar(20)
+  note         String?  @db.VarChar(500)
+  /// Estorno de outro recebimento (valor negativo).
+  reversalOfId String?  @unique @map("reversal_of_id") @db.Uuid
+  createdById  String?  @map("created_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  receivable CustomerReceivable @relation(fields: [receivableId], references: [id], onDelete: Restrict)
+
+  @@index([receivableId])
+  @@index([receivedAt])
+  @@map("customer_payments")
+}
+
+/// Custo de material por OS (razão imutável derivada de compras, saídas de estoque e sobras;
+/// a chave de origem impede duplicar o mesmo fato).
+model ServiceOrderCost {
+  id                 String   @id @default(uuid()) @db.Uuid
+  serviceOrderId     String   @map("service_order_id") @db.Uuid
+  serviceOrderItemId String?  @map("service_order_item_id") @db.Uuid
+  /// MATERIAL, OUTRO_VARIAVEL.
+  category           String   @db.VarChar(20)
+  /// COMPRA_EXCLUSIVA, ESTORNO_COMPRA, SAIDA_ESTOQUE, DEVOLUCAO_ESTOQUE, SOBRA_SAIDA, SOBRA_ENTRADA, AJUSTE_MANUAL.
+  source             String   @db.VarChar(30)
+  sourceKey          String   @unique @map("source_key") @db.VarChar(120)
+  description        String   @db.VarChar(200)
+  quantity           Decimal? @db.Decimal(12, 3)
+  unitCostCents      Int?     @map("unit_cost_cents")
+  amountCents        Int      @map("amount_cents")
+  /// Sem preço conhecido: valor 0 até o gestor ajustar (sinalizado).
+  priced             Boolean  @default(true)
+  occurredAt         DateTime @map("occurred_at") @db.Timestamptz(3)
+  note               String?  @db.VarChar(500)
+  actorId            String?  @map("actor_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  serviceOrder ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+
+  @@index([serviceOrderId, occurredAt])
+  @@map("service_order_costs")
+}
+
+/// Mão de obra por produção (MO-00001): valor combinado com o tapeceiro principal por OS/peça.
+model ProductionPayable {
+  id                 String    @id @default(uuid()) @db.Uuid
+  number             Int       @unique @default(autoincrement())
+  professionalUserId String    @map("professional_user_id") @db.Uuid
+  serviceOrderId     String    @map("service_order_id") @db.Uuid
+  serviceOrderItemId String?   @map("service_order_item_id") @db.Uuid
+  service            String    @db.VarChar(200)
+  agreedCents        Int       @map("agreed_cents")
+  adjustmentsCents   Int       @default(0) @map("adjustments_cents")
+  paidCents          Int       @default(0) @map("paid_cents")
+  /// PRODUCAO_CONCLUIDA, QUALIDADE_APROVADA, ENTREGA_CONCLUIDA.
+  eligibility        String    @default("QUALIDADE_APROVADA") @db.VarChar(30)
+  /// PREVISTO, LIBERADO, PAGO_PARCIAL, PAGO, CANCELADO.
+  status             String    @default("PREVISTO") @db.VarChar(20)
+  eligibleAt         DateTime? @map("eligible_at") @db.Timestamptz(3)
+  notes              String?   @db.VarChar(500)
+  cancelReason       String?   @map("cancel_reason") @db.VarChar(500)
+  version            Int       @default(1)
+  createdById        String?   @map("created_by_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  professional User                  @relation("ProductionPayableProfessional", fields: [professionalUserId], references: [id], onDelete: Restrict)
+  serviceOrder ServiceOrder          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  item         ServiceOrderItem?     @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  adjustments  FinancialAdjustment[]
+  payments     ProfessionalPayment[]
+
+  @@index([professionalUserId, status])
+  @@index([serviceOrderId])
+  @@map("production_payables")
+}
+
+/// Ajuste autorizado (mão de obra ou custo) — imutável, com motivo e autor.
+model FinancialAdjustment {
+  id                  String   @id @default(uuid()) @db.Uuid
+  productionPayableId String?  @map("production_payable_id") @db.Uuid
+  amountCents         Int      @map("amount_cents")
+  reason              String   @db.VarChar(500)
+  authorizedById      String   @map("authorized_by_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  payable      ProductionPayable? @relation(fields: [productionPayableId], references: [id], onDelete: Restrict)
+  authorizedBy User               @relation("FinancialAdjustmentBy", fields: [authorizedById], references: [id], onDelete: Restrict)
+
+  @@index([productionPayableId])
+  @@map("financial_adjustments")
+}
+
+/// Pagamento ao profissional por produção — imutável (registro; nenhuma transferência é feita).
+model ProfessionalPayment {
+  id                  String   @id @default(uuid()) @db.Uuid
+  productionPayableId String   @map("production_payable_id") @db.Uuid
+  amountCents         Int      @map("amount_cents")
+  paidAt              DateTime @map("paid_at") @db.Date
+  method              String   @db.VarChar(20)
+  note                String?  @db.VarChar(500)
+  /// Pagamento antes da elegibilidade: só com autorização explícita (motivo).
+  earlyReason         String?  @map("early_reason") @db.VarChar(500)
+  createdById         String?  @map("created_by_id") @db.Uuid
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  payable ProductionPayable @relation(fields: [productionPayableId], references: [id], onDelete: Restrict)
+
+  @@index([productionPayableId])
+  @@index([paidAt])
+  @@map("professional_payments")
+}
+
+/// Custo mensal de equipe de remuneração fixa (João, Thiago) — não é pagamento por produção.
+model TeamMonthlyCost {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  month       DateTime @db.Date
+  amountCents Int      @map("amount_cents")
+  notes       String?  @db.VarChar(500)
+  version     Int      @default(1)
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation("TeamMonthlyCostUser", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, month])
+  @@map("team_monthly_costs")
+}
+
+/// Custo de logística (LG-00001): uma viagem pode atender várias OS (rateio documentado).
+model LogisticsCost {
+  id           String    @id @default(uuid()) @db.Uuid
+  number       Int       @unique @default(autoincrement())
+  /// RETIRADA, ENTREGA, INSTALACAO, TRANSPORTE_TERCEIRIZADO, DESLOCAMENTO.
+  kind         String    @db.VarChar(30)
+  description  String    @db.VarChar(200)
+  amountCents  Int       @map("amount_cents")
+  date         DateTime  @db.Date
+  deliveryId   String?   @map("delivery_id") @db.Uuid
+  pickupId     String?   @map("pickup_id") @db.Uuid
+  beneficiary  String?   @db.VarChar(160)
+  /// IGUAL, POR_PECA, MANUAL.
+  splitMethod  String    @map("split_method") @db.VarChar(20)
+  splitNote    String?   @map("split_note") @db.VarChar(500)
+  payableId    String?   @unique @map("payable_id") @db.Uuid
+  cancelledAt  DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason String?   @map("cancel_reason") @db.VarChar(500)
+  version      Int       @default(1)
+  createdById  String?   @map("created_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  delivery    Delivery?                 @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  pickup      PickupRequest?            @relation(fields: [pickupId], references: [id], onDelete: Restrict)
+  payable     AccountPayable?           @relation(fields: [payableId], references: [id], onDelete: Restrict)
+  allocations LogisticsCostAllocation[]
+
+  @@index([date])
+  @@map("logistics_costs")
+}
+
+model LogisticsCostAllocation {
+  id                 String  @id @default(uuid()) @db.Uuid
+  logisticsCostId    String  @map("logistics_cost_id") @db.Uuid
+  serviceOrderId     String  @map("service_order_id") @db.Uuid
+  serviceOrderItemId String? @map("service_order_item_id") @db.Uuid
+  amountCents        Int     @map("amount_cents")
+
+  cost         LogisticsCost @relation(fields: [logisticsCostId], references: [id], onDelete: Restrict)
+  serviceOrder ServiceOrder  @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+
+  @@unique([logisticsCostId, serviceOrderId])
+  @@index([serviceOrderId])
+  @@map("logistics_cost_allocations")
+}
+
+/// Modelo de despesa recorrente mensal (aluguel, energia...).
+model RecurringExpense {
+  id          String    @id @default(uuid()) @db.Uuid
+  category    String    @db.VarChar(30)
+  description String    @db.VarChar(200)
+  amountCents Int       @map("amount_cents")
+  dayOfMonth  Int       @map("day_of_month")
+  beneficiary String?   @db.VarChar(160)
+  startMonth  DateTime  @map("start_month") @db.Date
+  endMonth    DateTime? @map("end_month") @db.Date
+  active      Boolean   @default(true)
+  version     Int       @default(1)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  expenses OperationalExpense[]
+
+  @@map("recurring_expenses")
+}
+
+/// Despesa operacional (DP-00001) por competência; gera a conta a pagar correspondente.
+model OperationalExpense {
+  id           String    @id @default(uuid()) @db.Uuid
+  number       Int       @unique @default(autoincrement())
+  category     String    @db.VarChar(30)
+  description  String    @db.VarChar(200)
+  amountCents  Int       @map("amount_cents")
+  /// Mês de competência (primeiro dia).
+  competence   DateTime  @db.Date
+  recurringId  String?   @map("recurring_id") @db.Uuid
+  payableId    String?   @unique @map("payable_id") @db.Uuid
+  cancelledAt  DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason String?   @map("cancel_reason") @db.VarChar(500)
+  version      Int       @default(1)
+  createdById  String?   @map("created_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  recurring RecurringExpense? @relation(fields: [recurringId], references: [id], onDelete: Restrict)
+  payable   AccountPayable?   @relation(fields: [payableId], references: [id], onDelete: Restrict)
+
+  @@unique([recurringId, competence])
+  @@index([competence])
+  @@map("operational_expenses")
+}
+
+/// Conta a pagar (CPG-00001): obrigação com fornecedor ou beneficiário. Registro apenas.
+model AccountPayable {
+  id           String    @id @default(uuid()) @db.Uuid
+  number       Int       @unique @default(autoincrement())
+  beneficiary  String    @db.VarChar(160)
+  supplierId   String?   @map("supplier_id") @db.Uuid
+  category     String    @db.VarChar(30)
+  description  String    @db.VarChar(200)
+  amountCents  Int       @map("amount_cents")
+  paidCents    Int       @default(0) @map("paid_cents")
+  dueDate      DateTime  @map("due_date") @db.Date
+  /// ABERTO, PARCIAL, PAGO, CANCELADO.
+  status       String    @default("ABERTO") @db.VarChar(20)
+  notes        String?   @db.VarChar(1000)
+  cancelReason String?   @map("cancel_reason") @db.VarChar(500)
+  cancelledAt  DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  version      Int       @default(1)
+  createdById  String?   @map("created_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  supplier      Supplier?           @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  payments      PayablePayment[]
+  expense       OperationalExpense?
+  logisticsCost LogisticsCost?
+
+  @@index([status, dueDate])
+  @@map("account_payables")
+}
+
+model PayablePayment {
+  id          String   @id @default(uuid()) @db.Uuid
+  payableId   String   @map("payable_id") @db.Uuid
+  amountCents Int      @map("amount_cents")
+  paidAt      DateTime @map("paid_at") @db.Date
+  method      String   @db.VarChar(20)
+  note        String?  @db.VarChar(500)
+  /// Comprovante opcional (anexo privado FINANCIAL_PAYMENT).
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  payable AccountPayable @relation(fields: [payableId], references: [id], onDelete: Restrict)
+
+  @@index([payableId])
+  @@index([paidAt])
+  @@map("payable_payments")
+}
+
+/// Histórico imutável dos registros financeiros (quem, quando, o quê).
+model FinancialEvent {
+  id         String   @id @default(uuid()) @db.Uuid
+  entityType String   @map("entity_type") @db.VarChar(40)
+  entityId   String   @map("entity_id") @db.Uuid
+  kind       String   @db.VarChar(40)
+  note       String?  @db.VarChar(1000)
+  data       Json?
+  actorId    String?  @map("actor_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([entityType, entityId, createdAt])
+  @@map("financial_events")
 }

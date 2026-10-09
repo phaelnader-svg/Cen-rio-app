@@ -258,6 +258,8 @@ export const stockAdjustSchema = z.object({
     .refine((v) => v !== 0, { message: 'Informe uma quantidade diferente de zero.' })
     .refine((v) => Math.abs(v) <= 1_000_000, { message: 'Quantidade muito grande.' }),
   reason: reason('Motivo do ajuste'),
+  /** Fase 11: entrada que é devolução de material de uma OS (sai do custo dessa OS). */
+  serviceOrderId: idSchema.nullable().optional(),
 });
 
 export const stockIssueSchema = z.object({

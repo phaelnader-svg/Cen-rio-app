@@ -34,3 +34,6 @@ export * from './types-issue';
 export * from './quality-domain';
 export * from './schemas/quality';
 export * from './types-quality';
+export * from './finance-domain';
+export * from './schemas/finance';
+export * from './types-finance';

@@ -97,6 +97,22 @@ describe('Banco de dados e migrations', () => {
       'piece_returns',
       'piece_return_lines',
       'receipt_corrections',
+      // Fase 11
+      'commercial_adjustments',
+      'customer_receivables',
+      'customer_payments',
+      'service_order_costs',
+      'production_payables',
+      'financial_adjustments',
+      'professional_payments',
+      'team_monthly_costs',
+      'logistics_costs',
+      'logistics_cost_allocations',
+      'recurring_expenses',
+      'operational_expenses',
+      'account_payables',
+      'payable_payments',
+      'financial_events',
     ]) {
       expect(names).toContain(t);
     }

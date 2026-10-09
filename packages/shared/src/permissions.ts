@@ -23,6 +23,7 @@ export const PERMISSION_GROUPS = {
   producao: 'Produção',
   presenca: 'Presença operacional',
   qualidade: 'Qualidade e expedição',
+  financeiro: 'Financeiro operacional',
   sistema: 'Sistema',
 } as const;
 
@@ -323,6 +324,33 @@ export const PERMISSIONS = {
     description:
       'Confirmar ausências, registrar folgas, férias, ausências justificadas, atestados informados, trabalho externo e corrigir registros (com justificativa e histórico).',
     critical: true,
+  },
+  'financeiro.ver': {
+    group: 'financeiro',
+    label: 'Ver financeiro completo',
+    description:
+      'Consultar receitas, recebimentos, contas a pagar, custos por OS, margens, despesas, painel financeiro, indicadores e relatórios (gestor).',
+    critical: true,
+  },
+  'financeiro.gerenciar': {
+    group: 'financeiro',
+    label: 'Registrar recebimentos, pagamentos e despesas',
+    description:
+      'Criar contas a receber e a pagar, registrar recebimentos e pagamentos (sem integração bancária), lançar despesas, custos logísticos, custos da equipe e valores de produção (gestor).',
+    critical: true,
+  },
+  'financeiro.ajustes': {
+    group: 'financeiro',
+    label: 'Ajustes comerciais e de custos',
+    description:
+      'Conceder descontos, acréscimos e ajustes ao valor da OS, ajustar valores de produção e corrigir custos, sempre com motivo e histórico (gestor).',
+    critical: true,
+  },
+  'financeiro.producao_propria': {
+    group: 'financeiro',
+    label: 'Ver os próprios valores de produção',
+    description:
+      'O tapeceiro vê apenas os próprios valores de produção e pagamentos, quando o gestor autorizar. Nunca vê valores de outras pessoas nem dos clientes.',
   },
   'auditoria.ver': {
     group: 'sistema',

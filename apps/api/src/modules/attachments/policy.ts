@@ -14,6 +14,8 @@ export const VIEW_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   PACKAGING: ['qualidade.gerenciar', 'entregas.ver', 'entregas.gerenciar'],
   DELIVERY: ['entregas.ver', 'entregas.gerenciar'],
   LOGISTICS_OCCURRENCE: ['entregas.ver', 'entregas.gerenciar'],
+  // Fase 11: comprovantes de pagamento — só o financeiro.
+  FINANCE_PAYABLE: ['financeiro.ver'],
 };
 
 /** Quem pode ENVIAR/REMOVER fotos de cada tipo de registro. */
@@ -29,6 +31,7 @@ export const MANAGE_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   PACKAGING: ['qualidade.gerenciar'],
   DELIVERY: ['entregas.gerenciar'],
   LOGISTICS_OCCURRENCE: ['entregas.gerenciar'],
+  FINANCE_PAYABLE: ['financeiro.gerenciar'],
 };
 
 export function allowed(perms: ReadonlySet<Permission>, list: Permission[]): boolean {
@@ -63,6 +66,8 @@ export async function entityExists(
       return (await db.delivery.count({ where: { id } })) > 0;
     case 'LOGISTICS_OCCURRENCE':
       return (await db.logisticsOccurrence.count({ where: { id } })) > 0;
+    case 'FINANCE_PAYABLE':
+      return (await db.accountPayable.count({ where: { id } })) > 0;
   }
 }
 

@@ -191,6 +191,7 @@ export const ATTACHMENT_ENTITIES = [
   'PACKAGING',
   'DELIVERY',
   'LOGISTICS_OCCURRENCE',
+  'FINANCE_PAYABLE',
 ] as const;
 export type AttachmentEntity = (typeof ATTACHMENT_ENTITIES)[number];
 

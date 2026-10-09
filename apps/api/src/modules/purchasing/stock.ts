@@ -165,10 +165,34 @@ export async function stockRoutes(app: FastifyInstance) {
               : 'O ajuste deixaria o estoque abaixo do que está reservado para OS.',
           );
         }
+        if (input.serviceOrderId) {
+          // Devolução ao estoque: só entrada e nunca mais do que saiu para essa OS.
+          if (input.quantity < 0)
+            throw Errors.business('Devolução de material da OS é sempre uma entrada.');
+          if (!(await tx.serviceOrder.count({ where: { id: input.serviceOrderId } })))
+            throw Errors.notFound('Ordem de serviço');
+          const moved = await tx.stockMovement.findMany({
+            where: {
+              stockItemId: id,
+              serviceOrderId: input.serviceOrderId,
+              type: { in: ['SAIDA_OS', 'AJUSTE_ENTRADA'] },
+            },
+          });
+          const net = moved.reduce(
+            (a, m) =>
+              a + (m.type === 'SAIDA_OS' ? Math.abs(num(m.quantity)) : -Math.abs(num(m.quantity))),
+            0,
+          );
+          if (input.quantity > net + EPS)
+            throw Errors.business(
+              `A devolução passa do que saiu do estoque para esta OS (${Math.max(0, net)}).`,
+            );
+        }
         await changeStock(tx, actor, stock, {
           onHand: input.quantity,
           movement: {
             type: input.quantity > 0 ? 'AJUSTE_ENTRADA' : 'AJUSTE_SAIDA',
+            serviceOrderId: input.serviceOrderId ?? null,
             reason: input.reason,
           },
         });

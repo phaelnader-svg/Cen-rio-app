@@ -32,6 +32,7 @@ import { attendanceRoutes } from './modules/attendance/routes';
 import { helpRoutes } from './modules/help/routes';
 import { issueRoutes } from './modules/issues/routes';
 import { qualityRoutes } from './modules/quality/routes';
+import { financeRoutes } from './modules/finance/routes';
 import { processIssueRisks } from './modules/issues/service';
 import { processHelpQueue } from './modules/help/queue';
 import { testClockRoutes } from './modules/testing/routes';
@@ -191,6 +192,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(helpRoutes);
   await app.register(issueRoutes);
   await app.register(qualityRoutes);
+  await app.register(financeRoutes);
   // Relógio de teste: só existe com ENABLE_TEST_CLOCK (validado para APP_ENV=test).
   if (env.ENABLE_TEST_CLOCK && env.APP_ENV === 'test') await app.register(testClockRoutes);
 

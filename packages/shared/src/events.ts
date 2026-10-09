@@ -120,6 +120,13 @@ export const EVENT_TYPES = {
   LOGISTICS_OCCURRENCE_UPDATED: 'logistics.occurrence_updated',
   PIECE_RETURN_UPDATED: 'return.updated',
   RECEIPT_CORRECTED: 'receipt.corrected',
+  // Fase 11 — financeiro operacional (sem valores no payload)
+  FINANCE_RECEIVABLE_CREATED: 'finance.receivable_created',
+  FINANCE_PAYMENT_RECORDED: 'finance.payment_recorded',
+  FINANCE_PAYABLE_CREATED: 'finance.payable_created',
+  FINANCE_PAYABLE_PAID: 'finance.payable_paid',
+  FINANCE_EXPENSE_CREATED: 'finance.expense_created',
+  FINANCE_COST_UPDATED: 'finance.cost_updated',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

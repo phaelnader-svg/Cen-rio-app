@@ -55,7 +55,13 @@ counts() {
     UNION ALL SELECT 'deliveries', count(*) FROM deliveries
     UNION ALL SELECT 'delivery_items', count(*) FROM delivery_items
     UNION ALL SELECT 'delivery_events', count(*) FROM delivery_events
-    UNION ALL SELECT 'logistics_occurrences', count(*) FROM logistics_occurrences) x"
+    UNION ALL SELECT 'logistics_occurrences', count(*) FROM logistics_occurrences
+    UNION ALL SELECT 'customer_receivables', count(*) FROM customer_receivables
+    UNION ALL SELECT 'customer_payments', count(*) FROM customer_payments
+    UNION ALL SELECT 'service_order_costs', count(*) FROM service_order_costs
+    UNION ALL SELECT 'account_payables', count(*) FROM account_payables
+    UNION ALL SELECT 'operational_expenses', count(*) FROM operational_expenses
+    UNION ALL SELECT 'financial_events', count(*) FROM financial_events) x"
 }
 
 # Garante dados de referência na origem (seed idempotente + um registro de auditoria).
@@ -232,6 +238,35 @@ INSERT INTO logistics_occurrences (id, kind, delivery_id, description, updated_a
 SELECT gen_random_uuid(), 'ENDERECO_INCORRETO', de.delivery_id, 'Número errado (backup)', now() FROM de;
 SQL
 
+# Dados fictícios da Fase 11 (cobrança → recebimento, custo da OS, despesa → conta a pagar).
+psql "$SOURCE" -q -v ON_ERROR_STOP=1 > /dev/null <<'SQL'
+WITH so AS (
+  SELECT s.id, s.order_id, s.customer_id FROM service_orders s
+  JOIN commercial_orders o ON o.id = s.order_id
+  WHERE o.contracted_service = 'Teste de backup' ORDER BY s.created_at DESC LIMIT 1
+), rc AS (
+  INSERT INTO customer_receivables (id, customer_id, order_id, description, amount_cents, received_cents, due_date, expected_method, status, updated_at)
+  SELECT gen_random_uuid(), so.customer_id, so.order_id, 'Entrada (backup)', 50000, 20000, current_date, 'PIX', 'PARCIAL', now() FROM so
+  RETURNING id
+), cp AS (
+  INSERT INTO customer_payments (id, receivable_id, amount_cents, received_at, method)
+  SELECT gen_random_uuid(), rc.id, 20000, current_date, 'PIX' FROM rc RETURNING receivable_id
+), fe AS (
+  INSERT INTO financial_events (id, entity_type, entity_id, kind, note)
+  SELECT gen_random_uuid(), 'customer_receivable', cp.receivable_id, 'RECEBIMENTO_PARCIAL', 'Backup' FROM cp RETURNING id
+), sc AS (
+  INSERT INTO service_order_costs (id, service_order_id, category, source, source_key, description, quantity, unit_cost_cents, amount_cents, occurred_at)
+  SELECT gen_random_uuid(), so.id, 'MATERIAL', 'AJUSTE_MANUAL', 'backup:' || gen_random_uuid(), 'Linho (backup)', 2.5, 4500, 11250, now() FROM so, fe
+  RETURNING id
+), ap AS (
+  INSERT INTO account_payables (id, beneficiary, category, description, amount_cents, due_date, updated_at)
+  SELECT gen_random_uuid(), 'Distribuidora Exemplo', 'ENERGIA', 'Energia (backup)', 15000, current_date, now() FROM sc
+  RETURNING id
+)
+INSERT INTO operational_expenses (id, category, description, amount_cents, competence, payable_id, updated_at)
+SELECT gen_random_uuid(), 'ENERGIA', 'Energia (backup)', 15000, date_trunc('month', current_date)::date, ap.id, now() FROM ap;
+SQL
+
 DATABASE_URL="$SOURCE" STORAGE_DIR="$WORK/none" BACKUP_RETENTION_DAYS=0 bash scripts/backup.sh "$WORK/out" > /dev/null
 DIR="$(ls -d "$WORK"/out/cenario-*)"
 psql "$BASE/postgres" -qc "DROP DATABASE IF EXISTS $RESTORE_DB" > /dev/null
@@ -298,6 +333,23 @@ if psql "$RESTORE_URL" -qc "DELETE FROM measurement_revisions" > /dev/null 2>&1;
 fi
 [[ "$(psql "$RESTORE_URL" -At -c "SELECT quantity FROM material_request_items WHERE description = 'Linho fictício' LIMIT 1")" == "12.500" ]] \
   || { echo "✖ Quantidade decimal não preservada" >&2; exit 1; }
+if psql "$RESTORE_URL" -qc "DELETE FROM financial_events" > /dev/null 2>&1; then
+  echo "✖ Trigger de imutabilidade do histórico financeiro ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "UPDATE customer_payments SET amount_cents = 1" > /dev/null 2>&1; then
+  echo "✖ Trigger de imutabilidade dos recebimentos ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "DELETE FROM customer_receivables" > /dev/null 2>&1; then
+  echo "✖ Proteção contra exclusão de contas a receber ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "UPDATE customer_receivables SET received_cents = amount_cents + 1" > /dev/null 2>&1; then
+  echo "✖ Restrição de recebido ≤ valor ausente no banco restaurado" >&2; exit 1
+fi
+if psql "$RESTORE_URL" -qc "DELETE FROM service_order_costs" > /dev/null 2>&1; then
+  echo "✖ Trigger de imutabilidade dos custos da OS ausente no banco restaurado" >&2; exit 1
+fi
+[[ "$(psql "$RESTORE_URL" -At -c "SELECT amount_cents FROM service_order_costs WHERE description = 'Linho (backup)' LIMIT 1")" == "11250" ]] \
+  || { echo "✖ Custo da OS não preservado" >&2; exit 1; }
 if psql "$RESTORE_URL" -qc "DELETE FROM audit_logs" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade ausente no banco restaurado" >&2; exit 1
 fi
