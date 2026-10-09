@@ -1687,10 +1687,21 @@ model ProductionTemplateStep {
 }
 
 /// Planejamento semanal de produção (um por semana; segunda-feira como referência).
+/// Evolução Fase 2: LEGADO = programação por horário (planos antigos, intocados);
+/// FILA_SEMANAL = fila contínua por funcionário, sem horário como pré-condição.
+enum PlanMode {
+  LEGADO
+  FILA_SEMANAL
+
+  @@map("plan_mode")
+}
+
 model ProductionPlan {
   id            String     @id @default(uuid()) @db.Uuid
   weekStart     DateTime   @unique @map("week_start") @db.Date
   status        PlanStatus @default(RASCUNHO)
+  /// Imutável depois de criado (trigger). Planos existentes ficam LEGADO.
+  mode          PlanMode   @default(LEGADO)
   /// Número da última revisão publicada (0 = nunca publicado).
   revision      Int        @default(0)
   notes         String?    @db.VarChar(1000)
@@ -1701,11 +1712,12 @@ model ProductionPlan {
   createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  createdBy   User?                    @relation("PlanCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  publishedBy User?                    @relation("PlanPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
-  items       ProductionPlanItem[]
-  tasks       ProductionTask[]
-  revisions   ProductionPlanRevision[]
+  createdBy    User?                    @relation("PlanCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  publishedBy  User?                    @relation("PlanPublishedBy", fields: [publishedById], references: [id], onDelete: SetNull)
+  items        ProductionPlanItem[]
+  tasks        ProductionTask[]
+  revisions    ProductionPlanRevision[]
+  carriedTasks ProductionTask[]         @relation("TaskCarriedFrom")
 
   @@map("production_plans")
 }
@@ -1789,11 +1801,20 @@ model ProductionTask {
   issueId               String?               @map("issue_id") @db.Uuid
   /// Fase 10: correção ou embalagem ligada a uma inspeção de qualidade.
   inspectionId          String?               @map("inspection_id") @db.Uuid
+  /// Evolução Fase 2 (modo fila): posição definida pelo gestor dentro da faixa de prioridade
+  /// (nula = ordem natural por prioridade, sequência e número).
+  queuePosition         Int?                  @map("queue_position")
+  /// Semana de origem quando a pendência foi transferida pelo gestor.
+  carriedFromPlanId     String?               @map("carried_from_plan_id") @db.Uuid
+  /// Calculado no banco (trigger): tarefa de plano em fila que não é apoio. No máximo uma
+  /// delas EM_EXECUCAO por responsável (índice único parcial).
+  queueExclusive        Boolean               @default(false) @map("queue_exclusive")
   version               Int                   @default(1)
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   plan              ProductionPlan?          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  carriedFromPlan   ProductionPlan?          @relation("TaskCarriedFrom", fields: [carriedFromPlanId], references: [id], onDelete: Restrict)
   serviceOrder      ServiceOrder             @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
   serviceOrderItem  ServiceOrderItem?        @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
   assignee          User?                    @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: Restrict)
