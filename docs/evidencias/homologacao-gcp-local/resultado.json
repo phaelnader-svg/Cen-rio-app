@@ -1,0 +1,70 @@
+{
+  "executadoEm": "2026-10-09T05:51:26.985Z",
+  "web": "https://localhost",
+  "results": [
+    {
+      "etapa": "Proxy: sem credencial 401 (nada exposto, inclusive /api e o WebSocket); senha errada 401; senha certa grava cookie Secure/HttpOnly; cookie falso 401",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Só com o cookie de acesso: painel, login e WebSocket wss:// /api/realtime conectado",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "API: health/ready; anônimo 401; origem estranha 403; senha errada 401; CSP e X-Frame",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Login do gestor no painel e tempo real conectado",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Expediente de homologação configurado (00:00–23:59, todos os dias)",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Cliente, pedido, recebimento e OS fictícios criados pela API",
+      "resultado": 1
+    },
+    {
+      "etapa": "Programação semanal com 4 tarefas publicada",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "PIN, cadastro, vinculação e entrada dos 4 tablets (Ricardo, Márcio, João, Thiago)",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Chegada e início simultâneo nos 4 tablets; quadro do painel atualizado",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Tablets sem valores financeiros na tela e 403 nas rotas financeiras",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Queda e reconexão do Márcio: prioridade recuperada sem recarregar, sem duplicidade",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Conclusões de João e Ricardo; inspeção do sofá chega ao Thiago em tempo real",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Inspeção aprovada pelo Thiago (tablet) e visível no painel",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Celular do André (390 px): entrada por PIN, sem pedidos (403) e sem valores",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Cobrança registrada e financeiro do painel aberto",
+      "resultado": "OK"
+    },
+    {
+      "etapa": "Telas do painel: 48 visitas (desktop e celular), sem erro, título ou rolagem",
+      "resultado": "OK"
+    }
+  ]
+}

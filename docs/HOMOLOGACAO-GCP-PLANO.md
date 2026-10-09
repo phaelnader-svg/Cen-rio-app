@@ -1,5 +1,9 @@
 # Homologação no Google Cloud — plano técnico (aguardando autorização)
 
+> **Atualização:** decisões tomadas (e2-small em us-east1, autenticação adicional no proxy) e
+> preparação concluída em [`HOMOLOGACAO-GCP-PREPARACAO.md`](HOMOLOGACAO-GCP-PREPARACAO.md), que
+> prevalece sobre este plano nos comandos, segredos e custos.
+
 > **Nada foi criado no Google Cloud.** Nenhum serviço foi habilitado, nenhum deploy foi feito,
 > nenhum DNS foi alterado e nenhuma migration rodou fora do ambiente local. Este documento é o
 > plano para sua decisão. Base: commit `9082d5d` da branch `claude/cenario-gestao-fase-1-zf3bj2`.

@@ -10,6 +10,11 @@ Izaías) **antes** de qualquer uso real.
 > `FASE-12-RELATORIO.md` §17). Subir o ambiente depende da sua autorização, de uma VM e de
 > um domínio de teste. Use **somente dados fictícios**.
 
+> **Google Cloud:** a configuração escolhida (VM e2-small em us-east1, autenticação adicional no
+> proxy, segredos no Secret Manager, scripts `infra/homolog/gcp/`) está em
+> [`HOMOLOGACAO-GCP-PREPARACAO.md`](HOMOLOGACAO-GCP-PREPARACAO.md), que prevalece sobre os
+> comandos genéricos abaixo.
+
 ## 1. O que compõe o ambiente
 
 | Peça            | Como                                                       | Arquivo                                    |

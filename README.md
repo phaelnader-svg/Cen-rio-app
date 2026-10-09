@@ -14,24 +14,25 @@ interface de produção para os tablets da oficina, sincronizados em tempo real.
 
 ## Documentação
 
-| Documento                                              | Conteúdo                                                      |
-| ------------------------------------------------------ | ------------------------------------------------------------- |
-| [docs/ARQUITETURA.md](docs/ARQUITETURA.md)             | Arquitetura, decisões técnicas, módulos, eventos e tempo real |
-| [docs/SEGURANCA.md](docs/SEGURANCA.md)                 | Autenticação, sessões, permissões, proteções e riscos aceitos |
-| [docs/OPERACAO.md](docs/OPERACAO.md)                   | Ambientes, variáveis, deploy, backup e restauração            |
-| [docs/HOMOLOGACAO.md](docs/HOMOLOGACAO.md)             | Ambiente de testes, contas, tablets, iPhone e roteiro         |
-| [docs/FASE-1-RELATORIO.md](docs/FASE-1-RELATORIO.md)   | Entregáveis da Fase 1, APIs, testes executados e pendências   |
-| [docs/FASE-2-RELATORIO.md](docs/FASE-2-RELATORIO.md)   | Entregáveis da Fase 2, APIs, testes executados e pendências   |
-| [docs/FASE-3-RELATORIO.md](docs/FASE-3-RELATORIO.md)   | Entregáveis da Fase 3, APIs, testes executados e pendências   |
-| [docs/FASE-4-RELATORIO.md](docs/FASE-4-RELATORIO.md)   | Entregáveis da Fase 4, APIs, testes executados e pendências   |
-| [docs/FASE-5-RELATORIO.md](docs/FASE-5-RELATORIO.md)   | Entregáveis da Fase 5, APIs, testes executados e pendências   |
-| [docs/FASE-6-RELATORIO.md](docs/FASE-6-RELATORIO.md)   | Entregáveis da Fase 6, APIs, testes executados e pendências   |
-| [docs/FASE-7-RELATORIO.md](docs/FASE-7-RELATORIO.md)   | Entregáveis da Fase 7, APIs, testes executados e pendências   |
-| [docs/FASE-8-RELATORIO.md](docs/FASE-8-RELATORIO.md)   | Entregáveis da Fase 8, APIs, testes executados e pendências   |
-| [docs/FASE-9-RELATORIO.md](docs/FASE-9-RELATORIO.md)   | Entregáveis da Fase 9, APIs, testes executados e pendências   |
-| [docs/FASE-10-RELATORIO.md](docs/FASE-10-RELATORIO.md) | Entregáveis da Fase 10, APIs, testes executados e pendências  |
-| [docs/FASE-11-RELATORIO.md](docs/FASE-11-RELATORIO.md) | Entregáveis da Fase 11, APIs, testes executados e pendências  |
-| [docs/FASE-12-RELATORIO.md](docs/FASE-12-RELATORIO.md) | Auditoria final, correções, Go/No-Go e homologação            |
+| Documento                                                                | Conteúdo                                                      |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| [docs/ARQUITETURA.md](docs/ARQUITETURA.md)                               | Arquitetura, decisões técnicas, módulos, eventos e tempo real |
+| [docs/SEGURANCA.md](docs/SEGURANCA.md)                                   | Autenticação, sessões, permissões, proteções e riscos aceitos |
+| [docs/OPERACAO.md](docs/OPERACAO.md)                                     | Ambientes, variáveis, deploy, backup e restauração            |
+| [docs/HOMOLOGACAO.md](docs/HOMOLOGACAO.md)                               | Ambiente de testes, contas, tablets, iPhone e roteiro         |
+| [docs/HOMOLOGACAO-GCP-PREPARACAO.md](docs/HOMOLOGACAO-GCP-PREPARACAO.md) | Homologação no Google Cloud: preparação, custos e comandos    |
+| [docs/FASE-1-RELATORIO.md](docs/FASE-1-RELATORIO.md)                     | Entregáveis da Fase 1, APIs, testes executados e pendências   |
+| [docs/FASE-2-RELATORIO.md](docs/FASE-2-RELATORIO.md)                     | Entregáveis da Fase 2, APIs, testes executados e pendências   |
+| [docs/FASE-3-RELATORIO.md](docs/FASE-3-RELATORIO.md)                     | Entregáveis da Fase 3, APIs, testes executados e pendências   |
+| [docs/FASE-4-RELATORIO.md](docs/FASE-4-RELATORIO.md)                     | Entregáveis da Fase 4, APIs, testes executados e pendências   |
+| [docs/FASE-5-RELATORIO.md](docs/FASE-5-RELATORIO.md)                     | Entregáveis da Fase 5, APIs, testes executados e pendências   |
+| [docs/FASE-6-RELATORIO.md](docs/FASE-6-RELATORIO.md)                     | Entregáveis da Fase 6, APIs, testes executados e pendências   |
+| [docs/FASE-7-RELATORIO.md](docs/FASE-7-RELATORIO.md)                     | Entregáveis da Fase 7, APIs, testes executados e pendências   |
+| [docs/FASE-8-RELATORIO.md](docs/FASE-8-RELATORIO.md)                     | Entregáveis da Fase 8, APIs, testes executados e pendências   |
+| [docs/FASE-9-RELATORIO.md](docs/FASE-9-RELATORIO.md)                     | Entregáveis da Fase 9, APIs, testes executados e pendências   |
+| [docs/FASE-10-RELATORIO.md](docs/FASE-10-RELATORIO.md)                   | Entregáveis da Fase 10, APIs, testes executados e pendências  |
+| [docs/FASE-11-RELATORIO.md](docs/FASE-11-RELATORIO.md)                   | Entregáveis da Fase 11, APIs, testes executados e pendências  |
+| [docs/FASE-12-RELATORIO.md](docs/FASE-12-RELATORIO.md)                   | Auditoria final, correções, Go/No-Go e homologação            |
 
 ## Requisitos
 
