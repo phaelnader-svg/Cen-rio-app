@@ -21,6 +21,7 @@ interface de produção para os tablets da oficina, sincronizados em tempo real.
 | [docs/OPERACAO.md](docs/OPERACAO.md)                                     | Ambientes, variáveis, deploy, backup e restauração            |
 | [docs/HOMOLOGACAO.md](docs/HOMOLOGACAO.md)                               | Ambiente de testes, contas, tablets, iPhone e roteiro         |
 | [docs/HOMOLOGACAO-GCP-PREPARACAO.md](docs/HOMOLOGACAO-GCP-PREPARACAO.md) | Homologação no Google Cloud: preparação, custos e comandos    |
+| [docs/HOMOLOGACAO-GCP-ETAPA1.md](docs/HOMOLOGACAO-GCP-ETAPA1.md)         | Etapa 1 no Google Cloud: infraestrutura mínima e verificações |
 | [docs/FASE-1-RELATORIO.md](docs/FASE-1-RELATORIO.md)                     | Entregáveis da Fase 1, APIs, testes executados e pendências   |
 | [docs/FASE-2-RELATORIO.md](docs/FASE-2-RELATORIO.md)                     | Entregáveis da Fase 2, APIs, testes executados e pendências   |
 | [docs/FASE-3-RELATORIO.md](docs/FASE-3-RELATORIO.md)                     | Entregáveis da Fase 3, APIs, testes executados e pendências   |

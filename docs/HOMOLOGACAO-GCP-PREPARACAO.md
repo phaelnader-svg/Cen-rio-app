@@ -149,6 +149,12 @@ Orçamento sugerido: **US$ 30/mês**, alertas em 50%, 90% e 100% (você já tem 
 
 ## 9. Comandos exatos para a implantação futura (NÃO executados)
 
+> **Implantação em etapas:** a Etapa 1 (infraestrutura mínima, sem publicar) é feita por
+> `infra/homolog/gcp/etapa1-infra.sh` — ver [`HOMOLOGACAO-GCP-ETAPA1.md`](HOMOLOGACAO-GCP-ETAPA1.md).
+> Nela o firewall só libera SSH pelo IAP e nega todo o resto (`cenario-homolog-bloqueio`,
+> prioridade 1000); a regra 80/443 dos comandos abaixo entra na Etapa 2 com **prioridade 900**
+> (`--priority=900`), junto com o Artifact Registry e o build.
+
 Pré-requisitos no seu computador: `gcloud` autenticado na sua conta, `git`, `openssl`; clone na
 branch e no commit a implantar, sem mudanças pendentes.
 

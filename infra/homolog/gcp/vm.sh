@@ -52,7 +52,8 @@ gerar_env() {
   pw="$(s homolog-postgres-password)"; tk="$(s homolog-token-hash-secret)"
   adm="$(s homolog-admin-password)"; proxy="$(s homolog-proxy-password)"; gate="$(s homolog-gate-token)"
   # Hash bcrypt da senha do proxy calculado na própria VM (a senha em texto fica só no Secret Manager).
-  hash="$(docker run --rm caddy:2.10-alpine caddy hash-password --plaintext "$proxy")"
+  # Pela entrada padrão: a senha nunca aparece nos argumentos de processos (ps) nem em logs.
+  hash="$(printf '%s\n' "$proxy" | docker run -i --rm caddy:2.10-alpine caddy hash-password)"
   install -d -m 700 "$(dirname "$ENV_FILE")"
   umask 077
   # Aspas simples: o Docker Compose não interpreta "$" dentro delas (o hash bcrypt contém "$").
@@ -109,12 +110,16 @@ saude() {
     [[ "$st" == running* && "$st" != *unhealthy* ]] && ok "contêiner $s: $st" || ruim "contêiner $s: $st"
   done
   local base="https://$HOMOLOG_DOMAIN" res=(--resolve "$HOMOLOG_DOMAIN:443:127.0.0.1")
+  # Cookie de acesso num arquivo temporário (600), não nos argumentos do curl.
+  local hdr; hdr="$(mktemp)"; chmod 600 "$hdr"
+  printf 'Cookie: cenario_homolog=%s\n' "$HOMOLOG_GATE_TOKEN" > "$hdr"
+  trap 'rm -f "$hdr"' RETURN
   [[ -n "${CENARIO_CACERT:-}" ]] && res+=(--cacert "$CENARIO_CACERT")
   r="$(curl -s -o /dev/null -w '%{http_code}' "${res[@]}" "$base/painel" || true)"
   [[ "$r" == 401 ]] && ok "proxy exige autenticação (sem credencial: $r)" || ruim "proxy sem credencial respondeu $r (esperado 401)"
-  r="$(curl -s "${res[@]}" -b "cenario_homolog=$HOMOLOG_GATE_TOKEN" "$base/api/ready" || true)"
+  r="$(curl -s "${res[@]}" -H "@$hdr" "$base/api/ready" || true)"
   [[ "$r" == *ready* ]] && ok "HTTPS + API + banco: $r" || ruim "API não pronta: $r"
-  r="$(curl -s -o /dev/null -w '%{http_code}' "${res[@]}" -b "cenario_homolog=$HOMOLOG_GATE_TOKEN" "$base/entrar" || true)"
+  r="$(curl -s -o /dev/null -w '%{http_code}' "${res[@]}" -H "@$hdr" "$base/entrar" || true)"
   [[ "$r" == 200 ]] && ok "web (tela de entrada): $r" || ruim "web respondeu $r"
   local fim; fim="$(echo | openssl s_client -connect 127.0.0.1:443 -servername "$HOMOLOG_DOMAIN" 2>/dev/null \
     | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2 || true)"
@@ -158,7 +163,7 @@ enviar_backups() {
     grep -qx "$nome" "$STATE_DIR/enviados" && continue
     ( cd "$d" && sha256sum --check --quiet SHA256SUMS ) || { log "✘ $nome com checksum inválido: não enviado"; continue; }
     tar -C "$vol" -cf "$tmp/$nome.tar" "$nome"
-    gcloud storage cp --no-clobber "$tmp/$nome.tar" "$BUCKET/$nome.tar" --quiet
+    gcloud storage cp --if-generation-match=0 "$tmp/$nome.tar" "$BUCKET/$nome.tar" --quiet
     echo "$nome" >> "$STATE_DIR/enviados"
     log "✔ $nome enviado a $BUCKET"
     rm -f "$tmp/$nome.tar"
