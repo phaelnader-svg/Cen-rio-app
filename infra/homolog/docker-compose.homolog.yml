@@ -1,8 +1,26 @@
-# HOMOLOGAÇÃO (testes) — separado da produção. Nada aqui foi publicado.
-# Uso (na raiz do repositório, numa VM com Docker e um domínio de teste apontado para ela):
-#   cp infra/homolog/env.homolog.example infra/homolog/.env.homolog   # preencher
-#   docker compose -f infra/homolog/docker-compose.homolog.yml --env-file infra/homolog/.env.homolog up -d --build
+# HOMOLOGAÇÃO (testes, só dados fictícios) — separada da produção. Nada aqui foi publicado.
+#
+# Local (verificação):  docker compose -f infra/homolog/docker-compose.homolog.yml \
+#                         --env-file <arquivo de variáveis> up -d --build
+# Na VM (Google Cloud): imagens do Artifact Registry (CENARIO_API_IMAGE / CENARIO_WEB_IMAGE) e
+#                       variáveis em /run/cenario/env, geradas a partir do Secret Manager pelo
+#                       script infra/homolog/gcp/vm.sh. Veja docs/HOMOLOGACAO-GCP-PREPARACAO.md.
+#
+# Memória: limites para uma VM e2-small (2 GB + 2 GB de swap), medidos com painel + 4 tablets.
 name: cenario-homolog
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+networks:
+  interna:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -11,6 +29,18 @@ services:
       POSTGRES_USER: cenario
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
       POSTGRES_DB: cenario_homolog
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=384MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=40
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,9 +48,14 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    mem_limit: 448m
+    shm_size: 128m
+    networks: [interna]
+    logging: *logging
     # Sem porta publicada: só a API acessa o banco.
 
   api:
+    image: ${CENARIO_API_IMAGE:-cenario-homolog-api}
     build:
       context: ../..
       dockerfile: infra/homolog/Dockerfile
@@ -32,13 +67,14 @@ services:
     environment:
       APP_ENV: staging
       NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=320
       DATABASE_URL: postgresql://cenario:${POSTGRES_PASSWORD}@postgres:5432/cenario_homolog
       API_HOST: 0.0.0.0
       API_PORT: 4000
       ALLOWED_ORIGINS: https://${HOMOLOG_DOMAIN:?defina HOMOLOG_DOMAIN}
-      TRUST_PROXY: ${TRUST_PROXY:-172.16.0.0/12}
+      TRUST_PROXY: 172.28.0.0/24
       COOKIE_SECURE: 'true'
-      TOKEN_HASH_SECRET: ${TOKEN_HASH_SECRET:?gere com openssl rand -base64 48}
+      TOKEN_HASH_SECRET: ${TOKEN_HASH_SECRET:?defina TOKEN_HASH_SECRET}
       LOG_LEVEL: info
       STORAGE_DIR: /data/storage
       MAX_UPLOAD_MB: 5
@@ -47,8 +83,12 @@ services:
       SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-}
     volumes:
       - storage:/data/storage
+    mem_limit: 512m
+    networks: [interna]
+    logging: *logging
 
   web:
+    image: ${CENARIO_WEB_IMAGE:-cenario-homolog-web}
     build:
       context: ../..
       dockerfile: infra/homolog/Dockerfile
@@ -59,9 +99,13 @@ services:
     depends_on: [api]
     environment:
       NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=256
+    mem_limit: 448m
+    networks: [interna]
+    logging: *logging
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.10-alpine
     restart: unless-stopped
     depends_on: [api, web]
     ports:
@@ -69,18 +113,23 @@ services:
       - '443:443'
     environment:
       HOMOLOG_DOMAIN: ${HOMOLOG_DOMAIN}
+      HOMOLOG_BASIC_USER: ${HOMOLOG_BASIC_USER:?defina HOMOLOG_BASIC_USER}
+      HOMOLOG_BASIC_HASH: ${HOMOLOG_BASIC_HASH:?defina HOMOLOG_BASIC_HASH}
+      HOMOLOG_GATE_TOKEN: ${HOMOLOG_GATE_TOKEN:?defina HOMOLOG_GATE_TOKEN}
     volumes:
       - ./Caddyfile.homolog:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
+    mem_limit: 192m
+    networks: [interna]
+    logging: *logging
 
-  # Backup diário (banco + arquivos), retenção de 14 dias, no volume "backups". Usa a imagem
-  # oficial do PostgreSQL 16 (pg_dump/pg_restore da mesma versão do servidor) e o script do
-  # repositório, somente leitura.
+  # Backup diário (banco + arquivos), retenção de 14 dias no volume "backups". Imagem oficial do
+  # PostgreSQL 16 (pg_dump da mesma versão do servidor) e o script do repositório, somente leitura.
+  # Só depois da API saudável (migrations aplicadas): o primeiro backup já tem o schema.
   backup:
     image: postgres:16
     restart: unless-stopped
     depends_on:
-      # Só depois da API saudável (migrations aplicadas): o primeiro backup já tem o schema.
       api:
         condition: service_healthy
     environment:
@@ -95,6 +144,9 @@ services:
     working_dir: /tmp
     entrypoint:
       ['bash', '-c', 'while true; do bash /scripts/backup.sh /data/backups; sleep 86400; done']
+    mem_limit: 256m
+    networks: [interna]
+    logging: *logging
 
 volumes:
   pgdata:

@@ -37,7 +37,10 @@ base_url() {
 
 load_env() {
   [[ -f "$ENV_FILE" ]] || { echo "Rode primeiro: bash scripts/homolog-local.sh preparar" >&2; exit 2; }
-  set -a; source "$ENV_FILE"; set +a
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
 }
 
 preparar() {

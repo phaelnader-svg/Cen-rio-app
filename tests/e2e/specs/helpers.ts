@@ -1,4 +1,4 @@
-import { expect, type Browser, type Page } from '@playwright/test';
+import { expect, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
 import { E2E } from '../env';
 
 export async function loginAdmin(page: Page) {
@@ -38,8 +38,10 @@ export async function openTablet(
   code: string,
   pin: string,
   device: { width: number; height: number; isMobile?: boolean } = { width: 1280, height: 800 },
+  extra: BrowserContextOptions = {},
 ) {
   const context = await browser.newContext({
+    ...extra,
     viewport: { width: device.width, height: device.height },
     isMobile: device.isMobile ?? false,
     hasTouch: true,

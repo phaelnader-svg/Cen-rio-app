@@ -3,15 +3,14 @@
 #   docker build -f infra/homolog/Dockerfile --target web -t cenario-web:homolog .
 # Não contém segredos: tudo vem do ambiente em tempo de execução (exceto API_INTERNAL_URL,
 # gravado no build do Next.js).
-FROM node:22-bookworm-slim AS base
+#
+# Base completa (não a "slim"): já traz OpenSSL 3 (exigido pelo motor do Prisma) e os
+# certificados de CA, sem precisar de apt-get no build. Versão fixa para builds reproduzíveis.
+FROM node:22.23.3-bookworm AS base
 # COREPACK_HOME compartilhado: o pnpm fica dentro da imagem (sem download ao iniciar).
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true NEXT_TELEMETRY_DISABLED=1 \
   COREPACK_HOME=/corepack COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-# openssl: exigido pelo motor do Prisma. O backup roda na imagem oficial postgres:16
-# (pg_dump da mesma versão do servidor), não nesta.
-RUN corepack enable && apt-get update \
-  && apt-get install -y --no-install-recommends openssl ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+RUN corepack enable
 WORKDIR /app
 
 FROM base AS deps
@@ -33,16 +32,20 @@ RUN pnpm --filter @cenario/db generate \
   && API_INTERNAL_URL=$API_INTERNAL_URL pnpm --filter @cenario/web build
 
 # API: aplica as migrations pendentes (nunca reset) e inicia. Usuário sem privilégios.
+# "exec": o Node vira o processo principal e recebe o SIGTERM (encerramento seguro em até 10 s).
 FROM build AS api
 ENV NODE_ENV=production
 RUN mkdir -p /data/storage && chown -R node:node /data /app/packages/db
 USER node
 EXPOSE 4000
-HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:4000/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["sh", "-c", "pnpm db:migrate && node apps/api/dist/server.js"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD node -e "fetch('http://127.0.0.1:4000/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["sh", "-c", "pnpm db:migrate && exec node apps/api/dist/server.js"]
 
+# Web: Next.js iniciado diretamente pelo Node (sem o processo extra do pnpm).
 FROM build AS web
 ENV NODE_ENV=production
+WORKDIR /app/apps/web
 USER node
 EXPOSE 3000
-CMD ["pnpm", "--filter", "@cenario/web", "start"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD node -e "fetch('http://127.0.0.1:3000/entrar').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "node_modules/next/dist/bin/next", "start", "-H", "0.0.0.0", "-p", "3000"]

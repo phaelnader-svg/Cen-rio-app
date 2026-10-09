@@ -1,6 +1,17 @@
-# Proxy de homologação: HTTPS automático (Let's Encrypt) no domínio de teste.
-# /api/* (incluindo o WebSocket /api/realtime) vai direto à API; o resto ao Next.js.
-{$HOMOLOG_DOMAIN} {
+# Proxy de homologação: HTTPS automático (Let's Encrypt) no domínio de teste e uma camada de
+# autenticação ANTES do sistema (além do login da própria aplicação).
+#
+# - Primeira visita: usuário e senha do proxy (basic auth). Aceitos, o proxy grava o cookie
+#   "cenario_homolog" (30 dias, Secure, HttpOnly). As requisições seguintes — inclusive o
+#   WebSocket /api/realtime, o service worker e o app adicionado à tela inicial — passam pelo
+#   cookie, sem pedir a senha de novo.
+# - Sem senha válida nem cookie: 401, nada do sistema é exibido.
+# - /api/* (inclusive o WebSocket) vai direto à API; o resto ao Next.js.
+#
+# Variáveis (vindas do Secret Manager, nunca do Git): HOMOLOG_DOMAIN, HOMOLOG_BASIC_USER,
+# HOMOLOG_BASIC_HASH (bcrypt, `caddy hash-password`), HOMOLOG_GATE_TOKEN (hexadecimal aleatório).
+
+(cenario_app) {
 	encode zstd gzip
 
 	@api path /api/*
@@ -11,7 +22,9 @@
 	handle {
 		reverse_proxy web:3000
 	}
+}
 
+{$HOMOLOG_DOMAIN} {
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Robots-Tag "noindex, nofollow"
@@ -20,5 +33,26 @@
 
 	request_body {
 		max_size 10MB
+	}
+
+	@liberado header_regexp Cookie "(^|;\s*)cenario_homolog={$HOMOLOG_GATE_TOKEN}(;|$)"
+	handle @liberado {
+		import cenario_app
+	}
+
+	handle {
+		# "route" mantém a ordem: o cookie só é gravado DEPOIS de a senha ser aceita.
+		route {
+			basic_auth {
+				{$HOMOLOG_BASIC_USER} {$HOMOLOG_BASIC_HASH}
+			}
+			header Set-Cookie "cenario_homolog={$HOMOLOG_GATE_TOKEN}; Path=/; Max-Age=2592000; Secure; HttpOnly; SameSite=Lax"
+			import cenario_app
+		}
+	}
+
+	log {
+		output stdout
+		format json
 	}
 }

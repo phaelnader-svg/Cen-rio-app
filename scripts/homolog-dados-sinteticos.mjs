@@ -9,6 +9,9 @@
  *   HOMOLOG_EMAIL=gestor@teste.local HOMOLOG_PASSWORD='…' \
  *   node scripts/homolog-dados-sinteticos.mjs [quantidade=5]
  *
+ * Atrás do proxy com autenticação adicional (homologação no Google Cloud), defina também
+ * HOMOLOG_BASIC_USER e HOMOLOG_BASIC_PASSWORD (usuário e senha do proxy).
+ *
  * Recusa rodar com APP_ENV=production. Cada execução cria registros novos (nomes numerados).
  */
 const base = (process.env.HOMOLOG_URL ?? '').replace(/\/$/, '');
@@ -25,9 +28,13 @@ if (!base || !email || !password) {
   process.exit(1);
 }
 
-let cookie = '';
+const jar = new Map(); // cookies por nome: sessão do sistema e cookie de acesso do proxy
+const proxyAuth = process.env.HOMOLOG_BASIC_USER
+  ? `Basic ${Buffer.from(`${process.env.HOMOLOG_BASIC_USER}:${process.env.HOMOLOG_BASIC_PASSWORD ?? ''}`).toString('base64')}`
+  : null;
 const key = () => crypto.randomUUID().replace(/-/g, '');
 async function call(method, path, body) {
+  const cookie = [...jar].map(([k, v]) => `${k}=${v}`).join('; ');
   const res = await fetch(`${base}${path}`, {
     method,
     headers: {
@@ -35,11 +42,15 @@ async function call(method, path, body) {
       'content-type': 'application/json',
       'idempotency-key': key(),
       ...(cookie ? { cookie } : {}),
+      ...(proxyAuth ? { authorization: proxyAuth } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const set = res.headers.getSetCookie?.() ?? [];
-  if (set.length) cookie = set.map((c) => c.split(';')[0]).join('; ');
+  for (const c of res.headers.getSetCookie?.() ?? []) {
+    const [pair] = c.split(';');
+    const i = pair.indexOf('=');
+    jar.set(pair.slice(0, i).trim(), pair.slice(i + 1));
+  }
   const text = await res.text();
   if (!res.ok) throw new Error(`${method} ${path}: ${res.status} ${text}`);
   return text ? JSON.parse(text) : null;

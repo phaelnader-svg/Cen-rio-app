@@ -1,16 +1,25 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { request as httpsRequest } from 'node:https';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { openTablet, registerDevice, setPin } from '../specs/helpers';
 
 /**
- * Homologação LOCAL contra a instância em execução (scripts/homolog-local.sh). Somente dados
+ * Homologação contra uma instância EM EXECUÇÃO — a local (scripts/homolog-local.sh) ou a pilha
+ * de homologação atrás do Caddy (HTTPS + autenticação adicional no proxy). Somente dados
  * fictícios. Cada execução cria registros novos (nomes com carimbo de data), sem apagar nada.
- * Evidências: docs/evidencias/homologacao-local/.
+ * Evidências: HOMOLOG_EVIDENCE_DIR (padrão docs/evidencias/homologacao-local/).
  */
 const WEB = process.env.HOMOLOG_WEB_URL!;
-const API = `http://127.0.0.1:${process.env.API_PORT}`;
+// Sem porta da API (pilha atrás do proxy): saúde e prontidão consultadas pelo próprio domínio.
+const API = process.env.API_PORT ? `http://127.0.0.1:${process.env.API_PORT}` : WEB;
 const ADMIN = { email: process.env.SEED_ADMIN_EMAIL!, password: process.env.SEED_ADMIN_PASSWORD! };
-const OUT = '../../docs/evidencias/homologacao-local';
+const OUT = `../../${process.env.HOMOLOG_EVIDENCE_DIR ?? 'docs/evidencias/homologacao-local'}`;
+const PROXY = process.env.HOMOLOG_BASIC_USER
+  ? { username: process.env.HOMOLOG_BASIC_USER, password: process.env.HOMOLOG_BASIC_PASSWORD! }
+  : undefined;
+const IGNORE_TLS = process.env.HOMOLOG_IGNORE_HTTPS === '1';
+/** Opções dos contextos extras (tablets e celulares): mesmas credenciais do proxy e HTTPS de teste. */
+const CTX = { httpCredentials: PROXY, ignoreHTTPSErrors: IGNORE_TLS };
 const TZ = 'America/Sao_Paulo';
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
 const mondayOf = (iso: string) => {
@@ -23,6 +32,25 @@ const results: { etapa: string; resultado: string }[] = [];
 const ok = (etapa: string, resultado = 'OK') => results.push({ etapa, resultado });
 const shot = (p: Page, name: string, fullPage = false) =>
   p.screenshot({ path: `${OUT}/${name}.png`, fullPage });
+
+/** Requisição HTTPS "crua" (sem nenhuma credencial herdada da configuração do Playwright). */
+function raw(path: string, headers: Record<string, string> = {}) {
+  return new Promise<{ status: number; headers: Record<string, unknown>; body: string }>(
+    (resolve, reject) => {
+      const req = httpsRequest(
+        `${WEB}${path}`,
+        { headers, rejectUnauthorized: !IGNORE_TLS },
+        (res) => {
+          let body = '';
+          res.on('data', (c: Buffer) => (body += c.toString()));
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    },
+  );
+}
 
 async function call(page: Page, method: string, path: string, data?: unknown, expected = 0) {
   const r = await page.request.fetch(path, {
@@ -71,6 +99,62 @@ test.describe.serial('Homologação local — instância em execução', () => {
       JSON.stringify({ executadoEm: new Date().toISOString(), web: WEB, results }, null, 2),
     ),
   );
+
+  test('0. Proxy: HTTPS, autenticação adicional e WebSocket só com o cookie de acesso', async ({
+    browser,
+  }) => {
+    test.skip(!PROXY, 'Instância sem proxy de autenticação (homologação local direta).');
+    const basic = (u: string, p: string) => `Basic ${Buffer.from(`${u}:${p}`).toString('base64')}`;
+    const semCredencial = await raw('/painel');
+    expect(semCredencial.status).toBe(401);
+    expect(String(semCredencial.headers['www-authenticate'])).toMatch(/^Basic/);
+    expect(semCredencial.body).not.toContain('Cenário');
+    expect((await raw('/api/ready')).status).toBe(401);
+    expect((await raw('/api/realtime')).status).toBe(401);
+    const errada = await raw('/painel', { authorization: basic(PROXY!.username, 'senha-errada') });
+    expect(errada.status).toBe(401);
+    expect(String(errada.headers['set-cookie'] ?? '')).not.toContain('cenario_homolog');
+    const liberada = await raw('/entrar', {
+      authorization: basic(PROXY!.username, PROXY!.password),
+    });
+    expect(liberada.status).toBe(200);
+    const cookie = String(liberada.headers['set-cookie'] ?? '');
+    expect(cookie).toMatch(/cenario_homolog=[0-9a-f]{64}/);
+    expect(cookie).toMatch(/Secure/);
+    expect(cookie).toMatch(/HttpOnly/);
+    const token = /cenario_homolog=([0-9a-f]{64})/.exec(cookie)![1]!;
+    expect((await raw('/api/ready', { cookie: `cenario_homolog=${token}` })).status).toBe(200);
+    expect((await raw('/api/ready', { cookie: `cenario_homolog=${'0'.repeat(64)}` })).status).toBe(
+      401,
+    );
+    ok(
+      'Proxy: sem credencial 401 (nada exposto, inclusive /api e o WebSocket); senha errada 401; senha certa grava cookie Secure/HttpOnly; cookie falso 401',
+    );
+
+    // Só o cookie (como um app adicionado à tela inicial depois da primeira autenticação).
+    const ctx = await browser.newContext({
+      ignoreHTTPSErrors: IGNORE_TLS,
+      httpCredentials: undefined,
+    });
+    await ctx.addCookies([
+      { name: 'cenario_homolog', value: token, url: WEB, secure: true, httpOnly: true },
+    ]);
+    const page = await ctx.newPage();
+    const sockets: string[] = [];
+    const comAutorizacao: string[] = [];
+    page.on('websocket', (ws) => sockets.push(ws.url()));
+    page.on('request', (r) => {
+      void r.allHeaders().then((h) => {
+        if (h.authorization) comAutorizacao.push(r.url());
+      });
+    });
+    await login(page);
+    expect(comAutorizacao, 'nenhuma requisição deve usar a senha do proxy').toEqual([]);
+    expect(sockets.some((u) => u.startsWith('wss://') && u.endsWith('/api/realtime'))).toBe(true);
+    await shot(page, 'proxy-cookie-painel');
+    await ctx.close();
+    ok('Só com o cookie de acesso: painel, login e WebSocket wss:// /api/realtime conectado');
+  });
 
   test('1. API: saúde, prontidão e proteções de acesso', async ({ request }) => {
     expect((await (await request.get(`${API}/api/health`)).json()).status).toBe('ok');
@@ -247,6 +331,7 @@ test.describe.serial('Homologação local — instância em execução', () => {
         code,
         pins[name],
         phone ? { width: 390, height: 844, isMobile: true } : undefined,
+        CTX,
       );
       devices[name] = { page: t.page, close: () => t.context.close() };
     };

@@ -1,0 +1,38 @@
+# Build das imagens de homologação no Cloud Build (disparo MANUAL, sem gatilho automático).
+#   gcloud builds submit --config infra/homolog/gcp/cloudbuild.yaml --region=us-east1 \
+#     --substitutions=_TAG=$(git rev-parse --short HEAD)
+# Máquina padrão (e2-standard-2): dentro da cota gratuita de minutos de build.
+substitutions:
+  _REGION: us-east1
+  _REPO: cenario-homolog
+  _TAG: manual
+steps:
+  - id: api
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - infra/homolog/Dockerfile
+      - --target
+      - api
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${_TAG}
+      - .
+  - id: web
+    name: gcr.io/cloud-builders/docker
+    waitFor: [api]
+    args:
+      - build
+      - -f
+      - infra/homolog/Dockerfile
+      - --target
+      - web
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/web:${_TAG}
+      - .
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${_TAG}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/web:${_TAG}
+timeout: 1800s
+options:
+  logging: CLOUD_LOGGING_ONLY
