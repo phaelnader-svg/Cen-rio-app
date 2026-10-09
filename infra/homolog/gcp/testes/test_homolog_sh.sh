@@ -22,10 +22,18 @@ cp -r "$ORIGEM/infra" "$REPO/"; cp "$ORIGEM/scripts/backup.sh" "$ORIGEM/scripts/
 
 mkdir -p "$TMP/bin"
 printf '#!/usr/bin/env bash\nexec python3 %q "$@"\n' "$AQUI/gcloud_falso.py" > "$TMP/bin/gcloud"
+# curl falso com o comportamento REAL das APIs: o testIamPermissions do projeto nunca devolve as
+# permissões storage.buckets.* (não são do tipo "projeto"); o testPermissions do bucket devolve.
 cat > "$TMP/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 echo "curl $*" >> "$GCLOUD_LOG"
-echo '{"permissions":["compute.instances.get","compute.instances.setMetadata","compute.firewalls.list","compute.disks.get","iap.tunnelInstances.accessViaIAP","storage.buckets.get","storage.buckets.update","storage.buckets.getIamPolicy","storage.buckets.setIamPolicy","secretmanager.secrets.getIamPolicy","secretmanager.secrets.setIamPolicy","resourcemanager.projects.getIamPolicy","iam.serviceAccountKeys.list","compute.resourcePolicies.create","compute.disks.addResourcePolicies"]}'
+case "$*" in
+  *"storage.googleapis.com/storage/v1/b/cenariogestao-homolog-backups/iam/testPermissions?permissions=storage.buckets.get&"*)
+    echo '{"kind":"storage#testIamPermissionsResponse","permissions":["storage.buckets.get","storage.buckets.update","storage.buckets.getIamPolicy","storage.buckets.setIamPolicy"]}' ;;
+  *":testIamPermissions"*)
+    echo '{"permissions":["compute.instances.get","compute.instances.setMetadata","compute.firewalls.list","compute.disks.get","iap.tunnelInstances.accessViaIAP","secretmanager.secrets.getIamPolicy","secretmanager.secrets.setIamPolicy","resourcemanager.projects.getIamPolicy","iam.serviceAccountKeys.list","compute.resourcePolicies.create","compute.disks.addResourcePolicies"]}' ;;
+  *) echo '{}' ;;
+esac
 EOF
 chmod +x "$TMP/bin/gcloud" "$TMP/bin/curl"
 export PATH="$TMP/bin:$PATH" GCLOUD_LOG="$TMP/gcloud.log" CENARIO_SEM_SONDA=1 CENARIO_RELATORIOS="$TMP/rel"
@@ -72,6 +80,10 @@ afirma "$TMP/1.out" "✔ segredo homolog-gate-token: 1 versão(ões) ativa(s)"
 afirma "$TMP/1.out" "✔ verificapro-exemplo: a conta da VM da homologação não tem acesso"
 afirma "$TMP/1.out" "? snapshots diários (7 dias) NÃO configurados"
 afirma "$TMP/1.out" "FIM-INSPECAO"
+afirma "$TMP/1.out" "✔ storage.buckets.update"
+afirma "$TMP/1.out" "✔ storage.buckets.setIamPolicy"
+nega "$TMP/1.out" "✘ sem storage."
+nega "$TMP/1.out" "✘ sem"
 afirma "$TMP/1.out" "AUDITORIA: OK"
 rc_e "$TMP/1.out" 0
 sem_escritas; sem_proibidos
@@ -148,6 +160,16 @@ afirma "$TMP/9.out" "A conta da VM tem roles/storage.objectAdmin no bucket"
 rc_nao0 "$TMP/9.out"; sem_escritas
 FALSO_BUCKET_ADMIN=1 roda "$TMP/9b.out" "" auditar --sem-ssh
 afirma "$TMP/9b.out" "✘ papel amplo demais no bucket: roles/storage.objectAdmin"
+
+echo "9c. bucket com regra de ciclo de vida própria → não é sobrescrita; os itens aditivos seguem"
+novo_estado lifecycle
+FALSO_LIFECYCLE_PROPRIO=1 roda "$TMP/9c.out" "configurar cenariogestao" configurar
+afirma "$TMP/9c.out" "já tem outras regras de ciclo de vida: NÃO serão alteradas"
+afirma "$TMP/9c.out" "CONFIGURAÇÃO: OK"
+nega "$GCLOUD_LOG" "buckets update"
+afirma "$GCLOUD_LOG" "--role=roles/storage.objectCreator"
+afirma "$GCLOUD_LOG" "compute instances add-metadata"
+rc_e "$TMP/9c.out" 0; sem_proibidos
 
 echo "10. preparar-vm: confirmação errada → nada copiado"
 novo_estado prep
@@ -232,6 +254,8 @@ export CENARIO_PRECOS_TIMEOUT=1 CENARIO_PRECOS_TENTATIVAS=2 CENARIO_PRECOS_PRAZO
 export CENARIO_PRECOS_CACHE="$TMP/cache1/p.json"
 roda "$TMP/17a.out" "" custos
 afirma "$TMP/17a.out" "CUSTOS: estimativa base dentro de US\$ 20.00"
+afirma "$TMP/17a.out" "snapshots desativados (agenda cenario-homolog-diario inexistente): fora da estimativa"
+afirma "$TMP/17a.out" "Snapshots (desativados; não incluídos)"
 afirma "$TMP/17a.out" "Artifact Registry"
 rc_e "$TMP/17a.out" 0
 echo alto > "$MODO"; export CENARIO_PRECOS_CACHE="$TMP/cache2/p.json"
@@ -243,6 +267,18 @@ roda "$TMP/17c.out" "" custos
 afirma "$TMP/17c.out" "CUSTOS: sem estimativa oficial válida"
 rc_e "$TMP/17c.out" 2
 sem_escritas; sem_proibidos
+echo "17d. custos com a agenda de snapshots existente (estado do cenário 8) → incluídos"
+echo ok > "$MODO"; export FALSO_ESTADO="$TMP/estado-config.json" CENARIO_PRECOS_CACHE="$TMP/cache5/p.json"
+roda "$TMP/17d.out" "" custos
+afirma "$TMP/17d.out" "agenda de snapshots cenario-homolog-diario EXISTE: incluída na estimativa"
+afirma "$TMP/17d.out" "Snapshots (~10 GB armazenados)"
+rc_e "$TMP/17d.out" 0
+echo "17e. custos --diagnosticar: lista as SKUs candidatas, sem estimar"
+roda "$TMP/17e.out" "" custos --diagnosticar
+afirma "$TMP/17e.out" "DISCO | Balanced PD Capacity | OnDemand"
+afirma "$TMP/17e.out" "fim do catálogo: sim"
+nega "$TMP/17e.out" "TOTAL_USD"
+rc_e "$TMP/17e.out" 0; sem_escritas
 
 echo "18. tudo: para na primeira etapa com problema (custos acima do limite) sem configurar"
 novo_estado tudo; echo alto > "$MODO"; export CENARIO_PRECOS_CACHE="$TMP/cache4/p.json"

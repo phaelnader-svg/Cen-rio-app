@@ -4,7 +4,8 @@
 # segredos e bucket de backups). Na raiz do repositório:
 #
 #   bash infra/homolog/gcp/homolog.sh auditar [--sem-ssh]   # SÓ LEITURA: tudo o que existe, custa ou expõe
-#   bash infra/homolog/gcp/homolog.sh custos                # preços oficiais + itens adicionais/variáveis
+#   bash infra/homolog/gcp/homolog.sh custos [--diagnosticar] # preços oficiais + itens adicionais/variáveis
+#                                                           # (--diagnosticar: só lista as SKUs de disco/snapshot)
 #   bash infra/homolog/gcp/homolog.sh configurar [--com-snapshots]
 #                                                           # aplica SÓ o que falta e está autorizado
 #                                                           # (pede para digitar a confirmação)
@@ -147,11 +148,19 @@ auditar() {
   fi
 
   secao "2. Suas permissões no projeto (necessárias às etapas de preparação)"
-  local perms='["compute.instances.get","compute.instances.setMetadata","compute.firewalls.list","compute.disks.get","iap.tunnelInstances.accessViaIAP","storage.buckets.get","storage.buckets.update","storage.buckets.getIamPolicy","storage.buckets.setIamPolicy","secretmanager.secrets.getIamPolicy","secretmanager.secrets.setIamPolicy","resourcemanager.projects.getIamPolicy","iam.serviceAccountKeys.list","compute.resourcePolicies.create","compute.disks.addResourcePolicies"]'
-  local tem; tem="$(api -X POST -H 'content-type: application/json' -d "{\"permissions\": $perms}" \
+  # O testIamPermissions do PROJETO só avalia permissões do tipo "projeto": as storage.buckets.*
+  # voltavam sempre ausentes (falso negativo), mesmo com describe/get-iam-policy funcionando.
+  # Por isso as do bucket são testadas NO PRÓPRIO BUCKET (API do Cloud Storage).
+  local perms='["compute.instances.get","compute.instances.setMetadata","compute.firewalls.list","compute.disks.get","iap.tunnelInstances.accessViaIAP","secretmanager.secrets.getIamPolicy","secretmanager.secrets.setIamPolicy","resourcemanager.projects.getIamPolicy","iam.serviceAccountKeys.list","compute.resourcePolicies.create","compute.disks.addResourcePolicies"]'
+  local perms_bucket='["storage.buckets.get","storage.buckets.update","storage.buckets.getIamPolicy","storage.buckets.setIamPolicy"]'
+  local tem tem_b consulta
+  tem="$(api -X POST -H 'content-type: application/json' -d "{\"permissions\": $perms}" \
     "https://cloudresourcemanager.googleapis.com/v1/projects/$PROJECT:testIamPermissions" 2>/dev/null || echo '{}')"
+  consulta="$(jq -r 'map("permissions=" + .) | join("&")' <<<"$perms_bucket")"
+  tem_b="$(api "https://storage.googleapis.com/storage/v1/b/${BUCKET#gs://}/iam/testPermissions?$consulta" 2>/dev/null || echo '{}')"
+  tem="$(jq -c --argjson b "$tem_b" '{permissions: ((.permissions // []) + ($b.permissions // []))}' <<<"$tem")"
   local p
-  for p in $(jq -r '.[]' <<<"$perms"); do
+  for p in $(jq -r '.[]' <<<"$perms") $(jq -r '.[]' <<<"$perms_bucket"); do
     if jq -e --arg p "$p" '(.permissions // []) | index($p)' <<<"$tem" >/dev/null; then ok "$p"
     elif [[ "$p" == compute.resourcePolicies.create || "$p" == compute.disks.addResourcePolicies ]]; then aviso "sem $p (só necessária para os snapshots opcionais)"
     else falha "sem $p"; fi
@@ -353,13 +362,21 @@ resumo() {
 # ================================================================ CUSTOS
 custos() {
   requisitos
+  # Snapshots entram na estimativa SÓ se a agenda existir de fato (estão desativados).
+  local snap=()
+  if g compute resource-policies describe "$SNAP_POLITICA" --region="$REGION" --format=json >/dev/null 2>&1; then
+    snap=(--com-snapshots); echo "• agenda de snapshots $SNAP_POLITICA EXISTE: incluída na estimativa"
+  else echo "• snapshots desativados (agenda $SNAP_POLITICA inexistente): fora da estimativa"; fi
+  if [[ "${1:-}" == --diagnosticar ]]; then
+    secao "Diagnóstico das SKUs de disco e snapshot (só leitura; nenhuma estimativa)"
+    CENARIO_TOKEN="$(gcloud auth print-access-token 2>/dev/null)" python3 infra/homolog/gcp/precos_catalogo.py diagnosticar
+    return
+  fi
   secao "Preços oficiais de lista (Cloud Billing Catalog API, US\$, sem tributos)"
   local rc=0
   CENARIO_TOKEN="$(gcloud auth print-access-token 2>/dev/null)" CENARIO_CONTA="$(gcloud config get-value account 2>/dev/null)" \
-    python3 infra/homolog/gcp/precos_catalogo.py obter --limite "$LIMITE_USD" || rc=$?
+    python3 infra/homolog/gcp/precos_catalogo.py obter --limite "$LIMITE_USD" "${snap[@]}" || rc=$?
   cat <<'EOF'
-
-O total acima inclui ~10 GB de snapshots (opcionais: só existem com 'configurar --com-snapshots').
 
 Itens ADICIONAIS e VARIÁVEIS (preços públicos de lista; ver docs/HOMOLOGACAO-GCP-PRE-DEPLOY-RELATORIO.md §7):
   Situação        Item                                         Estimativa/mês (US$)
@@ -387,10 +404,17 @@ configurar() {
   local com_snap=0; [[ "${1:-}" == --com-snapshots ]] && com_snap=1
   requisitos
   ler_vm; ler_bucket
-  local plano=() s
+  local plano=() s lifecycle_manual=0
   if ! tem_lifecycle_30; then
-    [[ "$(outras_regras_lifecycle)" == 0 ]] || { echo "✘ O bucket já tem outras regras de ciclo de vida: não serão sobrescritas. Ajuste manual necessário."; exit 1; }
-    plano+=("lifecycle|bucket $BUCKET: excluir objetos após 30 dias (e testes-preparo/ após 1 dia)")
+    if [[ "$(outras_regras_lifecycle)" == 0 ]]; then
+      plano+=("lifecycle|bucket $BUCKET: excluir objetos após 30 dias (e testes-preparo/ após 1 dia)")
+    else
+      # Regras existentes nunca são sobrescritas: o ciclo de vida fica como está (ajuste manual) e
+      # os demais itens, todos aditivos, seguem.
+      lifecycle_manual=1
+      echo "⚠ O bucket já tem outras regras de ciclo de vida: NÃO serão alteradas (confira manualmente a exclusão aos 30 dias):"
+      jq -c '(.lifecycle_config.rule // .lifecycle.rule // [])[]' "$T/bucket.json" | sed 's/^/    /'
+    fi
   fi
   local pb; pb="$(papeis_no_bucket)"
   for s in $pb; do [[ "$s" =~ $PAPEIS_PROIBIDOS ]] && { echo "✘ A conta da VM tem $s no bucket: remova manualmente (nada é removido automaticamente)."; exit 1; }; done
@@ -409,7 +433,11 @@ configurar() {
   fi
 
   secao "Plano de configuração (somente recursos existentes; nada é criado além do listado)"
-  if (( ${#plano[@]} == 0 )); then echo "✔ Nada a configurar: tudo já está como deveria."; echo "CONFIGURAÇÃO: OK"; return 0; fi
+  if (( ${#plano[@]} == 0 )); then
+    echo "✔ Nada a configurar: tudo já está como deveria."
+    (( lifecycle_manual == 0 )) || echo "⚠ exceto o ciclo de vida do bucket (regras próprias mantidas; conferir manualmente)"
+    echo "CONFIGURAÇÃO: OK"; return 0
+  fi
   local i k; for i in "${plano[@]}"; do echo "  • ${i#*|}"; done
   echo "NÃO será feito: abrir portas, criar VM/IP/firewall/Artifact Registry, alterar DNS, iniciar serviços, ler segredos."
   confirmar "configurar $PROJECT"
@@ -430,7 +458,7 @@ configurar() {
   # Confere relendo o estado real.
   ler_vm; ler_bucket
   local erros=0
-  tem_lifecycle_30 || { echo "✘ lifecycle não confirmado"; erros=$((erros + 1)); }
+  (( lifecycle_manual == 1 )) || tem_lifecycle_30 || { echo "✘ lifecycle não confirmado"; erros=$((erros + 1)); }
   [[ " $(papeis_no_bucket) " == *" roles/storage.objectCreator "* ]] || { echo "✘ objectCreator não confirmado"; erros=$((erros + 1)); }
   for s in "${SECRETS[@]}"; do acessor_do_segredo "$s" || { echo "✘ secretAccessor em $s não confirmado"; erros=$((erros + 1)); }; done
   [[ -z "$(metadados_faltando)" ]] || { echo "✘ metadados não confirmados"; erros=$((erros + 1)); }

@@ -6,6 +6,9 @@ Uso (chamado por "homolog.sh custos"; o token vem de CENARIO_TOKEN, nunca de arg
   precos_catalogo.py obter --limite 20.00   # consulta oficial (com tentativas); se falhar, reutiliza
                                             # uma consulta oficial recente ainda válida
   precos_catalogo.py cache --limite 20.00   # só a consulta guardada (sem rede)
+  precos_catalogo.py diagnosticar           # SÓ LISTA as SKUs candidatas a disco e snapshot (sem
+                                            # estimativa), para investigar uma identificação que falhou
+  --com-snapshots                           # inclui os snapshots (só quando a agenda existe de fato)
 
 Códigos de saída: 0 = estimativa válida dentro do limite; 3 = estimativa válida ACIMA do limite;
 2 = sem estimativa válida (rede, resposta incompleta, cache ausente/vencido/inválido).
@@ -29,7 +32,7 @@ URL_OFICIAL = f"https://cloudbilling.googleapis.com/v1/services/{SERVICO}/skus"
 FONTE = "Cloud Billing Catalog API v1 (preços de lista, USD, sem tributos)"
 REGIAO = "us-east1"
 HORAS_MES = 730
-VERSAO_CACHE = 2  # v2: identificação estrita das SKUs (invalida consultas guardadas antigas)
+VERSAO_CACHE = 3  # v3: disco aceito em SKU multirregião; snapshots opcionais (invalida as antigas)
 
 # Itens da Etapa 1: quantidades definidas AQUI (nunca lidas do cache) e unidade esperada da SKU.
 ITENS = {
@@ -39,6 +42,15 @@ ITENS = {
     "ip": {"nome": "IPv4 estático em uso", "qtd": HORAS_MES, "unidade": "h"},
     "snapshot": {"nome": "Snapshots (~10 GB armazenados)", "qtd": 10, "unidade": "GiBy.mo"},
 }
+# Snapshots são OPCIONAIS (custo adicional, desativados): só entram na estimativa com
+# --com-snapshots, que o homolog.sh usa apenas quando a agenda de snapshots existe no projeto.
+INCLUIR_SNAPSHOT = False
+
+
+def ativos() -> list[str]:
+    """Itens exigidos nesta estimativa (o snapshot só quando incluído)."""
+    return [k for k in ITENS if k != "snapshot" or INCLUIR_SNAPSHOT]
+
 PRECO_MAX = 1.0  # sanidade: nenhum preço unitário destes itens passa de US$ 1
 
 # Paginação. A API v1 (services.skus.list) NÃO tem filtro por descrição, região ou SKU — só por
@@ -57,7 +69,12 @@ MAX_PAGINAS = MAX_SKUS_EXAMINADAS // TAMANHO_PAGINA  # 20
 REGRAS = {
     "core": {"prefixo": "E2 Instance Core running in Americas", "regiao": "contém"},
     "ram": {"prefixo": "E2 Instance Ram running in Americas", "regiao": "contém"},
-    "disco": {"prefixo": "Balanced PD Capacity", "regiao": "somente"},
+    # Disco: a SKU real de pd-balanced cobre VÁRIAS regiões (us-east1 entre elas) — exigir us-east1
+    # como única região a rejeitava (causa do "3 de 5"). O prefixo já exclui "Regional Balanced PD
+    # Capacity" (disco regional) e Hyperdisk; SKUs só de outras regiões continuam recusadas.
+    "disco": {"prefixo": "Balanced PD Capacity", "regiao": "contém"},
+    # Snapshot: mantém "somente us-east1" para não confundir com o snapshot multirregional (que
+    # também lista us-east1, com outro preço).
     "snapshot": {"prefixo": "Storage PD Snapshot", "regiao": "somente"},
     "ip": {"prefixo": "External IP Charge on a Standard VM", "regiao": "contém-ou-global"},
 }
@@ -157,7 +174,7 @@ def consultar(url: str, token: str, timeout: float, tentativas: int, prazo_total
     while True:
         n_paginas += 1
         if n_paginas > MAX_PAGINAS:
-            faltam = sorted(set(ITENS) - set(achados))
+            faltam = sorted(set(ativos()) - set(achados))
             raise RuntimeError(f"itens não encontrados em {examinadas} SKUs ({MAX_PAGINAS} páginas de "
                                f"{TAMANHO_PAGINA}, teto do script): {', '.join(faltam)}")
         sep = "&" if "?" in url else "?"
@@ -166,19 +183,19 @@ def consultar(url: str, token: str, timeout: float, tentativas: int, prazo_total
         for sku in dados.get("skus", []):
             examinadas += 1
             chave = identificar(sku)
-            if chave and chave not in achados:
+            if chave and chave in ativos() and chave not in achados:
                 preco, unidade = preco_unitario(sku)
                 validar_item(chave, preco, unidade)
                 achados[chave] = {"sku_id": sku.get("skuId", "?"), "descricao": sku.get("description", ""),
                                   "regioes": sku.get("serviceRegions") or [], "cobranca": "OnDemand",
                                   "unidade": unidade, "preco_unitario": preco,
                                   "posicao": examinadas, "pagina": n_paginas}
-        print(f"  página {n_paginas}: {examinadas} SKUs examinadas, {len(achados)}/{len(ITENS)} itens", file=sys.stderr)
-        if len(achados) == len(ITENS):
+        print(f"  página {n_paginas}: {examinadas} SKUs examinadas, {len(achados)}/{len(ativos())} itens", file=sys.stderr)
+        if len(achados) == len(ativos()):
             break
         pagina = dados.get("nextPageToken", "")
         if not pagina:
-            faltam = sorted(set(ITENS) - set(achados))
+            faltam = sorted(set(ativos()) - set(achados))
             raise RuntimeError(f"resposta incompleta: SKUs não encontradas no catálogo: {', '.join(faltam)}")
         if pagina in vistos:
             raise RuntimeError("paginação repetida (resposta inválida)")
@@ -199,14 +216,16 @@ def montar_registro(achados: dict, url: str, conta: str, validade_h: float, limi
         "consultado_em": t.isoformat(timespec="seconds"),
         "valido_ate": (t + timedelta(hours=validade_h)).isoformat(timespec="seconds"),
         "limite_usd": limite,
-        "itens": {k: achados[k] for k in ITENS},
+        "com_snapshots": INCLUIR_SNAPSHOT,
+        "itens": {k: achados[k] for k in ativos()},
     }
 
 
 def calcular(registro: dict) -> tuple[list[tuple[str, float, str]], float]:
     """Recalcula SEMPRE a partir dos preços unitários e das quantidades do código."""
     linhas = []
-    for chave, item in ITENS.items():
+    for chave in ativos():
+        item = ITENS[chave]
         a = registro["itens"][chave]
         validar_item(chave, a["preco_unitario"], a["unidade"])
         # Reaplica as regras de identificação ao que foi guardado (descrição, região, SKU conhecida).
@@ -232,7 +251,7 @@ def ler_cache(caminho: str, url_aceita: str, validade_max_h: float) -> dict:
             raise ValueError("versão, serviço ou região diferentes")
         if r.get("fonte_url") != url_aceita:
             raise ValueError(f"origem não oficial: {r.get('fonte_url')}")
-        if set(r.get("itens", {})) != set(ITENS):
+        if set(r.get("itens", {})) != set(ativos()):
             raise ValueError("itens incompletos")
     except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as e:
         raise RuntimeError(f"consulta guardada inválida: {e}") from e
@@ -262,6 +281,8 @@ def relatar(registro: dict, origem: str, limite: float) -> int:
     print(f"  Consultado em: {registro['consultado_em']} · válido até: {registro['valido_ate']}")
     for nome, v, desc in linhas:
         print(f"  {nome:45s} US$ {v:6.2f}   [{desc}]")
+    if not INCLUIR_SNAPSHOT:
+        print(f"  {'Snapshots (desativados; não incluídos)':45s} US$   0.00")
     print(f"  {'Bucket, segredos, IAP, logs (cotas gratuitas)':45s} US$   0.00")
     print(f"  {'TOTAL infraestrutura base (sem tributos)':45s} US$ {total:6.2f}  (limite autorizado: US$ {limite:.2f})")
     print(f"TOTAL_USD={total:.2f}")
@@ -271,12 +292,53 @@ def relatar(registro: dict, origem: str, limite: float) -> int:
     return 0
 
 
+def diagnosticar(url: str, token: str, timeout: float, tentativas: int, prazo_total: float) -> int:
+    """SÓ LEITURA: lista as SKUs candidatas a disco e snapshot e a decisão das regras para cada uma.
+    Não estima nem guarda nada; serve para corrigir a identificação com dados reais, sem presumir."""
+    prazo = time.monotonic() + prazo_total
+    pagina, n, examinadas, candidatas, fim = "", 0, 0, 0, False
+    while n < MAX_PAGINAS:
+        n += 1
+        sep = "&" if "?" in url else "?"
+        dados = buscar_pagina(f"{url}{sep}currencyCode=USD&pageSize={TAMANHO_PAGINA}&pageToken={pagina}",
+                              token, timeout, tentativas, prazo)
+        for sku in dados.get("skus", []):
+            examinadas += 1
+            d = sku.get("description", "")
+            regioes = sku.get("serviceRegions") or []
+            if not (("PD Capacity" in d or "Snapshot" in d) and (REGIAO in regioes or "global" in regioes)):
+                continue
+            candidatas += 1
+            try:
+                preco, unidade = preco_unitario(sku)
+                preco_txt = f"{preco:.6f}/{unidade}"
+            except ValueError as e:
+                preco_txt = f"sem preço ({e})"
+            try:
+                decisao = identificar(sku) or "não usada"
+            except ValueError as e:
+                decisao = f"recusada ({e})"
+            rs = ",".join(regioes[:6]) + (f",…(+{len(regioes) - 6})" if len(regioes) > 6 else "")
+            print(f"{sku.get('skuId', '?')} | {d} | {(sku.get('category') or {}).get('usageType')} | "
+                  f"regiões: {rs} | {preco_txt} | regra: {decisao}")
+        pagina = dados.get("nextPageToken", "")
+        if not pagina:
+            fim = True
+            break
+    print(f"# {examinadas} SKUs examinadas em {n} página(s); fim do catálogo: {'sim' if fim else 'NÃO (teto do script)'}; "
+          f"{candidatas} candidata(s) com {REGIAO}.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("modo", choices=["obter", "cache"])
-    ap.add_argument("--limite", type=float, required=True)
+    ap.add_argument("modo", choices=["obter", "cache", "diagnosticar"])
+    ap.add_argument("--limite", type=float)
+    ap.add_argument("--com-snapshots", action="store_true")
     a = ap.parse_args()
-    if not (a.limite > 0):
+    global INCLUIR_SNAPSHOT
+    INCLUIR_SNAPSHOT = a.com_snapshots
+    if a.modo != "diagnosticar" and not (a.limite is not None and a.limite > 0):
         print("limite inválido", file=sys.stderr)
         return 2
     url = os.environ.get("CENARIO_CATALOGO_URL", URL_OFICIAL)
@@ -290,6 +352,17 @@ def main() -> int:
     validade_h = min(float(os.environ.get("CENARIO_PRECOS_VALIDADE_H", "24")), 72.0)
     caminho = os.environ.get("CENARIO_PRECOS_CACHE") or os.path.expanduser(
         "~/.cache/cenario-homolog/precos-etapa1.json")
+
+    if a.modo == "diagnosticar":
+        token = os.environ.get("CENARIO_TOKEN", "")
+        if not token:
+            print("✘ sem token de acesso (gcloud auth)", file=sys.stderr)
+            return 2
+        try:
+            return diagnosticar(url, token, timeout, tentativas, prazo_total)
+        except (RuntimeError, ValueError, TimeoutError) as e:
+            print(f"✘ diagnóstico interrompido: {e}", file=sys.stderr)
+            return 2
 
     if a.modo == "obter":
         token = os.environ.get("CENARIO_TOKEN", "")

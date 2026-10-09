@@ -9,6 +9,30 @@
 > Base: branch `claude/cenario-gestao-fase-1-zf3bj2`. HEAD remoto conferido antes de começar:
 > `9568efe`. Scripts e testes: commit `f4f32fd`. Este relatório: o commit seguinte.
 
+## Atualização após a auditoria real
+
+A auditoria no Cloud Shell confirmou a VM, a VPC, os 5 segredos e o bucket. Dois achados foram
+corrigidos (nenhum controle de segurança ou limite de custo foi desativado):
+
+1. **`custos` encontrava só 3 de 5 SKUs (faltavam disco e snapshots).** Causa: a regra estrita
+   exigia que o disco pd-balanced tivesse **us-east1 como única** região; a SKU real cobre várias
+   regiões (a versão anterior, que aceitava "us-east1 entre as regiões", chegou a US$ 19,29). A
+   regra do disco passou a aceitar SKUs que **incluem** us-east1; continuam recusados o disco
+   regional ("Regional Balanced PD Capacity"), Hyperdisk, Spot/compromisso e SKUs só de outras
+   regiões. **Snapshots** (desativados) saíram da estimativa: entram apenas quando a agenda
+   `cenario-homolog-diario` existe, e aí com a regra estrita (só us-east1). O limite de US$ 20 e o
+   bloqueio sem preço oficial continuam. Se ainda faltar alguma SKU, `homolog.sh custos
+--diagnosticar` lista as candidatas reais (só leitura) — nenhum preço é presumido.
+2. **Quatro permissões `storage.buckets.*` apontadas como ausentes.** Falso negativo: o
+   `testIamPermissions` do **projeto** só avalia permissões do tipo projeto e nunca devolve as de
+   bucket. Agora elas são testadas **no próprio bucket** (`storage/v1/b/<bucket>/iam/testPermissions`).
+
+`configurar` revisado: faz apenas inclusões (ciclo de vida, `objectCreator` da VM, metadados não
+secretos e, se faltar, `secretAccessor`), mostra o plano e pede confirmação; não toca firewall,
+portas, DNS, VM em execução nem outros projetos; sem `--com-snapshots` não cria snapshots. Se o
+bucket já tiver uma regra de ciclo de vida própria, ela **não** é sobrescrita (aviso) e os demais
+itens seguem.
+
 Legenda usada abaixo: **[verificado]** = executado aqui, com evidência · **[informado]** = dado
 que você passou, ainda não conferido · **[a auditar]** = será conferido por `homolog.sh auditar`
 · **[pendente]** = depende de autorização ou da aplicação rodando.

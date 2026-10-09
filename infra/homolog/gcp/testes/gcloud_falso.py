@@ -5,7 +5,7 @@ bucket privado sem ciclo de vida e sem objectCreator) e guarda as alterações n
 Registra TODA chamada em $GCLOUD_LOG. Nada externo é tocado.
 
 Variações (variáveis de ambiente): FALSO_ESCOPOS (lista separada por vírgula), FALSO_FW_ABERTO=1,
-FALSO_SEGUNDA_VM=1, FALSO_DISCO_ORFAO=1, FALSO_BUCKET_ADMIN=1, FALSO_PORTAO=ABERTO|FECHADO,
+FALSO_SEGUNDA_VM=1, FALSO_DISCO_ORFAO=1, FALSO_BUCKET_ADMIN=1, FALSO_LIFECYCLE_PROPRIO=1, FALSO_PORTAO=ABERTO|FECHADO,
 FALSO_SSH_FALHA=1.
 """
 import json
@@ -53,12 +53,15 @@ def estado_inicial():
     bucket_iam = {"bindings": [{"role": "roles/storage.legacyBucketOwner", "members": [f"projectOwner:{P}"]}]}
     if os.environ.get("FALSO_BUCKET_ADMIN") == "1":
         bucket_iam["bindings"].append({"role": "roles/storage.objectAdmin", "members": [f"serviceAccount:{SA}"]})
+    bucket = {"name": "cenariogestao-homolog-backups", "location": "US-EAST1",
+              "default_storage_class": "STANDARD", "uniform_bucket_level_access": True,
+              "public_access_prevention": "enforced",
+              "soft_delete_policy": {"retentionDurationSeconds": "604800"}}
+    if os.environ.get("FALSO_LIFECYCLE_PROPRIO") == "1":
+        bucket["lifecycle_config"] = {"rule": [{"action": {"type": "Delete"}, "condition": {"age": 45, "isLive": True}}]}
     return {
         "vms": vms, "discos": discos, "fw": fw, "politicas": [],
-        "bucket": {"name": "cenariogestao-homolog-backups", "location": "US-EAST1",
-                   "default_storage_class": "STANDARD", "uniform_bucket_level_access": True,
-                   "public_access_prevention": "enforced",
-                   "soft_delete_policy": {"retentionDurationSeconds": "604800"}},
+        "bucket": bucket,
         "bucket_iam": bucket_iam,
         "segredos_iam": {s: {"bindings": [{"role": "roles/secretmanager.secretAccessor",
                                            "members": [f"serviceAccount:{SA}"]}]} for s in SEGREDOS},

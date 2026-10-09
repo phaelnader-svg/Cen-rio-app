@@ -4,7 +4,7 @@ Imita o comportamento real relevante: paginação por pageSize/pageToken, milhar
 "enchimento" antes dos itens procurados e SKUs-isca parecidas (Custom, Spot, regional,
 Hyperdisk, multirregional, outra região) aparecendo ANTES das corretas.
 
-MODO: ok, alto, lento, erro500, erro500-depois-ok, truncado, sem-snapshot, sem-preco,
+MODO: ok, alto, lento, sem-disco-us-east1, erro500, erro500-depois-ok, truncado, sem-snapshot, sem-preco,
 unidade-errada, pagina-repetida, proibido, infinito, ip-id-diferente. Conta as requisições.
 """
 from __future__ import annotations
@@ -58,7 +58,9 @@ def corretas(fator=1.0, ip_id=IP_OFICIAL):
         sku("CORE", "E2 Instance Core running in Americas", ["us-east1", "us-central1", "southamerica-east1"],
             "h", p["core"]),
         sku("RAM", "E2 Instance Ram running in Americas", ["us-east1", "us-central1"], "GiBy.h", p["ram"]),
-        sku("DISCO", "Balanced PD Capacity in South Carolina", ["us-east1"], "GiBy.mo", p["disco"]),
+        # Como a SKU real: uma SKU de pd-balanced para várias regiões (us-east1 entre elas).
+        sku("DISCO", "Balanced PD Capacity", ["us-east1", "us-east4", "us-central1", "southamerica-east1"],
+            "GiBy.mo", p["disco"]),
         sku(ip_id, "External IP Charge on a Standard VM", ["global"], "h", p["ip"]),
         sku("SNAP", "Storage PD Snapshot in South Carolina", ["us-east1"], "GiBy.mo", p["snapshot"]),
     ]
@@ -130,6 +132,9 @@ class Catalogo:
         m = self.modo
         certas = corretas(fator=1.5 if m == "alto" else 1.0,
                           ip_id="0000-AAAA-BBBB" if m == "ip-id-diferente" else IP_OFICIAL)
+        if m == "sem-disco-us-east1":  # pd-balanced só para outras regiões: não pode ser aceita
+            certas = [dict(x, serviceRegions=["us-central1", "us-west1"]) if x["skuId"] == "DISCO" else x
+                      for x in certas]
         if m == "sem-snapshot":
             certas = [s for s in certas if s["skuId"] != "SNAP"]
         if m == "sem-preco":
@@ -160,11 +165,11 @@ class Catalogo:
         self.srv.server_close()
 
 
-def total_esperado(alto=False):
+def total_esperado(alto=False, com_snapshots=False):
     f = 1.5 if alto else 1
     p = {k: v * f for k, v in PRECOS_TESTE.items()}
     return round(p["core"] * 0.5 * 730 + p["ram"] * 2 * 730 + p["disco"] * 20 + p["ip"] * 730
-                 + p["snapshot"] * 10, 2)
+                 + (p["snapshot"] * 10 if com_snapshots else 0), 2)
 
 
 if __name__ == "__main__":  # uso pelo teste de integração em shell

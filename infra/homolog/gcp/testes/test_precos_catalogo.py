@@ -36,7 +36,7 @@ class Base(unittest.TestCase):
         self.cats.append(c)
         return c
 
-    def rodar(self, modo_cli, url, limite="20.00", extra=None, token="tok-teste"):
+    def rodar(self, modo_cli, url, limite="20.00", extra=None, token="tok-teste", args=()):
         env = {
             "PATH": os.environ["PATH"],
             "CENARIO_TOKEN": token,
@@ -50,7 +50,8 @@ class Base(unittest.TestCase):
             **(extra or {}),
         }
         t0 = time.monotonic()
-        r = subprocess.run([sys.executable, MODULO, modo_cli, "--limite", limite], env=env,
+        cmd = [sys.executable, MODULO, modo_cli] + (["--limite", limite] if limite else []) + list(args)
+        r = subprocess.run(cmd, env=env,
                            capture_output=True, text=True, timeout=120)
         r.duracao = time.monotonic() - t0
         return r
@@ -85,16 +86,56 @@ class ConsultaOficial(Base):
         self.assertEqual(set(c.tamanhos_pedidos), {5000})  # tamanho máximo oficial de página
         with open(self.cache, encoding="utf-8") as fh:
             itens = json.load(fh)["itens"]
+        # Snapshots desativados: não são exigidos nem entram no total.
         self.assertEqual({k: v["sku_id"] for k, v in itens.items()},
-                         {"core": "CORE", "ram": "RAM", "disco": "DISCO", "ip": IP_OFICIAL, "snapshot": "SNAP"})
+                         {"core": "CORE", "ram": "RAM", "disco": "DISCO", "ip": IP_OFICIAL})
         for v in itens.values():  # nenhuma isca; cobrança e regiões registradas
             self.assertFalse(v["sku_id"].startswith("ISCA"))
             self.assertEqual(v["cobranca"], "OnDemand")
             self.assertTrue(v["regioes"] == ["global"] or "us-east1" in v["regioes"], v)
-        self.assertEqual(itens["disco"]["regioes"], ["us-east1"])
-        self.assertEqual(itens["snapshot"]["regioes"], ["us-east1"])
-        self.assertEqual(itens["snapshot"]["pagina"], 4)
+        self.assertIn("us-east1", itens["disco"]["regioes"])  # SKU multirregião, como a real
+        self.assertGreater(len(itens["disco"]["regioes"]), 1)
         self.assertIn("página 4", r.stderr)
+        self.assertIn("Snapshots (desativados; não incluídos)", r.stdout)
+
+    def test_com_snapshots_exige_a_sku_regional_correta(self):
+        c = self.catalogo("ok")
+        r = self.rodar("obter", c.url, args=["--com-snapshots"])
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertAlmostEqual(self.total(r), total_esperado(com_snapshots=True), places=2)
+        with open(self.cache, encoding="utf-8") as fh:
+            itens = json.load(fh)["itens"]
+        self.assertEqual(itens["snapshot"]["sku_id"], "SNAP")  # nem a multirregional, nem a de arquivo
+        self.assertEqual(itens["snapshot"]["regioes"], ["us-east1"])
+        # A consulta guardada COM snapshots não serve para a estimativa SEM eles (e vice-versa).
+        self.assertEqual(self.rodar("cache", c.url).returncode, 2)
+
+    def test_sem_snapshot_no_catalogo(self):
+        c = self.catalogo("sem-snapshot")
+        r = self.rodar("obter", c.url)  # snapshots desativados: a falta da SKU não bloqueia
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        os.remove(self.cache)
+        r = self.rodar("obter", c.url, args=["--com-snapshots"])  # pedidos: bloqueia, sem presumir
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("SKUs não encontradas no catálogo: snapshot", r.stderr)
+
+    def test_disco_so_de_outras_regioes_nao_e_aceito(self):
+        c = self.catalogo("sem-disco-us-east1")
+        r = self.rodar("obter", c.url)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("SKUs não encontradas no catálogo: disco", r.stderr)
+
+    def test_diagnosticar_lista_candidatas_sem_estimar(self):
+        c = self.catalogo("ok")
+        r = self.rodar("diagnosticar", c.url, limite=None)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("DISCO | Balanced PD Capacity | OnDemand | regiões: us-east1,us-east4", r.stdout)
+        self.assertIn("regra: disco", r.stdout)
+        self.assertIn("ISCA-PD-REGIONAL | Regional Balanced PD Capacity", r.stdout)
+        self.assertIn("ISCA-SNAP-MULTI", r.stdout)
+        self.assertIn("fim do catálogo: sim", r.stdout)
+        self.assertNotIn("TOTAL_USD", r.stdout)
+        self.assertFalse(os.path.exists(self.cache))
 
     def test_teto_de_paginas_sem_os_itens(self):
         c = self.catalogo("infinito")
@@ -150,7 +191,6 @@ class ConsultaOficial(Base):
 
     def test_json_truncado_e_resposta_incompleta(self):
         for modo, trecho in [("truncado", "resposta incompleta ou inválida"),
-                             ("sem-snapshot", "SKUs não encontradas"),
                              ("sem-preco", "sem preço completo"),
                              ("unidade-errada", "unidade"),
                              ("pagina-repetida", "paginação repetida")]:
@@ -236,7 +276,7 @@ class Reutilizacao(Base):
             ("total alterado é ignorado (recalculado)", lambda reg: reg.update(total=1.0), 0, None),
             ("preço absurdo", lambda reg: reg["itens"]["core"].update(preco_unitario=5.0), 2, "fora do esperado"),
             ("preço negativo", lambda reg: reg["itens"]["ip"].update(preco_unitario=-1), 2, "fora do esperado"),
-            ("item faltando", lambda reg: reg["itens"].pop("snapshot"), 2, "itens incompletos"),
+            ("item faltando", lambda reg: reg["itens"].pop("disco"), 2, "itens incompletos"),
             ("unidade trocada", lambda reg: reg["itens"]["disco"].update(unidade="h"), 2, "unidade"),
             ("validade estendida", lambda reg: reg.update(
                 valido_ate=(datetime.fromisoformat(reg["consultado_em"]) + timedelta(days=30)).isoformat()), 2,
@@ -246,8 +286,10 @@ class Reutilizacao(Base):
             ("origem não oficial", lambda reg: reg.update(fonte_url="https://exemplo.com/precos"), 2, "não oficial"),
             ("SKU isca no lugar da correta", lambda reg: reg["itens"]["core"].update(
                 descricao="E2 Custom Instance Core running in Americas"), 2, "não atende às regras"),
-            ("disco multirregional", lambda reg: reg["itens"]["disco"].update(
-                regioes=["us-east1", "us-central1"]), 2, "não atende às regras"),
+            ("disco de outra região", lambda reg: reg["itens"]["disco"].update(
+                regioes=["us-central1", "us-west1"]), 2, "não atende às regras"),
+            ("disco regional no lugar do zonal", lambda reg: reg["itens"]["disco"].update(
+                descricao="Regional Balanced PD Capacity in South Carolina"), 2, "não atende às regras"),
             ("cobrança Spot", lambda reg: reg["itens"]["ram"].update(cobranca="Preemptible"), 2,
              "não atende às regras"),
             ("versão antiga do cache", lambda reg: reg.update(versao=1), 2, "versão"),
