@@ -101,7 +101,7 @@ export function TabletHome({ me }: { me: MeDto }) {
   const todayCount = useMyTodayCount(canExecute);
   // Evolução Fase 4: com fila semanal publicada, a tela inicial vira "Minha semana".
   const queue = useMyQueue(canExecute);
-  const weekly = Boolean(queue.data && (queue.data.total > 0 || queue.data.counts.done > 0));
+  const weekly = Boolean(queue.data && queue.data.total > 0);
   const [measurementId, setMeasurementId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [taskFrom, setTaskFrom] = useState<Screen>('home');

@@ -99,7 +99,10 @@ export async function loadQueue(db: Tx | PrismaClient, userId: string): Promise<
       assigneeUserId: userId,
       queueExclusive: true,
       status: 'CONCLUIDA',
-      completedAt: { gte: zonedDateTime(start, '00:00', timezone) },
+      completedAt: {
+        gte: zonedDateTime(start, '00:00', timezone),
+        lt: zonedDateTime(addDays(start, 7), '00:00', timezone),
+      },
     },
   });
   const count = (f: (e: QueueEntryDto) => boolean) => items.filter(f).length;

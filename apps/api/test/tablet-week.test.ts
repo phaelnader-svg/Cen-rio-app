@@ -203,6 +203,13 @@ describe('Minha semana (tablet)', () => {
     const qt = await queueOf(tabs.joao);
     expect(qt.items.map((e) => e.task.id)).toEqual(q.items.map((e) => e.task.id));
     expect(qt.counts.done).toBe(1); // mesma semana
+    // Semana seguinte: a contagem é só da semana vigente (nada some nem se transfere).
+    clockAt(7, '08:00');
+    const qn = await queueOf(tabs.joao);
+    expect(qn.counts.done).toBe(0);
+    expect(qn.week.start).toBe(addDays(MONDAY(), 7));
+    expect(qn.items.map((e) => e.task.id)).toEqual(q.items.map((e) => e.task.id));
+    expect(qn.fromPreviousWeeks).toBe(qn.total);
     void b;
   });
 

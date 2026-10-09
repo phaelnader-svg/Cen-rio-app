@@ -46,7 +46,7 @@ export function MyWeek({
     );
   const q = queue.data;
   // Sem fila semanal: experiência anterior (planos por horário), sem conversão.
-  if (q.total === 0 && q.counts.done === 0)
+  if (q.total === 0)
     return <MyDay onOpen={onOpen} canAskHelp={canAskHelp} reportUserId={reportUserId} />;
 
   const s = summarizeWeek(q);
@@ -112,7 +112,7 @@ export function MyWeek({
           <ul className="grid gap-3 lg:grid-cols-2" data-testid="week-others">
             {others.map((t) => (
               <li key={t.id}>
-                <TaskCard t={t} onOpen={onOpen} compact />
+                <TaskCard t={t} onOpen={onOpen} />
               </li>
             ))}
           </ul>
