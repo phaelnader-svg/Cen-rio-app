@@ -14,6 +14,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Textarea } from '@/components/ui/field';
+import Link from 'next/link';
 import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
@@ -42,7 +43,20 @@ export function NewServiceOrderPage() {
   const available = useAvailableForOs(orderId);
   if (!can('os.gerenciar')) return <Alert tone="warn">Você não tem permissão para criar OS.</Alert>;
   if (!orderId)
-    return <Alert tone="info">Abra um pedido com peças recebidas e use “Criar OS técnica”.</Alert>;
+    return (
+      <>
+        <PageHeader
+          title="Nova OS técnica"
+          description="A OS técnica nasce de um pedido com peças já recebidas na oficina."
+        />
+        <Alert tone="info">
+          Abra um pedido com peças recebidas e use “Criar OS técnica”.{' '}
+          <Link href="/painel/pedidos" className="font-semibold text-brand-700 hover:underline">
+            Ir para Pedidos comerciais
+          </Link>
+        </Alert>
+      </>
+    );
   if (available.isPending) return <Spinner />;
   if (available.isError) return <Alert tone="danger">{available.error.message}</Alert>;
   return (

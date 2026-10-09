@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  Permission,
   MaterialKind,
   MaterialSourcing,
   MaterialUnit,
@@ -11,6 +12,7 @@ import type {
   ServiceType,
 } from '@cenario/shared';
 import {
+  FULFILLMENT_STAGE_LABEL,
   MATERIAL_KINDS,
   MATERIAL_KIND_LABEL,
   MATERIAL_SOURCINGS,
@@ -41,6 +43,7 @@ import { formatDay, useServiceOrder, useServiceOrderRevisions } from '@/lib/comm
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { useEmployees } from '@/lib/queries';
+import { usePieces } from '@/lib/quality';
 import { CreateMeasurementDialog } from '@/components/measurements/create-dialog';
 import { OsMaterialsOverview } from '@/components/purchasing/os-materials';
 import { OsProduction } from '@/components/production/os-production';
@@ -49,8 +52,6 @@ import { useMeasurements } from '@/lib/measurements';
 import { PriorityBadge, ServiceOrderStatusBadge } from './badges';
 import { PhotoGallery } from './photo-gallery';
 import { BackLink, Detail, Section } from './section';
-
-const FUTURE = 'Disponível em fase futura';
 
 function useSoMutation(id: string, onDone: () => void, success: string) {
   const qc = useQueryClient();
@@ -136,6 +137,9 @@ export function ServiceOrderDetail({ id }: { id: string }) {
   // Registro direto de medidas: somente gestão (o fluxo normal é a medição atribuída).
   const canMeasure = can('os.gerenciar') && open;
   const canProduction = can('producao.ver') || can('producao.planejar');
+  const canQuality = ['qualidade.gerenciar', 'entregas.ver', 'entregas.gerenciar'].some((p) =>
+    can(p as Permission),
+  );
   const canRequestMeasurement = can('medicoes.gerenciar') && open;
 
   return (
@@ -202,10 +206,10 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           { key: 'fotos', label: 'Fotografias' },
           { key: 'historico', label: 'Histórico', count: revisions.data?.length },
           ...(canProduction ? [{ key: 'producao', label: 'Produção' }] : []),
-          { key: 'qualidade', label: 'Qualidade', disabledNote: FUTURE },
-          { key: 'entrega', label: 'Entrega', disabledNote: FUTURE },
+          ...(canQuality ? [{ key: 'qualidade', label: 'Qualidade e entrega' }] : []),
         ]}
       >
+        {tab === 'qualidade' && canQuality && <OsQualityDelivery serviceOrderId={s.id} />}
         {tab === 'producao' && canProduction && <OsProduction serviceOrderId={s.id} />}
         {tab === 'resumo' && (
           <div className="grid gap-6 lg:grid-cols-5">
@@ -1104,5 +1108,48 @@ function CancelDialog({ so, onClose }: { so: ServiceOrderDto; onClose: () => voi
         )}
       </Field>
     </Dialog>
+  );
+}
+
+/** Fase 12: situação de cada peça da OS na qualidade, embalagem e entrega (Fase 10). */
+function OsQualityDelivery({ serviceOrderId }: { serviceOrderId: string }) {
+  const q = usePieces({ serviceOrderId });
+  if (q.isPending) return <Spinner />;
+  if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
+  if (!q.data.length) return <p className="text-sm text-ink-muted">Nenhuma peça nesta OS.</p>;
+  return (
+    <ul className="divide-y divide-line rounded-xl border border-line" data-testid="os-quality">
+      {q.data.map((p) => (
+        <li key={p.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm">
+          <span className="w-28 font-mono font-semibold">{p.code}</span>
+          <span className="min-w-40 flex-1">
+            {p.description} ({p.quantity})
+            {p.location && <span className="text-ink-muted"> · {p.location.label}</span>}
+          </span>
+          <Badge
+            tone={p.stage === 'ENTREGUE' ? 'ok' : p.stage === 'DEVOLVIDA' ? 'neutral' : 'info'}
+          >
+            {FULFILLMENT_STAGE_LABEL[p.stage]}
+          </Badge>
+          {p.inspection && (
+            <Link
+              className="text-brand-700 hover:underline"
+              href={`/painel/qualidade/inspecoes/${p.inspection.id}`}
+            >
+              {p.inspection.code} (rodada {p.inspection.round})
+            </Link>
+          )}
+          {p.packaging && <span className="text-ink-muted">{p.packaging.code}</span>}
+          {p.delivery && (
+            <Link
+              className="text-brand-700 hover:underline"
+              href={`/painel/entregas/${p.delivery.id}`}
+            >
+              {p.delivery.code} · {p.delivery.scheduledDate.split('-').reverse().join('/')}
+            </Link>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

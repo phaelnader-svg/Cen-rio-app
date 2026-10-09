@@ -230,7 +230,8 @@ function TransitionDialog({
         )}
       </Field>
       <p className="mt-2 text-xs text-ink-muted">
-        Registro manual da confirmação (a integração com a logística virá em fase futura).
+        Registro manual da confirmação pelo gestor. A execução pela logística (saída e retirada
+        realizada) é registrada pelo responsável no celular.
       </p>
     </Dialog>
   );

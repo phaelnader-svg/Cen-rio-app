@@ -52,6 +52,15 @@
     @apply bg-canvas text-ink antialiased;
     font-feature-settings: 'cv11', 'ss01';
   }
+  /* Fase 12 (auditoria visual): fieldset e itens de grid não podem crescer além da tela por
+     causa de um filho largo (tabela com rolagem própria, selos) — causava rolagem horizontal
+     no celular e no tablet. */
+  fieldset {
+    min-width: 0;
+  }
+  .grid > * {
+    min-width: 0;
+  }
   :focus-visible {
     outline: 3px solid var(--color-brand-500);
     outline-offset: 2px;

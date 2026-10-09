@@ -394,6 +394,8 @@ function ProposalCard({ p }: { p: RescheduleProposalDto }) {
         <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
           <Button
             loading={m.isPending}
+            className="max-w-full"
+            title={`Aprovar: ${alt?.title ?? 'alternativa'}`}
             onClick={() =>
               m.mutate({
                 run: () =>
@@ -406,7 +408,7 @@ function ProposalCard({ p }: { p: RescheduleProposalDto }) {
               })
             }
           >
-            Aprovar: {alt?.title ?? 'alternativa'}
+            <span className="min-w-0 truncate">Aprovar: {alt?.title ?? 'alternativa'}</span>
           </Button>
           {alt && alt.actions.some((x) => x.type !== 'INTERRUPT_FOR_HELP') && (
             <Button variant="secondary" onClick={() => setDialog('adjust')}>

@@ -344,15 +344,29 @@ export function RealtimeProvider({
         connect();
       }
     };
+    // A rede voltou: o socket antigo pode ter sobrevivido à queda sem fechar ("zumbi", que só
+    // seria detectado no próximo ping, até 30 s depois). Troca por uma conexão nova na hora; o
+    // "resume" pela última sequência recupera os eventos perdidos.
+    const onOnline = () => {
+      const old = wsRef.current;
+      if (old && !endedRef.current) {
+        disposedSet.add(old);
+        wsRef.current = null;
+        window.clearInterval(timers.current.ping);
+        window.clearTimeout(timers.current.pong);
+        old.close(4002, 'network back');
+      }
+      wake();
+    };
     const onVisible = () => document.visibilityState === 'visible' && wake();
     const onOffline = () => setStatus((s) => (s === 'ended' ? s : 'offline'));
-    window.addEventListener('online', wake);
+    window.addEventListener('online', onOnline);
     window.addEventListener('offline', onOffline);
     document.addEventListener('visibilitychange', onVisible);
     const t = timers.current;
     return () => {
       endedRef.current = true;
-      window.removeEventListener('online', wake);
+      window.removeEventListener('online', onOnline);
       window.removeEventListener('offline', onOffline);
       document.removeEventListener('visibilitychange', onVisible);
       window.clearTimeout(t.retry);
