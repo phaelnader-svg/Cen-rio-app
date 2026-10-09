@@ -5,6 +5,7 @@ import type {
   PieceType,
   ProductionActivity,
   ProductionTemplateDto,
+  StepClass,
   TaskRole,
 } from '@cenario/shared';
 import {
@@ -13,9 +14,11 @@ import {
   PIECE_TYPES,
   PIECE_TYPE_LABEL,
   PLANNABLE_ACTIVITIES,
+  ACTIVITY_STEP_CLASS,
   PRODUCTION_ACTIVITY_LABEL,
-  TASK_ROLES,
-  TASK_ROLE_LABEL,
+  STEP_CLASSES,
+  STEP_CLASS_LABEL,
+  STEP_CLASS_ROLE,
 } from '@cenario/shared';
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
@@ -36,6 +39,8 @@ interface StepDraft {
   optional: boolean;
   dependsOn: number[];
   completionRequirement: CompletionRequirement;
+  /** Evolução Fase 3: classe explícita (nula = ambígua; a distribuição deixa pendente). */
+  stepClass: StepClass | null;
 }
 interface Draft {
   name: string;
@@ -56,6 +61,7 @@ const fromDto = (t: ProductionTemplateDto): Draft => ({
     optional: s.optional,
     dependsOn: s.dependsOn,
     completionRequirement: s.completionRequirement,
+    stepClass: s.stepClass,
   })),
 });
 
@@ -95,6 +101,7 @@ export function ProductionTemplatesPage() {
                 optional: false,
                 dependsOn: [],
                 completionRequirement: 'NENHUM',
+                stepClass: 'PREPARACAO',
               },
             ],
           }}
@@ -215,7 +222,7 @@ function TemplateEditor({
                 <th className="px-2 py-1">#</th>
                 <th className="px-2 py-1">Etapa</th>
                 <th className="px-2 py-1">Nome</th>
-                <th className="px-2 py-1">Papel</th>
+                <th className="px-2 py-1">Classe (quem faz)</th>
                 <th className="px-2 py-1">Depende de</th>
                 <th className="px-2 py-1">Materiais</th>
                 <th className="px-2 py-1">Opcional</th>
@@ -232,7 +239,11 @@ function TemplateEditor({
                       className="h-8 py-0"
                       value={s.activity}
                       onChange={(e) =>
-                        setStep(i, { activity: e.target.value as ProductionActivity })
+                        setStep(i, {
+                          activity: e.target.value as ProductionActivity,
+                          stepClass:
+                            ACTIVITY_STEP_CLASS[e.target.value as ProductionActivity] ?? null,
+                        })
                       }
                     >
                       {PLANNABLE_ACTIVITIES.map((a) => (
@@ -252,12 +263,17 @@ function TemplateEditor({
                   <td className="px-2 py-1.5">
                     <Select
                       className="h-8 py-0"
-                      value={s.role}
-                      onChange={(e) => setStep(i, { role: e.target.value as TaskRole })}
+                      aria-label={`Classe da etapa ${i + 1}`}
+                      value={s.stepClass ?? ''}
+                      onChange={(e) => {
+                        const c = (e.target.value || null) as StepClass | null;
+                        setStep(i, { stepClass: c, ...(c ? { role: STEP_CLASS_ROLE[c] } : {}) });
+                      }}
                     >
-                      {TASK_ROLES.map((r) => (
-                        <option key={r} value={r}>
-                          {TASK_ROLE_LABEL[r]}
+                      <option value="">Sem classe — revisar</option>
+                      {STEP_CLASSES.map((c) => (
+                        <option key={c} value={c}>
+                          {STEP_CLASS_LABEL[c]}
                         </option>
                       ))}
                     </Select>
@@ -372,6 +388,7 @@ function TemplateEditor({
                       optional: false,
                       dependsOn: [],
                       completionRequirement: 'NENHUM',
+                      stepClass: 'OUTRA',
                     },
                   ],
                 })

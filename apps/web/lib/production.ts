@@ -2,6 +2,7 @@
 
 import type {
   MyQueueDto,
+  PlanDistributionDto,
   NotificationDto,
   PlanCandidateDto,
   ProductionPlanDto,
@@ -97,6 +98,14 @@ export const useMyQueue = (enabled = true) =>
     queryFn: () => api<MyQueueDto>('/api/v1/production-tasks/mine/queue'),
     enabled,
     refetchInterval: 60_000,
+  });
+
+/** Evolução Fase 3: distribuição por peça (titular, responsáveis e pendências). */
+export const useDistribution = (planId: string | null) =>
+  useQuery({
+    queryKey: ['production-distribution', planId],
+    queryFn: () => api<PlanDistributionDto>(`/api/v1/production-plans/${planId}/distribution`),
+    enabled: Boolean(planId),
   });
 
 /** Fila de um funcionário (gestão). */

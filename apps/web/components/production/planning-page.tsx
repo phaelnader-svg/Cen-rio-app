@@ -47,7 +47,13 @@ import { api, newIdempotencyKey } from '@/lib/api';
 import { addDays, formatDay, todayIso } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useMe } from '@/lib/hooks';
-import { useCandidates, usePlan, usePlansOfWeek, useWorkers } from '@/lib/production';
+import {
+  useCandidates,
+  useDistribution,
+  usePlan,
+  usePlansOfWeek,
+  useWorkers,
+} from '@/lib/production';
 import { TaskStatusBadge, blockersText } from './badges';
 import { useSend } from './use-send';
 
@@ -258,6 +264,7 @@ function PlanEditor({ planId }: { planId: string }) {
         </Alert>
       )}
 
+      {fila && <DistributionSection plan={plan} workers={workers.data ?? []} reason={why} />}
       {fila && <QueuesSection plan={plan} workers={workers.data ?? []} reason={why} send={send} />}
 
       <CandidatesSection planId={planId} onAdd={setAdding} />
@@ -381,6 +388,10 @@ function AddOsDialog({
   const [date, setDate] = useState(plan.weekStart);
   const [key] = useState(newIdempotencyKey);
   const { m, error } = useSend(onClose);
+  // Evolução Fase 3 (fila): titular por peça; vazio = usa o principal acima como proposta.
+  const fila = plan.mode === 'FILA_SEMANAL';
+  const [owners, setOwners] = useState<Record<string, string>>({});
+  const tapeceiros = workers.filter((w) => w.isTapeceiro);
   return (
     <Dialog
       open
@@ -404,7 +415,17 @@ function AddOsDialog({
                       serviceOrderId: candidate.serviceOrder.id,
                       principalUserId: principal || null,
                       priority,
-                      ...(plan.mode === 'FILA_SEMANAL' ? {} : { date }),
+                      ...(fila ? {} : { date }),
+                      ...(fila
+                        ? {
+                            pieces: Object.entries(owners)
+                              .filter(([, v]) => v)
+                              .map(([serviceOrderItemId, upholstererUserId]) => ({
+                                serviceOrderItemId,
+                                upholstererUserId,
+                              })),
+                          }
+                        : {}),
                       reason,
                     },
                   }),
@@ -429,9 +450,19 @@ function AddOsDialog({
       )}
       <div className="grid gap-4 sm:grid-cols-3">
         <Field
-          label={hasSofa ? 'Tapeceiro principal (sofá)' : 'Responsável principal'}
+          label={
+            fila
+              ? 'Tapeceiro titular (proposta para todas as peças)'
+              : hasSofa
+                ? 'Tapeceiro principal (sofá)'
+                : 'Responsável principal'
+          }
           className="sm:col-span-3"
-          hint="Corte e costura ficam com o responsável principal."
+          hint={
+            fila
+              ? 'Toda a tapeçaria de cada peça fica com o seu titular. Sem titular, a peça fica pendente.'
+              : 'Corte e costura ficam com o responsável principal.'
+          }
         >
           {(p) => (
             <Select {...p} value={principal} onChange={(e) => setPrincipal(e.target.value)}>
@@ -447,6 +478,29 @@ function AddOsDialog({
             </Select>
           )}
         </Field>
+        {fila &&
+          candidate.items.map((it) => (
+            <Field
+              key={it.id}
+              label={`Titular de ${it.code} · ${it.description}`}
+              className="sm:col-span-3"
+            >
+              {(p) => (
+                <Select
+                  {...p}
+                  value={owners[it.id] ?? ''}
+                  onChange={(e) => setOwners({ ...owners, [it.id]: e.target.value })}
+                >
+                  <option value="">Usar a proposta acima / titular já definido</option>
+                  {tapeceiros.map((w) => (
+                    <option key={w.userId} value={w.userId}>
+                      {w.displayName}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          ))}
         <Field label="Prioridade">
           {(p) => (
             <Select
@@ -917,6 +971,214 @@ function CarryOverDialog({ plan, onClose }: { plan: ProductionPlanDto; onClose: 
       <Field label="Motivo (histórico)">
         {(p) => <Input {...p} value={reason} onChange={(e) => setReason(e.target.value)} />}
       </Field>
+    </Dialog>
+  );
+}
+
+/**
+ * Evolução Fase 3 — distribuição por peça: titular, responsáveis, inspetor e pendências.
+ * Definir o titular pela primeira vez é direto; trocar é substituição (motivo + confirmação).
+ */
+function DistributionSection({
+  plan,
+  workers,
+  reason,
+}: {
+  plan: ProductionPlanDto;
+  workers: WorkerDto[];
+  reason: string | undefined;
+}) {
+  const q = useDistribution(plan.id);
+  const { m, error } = useSend();
+  const [replacing, setReplacing] = useState<{
+    itemId: string;
+    code: string;
+    from: string;
+    to: string;
+  } | null>(null);
+  if (q.isPending) return <Spinner />;
+  if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
+  const tapeceiros = workers.filter((w) => w.isTapeceiro);
+  const define = (itemId: string, userId: string) =>
+    m.mutate({
+      run: () =>
+        api(`/api/v1/service-order-items/${itemId}/upholsterer`, {
+          method: 'PUT',
+          idempotencyKey: newIdempotencyKey(),
+          body: { userId, expectedUserId: null, reason },
+        }),
+      ok: 'Titular definido.',
+    });
+  return (
+    <Section
+      title={`Distribuição por peça · ${q.data.pendencyCount} pendência(s)`}
+      bodyClassName="p-0"
+      actions={plan.items.map((it) => (
+        <Button
+          key={it.id}
+          size="sm"
+          variant="secondary"
+          loading={m.isPending}
+          onClick={() =>
+            m.mutate({
+              run: () =>
+                api(`/api/v1/production-plans/${plan.id}/items/${it.id}/distribute`, {
+                  method: 'POST',
+                  idempotencyKey: newIdempotencyKey(),
+                  body: { reason },
+                }),
+              ok: 'Distribuição reprocessada.',
+            })
+          }
+        >
+          Reprocessar {it.serviceOrder.code}
+        </Button>
+      ))}
+    >
+      {error && (
+        <Alert tone="danger" className="m-4">
+          {error}
+        </Alert>
+      )}
+      <ul className="divide-y divide-line" data-testid="distribution">
+        {q.data.pieces.map((p) => (
+          <li key={p.item.id} className="space-y-2 px-5 py-3" data-testid={`piece-${p.item.code}`}>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="font-mono text-sm font-semibold">{p.item.code}</span>
+              <span className="min-w-0 flex-1 text-sm">
+                {p.item.description}
+                <span className="block text-xs text-ink-muted">
+                  {p.template ? `Modelo: ${p.template.name}` : 'Sem modelo'} · Inspeção:{' '}
+                  {p.inspector?.displayName ?? 'sem inspetor'}
+                </span>
+              </span>
+              {p.needsUpholstery && (
+                <Select
+                  aria-label={`Titular de ${p.item.code}`}
+                  className="h-9 w-48 py-0 text-sm"
+                  value={p.upholsterer?.userId ?? ''}
+                  onChange={(e) => {
+                    const to = e.target.value;
+                    if (!to) return;
+                    if (!p.upholsterer) define(p.item.id, to);
+                    else
+                      setReplacing({
+                        itemId: p.item.id,
+                        code: p.item.code,
+                        from: p.upholsterer.userId,
+                        to,
+                      });
+                  }}
+                >
+                  <option value="">Titular: a definir</option>
+                  {tapeceiros.map((w) => (
+                    <option key={w.userId} value={w.userId}>
+                      Titular: {w.displayName}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </div>
+            <p className="text-xs text-ink-muted">
+              {p.tasks
+                .map(
+                  (t) => `${t.code} ${t.title.split(' — ')[0]}: ${t.assignee?.displayName ?? '—'}`,
+                )
+                .join(' · ')}
+            </p>
+            {p.pendencies.length > 0 && (
+              <ul
+                className="list-disc pl-5 text-sm text-warn-600"
+                data-testid={`pendencies-${p.item.code}`}
+              >
+                {p.pendencies.map((x, i) => (
+                  <li key={i}>{x.message}</li>
+                ))}
+              </ul>
+            )}
+            {p.ownerChanges.length > 0 && (
+              <p className="text-xs text-ink-muted">
+                {p.ownerChanges
+                  .map(
+                    (c) =>
+                      `${c.kind === 'DEFINICAO' ? 'Definido' : 'Substituído'}: ${c.from ? `${c.from} → ` : ''}${c.to} (${formatDateTime(c.createdAt)}${c.reason ? `, ${c.reason}` : ''}${c.financialReviewRequired ? ', revisão financeira pendente' : ''})`,
+                  )
+                  .join(' · ')}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+      {replacing && (
+        <ReplaceOwnerDialog
+          value={replacing}
+          name={(id) => workers.find((w) => w.userId === id)?.displayName ?? '—'}
+          onClose={() => setReplacing(null)}
+        />
+      )}
+    </Section>
+  );
+}
+
+function ReplaceOwnerDialog({
+  value,
+  name,
+  onClose,
+}: {
+  value: { itemId: string; code: string; from: string; to: string };
+  name: (id: string) => string;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState('');
+  const [confirm, setConfirm] = useState(false);
+  const [key] = useState(newIdempotencyKey);
+  const { m, error } = useSend(onClose);
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Substituir o titular de ${value.code}?`}
+      description={`${name(value.from)} → ${name(value.to)}. Etapas concluídas e o histórico ficam como estão; só as pendentes passam ao novo titular. Valores combinados não mudam: havendo mão de obra com outra pessoa, fica sinalizada a revisão financeira.`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            loading={m.isPending}
+            disabled={!confirm || reason.trim().length < 3}
+            onClick={() =>
+              m.mutate({
+                run: () =>
+                  api(`/api/v1/service-order-items/${value.itemId}/upholsterer`, {
+                    method: 'PUT',
+                    idempotencyKey: key,
+                    body: { userId: value.to, expectedUserId: value.from, reason, confirm },
+                  }),
+                ok: 'Titular substituído.',
+              })
+            }
+          >
+            Substituir
+          </Button>
+        </>
+      }
+    >
+      {error && (
+        <Alert tone="danger" className="mb-3">
+          {error}
+        </Alert>
+      )}
+      <Field label="Motivo (histórico e auditoria)">
+        {(p) => <Input {...p} value={reason} onChange={(e) => setReason(e.target.value)} />}
+      </Field>
+      <div className="mt-3">
+        <Checkbox
+          label="Confirmo a substituição (ação excepcional)"
+          checked={confirm}
+          onChange={(e) => setConfirm(e.target.checked)}
+        />
+      </div>
     </Dialog>
   );
 }

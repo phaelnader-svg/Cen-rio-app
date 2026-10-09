@@ -104,6 +104,7 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
       ['my-tasks'],
       ['my-queue'],
       ['production-queue'],
+      ['production-distribution'],
       ['os-production'],
     );
   }
