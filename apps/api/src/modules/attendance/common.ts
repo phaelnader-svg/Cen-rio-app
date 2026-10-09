@@ -20,6 +20,7 @@ import { loadUserPermissions } from '../../core/permissions';
 import type { ActorContext } from '../../core/types';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { notify } from '../notifications/notify';
+import { now, setClock } from '../../core/clock';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -37,13 +38,12 @@ export const audienceOf = (userId: string) =>
 // ─────────────────────────── Configuração e datas ───────────────────────────
 
 /**
- * Relógio da presença: sempre o horário do servidor. Os testes podem fixá-lo para
- * simular 8h30, atrasos e o limite de 9h30 de forma determinística.
+ * Relógio da presença: o relógio operacional único da aplicação (core/clock), que os testes
+ * podem fixar para simular 8h30, atrasos e o limite de 9h30 de forma determinística.
  */
-let clockFn: () => Date = () => new Date();
-export const clock = () => clockFn();
+export const clock = () => now();
 export function setAttendanceClock(fn?: () => Date) {
-  clockFn = fn ?? (() => new Date());
+  setClock(fn);
 }
 
 export async function attendanceConfig(db: Tx | PrismaClient, now = clock()) {

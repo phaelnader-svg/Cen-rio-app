@@ -29,6 +29,7 @@ import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
 import { Errors } from '../../lib/errors';
+import { now as clockNow } from '../../core/clock';
 import { parseDateOnly } from '../commercial/common';
 import { idParams } from '../presenters';
 import { refreshAvailabilityOfUser } from '../attendance/common';
@@ -187,6 +188,49 @@ async function scheduledFrom(
   return zonedDateTime(date, time ?? cur?.time ?? workdayStart, timezone);
 }
 
+/** Planejamento em fila semanal: tarefas sem data/horário; a ordem é a da fila. */
+async function isQueuePlan(db: Tx | PrismaClient, planId: string | null) {
+  if (!planId) return false;
+  const p = await db.productionPlan.findUnique({ where: { id: planId }, select: { mode: true } });
+  return p?.mode === 'FILA_SEMANAL';
+}
+
+function rejectTimeInQueue(input: { date?: string | null; time?: string | null }) {
+  if (input.date || input.time) {
+    throw Errors.business(
+      'No planejamento em fila semanal as tarefas não têm data nem horário: ajuste a ordem da fila.',
+    );
+  }
+}
+
+/**
+ * Fila semanal (D-6): no máximo UMA tarefa principal em execução por funcionário. Um advisory
+ * lock por funcionário serializa inícios concorrentes; o índice único parcial
+ * production_tasks_one_active_per_assignee garante o mesmo no banco. Apoio (supportForTaskId)
+ * não conta: ajudar um colega não é uma segunda tarefa principal.
+ */
+async function assertSingleActive(
+  tx: Tx,
+  t: { id: string; queueExclusive: boolean; assigneeUserId: string | null },
+) {
+  if (!t.queueExclusive || !t.assigneeUserId) return;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`fila:${t.assigneeUserId}`}, 0))`;
+  const other = await tx.productionTask.findFirst({
+    where: {
+      assigneeUserId: t.assigneeUserId,
+      status: 'EM_EXECUCAO',
+      queueExclusive: true,
+      id: { not: t.id },
+    },
+    select: { number: true, title: true },
+  });
+  if (other) {
+    throw Errors.conflict(
+      `Você já tem ${taskCode(other.number)} · ${other.title} em execução: pause ou conclua antes de iniciar outra.`,
+    );
+  }
+}
+
 export async function productionTaskRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -216,6 +260,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           throw Errors.business('A peça não pertence a esta OS.');
         }
         if (input.assigneeUserId) await assertWorker(tx, input.assigneeUserId);
+        if (plan.mode === 'FILA_SEMANAL') rejectTimeInQueue(input);
         const piece = item.serviceOrder.items.find((i) => i.id === input.serviceOrderItemId);
         const data = {
           planId,
@@ -283,6 +328,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         throw Errors.business('A tarefa já começou: o responsável não pode ser trocado.');
       }
       if (input.assigneeUserId) await assertWorker(tx, input.assigneeUserId);
+      if (await isQueuePlan(tx, t.planId)) rejectTimeInQueue(input);
       const data: Prisma.ProductionTaskUncheckedUpdateInput = {
         ...(input.title !== undefined ? { title: input.title ?? t.title } : {}),
         ...(input.role ? { role: input.role } : {}),
@@ -611,13 +657,30 @@ export async function productionTaskRoutes(app: FastifyInstance) {
   app.get('/api/v1/production-board', { config: { access: VIEW } }, async (request) => {
     const q = boardQuerySchema.parse(request.query);
     const { timezone } = await company(prisma);
-    const range =
+    // Legado: período pelo horário da tarefa. Fila semanal (sem horário): pela semana do plano.
+    const range: Prisma.ProductionTaskWhereInput =
       q.from || q.to
         ? {
-            scheduledAt: {
-              ...(q.from ? { gte: zonedDateTime(q.from, '00:00', timezone) } : {}),
-              ...(q.to ? { lte: zonedDateTime(q.to, '23:59', timezone) } : {}),
-            },
+            OR: [
+              {
+                scheduledAt: {
+                  ...(q.from ? { gte: zonedDateTime(q.from, '00:00', timezone) } : {}),
+                  ...(q.to ? { lte: zonedDateTime(q.to, '23:59', timezone) } : {}),
+                },
+              },
+              {
+                scheduledAt: null,
+                plan: {
+                  mode: 'FILA_SEMANAL',
+                  weekStart: {
+                    ...(q.to ? { lte: parseDateOnly(q.to)! } : {}),
+                    ...(q.from
+                      ? { gt: new Date(parseDateOnly(q.from)!.getTime() - 7 * 86_400_000) }
+                      : {}),
+                  },
+                },
+              },
+            ],
           }
         : {};
     const rows = await prisma.productionTask.findMany({
@@ -661,7 +724,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
   /** Minhas tarefas: as do dia (e atrasadas/em andamento), em ordem de prioridade; e as próximas. */
   app.get('/api/v1/production-tasks/mine', { config: { access: EXECUTE } }, async (request) => {
     const { timezone } = await company(prisma);
-    const today = localParts(new Date(), timezone).date;
+    const today = localParts(clockNow(), timezone).date;
     const endOfToday = zonedDateTime(today, '23:59', timezone);
     const startOfToday = zonedDateTime(today, '00:00', timezone);
     const rows = await prisma.productionTask.findMany({
@@ -673,6 +736,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           { scheduledAt: { lte: endOfToday }, status: { notIn: ['CONCLUIDA'] } },
           { scheduledAt: { gte: startOfToday, lte: endOfToday } },
           { completedAt: { gte: startOfToday } },
+          // Fila semanal: todas as tarefas abertas aparecem (sem horário, a fila não zera no dia).
+          { plan: { mode: 'FILA_SEMANAL' }, status: { notIn: ['CONCLUIDA'] } },
           { scheduledAt: { gt: endOfToday, lte: new Date(endOfToday.getTime() + 7 * 86_400_000) } },
         ],
       },
@@ -835,7 +900,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       const t = await tx.productionTask.findUnique({
         where: { id },
         include: {
-          plan: { select: { status: true } },
+          plan: { select: { status: true, mode: true } },
           serviceOrder: {
             select: {
               status: true,
@@ -851,7 +916,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         throw Errors.forbidden('Esta tarefa é de outra pessoa.');
       }
       if (t.serviceOrder.status !== 'ABERTA') throw Errors.business('A OS não está ativa.');
-      const now = new Date();
+      const now = clockNow();
 
       if (action === 'start') {
         if (t.status === 'EM_EXECUCAO') return; // repetição: nada muda
@@ -878,6 +943,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           openIssue: await hasBlockingIssue(tx, t.id),
           scheduledAt: t.scheduledAt,
           now,
+          mode: t.plan?.mode ?? 'LEGADO',
         });
         if (check.status !== 'LIBERADA') {
           const why = check.blockers.length
@@ -885,6 +951,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
             : 'o horário programado ainda não chegou';
           throw Errors.business(`A tarefa ainda não está liberada: ${why}.`);
         }
+        await assertSingleActive(tx, t);
         const u = await tx.productionTask.update({
           where: { id },
           data: {
@@ -950,6 +1017,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           throw Errors.business(
             'Há uma ocorrência aberta impedindo esta tarefa: aguarde a resolução confirmada.',
           );
+        await assertSingleActive(tx, t);
         const u = await tx.productionTask.update({
           where: { id },
           data: {

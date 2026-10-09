@@ -3,7 +3,9 @@ import {
   addPlanItemSchema,
   createPlanSchema,
   formatServiceOrderItemCode,
+  localParts,
   mondayOf,
+  PLAN_MODE_LABEL,
   publishPlanSchema,
   taskCode,
   templateSchema,
@@ -24,6 +26,7 @@ import { appendEvent } from '../../core/events/append';
 import { loadUserPermissions } from '../../core/permissions';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
+import { now as clockNow } from '../../core/clock';
 import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
 import { notify, taskNotice } from '../notifications/notify';
@@ -89,6 +92,7 @@ async function snapshot(tx: Tx, planId: string) {
     title: t.title,
     assigneeUserId: t.assigneeUserId,
     priority: t.priority,
+    queuePosition: t.queuePosition,
     scheduledAt: t.scheduledAt?.toISOString() ?? null,
     dueDate: dateOnly(t.dueDate),
     status: t.status,
@@ -158,7 +162,7 @@ export async function reviseIfPublishedBy(
   });
 }
 
-export function weekdayIn(timeZone: string, d = new Date()) {
+export function weekdayIn(timeZone: string, d = clockNow()) {
   const day = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(d);
   return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(day);
 }
@@ -222,7 +226,9 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
       message: `${noAssignee.length} tarefa(s) sem responsável.`,
       taskIds: noAssignee.map((t) => t.id),
     });
-  const noTime = open.filter((t) => !t.scheduledAt);
+  // Fila semanal: sem horário por desenho — nenhum aviso baseado em horário.
+  const queue = plan.mode === 'FILA_SEMANAL';
+  const noTime = queue ? [] : open.filter((t) => !t.scheduledAt);
   if (noTime.length)
     conflicts.push({
       kind: 'SEM_HORARIO',
@@ -287,11 +293,19 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
       });
     }
   }
+  // A semana de trabalho (seg–sex) terminou: pendências ficam visíveis para o gestor transferir.
+  const today = localParts(clockNow(), timezone).date;
+  const pending = dtos.filter(
+    (t) => !['CONCLUIDA', 'CANCELADA', 'RASCUNHO'].includes(t.status) && !t.supportFor,
+  );
   return {
     id: plan.id,
     weekStart,
     weekEnd,
     status: plan.status,
+    mode: plan.mode,
+    weekEnded: today > addDays(weekStart, 4),
+    pendingCount: plan.status === 'PUBLICADO' ? pending.length : 0,
     revision: plan.revision,
     notes: plan.notes,
     createdBy: plan.createdBy?.displayName ?? null,
@@ -582,6 +596,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
       id: p.id,
       weekStart: dateOnly(p.weekStart),
       status: p.status,
+      mode: p.mode,
       revision: p.revision,
       version: p.version,
     }));
@@ -609,6 +624,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         const plan = await tx.productionPlan.create({
           data: {
             weekStart: parseDateOnly(weekStart)!,
+            mode: input.mode,
             notes: input.notes ?? null,
             createdById: actor.userId,
           },
@@ -617,7 +633,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           action: 'production.plan_created',
           entityType: 'production_plan',
           entityId: plan.id,
-          summary: `Planejamento da semana de ${weekStart} criado (rascunho).`,
+          summary: `Planejamento da semana de ${weekStart} criado (rascunho, ${PLAN_MODE_LABEL[input.mode].toLowerCase()}).`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.PRODUCTION_PLAN_CREATED,
@@ -727,6 +743,11 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         await tx.productionPlanItem.create({
           data: { planId: id, serviceOrderId: so.id, principalUserId: principal, priority },
         });
+        // Fila semanal: sem data/horário (nada fictício); a ordem é a da fila.
+        if (plan.mode === 'FILA_SEMANAL' && input.date)
+          throw Errors.business(
+            'No planejamento em fila semanal as tarefas não têm data nem horário.',
+          );
         const scheduledAt = input.date ? zonedDateTime(input.date, workdayStart, timezone) : null;
         const created = input.generate
           ? await generateTasks(tx, id, so, principal, priority, scheduledAt)
@@ -884,7 +905,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           where: { planId: id, status: 'RASCUNHO' },
           data: { status: 'BLOQUEADA' },
         });
-        const now = new Date();
+        const now = clockNow();
         await tx.productionPlan.update({
           where: { id },
           data: {

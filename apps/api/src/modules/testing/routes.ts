@@ -5,12 +5,14 @@ import { detectAbsences } from '../attendance/absence';
 import { clock, setAttendanceClock } from '../attendance/common';
 import { processHelpQueue } from '../help/queue';
 import { processIssueRisks } from '../issues/service';
+import { releaseDueTasks } from '../production/common';
 
 /**
  * Fase 8 — relógio de teste. Registrado somente com ENABLE_TEST_CLOCK=true e APP_ENV=test
  * (a validação do ambiente recusa a combinação em qualquer outro ambiente). Não altera o
  * relógio do sistema operacional nem do banco: apenas desloca o relógio operacional da
- * aplicação (presença, ausência presumida e fila de ajuda), que continua andando.
+ * aplicação (presença, ausência presumida, fila de ajuda e — Evolução Fase 2 — liberação e
+ * execução da produção, via core/clock), que continua andando.
  */
 const ACCESS = { session: 'WEB', permissions: ['presenca.gerenciar'] } as const;
 
@@ -39,5 +41,7 @@ export async function testClockRoutes(app: FastifyInstance) {
     flagged: await detectAbsences(prisma),
     assigned: await processHelpQueue(prisma),
     issueRisks: await processIssueRisks(prisma),
+    // O relógio de teste também vale para a liberação por horário (planos LEGADO).
+    released: await releaseDueTasks(prisma),
   }));
 }

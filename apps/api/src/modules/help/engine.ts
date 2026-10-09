@@ -13,6 +13,7 @@ import {
   type HelpKind,
   type Skill,
 } from '@cenario/shared';
+import { now as clockNow } from '../../core/clock';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
@@ -269,7 +270,7 @@ export async function assignTo(
       priority: req.urgent ? 'URGENTE' : task.priority,
       sequence: task.sequence,
       // Horário real: a tarefa pode ser iniciada imediatamente.
-      scheduledAt: new Date(),
+      scheduledAt: clockNow(),
       dueDate: dbDate(cfg.today),
       instructions: [
         `Apoio para ${requester.displayName} em ${taskCode(task.number)} (${helpRequestCode(req.number)}).`,

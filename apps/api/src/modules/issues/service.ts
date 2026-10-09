@@ -16,6 +16,7 @@ import {
   type ProposalAlternative,
   type Skill,
 } from '@cenario/shared';
+import { now as clockNow } from '../../core/clock';
 import { Prisma, type PrismaClient, type Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import { loadUserPermissions } from '../../core/permissions';
@@ -578,7 +579,7 @@ export async function assignIssue(
       assigneeUserId: input.assigneeUserId,
       priority,
       sequence: task.sequence,
-      scheduledAt: new Date(),
+      scheduledAt: clockNow(),
       dueDate: dbDate((await attendanceConfig(tx, dueAt)).today),
       instructions: [
         input.instructions,

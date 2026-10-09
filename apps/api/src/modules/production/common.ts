@@ -18,6 +18,7 @@ import {
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyRequest } from 'fastify';
 import { audit } from '../../core/audit';
+import { now as clockNow } from '../../core/clock';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
@@ -69,7 +70,8 @@ const refSelect = {
 } as const;
 
 export const taskInclude = {
-  plan: { select: { id: true, weekStart: true, status: true } },
+  plan: { select: { id: true, weekStart: true, status: true, mode: true } },
+  carriedFromPlan: { select: { weekStart: true } },
   serviceOrder: {
     select: {
       id: true,
@@ -132,7 +134,12 @@ export function toTaskDto(t: TaskRow, timeZone: string): ProductionTaskDto {
     number: t.number,
     code: taskCode(t.number),
     plan: t.plan
-      ? { id: t.plan.id, weekStart: dateOnly(t.plan.weekStart)!, status: t.plan.status }
+      ? {
+          id: t.plan.id,
+          weekStart: dateOnly(t.plan.weekStart)!,
+          status: t.plan.status,
+          mode: t.plan.mode,
+        }
       : null,
     serviceOrder: {
       id: t.serviceOrder.id,
@@ -159,6 +166,8 @@ export function toTaskDto(t: TaskRow, timeZone: string): ProductionTaskDto {
       : null,
     priority: t.priority,
     sequence: t.sequence,
+    queuePosition: t.queuePosition,
+    carriedFromWeek: t.carriedFromPlan ? dateOnly(t.carriedFromPlan.weekStart) : null,
     scheduledAt: t.scheduledAt?.toISOString() ?? null,
     scheduledDate: local?.date ?? null,
     scheduledTime: local?.time ?? null,
@@ -363,7 +372,7 @@ export async function reevaluateTasks(
   tx: Tx,
   actor: ActorContext,
   taskIds: string[],
-  now = new Date(),
+  now = clockNow(),
 ) {
   if (!taskIds.length) return;
   await lockTasks(tx, taskIds);
@@ -373,7 +382,7 @@ export async function reevaluateTasks(
     const t = await tx.productionTask.findUnique({
       where: { id },
       include: {
-        plan: { select: { status: true } },
+        plan: { select: { status: true, mode: true } },
         serviceOrder: {
           select: {
             status: true,
@@ -407,6 +416,8 @@ export async function reevaluateTasks(
       openIssue,
       scheduledAt: t.scheduledAt,
       now,
+      // Fila semanal: horário não é pré-condição; legado (ou sem plano): regra por horário.
+      mode: t.plan?.mode ?? 'LEGADO',
     });
     const sameBlockers =
       result.blockers.length === t.blockers.length &&
@@ -473,7 +484,7 @@ onReadinessChanged(async (tx, actor, serviceOrderId) => {
  * Libera as tarefas cujo horário programado chegou (executado periodicamente e
  * idempotente: tarefas já liberadas não geram novos eventos).
  */
-export async function releaseDueTasks(prisma: PrismaClient, now = new Date()) {
+export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
   const due = await prisma.productionTask.findMany({
     where: { status: 'PROGRAMADA', scheduledAt: { lte: now } },
     select: { id: true },

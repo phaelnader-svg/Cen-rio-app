@@ -4,6 +4,7 @@ import {
   compareTasks,
   helpRequestCode,
   localParts,
+  onlyReassignableBlockers,
   pickCandidate,
   proposalCode,
   taskCode,
@@ -29,6 +30,7 @@ import {
   taskEvent,
 } from '../production/common';
 import { assertWorker, reviseIfPublishedBy } from '../production/plans';
+import { loadQueue } from '../production/queue';
 import {
   HELP_AUDIENCE,
   SYSTEM,
@@ -163,6 +165,7 @@ export async function suggestAlternative(
     title: string;
     version: number;
     assigneeUserId: string | null;
+    queueExclusive?: boolean;
   },
 ) {
   if (!blocked.assigneeUserId) return null;
@@ -173,6 +176,29 @@ export async function suggestAlternative(
     where: { employeeId_date: { employeeId: employee.id, date: dbDate(cfg.today) } },
   });
   if (!day?.arrivedAt || day.situation !== 'PRESENTE') return null;
+  // Fila semanal: só indica a próxima executável na ordem da fila. Não antecipa horário, não
+  // reordena e não inicia nada; quem está em execução não é interrompido.
+  if (blocked.queueExclusive) {
+    const q = await loadQueue(tx, blocked.assigneeUserId);
+    if (q.current || !q.next || q.next.id === blocked.id) return null;
+    await planningAction(tx, SYSTEM, {
+      kind: 'ALTERNATIVA_SUGERIDA',
+      automatic: true,
+      reason: `${taskCode(blocked.number)} bloqueada; ${q.next.code} é a próxima executável da fila de ${employee.displayName}.`,
+      taskId: q.next.id,
+    });
+    await notify(tx, actor, [
+      {
+        userId: blocked.assigneeUserId,
+        kind: 'TAREFA_ALTERNATIVA_LIBERADA',
+        dedupeKey: `ALTERNATIVA:${blocked.id}:${blocked.version}`,
+        body: `${taskCode(blocked.number)} · ${blocked.title} está bloqueada. A próxima da sua fila é ${q.next.code} · ${q.next.title}: toque em Iniciar quando for começar.`,
+        taskId: q.next.id,
+        includeActor: true,
+      },
+    ]);
+    return null;
+  }
   const mine = await tx.productionTask.findMany({
     where: {
       assigneeUserId: blocked.assigneeUserId,
@@ -224,7 +250,7 @@ export async function suggestAlternative(
     ),
   )[0];
   if (!next) return null;
-  const now = new Date();
+  const now = clock();
   const reason = `Automático: ${taskCode(blocked.number)} ficou bloqueada; ${taskCode(next.number)} antecipada para agora (mesmo funcionário, sem bloqueios, prazo preservado).`;
   const r = await changeTask(
     tx,
@@ -494,7 +520,7 @@ export async function analyzeAbsence(
       !isImportant(t.priority) &&
       (!t.dueDate || dateOnly(t.dueDate)! > cfg.today) &&
       !t.blockedReason &&
-      t.blockers.every((b) => b === 'DEPENDENCIAS' || b === 'HORARIO');
+      onlyReassignableBlockers(t.blockers);
     if (!simple) {
       remaining.push(t);
       continue;
