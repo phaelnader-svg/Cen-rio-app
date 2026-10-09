@@ -1,0 +1,22 @@
+# Arquivos enviados ao Cloud Build por "operador.sh build" (só após autorização da publicação).
+# Envia apenas o necessário ao Dockerfile de homologação; nada de dependências, builds, backups
+# ou arquivos de ambiente.
+.gcloudignore
+.git
+.github
+**/node_modules
+**/.next
+**/.next-*
+**/dist
+**/*.tsbuildinfo
+.env
+.env.*
+!.env.example
+storage
+storage-e2e
+apps/api/storage
+backups
+tests/e2e/test-results
+tests/e2e/playwright-report
+infra/homolog/.env.homolog
+.homolog-local

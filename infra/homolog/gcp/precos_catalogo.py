@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Estimativa de custo da Etapa 1 com preços OFICIAIS de lista do catálogo do Cloud Billing.
+"""Estimativa de custo da infraestrutura base da homologação (VM, disco, IP, snapshots) com preços
+OFICIAIS de lista do catálogo do Cloud Billing.
 
-Uso (chamado por etapa1-infra.sh; o token vem de CENARIO_TOKEN, nunca de argumentos):
+Uso (chamado por "homolog.sh custos"; o token vem de CENARIO_TOKEN, nunca de argumentos):
   precos_catalogo.py obter --limite 20.00   # consulta oficial (com tentativas); se falhar, reutiliza
                                             # uma consulta oficial recente ainda válida
   precos_catalogo.py cache --limite 20.00   # só a consulta guardada (sem rede)
@@ -262,7 +263,7 @@ def relatar(registro: dict, origem: str, limite: float) -> int:
     for nome, v, desc in linhas:
         print(f"  {nome:45s} US$ {v:6.2f}   [{desc}]")
     print(f"  {'Bucket, segredos, IAP, logs (cotas gratuitas)':45s} US$   0.00")
-    print(f"  {'TOTAL Etapa 1 (sem tributos)':45s} US$ {total:6.2f}  (limite autorizado: US$ {limite:.2f})")
+    print(f"  {'TOTAL infraestrutura base (sem tributos)':45s} US$ {total:6.2f}  (limite autorizado: US$ {limite:.2f})")
     print(f"TOTAL_USD={total:.2f}")
     if total > limite:
         print(f"✘ Estimativa ACIMA do limite autorizado (US$ {limite:.2f}): criação bloqueada.")
