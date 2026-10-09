@@ -575,6 +575,34 @@ cobrança externa nem emissão de nota fiscal — recebimentos e pagamentos são
 - **Histórico**: `financial_events` (imutável) por registro, além da auditoria; eventos de domínio
   sem valores, só para `financeiro.ver`.
 
+### Auditoria final e remediação (Fase 12)
+
+Sem módulos novos; fechamento das pendências que atravessam módulos:
+
+- **Reservas de peças devolvidas** (`purchasing/withdrawal.ts`, `releaseReservationsOfItems`):
+  na confirmação de uma devolução parcial, libera só as reservas `ATIVA` cuja necessidade aponta
+  para uma peça devolvida (bloqueio do item de estoque, releitura da reserva, evento
+  `stock.released`, auditoria `stock.released_on_return`, recálculo da prontidão). Reservas sem
+  peça definida não são rateadas: entram na lista de revisão do detalhe da devolução.
+- **Valores de produção** (`finance/withdrawal.ts`, `settleLaborOfWithdrawal`): sem execução nem
+  pagamento → cancelado com justificativa (`CANCELADO_DEVOLUCAO`); com execução ou pagamento →
+  `REVISAO_DEVOLUCAO` + aviso a quem tem `financeiro.gerenciar`. A elegibilidade passou a ser
+  "pegajosa" (`eligibleAt` gravado não se perde). Também roda no cancelamento da OS (consumidor
+  `onServiceOrderCancelled`).
+- **Situação do serviço do pedido** (`orderServiceState` em `shared/domain.ts`,
+  `commercial/status.ts`): derivada de peças recebidas, devolvidas, ativas e entregues; não muda o
+  valor negociado.
+- **Encerramento de saldo de compra** (`POST /purchase-orders/:id/close-balance`):
+  `closed_quantity` por item, situação `RECEBIDO`, histórico `SALDO_ENCERRADO`; necessidades,
+  custos e prontidão contam só o que foi recebido. Estorno posterior soma ao saldo encerrado.
+- **Transações**: limite de 60 s (`transactionOptions` em `packages/db`), por causa da publicação
+  de planejamentos grandes (6–7 s com 40 OS).
+- **Catálogo de rotas** (`app.routeCatalog`): lista método, URL e regra de acesso de toda rota,
+  usada pela auditoria de segurança automatizada.
+- **Tempo real no cliente**: ao voltar a rede (`online`), o painel/tablet troca o socket antigo
+  por um novo na hora e retoma pela última sequência, em vez de esperar o ping detectar a
+  conexão morta (até 30 s).
+
 ## 4. Eventos, concorrência e tempo real
 
 **Gravação (outbox).** Toda alteração relevante grava, na mesma transação: os dados, a

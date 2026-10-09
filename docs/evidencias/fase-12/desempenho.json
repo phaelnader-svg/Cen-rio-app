@@ -1,0 +1,208 @@
+{
+  "executadoEm": "2026-10-09T02:16:56.114Z",
+  "maquina": {
+    "cpus": 4,
+    "modelo": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "memoriaGB": 16
+  },
+  "node": "v22.22.0",
+  "volume": {
+    "orders": 120,
+    "planned": 40
+  },
+  "publicacaoSemanal": {
+    "os": 40,
+    "ms": 6806
+  },
+  "geracao": {
+    "segundos": 44.5,
+    "cpuUsuarioS": 32.6,
+    "registros": {
+      "os": 120,
+      "pecas": 240,
+      "tarefas": 480,
+      "eventosDeDominio": 1203,
+      "auditoria": 651
+    }
+  },
+  "latencias": {
+    "OS: lista (100)": {
+      "sequencial": {
+        "n": 20,
+        "p50ms": 17.1,
+        "p95ms": 19.7,
+        "maxms": 19.7
+      },
+      "simultaneo": {
+        "n": 5,
+        "totalms": 54,
+        "maxms": 53.4
+      }
+    },
+    "OS: detalhe": {
+      "sequencial": {
+        "n": 20,
+        "p50ms": 17.1,
+        "p95ms": 26.5,
+        "maxms": 26.5
+      },
+      "simultaneo": {
+        "n": 5,
+        "totalms": 39,
+        "maxms": 38.4
+      }
+    },
+    "Planejamento semanal (plano publicado)": {
+      "sequencial": {
+        "n": 20,
+        "p50ms": 478.2,
+        "p95ms": 607.9,
+        "maxms": 607.9
+      },
+      "simultaneo": {
+        "n": 5,
+        "totalms": 1054,
+        "maxms": 1054.3
+      }
+    },
+    "Quadro de produção": {
+      "sequencial": {
+        "n": 20,
+        "p50ms": 152.6,
+        "p95ms": 392.4,
+        "maxms": 392.4
+      },
+      "simultaneo": {
+        "n": 5,
+        "totalms": 516,
+        "maxms": 515.5
+      }
+    },
+    "Central de atenção": {
+      "sequencial": {
+        "n": 20,
+        "p50ms": 28.7,
+        "p95ms": 37.8,
+        "maxms": 37.8
+      },
+      "simultaneo": {
+        "n": 5,
+        "totalms": 54,
+        "maxms": 54.3
+      }
+    },
+    "Compras: necessidades": {
+      "sequencial": {
+        "n": 20,
+        "p50ms": 8,
+        "p95ms": 10,
+        "maxms": 10
+      },
+      "simultaneo": {
+        "n": 5,
+        "totalms": 15,
+        "maxms": 15.2
+      }
+    },
+    "Estoque: itens": {
+      "sequencial": {
+        "n": 20,
+        "p50ms": 6.3,
+        "p95ms": 7.9,
+        "maxms": 7.9
+      },
+      "simultaneo": {
+        "n": 5,
+        "totalms": 10,
+        "maxms": 9.8
+      }
+    },
+    "Prontidão de materiais": {
+      "sequencial": {
+        "n": 20,
+        "p50ms": 274.5,
+        "p95ms": 299.2,
+        "maxms": 299.2
+      },
+      "simultaneo": {
+        "n": 5,
+        "totalms": 723,
+        "maxms": 722.9
+      }
+    },
+    "Pedidos: lista": {
+      "sequencial": {
+        "n": 20,
+        "p50ms": 21.5,
+        "p95ms": 25.5,
+        "maxms": 25.5
+      },
+      "simultaneo": {
+        "n": 5,
+        "totalms": 45,
+        "maxms": 44.7
+      }
+    },
+    "Financeiro: contas a receber": {
+      "sequencial": {
+        "n": 20,
+        "p50ms": 123.1,
+        "p95ms": 134.4,
+        "maxms": 134.4
+      },
+      "simultaneo": {
+        "n": 5,
+        "totalms": 568,
+        "maxms": 567.9
+      }
+    },
+    "Financeiro: painel (mês)": {
+      "sequencial": {
+        "n": 5,
+        "p50ms": 3708.9,
+        "p95ms": 3821.8,
+        "maxms": 3821.8
+      },
+      "simultaneo": {
+        "n": 2,
+        "totalms": 3536,
+        "maxms": 3535.9
+      }
+    },
+    "Financeiro: resultado de uma OS": {
+      "sequencial": {
+        "n": 20,
+        "p50ms": 38.8,
+        "p95ms": 44,
+        "maxms": 44
+      },
+      "simultaneo": {
+        "n": 5,
+        "totalms": 80,
+        "maxms": 79.9
+      }
+    }
+  },
+  "tempoReal": {
+    "clientes": 40,
+    "sinais": 10,
+    "ateTodosReceberem": {
+      "p50ms": 41.7,
+      "p95ms": 45.6,
+      "maxms": 45.6
+    },
+    "observacao": "Inclui o intervalo de leitura do feed de eventos (100 ms nos testes)."
+  },
+  "upload": {
+    "fotos": 10,
+    "tamanhoKB": 233,
+    "p50ms": 22.2,
+    "maxms": 188.9
+  },
+  "eventos": {
+    "processados": 3223,
+    "ms": 15907,
+    "porSegundo": 203
+  },
+  "memoriaMB": 1159
+}

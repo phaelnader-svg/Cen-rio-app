@@ -246,6 +246,26 @@
 - Comprovantes (anexo `FINANCE_PAYABLE`): ver com `financeiro.ver`, enviar com
   `financeiro.gerenciar`.
 
+## Auditoria final (Fase 12)
+
+Verificações automatizadas que passam a rodar em todo `pnpm test` (e no CI):
+
+- `apps/api/test/security-audit.test.ts` percorre **todas as rotas registradas** (catálogo
+  `app.routeCatalog`, ~300): sem sessão → 401; com `Origin` estranho → 403; com o tablet do
+  Ricardo, o celular do André e um usuário de painel só com `pedidos.ver` → 403 onde a regra
+  declarada da rota nega. Rotas públicas são exatamente: `health`, `ready`, `tablet/status`,
+  `auth/login` e `tablet/pair`. Toda rota nova sem `config.access` impede a API de iniciar.
+- Isolamento André × Izaías (um não vê nem movimenta a retirada do outro), anexos privados
+  (comprovante financeiro → 403 no tablet; caminhos com `..` → 400/404), textos de injeção
+  gravados como texto, corpo acima do limite → 413, cabeçalhos de segurança, e sessão revogada
+  derrubando o WebSocket na hora.
+- `pnpm audit --audit-level critical` no CI. Dependências atualizadas na Fase 12 (vitest 4.1,
+  postcss 8.5, overrides de `esbuild`, `deepmerge-ts`). Resta 1 alerta **alto** sem versão
+  corrigida publicada: `braces` (via `@next/eslint-plugin-next`, só ferramenta de lint em
+  desenvolvimento; não vai para a API nem para o navegador).
+- Homologação: `infra/homolog/` sem segredos versionados (`.env.homolog` ignorado no Git e no
+  contexto do Docker), banco sem porta pública, API como usuário sem privilégios, `noindex`.
+
 ## Segredos e ambientes
 
 - Segredos apenas por variáveis de ambiente; `.env` não é versionado.
@@ -263,3 +283,4 @@
 | Resposta idempotente guardada        | A resposta do cadastro de dispositivo (que contém o código de vinculação) fica até 24 h na tabela de idempotência. O código expira em 15 min e é de uso único; quem lê o banco já tem acesso total.                                                       |
 | CSP com `'unsafe-inline'` em scripts | Exigido pelo Next.js sem _nonce_. Nenhuma origem externa é permitida. Evolução: CSP com nonce.                                                                                                                                                            |
 | PIN de 6 dígitos                     | Adequado somado ao vínculo do dispositivo e ao bloqueio progressivo; não substitui senha no painel.                                                                                                                                                       |
+| Dependência `braces` (alerta alto)   | Só no lint (`@next/eslint-plugin-next`), sem versão corrigida publicada; não é executada pela API nem pelo navegador. Reavaliar a cada atualização do Next.js.                                                                                            |

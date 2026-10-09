@@ -1,0 +1,24 @@
+# Proxy de homologação: HTTPS automático (Let's Encrypt) no domínio de teste.
+# /api/* (incluindo o WebSocket /api/realtime) vai direto à API; o resto ao Next.js.
+{$HOMOLOG_DOMAIN} {
+	encode zstd gzip
+
+	@api path /api/*
+	handle @api {
+		reverse_proxy api:4000
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	request_body {
+		max_size 10MB
+	}
+}

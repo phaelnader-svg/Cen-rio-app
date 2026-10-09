@@ -164,6 +164,28 @@ desejado, conceder "Ver os próprios valores de produção" ao Ricardo e ao Már
 permissões individuais). As despesas recorrentes são geradas pelo botão "Gerar recorrentes do
 mês" (idempotente).
 
+## Atualização da Fase 11 para a Fase 12
+
+A migration `20261017000000_auditoria_final` é aditiva: acrescenta `piece_returns.destination`,
+`purchase_order_items.closed_quantity` (padrão 0) e, em `purchase_orders`, os campos do
+encerramento de saldo (`balance_closed_at`, `balance_closed_by_id`, `balance_close_reason`), com
+CHECKs, e cria 19 índices em chaves estrangeiras muito consultadas. Nada é apagado nem
+recalculado. Procedimento: backup (`pnpm backup`) → `pnpm db:migrate` → reiniciar API e web.
+
+Mudanças de regra a comunicar:
+
+- Devolução parcial de peças de uma OS libera só as reservas de material ligadas às peças
+  devolvidas; reservas sem peça definida ficam para revisão do gestor (aparecem no detalhe da
+  devolução). Material já entregue à OS não volta sozinho ao estoque.
+- Valor de produção de peça devolvida sem nenhuma execução é cancelado com justificativa; se já
+  houve execução ou pagamento, fica marcado "Revisar" no Financeiro e o gestor recebe aviso —
+  nada é descontado automaticamente.
+- Pedido passa a mostrar a situação do serviço (devolução parcial/total, concluído, cancelado)
+  sem alterar o valor negociado.
+- Compra parcialmente recebida pode ter o **saldo encerrado** (Compras → pedido → "Encerrar
+  saldo pendente", permissão `compras.aprovar`, com justificativa).
+- Transações longas (publicar um planejamento grande) têm limite de 60 s (antes 5 s).
+
 ## Backup e restauração
 
 ```bash
@@ -183,6 +205,25 @@ pnpm test:backup                      # teste automático de backup + restauraç
 - Recomendação: agendar `scripts/backup.sh` diariamente (cron/systemd) e copiar o diretório
   para um local externo criptografado; testar a restauração mensalmente.
 
+### Procedimento de recuperação (testado na Fase 12)
+
+1. Parar a API e a web (evita gravações durante a restauração).
+2. Escolher o backup: `ls backups/` — cada pasta tem `database.dump`, `storage.tar.gz` (se
+   houver arquivos) e `SHA256SUMS`.
+3. Restaurar num banco **vazio** (novo ou recriado) e numa pasta de arquivos vazia:
+   `bash scripts/restore.sh backups/<pasta> --target <url do banco> --storage <pasta> --yes`.
+   Um backup adulterado é recusado pelo checksum antes de tocar no banco.
+4. Conferir: `DATABASE_URL=<url> pnpm db:status` (migrations aplicadas) e
+   `GET /api/ready`.
+5. Apontar a API para o banco restaurado e iniciar. Os painéis e tablets conectados recebem
+   `resync.required` e recarregam; eventos pendentes continuam de onde pararam (os
+   consumidores guardam a última sequência processada no próprio banco).
+
+O teste automático (`pnpm test:backup`) faz exatamente isso num banco temporário e compara as
+contagens de todas as tabelas principais (inclusive arquivos e anexos com SHA-256, auditoria,
+eventos, consumidores de eventos, permissões e migrations), a imutabilidade e a recusa de backup
+adulterado.
+
 ## Rotina de manutenção automática
 
 A cada 15 min (uma instância por vez): remove chaves de idempotência expiradas, contadores de
@@ -192,3 +233,17 @@ login antigos e sessões encerradas há mais de 90 dias. Auditoria e eventos nã
 
 JSON estruturado no stdout (um objeto por linha, com `requestId`). Em desenvolvimento com
 terminal interativo, saída formatada. Nível por `LOG_LEVEL`.
+
+## Desempenho (medição local)
+
+```bash
+createdb cenario_perf_test   # banco exclusivo, apagado a cada execução
+TEST_DATABASE_URL=postgresql://…/cenario_perf_test pnpm --filter @cenario/api perf
+```
+
+Gera volume sintético pela API e grava latências em `docs/evidencias/fase-12/desempenho.json`.
+Não acessa serviços externos. Resultados da Fase 12 em `docs/FASE-12-RELATORIO.md` §10.
+
+## Homologação
+
+Ambiente de testes em nuvem: veja [HOMOLOGACAO.md](HOMOLOGACAO.md) e `infra/homolog/`.

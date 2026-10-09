@@ -1,0 +1,1298 @@
+[
+  {
+    "route": "/painel",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Bom dia, Gestor E2E.",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/atencao",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Central de atenção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/funcionarios",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Funcionários",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/funcoes",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Funções e permissões",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/dispositivos",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Dispositivos e sessões",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/clientes",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Clientes",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/clientes/ee8c54ce-5daf-4eb1-91b0-ff216b32d454",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Cliente Ajuda E2E",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Pedidos comerciais",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos/novo",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Novo pedido comercial",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos/6f4b39c0-c5b3-460c-96d7-f8c6c62bb286",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Pedido PC-00013",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos/6f4b39c0-c5b3-460c-96d7-f8c6c62bb286/editar",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Editar pedido PC-00013",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/retiradas",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Retiradas",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/recebimentos",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Recebimentos",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/recebimentos/novo",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Registrar recebimento",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/os",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Ordens de serviço",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/os/nova",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Nova OS técnica",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/os/d83957ce-d88a-41a4-9208-1e08d42db735",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "OS-00012",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/medicoes",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Medições",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/medicoes/9122f413-e130-4ece-b281-6f10b6771abe",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "MD-00002 · OS-00003",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/materiais",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Materiais aprovados",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/compras",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Compras",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/compras/novo",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Novo pedido de compra",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/compras/974f22f7-b11f-4a8d-92f4-658559aa2929",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Pedido de compra CP-00001",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/fornecedores",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Fornecedores",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/recebimento-materiais",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Recebimento de materiais",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/estoque",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Estoque",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/prontidao",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Prontidão de materiais",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/planejamento",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Planejamento de sexta",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/producao/planejamento",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Planejamento de produção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/producao",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Quadro de produção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/producao/modelos",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Modelos de produção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/ajuda",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Pedidos de ajuda",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/reprogramacao",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Reprogramação",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/competencias",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Competências da equipe",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/ocorrencias/2daf3df3-72f4-463c-b216-bd93510e8a83",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "OC-00001 · Problema técnico",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/qualidade",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Qualidade e embalagem",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/qualidade/inspecoes/6c25dac0-f4c8-4bed-8b23-d4c5222d5a3f",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Inspeção IQ-00001",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/entregas",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Expedição e entregas",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/entregas/c90150a2-1163-4ca7-94e7-7d3a68ec3d85",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Entrega EN-00001",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/devolucoes",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Devoluções",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/presenca",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Presença da equipe",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/financeiro",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Financeiro",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/empresa",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Empresa",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/auditoria",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Auditoria",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/sincronizacao",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Sincronização",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/conta",
+    "viewport": "desktop",
+    "status": 200,
+    "heading": "Minha conta",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Bom dia, Gestor E2E.",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/atencao",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Central de atenção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/funcionarios",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Funcionários",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/funcoes",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Funções e permissões",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/dispositivos",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Dispositivos e sessões",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/clientes",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Clientes",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/clientes/ee8c54ce-5daf-4eb1-91b0-ff216b32d454",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Cliente Ajuda E2E",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Pedidos comerciais",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos/novo",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Novo pedido comercial",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos/6f4b39c0-c5b3-460c-96d7-f8c6c62bb286",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Pedido PC-00013",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos/6f4b39c0-c5b3-460c-96d7-f8c6c62bb286/editar",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Editar pedido PC-00013",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/retiradas",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Retiradas",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/recebimentos",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Recebimentos",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/recebimentos/novo",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Registrar recebimento",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/os",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Ordens de serviço",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/os/nova",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Nova OS técnica",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/os/d83957ce-d88a-41a4-9208-1e08d42db735",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "OS-00012",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/medicoes",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Medições",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/medicoes/9122f413-e130-4ece-b281-6f10b6771abe",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "MD-00002 · OS-00003",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/materiais",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Materiais aprovados",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/compras",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Compras",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/compras/novo",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Novo pedido de compra",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/compras/974f22f7-b11f-4a8d-92f4-658559aa2929",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Pedido de compra CP-00001",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/fornecedores",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Fornecedores",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/recebimento-materiais",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Recebimento de materiais",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/estoque",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Estoque",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/prontidao",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Prontidão de materiais",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/planejamento",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Planejamento de sexta",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/producao/planejamento",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Planejamento de produção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/producao",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Quadro de produção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/producao/modelos",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Modelos de produção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/ajuda",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Pedidos de ajuda",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/reprogramacao",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Reprogramação",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/competencias",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Competências da equipe",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/ocorrencias/2daf3df3-72f4-463c-b216-bd93510e8a83",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "OC-00001 · Problema técnico",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/qualidade",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Qualidade e embalagem",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/qualidade/inspecoes/6c25dac0-f4c8-4bed-8b23-d4c5222d5a3f",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Inspeção IQ-00001",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/entregas",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Expedição e entregas",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/entregas/c90150a2-1163-4ca7-94e7-7d3a68ec3d85",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Entrega EN-00001",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/devolucoes",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Devoluções",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/presenca",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Presença da equipe",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/financeiro",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Financeiro",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/empresa",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Empresa",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/auditoria",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Auditoria",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/sincronizacao",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Sincronização",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/conta",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Minha conta",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Bom dia, Gestor E2E.",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/atencao",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Central de atenção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/funcionarios",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Funcionários",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/funcoes",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Funções e permissões",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/dispositivos",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Dispositivos e sessões",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/clientes",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Clientes",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/clientes/ee8c54ce-5daf-4eb1-91b0-ff216b32d454",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Cliente Ajuda E2E",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Pedidos comerciais",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos/novo",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Novo pedido comercial",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos/6f4b39c0-c5b3-460c-96d7-f8c6c62bb286",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Pedido PC-00013",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/pedidos/6f4b39c0-c5b3-460c-96d7-f8c6c62bb286/editar",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Editar pedido PC-00013",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/retiradas",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Retiradas",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/recebimentos",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Recebimentos",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/recebimentos/novo",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Registrar recebimento",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/os",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Ordens de serviço",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/os/nova",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Nova OS técnica",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/os/d83957ce-d88a-41a4-9208-1e08d42db735",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "OS-00012",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/medicoes",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Medições",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/medicoes/9122f413-e130-4ece-b281-6f10b6771abe",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "MD-00002 · OS-00003",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/materiais",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Materiais aprovados",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/compras",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Compras",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/compras/novo",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Novo pedido de compra",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/compras/974f22f7-b11f-4a8d-92f4-658559aa2929",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Pedido de compra CP-00001",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/fornecedores",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Fornecedores",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/recebimento-materiais",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Recebimento de materiais",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/estoque",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Estoque",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/prontidao",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Prontidão de materiais",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/planejamento",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Planejamento de sexta",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/producao/planejamento",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Planejamento de produção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/producao",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Quadro de produção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/producao/modelos",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Modelos de produção",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/ajuda",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Pedidos de ajuda",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/reprogramacao",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Reprogramação",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/competencias",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Competências da equipe",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/ocorrencias/2daf3df3-72f4-463c-b216-bd93510e8a83",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "OC-00001 · Problema técnico",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/qualidade",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Qualidade e embalagem",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/qualidade/inspecoes/6c25dac0-f4c8-4bed-8b23-d4c5222d5a3f",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Inspeção IQ-00001",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/entregas",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Expedição e entregas",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/entregas/c90150a2-1163-4ca7-94e7-7d3a68ec3d85",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Entrega EN-00001",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/devolucoes",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Devoluções",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/presenca",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Presença da equipe",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/financeiro",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Financeiro",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/empresa",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Empresa",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/auditoria",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Auditoria",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/sincronizacao",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Sincronização",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/painel/conta",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Minha conta",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/tablet",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": "Meu dia0 tarefa(s) para hoje",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/tablet#tile-materials",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": null,
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/tablet#tile-measurements",
+    "viewport": "tablet",
+    "status": 200,
+    "heading": null,
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/tablet",
+    "viewport": "celular",
+    "status": 200,
+    "heading": "Meu dia0 tarefa(s) para hoje",
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/tablet#tile-materials",
+    "viewport": "celular",
+    "status": 200,
+    "heading": null,
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  {
+    "route": "/tablet#tile-measurements",
+    "viewport": "celular",
+    "status": 200,
+    "heading": null,
+    "overflowPx": 0,
+    "pageErrors": [],
+    "consoleErrors": []
+  }
+]

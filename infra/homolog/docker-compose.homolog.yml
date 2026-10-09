@@ -1,0 +1,103 @@
+# HOMOLOGAÇÃO (testes) — separado da produção. Nada aqui foi publicado.
+# Uso (na raiz do repositório, numa VM com Docker e um domínio de teste apontado para ela):
+#   cp infra/homolog/env.homolog.example infra/homolog/.env.homolog   # preencher
+#   docker compose -f infra/homolog/docker-compose.homolog.yml --env-file infra/homolog/.env.homolog up -d --build
+name: cenario-homolog
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cenario
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      POSTGRES_DB: cenario_homolog
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cenario -d cenario_homolog']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # Sem porta publicada: só a API acessa o banco.
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/homolog/Dockerfile
+      target: api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: staging
+      NODE_ENV: production
+      DATABASE_URL: postgresql://cenario:${POSTGRES_PASSWORD}@postgres:5432/cenario_homolog
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      ALLOWED_ORIGINS: https://${HOMOLOG_DOMAIN:?defina HOMOLOG_DOMAIN}
+      TRUST_PROXY: ${TRUST_PROXY:-172.16.0.0/12}
+      COOKIE_SECURE: 'true'
+      TOKEN_HASH_SECRET: ${TOKEN_HASH_SECRET:?gere com openssl rand -base64 48}
+      LOG_LEVEL: info
+      STORAGE_DIR: /data/storage
+      MAX_UPLOAD_MB: 5
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-}
+    volumes:
+      - storage:/data/storage
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/homolog/Dockerfile
+      target: web
+      args:
+        API_INTERNAL_URL: http://api:4000
+    restart: unless-stopped
+    depends_on: [api]
+    environment:
+      NODE_ENV: production
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [api, web]
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      HOMOLOG_DOMAIN: ${HOMOLOG_DOMAIN}
+    volumes:
+      - ./Caddyfile.homolog:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+
+  # Backup diário (banco + arquivos), retenção de 14 dias, no volume "backups". Usa a imagem
+  # oficial do PostgreSQL 16 (pg_dump/pg_restore da mesma versão do servidor) e o script do
+  # repositório, somente leitura.
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    depends_on:
+      # Só depois da API saudável (migrations aplicadas): o primeiro backup já tem o schema.
+      api:
+        condition: service_healthy
+    environment:
+      APP_ENV: staging
+      DATABASE_URL: postgresql://cenario:${POSTGRES_PASSWORD}@postgres:5432/cenario_homolog
+      STORAGE_DIR: /data/storage
+      BACKUP_RETENTION_DAYS: 14
+    volumes:
+      - ../../scripts:/scripts:ro
+      - storage:/data/storage:ro
+      - backups:/data/backups
+    working_dir: /tmp
+    entrypoint:
+      ['bash', '-c', 'while true; do bash /scripts/backup.sh /data/backups; sleep 86400; done']
+
+volumes:
+  pgdata:
+  storage:
+  backups:
+  caddy_data:

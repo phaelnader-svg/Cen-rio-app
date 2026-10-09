@@ -61,7 +61,14 @@ counts() {
     UNION ALL SELECT 'service_order_costs', count(*) FROM service_order_costs
     UNION ALL SELECT 'account_payables', count(*) FROM account_payables
     UNION ALL SELECT 'operational_expenses', count(*) FROM operational_expenses
-    UNION ALL SELECT 'financial_events', count(*) FROM financial_events) x"
+    UNION ALL SELECT 'financial_events', count(*) FROM financial_events
+    UNION ALL SELECT 'stored_files', count(*) FROM stored_files
+    UNION ALL SELECT 'attachments', count(*) FROM attachments
+    UNION ALL SELECT 'event_consumers', count(*) FROM event_consumers
+    UNION ALL SELECT 'user_permissions', count(*) FROM user_permissions
+    UNION ALL SELECT 'piece_returns', count(*) FROM piece_returns
+    UNION ALL SELECT '_prisma_migrations', count(*) FROM _prisma_migrations
+    UNION ALL SELECT 'max_event_seq', coalesce(max(seq), 0) FROM domain_events) x"
 }
 
 # Garante dados de referência na origem (seed idempotente + um registro de auditoria).
@@ -267,11 +274,35 @@ INSERT INTO operational_expenses (id, category, description, amount_cents, compe
 SELECT gen_random_uuid(), 'ENERGIA', 'Energia (backup)', 15000, date_trunc('month', current_date)::date, ap.id, now() FROM ap;
 SQL
 
-DATABASE_URL="$SOURCE" STORAGE_DIR="$WORK/none" BACKUP_RETENTION_DAYS=0 bash scripts/backup.sh "$WORK/out" > /dev/null
+# Fase 12: anexo real (arquivo + registros) para provar que fotos voltam junto com o banco.
+mkdir -p "$WORK/storage/attachment"
+FILE_ID="$(psql "$SOURCE" -At -c "SELECT gen_random_uuid()")"
+head -c 4096 /dev/urandom > "$WORK/storage/attachment/$FILE_ID"
+FILE_SHA="$(sha256sum "$WORK/storage/attachment/$FILE_ID" | cut -d' ' -f1)"
+psql "$SOURCE" -q -v ON_ERROR_STOP=1 > /dev/null <<SQL
+INSERT INTO stored_files (id, storage_key, purpose, original_name, mime_type, size_bytes, sha256)
+VALUES ('$FILE_ID', 'attachment/$FILE_ID', 'attachment', 'foto-backup.png', 'image/png', 4096, '$FILE_SHA');
+INSERT INTO attachments (id, file_id, entity_type, entity_id, caption)
+SELECT gen_random_uuid(), '$FILE_ID', 'SERVICE_ORDER', id, 'Foto do backup' FROM service_orders ORDER BY created_at DESC LIMIT 1;
+SQL
+DATABASE_URL="$SOURCE" STORAGE_DIR="$WORK/storage" BACKUP_RETENTION_DAYS=0 bash scripts/backup.sh "$WORK/out" > /dev/null
 DIR="$(ls -d "$WORK"/out/cenario-*)"
 psql "$BASE/postgres" -qc "DROP DATABASE IF EXISTS $RESTORE_DB" > /dev/null
 psql "$BASE/postgres" -qc "CREATE DATABASE $RESTORE_DB" > /dev/null
-bash scripts/restore.sh "$DIR" --target "$RESTORE_URL" --yes > /dev/null
+# Backup adulterado é recusado antes de tocar no banco (checksum).
+cp -r "$DIR" "$WORK/tampered"
+printf 'x' >> "$WORK/tampered/database.dump"
+if bash scripts/restore.sh "$WORK/tampered" --target "$RESTORE_URL" --yes > /dev/null 2>&1; then
+  echo "✖ Backup adulterado foi aceito" >&2; exit 1
+fi
+bash scripts/restore.sh "$DIR" --target "$RESTORE_URL" --storage "$WORK/restored-storage" --yes > /dev/null
+[[ "$(sha256sum "$WORK/restored-storage/attachment/$FILE_ID" | cut -d' ' -f1)" == "$FILE_SHA" ]] \
+  || { echo "✖ Anexo não restaurado íntegro" >&2; exit 1; }
+[[ "$(psql "$RESTORE_URL" -At -c "SELECT count(*) FROM attachments a JOIN stored_files f ON f.id = a.file_id WHERE f.id = '$FILE_ID'")" == "1" ]] \
+  || { echo "✖ Registro do anexo ausente no banco restaurado" >&2; exit 1; }
+# Migrations do banco restaurado conferem com o código.
+( cd packages/db && DATABASE_URL="$RESTORE_URL" pnpm exec prisma migrate status > /dev/null ) \
+  || { echo "✖ Banco restaurado com migrations divergentes" >&2; exit 1; }
 
 A="$(counts "$SOURCE")"; B="$(counts "$RESTORE_URL")"
 echo "origem:     $A"
