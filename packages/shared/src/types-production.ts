@@ -60,8 +60,16 @@ export interface ProductionTaskDto {
   plan: { id: string; weekStart: string; status: PlanStatus; mode: PlanMode } | null;
   serviceOrder: { id: string; code: string; promisedDate: string | null };
   customerName: string;
-  serviceOrderItem: { id: string; code: string; description: string } | null;
+  serviceOrderItem: {
+    id: string;
+    code: string;
+    description: string;
+    /** Evolução Fase 4: tapeceiro titular da peça (não é quem executa uma etapa de apoio). */
+    upholsterer: { userId: string; displayName: string } | null;
+  } | null;
   activity: ProductionActivity;
+  /** Evolução Fase 3/4: classe da etapa (null = legado ou avulsa sem classe). */
+  stepClass: StepClass | null;
   title: string;
   role: TaskRole;
   assignee: { userId: string; displayName: string; color: string } | null;
@@ -255,6 +263,12 @@ export interface QueueEntryDto {
   task: ProductionTaskDto;
 }
 export interface MyQueueDto {
+  /** Evolução Fase 4: semana vigente (segunda a domingo, no fuso da empresa). */
+  week: { start: string; end: string };
+  /** Contagens da fila (não medem produtividade): concluídas na semana e situação das abertas. */
+  counts: { done: number; running: number; paused: number; executable: number; blocked: number };
+  /** Abertas que vêm de semanas anteriores (pendências não transferidas automaticamente). */
+  fromPreviousWeeks: number;
   /** Em execução ou, se não houver, a primeira pausada. */
   current: ProductionTaskDto | null;
   /** Primeira tarefa LIBERADA na ordem da fila (nunca é iniciada automaticamente). */
