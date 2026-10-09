@@ -20,7 +20,7 @@ só por IAP; sem integração bancária, pagamentos externos ou dados reais.
 | `infra/homolog/env.homolog.example`                   | Modelo sem segredos (só para a verificação local).                                                                                                                                                                                                                                                                                                   |
 | `infra/homolog/gcp/vm.sh`                             | Operação dentro da VM: `gerar-env` (Secret Manager → `/run/cenario/env`, memória, 600), `iniciar`, `status`, `saude`, `semear`, `backup`, `enviar-backups`, `restaurar-teste`, `restaurar … --sim`, `atualizar <etiqueta>` (com backup e reversão), `parar`.                                                                                         |
 | `infra/homolog/gcp/startup.sh`                        | Partida da VM (idempotente): Docker Engine + Compose (repositório oficial), 2 GB de swap, serviço systemd da pilha e timer diário de envio dos backups.                                                                                                                                                                                              |
-| `infra/homolog/gcp/operador.sh`                       | No seu computador: `criar-segredos`, `build`, `enviar-pacote`, `atualizar`, `senhas`, `saude` — cada um pede confirmação.                                                                                                                                                                                                                            |
+| `infra/homolog/gcp/operador.sh`                       | No seu computador: `criar-segredos`, `build`, `atualizar`, `mostrar-credencial`, `trazer-backup`, `saude` — cada um pede confirmação. (`enviar-pacote` → `homolog.sh preparar-vm`; `senhas` removido.)                                                                                                                                               |
 | `infra/homolog/gcp/cloudbuild.yaml`                   | Build manual das duas imagens no Cloud Build → Artifact Registry.                                                                                                                                                                                                                                                                                    |
 | `infra/homolog/gcp/lifecycle-30d.json`                | Ciclo de vida do bucket: apaga backups com mais de 30 dias.                                                                                                                                                                                                                                                                                          |
 | `tests/e2e/homolog/…`, `playwright.homolog.config.ts` | O roteiro ao vivo agora também roda contra a pilha atrás do proxy (credenciais do proxy, HTTPS) e ganhou o teste "0. Proxy".                                                                                                                                                                                                                         |
@@ -149,6 +149,11 @@ Orçamento sugerido: **US$ 30/mês**, alertas em 50%, 90% e 100% (você já tem 
 
 ## 9. Comandos exatos para a implantação futura (NÃO executados)
 
+> **Atualização (pré-implantação; esta seção é histórica):** a infraestrutura foi criada manualmente, numa VPC exclusiva
+> (`cenario-homolog-vpc`), não na rede `default`. O `etapa1-infra.sh` foi **retirado** (o `criar` e o
+> `encerrar` dele não correspondem aos recursos reais). A preparação agora é feita pelo
+> `infra/homolog/gcp/homolog.sh` — ver [`HOMOLOGACAO-GCP-PRE-DEPLOY-RELATORIO.md`](HOMOLOGACAO-GCP-PRE-DEPLOY-RELATORIO.md).
+
 > **Implantação em etapas:** a Etapa 1 (infraestrutura mínima, sem publicar) é feita por
 > `infra/homolog/gcp/etapa1-infra.sh` — ver [`HOMOLOGACAO-GCP-ETAPA1.md`](HOMOLOGACAO-GCP-ETAPA1.md).
 > Nela o firewall só libera SSH pelo IAP e nega todo o resto (`cenario-homolog-bloqueio`,
@@ -243,7 +248,7 @@ gcloud compute disks add-resource-policies $VM --zone=$ZONE --resource-policies=
 **9. Arquivos na VM e pilha:**
 
 ```bash
-bash infra/homolog/gcp/operador.sh enviar-pacote
+bash infra/homolog/gcp/homolog.sh preparar-vm
 gcloud compute ssh $VM --zone=$ZONE --tunnel-through-iap --command="sudo systemctl restart cenario-homolog && sudo /opt/cenario/infra/homolog/gcp/vm.sh status"
 ```
 
@@ -261,7 +266,7 @@ gcloud compute ssh $VM --zone=$ZONE --tunnel-through-iap --command="sudo /opt/ce
 bash infra/homolog/gcp/operador.sh saude
 gcloud compute ssh $VM --zone=$ZONE --tunnel-through-iap --command="sudo /opt/cenario/infra/homolog/gcp/vm.sh backup && sudo /opt/cenario/infra/homolog/gcp/vm.sh restaurar-teste"
 gcloud storage ls $BUCKET            # o backup enviado precisa aparecer
-bash infra/homolog/gcp/operador.sh senhas
+bash infra/homolog/gcp/operador.sh mostrar-credencial proxy   # e depois: gestor
 ```
 
 Depois, do seu computador (dados fictícios + roteiro completo contra o domínio real):

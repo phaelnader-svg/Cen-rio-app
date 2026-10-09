@@ -1,5 +1,10 @@
 # Homologação no Google Cloud — Etapa 1 (infraestrutura mínima)
 
+> **Atualização (pré-implantação):** a infraestrutura foi criada manualmente, numa VPC exclusiva
+> (`cenario-homolog-vpc`), não na rede `default`. O `etapa1-infra.sh` foi **retirado** (o `criar` e o
+> `encerrar` dele não correspondem aos recursos reais). A preparação agora é feita pelo
+> `infra/homolog/gcp/homolog.sh` — ver [`HOMOLOGACAO-GCP-PRE-DEPLOY-RELATORIO.md`](HOMOLOGACAO-GCP-PRE-DEPLOY-RELATORIO.md).
+
 > **Situação: NÃO executada.** O ambiente do Claude Code não tem credenciais do Google Cloud
 > (`gcloud` sem conta autenticada; chamada de leitura ao projeto → `CREDENTIALS_MISSING`). Nada foi
 > criado, habilitado ou alterado no Google Cloud. Não foi sugerido armazenar uma chave de conta de

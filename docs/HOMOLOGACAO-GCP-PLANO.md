@@ -13,6 +13,11 @@
 
 ## 1. Resumo da recomendação
 
+> **Atualização (pré-implantação):** a infraestrutura foi criada manualmente, numa VPC exclusiva
+> (`cenario-homolog-vpc`), não na rede `default`. O `etapa1-infra.sh` foi **retirado** (o `criar` e o
+> `encerrar` dele não correspondem aos recursos reais). A preparação agora é feita pelo
+> `infra/homolog/gcp/homolog.sh` — ver [`HOMOLOGACAO-GCP-PRE-DEPLOY-RELATORIO.md`](HOMOLOGACAO-GCP-PRE-DEPLOY-RELATORIO.md).
+
 | Opção                                                                    | Custo mensal estimado (US$, sem impostos)    | Mudanças no código                                               | Recomendação                       |
 | ------------------------------------------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------- |
 | **A. VM e2-small + Docker Compose** (pilha `infra/homolog` já existente) | **≈ 19–20 (us-east1)** · ≈ 27–29 (São Paulo) | Mínimas (arquivos de implantação)                                | **Recomendada**                    |
