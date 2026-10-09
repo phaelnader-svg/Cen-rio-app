@@ -17,7 +17,8 @@
 | `acd2a59` | Pendências antigas A–E e migration `20261017000000_auditoria_final`                  |
 | `eec425d` | Fluxo completo de ponta a ponta (32 passos) e medição de desempenho                  |
 | `4bcb53e` | Auditoria visual, quatro tablets simultâneos, reconexão imediata, correções de telas |
-| (este)    | Homologação (`infra/homolog`, guia, dados sintéticos), documentação e este relatório |
+| `17c2c20` | E2E independentes do horário do dia (pendência 15)                                   |
+| `c8410f6` | Homologação (`infra/homolog`, guia, dados sintéticos), documentação e este relatório |
 
 ## 2. Linha de base inicial
 
@@ -277,7 +278,7 @@ tela).
 | Sincronização e tempo real                       | APROVADA               | Testes + E2E com 4 tablets; defeito de reconexão corrigido          |
 | Integridade do banco                             | APROVADA               | Falhas forçadas sem registro parcial; triggers; CHECKs              |
 | Backup e restauração                             | APROVADA               | Teste automático + pilha de homologação local                       |
-| CI                                               | APROVADA               | #28–#30 verdes no GitHub (ver §13/§19 para as seguintes)            |
+| CI                                               | APROVADA               | #28–#31 verdes no GitHub (§13)                                      |
 | Telas e responsividade (Chromium)                | APROVADA COM RESSALVAS | 144 combinações sem defeito; Safari/iPhone **não testado**          |
 | Tablets físicos e iPhone                         | NÃO TESTADA            | Depende da homologação                                              |
 | Ambiente de homologação em nuvem                 | NÃO TESTADA            | Pilha verificada localmente; nada publicado                         |
