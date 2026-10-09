@@ -68,6 +68,9 @@ services:
       APP_ENV: staging
       NODE_ENV: production
       NODE_OPTIONS: --max-old-space-size=320
+      # O "prisma migrate deploy" do início envia dados de uso a checkpoint.prisma.io se isto não
+      # estiver definido: nenhum dado sai para serviços externos.
+      CHECKPOINT_DISABLE: '1'
       DATABASE_URL: postgresql://cenario:${POSTGRES_PASSWORD}@postgres:5432/cenario_homolog
       API_HOST: 0.0.0.0
       API_PORT: 4000
