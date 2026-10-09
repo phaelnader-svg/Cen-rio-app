@@ -7,7 +7,7 @@ import { openServiceOrder } from './os-helpers';
  * Fase 8 — distribuição automática de ajudantes e reprogramação, com dados fictícios.
  * Painel (gestor) + tablets do Ricardo, do João e do Thiago em sessões separadas. A presença
  * usa o relógio de teste da API num dia próprio (roda em qualquer horário real); as tarefas
- * são programadas para hoje às 00:01 (liberadas). No fim, tudo o que foi criado é encerrado
+ * são programadas para hoje às 00:00 (já liberadas em qualquer horário). No fim, tudo o que foi criado é encerrado
  * para não interferir nos outros specs.
  */
 const TZ = 'America/Sao_Paulo';
@@ -104,7 +104,7 @@ test.describe.serial('Fase 8 — ajuda e reprogramação', () => {
           title,
           assigneeUserId: idOf(who),
           date: today(),
-          time: '00:01',
+          time: '00:00',
           reason,
         });
         created.push(t.id);

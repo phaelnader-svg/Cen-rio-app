@@ -8,7 +8,7 @@ import { openServiceOrder } from './os-helpers';
  * do Márcio e do Thiago. Márcio registra que a máquina de costura está com problema; o gestor
  * delega ao Thiago ("Verificar a máquina de costura do Márcio"); Thiago resolve no tablet;
  * concluir a ação não encerra a ocorrência; o gestor confirma e o Márcio retoma. Presença no
- * relógio de teste num dia próprio; tarefas programadas para hoje às 00:01 (liberadas).
+ * relógio de teste num dia próprio; tarefas programadas para hoje às 00:00 (já liberadas em qualquer horário).
  */
 const TZ = 'America/Sao_Paulo';
 const origin = `http://localhost:${E2E.webPort}`;
@@ -99,7 +99,7 @@ test.describe.serial('Fase 9 — central de atenção e ocorrências', () => {
         title: 'Revestimento com costura dupla',
         assigneeUserId: worker('Márcio').userId,
         date: today(),
-        time: '00:01',
+        time: '00:00',
         reason,
       });
       if (plan.status !== 'PUBLICADO') {

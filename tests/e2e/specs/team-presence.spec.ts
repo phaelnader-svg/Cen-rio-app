@@ -104,7 +104,7 @@ test.describe.serial('Fase 7 — presença operacional', () => {
       const prep = await call(page, 'PUT', `/api/v1/production-tasks/${prep0.id}`, {
         assigneeUserId: idOf('João'),
         date: today(),
-        time: '00:01',
+        time: '00:00',
         dueDate: today(),
         reason,
         version: prep0.version,
@@ -115,7 +115,7 @@ test.describe.serial('Fase 7 — presença operacional', () => {
         title: 'Revestimento do assento',
         assigneeUserId: idOf('Márcio'),
         date: today(),
-        time: '00:01',
+        time: '00:00',
         dependsOn: [prep.id],
         reason,
       });

@@ -115,7 +115,7 @@ test.describe.serial('Fase 10 — qualidade, embalagem e entrega', () => {
         title: 'Revestimento do sofá (qualidade)',
         assigneeUserId: worker('Ricardo').userId,
         date: today(),
-        time: '00:01',
+        time: '00:00',
         reason,
       });
       if (plan.status !== 'PUBLICADO') {

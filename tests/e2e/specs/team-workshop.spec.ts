@@ -115,7 +115,7 @@ test.describe.serial('Fase 12 — painel + quatro tablets simultâneos', () => {
           title: titles[name],
           assigneeUserId: w(name).userId,
           date: today(),
-          time: '00:01',
+          time: '00:00',
           reason,
         });
         ids[name] = t.id;

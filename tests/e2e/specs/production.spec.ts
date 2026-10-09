@@ -70,8 +70,8 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     await expect(page.getByTestId(`plan-task-Desmontagem — ${sofa}`)).toHaveCount(0);
     await page.getByLabel(`Responsável de ${prep}`).selectOption({ label: 'João' });
     await expect(page.getByLabel(`Responsável de ${prep}`)).not.toHaveValue('');
-    await page.getByLabel(`Hora de ${prep}`).fill('00:01');
-    await expect(page.getByLabel(`Hora de ${prep}`)).toHaveValue('00:01');
+    await page.getByLabel(`Hora de ${prep}`).fill('00:00');
+    await expect(page.getByLabel(`Hora de ${prep}`)).toHaveValue('00:00');
 
     await page.getByLabel('Incluir etapa').first().selectOption({ label: 'Revestimento' });
     await page.getByRole('button', { name: 'Incluir', exact: true }).first().click();
@@ -81,8 +81,8 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     await expect(page.getByLabel('Responsável de Revestimento')).not.toHaveValue('');
     await page.getByLabel('Dia de Revestimento').fill(today());
     await expect(page.getByLabel('Hora de Revestimento')).toBeEnabled();
-    await page.getByLabel('Hora de Revestimento').fill('00:01');
-    await expect(page.getByLabel('Hora de Revestimento')).toHaveValue('00:01');
+    await page.getByLabel('Hora de Revestimento').fill('00:00');
+    await expect(page.getByLabel('Hora de Revestimento')).toHaveValue('00:00');
     await rev.getByRole('button', { name: 'nenhuma' }).click();
     await page.getByRole('dialog').getByLabel(new RegExp(prep)).check();
     await page.getByRole('dialog').getByRole('button', { name: 'Salvar' }).click();

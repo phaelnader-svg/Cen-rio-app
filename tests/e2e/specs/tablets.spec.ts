@@ -102,7 +102,7 @@ test.describe.serial('Fase 6 — interface operacional dos tablets', () => {
     const prep = await call(page, 'PUT', `/api/v1/production-tasks/${prep0.id}`, {
       assigneeUserId: joaoId,
       date: today(),
-      time: '00:01',
+      time: '00:00',
       instructions: 'Limpar a estrutura e conferir os percintas.',
       reason,
       version: prep0.version,
@@ -113,7 +113,7 @@ test.describe.serial('Fase 6 — interface operacional dos tablets', () => {
       title: 'Revestimento do encosto',
       assigneeUserId: marcioId,
       date: today(),
-      time: '00:01',
+      time: '00:00',
       dependsOn: [prep.id],
       reason,
     });
