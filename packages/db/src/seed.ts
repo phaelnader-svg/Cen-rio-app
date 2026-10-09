@@ -14,6 +14,7 @@ import { hash } from '@node-rs/argon2';
 import {
   DEFAULT_LOCATIONS,
   DEFAULT_PRODUCTION_TEMPLATES,
+  classifyStep,
   DEFAULT_QUALITY_TEMPLATES,
   DEFAULT_ROLES,
   DEFAULT_ROLE_SKILLS,
@@ -237,6 +238,8 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
                 ...s,
                 dependsOn: [...s.dependsOn],
                 position: i + 1,
+                // Evolução Fase 3: mesma classificação da migration (atividade + papel).
+                stepClass: classifyStep(s.activity, s.role),
               })),
             },
           },

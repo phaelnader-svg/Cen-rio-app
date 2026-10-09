@@ -75,42 +75,46 @@ model User {
   createdLeftovers            MaterialLeftover[]         @relation("LeftoverCreatedBy")
   authorizedLeftoverMoves     MaterialLeftoverTransfer[] @relation("LeftoverTransferAuthorizedBy")
 
-  createdPlans              ProductionPlan[]         @relation("PlanCreatedBy")
-  publishedPlans            ProductionPlan[]         @relation("PlanPublishedBy")
-  principalPlanItems        ProductionPlanItem[]     @relation("PlanItemPrincipal")
-  planRevisions             ProductionPlanRevision[] @relation("PlanRevisionCreatedBy")
-  assignedTasks             ProductionTask[]         @relation("TaskAssignee")
-  completedTasks            ProductionTask[]         @relation("TaskCompletedBy")
-  taskEvents                ProductionTaskEvent[]    @relation("TaskEventActor")
-  notifications             Notification[]           @relation("UserNotifications")
-  attendanceArrivals        OperationalAttendance[]  @relation("AttendanceArrivalBy")
-  attendanceDepartures      OperationalAttendance[]  @relation("AttendanceDepartureBy")
-  attendanceCorrections     AttendanceCorrection[]   @relation("AttendanceCorrectionActor")
-  attendanceImpacts         AttendanceImpact[]       @relation("AttendanceImpactAffected")
-  attendanceImpactsResolved AttendanceImpact[]       @relation("AttendanceImpactResolvedBy")
-  skillsGranted             EmployeeSkill[]          @relation("SkillGrantedBy")
-  helpRequested             HelpRequest[]            @relation("HelpRequester")
-  helpGiven                 HelpRequest[]            @relation("HelpHelper")
-  helpEvents                HelpRequestEvent[]       @relation("HelpEventActor")
-  proposalsDecided          RescheduleProposal[]     @relation("ProposalDecidedBy")
-  planningActions           PlanningAction[]         @relation("PlanningActionActor")
-  issuesReported            ProductionIssue[]        @relation("IssueReporter")
-  issuesAssigned            ProductionIssue[]        @relation("IssueAssignee")
-  issuesResolved            ProductionIssue[]        @relation("IssueResolvedBy")
-  issuesCancelled           ProductionIssue[]        @relation("IssueCancelledBy")
-  issueEvents               ProductionIssueEvent[]   @relation("IssueEventActor")
-  inspectionsAssigned       QualityInspection[]      @relation("InspectionInspector")
-  inspectionsDecided        QualityInspection[]      @relation("InspectionDecidedBy")
-  qualityEvents             QualityEvent[]           @relation("QualityEventActor")
-  packagingAssigned         PackagingRecord[]        @relation("PackagingAssignee")
-  locationEvents            ItemLocationEvent[]      @relation("LocationEventActor")
-  deliveriesResponsible     Delivery[]               @relation("DeliveryResponsible")
-  deliveriesCreated         Delivery[]               @relation("DeliveryCreatedBy")
-  deliveryEvents            DeliveryEvent[]          @relation("DeliveryEventActor")
-  pickupsLogistics          PickupRequest[]          @relation("PickupLogisticsUser")
-  logisticsResponsible      LogisticsOccurrence[]    @relation("LogisticsResponsible")
-  logisticsReported         LogisticsOccurrence[]    @relation("LogisticsReportedBy")
-  returnsResponsible        PieceReturn[]            @relation("ReturnResponsible")
+  createdPlans              ProductionPlan[]              @relation("PlanCreatedBy")
+  publishedPlans            ProductionPlan[]              @relation("PlanPublishedBy")
+  principalPlanItems        ProductionPlanItem[]          @relation("PlanItemPrincipal")
+  upholsteredItems          ServiceOrderItem[]            @relation("ItemUpholsterer")
+  itemOwnerChangesFrom      ServiceOrderItemOwnerChange[] @relation("OwnerChangeFrom")
+  itemOwnerChangesTo        ServiceOrderItemOwnerChange[] @relation("OwnerChangeTo")
+  itemOwnerChangesBy        ServiceOrderItemOwnerChange[] @relation("OwnerChangeBy")
+  planRevisions             ProductionPlanRevision[]      @relation("PlanRevisionCreatedBy")
+  assignedTasks             ProductionTask[]              @relation("TaskAssignee")
+  completedTasks            ProductionTask[]              @relation("TaskCompletedBy")
+  taskEvents                ProductionTaskEvent[]         @relation("TaskEventActor")
+  notifications             Notification[]                @relation("UserNotifications")
+  attendanceArrivals        OperationalAttendance[]       @relation("AttendanceArrivalBy")
+  attendanceDepartures      OperationalAttendance[]       @relation("AttendanceDepartureBy")
+  attendanceCorrections     AttendanceCorrection[]        @relation("AttendanceCorrectionActor")
+  attendanceImpacts         AttendanceImpact[]            @relation("AttendanceImpactAffected")
+  attendanceImpactsResolved AttendanceImpact[]            @relation("AttendanceImpactResolvedBy")
+  skillsGranted             EmployeeSkill[]               @relation("SkillGrantedBy")
+  helpRequested             HelpRequest[]                 @relation("HelpRequester")
+  helpGiven                 HelpRequest[]                 @relation("HelpHelper")
+  helpEvents                HelpRequestEvent[]            @relation("HelpEventActor")
+  proposalsDecided          RescheduleProposal[]          @relation("ProposalDecidedBy")
+  planningActions           PlanningAction[]              @relation("PlanningActionActor")
+  issuesReported            ProductionIssue[]             @relation("IssueReporter")
+  issuesAssigned            ProductionIssue[]             @relation("IssueAssignee")
+  issuesResolved            ProductionIssue[]             @relation("IssueResolvedBy")
+  issuesCancelled           ProductionIssue[]             @relation("IssueCancelledBy")
+  issueEvents               ProductionIssueEvent[]        @relation("IssueEventActor")
+  inspectionsAssigned       QualityInspection[]           @relation("InspectionInspector")
+  inspectionsDecided        QualityInspection[]           @relation("InspectionDecidedBy")
+  qualityEvents             QualityEvent[]                @relation("QualityEventActor")
+  packagingAssigned         PackagingRecord[]             @relation("PackagingAssignee")
+  locationEvents            ItemLocationEvent[]           @relation("LocationEventActor")
+  deliveriesResponsible     Delivery[]                    @relation("DeliveryResponsible")
+  deliveriesCreated         Delivery[]                    @relation("DeliveryCreatedBy")
+  deliveryEvents            DeliveryEvent[]               @relation("DeliveryEventActor")
+  pickupsLogistics          PickupRequest[]               @relation("PickupLogisticsUser")
+  logisticsResponsible      LogisticsOccurrence[]         @relation("LogisticsResponsible")
+  logisticsReported         LogisticsOccurrence[]         @relation("LogisticsReportedBy")
+  returnsResponsible        PieceReturn[]                 @relation("ReturnResponsible")
 
   // Fase 11: financeiro operacional.
   commercialAdjustments CommercialAdjustment[] @relation("CommercialAdjustmentBy")
@@ -331,7 +335,10 @@ model CompanySettings {
   updatedById        String?  @map("updated_by_id") @db.Uuid
 
   /// Fase 10: inspetor principal da qualidade (vazio = quem tem a competência de inspeção).
-  qualityInspectorUserId String? @map("quality_inspector_user_id") @db.Uuid
+  qualityInspectorUserId    String? @map("quality_inspector_user_id") @db.Uuid
+  /// Evolução Fase 3: responsável padrão das etapas de preparação/desmontagem (vazio = único
+  /// ajudante ativo com a competência; se houver zero ou vários, a tarefa fica pendente).
+  preparationAssigneeUserId String? @map("preparation_assignee_user_id") @db.Uuid
 
   // Fase 11: financeiro operacional.
   /// Alíquota estimada de tributos sobre a receita (pontos-base; 600 = 6%). Vazio = não configurada.
@@ -921,6 +928,12 @@ model ServiceOrderItem {
 
   // Fase 11: financeiro operacional.
   productionPayables ProductionPayable[]
+
+  /// Evolução Fase 3: tapeceiro titular da peça (fonte de verdade operacional; um por peça).
+  /// Não é direito financeiro: mão de obra combinada fica em production_payables.
+  upholstererUserId String?                       @map("upholsterer_user_id") @db.Uuid
+  upholsterer       User?                         @relation("ItemUpholsterer", fields: [upholstererUserId], references: [id], onDelete: Restrict)
+  ownerChanges      ServiceOrderItemOwnerChange[]
 
   @@unique([serviceOrderId, position])
   @@index([orderItemId])
@@ -1679,6 +1692,8 @@ model ProductionTemplateStep {
   dependsOn             Int[]                 @map("depends_on")
   /// Fase 6: registro exigido para concluir a tarefa gerada por esta etapa.
   completionRequirement CompletionRequirement @default(NENHUM) @map("completion_requirement")
+  /// Evolução Fase 3: classificação explícita (nula = ambígua, exige revisão do gestor).
+  stepClass             StepClass?            @map("step_class")
 
   template ProductionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
@@ -1689,6 +1704,15 @@ model ProductionTemplateStep {
 /// Planejamento semanal de produção (um por semana; segunda-feira como referência).
 /// Evolução Fase 2: LEGADO = programação por horário (planos antigos, intocados);
 /// FILA_SEMANAL = fila contínua por funcionário, sem horário como pré-condição.
+/// Evolução Fase 3: função da etapa para a distribuição automática.
+enum StepClass {
+  PREPARACAO
+  TAPECARIA
+  OUTRA
+
+  @@map("step_class")
+}
+
 enum PlanMode {
   LEGADO
   FILA_SEMANAL
@@ -1809,6 +1833,11 @@ model ProductionTask {
   /// Calculado no banco (trigger): tarefa de plano em fila que não é apoio. No máximo uma
   /// delas EM_EXECUCAO por responsável (índice único parcial).
   queueExclusive        Boolean               @default(false) @map("queue_exclusive")
+  /// Evolução Fase 3: classe da etapa e origem da geração automática (chave de idempotência).
+  stepClass             StepClass?            @map("step_class")
+  templateId            String?               @map("template_id") @db.Uuid
+  templateVersion       Int?                  @map("template_version")
+  templateStepPosition  Int?                  @map("template_step_position")
   version               Int                   @default(1)
   createdAt             DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -3049,4 +3078,29 @@ model FinancialEvent {
 
   @@index([entityType, entityId, createdAt])
   @@map("financial_events")
+}
+
+/// Evolução Fase 3: definição e substituição do titular da peça (imutável).
+model ServiceOrderItemOwnerChange {
+  id                      String   @id @default(uuid()) @db.Uuid
+  serviceOrderItemId      String   @map("service_order_item_id") @db.Uuid
+  /// DEFINICAO (primeiro titular) ou SUBSTITUICAO (troca autorizada).
+  kind                    String   @db.VarChar(20)
+  fromUserId              String?  @map("from_user_id") @db.Uuid
+  toUserId                String   @map("to_user_id") @db.Uuid
+  reason                  String?  @db.VarChar(500)
+  /// Tarefas pendentes que passaram ao novo titular (concluídas nunca mudam).
+  movedTaskIds            String[] @map("moved_task_ids") @db.Uuid
+  /// Há mão de obra combinada com outra pessoa: revisão financeira manual (Fase 5).
+  financialReviewRequired Boolean  @default(false) @map("financial_review_required")
+  createdById             String?  @map("created_by_id") @db.Uuid
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  item      ServiceOrderItem @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  fromUser  User?            @relation("OwnerChangeFrom", fields: [fromUserId], references: [id], onDelete: Restrict)
+  toUser    User             @relation("OwnerChangeTo", fields: [toUserId], references: [id], onDelete: Restrict)
+  createdBy User?            @relation("OwnerChangeBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([serviceOrderItemId, createdAt])
+  @@map("service_order_item_owner_changes")
 }
