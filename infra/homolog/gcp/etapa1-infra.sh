@@ -30,6 +30,9 @@ ADMIN_EMAIL=gestor@teste.cenariogestao.com.br
 SECRETS=(homolog-postgres-password homolog-token-hash-secret homolog-admin-password homolog-proxy-password homolog-gate-token)
 APIS=(compute.googleapis.com iam.googleapis.com secretmanager.googleapis.com storage.googleapis.com iap.googleapis.com)
 LOG="etapa1-$(date -u +%Y%m%dT%H%M%SZ).log"
+# Limite autorizado para a estimativa mensal da Etapa 1 (US$, sem tributos). Acima dele, ou sem
+# estimativa oficial válida, a criação é BLOQUEADA. Mudar este valor exige nova autorização.
+LIMITE_USD=20.00
 
 g() { gcloud --project="$PROJECT" --quiet "$@"; }
 ok() { echo "✔ $*"; }
@@ -112,53 +115,31 @@ EOF
   ok "outros projetos visíveis (NÃO serão tocados: todo comando usa --project=$PROJECT): ${outros:-nenhum}"
 
   echo "== Preços oficiais (catálogo do Cloud Billing, US$, sem tributos)"
-  precos || aviso "catálogo indisponível: confira na calculadora (entradas em docs/HOMOLOGACAO-GCP-ETAPA1.md §3)"
+  local rc=0; precos obter || rc=$?
+  case "$rc" in
+    0) ok "estimativa oficial dentro do limite (US$ $LIMITE_USD)" ;;
+    3) falha "estimativa oficial ACIMA do limite autorizado (US$ $LIMITE_USD)" ;;
+    *) aviso "sem estimativa oficial válida agora: o 'criar' ficará bloqueado até uma consulta funcionar" ;;
+  esac
 
   echo; (( FALHAS == 0 )) && echo "VERIFICAÇÃO: OK" || echo "VERIFICAÇÃO: $FALHAS problema(s) — não prossiga"
   return "$FALHAS"
 }
 
-# Lê o catálogo oficial de SKUs do Compute Engine (preço de lista) e calcula o mês da Etapa 1.
+# Estimativa com preços oficiais de lista (infra/homolog/gcp/precos_catalogo.py): timeout por
+# requisição, tentativas limitadas, prazo total, validação da resposta e reutilização de uma
+# consulta oficial recente (origem, data e validade registradas). Nunca usa preços presumidos.
+#   precos obter  → consulta agora; se falhar, usa a consulta guardada se ainda válida
+#   precos cache  → só a consulta guardada (sem rede)
+# Saída: 0 dentro do limite · 3 acima do limite · 2 sem estimativa válida.
 precos() {
-  local t; t="$(token)"; [[ -n "$t" ]] || return 1
-  CENARIO_TOKEN="$t" python3 - <<'EOF'
-import json, os, urllib.request
-tok = os.environ["CENARIO_TOKEN"]
-def get(url):
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {tok}"})
-    return json.load(urllib.request.urlopen(req, timeout=30))
-skus, page = [], ""
-while True:
-    d = get(f"https://cloudbilling.googleapis.com/v1/services/6F81-5844-456A/skus?currencyCode=USD&pageSize=5000&pageToken={page}")
-    skus += d.get("skus", []); page = d.get("nextPageToken", "")
-    if not page: break
-def unit(desc_pred, region="us-east1"):
-    for s in skus:
-        if desc_pred(s["description"]) and region in s.get("serviceRegions", []) and s["category"].get("usageType") == "OnDemand":
-            p = s["pricingInfo"][0]["pricingExpression"]["tieredRates"][-1]["unitPrice"]
-            return int(p.get("units", 0)) + p.get("nanos", 0) / 1e9, s["description"]
-    return None, None
-core, dc = unit(lambda d: d.startswith("E2 Instance Core running in"))
-ram, dr = unit(lambda d: d.startswith("E2 Instance Ram running in"))
-pd, dp = unit(lambda d: d.startswith("Balanced PD Capacity"))
-snap, ds = unit(lambda d: "Snapshot" in d and "Regional" not in d and "Multi" not in d and "Archive" not in d)
-ip, di = unit(lambda d: d.startswith("External IP Charge on a Standard VM"), region="global")
-if ip is None: ip, di = unit(lambda d: "External IP Charge on a Standard VM" in d, region="us-east1")
-h = 730
-linhas = []
-if core and ram: linhas.append(("VM e2-small (0,5 vCPU-equivalente + 2 GB)", (0.5 * core + 2 * ram) * h, f"{dc}; {dr}"))
-if pd: linhas.append(("Disco pd-balanced 20 GB", 20 * pd, dp))
-if ip: linhas.append(("IPv4 estático em uso", ip * h, di))
-if snap: linhas.append(("Snapshots (~10 GB armazenados)", 10 * snap, ds))
-total = sum(v for _, v, _ in linhas)
-for n, v, d in linhas: print(f"  {n:45s} US$ {v:6.2f}   [{d}]")
-print(f"  {'Bucket, segredos, IAP, logs (cotas gratuitas)':45s} US$   0.00")
-print(f"  {'TOTAL Etapa 1 (sem tributos)':45s} US$ {total:6.2f}")
-if total > 22: print("⚠ ACIMA do limite combinado (~US$ 20): NÃO prossiga sem nova autorização")
-EOF
+  local modo="$1" t=""
+  [[ "$modo" == obter ]] && t="$(token)"
+  CENARIO_TOKEN="$t" CENARIO_CONTA="$(gcloud config get-value account 2>/dev/null || true)" \
+    python3 infra/homolog/gcp/precos_catalogo.py "$modo" --limite "$LIMITE_USD"
 }
 
-planejar() {
+plano() {
   cat <<EOF
 Projeto: $PROJECT · Região: $REGION · Zona: $ZONE
 Será criado (Etapa 1), apenas se ainda não existir:
@@ -177,14 +158,25 @@ Será criado (Etapa 1), apenas se ainda não existir:
   8. Agenda de snapshots $VM-diario (diária, 7 dias) no disco da VM
 NÃO cria: Artifact Registry, Cloud Build, regras 80/443, balanceador, Cloud SQL, DNS.
 EOF
-  echo "Custo (preços oficiais do catálogo):"; precos || echo "  (catálogo indisponível — ver docs/HOMOLOGACAO-GCP-ETAPA1.md §3)"
+}
+
+planejar() {
+  plano
+  echo "Custo (preços oficiais do catálogo):"
+  precos obter || true
 }
 
 criar() {
   FALHAS=0
   verificar || { echo "Verificação com problemas: nada foi criado."; exit 1; }
-  planejar
-  read -r -p "Para criar, digite o nome do projeto ($PROJECT): " r
+  plano
+  # Sem nova consulta à rede: usa a consulta oficial que o 'verificar' acabou de fazer (ou validar).
+  echo "Custo (preços oficiais do catálogo):"
+  local rc=0; precos cache || rc=$?
+  if (( rc == 3 )); then echo "Criação BLOQUEADA: estimativa acima de US\$ $LIMITE_USD. Nada foi criado."; exit 1; fi
+  if (( rc != 0 )); then echo "Criação BLOQUEADA: sem estimativa oficial válida. Nada foi criado."; exit 1; fi
+  printf 'Para criar, digite o nome do projeto (%s): ' "$PROJECT"
+  read -r r
   [[ "$r" == "$PROJECT" ]] || { echo "Cancelado. Nada foi criado."; exit 1; }
   exec > >(tee -a "$LOG") 2>&1
   echo "== $(date -u +%FT%TZ) início da criação (registro: $LOG)"

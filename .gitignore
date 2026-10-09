@@ -21,3 +21,6 @@ apps/web/next-env.d.ts
 # Homologação local (segredos gerados, arquivos, logs): scripts/homolog-local.sh
 .homolog-local/
 storage-e2e/
+
+# Python (scripts de operação e testes)
+__pycache__/

@@ -18,7 +18,7 @@ Build, regras 80/443, DNS, balanceador, Cloud SQL.
 | --- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Branch, HEAD e estado                 | ✔ `claude/cenario-gestao-fase-1-zf3bj2`, HEAD `9be8187` (antes desta etapa), sem mudanças pendentes, igual ao remoto                                                                                                                                                        |
 | 2   | Relatório de preparação e plano       | ✔ revisados; a separação entre Etapa 1 e Etapa 2 está no §4                                                                                                                                                                                                                 |
-| 3   | Custos na calculadora oficial         | ⏳ as páginas oficiais de preços são dinâmicas e não abrem neste ambiente. O script lê o **catálogo oficial de preços** (API do Cloud Billing) com a sua conta; entradas para a calculadora no §3                                                                            |
+| 3   | Custos na calculadora oficial         | ⏳ as páginas oficiais de preços são dinâmicas e não abrem neste ambiente. O script lê o **catálogo oficial de preços** (API do Cloud Billing) com a sua conta — no Cloud Shell, o `verificar` calculou **US$ 19,29/mês** sem tributos; entradas para a calculadora no §3    |
 | 4   | Projeto e conta de faturamento        | ⏳ depende da sua conta → `etapa1-infra.sh verificar`                                                                                                                                                                                                                        |
 | 5   | Orçamento restrito ao projeto         | ⏳ `verificar` lista cada orçamento e marca ⚠ os que cobrem **todos** os projetos da conta de faturamento                                                                                                                                                                   |
 | 6   | Permissões necessárias                | ⏳ `verificar` testa as 11 permissões exatas na sua conta (`testIamPermissions`)                                                                                                                                                                                             |
@@ -62,8 +62,37 @@ dólar no cartão; em reais com CNPJ, tributos na nota (ver `HOMOLOGACAO-GCP-PRE
 - Cloud Storage: us-east1, Standard, 1 GB, 100 operações de classe A.
 - Secret Manager: 5 versões ativas, 100 acessos/mês.
 
-O comando `etapa1-infra.sh verificar` também calcula o total com os **preços de lista oficiais**
-lidos do catálogo do Cloud Billing com a sua conta, e avisa se passar de US$ 22.
+### 3.1 Consulta oficial de preços (`precos_catalogo.py`) — corrigida após o timeout no Cloud Shell
+
+O primeiro `criar` no Cloud Shell parou com `TimeoutError` (nada foi criado): a consulta trazia
+páginas de 5.000 SKUs com timeout fixo de 30 s, sem novas tentativas, e o `criar` consultava o
+catálogo **duas vezes** (no `verificar` e no plano). Além disso, a estimativa acima do limite só
+gerava um aviso — não bloqueava. Agora:
+
+- **Timeout e tentativas:** 20 s por requisição, até 3 tentativas com espera de 2 s e 4 s, prazo
+  total de 120 s; páginas de 500 SKUs e parada assim que os 5 itens são encontrados.
+- **Resposta validada:** JSON completo, SKUs exigidas presentes, preço em USD, unidade esperada
+  (`h`, `GiBy.h`, `GiBy.mo`) e valor plausível; paginação anormal é recusada. Resposta incompleta
+  nunca vira estimativa nem é guardada.
+- **Reutilização da consulta oficial:** cada consulta bem-sucedida fica em
+  `~/.cache/cenario-homolog/precos-etapa1.json` (permissão 600) com **fonte** (Cloud Billing
+  Catalog API, endereço oficial), **data da consulta**, **validade de 24 h**, conta e SKUs (id,
+  descrição, unidade, preço unitário). Se a consulta nova falhar, a guardada é usada **somente**
+  se for da mesma fonte oficial, estiver íntegra e dentro da validade; o total é sempre
+  **recalculado** dos preços unitários com as quantidades fixas do script (um total editado no
+  arquivo é ignorado; preço absurdo, item faltando, validade estendida ou data futura → recusada).
+- **Sem preço inventado:** sem consulta oficial válida (nova ou guardada), não há estimativa.
+- **Limite efetivo:** `LIMITE_USD=20.00` no script. O `criar` **bloqueia** — antes da confirmação
+  manual — se não houver estimativa válida ou se ela passar do limite. O `criar` não consulta a
+  rede de novo: usa a consulta que o `verificar` acabou de fazer ou validar.
+- **Confirmação manual preservada:** continua sendo preciso digitar `cenariogestao`.
+
+Testes (sem rede externa; catálogo, `gcloud` e `curl` falsos):
+
+```bash
+python3 -m unittest discover -s infra/homolog/gcp/testes -v      # 17 testes da consulta e do cache
+bash infra/homolog/gcp/testes/test_etapa1_bloqueio.sh             # 6 cenários do script completo
+```
 
 ## 4. O que a Etapa 1 cria (e o que não cria)
 
