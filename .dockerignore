@@ -1,0 +1,16 @@
+**/node_modules
+**/.next
+**/.next-e2e
+**/dist
+**/*.tsbuildinfo
+.git
+.env
+.env.*
+!.env.example
+storage
+storage-e2e
+apps/api/storage
+backups
+tests/e2e/test-results
+tests/e2e/playwright-report
+infra/homolog/.env.homolog

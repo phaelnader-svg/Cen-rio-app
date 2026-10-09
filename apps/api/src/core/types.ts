@@ -67,6 +67,8 @@ declare module 'fastify' {
   }
   interface FastifyInstance {
     ctx: AppContext;
+    /** Todas as rotas /api com a regra de acesso declarada (auditoria). */
+    routeCatalog: { method: string; url: string; access: AccessRule }[];
   }
   interface FastifyContextConfig {
     access?: AccessRule;

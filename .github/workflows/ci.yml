@@ -38,9 +38,17 @@ jobs:
           psql "postgresql://cenario:cenario_ci@localhost:5432/postgres" -c "CREATE DATABASE cenario_test"
           psql "postgresql://cenario:cenario_ci@localhost:5432/postgres" -c "CREATE DATABASE cenario_e2e_test"
       - run: pnpm install --frozen-lockfile
+      # Vulnerabilidades críticas em dependências bloqueiam o CI (o relatório completo fica no log).
+      - run: pnpm audit --audit-level critical
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
+      - name: Migrations (aplicar do zero e conferir que o schema não diverge)
+        run: |
+          pnpm db:migrate
+          pnpm db:status
+          pnpm --filter @cenario/db exec prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+      - run: pnpm build
       - run: pnpm test
       - run: pnpm test:backup
       - run: pnpm --filter @cenario/e2e exec playwright install --with-deps chromium

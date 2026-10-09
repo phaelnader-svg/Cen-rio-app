@@ -45,6 +45,11 @@
       "esbuild",
       "sharp",
       "unrs-resolver"
-    ]
+    ],
+    "overrides": {
+      "postcss": "8.5.29",
+      "deepmerge-ts": "8.0.2",
+      "esbuild": "0.28.2"
+    }
   }
 }

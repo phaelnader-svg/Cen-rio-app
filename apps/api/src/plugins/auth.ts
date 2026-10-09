@@ -39,12 +39,18 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
   app.decorateRequest('auth', null);
   app.decorateRequest('device', null);
 
+  // Catálogo das regras de acesso (auditoria automática de todas as rotas — Fase 12).
+  const routeCatalog: { method: string; url: string; access: AccessRule }[] = [];
+  app.decorate('routeCatalog', routeCatalog);
+
   app.addHook('onRoute', (route) => {
     if (!route.url.startsWith('/api')) return;
     const access = (route.config as { access?: AccessRule } | undefined)?.access;
     if (!access) {
       throw new Error(`Rota sem regra de acesso declarada: ${String(route.method)} ${route.url}`);
     }
+    for (const method of [route.method].flat())
+      routeCatalog.push({ method: String(method), url: route.url, access });
   });
 
   app.addHook('onRequest', async (request, reply) => {
