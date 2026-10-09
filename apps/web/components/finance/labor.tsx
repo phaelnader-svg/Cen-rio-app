@@ -107,6 +107,11 @@ export function LaborTab() {
                   <Badge tone={l.status === 'LIBERADO' ? 'brand' : statusTone(l.status)}>
                     {LABOR_STATUS_LABEL[l.status]}
                   </Badge>
+                  {l.withdrawn && (
+                    <Badge tone="warn" className="ml-1">
+                      Revisar: peça devolvida/OS cancelada
+                    </Badge>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-right">
                   <Button size="sm" variant="secondary" onClick={() => setOpen(l.id)}>

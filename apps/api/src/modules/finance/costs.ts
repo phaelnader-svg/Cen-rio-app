@@ -227,8 +227,9 @@ export async function materialSummary(
     if (unit === null) forecastUnpriced += 1;
     else forecastCents += Math.round(num(r.quantity) * unit);
   }
+  // Comprado = pedido menos o saldo encerrado (Fase 12): o que não virá não conta.
   const purchasedCents = exclusive.reduce(
-    (a, e) => a + Math.round(num(e.quantity) * (e.unitPriceCents ?? 0)),
+    (a, e) => a + Math.round((num(e.quantity) - num(e.closedQuantity)) * (e.unitPriceCents ?? 0)),
     0,
   );
   const reservations = await db.stockReservation.findMany({

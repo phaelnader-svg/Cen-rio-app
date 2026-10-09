@@ -57,6 +57,8 @@ export interface PurchaseOrderItemDto extends SpecDto {
   quantity: number;
   extraAuthorized: number;
   receivedQuantity: number;
+  /** Fase 12: saldo encerrado (não será entregue). */
+  closedQuantity: number;
   pendingQuantity: number;
   rejectedQuantity: number;
   /** Preços só para quem tem `compras.ver`. */
@@ -135,7 +137,16 @@ export interface PurchaseOrderDto extends PurchaseOrderSummaryDto {
   confirmedBy: string | null;
   cancelledAt: string | null;
   cancelReason: string | null;
-  can: { edit: boolean; confirm: boolean; cancel: boolean; authorizeExtra: boolean };
+  /** Fase 12: saldo pendente encerrado (o recebido é preservado). */
+  balanceClosedAt: string | null;
+  balanceCloseReason: string | null;
+  can: {
+    edit: boolean;
+    confirm: boolean;
+    cancel: boolean;
+    authorizeExtra: boolean;
+    closeBalance: boolean;
+  };
 }
 
 /** Pedido aguardando chegada, como o funcionário vê (sem preços nem fornecedor comercial). */

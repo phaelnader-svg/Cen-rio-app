@@ -44,12 +44,19 @@ const RECEIPT_VIEW = {
   anyPermissions: ['compras.ver', 'estoque.ver', 'estoque.gerenciar', 'estoque.autorizar'],
 } as const;
 
-/** Situação do pedido a partir do recebido líquido de cada item. */
+/**
+ * Situação do pedido a partir do recebido líquido de cada item. Saldo encerrado (Fase 12) conta
+ * como atendido: o pedido encerrado continua "recebido" (não volta a esperar entrega).
+ */
 function statusFromItems(
-  items: { quantity: unknown; receivedQuantity: unknown }[],
+  items: { quantity: unknown; receivedQuantity: unknown; closedQuantity?: unknown }[],
+  balanceClosed = false,
 ): PurchaseOrderStatus {
+  if (balanceClosed) return 'RECEBIDO';
   const all = items.every(
-    (i) => num(i.receivedQuantity as never) + EPS >= num(i.quantity as never),
+    (i) =>
+      num(i.receivedQuantity as never) + num((i.closedQuantity ?? 0) as never) + EPS >=
+      num(i.quantity as never),
   );
   if (all) return 'RECEBIDO';
   return items.some((i) => num(i.receivedQuantity as never) > 0)
@@ -431,10 +438,21 @@ export async function materialReceiptRoutes(app: FastifyInstance) {
         }
         await tx.purchaseOrderItem.update({
           where: { id: item.id },
-          data: { receivedQuantity: newReceived },
+          data: {
+            receivedQuantity: newReceived,
+            // Pedido com saldo encerrado: o estornado também não virá mais (vira saldo encerrado).
+            ...(po.balanceClosedAt
+              ? {
+                  closedQuantity: Math.min(
+                    num(item.quantity),
+                    q3(num(item.closedQuantity) + input.quantity),
+                  ),
+                }
+              : {}),
+          },
         });
         const items = await tx.purchaseOrderItem.findMany({ where: { purchaseOrderId: po.id } });
-        const status = statusFromItems(items);
+        const status = statusFromItems(items, Boolean(po.balanceClosedAt));
         impact.statusBefore = po.status;
         impact.statusAfter = status;
         if (status !== po.status) {

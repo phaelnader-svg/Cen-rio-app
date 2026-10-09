@@ -50,6 +50,40 @@ export const ORDER_STATUS_LABEL: Record<OrderStatus, string> = {
   CANCELADO: 'Cancelado',
 };
 
+/**
+ * Fase 12 — situação do serviço do pedido (derivada; não altera o valor negociado):
+ * devolução parcial, devolução total, serviço concluído (todas as peças ativas entregues),
+ * serviço cancelado ou em andamento.
+ */
+export const ORDER_SERVICE_STATES = [
+  'EM_ANDAMENTO',
+  'DEVOLUCAO_PARCIAL',
+  'DEVOLUCAO_TOTAL',
+  'SERVICO_CONCLUIDO',
+  'SERVICO_CANCELADO',
+] as const;
+export type OrderServiceState = (typeof ORDER_SERVICE_STATES)[number];
+export const ORDER_SERVICE_STATE_LABEL: Record<OrderServiceState, string> = {
+  EM_ANDAMENTO: 'Em andamento',
+  DEVOLUCAO_PARCIAL: 'Devolução parcial',
+  DEVOLUCAO_TOTAL: 'Devolução total',
+  SERVICO_CONCLUIDO: 'Serviço concluído',
+  SERVICO_CANCELADO: 'Serviço cancelado',
+};
+export function orderServiceState(i: {
+  cancelled: boolean;
+  receivedPieces: number;
+  returnedPieces: number;
+  activePieces: number;
+  deliveredPieces: number;
+}): OrderServiceState {
+  if (i.cancelled) return 'SERVICO_CANCELADO';
+  if (i.receivedPieces > 0 && i.returnedPieces >= i.receivedPieces) return 'DEVOLUCAO_TOTAL';
+  if (i.activePieces > 0 && i.deliveredPieces >= i.activePieces) return 'SERVICO_CONCLUIDO';
+  if (i.returnedPieces > 0) return 'DEVOLUCAO_PARCIAL';
+  return 'EM_ANDAMENTO';
+}
+
 export const PICKUP_STATUSES = [
   'AGUARDANDO_AGENDAMENTO',
   'AGENDADA',

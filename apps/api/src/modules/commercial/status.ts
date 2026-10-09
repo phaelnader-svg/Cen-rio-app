@@ -1,4 +1,5 @@
-import type { CommercialOrderStatus, Tx } from '@cenario/db';
+import { orderServiceState, type OrderServiceState } from '@cenario/shared';
+import type { CommercialOrderStatus, PrismaClient, Tx } from '@cenario/db';
 
 /** Situações de retirada que ainda "reservam" peças (não recebidas nem canceladas). */
 export const ACTIVE_PICKUP_STATUSES = [
@@ -67,4 +68,45 @@ export async function itemAllocations(tx: Tx, orderId: string) {
     inPickups: (id: string) => inPickups.get(id) ?? 0,
     inServiceOrders: (id: string) => inServiceOrders.get(id) ?? 0,
   };
+}
+
+/**
+ * Fase 12 — situação do serviço de cada pedido (devolução parcial/total, concluído, cancelado),
+ * derivada das peças recebidas/devolvidas e das etapas das peças das OS ativas.
+ */
+export async function serviceStates(
+  db: Tx | PrismaClient,
+  orders: {
+    id: string;
+    status: CommercialOrderStatus;
+    items: { receivedQuantity: number; returnedQuantity: number }[];
+  }[],
+): Promise<Map<string, { returnedPieces: number; serviceState: OrderServiceState }>> {
+  const pieces = await db.serviceOrderItem.findMany({
+    where: { serviceOrder: { orderId: { in: orders.map((o) => o.id) }, status: 'ABERTA' } },
+    select: { quantity: true, fulfillmentStage: true, serviceOrder: { select: { orderId: true } } },
+  });
+  const out = new Map<string, { returnedPieces: number; serviceState: OrderServiceState }>();
+  for (const o of orders) {
+    const mine = pieces.filter(
+      (p) =>
+        p.serviceOrder.orderId === o.id &&
+        p.fulfillmentStage !== 'DEVOLVIDA' &&
+        p.fulfillmentStage !== 'CANCELADA',
+    );
+    const returnedPieces = o.items.reduce((a, i) => a + i.returnedQuantity, 0);
+    out.set(o.id, {
+      returnedPieces,
+      serviceState: orderServiceState({
+        cancelled: o.status === 'CANCELADO',
+        receivedPieces: o.items.reduce((a, i) => a + i.receivedQuantity, 0),
+        returnedPieces,
+        activePieces: mine.reduce((a, p) => a + p.quantity, 0),
+        deliveredPieces: mine
+          .filter((p) => p.fulfillmentStage === 'ENTREGUE')
+          .reduce((a, p) => a + p.quantity, 0),
+      }),
+    });
+  }
+  return out;
 }

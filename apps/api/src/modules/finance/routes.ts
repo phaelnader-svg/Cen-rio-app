@@ -76,6 +76,8 @@ import {
   upsertTeamCost,
 } from './payables';
 import { REPORTS, buildReport } from './reports';
+// Registra a reação ao cancelamento de OS (valores de produção) — Fase 12.
+import './withdrawal';
 import { dashboard, orderResult, productivity, taxRate } from './results';
 import {
   addCommercialAdjustment,

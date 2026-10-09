@@ -287,6 +287,8 @@ export const createReturnSchema = z.object({
   reason: trimmed(3, 500, 'Motivo da devolução'),
   responsibleUserId: idSchema.nullable().optional(),
   returnDate: dateOnly,
+  /** Fase 12: para onde as peças vão (ex.: entregue no endereço do cliente). */
+  destination: optionalText(200),
   lines: z
     .array(
       z.object({

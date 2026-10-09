@@ -32,7 +32,12 @@ import {
   snapshotAddress,
   toCustomerSummary,
 } from '../commercial/common';
-import { ACTIVE_PICKUP_STATUSES, itemAllocations, refreshOrderStatus } from '../commercial/status';
+import {
+  ACTIVE_PICKUP_STATUSES,
+  itemAllocations,
+  refreshOrderStatus,
+  serviceStates,
+} from '../commercial/status';
 
 const VIEW = { session: 'WEB', permissions: ['pedidos.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['pedidos.gerenciar'] } as const;
@@ -57,8 +62,9 @@ const fullInclude = {
 function toSummary(
   o: CommercialOrder & {
     customer: Customer;
-    items: Pick<CommercialOrderItem, 'quantity' | 'receivedQuantity'>[];
+    items: Pick<CommercialOrderItem, 'quantity' | 'receivedQuantity' | 'returnedQuantity'>[];
   },
+  state: { returnedPieces: number; serviceState: OrderSummaryDto['serviceState'] },
 ): OrderSummaryDto {
   return {
     id: o.id,
@@ -69,6 +75,8 @@ function toSummary(
     contractedService: o.contractedService,
     totalPieces: o.items.reduce((a, i) => a + i.quantity, 0),
     receivedPieces: o.items.reduce((a, i) => a + i.receivedQuantity, 0),
+    returnedPieces: state.returnedPieces,
+    serviceState: state.serviceState,
     createdAt: o.createdAt.toISOString(),
   };
 }
@@ -86,7 +94,7 @@ export async function loadOrderDto(
   const alloc = await itemAllocations(db as Tx, id);
   const valuesVisible = can(request, 'pedidos.valores');
   return {
-    ...toSummary(o),
+    ...toSummary(o, (await serviceStates(db, [o])).get(o.id)!),
     pickupAddressId: o.pickupAddressId,
     pickupAddress: asSnapshot(o.pickupAddressSnapshot),
     description: o.description,
@@ -104,6 +112,7 @@ export async function loadOrderDto(
       receivedQuantity: i.receivedQuantity,
       inActivePickups: alloc.inPickups(i.id),
       inServiceOrders: alloc.inServiceOrders(i.id),
+      returnedQuantity: i.returnedQuantity,
     })),
     cancelledAt: o.cancelledAt?.toISOString() ?? null,
     cancelReason: o.cancelReason,
@@ -155,13 +164,20 @@ export async function orderRoutes(app: FastifyInstance) {
       prisma.commercialOrder.count({ where }),
       prisma.commercialOrder.findMany({
         where,
-        include: { customer: true, items: { select: { quantity: true, receivedQuantity: true } } },
+        include: {
+          customer: true,
+          items: { select: { quantity: true, receivedQuantity: true, returnedQuantity: true } },
+        },
         orderBy: { createdAt: 'desc' },
         take: q.limit,
         skip: q.offset,
       }),
     ]);
-    return { items: rows.map(toSummary), total } satisfies PageDto<OrderSummaryDto>;
+    const states = await serviceStates(prisma, rows);
+    return {
+      items: rows.map((r) => toSummary(r, states.get(r.id)!)),
+      total,
+    } satisfies PageDto<OrderSummaryDto>;
   });
 
   app.get('/api/v1/orders/:id', { config: { access: VIEW } }, async (request) => {

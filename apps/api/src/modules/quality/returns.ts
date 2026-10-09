@@ -17,7 +17,10 @@ import {
   lockOrderItems,
   orderCode,
   parseDateOnly,
+  serviceOrderCode,
 } from '../commercial/common';
+import { settleLaborOfWithdrawal } from '../finance/withdrawal';
+import { releaseReservationsOfItems } from '../purchasing/withdrawal';
 import { itemAllocations, refreshOrderStatus } from '../commercial/status';
 import { notify, taskNotice } from '../notifications/notify';
 import { onServiceOrderCancelled, protectCancelledServiceOrder } from '../production/cancellation';
@@ -57,6 +60,7 @@ export async function toReturnDto(db: Tx | PrismaClient, r: ReturnRow): Promise<
       ? { userId: r.responsible.id, displayName: r.responsible.displayName }
       : null,
     returnDate: dateOnly(r.returnDate)!,
+    destination: r.destination,
     lines: [...r.lines]
       .sort((a, b) => a.orderItem.position - b.orderItem.position)
       .map((l) => ({
@@ -67,12 +71,63 @@ export async function toReturnDto(db: Tx | PrismaClient, r: ReturnRow): Promise<
           .filter((s) => l.serviceOrderItemIds.includes(s.id))
           .map((s) => ({ id: s.id, code: pieceCode(s) })),
       })),
+    review: await reviewOf(db, r, soItems),
+    history: (
+      await db.auditLog.findMany({
+        where: { entityType: 'piece_return', entityId: r.id },
+        orderBy: { createdAt: 'asc' },
+        include: { actor: { select: { displayName: true } } },
+      })
+    ).map((h) => ({
+      id: h.id,
+      action: h.action,
+      summary: h.summary,
+      actor: h.actor?.displayName ?? null,
+      createdAt: h.createdAt.toISOString(),
+    })),
     confirmedAt: r.confirmedAt?.toISOString() ?? null,
     confirmedBy: confirmedBy?.displayName ?? null,
     confirmationNote: r.confirmationNote,
     cancelReason: r.cancelReason,
     version: r.version,
     createdAt: r.createdAt.toISOString(),
+  };
+}
+
+/** Fase 12: pendências de revisão do gestor depois de uma devolução confirmada. */
+async function reviewOf(
+  db: Tx | PrismaClient,
+  r: ReturnRow,
+  soItems: { id: string; serviceOrderId: string }[],
+): Promise<PieceReturnDto['review']> {
+  if (r.status !== 'CONFIRMADA' || !soItems.length) return { reservations: [], laborToReview: 0 };
+  const soIds = [...new Set(soItems.map((i) => i.serviceOrderId))];
+  const reservations = await db.stockReservation.findMany({
+    where: {
+      serviceOrderId: { in: soIds },
+      status: 'ATIVA',
+      serviceOrder: { status: 'ABERTA' },
+      OR: [{ materialRequirementId: null }, { requirement: { serviceOrderItemId: null } }],
+    },
+    include: {
+      stockItem: { select: { description: true } },
+      serviceOrder: { select: { number: true } },
+    },
+  });
+  const laborToReview = await db.productionPayable.count({
+    where: {
+      serviceOrderItemId: { in: soItems.map((i) => i.id) },
+      status: { in: ['PREVISTO', 'LIBERADO', 'PAGO_PARCIAL'] },
+    },
+  });
+  return {
+    reservations: reservations.map((x) => ({
+      id: x.id,
+      serviceOrder: serviceOrderCode(x.serviceOrder.number),
+      material: x.stockItem.description,
+      quantity: Number(x.quantity),
+    })),
+    laborToReview,
   };
 }
 
@@ -169,6 +224,7 @@ export async function createReturn(
     reason: string;
     responsibleUserId?: string | null;
     returnDate: string;
+    destination?: string | null;
     lines: Line[];
   },
 ) {
@@ -185,6 +241,7 @@ export async function createReturn(
       reason: input.reason,
       responsibleUserId: input.responsibleUserId ?? actor.userId,
       returnDate: parseDateOnly(input.returnDate)!,
+      destination: input.destination ?? null,
       createdById: actor.userId,
       lines: {
         create: input.lines.map((l) => ({
@@ -283,6 +340,7 @@ export async function confirmReturn(
   const code = returnCode(r.number);
   const reason = `Devolvida ao cliente (${code}): ${r.reason}`;
   const touchedOrders = new Set<string>();
+  const returnedBySo = new Map<string, string[]>();
   for (const line of r.lines) {
     for (const itemId of line.serviceOrderItemIds) {
       const item = await tx.serviceOrderItem.findUniqueOrThrow({
@@ -299,6 +357,10 @@ export async function confirmReturn(
         note: `${reason}. ${input.note}`,
       });
       touchedOrders.add(item.serviceOrderId);
+      returnedBySo.set(item.serviceOrderId, [
+        ...(returnedBySo.get(item.serviceOrderId) ?? []),
+        itemId,
+      ]);
     }
     await tx.commercialOrderItem.update({
       where: { id: line.orderItemId },
@@ -321,8 +383,20 @@ export async function confirmReturn(
       where: { id: serviceOrderId },
       include: { items: { select: { fulfillmentStage: true } } },
     });
-    if (so.status !== 'ABERTA' || so.items.some((i) => i.fulfillmentStage !== 'DEVOLVIDA'))
+    if (so.status !== 'ABERTA') continue;
+    if (so.items.some((i) => i.fulfillmentStage !== 'DEVOLVIDA')) {
+      // Devolução parcial (Fase 12): só as reservas e os valores das peças devolvidas.
+      const items = returnedBySo.get(so.id) ?? [];
+      await releaseReservationsOfItems(tx, actor, so.id, items, `Peça devolvida (${code})`);
+      await settleLaborOfWithdrawal(
+        tx,
+        actor,
+        so.id,
+        { itemIds: items },
+        `peça devolvida (${code})`,
+      );
       continue;
+    }
     await tx.$queryRaw`SELECT id FROM service_orders WHERE id = ${so.id}::uuid FOR UPDATE`;
     const last = await tx.serviceOrderRevision.aggregate({
       where: { serviceOrderId: so.id },

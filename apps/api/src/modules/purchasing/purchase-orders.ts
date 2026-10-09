@@ -161,7 +161,7 @@ function toSummary(po: SummaryRow, prices: boolean): PurchaseOrderSummaryDto {
       .sort((a, b) => a.code.localeCompare(b.code)),
     hasIssues: po.items.some(
       (i) =>
-        num(i.receivedQuantity) < num(i.quantity) &&
+        num(i.receivedQuantity) + num(i.closedQuantity) < num(i.quantity) &&
         i.receiptLines.some((l) => num(l.rejectedQuantity) > 0),
     ),
     version: po.version,
@@ -190,7 +190,11 @@ export async function loadPurchaseOrder(
         quantity: num(i.quantity),
         extraAuthorized: num(i.extraAuthorized),
         receivedQuantity: num(i.receivedQuantity),
-        pendingQuantity: Math.max(0, q3(num(i.quantity) - num(i.receivedQuantity))),
+        closedQuantity: num(i.closedQuantity),
+        pendingQuantity: Math.max(
+          0,
+          q3(num(i.quantity) - num(i.receivedQuantity) - num(i.closedQuantity)),
+        ),
         rejectedQuantity: q3(rejected),
         unitPriceCents: prices ? i.unitPriceCents : null,
         totalCents: prices ? lineTotalCents(num(i.quantity), i.unitPriceCents) : null,
@@ -229,6 +233,8 @@ export async function loadPurchaseOrder(
     confirmedBy: po.confirmedBy?.displayName ?? null,
     cancelledAt: po.cancelledAt?.toISOString() ?? null,
     cancelReason: po.cancelReason,
+    balanceClosedAt: po.balanceClosedAt?.toISOString() ?? null,
+    balanceCloseReason: po.balanceCloseReason,
     can: {
       edit: po.status === 'RASCUNHO' && has(request, 'compras.gerenciar'),
       confirm: po.status === 'RASCUNHO' && has(request, 'compras.aprovar'),
@@ -239,6 +245,7 @@ export async function loadPurchaseOrder(
       authorizeExtra:
         (PURCHASE_ORDER_RECEIVABLE as readonly string[]).includes(po.status) &&
         has(request, 'compras.aprovar'),
+      closeBalance: po.status === 'PARCIALMENTE_RECEBIDO' && has(request, 'compras.aprovar'),
     },
   };
 }
@@ -748,6 +755,75 @@ export async function purchaseOrderRoutes(app: FastifyInstance) {
           aggregateType: 'purchase_order',
           aggregateId: id,
           payload: { id, code: purchaseOrderCode(po.number), status: 'CANCELADO' },
+          audience: 'all',
+        });
+      });
+      return loadPurchaseOrder(prisma, id, request);
+    },
+  );
+
+  /**
+   * Fase 12 — encerra o saldo que não será entregue (gestor, com justificativa). O que já foi
+   * recebido e seus custos ficam como estão; só o pendente deixa de ser esperado, as necessidades
+   * voltam a aparecer como não atendidas e a prontidão é recalculada. Não mexe no estoque.
+   */
+  app.post(
+    '/api/v1/purchase-orders/:id/close-balance',
+    { config: { access: PURCHASE_APPROVE, idempotent: true } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const input = cancelPurchaseOrderSchema.parse(request.body);
+      const actor = actorFrom(request);
+      await prisma.$transaction(async (tx) => {
+        const po = await lockPurchaseOrder(tx, id);
+        if (po.version !== input.version) throw Errors.versionConflict(po.version);
+        if (po.status !== 'PARCIALMENTE_RECEBIDO') {
+          throw Errors.business(
+            po.status === 'CONFIRMADO'
+              ? 'Nada foi recebido neste pedido: para desistir da compra, cancele o pedido.'
+              : 'Só pedidos parcialmente recebidos têm saldo para encerrar.',
+          );
+        }
+        await lockRows(
+          tx,
+          'purchase_order_items',
+          po.items.map((i) => i.id),
+        );
+        const closed: { item: string; quantity: number }[] = [];
+        for (const i of po.items) {
+          const pending = q3(num(i.quantity) - num(i.receivedQuantity) - num(i.closedQuantity));
+          if (pending <= 1e-6) continue;
+          await tx.purchaseOrderItem.update({
+            where: { id: i.id },
+            data: { closedQuantity: q3(num(i.closedQuantity) + pending) },
+          });
+          closed.push({ item: i.description, quantity: pending });
+        }
+        if (!closed.length) throw Errors.business('Não há saldo pendente neste pedido.');
+        await tx.purchaseOrder.update({
+          where: { id },
+          data: {
+            status: 'RECEBIDO',
+            balanceClosedAt: new Date(),
+            balanceClosedById: actor.userId,
+            balanceCloseReason: input.reason,
+            version: { increment: 1 },
+          },
+        });
+        await poHistory(tx, actor, id, {
+          kind: 'SALDO_ENCERRADO',
+          note: input.reason,
+          summary: `Saldo pendente do pedido de compra ${purchaseOrderCode(po.number)} encerrado: ${closed
+            .map((c) => `${c.quantity} de ${c.item}`)
+            .join(', ')}.`,
+          changes: { closed },
+        });
+        await refreshReadiness(tx, actor, poServiceOrderIds(po));
+        await appendEvent(tx, actor, {
+          type: EVENT_TYPES.PURCHASE_ORDER_UPDATED,
+          aggregateType: 'purchase_order',
+          aggregateId: id,
+          payload: { id, code: purchaseOrderCode(po.number), status: 'RECEBIDO' },
           audience: 'all',
         });
       });

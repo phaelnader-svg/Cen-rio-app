@@ -1,4 +1,5 @@
 import {
+  ORDER_SERVICE_STATE_LABEL,
   ORDER_STATUS_LABEL,
   PICKUP_STATUS_LABEL,
   PRIORITY_LABEL,
@@ -7,6 +8,7 @@ import {
   type PickupStatus,
   type Priority,
   type ServiceOrderStatus,
+  type OrderServiceState,
 } from '@cenario/shared';
 import { Badge } from '@/components/ui/misc';
 
@@ -53,3 +55,28 @@ export const ServiceOrderStatusBadge = ({ status }: { status: ServiceOrderStatus
     {SERVICE_ORDER_STATUS_LABEL[status]}
   </Badge>
 );
+
+/** Fase 12: situação do serviço (devoluções, concluído, cancelado) — oculta "em andamento". */
+export const ServiceStateBadge = ({
+  state,
+  returned = 0,
+}: {
+  state: OrderServiceState;
+  returned?: number;
+}) =>
+  state === 'EM_ANDAMENTO' ? null : (
+    <Badge
+      tone={
+        state === 'SERVICO_CONCLUIDO'
+          ? 'ok'
+          : state === 'SERVICO_CANCELADO'
+            ? 'neutral'
+            : state === 'DEVOLUCAO_TOTAL'
+              ? 'danger'
+              : 'warn'
+      }
+    >
+      {ORDER_SERVICE_STATE_LABEL[state]}
+      {returned > 0 && state === 'SERVICO_CONCLUIDO' ? ` · ${returned} devolvida(s)` : ''}
+    </Badge>
+  );

@@ -58,7 +58,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
   const can = useCan();
   const q = usePurchaseOrder(id);
   const [dialog, setDialog] = useState<
-    | { kind: 'confirm' | 'cancel' }
+    | { kind: 'confirm' | 'cancel' | 'close' }
     | { kind: 'extra'; itemId: string; label: string }
     | { kind: 'reverse'; lineId: string; max: number; label: string }
     | null
@@ -101,9 +101,24 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
                 Cancelar pedido
               </Button>
             )}
+            {po.can.closeBalance && (
+              <Button
+                variant="secondary"
+                icon={<Ban className="size-4" aria-hidden />}
+                onClick={() => setDialog({ kind: 'close' })}
+                data-testid="po-close-balance"
+              >
+                Encerrar saldo pendente
+              </Button>
+            )}
           </>
         }
       />
+      {po.balanceClosedAt && (
+        <Alert tone="info" className="mb-4" title="Saldo pendente encerrado">
+          {po.balanceCloseReason} — o recebido foi preservado; o restante não será entregue.
+        </Alert>
+      )}
       <div className="mb-6 flex flex-wrap items-center gap-3" data-testid="po-status">
         <PurchaseStatusBadge status={po.status} />
         {po.hasIssues && (
@@ -169,6 +184,11 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
                       Pendente:{' '}
                       <strong className="tabular-nums">{qtyText(i.pendingQuantity, i.unit)}</strong>
                     </span>
+                    {i.closedQuantity > 0 && (
+                      <span className="text-ink-muted" data-testid="po-item-closed">
+                        Saldo encerrado: {qtyText(i.closedQuantity, i.unit)}
+                      </span>
+                    )}
                     {i.rejectedQuantity > 0 && (
                       <span className="text-danger-600">
                         Com problema: {qtyText(i.rejectedQuantity, i.unit)}
@@ -301,6 +321,9 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
 
       {dialog?.kind === 'confirm' && <ConfirmDialog po={po} onClose={() => setDialog(null)} />}
       {dialog?.kind === 'cancel' && <CancelDialog po={po} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'close' && (
+        <CancelDialog po={po} onClose={() => setDialog(null)} mode="close" />
+      )}
       {dialog?.kind === 'extra' && (
         <QuantityReasonDialog
           title="Autorizar recebimento acima do pedido"
@@ -379,16 +402,35 @@ function ConfirmDialog({ po, onClose }: { po: PurchaseOrderDto; onClose: () => v
   );
 }
 
-function CancelDialog({ po, onClose }: { po: PurchaseOrderDto; onClose: () => void }) {
-  const { m, error } = useAction(po.id, `Pedido ${po.code} cancelado.`, onClose);
+/** Cancelar o pedido ou (Fase 12) encerrar o saldo que não será entregue. */
+function CancelDialog({
+  po,
+  onClose,
+  mode = 'cancel',
+}: {
+  po: PurchaseOrderDto;
+  onClose: () => void;
+  mode?: 'cancel' | 'close';
+}) {
+  const close = mode === 'close';
+  const { m, error } = useAction(
+    po.id,
+    close ? `Saldo pendente de ${po.code} encerrado.` : `Pedido ${po.code} cancelado.`,
+    onClose,
+  );
+  const [key] = useState(newIdempotencyKey);
   const [reason, setReason] = useState('');
   return (
     <Dialog
       open
       onClose={onClose}
       size="sm"
-      title={`Cancelar ${po.code}?`}
-      description="Os materiais voltam a aparecer como pendentes de compra."
+      title={close ? `Encerrar o saldo pendente de ${po.code}?` : `Cancelar ${po.code}?`}
+      description={
+        close
+          ? 'O que já foi recebido continua valendo (estoque e custos). Só o pendente deixa de ser esperado e volta a aparecer como necessidade de compra.'
+          : 'Os materiais voltam a aparecer como pendentes de compra.'
+      }
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -400,14 +442,15 @@ function CancelDialog({ po, onClose }: { po: PurchaseOrderDto; onClose: () => vo
             disabled={reason.trim().length < 3}
             onClick={() =>
               m.mutate(() =>
-                api(`/api/v1/purchase-orders/${po.id}/cancel`, {
+                api(`/api/v1/purchase-orders/${po.id}/${close ? 'close-balance' : 'cancel'}`, {
                   method: 'POST',
                   body: { reason, version: po.version },
+                  ...(close ? { idempotencyKey: key } : {}),
                 }),
               )
             }
           >
-            Cancelar pedido
+            {close ? 'Encerrar saldo' : 'Cancelar pedido'}
           </Button>
         </>
       }

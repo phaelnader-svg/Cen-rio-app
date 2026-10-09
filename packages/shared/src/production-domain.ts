@@ -171,6 +171,9 @@ export const NOTIFICATION_KINDS = [
   'ENTREGA_ATRIBUIDA',
   'ENTREGA_CONCLUIDA',
   'OCORRENCIA_LOGISTICA',
+  // Fase 12 — devoluções e compras
+  'REVISAO_DEVOLUCAO',
+  'SALDO_COMPRA_ENCERRADO',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -223,6 +226,8 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   ENTREGA_ATRIBUIDA: 'Entrega ou retirada atribuída',
   ENTREGA_CONCLUIDA: 'Entrega concluída',
   OCORRENCIA_LOGISTICA: 'Ocorrência logística',
+  REVISAO_DEVOLUCAO: 'Devolução: revisar reservas ou valores',
+  SALDO_COMPRA_ENCERRADO: 'Saldo de compra encerrado',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

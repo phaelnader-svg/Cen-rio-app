@@ -20,7 +20,12 @@ import { formatDay, useOrder, usePickups, useReceipts, useServiceOrders } from '
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { addressLines } from './address-form';
-import { OrderStatusBadge, PickupStatusBadge, ServiceOrderStatusBadge } from './badges';
+import {
+  OrderStatusBadge,
+  PickupStatusBadge,
+  ServiceOrderStatusBadge,
+  ServiceStateBadge,
+} from './badges';
 import { PhotoGallery } from './photo-gallery';
 import { PickupDetailDialog } from './pickup-detail';
 import { PickupForm } from './pickup-form';
@@ -107,8 +112,12 @@ export function OrderDetail({ id }: { id: string }) {
         <span data-testid="order-status">
           <OrderStatusBadge status={o.status} />
         </span>
+        <span data-testid="order-service-state">
+          <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />
+        </span>
         <span className="text-sm text-ink-muted">
           {o.receivedPieces} de {o.totalPieces} peça(s) na oficina
+          {o.returnedPieces > 0 ? ` · ${o.returnedPieces} devolvida(s) ao cliente` : ''}
         </span>
       </div>
       {o.status === 'CANCELADO' && (

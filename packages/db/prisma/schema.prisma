@@ -62,17 +62,18 @@ model User {
   measurementRevisions  MeasurementRevision[]
   reviewedRequests      MaterialRequest[]     @relation("MaterialRequestReviewedBy")
 
-  stockMovements          StockMovement[]            @relation("StockMovementActor")
-  createdReservations     StockReservation[]         @relation("ReservationCreatedBy")
-  closedReservations      StockReservation[]         @relation("ReservationClosedBy")
-  createdPurchaseOrders   PurchaseOrder[]            @relation("PurchaseOrderCreatedBy")
-  confirmedPurchaseOrders PurchaseOrder[]            @relation("PurchaseOrderConfirmedBy")
-  cancelledPurchaseOrders PurchaseOrder[]            @relation("PurchaseOrderCancelledBy")
-  purchaseOrderHistory    PurchaseOrderHistory[]     @relation("PurchaseOrderHistoryActor")
-  materialReceipts        MaterialReceipt[]          @relation("MaterialReceiptReceivedBy")
-  receiptReversals        MaterialReceiptReversal[]  @relation("ReceiptReversalAuthorizedBy")
-  createdLeftovers        MaterialLeftover[]         @relation("LeftoverCreatedBy")
-  authorizedLeftoverMoves MaterialLeftoverTransfer[] @relation("LeftoverTransferAuthorizedBy")
+  stockMovements              StockMovement[]            @relation("StockMovementActor")
+  createdReservations         StockReservation[]         @relation("ReservationCreatedBy")
+  closedReservations          StockReservation[]         @relation("ReservationClosedBy")
+  createdPurchaseOrders       PurchaseOrder[]            @relation("PurchaseOrderCreatedBy")
+  confirmedPurchaseOrders     PurchaseOrder[]            @relation("PurchaseOrderConfirmedBy")
+  cancelledPurchaseOrders     PurchaseOrder[]            @relation("PurchaseOrderCancelledBy")
+  balanceClosedPurchaseOrders PurchaseOrder[]            @relation("PurchaseOrderBalanceClosedBy")
+  purchaseOrderHistory        PurchaseOrderHistory[]     @relation("PurchaseOrderHistoryActor")
+  materialReceipts            MaterialReceipt[]          @relation("MaterialReceiptReceivedBy")
+  receiptReversals            MaterialReceiptReversal[]  @relation("ReceiptReversalAuthorizedBy")
+  createdLeftovers            MaterialLeftover[]         @relation("LeftoverCreatedBy")
+  authorizedLeftoverMoves     MaterialLeftoverTransfer[] @relation("LeftoverTransferAuthorizedBy")
 
   createdPlans              ProductionPlan[]         @relation("PlanCreatedBy")
   publishedPlans            ProductionPlan[]         @relation("PlanPublishedBy")
@@ -682,6 +683,7 @@ model PickupRequestItem {
   orderItem CommercialOrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
 
   @@id([pickupId, orderItemId])
+  @@index([orderItemId])
   @@map("pickup_request_items")
 }
 
@@ -749,6 +751,7 @@ model Receipt {
 
   @@index([orderId])
   @@index([receivedAt(sort: Desc)])
+  @@index([pickupId])
   @@map("receipts")
 }
 
@@ -995,6 +998,7 @@ model MaterialRequirement {
   issues              ProductionIssue[]
 
   @@index([serviceOrderId])
+  @@index([serviceOrderItemId])
   @@map("material_requirements")
 }
 
@@ -1338,6 +1342,8 @@ model StockMovement {
 
   @@index([stockItemId, createdAt])
   @@index([serviceOrderId])
+  @@index([reservationId])
+  @@index([materialReceiptLineId])
   @@map("stock_movements")
 }
 
@@ -1372,29 +1378,34 @@ model StockReservation {
 
 /// Pedido de compra (CP-00001). Preços em centavos; sem pagamentos.
 model PurchaseOrder {
-  id            String              @id @default(uuid()) @db.Uuid
-  number        Int                 @unique @default(autoincrement())
-  supplierId    String?             @map("supplier_id") @db.Uuid
-  status        PurchaseOrderStatus @default(RASCUNHO)
-  expectedDate  DateTime?           @map("expected_date") @db.Date
-  notes         String?             @db.VarChar(2000)
-  createdById   String?             @map("created_by_id") @db.Uuid
-  confirmedAt   DateTime?           @map("confirmed_at") @db.Timestamptz(3)
-  confirmedById String?             @map("confirmed_by_id") @db.Uuid
-  cancelledAt   DateTime?           @map("cancelled_at") @db.Timestamptz(3)
-  cancelledById String?             @map("cancelled_by_id") @db.Uuid
-  cancelReason  String?             @map("cancel_reason") @db.VarChar(500)
-  version       Int                 @default(1)
-  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                 String              @id @default(uuid()) @db.Uuid
+  number             Int                 @unique @default(autoincrement())
+  supplierId         String?             @map("supplier_id") @db.Uuid
+  status             PurchaseOrderStatus @default(RASCUNHO)
+  expectedDate       DateTime?           @map("expected_date") @db.Date
+  notes              String?             @db.VarChar(2000)
+  createdById        String?             @map("created_by_id") @db.Uuid
+  confirmedAt        DateTime?           @map("confirmed_at") @db.Timestamptz(3)
+  confirmedById      String?             @map("confirmed_by_id") @db.Uuid
+  cancelledAt        DateTime?           @map("cancelled_at") @db.Timestamptz(3)
+  cancelledById      String?             @map("cancelled_by_id") @db.Uuid
+  cancelReason       String?             @map("cancel_reason") @db.VarChar(500)
+  /// Fase 12: saldo pendente encerrado (o recebido é preservado).
+  balanceClosedAt    DateTime?           @map("balance_closed_at") @db.Timestamptz(3)
+  balanceClosedById  String?             @map("balance_closed_by_id") @db.Uuid
+  balanceCloseReason String?             @map("balance_close_reason") @db.VarChar(500)
+  version            Int                 @default(1)
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  supplier    Supplier?              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
-  createdBy   User?                  @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  confirmedBy User?                  @relation("PurchaseOrderConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
-  cancelledBy User?                  @relation("PurchaseOrderCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
-  items       PurchaseOrderItem[]
-  history     PurchaseOrderHistory[]
-  receipts    MaterialReceipt[]
+  supplier        Supplier?              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  balanceClosedBy User?                  @relation("PurchaseOrderBalanceClosedBy", fields: [balanceClosedById], references: [id], onDelete: SetNull)
+  createdBy       User?                  @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  confirmedBy     User?                  @relation("PurchaseOrderConfirmedBy", fields: [confirmedById], references: [id], onDelete: SetNull)
+  cancelledBy     User?                  @relation("PurchaseOrderCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  items           PurchaseOrderItem[]
+  history         PurchaseOrderHistory[]
+  receipts        MaterialReceipt[]
 
   @@index([status])
   @@index([supplierId])
@@ -1420,6 +1431,8 @@ model PurchaseOrderItem {
   extraAuthorized  Decimal          @default(0) @map("extra_authorized") @db.Decimal(12, 3)
   /// Recebido conforme, líquido de estornos (mantido na mesma transação).
   receivedQuantity Decimal          @default(0) @map("received_quantity") @db.Decimal(12, 3)
+  /// Fase 12: saldo encerrado (não será entregue). Pedido = quantidade − encerrado.
+  closedQuantity   Decimal          @default(0) @map("closed_quantity") @db.Decimal(12, 3)
   unitPriceCents   Int?             @map("unit_price_cents")
   serviceOrderId   String?          @map("service_order_id") @db.Uuid
   stockItemId      String?          @map("stock_item_id") @db.Uuid
@@ -1433,6 +1446,7 @@ model PurchaseOrderItem {
 
   @@unique([purchaseOrderId, position])
   @@index([serviceOrderId])
+  @@index([stockItemId])
   @@map("purchase_order_items")
 }
 
@@ -1506,6 +1520,7 @@ model MaterialReceiptLine {
   movements StockMovement[]
 
   @@index([purchaseOrderItemId])
+  @@index([receiptId])
   @@map("material_receipt_lines")
 }
 
@@ -1576,6 +1591,7 @@ model MaterialLeftoverTransfer {
   authorizedBy     User                 @relation("LeftoverTransferAuthorizedBy", fields: [authorizedById], references: [id], onDelete: Restrict)
 
   @@index([toRequirementId])
+  @@index([leftoverId])
   @@map("material_leftover_transfers")
 }
 
@@ -1708,6 +1724,7 @@ model ProductionPlanItem {
   principal    User?          @relation("PlanItemPrincipal", fields: [principalUserId], references: [id], onDelete: Restrict)
 
   @@unique([planId, serviceOrderId])
+  @@index([serviceOrderId])
   @@map("production_plan_items")
 }
 
@@ -1804,6 +1821,7 @@ model ProductionTask {
   @@index([serviceOrderId])
   @@index([planId])
   @@index([status, scheduledAt])
+  @@index([serviceOrderItemId])
   @@map("production_tasks")
 }
 
@@ -1884,6 +1902,7 @@ model Notification {
 
   @@unique([userId, dedupeKey])
   @@index([userId, readAt, createdAt])
+  @@index([taskId])
   @@map("notifications")
 }
 
@@ -2062,6 +2081,7 @@ model HelpRequest {
   @@index([status, urgent, createdAt])
   @@index([requesterUserId, createdAt])
   @@index([helperUserId, status])
+  @@index([serviceOrderId])
   @@map("help_requests")
 }
 
@@ -2220,6 +2240,7 @@ model ProductionIssue {
   @@index([taskId, status])
   @@index([assigneeUserId, status])
   @@index([serviceOrderId])
+  @@index([materialRequirementId])
   @@map("production_issues")
 }
 
@@ -2331,6 +2352,7 @@ model QualityInspection {
   @@unique([serviceOrderItemId, round])
   @@index([status, createdAt])
   @@index([inspectorUserId, status])
+  @@index([serviceOrderId])
   @@map("quality_inspections")
 }
 
@@ -2507,6 +2529,7 @@ model Delivery {
   @@index([scheduledDate])
   @@index([status])
   @@index([responsibleUserId, status])
+  @@index([customerId])
   @@map("deliveries")
 }
 
@@ -2579,6 +2602,7 @@ model LogisticsOccurrence {
   events      LogisticsOccurrenceEvent[]
 
   @@index([status, createdAt])
+  @@index([deliveryId])
   @@map("logistics_occurrences")
 }
 
@@ -2606,6 +2630,8 @@ model PieceReturn {
   status            String    @default("REGISTRADA") @db.VarChar(20)
   reason            String    @db.VarChar(500)
   responsibleUserId String?   @map("responsible_user_id") @db.Uuid
+  /// Fase 12: destino das peças (ex.: entregue ao cliente no endereço X, retirada na oficina).
+  destination       String?   @db.VarChar(200)
   returnDate        DateTime  @map("return_date") @db.Date
   confirmedAt       DateTime? @map("confirmed_at") @db.Timestamptz(3)
   confirmedById     String?   @map("confirmed_by_id") @db.Uuid
@@ -2636,6 +2662,7 @@ model PieceReturnLine {
   orderItem   CommercialOrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
 
   @@id([returnId, orderItemId])
+  @@index([orderItemId])
   @@map("piece_return_lines")
 }
 
@@ -2706,6 +2733,8 @@ model CustomerReceivable {
 
   @@index([orderId])
   @@index([status, dueDate])
+  @@index([customerId])
+  @@index([serviceOrderId])
   @@map("customer_receivables")
 }
 

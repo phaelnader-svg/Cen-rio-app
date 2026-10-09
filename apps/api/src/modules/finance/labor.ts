@@ -23,7 +23,12 @@ import { checkVersion, dateOnly, financeEvent, historyOf, lockRow, parseDate } f
 export const laborInclude = {
   professional: { select: { id: true, displayName: true } },
   serviceOrder: {
-    select: { id: true, number: true, items: { select: { id: true, fulfillmentStage: true } } },
+    select: {
+      id: true,
+      number: true,
+      status: true,
+      items: { select: { id: true, fulfillmentStage: true } },
+    },
   },
   item: { select: { id: true, position: true, description: true, fulfillmentStage: true } },
   adjustments: {
@@ -41,8 +46,13 @@ function coveredStages(p: LaborRow) {
     .map((i) => i.fulfillmentStage)
     .filter((s) => s !== 'DEVOLVIDA' && s !== 'CANCELADA');
 }
+/**
+ * Elegível quando as peças atingem a condição. Uma vez atingida (eligibleAt), continua devida
+ * (Fase 12): invalidação de aprovação, devolução ou cancelamento posteriores não "desfazem" um
+ * valor já devido em silêncio — o gestor revisa e ajusta com justificativa.
+ */
 export const isEligible = (p: LaborRow) =>
-  laborEligible(p.eligibility as EligibilityRule, coveredStages(p));
+  p.eligibleAt !== null || laborEligible(p.eligibility as EligibilityRule, coveredStages(p));
 
 export async function toLaborDto(db: Tx | PrismaClient, p: LaborRow): Promise<LaborPayableDto> {
   const due = laborDue(p);
@@ -71,6 +81,9 @@ export async function toLaborDto(db: Tx | PrismaClient, p: LaborRow): Promise<La
     status: p.status as LaborStatus,
     eligibleAt: p.eligibleAt?.toISOString() ?? null,
     notes: p.notes,
+    withdrawn:
+      p.status !== 'CANCELADO' &&
+      (p.serviceOrder.status === 'CANCELADA' || p.item?.fulfillmentStage === 'DEVOLVIDA'),
     adjustments: p.adjustments.map((a) => ({
       id: a.id,
       amountCents: a.amountCents,

@@ -17,6 +17,7 @@ import { audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { orderCode, serviceOrderCode } from '../commercial/common';
+import { serviceStates } from '../commercial/status';
 import {
   checkVersion,
   dateOnly,
@@ -86,8 +87,17 @@ export async function orderRevenueDto(
   orderId: string,
 ): Promise<OrderRevenueDto> {
   const r = await orderRevenue(db, orderId);
+  const items = await db.commercialOrderItem.findMany({
+    where: { orderId },
+    select: { receivedQuantity: true, returnedQuantity: true },
+  });
+  const state = (await serviceStates(db, [{ id: orderId, status: r.order.status, items }])).get(
+    orderId,
+  )!;
   return {
     orderId,
+    serviceState: state.serviceState,
+    returnedPieces: state.returnedPieces,
     orderCode: orderCode(r.order.number),
     customer: r.order.customer,
     contractedCents: r.order.agreedValueCents,

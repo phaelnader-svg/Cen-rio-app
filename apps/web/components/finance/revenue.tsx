@@ -98,6 +98,11 @@ export function RevenueTab() {
                   <Badge tone={statusTone(o.financialStatus)}>
                     {FINANCIAL_STATUS_LABEL[o.financialStatus]}
                   </Badge>
+                  {o.returnedPieces > 0 && (
+                    <p className="mt-1 text-xs text-warn-600" data-testid="fin-order-returned">
+                      {o.returnedPieces} peça(s) devolvida(s): o valor negociado só muda com ajuste.
+                    </p>
+                  )}
                 </td>
                 <td className="px-4 py-2.5 text-right whitespace-nowrap">
                   {can('financeiro.gerenciar') && o.finalCents !== null && (

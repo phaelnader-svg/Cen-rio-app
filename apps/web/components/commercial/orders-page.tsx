@@ -9,7 +9,7 @@ import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/mi
 import { useOrders } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
-import { OrderStatusBadge } from './badges';
+import { OrderStatusBadge, ServiceStateBadge } from './badges';
 
 export function OrdersPage() {
   const can = useCan();
@@ -84,7 +84,8 @@ export function OrdersPage() {
                   <span className="text-sm text-ink-muted tabular-nums">
                     {o.receivedPieces}/{o.totalPieces} peças na oficina
                   </span>
-                  <OrderStatusBadge status={o.status} />
+                  <OrderStatusBadge status={o.status} />{' '}
+                  <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />
                   <span className="hidden w-32 text-right text-xs text-ink-muted md:block">
                     {formatDateTime(o.createdAt)}
                   </span>

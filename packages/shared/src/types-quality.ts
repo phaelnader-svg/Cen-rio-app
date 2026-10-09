@@ -285,11 +285,27 @@ export interface PieceReturnDto {
   reason: string;
   responsible: PersonRefDto | null;
   returnDate: string;
+  /** Fase 12: destino das peças devolvidas. */
+  destination: string | null;
   lines: {
     orderItemId: string;
     description: string;
     quantity: number;
     serviceOrderItems: { id: string; code: string }[];
+  }[];
+  /** Fase 12: o que ficou para o gestor revisar depois da confirmação. */
+  review: {
+    /** Reservas ativas da OS sem peça definida (não são rateadas por suposição). */
+    reservations: { id: string; serviceOrder: string; material: string; quantity: number }[];
+    /** Valores de produção das peças devolvidas com trabalho executado ou valor devido. */
+    laborToReview: number;
+  };
+  history: {
+    id: string;
+    action: string;
+    summary: string;
+    actor: string | null;
+    createdAt: string;
   }[];
   confirmedAt: string | null;
   confirmedBy: string | null;

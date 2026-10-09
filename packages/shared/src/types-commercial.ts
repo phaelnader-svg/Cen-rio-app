@@ -5,6 +5,7 @@ import type {
   MaterialKind,
   MaterialSourcing,
   MeasurementKind,
+  OrderServiceState,
   OrderStatus,
   PickupStatus,
   PickupTeam,
@@ -77,6 +78,8 @@ export interface OrderItemDto {
   inActivePickups: number;
   /** Quantidade recebida já incluída em OS ativas. */
   inServiceOrders: number;
+  /** Fase 12: quantidade devolvida ao cliente. */
+  returnedQuantity: number;
 }
 
 export interface OrderSummaryDto {
@@ -88,6 +91,9 @@ export interface OrderSummaryDto {
   contractedService: string;
   totalPieces: number;
   receivedPieces: number;
+  /** Fase 12: peças devolvidas ao cliente e situação do serviço (derivada). */
+  returnedPieces: number;
+  serviceState: OrderServiceState;
   createdAt: string;
 }
 

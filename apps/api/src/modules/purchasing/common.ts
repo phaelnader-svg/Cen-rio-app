@@ -375,7 +375,6 @@ export function requirementProgress(r: RequirementWithProgress): RequirementProg
       purchasedDraft += qtyA;
       continue;
     }
-    if ((PURCHASE_ORDER_COMMITTED as readonly string[]).includes(po.status)) purchased += qtyA;
     const ordered = [...a.item.allocations].sort(
       (x, y) => x.createdAt.getTime() - y.createdAt.getTime() || x.id.localeCompare(y.id),
     );
@@ -385,8 +384,13 @@ export function requirementProgress(r: RequirementWithProgress): RequirementProg
         ordered.findIndex((x) => x.id === a.id),
       )
       .reduce((s, x) => s + num(x.quantity), 0);
-    received += Math.min(qtyA, Math.max(0, num(a.item.receivedQuantity) - before));
-    const itemOpen = num(a.item.receivedQuantity) < num(a.item.quantity);
+    const share = Math.min(qtyA, Math.max(0, num(a.item.receivedQuantity) - before));
+    received += share;
+    // Fase 12: saldo encerrado não é mais "comprado" — só o recebido conta para esta OS.
+    if ((PURCHASE_ORDER_COMMITTED as readonly string[]).includes(po.status))
+      purchased += num(a.item.closedQuantity) > 0 ? share : qtyA;
+    const itemOpen =
+      num(a.item.receivedQuantity) + num(a.item.closedQuantity) < num(a.item.quantity);
     if (itemOpen && a.item.receiptLines.some((l) => num(l.rejectedQuantity) > 0)) divergence = true;
   }
   const reserved = r.reservations

@@ -1,3 +1,4 @@
+import type { OrderServiceState } from './domain';
 import type {
   AdjustmentKind,
   EligibilityRule,
@@ -22,6 +23,9 @@ export interface FinanceEventDto {
 
 export interface OrderRevenueDto {
   orderId: string;
+  /** Fase 12: situação do serviço; devolução não altera o valor negociado sem ajuste. */
+  serviceState: OrderServiceState;
+  returnedPieces: number;
   orderCode: string;
   customer: { id: string; name: string };
   contractedCents: number | null;
@@ -125,6 +129,8 @@ export interface LaborPayableDto {
   status: LaborStatus;
   eligibleAt: string | null;
   notes: string | null;
+  /** Fase 12: peça devolvida ou OS cancelada com valor ainda ativo — revisar. */
+  withdrawn: boolean;
   adjustments: {
     id: string;
     amountCents: number;
