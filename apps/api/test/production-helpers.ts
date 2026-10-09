@@ -22,10 +22,18 @@ export async function userIdOf(name: string) {
   return (await db().employee.findFirstOrThrow({ where: { displayName: name } })).userId;
 }
 
-export async function createPlan(admin: Client, weekOf = today()) {
+/**
+ * Os testes anteriores à Evolução Fase 2 exercitam o modo por horário: o padrão aqui é LEGADO
+ * (a API, sem modo informado, cria FILA_SEMANAL).
+ */
+export async function createPlan(
+  admin: Client,
+  weekOf = today(),
+  mode: 'LEGADO' | 'FILA_SEMANAL' = 'LEGADO',
+) {
   const r = await admin.post(
     '/api/v1/production-plans',
-    { weekStart: mondayOf(weekOf) },
+    { weekStart: mondayOf(weekOf), mode },
     { 'idempotency-key': idemKey() },
   );
   if (r.status !== 201) throw new Error(`plan: ${JSON.stringify(r.body)}`);

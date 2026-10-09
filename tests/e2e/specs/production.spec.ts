@@ -44,6 +44,8 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     // 1. Planejamento da semana atual (rascunho).
     await page.goto('/painel/producao/planejamento');
     await page.getByLabel('Semana', { exact: true }).fill(today());
+    // Este roteiro cobre o modo por horário (LEGADO); a fila semanal tem roteiro próprio.
+    await page.getByLabel('Modo do planejamento').selectOption('LEGADO');
     await page.getByRole('button', { name: 'Criar planejamento da semana' }).click();
     await expect(page.getByTestId('plan-editor')).toBeVisible();
 

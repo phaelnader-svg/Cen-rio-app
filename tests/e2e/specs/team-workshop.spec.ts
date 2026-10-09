@@ -80,7 +80,11 @@ test.describe.serial('Fase 12 — painel + quatro tablets simultâneos', () => {
       const so = await openServiceOrder(page, 'Cliente Quatro Tablets E2E');
       const week = mondayOf(today());
       let plan = (await call(page, 'GET', `/api/v1/production-plans?week=${week}`))[0];
-      if (!plan) plan = await call(page, 'POST', '/api/v1/production-plans', { weekStart: week });
+      if (!plan)
+        plan = await call(page, 'POST', '/api/v1/production-plans', {
+          weekStart: week,
+          mode: 'LEGADO',
+        });
       const reason = 'OS de teste da Fase 12';
       const added = await call(page, 'POST', `/api/v1/production-plans/${plan.id}/items`, {
         serviceOrderId: so.id,

@@ -92,7 +92,11 @@ test.describe.serial('Fase 10 — qualidade, embalagem e entrega', () => {
       const sofa = so.items[0]!;
       const week = mondayOf(today());
       let plan = (await call(page, 'GET', `/api/v1/production-plans?week=${week}`))[0];
-      if (!plan) plan = await call(page, 'POST', '/api/v1/production-plans', { weekStart: week });
+      if (!plan)
+        plan = await call(page, 'POST', '/api/v1/production-plans', {
+          weekStart: week,
+          mode: 'LEGADO',
+        });
       const reason = 'OS de teste da Fase 10';
       const added = await call(page, 'POST', `/api/v1/production-plans/${plan.id}/items`, {
         serviceOrderId: so.id,

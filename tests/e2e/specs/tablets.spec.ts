@@ -84,7 +84,11 @@ test.describe.serial('Fase 6 — interface operacional dos tablets', () => {
     // 1. Programação da semana (já publicada pela Fase 5 ou criada agora) recebe a OS.
     const week = mondayOf(today());
     let plan = (await call(page, 'GET', `/api/v1/production-plans?week=${week}`))[0];
-    if (!plan) plan = await call(page, 'POST', '/api/v1/production-plans', { weekStart: week });
+    if (!plan)
+      plan = await call(page, 'POST', '/api/v1/production-plans', {
+        weekStart: week,
+        mode: 'LEGADO',
+      });
     const reason = 'Inclusão da OS de teste da Fase 6';
     const added = await call(page, 'POST', `/api/v1/production-plans/${plan.id}/items`, {
       serviceOrderId: so.id,
