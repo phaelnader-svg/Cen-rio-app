@@ -52,7 +52,8 @@ export const templateSchema = z
   .superRefine((v, ctx) => {
     v.steps.forEach((s, i) => {
       const problem = s.stepClass ? stepClassProblem(s.activity, s.stepClass) : null;
-      if (problem) ctx.addIssue({ code: 'custom', path: ['steps', i, 'stepClass'], message: problem });
+      if (problem)
+        ctx.addIssue({ code: 'custom', path: ['steps', i, 'stepClass'], message: problem });
       if (s.dependsOn.some((d) => d >= i + 1)) {
         ctx.addIssue({
           code: 'custom',
