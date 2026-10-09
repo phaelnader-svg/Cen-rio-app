@@ -18,6 +18,7 @@ import {
   queueOrderProblem,
   reorderQueueSchema,
   taskCode,
+  zonedDateTime,
   type MyQueueDto,
   type QueueEntryDto,
 } from '@cenario/shared';
@@ -90,7 +91,28 @@ export async function loadQueue(db: Tx | PrismaClient, userId: string): Promise<
   }));
   const current = items.find((e) => e.task.status === 'EM_EXECUCAO') ?? null;
   const nextIdx = items.findIndex((e) => e.executable);
+  // Semana vigente (segunda a domingo) no fuso da empresa, pelo relógio operacional.
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(clockNow());
+  const start = addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7));
+  const done = await db.productionTask.count({
+    where: {
+      assigneeUserId: userId,
+      queueExclusive: true,
+      status: 'CONCLUIDA',
+      completedAt: { gte: zonedDateTime(start, '00:00', timezone) },
+    },
+  });
+  const count = (f: (e: QueueEntryDto) => boolean) => items.filter(f).length;
   return {
+    week: { start, end: addDays(start, 6) },
+    counts: {
+      done,
+      running: count((e) => e.task.status === 'EM_EXECUCAO'),
+      paused: count((e) => e.task.status === 'PAUSADA'),
+      executable: count((e) => e.executable && e.task.status !== 'PAUSADA'),
+      blocked: count((e) => !e.executable && e.task.status !== 'EM_EXECUCAO'),
+    },
+    fromPreviousWeeks: count((e) => (e.task.plan?.weekStart ?? start) < start),
     current: current?.task ?? null,
     next: nextIdx >= 0 ? items[nextIdx]!.task : null,
     blockedAhead:

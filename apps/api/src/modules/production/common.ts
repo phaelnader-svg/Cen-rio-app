@@ -81,7 +81,14 @@ export const taskInclude = {
       customer: { select: { name: true } },
     },
   },
-  serviceOrderItem: { select: { id: true, position: true, description: true } },
+  serviceOrderItem: {
+    select: {
+      id: true,
+      position: true,
+      description: true,
+      upholsterer: { select: { id: true, displayName: true } },
+    },
+  },
   assignee: { select: { id: true, displayName: true, employee: { select: { color: true } } } },
   dependsOn: { include: { dependsOn: { select: refSelect } } },
   dependents: { include: { task: { select: refSelect } } },
@@ -152,9 +159,16 @@ export function toTaskDto(t: TaskRow, timeZone: string): ProductionTaskDto {
           id: t.serviceOrderItem.id,
           code: formatServiceOrderItemCode(t.serviceOrder.number, t.serviceOrderItem.position),
           description: t.serviceOrderItem.description,
+          upholsterer: t.serviceOrderItem.upholsterer
+            ? {
+                userId: t.serviceOrderItem.upholsterer.id,
+                displayName: t.serviceOrderItem.upholsterer.displayName,
+              }
+            : null,
         }
       : null,
     activity: t.activity,
+    stepClass: t.stepClass,
     title: t.title,
     role: t.role,
     assignee: t.assignee
