@@ -11,7 +11,10 @@ test.describe.serial('Tablets, sessões e sincronização', () => {
     const code = await registerDevice(page, 'Tablet Ricardo', 'Ricardo');
     const tablet = await openTablet(browser, code, '482915');
     await expect(tablet.page.getByTestId('tablet-user')).toHaveText('Ricardo');
-    await expect(tablet.page.getByText('Disponível na próxima fase').first()).toBeVisible();
+    // Fase 11: o atalho antigo "Ocorrências — disponível na próxima fase" saiu do tablet
+    // (ocorrências são registradas em "Tenho um problema", na tarefa, desde a Fase 9).
+    await expect(tablet.page.getByText('Disponível na próxima fase')).toHaveCount(0);
+    await expect(tablet.page.getByTestId('tile-values')).toHaveCount(0);
 
     // Sessão persistente: recarregar ou reabrir o navegador mantém o acesso.
     await tablet.page.reload();

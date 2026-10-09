@@ -147,6 +147,23 @@ Depois: definir o PIN de André e Izaías no painel e vincular um dispositivo (c
 com "restringir ao funcionário". O inspetor principal pode ser fixado em Qualidade → "Inspetor e
 localizações".
 
+## Atualização da Fase 10 para a Fase 11
+
+A migration `20261016000000_financeiro_operacional` é aditiva: cria ajustes comerciais, contas a
+receber e recebimentos, razão de custos da OS, valores de produção com ajustes e pagamentos,
+custo mensal da equipe, custos logísticos com rateio, despesas (e recorrências), contas a pagar e
+pagamentos e o histórico financeiro, com CHECKs, índices únicos parciais e triggers de
+imutabilidade/não exclusão; acrescenta `service_orders.revenue_cents`,
+`company_settings.tax_rate_bps`, o tipo de anexo `FINANCE_PAYABLE` e as permissões
+`financeiro.*` (o gestor recebe todas). Nada é apagado nem recalculado em dados antigos.
+Procedimento: backup (`pnpm backup`) → `pnpm db:migrate` → `pnpm db:seed` → reiniciar API e web.
+
+Depois: configurar a alíquota estimada (Financeiro → Custos e resultado por OS), cadastrar as
+despesas recorrentes e o custo mensal da equipe fixa, combinar os valores de produção e, se
+desejado, conceder "Ver os próprios valores de produção" ao Ricardo e ao Márcio (Funcionários →
+permissões individuais). As despesas recorrentes são geradas pelo botão "Gerar recorrentes do
+mês" (idempotente).
+
 ## Backup e restauração
 
 ```bash

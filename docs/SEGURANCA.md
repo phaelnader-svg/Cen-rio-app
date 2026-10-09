@@ -221,6 +221,31 @@
 - Fotos (inspeção, embalagem, entrega, ocorrência logística) seguem a política de anexos privados:
   inspetor designado, quem embala e o responsável pela entrega, além do gestor.
 
+## Financeiro operacional (Fase 11)
+
+- `financeiro.ver` (gestor, **somente sessão do painel**): receitas, recebimentos, contas a pagar,
+  custos por OS, margens, despesas, painel, indicadores e relatórios. Tablets recebem 403 mesmo se
+  a permissão for concedida.
+- `financeiro.gerenciar` (gestor, painel): cobranças, recebimentos, contas a pagar, pagamentos,
+  despesas, custos logísticos, custo mensal da equipe e valores de produção. Tudo é registro: o
+  sistema não acessa banco, não paga, não cobra e não emite nota fiscal.
+- `financeiro.ajustes` (gestor, painel): descontos/acréscimos/ajustes do valor da OS, ajuste do
+  valor de produção, custo manual e alíquota estimada — sempre com justificativa, auditoria e
+  histórico imutável.
+- `financeiro.producao_propria` (concessão individual a Ricardo/Márcio, qualquer sessão): só os
+  **próprios** valores de produção e pagamentos (`GET /finance/my-production`, filtrado pelo
+  usuário da sessão). Nunca valores de clientes, de outras pessoas, margens ou custos.
+- Eventos financeiros (`finance.*`) vão só para quem tem `financeiro.ver` e **não levam valores**
+  (id, tipo, situação); tablets não os recebem nem na reconciliação.
+- Banco: CHECKs (valores positivos, recebido/pago ≤ valor, situações válidas), triggers de
+  imutabilidade (ajustes, recebimentos, pagamentos, custos da OS, rateios, histórico financeiro) e
+  de não exclusão (contas a receber/pagar, valores de produção, custos logísticos, despesas);
+  índices únicos parciais contra duplicidade; versão (409) e `FOR UPDATE` nas ações; chave de
+  idempotência nas criações e pagamentos.
+- CSV exportado com proteção contra injeção de fórmulas (texto começando com `=`, `+`, `@`, `-`).
+- Comprovantes (anexo `FINANCE_PAYABLE`): ver com `financeiro.ver`, enviar com
+  `financeiro.gerenciar`.
+
 ## Segredos e ambientes
 
 - Segredos apenas por variáveis de ambiente; `.env` não é versionado.

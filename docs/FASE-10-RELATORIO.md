@@ -201,11 +201,21 @@ versão (409 `VERSION_CONFLICT`), conflito (409) e chave de idempotência nas a�
 
 ## 10. Testes e resultados (08/10/2026, PostgreSQL 16 real)
 
-**RESULTADOS**
+> **Nota (acrescentada na Fase 11, 09/10/2026):** este relatório foi entregue com esta seção e a
+> seguinte ainda como marcadores de texto. Os números abaixo foram **medidos no início da Fase 11
+> sobre o mesmo código** (`b928db3`, que só acrescentou este relatório a `d0c6308`), em PostgreSQL
+> 16 real:
+
+- `pnpm check` (formatação, lint, tipos e testes): **aprovado** — API **242/242** (inclui os 27
+  testes de `quality.test.ts`), compartilhado **45/45**, web **6/6**.
+- E2E completo (painel + tablets do Ricardo, Thiago e João + celular do André): **18/18**
+  aprovados.
 
 ## 11. Defeitos corrigidos
 
-**DEFEITOS**
+> **Nota (Fase 11):** a lista de defeitos corrigidos durante a Fase 10 não foi registrada na
+> entrega e não pode ser reconstruída com segurança a partir do repositório; por isso não é
+> listada aqui. Os commits `eceaac3` e `d0c6308` contêm todas as alterações da fase.
 
 ## 12. Pendências
 

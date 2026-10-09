@@ -108,25 +108,29 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           );
         })}
       </ul>
-      <div className="mt-6 px-6">
-        <p className="text-[11px] font-semibold tracking-[0.12em] text-ink-muted uppercase">
-          Próximas fases
-        </p>
-      </div>
-      <ul className="mt-2 space-y-0.5 px-3" aria-label="Módulos ainda não disponíveis">
-        {UPCOMING.map((m) => (
-          <li
-            key={m.label}
-            aria-disabled="true"
-            className="flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2 text-sm text-ink-muted/80"
-            title="Disponível em fase futura"
-          >
-            <m.icon className="size-[17px] opacity-60" aria-hidden />
-            <span className="flex-1">{m.label}</span>
-            <Lock className="size-3.5 opacity-60" aria-hidden />
-          </li>
-        ))}
-      </ul>
+      {UPCOMING.length > 0 && (
+        <>
+          <div className="mt-6 px-6">
+            <p className="text-[11px] font-semibold tracking-[0.12em] text-ink-muted uppercase">
+              Próximas fases
+            </p>
+          </div>
+          <ul className="mt-2 space-y-0.5 px-3" aria-label="Módulos ainda não disponíveis">
+            {UPCOMING.map((m) => (
+              <li
+                key={m.label}
+                aria-disabled="true"
+                className="flex cursor-not-allowed items-center gap-3 rounded-xl px-3 py-2 text-sm text-ink-muted/80"
+                title="Disponível em fase futura"
+              >
+                <m.icon className="size-[17px] opacity-60" aria-hidden />
+                <span className="flex-1">{m.label}</span>
+                <Lock className="size-3.5 opacity-60" aria-hidden />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <div className="mt-auto border-t border-line p-4">
         <div className="flex items-center gap-3">
           <Avatar

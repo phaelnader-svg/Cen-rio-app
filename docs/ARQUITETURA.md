@@ -515,6 +515,66 @@ Módulo `modules/quality` (`common`, `inspections`, `packaging`, `shipping`, `lo
 - **OS cancelada**: inspeções e embalagens abertas são canceladas e a peça sai das entregas
   (listener `onServiceOrderCancelled`).
 
+### Financeiro operacional, custos por OS e indicadores (Fase 11)
+
+Módulo `modules/finance` (`common`, `revenue`, `costs`, `labor`, `payables`, `results`,
+`reports`, `routes`); regras puras em `packages/shared/src/finance-domain.ts` (valores sempre em
+centavos inteiros). Não é contabilidade: não há integração bancária, pagamento automático,
+cobrança externa nem emissão de nota fiscal — recebimentos e pagamentos são **registros**.
+
+- **Receita por OS**: reaproveita `commercial_orders.agreed_value_cents` (Fase 2, protegido por
+  `pedidos.valores`). Valor final = contratado + ajustes (`commercial_adjustments`, imutáveis:
+  desconto, acréscimo, ajuste, com justificativa e quem autorizou). Receita da OS = valor definido
+  pelo gestor (`service_orders.revenue_cents`, só se a soma das OS do pedido for o valor final)
+  ou rateio proporcional às peças não devolvidas (`splitCents`, maiores restos, soma exata).
+- **Contas a receber** (`customer_receivables`, RC-00001; `customer_payments` imutáveis):
+  recebimento parcial, estorno por linha negativa única (`reversal_of_id`), soma das cobranças ≤
+  valor final, recebido ≤ valor (CHECK), cancelamento só sem recebimento. Situação do pedido
+  derivada (`orderFinancialStatus`).
+- **Custo de material** (`service_order_costs`, razão imutável com `source_key` único →
+  sincronização idempotente, `syncMaterialCosts`): compras exclusivas da OS **recebidas** (e
+  estornos), saídas do estoque comum para a OS (`SAIDA_OS`) ao custo médio ponderado no instante
+  da saída (`stockAverageCost`, determinístico), devoluções ao estoque (`AJUSTE_ENTRADA` com OS,
+  novo na Fase 11), sobras transferidas (sai da origem e entra no destino ao preço da compra
+  exclusiva de origem) e lançamentos manuais justificados. Compra de estoque comum não é custo da
+  OS; reserva não é consumo. Visões separadas: previsto (necessidades × preço), comprado
+  (exclusivo), reservado (ao custo médio) e consumido (razão).
+- **Mão de obra por produção** (`production_payables`, MO-00001): só tapeceiro (função
+  `tapeceiro`), um valor ativo por peça ou por OS inteira (índices únicos parciais; nunca os dois;
+  nunca dividido). Regra de liberação `PRODUCAO_CONCLUIDA` / `QUALIDADE_APROVADA` (padrão) /
+  `ENTREGA_CONCLUIDA`, avaliada pela etapa da peça (Fase 10) — concluir a tarefa sozinha não
+  libera. Situação PREVISTO → LIBERADO → PAGO_PARCIAL → PAGO (ou CANCELADO). Ajustes
+  (`financial_adjustments`) e pagamentos (`professional_payments`) imutáveis; pagamento antes da
+  condição só com justificativa; nunca acima do devido.
+- **Equipe fixa** (`team_monthly_costs`, um por pessoa e mês): custo mensal informado; a alocação
+  por OS é estimativa proporcional ao tempo de execução no mês, fora da margem de contribuição.
+  Nenhum desconto automático.
+- **Logística** (`logistics_costs`, LG-00001 + `logistics_cost_allocations`): um custo por viagem
+  rateado entre as OS (igual, por peça ou manual; soma = total); um custo ativo por entrega/retirada
+  e tipo; conta a pagar opcional ao transportador.
+- **Despesas** (`operational_expenses`, DP-00001; `recurring_expenses`): competência mensal e
+  categoria; cada despesa gera sua conta a pagar na mesma transação; geração mensal idempotente
+  (único por modelo + competência, `pg_advisory_xact_lock`).
+- **Contas a pagar** (`account_payables`, CPG-00001; `payable_payments` imutáveis): pagamento
+  parcial, comprovante opcional (anexo `FINANCE_PAYABLE`), cancelamento só sem pagamento.
+- **Resultado da OS** (`orderResult`): receita, materiais, mão de obra, logística, tributos
+  estimados (`company_settings.tax_rate_bps`), outros variáveis → **margem de contribuição**
+  (`contributionMargin`), em duas colunas: previsto (estimativa) e realizado (registrado). Avisos
+  quando falta valor, preço ou alíquota.
+- **Painel** (`dashboard`): competência (contratado pela data do pedido; margem das OS concluídas
+  — todas as peças entregues — no período; despesas pelo mês de competência; equipe fixa) →
+  resultado gerencial = margem − despesas − equipe fixa; caixa (recebido, pago, saldo); saldos em
+  aberto; OS em andamento; despesas por categoria; serviços mais rentáveis.
+- **Produtividade** (`productivity`): por pessoa, sem ranking — tarefas, apoios, retrabalhos
+  (`CORRECAO`), tempos de execução e espera (`taskTimings`, pelo histórico imutável), prazo (data
+  limite ou dia programado), atrasos com impedimento (pausa por impedimento ou ocorrência)
+  separados, ocorrências registradas e peças reprovadas.
+- **Relatórios** (`buildReport`): resultado por OS, receita, custos por categoria, produção,
+  despesas, margens, produtividade, retrabalhos, serviços mais rentáveis — JSON e CSV (`;`, BOM,
+  proteção contra fórmulas).
+- **Histórico**: `financial_events` (imutável) por registro, além da auditoria; eventos de domínio
+  sem valores, só para `financeiro.ver`.
+
 ## 4. Eventos, concorrência e tempo real
 
 **Gravação (outbox).** Toda alteração relevante grava, na mesma transação: os dados, a
@@ -662,6 +722,10 @@ são usadas como garantia de execução.
   prontas para entrega com agendamento definitivo ou provisório, expedição com localização e
   ocorrências), `/painel/entregas/[id]`, `/painel/entregas/ocorrencias/[id]`,
   `/painel/devolucoes` e "Corrigir" nas linhas de Recebimentos.
+- Fase 11: `/painel/financeiro` (abas Painel, Receitas e recebimentos, Contas a pagar, Produção e
+  equipe, Custos e resultado por OS, Despesas, Produtividade e Relatórios, com filtro de período
+  e exportação CSV); no tablet, "Meus valores" só para quem tem `financeiro.producao_propria`. O
+  bloco informativo antigo "Ocorrências — disponível na próxima fase" saiu do tablet.
 - PWA: `manifest.webmanifest` (início em `/tablet`), service worker que **nunca** guarda
   respostas da API e mostra página offline quando não há rede.
 - Permissões no frontend só escondem elementos; o servidor sempre decide.
@@ -675,4 +739,6 @@ configurável, sem efeito trabalhista); dia de programação e de medição (sex
 consumidores para a central de atenção. A distribuição de ajuda e a reprogramação foram
 implementadas na Fase 8.
 A equipe de logística terceirizada (André e Izaías) passou a ter acesso restrito na Fase 10
-(só as próprias retiradas e entregas, sem dados comerciais).
+(só as próprias retiradas e entregas, sem dados comerciais). O financeiro operacional (Fase 11)
+é do gestor (`/painel/financeiro`); Ricardo e Márcio veem só os próprios valores de produção no
+tablet ("Meus valores"), quando autorizados.

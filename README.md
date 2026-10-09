@@ -3,11 +3,12 @@
 Sistema de gestão de produção da **Cenário Estofados** — painel administrativo do gestor e
 interface de produção para os tablets da oficina, sincronizados em tempo real.
 
-> **Status: Fase 10 concluída.** Fases 1–6 (fundação, comercial e OS, medições, compras e estoque,
+> **Status: Fase 11 concluída.** Fases 1–6 (fundação, comercial e OS, medições, compras e estoque,
 > planejamento e motor de produção, tablets com Meu dia e avisos), Fase 7 (presença operacional),
-> Fase 8 (ajuda e reprogramação), Fase 9 (central de atenção e ocorrências) e Fase 10 (inspeção de
-> qualidade com correção e reinspeção, embalagem, pronto para entrega, agenda de entregas,
-> logística terceirizada, ocorrências logísticas e devoluções). O financeiro é de fase futura.
+> Fase 8 (ajuda e reprogramação), Fase 9 (central de atenção e ocorrências), Fase 10 (qualidade,
+> embalagem, entregas, logística e devoluções) e Fase 11 (financeiro operacional: receita por OS,
+> recebimentos, contas a pagar, custos de material, mão de obra por produção, logística,
+> despesas, margem de contribuição, painel, produtividade e relatórios — sem integração bancária).
 
 ## Documentação
 
@@ -26,6 +27,7 @@ interface de produção para os tablets da oficina, sincronizados em tempo real.
 | [docs/FASE-8-RELATORIO.md](docs/FASE-8-RELATORIO.md)   | Entregáveis da Fase 8, APIs, testes executados e pendências   |
 | [docs/FASE-9-RELATORIO.md](docs/FASE-9-RELATORIO.md)   | Entregáveis da Fase 9, APIs, testes executados e pendências   |
 | [docs/FASE-10-RELATORIO.md](docs/FASE-10-RELATORIO.md) | Entregáveis da Fase 10, APIs, testes executados e pendências  |
+| [docs/FASE-11-RELATORIO.md](docs/FASE-11-RELATORIO.md) | Entregáveis da Fase 11, APIs, testes executados e pendências  |
 
 ## Requisitos
 

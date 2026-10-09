@@ -176,6 +176,12 @@ export const NAV: NavItem[] = [
     anyOf: ['devolucoes.gerenciar'],
   },
   {
+    href: '/painel/financeiro',
+    label: 'Financeiro',
+    icon: Wallet,
+    anyOf: ['financeiro.ver'],
+  },
+  {
     href: '/painel/presenca',
     label: 'Presença da equipe',
     icon: UserCheck,
@@ -192,6 +198,4 @@ export const NAV: NavItem[] = [
 ];
 
 /** Módulos das próximas fases: exibidos como indisponíveis (sem link). */
-export const UPCOMING: { label: string; icon: LucideIcon }[] = [
-  { label: 'Financeiro', icon: Wallet },
-];
+export const UPCOMING: { label: string; icon: LucideIcon }[] = [];

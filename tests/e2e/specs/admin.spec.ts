@@ -19,9 +19,11 @@ test.describe('Painel administrativo', () => {
   test('gestor entra, navega e cadastra um funcionário', async ({ page }) => {
     await loginAdmin(page);
     await expect(page.getByRole('heading', { name: /Bom dia|Boa tarde|Boa noite/ })).toBeVisible();
-    // módulos futuros aparecem como indisponíveis, sem link
-    await expect(page.getByLabel('Módulos ainda não disponíveis')).toContainText('Financeiro');
-    await expect(page.getByRole('link', { name: 'Financeiro' })).toHaveCount(0);
+    // Fase 11: o Financeiro foi liberado (não há mais módulos "próximas fases").
+    await expect(page.getByLabel('Módulos ainda não disponíveis')).toHaveCount(0);
+    await expect(
+      page.getByRole('navigation').getByRole('link', { name: 'Financeiro' }),
+    ).toBeVisible();
     // Liberados na Fase 10:
     await expect(
       page.getByRole('navigation').getByRole('link', { name: 'Qualidade' }),

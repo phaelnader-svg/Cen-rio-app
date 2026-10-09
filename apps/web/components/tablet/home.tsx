@@ -4,13 +4,13 @@ import type { MeDto } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  AlertOctagon,
   ArrowLeft,
   BadgeCheck,
   LogOut,
   PackageCheck,
   RadioTower,
   Ruler,
+  Wallet,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ConnectionIndicator } from '@/components/connection-indicator';
@@ -23,6 +23,7 @@ import { usePendingReceipts } from '@/lib/purchasing';
 import { useMyAttendance } from '@/lib/attendance';
 import { MyMeasurementDetail, MyMeasurements, useMyOpenCount } from './measurements';
 import { LogisticsJobs } from './logistics';
+import { MyValues } from './my-values';
 import { DepartScreen, PresenceCard } from './presence';
 import { InspectionDetail, MyInspections, useMyInspectionCount } from './quality';
 import {
@@ -44,7 +45,8 @@ type Screen =
   | 'materials'
   | 'depart'
   | 'inspections'
-  | 'inspection';
+  | 'inspection'
+  | 'values';
 
 function useClock(timezone: string) {
   // Renderizado apenas no cliente (após autenticação), sem risco de divergência de hidratação.
@@ -68,15 +70,6 @@ function useClock(timezone: string) {
   };
 }
 
-/** Módulos que chegam nas próximas fases (apenas informativos, sem ação). */
-const UPCOMING = [
-  {
-    icon: AlertOctagon,
-    title: 'Ocorrências',
-    text: 'Registro de impedimentos para a central de atenção.',
-  },
-];
-
 /**
  * Tablet individual (Ricardo, Márcio, Thiago, João): a tela inicial é o "Meu dia".
  * A sessão permanece válida entre expedientes (Fase 1) e pode ser revogada pelo painel.
@@ -88,6 +81,8 @@ export function TabletHome({ me }: { me: MeDto }) {
   const clock = useClock(me.company.timezone);
   const color = me.employee?.color ?? '#1d4a45';
   const canSync = me.permissions.includes('sincronizacao.diagnosticar');
+  // Fase 11: só os próprios valores de produção, se o gestor autorizar.
+  const canSeeValues = me.permissions.includes('financeiro.producao_propria');
   const canMeasure =
     me.permissions.includes('medicoes.extraordinarias') ||
     me.permissions.includes('medicoes.gerenciar');
@@ -273,25 +268,17 @@ export function TabletHome({ me }: { me: MeDto }) {
                   />
                 </li>
               )}
-              {UPCOMING.map((m) => (
-                <li key={m.title}>
-                  <div
-                    aria-disabled="true"
-                    className="flex h-full items-start gap-4 rounded-2xl border border-dashed border-line-strong bg-surface/60 p-5"
-                  >
-                    <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-subtle text-ink-muted">
-                      <m.icon className="size-6" aria-hidden />
-                    </span>
-                    <div>
-                      <p className="text-lg font-semibold text-ink-soft">{m.title}</p>
-                      <p className="text-base text-ink-muted">{m.text}</p>
-                      <p className="mt-2 inline-block rounded-full bg-subtle px-3 py-1 text-sm font-medium text-ink-muted">
-                        Disponível na próxima fase
-                      </p>
-                    </div>
-                  </div>
+              {canSeeValues && (
+                <li>
+                  <Tile
+                    onClick={() => setScreen('values')}
+                    testId="tile-values"
+                    icon={<Wallet className="size-7" aria-hidden />}
+                    title="Meus valores"
+                    text="Valores de produção combinados e pagamentos registrados."
+                  />
                 </li>
-              ))}
+              )}
             </ul>
           </>
         ) : screen === 'task' && taskId ? (
@@ -328,6 +315,12 @@ export function TabletHome({ me }: { me: MeDto }) {
               id={inspectionId}
               onDone={() => window.scrollTo({ top: 0 })}
             />
+          </>
+        ) : screen === 'values' && canSeeValues ? (
+          <>
+            {back('Voltar ao início', 'home')}
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Meus valores</h1>
+            <MyValues />
           </>
         ) : screen === 'depart' && attendance.data ? (
           <>
