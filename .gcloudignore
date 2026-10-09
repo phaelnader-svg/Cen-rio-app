@@ -1,22 +1,11 @@
 # Arquivos enviados ao Cloud Build por "operador.sh build" (só após autorização da publicação).
-# Envia apenas o necessário ao Dockerfile de homologação; nada de dependências, builds, backups
-# ou arquivos de ambiente.
+# Reaproveita o .gitignore (padrões já ancorados, ex.: "/storage/"). Atenção: nesta sintaxe um
+# padrão SEM "/" vale em QUALQUER nível — um "storage" solto excluía o código de
+# apps/api/src/core/storage/ e quebrou o build da API (Cloud Build 436c51a7).
+# Conferência local, sem custo: gcloud meta list-files-for-upload .
 .gcloudignore
 .git
 .github
-**/node_modules
-**/.next
-**/.next-*
-**/dist
-**/*.tsbuildinfo
-.env
-.env.*
-!.env.example
-storage
-storage-e2e
-apps/api/storage
-backups
-tests/e2e/test-results
-tests/e2e/playwright-report
-infra/homolog/.env.homolog
-.homolog-local
+#!include:.gitignore
+.ruff_cache/
+**/.pytest_cache/

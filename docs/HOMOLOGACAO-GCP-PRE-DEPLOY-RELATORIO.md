@@ -33,6 +33,24 @@ portas, DNS, VM em execução nem outros projetos; sem `--com-snapshots` não cr
 bucket já tiver uma regra de ciclo de vida própria, ela **não** é sobrescrita (aviso) e os demais
 itens seguem.
 
+## Atualização: falha do primeiro Cloud Build (436c51a7)
+
+**Causa raiz:** o `.gcloudignore` criado nesta preparação tinha o padrão `storage` sem `/`. Nessa
+sintaxe (a do `.gitignore`), padrão sem `/` vale em **qualquer nível**: além da pasta de dados
+`/storage/`, excluía o código `apps/api/src/core/storage/` (`storage.ts`, `upload.ts`) do envio
+ao Cloud Build, e o tsup não encontrou os módulos. Os arquivos sempre estiveram versionados; o
+`.gitignore` (ancorado, `/storage/`) e o `.dockerignore` (ancorado por natureza) estavam corretos.
+
+**Correção:** o `.gcloudignore` passou a reaproveitar o `.gitignore` (`#!include:.gitignore`) e
+exclui só `.git`, `.github` e caches locais. Novo `infra/homolog/gcp/conferir-contexto.sh` compara,
+sem custo, o que o gcloud enviaria (`gcloud meta list-files-for-upload`) com `git ls-files`; o
+`operador.sh build` o executa e **recusa o envio** se faltar qualquer arquivo versionado.
+
+**Verificação local (Linux, Docker, contexto idêntico ao enviado):** com o `.gcloudignore` antigo,
+os mesmos 3 erros do Cloud Build; com o novo, imagens `api` e `web` construídas (Prisma gerado,
+`dist/server.js`, Next.js com 44 páginas), conteúdo conferido. Testes da API exigem PostgreSQL e
+não foram executados nesta etapa.
+
 Legenda usada abaixo: **[verificado]** = executado aqui, com evidência · **[informado]** = dado
 que você passou, ainda não conferido · **[a auditar]** = será conferido por `homolog.sh auditar`
 · **[pendente]** = depende de autorização ou da aplicação rodando.

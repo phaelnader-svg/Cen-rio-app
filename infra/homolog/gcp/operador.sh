@@ -55,6 +55,8 @@ criar_segredos() {
 build() {
   local tag; tag="$(git rev-parse --short HEAD)"
   [[ -z "$(git status --porcelain)" ]] || { echo "Há mudanças não commitadas: faça commit antes (a etiqueta deve corresponder exatamente ao commit)." >&2; exit 2; }
+  # Sem custo: recusa o envio se o .gcloudignore deixar de fora algum arquivo versionado.
+  bash infra/homolog/gcp/conferir-contexto.sh || { echo "Build NÃO enviado (nada foi cobrado)." >&2; exit 2; }
   confirma "Cloud Build das imagens api/web com a etiqueta $tag"
   gcloud builds submit --project="$PROJECT" --region="$REGION" \
     --config infra/homolog/gcp/cloudbuild.yaml --substitutions="_TAG=$tag,_REGION=$REGION" .
