@@ -107,7 +107,7 @@ test.describe.serial('Evolução Fase 3 — distribuição automática', () => {
         await registerDevice(page, 'Tablet Márcio (distribuição)', 'Márcio'),
         '715324',
       );
-      const queue = marcio.page.getByTestId('my-queue');
+      const queue = marcio.page.getByTestId('my-week');
       await expect(queue).toContainText(`${so.code}/2`);
       await expect(queue).not.toContainText(`${so.code}/1`);
 

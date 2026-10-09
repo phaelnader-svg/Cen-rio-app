@@ -104,26 +104,25 @@ test.describe.serial('Evolução Fase 2 — fila semanal', () => {
         '602413',
       );
       const jt = joao.page;
-      const queue = jt.getByTestId('my-queue');
-      await expect(queue).toContainText('Minha fila da semana (6)');
-      await expect(jt.getByTestId('queue-item-1')).toContainText('Fila E2E 2');
-      await expect(jt.getByTestId('queue-item-2')).toContainText('Fila E2E 1');
-      await expect(jt.getByTestId('next-task')).toContainText('Fila E2E 2');
+      // Evolução Fase 4: "Minha semana" — destaque, próximas três e "Ver todas as tarefas".
+      const hl = jt.getByTestId('week-highlight');
+      const all = jt.getByTestId('week-all');
+      await expect(all).toContainText('Ver todas as tarefas (6)');
+      await expect(hl).toContainText('Fila E2E 2');
+      await expect(jt.getByTestId('week-next-2')).toContainText('Fila E2E 1');
       await evidence(jt, '02-tablet-fila');
 
       // Segunda: inicia e conclui as duas primeiras. A próxima fica disponível, sem iniciar.
       for (const n of [1, 2]) {
-        const card = jt.getByTestId('queue-item-1'); // a fila anda: a próxima vira a 1ª
-        await card.getByRole('button', { name: 'Iniciar' }).click();
-        await expect(card.getByRole('button', { name: 'Concluir' })).toBeVisible();
-        await card.getByRole('button', { name: 'Concluir' }).click();
-        await card.getByRole('button', { name: 'Toque de novo para confirmar' }).click();
-        await expect(queue).toContainText(`Minha fila da semana (${6 - n})`);
+        await hl.getByRole('button', { name: 'Iniciar' }).click();
+        await expect(hl.getByRole('button', { name: 'Concluir' })).toBeVisible();
+        await hl.getByRole('button', { name: 'Concluir' }).click();
+        await hl.getByRole('button', { name: 'Toque de novo para confirmar' }).click();
+        await expect(all).toContainText(`Ver todas as tarefas (${6 - n})`);
       }
-      await expect(jt.getByTestId('next-task')).toContainText('Fila E2E 3');
-      await expect(
-        jt.getByTestId('queue-item-1').getByRole('button', { name: 'Iniciar' }),
-      ).toBeVisible();
+      await expect(hl).toContainText('Fila E2E 3');
+      await expect(hl.getByRole('button', { name: 'Iniciar' })).toBeVisible();
+      await expect(jt.getByTestId('count-done')).toHaveText('2');
       const third = await call(page, 'GET', `/api/v1/production-tasks/${tasks[2]!.id}`);
       expect(third.status).toBe('LIBERADA');
 
@@ -133,25 +132,27 @@ test.describe.serial('Evolução Fase 2 — fila semanal', () => {
       await setClock(at(1, '08:00'));
       await call(page, 'POST', '/api/test/attendance/check');
       await jt.reload();
-      await expect(queue).toContainText('Minha fila da semana (4)');
-      await expect(jt.getByTestId('queue-item-1')).toContainText('Fila E2E 3');
+      await expect(all).toContainText('Ver todas as tarefas (4)');
+      await expect(hl).toContainText('Fila E2E 3');
 
       // Primeira bloqueada → a próxima executável aparece sem mudar a ordem.
       await call(page, 'POST', `/api/v1/production-tasks/${tasks[2]!.id}/block`, {
         reason: 'Falta a grampeadeira',
       });
-      await expect(jt.getByTestId('next-task')).toContainText('Fila E2E 4');
-      await expect(jt.getByTestId('queue-item-1')).toContainText('Fila E2E 3');
-      await jt.getByTestId('queue-item-2').getByRole('button', { name: 'Iniciar' }).click();
-      await expect(
-        jt.getByTestId('queue-item-2').getByRole('button', { name: 'Concluir' }),
-      ).toBeVisible();
+      await expect(hl).toContainText('Fila E2E 4');
+      await expect(jt.getByTestId('week-next-1')).toContainText('Fila E2E 3');
+      await hl.getByRole('button', { name: 'Iniciar' }).click();
+      await expect(hl.getByRole('button', { name: 'Concluir' })).toBeVisible();
       // Ferramenta chegou: desbloqueio não interrompe a tarefa em execução.
       await call(page, 'POST', `/api/v1/production-tasks/${tasks[2]!.id}/unblock`, {
         reason: 'Chegou a grampeadeira',
       });
-      await expect(jt.getByTestId('current-task')).toContainText('Fila E2E 4');
-      await expect(jt.getByTestId('next-task')).toContainText('Fila E2E 3');
+      await expect(jt.getByTestId('week-next-1').getByTestId(/^my-task-/)).toHaveAttribute(
+        'data-status',
+        'LIBERADA',
+      );
+      await expect(hl).toContainText('Fila E2E 4');
+      await expect(jt.getByTestId('week-next-1')).toContainText('Fila E2E 3');
       const fourth = await call(page, 'GET', `/api/v1/production-tasks/${tasks[3]!.id}`);
       expect(fourth.status).toBe('EM_EXECUCAO');
       await evidence(jt, '03-tablet-terca');
