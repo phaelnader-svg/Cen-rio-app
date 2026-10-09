@@ -121,6 +121,17 @@ async function preparationAssignee(
 
 // ─────────────────────────── Geração ───────────────────────────
 
+/** Tarefas de produção da peça sem marcador de geração (apoio/ocorrência/qualidade não contam). */
+const manualTaskWhere = (itemId: string): Prisma.ProductionTaskWhereInput => ({
+  serviceOrderItemId: itemId,
+  templateId: null,
+  status: { not: 'CANCELADA' },
+  supportForTaskId: null,
+  issueId: null,
+  inspectionId: null,
+  activity: { notIn: ['CORRECAO', 'EMBALAGEM'] },
+});
+
 type ItemRow = {
   id: string;
   position: number;
@@ -272,6 +283,8 @@ export async function distributeServiceOrder(
       },
     });
     if (existing.some((t) => t.planId !== plan.id)) continue; // pendência JA_GERADA_EM_OUTRA_SEMANA
+    // Tarefas sem marcador de modelo (Fase 2, legado ou avulsas): nunca gerar por cima.
+    if (await tx.productionTask.count({ where: manualTaskWhere(item.id) })) continue;
     const stale = existing.filter(
       (t) => t.templateId !== template.id || t.templateVersion !== template.version,
     );
@@ -438,6 +451,15 @@ export async function pieceDistribution(
     add(
       'MODELO_ALTERADO',
       generated.map((t) => t.id),
+    );
+  const manual = await db.productionTask.findMany({
+    where: manualTaskWhere(item.id),
+    select: { id: true },
+  });
+  if (manual.length && !generated.length)
+    add(
+      'TAREFAS_ANTERIORES',
+      manual.map((t) => t.id),
     );
   const elsewhere = generated.filter((t) => t.planId !== planId);
   if (elsewhere.length)

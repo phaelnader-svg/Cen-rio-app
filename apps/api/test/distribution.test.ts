@@ -493,6 +493,47 @@ describe('Distribuição automática (fila semanal)', () => {
     expect(rows.every((t) => t.templateVersion === tpl.version + 1)).toBe(true);
   });
 
+  it('CA3-05b: peça com tarefas anteriores (Fase 2/avulsas) não recebe geração por cima', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const so = await os(admin, 'Cliente Tarefa Avulsa', [
+      { pieceType: 'SOFA', description: 'Sofá' },
+    ]);
+    const plan = await createPlan(admin, today(), 'FILA_SEMANAL');
+    const r = await addOs(admin, plan.id, {
+      serviceOrderId: so.id,
+      generate: false,
+      pieces: [{ serviceOrderItemId: so.items[0]!.id, upholstererUserId: p.ricardo }],
+    });
+    expect(r.status).toBe(201);
+    // Etapa avulsa de tapeçaria: vai sozinha ao titular (sem escolher responsável).
+    const t = await post(admin, `/api/v1/production-plans/${plan.id}/tasks`, {
+      serviceOrderId: so.id,
+      serviceOrderItemId: so.items[0]!.id,
+      activity: 'COSTURA',
+    });
+    expect(t.status).toBe(201);
+    expect(t.body.assignee.userId).toBe(p.ricardo);
+    // Avulsa para outra pessoa: recusada (titular único).
+    const bad = await post(admin, `/api/v1/production-plans/${plan.id}/tasks`, {
+      serviceOrderId: so.id,
+      serviceOrderItemId: so.items[0]!.id,
+      activity: 'ACABAMENTO',
+      assigneeUserId: p.marcio,
+    });
+    expect(bad.status).toBe(422);
+    const d0 = await planOf(admin, plan.id);
+    const res = await post(
+      admin,
+      `/api/v1/production-plans/${plan.id}/items/${d0.items[0]!.id}/distribute`,
+      {},
+    );
+    expect(res.status).toBe(200);
+    expect(await db().productionTask.count({ where: { serviceOrderId: so.id } })).toBe(1);
+    const d = await dist(admin, plan.id);
+    expect(d.pieces[0]!.pendencies.map((k) => k.kind)).toContain('TAREFAS_ANTERIORES');
+  });
+
   it('CA3-10: plano LEGADO segue a geração anterior, sem classe, sem titular por peça', async () => {
     const admin = await loginAdmin(app);
     const p = await team();

@@ -73,6 +73,7 @@ export const DISTRIBUTION_PENDENCIES = [
   'ETAPA_SEM_CLASSIFICACAO',
   'MODELO_ALTERADO',
   'JA_GERADA_EM_OUTRA_SEMANA',
+  'TAREFAS_ANTERIORES',
   'SEM_INSPETOR',
   'REVISAO_FINANCEIRA',
 ] as const;
@@ -85,6 +86,8 @@ export const DISTRIBUTION_PENDENCY_LABEL: Record<DistributionPendency, string> =
   ETAPA_SEM_CLASSIFICACAO: 'Etapa do modelo sem classificação (revise o modelo)',
   MODELO_ALTERADO: 'Modelo alterado depois da geração (revisão manual)',
   JA_GERADA_EM_OUTRA_SEMANA: 'Tarefas desta peça já geradas em outra semana',
+  TAREFAS_ANTERIORES:
+    'Peça com tarefas criadas antes da distribuição automática ou à mão (nada é gerado por cima)',
   SEM_INSPETOR: 'Sem inspetor elegível (a qualidade pedirá substituto)',
   REVISAO_FINANCEIRA: 'Mão de obra combinada com outra pessoa: revisão financeira manual',
 };
