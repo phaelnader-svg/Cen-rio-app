@@ -21,7 +21,8 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     "next-env.d.ts",
-    ".next-e2e/types/**/*.ts"
+    ".next-e2e/types/**/*.ts",
+    ".next-homolog/types/**/*.ts"
   ],
   "exclude": ["node_modules", ".next"]
 }

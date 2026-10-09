@@ -17,4 +17,7 @@ apps/web/next-env.d.ts
 .DS_Store
 *.log
 .next-e2e/
+.next-homolog/
+# Homologação local (segredos gerados, arquivos, logs): scripts/homolog-local.sh
+.homolog-local/
 storage-e2e/

@@ -8,4 +8,6 @@ playwright-report
 test-results
 storage
 .next-e2e
+.next-homolog
+.homolog-local
 storage-e2e

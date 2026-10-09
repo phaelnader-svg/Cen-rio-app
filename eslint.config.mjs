@@ -12,6 +12,8 @@ export default tseslint.config(
       '**/dist/**',
       '**/.next/**',
       '**/.next-e2e/**',
+      '**/.next-homolog/**',
+      '.homolog-local/**',
       '**/coverage/**',
       '**/playwright-report/**',
       '**/test-results/**',

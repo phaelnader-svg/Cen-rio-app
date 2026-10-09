@@ -14,3 +14,5 @@ backups
 tests/e2e/test-results
 tests/e2e/playwright-report
 infra/homolog/.env.homolog
+**/.next-homolog
+.homolog-local
