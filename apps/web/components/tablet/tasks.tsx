@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  MyQueueDto,
   NotificationDto,
   PauseReason,
   ProductionTaskDetailDto,
@@ -46,7 +47,7 @@ import { Alert, Spinner } from '@/components/ui/misc';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { formatDay } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
-import { useMyTasks, useNotifications, useTask } from '@/lib/production';
+import { useMyQueue, useMyTasks, useNotifications, useTask } from '@/lib/production';
 import { useRealtime } from '@/lib/realtime';
 import { AlternativeTasks, HelpPanel, MyOpenHelp, SupportInfo } from './help';
 import { IssueInfo, MyOpenIssues, ProblemPanel } from './issues';
@@ -128,13 +129,17 @@ export function MyDay({
   reportUserId?: string | null;
 }) {
   const q = useMyTasks();
+  const queue = useMyQueue();
   if (q.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
   const today = q.data.today;
   const current = today.find((t) => t.status === 'EM_EXECUCAO');
   const paused = today.filter((t) => t.status === 'PAUSADA');
-  const next = today.find((t) => t.status === 'LIBERADA');
-  const open = today.filter(isOpen);
+  // Fila semanal: a próxima é a primeira executável na ordem da fila (nunca inicia sozinha).
+  const fila = queue.data && queue.data.total > 0 ? queue.data : null;
+  const inQueue = new Set(fila?.items.map((e) => e.task.id) ?? []);
+  const next = fila ? (fila.next ?? undefined) : today.find((t) => t.status === 'LIBERADA');
+  const open = today.filter((t) => isOpen(t) && !inQueue.has(t.id));
   const done = today.filter((t) => !isOpen(t));
   return (
     <div className="space-y-8" data-testid="my-day">
@@ -151,7 +156,7 @@ export function MyDay({
           testId="current-task"
         />
         <Highlight
-          label="Próxima tarefa liberada"
+          label={fila ? 'Próxima da fila' : 'Próxima tarefa liberada'}
           empty="Nenhuma tarefa liberada para começar."
           task={next}
           onOpen={onOpen}
@@ -162,9 +167,15 @@ export function MyDay({
       {canAskHelp && <MyOpenHelp />}
       {reportUserId && <MyOpenIssues userId={reportUserId} />}
 
+      {fila && <QueueSection queue={fila} onOpen={onOpen} />}
+
       <section>
-        <h2 className="mb-3 text-xl font-semibold">Tarefas de hoje ({open.length})</h2>
-        {open.length === 0 ? (
+        <h2 className="mb-3 text-xl font-semibold">
+          {fila ? 'Outras tarefas' : 'Tarefas de hoje'} ({open.length})
+        </h2>
+        {open.length === 0 && fila ? (
+          <p className="text-base text-ink-muted">Nenhuma tarefa fora da fila.</p>
+        ) : open.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-line-strong bg-surface/60 p-10 text-center">
             <ClipboardCheck className="mx-auto size-10 text-ink-muted" aria-hidden />
             <p className="mt-3 text-xl font-semibold">Nenhuma tarefa para hoje</p>
@@ -209,6 +220,42 @@ export function MyDay({
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * Evolução Fase 2 — fila semanal: ordem definida pelo gestor, sem horário. A posição não muda
+ * quando uma tarefa fica bloqueada; a fila continua de um dia para o outro.
+ */
+function QueueSection({ queue, onOpen }: { queue: MyQueueDto; onOpen: (id: string) => void }) {
+  return (
+    <section data-testid="my-queue">
+      <h2 className="mb-1 text-xl font-semibold">Minha fila da semana ({queue.total})</h2>
+      <p className="mb-3 text-base text-ink-muted">
+        Siga a ordem: conclua uma e toque em Iniciar na próxima.
+        {queue.blockedAhead > 0 &&
+          ` ${queue.blockedAhead} tarefa(s) à frente aguardando desbloqueio (mantêm o lugar).`}
+      </p>
+      <ol className="grid gap-4 lg:grid-cols-2">
+        {queue.items.map((e) => {
+          const active = e.executable || e.task.status === 'EM_EXECUCAO';
+          return (
+            <li key={e.task.id} data-testid={`queue-item-${e.position}`} className="relative">
+              <span
+                className={clsx(
+                  'absolute -top-2 -left-2 z-10 flex size-8 items-center justify-center rounded-full text-sm font-bold shadow',
+                  active ? 'bg-brand-600 text-white' : 'bg-subtle text-ink-muted',
+                )}
+                aria-label={`Posição ${e.position}`}
+              >
+                {e.position}
+              </span>
+              <TaskCard t={e.task} onOpen={onOpen} compact={!active} />
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 

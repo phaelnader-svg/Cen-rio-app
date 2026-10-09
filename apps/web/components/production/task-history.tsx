@@ -14,6 +14,8 @@ export const EVENT_LABEL: Record<string, string> = {
   BLOQUEADA: 'Bloqueada',
   PROGRAMADA: 'Programada',
   REPROGRAMADA: 'Reprogramada',
+  FILA_REORDENADA: 'Fila reordenada',
+  TRANSFERIDA_SEMANA: 'Transferida para outra semana',
   RESPONSAVEL_ALTERADO: 'Responsável alterado',
   DEPENDENCIAS: 'Dependências alteradas',
   MATERIAIS: 'Materiais da tarefa alterados',

@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  MyQueueDto,
   NotificationDto,
   PlanCandidateDto,
   ProductionPlanDto,
@@ -23,7 +24,7 @@ export const usePlansOfWeek = (week: string) =>
   useQuery({
     queryKey: ['production-plans', week],
     queryFn: () =>
-      api<{ id: string; weekStart: string; status: string; revision: number }[]>(
+      api<{ id: string; weekStart: string; status: string; mode: string; revision: number }[]>(
         `/api/v1/production-plans${qs({ week })}`,
       ),
   });
@@ -87,6 +88,23 @@ export const useMyTasks = (enabled = true) =>
       ),
     enabled,
     refetchInterval: 60_000,
+  });
+
+/** Evolução Fase 2: minha fila semanal (ordem, atual, próxima executável). */
+export const useMyQueue = (enabled = true) =>
+  useQuery({
+    queryKey: ['my-queue'],
+    queryFn: () => api<MyQueueDto>('/api/v1/production-tasks/mine/queue'),
+    enabled,
+    refetchInterval: 60_000,
+  });
+
+/** Fila de um funcionário (gestão). */
+export const useQueueOf = (userId: string | null) =>
+  useQuery({
+    queryKey: ['production-queue', userId],
+    queryFn: () => api<MyQueueDto>(`/api/v1/production-queue/${userId}`),
+    enabled: Boolean(userId),
   });
 
 export const useOsProduction = (serviceOrderId: string, enabled = true) =>

@@ -3,6 +3,7 @@
 import type {
   PlanCandidateDto,
   PlanItemDto,
+  PlanMode,
   Priority,
   ProductionActivity,
   ProductionPlanDto,
@@ -10,17 +11,23 @@ import type {
   WorkerDto,
 } from '@cenario/shared';
 import {
+  PLAN_MODES,
+  PLAN_MODE_LABEL,
   PRIORITIES,
   PRIORITY_LABEL,
   PLANNABLE_ACTIVITIES,
   PRODUCTION_ACTIVITY_LABEL,
+  compareQueue,
   mondayOf,
 } from '@cenario/shared';
 import {
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   CalendarRange,
   ChevronLeft,
   ChevronRight,
+  Forward,
   Link2,
   Plus,
   Send,
@@ -53,6 +60,8 @@ export function ProductionPlanningPage() {
   const plan = plans.data?.[0] ?? null;
   const { m, error } = useSend();
   const [key] = useState(newIdempotencyKey);
+  // Evolução Fase 2 (D-1): planos novos nascem em fila semanal; "por horário" só se escolhido.
+  const [mode, setMode] = useState<PlanMode>('FILA_SEMANAL');
 
   return (
     <>
@@ -112,22 +121,36 @@ export function ProductionPlanningPage() {
             title="Nenhum planejamento para esta semana"
             description="Crie o rascunho, escolha as OS e publique quando estiver pronto."
             action={
-              <Button
-                loading={m.isPending}
-                onClick={() =>
-                  m.mutate({
-                    run: () =>
-                      api('/api/v1/production-plans', {
-                        method: 'POST',
-                        idempotencyKey: key,
-                        body: { weekStart: week },
-                      }),
-                    ok: 'Rascunho criado.',
-                  })
-                }
-              >
-                Criar planejamento da semana
-              </Button>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Select
+                  aria-label="Modo do planejamento"
+                  className="w-56"
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value as PlanMode)}
+                >
+                  {PLAN_MODES.map((x) => (
+                    <option key={x} value={x}>
+                      {PLAN_MODE_LABEL[x]}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  loading={m.isPending}
+                  onClick={() =>
+                    m.mutate({
+                      run: () =>
+                        api('/api/v1/production-plans', {
+                          method: 'POST',
+                          idempotencyKey: `${key}${mode}`,
+                          body: { weekStart: week, mode },
+                        }),
+                      ok: 'Rascunho criado.',
+                    })
+                  }
+                >
+                  Criar planejamento da semana
+                </Button>
+              </div>
             }
           />
         </Card>
@@ -144,11 +167,13 @@ function PlanEditor({ planId }: { planId: string }) {
   const [reason, setReason] = useState('');
   const [adding, setAdding] = useState<PlanCandidateDto | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [carrying, setCarrying] = useState(false);
   const { m, error } = useSend();
   if (q.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
   const plan = q.data;
   const published = plan.status === 'PUBLICADO';
+  const fila = plan.mode === 'FILA_SEMANAL';
   const why = published ? reason : undefined;
   const send = (run: () => Promise<unknown>, ok?: string) => {
     if (published && reason.trim().length < 3) {
@@ -170,6 +195,9 @@ function PlanEditor({ planId }: { planId: string }) {
         ) : (
           <Badge dot>Rascunho</Badge>
         )}
+        <span data-testid="plan-mode">
+          <Badge tone={fila ? 'info' : undefined}>{PLAN_MODE_LABEL[plan.mode]}</Badge>
+        </span>
         <span className="text-sm text-ink-muted">
           {plan.items.length} OS · {plan.tasks.filter((t) => t.status !== 'CANCELADA').length}{' '}
           tarefa(s)
@@ -212,6 +240,25 @@ function PlanEditor({ planId }: { planId: string }) {
           </ul>
         </Alert>
       )}
+
+      {fila && published && plan.weekEnded && plan.pendingCount > 0 && (
+        <Alert tone="warn" title={`Semana encerrada com ${plan.pendingCount} pendência(s)`}>
+          <p className="mt-1">
+            As pendências continuam nesta semana até você decidir. Nada é transferido
+            automaticamente.
+          </p>
+          <Button
+            size="sm"
+            className="mt-2"
+            icon={<Forward className="size-3.5" aria-hidden />}
+            onClick={() => setCarrying(true)}
+          >
+            Transferir pendências…
+          </Button>
+        </Alert>
+      )}
+
+      {fila && <QueuesSection plan={plan} workers={workers.data ?? []} reason={why} send={send} />}
 
       <CandidatesSection planId={planId} onAdd={setAdding} />
 
@@ -257,6 +304,7 @@ function PlanEditor({ planId }: { planId: string }) {
         />
       )}
       {publishing && <PublishDialog plan={plan} onClose={() => setPublishing(false)} />}
+      {carrying && <CarryOverDialog plan={plan} onClose={() => setCarrying(false)} />}
     </div>
   );
 }
@@ -356,7 +404,7 @@ function AddOsDialog({
                       serviceOrderId: candidate.serviceOrder.id,
                       principalUserId: principal || null,
                       priority,
-                      date,
+                      ...(plan.mode === 'FILA_SEMANAL' ? {} : { date }),
                       reason,
                     },
                   }),
@@ -414,11 +462,13 @@ function AddOsDialog({
             </Select>
           )}
         </Field>
-        <Field label="Começar em" className="sm:col-span-2">
-          {(p) => (
-            <Input {...p} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          )}
-        </Field>
+        {plan.mode !== 'FILA_SEMANAL' && (
+          <Field label="Começar em" className="sm:col-span-2">
+            {(p) => (
+              <Input {...p} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            )}
+          </Field>
+        )}
       </div>
     </Dialog>
   );
@@ -438,6 +488,7 @@ function ItemSection({
   send: (run: () => Promise<unknown>, ok?: string) => void;
 }) {
   const tasks = plan.tasks.filter((t) => t.serviceOrder.id === item.serviceOrder.id);
+  const timed = plan.mode !== 'FILA_SEMANAL';
   const [deps, setDeps] = useState<ProductionTaskDto | null>(null);
   const [activity, setActivity] = useState<ProductionActivity>('APOIO');
   const [key] = useState(newIdempotencyKey);
@@ -511,8 +562,8 @@ function ItemSection({
                 Tarefa
               </th>
               <th className="px-3 py-2 font-semibold">Responsável</th>
-              <th className="px-3 py-2 font-semibold">Dia</th>
-              <th className="px-3 py-2 font-semibold">Hora</th>
+              {timed && <th className="px-3 py-2 font-semibold">Dia</th>}
+              {timed && <th className="px-3 py-2 font-semibold">Hora</th>}
               <th className="px-3 py-2 font-semibold">Prazo interno</th>
               <th className="px-3 py-2 font-semibold">Prioridade</th>
               <th className="px-3 py-2 font-semibold">Depende de</th>
@@ -559,28 +610,32 @@ function ItemSection({
                       ))}
                     </Select>
                   </td>
-                  <td className="px-3 py-2">
-                    <Input
-                      aria-label={`Dia de ${t.title}`}
-                      type="date"
-                      className="h-9 w-40 py-0 text-sm"
-                      disabled={locked}
-                      value={t.scheduledDate ?? ''}
-                      onChange={(e) => put(t, { date: e.target.value || null })}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <Input
-                      aria-label={`Hora de ${t.title}`}
-                      type="time"
-                      className="h-9 w-28 py-0 text-sm"
-                      disabled={locked || !t.scheduledDate}
-                      value={t.scheduledTime ?? ''}
-                      onChange={(e) =>
-                        e.target.value && put(t, { date: t.scheduledDate, time: e.target.value })
-                      }
-                    />
-                  </td>
+                  {timed && (
+                    <td className="px-3 py-2">
+                      <Input
+                        aria-label={`Dia de ${t.title}`}
+                        type="date"
+                        className="h-9 w-40 py-0 text-sm"
+                        disabled={locked}
+                        value={t.scheduledDate ?? ''}
+                        onChange={(e) => put(t, { date: e.target.value || null })}
+                      />
+                    </td>
+                  )}
+                  {timed && (
+                    <td className="px-3 py-2">
+                      <Input
+                        aria-label={`Hora de ${t.title}`}
+                        type="time"
+                        className="h-9 w-28 py-0 text-sm"
+                        disabled={locked || !t.scheduledDate}
+                        value={t.scheduledTime ?? ''}
+                        onChange={(e) =>
+                          e.target.value && put(t, { date: t.scheduledDate, time: e.target.value })
+                        }
+                      />
+                    </td>
+                  )}
                   <td className="px-3 py-2">
                     <Input
                       aria-label={`Prazo de ${t.title}`}
@@ -687,6 +742,182 @@ function ItemSection({
         <DepsDialog task={deps} tasks={tasks} reason={reason} onClose={() => setDeps(null)} />
       )}
     </Section>
+  );
+}
+
+/**
+ * Evolução Fase 2 — fila de cada funcionário neste planejamento (ordem da fila, sem horário).
+ * Mover respeita faixas de prioridade e dependências (validado no servidor); publicado exige
+ * motivo e gera revisão; a versão do plano impede sobrescrever a alteração de outro gestor.
+ */
+function QueuesSection({
+  plan,
+  workers,
+  reason,
+  send,
+}: {
+  plan: ProductionPlanDto;
+  workers: WorkerDto[];
+  reason: string | undefined;
+  send: (run: () => Promise<unknown>, ok?: string) => void;
+}) {
+  const open = (t: ProductionTaskDto) =>
+    !t.supportFor &&
+    (plan.status === 'PUBLICADO'
+      ? !['CONCLUIDA', 'CANCELADA', 'RASCUNHO'].includes(t.status)
+      : t.status === 'RASCUNHO');
+  const key = (t: ProductionTaskDto) => ({ ...t, weekStart: plan.weekStart });
+  const queues = workers
+    .map((w) => ({
+      w,
+      list: plan.tasks
+        .filter((t) => t.assignee?.userId === w.userId && open(t))
+        .sort((a, b) => compareQueue(key(a), key(b))),
+    }))
+    .filter((x) => x.list.length > 0);
+  const done = plan.tasks.filter((t) => t.status === 'CONCLUIDA' && !t.supportFor).length;
+  const total = plan.tasks.filter((t) => t.status !== 'CANCELADA' && !t.supportFor).length;
+  const move = (userId: string, list: ProductionTaskDto[], i: number, d: -1 | 1) => {
+    const ids = list.map((t) => t.id);
+    [ids[i], ids[i + d]] = [ids[i + d]!, ids[i]!];
+    send(
+      () =>
+        api(`/api/v1/production-plans/${plan.id}/queue`, {
+          method: 'PUT',
+          idempotencyKey: newIdempotencyKey(),
+          body: { userId, taskIds: ids, version: plan.version, reason },
+        }),
+      'Fila reordenada.',
+    );
+  };
+  return (
+    <Section title={`Filas da semana · ${done} de ${total} concluída(s)`} bodyClassName="p-0">
+      {queues.length === 0 ? (
+        <p className="px-5 py-4 text-sm text-ink-muted">
+          Nenhuma tarefa com responsável. Defina os responsáveis nas OS abaixo.
+        </p>
+      ) : (
+        <div className="grid gap-0 divide-y divide-line lg:grid-cols-2 lg:divide-x">
+          {queues.map(({ w, list }) => (
+            <div key={w.userId} className="p-4" data-testid={`queue-${w.displayName}`}>
+              <h3 className="mb-2 font-semibold">
+                {w.displayName} <span className="text-ink-muted">({list.length})</span>
+              </h3>
+              <ol className="space-y-1">
+                {list.map((t, i) => (
+                  <li key={t.id} className="flex items-center gap-2 text-sm">
+                    <span className="w-6 text-right font-mono text-ink-muted">{i + 1}</span>
+                    <span className="min-w-0 flex-1 truncate">
+                      <Link href={`/painel/producao/tarefas/${t.id}`} className="hover:underline">
+                        {t.code} · {t.title}
+                      </Link>
+                      {t.carriedFromWeek && (
+                        <Badge tone="warn" className="ml-1">
+                          da semana {formatDay(t.carriedFromWeek)}
+                        </Badge>
+                      )}
+                    </span>
+                    <PriorityBadge priority={t.priority} />
+                    <TaskStatusBadge status={t.status} />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Subir ${t.code}`}
+                      disabled={i === 0}
+                      icon={<ArrowUp className="size-3.5" aria-hidden />}
+                      onClick={() => move(w.userId, list, i, -1)}
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Descer ${t.code}`}
+                      disabled={i === list.length - 1}
+                      icon={<ArrowDown className="size-3.5" aria-hidden />}
+                      onClick={() => move(w.userId, list, i, 1)}
+                    />
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+/** Pendências de uma semana encerrada → outra semana em fila já publicada (ação explícita). */
+function CarryOverDialog({ plan, onClose }: { plan: ProductionPlanDto; onClose: () => void }) {
+  const target = usePlansOfWeek(addDays(plan.weekStart, 7));
+  const to = target.data?.[0];
+  const pending = plan.tasks.filter(
+    (t) => !t.supportFor && ['BLOQUEADA', 'PROGRAMADA', 'LIBERADA', 'PAUSADA'].includes(t.status),
+  );
+  const [sel, setSel] = useState(() => new Set(pending.map((t) => t.id)));
+  const [reason, setReason] = useState('');
+  const [key] = useState(newIdempotencyKey);
+  const { m, error } = useSend(onClose);
+  const ready = to && to.status === 'PUBLICADO' && to.mode === 'FILA_SEMANAL';
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Transferir pendências"
+      description={`Para a semana de ${formatDay(addDays(plan.weekStart, 7))}. Responsável, andamento e histórico são mantidos; tarefas em execução não são transferidas.`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button
+            loading={m.isPending}
+            disabled={!ready || sel.size === 0 || reason.trim().length < 3}
+            onClick={() =>
+              m.mutate({
+                run: () =>
+                  api(`/api/v1/production-plans/${plan.id}/carry-over`, {
+                    method: 'POST',
+                    idempotencyKey: key,
+                    body: { toPlanId: to!.id, taskIds: [...sel], reason },
+                  }),
+                ok: 'Pendências transferidas.',
+              })
+            }
+          >
+            Transferir {sel.size}
+          </Button>
+        </>
+      }
+    >
+      {error && (
+        <Alert tone="danger" className="mb-3">
+          {error}
+        </Alert>
+      )}
+      {!target.isPending && !ready && (
+        <Alert tone="warn" className="mb-3">
+          Crie e publique o planejamento em fila da próxima semana antes de transferir.
+        </Alert>
+      )}
+      <div className="mb-4 max-h-72 space-y-2 overflow-y-auto">
+        {pending.map((t) => (
+          <Checkbox
+            key={t.id}
+            label={`${t.code} · ${t.title} · ${t.assignee?.displayName ?? 'sem responsável'}`}
+            checked={sel.has(t.id)}
+            onChange={(e) => {
+              const n = new Set(sel);
+              if (e.target.checked) n.add(t.id);
+              else n.delete(t.id);
+              setSel(n);
+            }}
+          />
+        ))}
+      </div>
+      <Field label="Motivo (histórico)">
+        {(p) => <Input {...p} value={reason} onChange={(e) => setReason(e.target.value)} />}
+      </Field>
+    </Dialog>
   );
 }
 
