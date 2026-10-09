@@ -28,7 +28,7 @@ URL_OFICIAL = f"https://cloudbilling.googleapis.com/v1/services/{SERVICO}/skus"
 FONTE = "Cloud Billing Catalog API v1 (preços de lista, USD, sem tributos)"
 REGIAO = "us-east1"
 HORAS_MES = 730
-VERSAO_CACHE = 1
+VERSAO_CACHE = 2  # v2: identificação estrita das SKUs (invalida consultas guardadas antigas)
 
 # Itens da Etapa 1: quantidades definidas AQUI (nunca lidas do cache) e unidade esperada da SKU.
 ITENS = {
@@ -40,28 +40,56 @@ ITENS = {
 }
 PRECO_MAX = 1.0  # sanidade: nenhum preço unitário destes itens passa de US$ 1
 
+# Paginação. A API v1 (services.skus.list) NÃO tem filtro por descrição, região ou SKU — só por
+# serviço (no caminho), moeda e data; a v2beta também só filtra por serviço, e a busca de preço
+# por ID nela exige chave de API (recurso novo, fora do autorizado). Por isso: página do tamanho
+# MÁXIMO oficial (5.000), parada assim que os 5 itens são achados e um teto explícito de SKUs
+# examinadas (o catálogo do Compute Engine tem dezenas de milhares de SKUs).
+TAMANHO_PAGINA = 5000
+MAX_SKUS_EXAMINADAS = 100_000
+MAX_PAGINAS = MAX_SKUS_EXAMINADAS // TAMANHO_PAGINA  # 20
+
+# Regras de identificação (estritas). Todas exigem cobrança "OnDemand" (exclui Spot/Preemptible e
+# compromissos), moeda USD e a unidade de ITENS. Iscas conhecidas que NÃO podem ser aceitas:
+# "E2 Custom Instance …", "Spot Preemptible E2 …", "Regional Balanced PD Capacity …",
+# "Hyperdisk …", snapshots multirregionais/arquivo/instantâneos e IP de VM Spot.
+REGRAS = {
+    "core": {"prefixo": "E2 Instance Core running in Americas", "regiao": "contém"},
+    "ram": {"prefixo": "E2 Instance Ram running in Americas", "regiao": "contém"},
+    "disco": {"prefixo": "Balanced PD Capacity", "regiao": "somente"},
+    "snapshot": {"prefixo": "Storage PD Snapshot", "regiao": "somente"},
+    "ip": {"prefixo": "External IP Charge on a Standard VM", "regiao": "contém-ou-global"},
+}
+# SKU confirmada no anúncio oficial de preços de IPv4 externo (fev/2024). Se o catálogo trouxer
+# outro ID para a mesma descrição, a consulta é recusada (mudança a revisar, nunca presumida).
+SKU_CONHECIDA = {"ip": "C054-7F72-A02E"}
+
 
 def agora() -> datetime:
     return datetime.now(timezone.utc)
 
 
 def identificar(sku: dict) -> str | None:
-    """Qual item da Etapa 1 esta SKU representa (ou None)."""
+    """Qual item da Etapa 1 esta SKU representa (ou None), pelas REGRAS estritas."""
     d = sku.get("description", "")
-    regioes = sku.get("serviceRegions", [])
+    regioes = sku.get("serviceRegions") or []
     if (sku.get("category") or {}).get("usageType") != "OnDemand":
         return None
-    if REGIAO in regioes:
-        if d.startswith("E2 Instance Core running in"):
-            return "core"
-        if d.startswith("E2 Instance Ram running in"):
-            return "ram"
-        if d.startswith("Balanced PD Capacity"):
-            return "disco"
-        if "Snapshot" in d and not any(x in d for x in ("Regional", "Multi", "Archive", "Early", "Instant")):
-            return "snapshot"
-    if d.startswith("External IP Charge on a Standard VM") and ("global" in regioes or REGIAO in regioes):
-        return "ip"
+    for chave, r in REGRAS.items():
+        if not d.startswith(r["prefixo"]):
+            continue
+        if r["regiao"] == "somente" and regioes != [REGIAO]:
+            return None  # p.ex. disco/snapshot de outra região ou multirregional
+        if r["regiao"] == "contém" and REGIAO not in regioes:
+            return None
+        if r["regiao"] == "contém-ou-global" and REGIAO not in regioes and "global" not in regioes:
+            return None
+        if any(x in d for x in ("Archive", "Instant", "Multi-region", "Multiregional")):
+            return None
+        conhecida = SKU_CONHECIDA.get(chave)
+        if conhecida and sku.get("skuId") != conhecida:
+            raise ValueError(f"{chave}: SKU {sku.get('skuId')} difere da oficial conhecida {conhecida}")
+        return chave
     return None
 
 
@@ -124,21 +152,27 @@ def consultar(url: str, token: str, timeout: float, tentativas: int, prazo_total
     """Percorre o catálogo em páginas pequenas e para assim que achar os 5 itens."""
     prazo = time.monotonic() + prazo_total
     achados: dict[str, dict] = {}
-    pagina, vistos, n_paginas = "", set(), 0
+    pagina, vistos, n_paginas, examinadas = "", set(), 0, 0
     while True:
         n_paginas += 1
-        if n_paginas > 60:
-            raise RuntimeError("paginação anormal (mais de 60 páginas)")
+        if n_paginas > MAX_PAGINAS:
+            faltam = sorted(set(ITENS) - set(achados))
+            raise RuntimeError(f"itens não encontrados em {examinadas} SKUs ({MAX_PAGINAS} páginas de "
+                               f"{TAMANHO_PAGINA}, teto do script): {', '.join(faltam)}")
         sep = "&" if "?" in url else "?"
-        dados = buscar_pagina(f"{url}{sep}currencyCode=USD&pageSize=500&pageToken={pagina}",
+        dados = buscar_pagina(f"{url}{sep}currencyCode=USD&pageSize={TAMANHO_PAGINA}&pageToken={pagina}",
                               token, timeout, tentativas, prazo)
         for sku in dados.get("skus", []):
+            examinadas += 1
             chave = identificar(sku)
             if chave and chave not in achados:
                 preco, unidade = preco_unitario(sku)
                 validar_item(chave, preco, unidade)
                 achados[chave] = {"sku_id": sku.get("skuId", "?"), "descricao": sku.get("description", ""),
-                                  "unidade": unidade, "preco_unitario": preco}
+                                  "regioes": sku.get("serviceRegions") or [], "cobranca": "OnDemand",
+                                  "unidade": unidade, "preco_unitario": preco,
+                                  "posicao": examinadas, "pagina": n_paginas}
+        print(f"  página {n_paginas}: {examinadas} SKUs examinadas, {len(achados)}/{len(ITENS)} itens", file=sys.stderr)
         if len(achados) == len(ITENS):
             break
         pagina = dados.get("nextPageToken", "")
@@ -174,7 +208,13 @@ def calcular(registro: dict) -> tuple[list[tuple[str, float, str]], float]:
     for chave, item in ITENS.items():
         a = registro["itens"][chave]
         validar_item(chave, a["preco_unitario"], a["unidade"])
-        linhas.append((item["nome"], a["preco_unitario"] * item["qtd"], f"{a['descricao']} [{a['sku_id']}]"))
+        # Reaplica as regras de identificação ao que foi guardado (descrição, região, SKU conhecida).
+        sku = {"skuId": a.get("sku_id"), "description": a.get("descricao", ""),
+               "serviceRegions": a.get("regioes"), "category": {"usageType": a.get("cobranca")}}
+        if identificar(sku) != chave:
+            raise ValueError(f"{chave}: SKU guardada não atende às regras ({a.get('descricao')!r}, {a.get('regioes')})")
+        linhas.append((item["nome"], a["preco_unitario"] * item["qtd"],
+                       f"{a['descricao']} · {a['sku_id']} · {a['preco_unitario']:.6f}/{a['unidade']}"))
     return linhas, round(sum(v for _, v, _ in linhas), 2)
 
 
@@ -243,9 +283,9 @@ def main() -> int:
     if url != URL_OFICIAL and not teste:
         print("✘ endereço do catálogo diferente do oficial: recusado", file=sys.stderr)
         return 2
-    timeout = float(os.environ.get("CENARIO_PRECOS_TIMEOUT", "20"))
+    timeout = float(os.environ.get("CENARIO_PRECOS_TIMEOUT", "60"))  # páginas de 5.000 SKUs
     tentativas = max(1, min(int(os.environ.get("CENARIO_PRECOS_TENTATIVAS", "3")), 5))
-    prazo_total = float(os.environ.get("CENARIO_PRECOS_PRAZO", "120"))
+    prazo_total = float(os.environ.get("CENARIO_PRECOS_PRAZO", "300"))
     validade_h = min(float(os.environ.get("CENARIO_PRECOS_VALIDADE_H", "24")), 72.0)
     caminho = os.environ.get("CENARIO_PRECOS_CACHE") or os.path.expanduser(
         "~/.cache/cenario-homolog/precos-etapa1.json")

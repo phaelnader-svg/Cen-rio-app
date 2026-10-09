@@ -39,17 +39,18 @@ ok() { echo "✔ $*"; }
 aviso() { echo "⚠ $*"; }
 falha() { echo "✘ $*"; FALHAS=$((FALHAS + 1)); }
 FALHAS=0
+BLOQUEIO_PRECOS=0
 token() { gcloud auth print-access-token 2>/dev/null; } # usado só em cabeçalhos; nunca exibido
 api_get() { curl -fsS -H "Authorization: Bearer $(token)" "$1"; }
 
 verificar() {
   echo "== Conta e projeto"
   local conta; conta="$(gcloud config get-value account 2>/dev/null || true)"
-  [[ -n "$conta" ]] && ok "conta autenticada: $conta" || { falha "nenhuma conta autenticada (gcloud auth login)"; return; }
+  [[ -n "$conta" ]] && ok "conta autenticada: $conta" || { falha "nenhuma conta autenticada (gcloud auth login)"; return 1; }
   local num estado
   num="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)' 2>/dev/null || true)"
   estado="$(gcloud projects describe "$PROJECT" --format='value(lifecycleState)' 2>/dev/null || true)"
-  [[ -n "$num" && "$estado" == ACTIVE ]] && ok "projeto $PROJECT ativo (número $num)" || { falha "projeto $PROJECT inacessível"; return; }
+  [[ -n "$num" && "$estado" == ACTIVE ]] && ok "projeto $PROJECT ativo (número $num)" || { falha "projeto $PROJECT inacessível"; return 1; }
   local ativo; ativo="$(gcloud config get-value project 2>/dev/null || true)"
   [[ "$ativo" == "$PROJECT" ]] || aviso "projeto padrão do gcloud é '${ativo:-nenhum}': este script usa sempre --project=$PROJECT"
 
@@ -115,15 +116,23 @@ EOF
   ok "outros projetos visíveis (NÃO serão tocados: todo comando usa --project=$PROJECT): ${outros:-nenhum}"
 
   echo "== Preços oficiais (catálogo do Cloud Billing, US$, sem tributos)"
-  local rc=0; precos obter || rc=$?
+  local rc=0; BLOQUEIO_PRECOS=0; precos obter || rc=$?
   case "$rc" in
     0) ok "estimativa oficial dentro do limite (US$ $LIMITE_USD)" ;;
     3) falha "estimativa oficial ACIMA do limite autorizado (US$ $LIMITE_USD)" ;;
-    *) aviso "sem estimativa oficial válida agora: o 'criar' ficará bloqueado até uma consulta funcionar" ;;
+    *) BLOQUEIO_PRECOS=1 ;;
   esac
 
-  echo; (( FALHAS == 0 )) && echo "VERIFICAÇÃO: OK" || echo "VERIFICAÇÃO: $FALHAS problema(s) — não prossiga"
-  return "$FALHAS"
+  echo
+  if (( FALHAS > 0 )); then
+    echo "VERIFICAÇÃO: $FALHAS problema(s) — não prossiga"
+    return 1
+  fi
+  if (( BLOQUEIO_PRECOS == 1 )); then
+    echo "VERIFICAÇÃO: BLOQUEADA — sem estimativa oficial de preços válida. O 'criar' NÃO pode prosseguir."
+    return 2
+  fi
+  echo "VERIFICAÇÃO: OK"
 }
 
 # Estimativa com preços oficiais de lista (infra/homolog/gcp/precos_catalogo.py): timeout por
@@ -155,7 +164,7 @@ Será criado (Etapa 1), apenas se ainda não existir:
      $VM-bloqueio (nega TODO o resto de entrada para a VM, prioridade 1000 — neutraliza regras padrão da rede)
   7. VM $VM: e2-small, Debian 12, pd-balanced 20 GB, Shielded VM, OS Login, IP estático,
      conta de serviço exclusiva; script de partida instala Docker e swap (NENHUM serviço do sistema é iniciado)
-  8. Agenda de snapshots $VM-diario (diária, 7 dias) no disco da VM
+  8. Agenda de snapshots $VM-diario (diária, 7 dias, armazenamento regional $REGION) no disco da VM
 NÃO cria: Artifact Registry, Cloud Build, regras 80/443, balanceador, Cloud SQL, DNS.
 EOF
 }
@@ -168,7 +177,9 @@ planejar() {
 
 criar() {
   FALHAS=0
-  verificar || { echo "Verificação com problemas: nada foi criado."; exit 1; }
+  local rv=0; verificar || rv=$?
+  if (( rv == 2 )); then echo "Criação BLOQUEADA: sem estimativa oficial válida. Nada foi criado."; exit 1; fi
+  if (( rv != 0 )); then echo "Verificação com problemas: nada foi criado."; exit 1; fi
   plano
   # Sem nova consulta à rede: usa a consulta oficial que o 'verificar' acabou de fazer (ou validar).
   echo "Custo (preços oficiais do catálogo):"
@@ -226,7 +237,8 @@ criar() {
 
   g compute resource-policies describe "$VM-diario" --region="$REGION" >/dev/null 2>&1 || \
     g compute resource-policies create snapshot-schedule "$VM-diario" --region="$REGION" \
-      --daily-schedule --start-time=06:00 --max-retention-days=7 --on-source-disk-delete=apply-retention-policy
+      --daily-schedule --start-time=06:00 --max-retention-days=7 --on-source-disk-delete=apply-retention-policy \
+      --storage-location="$REGION"
   g compute disks add-resource-policies "$VM" --zone="$ZONE" --resource-policies="$VM-diario" 2>/dev/null || true
   ok "snapshots diários (7 dias)"
   echo "== $(date -u +%FT%TZ) criação concluída. Aguarde ~3 min (instalação do Docker) e rode: verificar-infra"
@@ -242,6 +254,9 @@ verificar_infra() {
     && ok "VM RUNNING, e2-small, conta $sa, Secure Boot, IP $ip" || falha "VM: $st $mt $sa $sb"
   read -r sz tp rp < <(g compute disks describe "$VM" --zone="$ZONE" --format='value(sizeGb,type.basename(),resourcePolicies.len())')
   [[ "$sz" == 20 && "$tp" == pd-balanced && "${rp:-0}" -ge 1 ]] && ok "disco $sz GB $tp com agenda de snapshots" || falha "disco: $sz $tp $rp"
+  local loc_snap; loc_snap="$(g compute resource-policies describe "$VM-diario" --region="$REGION" \
+    --format='value(snapshotSchedulePolicy.snapshotProperties.storageLocations)' 2>/dev/null || true)"
+  [[ "$loc_snap" == *"$REGION"* ]] && ok "snapshots armazenados em $loc_snap (preço regional)" || falha "snapshots fora de $REGION: '$loc_snap'"
   echo "== Firewall que se aplica à VM"
   g compute firewall-rules list --filter="network~default AND disabled=false" \
     --format='table(name,direction,priority,sourceRanges.list(),allowed[].map().firewall_rule().list(),denied[].map().firewall_rule().list(),targetTags.list())'

@@ -69,8 +69,8 @@ páginas de 5.000 SKUs com timeout fixo de 30 s, sem novas tentativas, e o `cria
 catálogo **duas vezes** (no `verificar` e no plano). Além disso, a estimativa acima do limite só
 gerava um aviso — não bloqueava. Agora:
 
-- **Timeout e tentativas:** 20 s por requisição, até 3 tentativas com espera de 2 s e 4 s, prazo
-  total de 120 s; páginas de 500 SKUs e parada assim que os 5 itens são encontrados.
+- **Timeout e tentativas:** 60 s por requisição (páginas de 5.000 SKUs), até 3 tentativas com
+  espera de 2 s e 4 s, prazo total de 300 s; parada assim que os 5 itens são encontrados (§3.2).
 - **Resposta validada:** JSON completo, SKUs exigidas presentes, preço em USD, unidade esperada
   (`h`, `GiBy.h`, `GiBy.mo`) e valor plausível; paginação anormal é recusada. Resposta incompleta
   nunca vira estimativa nem é guardada.
@@ -87,11 +87,49 @@ gerava um aviso — não bloqueava. Agora:
   rede de novo: usa a consulta que o `verificar` acabou de fazer ou validar.
 - **Confirmação manual preservada:** continua sendo preciso digitar `cenariogestao`.
 
+### 3.2 Segunda correção — "paginação anormal (mais de 60 páginas)"
+
+**Causa:** o catálogo de preços do Compute Engine tem dezenas de milhares de SKUs, e a API v1
+(`services.skus.list`) **não oferece filtro** por descrição, região ou SKU — só serviço (no
+caminho), moeda e data. A v2beta também só filtra por serviço, e a busca de preço por ID nela
+exige **chave de API** (um recurso novo, fora do autorizado). A correção anterior tinha reduzido a
+página para 500 SKUs com teto de 60 páginas (30.000 SKUs): os itens estavam além disso. (A versão
+original percorria o catálogo inteiro em páginas de 5.000 — por isso a primeira verificação chegou
+a US$ 19,29 —, mas sem tentativas, e expirou na segunda consulta.)
+
+**Agora:**
+
+- Página do **tamanho máximo oficial (5.000)** e teto explícito de **100.000 SKUs examinadas
+  (20 páginas)** — menos páginas que antes, cobrindo mais; para assim que os 5 itens aparecem
+  e registra em que página/posição cada um foi achado.
+- **Identificação estrita** (todas com cobrança `OnDemand`, moeda USD e unidade conferida):
+
+  | Item              | Regra                                                                                                  | Unidade                    |
+  | ----------------- | ------------------------------------------------------------------------------------------------------ | -------------------------- |
+  | vCPU e2-small     | descrição `E2 Instance Core running in Americas`, regiões incluem `us-east1`                           | `h` (× 0,5 vCPU × 730 h)   |
+  | Memória e2-small  | `E2 Instance Ram running in Americas`, regiões incluem `us-east1`                                      | `GiBy.h` (× 2 GiB × 730 h) |
+  | Disco pd-balanced | começa com `Balanced PD Capacity`, região **somente** `us-east1`                                       | `GiBy.mo` (× 20)           |
+  | IPv4 estático     | `External IP Charge on a Standard VM`, SKU **`C054-7F72-A02E`** (anúncio oficial; outro ID → recusado) | `h` (× 730)                |
+  | Snapshots         | começa com `Storage PD Snapshot`, região **somente** `us-east1` (sem arquivo/instantâneo)              | `GiBy.mo` (× 10)           |
+
+  Iscas recusadas (testadas): `E2 Custom Instance …`, `Spot Preemptible E2 …`, compromissos,
+  `Regional Balanced PD Capacity …`, disco de outra região, `Hyperdisk …`, snapshot
+  multirregional ou de arquivo e IP de VM Spot.
+
+- **Condição de cobrança dos snapshots:** sem local definido, o Google guarda snapshots em local
+  multirregional (outro preço). A agenda agora usa `--storage-location=us-east1`, coerente com o
+  preço regional usado na estimativa; o `verificar-infra` confere.
+- **`verificar` com estado claro:** sem estimativa oficial válida, termina em
+  **"VERIFICAÇÃO: BLOQUEADA"** e sai com erro (antes mostrava "OK"); o `criar` não avança.
+  Corrigido também: falha de conta/projeto no `verificar` agora sai com erro.
+- Cache v2 (as consultas guardadas na versão anterior são recusadas e refeitas); na
+  reutilização, as mesmas regras são reaplicadas às SKUs guardadas.
+
 Testes (sem rede externa; catálogo, `gcloud` e `curl` falsos):
 
 ```bash
-python3 -m unittest discover -s infra/homolog/gcp/testes -v      # 17 testes da consulta e do cache
-bash infra/homolog/gcp/testes/test_etapa1_bloqueio.sh             # 6 cenários do script completo
+python3 -m unittest discover -s infra/homolog/gcp/testes -v      # 20 testes da consulta e do cache
+bash infra/homolog/gcp/testes/test_etapa1_bloqueio.sh             # 8 cenários do script completo
 ```
 
 ## 4. O que a Etapa 1 cria (e o que não cria)

@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, AQUI)
-from catalogo_falso import Catalogo, total_esperado  # noqa: E402
+from catalogo_falso import IP_OFICIAL, Catalogo, total_esperado  # noqa: E402
 
 MODULO = os.path.join(AQUI, "..", "precos_catalogo.py")
 
@@ -67,7 +67,7 @@ class ConsultaOficial(Base):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertAlmostEqual(self.total(r), total_esperado(), places=2)
         self.assertIn("consulta oficial agora", r.stdout)
-        self.assertEqual(c.requisicoes, 2)  # duas páginas
+        self.assertEqual(c.requisicoes, 4)  # para na página 4 (de 5), onde estão os últimos itens
         with open(self.cache, encoding="utf-8") as fh:
             conteudo = fh.read()
         reg = json.loads(conteudo)
@@ -77,6 +77,37 @@ class ConsultaOficial(Base):
         self.assertEqual(validade, timedelta(hours=24))
         self.assertEqual(oct(os.stat(self.cache).st_mode & 0o777), "0o600")
         self.assertNotIn("tok-teste", conteudo)  # token nunca gravado
+
+    def test_paginacao_e_regras_escolhem_as_skus_corretas_e_param_cedo(self):
+        c = self.catalogo("ok")
+        r = self.rodar("obter", c.url)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(set(c.tamanhos_pedidos), {5000})  # tamanho máximo oficial de página
+        with open(self.cache, encoding="utf-8") as fh:
+            itens = json.load(fh)["itens"]
+        self.assertEqual({k: v["sku_id"] for k, v in itens.items()},
+                         {"core": "CORE", "ram": "RAM", "disco": "DISCO", "ip": IP_OFICIAL, "snapshot": "SNAP"})
+        for v in itens.values():  # nenhuma isca; cobrança e regiões registradas
+            self.assertFalse(v["sku_id"].startswith("ISCA"))
+            self.assertEqual(v["cobranca"], "OnDemand")
+            self.assertTrue(v["regioes"] == ["global"] or "us-east1" in v["regioes"], v)
+        self.assertEqual(itens["disco"]["regioes"], ["us-east1"])
+        self.assertEqual(itens["snapshot"]["regioes"], ["us-east1"])
+        self.assertEqual(itens["snapshot"]["pagina"], 4)
+        self.assertIn("página 4", r.stderr)
+
+    def test_teto_de_paginas_sem_os_itens(self):
+        c = self.catalogo("infinito")
+        r = self.rodar("obter", c.url, extra={"CENARIO_PRECOS_PRAZO": "120"})
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertEqual(c.requisicoes, 20)  # teto: 100.000 SKUs / 5.000 por página
+        self.assertIn("itens não encontrados em 100000 SKUs", r.stderr)
+
+    def test_sku_do_ip_com_id_diferente_do_oficial_recusada(self):
+        c = self.catalogo("ip-id-diferente")
+        r = self.rodar("obter", c.url)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("difere da oficial conhecida", r.stderr)
 
     def test_timeout_com_tentativas_limitadas_e_sem_cache_bloqueia(self):
         c = self.catalogo("lento", atraso=3)
@@ -213,6 +244,13 @@ class Reutilizacao(Base):
             ("data no futuro", lambda reg: reg.update(
                 consultado_em=(datetime.now(timezone.utc) + timedelta(days=1)).isoformat()), 2, "futuro"),
             ("origem não oficial", lambda reg: reg.update(fonte_url="https://exemplo.com/precos"), 2, "não oficial"),
+            ("SKU isca no lugar da correta", lambda reg: reg["itens"]["core"].update(
+                descricao="E2 Custom Instance Core running in Americas"), 2, "não atende às regras"),
+            ("disco multirregional", lambda reg: reg["itens"]["disco"].update(
+                regioes=["us-east1", "us-central1"]), 2, "não atende às regras"),
+            ("cobrança Spot", lambda reg: reg["itens"]["ram"].update(cobranca="Preemptible"), 2,
+             "não atende às regras"),
+            ("versão antiga do cache", lambda reg: reg.update(versao=1), 2, "versão"),
             ("JSON corrompido", None, 2, "inválida"),
         ]
         for nome, f, codigo, trecho in casos:

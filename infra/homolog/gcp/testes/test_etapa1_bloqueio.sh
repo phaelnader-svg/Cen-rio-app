@@ -5,6 +5,8 @@
 #   B. com o catálogo fora do ar, reutiliza a consulta oficial recente e chega à confirmação manual;
 #   C. com estimativa acima do limite → bloqueia;
 #   D. com consulta oficial normal → chega à confirmação manual (que continua obrigatória);
+#   F. catálogo sem os itens até o teto de páginas → "verificar" BLOQUEADA e "criar" bloqueado;
+#   G. consulta normal → "verificar" OK;
 # e que, em nenhum caso, chama comandos que criam/alteram recursos.
 # Executar: bash infra/homolog/gcp/testes/test_etapa1_bloqueio.sh
 set -euo pipefail
@@ -123,6 +125,25 @@ export CENARIO_PRECOS_CACHE="$TMP/cacheE/precos.json"; echo truncado > "$MODO"
 roda "$TMP/e.out" "" planejar
 afirma "$TMP/e.out" "Sem estimativa válida"
 nega "$TMP/e.out" "TOTAL_USD="
+sem_alteracoes
+
+echo "F. catálogo sem os itens até o teto de páginas → 'verificar' BLOQUEADA (não 'OK') e 'criar' bloqueado"
+export CENARIO_PRECOS_CACHE="$TMP/cacheF/precos.json"; echo infinito > "$MODO"
+roda "$TMP/f1.out" "" verificar
+afirma "$TMP/f1.out" "itens não encontrados em 100000 SKUs"
+afirma "$TMP/f1.out" "VERIFICAÇÃO: BLOQUEADA"
+nega "$TMP/f1.out" "VERIFICAÇÃO: OK"
+[[ "$(cat "$TMP/f1.out.rc")" != 0 ]] && echo "  ✔ 'verificar' sai com erro" || { echo "  ✘ 'verificar' saiu com 0"; FALHAS=$((FALHAS + 1)); }
+roda "$TMP/f2.out" cenariogestao criar
+afirma "$TMP/f2.out" "Criação BLOQUEADA: sem estimativa oficial válida"
+nega "$TMP/f2.out" "Para criar, digite"
+sem_alteracoes
+
+echo "G. 'verificar' com consulta normal → OK e sai com 0"
+export CENARIO_PRECOS_CACHE="$TMP/cacheG/precos.json"; echo ok > "$MODO"
+roda "$TMP/g.out" "" verificar
+afirma "$TMP/g.out" "VERIFICAÇÃO: OK"
+[[ "$(cat "$TMP/g.out.rc")" == 0 ]] && echo "  ✔ 'verificar' sai com 0" || { echo "  ✘ 'verificar' saiu com $(cat "$TMP/g.out.rc")"; FALHAS=$((FALHAS + 1)); }
 sem_alteracoes
 
 echo; if (( FALHAS == 0 )); then echo "RESULTADO: todos os cenários OK"; else echo "RESULTADO: $FALHAS falha(s)"; exit 1; fi
