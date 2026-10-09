@@ -422,6 +422,7 @@ export function TaskCard({
               {t.pauseImpediment ? ' (impedimento)' : ''}
             </span>
           )}
+          <PieceOwnerInfo t={t} />
           <SupportInfo t={t} />
           <IssueInfo t={t} />
           <QualityInfo t={t} />
@@ -430,6 +431,23 @@ export function TaskCard({
       </button>
       {!compact && <QuickAction t={t} />}
     </div>
+  );
+}
+
+/**
+ * Evolução Fase 4: tapeceiro titular da peça × quem executa a etapa. Quem prepara/desmonta a
+ * peça de outro titular vê de quem é a peça; o titular vê que a tapeçaria é dele. Só exibição.
+ */
+export function PieceOwnerInfo({ t }: { t: ProductionTaskDto }) {
+  const owner = t.serviceOrderItem?.upholsterer;
+  if (!owner) return null;
+  const mine = t.assignee?.userId === owner.userId;
+  return (
+    <span className="mt-2 block text-sm text-ink-soft" data-testid="piece-owner">
+      {mine && t.stepClass === 'TAPECARIA'
+        ? 'Você é o tapeceiro titular desta peça.'
+        : `Tapeceiro titular da peça: ${owner.displayName}${mine ? '' : ' — esta etapa é de apoio.'}`}
+    </span>
   );
 }
 

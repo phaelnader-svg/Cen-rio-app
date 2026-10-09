@@ -26,8 +26,9 @@ import { LogisticsJobs } from './logistics';
 import { MyValues } from './my-values';
 import { DepartScreen, PresenceCard } from './presence';
 import { InspectionDetail, MyInspections, useMyInspectionCount } from './quality';
+import { MyQueueAll, MyWeek } from './my-week';
+import { useMyQueue } from '@/lib/production';
 import {
-  MyDay,
   MyTaskDetail,
   NotificationsButton,
   NotificationsInbox,
@@ -46,7 +47,8 @@ type Screen =
   | 'depart'
   | 'inspections'
   | 'inspection'
-  | 'values';
+  | 'values'
+  | 'queue';
 
 function useClock(timezone: string) {
   // Renderizado apenas no cliente (após autenticação), sem risco de divergência de hidratação.
@@ -97,6 +99,9 @@ export function TabletHome({ me }: { me: MeDto }) {
   const attendance = useMyAttendance(canPresence);
   const openCount = useMyOpenCount(canMeasure);
   const todayCount = useMyTodayCount(canExecute);
+  // Evolução Fase 4: com fila semanal publicada, a tela inicial vira "Minha semana".
+  const queue = useMyQueue(canExecute);
+  const weekly = Boolean(queue.data && (queue.data.total > 0 || queue.data.counts.done > 0));
   const [measurementId, setMeasurementId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [taskFrom, setTaskFrom] = useState<Screen>('home');
@@ -188,8 +193,8 @@ export function TabletHome({ me }: { me: MeDto }) {
         ) : screen === 'home' ? (
           <>
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">
-              {canExecute ? 'Meu dia' : 'Início'}
-              {canExecute && todayCount !== undefined && (
+              {canExecute ? (weekly ? 'Minha semana' : 'Meu dia') : 'Início'}
+              {canExecute && !weekly && todayCount !== undefined && (
                 <span className="ml-3 align-middle text-base font-normal text-ink-muted">
                   <span data-testid="tasks-count">{todayCount}</span> tarefa(s) para hoje
                 </span>
@@ -206,8 +211,12 @@ export function TabletHome({ me }: { me: MeDto }) {
               </div>
             )}
             {canExecute && (
-              <MyDay
+              <MyWeek
                 onOpen={(id) => openTask(id, 'home')}
+                onAll={() => {
+                  setScreen('queue');
+                  window.scrollTo({ top: 0 });
+                }}
                 canAskHelp={canAskHelp}
                 reportUserId={reportUserId}
               />
@@ -281,10 +290,22 @@ export function TabletHome({ me }: { me: MeDto }) {
               )}
             </ul>
           </>
+        ) : screen === 'queue' ? (
+          <>
+            {back('Voltar à minha semana', 'home')}
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Todas as minhas tarefas</h1>
+            <MyQueueAll onOpen={(id) => openTask(id, 'queue')} />
+          </>
         ) : screen === 'task' && taskId ? (
           <>
             {back(
-              taskFrom === 'notifications' ? 'Voltar aos avisos' : 'Voltar ao Meu dia',
+              taskFrom === 'notifications'
+                ? 'Voltar aos avisos'
+                : taskFrom === 'queue'
+                  ? 'Voltar à fila completa'
+                  : weekly
+                    ? 'Voltar à minha semana'
+                    : 'Voltar ao Meu dia',
               taskFrom,
             )}
             <MyTaskDetail
