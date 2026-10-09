@@ -66,6 +66,9 @@ export const EVENT_TYPES = {
   PRODUCTION_QUEUE_REORDERED: 'production.queue_reordered',
   /** Evolução Fase 2: pendências transferidas para outra semana pelo gestor. */
   PRODUCTION_TASKS_CARRIED: 'production.tasks_carried',
+  // Evolução Fase 3 — distribuição automática e titular por peça.
+  PRODUCTION_DISTRIBUTION_UPDATED: 'production.distribution_updated',
+  PRODUCTION_PIECE_OWNER_CHANGED: 'production.piece_owner_changed',
   PRODUCTION_TASK_ASSIGNED: 'production.task_assigned',
   PRODUCTION_TASK_RELEASED: 'production.task_released',
   PRODUCTION_TASK_BLOCKED: 'production.task_blocked',

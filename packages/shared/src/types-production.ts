@@ -1,6 +1,7 @@
 import type { IssueKind } from './issue-domain';
 import type { PieceType, Priority } from './domain';
 import type { MaterialReadiness } from './purchasing-domain';
+import type { DistributionPendency, OwnerChangeKind, StepClass } from './distribution-domain';
 import type {
   CompletionRequirement,
   NotificationKind,
@@ -30,6 +31,8 @@ export interface ProductionTemplateDto {
     optional: boolean;
     dependsOn: number[];
     completionRequirement: CompletionRequirement;
+    /** Evolução Fase 3: null = ambígua (pendência de revisão). */
+    stepClass: StepClass | null;
   }[];
   version: number;
 }
@@ -281,4 +284,45 @@ export interface NotificationDto {
   serviceOrderId: string | null;
   createdAt: string;
   readAt: string | null;
+}
+
+// ─────────────────────────── Evolução Fase 3: distribuição ───────────────────────────
+
+export interface DistributionPendencyDto {
+  kind: DistributionPendency;
+  message: string;
+  taskIds: string[];
+}
+export interface PieceDistributionDto {
+  item: { id: string; code: string; pieceType: string; description: string };
+  serviceOrder: { id: string; code: string };
+  needsUpholstery: boolean;
+  upholsterer: { userId: string; displayName: string } | null;
+  template: { id: string; name: string; version: number } | null;
+  tasks: {
+    id: string;
+    code: string;
+    title: string;
+    stepClass: StepClass | null;
+    status: string;
+    assignee: { userId: string; displayName: string } | null;
+    planId: string | null;
+  }[];
+  inspector: { userId: string; displayName: string } | null;
+  pendencies: DistributionPendencyDto[];
+  ownerChanges: {
+    kind: OwnerChangeKind;
+    from: string | null;
+    to: string;
+    reason: string | null;
+    financialReviewRequired: boolean;
+    createdBy: string | null;
+    createdAt: string;
+  }[];
+}
+export interface PlanDistributionDto {
+  planId: string;
+  mode: string;
+  pieces: PieceDistributionDto[];
+  pendencyCount: number;
 }

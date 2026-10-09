@@ -1,3 +1,4 @@
+import { STEP_CLASSES, stepClassProblem } from '../distribution-domain';
 import { z } from 'zod';
 import { PIECE_TYPES, PRIORITIES } from '../domain';
 import {
@@ -37,6 +38,8 @@ export const templateStepSchema = z.object({
   /** Posições (1, 2, …) das etapas anteriores de que esta depende. */
   dependsOn: z.array(z.number().int().min(1)).max(20).default([]),
   completionRequirement: z.enum(COMPLETION_REQUIREMENTS).default('NENHUM'),
+  /** Evolução Fase 3: classe explícita; ausente = derivada de atividade + papel (ou nula). */
+  stepClass: z.enum(STEP_CLASSES).nullable().optional(),
 });
 
 export const templateSchema = z
@@ -48,6 +51,8 @@ export const templateSchema = z
   })
   .superRefine((v, ctx) => {
     v.steps.forEach((s, i) => {
+      const problem = s.stepClass ? stepClassProblem(s.activity, s.stepClass) : null;
+      if (problem) ctx.addIssue({ code: 'custom', path: ['steps', i, 'stepClass'], message: problem });
       if (s.dependsOn.some((d) => d >= i + 1)) {
         ctx.addIssue({
           code: 'custom',
@@ -93,6 +98,38 @@ export const addPlanItemSchema = z.object({
   /** Gera as tarefas a partir dos modelos de cada peça (padrão: sim). */
   generate: z.boolean().default(true),
   reason: optionalText(500),
+  /**
+   * Evolução Fase 3 (planos em fila): titular e modelo por peça. Peça omitida usa o titular já
+   * definido, ou o responsável principal informado acima como proposta; sem nenhum = pendência.
+   */
+  pieces: z
+    .array(
+      z.object({
+        serviceOrderItemId: idSchema,
+        upholstererUserId: idSchema.nullable().optional(),
+        templateId: idSchema.nullable().optional(),
+      }),
+    )
+    .max(50)
+    .default([]),
+});
+
+/** Definir ou substituir o tapeceiro titular de uma peça (CAS pelo titular atual). */
+export const setUpholstererSchema = z.object({
+  userId: idSchema,
+  /** Titular que a tela mostrava (null = nenhum). Divergência = 409. */
+  expectedUserId: idSchema.nullable(),
+  reason: optionalText(500),
+  /** Substituição exige confirmação explícita. */
+  confirm: z.boolean().default(false),
+});
+export type SetUpholstererInput = z.input<typeof setUpholstererSchema>;
+
+/** Reprocessar a distribuição da OS no plano (completa o que falta; nunca troca titular). */
+export const distributeSchema = z.object({
+  reason: optionalText(500),
+  /** Modelo alterado e nada iniciado: substituir as tarefas antigas (com motivo). */
+  regenerate: z.boolean().default(false),
 });
 
 export const updatePlanItemSchema = z.object({
