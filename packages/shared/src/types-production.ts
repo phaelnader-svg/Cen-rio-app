@@ -5,6 +5,7 @@ import type {
   CompletionRequirement,
   NotificationKind,
   PauseReason,
+  PlanMode,
   PlanStatus,
   ProductionActivity,
   ReleaseBlocker,
@@ -53,7 +54,7 @@ export interface ProductionTaskDto {
   id: string;
   number: number;
   code: string;
-  plan: { id: string; weekStart: string; status: PlanStatus } | null;
+  plan: { id: string; weekStart: string; status: PlanStatus; mode: PlanMode } | null;
   serviceOrder: { id: string; code: string; promisedDate: string | null };
   customerName: string;
   serviceOrderItem: { id: string; code: string; description: string } | null;
@@ -63,6 +64,10 @@ export interface ProductionTaskDto {
   assignee: { userId: string; displayName: string; color: string } | null;
   priority: Priority;
   sequence: number;
+  /** Evolução Fase 2: posição na fila definida pelo gestor (null = ordem natural). */
+  queuePosition: number | null;
+  /** Semana de origem, quando a pendência foi transferida. */
+  carriedFromWeek: string | null;
   scheduledAt: string | null;
   scheduledDate: string | null;
   scheduledTime: string | null;
@@ -222,6 +227,11 @@ export interface ProductionPlanDto {
   weekStart: string;
   weekEnd: string;
   status: PlanStatus;
+  /** Evolução Fase 2: LEGADO (por horário) ou FILA_SEMANAL. */
+  mode: PlanMode;
+  /** A semana já terminou (no fuso da empresa) e ainda há pendências. */
+  weekEnded: boolean;
+  pendingCount: number;
   revision: number;
   notes: string | null;
   createdBy: string | null;
@@ -232,6 +242,24 @@ export interface ProductionPlanDto {
   conflicts: PlanConflictDto[];
   revisions: PlanRevisionDto[];
   version: number;
+}
+
+/** Evolução Fase 2: fila do funcionário (ordem da fila, independente do estado). */
+export interface QueueEntryDto {
+  /** 1 = primeira da fila. Não muda quando a tarefa fica bloqueada. */
+  position: number;
+  executable: boolean;
+  task: ProductionTaskDto;
+}
+export interface MyQueueDto {
+  /** Em execução ou, se não houver, a primeira pausada. */
+  current: ProductionTaskDto | null;
+  /** Primeira tarefa LIBERADA na ordem da fila (nunca é iniciada automaticamente). */
+  next: ProductionTaskDto | null;
+  /** Quantas tarefas à frente da "próxima" estão bloqueadas (mantêm o lugar). */
+  blockedAhead: number;
+  items: QueueEntryDto[];
+  total: number;
 }
 
 export interface PlanCandidateDto {

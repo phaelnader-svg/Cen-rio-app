@@ -3,6 +3,7 @@ import { PIECE_TYPES, PRIORITIES } from '../domain';
 import {
   COMPLETION_REQUIREMENTS,
   PAUSE_REASONS,
+  PLAN_MODES,
   PLANNABLE_ACTIVITIES,
   PRODUCTION_ACTIVITIES,
   TASK_ROLES,
@@ -61,7 +62,29 @@ export const updateTemplateSchema = z.object({ version: versionSchema }).and(tem
 
 // ─────────────────────────── Planejamento ───────────────────────────
 
-export const createPlanSchema = z.object({ weekStart: dateOnly, notes: optionalText(1000) });
+/** Evolução Fase 2 (D-1): planos novos nascem em FILA_SEMANAL; LEGADO só se pedido. */
+export const createPlanSchema = z.object({
+  weekStart: dateOnly,
+  notes: optionalText(1000),
+  mode: z.enum(PLAN_MODES).default('FILA_SEMANAL'),
+});
+
+/** Reordenação da fila de um funcionário no plano: lista completa das tarefas em aberto. */
+export const reorderQueueSchema = z.object({
+  userId: idSchema,
+  taskIds: z.array(idSchema).min(1).max(500),
+  version: versionSchema,
+  reason: optionalText(500),
+});
+export type ReorderQueueInput = z.input<typeof reorderQueueSchema>;
+
+/** Transferência controlada de pendências para outra semana (nunca automática). */
+export const carryOverSchema = z.object({
+  toPlanId: idSchema,
+  taskIds: z.array(idSchema).min(1).max(500),
+  reason: reason(),
+});
+export type CarryOverInput = z.input<typeof carryOverSchema>;
 
 export const addPlanItemSchema = z.object({
   serviceOrderId: idSchema,

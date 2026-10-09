@@ -62,6 +62,10 @@ export const EVENT_TYPES = {
   PRODUCTION_PLAN_UPDATED: 'production.plan_updated',
   PRODUCTION_PLAN_PUBLISHED: 'production.plan_published',
   PRODUCTION_PLAN_REVISED: 'production.plan_revised',
+  /** Evolução Fase 2: ordem da fila de um funcionário alterada pelo gestor (sem valores). */
+  PRODUCTION_QUEUE_REORDERED: 'production.queue_reordered',
+  /** Evolução Fase 2: pendências transferidas para outra semana pelo gestor. */
+  PRODUCTION_TASKS_CARRIED: 'production.tasks_carried',
   PRODUCTION_TASK_ASSIGNED: 'production.task_assigned',
   PRODUCTION_TASK_RELEASED: 'production.task_released',
   PRODUCTION_TASK_BLOCKED: 'production.task_blocked',

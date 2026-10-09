@@ -253,6 +253,28 @@ export const RELEASE_BLOCKERS = [
   'OCORRENCIA',
 ] as const;
 export type ReleaseBlocker = (typeof RELEASE_BLOCKERS)[number];
+/**
+ * Impedimentos que, sozinhos, ainda permitem a redistribuição simples numa ausência confirmada
+ * (Fase 8). Esperar o horário não é um impedimento: é o status PROGRAMADA, sem bloqueadores —
+ * por isso a lista é tipada (um código inexistente, como o antigo 'HORARIO', não compila).
+ */
+export const REASSIGNABLE_WAITING_BLOCKERS: readonly ReleaseBlocker[] = ['DEPENDENCIAS'];
+export const onlyReassignableBlockers = (blockers: readonly string[]) =>
+  blockers.every((b) => (REASSIGNABLE_WAITING_BLOCKERS as readonly string[]).includes(b));
+
+// ─────────────────────────── Modo do planejamento (Evolução, Fase 2) ───────────────────────────
+
+/**
+ * LEGADO: programação por horário (planos anteriores; horário obrigatório e horário futuro
+ * impede o início). FILA_SEMANAL: fila contínua por funcionário — sem horário como condição.
+ */
+export const PLAN_MODES = ['LEGADO', 'FILA_SEMANAL'] as const;
+export type PlanMode = (typeof PLAN_MODES)[number];
+export const PLAN_MODE_LABEL: Record<PlanMode, string> = {
+  LEGADO: 'Por horário (anterior)',
+  FILA_SEMANAL: 'Fila semanal',
+};
+
 export const RELEASE_BLOCKER_LABEL: Record<ReleaseBlocker, string> = {
   OS_INATIVA: 'A OS não está ativa',
   PECA_NAO_RECEBIDA: 'Peça ainda não recebida na oficina',
@@ -278,6 +300,8 @@ export interface ReleaseInput {
   openIssue?: boolean;
   scheduledAt: Date | null;
   now: Date;
+  /** Modo do planejamento da tarefa (sem plano ou ausente = LEGADO). */
+  mode?: PlanMode | null;
 }
 
 /**
@@ -299,6 +323,8 @@ export function evaluateRelease(i: ReleaseInput): {
   if (i.manuallyBlocked) blockers.push('BLOQUEIO');
   if (i.openIssue) blockers.push('OCORRENCIA');
   if (blockers.length) return { status: 'BLOQUEADA', blockers };
+  // Fila semanal: o horário não é pré-condição (nem ausente, nem futuro).
+  if (i.mode === 'FILA_SEMANAL') return { status: 'LIBERADA', blockers };
   if (!i.scheduledAt || i.scheduledAt.getTime() > i.now.getTime()) {
     return { status: 'PROGRAMADA', blockers };
   }
@@ -388,16 +414,73 @@ const STATUS_ORDER: Record<TaskStatus, number> = {
   CANCELADA: 7,
 };
 const PRIORITY_ORDER: Record<string, number> = { URGENTE: 0, ALTA: 1, NORMAL: 2, BAIXA: 3 };
-export function compareTasks(
-  a: { status: TaskStatus; priority: string; scheduledAt: string | null; sequence: number },
-  b: { status: TaskStatus; priority: string; scheduledAt: string | null; sequence: number },
-): number {
+type Comparable = {
+  status: TaskStatus;
+  priority: string;
+  scheduledAt: string | null;
+  sequence: number;
+  /** Fila semanal: posição do gestor (nula = depois das posicionadas, na ordem natural). */
+  queuePosition?: number | null;
+};
+const posOf = (t: Comparable) => t.queuePosition ?? Number.MAX_SAFE_INTEGER;
+const hasPos = (t: Comparable) => typeof t.queuePosition === 'number';
+export function compareTasks(a: Comparable, b: Comparable): number {
   return (
     STATUS_ORDER[a.status] - STATUS_ORDER[b.status] ||
     (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9) ||
+    // Só pesa quando o gestor posicionou alguma: tarefas legadas (sem posição) não mudam de ordem.
+    (hasPos(a) || hasPos(b) ? posOf(a) - posOf(b) : 0) ||
     (a.scheduledAt ?? '').localeCompare(b.scheduledAt ?? '') ||
     a.sequence - b.sequence
   );
+}
+
+/**
+ * Ordem da FILA (independe do estado): semana do plano, faixa de prioridade, posição do gestor,
+ * sequência e número. Uma tarefa bloqueada não perde o lugar; a "próxima executável" é a
+ * primeira liberada nesta ordem — nada é regravado para encontrá-la.
+ */
+export function compareQueue(
+  a: {
+    weekStart: string | null;
+    priority: string;
+    queuePosition: number | null;
+    sequence: number;
+    number: number;
+  },
+  b: {
+    weekStart: string | null;
+    priority: string;
+    queuePosition: number | null;
+    sequence: number;
+    number: number;
+  },
+): number {
+  return (
+    (a.weekStart ?? '').localeCompare(b.weekStart ?? '') ||
+    (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9) ||
+    (a.queuePosition ?? Number.MAX_SAFE_INTEGER) - (b.queuePosition ?? Number.MAX_SAFE_INTEGER) ||
+    a.sequence - b.sequence ||
+    a.number - b.number
+  );
+}
+
+/** Uma reordenação respeita as faixas de prioridade (para mudar de faixa, altere a prioridade). */
+export function queueOrderProblem(
+  ordered: { id: string; priority: string; dependsOn: string[] }[],
+): string | null {
+  const pos = new Map(ordered.map((t, i) => [t.id, i]));
+  for (let i = 1; i < ordered.length; i++) {
+    if (
+      (PRIORITY_ORDER[ordered[i]!.priority] ?? 9) < (PRIORITY_ORDER[ordered[i - 1]!.priority] ?? 9)
+    )
+      return 'A ordem precisa respeitar as faixas de prioridade: altere a prioridade para mover a tarefa de faixa.';
+  }
+  for (const t of ordered)
+    for (const d of t.dependsOn)
+      if (pos.has(d) && pos.get(d)! > pos.get(t.id)!)
+        return 'Uma tarefa não pode ficar antes de outra da qual depende.';
+  return null;
 }
 
 /** Modelos iniciais (os mesmos criados pela migration; o seed os recria se não houver nenhum). */

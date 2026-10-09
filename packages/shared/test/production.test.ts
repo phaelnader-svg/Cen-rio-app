@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  compareQueue,
   compareTasks,
+  createPlanSchema,
   evaluateRelease,
+  onlyReassignableBlockers,
+  queueOrderProblem,
   findCycle,
   mondayOf,
   templateSchema,
@@ -94,5 +98,113 @@ describe('Datas e ordenação', () => {
       'LIBERADA/NORMAL',
       'BLOQUEADA/URGENTE',
     ]);
+  });
+});
+
+describe('Evolução Fase 2 — fila semanal', () => {
+  it('liberação por modo: LEGADO exige horário; FILA ignora horário mas mantém os bloqueios', () => {
+    const noTime = { ...base, scheduledAt: null };
+    const future = { ...base, now: new Date('2026-10-08T11:00:00Z') };
+    expect(evaluateRelease(noTime).status).toBe('PROGRAMADA');
+    expect(evaluateRelease({ ...noTime, mode: 'LEGADO' }).status).toBe('PROGRAMADA');
+    expect(evaluateRelease(future).status).toBe('PROGRAMADA');
+    expect(evaluateRelease({ ...noTime, mode: 'FILA_SEMANAL' })).toEqual({
+      status: 'LIBERADA',
+      blockers: [],
+    });
+    expect(evaluateRelease({ ...future, mode: 'FILA_SEMANAL' }).status).toBe('LIBERADA');
+    expect(
+      evaluateRelease({
+        ...noTime,
+        mode: 'FILA_SEMANAL',
+        dependenciesDone: false,
+        materialsReady: false,
+      }),
+    ).toEqual({ status: 'BLOQUEADA', blockers: ['DEPENDENCIAS', 'MATERIAIS'] });
+  });
+
+  it('planos novos nascem em fila; LEGADO só se pedido', () => {
+    expect(createPlanSchema.parse({ weekStart: '2026-10-12' }).mode).toBe('FILA_SEMANAL');
+    expect(createPlanSchema.parse({ weekStart: '2026-10-12', mode: 'LEGADO' }).mode).toBe('LEGADO');
+  });
+
+  it('ordem da fila: semana, prioridade, posição do gestor, sequência e número (determinística)', () => {
+    const t = (id: string, o: Partial<Parameters<typeof compareQueue>[0]>) => ({
+      id,
+      weekStart: '2026-10-12',
+      priority: 'NORMAL',
+      queuePosition: null as number | null,
+      sequence: 100,
+      number: 1,
+      ...o,
+    });
+    const list = [
+      t('seq2', { sequence: 200, number: 5 }),
+      t('num2', { number: 2 }),
+      t('pos2', { queuePosition: 2, number: 9 }),
+      t('urg', { priority: 'URGENTE', number: 8 }),
+      t('pos1', { queuePosition: 1, number: 7 }),
+      t('anterior', { weekStart: '2026-10-05', priority: 'BAIXA', number: 99 }),
+      t('num1', { number: 1 }),
+    ];
+    expect(list.sort(compareQueue).map((x) => x.id)).toEqual([
+      'anterior',
+      'urg',
+      'pos1',
+      'pos2',
+      'num1',
+      'num2',
+      'seq2',
+    ]);
+  });
+
+  it('posição só pesa quando definida: ordem legada (sem posição) inalterada', () => {
+    const a = {
+      status: 'LIBERADA' as const,
+      priority: 'NORMAL',
+      scheduledAt: '2026-10-08T10:00:00Z',
+      sequence: 2,
+    };
+    const b = { ...a, scheduledAt: '2026-10-08T09:00:00Z', sequence: 1 };
+    expect([a, b].sort(compareTasks)).toEqual([b, a]);
+    const an = { ...a, queuePosition: null };
+    const bn = { ...b, queuePosition: null };
+    expect([an, bn].sort(compareTasks)).toEqual([bn, an]);
+    // Com posição definida, ela vence o horário.
+    expect(
+      [
+        { ...b, queuePosition: 2 },
+        { ...a, queuePosition: 1 },
+      ].sort(compareTasks)[0],
+    ).toMatchObject({
+      queuePosition: 1,
+    });
+  });
+
+  it('reordenação respeita faixas de prioridade e dependências', () => {
+    expect(
+      queueOrderProblem([
+        { id: 'a', priority: 'URGENTE', dependsOn: [] },
+        { id: 'b', priority: 'NORMAL', dependsOn: ['a'] },
+      ]),
+    ).toBeNull();
+    expect(
+      queueOrderProblem([
+        { id: 'b', priority: 'NORMAL', dependsOn: [] },
+        { id: 'a', priority: 'URGENTE', dependsOn: [] },
+      ]),
+    ).toMatch(/prioridade/);
+    expect(
+      queueOrderProblem([
+        { id: 'b', priority: 'NORMAL', dependsOn: ['a'] },
+        { id: 'a', priority: 'NORMAL', dependsOn: [] },
+      ]),
+    ).toMatch(/depende/);
+  });
+
+  it('defeito HORARIO corrigido: só DEPENDENCIAS permite a redistribuição simples', () => {
+    expect(onlyReassignableBlockers(['DEPENDENCIAS'])).toBe(true);
+    expect(onlyReassignableBlockers(['HORARIO'])).toBe(false);
+    expect(onlyReassignableBlockers(['MATERIAIS'])).toBe(false);
   });
 });
