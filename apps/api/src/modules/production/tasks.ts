@@ -724,7 +724,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
   /** Minhas tarefas: as do dia (e atrasadas/em andamento), em ordem de prioridade; e as próximas. */
   app.get('/api/v1/production-tasks/mine', { config: { access: EXECUTE } }, async (request) => {
     const { timezone } = await company(prisma);
-    const today = localParts(clockNow(), timezone).date;
+    // Exibição: dia real (o relógio de teste vale para liberação e início, não para a agenda).
+    const today = localParts(new Date(), timezone).date;
     const endOfToday = zonedDateTime(today, '23:59', timezone);
     const startOfToday = zonedDateTime(today, '00:00', timezone);
     const rows = await prisma.productionTask.findMany({

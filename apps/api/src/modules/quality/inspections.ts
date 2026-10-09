@@ -14,7 +14,7 @@ import {
   type Priority,
   type TaskStatus,
 } from '@cenario/shared';
-import { now as clockNow } from '../../core/clock';
+import { immediateAt } from '../../core/clock';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
@@ -605,7 +605,7 @@ export async function rejectInspection(
       assigneeUserId,
       priority,
       sequence: (base?.sequence ?? 0) + 1,
-      scheduledAt: clockNow(),
+      scheduledAt: immediateAt(),
       dueDate,
       instructions: [
         `Reprovada na inspeção ${code}: ${input.reason}`,

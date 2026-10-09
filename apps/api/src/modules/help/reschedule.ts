@@ -31,6 +31,7 @@ import {
 } from '../production/common';
 import { assertWorker, reviseIfPublishedBy } from '../production/plans';
 import { loadQueue } from '../production/queue';
+import { immediateAt } from '../../core/clock';
 import {
   HELP_AUDIENCE,
   SYSTEM,
@@ -250,7 +251,7 @@ export async function suggestAlternative(
     ),
   )[0];
   if (!next) return null;
-  const now = clock();
+  const now = immediateAt();
   const reason = `Automático: ${taskCode(blocked.number)} ficou bloqueada; ${taskCode(next.number)} antecipada para agora (mesmo funcionário, sem bloqueios, prazo preservado).`;
   const r = await changeTask(
     tx,

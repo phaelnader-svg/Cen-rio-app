@@ -9,3 +9,14 @@ export const now = () => clockFn();
 export function setClock(fn?: () => Date) {
   clockFn = fn ?? (() => new Date());
 }
+
+/**
+ * Carimbo de tarefas "para já" (apoio, resolução, correção, embalagem, antecipação): nunca no
+ * futuro do relógio operacional nem do real. Em produção os dois coincidem; com o relógio de
+ * teste adiantado, a tarefa fica na data real (como antes) e continua liberada.
+ */
+export function immediateAt() {
+  const real = new Date();
+  const c = clockFn();
+  return c.getTime() < real.getTime() ? c : real;
+}

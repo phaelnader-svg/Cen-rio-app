@@ -9,7 +9,7 @@ import {
   type PackagingStatus,
   type Protection,
 } from '@cenario/shared';
-import { now as clockNow } from '../../core/clock';
+import { immediateAt } from '../../core/clock';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
@@ -124,7 +124,7 @@ async function newPackagingTask(
       assigneeUserId,
       priority: item.serviceOrder.priority,
       sequence: (base?.sequence ?? 0) + 2,
-      scheduledAt: clockNow(),
+      scheduledAt: immediateAt(),
       instructions: `Aprovada na inspeção ${inspectionCode(inspection.number)}. Ao concluir, registre a proteção usada e o local onde a peça ficou.`,
       requiresMaterials: false,
       inspectionId: inspection.id,
