@@ -107,7 +107,7 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await expect(labor).toBeHidden();
     const mo = page.getByTestId('fin-labor').getByRole('row').filter({ hasText: so.code });
     await expect(mo).toContainText('R$ 320,00');
-    await expect(mo).toContainText('Previsto');
+    await expect(mo).toContainText(/previsto/i);
     await evidence(page, '02-producao-combinada');
 
     // ── Despesa operacional e painel (competência × caixa) ──
@@ -158,10 +158,13 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await grant(page, RICARDO, 'financeiro.producao_propria');
     await rt.reload();
     await rt.getByTestId('tile-values').click();
+    // Evolução Fase 5: tablet compartilhado → PIN redigitado a cada abertura.
+    await rt.getByTestId('my-values-pin').fill('482915');
+    await rt.getByTestId('my-values-unlock').click();
     const values = rt.getByTestId('my-values');
     await expect(values).toContainText('R$ 320,00');
     await expect(values).toContainText(so.code);
-    await expect(values).toContainText('Previsto');
+    await expect(values).toContainText(/previsto/i);
     // Nunca o valor cobrado do cliente, recebimentos ou o financeiro geral.
     await expect(values).not.toContainText('1.000,00');
     await expect(values).not.toContainText('200,00');
