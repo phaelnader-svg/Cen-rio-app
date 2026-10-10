@@ -157,7 +157,7 @@ export async function payPayable(
   if (p.status === 'CANCELADO') throw Errors.business('Conta cancelada.');
   const problem = settlementProblem(p.amountCents, p.paidCents, input.amountCents);
   if (problem) throw Errors.business(problem);
-  await tx.payablePayment.create({
+  const pay = await tx.payablePayment.create({
     data: {
       payableId: id,
       amountCents: input.amountCents,
@@ -189,7 +189,7 @@ export async function payPayable(
     type: EVENT_TYPES.FINANCE_PAYABLE_PAID,
     status,
   });
-  return u;
+  return { ...u, paymentId: pay.id };
 }
 
 export async function cancelPayable(

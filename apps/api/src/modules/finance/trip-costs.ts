@@ -435,6 +435,8 @@ export async function upsertTripCost(
   const trip = await loadTrip(tx, input, true);
   if (trip.cancelled) throw Errors.business(`${trip.code} cancelada: não recebe custo.`);
   const existing = await liveTripCost(tx, trip);
+  if (!existing && (await tx.logisticsFreeTrip.count({ where: tripWhere(trip) })))
+    throw Errors.business(`${trip.code} foi confirmada como gratuita: não recebe custo.`);
   const mode = input.serviceOrderIds?.length ? 'ESCOLHIDA' : 'AUTO';
   if (!existing) {
     const c = await tx.logisticsCost.create({
@@ -890,7 +892,9 @@ export async function tripCostView(db: Db, ref: TripRef): Promise<TripCostViewDt
   });
   const live = costs.find((c) => c.kind === trip.kind && !c.cancelledAt) ?? null;
   const sos = await tripServiceOrders(db, trip);
+  const free = await db.logisticsFreeTrip.findFirst({ where: tripWhere(trip) });
   return {
+    freeConfirmed: free ? { reason: free.reason, at: free.createdAt.toISOString() } : null,
     trip: { kind: trip.kind, id: trip.id, code: trip.code, status: trip.status },
     cost: live ? await toTripCostDto(db, live) : null,
     fees: await Promise.all(
@@ -1060,7 +1064,15 @@ export async function tripCostRoutes(app: FastifyInstance) {
     { config: { access: FIN_MANAGE, idempotent: true } },
     async (request) => {
       const { id } = idParams.parse(request.params);
-      await tx((t) => constituteTripCost(t, actorFrom(request), id));
+      await tx(async (t) => {
+        // Só completa a obrigação de um custo já DEVIDO (viagem realizada sem recebedor):
+        // nunca transforma um combinado (agendado) em devido.
+        const c = await t.logisticsCost.findUnique({ where: { id } });
+        if (!c) throw Errors.notFound('Custo de logística');
+        if (c.status !== 'DEVIDO')
+          throw Errors.business('Só um custo já devido (viagem realizada) gera conta a pagar.');
+        await constituteTripCost(t, actorFrom(request), id);
+      });
       return loadTripCost(prisma, id);
     },
   );

@@ -44,7 +44,7 @@ export const laborInclude = {
     include: { authorizedBy: { select: { displayName: true } } },
     orderBy: { createdAt: 'asc' },
   },
-  payments: { orderBy: { createdAt: 'asc' } },
+  payments: { orderBy: { createdAt: 'asc' }, include: { reversal: true } },
 } as const satisfies Prisma.ProductionPayableInclude;
 type LaborRow = Prisma.ProductionPayableGetPayload<{ include: typeof laborInclude }>;
 
@@ -164,6 +164,7 @@ export async function toLaborDto(
       method: x.method as PaymentMethod,
       note: x.note,
       early: Boolean(x.earlyReason),
+      reversed: Boolean(x.reversal),
     })),
     history: await historyOf(db, 'production_payable', p.id),
     version: p.version,
@@ -398,7 +399,7 @@ export async function payLabor(
     );
   const problem = settlementProblem(laborDue(p), p.paidCents, input.amountCents);
   if (problem) throw Errors.business(problem);
-  await tx.professionalPayment.create({
+  const pay = await tx.professionalPayment.create({
     data: {
       productionPayableId: id,
       amountCents: input.amountCents,
@@ -432,7 +433,59 @@ export async function payLabor(
     data: { amountCents: input.amountCents, method: input.method },
     type: EVENT_TYPES.FINANCE_PAYABLE_PAID,
   });
-  return tx.productionPayable.findUniqueOrThrow({ where: { id } });
+  return {
+    ...(await tx.productionPayable.findUniqueOrThrow({ where: { id } })),
+    paymentId: pay.id,
+  };
+}
+
+/**
+ * Evolução Fase 7: estorno de pagamento por produção. O pagamento original permanece; o saldo volta
+ * a ficar em aberto e a situação é recalculada. Um estorno por pagamento.
+ */
+export async function reverseLaborPayment(
+  tx: Tx,
+  actor: ActorContext,
+  paymentId: string,
+  input: { reason: string; version?: number },
+) {
+  const pay = await tx.professionalPayment.findUnique({ where: { id: paymentId } });
+  if (!pay) throw Errors.notFound('Pagamento');
+  await lockRow(tx, 'production_payables', pay.productionPayableId, 'Mão de obra');
+  const p = await tx.productionPayable.findUniqueOrThrow({
+    where: { id: pay.productionPayableId },
+    include: laborInclude,
+  });
+  if (input.version !== undefined) checkVersion(p, input.version);
+  if (await tx.professionalPaymentReversal.findUnique({ where: { paymentId } }))
+    throw Errors.conflict('Este pagamento já foi estornado.');
+  await tx.professionalPaymentReversal.create({
+    data: { paymentId, reason: input.reason, createdById: actor.userId },
+  });
+  const paid = p.paidCents - pay.amountCents;
+  const eligible = isEligible(p);
+  await tx.productionPayable.update({
+    where: { id: p.id },
+    data: {
+      paidCents: paid,
+      status: laborStatus({ ...p, paidCents: paid, eligible, cancelled: false }),
+      version: { increment: 1 },
+    },
+  });
+  await audit(tx, actor, {
+    action: 'finance.labor_payment_reversed',
+    entityType: 'production_payable',
+    entityId: p.id,
+    summary: `${productionPayableCode(p.number)}: estorno de ${(pay.amountCents / 100).toFixed(2)} — ${input.reason}`,
+  });
+  await financeEvent(tx, actor, {
+    entityType: 'production_payable',
+    entityId: p.id,
+    kind: 'ESTORNO',
+    note: input.reason,
+    data: { paymentId, amountCents: pay.amountCents },
+    type: EVENT_TYPES.FINANCE_PAYABLE_PAID,
+  });
 }
 
 async function assertNoReview(
@@ -517,10 +570,12 @@ export async function myProduction(
       paidCents: p.paidCents,
       status,
       eligibility: p.eligibility as EligibilityRule,
-      payments: p.payments.map((x) => ({
-        amountCents: x.amountCents,
-        paidAt: dateOnly(x.paidAt)!,
-      })),
+      payments: p.payments
+        .filter((x) => !x.reversal)
+        .map((x) => ({
+          amountCents: x.amountCents,
+          paidAt: dateOnly(x.paidAt)!,
+        })),
     };
   });
   return {
