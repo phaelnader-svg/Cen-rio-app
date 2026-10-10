@@ -1,0 +1,3028 @@
+{
+  "resumo": {
+    "telas": 51,
+    "medicoes": 204,
+    "comDesalinhamento": 23,
+    "linhasDesalinhadas": 35,
+    "comRolagemHorizontal": 0,
+    "comCampoEstourado": 0,
+    "alturasDeCampoNoSistema": [
+      38,
+      43,
+      45
+    ],
+    "alturasDeBotaoNoSistema": [
+      20,
+      32,
+      34,
+      36,
+      38,
+      40,
+      42,
+      44,
+      48,
+      66,
+      86,
+      90,
+      98,
+      118,
+      130
+    ]
+  },
+  "medidas": [
+    {
+      "rota": "painel",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-atencao",
+      "largura": "390",
+      "campos": 6,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        86
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcionarios",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcionarios-dialogo-Novo-funcion-rio",
+      "largura": "390",
+      "campos": 7,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcoes-dialogo-Nova-fun-o",
+      "largura": "390",
+      "campos": 1,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-competencias",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-dispositivos-dialogo-Cadastrar-dispositivo",
+      "largura": "390",
+      "campos": 4,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-clientes-dialogo-Novo-cliente",
+      "largura": "390",
+      "campos": 15,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        20,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-clientes-9199f368-7719-49b7-b8e5-443bdf1a47f2",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos",
+      "largura": "390",
+      "campos": 2,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-novo",
+      "largura": "390",
+      "campos": 8,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        44,
+        48
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-c8bda793-21a1-4f22-a654-dac9df062125",
+      "largura": "390",
+      "campos": 1,
+      "alturasCampos": [
+        38
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-c8bda793-21a1-4f22-a654-dac9df062125-editar",
+      "largura": "390",
+      "campos": 12,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        48
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-retiradas",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        66
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimentos",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimentos-novo",
+      "largura": "390",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os",
+      "largura": "390",
+      "campos": 2,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os-nova-pedido-c8bda793-21a1-4f22-a654-dac9df062125",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os-7fd417b4-5ffa-41ea-97ec-a2cb0df633d5",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-medicoes",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-medicoes-0d711ec3-e8dd-4c3f-9b4f-16068d16198d",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-materiais",
+      "largura": "390",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras-novo",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras-63b56315-14c6-4f38-90e7-7672d958a130",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-fornecedores-dialogo-Novo-fornecedor",
+      "largura": "390",
+      "campos": 5,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimento-materiais",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-estoque",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-estoque-dialogo-Novo-material",
+      "largura": "390",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-prontidao",
+      "largura": "390",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-planejamento",
+      "largura": "390",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        34
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-producao-planejamento",
+      "largura": "390",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-producao",
+      "largura": "390",
+      "campos": 7,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-ajuda",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-reprogramacao",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42,
+        90,
+        118
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-qualidade",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-qualidade-Checklists-dialogo-Novo-checklist",
+      "largura": "390",
+      "campos": 3,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-entregas",
+      "largura": "390",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-entregas-40ef0b27-e065-4dd2-a9c1-3ba508f9f482",
+      "largura": "390",
+      "campos": 1,
+      "alturasCampos": [
+        38
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-devolucoes",
+      "largura": "390",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-presenca",
+      "largura": "390",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro",
+      "largura": "390",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Receitas-e-recebimentos-dialogo-Lan-ar-cobran-a",
+      "largura": "390",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Fechamento-semanal",
+      "largura": "390",
+      "campos": 4,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Contas-a-pagar-dialogo-Nova-conta-a-pagar",
+      "largura": "390",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Produ-o-e-equipe-dialogo-Combinar-valor",
+      "largura": "390",
+      "campos": 6,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Custos-e-resultado-por-OS-dialogo-Lan-ar-custo-log-stico",
+      "largura": "390",
+      "campos": 7,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Despesas-dialogo-Nova-despesa",
+      "largura": "390",
+      "campos": 6,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-empresa",
+      "largura": "390",
+      "campos": 14,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        38,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-auditoria",
+      "largura": "390",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-conta",
+      "largura": "390",
+      "campos": 3,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-atencao",
+      "largura": "768",
+      "campos": 6,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        86
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcionarios",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcionarios-dialogo-Novo-funcion-rio",
+      "largura": "768",
+      "campos": 7,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcoes-dialogo-Nova-fun-o",
+      "largura": "768",
+      "campos": 1,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-competencias",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-dispositivos-dialogo-Cadastrar-dispositivo",
+      "largura": "768",
+      "campos": 4,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 390,
+          "detalhes": "input[text] \"_r_4_\" top=416 h=45 | select[select-one] \"_r_5_\" top=416 h=43"
+        },
+        {
+          "y": 498,
+          "detalhes": "input[text] \"_r_6_\" top=524 h=45 | select[select-one] \"_r_7_\" top=524 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-clientes-dialogo-Novo-cliente",
+      "largura": "768",
+      "campos": 15,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 164,
+          "detalhes": "select[select-one] \"_r_5_\" top=190 h=43 | input[text] \"_r_6_\" top=190 h=45"
+        },
+        {
+          "y": 950,
+          "detalhes": "input[text] \"_r_i_\" top=976 h=45 | select[select-one] \"_r_j_\" top=976 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        20,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-clientes-9199f368-7719-49b7-b8e5-443bdf1a47f2",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos",
+      "largura": "768",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-novo",
+      "largura": "768",
+      "campos": 8,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        44,
+        48
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-c8bda793-21a1-4f22-a654-dac9df062125",
+      "largura": "768",
+      "campos": 1,
+      "alturasCampos": [
+        38
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-c8bda793-21a1-4f22-a654-dac9df062125-editar",
+      "largura": "768",
+      "campos": 12,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        48
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-retiradas",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        130
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimentos",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimentos-novo",
+      "largura": "768",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os",
+      "largura": "768",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os-nova-pedido-c8bda793-21a1-4f22-a654-dac9df062125",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os-7fd417b4-5ffa-41ea-97ec-a2cb0df633d5",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-medicoes",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-medicoes-0d711ec3-e8dd-4c3f-9b4f-16068d16198d",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-materiais",
+      "largura": "768",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras-novo",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras-63b56315-14c6-4f38-90e7-7672d958a130",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-fornecedores-dialogo-Novo-fornecedor",
+      "largura": "768",
+      "campos": 5,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimento-materiais",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-estoque",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-estoque-dialogo-Novo-material",
+      "largura": "768",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-prontidao",
+      "largura": "768",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-planejamento",
+      "largura": "768",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        34
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-producao-planejamento",
+      "largura": "768",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-producao",
+      "largura": "768",
+      "campos": 7,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-ajuda",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-reprogramacao",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42,
+        118
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-qualidade",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-qualidade-Checklists-dialogo-Novo-checklist",
+      "largura": "768",
+      "campos": 3,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-entregas",
+      "largura": "768",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-entregas-40ef0b27-e065-4dd2-a9c1-3ba508f9f482",
+      "largura": "768",
+      "campos": 1,
+      "alturasCampos": [
+        38
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-devolucoes",
+      "largura": "768",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-presenca",
+      "largura": "768",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro",
+      "largura": "768",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Receitas-e-recebimentos-dialogo-Lan-ar-cobran-a",
+      "largura": "768",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 436,
+          "detalhes": "input[date] \"_r_b_\" top=462 h=45 | select[select-one] \"_r_c_\" top=462 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Fechamento-semanal",
+      "largura": "768",
+      "campos": 4,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Contas-a-pagar-dialogo-Nova-conta-a-pagar",
+      "largura": "768",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 335,
+          "detalhes": "input[text] \"_r_7_\" top=361 h=45 | select[select-one] \"_r_8_\" top=361 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Produ-o-e-equipe-dialogo-Combinar-valor",
+      "largura": "768",
+      "campos": 6,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Custos-e-resultado-por-OS-dialogo-Lan-ar-custo-log-stico",
+      "largura": "768",
+      "campos": 7,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 389,
+          "detalhes": "select[select-one] \"_r_7_\" top=415 h=43 | input[text] \"_r_8_\" top=415 h=45"
+        },
+        {
+          "y": 554,
+          "detalhes": "select[select-one] \"_r_b_\" top=580 h=43 | input[text] \"_r_c_\" top=580 h=45"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Despesas-dialogo-Nova-despesa",
+      "largura": "768",
+      "campos": 6,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 401,
+          "detalhes": "select[select-one] \"_r_7_\" top=427 h=43 | input[text] \"_r_8_\" top=427 h=45"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-empresa",
+      "largura": "768",
+      "campos": 14,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 818,
+          "detalhes": "input[time] \"_r_8_\" top=864 h=45 | input[time] \"_r_9_\" top=844 h=45 | input[time] \"_r_a_\" top=844 h=45"
+        },
+        {
+          "y": 943,
+          "detalhes": "input[time] \"_r_b_\" top=969 h=45 | input[number] \"_r_c_\" top=989 h=45"
+        }
+      ],
+      "alturasBotoes": [
+        38,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-auditoria",
+      "largura": "768",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-conta",
+      "largura": "768",
+      "campos": 3,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-atencao",
+      "largura": "1280",
+      "campos": 6,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 343,
+          "detalhes": "select[select-one] \"\" top=367 h=43 | select[select-one] \"\" top=367 h=43 | select[select-one] \"\" top=367 h=43 | select[select-one] \"\" top=387 h=43 | select[select-one] \"\" top=367 h=43 | input[date] \"\" top=367 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        86
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcionarios",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcionarios-dialogo-Novo-funcion-rio",
+      "largura": "1280",
+      "campos": 7,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcoes-dialogo-Nova-fun-o",
+      "largura": "1280",
+      "campos": 1,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-competencias",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-dispositivos-dialogo-Cadastrar-dispositivo",
+      "largura": "1280",
+      "campos": 4,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 278,
+          "detalhes": "input[text] \"_r_4_\" top=304 h=45 | select[select-one] \"_r_5_\" top=304 h=43"
+        },
+        {
+          "y": 386,
+          "detalhes": "input[text] \"_r_6_\" top=412 h=45 | select[select-one] \"_r_7_\" top=412 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-clientes-dialogo-Novo-cliente",
+      "largura": "1280",
+      "campos": 15,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 151,
+          "detalhes": "select[select-one] \"_r_5_\" top=177 h=43 | input[text] \"_r_6_\" top=177 h=45"
+        },
+        {
+          "y": 937,
+          "detalhes": "input[text] \"_r_i_\" top=963 h=45 | select[select-one] \"_r_j_\" top=963 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        20,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-clientes-9199f368-7719-49b7-b8e5-443bdf1a47f2",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos",
+      "largura": "1280",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-novo",
+      "largura": "1280",
+      "campos": 8,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        44,
+        48
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-c8bda793-21a1-4f22-a654-dac9df062125",
+      "largura": "1280",
+      "campos": 1,
+      "alturasCampos": [
+        38
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-c8bda793-21a1-4f22-a654-dac9df062125-editar",
+      "largura": "1280",
+      "campos": 12,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        48
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-retiradas",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        98
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimentos",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimentos-novo",
+      "largura": "1280",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os",
+      "largura": "1280",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os-nova-pedido-c8bda793-21a1-4f22-a654-dac9df062125",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os-7fd417b4-5ffa-41ea-97ec-a2cb0df633d5",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-medicoes",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-medicoes-0d711ec3-e8dd-4c3f-9b4f-16068d16198d",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-materiais",
+      "largura": "1280",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras-novo",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras-63b56315-14c6-4f38-90e7-7672d958a130",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-fornecedores-dialogo-Novo-fornecedor",
+      "largura": "1280",
+      "campos": 5,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimento-materiais",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-estoque",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-estoque-dialogo-Novo-material",
+      "largura": "1280",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-prontidao",
+      "largura": "1280",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-planejamento",
+      "largura": "1280",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        34
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-producao-planejamento",
+      "largura": "1280",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-producao",
+      "largura": "1280",
+      "campos": 7,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-ajuda",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-reprogramacao",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42,
+        90
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-qualidade",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-qualidade-Checklists-dialogo-Novo-checklist",
+      "largura": "1280",
+      "campos": 3,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-entregas",
+      "largura": "1280",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-entregas-40ef0b27-e065-4dd2-a9c1-3ba508f9f482",
+      "largura": "1280",
+      "campos": 1,
+      "alturasCampos": [
+        38
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-devolucoes",
+      "largura": "1280",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-presenca",
+      "largura": "1280",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro",
+      "largura": "1280",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Receitas-e-recebimentos-dialogo-Lan-ar-cobran-a",
+      "largura": "1280",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 324,
+          "detalhes": "input[date] \"_r_b_\" top=350 h=45 | select[select-one] \"_r_c_\" top=350 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Fechamento-semanal",
+      "largura": "1280",
+      "campos": 4,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Contas-a-pagar-dialogo-Nova-conta-a-pagar",
+      "largura": "1280",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 223,
+          "detalhes": "input[text] \"_r_7_\" top=249 h=45 | select[select-one] \"_r_8_\" top=249 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Produ-o-e-equipe-dialogo-Combinar-valor",
+      "largura": "1280",
+      "campos": 6,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Custos-e-resultado-por-OS-dialogo-Lan-ar-custo-log-stico",
+      "largura": "1280",
+      "campos": 7,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 369,
+          "detalhes": "select[select-one] \"_r_7_\" top=395 h=43 | input[text] \"_r_8_\" top=395 h=45"
+        },
+        {
+          "y": 534,
+          "detalhes": "select[select-one] \"_r_b_\" top=560 h=43 | input[text] \"_r_c_\" top=560 h=45"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Despesas-dialogo-Nova-despesa",
+      "largura": "1280",
+      "campos": 6,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 289,
+          "detalhes": "select[select-one] \"_r_7_\" top=315 h=43 | input[text] \"_r_8_\" top=315 h=45"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-empresa",
+      "largura": "1280",
+      "campos": 14,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 288,
+          "detalhes": "input[time] \"_r_8_\" top=354 h=45 | input[time] \"_r_9_\" top=334 h=45 | input[time] \"_r_a_\" top=334 h=45"
+        },
+        {
+          "y": 448,
+          "detalhes": "input[time] \"_r_b_\" top=474 h=45 | input[number] \"_r_c_\" top=514 h=45"
+        },
+        {
+          "y": 709,
+          "detalhes": "select[select-one] \"_r_d_\" top=755 h=43 | select[select-one] \"_r_e_\" top=735 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        38,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-auditoria",
+      "largura": "1280",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-conta",
+      "largura": "1280",
+      "campos": 3,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-atencao",
+      "largura": "1440",
+      "campos": 6,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 343,
+          "detalhes": "select[select-one] \"\" top=367 h=43 | select[select-one] \"\" top=367 h=43 | select[select-one] \"\" top=367 h=43 | select[select-one] \"\" top=387 h=43 | select[select-one] \"\" top=367 h=43 | input[date] \"\" top=367 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        86
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcionarios",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcionarios-dialogo-Novo-funcion-rio",
+      "largura": "1440",
+      "campos": 7,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-funcoes-dialogo-Nova-fun-o",
+      "largura": "1440",
+      "campos": 1,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-competencias",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-dispositivos-dialogo-Cadastrar-dispositivo",
+      "largura": "1440",
+      "campos": 4,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 328,
+          "detalhes": "input[text] \"_r_4_\" top=354 h=45 | select[select-one] \"_r_5_\" top=354 h=43"
+        },
+        {
+          "y": 436,
+          "detalhes": "input[text] \"_r_6_\" top=462 h=45 | select[select-one] \"_r_7_\" top=462 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-clientes-dialogo-Novo-cliente",
+      "largura": "1440",
+      "campos": 15,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 157,
+          "detalhes": "select[select-one] \"_r_5_\" top=183 h=43 | input[text] \"_r_6_\" top=183 h=45"
+        },
+        {
+          "y": 943,
+          "detalhes": "input[text] \"_r_i_\" top=969 h=45 | select[select-one] \"_r_j_\" top=969 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        20,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-clientes-9199f368-7719-49b7-b8e5-443bdf1a47f2",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos",
+      "largura": "1440",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-novo",
+      "largura": "1440",
+      "campos": 8,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        44,
+        48
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-c8bda793-21a1-4f22-a654-dac9df062125",
+      "largura": "1440",
+      "campos": 1,
+      "alturasCampos": [
+        38
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-pedidos-c8bda793-21a1-4f22-a654-dac9df062125-editar",
+      "largura": "1440",
+      "campos": 12,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        48
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-retiradas",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        98
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimentos",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimentos-novo",
+      "largura": "1440",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os",
+      "largura": "1440",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os-nova-pedido-c8bda793-21a1-4f22-a654-dac9df062125",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-os-7fd417b4-5ffa-41ea-97ec-a2cb0df633d5",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-medicoes",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-medicoes-0d711ec3-e8dd-4c3f-9b4f-16068d16198d",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-materiais",
+      "largura": "1440",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras-novo",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-compras-63b56315-14c6-4f38-90e7-7672d958a130",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-fornecedores-dialogo-Novo-fornecedor",
+      "largura": "1440",
+      "campos": 5,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-recebimento-materiais",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-estoque",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-estoque-dialogo-Novo-material",
+      "largura": "1440",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-prontidao",
+      "largura": "1440",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-planejamento",
+      "largura": "1440",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        34
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-producao-planejamento",
+      "largura": "1440",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-producao",
+      "largura": "1440",
+      "campos": 7,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-ajuda",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-reprogramacao",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40,
+        42,
+        90
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-qualidade",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-qualidade-Checklists-dialogo-Novo-checklist",
+      "largura": "1440",
+      "campos": 3,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-entregas",
+      "largura": "1440",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-entregas-40ef0b27-e065-4dd2-a9c1-3ba508f9f482",
+      "largura": "1440",
+      "campos": 1,
+      "alturasCampos": [
+        38
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-devolucoes",
+      "largura": "1440",
+      "campos": 0,
+      "alturasCampos": [],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-presenca",
+      "largura": "1440",
+      "campos": 2,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro",
+      "largura": "1440",
+      "campos": 2,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Receitas-e-recebimentos-dialogo-Lan-ar-cobran-a",
+      "largura": "1440",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 374,
+          "detalhes": "input[date] \"_r_b_\" top=400 h=45 | select[select-one] \"_r_c_\" top=400 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Fechamento-semanal",
+      "largura": "1440",
+      "campos": 4,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        32,
+        42
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Contas-a-pagar-dialogo-Nova-conta-a-pagar",
+      "largura": "1440",
+      "campos": 5,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 273,
+          "detalhes": "input[text] \"_r_7_\" top=299 h=45 | select[select-one] \"_r_8_\" top=299 h=43"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Produ-o-e-equipe-dialogo-Combinar-valor",
+      "largura": "1440",
+      "campos": 6,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Custos-e-resultado-por-OS-dialogo-Lan-ar-custo-log-stico",
+      "largura": "1440",
+      "campos": 7,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 375,
+          "detalhes": "select[select-one] \"_r_7_\" top=401 h=43 | input[text] \"_r_8_\" top=401 h=45"
+        },
+        {
+          "y": 540,
+          "detalhes": "select[select-one] \"_r_b_\" top=566 h=43 | input[text] \"_r_c_\" top=566 h=45"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-financeiro-Despesas-dialogo-Nova-despesa",
+      "largura": "1440",
+      "campos": 6,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 339,
+          "detalhes": "select[select-one] \"_r_7_\" top=365 h=43 | input[text] \"_r_8_\" top=365 h=45"
+        }
+      ],
+      "alturasBotoes": [
+        36,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-empresa",
+      "largura": "1440",
+      "campos": 14,
+      "alturasCampos": [
+        43,
+        45
+      ],
+      "linhasDesalinhadas": [
+        {
+          "y": 448,
+          "detalhes": "input[time] \"_r_b_\" top=474 h=45 | input[number] \"_r_c_\" top=514 h=45"
+        }
+      ],
+      "alturasBotoes": [
+        38,
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-auditoria",
+      "largura": "1440",
+      "campos": 1,
+      "alturasCampos": [
+        43
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    },
+    {
+      "rota": "painel-conta",
+      "largura": "1440",
+      "campos": 3,
+      "alturasCampos": [
+        45
+      ],
+      "linhasDesalinhadas": [],
+      "alturasBotoes": [
+        40
+      ],
+      "rolagemHorizontalPx": 0,
+      "camposEstourados": []
+    }
+  ]
+}
