@@ -314,6 +314,14 @@ describe('Fechamento semanal (CA7-01..03, 06, 09)', () => {
     const last = mar[4]!;
     const items = (await admin.get(C())).body.items.filter((i: { id: string }) => i.id === last.id);
     expect(items).toHaveLength(1);
+    // Retrabalho depois da liberação (correção e nova aprovação): continua UMA obrigação.
+    const before = await db().productionPayable.count();
+    await stage(admin, [sos[4]!.items[1].id], 'EM_CORRECAO');
+    await stage(admin, [sos[4]!.items[1].id], 'AGUARDANDO_EMBALAGEM');
+    const reworked = (await admin.get(C())).body;
+    expect(reworked.items.filter((i: { id: string }) => i.id === last.id)).toHaveLength(1);
+    expect(rowOf(reworked, 'Márcio')).toMatchObject({ dueCents: 405000, items: 5 });
+    expect(await db().productionPayable.count()).toBe(before);
   });
 });
 
