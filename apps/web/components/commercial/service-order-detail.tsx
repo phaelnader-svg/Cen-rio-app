@@ -52,6 +52,7 @@ import { useMeasurements } from '@/lib/measurements';
 import { PriorityBadge, ServiceOrderStatusBadge } from './badges';
 import { PhotoGallery } from './photo-gallery';
 import { BackLink, Detail, Section } from './section';
+import { OsLabor } from '@/components/finance/service-order-labor';
 
 function useSoMutation(id: string, onDone: () => void, success: string) {
   const qc = useQueryClient();
@@ -141,6 +142,8 @@ export function ServiceOrderDetail({ id }: { id: string }) {
     can(p as Permission),
   );
   const canRequestMeasurement = can('medicoes.gerenciar') && open;
+  // Evolução Fase 5: valores de mão de obra só para quem vê o financeiro.
+  const canLabor = can('financeiro.ver');
 
   return (
     <>
@@ -207,8 +210,10 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           { key: 'historico', label: 'Histórico', count: revisions.data?.length },
           ...(canProduction ? [{ key: 'producao', label: 'Produção' }] : []),
           ...(canQuality ? [{ key: 'qualidade', label: 'Qualidade e entrega' }] : []),
+          ...(canLabor ? [{ key: 'mao-de-obra', label: 'Mão de obra' }] : []),
         ]}
       >
+        {tab === 'mao-de-obra' && canLabor && <OsLabor serviceOrderId={s.id} />}
         {tab === 'qualidade' && canQuality && <OsQualityDelivery serviceOrderId={s.id} />}
         {tab === 'producao' && canProduction && <OsProduction serviceOrderId={s.id} />}
         {tab === 'resumo' && (

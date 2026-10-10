@@ -4,14 +4,15 @@ import type {
   ExpenseDto,
   FinanceDashboardDto,
   LaborPayableDto,
+  LaborReviewDto,
   LogisticsCostDto,
-  MyProductionDto,
   OrderResultDto,
   OrderRevenueDto,
   PayableDto,
   ProductivityDto,
   ReceivableDto,
   RecurringExpenseDto,
+  ServiceOrderLaborDto,
   TeamCostDto,
   WorkerDto,
 } from '@cenario/shared';
@@ -63,6 +64,11 @@ export const usePayable = (id: string | null) => useFin<PayableDto>(`/payables/$
 export const useLabor = (status?: string) => useFin<LaborPayableDto[]>(`/labor${qs({ status })}`);
 export const useLaborOne = (id: string | null) =>
   useFin<LaborPayableDto>(`/labor/${id}`, Boolean(id));
+/** Evolução Fase 5: mão de obra por peça da OS e revisões financeiras. */
+export const useServiceOrderLabor = (id: string) =>
+  useFin<ServiceOrderLaborDto>(`/service-orders/${id}/labor`);
+export const useLaborReviews = (status?: 'ABERTA' | 'RESOLVIDA') =>
+  useFin<LaborReviewDto[]>(`/labor-reviews${qs({ status })}`);
 export const useTeamCosts = () => useFin<TeamCostDto[]>('/team-costs');
 export const useFinPeople = () => useFin<WorkerDto[]>('/people');
 export const useLogisticsCosts = () => useFin<LogisticsCostDto[]>('/logistics-costs');
@@ -84,13 +90,10 @@ export const useReport = (kind: string, p: Period) =>
 export const reportCsvUrl = (kind: string, p: Period) =>
   `/api/v1/finance/reports/${kind}${qs({ ...p, format: 'csv' })}`;
 
-/** Ricardo/Márcio: os próprios valores (só com autorização do gestor). */
-export const useMyProduction = (enabled: boolean) =>
-  useQuery({
-    queryKey: ['fin', 'my-production'],
-    queryFn: () => api<MyProductionDto>('/api/v1/finance/my-production'),
-    enabled,
-  });
+/*
+ * "Meus valores" (Ricardo/Márcio) não usa consulta em cache: o tablet confirma o PIN a cada
+ * abertura (POST /my-production/unlock) — ver components/tablet/my-values.tsx.
+ */
 
 /** Mutação do financeiro: executa, atualiza as consultas ['fin'] e mostra o erro. */
 export function useFinSend(onDone?: () => void) {

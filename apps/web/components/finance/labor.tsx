@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  ELIGIBILITY_LABEL,
-  LABOR_STATUS_LABEL,
-  PAYMENT_METHOD_LABEL,
-  type LaborPayableDto,
-} from '@cenario/shared';
+import { ELIGIBILITY_LABEL, PAYMENT_METHOD_LABEL, type LaborPayableDto } from '@cenario/shared';
 import type { ServiceOrderDto } from '@cenario/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
@@ -23,11 +18,14 @@ import {
   money,
   useFinPeople,
   useLabor,
+  useLaborReviews,
   useLaborOne,
   useTeamCosts,
 } from '@/lib/finance';
 import { FormDialog, PAYMENT_OPTIONS, Table } from './common';
-import { History, statusTone } from './revenue';
+import { History } from './revenue';
+import { ResolveReviewDialog, SituationBadge } from './service-order-labor';
+import type { LaborReviewDto } from '@cenario/shared';
 
 /**
  * Mão de obra por produção (Ricardo, Márcio): valor combinado por peça ou OS, liberado só
@@ -44,8 +42,32 @@ export function LaborTab() {
   const [open, setOpen] = useState<string | null>(null);
   const [teamCost, setTeamCost] = useState(false);
   const manage = can('financeiro.gerenciar');
+  const reviews = useLaborReviews('ABERTA');
+  const [resolve, setResolve] = useState<LaborReviewDto | null>(null);
   return (
     <div className="space-y-8">
+      {reviews.data && reviews.data.length > 0 && (
+        <section data-testid="labor-reviews">
+          <h2 className="mb-3 text-lg font-semibold">Revisões financeiras pendentes</h2>
+          <ul className="space-y-2">
+            {reviews.data.map((r) => (
+              <li key={r.id}>
+                <Alert
+                  tone="warn"
+                  title={`${r.code} — ${r.serviceOrder.code}${r.piece ? ` · ${r.piece.code}` : ' · OS inteira'}`}
+                >
+                  <p>{r.reason}</p>
+                  {can('financeiro.ajustes') && (
+                    <Button size="sm" className="mt-2" onClick={() => setResolve(r)}>
+                      Resolver revisão
+                    </Button>
+                  )}
+                </Alert>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section>
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <h2 className="mr-auto text-lg font-semibold">Pagamentos por produção</h2>
@@ -104,9 +126,12 @@ export function LaborTab() {
                 <td className="px-4 py-2.5 tabular-nums">{money(l.paidCents)}</td>
                 <td className="px-4 py-2.5 text-xs">{ELIGIBILITY_LABEL[l.eligibility]}</td>
                 <td className="px-4 py-2.5">
-                  <Badge tone={l.status === 'LIBERADO' ? 'brand' : statusTone(l.status)}>
-                    {LABOR_STATUS_LABEL[l.status]}
-                  </Badge>
+                  <SituationBadge l={l} />
+                  {l.review && (
+                    <Badge tone="warn" className="ml-1">
+                      {l.review.code}
+                    </Badge>
+                  )}
                   {l.withdrawn && (
                     <Badge tone="warn" className="ml-1">
                       Revisar: peça devolvida/OS cancelada
@@ -156,6 +181,7 @@ export function LaborTab() {
         )}
       </section>
 
+      {resolve && <ResolveReviewDialog review={resolve} onClose={() => setResolve(null)} />}
       {create && <CreateLabor onClose={() => setCreate(false)} />}
       {open && <LaborDialog id={open} onClose={() => setOpen(null)} />}
       {teamCost && (
@@ -281,13 +307,15 @@ function CreateLabor({ onClose }: { onClose: () => void }) {
   );
 }
 
-function LaborDialog({ id, onClose }: { id: string; onClose: () => void }) {
+export function LaborDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const can = useCan();
   const q = useLaborOne(id);
   const [pay, setPay] = useState(false);
   const [adjust, setAdjust] = useState(false);
   const [cancel, setCancel] = useState(false);
+  const [edit, setEdit] = useState(false);
   const l: LaborPayableDto | undefined = q.data;
+  const locked = Boolean(l?.review);
   return (
     <Dialog
       open
@@ -323,8 +351,31 @@ function LaborDialog({ id, onClose }: { id: string; onClose: () => void }) {
               ? `atingida${l.eligibleAt ? ` em ${brDate(l.eligibleAt)}` : ''}`
               : 'ainda não atingida (valor previsto).'}
           </Alert>
-          <div className="flex gap-2">
-            {can('financeiro.gerenciar') &&
+          <div className="flex flex-wrap items-center gap-2">
+            <SituationBadge l={l} />
+          </div>
+          {l.review && (
+            <Alert tone="warn" title={`Revisão financeira ${l.review.code} pendente`}>
+              Troca de titular com valor já combinado: pagamento, ajuste e alteração ficam travados
+              até o gestor resolver a revisão (na OS ou em Produção).
+            </Alert>
+          )}
+          {l.needsPieceReview && (
+            <Alert tone="warn">
+              Valor da OS inteira com peças de outro titular: nada é dividido automaticamente.
+            </Alert>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {can('financeiro.ajustes') &&
+              !locked &&
+              l.paidCents === 0 &&
+              l.status !== 'CANCELADO' && (
+                <Button size="sm" variant="secondary" onClick={() => setEdit(true)}>
+                  Alterar valor combinado
+                </Button>
+              )}
+            {!locked &&
+              can('financeiro.gerenciar') &&
               (l.status === 'PREVISTO' ||
                 l.status === 'LIBERADO' ||
                 l.status === 'PAGO_PARCIAL') && (
@@ -332,16 +383,22 @@ function LaborDialog({ id, onClose }: { id: string; onClose: () => void }) {
                   Registrar pagamento
                 </Button>
               )}
-            {can('financeiro.ajustes') && l.status !== 'PAGO' && l.status !== 'CANCELADO' && (
-              <Button size="sm" variant="secondary" onClick={() => setAdjust(true)}>
-                Ajustar valor
-              </Button>
-            )}
-            {can('financeiro.gerenciar') && l.paidCents === 0 && l.status !== 'CANCELADO' && (
-              <Button size="sm" variant="ghost" onClick={() => setCancel(true)}>
-                Cancelar
-              </Button>
-            )}
+            {!locked &&
+              can('financeiro.ajustes') &&
+              l.status !== 'PAGO' &&
+              l.status !== 'CANCELADO' && (
+                <Button size="sm" variant="secondary" onClick={() => setAdjust(true)}>
+                  Ajustar valor
+                </Button>
+              )}
+            {!locked &&
+              can('financeiro.gerenciar') &&
+              l.paidCents === 0 &&
+              l.status !== 'CANCELADO' && (
+                <Button size="sm" variant="ghost" onClick={() => setCancel(true)}>
+                  Cancelar
+                </Button>
+              )}
           </div>
           {l.adjustments.length > 0 && (
             <div>
@@ -439,6 +496,30 @@ function LaborDialog({ id, onClose }: { id: string; onClose: () => void }) {
             api(`/api/v1/finance/labor/${l.id}/adjustments`, {
               method: 'POST',
               body: { amountCents: cents('amount'), reason: v.reason, version: l.version },
+              idempotencyKey: key,
+            })
+          }
+        />
+      )}
+      {l && edit && (
+        <FormDialog
+          title={`Alterar valor combinado — ${l.code}`}
+          description="Somente antes de qualquer pagamento. O valor anterior e o motivo ficam na auditoria."
+          onClose={() => setEdit(false)}
+          fields={[
+            {
+              name: 'amount',
+              label: 'Novo valor combinado (R$)',
+              type: 'money',
+              required: true,
+              initial: (l.agreedCents / 100).toFixed(2).replace('.', ','),
+            },
+            { name: 'reason', label: 'Motivo', type: 'textarea', required: true },
+          ]}
+          onSubmit={(v, cents, key) =>
+            api(`/api/v1/finance/labor/${l.id}/agreed`, {
+              method: 'POST',
+              body: { agreedCents: cents('amount'), reason: v.reason, version: l.version },
               idempotencyKey: key,
             })
           }
