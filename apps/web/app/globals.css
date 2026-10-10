@@ -158,6 +158,8 @@
       display: grid;
       grid-row: span 3;
       grid-template-rows: subgrid;
+      /* Coluna que encolhe: controles nativos (ex.: data) não estouram colunas estreitas. */
+      grid-template-columns: minmax(0, 1fr);
       row-gap: 0;
     }
     .grid > .field > .label {
@@ -174,6 +176,7 @@
       display: grid;
       grid-row: span 3;
       grid-template-rows: subgrid;
+      grid-template-columns: minmax(0, 1fr);
       row-gap: 0;
     }
     .grid:has(> .field) > .field-action > :first-child {

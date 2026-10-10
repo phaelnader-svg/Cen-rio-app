@@ -334,6 +334,33 @@ describe('B. Agendamento por horário de chegada (CA-13..16, CA-19, CA-20)', () 
     expect(kept.status).toBe(200);
     expect(kept.body).toMatchObject({ windowStart: '09:00', windowEnd: '12:00' });
   });
+
+  it('entrega: confirmada exige chegada; provisória sem horário; confirmar exige chegada', async () => {
+    const admin = await loginAdmin(app);
+    const { customer, order } = await receivedOrder(admin, 'Cliente Entrega Chegada');
+    const so = await post(admin, '/api/v1/service-orders', osBody(order));
+    expect(so.status, JSON.stringify(so.body)).toBe(201);
+    const itemIds = so.body.items.map((i: { id: string }) => i.id);
+    const base = {
+      customerId: customer.id,
+      scheduledDate: day(6),
+      team: 'LOGISTICA_TERCEIRIZADA',
+      itemIds,
+    };
+    const noTime = await post(admin, '/api/v1/deliveries', base);
+    expect(noTime.status).toBe(400);
+    expect(JSON.stringify(noTime.body)).toMatch(/horário de chegada/);
+    const prov = await post(admin, '/api/v1/deliveries', { ...base, provisional: true });
+    expect(prov.status, JSON.stringify(prov.body)).toBe(201);
+    expect(prov.body).toMatchObject({ status: 'PROVISORIA', windowStart: null, windowEnd: null });
+    const confirm = await post(admin, `/api/v1/deliveries/${prov.body.id}/confirm`, {
+      version: prov.body.version,
+    });
+    expect(confirm.status).toBe(422);
+    expect(JSON.stringify(confirm.body)).toMatch(/horário de chegada/);
+    const row = await db().delivery.findUniqueOrThrow({ where: { id: prov.body.id } });
+    expect(row.status).toBe('PROVISORIA');
+  });
 });
 
 describe('C. Roteiro diário (CA-17, CA-18, CA-20, CA-22, CA-24)', () => {
