@@ -20,6 +20,7 @@ import { PickupStatusBadge } from './badges';
 import { PhotoGallery } from './photo-gallery';
 import { PickupForm } from './pickup-form';
 import { Detail } from './section';
+import { TripCostCard } from '@/components/finance/trip-cost';
 
 const ACTION_LABEL: Partial<Record<PickupStatus, string>> = {
   AGENDADA: 'Marcar como agendada',
@@ -67,6 +68,7 @@ export function PickupDetailDialog({ id, onClose }: { id: string; onClose: () =>
         )
       ) : (
         <div className="space-y-5" data-testid="pickup-detail">
+          <TripCostCard pickupId={p.id} />
           <div className="flex flex-wrap items-center gap-2">
             <PickupStatusBadge status={p.status} />
             {manage &&

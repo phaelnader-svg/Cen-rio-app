@@ -39,6 +39,7 @@ import {
   useLogisticsPeople,
   usePieces,
 } from '@/lib/quality';
+import { TripCostCard, TripCostFields, type TripCostValue } from '@/components/finance/trip-cost';
 
 const day = (iso: string) => {
   const d = new Date(`${iso}T12:00:00Z`);
@@ -517,6 +518,7 @@ export function ScheduleDialog({
   const [instructions, setInstructions] = useState(delivery?.instructions ?? '');
   const [notes, setNotes] = useState(delivery?.notes ?? '');
   const [reason, setReason] = useState('');
+  const [trip, setTrip] = useState<{ v: TripCostValue; ok: boolean }>({ v: undefined, ok: true });
   const [key] = useState(newIdempotencyKey);
   const { m, error } = useSend(onClose);
   const candidates = (pieces.data ?? []).filter(
@@ -554,7 +556,12 @@ export function ScheduleDialog({
             Cancelar
           </Button>
           <Button
-            disabled={!ids.length || !date || (Boolean(delivery) && reason.trim().length < 3)}
+            disabled={
+              !ids.length ||
+              !date ||
+              (Boolean(delivery) && reason.trim().length < 3) ||
+              (!delivery && !trip.ok)
+            }
             loading={m.isPending}
             onClick={() =>
               m.mutate({
@@ -571,7 +578,12 @@ export function ScheduleDialog({
                       })
                     : api('/api/v1/deliveries', {
                         method: 'POST',
-                        body: { ...body, customerId, provisional },
+                        body: {
+                          ...body,
+                          customerId,
+                          provisional,
+                          ...(trip.v ? { tripCost: trip.v } : {}),
+                        },
                         idempotencyKey: key,
                       }),
                 ok: provisional ? 'Pré-agendamento provisório registrado.' : 'Entrega agendada.',
@@ -719,6 +731,11 @@ export function ScheduleDialog({
             </Field>
           </div>
         )}
+        {!delivery && (
+          <div className="sm:col-span-2">
+            <TripCostFields kind="ENTREGA" onChange={(v, ok) => setTrip({ v, ok })} />
+          </div>
+        )}
       </div>
     </Dialog>
   );
@@ -790,6 +807,9 @@ export function DeliveryDetailPage({ id }: { id: string }) {
           {PICKUP_TEAM_LABEL[d.team]} · {d.responsible?.displayName ?? 'sem responsável'}
         </span>
         {d.attempts > 0 && <Badge tone="danger">{d.attempts} tentativa(s) frustrada(s)</Badge>}
+      </div>
+      <div className="mb-6">
+        <TripCostCard deliveryId={d.id} />
       </div>
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="space-y-6">

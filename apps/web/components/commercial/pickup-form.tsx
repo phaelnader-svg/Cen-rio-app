@@ -17,6 +17,7 @@ import { useToast } from '@/components/ui/toast';
 import { ApiError, api, fieldErrors, newIdempotencyKey } from '@/lib/api';
 import { useCustomerAddresses } from '@/lib/commercial';
 import { addressLines } from './address-form';
+import { TripCostFields, type TripCostValue } from '@/components/finance/trip-cost';
 
 /** Solicitar (a partir do pedido) ou editar/reagendar uma retirada. */
 export function PickupForm({
@@ -59,6 +60,7 @@ export function PickupForm({
       ]),
     ),
   );
+  const [trip, setTrip] = useState<{ v: TripCostValue; ok: boolean }>({ v: undefined, ok: true });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const idem = useRef(newIdempotencyKey());
@@ -87,7 +89,11 @@ export function PickupForm({
       }
       return api<PickupDto>('/api/v1/pickups', {
         method: 'POST',
-        body: createPickupSchema.parse({ ...base, orderId: order.id }),
+        body: createPickupSchema.parse({
+          ...base,
+          orderId: order.id,
+          ...(trip.v && date ? { tripCost: trip.v } : {}),
+        }),
         idempotencyKey: idem.current,
       });
     },
@@ -129,7 +135,7 @@ export function PickupForm({
           <Button variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
-          <Button loading={m.isPending} onClick={() => m.mutate()}>
+          <Button loading={m.isPending} disabled={!pickup && !trip.ok} onClick={() => m.mutate()}>
             {pickup ? 'Salvar' : date ? 'Solicitar e agendar' : 'Solicitar retirada'}
           </Button>
         </>
@@ -215,6 +221,9 @@ export function PickupForm({
             />
           )}
         </Field>
+        {!pickup && date && (
+          <TripCostFields kind="RETIRADA" onChange={(v, ok) => setTrip({ v, ok })} />
+        )}
         <fieldset>
           <legend className="mb-2 text-sm font-semibold">Peças a retirar</legend>
           {errors.items && <p className="mb-2 text-sm text-danger-600">{errors.items}</p>}

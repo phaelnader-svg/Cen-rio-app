@@ -2,6 +2,7 @@
 
 import {
   LABOR_STATUS_LABEL,
+  ALL_LOGISTICS_COST_KIND_LABEL,
   LOGISTICS_COST_KIND_LABEL,
   SPLIT_METHOD_LABEL,
   type ResultColumns,
@@ -26,6 +27,7 @@ import {
   type Period,
 } from '@/lib/finance';
 import { FormDialog, PAYMENT_OPTIONS, Table } from './common';
+import { LogisticsDefaultsPanel, TripSituation } from './trip-cost';
 
 const SOURCE_LABEL: Record<string, string> = {
   COMPRA_EXCLUSIVA: 'Compra exclusiva recebida',
@@ -131,30 +133,41 @@ export function CostsTab({ period }: { period: Period }) {
             </Button>
           )}
         </div>
+        <div className="mb-3">
+          <LogisticsDefaultsPanel />
+        </div>
+        <p className="mb-3 text-sm text-ink-muted">
+          Retirada e entrega: custo total combinado no agendamento (ver a retirada/entrega) e devido
+          só na realização. “Lançar” aqui é para custos avulsos sem viagem cadastrada.
+        </p>
         {logistics.data && (
           <Table
             testId="fin-logistics"
-            head={['Código', 'Data', 'Tipo', 'Descrição', 'Valor', 'Rateio', 'Conta a pagar', '']}
+            head={['Código', 'Data', 'Tipo', 'Descrição', 'Valor', 'Rateio', 'Situação', '']}
           >
             {logistics.data.map((c) => (
               <tr key={c.id} className={c.cancelled ? 'opacity-50' : undefined}>
                 <td className="px-4 py-2.5 font-mono font-semibold">{c.code}</td>
                 <td className="px-4 py-2.5">{brDate(c.date)}</td>
-                <td className="px-4 py-2.5">{LOGISTICS_COST_KIND_LABEL[c.kind]}</td>
+                <td className="px-4 py-2.5">{ALL_LOGISTICS_COST_KIND_LABEL[c.kind]}</td>
                 <td className="px-4 py-2.5">
                   {c.description}
                   {c.beneficiary && <p className="text-xs text-ink-muted">{c.beneficiary}</p>}
                 </td>
-                <td className="px-4 py-2.5 tabular-nums">{money(c.amountCents)}</td>
+                <td className="px-4 py-2.5 tabular-nums">
+                  {money(c.amountCents + c.adjustmentsCents)}
+                  {c.payee && <p className="text-xs text-ink-muted">{c.payee.displayName}</p>}
+                </td>
                 <td className="px-4 py-2.5 text-xs">
                   {SPLIT_METHOD_LABEL[c.splitMethod]}:{' '}
                   {c.allocations.map((a) => `${a.code} ${money(a.amountCents)}`).join(' · ')}
                 </td>
                 <td className="px-4 py-2.5 text-xs">
-                  {c.cancelled ? 'Cancelado' : (c.payable?.code ?? '—')}
+                  <TripSituation c={c} />
+                  {c.payable && <p className="mt-1">{c.payable.code}</p>}
                 </td>
                 <td className="px-4 py-2.5 text-right">
-                  {can('financeiro.gerenciar') && !c.cancelled && (
+                  {can('financeiro.gerenciar') && !c.cancelled && c.status !== 'DEVIDO' && (
                     <Button
                       size="sm"
                       variant="ghost"

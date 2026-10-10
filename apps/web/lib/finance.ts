@@ -6,6 +6,9 @@ import type {
   LaborPayableDto,
   LaborReviewDto,
   LogisticsCostDto,
+  LogisticsDefaultsDto,
+  LogisticsWeeklyDto,
+  TripCostViewDto,
   OrderResultDto,
   OrderRevenueDto,
   PayableDto,
@@ -69,6 +72,13 @@ export const useServiceOrderLabor = (id: string) =>
   useFin<ServiceOrderLaborDto>(`/service-orders/${id}/labor`);
 export const useLaborReviews = (status?: 'ABERTA' | 'RESOLVIDA') =>
   useFin<LaborReviewDto[]>(`/labor-reviews${qs({ status })}`);
+/** Evolução Fase 6: custos de retirada e entrega. */
+export const useLogisticsDefaults = (enabled = true) =>
+  useFin<LogisticsDefaultsDto>('/logistics-defaults', enabled);
+export const useTripCost = (ref: { pickupId?: string; deliveryId?: string }, enabled = true) =>
+  useFin<TripCostViewDto>(`/trip-costs${qs(ref)}`, enabled);
+export const useLogisticsWeekly = (p: Period) =>
+  useFin<LogisticsWeeklyDto>(`/logistics-weekly${qs({ ...p })}`);
 export const useTeamCosts = () => useFin<TeamCostDto[]>('/team-costs');
 export const useFinPeople = () => useFin<WorkerDto[]>('/people');
 export const useLogisticsCosts = () => useFin<LogisticsCostDto[]>('/logistics-costs');

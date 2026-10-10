@@ -158,6 +158,7 @@ function PayableDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const q = usePayable(id);
   const [pay, setPay] = useState(false);
   const [cancel, setCancel] = useState(false);
+  const [reverse, setReverse] = useState<string | null>(null);
   const p: PayableDto | undefined = q.data;
   return (
     <Dialog
@@ -208,10 +209,23 @@ function PayableDialog({ id, onClose }: { id: string; onClose: () => void }) {
                   <li key={x.id} className="flex gap-3 px-3 py-2">
                     <span className="w-24">{brDate(x.paidAt)}</span>
                     <span className="w-28 font-semibold tabular-nums">{money(x.amountCents)}</span>
-                    <span className="text-ink-muted">
+                    <span className="flex-1 text-ink-muted">
                       {PAYMENT_METHOD_LABEL[x.method]}
                       {x.note ? ` · ${x.note}` : ''}
+                      {x.reversal && (
+                        <span
+                          className="ml-1 text-danger-600"
+                          data-testid={`payment-reversed-${x.id}`}
+                        >
+                          · estornado: {x.reversal.reason}
+                        </span>
+                      )}
                     </span>
+                    {can('financeiro.ajustes') && !x.reversal && (
+                      <Button size="sm" variant="ghost" onClick={() => setReverse(x.id)}>
+                        Estornar
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -262,6 +276,23 @@ function PayableDialog({ id, onClose }: { id: string; onClose: () => void }) {
                 note: v.note || null,
                 version: p.version,
               },
+              idempotencyKey: key,
+            })
+          }
+        />
+      )}
+      {p && reverse && (
+        <FormDialog
+          title={`Estornar pagamento — ${p.code}`}
+          description="O pagamento original continua no histórico; o saldo volta a ficar em aberto."
+          onClose={() => setReverse(null)}
+          fields={[
+            { name: 'reason', label: 'Motivo do estorno', type: 'textarea', required: true },
+          ]}
+          onSubmit={(v, _c, key) =>
+            api(`/api/v1/finance/payables/${p.id}/payments/${reverse}/reverse`, {
+              method: 'POST',
+              body: { reason: v.reason, version: p.version },
               idempotencyKey: key,
             })
           }
