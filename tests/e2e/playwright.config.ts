@@ -17,6 +17,8 @@ export default defineConfig({
     baseURL: origin,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    // Fuso explícito da oficina (antes: o do sistema, UTC no contêiner de testes).
+    timezoneId: 'America/Sao_Paulo',
     launchOptions: env.PLAYWRIGHT_CHROMIUM_PATH
       ? { executablePath: env.PLAYWRIGHT_CHROMIUM_PATH }
       : undefined,

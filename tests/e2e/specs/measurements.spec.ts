@@ -77,6 +77,24 @@ async function openServiceOrder(page: Page, name: string) {
   }) as Promise<{ id: string; code: string; items: { id: string; code: string }[] }>;
 }
 
+/** Relógio do servidor (só E2E): congela “agora” num instante local fixo; null volta ao real. */
+async function setServerClock(page: Page, now: string | null) {
+  const r = await page.request.post('/api/test/clock', {
+    data: { now },
+    headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
+  });
+  expect(r.ok(), `clock: ${await r.text()}`).toBe(true);
+}
+/** Próxima sexta-feira (data local da oficina) a partir de hoje, inclusive. */
+function nextFriday() {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(
+    new Date(),
+  );
+  const d = new Date(`${today}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + ((5 - d.getUTCDay() + 7) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
 test.describe.serial('Fase 3 — medições e solicitações de materiais', () => {
   test('gestor delega a Ricardo, tablet mede e envia, gestor devolve, Ricardo corrige, gestor aprova', async ({
     page,
@@ -225,28 +243,36 @@ test.describe.serial('Fase 3 — medições e solicitações de materiais', () =
 
   test('rotina de sexta: o gestor mede pelo painel', async ({ page }) => {
     await loginAdmin(page);
-    const so = await openServiceOrder(page, 'Cliente Rotina E2E');
-    await page.goto(`/painel/os/${so.id}`);
-    await page.getByRole('button', { name: 'Solicitar medição' }).click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog.getByLabel('Responsável')).toHaveValue(/.+/);
-    await expect(dialog.getByLabel('Prazo')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
-    await dialog.getByRole('button', { name: 'Atribuir medição' }).click();
-    await page.getByRole('button', { name: 'Medir agora' }).click();
-    await page.getByRole('button', { name: 'Próximo' }).click();
-    await page.getByRole('button', { name: 'Próximo' }).click();
-    await page.getByRole('button', { name: 'Próximo' }).click();
-    await page.getByRole('button', { name: 'Adicionar outro material' }).click();
-    await page.getByLabel('Descrição').fill('Grampos 80/10');
-    await page.getByLabel('Quantidade').fill('1,5');
-    await page.getByLabel('Unidade').selectOption({ label: 'embalagens' });
-    await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
-    await expect(page.getByText(/número inteiro/)).toBeVisible();
-    await page.getByLabel('Quantidade').fill('2');
-    await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
-    await page.getByRole('button', { name: 'Próximo' }).click();
-    await page.getByRole('button', { name: 'Enviar medição' }).click();
-    await expect(page.getByTestId('measurement-badges')).toContainText('Concluída');
-    await expect(page.getByTestId('measurement-badges')).toContainText('Materiais: enviada');
+    // Fase 8: relógio controlado na borda mais sensível — sexta 23h59 no horário da oficina.
+    // O prazo sugerido (dia de medição) e a validação no servidor usam o MESMO instante, então o
+    // resultado não depende da hora real em que a suíte roda.
+    await setServerClock(page, new Date(`${nextFriday()}T23:59:00-03:00`).toISOString());
+    try {
+      const so = await openServiceOrder(page, 'Cliente Rotina E2E');
+      await page.goto(`/painel/os/${so.id}`);
+      await page.getByRole('button', { name: 'Solicitar medição' }).click();
+      const dialog = page.getByRole('dialog');
+      await expect(dialog.getByLabel('Responsável')).toHaveValue(/.+/);
+      await expect(dialog.getByLabel('Prazo')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+      await dialog.getByRole('button', { name: 'Atribuir medição' }).click();
+      await page.getByRole('button', { name: 'Medir agora' }).click();
+      await page.getByRole('button', { name: 'Próximo' }).click();
+      await page.getByRole('button', { name: 'Próximo' }).click();
+      await page.getByRole('button', { name: 'Próximo' }).click();
+      await page.getByRole('button', { name: 'Adicionar outro material' }).click();
+      await page.getByLabel('Descrição').fill('Grampos 80/10');
+      await page.getByLabel('Quantidade').fill('1,5');
+      await page.getByLabel('Unidade').selectOption({ label: 'embalagens' });
+      await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
+      await expect(page.getByText(/número inteiro/)).toBeVisible();
+      await page.getByLabel('Quantidade').fill('2');
+      await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
+      await page.getByRole('button', { name: 'Próximo' }).click();
+      await page.getByRole('button', { name: 'Enviar medição' }).click();
+      await expect(page.getByTestId('measurement-badges')).toContainText('Concluída');
+      await expect(page.getByTestId('measurement-badges')).toContainText('Materiais: enviada');
+    } finally {
+      await setServerClock(page, null);
+    }
   });
 });
