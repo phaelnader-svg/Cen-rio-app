@@ -280,19 +280,21 @@ export function WeeklyClosingTab() {
                     >
                       {money(r.openAtEndCents)}
                     </td>
-                    <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setOpen(open === rowKey(r) ? null : rowKey(r))}
-                      >
-                        {open === rowKey(r) ? 'Ocultar' : 'Detalhar'}
-                      </Button>
-                      {manage && r.canPay && r.currentOpenCents > 0 && (
-                        <Button size="sm" onClick={() => setPay(r)} data-testid="closing-pay">
-                          Registrar Pix
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-col items-end gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setOpen(open === rowKey(r) ? null : rowKey(r))}
+                        >
+                          {open === rowKey(r) ? 'Ocultar' : 'Detalhar'}
                         </Button>
-                      )}
+                        {manage && r.canPay && r.currentOpenCents > 0 && (
+                          <Button size="sm" onClick={() => setPay(r)} data-testid="closing-pay">
+                            Registrar Pix
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

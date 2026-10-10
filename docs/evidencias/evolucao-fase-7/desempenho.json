@@ -1,0 +1,52 @@
+{
+  "volume": {
+    "os": 40,
+    "tasks": 200,
+    "laborItems": 80,
+    "tripObligations": 80,
+    "tablets": 4,
+    "rows": 3,
+    "items": 160
+  },
+  "runs": 20,
+  "GET fechamento da semana (painel)": {
+    "p50": 83,
+    "p95": 136,
+    "max": 136
+  },
+  "GET fechamento CSV": {
+    "p50": 79,
+    "p95": 101,
+    "max": 101
+  },
+  "GET lista de fechamentos": {
+    "p50": 8,
+    "p95": 14,
+    "max": 14
+  },
+  "Painel + 4 tablets simultâneos (rodada)": {
+    "p50": 104,
+    "p95": 154,
+    "max": 154
+  },
+  "GET fila do tablet durante o fechamento": {
+    "p50": 61,
+    "p95": 82,
+    "max": 85
+  },
+  "POST Pix em lote (baixa nas obrigações originais)": {
+    "p50": 354,
+    "p95": 528,
+    "max": 528
+  },
+  "POST conferir": {
+    "p50": 201,
+    "p95": 212,
+    "max": 212
+  },
+  "POST reabrir": {
+    "p50": 129,
+    "p95": 149,
+    "max": 149
+  }
+}
