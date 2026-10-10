@@ -100,15 +100,15 @@ export function ProductionBoardPage() {
       <HelpAndRescheduleBanner />
       <Card className="mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">De</span>
+          <span className="label">De</span>
           <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Até</span>
+          <span className="label">Até</span>
           <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Funcionário</span>
+          <span className="label">Funcionário</span>
           <Select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
             <option value="">Todos</option>
             {workers.data?.map((w) => (
@@ -119,11 +119,11 @@ export function ProductionBoardPage() {
           </Select>
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">OS ou cliente</span>
+          <span className="label">OS ou cliente</span>
           <Input value={os} placeholder="OS-00001" onChange={(e) => setOs(e.target.value)} />
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Etapa</span>
+          <span className="label">Etapa</span>
           <Select value={activity} onChange={(e) => setActivity(e.target.value)}>
             <option value="">Todas</option>
             {PRODUCTION_ACTIVITIES.map((a) => (
@@ -134,7 +134,7 @@ export function ProductionBoardPage() {
           </Select>
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Status</span>
+          <span className="label">Status</span>
           <Select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">Todos</option>
             {TASK_STATUSES.filter((s) => s !== 'RASCUNHO').map((s) => (
@@ -145,7 +145,7 @@ export function ProductionBoardPage() {
           </Select>
         </label>
         <label className="text-sm sm:col-span-2">
-          <span className="mb-1 block text-ink-muted">Agrupar por</span>
+          <span className="label">Agrupar por</span>
           <Select
             aria-label="Agrupar por"
             value={by}

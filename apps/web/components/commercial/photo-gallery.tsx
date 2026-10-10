@@ -105,7 +105,7 @@ export function PhotoGallery({
       {canManage && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <input
-            className="input max-w-xs py-2 text-sm"
+            className="input input-sm max-w-xs"
             placeholder="Legenda (opcional)"
             aria-label="Legenda da foto"
             value={caption}

@@ -102,23 +102,23 @@ export function OsTotals({ rows, osCode }: { rows: Row[]; osCode: string }) {
   );
   if (lines.length === 0) return null;
   return (
-    <table className="w-full text-sm" data-testid="os-totals">
-      <thead className="text-left text-xs text-ink-muted uppercase">
+    <table className="data-table" data-testid="os-totals">
+      <thead>
         <tr>
-          <th className="py-1.5 font-semibold">Material</th>
-          <th className="py-1.5 text-right font-semibold">Total da OS</th>
+          <th>Material</th>
+          <th className="text-right">Total da OS</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-line">
         {lines.map((l) => (
           <tr key={l.key}>
-            <td className="py-2">
+            <td>
               {MATERIAL_KIND_LABEL[l.kind]}: {describeMaterial(l)}
               <span className="block text-xs text-ink-muted">
                 {l.origins.map((o) => o.itemCode ?? 'Toda a OS').join(' + ')}
               </span>
             </td>
-            <td className="py-2 text-right font-semibold tabular-nums">
+            <td className="text-right font-semibold tabular-nums">
               {formatQuantity(l.totalQuantity)} {MATERIAL_UNIT_LABEL[l.unit]}
             </td>
           </tr>

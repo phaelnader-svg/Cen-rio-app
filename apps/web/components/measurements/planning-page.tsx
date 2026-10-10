@@ -293,36 +293,34 @@ function PlanningMaterials({
     );
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-sm" data-testid="planning-materials">
-        <thead className="bg-subtle/60 text-left text-xs text-ink-muted uppercase">
+      <table className="data-table min-w-[640px]" data-testid="planning-materials">
+        <thead>
           <tr>
-            <th className="px-4 py-2 font-semibold">Material</th>
-            <th className="px-4 py-2 text-right font-semibold">Solicitado</th>
-            <th className="px-4 py-2 text-right font-semibold">Aprovado</th>
-            <th className="px-4 py-2 text-right font-semibold">Comprado</th>
-            <th className="px-4 py-2 text-right font-semibold">Recebido</th>
+            <th>Material</th>
+            <th className="text-right">Solicitado</th>
+            <th className="text-right">Aprovado</th>
+            <th className="text-right">Comprado</th>
+            <th className="text-right">Recebido</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
           {rows.map(({ line, requested, approved }) => (
             <tr key={line.key}>
-              <td className="px-4 py-2.5">
+              <td>
                 {MATERIAL_KIND_LABEL[line.kind]}: {describeMaterial(line)}
                 <span className="block text-xs text-ink-muted">
                   {line.serviceOrder ? `Exclusivo ${line.serviceOrder.code}` : 'Estoque comum'} ·{' '}
                   {line.origins.map((o) => o.itemCode ?? o.serviceOrderCode).join(', ')}
                 </span>
               </td>
-              <td className="px-4 py-2.5 text-right tabular-nums">{qty(requested, line.unit)}</td>
-              <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                {qty(approved, line.unit)}
-              </td>
-              <td className="px-4 py-2.5 text-right tabular-nums">
+              <td className="text-right tabular-nums">{qty(requested, line.unit)}</td>
+              <td className="text-right font-semibold tabular-nums">{qty(approved, line.unit)}</td>
+              <td className="text-right tabular-nums">
                 {progress
                   ? qty(progress.get(line.key)?.purchased ?? 0, line.unit)
                   : qty(null, line.unit)}
               </td>
-              <td className="px-4 py-2.5 text-right tabular-nums">
+              <td className="text-right tabular-nums">
                 {progress
                   ? qty(progress.get(line.key)?.received ?? 0, line.unit)
                   : qty(null, line.unit)}

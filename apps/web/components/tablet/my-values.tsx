@@ -68,7 +68,7 @@ export function MyValues() {
             maxLength={6}
             value={pin}
             onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            className="mt-1 block h-14 w-full rounded-xl border border-line-strong bg-surface px-4 text-2xl tracking-[0.5em]"
+            className="input input-lg mt-1 text-2xl tracking-[0.5em]"
             aria-describedby="my-values-error"
             data-testid="my-values-pin"
           />

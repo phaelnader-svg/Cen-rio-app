@@ -236,8 +236,8 @@ export function Table({
 }) {
   return (
     <Card className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-sm" data-testid={testId}>
-        <thead className="border-b border-line bg-subtle/60 text-left text-xs font-semibold tracking-wide text-ink-muted uppercase">
+      <table className="data-table min-w-[640px]" data-testid={testId}>
+        <thead>
           <tr>
             {head.map((h) => (
               <th key={h} className="px-4 py-2.5">

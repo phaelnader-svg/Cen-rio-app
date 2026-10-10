@@ -51,22 +51,22 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-sm" data-testid="os-material-lines">
-              <thead className="bg-subtle/60 text-left text-xs text-ink-muted uppercase">
+            <table className="data-table min-w-[760px]" data-testid="os-material-lines">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2 font-semibold">Material</th>
-                  <th className="px-4 py-2 text-right font-semibold">Aprovado</th>
-                  <th className="px-4 py-2 text-right font-semibold">Comprado</th>
-                  <th className="px-4 py-2 text-right font-semibold">Recebido</th>
-                  <th className="px-4 py-2 text-right font-semibold">Reservado</th>
-                  <th className="px-4 py-2 text-right font-semibold">Disponível</th>
-                  <th className="px-4 py-2 font-semibold">Situação</th>
+                  <th>Material</th>
+                  <th className="text-right">Aprovado</th>
+                  <th className="text-right">Comprado</th>
+                  <th className="text-right">Recebido</th>
+                  <th className="text-right">Reservado</th>
+                  <th className="text-right">Disponível</th>
+                  <th>Situação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {r.lines.map((l) => (
                   <tr key={l.requirementId}>
-                    <td className="px-4 py-2.5">
+                    <td>
                       {specText(l)}
                       <span className="block text-xs text-ink-muted">
                         {l.itemCode ?? 'Toda a OS'} · {MATERIAL_SOURCING_LABEL[l.sourcing]}
@@ -76,22 +76,16 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
                         {l.divergence ? ' · recebimento com divergência' : ''}
                       </span>
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
-                      {qtyText(l.need, l.unit)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
-                      {qtyText(l.purchased, l.unit)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
-                      {qtyText(l.received, l.unit)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
+                    <td className="text-right tabular-nums">{qtyText(l.need, l.unit)}</td>
+                    <td className="text-right tabular-nums">{qtyText(l.purchased, l.unit)}</td>
+                    <td className="text-right tabular-nums">{qtyText(l.received, l.unit)}</td>
+                    <td className="text-right tabular-nums">
                       {l.sourcing === 'ESTOQUE' ? qtyText(l.reserved, l.unit) : '—'}
                     </td>
-                    <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                    <td className="text-right font-semibold tabular-nums">
                       {qtyText(l.covered, l.unit)}
                     </td>
-                    <td className="px-4 py-2.5">
+                    <td>
                       <StageBadge stage={l.stage} />
                     </td>
                   </tr>

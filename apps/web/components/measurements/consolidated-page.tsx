@@ -135,23 +135,23 @@ export function ConsolidatedPage() {
               <Section key={kind} title={TITLE[kind]} bodyClassName="p-0">
                 <div className="overflow-x-auto">
                   <table
-                    className="w-full min-w-[560px] text-sm"
+                    className="data-table data-table-compact min-w-[560px]"
                     data-testid={`consolidated-${kind}`}
                   >
-                    <thead className="bg-subtle/60 text-left text-xs text-ink-muted uppercase">
+                    <thead>
                       <tr>
-                        <th className="px-4 py-2 font-semibold">Material</th>
-                        <th className="px-4 py-2 font-semibold">Destino</th>
-                        <th className="px-4 py-2 font-semibold">Origens</th>
-                        <th className="px-4 py-2 text-right font-semibold">Total</th>
+                        <th>Material</th>
+                        <th>Destino</th>
+                        <th>Origens</th>
+                        <th className="text-right">Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line">
                       {group.map((l) => (
                         <tr key={l.key}>
-                          <td className="px-4 py-2.5 font-medium">{describeMaterial(l)}</td>
-                          <td className="px-4 py-2.5 text-ink-soft">{destination(l)}</td>
-                          <td className="px-4 py-2.5 text-xs text-ink-muted">
+                          <td className="font-medium">{describeMaterial(l)}</td>
+                          <td className="text-ink-soft">{destination(l)}</td>
+                          <td className="text-xs text-ink-muted">
                             {l.origins
                               .map(
                                 (o) =>
@@ -159,7 +159,7 @@ export function ConsolidatedPage() {
                               )
                               .join(' · ')}
                           </td>
-                          <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                          <td className="text-right font-semibold tabular-nums">
                             {formatQuantity(l.totalQuantity)} {MATERIAL_UNIT_LABEL[l.unit]}
                           </td>
                         </tr>

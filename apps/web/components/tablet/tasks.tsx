@@ -1045,11 +1045,11 @@ function CompletePanel({
       )}
       {needsNote && (
         <label className="mt-4 block">
-          <span className="mb-1 block text-base font-semibold">
+          <span className="label-lg">
             {t.issueFor ? 'Resultado (o que foi feito)' : 'Observação de conclusão'}
           </span>
           <input
-            className="h-16 w-full rounded-2xl border border-line-strong px-4 text-lg"
+            className="input input-lg"
             value={note}
             maxLength={500}
             onChange={(e) => setNote(e.target.value)}
@@ -1126,7 +1126,7 @@ function PausePanel({
         <div className="mt-4 flex flex-wrap gap-3">
           <input
             aria-label="Motivo da pausa"
-            className="h-16 min-w-0 flex-1 rounded-2xl border border-line-strong px-4 text-lg"
+            className="input input-lg min-w-0 flex-1"
             value={note}
             maxLength={300}
             onChange={(e) => setNote(e.target.value)}
@@ -1176,7 +1176,7 @@ function ProgressPanel({
     nextStep.trim().length >= 2 ||
     percent !== null ||
     photos.ids.length > 0;
-  const field = 'h-16 w-full rounded-2xl border border-line-strong px-4 text-lg';
+  const field = 'input input-lg';
   return (
     <div className="rounded-2xl border border-line bg-surface p-5" data-testid="progress-panel">
       <p className="mb-1 text-xl font-semibold">Como está o andamento?</p>
@@ -1188,7 +1188,7 @@ function ProgressPanel({
       )}
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="sm:col-span-2">
-          <span className="mb-1 block text-base font-semibold">Observação</span>
+          <span className="label-lg">Observação</span>
           <input
             aria-label="Andamento"
             placeholder="Ex.: Braços cortados"
@@ -1199,7 +1199,7 @@ function ProgressPanel({
           />
         </label>
         <label>
-          <span className="mb-1 block text-base font-semibold">Etapa atual</span>
+          <span className="label-lg">Etapa atual</span>
           <input
             aria-label="Etapa atual"
             className={field}
@@ -1209,7 +1209,7 @@ function ProgressPanel({
           />
         </label>
         <label>
-          <span className="mb-1 block text-base font-semibold">Próximo passo</span>
+          <span className="label-lg">Próximo passo</span>
           <input
             aria-label="Próximo passo"
             className={field}

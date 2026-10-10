@@ -185,7 +185,7 @@ function TemplateEditor({
       <fieldset disabled={readOnly} className="space-y-4">
         <div className="flex flex-wrap items-end gap-4">
           <label className="text-sm">
-            <span className="mb-1 block text-ink-muted">Nome</span>
+            <span className="label">Nome</span>
             <Input
               className="w-64"
               value={d.name}
@@ -216,27 +216,27 @@ function TemplateEditor({
           />
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1080px] text-sm">
-            <thead className="text-left text-xs text-ink-muted uppercase">
+          <table className="data-table min-w-[1080px]">
+            <thead>
               <tr>
-                <th className="px-2 py-1">#</th>
-                <th className="px-2 py-1">Etapa</th>
-                <th className="px-2 py-1">Nome</th>
-                <th className="px-2 py-1">Classe (quem faz)</th>
-                <th className="px-2 py-1">Depende de</th>
-                <th className="px-2 py-1">Materiais</th>
-                <th className="px-2 py-1">Opcional</th>
-                <th className="px-2 py-1">Para concluir</th>
-                <th className="px-2 py-1" />
+                <th>#</th>
+                <th>Etapa</th>
+                <th>Nome</th>
+                <th>Classe (quem faz)</th>
+                <th>Depende de</th>
+                <th>Materiais</th>
+                <th>Opcional</th>
+                <th>Para concluir</th>
+                <th />
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {d.steps.map((s, i) => (
                 <tr key={i}>
-                  <td className="px-2 py-1.5 tabular-nums">{i + 1}</td>
-                  <td className="px-2 py-1.5">
+                  <td className="tabular-nums">{i + 1}</td>
+                  <td>
                     <Select
-                      className="h-8 py-0"
+                      className="input-sm"
                       value={s.activity}
                       onChange={(e) =>
                         setStep(i, {
@@ -253,16 +253,16 @@ function TemplateEditor({
                       ))}
                     </Select>
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td>
                     <Input
-                      className="h-8"
+                      className="input-sm"
                       value={s.name}
                       onChange={(e) => setStep(i, { name: e.target.value })}
                     />
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td>
                     <Select
-                      className="h-8 py-0"
+                      className="input-sm"
                       aria-label={`Classe da etapa ${i + 1}`}
                       value={s.stepClass ?? ''}
                       onChange={(e) => {
@@ -278,9 +278,9 @@ function TemplateEditor({
                       ))}
                     </Select>
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td>
                     <Input
-                      className="h-8 w-28"
+                      className="input-sm w-28"
                       placeholder="ex.: 1, 2"
                       aria-label={`Dependências da etapa ${i + 1}`}
                       value={s.dependsOn.join(', ')}
@@ -294,7 +294,7 @@ function TemplateEditor({
                       }
                     />
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td>
                     <input
                       type="checkbox"
                       aria-label={`Etapa ${i + 1} exige materiais`}
@@ -303,7 +303,7 @@ function TemplateEditor({
                       onChange={(e) => setStep(i, { requiresMaterials: e.target.checked })}
                     />
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td>
                     <input
                       type="checkbox"
                       aria-label={`Etapa ${i + 1} opcional`}
@@ -312,9 +312,9 @@ function TemplateEditor({
                       onChange={(e) => setStep(i, { optional: e.target.checked })}
                     />
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td>
                     <Select
-                      className="h-8 py-0"
+                      className="input-sm"
                       aria-label={`Registro para concluir a etapa ${i + 1}`}
                       value={s.completionRequirement}
                       onChange={(e) =>
@@ -330,7 +330,7 @@ function TemplateEditor({
                       ))}
                     </Select>
                   </td>
-                  <td className="px-2 py-1.5 whitespace-nowrap">
+                  <td className="whitespace-nowrap">
                     <Button
                       size="sm"
                       variant="ghost"

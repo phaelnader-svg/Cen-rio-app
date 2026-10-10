@@ -16,14 +16,19 @@ interface FieldProps {
   required?: boolean;
 }
 
-/** Campo acessível: rótulo associado, mensagem de erro e dica ligadas por aria-describedby. */
+/**
+ * Campo acessível: rótulo associado, mensagem de erro e dica ligadas por aria-describedby.
+ * Sempre três filhos (rótulo · controle · mensagem): num grid, campos vizinhos compartilham as
+ * mesmas trilhas (ver `.field` em globals.css) e ficam alinhados mesmo com dica, erro ou rótulo
+ * longo.
+ */
 export function Field({ label, error, hint, children, className, required }: FieldProps) {
   const id = useId();
   const describedBy = [error ? `${id}-err` : null, hint ? `${id}-hint` : null]
     .filter(Boolean)
     .join(' ');
   return (
-    <div className={className}>
+    <div className={clsx('field', className)}>
       <label htmlFor={id} className="label">
         {label}
         {required && (
@@ -33,21 +38,25 @@ export function Field({ label, error, hint, children, className, required }: Fie
           </span>
         )}
       </label>
-      {children({
-        id,
-        'aria-invalid': error ? true : undefined,
-        'aria-describedby': describedBy || undefined,
-      })}
-      {hint && !error && (
-        <p id={`${id}-hint`} className="mt-1.5 text-xs text-ink-muted">
-          {hint}
-        </p>
-      )}
-      {error && (
-        <p id={`${id}-err`} role="alert" className="mt-1.5 text-sm text-danger-600">
-          {error}
-        </p>
-      )}
+      <div className="min-w-0">
+        {children({
+          id,
+          'aria-invalid': error ? true : undefined,
+          'aria-describedby': describedBy || undefined,
+        })}
+      </div>
+      <div className="field-msg">
+        {hint && !error && (
+          <p id={`${id}-hint`} className="mt-1.5 text-xs leading-4 text-ink-muted">
+            {hint}
+          </p>
+        )}
+        {error && (
+          <p id={`${id}-err`} role="alert" className="mt-1.5 text-sm leading-5 text-danger-600">
+            {error}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -62,12 +71,12 @@ export const Textarea = forwardRef<
   HTMLTextAreaElement,
   React.TextareaHTMLAttributes<HTMLTextAreaElement>
 >(function Textarea({ className, ...rest }, ref) {
-  return <textarea ref={ref} className={clsx('input min-h-20', className)} {...rest} />;
+  return <textarea ref={ref} className={clsx('input', className)} {...rest} />;
 });
 
 export const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<HTMLSelectElement>>(
   function Select({ className, ...rest }, ref) {
-    return <select ref={ref} className={clsx('input pr-8', className)} {...rest} />;
+    return <select ref={ref} className={clsx('input', className)} {...rest} />;
   },
 );
 

@@ -58,7 +58,7 @@ export function TeamAttendancePage() {
       />
       <Card className="mb-6 flex flex-wrap items-end gap-4 p-4">
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Data</span>
+          <span className="label">Data</span>
           <Input
             type="date"
             value={date}
@@ -66,7 +66,7 @@ export function TeamAttendancePage() {
           />
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Funcionário</span>
+          <span className="label">Funcionário</span>
           <Select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
             <option value="">Todos</option>
             {allMembers.data?.days.map((d) => (
@@ -112,29 +112,29 @@ export function TeamAttendancePage() {
       ) : (
         <Card className="mb-8 p-0">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-sm" data-testid="team-attendance">
-              <thead className="bg-subtle/60 text-left text-xs text-ink-muted uppercase">
+            <table className="data-table min-w-[980px]" data-testid="team-attendance">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2">Funcionário</th>
-                  <th className="px-4 py-2">Situação</th>
-                  <th className="px-4 py-2">Chegada</th>
-                  <th className="px-4 py-2">Tarefa em execução</th>
-                  <th className="px-4 py-2">Próxima tarefa</th>
-                  <th className="px-4 py-2">Saída</th>
-                  <th className="px-4 py-2">Alertas</th>
-                  <th className="px-4 py-2" />
+                  <th>Funcionário</th>
+                  <th>Situação</th>
+                  <th>Chegada</th>
+                  <th>Tarefa em execução</th>
+                  <th>Próxima tarefa</th>
+                  <th>Saída</th>
+                  <th>Alertas</th>
+                  <th />
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {q.data.days.map((d) => (
                   <tr key={d.employee.id} data-testid={`attendance-${d.employee.displayName}`}>
-                    <td className="px-4 py-3">
+                    <td>
                       <span className="flex items-center gap-2 font-medium">
                         <Avatar name={d.employee.displayName} color={d.employee.color} size={28} />
                         {d.employee.displayName}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       <span
                         className={clsx(
                           'rounded-full px-2.5 py-1 text-xs font-semibold',
@@ -152,7 +152,7 @@ export function TeamAttendancePage() {
                           </span>
                         )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {d.arrivedAt ? (
                         <>
                           <span className="font-medium tabular-nums">
@@ -169,21 +169,21 @@ export function TeamAttendancePage() {
                         <span className="text-ink-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {d.runningTask ? (
                         <TaskLink t={d.runningTask} />
                       ) : (
                         <span className="text-ink-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {d.nextTask ? (
                         <TaskLink t={d.nextTask} />
                       ) : (
                         <span className="text-ink-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {d.departedAt ? (
                         <>
                           <span className="tabular-nums">{formatHourMinute(d.departedAt)}</span>
@@ -195,7 +195,7 @@ export function TeamAttendancePage() {
                         <span className="text-ink-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {d.openAlerts ? (
                         <span className="inline-flex items-center gap-1 font-semibold text-danger-600">
                           <AlertTriangle className="size-4" aria-hidden /> {d.openAlerts}
@@ -204,7 +204,7 @@ export function TeamAttendancePage() {
                         <span className="text-ink-muted">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="whitespace-nowrap">
                       {manage && (
                         <Button
                           size="sm"

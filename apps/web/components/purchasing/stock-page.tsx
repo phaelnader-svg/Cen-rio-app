@@ -123,33 +123,29 @@ function ItemsTab() {
         </Card>
       ) : (
         <Card className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-sm" data-testid="stock-items">
-            <thead className="bg-subtle/60 text-left text-xs text-ink-muted uppercase">
+          <table className="data-table min-w-[820px]" data-testid="stock-items">
+            <thead>
               <tr>
-                <th className="px-4 py-2 font-semibold">Material</th>
-                <th className="px-4 py-2 text-right font-semibold">Físico</th>
-                <th className="px-4 py-2 text-right font-semibold">Reservado</th>
-                <th className="px-4 py-2 text-right font-semibold">Disponível</th>
-                <th className="px-4 py-2 text-right font-semibold">Mínimo</th>
-                <th className="px-4 py-2" />
+                <th>Material</th>
+                <th className="text-right">Físico</th>
+                <th className="text-right">Reservado</th>
+                <th className="text-right">Disponível</th>
+                <th className="text-right">Mínimo</th>
+                <th />
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {items.data.map((i) => (
                 <tr key={i.id} data-testid={`stock-${i.code}`}>
-                  <td className="px-4 py-2.5">
+                  <td>
                     <span className="font-mono text-xs text-ink-muted">{i.code}</span> {specText(i)}
                     {i.location && (
                       <span className="block text-xs text-ink-muted">{i.location}</span>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">
-                    {qtyText(i.onHand, i.unit)}
-                  </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">
-                    {formatQuantity(i.reserved)}
-                  </td>
-                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                  <td className="text-right tabular-nums">{qtyText(i.onHand, i.unit)}</td>
+                  <td className="text-right tabular-nums">{formatQuantity(i.reserved)}</td>
+                  <td className="text-right font-semibold tabular-nums">
                     {formatQuantity(i.available)}
                     {i.belowMinimum && (
                       <Badge tone="danger" className="ml-2">
@@ -157,10 +153,10 @@ function ItemsTab() {
                       </Badge>
                     )}
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">
+                  <td className="text-right tabular-nums">
                     {i.minQuantity === null ? '—' : formatQuantity(i.minQuantity)}
                   </td>
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                  <td className="text-right whitespace-nowrap">
                     {manage && (
                       <>
                         <Button
@@ -542,38 +538,38 @@ function MovementsTab() {
     );
   return (
     <Card className="overflow-x-auto">
-      <table className="w-full min-w-[820px] text-sm" data-testid="stock-movements">
-        <thead className="bg-subtle/60 text-left text-xs text-ink-muted uppercase">
+      <table className="data-table min-w-[820px]" data-testid="stock-movements">
+        <thead>
           <tr>
-            <th className="px-4 py-2 font-semibold">Quando</th>
-            <th className="px-4 py-2 font-semibold">Material</th>
-            <th className="px-4 py-2 font-semibold">Tipo</th>
-            <th className="px-4 py-2 text-right font-semibold">Quantidade</th>
-            <th className="px-4 py-2 text-right font-semibold">Saldo após</th>
-            <th className="px-4 py-2 font-semibold">Referência</th>
+            <th>Quando</th>
+            <th>Material</th>
+            <th>Tipo</th>
+            <th className="text-right">Quantidade</th>
+            <th className="text-right">Saldo após</th>
+            <th>Referência</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
           {list.data.map((mv) => (
             <tr key={mv.id}>
-              <td className="px-4 py-2.5 whitespace-nowrap">
+              <td className="whitespace-nowrap">
                 {formatDateTime(mv.createdAt)}
                 <span className="block text-xs text-ink-muted">{mv.actor}</span>
               </td>
-              <td className="px-4 py-2.5">
+              <td>
                 {mv.stockItem.code} · {mv.stockItem.description}
               </td>
-              <td className="px-4 py-2.5">{STOCK_MOVEMENT_LABEL[mv.type]}</td>
+              <td>{STOCK_MOVEMENT_LABEL[mv.type]}</td>
               <td
                 className={`px-4 py-2.5 text-right font-semibold tabular-nums ${mv.quantity < 0 ? 'text-danger-600' : 'text-ok-600'}`}
               >
                 {mv.quantity > 0 ? '+' : ''}
                 {formatQuantity(mv.quantity)}
               </td>
-              <td className="px-4 py-2.5 text-right tabular-nums">
+              <td className="text-right tabular-nums">
                 {formatQuantity(mv.balanceAfter)} (res. {formatQuantity(mv.reservedAfter)})
               </td>
-              <td className="px-4 py-2.5 text-xs text-ink-muted">
+              <td className="text-xs text-ink-muted">
                 {[mv.reference, mv.serviceOrder?.code, mv.reason].filter(Boolean).join(' · ')}
               </td>
             </tr>

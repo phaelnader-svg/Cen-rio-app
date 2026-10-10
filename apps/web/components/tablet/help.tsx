@@ -260,7 +260,7 @@ function HelpForm({
             Por que é urgente? (obrigatório)
           </span>
           <input
-            className="h-14 w-full rounded-xl border border-line bg-surface px-4 text-lg"
+            className="input input-lg"
             value={why}
             maxLength={300}
             onChange={(e) => setWhy(e.target.value)}
@@ -274,7 +274,7 @@ function HelpForm({
           Observação (opcional)
         </span>
         <input
-          className="h-14 w-full rounded-xl border border-line bg-surface px-4 text-lg"
+          className="input input-lg"
           value={note}
           maxLength={300}
           onChange={(e) => setNote(e.target.value)}

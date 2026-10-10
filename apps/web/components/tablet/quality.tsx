@@ -214,7 +214,7 @@ function ChecklistItem({
           </label>
           <textarea
             id={`defect-${item.id}`}
-            className="input min-h-20 w-full text-lg"
+            className="input input-lg min-h-20"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Ex.: ponto solto no braço esquerdo"
@@ -387,7 +387,7 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
               </label>
               <textarea
                 id="approve-note"
-                className="input min-h-16 w-full text-lg"
+                className="input input-lg min-h-16"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
@@ -431,7 +431,7 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
               </label>
               <textarea
                 id="reject-reason"
-                className="input min-h-20 w-full text-lg"
+                className="input input-lg min-h-20"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               />
@@ -577,7 +577,7 @@ export function PackagingPanel({ packagingId }: { packagingId: string }) {
         </label>
         <select
           id="packaging-location"
-          className="input w-full text-lg"
+          className="input input-lg"
           value={locationId}
           onChange={(e) => setLocationId(e.target.value)}
         >
@@ -595,7 +595,7 @@ export function PackagingPanel({ packagingId }: { packagingId: string }) {
         </label>
         <textarea
           id="packaging-notes"
-          className="input min-h-16 w-full text-lg"
+          className="input input-lg min-h-16"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />

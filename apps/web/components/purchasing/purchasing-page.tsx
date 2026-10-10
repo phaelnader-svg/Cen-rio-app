@@ -98,17 +98,17 @@ function NeedsTab() {
         </Card>
       ) : (
         <Card className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-sm" data-testid="needs">
-            <thead className="bg-subtle/60 text-left text-xs text-ink-muted uppercase">
+          <table className="data-table min-w-[980px]" data-testid="needs">
+            <thead>
               <tr>
-                {canBuy && <th className="w-10 px-3 py-2" />}
-                <th className="px-3 py-2 font-semibold">OS / cliente</th>
-                <th className="px-3 py-2 font-semibold">Material</th>
-                <th className="px-3 py-2 text-right font-semibold">Aprovado</th>
-                <th className="px-3 py-2 text-right font-semibold">Em compra</th>
-                <th className="px-3 py-2 text-right font-semibold">A comprar</th>
-                <th className="px-3 py-2 font-semibold">Compras</th>
-                <th className="px-3 py-2 font-semibold">Situação</th>
+                {canBuy && <th className="w-10" />}
+                <th>OS / cliente</th>
+                <th>Material</th>
+                <th className="text-right">Aprovado</th>
+                <th className="text-right">Em compra</th>
+                <th className="text-right">A comprar</th>
+                <th>Compras</th>
+                <th>Situação</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
@@ -118,7 +118,7 @@ function NeedsTab() {
                   data-testid={`need-${n.serviceOrder.code}-${n.description}`}
                 >
                   {canBuy && (
-                    <td className="px-3 py-2.5">
+                    <td>
                       <input
                         type="checkbox"
                         aria-label={`Selecionar ${n.description} da ${n.serviceOrder.code}`}
@@ -129,7 +129,7 @@ function NeedsTab() {
                       />
                     </td>
                   )}
-                  <td className="px-3 py-2.5">
+                  <td>
                     <Link
                       href={`/painel/os/${n.serviceOrder.id}`}
                       className="font-mono font-semibold text-brand-700 hover:underline"
@@ -141,20 +141,20 @@ function NeedsTab() {
                     </span>
                     <PriorityBadge priority={n.serviceOrder.priority} />
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td>
                     {specText(n)}
                     <span className="block text-xs text-ink-muted">
                       {n.itemCode ?? 'Toda a OS'} · {MATERIAL_SOURCING_LABEL[n.sourcing]}
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{qtyText(n.need, n.unit)}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">
+                  <td className="text-right tabular-nums">{qtyText(n.need, n.unit)}</td>
+                  <td className="text-right tabular-nums">
                     {qtyText(n.purchased + n.purchasedDraft, n.unit)}
                   </td>
-                  <td className="px-3 py-2.5 text-right font-semibold tabular-nums">
+                  <td className="text-right font-semibold tabular-nums">
                     {qtyText(n.pendingToBuy, n.unit)}
                   </td>
-                  <td className="px-3 py-2.5 text-xs">
+                  <td className="text-xs">
                     {n.purchases.map((p) => (
                       <Link
                         key={p.purchaseOrderId}
@@ -167,7 +167,7 @@ function NeedsTab() {
                       </Link>
                     ))}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td>
                     <StageBadge stage={n.stage} />
                   </td>
                 </tr>

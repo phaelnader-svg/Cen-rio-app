@@ -16,18 +16,21 @@ export const MoneyInput = forwardRef<
     cents: number | null;
     onCents: (v: number | null, valid: boolean) => void;
   }
->(function MoneyInput({ cents, onCents, ...rest }, ref) {
+>(function MoneyInput({ cents, onCents, className, ...rest }, ref) {
   const [text, setText] = useState(toText(cents));
   return (
     <div className="relative">
-      <span className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-ink-muted">
+      <span
+        className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-[15px] text-ink-muted"
+        aria-hidden
+      >
         R$
       </span>
       <Input
         ref={ref}
         {...rest}
         inputMode="decimal"
-        className="pl-10"
+        className={`pl-10 tabular-nums ${className ?? ''}`}
         value={text}
         onChange={(e) => {
           setText(e.target.value);

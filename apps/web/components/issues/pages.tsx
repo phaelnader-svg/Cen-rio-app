@@ -88,7 +88,7 @@ export function AttentionPage() {
       </div>
       <Card className="mb-4 grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Tipo</span>
+          <span className="label">Tipo</span>
           <Select value={f.type ?? ''} onChange={(e) => set('type', e.target.value)}>
             <option value="">Todos</option>
             {ATTENTION_TYPES.map((t) => (
@@ -99,7 +99,7 @@ export function AttentionPage() {
           </Select>
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Situação</span>
+          <span className="label">Situação</span>
           <Select value={f.status ?? ''} onChange={(e) => set('status', e.target.value)}>
             <option value="">Todas</option>
             {Object.entries(ISSUE_STATUS_LABEL).map(([k, v]) => (
@@ -110,7 +110,7 @@ export function AttentionPage() {
           </Select>
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Funcionário</span>
+          <span className="label">Funcionário</span>
           <Select
             value={f.employeeUserId ?? ''}
             onChange={(e) => set('employeeUserId', e.target.value)}
@@ -124,7 +124,7 @@ export function AttentionPage() {
           </Select>
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Responsável pela solução</span>
+          <span className="label">Responsável pela solução</span>
           <Select
             value={f.solverUserId ?? ''}
             onChange={(e) => set('solverUserId', e.target.value)}
@@ -138,7 +138,7 @@ export function AttentionPage() {
           </Select>
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">OS</span>
+          <span className="label">OS</span>
           <Select
             value={f.serviceOrderId ?? ''}
             onChange={(e) => set('serviceOrderId', e.target.value)}
@@ -152,7 +152,7 @@ export function AttentionPage() {
           </Select>
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Data</span>
+          <span className="label">Data</span>
           <Input type="date" value={f.date ?? ''} onChange={(e) => set('date', e.target.value)} />
         </label>
       </Card>

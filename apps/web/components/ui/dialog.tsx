@@ -22,7 +22,7 @@ export function Dialog({
   description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -35,7 +35,7 @@ export function Dialog({
     if (!open && el.open) el.close();
   }, [open]);
 
-  const width = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl' }[size];
+  const width = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl' }[size];
 
   return (
     <dialog
@@ -49,9 +49,9 @@ export function Dialog({
       className={`m-auto w-[calc(100%-1.5rem)] ${width} rounded-2xl border border-line bg-surface p-0 text-ink shadow-[var(--shadow-pop)]`}
     >
       {open && (
-        <div className="flex max-h-[88vh] flex-col">
-          <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-4">
-            <div>
+        <div className="flex max-h-[min(88vh,calc(100dvh-1.5rem))] flex-col">
+          <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-6">
+            <div className="min-w-0">
               <h2 id={titleId} className="text-lg font-semibold">
                 {title}
               </h2>
@@ -70,9 +70,11 @@ export function Dialog({
               <X className="size-5" aria-hidden />
             </button>
           </div>
-          <div className="overflow-y-auto px-6 py-5">{children}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
+            {children}
+          </div>
           {footer && (
-            <div className="flex flex-wrap justify-end gap-2 border-t border-line bg-subtle/60 px-6 py-3.5">
+            <div className="flex flex-col-reverse gap-2 border-t border-line bg-subtle/60 px-5 py-3.5 sm:flex-row sm:flex-wrap sm:justify-end sm:px-6 [&>*]:w-full sm:[&>*]:w-auto">
               {footer}
             </div>
           )}

@@ -804,7 +804,7 @@ function MeasureDialog({
       )}
       <ul className="space-y-2">
         {rows.map((r, idx) => (
-          <li key={idx} className="grid grid-cols-[1fr_120px_auto] items-end gap-2">
+          <li key={idx} className="grid grid-cols-[1fr_120px_auto] gap-2">
             <Field label={idx === 0 ? 'Medida' : ' '}>
               {(p) => (
                 <Input
@@ -830,12 +830,14 @@ function MeasureDialog({
                 />
               )}
             </Field>
-            <Button
-              variant="ghost"
-              aria-label={`Remover medida ${idx + 1}`}
-              icon={<Trash2 className="size-4" aria-hidden />}
-              onClick={() => setRows(rows.filter((_, i) => i !== idx))}
-            />
+            <div className="field-action">
+              <Button
+                variant="ghost"
+                aria-label={`Remover medida ${idx + 1}`}
+                icon={<Trash2 className="size-4" aria-hidden />}
+                onClick={() => setRows(rows.filter((_, i) => i !== idx))}
+              />
+            </div>
           </li>
         ))}
       </ul>

@@ -109,16 +109,16 @@ export function HelpRequestsPage() {
           />
         ) : (
           <Card className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm" data-testid="help-table">
-              <thead className="bg-subtle text-left text-ink-muted">
+            <table className="data-table" data-testid="help-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-2.5">Pedido</th>
-                  <th className="px-4 py-2.5">Quem pediu</th>
-                  <th className="px-4 py-2.5">Tarefa</th>
-                  <th className="px-4 py-2.5">Apoio</th>
-                  <th className="px-4 py-2.5">Ajudante</th>
-                  <th className="px-4 py-2.5">Espera</th>
-                  <th className="px-4 py-2.5" />
+                  <th>Pedido</th>
+                  <th>Quem pediu</th>
+                  <th>Tarefa</th>
+                  <th>Apoio</th>
+                  <th>Ajudante</th>
+                  <th>Espera</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -128,7 +128,7 @@ export function HelpRequestsPage() {
                     className="border-t border-line"
                     data-testid={`help-row-${r.code}`}
                   >
-                    <td className="px-4 py-3">
+                    <td>
                       <span className="font-mono font-semibold">{r.code}</span>
                       {r.urgent && (
                         <Badge tone="danger" className="ml-2">
@@ -139,27 +139,27 @@ export function HelpRequestsPage() {
                         {formatDateTime(r.createdAt)}
                       </span>
                     </td>
-                    <td className="px-4 py-3">{r.requester.displayName}</td>
-                    <td className="px-4 py-3">
+                    <td>{r.requester.displayName}</td>
+                    <td>
                       <span className="font-mono text-xs text-ink-muted">
                         {r.serviceOrder.code} · {r.task.code}
                       </span>
                       <span className="block">{r.task.title}</span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {HELP_KIND_LABEL[r.kind]} · {r.estimatedMinutes} min
                       {r.justification && (
                         <span className="block text-xs text-danger-600">{r.justification}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {r.helper?.displayName ?? '—'}
                       <Badge tone={STATUS_TONE[r.status]} className="ml-2">
                         {HELP_STATUS_LABEL[r.status]}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3">{r.waitingMinutes} min</td>
-                    <td className="px-4 py-3 text-right">
+                    <td>{r.waitingMinutes} min</td>
+                    <td className="text-right">
                       <Button size="sm" variant="secondary" onClick={() => setOpen(r.id)}>
                         Detalhes
                       </Button>
@@ -216,19 +216,19 @@ function HelpDetailDialog({ id, onClose }: { id: string; onClose: () => void }) 
                 </p>
                 {e.note && <p className="text-sm">{e.note}</p>}
                 {e.candidates && (
-                  <table className="mt-2 w-full text-sm" data-testid="candidates">
-                    <thead className="text-left text-ink-muted">
+                  <table className="data-table mt-2" data-testid="candidates">
+                    <thead>
                       <tr>
-                        <th className="py-1">Candidato</th>
-                        <th className="py-1">Situação</th>
-                        <th className="py-1">Impacto</th>
+                        <th>Candidato</th>
+                        <th>Situação</th>
+                        <th>Impacto</th>
                       </tr>
                     </thead>
                     <tbody>
                       {e.candidates.map((c) => (
                         <tr key={c.userId} className="border-t border-line">
-                          <td className="py-1.5">{c.name}</td>
-                          <td className="py-1.5">
+                          <td>{c.name}</td>
+                          <td>
                             {c.eligible ? (
                               <Badge tone="ok">Elegível</Badge>
                             ) : (
@@ -240,7 +240,7 @@ function HelpDetailDialog({ id, onClose }: { id: string; onClose: () => void }) 
                               </span>
                             )}
                           </td>
-                          <td className="py-1.5">{c.eligible ? c.score : '—'}</td>
+                          <td>{c.eligible ? c.score : '—'}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -654,29 +654,27 @@ function PlanningHistory() {
       ) : !q.data?.length ? (
         <EmptyState title="Nenhuma alteração registrada" />
       ) : (
-        <table className="w-full text-sm" data-testid="planning-history">
-          <thead className="bg-subtle text-left text-ink-muted">
+        <table className="data-table" data-testid="planning-history">
+          <thead>
             <tr>
-              <th className="px-4 py-2.5">Quando</th>
-              <th className="px-4 py-2.5">O quê</th>
-              <th className="px-4 py-2.5">Quem</th>
-              <th className="px-4 py-2.5">Por quê</th>
+              <th>Quando</th>
+              <th>O quê</th>
+              <th>Quem</th>
+              <th>Por quê</th>
             </tr>
           </thead>
           <tbody>
             {q.data.map((a) => (
               <tr key={a.id} className="border-t border-line align-top">
-                <td className="px-4 py-2.5 whitespace-nowrap">{formatDateTime(a.createdAt)}</td>
-                <td className="px-4 py-2.5">
+                <td className="whitespace-nowrap">{formatDateTime(a.createdAt)}</td>
+                <td>
                   {PLANNING_ACTION_LABEL[a.kind]}
                   <span className="block font-mono text-xs text-ink-muted">
                     {[a.task?.code, a.helpRequestCode, a.proposalCode].filter(Boolean).join(' · ')}
                   </span>
                 </td>
-                <td className="px-4 py-2.5">
-                  {a.automatic ? <Badge tone="info">Automática</Badge> : (a.actor ?? '—')}
-                </td>
-                <td className="px-4 py-2.5">{a.reason}</td>
+                <td>{a.automatic ? <Badge tone="info">Automática</Badge> : (a.actor ?? '—')}</td>
+                <td>{a.reason}</td>
               </tr>
             ))}
           </tbody>

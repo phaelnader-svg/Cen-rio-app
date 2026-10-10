@@ -323,7 +323,7 @@ export function OrderForm({
           {items.map((it, idx) => (
             <li
               key={it.key}
-              className="grid gap-3 rounded-xl border border-line p-4 sm:grid-cols-[180px_1fr_110px_auto] sm:items-end"
+              className="grid gap-3 rounded-xl border border-line p-4 sm:grid-cols-[180px_1fr_110px_auto]"
               data-testid={`order-item-${idx}`}
             >
               <Field label={`Tipo da peça ${idx + 1}`}>
@@ -366,14 +366,16 @@ export function OrderForm({
                   />
                 )}
               </Field>
-              <Button
-                variant="ghost"
-                aria-label={`Remover peça ${idx + 1}`}
-                disabled={items.length === 1 || Boolean(it.locked)}
-                title={it.locked ? 'Peça já em retirada ou recebida' : undefined}
-                onClick={() => setItems(items.filter((x) => x.key !== it.key))}
-                icon={<Trash2 className="size-4" aria-hidden />}
-              />
+              <div className="field-action">
+                <Button
+                  variant="ghost"
+                  aria-label={`Remover peça ${idx + 1}`}
+                  disabled={items.length === 1 || Boolean(it.locked)}
+                  title={it.locked ? 'Peça já em retirada ou recebida' : undefined}
+                  onClick={() => setItems(items.filter((x) => x.key !== it.key))}
+                  icon={<Trash2 className="size-4" aria-hidden />}
+                />
+              </div>
               <Field label="Observações da peça" className="sm:col-span-4">
                 {(p) => (
                   <Input

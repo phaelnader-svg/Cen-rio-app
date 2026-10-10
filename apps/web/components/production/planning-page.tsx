@@ -562,7 +562,7 @@ function ItemSection({
           <PriorityBadge priority={item.priority} />
           <Select
             aria-label={`Responsável principal da ${item.serviceOrder.code}`}
-            className="h-8 w-48 py-0 text-sm"
+            className="input-sm w-48"
             value={item.principal?.userId ?? ''}
             onChange={(e) =>
               send(
@@ -607,22 +607,20 @@ function ItemSection({
     >
       <div className="overflow-x-auto">
         <table
-          className="w-full min-w-[1200px] text-sm"
+          className="data-table min-w-[1200px]"
           data-testid={`plan-tasks-${item.serviceOrder.code}`}
         >
-          <thead className="bg-subtle/60 text-left text-xs text-ink-muted uppercase">
+          <thead>
             <tr>
-              <th className="sticky left-0 z-10 min-w-56 bg-subtle px-3 py-2 font-semibold">
-                Tarefa
-              </th>
-              <th className="px-3 py-2 font-semibold">Responsável</th>
-              {timed && <th className="px-3 py-2 font-semibold">Dia</th>}
-              {timed && <th className="px-3 py-2 font-semibold">Hora</th>}
-              <th className="px-3 py-2 font-semibold">Prazo interno</th>
-              <th className="px-3 py-2 font-semibold">Prioridade</th>
-              <th className="px-3 py-2 font-semibold">Depende de</th>
-              <th className="px-3 py-2 font-semibold">Situação</th>
-              <th className="px-3 py-2" />
+              <th className="sticky left-0 z-10 min-w-56 bg-subtle">Tarefa</th>
+              <th>Responsável</th>
+              {timed && <th>Dia</th>}
+              {timed && <th>Hora</th>}
+              <th>Prazo interno</th>
+              <th>Prioridade</th>
+              <th>Depende de</th>
+              <th>Situação</th>
+              <th />
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
@@ -636,7 +634,7 @@ function ItemSection({
                   data-testid={`plan-task-${t.title}`}
                   className={t.status === 'CANCELADA' ? 'opacity-50' : undefined}
                 >
-                  <td className="sticky left-0 z-10 min-w-56 bg-surface px-3 py-2 shadow-[1px_0_0_var(--color-line)]">
+                  <td className="sticky left-0 z-10 min-w-56 bg-surface shadow-[1px_0_0_var(--color-line)]">
                     <Link
                       href={`/painel/producao/tarefas/${t.id}`}
                       className="font-medium hover:underline"
@@ -648,10 +646,10 @@ function ItemSection({
                       {t.requiresMaterials ? ' · exige materiais' : ''}
                     </span>
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <Select
                       aria-label={`Responsável de ${t.title}`}
-                      className="h-9 min-w-32 py-0 text-sm"
+                      className="input-sm min-w-32"
                       disabled={locked}
                       value={t.assignee?.userId ?? ''}
                       onChange={(e) => put(t, { assigneeUserId: e.target.value || null })}
@@ -665,11 +663,11 @@ function ItemSection({
                     </Select>
                   </td>
                   {timed && (
-                    <td className="px-3 py-2">
+                    <td>
                       <Input
                         aria-label={`Dia de ${t.title}`}
                         type="date"
-                        className="h-9 w-40 py-0 text-sm"
+                        className="input-sm w-40"
                         disabled={locked}
                         value={t.scheduledDate ?? ''}
                         onChange={(e) => put(t, { date: e.target.value || null })}
@@ -677,11 +675,11 @@ function ItemSection({
                     </td>
                   )}
                   {timed && (
-                    <td className="px-3 py-2">
+                    <td>
                       <Input
                         aria-label={`Hora de ${t.title}`}
                         type="time"
-                        className="h-9 w-28 py-0 text-sm"
+                        className="input-sm w-28"
                         disabled={locked || !t.scheduledDate}
                         value={t.scheduledTime ?? ''}
                         onChange={(e) =>
@@ -690,20 +688,20 @@ function ItemSection({
                       />
                     </td>
                   )}
-                  <td className="px-3 py-2">
+                  <td>
                     <Input
                       aria-label={`Prazo de ${t.title}`}
                       type="date"
-                      className="h-9 w-40 py-0 text-sm"
+                      className="input-sm w-40"
                       disabled={locked}
                       value={t.dueDate ?? ''}
                       onChange={(e) => put(t, { dueDate: e.target.value || null })}
                     />
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <Select
                       aria-label={`Prioridade de ${t.title}`}
-                      className="h-9 min-w-28 py-0 text-sm"
+                      className="input-sm min-w-28"
                       disabled={locked}
                       value={t.priority}
                       onChange={(e) => put(t, { priority: e.target.value })}
@@ -715,7 +713,7 @@ function ItemSection({
                       ))}
                     </Select>
                   </td>
-                  <td className="px-3 py-2 text-xs">
+                  <td className="text-xs">
                     <button
                       type="button"
                       className="inline-flex items-center gap-1 text-brand-700 hover:underline disabled:text-ink-muted"
@@ -726,7 +724,7 @@ function ItemSection({
                       {t.dependsOn.length ? t.dependsOn.map((d) => d.code).join(', ') : 'nenhuma'}
                     </button>
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     <TaskStatusBadge status={t.status} />
                     {t.blockers.length > 0 && (
                       <span className="block text-xs text-danger-600">
@@ -734,7 +732,7 @@ function ItemSection({
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td>
                     {!locked && (
                       <Button
                         size="sm"
@@ -763,7 +761,7 @@ function ItemSection({
           {(p) => (
             <Select
               {...p}
-              className="h-9 py-0 text-sm"
+              className="input-sm"
               value={activity}
               onChange={(e) => setActivity(e.target.value as ProductionActivity)}
             >
@@ -1055,7 +1053,7 @@ function DistributionSection({
               {p.needsUpholstery && (
                 <Select
                   aria-label={`Titular de ${p.item.code}`}
-                  className="h-9 w-48 py-0 text-sm"
+                  className="input-sm w-48"
                   value={p.upholsterer?.userId ?? ''}
                   onChange={(e) => {
                     const to = e.target.value;

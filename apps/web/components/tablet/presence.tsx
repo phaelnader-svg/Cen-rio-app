@@ -182,7 +182,7 @@ export function DepartScreen({ data, onDone }: { data: MyAttendanceDto; onDone: 
   const set = (id: string, patch: Partial<TaskInput>) =>
     setValues((v) => ({ ...v, [id]: { ...v[id]!, ...patch } }));
   const missing = data.openTasks.filter((t) => !informed(values[t.id]!));
-  const field = 'h-14 w-full rounded-2xl border border-line-strong px-4 text-lg';
+  const field = 'input input-lg';
   const send = () =>
     m.mutate({
       run: () =>
@@ -232,7 +232,7 @@ export function DepartScreen({ data, onDone }: { data: MyAttendanceDto; onDone: 
             </p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="sm:col-span-2">
-                <span className="mb-1 block text-base font-semibold">Como ficou</span>
+                <span className="label-lg">Como ficou</span>
                 <input
                   aria-label={`Andamento de ${t.code}`}
                   className={field}
@@ -242,7 +242,7 @@ export function DepartScreen({ data, onDone }: { data: MyAttendanceDto; onDone: 
                 />
               </label>
               <label>
-                <span className="mb-1 block text-base font-semibold">Etapa atual</span>
+                <span className="label-lg">Etapa atual</span>
                 <input
                   aria-label={`Etapa atual de ${t.code}`}
                   className={field}
@@ -252,7 +252,7 @@ export function DepartScreen({ data, onDone }: { data: MyAttendanceDto; onDone: 
                 />
               </label>
               <label>
-                <span className="mb-1 block text-base font-semibold">Próximo passo</span>
+                <span className="label-lg">Próximo passo</span>
                 <input
                   aria-label={`Próximo passo de ${t.code}`}
                   className={field}
@@ -279,7 +279,7 @@ export function DepartScreen({ data, onDone }: { data: MyAttendanceDto; onDone: 
         );
       })}
       <label className="block">
-        <span className="mb-1 block text-base font-semibold">Observação do dia (opcional)</span>
+        <span className="label-lg">Observação do dia (opcional)</span>
         <input
           aria-label="Observação do dia"
           className={field}

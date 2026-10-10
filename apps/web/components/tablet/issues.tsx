@@ -269,7 +269,7 @@ function ProblemForm({
             </div>
             {requirementId === null && (
               <input
-                className="mt-3 h-14 w-full rounded-xl border border-line bg-surface px-4 text-lg"
+                className="mt-3 input input-lg"
                 placeholder="Qual material está faltando?"
                 value={other}
                 maxLength={200}
@@ -283,7 +283,7 @@ function ProblemForm({
               <span className="mb-2 block text-base font-semibold text-ink-soft">Quantidade</span>
               <input
                 inputMode="decimal"
-                className="h-14 w-full rounded-xl border border-line bg-surface px-4 text-lg"
+                className="input input-lg"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
                 data-testid="problem-quantity"
@@ -292,7 +292,7 @@ function ProblemForm({
             <label className="block">
               <span className="mb-2 block text-base font-semibold text-ink-soft">Unidade</span>
               <select
-                className="h-14 w-full rounded-xl border border-line bg-surface px-4 text-lg"
+                className="input input-lg"
                 value={unit}
                 onChange={(e) => setUnit(e.target.value as MaterialUnit)}
                 data-testid="problem-unit"
