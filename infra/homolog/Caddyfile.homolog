@@ -77,6 +77,30 @@
 			HTML 401
 	}
 
+	# Manutenção: com a API e a web paradas (atualização controlada), o proxy responde 503 com
+	# explicação (JSON para a API, para os tablets mostrarem "sem conexão" e tentarem depois) em
+	# vez de 502 vazio. Nenhuma operação chega ao banco nesse período.
+	handle_errors 502 503 504 {
+		header Cache-Control "no-store"
+		header Retry-After "120"
+		@api path /api/*
+		handle @api {
+			header Content-Type "application/json; charset=utf-8"
+			respond `{"error":{"code":"MANUTENCAO","message":"Sistema em manutenção. Tente novamente em alguns minutos."}}` 503
+		}
+		handle {
+			header Content-Type "text/html; charset=utf-8"
+			respond <<HTML
+				<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Em manutenção · Homologação</title></head>
+				<body style="font-family:-apple-system,system-ui,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1rem;line-height:1.5;color:#1d2b2a">
+				<h1 style="font-size:1.3rem">Homologação do Cenário Gestão — em manutenção</h1>
+				<p>O sistema está sendo atualizado. Nenhum dado é perdido: tente novamente em alguns minutos.</p>
+				<p><a href="/">Tentar de novo</a></p>
+				</body></html>
+				HTML 503
+		}
+	}
+
 	log {
 		output stdout
 		format json

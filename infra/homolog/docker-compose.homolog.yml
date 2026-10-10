@@ -71,6 +71,10 @@ services:
       # O "prisma migrate deploy" do início envia dados de uso a checkpoint.prisma.io se isto não
       # estiver definido: nenhum dado sai para serviços externos.
       CHECKPOINT_DISABLE: '1'
+      # Migrations NUNCA implícitas na partida: a API só confere e recusa iniciar com pendência.
+      # Aplicação explícita: "vm.sh migrar <etiqueta>" (após "vm.sh ponto-recuperacao").
+      # Imagens anteriores a esta regra (ex.: fd6dc19) ignoram a variável e migram ao iniciar.
+      MIGRATE_ON_START: ${CENARIO_MIGRATE_ON_START:-0}
       DATABASE_URL: postgresql://cenario:${POSTGRES_PASSWORD}@postgres:5432/cenario_homolog
       API_HOST: 0.0.0.0
       API_PORT: 4000

@@ -474,7 +474,7 @@ preparar_vm() {
   ler_vm
   [[ "$(jq -r .status "$T/vm.json")" == RUNNING ]] || { echo "✘ VM não está RUNNING"; exit 1; }
   local estado; estado="$(ssh_vm "test -f $PORTAO && echo PORTAO-ABERTO || echo PORTAO-FECHADO" < /dev/null 2>/dev/null | tail -1)"
-  [[ "$estado" == PORTAO-FECHADO ]] || { echo "✘ Portão da VM: '${estado:-sem resposta}'. Com a publicação autorizada, use 'operador.sh atualizar'. Nada foi copiado."; exit 1; }
+  [[ "$estado" == PORTAO-FECHADO ]] || { echo "✘ Portão da VM: '${estado:-sem resposta}'. Com a publicação autorizada, use 'operador.sh atualizar-config' e a sequência 'operador.sh passo …'. Nada foi copiado."; exit 1; }
   secao "Preparação da VM $VM com o commit $commit"
   cat <<EOF
   • copia infra/homolog e scripts/backup.sh + restore.sh do commit para /opt/cenario

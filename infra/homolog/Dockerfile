@@ -31,15 +31,17 @@ RUN pnpm --filter @cenario/db generate \
   && pnpm --filter @cenario/api build \
   && API_INTERNAL_URL=$API_INTERNAL_URL pnpm --filter @cenario/web build
 
-# API: aplica as migrations pendentes (nunca reset) e inicia. Usuário sem privilégios.
-# "exec": o Node vira o processo principal e recebe o SIGTERM (encerramento seguro em até 10 s).
+# API: partida em infra/homolog/api-iniciar.sh. MIGRATE_ON_START=1 (padrão, uso local) aplica as
+# migrations pendentes (nunca reset); MIGRATE_ON_START=0 (homologação) só confere e recusa iniciar
+# com migration pendente — elas são aplicadas por "vm.sh migrar", depois do ponto de recuperação.
+# Usuário sem privilégios; o Node recebe o SIGTERM (encerramento seguro em até 10 s).
 FROM build AS api
 ENV NODE_ENV=production
 RUN mkdir -p /data/storage && chown -R node:node /data /app/packages/db
 USER node
 EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s CMD node -e "fetch('http://127.0.0.1:4000/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["sh", "-c", "pnpm db:migrate && exec node apps/api/dist/server.js"]
+CMD ["sh", "infra/homolog/api-iniciar.sh"]
 
 # Web: Next.js iniciado diretamente pelo Node (sem o processo extra do pnpm).
 FROM build AS web

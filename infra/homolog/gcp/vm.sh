@@ -16,8 +16,21 @@
 #   vm.sh enviar-backups       # envia ao bucket os backups ainda não enviados (usado pelo timer diário)
 #   vm.sh restaurar-teste [pasta]   # restaura num banco SEPARADO e compara (não toca na homologação)
 #   vm.sh restaurar <pasta> --sim   # restaura SOBRE a homologação (faz backup de segurança antes)
-#   vm.sh atualizar <etiqueta>      # backup + troca de versão das imagens (reversão: etiqueta anterior)
+#   vm.sh atualizar <etiqueta>      # DESATIVADO: migrava implicitamente na partida; use a sequência abaixo
 #   vm.sh parar                # encerra os contêineres (dados preservados)
+#
+# ATUALIZAÇÃO CONTROLADA (Evolução — pré-deploy), um passo por vez, cada um conferindo o anterior:
+#   vm.sh preparar-versao <etiqueta>  # baixa/confere as imagens novas e os digests (nada reiniciado)
+#   vm.sh manutencao                  # para API e web (o proxy responde 503 "em manutenção")
+#   vm.sh ponto-recuperacao           # backup + checksum + restauração em banco SEPARADO + impressão
+#                                     # digital idêntica + envio ao bucket; registra o ponto
+#   vm.sh migrar <etiqueta>           # pré-verificação + migrations com a imagem nova, SÓ se o banco
+#                                     # ainda for idêntico ao ponto de recuperação
+#   vm.sh ativar <etiqueta>           # sobe a versão nova (exige cenario-tag = etiqueta) + saúde
+#   vm.sh recuperar --sim             # volta ao ponto: recria o banco, restaura, confere a impressão
+#                                     # digital e sobe a versão anterior (perde o que veio depois)
+#   vm.sh impressao-digital [banco]   # SÓ LEITURA: conteúdo, vínculos, catálogo e valores do banco
+#   vm.sh preflight                   # SÓ LEITURA: dados que fariam as migrations da Evolução falharem
 #
 # Configuração não secreta: atributos da VM (metadata) "cenario-*" ou, fora do Google Cloud,
 # variáveis de ambiente com o mesmo nome em maiúsculas (ex.: CENARIO_TAG). Segredos: só no
@@ -291,6 +304,10 @@ saude() {
     local idade; idade="$(compose exec -T backup sh -c "echo \$(( (\$(date +%s) - \$(stat -c %Y '$ultimo')) / 3600 ))")"
     (( idade <= 26 )) && ok "último backup há ${idade} h ($(basename "$ultimo"))" || ruim "último backup há ${idade} h"
   else ruim "nenhum backup encontrado"; fi
+  local mig; mig="$(compose exec -T postgres psql -tAU cenario -d cenario_homolog -c \
+    "select count(*) filter (where finished_at is not null and rolled_back_at is null) || ' ' || count(*) filter (where finished_at is null and rolled_back_at is null) from _prisma_migrations" 2>/dev/null || true)"
+  if [[ "$mig" =~ ^([0-9]+)\ 0$ ]]; then ok "migrations: ${BASH_REMATCH[1]} aplicadas, nenhuma pendente/com falha"
+  else ruim "migrations: '${mig:-sem resposta}' (aplicadas pendentes/falhas)"; fi
   local uso; uso="$(df --output=pcent / | tail -1 | tr -dc 0-9)"
   (( uso < 85 )) && ok "disco em ${uso}%" || ruim "disco em ${uso}%"
   local livre; livre="$(free -m | awk '/^Mem:/ {print $7}')"
@@ -427,7 +444,35 @@ FICTICIO
   else echo "PREPARO DA VM: $falhas problema(s) (nada foi iniciado)"; return 1; fi
 }
 
-# Restauração de TESTE: banco separado, contagens comparadas, banco removido no fim.
+# Impressão digital SÓ LEITURA de um banco (contagem + md5 por tabela, catálogo de gatilhos/índices/
+# restrições, migrations e somas de todas as colunas *_cents). Igualdade = mesmo banco, por valor.
+impressao_digital() { # impressao_digital [banco]
+  need_env
+  compose exec -T postgres psql -U cenario -d "${1:-cenario_homolog}" -At -F'|' -v ON_ERROR_STOP=1 \
+    < "$DIR/infra/homolog/gcp/sql/impressao-digital.sql" | grep -vE '^(BEGIN|ROLLBACK)$'
+}
+preflight() {
+  need_env
+  compose exec -T postgres psql -U cenario -d cenario_homolog -At -F'|' -v ON_ERROR_STOP=1 \
+    < "$DIR/infra/homolog/gcp/sql/preflight-evolucao.sql" | grep -vE '^(BEGIN|ROLLBACK)$'
+}
+
+# Restaura <pasta> num banco <destino> (recriado VAZIO antes: um pg_restore --clean sobre um schema
+# mais novo deixaria tabelas/tipos novos para trás e falharia nas chaves estrangeiras deles).
+restaurar_em() { # restaurar_em <pasta> <banco> [--com-arquivos]
+  local pasta="$1" db="$2"
+  compose exec -T postgres psql -qU cenario -d postgres -v ON_ERROR_STOP=1 \
+    -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" -c "CREATE DATABASE $db OWNER cenario"
+  if [[ "${3:-}" == --com-arquivos ]]; then
+    compose run --rm -T --no-deps -v cenario-homolog_storage:/data/storage-rw --entrypoint bash backup -c \
+      "bash /scripts/restore.sh /data/backups/$pasta --target postgresql://cenario:$POSTGRES_PASSWORD@postgres:5432/$db --storage /data/storage-rw --yes"
+  else
+    compose run --rm -T --no-deps --entrypoint bash backup -c \
+      "bash /scripts/restore.sh /data/backups/$pasta --target postgresql://cenario:$POSTGRES_PASSWORD@postgres:5432/$db --storage /tmp/rs --yes && echo arquivos restaurados: \$(find /tmp/rs -type f | wc -l)"
+  fi
+}
+
+# Restauração de TESTE: banco SEPARADO, comparado por impressão digital, removido no fim.
 restaurar_teste() {
   need_env
   set -a
@@ -436,21 +481,23 @@ restaurar_teste() {
   set +a
   local pasta="${1:-}"
   [[ -n "$pasta" ]] || pasta="$(compose exec -T backup sh -c 'ls -1d /data/backups/cenario-* | tail -1' | xargs basename)"
-  local db=cenario_restore_check
-  compose exec -T postgres psql -qU cenario -d cenario_homolog -c "drop database if exists $db" -c "create database $db"
-  compose run --rm -T --no-deps --entrypoint bash backup -c \
-    "bash /scripts/restore.sh /data/backups/$pasta --target postgresql://cenario:$POSTGRES_PASSWORD@postgres:5432/$db --storage /tmp/rs --yes && echo arquivos restaurados: \$(find /tmp/rs -type f | wc -l)"
-  local q="select (select count(*) from users),(select count(*) from customers),(select count(*) from service_orders),(select count(*) from production_tasks),(select count(*) from audit_logs),(select coalesce(max(seq),0) from domain_events),(select count(*) from stored_files),(select count(*) from _prisma_migrations)"
-  local a b
-  a="$(compose exec -T backup sh -c "psql -tA 'postgresql://cenario:$POSTGRES_PASSWORD@postgres:5432/$db' -c \"$q\"")"
-  echo "restaurado ($pasta): $a"
-  b="$(compose exec -T postgres psql -tAU cenario -d cenario_homolog -c "$q")"
-  echo "atual:                 $b"
-  compose exec -T postgres psql -qU cenario -d cenario_homolog -c "drop database $db"
-  log "Restauração de teste concluída (banco temporário removido). Diferenças são esperadas se houve uso depois do backup."
+  local db=cenario_restore_check tmp; tmp="$(mktemp -d)"
+  restaurar_em "$pasta" "$db"
+  impressao_digital cenario_homolog > "$tmp/atual"
+  impressao_digital "$db" > "$tmp/restaurado"
+  compose exec -T postgres psql -qU cenario -d postgres -c "DROP DATABASE $db WITH (FORCE)"
+  echo "tabelas: $(grep -c '^tabela|' "$tmp/restaurado") · colunas financeiras: $(grep -c '^financeiro|' "$tmp/restaurado") · $(grep '^migracoes|aplicadas' "$tmp/restaurado" | cut -d'|' -f3) migrations"
+  if cmp -s "$tmp/atual" "$tmp/restaurado"; then
+    log "✔ Restauração de teste de $pasta IDÊNTICA ao banco atual (conteúdo, vínculos, catálogo e valores)."
+    rm -rf "$tmp"; return 0
+  fi
+  echo "Diferenças (restaurado × atual; esperadas se houve uso depois do backup):"
+  diff <(cut -d'|' -f1-3 "$tmp/restaurado") <(cut -d'|' -f1-3 "$tmp/atual") | head -20 || true
+  rm -rf "$tmp"; return 1
 }
 
-# Restauração SOBRE a homologação. Exige --sim e faz um backup de segurança antes.
+# Restauração SOBRE a homologação. Exige --sim e faz um backup de segurança antes. O banco é
+# RECRIADO vazio antes do pg_restore (ver restaurar_em). Arquivos criados depois do backup ficam.
 restaurar() {
   need_env
   set -a
@@ -460,23 +507,176 @@ restaurar() {
   local pasta="${1:-}"; [[ -n "$pasta" && "${2:-}" == --sim ]] || {
     echo "Uso: vm.sh restaurar <pasta-do-backup> --sim   (substitui o banco e os arquivos da homologação)" >&2; exit 2; }
   log "Backup de segurança antes da restauração…"
-  compose exec -T backup bash /scripts/backup.sh /data/backups
+  compose exec -T backup bash /scripts/backup.sh /data/backups || log "⚠ backup de segurança falhou (seguindo: a restauração foi pedida explicitamente)"
   compose stop api web
-  compose run --rm -T --no-deps -v cenario-homolog_storage:/data/storage-rw --entrypoint bash backup -c \
-    "bash /scripts/restore.sh /data/backups/$pasta --target postgresql://cenario:$POSTGRES_PASSWORD@postgres:5432/cenario_homolog --storage /data/storage-rw --yes"
-  compose start api web
+  restaurar_em "$pasta" cenario_homolog --com-arquivos
+  compose up -d --no-build api web
   log "Restauração concluída a partir de $pasta. Painéis e tablets recarregam sozinhos (resync)."
 }
 
+# DESATIVADO: trocava a etiqueta e iniciava a pilha, e a imagem aplicava as migrations NA PARTIDA,
+# sem teste de restauração nem garantia de que nada foi gravado depois do backup.
 atualizar() {
-  local nova="${1:-}"; [[ -n "$nova" ]] || { echo "Uso: vm.sh atualizar <etiqueta>" >&2; exit 2; }
-  need_env
-  log "Backup antes da atualização…"; backup
-  local anterior; anterior="$(grep -oP "(?<=api:)[^']+" "$ENV_FILE" || true)"
-  sed -i "s#\(/api:\|/web:\)[^']*'#\1$nova'#" "$ENV_FILE"
-  log "Versão: $anterior → $nova (para voltar: vm.sh atualizar $anterior)"
-  iniciar
-  saude || log "ATENÇÃO: verificação falhou. Reverter com: vm.sh atualizar $anterior"
+  echo "vm.sh atualizar foi desativado (migrava implicitamente). Use, nesta ordem:" >&2
+  echo "  preparar-versao <etiqueta> → manutencao → ponto-recuperacao → migrar <etiqueta> → ativar <etiqueta>" >&2
+  echo "  (falha: recuperar --sim). Veja docs/EVOLUCAO-PRE-DEPLOY-HOMOLOGACAO.md." >&2
+  exit 2
+}
+
+# ======================================================== ATUALIZAÇÃO CONTROLADA
+imagem() { echo "${CENARIO_REGISTRY:-$REGION-docker.pkg.dev/$PROJECT/$REPO}/$1:$2"; }
+etiqueta_valida() { [[ "${1:-}" =~ ^[0-9a-f]{7,40}$ ]] || { echo "Etiqueta inválida: '${1:-}' (SHA do commit)." >&2; exit 2; }; }
+etiqueta_ativa() { sed -n "s#^CENARIO_API_IMAGE='.*/api:\([^']*\)'#\1#p" "$ENV_FILE"; }
+app_parada() { # API e web sem execução
+  local s id
+  for s in api web; do
+    id="$(compose ps -q "$s" 2>/dev/null || true)"
+    [[ -z "$id" || "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null)" != true ]] || return 1
+  done
+}
+PONTO_ARQ() { echo "$STATE_DIR/ponto-recuperacao"; }
+
+preparar_versao() {
+  local tag="${1:-}"; etiqueta_valida "$tag"
+  need_portao; need_env
+  install -d -m 700 "$STATE_DIR"
+  local ref falhas=0
+  if [[ -z "${CENARIO_REGISTRY:-}" && -n "$PROJECT" ]]; then
+    gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet >/dev/null 2>&1 || true
+  fi
+  for x in api web; do
+    ref="$(imagem "$x" "$tag")"
+    if [[ -z "${CENARIO_REGISTRY:-}" && -n "$PROJECT" ]]; then docker pull -q "$ref" >/dev/null || { echo "✘ não baixou $ref"; falhas=$((falhas + 1)); continue; }; fi
+    if ! docker image inspect "$ref" >/dev/null 2>&1; then echo "✘ imagem ausente: $ref"; falhas=$((falhas + 1)); continue; fi
+    echo "✔ $x: $ref"
+    echo "    digest: $(docker image inspect -f '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}(local, sem digest de registro){{end}}' "$ref")"
+    echo "    id: $(docker image inspect -f '{{.Id}}' "$ref") · tamanho: $(( $(docker image inspect -f '{{.Size}}' "$ref") / 1048576 )) MB"
+  done
+  ref="$(imagem api "$tag")"
+  if docker run --rm --entrypoint sh "$ref" -c 'test -f infra/homolog/api-iniciar.sh' 2>/dev/null; then
+    echo "✔ a imagem nova NÃO migra na partida (infra/homolog/api-iniciar.sh presente)"
+  else echo "✘ a imagem $tag é anterior à regra de migração explícita: migraria ao iniciar"; falhas=$((falhas + 1)); fi
+  local novas; novas="$(docker run --rm --entrypoint ls "$ref" packages/db/prisma/migrations 2>/dev/null | grep -c '^[0-9]' || true)"
+  echo "• migrations na imagem: $novas · aplicadas no banco: $(impressao_digital | sed -n 's/^migracoes|aplicadas|\([0-9]*\)|.*/\1/p')"
+  local livre; livre="$(df --output=avail -BG / | tail -1 | tr -dc 0-9)"
+  (( livre >= 3 )) && echo "✔ disco livre: ${livre} GB" || { echo "✘ disco livre: ${livre} GB (mínimo 3 GB)"; falhas=$((falhas + 1)); }
+  (( falhas == 0 )) || { echo "PREPARAR-VERSÃO: $falhas problema(s). Nada foi alterado."; return 1; }
+  echo "$tag" > "$STATE_DIR/candidata"
+  echo "PREPARAR-VERSÃO: OK (imagens presentes; nada reiniciado; banco intocado)"
+}
+
+manutencao() {
+  need_portao; need_env
+  compose stop web api
+  app_parada && log "✔ API e web paradas: o proxy responde 503 'em manutenção'; nenhuma operação chega ao banco." \
+    || { log "✘ API ou web ainda em execução"; return 1; }
+}
+
+ponto_recuperacao() {
+  need_portao; need_env
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
+  app_parada || { echo "✘ API/web em execução: rode 'vm.sh manutencao' antes (o ponto precisa ser estável)." >&2; return 1; }
+  install -d -m 700 "$STATE_DIR"
+  log "Backup completo (banco + arquivos + SHA-256)…"
+  compose exec -T backup bash /scripts/backup.sh /data/backups
+  local pasta; pasta="$(compose exec -T backup sh -c 'ls -1d /data/backups/cenario-* | tail -1' | xargs basename)"
+  compose exec -T backup sh -c "cd /data/backups/$pasta && sha256sum --check --quiet SHA256SUMS" \
+    || { log "✘ checksum do backup $pasta inválido"; return 1; }
+  log "✔ $pasta íntegro (SHA256SUMS). Restauração de teste em banco separado…"
+  restaurar_teste "$pasta" || { log "✘ restauração de teste NÃO idêntica: ponto de recuperação NÃO registrado"; return 1; }
+  local fp; fp="$(impressao_digital | md5sum | cut -d' ' -f1)"
+  if [[ -n "$BUCKET" ]]; then enviar_backups || { log "✘ cópia fora da VM falhou: ponto NÃO registrado"; return 1; }; fi
+  umask 077
+  cat > "$(PONTO_ARQ)" <<EOF
+PASTA=$pasta
+DATA=$(date -u +%s)
+ETIQUETA=$(etiqueta_ativa)
+IMPRESSAO=$fp
+EOF
+  log "✔ PONTO DE RECUPERAÇÃO: $pasta (versão $(etiqueta_ativa), impressão $fp). Tudo o que for gravado depois dele se perde numa recuperação."
+}
+
+ponto_carregar() { # carrega PASTA, DATA, ETIQUETA, IMPRESSAO
+  [[ -f "$(PONTO_ARQ)" ]] || { echo "✘ sem ponto de recuperação: rode 'vm.sh ponto-recuperacao'." >&2; return 1; }
+  # shellcheck source=/dev/null
+  source "$(PONTO_ARQ)"
+}
+
+migrar() {
+  local tag="${1:-}"; etiqueta_valida "$tag"
+  need_portao; need_env
+  app_parada || { echo "✘ API/web em execução: rode 'vm.sh manutencao'." >&2; return 1; }
+  ponto_carregar || return 1
+  local idade=$(( ($(date -u +%s) - DATA) / 60 )) max="${CENARIO_PONTO_MAX_MIN:-240}"
+  (( idade <= max )) || { echo "✘ ponto de recuperação com ${idade} min (máximo $max): faça outro." >&2; return 1; }
+  [[ "$(impressao_digital | md5sum | cut -d' ' -f1)" == "$IMPRESSAO" ]] \
+    || { echo "✘ o banco mudou depois do ponto de recuperação $PASTA: faça outro antes de migrar." >&2; return 1; }
+  echo "✔ banco idêntico ao ponto de recuperação $PASTA (${idade} min)"
+  if [[ "$(impressao_digital | grep -c '^tabela|weekly_closings|')" == 0 ]]; then
+    local ruins; ruins="$(preflight | awk -F'|' '$1 !~ /^volume/ && $(NF-1) != $NF')"
+    [[ -z "$ruins" ]] || { echo "✘ pré-verificação: dados que fariam a migration falhar:"; echo "$ruins"; return 1; }
+    echo "✔ pré-verificação das migrations da Evolução sem bloqueios"
+  fi
+  local ref log_m; ref="$(imagem api "$tag")"; log_m="$STATE_DIR/migracao-$tag-$(date -u +%Y%m%dT%H%M%SZ).log"
+  log "Aplicando as migrations com $ref (log: $log_m)…"
+  local ini; ini="$(date +%s)"
+  if CENARIO_API_IMAGE="$ref" compose run --rm --no-deps -T -e MIGRATE_ON_START=0 --entrypoint sh api \
+      -c 'pnpm db:migrate && pnpm db:status' > "$log_m" 2>&1; then
+    grep -E 'Applying|applied|up to date|Database schema' "$log_m" || true
+    echo "$tag" > "$STATE_DIR/migrada"
+    log "✔ migrations aplicadas em $(( $(date +%s) - ini )) s. Próximo: (operador) cenario-tag=$tag nos metadados → vm.sh ativar $tag"
+  else
+    tail -20 "$log_m"
+    log "✘ MIGRATION FALHOU (banco pode estar em estado PARCIAL). NÃO inicie a API. Recupere com: vm.sh recuperar --sim (ponto $PASTA)."
+    return 1
+  fi
+}
+
+ativar() {
+  local tag="${1:-}"; etiqueta_valida "$tag"
+  need_portao; need_env
+  [[ "$TAG" == "$tag" ]] || { echo "✘ metadado cenario-tag='$TAG' ≠ $tag: num reinício da VM a versão errada subiria. Ajuste com 'operador.sh definir-etiqueta $tag'." >&2; return 1; }
+  sed -i "s#^\(CENARIO_\(API\|WEB\)_IMAGE='.*/\(api\|web\):\)[^']*'#\1$tag'#" "$ENV_FILE"
+  [[ "$(etiqueta_ativa)" == "$tag" ]] || { echo "✘ não consegui gravar a etiqueta no ambiente" >&2; return 1; }
+  compose up -d --no-build --remove-orphans
+  local st=""
+  for _ in $(seq 1 60); do
+    st="$(docker inspect -f '{{.State.Health.Status}}' "$(compose ps -q api)" 2>/dev/null || true)"
+    [[ "$st" == healthy ]] && break; sleep 5
+  done
+  [[ "$st" == healthy ]] || { compose logs --tail 30 api; log "✘ API não ficou saudável. Recuperação: vm.sh recuperar --sim"; return 1; }
+  saude
+}
+
+recuperar() {
+  [[ "${1:-}" == --sim ]] || { echo "Uso: vm.sh recuperar --sim   (volta ao ponto de recuperação; perde o que foi gravado depois)" >&2; exit 2; }
+  need_portao; need_env
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
+  ponto_carregar || return 1
+  [[ "$TAG" == "$ETIQUETA" ]] || { echo "✘ metadado cenario-tag='$TAG' ≠ versão do ponto ($ETIQUETA). Ajuste com 'operador.sh definir-etiqueta $ETIQUETA'." >&2; return 1; }
+  log "Recuperação para o ponto $PASTA (versão $ETIQUETA)…"
+  compose stop web api
+  log "Backup de segurança do estado atual (análise posterior)…"
+  compose exec -T backup bash /scripts/backup.sh /data/backups || log "⚠ backup de segurança falhou (seguindo)"
+  restaurar_em "$PASTA" cenario_homolog --com-arquivos
+  [[ "$(impressao_digital | md5sum | cut -d' ' -f1)" == "$IMPRESSAO" ]] \
+    && log "✔ banco IDÊNTICO ao ponto de recuperação (impressão $IMPRESSAO)" \
+    || { log "✘ banco restaurado difere do ponto: NÃO iniciado. Verifique antes de prosseguir."; return 1; }
+  sed -i "s#^\(CENARIO_\(API\|WEB\)_IMAGE='.*/\(api\|web\):\)[^']*'#\1$ETIQUETA'#" "$ENV_FILE"
+  compose up -d --no-build --remove-orphans
+  local st=""
+  for _ in $(seq 1 60); do
+    st="$(docker inspect -f '{{.State.Health.Status}}' "$(compose ps -q api)" 2>/dev/null || true)"
+    [[ "$st" == healthy ]] && break; sleep 5
+  done
+  log "Versão $ETIQUETA em execução (API: ${st:-?})."
+  saude
 }
 
 parar() { need_env; compose stop; log "Contêineres parados (volumes e dados preservados)."; }
@@ -496,6 +696,14 @@ case "${1:-}" in
   restaurar-teste) restaurar_teste "${2:-}" ;;
   restaurar) restaurar "${2:-}" "${3:-}" ;;
   atualizar) atualizar "${2:-}" ;;
+  preparar-versao) preparar_versao "${2:-}" ;;
+  manutencao) manutencao ;;
+  ponto-recuperacao) ponto_recuperacao ;;
+  migrar) migrar "${2:-}" ;;
+  ativar) ativar "${2:-}" ;;
+  recuperar) recuperar "${2:-}" ;;
+  impressao-digital) impressao_digital "${2:-}" ;;
+  preflight) preflight ;;
   parar) parar ;;
   *) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 2 ;;
 esac

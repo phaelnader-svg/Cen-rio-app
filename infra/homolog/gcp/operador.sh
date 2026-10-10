@@ -6,7 +6,17 @@
 #
 #   operador.sh criar-segredos           # cria os segredos que faltarem (valores aleatórios; existentes mantidos)
 #   operador.sh build                    # Cloud Build das imagens do commit atual → Artifact Registry
-#   operador.sh atualizar <tag>          # muda a etiqueta das imagens na VM e reinicia a pilha (com backup)
+#   operador.sh atualizar <tag>          # DESATIVADO (migrava implicitamente na partida); use os passos abaixo
+#   operador.sh auditar                  # SÓ LEITURA: projeto, VM, rede, segredos (sem valores), registro,
+#                                        # bucket e a VM por dentro (auditoria-pre-deploy.sh)
+#   ATUALIZAÇÃO CONTROLADA — um passo por vez (docs/EVOLUCAO-PRE-DEPLOY-HOMOLOGACAO.md):
+#   operador.sh passo preparar-versao <tag>   # imagens + digests na VM (nada reiniciado)
+#   operador.sh passo manutencao              # para API e web (proxy: 503 "em manutenção")
+#   operador.sh passo ponto-recuperacao       # backup + restauração de teste idêntica + bucket
+#   operador.sh passo migrar <tag>            # migrations explícitas (banco igual ao ponto)
+#   operador.sh definir-etiqueta <tag>        # metadado cenario-tag (versão que sobe num reinício)
+#   operador.sh passo ativar <tag>            # sobe a versão nova + saúde
+#   operador.sh passo recuperar --sim         # volta ao ponto de recuperação (perde o posterior)
 #   operador.sh mostrar-credencial proxy|gestor
 #                                        # mostra UMA credencial de teste só no terminal interativo e
 #                                        # limpa a tela em seguida (nunca em logs, relatórios ou pipes)
@@ -68,10 +78,30 @@ build() {
 }
 
 atualizar() {
-  local tag="${1:-}"; [[ -n "$tag" ]] || { echo "Uso: operador.sh atualizar <etiqueta>" >&2; exit 2; }
-  confirma "trocar as imagens da VM para a etiqueta $tag (backup automático antes)"
+  echo "operador.sh atualizar foi desativado: as imagens migravam o banco na partida, sem ponto de" >&2
+  echo "recuperação validado. Use a sequência 'operador.sh passo …' (veja o cabeçalho deste arquivo)." >&2
+  exit 2
+}
+
+# Um passo da atualização controlada, executado pelo vm.sh DENTRO da VM, com confirmação.
+passo() {
+  local p="${1:-}"; shift || true
+  case "$p" in
+    preparar-versao|manutencao|ponto-recuperacao|migrar|ativar|recuperar) ;;
+    *) echo "Uso: operador.sh passo preparar-versao|manutencao|ponto-recuperacao|migrar|ativar|recuperar [args]" >&2; exit 2 ;;
+  esac
+  local a; for a in "$@"; do [[ "$a" =~ ^(--sim|[0-9a-f]{7,40})$ ]] || { echo "Argumento inválido: $a" >&2; exit 2; }; done
+  confirma "vm.sh $p $* na VM $VM"
+  ssh_vm "sudo /opt/cenario/infra/homolog/gcp/vm.sh $p $*"
+}
+
+# Metadado que decide quais imagens sobem num reinício da VM (gerar-env). Só com confirmação.
+definir_etiqueta() {
+  local tag="${1:-}"; [[ "$tag" =~ ^[0-9a-f]{7,40}$ ]] || { echo "Uso: operador.sh definir-etiqueta <sha>" >&2; exit 2; }
+  local atual; atual="$(gcloud compute instances describe "$VM" --zone="$ZONE" --project="$PROJECT" --format=json \
+    | jq -r '.metadata.items[]? | select(.key=="cenario-tag") | .value')"
+  confirma "alterar o metadado cenario-tag da VM: ${atual:-?} → $tag"
   gcloud compute instances add-metadata "$VM" --zone="$ZONE" --project="$PROJECT" --metadata=cenario-tag="$tag"
-  ssh_vm "sudo /opt/cenario/infra/homolog/gcp/vm.sh atualizar $tag"
 }
 
 # Leva à VM SÓ os arquivos de configuração e operação (infra/homolog + scripts de backup) do
@@ -142,6 +172,9 @@ case "${1:-}" in
   build) build ;;
   enviar-pacote) echo "Substituído por: bash infra/homolog/gcp/homolog.sh preparar-vm" >&2; exit 2 ;;
   atualizar) atualizar "${2:-}" ;;
+  auditar) bash infra/homolog/gcp/auditoria-pre-deploy.sh ;;
+  passo) shift; passo "$@" ;;
+  definir-etiqueta) definir_etiqueta "${2:-}" ;;
   mostrar-credencial) mostrar_credencial "${2:-}" ;;
   senhas) echo "Removido (exibia segredos em sequência). Use: operador.sh mostrar-credencial proxy|gestor" >&2; exit 2 ;;
   trazer-backup) trazer_backup "${2:-}" ;;
