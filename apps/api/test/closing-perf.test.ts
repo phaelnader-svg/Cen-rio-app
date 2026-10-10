@@ -196,6 +196,15 @@ describe.skipIf(!ON)('Desempenho do fechamento semanal', () => {
     const first = (await admin.get(C)).body;
     expect(first.totals.weekDueCents).toBe(80 * 10000 + 40 * 70000 + 40 * 80000);
     const runs = 20;
+    // Memória do processo (API + cliente de teste no mesmo processo: limite SUPERIOR da API).
+    const mb = (n: number) => Math.round(n / 1048576);
+    let peakRss = process.memoryUsage().rss;
+    let peakHeap = process.memoryUsage().heapUsed;
+    const sampler = setInterval(() => {
+      const m = process.memoryUsage();
+      peakRss = Math.max(peakRss, m.rss);
+      peakHeap = Math.max(peakHeap, m.heapUsed);
+    }, 100);
     const read: number[] = [];
     const csv: number[] = [];
     const list: number[] = [];
@@ -233,7 +242,7 @@ describe.skipIf(!ON)('Desempenho do fechamento semanal', () => {
         beneficiaryUserId: i % 2 ? ids['André'] : ids.Ricardo,
         category: i % 2 ? 'LOGISTICA' : 'TAPECARIA',
         amountCents: i % 2 ? 15000 : 105000,
-        paidAt: today(),
+        paidAt: mondayOf(today()), // data do relógio controlado (segunda)
         method: 'PIX',
         reference: `PERF-${i}`,
       });
@@ -258,7 +267,13 @@ describe.skipIf(!ON)('Desempenho do fechamento semanal', () => {
     }
     const final = (await admin.get(C)).body;
     expect(final.totals.paidInWeekCents).toBe(10 * 15000 + 10 * 105000);
+    clearInterval(sampler);
     const out = {
+      memoryMb: {
+        peakRss: mb(peakRss),
+        peakHeapUsed: mb(peakHeap),
+        note: 'API e teste no mesmo processo',
+      },
       volume: {
         os: 40,
         tasks: 200,
