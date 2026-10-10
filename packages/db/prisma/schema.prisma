@@ -130,6 +130,10 @@ model User {
   logisticsParticipations  LogisticsCostParticipant[] @relation("LogisticsCostParticipantUser")
   logisticsCostAdjustments LogisticsCostAdjustment[]  @relation("LogisticsCostAdjustmentBy")
 
+  // Evolução Fase 7: fechamento semanal.
+  weeklyClosingsChecked WeeklyClosing[]  @relation("WeeklyClosingCheckedBy")
+  closingPayments       ClosingPayment[] @relation("ClosingPaymentBeneficiary")
+
   @@map("users")
 }
 
@@ -2921,7 +2925,10 @@ model ProfessionalPayment {
   createdById         String?  @map("created_by_id") @db.Uuid
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  payable ProductionPayable @relation(fields: [productionPayableId], references: [id], onDelete: Restrict)
+  payable     ProductionPayable            @relation(fields: [productionPayableId], references: [id], onDelete: Restrict)
+  /// Evolução Fase 7: estorno (o pagamento original permanece).
+  reversal    ProfessionalPaymentReversal?
+  closingPart ClosingPaymentPart?
 
   @@index([productionPayableId])
   @@index([paidAt])
@@ -3056,6 +3063,124 @@ model PayablePaymentReversal {
   @@map("payable_payment_reversals")
 }
 
+/// Evolução Fase 7: estorno de pagamento por produção (imutável; o pagamento original permanece).
+model ProfessionalPaymentReversal {
+  id          String   @id @default(uuid()) @db.Uuid
+  paymentId   String   @unique @map("payment_id") @db.Uuid
+  reason      String   @db.VarChar(500)
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  payment ProfessionalPayment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@map("professional_payment_reversals")
+}
+
+/// Evolução Fase 7: conferência do fechamento semanal (uma linha por semana; versão + retrato).
+model WeeklyClosing {
+  id           String    @id @default(uuid()) @db.Uuid
+  /// Segunda-feira (fuso da oficina).
+  weekStart    DateTime  @unique @map("week_start") @db.Date
+  /// CONFERIDO ou REABERTO.
+  status       String    @db.VarChar(20)
+  version      Int       @default(1)
+  note         String?   @db.VarChar(1000)
+  reopenReason String?   @map("reopen_reason") @db.VarChar(500)
+  /// Retrato do que foi conferido (linhas, itens e valores devidos).
+  snapshot     Json
+  dueCents     Int       @map("due_cents")
+  paidCents    Int       @map("paid_cents")
+  openCents    Int       @map("open_cents")
+  checkedById  String?   @map("checked_by_id") @db.Uuid
+  checkedAt    DateTime? @map("checked_at") @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  checkedBy User? @relation("WeeklyClosingCheckedBy", fields: [checkedById], references: [id], onDelete: SetNull)
+
+  @@map("weekly_closings")
+}
+
+/// Evolução Fase 7: histórico imutável do fechamento (conferência, reabertura, pagamentos, estornos).
+model WeeklyClosingEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  weekStart DateTime @map("week_start") @db.Date
+  kind      String   @db.VarChar(30)
+  note      String?  @db.VarChar(1000)
+  data      Json?
+  actorId   String?  @map("actor_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([weekStart, createdAt])
+  @@map("weekly_closing_events")
+}
+
+/// Evolução Fase 7: Pix/transferência feito FORA do sistema, distribuído pelas obrigações originais.
+model ClosingPayment {
+  id                String   @id @default(uuid()) @db.Uuid
+  number            Int      @unique @default(autoincrement())
+  weekStart         DateTime @map("week_start") @db.Date
+  beneficiaryUserId String   @map("beneficiary_user_id") @db.Uuid
+  /// TAPECARIA ou LOGISTICA.
+  category          String   @db.VarChar(20)
+  amountCents       Int      @map("amount_cents")
+  paidAt            DateTime @map("paid_at") @db.Date
+  method            String   @db.VarChar(20)
+  /// Referência/identificador do comprovante (sem dados bancários).
+  reference         String?  @db.VarChar(120)
+  note              String?  @db.VarChar(500)
+  createdById       String?  @map("created_by_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  beneficiary User                    @relation("ClosingPaymentBeneficiary", fields: [beneficiaryUserId], references: [id], onDelete: Restrict)
+  parts       ClosingPaymentPart[]
+  reversal    ClosingPaymentReversal?
+
+  @@index([weekStart])
+  @@index([beneficiaryUserId, paidAt])
+  @@map("closing_payments")
+}
+
+/// Parte do pagamento em lote: liga a uma baixa da obrigação original (produção OU conta a pagar).
+model ClosingPaymentPart {
+  id                    String  @id @default(uuid()) @db.Uuid
+  closingPaymentId      String  @map("closing_payment_id") @db.Uuid
+  professionalPaymentId String? @unique @map("professional_payment_id") @db.Uuid
+  payablePaymentId      String? @unique @map("payable_payment_id") @db.Uuid
+  amountCents           Int     @map("amount_cents")
+
+  closingPayment      ClosingPayment       @relation(fields: [closingPaymentId], references: [id], onDelete: Restrict)
+  professionalPayment ProfessionalPayment? @relation(fields: [professionalPaymentId], references: [id], onDelete: Restrict)
+  payablePayment      PayablePayment?      @relation(fields: [payablePaymentId], references: [id], onDelete: Restrict)
+
+  @@index([closingPaymentId])
+  @@map("closing_payment_parts")
+}
+
+model ClosingPaymentReversal {
+  id               String   @id @default(uuid()) @db.Uuid
+  closingPaymentId String   @unique @map("closing_payment_id") @db.Uuid
+  reason           String   @db.VarChar(500)
+  createdById      String?  @map("created_by_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  closingPayment ClosingPayment @relation(fields: [closingPaymentId], references: [id], onDelete: Restrict)
+
+  @@map("closing_payment_reversals")
+}
+
+/// Evolução Fase 7: viagem realizada sem custo, confirmada como GRATUITA pelo gestor (≠ não informado).
+model LogisticsFreeTrip {
+  id            String   @id @default(uuid()) @db.Uuid
+  pickupId      String?  @unique @map("pickup_id") @db.Uuid
+  deliveryId    String?  @unique @map("delivery_id") @db.Uuid
+  reason        String   @db.VarChar(500)
+  confirmedById String?  @map("confirmed_by_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("logistics_free_trips")
+}
+
 /// Modelo de despesa recorrente mensal (aluguel, energia...).
 model RecurringExpense {
   id          String    @id @default(uuid()) @db.Uuid
@@ -3143,8 +3268,9 @@ model PayablePayment {
   createdById String?  @map("created_by_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  payable  AccountPayable          @relation(fields: [payableId], references: [id], onDelete: Restrict)
-  reversal PayablePaymentReversal?
+  payable     AccountPayable          @relation(fields: [payableId], references: [id], onDelete: Restrict)
+  reversal    PayablePaymentReversal?
+  closingPart ClosingPaymentPart?
 
   @@index([payableId])
   @@index([paidAt])

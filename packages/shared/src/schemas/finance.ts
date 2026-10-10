@@ -364,3 +364,53 @@ export const logisticsWeeklyQuerySchema = z
     message: 'Período máximo: 400 dias.',
     path: ['to'],
   });
+
+// ─────────────────────────── Evolução Fase 7: fechamento semanal ───────────────────────────
+
+const monday = dateOnly.refine(
+  (v) => new Date(`${v}T12:00:00Z`).getUTCDay() === 1,
+  'A semana começa na segunda-feira.',
+);
+export const weekStartParamsSchema = z.object({ weekStart: monday });
+export const closingQuerySchema = z.object({
+  beneficiaryUserId: idSchema.optional(),
+  category: z.enum(['TAPECARIA', 'LOGISTICA']).optional(),
+  state: z
+    .enum(['PREVISTO', 'AGUARDANDO_QUALIDADE', 'EM_REVISAO', 'PENDENTE_CONFIGURACAO', 'DEVIDO'])
+    .optional(),
+  format: z.enum(['json', 'csv']).default('json'),
+});
+export const confirmClosingSchema = z.object({
+  /** Versão vista na tela (0 = nunca conferido). */
+  version: z.number().int().min(0),
+  note: optionalText(1000),
+});
+export const reopenClosingSchema = z.object({
+  reason: reason('Motivo da reabertura'),
+  version: versionSchema,
+});
+/** Pix/transferência feito FORA do sistema (nenhuma transação bancária é iniciada). */
+export const closingPaymentSchema = z.object({
+  beneficiaryUserId: idSchema,
+  category: z.enum(['TAPECARIA', 'LOGISTICA']),
+  amountCents: cents('Valor pago'),
+  paidAt: dateOnly,
+  method: z.enum(PAYMENT_METHODS),
+  reference: optionalText(120),
+  note: optionalText(500),
+});
+export const reverseClosingPaymentSchema = z.object({ reason: reason('Motivo do estorno') });
+export const reverseLaborPaymentSchema = z.object({
+  reason: reason('Motivo do estorno'),
+  version: versionSchema,
+});
+export const freeTripSchema = z
+  .object({
+    pickupId: idSchema.nullable().optional(),
+    deliveryId: idSchema.nullable().optional(),
+    reason: reason('Motivo (gratuita confirmada)'),
+  })
+  .refine((v) => Boolean(v.pickupId) !== Boolean(v.deliveryId), {
+    message: 'Informe a retirada ou a entrega.',
+    path: ['pickupId'],
+  });

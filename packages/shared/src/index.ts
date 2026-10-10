@@ -39,3 +39,4 @@ export * from './types-quality';
 export * from './finance-domain';
 export * from './schemas/finance';
 export * from './types-finance';
+export * from './closing-domain';

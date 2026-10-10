@@ -155,6 +155,8 @@ export interface LaborPayableDto {
     method: PaymentMethod;
     note: string | null;
     early: boolean;
+    /** Evolução Fase 7: pagamento estornado (continua no histórico). */
+    reversed: boolean;
   }[];
   history: FinanceEventDto[];
   version: number;
@@ -285,6 +287,8 @@ export interface LogisticsDefaultsDto {
 
 /** Evolução Fase 6: custo da viagem visto da retirada/entrega (somente financeiro). */
 export interface TripCostViewDto {
+  /** Evolução Fase 7: viagem sem custo confirmada como gratuita (≠ não informado). */
+  freeConfirmed: { reason: string; at: string } | null;
   trip: { kind: 'RETIRADA' | 'ENTREGA'; id: string; code: string; status: string };
   cost: LogisticsCostDto | null;
   fees: LogisticsCostDto[];
@@ -501,4 +505,104 @@ export interface LaborWeeklyDto {
   }[];
   /** Saldo atual por profissional (liberado e não pago), independente do período. */
   openByProfessional: { professionalUserId: string; displayName: string; openCents: number }[];
+}
+
+// ─────────────────────────── Evolução Fase 7: fechamento semanal ───────────────────────────
+
+export interface ClosingItemDto {
+  /** Fonte de verdade: obrigação de produção (MO) ou custo de logística (LG). */
+  kind: 'MAO_DE_OBRA' | 'LOGISTICA';
+  id: string;
+  code: string;
+  category: 'TAPECARIA' | 'LOGISTICA';
+  beneficiary: { userId: string | null; displayName: string };
+  state: 'PREVISTO' | 'AGUARDANDO_QUALIDADE' | 'EM_REVISAO' | 'PENDENTE_CONFIGURACAO' | 'DEVIDO';
+  bucket: 'WEEK' | 'PREVIOUS' | 'FORECAST' | null;
+  description: string;
+  serviceOrders: { id: string; code: string; amountCents: number | null }[];
+  piece: { id: string; code: string } | null;
+  /** Data local em que ficou devido (liberação/realização); null se ainda não. */
+  competence: string | null;
+  agreedCents: number;
+  adjustmentsCents: number;
+  totalDueCents: number;
+  dueCents: number;
+  paidInWeekCents: number;
+  openAtEndCents: number;
+  paidAfterCents: number;
+  currentOpenCents: number;
+  payments: { id: string; amountCents: number; paidAt: string; reversed: boolean }[];
+  /** Pode ser quitado pelo lote (devido, sem revisão, com obrigação vinculada). */
+  payable: boolean;
+  notes: string[];
+}
+
+export interface ClosingRowDto {
+  beneficiary: { userId: string | null; displayName: string };
+  category: 'TAPECARIA' | 'LOGISTICA';
+  items: number;
+  forecastCents: number;
+  awaitingCents: number;
+  weekDueCents: number;
+  previousOpenCents: number;
+  dueCents: number;
+  paidInWeekCents: number;
+  openAtEndCents: number;
+  paidAfterCents: number;
+  currentOpenCents: number;
+  adjustmentsCents: number;
+  /** Lote permitido (recebedor vinculado e ativo). */
+  canPay: boolean;
+}
+
+export interface ClosingPendencyDto {
+  kind:
+    | 'REVISAO_ABERTA'
+    | 'SEM_RECEBEDOR'
+    | 'CUSTO_NAO_INFORMADO'
+    | 'DIVERGENCIA_CONTA'
+    | 'PECA_DEVOLVIDA';
+  /** Bloqueia a conferência até ser resolvida explicitamente. */
+  blocking: boolean;
+  message: string;
+  ref: { kind: string; id: string; code: string } | null;
+}
+
+export interface WeeklyClosingDto {
+  weekStart: string;
+  weekEnd: string;
+  timezone: string;
+  /** ABERTO (nunca conferido), CONFERIDO ou REABERTO. */
+  status: 'ABERTO' | 'CONFERIDO' | 'REABERTO';
+  version: number;
+  checkedBy: string | null;
+  checkedAt: string | null;
+  note: string | null;
+  reopenReason: string | null;
+  /** Valores devidos mudaram depois da conferência (ajuste, estorno, novo item...). */
+  divergent: boolean;
+  divergences: string[];
+  rows: ClosingRowDto[];
+  totals: Omit<ClosingRowDto, 'beneficiary' | 'category' | 'canPay'>;
+  items: ClosingItemDto[];
+  pendencies: ClosingPendencyDto[];
+  payments: {
+    id: string;
+    code: string;
+    beneficiary: string;
+    category: 'TAPECARIA' | 'LOGISTICA';
+    amountCents: number;
+    paidAt: string;
+    method: PaymentMethod;
+    reference: string | null;
+    reversed: boolean;
+    parts: { code: string; amountCents: number }[];
+  }[];
+  history: {
+    kind: string;
+    note: string | null;
+    actor: string | null;
+    createdAt: string;
+    data: unknown;
+  }[];
 }
