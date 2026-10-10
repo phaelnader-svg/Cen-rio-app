@@ -3,7 +3,8 @@
 # restaura num banco temporário e compara a contagem de registros por tabela.
 # Uso: scripts/test-backup-restore.sh  (requer TEST_DATABASE_URL e permissão CREATEDB)
 set -euo pipefail
-if [[ -f .env ]]; then set -a; source .env; set +a; fi
+# O .env só completa o que não veio do ambiente (permite apontar para outro banco de teste).
+if [[ -f .env && -z "${TEST_DATABASE_URL:-}" ]]; then set -a; source .env; set +a; fi
 : "${TEST_DATABASE_URL:?TEST_DATABASE_URL não definido}"
 SOURCE="$TEST_DATABASE_URL"
 BASE="${SOURCE%/*}"
@@ -308,6 +309,30 @@ A="$(counts "$SOURCE")"; B="$(counts "$RESTORE_URL")"
 echo "origem:     $A"
 echo "restaurado: $B"
 [[ "$A" == "$B" ]] || { echo "✖ Divergência após restauração" >&2; exit 1; }
+# Evolução, Fase 8: comparação POR VALOR de TODAS as tabelas do schema public (a lista fixa acima
+# não acompanha tabelas novas) e do catálogo de gatilhos/índices/restrições.
+table_hashes() {
+  psql "$1" -At -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY 1" |
+    while read -r t; do
+      echo "$t|$(psql "$1" -At -c "SELECT count(*) || ':' || coalesce(md5(string_agg(x::text, '/' ORDER BY x::text)), '-') FROM \"$t\" x")"
+    done
+}
+catalog() {
+  psql "$1" -At -c "SELECT string_agg(x, ',' ORDER BY x) FROM (
+    SELECT 'trg:' || c.relname || '.' || t.tgname x FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND NOT t.tgisinternal
+    UNION ALL SELECT 'idx:' || indexname FROM pg_indexes WHERE schemaname = 'public'
+    UNION ALL SELECT 'con:' || conname FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+      WHERE n.nspname = 'public') q"
+}
+HA="$(table_hashes "$SOURCE")"; HB="$(table_hashes "$RESTORE_URL")"
+if [[ "$HA" != "$HB" ]]; then
+  diff <(echo "$HA") <(echo "$HB") >&2 || true
+  echo "✖ Conteúdo divergente após restauração" >&2; exit 1
+fi
+[[ "$(catalog "$SOURCE")" == "$(catalog "$RESTORE_URL")" ]] \
+  || { echo "✖ Gatilhos/índices/restrições divergentes após restauração" >&2; exit 1; }
+echo "tabelas comparadas por valor: $(echo "$HA" | wc -l) (com linhas: $(echo "$HA" | grep -vc '|0:-'))"
 # A auditoria continua imutável no banco restaurado.
 [[ "$(psql "$RESTORE_URL" -At -c "SELECT count(*) FROM audit_logs WHERE action = 'backup.check'")" -ge 1 ]] \
   || { echo "✖ Marcador de auditoria ausente" >&2; exit 1; }

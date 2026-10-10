@@ -4,5 +4,13 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "test", "perf", "tsup.config.ts", "vitest.config.ts", "vitest.perf.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "perf",
+    "tsup.config.ts",
+    "vitest.config.ts",
+    "vitest.perf.config.ts",
+    "vitest.migration.config.ts"
+  ]
 }

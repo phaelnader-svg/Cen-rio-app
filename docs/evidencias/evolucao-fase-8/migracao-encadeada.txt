@@ -1,0 +1,40 @@
+■ 1. Código legado (839770a) e banco gerado por ele
+migrations legadas: 12
+linhas por tabela (com dados): 76
+totais legados: OS=1 tarefas=8 pagamentos=0+1+1 auditoria=81 soma_contas=15000 soma_mo=125000 soma_receber=350000
+■ 2. Fotografia do legado
+tabelas fotografadas: 98
+■ 3. Migrations da Evolução (Fases 2–7)
+Applying migration `20261018000000_fila_semanal`
+Applying migration `20261025000000_distribuicao_automatica`
+Applying migration `20261101000000_mao_de_obra_revisao`
+Applying migration `20261108000000_custos_logistica`
+Applying migration `20261115000000_fechamento_semanal`
+The following migration(s) have been applied:
+All migrations have been successfully applied.
+✔ dados legados idênticos (todas as colunas existentes, 98 tabelas)
+✔ índices legados preservados (3 substituições documentadas); novos: 39
+valores derivados: planos=LEGADO=1 custos_logistica=LANCADO=1
+■ 4. Código atual sobre o legado migrado (leitura)
+      Tests  1 passed | 1 skipped (2)
+tabelas alteradas pela etapa 4 (uso normal do sistema): audit_logs sessions users 
+■ 5. Rollbacks sem dados novos (7 → 6 → 5 → 3 → 2)
+  revertida: 20261115000000_fechamento_semanal
+  revertida: 20261108000000_custos_logistica
+  revertida: 20261101000000_mao_de_obra_revisao
+  revertida: 20261025000000_distribuicao_automatica
+  revertida: 20261018000000_fila_semanal
+✔ schema idêntico ao legado (pg_dump -s) e dados idênticos
+■ 6. Reaplica, cria dados novos e prova a RECUSA de cada rollback
+      Tests  1 passed | 1 skipped (2)
+  recusado: 20261115000000_fechamento_semanal — Reversão bloqueada: 3 registro(s) da Fase 7
+  recusado: 20261108000000_custos_logistica — Reversão bloqueada: 3 registro(s) da Fase 6
+  recusado: 20261101000000_mao_de_obra_revisao — Reversão bloqueada: 2 revisão(ões)/divisão(ões) de obrigação da Fase 5
+  recusado: 20261025000000_distribuicao_automatica — Reversão bloqueada: 17 registro(s) da distribuição automática (Fase 3)
+  recusado: 20261018000000_fila_semanal — Reversão bloqueada: 1 registro(s) da fila semanal (Fase 2)
+✔ todas as recusas foram atômicas (schema, migrations e dados inalterados)
+■ 7. Backup e restauração do banco com dados de todas as fases
+tabelas comparadas por valor: 111 (com linhas: 89)
+✔ Backup e restauração verificados.
+✔ Migração encadeada, rollback condicionado e backup verificados.
+EXIT 0
