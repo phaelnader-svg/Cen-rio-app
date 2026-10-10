@@ -54,6 +54,7 @@ import {
   createLabor,
   laborInclude,
   myProduction,
+  openReviewIndex,
   payLabor,
   refreshLaborOf,
   toLaborDto,
@@ -355,7 +356,8 @@ export async function financeRoutes(app: FastifyInstance) {
       orderBy: { number: 'desc' },
       take: 300,
     });
-    return Promise.all(rows.map((r) => toLaborDto(prisma, r)));
+    const reviews = await openReviewIndex(prisma, rows);
+    return Promise.all(rows.map((r) => toLaborDto(prisma, r, reviews)));
   });
 
   app.get('/api/v1/finance/labor/:id', { config: { access: FIN_VIEW } }, async (request) => {
@@ -410,16 +412,25 @@ export async function financeRoutes(app: FastifyInstance) {
   );
 
   /** Ricardo/Márcio: só os próprios valores, e só com autorização do gestor. */
-  app.get('/api/v1/finance/my-production', { config: { access: FIN_OWN } }, async (request) => {
-    const userId = request.auth!.userId;
-    await tx((t) =>
-      refreshLaborOf(t, actorFrom(request), {
-        professionalUserId: userId,
-        status: { in: ['PREVISTO', 'LIBERADO'] },
-      }),
-    );
-    return myProduction(prisma, userId);
-  });
+  app.get(
+    '/api/v1/finance/my-production',
+    { config: { access: FIN_OWN } },
+    async (request, reply) => {
+      // Evolução Fase 5: no tablet compartilhado a sessão não prova quem está diante da tela;
+      // valores só com PIN redigitado (POST /my-production/unlock).
+      if (request.auth!.kind === 'DEVICE')
+        throw Errors.forbidden('Confirme seu PIN para ver seus valores.');
+      void reply.header('cache-control', 'no-store');
+      const userId = request.auth!.userId;
+      await tx((t) =>
+        refreshLaborOf(t, actorFrom(request), {
+          professionalUserId: userId,
+          status: { in: ['PREVISTO', 'LIBERADO'] },
+        }),
+      );
+      return myProduction(prisma, userId);
+    },
+  );
 
   // ─────────────────────────── Equipe de remuneração fixa ───────────────────────────
 

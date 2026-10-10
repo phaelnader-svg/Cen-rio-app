@@ -38,6 +38,7 @@ import { loadUserPermissions } from '../../core/permissions';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { serviceOrderCode } from '../commercial/common';
+import { openLaborReviews } from '../finance/labor-review';
 import { notify, taskNotice } from '../notifications/notify';
 import { idParams } from '../presenters';
 import { mainInspector } from '../quality/common';
@@ -138,6 +139,7 @@ type ItemRow = {
   pieceType: string;
   serviceType: string;
   upholstererUserId: string | null;
+  serviceOrderId: string;
 };
 
 async function lockItems(tx: Tx, ids: string[]) {
@@ -176,7 +178,7 @@ async function recordOwner(
     where: { id: item.id },
     data: { upholstererUserId: toUserId },
   });
-  await tx.serviceOrderItemOwnerChange.create({
+  const change = await tx.serviceOrderItemOwnerChange.create({
     data: {
       serviceOrderItemId: item.id,
       kind,
@@ -188,6 +190,16 @@ async function recordOwner(
       createdById: actor.userId,
     },
   });
+  // Evolução Fase 5: valor já combinado com outra pessoa abre a revisão financeira (trava
+  // liberação e pagamento); nada é transferido automaticamente.
+  if (financialReviewRequired)
+    await openLaborReviews(tx, actor, {
+      serviceOrderId: item.serviceOrderId,
+      itemId: item.id,
+      newOwnerId: toUserId,
+      ownerChangeId: change.id,
+    });
+  return change.id;
 }
 
 /** Mão de obra combinada (peça ou OS inteira) com outra pessoa: só sinaliza, nunca altera. */
@@ -269,7 +281,8 @@ export async function distributeServiceOrder(
         );
       if (!upholstererOk(team, wanted))
         throw Errors.business('O titular escolhido precisa ser um tapeceiro ativo.');
-      await recordOwner(tx, actor, item, wanted, 'DEFINICAO', args.reason ?? null, [], false);
+      const financial = await financialReviewNeeded(tx, so.id, item.id, wanted);
+      await recordOwner(tx, actor, item, wanted, 'DEFINICAO', args.reason ?? null, [], financial);
       owner = wanted;
     }
     if (!template || args.generate === false) continue;
@@ -468,9 +481,15 @@ export async function pieceDistribution(
       elsewhere.map((t) => t.id),
     );
   if (!inspector) add('SEM_INSPETOR');
+  // Evolução Fase 5: a pendência acompanha a revisão financeira ABERTA (peça ou OS inteira).
   if (
-    item.upholstererUserId &&
-    (await financialReviewNeeded(db, so.id, item.id, item.upholstererUserId))
+    await db.laborReview.count({
+      where: {
+        serviceOrderId: so.id,
+        status: 'ABERTA',
+        OR: [{ serviceOrderItemId: item.id }, { serviceOrderItemId: null }],
+      },
+    })
   )
     add('REVISAO_FINANCEIRA');
   const changes = await db.serviceOrderItemOwnerChange.findMany({
@@ -661,7 +680,7 @@ export async function setUpholsterer(
       kind === 'DEFINICAO' ? 'production.piece_owner_defined' : 'production.piece_owner_replaced',
     entityType: 'service_order_item',
     entityId: item.id,
-    summary: `${code}: titular ${kind === 'DEFINICAO' ? 'definido' : 'substituído'} (${team.get(input.userId)?.displayName}); ${toMove.length} tarefa(s) pendente(s) acompanharam${reason ? `. Motivo: ${reason}` : ''}${financial ? '. Revisão financeira manual pendente (Fase 5); nenhum valor foi alterado.' : ''}`,
+    summary: `${code}: titular ${kind === 'DEFINICAO' ? 'definido' : 'substituído'} (${team.get(input.userId)?.displayName}); ${toMove.length} tarefa(s) pendente(s) acompanharam${reason ? `. Motivo: ${reason}` : ''}${financial ? '. Revisão financeira aberta: liberação e pagamento travados até o gestor definir os valores; nenhum valor foi alterado.' : ''}`,
   });
   await appendEvent(tx, actor, {
     type: EVENT_TYPES.PRODUCTION_PIECE_OWNER_CHANGED,

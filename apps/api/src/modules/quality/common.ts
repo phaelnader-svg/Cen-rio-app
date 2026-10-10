@@ -27,6 +27,7 @@ import { attendanceConfig, clock, dbDate } from '../attendance/common';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { skillsByEmployee } from '../help/engine';
 import { notify } from '../notifications/notify';
+import { refreshLaborOf } from '../finance/labor';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -385,6 +386,9 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
     },
     audience: QUALITY_AUDIENCE,
   });
+  // Evolução Fase 5: a liberação da mão de obra acompanha o evento (aprovação, entrega…),
+  // na mesma transação — não depende de alguém abrir a tela do financeiro.
+  await refreshLaborOf(tx, actor, { serviceOrderId: updated.serviceOrderId });
   if (s.stage === 'PRONTA_ENTREGA' && s.inspection?.packaging) {
     const siblings = await tx.serviceOrderItem.findMany({
       where: { serviceOrderId: updated.serviceOrderId },

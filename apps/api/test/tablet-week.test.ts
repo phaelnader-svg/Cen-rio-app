@@ -54,6 +54,7 @@ type Q = {
   current: { id: string } | null;
   next: { id: string } | null;
   total: number;
+  fromPreviousWeeks: number;
   items: {
     position: number;
     executable: boolean;

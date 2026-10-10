@@ -1070,7 +1070,9 @@ describe('Segurança, concorrência e sincronização', () => {
     expect((await s.tablets.Thiago!.get(F('/dashboard'))).status).toBe(403);
     // Autorizado pelo gestor: Ricardo vê só os próprios valores.
     await grant(s.admin, 'Ricardo', ['financeiro.producao_propria']);
-    const mine = await ricardo.get(F('/my-production'));
+    // Evolução Fase 5: no tablet compartilhado, só com o PIN redigitado.
+    expect((await ricardo.get(F('/my-production'))).status).toBe(403);
+    const mine = await post(ricardo, F('/my-production/unlock'), { pin: PINS.Ricardo });
     expect(mine.status).toBe(200);
     expect(mine.body.items).toHaveLength(1);
     expect(mine.body.items[0]).toMatchObject({

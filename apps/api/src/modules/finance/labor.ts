@@ -3,6 +3,7 @@ import {
   formatServiceOrderItemCode,
   laborDue,
   laborEligible,
+  laborSituation,
   laborStatus,
   productionPayableCode,
   settlementProblem,
@@ -27,10 +28,18 @@ export const laborInclude = {
       id: true,
       number: true,
       status: true,
-      items: { select: { id: true, fulfillmentStage: true } },
+      items: { select: { id: true, fulfillmentStage: true, upholstererUserId: true } },
     },
   },
-  item: { select: { id: true, position: true, description: true, fulfillmentStage: true } },
+  item: {
+    select: {
+      id: true,
+      position: true,
+      description: true,
+      fulfillmentStage: true,
+      upholstererUserId: true,
+    },
+  },
   adjustments: {
     include: { authorizedBy: { select: { displayName: true } } },
     orderBy: { createdAt: 'asc' },
@@ -54,8 +63,57 @@ function coveredStages(p: LaborRow) {
 export const isEligible = (p: LaborRow) =>
   p.eligibleAt !== null || laborEligible(p.eligibility as EligibilityRule, coveredStages(p));
 
-export async function toLaborDto(db: Tx | PrismaClient, p: LaborRow): Promise<LaborPayableDto> {
+/**
+ * Evolução Fase 5: revisão financeira ABERTA no mesmo escopo (peça, ou OS inteira para a mão de
+ * obra da OS). Enquanto existir, nada é liberado nem pago nesse escopo.
+ */
+export async function openReviewOf(
+  db: Tx | PrismaClient,
+  p: { serviceOrderId: string; serviceOrderItemId: string | null },
+) {
+  return db.laborReview.findFirst({
+    where: {
+      status: 'ABERTA',
+      serviceOrderId: p.serviceOrderId,
+      serviceOrderItemId: p.serviceOrderItemId,
+    },
+  });
+}
+export const laborReviewCode = (n: number) => `RF-${String(n).padStart(5, '0')}`;
+
+type OpenReview = { id: string; number: number } | null;
+const scopeKey = (p: { serviceOrderId: string; serviceOrderItemId: string | null }) =>
+  `${p.serviceOrderId}|${p.serviceOrderItemId ?? ''}`;
+
+/** Revisões abertas das OS das linhas, numa consulta só (listas sem N+1). */
+export async function openReviewIndex(
+  db: Tx | PrismaClient,
+  rows: { serviceOrderId: string }[],
+): Promise<Map<string, OpenReview>> {
+  const reviews = await db.laborReview.findMany({
+    where: {
+      status: 'ABERTA',
+      serviceOrderId: { in: [...new Set(rows.map((r) => r.serviceOrderId))] },
+    },
+    select: { id: true, number: true, serviceOrderId: true, serviceOrderItemId: true },
+  });
+  return new Map(reviews.map((r) => [scopeKey(r), { id: r.id, number: r.number }]));
+}
+
+/** Mão de obra da OS inteira com peças cujo titular é outra pessoa: ratear exige revisão. */
+const needsPieceReview = (p: LaborRow) =>
+  !p.item &&
+  p.serviceOrder.items.some(
+    (i) => i.upholstererUserId && i.upholstererUserId !== p.professionalUserId,
+  );
+
+export async function toLaborDto(
+  db: Tx | PrismaClient,
+  p: LaborRow,
+  reviews?: Map<string, OpenReview>,
+): Promise<LaborPayableDto> {
   const due = laborDue(p);
+  const review = reviews ? (reviews.get(scopeKey(p)) ?? null) : await openReviewOf(db, p);
   return {
     id: p.id,
     number: p.number,
@@ -84,6 +142,14 @@ export async function toLaborDto(db: Tx | PrismaClient, p: LaborRow): Promise<La
     withdrawn:
       p.status !== 'CANCELADO' &&
       (p.serviceOrder.status === 'CANCELADA' || p.item?.fulfillmentStage === 'DEVOLVIDA'),
+    situation: laborSituation({
+      status: p.status as LaborStatus,
+      inReview: Boolean(review),
+      eligibility: p.eligibility as EligibilityRule,
+      stages: coveredStages(p),
+    }),
+    review: review ? { id: review.id, code: laborReviewCode(review.number) } : null,
+    needsPieceReview: needsPieceReview(p),
     adjustments: p.adjustments.map((a) => ({
       id: a.id,
       amountCents: a.amountCents,
@@ -110,6 +176,8 @@ export async function toLaborDto(db: Tx | PrismaClient, p: LaborRow): Promise<La
  */
 export async function refreshLabor(tx: Tx, actor: ActorContext, id: string) {
   const p = await tx.productionPayable.findUniqueOrThrow({ where: { id }, include: laborInclude });
+  // Evolução Fase 5: revisão financeira aberta trava a liberação no escopo.
+  if (p.status === 'PREVISTO' && (await openReviewOf(tx, p))) return p;
   const eligible = isEligible(p);
   const status = laborStatus({ ...p, eligible, cancelled: p.status === 'CANCELADO' });
   if (status === p.status) return p;
@@ -139,11 +207,16 @@ export async function refreshLaborOf(
   actor: ActorContext,
   where: Prisma.ProductionPayableWhereInput,
 ) {
+  // Lê tudo de uma vez e só regrava o que muda de situação (a revisão aberta é conferida
+  // dentro de refreshLabor).
   const rows = await tx.productionPayable.findMany({
     where: { ...where, status: { in: ['PREVISTO', 'LIBERADO'] } },
-    select: { id: true },
+    include: laborInclude,
   });
-  for (const r of rows) await refreshLabor(tx, actor, r.id);
+  for (const p of rows) {
+    const status = laborStatus({ ...p, eligible: isEligible(p), cancelled: false });
+    if (status !== p.status) await refreshLabor(tx, actor, p.id);
+  }
 }
 
 export async function createLabor(
@@ -172,6 +245,27 @@ export async function createLabor(
   if (so.status !== 'ABERTA') throw Errors.business('A OS não está ativa.');
   if (input.serviceOrderItemId && !so.items.some((i) => i.id === input.serviceOrderItemId))
     throw Errors.business('A peça não pertence a esta OS.');
+  // Evolução Fase 5: o valor da peça é do tapeceiro titular (Fase 3); revisão aberta bloqueia.
+  const piece = so.items.find((i) => i.id === input.serviceOrderItemId);
+  if (piece?.upholstererUserId && piece.upholstererUserId !== worker.userId)
+    throw Errors.business(
+      'O valor por peça é combinado com o tapeceiro titular da peça. Para outra pessoa, troque o titular (substituição) e resolva a revisão financeira.',
+    );
+  if (
+    !input.serviceOrderItemId &&
+    so.items.some((i) => i.upholstererUserId && i.upholstererUserId !== worker.userId)
+  )
+    throw Errors.business(
+      'Esta OS tem peças de outro tapeceiro titular: combine o valor por peça (nunca um valor da OS inteira para dividir depois).',
+    );
+  const scopeReview = await openReviewOf(tx, {
+    serviceOrderId: so.id,
+    serviceOrderItemId: input.serviceOrderItemId ?? null,
+  });
+  if (scopeReview)
+    throw Errors.business(
+      `Revisão financeira ${laborReviewCode(scopeReview.number)} pendente: resolva-a antes de combinar novos valores.`,
+    );
   const dup = await tx.productionPayable.findFirst({
     where: {
       serviceOrderId: so.id,
@@ -241,6 +335,7 @@ export async function adjustLabor(
   checkVersion(p, input.version);
   if (p.status === 'CANCELADO' || p.status === 'PAGO')
     throw Errors.business('Mão de obra encerrada não pode ser ajustada.');
+  await assertNoReview(tx, p);
   const next = p.adjustmentsCents + input.amountCents;
   if (p.agreedCents + next < p.paidCents)
     throw Errors.business('O valor devido não pode ficar abaixo do que já foi pago.');
@@ -295,6 +390,7 @@ export async function payLabor(
   const p = await tx.productionPayable.findUniqueOrThrow({ where: { id }, include: laborInclude });
   checkVersion(p, input.version);
   if (p.status === 'CANCELADO') throw Errors.business('Mão de obra cancelada.');
+  await assertNoReview(tx, p);
   const eligible = isEligible(p);
   if (!eligible && !(input.earlyReason && input.earlyReason.length >= 3))
     throw Errors.business(
@@ -339,6 +435,17 @@ export async function payLabor(
   return tx.productionPayable.findUniqueOrThrow({ where: { id } });
 }
 
+async function assertNoReview(
+  tx: Tx,
+  p: { serviceOrderId: string; serviceOrderItemId: string | null },
+) {
+  const r = await openReviewOf(tx, p);
+  if (r)
+    throw Errors.business(
+      `Revisão financeira ${laborReviewCode(r.number)} pendente: o gestor precisa definir os valores devidos antes de ajustar ou pagar.`,
+    );
+}
+
 export async function cancelLabor(
   tx: Tx,
   actor: ActorContext,
@@ -350,6 +457,7 @@ export async function cancelLabor(
   if (p.status === 'CANCELADO') return p;
   checkVersion(p, input.version);
   if (p.paidCents > 0) throw Errors.business('Há pagamentos registrados: não pode ser cancelada.');
+  await assertNoReview(tx, p);
   const u = await tx.productionPayable.update({
     where: { id },
     data: { status: 'CANCELADO', cancelReason: input.reason, version: { increment: 1 } },
@@ -381,10 +489,25 @@ export async function myProduction(
     orderBy: { createdAt: 'desc' },
     take: 200,
   });
+  const reviewed = new Set(
+    (
+      await db.laborReview.findMany({
+        where: { status: 'ABERTA', serviceOrderId: { in: rows.map((r) => r.serviceOrderId) } },
+        select: { serviceOrderId: true, serviceOrderItemId: true },
+      })
+    ).map((r) => `${r.serviceOrderId}:${r.serviceOrderItemId ?? ''}`),
+  );
   const items = rows.map((p) => {
     const eligible = isEligible(p);
     const status = laborStatus({ ...p, eligible, cancelled: false });
+    const inReview = reviewed.has(`${p.serviceOrderId}:${p.serviceOrderItemId ?? ''}`);
     return {
+      situation: laborSituation({
+        status,
+        inReview,
+        eligibility: p.eligibility as EligibilityRule,
+        stages: coveredStages(p),
+      }),
       id: p.id,
       code: productionPayableCode(p.number),
       serviceOrder: serviceOrderCode(p.serviceOrder.number),
