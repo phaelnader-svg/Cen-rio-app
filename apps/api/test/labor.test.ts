@@ -516,6 +516,52 @@ describe('Estados, qualidade e pagamentos (CA5-07, 08, 09, 10)', () => {
     expect((await s.admin.get(F(`/labor/${mo.id}`))).body.situation).toBe('LIBERADO');
   });
 
+  it('6b. reprovação e retrabalho: nada liberado nem duplicado até a nova aprovação', async () => {
+    const s = await scenario();
+    const mo = (
+      await labor(s.admin, {
+        professionalUserId: s.ids.ricardo,
+        serviceOrderId: s.so.id,
+        serviceOrderItemId: s.sofa.id,
+        eligibility: 'QUALIDADE_APROVADA',
+      })
+    ).body;
+    const T = s.tablets.Thiago!;
+    await finish(s.tablets.Ricardo!, s.sofaTask.id);
+    const first = await db().qualityInspection.findFirstOrThrow({
+      where: { serviceOrderItemId: s.sofa.id, status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } },
+    });
+    let i = (await T.get(`/api/v1/quality/inspections/${first.id}`)).body;
+    for (const it of i.items)
+      await T.put(`/api/v1/quality/inspections/${i.id}/items/${it.id}`, {
+        result: it.label === i.items[0].label ? 'NAO_CONFORME' : 'OK',
+        note: it.label === i.items[0].label ? 'Ponto solto' : null,
+      });
+    i = (await T.get(`/api/v1/quality/inspections/${first.id}`)).body;
+    const rej = await post(T, `/api/v1/quality/inspections/${i.id}/reject`, {
+      reason: 'Refazer a costura',
+      version: i.version,
+    });
+    expect(rej.status).toBe(200);
+    expect((await row(mo.id)).status).toBe('PREVISTO');
+    const c = await db().productionTask.findFirstOrThrow({ where: { activity: 'CORRECAO' } });
+    const st = await act(s.tablets.Ricardo!, c.id, 'start');
+    expect(st.status).toBe(200);
+    expect(
+      (await act(s.tablets.Ricardo!, c.id, 'complete', { note: 'Costura refeita' })).status,
+    ).toBe(200);
+    expect((await row(mo.id)).status).toBe('PREVISTO');
+    expect((await s.admin.get(F(`/labor/${mo.id}`))).body.situation).toBe('AGUARDANDO_QUALIDADE');
+    await approveInspection(T, s.sofa.id);
+    expect((await row(mo.id)).status).toBe('LIBERADO');
+    // Uma obrigação, um evento de liberação, nenhum pagamento automático.
+    expect(await db().productionPayable.count()).toBe(1);
+    expect(await db().financialEvent.count({ where: { entityId: mo.id, kind: 'LIBERADO' } })).toBe(
+      1,
+    );
+    expect(await db().professionalPayment.count()).toBe(0);
+  });
+
   it('7. pagamento parcial: saldo correto, nunca acima do devido, permissão e idempotência', async () => {
     const s = await scenario();
     const mo = (
