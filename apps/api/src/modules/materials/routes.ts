@@ -1,4 +1,5 @@
 import {
+  zonedDateTime,
   consolidateMaterials,
   consolidatedToCsv,
   formatServiceOrderItemCode,
@@ -12,6 +13,12 @@ import {
 import type { Prisma, PrismaClient } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { parseDateOnly, serviceOrderCode } from '../commercial/common';
+
+const nextDay = (iso: string) => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+};
 import { awaitingMeasurement } from '../measurements/routes';
 import { summaryInclude, toSummary, todayIn } from '../measurements/service';
 
@@ -166,9 +173,11 @@ export async function materialRoutes(app: FastifyInstance) {
         prisma.measurement.findMany({
           where: {
             status: 'CONCLUIDA',
+            // Dias LOCAIS da oficina (antes: meia-noite UTC — medições concluídas entre 21h e
+            // 24h no horário de Brasília caíam fora do período).
             completedAt: {
-              gte: parseDateOnly(from)!,
-              lt: new Date(parseDateOnly(to)!.getTime() + 86_400_000),
+              gte: zonedDateTime(from, '00:00', tz),
+              lt: zonedDateTime(nextDay(to), '00:00', tz),
             },
           },
           include: summaryInclude,

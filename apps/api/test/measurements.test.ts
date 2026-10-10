@@ -631,6 +631,36 @@ describe('Revisão, aprovação e devolução', () => {
 });
 
 describe('Consolidação e planejamento de sexta', () => {
+  it('planejamento usa dias LOCAIS da oficina (relógio controlado: 22:30 em Brasília = dia seguinte em UTC)', async () => {
+    const { zonedDateTime } = await import('@cenario/shared');
+    const admin = await loginAdmin(app);
+    const me = await gestorUserId();
+    const so = await openServiceOrder(admin);
+    const m = (
+      await createMeasurement(admin, {
+        serviceOrderId: so.id,
+        serviceOrderItemId: so.items[0].id,
+        kind: 'ROTINA',
+        assigneeUserId: me,
+        dueDate: nextFriday(),
+      })
+    ).body;
+    await fillAndSubmit(admin, m, { items: [fabric({ serviceOrderItemId: so.items[0].id })] });
+    const tz = 'America/Sao_Paulo';
+    const day = '2026-10-09';
+    const at = async (hhmm: string, d = day) => {
+      await db().measurement.update({
+        where: { id: m.id },
+        data: { completedAt: zonedDateTime(d, hhmm, tz) },
+      });
+      const plan = (await admin.get(`/api/v1/materials/planning?from=${day}&to=${day}`)).body;
+      return plan.completed.length as number;
+    };
+    expect(await at('22:30')).toBe(1); // 01:30 UTC do dia 10 — antes da correção ficava fora
+    expect(await at('01:00')).toBe(1); // 04:00 UTC do dia 9
+    expect(await at('23:30', '2026-10-08')).toBe(0); // dia local anterior (02:30 UTC do dia 9)
+  });
+
   it('tecidos ficam por OS (mesmo com nomes iguais); comuns de estoque agrupam com origens; CSV', async () => {
     const admin = await loginAdmin(app);
     const me = await gestorUserId();
