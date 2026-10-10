@@ -31,6 +31,8 @@ import {
 import { itemAllocations, refreshOrderStatus } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { syncTripCost, upsertTripCost } from '../finance/trip-costs';
+import { loadUserPermissions } from '../../core/permissions';
+import { notify } from '../notifications/notify';
 
 const VIEW = { session: 'WEB', permissions: ['retiradas.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['retiradas.gerenciar'] } as const;
@@ -209,6 +211,15 @@ export async function pickupRoutes(app: FastifyInstance) {
         if (!snapshot) throw Errors.validation(undefined, 'Informe o endereço da retirada.');
         const status: PickupStatus = input.scheduledDate ? 'AGENDADA' : 'AGUARDANDO_AGENDAMENTO';
         const actor = actorFrom(request);
+        // Correção global: responsável pela execução já na solicitação (mesma regra da atribuição).
+        let executor: { id: string; displayName: string } | null = null;
+        if (input.logisticsUserId) {
+          const perms = await loadUserPermissions(tx, input.logisticsUserId);
+          const u = await tx.user.findUnique({ where: { id: input.logisticsUserId } });
+          if (!u?.active || (!perms.has('logistica.executar') && !perms.has('producao.executar')))
+            throw Errors.business('Responsável inválido para a retirada.');
+          executor = { id: u.id, displayName: u.displayName };
+        }
         const pickup = await tx.pickupRequest.create({
           data: {
             orderId: order.id,
@@ -221,6 +232,7 @@ export async function pickupRoutes(app: FastifyInstance) {
             teamNotes: input.teamNotes ?? null,
             instructions: input.instructions ?? null,
             externalReference: input.externalReference ?? null,
+            logisticsUserId: executor?.id ?? null,
             status,
             createdById: actor.userId,
             items: {
@@ -242,7 +254,16 @@ export async function pickupRoutes(app: FastifyInstance) {
                         kind: 'AGENDADA',
                         fromStatus: 'AGUARDANDO_AGENDAMENTO' as const,
                         toStatus: 'AGENDADA' as const,
-                        note: `${input.scheduledDate}${input.windowStart ? ` ${input.windowStart}–${input.windowEnd ?? ''}` : ''}`,
+                        note: `${input.scheduledDate}${input.windowStart ? ` chegada ${input.windowStart}${input.windowEnd ? `–${input.windowEnd}` : ''}` : ''}`,
+                        recordedById: actor.userId,
+                      },
+                    ]
+                  : []),
+                ...(executor
+                  ? [
+                      {
+                        kind: 'RESPONSAVEL',
+                        note: `Responsável: ${executor.displayName}`,
                         recordedById: actor.userId,
                       },
                     ]
@@ -261,6 +282,16 @@ export async function pickupRoutes(app: FastifyInstance) {
           summary: `Retirada ${pickupCode(pickup.number)} solicitada para o pedido ${orderCode(order.number)}.`,
           changes: { status, scheduledDate: input.scheduledDate ?? null, team: input.team },
         });
+        if (executor)
+          await notify(tx, actor, [
+            {
+              userId: executor.id,
+              kind: 'ENTREGA_ATRIBUIDA',
+              dedupeKey: `RETIRADA_ATRIBUIDA:${pickup.id}:${pickup.version}`,
+              body: `Retirada ${pickupCode(pickup.number)}${input.scheduledDate ? ` em ${input.scheduledDate.split('-').reverse().join('/')}${input.windowStart ? `, chegada ${input.windowStart}` : ''}` : ''}.`,
+              includeActor: true,
+            },
+          ]);
         await emitPickupEvent(tx, request, pickup.id, EVENT_TYPES.PICKUP_CREATED);
         await emitOrderEvent(tx, request, order.id);
         return pickup.id;
@@ -315,6 +346,8 @@ export async function pickupRoutes(app: FastifyInstance) {
           scheduledDate: parseDateOnly(input.scheduledDate),
           windowStart: input.windowStart ?? null,
           windowEnd: input.windowEnd ?? null,
+          // Outro dia (ou sem data) = sai da sequência do roteiro em que estava.
+          ...(beforeDate !== (input.scheduledDate ?? null) ? { routeSequence: null } : {}),
           team: input.team,
           teamNotes: input.teamNotes ?? null,
           instructions: input.instructions ?? null,

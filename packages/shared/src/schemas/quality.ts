@@ -239,6 +239,24 @@ export const deliveryQuerySchema = z.object({
     .optional(),
 });
 
+// ─────────────────────── Roteiro diário (correção global) ───────────────────────
+
+export const logisticsRouteQuerySchema = z.object({ date: dateOnly });
+
+/** Nova sequência das paradas do dia. Deve listar EXATAMENTE as paradas atuais (senão 409). */
+export const logisticsRouteSequenceSchema = z.object({
+  date: dateOnly,
+  stops: z
+    .array(z.object({ kind: z.enum(['RETIRADA', 'ENTREGA']), id: idSchema }))
+    .min(1)
+    .max(100)
+    .refine((v) => new Set(v.map((s) => `${s.kind}:${s.id}`)).size === v.length, {
+      message: 'Parada repetida.',
+    }),
+  reason: optionalText(300),
+});
+export type LogisticsRouteSequenceInput = z.input<typeof logisticsRouteSequenceSchema>;
+
 export const assignPickupLogisticsSchema = z.object({
   logisticsUserId: idSchema.nullable(),
   version: versionSchema,

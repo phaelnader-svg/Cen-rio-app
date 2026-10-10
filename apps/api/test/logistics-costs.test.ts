@@ -264,6 +264,7 @@ describe('Padrões, valor total e recebedor (CA6-01..04)', () => {
     const r = await post(sched, '/api/v1/pickups', {
       orderId: order.id,
       scheduledDate: day(2),
+      windowStart: '09:00',
       team: 'LOGISTICA_TERCEIRIZADA',
       items: order.items.map((i: { id: string; quantity: number }) => ({
         orderItemId: i.id,
@@ -1003,6 +1004,7 @@ describe('Entrega completa (CA6-02, 05, 07 pela entrega)', () => {
     const d = await post(admin, '/api/v1/deliveries', {
       customerId,
       scheduledDate: day(1),
+      windowStart: '10:00',
       team: 'LOGISTICA_TERCEIRIZADA',
       responsibleUserId: ids.andre,
       itemIds: [so.items[0].id],
@@ -1032,6 +1034,7 @@ describe('Entrega completa (CA6-02, 05, 07 pela entrega)', () => {
     const full = (await admin.get(`/api/v1/deliveries/${d.body.id}`)).body;
     const again = await admin.put(`/api/v1/deliveries/${d.body.id}`, {
       scheduledDate: day(2),
+      windowStart: '10:00',
       team: 'LOGISTICA_TERCEIRIZADA',
       responsibleUserId: ids.andre,
       itemIds: [so.items[0].id],

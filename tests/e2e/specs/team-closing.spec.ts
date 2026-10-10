@@ -132,6 +132,7 @@ test.describe.serial('Evolução Fase 7 — fechamento semanal geral', () => {
       const pk = await post(page, '/api/v1/pickups', {
         orderId: order.id,
         scheduledDate: today(),
+        windowStart: '10:00',
         team: 'LOGISTICA_TERCEIRIZADA',
         items: [{ orderItemId: order.items[0].id, quantity: 1 }],
         tripCost: { amountCents: 10000, participantUserIds: [ANDRE.userId] },

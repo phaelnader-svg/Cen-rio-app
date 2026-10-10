@@ -34,6 +34,7 @@ import { attendanceRoutes } from './modules/attendance/routes';
 import { helpRoutes } from './modules/help/routes';
 import { issueRoutes } from './modules/issues/routes';
 import { qualityRoutes } from './modules/quality/routes';
+import { logisticsRouteRoutes } from './modules/quality/route';
 import { financeRoutes } from './modules/finance/routes';
 import { laborReviewRoutes } from './modules/finance/labor-review';
 import { tripCostRoutes } from './modules/finance/trip-costs';
@@ -199,6 +200,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(helpRoutes);
   await app.register(issueRoutes);
   await app.register(qualityRoutes);
+  await app.register(logisticsRouteRoutes);
   await app.register(financeRoutes);
   await app.register(laborReviewRoutes);
   await app.register(tripCostRoutes);

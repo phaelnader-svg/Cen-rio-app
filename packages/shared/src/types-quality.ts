@@ -255,6 +255,39 @@ export interface LogisticsJobDto {
   version: number;
 }
 
+/** Correção global — uma parada do roteiro diário (retirada ou entrega). */
+export interface LogisticsRouteStopDto {
+  /** Posição na sequência operacional do dia (1..n). Independe do horário combinado. */
+  position: number;
+  /** Ordem gravada pelo gestor (null = ainda não ordenada: vai ao fim, pelo horário). */
+  savedSequence: number | null;
+  /** Retirada só solicitada, entrega provisória etc.: aparece, mas não é compromisso firme. */
+  confirmed: boolean;
+  serviceOrders: string[];
+  team: 'LOGISTICA_TERCEIRIZADA' | 'EQUIPE_PROPRIA';
+  responsible: { userId: string; displayName: string } | null;
+  participants: { userId: string; displayName: string }[];
+  conflicts: string[];
+  job: LogisticsJobDto;
+}
+
+export interface LogisticsRouteDto {
+  date: string;
+  /** Visão de quem executa: só as paradas em que a pessoa é responsável ou participante. */
+  scope: 'GESTOR' | 'EQUIPE';
+  stops: LogisticsRouteStopDto[];
+  /** Alertas do dia (sem estimativas de deslocamento inventadas). */
+  warnings: string[];
+}
+
+export interface LogisticsRouteChangeDto {
+  at: string;
+  actor: string | null;
+  reason: string | null;
+  before: string[];
+  after: string[];
+}
+
 export interface LogisticsOccurrenceDto {
   id: string;
   number: number;

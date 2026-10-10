@@ -1,6 +1,7 @@
 'use client';
 
 import type { LogisticsJobDto, LogisticsKind } from '@cenario/shared';
+import { addDays, arrivalText, todayIso } from '@/lib/commercial';
 import {
   DELIVERY_ITEM_STATUS_LABEL,
   DELIVERY_STATUS_LABEL,
@@ -17,7 +18,7 @@ import { useSend } from '@/components/production/use-send';
 import { Button } from '@/components/ui/button';
 import { Alert, Spinner } from '@/components/ui/misc';
 import { api, newIdempotencyKey } from '@/lib/api';
-import { useLogisticsJobs } from '@/lib/quality';
+import { useLogisticsJobs, useLogisticsRoute } from '@/lib/quality';
 import { useOnline } from './tasks';
 
 /**
@@ -35,23 +36,86 @@ function statusLabel(j: LogisticsJobDto) {
 }
 
 export function LogisticsJobs() {
+  const [day, setDay] = useState<'hoje' | 'amanha'>('hoje');
+  const date = day === 'hoje' ? todayIso() : addDays(todayIso(), 1);
+  const route = useLogisticsRoute(date);
   const q = useLogisticsJobs();
-  if (q.isPending) return <Spinner />;
+  if (q.isPending || route.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
-  if (!q.data.length)
-    return (
-      <p className="rounded-2xl bg-subtle p-6 text-lg text-ink-muted" data-testid="no-jobs">
-        Nenhuma retirada ou entrega atribuída a você.
-      </p>
-    );
+  if (route.isError) return <Alert tone="danger">{route.error.message}</Alert>;
+  const inRoute = new Set(route.data.stops.map((s) => `${s.job.kind}:${s.job.id}`));
+  const others = q.data.filter(
+    (j) => !inRoute.has(`${j.kind}:${j.id}`) && j.scheduledDate !== date,
+  );
   return (
-    <ul className="space-y-5" data-testid="logistics-jobs">
-      {q.data.map((j) => (
-        <li key={`${j.kind}:${j.id}`}>
-          <JobCard j={j} />
-        </li>
-      ))}
-    </ul>
+    <div className="space-y-6" data-testid="logistics-route">
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="mr-auto text-2xl font-semibold">Roteiro do dia</h2>
+        <div className="flex gap-2" role="group" aria-label="Dia do roteiro">
+          {(['hoje', 'amanha'] as const).map((d) => (
+            <Button
+              key={d}
+              size="lg"
+              variant={day === d ? 'primary' : 'secondary'}
+              aria-pressed={day === d}
+              onClick={() => setDay(d)}
+            >
+              {d === 'hoje' ? 'Hoje' : 'Amanhã'}
+            </Button>
+          ))}
+        </div>
+      </div>
+      {!route.data.stops.length ? (
+        <p className="rounded-2xl bg-subtle p-6 text-lg text-ink-muted" data-testid="no-jobs">
+          Nenhuma retirada ou entrega sua {day === 'hoje' ? 'hoje' : 'amanhã'}.
+        </p>
+      ) : (
+        <ol className="space-y-5" data-testid="logistics-jobs">
+          {route.data.stops.map((s) => (
+            <li key={`${s.job.kind}:${s.job.id}`} data-testid={`route-stop-${s.job.code}`}>
+              <p className="mb-2 flex flex-wrap items-center gap-2 text-lg">
+                <span
+                  className="inline-flex size-10 items-center justify-center rounded-full bg-brand-700 text-xl font-bold text-white"
+                  aria-label={`Parada ${s.position}`}
+                >
+                  {s.position}
+                </span>
+                <span className="font-semibold">
+                  {s.job.kind === 'ENTREGA' ? 'Entrega' : 'Retirada'} ·{' '}
+                  {arrivalText(s.job.windowStart, s.job.windowEnd)}
+                </span>
+                {s.serviceOrders.length > 0 && (
+                  <span className="text-base text-ink-muted">OS {s.serviceOrders.join(', ')}</span>
+                )}
+                {s.participants.length > 0 && (
+                  <span className="text-base text-ink-muted">
+                    · equipe {s.participants.map((p) => p.displayName).join(', ')}
+                  </span>
+                )}
+              </p>
+              {!s.confirmed && (
+                <p className="mb-2 rounded-xl bg-warn-50 px-4 py-2 text-base text-warn-600">
+                  Ainda não confirmada com o cliente.
+                </p>
+              )}
+              <JobCard j={s.job} />
+            </li>
+          ))}
+        </ol>
+      )}
+      {others.length > 0 && (
+        <section className="space-y-4">
+          <h2 className="text-xl font-semibold">Outros dias e pendências</h2>
+          <ul className="space-y-5">
+            {others.map((j) => (
+              <li key={`${j.kind}:${j.id}`}>
+                <JobCard j={j} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -91,7 +155,7 @@ function JobCard({ j }: { j: LogisticsJobDto }) {
         </span>
         <span>
           · {day(j.scheduledDate)}
-          {j.windowStart ? ` · ${j.windowStart}${j.windowEnd ? `–${j.windowEnd}` : ''}` : ''}
+          {j.windowStart ? ` · ${arrivalText(j.windowStart, j.windowEnd)}` : ''}
         </span>
         <span className="rounded-full bg-subtle px-3 py-0.5 font-semibold" data-testid="job-status">
           {statusLabel(j)}
@@ -334,7 +398,7 @@ function ItemsPanel({
           {state[p.id]?.status !== 'ENTREGUE' && (
             <textarea
               aria-label={`Observação de ${p.code}`}
-              className="input mt-2 min-h-16 w-full text-lg"
+              className="input input-lg mt-2 min-h-16"
               value={state[p.id]?.note ?? ''}
               onChange={(e) =>
                 setState((x) => ({ ...x, [p.id]: { ...x[p.id]!, note: e.target.value } }))
@@ -384,7 +448,7 @@ function NotePanel({
       <label className="block text-base font-medium">
         {label}
         <textarea
-          className="input mt-2 min-h-16 w-full text-lg"
+          className="input input-lg mt-2 min-h-16"
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
@@ -450,7 +514,7 @@ function KindPanel({
       <label className="block text-base font-medium">
         {label}
         <textarea
-          className="input mt-2 min-h-16 w-full text-lg"
+          className="input input-lg mt-2 min-h-16"
           value={text}
           onChange={(e) => setText(e.target.value)}
         />

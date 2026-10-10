@@ -125,6 +125,8 @@ export const EVENT_TYPES = {
   ITEM_LOCATION_CHANGED: 'item.location_changed',
   DELIVERY_UPDATED: 'delivery.updated',
   LOGISTICS_OCCURRENCE_UPDATED: 'logistics.occurrence_updated',
+  /** Correção global: sequência do roteiro do dia alterada (payload: data). */
+  LOGISTICS_ROUTE_CHANGED: 'logistics.route_changed',
   PIECE_RETURN_UPDATED: 'return.updated',
   RECEIPT_CORRECTED: 'receipt.corrected',
   // Fase 11 — financeiro operacional (sem valores no payload)

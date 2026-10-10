@@ -159,6 +159,7 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     ['deliveries'],
     ['delivery'],
     ['logistics-jobs'],
+    ['logistics-route'],
     ['logistics-occurrences'],
     ['logistics-occurrence'],
     ['returns'],
@@ -174,7 +175,8 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     t === 'pickup.status_changed'
   )
     keys.push(...quality, ['my-tasks'], ['production-task'], ['fin']);
-  if (t === 'notification.created') keys.push(['inspections'], ['packaging'], ['logistics-jobs']);
+  if (t === 'notification.created')
+    keys.push(['inspections'], ['packaging'], ['logistics-jobs'], ['logistics-route']);
   if (t === 'quality.template_changed') keys.push(['quality-templates']);
   // Fase 11: eventos financeiros (sem valores) só chegam a quem vê o financeiro.
   if (t.startsWith('finance.')) keys.push(['fin']);

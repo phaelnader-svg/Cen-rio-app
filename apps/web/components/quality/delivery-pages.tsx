@@ -26,7 +26,7 @@ import { Checkbox, Field, Input, Select, Textarea } from '@/components/ui/field'
 import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { Tabs } from '@/components/ui/tabs';
 import { api, newIdempotencyKey } from '@/lib/api';
-import { useCustomer } from '@/lib/commercial';
+import { useCustomer, arrivalText } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { useWorkers } from '@/lib/production';
@@ -40,6 +40,14 @@ import {
   usePieces,
 } from '@/lib/quality';
 import { TripCostCard, TripCostFields, type TripCostValue } from '@/components/finance/trip-cost';
+import {
+  DateField,
+  FormGrid,
+  SelectField,
+  TextAreaField,
+  TextField,
+  TimeField,
+} from '@/components/ui/form';
 
 const day = (iso: string) => {
   const d = new Date(`${iso}T12:00:00Z`);
@@ -125,11 +133,11 @@ function Agenda() {
     <>
       <Card className="mb-4 flex flex-wrap items-end gap-3 p-4">
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">De</span>
+          <span className="label">De</span>
           <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Até</span>
+          <span className="label">Até</span>
           <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
       </Card>
@@ -169,7 +177,7 @@ function Agenda() {
                           </p>
                           <p className="text-ink-muted">
                             {d.windowStart
-                              ? `${d.windowStart}${d.windowEnd ? `–${d.windowEnd}` : ''}`
+                              ? arrivalText(d.windowStart, d.windowEnd)
                               : 'Horário a combinar'}{' '}
                             · {d.responsible?.displayName ?? 'sem responsável'} (
                             {PICKUP_TEAM_LABEL[d.team]})
@@ -282,7 +290,7 @@ function Shipping() {
     <>
       <Card className="mb-4 p-4">
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Etapa</span>
+          <span className="label">Etapa</span>
           <Select value={stage} onChange={(e) => setStage(e.target.value)}>
             <option value="">Em andamento (todas)</option>
             {Object.entries(FULFILLMENT_STAGE_LABEL).map(([k, v]) => (
@@ -509,7 +517,6 @@ export function ScheduleDialog({
   const [addressId, setAddressId] = useState('');
   const [date, setDate] = useState(delivery?.scheduledDate ?? plusDays(today(), 1));
   const [windowStart, setWindowStart] = useState(delivery?.windowStart ?? '');
-  const [windowEnd, setWindowEnd] = useState(delivery?.windowEnd ?? '');
   const [team, setTeam] = useState<PickupTeam>(delivery?.team ?? 'LOGISTICA_TERCEIRIZADA');
   const [responsibleUserId, setResponsible] = useState(delivery?.responsible?.userId ?? '');
   const [requiresInstallation, setInstall] = useState(delivery?.requiresInstallation ?? false);
@@ -535,7 +542,9 @@ export function ScheduleDialog({
     contactPhone: contactPhone || null,
     scheduledDate: date,
     windowStart: windowStart || null,
-    windowEnd: windowEnd || null,
+    // Registro antigo com janela: o fim só é mantido enquanto a chegada não mudar (sem conversão).
+    windowEnd:
+      delivery?.windowEnd && windowStart === delivery.windowStart ? delivery.windowEnd : null,
     team,
     responsibleUserId: responsibleUserId || null,
     requiresInstallation,
@@ -549,7 +558,7 @@ export function ScheduleDialog({
       size="lg"
       onClose={onClose}
       title={delivery ? `Reagendar ${delivery.code}` : `Agendar entrega — ${customerName}`}
-      description="Data, janela e equipe são combinadas pelo gestor com o cliente. Peças ainda não liberadas só entram em pré-agendamento provisório (sem confirmação ao cliente)."
+      description="Data e horário de chegada combinados com o cliente, equipe e peças. Peças ainda não liberadas só entram em pré-agendamento provisório (sem confirmação ao cliente)."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -559,6 +568,7 @@ export function ScheduleDialog({
             disabled={
               !ids.length ||
               !date ||
+              (!provisional && !windowStart) ||
               (Boolean(delivery) && reason.trim().length < 3) ||
               (!delivery && !trip.ok)
             }
@@ -608,10 +618,90 @@ export function ScheduleDialog({
           A confirmação definitiva só é possível com todas as peças liberadas.
         </Alert>
       )}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <fieldset className="sm:col-span-2">
-          <legend className="mb-1 text-sm font-medium">Peças</legend>
-          <div className="grid gap-1">
+      <div className="space-y-5" data-testid="delivery-form">
+        <FormGrid>
+          <DateField
+            label="Data do compromisso"
+            required
+            cols={4}
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+          <TimeField
+            label="Horário de chegada ao cliente"
+            required={!provisional}
+            cols={4}
+            hint={
+              provisional
+                ? 'Opcional no pré-agendamento; obrigatório para confirmar.'
+                : 'Compromisso com o cliente. Sem horário de término.'
+            }
+            value={windowStart}
+            onChange={(e) => setWindowStart(e.target.value)}
+          />
+          <SelectField
+            label="Endereço"
+            cols={4}
+            value={addressId}
+            onChange={(e) => setAddressId(e.target.value)}
+          >
+            <option value="">
+              {delivery ? 'Manter / principal do cliente' : 'Principal do cliente'}
+            </option>
+            {customer.data?.addresses.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label}: {a.street}, {a.number} — {a.city}
+              </option>
+            ))}
+          </SelectField>
+          {delivery?.windowEnd && (
+            <p className="text-xs text-ink-muted sm:col-span-12">
+              Registro antigo com janela {delivery.windowStart}–{delivery.windowEnd}: mantida
+              enquanto o horário de chegada não for alterado.
+            </p>
+          )}
+          <SelectField
+            label="Equipe responsável"
+            cols={4}
+            value={team}
+            onChange={(e) => setTeam(e.target.value as PickupTeam)}
+          >
+            <option value="LOGISTICA_TERCEIRIZADA">
+              {PICKUP_TEAM_LABEL.LOGISTICA_TERCEIRIZADA}
+            </option>
+            <option value="EQUIPE_PROPRIA">{PICKUP_TEAM_LABEL.EQUIPE_PROPRIA}</option>
+          </SelectField>
+          <SelectField
+            label="Responsável pela execução"
+            cols={4}
+            value={responsibleUserId}
+            onChange={(e) => setResponsible(e.target.value)}
+          >
+            <option value="">A definir</option>
+            {people.data
+              ?.filter((p) => p.team === team)
+              .map((p) => (
+                <option key={p.userId} value={p.userId}>
+                  {p.displayName}
+                </option>
+              ))}
+          </SelectField>
+          <TextField
+            label="Contato no local"
+            cols={4}
+            value={contactName}
+            onChange={(e) => setContactName(e.target.value)}
+          />
+          <TextField
+            label="Telefone do contato"
+            cols={4}
+            value={contactPhone}
+            onChange={(e) => setContactPhone(e.target.value)}
+          />
+        </FormGrid>
+        <fieldset>
+          <legend className="mb-2 text-sm font-semibold">Peças</legend>
+          <div className="grid gap-1 rounded-xl border border-line p-3">
             {candidates.map((p) => (
               <Checkbox
                 key={p.id}
@@ -624,118 +714,37 @@ export function ScheduleDialog({
             ))}
           </div>
         </fieldset>
-        <Field label="Endereço">
-          {(f) => (
-            <Select {...f} value={addressId} onChange={(e) => setAddressId(e.target.value)}>
-              <option value="">
-                {delivery ? 'Manter / principal do cliente' : 'Principal do cliente'}
-              </option>
-              {customer.data?.addresses.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label}: {a.street}, {a.number} — {a.city}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
-        <Field label="Data">
-          {(f) => (
-            <Input {...f} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          )}
-        </Field>
-        <Field label="Janela — início">
-          {(f) => (
-            <Input
-              {...f}
-              type="time"
-              value={windowStart}
-              onChange={(e) => setWindowStart(e.target.value)}
-            />
-          )}
-        </Field>
-        <Field label="Janela — fim">
-          {(f) => (
-            <Input
-              {...f}
-              type="time"
-              value={windowEnd}
-              onChange={(e) => setWindowEnd(e.target.value)}
-            />
-          )}
-        </Field>
-        <Field label="Equipe">
-          {(f) => (
-            <Select {...f} value={team} onChange={(e) => setTeam(e.target.value as PickupTeam)}>
-              <option value="LOGISTICA_TERCEIRIZADA">
-                {PICKUP_TEAM_LABEL.LOGISTICA_TERCEIRIZADA}
-              </option>
-              <option value="EQUIPE_PROPRIA">{PICKUP_TEAM_LABEL.EQUIPE_PROPRIA}</option>
-            </Select>
-          )}
-        </Field>
-        <Field label="Responsável">
-          {(f) => (
-            <Select
-              {...f}
-              value={responsibleUserId}
-              onChange={(e) => setResponsible(e.target.value)}
-            >
-              <option value="">A definir</option>
-              {people.data
-                ?.filter((p) => p.team === team)
-                .map((p) => (
-                  <option key={p.userId} value={p.userId}>
-                    {p.displayName}
-                  </option>
-                ))}
-            </Select>
-          )}
-        </Field>
-        <Field label="Contato no local">
-          {(f) => (
-            <Input {...f} value={contactName} onChange={(e) => setContactName(e.target.value)} />
-          )}
-        </Field>
-        <Field label="Telefone do contato">
-          {(f) => (
-            <Input {...f} value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} />
-          )}
-        </Field>
-        <div className="sm:col-span-2">
-          <Checkbox
-            label="Com instalação"
-            checked={requiresInstallation}
-            onChange={(e) => setInstall(e.target.checked)}
+        <Checkbox
+          label="Com instalação"
+          checked={requiresInstallation}
+          onChange={(e) => setInstall(e.target.checked)}
+        />
+        <FormGrid>
+          <TextAreaField
+            label="Instruções para a equipe"
+            cols={12}
+            rows={2}
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
           />
-        </div>
-        <div className="sm:col-span-2">
-          <Field label="Instruções para a equipe">
-            {(f) => (
-              <Textarea
-                {...f}
-                value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
-              />
-            )}
-          </Field>
-        </div>
-        <div className="sm:col-span-2">
-          <Field label="Observações internas">
-            {(f) => <Textarea {...f} value={notes} onChange={(e) => setNotes(e.target.value)} />}
-          </Field>
-        </div>
-        {delivery && (
-          <div className="sm:col-span-2">
-            <Field label="Motivo da alteração" required>
-              {(f) => <Input {...f} value={reason} onChange={(e) => setReason(e.target.value)} />}
-            </Field>
-          </div>
-        )}
-        {!delivery && (
-          <div className="sm:col-span-2">
-            <TripCostFields kind="ENTREGA" onChange={(v, ok) => setTrip({ v, ok })} />
-          </div>
-        )}
+          <TextAreaField
+            label="Observações internas"
+            cols={12}
+            rows={2}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+          {delivery && (
+            <TextField
+              label="Motivo da alteração"
+              required
+              cols={12}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          )}
+        </FormGrid>
+        {!delivery && <TripCostFields kind="ENTREGA" onChange={(v, ok) => setTrip({ v, ok })} />}
       </div>
     </Dialog>
   );
@@ -760,7 +769,7 @@ export function DeliveryDetailPage({ id }: { id: string }) {
       <BackLink href="/painel/entregas" label="Expedição e entregas" />
       <PageHeader
         title={`Entrega ${d.code}`}
-        description={`${d.customer.name} · ${day(d.scheduledDate)}${d.windowStart ? ` · ${d.windowStart}${d.windowEnd ? `–${d.windowEnd}` : ''}` : ''}`}
+        description={`${d.customer.name} · ${day(d.scheduledDate)}${d.windowStart ? ` · ${arrivalText(d.windowStart, d.windowEnd)}` : ''}`}
         actions={
           manage && (
             <>
@@ -963,7 +972,7 @@ function Occurrences() {
     <>
       <Card className="mb-4 p-4">
         <label className="text-sm">
-          <span className="mb-1 block text-ink-muted">Situação</span>
+          <span className="label">Situação</span>
           <Select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">Todas</option>
             {Object.entries(LOGISTICS_STATUS_LABEL).map(([k, v]) => (

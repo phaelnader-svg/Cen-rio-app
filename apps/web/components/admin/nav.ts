@@ -32,6 +32,7 @@ import {
   UserCog,
   Users,
   Workflow,
+  Route,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -71,6 +72,12 @@ export const NAV: NavItem[] = [
     anyOf: ['pedidos.ver'],
   },
   { href: '/painel/retiradas', label: 'Retiradas', icon: Truck, anyOf: ['retiradas.ver'] },
+  {
+    href: '/painel/roteiro',
+    label: 'Roteiro do dia',
+    icon: Route,
+    anyOf: ['entregas.ver', 'retiradas.ver'],
+  },
   {
     href: '/painel/recebimentos',
     label: 'Recebimentos',

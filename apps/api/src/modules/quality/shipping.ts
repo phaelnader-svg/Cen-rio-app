@@ -388,6 +388,15 @@ async function assertAllReady(tx: Tx, itemIds: string[]) {
     );
 }
 
+/** Correção global: compromisso confirmado com o cliente = data + HORÁRIO DE CHEGADA. */
+function requireArrival(provisional: boolean, windowStart: string | null | undefined) {
+  if (!provisional && !windowStart)
+    throw Errors.validation(
+      [{ path: 'windowStart', message: 'Informe o horário de chegada ao cliente.' }],
+      'Informe o horário de chegada ao cliente (entrega confirmada).',
+    );
+}
+
 export async function createDelivery(
   tx: Tx,
   actor: ActorContext,
@@ -409,6 +418,7 @@ export async function createDelivery(
     provisional: boolean;
   },
 ) {
+  requireArrival(input.provisional, input.windowStart);
   const customer = await tx.customer.findUnique({ where: { id: input.customerId } });
   if (!customer) throw Errors.notFound('Cliente');
   const items = await validatePieces(tx, customer.id, input.itemIds);
@@ -503,6 +513,7 @@ export async function updateDelivery(
     );
   const items = await validatePieces(tx, d.customerId, input.itemIds, d.id);
   const provisional = input.provisional ?? d.status === 'PROVISORIA';
+  requireArrival(provisional, input.windowStart);
   if (!provisional)
     await assertAllReady(
       tx,
@@ -541,6 +552,8 @@ export async function updateDelivery(
       scheduledDate: parseDateOnly(input.scheduledDate)!,
       windowStart: input.windowStart ?? null,
       windowEnd: input.windowEnd ?? null,
+      // Outro dia = sai da sequência do roteiro antigo (entra no fim do novo dia).
+      ...(dateOnly(d.scheduledDate) !== input.scheduledDate ? { routeSequence: null } : {}),
       team: input.team,
       responsibleUserId: responsible?.id ?? null,
       requiresInstallation: input.requiresInstallation,
@@ -579,6 +592,10 @@ export async function confirmDelivery(tx: Tx, actor: ActorContext, id: string, v
   if (d.version !== version) throw Errors.versionConflict(d.version);
   if (d.status !== 'PROVISORIA')
     throw Errors.business('Só um pré-agendamento provisório pode ser confirmado.');
+  if (!d.windowStart)
+    throw Errors.business(
+      'Informe o horário de chegada ao cliente antes de confirmar (Reagendar → Horário de chegada).',
+    );
   const items = d.items.filter((i) => i.active).map((i) => i.serviceOrderItemId);
   if (!items.length) throw Errors.business('A entrega não tem peças.');
   await assertAllReady(tx, items);

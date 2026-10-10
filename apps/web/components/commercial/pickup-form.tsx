@@ -11,11 +11,20 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { Field, Input, Select, Textarea } from '@/components/ui/field';
 import { Alert } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, fieldErrors, newIdempotencyKey } from '@/lib/api';
 import { useCustomerAddresses } from '@/lib/commercial';
+import { useLogisticsPeople } from '@/lib/quality';
+import { useCan } from '@/lib/hooks';
+import {
+  DateField,
+  FormGrid,
+  SelectField,
+  TextAreaField,
+  TextField,
+  TimeField,
+} from '@/components/ui/form';
 import { addressLines } from './address-form';
 import { TripCostFields, type TripCostValue } from '@/components/finance/trip-cost';
 
@@ -32,10 +41,12 @@ export function PickupForm({
   const qc = useQueryClient();
   const toast = useToast();
   const addresses = useCustomerAddresses(order.customer.id);
+  const can = useCan();
+  const people = useLogisticsPeople(can('entregas.ver'));
   const [addressId, setAddressId] = useState('');
   const [date, setDate] = useState(pickup?.scheduledDate ?? '');
   const [start, setStart] = useState(pickup?.windowStart ?? '');
-  const [end, setEnd] = useState(pickup?.windowEnd ?? '');
+  const [executor, setExecutor] = useState('');
   const [team, setTeam] = useState<(typeof PICKUP_TEAMS)[number]>(
     pickup?.team ?? 'LOGISTICA_TERCEIRIZADA',
   );
@@ -74,7 +85,8 @@ export function PickupForm({
         addressId: addressId || null,
         scheduledDate: date || null,
         windowStart: start || null,
-        windowEnd: end || null,
+        // Registro antigo com janela: o fim só é mantido enquanto a chegada não mudar.
+        windowEnd: pickup?.windowEnd && start === pickup.windowStart ? pickup.windowEnd : null,
         team,
         teamNotes,
         instructions,
@@ -92,7 +104,8 @@ export function PickupForm({
         body: createPickupSchema.parse({
           ...base,
           orderId: order.id,
-          ...(trip.v && date ? { tripCost: trip.v } : {}),
+          ...(executor ? { logisticsUserId: executor } : {}),
+          ...(trip.v ? { tripCost: trip.v } : {}),
         }),
         idempotencyKey: idem.current,
       });
@@ -122,6 +135,7 @@ export function PickupForm({
   });
 
   const currentAddress = pickup?.address ?? order.pickupAddress;
+  const scheduling = Boolean(date);
 
   return (
     <Dialog
@@ -135,95 +149,109 @@ export function PickupForm({
           <Button variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
-          <Button loading={m.isPending} disabled={!pickup && !trip.ok} onClick={() => m.mutate()}>
-            {pickup ? 'Salvar' : date ? 'Solicitar e agendar' : 'Solicitar retirada'}
+          <Button
+            loading={m.isPending}
+            disabled={(!pickup && !trip.ok) || (scheduling && !start)}
+            onClick={() => m.mutate()}
+          >
+            {pickup ? 'Salvar' : scheduling ? 'Solicitar e agendar' : 'Solicitar retirada'}
           </Button>
         </>
       }
     >
-      <div className="space-y-5">
+      <div className="space-y-5" data-testid="pickup-form">
         {error && <Alert tone="danger">{error}</Alert>}
-        <Field
-          label="Endereço"
-          hint={
-            currentAddress
-              ? `Atual: ${currentAddress.label} — ${addressLines(currentAddress).replace('\n', ' · ')}`
-              : 'O pedido não tem endereço definido.'
-          }
-        >
-          {(p) => (
-            <Select {...p} value={addressId} onChange={(e) => setAddressId(e.target.value)}>
-              <option value="">{currentAddress ? 'Manter o endereço atual' : 'Selecione…'}</option>
-              {addresses.data?.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label} — {addressLines(a).replace('\n', ' · ')}
-                </option>
-              ))}
-            </Select>
-          )}
-        </Field>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Field
-            label="Data combinada"
+        <FormGrid>
+          <DateField
+            label="Data do compromisso"
+            cols={4}
             error={errors.scheduledDate}
-            hint="Vazio = aguardando agendamento"
+            hint="Vazio = só solicitada (aguardando agendamento)"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+          <TimeField
+            label="Horário de chegada ao cliente"
+            cols={4}
+            required={scheduling}
+            error={errors.windowStart}
+            hint={scheduling ? 'Obrigatório no agendamento. Sem horário de término.' : 'Com a data'}
+            disabled={!scheduling}
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+          />
+          <SelectField
+            label="Equipe responsável"
+            cols={4}
+            value={team}
+            onChange={(e) => {
+              setTeam(e.target.value as typeof team);
+              setExecutor('');
+            }}
           >
-            {(p) => (
-              <Input {...p} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-            )}
-          </Field>
-          <Field label="Janela — início" error={errors.windowStart}>
-            {(p) => (
-              <Input {...p} type="time" value={start} onChange={(e) => setStart(e.target.value)} />
-            )}
-          </Field>
-          <Field label="Janela — fim" error={errors.windowEnd}>
-            {(p) => (
-              <Input {...p} type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
-            )}
-          </Field>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Equipe responsável">
-            {(p) => (
-              <Select {...p} value={team} onChange={(e) => setTeam(e.target.value as typeof team)}>
-                {PICKUP_TEAMS.map((t) => (
-                  <option key={t} value={t}>
-                    {PICKUP_TEAM_LABEL[t]}
+            {PICKUP_TEAMS.map((t) => (
+              <option key={t} value={t}>
+                {PICKUP_TEAM_LABEL[t]}
+              </option>
+            ))}
+          </SelectField>
+          {pickup?.windowEnd && (
+            <p className="text-xs text-ink-muted sm:col-span-12">
+              Registro antigo com janela {pickup.windowStart}–{pickup.windowEnd}: mantida enquanto o
+              horário de chegada não for alterado.
+            </p>
+          )}
+          {!pickup && people.data && (
+            <SelectField
+              label="Responsável pela execução"
+              cols={4}
+              value={executor}
+              onChange={(e) => setExecutor(e.target.value)}
+              data-testid="pickup-executor"
+            >
+              <option value="">A definir</option>
+              {people.data
+                .filter((p) => p.team === team)
+                .map((p) => (
+                  <option key={p.userId} value={p.userId}>
+                    {p.displayName}
                   </option>
                 ))}
-              </Select>
-            )}
-          </Field>
-          <Field label="Pessoas / observação da equipe">
-            {(p) => (
-              <Input {...p} value={teamNotes} onChange={(e) => setTeamNotes(e.target.value)} />
-            )}
-          </Field>
-          <Field label="Referência externa (logística)" hint="Protocolo da logística, se houver">
-            {(p) => (
-              <Input
-                {...p}
-                value={externalReference}
-                onChange={(e) => setExternalReference(e.target.value)}
-              />
-            )}
-          </Field>
-        </div>
-        <Field label="Instruções">
-          {(p) => (
-            <Textarea
-              {...p}
-              rows={2}
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              placeholder="Acesso, portaria, cuidados no transporte…"
-            />
+            </SelectField>
           )}
-        </Field>
-        {!pickup && date && (
-          <TripCostFields kind="RETIRADA" onChange={(v, ok) => setTrip({ v, ok })} />
-        )}
+          <TextField
+            label="Pessoas / observação da equipe"
+            cols={pickup ? 8 : 4}
+            value={teamNotes}
+            onChange={(e) => setTeamNotes(e.target.value)}
+          />
+          <TextField
+            label="Referência externa (logística)"
+            hint="Protocolo da logística, se houver"
+            cols={4}
+            value={externalReference}
+            onChange={(e) => setExternalReference(e.target.value)}
+          />
+          <SelectField
+            label="Endereço"
+            cols={12}
+            hint={
+              currentAddress
+                ? `Atual: ${currentAddress.label} — ${addressLines(currentAddress).replace('\n', ' · ')}`
+                : 'O pedido não tem endereço definido.'
+            }
+            value={addressId}
+            onChange={(e) => setAddressId(e.target.value)}
+          >
+            <option value="">{currentAddress ? 'Manter o endereço atual' : 'Selecione…'}</option>
+            {addresses.data?.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.label} — {addressLines(a).replace('\n', ' · ')}
+              </option>
+            ))}
+          </SelectField>
+        </FormGrid>
+        {!pickup && <TripCostFields kind="RETIRADA" onChange={(v, ok) => setTrip({ v, ok })} />}
         <fieldset>
           <legend className="mb-2 text-sm font-semibold">Peças a retirar</legend>
           {errors.items && <p className="mb-2 text-sm text-danger-600">{errors.items}</p>}
@@ -241,7 +269,7 @@ export function PickupForm({
                   min={0}
                   max={Math.max(0, available(i.id))}
                   aria-label={`Quantidade a retirar de ${i.description}`}
-                  className="input w-24 py-1.5"
+                  className="input input-sm w-24"
                   value={qty[i.id]}
                   onChange={(e) => setQty({ ...qty, [i.id]: e.target.value })}
                 />
@@ -249,6 +277,16 @@ export function PickupForm({
             ))}
           </ul>
         </fieldset>
+        <FormGrid>
+          <TextAreaField
+            label="Instruções"
+            cols={12}
+            rows={2}
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            placeholder="Acesso, portaria, cuidados no transporte…"
+          />
+        </FormGrid>
       </div>
     </Dialog>
   );

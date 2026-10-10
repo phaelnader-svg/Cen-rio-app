@@ -669,6 +669,8 @@ model PickupRequest {
   scheduledDate     DateTime?    @map("scheduled_date") @db.Date
   windowStart       String?      @map("window_start") @db.Char(5)
   windowEnd         String?      @map("window_end") @db.Char(5)
+  /// Correção global: posição no roteiro do dia (null = ainda não ordenada; vai ao fim).
+  routeSequence     Int?         @map("route_sequence")
   team              PickupTeam   @default(LOGISTICA_TERCEIRIZADA)
   teamNotes         String?      @map("team_notes") @db.VarChar(200)
   instructions      String?      @db.VarChar(1000)
@@ -2568,6 +2570,8 @@ model Delivery {
   scheduledDate        DateTime       @map("scheduled_date") @db.Date
   windowStart          String?        @map("window_start") @db.Char(5)
   windowEnd            String?        @map("window_end") @db.Char(5)
+  /// Correção global: posição no roteiro do dia (null = ainda não ordenada; vai ao fim).
+  routeSequence        Int?           @map("route_sequence")
   team                 PickupTeam     @default(EQUIPE_PROPRIA)
   responsibleUserId    String?        @map("responsible_user_id") @db.Uuid
   requiresInstallation Boolean        @default(false) @map("requires_installation")

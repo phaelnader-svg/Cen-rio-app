@@ -253,10 +253,9 @@ test.describe.serial('Fase 10 — qualidade, embalagem e entrega', () => {
         .first()
         .click();
       const dlg = page.getByRole('dialog');
-      await dlg.getByLabel('Data').fill(addDays(today(), 1));
-      await dlg.getByLabel('Janela — início').fill('09:00');
-      await dlg.getByLabel('Janela — fim').fill('12:00');
-      await dlg.getByLabel('Responsável').selectOption({ label: 'André' });
+      await dlg.getByLabel('Data do compromisso').fill(addDays(today(), 1));
+      await dlg.getByLabel('Horário de chegada ao cliente').fill('09:00');
+      await dlg.getByLabel('Responsável pela execução').selectOption({ label: 'André' });
       await dlg.getByLabel('Instruções para a equipe').fill('Portaria: avisar o zelador');
       await dlg.getByRole('button', { name: 'Agendar', exact: true }).click();
       await expect(dlg).toHaveCount(0);

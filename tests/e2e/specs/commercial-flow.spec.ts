@@ -59,9 +59,8 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     // 3. Retirada agendada (todas as peças)
     await page.goto(orderUrl);
     await page.getByRole('button', { name: 'Solicitar retirada' }).click();
-    await page.getByLabel('Data combinada').fill('2026-10-16');
-    await page.getByLabel('Janela — início').fill('09:00');
-    await page.getByLabel('Janela — fim').fill('12:00');
+    await page.getByLabel('Data do compromisso').fill('2026-10-16');
+    await page.getByLabel('Horário de chegada ao cliente').fill('09:00');
     await page.getByRole('button', { name: 'Solicitar e agendar' }).click();
     await expect(page.getByTestId('order-status')).toContainText('Retirada agendada');
 

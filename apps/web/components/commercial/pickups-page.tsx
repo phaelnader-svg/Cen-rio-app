@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/field';
 import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
-import { addDays, formatDay, todayIso, usePickups, weekStart } from '@/lib/commercial';
+import { addDays, formatDay, todayIso, usePickups, weekStart, arrivalText } from '@/lib/commercial';
 import { PickupStatusBadge } from './badges';
 import { PickupDetailDialog } from './pickup-detail';
 
@@ -34,7 +34,7 @@ function PickupLine({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
       </div>
       <span className="text-sm text-ink-soft">
         {p.scheduledDate
-          ? `${formatDay(p.scheduledDate)}${p.windowStart ? ` · ${p.windowStart}–${p.windowEnd ?? ''}` : ''}`
+          ? `${formatDay(p.scheduledDate)}${p.windowStart ? ` · ${arrivalText(p.windowStart, p.windowEnd)}` : ''}`
           : 'Sem data'}
       </span>
       <PickupStatusBadge status={p.status} />
@@ -154,7 +154,9 @@ export function PickupsPage() {
                             )}
                           >
                             <span className="block font-semibold">
-                              {p.windowStart ? `${p.windowStart}–${p.windowEnd ?? ''}` : 'Dia todo'}
+                              {p.windowStart
+                                ? arrivalText(p.windowStart, p.windowEnd)
+                                : 'Sem horário'}
                             </span>
                             <span className="block truncate">{p.customer.name}</span>
                             <span className="block text-ink-muted">

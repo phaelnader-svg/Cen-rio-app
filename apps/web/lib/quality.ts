@@ -6,6 +6,8 @@ import type {
   LocationDto,
   LogisticsJobDto,
   LogisticsOccurrenceDto,
+  LogisticsRouteChangeDto,
+  LogisticsRouteDto,
   PackagingDto,
   PieceReturnDto,
   PieceStatusDto,
@@ -109,9 +111,10 @@ export const useDelivery = (id: string | null) =>
     enabled: Boolean(id),
   });
 
-export const useLogisticsPeople = () =>
+export const useLogisticsPeople = (enabled = true) =>
   useQuery({
     queryKey: ['logistics-people'],
+    enabled,
     queryFn: () =>
       api<
         { userId: string; displayName: string; team: 'LOGISTICA_TERCEIRIZADA' | 'EQUIPE_PROPRIA' }[]
@@ -123,6 +126,22 @@ export const useLogisticsJobs = (enabled = true) =>
     queryKey: ['logistics-jobs'],
     queryFn: () => api<LogisticsJobDto[]>('/api/v1/logistics/jobs'),
     enabled,
+  });
+
+/** Correção global — roteiro do dia (gestor: todas as paradas; equipe: as suas). */
+export const useLogisticsRoute = (date: string, enabled = true) =>
+  useQuery({
+    queryKey: ['logistics-route', date],
+    queryFn: () => api<LogisticsRouteDto>(`/api/v1/logistics/route?date=${date}`),
+    enabled: enabled && Boolean(date),
+    placeholderData: keepPreviousData,
+  });
+
+export const useLogisticsRouteHistory = (date: string, enabled = true) =>
+  useQuery({
+    queryKey: ['logistics-route', date, 'history'],
+    queryFn: () => api<LogisticsRouteChangeDto[]>(`/api/v1/logistics/route/history?date=${date}`),
+    enabled: enabled && Boolean(date),
   });
 
 export const useLogisticsOccurrences = (filters: Record<string, string | undefined> = {}) =>

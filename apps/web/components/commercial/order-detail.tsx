@@ -16,7 +16,14 @@ import { Field, Textarea } from '@/components/ui/field';
 import { Alert, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { api, errorMessage } from '@/lib/api';
-import { formatDay, useOrder, usePickups, useReceipts, useServiceOrders } from '@/lib/commercial';
+import {
+  formatDay,
+  useOrder,
+  usePickups,
+  useReceipts,
+  useServiceOrders,
+  arrivalText,
+} from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { addressLines } from './address-form';
@@ -168,32 +175,30 @@ export function OrderDetail({ id }: { id: string }) {
 
         <Section title="Peças" className="lg:col-span-3" bodyClassName="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-subtle/70 text-left text-xs text-ink-muted uppercase">
+            <table className="data-table">
+              <thead>
                 <tr>
-                  <th className="px-5 py-2.5 font-semibold">Peça</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Qtd.</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Em retirada</th>
-                  <th className="px-3 py-2.5 text-right font-semibold">Recebidas</th>
-                  <th className="px-5 py-2.5 text-right font-semibold">Em OS</th>
+                  <th>Peça</th>
+                  <th className="text-right">Qtd.</th>
+                  <th className="text-right">Em retirada</th>
+                  <th className="text-right">Recebidas</th>
+                  <th className="text-right">Em OS</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
                 {o.items.map((i) => (
                   <tr key={i.id}>
-                    <td className="px-5 py-3">
+                    <td>
                       <p className="font-medium">{i.description}</p>
                       <p className="text-xs text-ink-muted">
                         {PIECE_TYPE_LABEL[i.pieceType]}
                         {i.notes ? ` · ${i.notes}` : ''}
                       </p>
                     </td>
-                    <td className="px-3 text-right tabular-nums">{i.quantity}</td>
-                    <td className="px-3 text-right tabular-nums">{i.inActivePickups}</td>
-                    <td className="px-3 text-right font-semibold tabular-nums">
-                      {i.receivedQuantity}
-                    </td>
-                    <td className="px-5 text-right tabular-nums">{i.inServiceOrders}</td>
+                    <td className="text-right tabular-nums">{i.quantity}</td>
+                    <td className="text-right tabular-nums">{i.inActivePickups}</td>
+                    <td className="text-right font-semibold tabular-nums">{i.receivedQuantity}</td>
+                    <td className="text-right tabular-nums">{i.inServiceOrders}</td>
                   </tr>
                 ))}
               </tbody>
@@ -221,7 +226,7 @@ export function OrderDetail({ id }: { id: string }) {
                       <PickupStatusBadge status={p.status} />
                       <span className="text-sm text-ink-soft">
                         {p.scheduledDate
-                          ? `${formatDay(p.scheduledDate, true)}${p.windowStart ? ` ${p.windowStart}–${p.windowEnd ?? ''}` : ''}`
+                          ? `${formatDay(p.scheduledDate, true)}${p.windowStart ? ` · ${arrivalText(p.windowStart, p.windowEnd)}` : ''}`
                           : 'Sem data'}
                       </span>
                       <span className="text-sm text-ink-muted">

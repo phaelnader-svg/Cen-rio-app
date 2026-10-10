@@ -90,7 +90,8 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
     });
     await page.goto(`/painel/pedidos/${order.id}`);
     await page.getByRole('button', { name: 'Solicitar retirada' }).click();
-    await page.getByLabel('Data combinada').fill(plus(2));
+    await page.getByLabel('Data do compromisso').fill(plus(2));
+    await page.getByLabel('Horário de chegada ao cliente').fill('16:00');
     const fields = page.getByTestId('trip-cost-fields');
     await expect(page.getByTestId('trip-cost-amount')).toHaveValue('80,00');
     await expect(fields.getByTestId('trip-payee')).toContainText(`${ANDRE.displayName} (100%)`);

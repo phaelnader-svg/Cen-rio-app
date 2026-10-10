@@ -12,7 +12,7 @@ import { Field, Textarea } from '@/components/ui/field';
 import { Alert, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { api, errorMessage } from '@/lib/api';
-import { formatDay, useOrder, usePickup } from '@/lib/commercial';
+import { formatDay, useOrder, usePickup, arrivalText } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { addressLines } from './address-form';
@@ -114,7 +114,7 @@ export function PickupDetailDialog({ id, onClose }: { id: string; onClose: () =>
           <dl className="grid gap-4 sm:grid-cols-2">
             <Detail label="Data e janela">
               {p.scheduledDate
-                ? `${formatDay(p.scheduledDate, true)}${p.windowStart ? `, ${p.windowStart}–${p.windowEnd ?? ''}` : ''}`
+                ? `${formatDay(p.scheduledDate, true)}${p.windowStart ? `, ${arrivalText(p.windowStart, p.windowEnd)}` : ''}`
                 : 'Aguardando agendamento'}
             </Detail>
             <Detail label="Equipe">{`${PICKUP_TEAM_LABEL[p.team]}${p.teamNotes ? ` · ${p.teamNotes}` : ''}`}</Detail>
