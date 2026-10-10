@@ -40,6 +40,9 @@ import {
 import { itemAllocations } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { syncPickupCostsOfOrder } from '../finance/trip-costs';
+import { createLabor } from '../finance/labor';
+import { orderRevenue } from '../finance/revenue';
+import { loadTeam, setUpholsterer, upholsterersOf } from '../production/distribution';
 
 const VIEW = { session: 'any', permissions: ['os.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['os.gerenciar'] } as const;
@@ -257,6 +260,14 @@ function weekdayIn(timezone: string, date = new Date()): number {
   return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(name);
 }
 
+type AvailableCommercial = {
+  contractedCents: number | null;
+  adjustmentsCents: number | null;
+  finalCents: number | null;
+  manualSplit: boolean;
+  serviceOrders: { code: string; revenueCents: number; pieces: number }[];
+};
+
 export async function serviceOrderRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -321,6 +332,33 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     });
     if (!order) throw Errors.notFound('Pedido');
     const alloc = await itemAllocations(prisma as unknown as Tx, orderId);
+    const perms = request.auth!.permissions;
+    // Valores comerciais: só com a permissão de ver valores do pedido (mesma regra do pedido).
+    let commercial: AvailableCommercial | null = null;
+    if (perms.has('pedidos.valores')) {
+      const r = await orderRevenue(prisma, orderId);
+      const pieces = new Map(
+        r.order.serviceOrders.map((so) => [
+          so.id,
+          so.items
+            .filter((i) => i.fulfillmentStage !== 'DEVOLVIDA')
+            .reduce((a, i) => a + i.quantity, 0),
+        ]),
+      );
+      commercial = {
+        contractedCents: order.agreedValueCents,
+        adjustmentsCents: perms.has('financeiro.ver') ? r.adjustmentsCents : null,
+        finalCents: perms.has('financeiro.ver') ? r.finalCents : order.agreedValueCents,
+        manualSplit: r.manual,
+        serviceOrders: r.shares.map((s) => ({
+          code: serviceOrderCode(s.number),
+          revenueCents: s.revenueCents,
+          pieces: pieces.get(s.id) ?? 0,
+        })),
+      };
+    }
+    const canPlan = perms.has('producao.planejar');
+    const canLabor = perms.has('financeiro.ver') && perms.has('financeiro.gerenciar');
     return {
       order: {
         id: order.id,
@@ -328,6 +366,9 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         status: order.status,
         contractedService: order.contractedService,
       },
+      commercial,
+      permissions: { upholsterer: canPlan, labor: canLabor },
+      upholsterers: canPlan ? upholsterersOf(await loadTeam(prisma)) : [],
       customer: toCustomerSummary(order.customer),
       items: order.items.map((i) => ({
         orderItemId: i.id,
@@ -381,6 +422,20 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     { config: { access: MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createServiceOrderSchema.parse(request.body);
+      // Correção global: titular e mão de obra opcionais NA CRIAÇÃO, cada parte com a permissão
+      // da tela própria (nada é concedido por estar na criação da OS).
+      const perms = request.auth!.permissions;
+      if (input.items.some((i) => i.upholstererUserId) && !perms.has('producao.planejar'))
+        throw Errors.forbidden(
+          'Definir o tapeceiro titular exige a permissão de planejar a produção.',
+        );
+      if (
+        input.items.some((i) => i.labor) &&
+        !(perms.has('financeiro.ver') && perms.has('financeiro.gerenciar'))
+      )
+        throw Errors.forbidden(
+          'Combinar a mão de obra exige a permissão de gerenciar o financeiro.',
+        );
       const id = await prisma.$transaction(async (tx) => {
         if (!(await lockOrder(tx, input.orderId))) throw Errors.notFound('Pedido');
         await lockOrderItems(tx, input.orderId);
@@ -449,6 +504,31 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
             },
           },
         });
+        // Correção global: titular e mão de obra por peça na MESMA transação — qualquer recusa
+        // (titular inelegível, valor inválido, duplicidade) desfaz a OS inteira.
+        const created = await tx.serviceOrderItem.findMany({
+          where: { serviceOrderId: so.id },
+          orderBy: { position: 'asc' },
+        });
+        for (const [idx, it] of input.items.entries()) {
+          const item = created[idx]!;
+          if (it.upholstererUserId)
+            await setUpholsterer(tx, actor, item.id, {
+              userId: it.upholstererUserId,
+              expectedUserId: null,
+              confirm: false,
+            });
+          if (it.labor)
+            await createLabor(tx, actor, {
+              professionalUserId: it.upholstererUserId!,
+              serviceOrderId: so.id,
+              serviceOrderItemId: item.id,
+              service: it.labor.service?.trim() || `Tapeçaria — ${it.description}`,
+              agreedCents: it.labor.agreedCents,
+              eligibility: it.labor.eligibility,
+              notes: it.labor.notes ?? null,
+            });
+        }
         // Evolução Fase 6: a OS entra no rateio automático da retirada do pedido.
         await syncPickupCostsOfOrder(tx, actor, order.id);
         await recordChange(

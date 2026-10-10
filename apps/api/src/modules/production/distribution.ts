@@ -102,6 +102,13 @@ const upholstererOk = (team: Team, userId: string | null | undefined) => {
   return Boolean(m && m.canExecute && (m.isTapeceiro || m.skills.has('CORTE_COSTURA')));
 };
 
+/** Titulares elegíveis (tapeceiro ou competência de corte e costura, com produção ativa). */
+export function upholsterersOf(team: Team) {
+  return [...team.values()]
+    .filter((m) => upholstererOk(team, m.userId))
+    .map((m) => ({ userId: m.userId, displayName: m.displayName, isTapeceiro: m.isTapeceiro }));
+}
+
 /** Responsável padrão de uma etapa de preparação (ou o motivo de não haver). */
 async function preparationAssignee(
   db: Tx | PrismaClient,

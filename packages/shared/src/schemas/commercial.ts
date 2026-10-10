@@ -17,6 +17,7 @@ import {
 import { isValidCnpj, isValidCpf, onlyDigits } from '../documents';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
 import { tripCostInputSchema } from './finance';
+import { ELIGIBILITY_RULES } from '../finance-domain';
 
 const dateOnly = z
   .string()
@@ -200,6 +201,16 @@ function refineWindow(
       message: 'O fim da janela deve ser após o início.',
     });
   }
+  // Correção global: o compromisso é o HORÁRIO DE CHEGADA ao cliente (window_start). Com data
+  // (retirada agendada) ele é obrigatório; o fim da janela é opcional e só existe em registros
+  // antigos. Sem data = só solicitada (aguardando agendamento), sem horário confirmado.
+  if (v.scheduledDate && !v.windowStart) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['windowStart'],
+      message: 'Informe o horário de chegada ao cliente.',
+    });
+  }
   if ((v.windowStart || v.windowEnd) && !v.scheduledDate) {
     ctx.addIssue({
       code: 'custom',
@@ -213,6 +224,8 @@ export const createPickupSchema = z
   .object({
     orderId: idSchema,
     ...pickupFields,
+    /** Correção global: quem executa (logística ou equipe própria), já na solicitação. */
+    logisticsUserId: idSchema.nullable().optional(),
     /** Evolução Fase 6: custo total da viagem (exige financeiro.gerenciar). */
     tripCost: tripCostInputSchema.optional(),
   })
@@ -291,16 +304,41 @@ const osItemSpecs = {
   technicalNotes: optionalText(2000),
 };
 
+/**
+ * Correção global — mão de obra combinada com o titular NA CRIAÇÃO da OS (opcional). Gravada na
+ * mesma transação da OS; exige `financeiro.gerenciar` e um titular definido na peça. Não libera
+ * pagamento: a obrigação segue a regra de elegibilidade (padrão: qualidade aprovada).
+ */
+export const serviceOrderItemLaborSchema = z.object({
+  agreedCents: z
+    .number({ message: 'Valor da mão de obra é obrigatório.' })
+    .int('Valor da mão de obra em centavos.')
+    .min(1, 'Valor da mão de obra deve ser maior que zero.')
+    .max(1_000_000_000),
+  service: optionalText(200),
+  eligibility: z.enum(ELIGIBILITY_RULES).default('QUALIDADE_APROVADA'),
+  notes: optionalText(500),
+});
+
 export const createServiceOrderSchema = z.object({
   orderId: idSchema,
   ...osHeader,
   items: z
     .array(
-      z.object({
-        orderItemId: idSchema,
-        quantity: z.number().int().min(1).max(200),
-        ...osItemSpecs,
-      }),
+      z
+        .object({
+          orderItemId: idSchema,
+          quantity: z.number().int().min(1).max(200),
+          ...osItemSpecs,
+          /** Tapeceiro titular da peça (exige `producao.planejar`). Opcional. */
+          upholstererUserId: idSchema.nullable().optional(),
+          /** Mão de obra combinada com o titular (exige `financeiro.gerenciar`). Opcional. */
+          labor: serviceOrderItemLaborSchema.nullable().optional(),
+        })
+        .refine((v) => !v.labor || Boolean(v.upholstererUserId), {
+          path: ['labor'],
+          message: 'Defina o tapeceiro titular da peça antes de combinar a mão de obra.',
+        }),
     )
     .min(1, { message: 'Inclua ao menos uma peça recebida.' })
     .max(50),

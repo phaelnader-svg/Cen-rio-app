@@ -195,6 +195,16 @@ export const useServiceOrderRevisions = (id: string) =>
 export interface AvailableForOs {
   order: { id: string; code: string; status: string; contractedService: string };
   customer: CustomerSummaryDto;
+  /** null = sem permissão para ver valores do pedido. */
+  commercial: {
+    contractedCents: number | null;
+    adjustmentsCents: number | null;
+    finalCents: number | null;
+    manualSplit: boolean;
+    serviceOrders: { code: string; revenueCents: number; pieces: number }[];
+  } | null;
+  permissions: { upholsterer: boolean; labor: boolean };
+  upholsterers: { userId: string; displayName: string; isTapeceiro: boolean }[];
   items: {
     orderItemId: string;
     pieceType: string;
@@ -248,4 +258,13 @@ export function weekStart(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
   const dow = (d.getUTCDay() + 6) % 7;
   return addDays(iso, -dow);
+}
+
+/**
+ * Correção global — horário do compromisso com o cliente. Novo: só o horário de chegada
+ * ("chegada 16:00"). Registro antigo com fim de janela: exibido como janela, sem conversão.
+ */
+export function arrivalText(windowStart: string | null, windowEnd?: string | null): string {
+  if (!windowStart) return 'sem horário';
+  return windowEnd ? `janela ${windowStart}–${windowEnd}` : `chegada ${windowStart}`;
 }
