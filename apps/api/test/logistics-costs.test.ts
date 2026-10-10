@@ -810,8 +810,6 @@ describe('Recebedor ausente, segurança e semana (C2, CA6-13, CA6-15)', () => {
       version: p.version,
     });
     // André executa pelo celular: saída e retirada realizada (constitui o devido).
-    let job = (await andre.get(`/api/v1/pickups/${pickup.id}`)).status;
-    void job;
     const cur = await db().pickupRequest.findUniqueOrThrow({ where: { id: pickup.id } });
     const s1 = await post(andre, `/api/v1/logistics/pickups/${pickup.id}/step`, {
       step: 'SAIDA',

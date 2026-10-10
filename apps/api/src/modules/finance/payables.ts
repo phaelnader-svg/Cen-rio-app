@@ -1,6 +1,5 @@
 import {
   EVENT_TYPES,
-  deliveryCode,
   expenseCode,
   logisticsCostCode,
   payableCode,
@@ -10,7 +9,6 @@ import {
   splitCents,
   type ExpenseCategory,
   type ExpenseDto,
-  type LogisticsCostDto,
   type LogisticsCostKind,
   type PayableCategory,
   type PayableDto,
@@ -22,7 +20,7 @@ import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
-import { pickupCode, serviceOrderCode } from '../commercial/common';
+import { serviceOrderCode } from '../commercial/common';
 import {
   checkVersion,
   dateOnly,
