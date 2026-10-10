@@ -1,0 +1,45 @@
+{
+  "volume": {
+    "os": 40,
+    "deliveries": 40,
+    "pickups": 40,
+    "realized": 20,
+    "tablets": 4
+  },
+  "runs": 20,
+  "POST transition (realização, constitui a obrigação)": {
+    "p50": 66,
+    "p95": 77,
+    "max": 77
+  },
+  "PUT /finance/trip-costs (alteração com motivo)": {
+    "p50": 58,
+    "p95": 71,
+    "max": 71
+  },
+  "GET /finance/trip-costs (retirada/entrega)": {
+    "p50": 20,
+    "p95": 24,
+    "max": 24
+  },
+  "GET /finance/logistics-costs (lista)": {
+    "p50": 77,
+    "p95": 106,
+    "max": 106
+  },
+  "GET /finance/logistics-weekly (60 dias)": {
+    "p50": 19,
+    "p95": 24,
+    "max": 24
+  },
+  "GET /finance/service-orders/:id (resultado com rateio)": {
+    "p50": 44,
+    "p95": 87,
+    "max": 87
+  },
+  "GET /logistics/jobs (celular do André)": {
+    "p50": 14,
+    "p95": 17,
+    "max": 17
+  }
+}

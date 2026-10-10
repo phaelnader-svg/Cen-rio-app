@@ -1,0 +1,34 @@
+{
+  "volume": {
+    "os": 60,
+    "payables": 120,
+    "payments": 30,
+    "openReviews": 20
+  },
+  "runs": 20,
+  "GET /finance/labor (todas)": {
+    "p50": 121,
+    "p95": 160,
+    "max": 160
+  },
+  "GET /finance/service-orders/:id/labor": {
+    "p50": 33,
+    "p95": 48,
+    "max": 48
+  },
+  "GET /finance/labor-reviews?status=ABERTA": {
+    "p50": 30,
+    "p95": 44,
+    "max": 44
+  },
+  "GET /finance/labor-weekly (90 dias)": {
+    "p50": 43,
+    "p95": 61,
+    "max": 61
+  },
+  "POST /finance/my-production/unlock (tablet)": {
+    "p50": 57,
+    "p95": 108,
+    "max": 108
+  }
+}

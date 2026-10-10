@@ -1,0 +1,57 @@
+{
+  "memoryMb": {
+    "peakRss": 905,
+    "peakHeapUsed": 206,
+    "note": "API e teste no mesmo processo"
+  },
+  "volume": {
+    "os": 40,
+    "tasks": 200,
+    "laborItems": 80,
+    "tripObligations": 80,
+    "tablets": 4,
+    "rows": 3,
+    "items": 160
+  },
+  "runs": 20,
+  "GET fechamento da semana (painel)": {
+    "p50": 77,
+    "p95": 105,
+    "max": 105
+  },
+  "GET fechamento CSV": {
+    "p50": 77,
+    "p95": 86,
+    "max": 86
+  },
+  "GET lista de fechamentos": {
+    "p50": 9,
+    "p95": 11,
+    "max": 11
+  },
+  "Painel + 4 tablets simultâneos (rodada)": {
+    "p50": 100,
+    "p95": 142,
+    "max": 142
+  },
+  "GET fila do tablet durante o fechamento": {
+    "p50": 56,
+    "p95": 77,
+    "max": 114
+  },
+  "POST Pix em lote (baixa nas obrigações originais)": {
+    "p50": 337,
+    "p95": 428,
+    "max": 428
+  },
+  "POST conferir": {
+    "p50": 202,
+    "p95": 225,
+    "max": 225
+  },
+  "POST reabrir": {
+    "p50": 130,
+    "p95": 158,
+    "max": 158
+  }
+}

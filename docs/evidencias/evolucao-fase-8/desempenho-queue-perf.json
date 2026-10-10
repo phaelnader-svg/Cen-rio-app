@@ -1,0 +1,26 @@
+{
+  "criar40OS_ms": 6218,
+  "criar200Tarefas_ms": 19976,
+  "publicar200_ms": 3982,
+  "lerPlano": {
+    "p50": 170,
+    "p95": 218
+  },
+  "lerQuadro": {
+    "p50": 41,
+    "p95": 51
+  },
+  "lerFila4Tablets": {
+    "p50": 58,
+    "p95": 110,
+    "n": 80
+  },
+  "execucao80acoes_ms": 5718,
+  "acaoIniciarConcluir": {
+    "p50": 213,
+    "p95": 509,
+    "n": 80
+  },
+  "reordenar40_ms": 314,
+  "reordenarAteAvisoNoTablet_ms": 314
+}

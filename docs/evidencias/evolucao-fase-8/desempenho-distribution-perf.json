@@ -1,0 +1,30 @@
+{
+  "criar40OS_ms": 6104,
+  "incluirOSComDistribuicao": {
+    "p50": 212,
+    "p95": 329,
+    "n": 40
+  },
+  "lerDistribuicao40OS": {
+    "p50": 462,
+    "p95": 523,
+    "n": 10
+  },
+  "reprocessarSemMudanca": {
+    "p50": 522,
+    "p95": 588,
+    "n": 10
+  },
+  "publicar200_ms": 3654,
+  "lerFila4Tablets": {
+    "p50": 61,
+    "p95": 82,
+    "n": 80
+  },
+  "execucao20acoes_ms": 2196,
+  "acaoIniciarConcluir": {
+    "p50": 91,
+    "p95": 171,
+    "n": 20
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "seconds": 60,
+  "concurrency": 8,
+  "errors": {},
+  "routes": {
+    "/api/v1/production-queue/:id": {
+      "n": 490,
+      "p50": 36,
+      "p95": 124
+    },
+    "/api/v1/finance/weekly-closings/2026-10-05?format=csv": {
+      "n": 118,
+      "p50": 258,
+      "p95": 369
+    },
+    "/api/v1/finance/labor": {
+      "n": 124,
+      "p50": 312,
+      "p95": 491
+    },
+    "/api/v1/finance/weekly-closings/2026-10-05": {
+      "n": 123,
+      "p50": 370,
+      "p95": 607
+    },
+    "/api/v1/production-plans/:id": {
+      "n": 119,
+      "p50": 580,
+      "p95": 694
+    },
+    "/api/v1/production-plans/:id/distribution": {
+      "n": 120,
+      "p50": 1947,
+      "p95": 2224
+    }
+  },
+  "rssMb": {
+    "idle": 206,
+    "peak": 325,
+    "limitContainer": 512,
+    "heapLimit": 320
+  },
+  "ambiente": "processo real da API (node + tsx), NODE_OPTIONS=--max-old-space-size=320, banco local com 40 OS/200 tarefas/160 obrigações; 8 sessões do painel em paralelo, ritmo < 600 req/min por sessão"
+}

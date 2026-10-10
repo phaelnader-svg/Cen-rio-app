@@ -1,0 +1,15 @@
+{
+  "GET plans": 3,
+  "GET /api/v1/production-plans/:id": 200,
+  "GET /api/v1/finance/dashboard": 200,
+  "GET /api/v1/finance/labor": 200,
+  "GET /api/v1/finance/payables": 200,
+  "GET /api/v1/finance/logistics-costs": 200,
+  "GET /api/v1/service-orders": 200,
+  "GET /api/v1/quality/inspections": 200,
+  "GET /api/v1/finance/productivity": 200,
+  "GET /api/v1/finance/reports/margens": 200,
+  "GET mine (Ricardo)": 200,
+  "POST start (tarefa de fila)": "sem tarefa liberada",
+  "POST labor em peça dividida": "422 {\"error\":{\"code\":\"BUSINESS_RULE\",\"message\":\"Pagamento por produção é só para o tapeceiro principal (equipe de remuneração fixa usa \\\"Custos de equipe\\\").\",\"requ"
+}
