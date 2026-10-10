@@ -523,9 +523,9 @@ Estado esperado: configuração `4f9b1ae` na VM, API/web em manutenção, sem po
 migrations. O backup da tentativa que falhou fica onde está (nada é apagado).
 
 ```bash
-# 0. Cloud Shell: clone no SHA desta correção (ver §1 / mensagem de entrega)
+# 0. Cloud Shell: clone no SHA desta correção (c0712f3)
 cd ~/cenario-pre-deploy && git fetch origin claude/cenario-gestao-fase-1-zf3bj2
-git checkout --detach <SHA-FINAL> && git log --oneline -1 && git status --short    # limpo
+git checkout --detach c0712f3 && git log --oneline -1 && git status --short    # limpo; c0712f3 ou o commit seguinte, que só registra este SHA
 
 # 1. SOMENTE LEITURA — confirma o estado e o indício da causa no banco real (nada é alterado)
 bash infra/homolog/gcp/operador.sh auditar
