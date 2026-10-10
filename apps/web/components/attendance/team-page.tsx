@@ -57,7 +57,7 @@ export function TeamAttendancePage() {
         description="Presença operacional para organizar a produção — não é registro de ponto, não calcula jornada nem gera falta ou desconto. Ausência presumida é só um alerta para o gestor confirmar ou corrigir."
       />
       <Card className="mb-6 flex flex-wrap items-end gap-4 p-4">
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Data</span>
           <Input
             type="date"
@@ -65,7 +65,7 @@ export function TeamAttendancePage() {
             onChange={(e) => e.target.value && setPicked(e.target.value)}
           />
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Funcionário</span>
           <Select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
             <option value="">Todos</option>

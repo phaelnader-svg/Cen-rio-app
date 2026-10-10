@@ -184,7 +184,7 @@ function TemplateEditor({
       )}
       <fieldset disabled={readOnly} className="space-y-4">
         <div className="flex flex-wrap items-end gap-4">
-          <label className="text-sm">
+          <label className="field">
             <span className="label">Nome</span>
             <Input
               className="w-64"

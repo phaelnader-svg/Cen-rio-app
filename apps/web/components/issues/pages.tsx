@@ -87,7 +87,7 @@ export function AttentionPage() {
         ))}
       </div>
       <Card className="mb-4 grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Tipo</span>
           <Select value={f.type ?? ''} onChange={(e) => set('type', e.target.value)}>
             <option value="">Todos</option>
@@ -98,7 +98,7 @@ export function AttentionPage() {
             ))}
           </Select>
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Situação</span>
           <Select value={f.status ?? ''} onChange={(e) => set('status', e.target.value)}>
             <option value="">Todas</option>
@@ -109,7 +109,7 @@ export function AttentionPage() {
             ))}
           </Select>
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Funcionário</span>
           <Select
             value={f.employeeUserId ?? ''}
@@ -123,7 +123,7 @@ export function AttentionPage() {
             ))}
           </Select>
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Responsável pela solução</span>
           <Select
             value={f.solverUserId ?? ''}
@@ -137,7 +137,7 @@ export function AttentionPage() {
             ))}
           </Select>
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">OS</span>
           <Select
             value={f.serviceOrderId ?? ''}
@@ -151,7 +151,7 @@ export function AttentionPage() {
             ))}
           </Select>
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Data</span>
           <Input type="date" value={f.date ?? ''} onChange={(e) => set('date', e.target.value)} />
         </label>

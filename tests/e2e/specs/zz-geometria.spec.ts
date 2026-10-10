@@ -146,9 +146,84 @@ test.describe.serial('Interface — geometria dos formulários', () => {
       medicao: first(await get(page, '/api/v1/measurements')),
       retirada: first(await get(page, '/api/v1/pickups')),
     };
-    const pedidoComRecebimento = (
-      (await get(page, '/api/v1/orders?limit=50')) as { items?: { id: string }[] } | null
-    )?.items?.[0]?.id;
+    // Dados fictícios próprios: pedido sem recebimento (diálogo de retirada), pedido recebido
+    // (formulário completo da nova OS) e entrega provisória (diálogo de agendamento de entrega).
+    const send = async (path: string, data: unknown) => {
+      const r = await page.request.post(path, {
+        data,
+        headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
+      });
+      expect(r.status(), `${path}: ${await r.text()}`).toBe(201);
+      return r.json();
+    };
+    const cli = await send('/api/v1/customers', {
+      kind: 'PF',
+      name: 'Cliente Geometria',
+      phone: null,
+      allowSimilar: true,
+      addresses: [
+        {
+          label: 'Residência',
+          street: 'Rua Fictícia da Geometria',
+          number: '1',
+          district: 'Bairro',
+          city: 'Cidade',
+          state: 'SP',
+          postalCode: '01000-000',
+        },
+      ],
+    });
+    const pedido = (items: unknown[]) =>
+      send('/api/v1/orders', {
+        customerId: cli.id,
+        pickupAddressId: cli.addresses[0].id,
+        contractedService: 'Reforma',
+        agreedValueCents: 200000,
+        paymentTerms: 'À vista',
+        items,
+      });
+    const receber = (o: { id: string; items: { id: string; quantity: number }[] }) =>
+      send('/api/v1/receipts', {
+        orderId: o.id,
+        pickupId: null,
+        origin: 'ENTREGUE_PELO_CLIENTE',
+        lines: o.items.map((i) => ({
+          orderItemId: i.id,
+          quantity: i.quantity,
+          condition: 'BOA',
+          location: 'Área de recebimento',
+        })),
+      });
+    const semRecebimento = await pedido([
+      { pieceType: 'SOFA', description: 'Sofá geometria', quantity: 1 },
+    ]);
+    const recebido = await pedido([
+      { pieceType: 'SOFA', description: 'Sofá geometria', quantity: 1 },
+      { pieceType: 'POLTRONA', description: 'Poltronas geometria', quantity: 2 },
+    ]);
+    await receber(recebido);
+    const paraEntrega = await pedido([
+      { pieceType: 'CADEIRA', description: 'Cadeira geometria', quantity: 1 },
+    ]);
+    await receber(paraEntrega);
+    const os = await send('/api/v1/service-orders', {
+      orderId: paraEntrega.id,
+      items: [
+        {
+          orderItemId: paraEntrega.items[0].id,
+          quantity: 1,
+          description: 'Cadeira geometria',
+          serviceType: 'REFORMA_COMPLETA',
+        },
+      ],
+    });
+    const entregaProvisoria = await send('/api/v1/deliveries', {
+      customerId: cli.id,
+      scheduledDate: new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10),
+      team: 'LOGISTICA_TERCEIRIZADA',
+      itemIds: [os.items[0].id],
+      provisional: true,
+    });
     const hoje = new Date().toISOString().slice(0, 10);
     // [rota, aba a clicar (opcional), botão que abre um formulário em diálogo (opcional)]
     const alvos: [string | null, string | null, string | null][] = [
@@ -164,11 +239,7 @@ test.describe.serial('Interface — geometria dos formulários', () => {
       ['/painel/pedidos', null, null],
       ['/painel/pedidos/novo', null, null],
       [ids.pedido && `/painel/pedidos/${ids.pedido}`, null, null],
-      [
-        pedidoComRecebimento ? `/painel/pedidos/${pedidoComRecebimento}` : null,
-        null,
-        'Solicitar retirada',
-      ],
+      [`/painel/pedidos/${semRecebimento.id}`, null, 'Solicitar retirada'],
       [ids.pedido && `/painel/pedidos/${ids.pedido}/editar`, null, null],
       ['/painel/retiradas', null, null],
       ['/painel/roteiro', null, null],
@@ -176,7 +247,7 @@ test.describe.serial('Interface — geometria dos formulários', () => {
       ['/painel/recebimentos', null, null],
       ['/painel/recebimentos/novo', null, null],
       ['/painel/os', null, null],
-      [pedidoComRecebimento ? `/painel/os/nova?pedido=${pedidoComRecebimento}` : null, null, null],
+      [`/painel/os/nova?pedido=${recebido.id}`, null, null],
       [ids.os && `/painel/os/${ids.os}`, null, null],
       ['/painel/medicoes', null, null],
       [ids.medicao && `/painel/medicoes/${ids.medicao}`, null, null],
@@ -200,6 +271,7 @@ test.describe.serial('Interface — geometria dos formulários', () => {
       ['/painel/entregas', null, null],
       ['/painel/entregas', null, 'Agendar entrega'],
       [ids.entrega && `/painel/entregas/${ids.entrega}`, null, null],
+      [`/painel/entregas/${entregaProvisoria.id}`, null, 'Alterar'],
       ['/painel/devolucoes', null, null],
       ['/painel/presenca', null, null],
       ['/painel/financeiro', null, null],

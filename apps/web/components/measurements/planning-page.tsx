@@ -138,7 +138,7 @@ export function PlanningPage() {
         description="O que falta medir, conferir e aprovar antes da compra de materiais."
       />
       <Card className="mb-6 flex flex-wrap items-end gap-3 p-4">
-        <label className="text-sm">
+        <label className="field">
           <span className="label">De</span>
           <Input
             type="date"
@@ -146,7 +146,7 @@ export function PlanningPage() {
             onChange={(e) => setFrom(e.target.value)}
           />
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Até</span>
           <Input
             type="date"

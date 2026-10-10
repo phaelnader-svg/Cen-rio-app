@@ -132,11 +132,11 @@ function Agenda() {
   return (
     <>
       <Card className="mb-4 flex flex-wrap items-end gap-3 p-4">
-        <label className="text-sm">
+        <label className="field">
           <span className="label">De</span>
           <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Até</span>
           <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
@@ -289,7 +289,7 @@ function Shipping() {
   return (
     <>
       <Card className="mb-4 p-4">
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Etapa</span>
           <Select value={stage} onChange={(e) => setStage(e.target.value)}>
             <option value="">Em andamento (todas)</option>
@@ -971,7 +971,7 @@ function Occurrences() {
   return (
     <>
       <Card className="mb-4 p-4">
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Situação</span>
           <Select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">Todas</option>

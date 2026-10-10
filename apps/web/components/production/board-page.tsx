@@ -99,15 +99,15 @@ export function ProductionBoardPage() {
       />
       <HelpAndRescheduleBanner />
       <Card className="mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="text-sm">
+        <label className="field">
           <span className="label">De</span>
           <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Até</span>
           <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Funcionário</span>
           <Select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
             <option value="">Todos</option>
@@ -118,11 +118,11 @@ export function ProductionBoardPage() {
             ))}
           </Select>
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">OS ou cliente</span>
           <Input value={os} placeholder="OS-00001" onChange={(e) => setOs(e.target.value)} />
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Etapa</span>
           <Select value={activity} onChange={(e) => setActivity(e.target.value)}>
             <option value="">Todas</option>
@@ -133,7 +133,7 @@ export function ProductionBoardPage() {
             ))}
           </Select>
         </label>
-        <label className="text-sm">
+        <label className="field">
           <span className="label">Status</span>
           <Select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">Todos</option>
@@ -144,7 +144,7 @@ export function ProductionBoardPage() {
             ))}
           </Select>
         </label>
-        <label className="text-sm sm:col-span-2">
+        <label className="field sm:col-span-2">
           <span className="label">Agrupar por</span>
           <Select
             aria-label="Agrupar por"

@@ -99,8 +99,14 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
     ])
       await expect(form.getByRole('heading', { name: s })).toBeVisible();
     await expect(page.getByTestId('so-contracted')).toHaveText('R$ 3.000,00');
-    await page.getByTestId('so-owner-0').selectOption({ label: 'Ricardo' });
-    await page.getByTestId('so-owner-1').selectOption({ label: 'Márcio' });
+    // Nomes de exibição variam (ex.: "Ricardo S."): escolhe pelo início do nome.
+    const pick = async (testId: string, prefix: string) => {
+      const sel = page.getByTestId(testId);
+      const value = await sel.locator('option', { hasText: prefix }).first().getAttribute('value');
+      await sel.selectOption(value!);
+    };
+    await pick('so-owner-0', 'Ricardo');
+    await pick('so-owner-1', 'Márcio');
     await page.getByTestId('so-labor-value-0').fill('800,00');
     await page.getByTestId('so-labor-value-1').fill('450,00');
     await expect(page.getByTestId('so-labor-total')).toHaveText('R$ 1.250,00');
