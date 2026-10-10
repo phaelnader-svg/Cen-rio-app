@@ -62,6 +62,8 @@ export function TripCostFields({
   useEffect(() => {
     if (!seeded && d.data) {
       setCents(suggested ?? null);
+      // Com padrão configurado, já vem marcado e preenchido; sem padrão, o gestor marca e digita.
+      setOn(Boolean(suggested));
       setPeople(d.data.payee ? [d.data.payee.userId] : []);
       setSeeded(true);
     }
@@ -75,12 +77,18 @@ export function TripCostFields({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowed, on, cents, people, valid]);
   if (!allowed) return null;
-  if (d.isPending) return <Spinner />;
+  // Só monta o campo de valor depois de aplicar o padrão (o campo guarda o texto inicial).
+  if (d.isPending || !seeded) return <Spinner />;
   return (
     <fieldset className="rounded-xl border border-line p-4" data-testid="trip-cost-fields">
       <legend className="px-1 text-sm font-semibold">Custo da viagem (financeiro)</legend>
       <label className="mb-3 flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={(e) => setOn(e.target.checked)}
+          data-testid="trip-cost-on"
+        />
         Combinar o custo total agora
       </label>
       {on && (
