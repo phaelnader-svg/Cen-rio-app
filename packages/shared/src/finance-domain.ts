@@ -200,6 +200,12 @@ export const LOGISTICS_COST_KIND_LABEL: Record<LogisticsCostKind, string> = {
   TRANSPORTE_TERCEIRIZADO: 'Transporte terceirizado',
   DESLOCAMENTO: 'Deslocamento adicional',
 };
+/** Evolução Fase 6: taxa de tentativa frustrada (custo próprio, só com autorização do gestor). */
+export const TRIP_FEE_KIND = 'TENTATIVA_FRUSTRADA' as const;
+export const ALL_LOGISTICS_COST_KIND_LABEL: Record<
+  LogisticsCostKind | typeof TRIP_FEE_KIND,
+  string
+> = { ...LOGISTICS_COST_KIND_LABEL, TENTATIVA_FRUSTRADA: 'Taxa de tentativa frustrada' };
 export const SPLIT_METHODS = ['IGUAL', 'POR_PECA', 'MANUAL'] as const;
 export type SplitMethod = (typeof SPLIT_METHODS)[number];
 export const SPLIT_METHOD_LABEL: Record<SplitMethod, string> = {
@@ -449,4 +455,67 @@ export function reviewResolutionProblem(
     if (!existing.some((e) => e.professionalUserId === l.professionalUserId) && l.amountCents === 0)
       return 'Novo profissional só com valor maior que zero.';
   return null;
+}
+
+// ─────────────────────────── Evolução Fase 6: custos de retirada e entrega ───────────────────────────
+
+/** Teto de um custo de viagem (R$ 100.000,00) — evita estouro e digitação absurda. */
+export const LOGISTICS_MAX_CENTS = 10_000_000;
+
+/**
+ * LANCADO: custo avulso/legado (Fase 11). PREVISTO: combinado no agendamento (nada devido).
+ * DEVIDO: viagem realizada ou taxa de tentativa frustrada autorizada (obrigação constituída).
+ * CANCELADO: viagem cancelada antes da realização.
+ */
+export const LOGISTICS_COST_STATUSES = ['LANCADO', 'PREVISTO', 'DEVIDO', 'CANCELADO'] as const;
+export type LogisticsCostStatus = (typeof LOGISTICS_COST_STATUSES)[number];
+
+export const TRIP_COST_SITUATIONS = [
+  'COMBINADO',
+  'PENDENTE_RECEBEDOR',
+  'DEVIDO',
+  'PAGO_PARCIAL',
+  'PAGO',
+  'CANCELADO',
+  'LANCADO',
+] as const;
+export type TripCostSituation = (typeof TRIP_COST_SITUATIONS)[number];
+export const TRIP_COST_SITUATION_LABEL: Record<TripCostSituation, string> = {
+  COMBINADO: 'Combinado (agendado, nada devido)',
+  PENDENTE_RECEBEDOR: 'Realizado — falta recebedor ativo',
+  DEVIDO: 'Devido (a pagar)',
+  PAGO_PARCIAL: 'Pago em parte (saldo pendente)',
+  PAGO: 'Pago',
+  CANCELADO: 'Cancelado',
+  LANCADO: 'Lançado (avulso)',
+};
+
+/** Situação exibida, derivada do custo e da conta a pagar (fonte única: as linhas do banco). */
+export function tripCostSituation(c: {
+  status: LogisticsCostStatus;
+  payable: { status: string; paidCents: number } | null;
+}): TripCostSituation {
+  if (c.status === 'CANCELADO') return 'CANCELADO';
+  if (c.status === 'PREVISTO') return 'COMBINADO';
+  if (c.status === 'LANCADO') return 'LANCADO';
+  if (!c.payable) return 'PENDENTE_RECEBEDOR';
+  if (c.payable.status === 'PAGO') return 'PAGO';
+  if (c.payable.paidCents > 0) return 'PAGO_PARCIAL';
+  return 'DEVIDO';
+}
+
+/**
+ * Rateio igual entre as OS atendidas, em centavos exatos: OS em ordem crescente de número; os
+ * centavos que sobram vão, um a um, para as primeiras OS (R$ 100 em 3 OS → 33,34 / 33,33 / 33,33).
+ */
+export function tripAllocation(
+  totalCents: number,
+  serviceOrders: readonly { id: string; number: number }[],
+): { serviceOrderId: string; amountCents: number }[] {
+  const ordered = [...serviceOrders].sort((a, b) => a.number - b.number);
+  const parts = splitCents(
+    totalCents,
+    ordered.map(() => 1),
+  );
+  return ordered.map((s, i) => ({ serviceOrderId: s.id, amountCents: parts[i]! }));
 }

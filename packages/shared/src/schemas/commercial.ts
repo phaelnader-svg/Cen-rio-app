@@ -16,6 +16,7 @@ import {
 } from '../domain';
 import { isValidCnpj, isValidCpf, onlyDigits } from '../documents';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
+import { tripCostInputSchema } from './finance';
 
 const dateOnly = z
   .string()
@@ -209,7 +210,12 @@ function refineWindow(
 }
 
 export const createPickupSchema = z
-  .object({ orderId: idSchema, ...pickupFields })
+  .object({
+    orderId: idSchema,
+    ...pickupFields,
+    /** Evolução Fase 6: custo total da viagem (exige financeiro.gerenciar). */
+    tripCost: tripCostInputSchema.optional(),
+  })
   .superRefine(refineWindow);
 export type CreatePickupInput = z.input<typeof createPickupSchema>;
 

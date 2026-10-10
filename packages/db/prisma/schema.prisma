@@ -124,6 +124,12 @@ model User {
   financialAdjustments  FinancialAdjustment[]  @relation("FinancialAdjustmentBy")
   teamMonthlyCosts      TeamMonthlyCost[]      @relation("TeamMonthlyCostUser")
 
+  // Evolução Fase 6: custos de logística.
+  logisticsPayeeOf         CompanySettings[]          @relation("LogisticsPayee")
+  logisticsCostsPayee      LogisticsCost[]            @relation("LogisticsCostPayee")
+  logisticsParticipations  LogisticsCostParticipant[] @relation("LogisticsCostParticipantUser")
+  logisticsCostAdjustments LogisticsCostAdjustment[]  @relation("LogisticsCostAdjustmentBy")
+
   @@map("users")
 }
 
@@ -345,6 +351,14 @@ model CompanySettings {
   // Fase 11: financeiro operacional.
   /// Alíquota estimada de tributos sobre a receita (pontos-base; 600 = 6%). Vazio = não configurada.
   taxRateBps Int? @map("tax_rate_bps")
+
+  // Evolução Fase 6: custos de retirada e entrega.
+  /// Valor padrão sugerido ao agendar uma retirada / entrega (centavos). Vazio = sem sugestão.
+  defaultPickupCostCents   Int?    @map("default_pickup_cost_cents")
+  defaultDeliveryCostCents Int?    @map("default_delivery_cost_cents")
+  /// Recebedor único da logística (André). Vazio/inativo = obrigação não é gerada (pendência).
+  logisticsPayeeUserId     String? @map("logistics_payee_user_id") @db.Uuid
+  logisticsPayee           User?   @relation("LogisticsPayee", fields: [logisticsPayeeUserId], references: [id], onDelete: SetNull)
 
   @@map("company_settings")
 }
@@ -2960,7 +2974,26 @@ model LogisticsCost {
   payable     AccountPayable?           @relation(fields: [payableId], references: [id], onDelete: Restrict)
   allocations LogisticsCostAllocation[]
 
+  // Evolução Fase 6: custo da viagem ligado ao agendamento.
+  /// LANCADO (avulso/legado), PREVISTO (agendado), DEVIDO (realizado/taxa autorizada), CANCELADO.
+  status             String                     @default("LANCADO") @db.VarChar(20)
+  /// Recebedor vinculado (novos lançamentos). O texto `beneficiary` legado é preservado.
+  payeeUserId        String?                    @map("payee_user_id") @db.Uuid
+  payee              User?                      @relation("LogisticsCostPayee", fields: [payeeUserId], references: [id], onDelete: Restrict)
+  adjustmentsCents   Int                        @default(0) @map("adjustments_cents")
+  /// Fato gerador do valor devido (realização ou taxa autorizada).
+  dueAt              DateTime?                  @map("due_at") @db.Timestamptz(3)
+  /// Motivo de não ter gerado a obrigação (ex.: RECEBEDOR_AUSENTE).
+  pendingReason      String?                    @map("pending_reason") @db.VarChar(40)
+  /// MANUAL (legado), AUTO (OS da viagem) ou ESCOLHIDA (OS escolhidas pelo gestor).
+  allocationMode     String                     @default("MANUAL") @map("allocation_mode") @db.VarChar(20)
+  /// Rateio vigente (rateios são imutáveis; um novo rateio é uma nova revisão).
+  allocationRevision Int                        @default(1) @map("allocation_revision")
+  participants       LogisticsCostParticipant[]
+  adjustments        LogisticsCostAdjustment[]
+
   @@index([date])
+  @@index([payeeUserId, dueAt])
   @@map("logistics_costs")
 }
 
@@ -2970,13 +3003,57 @@ model LogisticsCostAllocation {
   serviceOrderId     String  @map("service_order_id") @db.Uuid
   serviceOrderItemId String? @map("service_order_item_id") @db.Uuid
   amountCents        Int     @map("amount_cents")
+  /// Evolução Fase 6: revisão do rateio (vale a de `logistics_costs.allocation_revision`).
+  revision           Int     @default(1)
 
   cost         LogisticsCost @relation(fields: [logisticsCostId], references: [id], onDelete: Restrict)
   serviceOrder ServiceOrder  @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
 
-  @@unique([logisticsCostId, serviceOrderId])
+  @@unique([logisticsCostId, revision, serviceOrderId])
   @@index([serviceOrderId])
   @@map("logistics_cost_allocations")
+}
+
+/// Evolução Fase 6: quem executou a viagem (não é credor — o recebedor é `payee`).
+model LogisticsCostParticipant {
+  logisticsCostId String   @map("logistics_cost_id") @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  cost LogisticsCost @relation(fields: [logisticsCostId], references: [id], onDelete: Restrict)
+  user User          @relation("LogisticsCostParticipantUser", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([logisticsCostId, userId])
+  @@map("logistics_cost_participants")
+}
+
+/// Evolução Fase 6: ajuste auditável do valor devido da viagem (imutável).
+model LogisticsCostAdjustment {
+  id              String   @id @default(uuid()) @db.Uuid
+  logisticsCostId String   @map("logistics_cost_id") @db.Uuid
+  amountCents     Int      @map("amount_cents")
+  reason          String   @db.VarChar(500)
+  authorizedById  String   @map("authorized_by_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  cost         LogisticsCost @relation(fields: [logisticsCostId], references: [id], onDelete: Restrict)
+  authorizedBy User          @relation("LogisticsCostAdjustmentBy", fields: [authorizedById], references: [id], onDelete: Restrict)
+
+  @@index([logisticsCostId])
+  @@map("logistics_cost_adjustments")
+}
+
+/// Evolução Fase 6: estorno de pagamento de conta a pagar (o pagamento original fica).
+model PayablePaymentReversal {
+  id          String   @id @default(uuid()) @db.Uuid
+  paymentId   String   @unique @map("payment_id") @db.Uuid
+  reason      String   @db.VarChar(500)
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  payment PayablePayment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@map("payable_payment_reversals")
 }
 
 /// Modelo de despesa recorrente mensal (aluguel, energia...).
@@ -3066,7 +3143,8 @@ model PayablePayment {
   createdById String?  @map("created_by_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  payable AccountPayable @relation(fields: [payableId], references: [id], onDelete: Restrict)
+  payable  AccountPayable          @relation(fields: [payableId], references: [id], onDelete: Restrict)
+  reversal PayablePaymentReversal?
 
   @@index([payableId])
   @@index([paidAt])

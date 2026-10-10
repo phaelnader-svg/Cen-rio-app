@@ -4,6 +4,7 @@ import {
   ELIGIBILITY_RULES,
   EXPENSE_CATEGORIES,
   LOGISTICS_COST_KINDS,
+  LOGISTICS_MAX_CENTS,
   PAYABLE_CATEGORIES,
   PAYMENT_METHODS,
   SPLIT_METHODS,
@@ -276,3 +277,90 @@ export const financeSettingsSchema = z.object({
 export const reportQuerySchema = periodQuerySchema.extend({
   format: z.enum(['json', 'csv']).default('json'),
 });
+
+// ─────────────────────────── Evolução Fase 6: custos de retirada e entrega ───────────────────────────
+
+/** Valor total da viagem: centavos inteiros, > 0 (R$ 0 não é aceito — sem custo = sem lançamento). */
+export const tripCentsSchema = z
+  .number({ message: 'Informe o valor total da viagem.' })
+  .int('Valor em centavos inteiros.')
+  .min(1, 'O valor deve ser maior que zero (viagem sem custo não é lançada).')
+  .max(LOGISTICS_MAX_CENTS, 'Valor acima do limite (R$ 100.000,00).');
+
+/** Custo informado junto do agendamento (criação da retirada/entrega). */
+export const tripCostInputSchema = z
+  .object({
+    amountCents: tripCentsSchema,
+    participantUserIds: z.array(idSchema).max(6).default([]),
+  })
+  .refine((v) => new Set(v.participantUserIds).size === v.participantUserIds.length, {
+    message: 'Participante repetido.',
+    path: ['participantUserIds'],
+  });
+
+/** Custo da viagem (retirada OU entrega): combinado no agendamento, editável com motivo. */
+export const tripCostSchema = z
+  .object({
+    pickupId: idSchema.nullable().optional(),
+    deliveryId: idSchema.nullable().optional(),
+    amountCents: tripCentsSchema,
+    /** Quem executa (André, Izaías...). Não são credores: o recebedor é o configurado. */
+    participantUserIds: z.array(idSchema).max(6).default([]),
+    /** OS escolhidas pelo gestor (vazio = OS da própria viagem, recalculadas automaticamente). */
+    serviceOrderIds: z.array(idSchema).max(30).optional(),
+    /** Obrigatório ao alterar um custo já registrado. */
+    reason: optionalText(500),
+    version: versionSchema.optional(),
+  })
+  .refine((v) => Boolean(v.pickupId) !== Boolean(v.deliveryId), {
+    message: 'Informe a retirada ou a entrega.',
+    path: ['pickupId'],
+  })
+  .refine((v) => new Set(v.participantUserIds).size === v.participantUserIds.length, {
+    message: 'Participante repetido.',
+    path: ['participantUserIds'],
+  })
+  .refine(
+    (v) => !v.serviceOrderIds || new Set(v.serviceOrderIds).size === v.serviceOrderIds.length,
+    {
+      message: 'OS repetida no rateio.',
+      path: ['serviceOrderIds'],
+    },
+  );
+
+export const logisticsDefaultsSchema = z.object({
+  defaultPickupCostCents: tripCentsSchema.nullable(),
+  defaultDeliveryCostCents: tripCentsSchema.nullable(),
+  logisticsPayeeUserId: idSchema.nullable(),
+});
+
+/** Taxa de tentativa frustrada: só com autorização explícita e justificativa. */
+export const tripFeeSchema = z.object({
+  amountCents: tripCentsSchema,
+  reason: reason('Justificativa da taxa'),
+});
+
+/** Ajuste do valor devido (com sinal), depois de constituída a obrigação. */
+export const tripAdjustmentSchema = z.object({
+  amountCents: z
+    .number()
+    .int('Valor em centavos inteiros.')
+    .min(-LOGISTICS_MAX_CENTS)
+    .max(LOGISTICS_MAX_CENTS)
+    .refine((v) => v !== 0, 'O ajuste não pode ser zero.'),
+  reason: reason('Justificativa do ajuste'),
+  version: versionSchema,
+});
+
+export const reversePayablePaymentSchema = z.object({
+  reason: reason('Motivo do estorno'),
+  version: versionSchema,
+});
+
+export const logisticsWeeklyQuerySchema = z
+  .object({ from: dateOnly, to: dateOnly, payeeUserId: idSchema.optional() })
+  .refine((q) => q.from <= q.to, { message: 'Período inválido.', path: ['to'] })
+  .refine((q) => Date.parse(q.to) - Date.parse(q.from) <= 400 * 86_400_000, {
+    message: 'Período máximo: 400 dias.',
+    path: ['to'],
+  });

@@ -11,6 +11,7 @@ import {
 } from '../quality-domain';
 import { customerAddressSchema } from './commercial';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
+import { tripCostInputSchema } from './finance';
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.');
 const timeOnly = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Horário no formato HH:MM.');
@@ -169,6 +170,8 @@ export const createDeliverySchema = z
     ...deliveryFields,
     /** Pré-agendamento provisório: permitido para peças ainda não liberadas; nunca confirma ao cliente. */
     provisional: z.boolean().default(false),
+    /** Evolução Fase 6: custo total da viagem (exige financeiro.gerenciar). */
+    tripCost: tripCostInputSchema.optional(),
   })
   .superRefine(refineWindow);
 export type CreateDeliveryInput = z.input<typeof createDeliverySchema>;

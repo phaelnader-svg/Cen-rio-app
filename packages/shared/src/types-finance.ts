@@ -7,6 +7,8 @@ import type {
   LaborSituation,
   LaborStatus,
   LogisticsCostKind,
+  LogisticsCostStatus,
+  TripCostSituation,
   PayableCategory,
   PayableStatus,
   PaymentMethod,
@@ -88,6 +90,8 @@ export interface PayablePaymentDto {
   method: PaymentMethod;
   note: string | null;
   createdBy: string | null;
+  /** Evolução Fase 6: estorno registrado (o pagamento original continua no histórico). */
+  reversal: { reason: string; createdAt: string } | null;
 }
 
 export interface PayableDto {
@@ -233,7 +237,7 @@ export interface LogisticsCostDto {
   id: string;
   number: number;
   code: string;
-  kind: LogisticsCostKind;
+  kind: LogisticsCostKind | 'TENTATIVA_FRUSTRADA';
   description: string;
   amountCents: number;
   date: string;
@@ -247,6 +251,80 @@ export interface LogisticsCostDto {
   cancelled: boolean;
   cancelReason: string | null;
   version: number;
+  // Evolução Fase 6.
+  status: LogisticsCostStatus;
+  situation: TripCostSituation;
+  payee: { userId: string; displayName: string } | null;
+  participants: { userId: string; displayName: string }[];
+  adjustmentsCents: number;
+  /** Valor devido = combinado + ajustes (só existe obrigação depois da realização). */
+  dueCents: number;
+  paidCents: number;
+  openCents: number;
+  dueAt: string | null;
+  pendingReason: string | null;
+  allocationMode: 'MANUAL' | 'AUTO' | 'ESCOLHIDA';
+  adjustments: {
+    id: string;
+    amountCents: number;
+    reason: string;
+    authorizedBy: string;
+    createdAt: string;
+  }[];
+  history: FinanceEventDto[];
+}
+
+/** Evolução Fase 6: valores padrão e recebedor da logística. */
+export interface LogisticsDefaultsDto {
+  defaultPickupCostCents: number | null;
+  defaultDeliveryCostCents: number | null;
+  payee: { userId: string; displayName: string; active: boolean } | null;
+  /** Pessoas que podem participar de viagens (logística ativa). */
+  people: { userId: string; displayName: string }[];
+}
+
+/** Evolução Fase 6: custo da viagem visto da retirada/entrega (somente financeiro). */
+export interface TripCostViewDto {
+  trip: { kind: 'RETIRADA' | 'ENTREGA'; id: string; code: string; status: string };
+  cost: LogisticsCostDto | null;
+  fees: LogisticsCostDto[];
+  suggestedCents: number | null;
+  payee: { userId: string; displayName: string; active: boolean } | null;
+  /** OS que seriam rateadas automaticamente. */
+  serviceOrders: { id: string; code: string }[];
+}
+
+/** Base do fechamento semanal (Fase 7): logística por recebedor e semana (segunda). */
+export interface LogisticsWeeklyDto {
+  from: string;
+  to: string;
+  timezone: string;
+  items: {
+    costId: string;
+    code: string;
+    kind: string;
+    payee: { userId: string; displayName: string } | null;
+    trip: { kind: 'RETIRADA' | 'ENTREGA'; id: string; code: string } | null;
+    serviceOrders: { id: string; code: string; amountCents: number }[];
+    agreedCents: number;
+    adjustmentsCents: number;
+    dueCents: number;
+    paidCents: number;
+    openCents: number;
+    /** Fato gerador (realização ou taxa autorizada), data local da oficina. */
+    factDate: string;
+    weekStart: string;
+    situation: TripCostSituation;
+  }[];
+  weeks: {
+    payeeUserId: string | null;
+    displayName: string;
+    weekStart: string;
+    dueCents: number;
+    paidCents: number;
+    openCents: number;
+    items: number;
+  }[];
 }
 
 export interface ExpenseDto {
