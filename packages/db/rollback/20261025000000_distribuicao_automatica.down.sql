@@ -3,7 +3,19 @@
 -- Remove apenas o que a migration criou. Perdem-se: titular por peça, histórico de
 -- titularidade, classe das etapas e o marcador de geração das tarefas (as tarefas, os
 -- responsáveis gravados, os eventos e as auditorias permanecem).
+-- SEGURANÇA (Evolução, Fase 8): recusa ANTES de qualquer alteração se já existe titular por peça,
+-- histórico de titularidade ou tarefa gerada pela distribuição. Recupere pelo backup.
 BEGIN;
+DO $$
+DECLARE n bigint;
+BEGIN
+  SELECT (SELECT count(*) FROM "service_order_item_owner_changes")
+       + (SELECT count(*) FROM "service_order_items" WHERE "upholsterer_user_id" IS NOT NULL)
+       + (SELECT count(*) FROM "production_tasks" WHERE "template_id" IS NOT NULL) INTO n;
+  IF n > 0 THEN
+    RAISE EXCEPTION 'Reversão bloqueada: % registro(s) da distribuição automática (Fase 3). Restaure o backup anterior à migration.', n;
+  END IF;
+END $$;
 DROP TRIGGER IF EXISTS "service_order_item_owner_changes_immutable" ON "service_order_item_owner_changes";
 DROP FUNCTION IF EXISTS cenario_owner_change_immutable();
 DROP TRIGGER IF EXISTS "production_tasks_upholsterer_check" ON "production_tasks";

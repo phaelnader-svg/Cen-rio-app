@@ -3,7 +3,22 @@
 -- Remove apenas o que a migration criou. Perdem-se: revisões financeiras (abertas e
 -- resolvidas) e o vínculo obrigação→revisão. Obrigações, ajustes e pagamentos gravados pelas
 -- resoluções PERMANECEM (são linhas do financeiro existente) — confira-os antes de reverter.
+-- SEGURANÇA (Evolução, Fase 8): recusa explícita ANTES de qualquer alteração se existe revisão
+-- financeira (aberta ou resolvida) ou divisão de obrigação por peça (dois profissionais vivos na
+-- mesma peça). Antes, a recusa dependia da falha do índice único. Recupere pelo backup.
 BEGIN;
+DO $$
+DECLARE n bigint;
+BEGIN
+  SELECT (SELECT count(*) FROM "labor_reviews")
+       + (SELECT count(*) FROM (
+            SELECT "service_order_item_id" FROM "production_payables"
+            WHERE "service_order_item_id" IS NOT NULL AND "status" <> 'CANCELADO'
+            GROUP BY 1 HAVING count(*) > 1) d) INTO n;
+  IF n > 0 THEN
+    RAISE EXCEPTION 'Reversão bloqueada: % revisão(ões)/divisão(ões) de obrigação da Fase 5. Restaure o backup anterior à migration.', n;
+  END IF;
+END $$;
 DROP TRIGGER IF EXISTS "labor_reviews_guard" ON "labor_reviews";
 DROP FUNCTION IF EXISTS cenario_labor_review_guard();
 DROP INDEX IF EXISTS "production_payables_one_live_per_piece_professional";
