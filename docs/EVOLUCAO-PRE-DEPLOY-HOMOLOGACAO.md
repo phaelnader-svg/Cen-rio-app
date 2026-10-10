@@ -8,15 +8,15 @@
 
 ## 1. Identificação
 
-| Item                      | Valor                                                                                                                        |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Branch                    | `claude/cenario-gestao-fase-1-zf3bj2`                                                                                        |
-| SHA inicial (Fase 8)      | `e344dd6`                                                                                                                    |
-| Commits desta preparação  | `b5b9bb7` (migrations explícitas + passos controlados), `735ddfe` (correções achadas no ensaio + evidências), este documento |
-| SHA final                 | ver §1.1                                                                                                                     |
-| Versão publicada (relato) | `fd6dc19` — **não confirmada no ambiente real** (§11)                                                                        |
-| Código da aplicação       | idêntico a `e344dd6` (`git diff e344dd6 HEAD -- apps packages pnpm-lock.yaml package.json` vazio)                            |
-| Diferença para `e344dd6`  | só `infra/homolog/**` (Dockerfile/partida da API, Compose, Caddy, scripts), docs e evidências                                |
+| Item                      | Valor                                                                                                                                    |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Branch                    | `claude/cenario-gestao-fase-1-zf3bj2`                                                                                                    |
+| SHA inicial (Fase 8)      | `e344dd6`                                                                                                                                |
+| Commits desta preparação  | `b5b9bb7` (migrations explícitas + passos controlados), `735ddfe` (correções achadas no ensaio + evidências), `6239e2e` (este documento) |
+| SHA final                 | HEAD da branch: `6239e2e` + o commit seguinte, que só registra este SHA (sem mudança de código ou script) — use `git log -1`             |
+| Versão publicada (relato) | `fd6dc19` — **não confirmada no ambiente real** (§11)                                                                                    |
+| Código da aplicação       | idêntico a `e344dd6` (`git diff e344dd6 HEAD -- apps packages pnpm-lock.yaml package.json` vazio)                                        |
+| Diferença para `e344dd6`  | só `infra/homolog/**` (Dockerfile/partida da API, Compose, Caddy, scripts), docs e evidências                                            |
 
 ### 1.1 Etiqueta das imagens a publicar
 
