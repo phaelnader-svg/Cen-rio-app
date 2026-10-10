@@ -1,0 +1,112 @@
+
+== Sistema e recursos
+• Ubuntu 24.04.5 LTS · kernel 6.18.44-fc-v114 · ligada desde 2026-10-10 09:35:05
+• memória: 16093 MB total, 1266 usados, 14826 disponíveis · swap: 0 MB, 0 usados
+• disco /: 252G 26G 14G (66%)
+✔ disco livre 14 GB (imagens novas ~3,6 GB cada, camadas comuns compartilhadas)
+✔ nenhum reinício pendente
+
+== Versões
+• /opt/cenario/VERSAO (configuração na VM): desconhecida
+• metadado cenario-tag (imagens que sobem num reinício): 
+• metadados: domínio= · repo= · região= · bucket=
+⚠ ambiente /run/cenario/env ausente (pilha não iniciada desde o último boot?)
+⚠ portão de publicação FECHADO (/etc/cenario/publicacao-autorizada ausente)
+• cenario-homolog.service: not-found
+ausente / 
+• cenario-backup-upload.timer: not-found
+ausente / 
+
+== Contêineres
+• Docker 29.8.2 · Compose 5.6.0
+✔ postgres: running healthy · desde 2026-10-10T10:00:11.678331242Z · reinícios 0
+    imagem postgres:16-alpine · postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+✔ api: running healthy · desde 2026-10-10T10:00:30.021784618Z · reinícios 0
+    imagem local/cenario/api:fd6dc19 · cenario-api@sha256:69de19ca8713203367f03de92065a6f2226bf036e1118a810cd1f3f5e8440bb5
+✔ web: running healthy · desde 2026-10-10T10:00:30.22390633Z · reinícios 0
+    imagem local/cenario/web:fd6dc19 · cenario-web@sha256:27024fbd087a6017d07cae1cc8c8bf27502d9cd278afac9ad0dc99745bbb374f
+✔ caddy: running · desde 2026-10-10T10:00:17.811124407Z · reinícios 0
+    imagem caddy:2.10-alpine · caddy@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+✔ backup: running · desde 2026-10-10T10:00:23.081057595Z · reinícios 0
+    imagem postgres:16 · postgres@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
+• memória por contêiner:
+caddy-1 14.26MiB / 192MiB 0.00%
+backup-1 2.074MiB / 256MiB 0.00%
+web-1 118.6MiB / 448MiB 0.02%
+api-1 76.59MiB / 512MiB 0.02%
+postgres-1 57.54MiB / 448MiB 0.04%
+f2pg 126.5MiB / 15.72GiB 0.01%
+• imagens locais: local/cenario/web:b5b9bb7 (3.63GB) local/cenario/api:b5b9bb7 (3.63GB) cenario-web:depois (3.61GB) cenario-web:fd6dc19-local (3.61GB) local/cenario/web:fd6dc19 (3.61GB) cenario-api:depois (3.61GB) cenario-api:fd6dc19-local (3.61GB) local/cenario/api:fd6dc19 (3.61GB) cenario-homolog-web:latest (3.6GB) cenario-homolog-api:latest (3.6GB) node:22-bookworm (1.65GB) node:22.23.3-bookworm (1.65GB) node:22-bookworm-slim (329MB) postgres:16 (642MB) caddy:2-alpine (93.1MB) postgres:16-alpine (420MB) caddy:2.10-alpine (83.2MB)
+• espaço do Docker:
+    TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+    Images          12        5         7.938GB   1.189GB (14%)
+    Containers      6         6         413.7kB   0B (0%)
+    Local Volumes   10        6         757.5MB   326.1MB (43%)
+    Build Cache     70        0         6.533GB   2.173GB
+
+== Volumes persistentes
+✔ cenario-homolog_pgdata: 66M (1878 arquivos)
+✔ cenario-homolog_storage: 4.0K (0 arquivos)
+✔ cenario-homolog_backups: 936K (8 arquivos)
+✔ cenario-homolog_caddy_data: 72K (9 arquivos)
+
+== Banco de dados (somente leitura)
+✔ PostgreSQL aceita conexões (16.15)
+• tamanho do banco: 16 MB · conexões: 4
+• migrations aplicadas (nome · concluída):
+    20261008000000_fundacao|2026-10-10 09:48:34.727922+00|
+    20261008100000_comercial_oficina|2026-10-10 09:48:34.920907+00|
+    20261008200000_medicoes_materiais|2026-10-10 09:48:35.000474+00|
+    20261009000000_compras_estoque|2026-10-10 09:48:35.168068+00|
+    20261010000000_producao|2026-10-10 09:48:35.260745+00|
+    20261011000000_tablets_notificacoes|2026-10-10 09:48:35.289004+00|
+    20261012000000_presenca_operacional|2026-10-10 09:48:35.334952+00|
+    20261013000000_ajuda_reprogramacao|2026-10-10 09:48:35.423947+00|
+    20261014000000_central_atencao|2026-10-10 09:48:35.47564+00|
+    20261015000000_qualidade_logistica|2026-10-10 09:48:35.686726+00|
+    20261016000000_financeiro_operacional|2026-10-10 09:48:35.901385+00|
+    20261017000000_auditoria_final|2026-10-10 09:48:35.945436+00|
+✔ nenhuma migration pendente/com falha
+• linhas (estimativa) das tabelas principais:
+    account_payables|1
+    audit_logs|81
+    customers|1
+    logistics_costs|1
+    production_payables|2
+    production_tasks|8
+    service_orders|1
+    stored_files|0
+    users|7
+• pré-verificação das migrations da Evolução (verificação|valor|esperado):
+    ✔ migracoes-aplicadas|12|12
+    ✔ migracoes-com-falha-ou-pendentes|0|0
+    ✔ migracoes-da-evolucao-ja-presentes|0|0
+    ✔ objetos-novos-ja-existentes|0|0
+    ✔ tipos-novos-ja-existentes|0|0
+    ✔ mao-de-obra-duplicada-por-peca-e-profissional|0|0
+    ✔ mao-de-obra-duplicada-por-os-e-profissional|0|0
+    ✔ custos-logistica-valor-nao-positivo|0|0
+    ✔ custos-logistica-tipo-desconhecido|0|0
+    ✔ custos-logistica-rateio-tipo-desconhecido|0|0
+    ✔ rateio-duplicado-por-custo-e-os|0|0
+    ✔ configuracao-da-empresa-linhas|1|1
+    ✔ volume|audit_logs|81|-
+    ✔ volume|logistics_cost_allocations|1|-
+    ✔ volume|logistics_costs|1|-
+    ✔ volume|production_payables|2|-
+    ✔ volume|production_tasks|8|-
+    ✔ volume|production_template_steps|17|-
+    ✔ volume|service_order_items|2|-
+    ✔ volume|tamanho-do-banco|16 MB|-
+
+== Backups
+• 2 pasta(s) de backup; as 5 mais recentes:
+    cenario-staging-20261010T100023Z · 428K · há 0 h
+    cenario-staging-20261010T100101Z · 504K · há 0 h
+✔ último backup íntegro (SHA256SUMS): cenario-staging-20261010T100101Z
+main: line 144: /var/lib/cenario/enviados: No such file or directory
+• enviados ao bucket (registro local): 0
+
+== Rede e certificado
+• portas TCP escutando fora do loopback: nenhuma (esperado: 22 80 443)
+FIM-AUDITORIA

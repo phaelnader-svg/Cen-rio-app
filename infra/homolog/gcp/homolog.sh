@@ -570,6 +570,9 @@ SOMENTE APÓS AUTORIZAÇÃO EXPLÍCITA. Nada abaixo é executado por este script
       gcloud compute instances add-metadata $VM --zone=$ZONE --project=$PROJECT --metadata=cenario-tag=<commit>
       gcloud compute ssh $VM --zone=$ZONE --project=$PROJECT --tunnel-through-iap --command='sudo touch $PORTAO && sudo systemctl start cenario-homolog.service'
  5. Verificação: operador.sh saude · vm.sh semear (uma vez) · E2E · backup → bucket → restauração de teste
+ATUALIZAÇÃO de uma versão já publicada: NÃO use o item 4 (troca de etiqueta + reinício). Siga
+  operador.sh passo … (preparar-versao → manutencao → ponto-recuperacao → migrar → definir-etiqueta
+  → ativar; falha: recuperar --sim) — docs/EVOLUCAO-PRE-DEPLOY-HOMOLOGACAO.md.
 Despublicar (reversível, dados preservados):
       gcloud compute ssh $VM ... --command='sudo systemctl stop cenario-homolog.service && sudo rm -f $PORTAO'
       gcloud compute firewall-rules delete cenario-homolog-web --project=$PROJECT

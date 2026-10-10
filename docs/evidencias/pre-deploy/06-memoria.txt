@@ -1,0 +1,5 @@
+cenario-homolog-web-1 119.3MiB / 448MiB
+cenario-homolog-api-1 87.6MiB / 512MiB
+cenario-homolog-caddy-1 15.05MiB / 192MiB
+cenario-homolog-backup-1 4.387MiB / 256MiB
+cenario-homolog-postgres-1 76.65MiB / 448MiB

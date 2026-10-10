@@ -83,7 +83,9 @@ else echo "✘ metadado cenario-bucket ausente"; fi
 
 secao "Dentro da VM (IAP, somente leitura)"
 { printf 'PREFLIGHT_SQL=$(cat <<'"'"'SQLFIM'"'"'\n'; cat infra/homolog/gcp/sql/preflight-evolucao.sql; printf 'SQLFIM\n)\n'
-  cat infra/homolog/gcp/vm-auditoria.sh; } \
+  # Numa função lida por inteiro antes de executar, com a entrada fechada: senão o "docker exec -i"
+  # consumiria o restante do script que o "bash -s" ainda está lendo.
+  echo 'auditoria() {'; cat infra/homolog/gcp/vm-auditoria.sh; echo '}'; echo 'auditoria < /dev/null'; } \
   | g compute ssh "$VM" --zone="$ZONE" --tunnel-through-iap --command='sudo bash -s'
 
 secao "Resumo"

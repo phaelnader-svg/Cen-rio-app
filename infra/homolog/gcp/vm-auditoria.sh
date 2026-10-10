@@ -5,6 +5,7 @@
 # banco (transações READ ONLY), não lê o Secret Manager e não imprime segredos (do arquivo de
 # ambiente só as linhas das IMAGENS). Linhas ✔ / ⚠ / ✘ são contadas no resumo.
 # Variáveis opcionais: PREFLIGHT_SQL (conteúdo de sql/preflight-evolucao.sql, enviado junto).
+# Enviado dentro de uma função ("auditoria() { … }; auditoria < /dev/null"): não lê a entrada padrão.
 set -uo pipefail
 ok() { echo "✔ $*"; }
 aviso() { echo "⚠ $*"; }

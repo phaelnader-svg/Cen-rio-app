@@ -1,0 +1,31 @@
+== versões
+node v22.23.3
+pnpm 10.28.0
+prisma 6.19.3
+migrations: 17
+== usuário, healthcheck, CMD
+local/cenario/api:b5b9bb7 · user=node · cmd=["sh","infra/homolog/api-iniciar.sh"] · health=["CMD-SHELL","node -e \"fetch('http://127.0.0.1:4000/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+local/cenario/web:b5b9bb7 · user=node · cmd=["node","node_modules/next/dist/bin/next","start","-H","0.0.0.0","-p","3000"] · health=["CMD-SHELL","node -e \"fetch('http://127.0.0.1:3000/entrar').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+== variáveis embutidas (sem proxy/CA da sandbox)
+PATH=/pnpm:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+NODE_VERSION=22.23.3
+YARN_VERSION=1.22.22
+PNPM_HOME=/pnpm
+CI=true
+NEXT_TELEMETRY_DISABLED=1
+COREPACK_HOME=/corepack
+COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+NODE_ENV=production
+
+== arquivos .env / chaves / segredos na imagem
+/app/.env.example
+fim
+== histórico da imagem com proxy/segredos?
+0
+== tamanho
+3.38 GB
+3.38 GB
+1.21GB	RUN /bin/sh -c pnpm install --frozen-lockfil…
+619MB	RUN /bin/sh -c set -ex;  apt-get update;  ap…
+286MB	RUN |1 API_INTERNAL_URL=http://api:4000 /bin…
+213MB	RUN /bin/sh -c ARCH= && dpkgArch="$(dpkg --p…

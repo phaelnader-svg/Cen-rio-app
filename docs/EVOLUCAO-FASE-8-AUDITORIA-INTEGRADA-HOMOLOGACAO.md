@@ -279,6 +279,9 @@ Registrar por aparelho: modelo, sistema, navegador, resultado e captura.
 
 ## 14. Runbook de publicação futura (somente documentação — NÃO executado)
 
+> **Substituído** por `docs/EVOLUCAO-PRE-DEPLOY-HOMOLOGACAO.md` (pré-deploy controlado): `vm.sh atualizar`
+> foi desativado (migrava implicitamente na partida). Não reutilize os comandos abaixo.
+
 Pré-requisito: autorização explícita do proprietário para publicar o SHA final desta fase.
 
 1. **SHA aprovado**: HEAD final desta fase; conferir `git log --oneline -1` no Cloud Shell. Etiqueta

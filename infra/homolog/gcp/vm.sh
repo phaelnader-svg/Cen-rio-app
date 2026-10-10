@@ -136,7 +136,7 @@ iniciar() {
     compose pull --quiet api web
   fi
   compose up -d --no-build --remove-orphans
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 "${CENARIO_ESPERA:-60}"); do
     [[ "$(docker inspect -f '{{.State.Health.Status}}' "$(compose ps -q api)" 2>/dev/null)" == healthy ]] && break
     sleep 5
   done
@@ -278,7 +278,7 @@ saude() {
   # Cookie de acesso num arquivo temporário (600), não nos argumentos do curl.
   local hdr; hdr="$(mktemp)"; chmod 600 "$hdr"
   printf 'Cookie: cenario_homolog=%s\n' "$HOMOLOG_GATE_TOKEN" > "$hdr"
-  trap 'rm -f "$hdr"' RETURN
+  trap "rm -f '$hdr'; trap - RETURN" RETURN  # expandido agora: a armadilha RETURN é global
   [[ -n "${CENARIO_CACERT:-}" ]] && res+=(--cacert "$CENARIO_CACERT")
   r="$(curl -s -o /dev/null -w '%{http_code}' "${res[@]}" "$base/painel" || true)"
   [[ "$r" == 401 ]] && ok "proxy exige autenticação (sem credencial: $r)" || ruim "proxy sem credencial respondeu $r (esperado 401)"
@@ -351,7 +351,7 @@ backup() {
 enviar_backups() {
   if [[ -z "$BUCKET" ]]; then log "Sem bucket configurado (cenario-bucket): envio ignorado."; return 0; fi
   install -d -m 700 "$STATE_DIR"; touch "$STATE_DIR/enviados"
-  local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' RETURN
+  local tmp; tmp="$(mktemp -d)"; trap "rm -rf '$tmp'; trap - RETURN" RETURN
   local vol="${CENARIO_BACKUPS_DIR:-}"
   [[ -n "$vol" ]] || vol="$(docker volume inspect -f '{{.Mountpoint}}' cenario-homolog_backups 2>/dev/null || true)"
   [[ -n "$vol" && -d "$vol" ]] || { log "Sem volume de backups: nada a enviar."; return 0; }
@@ -393,7 +393,7 @@ verificar_preparo() {
   local portas; portas="$(ss -tlnH 2>/dev/null | awk '{print $4}' | grep -vE '^(127\.|\[::1\]|::1)' | sed 's/.*://' | sort -un | xargs || true)"
   [[ -z "$portas" || "$portas" == 22 ]] && ok "portas escutando fora do loopback: ${portas:-nenhuma}" \
     || ruim "portas escutando fora do loopback: $portas (esperado só 22)"
-  local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' RETURN
+  local tmp; tmp="$(mktemp -d)"; trap "rm -rf '$tmp'; trap - RETURN" RETURN
   cat > "$tmp/env" <<'FICTICIO'
 HOMOLOG_DOMAIN='teste.exemplo.invalid'
 POSTGRES_PASSWORD='ficticio'
@@ -641,9 +641,9 @@ ativar() {
   [[ "$TAG" == "$tag" ]] || { echo "✘ metadado cenario-tag='$TAG' ≠ $tag: num reinício da VM a versão errada subiria. Ajuste com 'operador.sh definir-etiqueta $tag'." >&2; return 1; }
   sed -i "s#^\(CENARIO_\(API\|WEB\)_IMAGE='.*/\(api\|web\):\)[^']*'#\1$tag'#" "$ENV_FILE"
   [[ "$(etiqueta_ativa)" == "$tag" ]] || { echo "✘ não consegui gravar a etiqueta no ambiente" >&2; return 1; }
-  compose up -d --no-build --remove-orphans
+  compose up -d --no-build --remove-orphans || log "⚠ o Compose relatou falha ao subir; conferindo a saúde da API…"
   local st=""
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 "${CENARIO_ESPERA:-60}"); do
     st="$(docker inspect -f '{{.State.Health.Status}}' "$(compose ps -q api)" 2>/dev/null || true)"
     [[ "$st" == healthy ]] && break; sleep 5
   done
@@ -669,9 +669,17 @@ recuperar() {
     && log "✔ banco IDÊNTICO ao ponto de recuperação (impressão $IMPRESSAO)" \
     || { log "✘ banco restaurado difere do ponto: NÃO iniciado. Verifique antes de prosseguir."; return 1; }
   sed -i "s#^\(CENARIO_\(API\|WEB\)_IMAGE='.*/\(api\|web\):\)[^']*'#\1$ETIQUETA'#" "$ENV_FILE"
-  compose up -d --no-build --remove-orphans
+  # Recarrega: as variáveis exportadas acima (imagens antigas) teriam precedência sobre o
+  # --env-file do Compose e subiriam de novo a versão nova.
+  set -a
+  # shellcheck source=/dev/null
+  source "$ENV_FILE"
+  set +a
+  [[ "$CENARIO_API_IMAGE" == *":$ETIQUETA" && "$CENARIO_WEB_IMAGE" == *":$ETIQUETA" ]] \
+    || { log "✘ não consegui gravar a versão $ETIQUETA no ambiente"; return 1; }
+  compose up -d --no-build --remove-orphans || log "⚠ o Compose relatou falha ao subir; conferindo a saúde da API…"
   local st=""
-  for _ in $(seq 1 60); do
+  for _ in $(seq 1 "${CENARIO_ESPERA:-60}"); do
     st="$(docker inspect -f '{{.State.Health.Status}}' "$(compose ps -q api)" 2>/dev/null || true)"
     [[ "$st" == healthy ]] && break; sleep 5
   done

@@ -1,0 +1,4 @@
+20261018000000_fila_semanal t f
+20261025000000_distribuicao_automatica t f
+20261101000000_mao_de_obra_revisao t f
+20261108000000_custos_logistica f f
