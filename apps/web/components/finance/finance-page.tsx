@@ -21,10 +21,12 @@ import { CostsTab } from './costs';
 import { ExpensesTab, PayablesTab } from './payables';
 import { LaborTab } from './labor';
 import { RevenueTab } from './revenue';
+import { WeeklyClosingTab } from './weekly-closing';
 
 const TABS = [
   { key: 'painel', label: 'Painel' },
   { key: 'receitas', label: 'Receitas e recebimentos' },
+  { key: 'fechamento', label: 'Fechamento semanal' },
   { key: 'pagar', label: 'Contas a pagar' },
   { key: 'producao', label: 'Produção e equipe' },
   { key: 'custos', label: 'Custos e resultado por OS' },
@@ -52,6 +54,7 @@ export function FinancePage() {
           {withPeriod && <PeriodPicker value={period} onChange={setPeriod} />}
           {tab === 'painel' && <Dashboard period={period} />}
           {tab === 'receitas' && <RevenueTab />}
+          {tab === 'fechamento' && <WeeklyClosingTab />}
           {tab === 'pagar' && <PayablesTab />}
           {tab === 'producao' && <LaborTab />}
           {tab === 'custos' && <CostsTab period={period} />}

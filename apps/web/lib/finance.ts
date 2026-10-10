@@ -9,6 +9,7 @@ import type {
   LogisticsDefaultsDto,
   LogisticsWeeklyDto,
   TripCostViewDto,
+  WeeklyClosingDto,
   OrderResultDto,
   OrderRevenueDto,
   PayableDto,
@@ -79,6 +80,15 @@ export const useTripCost = (ref: { pickupId?: string; deliveryId?: string }, ena
   useFin<TripCostViewDto>(`/trip-costs${qs(ref)}`, enabled);
 export const useLogisticsWeekly = (p: Period) =>
   useFin<LogisticsWeeklyDto>(`/logistics-weekly${qs({ ...p })}`);
+/** Evolução Fase 7: fechamento semanal geral. */
+export const useWeeklyClosing = (
+  weekStart: string,
+  f: { beneficiaryUserId?: string; category?: string; state?: string },
+) => useFin<WeeklyClosingDto>(`/weekly-closings/${weekStart}${qs(f)}`);
+export const weeklyClosingCsvUrl = (
+  weekStart: string,
+  f: { beneficiaryUserId?: string; category?: string; state?: string },
+) => `/api/v1/finance/weekly-closings/${weekStart}${qs({ ...f, format: 'csv' })}`;
 export const useTeamCosts = () => useFin<TeamCostDto[]>('/team-costs');
 export const useFinPeople = () => useFin<WorkerDto[]>('/people');
 export const useLogisticsCosts = () => useFin<LogisticsCostDto[]>('/logistics-costs');
