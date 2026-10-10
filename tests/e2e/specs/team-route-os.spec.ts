@@ -14,7 +14,7 @@ import { post } from './os-helpers';
  */
 const origin = `http://localhost:${E2E.webPort}`;
 const evidence = (page: Page, name: string) =>
-  process.env.E2E_EVIDENCE
+  process.env.E2E_GEOMETRIA
     ? page.screenshot({
         path: `../../docs/evidencias/interface/fluxos/${name}.png`,
         fullPage: true,
