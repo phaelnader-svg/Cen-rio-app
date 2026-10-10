@@ -16,6 +16,7 @@ import {
   productionPayableCode,
   resolveLaborReviewSchema,
   reviewResolutionProblem,
+  zonedDateTime,
   type LaborReviewDto,
   type LaborWeeklyDto,
   type ServiceOrderLaborDto,
@@ -39,6 +40,8 @@ import {
   dateOnly,
   financeEvent,
   lockRow,
+  period,
+  shopTimezone,
 } from './common';
 import {
   laborInclude,
@@ -440,8 +443,10 @@ export async function laborWeekly(
   to: string,
   timeZone = 'America/Sao_Paulo',
 ): Promise<LaborWeeklyDto> {
-  const start = new Date(`${from}T00:00:00-03:00`);
-  const end = new Date(new Date(`${to}T00:00:00-03:00`).getTime() + 86_400_000);
+  // Dias LOCAIS no fuso da oficina (antes: −03:00 fixo, que ignorava o fuso configurado).
+  const p = period({ from, to }, timeZone);
+  const start = p.fromTs;
+  const end = p.toExclusive;
   const payables = await db.productionPayable.findMany({
     where: { status: { not: 'CANCELADO' } },
     include: {
@@ -470,7 +475,7 @@ export async function laborWeekly(
     if (inRange(p.createdAt)) row(p, p.createdAt).agreedCents += laborDue(p);
     if (inRange(p.eligibleAt)) row(p, p.eligibleAt!).releasedCents += laborDue(p);
     for (const pay of p.payments) {
-      const at = new Date(`${dateOnly(pay.paidAt)}T12:00:00-03:00`);
+      const at = zonedDateTime(dateOnly(pay.paidAt)!, '12:00', timeZone);
       if (inRange(at)) row(p, at).paidCents += pay.amountCents;
     }
     if (p.status === 'LIBERADO' || p.status === 'PAGO_PARCIAL') {
@@ -554,7 +559,7 @@ export async function laborReviewRoutes(app: FastifyInstance) {
   app.get('/api/v1/finance/labor-weekly', { config: { access: FIN_VIEW } }, async (request) => {
     const q = laborWeeklyQuerySchema.parse(request.query);
     await tx((t) => refreshLaborOf(t, actorFrom(request), {}));
-    return laborWeekly(prisma, q.from, q.to);
+    return laborWeekly(prisma, q.from, q.to, await shopTimezone(prisma));
   });
 
   /**

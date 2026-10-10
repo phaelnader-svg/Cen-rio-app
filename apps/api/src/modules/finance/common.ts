@@ -1,5 +1,6 @@
-import { anyPermissionAudience, type EventType } from '@cenario/shared';
+import { anyPermissionAudience, zonedDateTime, type EventType } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
+import { now } from '../../core/clock';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
@@ -24,8 +25,22 @@ export const FINANCE_AUDIENCE = anyPermissionAudience('financeiro.ver');
 
 export const dateOnly = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 export const parseDate = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
+/** Hoje (AAAA-MM-DD) no fuso informado, pelo relógio operacional (o real em produção). */
 export const todayIso = (timeZone = 'America/Sao_Paulo') =>
-  new Intl.DateTimeFormat('en-CA', { timeZone }).format(new Date());
+  new Intl.DateTimeFormat('en-CA', { timeZone }).format(now());
+/** Data local (AAAA-MM-DD) de um instante no fuso informado. */
+export const localDateOf = (d: Date, timeZone: string) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone }).format(d);
+/** Fuso configurado da oficina (`company_settings.timezone`). */
+export async function shopTimezone(db: Tx | PrismaClient) {
+  const s = await db.companySettings.findUnique({ where: { id: 1 }, select: { timezone: true } });
+  return s?.timezone ?? 'America/Sao_Paulo';
+}
+const nextDayIso = (iso: string) => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+};
 
 export async function lockRow(tx: Tx, table: string, id: string, what: string) {
   const rows = await tx.$queryRawUnsafe<{ id: string }[]>(
@@ -96,9 +111,13 @@ export async function historyOf(db: Tx | PrismaClient, entityType: string, entit
   }));
 }
 
-/** Período [from, to] (datas locais); padrão: mês corrente. */
-export function period(q: { from?: string; to?: string }) {
-  const today = todayIso();
+/**
+ * Período [from, to] em datas LOCAIS do fuso da oficina; padrão: mês corrente. Os limites de
+ * instantes são a meia-noite local (antes: deslocamento fixo de −3 h, que ignorava o fuso
+ * configurado).
+ */
+export function period(q: { from?: string; to?: string }, timeZone = 'America/Sao_Paulo') {
+  const today = todayIso(timeZone);
   const from = q.from ?? `${today.slice(0, 7)}-01`;
   const to = q.to ?? today;
   if (to < from) throw Errors.validation(undefined, 'O fim do período é anterior ao início.');
@@ -107,8 +126,9 @@ export function period(q: { from?: string; to?: string }) {
     to,
     fromDate: parseDate(from),
     toDate: parseDate(to),
-    /** Fim exclusivo para timestamps (dia seguinte, no fuso UTC-3 aproximado por data local). */
-    toExclusive: new Date(parseDate(to).getTime() + 86_400_000 + 3 * 3_600_000),
-    fromTs: new Date(parseDate(from).getTime() + 3 * 3_600_000),
+    /** Fim exclusivo para instantes: meia-noite local do dia seguinte. */
+    toExclusive: zonedDateTime(nextDayIso(to), '00:00', timeZone),
+    fromTs: zonedDateTime(from, '00:00', timeZone),
+    timeZone,
   };
 }

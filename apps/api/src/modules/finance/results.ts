@@ -16,7 +16,7 @@ import type { PrismaClient, Tx } from '@cenario/db';
 import type { ActorContext } from '../../core/types';
 import { serviceOrderCode } from '../commercial/common';
 import { workers } from '../production/plans';
-import { dateOnly, parseDate, period, todayIso } from './common';
+import { dateOnly, localDateOf, parseDate, period, shopTimezone, todayIso } from './common';
 import { materialSummary, syncMaterialCosts } from './costs';
 import { isEligible, laborInclude, refreshLaborOf, toLaborDto } from './labor';
 import { serviceOrderRevenue } from './revenue';
@@ -187,8 +187,8 @@ export async function dashboard(
   actor: ActorContext,
   q: { from?: string; to?: string },
 ): Promise<FinanceDashboardDto> {
-  const p = period(q);
-  const today = todayIso();
+  const p = period(q, await shopTimezone(tx));
+  const today = todayIso(p.timeZone);
   // Competência: contratado no período.
   const orders = await tx.commercialOrder.findMany({
     where: { status: { not: 'CANCELADO' }, createdAt: { gte: p.fromTs, lt: p.toExclusive } },
@@ -352,7 +352,7 @@ export async function productivity(
   db: Tx | PrismaClient,
   q: { from?: string; to?: string },
 ): Promise<ProductivityDto> {
-  const p = period(q);
+  const p = period(q, await shopTimezone(db));
   const rows: ProductivityRowDto[] = [];
   for (const w of await workers(db)) {
     const tasks = await db.productionTask.findMany({
@@ -389,11 +389,11 @@ export async function productivity(
       const deadline = t.dueDate
         ? dateOnly(t.dueDate)!
         : t.scheduledAt
-          ? dateOnly(new Date(t.scheduledAt.getTime() - 3 * 3_600_000))!
+          ? localDateOf(t.scheduledAt, p.timeZone)
           : null;
       if (deadline) {
         withDue += 1;
-        const doneDay = dateOnly(new Date(t.completedAt!.getTime() - 3 * 3_600_000))!;
+        const doneDay = localDateOf(t.completedAt!, p.timeZone);
         if (doneDay <= deadline) onTime += 1;
         else {
           late += 1;

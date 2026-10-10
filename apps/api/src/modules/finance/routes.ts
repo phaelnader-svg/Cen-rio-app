@@ -46,6 +46,7 @@ import {
   lockRow,
   parseDate,
   period,
+  shopTimezone,
 } from './common';
 import { syncMaterialCosts } from './costs';
 import { loadTripCost, toTripCostDto, tripCostInclude } from './trip-costs';
@@ -507,7 +508,7 @@ export async function financeRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/finance/expenses', { config: { access: FIN_VIEW } }, async (request) => {
     const q = periodQuerySchema.parse(request.query);
-    const p = period(q);
+    const p = period(q, await shopTimezone(prisma));
     const rows = await prisma.operationalExpense.findMany({
       where: { competence: { gte: parseDate(`${p.from.slice(0, 7)}-01`), lte: p.toDate } },
       include: expenseInclude,
@@ -672,7 +673,7 @@ export async function financeRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/finance/service-orders', { config: { access: FIN_VIEW } }, async (request) => {
     const q = periodQuerySchema.parse(request.query);
-    const p = period(q);
+    const p = period(q, await shopTimezone(prisma));
     const sos = await prisma.serviceOrder.findMany({
       where: { status: 'ABERTA', createdAt: { lt: p.toExclusive } },
       orderBy: { number: 'desc' },
@@ -775,7 +776,7 @@ export async function financeRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const { kind } = reportParams.parse(request.params);
       const q = reportQuerySchema.parse(request.query);
-      const p = period(q);
+      const p = period(q, await shopTimezone(prisma));
       const report = await tx((t) => buildReport(t, actorFrom(request), kind, q));
       if (q.format === 'csv')
         return reply

@@ -20,7 +20,7 @@ import type { Tx } from '@cenario/db';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { orderCode, serviceOrderCode } from '../commercial/common';
-import { dateOnly, parseDate, period } from './common';
+import { dateOnly, parseDate, period, shopTimezone } from './common';
 import { dashboard, orderResult, productivity } from './results';
 
 /** Relatório tabular: mesmas linhas em JSON (tela) e CSV (exportação). */
@@ -49,7 +49,7 @@ const ESTIMATE = 'Margem de contribuição não é lucro líquido; tributos são
 
 /** OS concluídas no período (todas as peças entregues) ou ainda em andamento. */
 async function resultsInPeriod(tx: Tx, actor: ActorContext, q: { from?: string; to?: string }) {
-  const p = period(q);
+  const p = period(q, await shopTimezone(tx));
   const sos = await tx.serviceOrder.findMany({
     where: { status: 'ABERTA', createdAt: { lt: p.toExclusive } },
     orderBy: { number: 'asc' },
@@ -73,7 +73,7 @@ export async function buildReport(
   kind: ReportKind,
   q: { from?: string; to?: string },
 ): Promise<Report> {
-  const p = period(q);
+  const p = period(q, await shopTimezone(tx));
   switch (kind) {
     case 'resultado-os': {
       const rows = await resultsInPeriod(tx, actor, q);

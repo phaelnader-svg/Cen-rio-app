@@ -14,6 +14,7 @@ import {
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyRequest } from 'fastify';
+import { now as clockNow } from '../../core/clock';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { loadUserPermissions } from '../../core/permissions';
@@ -39,7 +40,7 @@ type MeasurementWithSummary = Prisma.MeasurementGetPayload<{ include: typeof sum
 
 /** Hoje no fuso da empresa (AAAA-MM-DD). */
 export function todayIn(timezone: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(new Date());
+  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(clockNow());
 }
 
 export function toSummary(m: MeasurementWithSummary, today: string): MeasurementSummaryDto {

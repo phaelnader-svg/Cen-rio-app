@@ -1,0 +1,6 @@
+     × fuso configurado (Manaus, UTC−4): 23h30 local de sexta é sexta — sem −3 h fixo 1336ms
+     × semanal da mão de obra usa o fuso configurado (liberação às 23h30 em Manaus) 1236ms
+     × materiais aprovados: aprovação às 22h30 local entra no dia local (antes: meia-noite UTC) 1430ms
+     × planejamento e financeiro: sexta 23h59 → sexta; sábado 00h01 → sábado (prazo de sexta recusado) 923ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+      Tests  4 failed | 2 passed (6)

@@ -13,14 +13,14 @@ import {
 import type { Prisma, PrismaClient } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { parseDateOnly, serviceOrderCode } from '../commercial/common';
+import { awaitingMeasurement } from '../measurements/routes';
+import { summaryInclude, toSummary, todayIn } from '../measurements/service';
 
 const nextDay = (iso: string) => {
   const d = new Date(`${iso}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 1);
   return d.toISOString().slice(0, 10);
 };
-import { awaitingMeasurement } from '../measurements/routes';
-import { summaryInclude, toSummary, todayIn } from '../measurements/service';
 
 const VIEW = {
   session: 'WEB',
@@ -37,6 +37,8 @@ async function approvedInputs(
   from?: string,
   to?: string,
 ): Promise<ConsolidationInput[]> {
+  const company = await prisma.companySettings.findUnique({ where: { id: 1 } });
+  const tz = company?.timezone ?? 'America/Sao_Paulo';
   const rows = await prisma.materialRequirement.findMany({
     where: {
       origin: 'SOLICITACAO_APROVADA',
@@ -44,8 +46,10 @@ async function approvedInputs(
       ...(from || to
         ? {
             approvedAt: {
-              ...(from ? { gte: parseDateOnly(from)! } : {}),
-              ...(to ? { lt: new Date(parseDateOnly(to)!.getTime() + 86_400_000) } : {}),
+              // Dias LOCAIS da oficina (antes: meia-noite UTC — aprovações entre 21h e 24h
+              // em Brasília caíam no dia seguinte).
+              ...(from ? { gte: zonedDateTime(from, '00:00', tz) } : {}),
+              ...(to ? { lt: zonedDateTime(nextDay(to), '00:00', tz) } : {}),
             },
           }
         : {}),
