@@ -1,0 +1,12 @@
+✔ banco idêntico ao ponto de recuperação cenario-staging-20261010T100302Z (0 min)
+✔ pré-verificação das migrations da Evolução sem bloqueios
+[2026-10-10T10:03:09Z] Aplicando as migrations com local/cenario/api:b5b9bb7 (log: /tmp/tmp.l0kDtL4arI/estado/migracao-b5b9bb7-20261010T100309Z.log)…
+Applying migration `20261018000000_fila_semanal`
+Applying migration `20261025000000_distribuicao_automatica`
+Applying migration `20261101000000_mao_de_obra_revisao`
+Applying migration `20261108000000_custos_logistica`
+Applying migration `20261115000000_fechamento_semanal`
+The following migration(s) have been applied:
+All migrations have been successfully applied.
+Database schema is up to date!
+[2026-10-10T10:03:15Z] ✔ migrations aplicadas em 6 s. Próximo: (operador) cenario-tag=b5b9bb7 nos metadados → vm.sh ativar b5b9bb7

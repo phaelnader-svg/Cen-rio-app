@@ -1,0 +1,109 @@
+
+■ 0. Pilha limpa com a versão PUBLICADA (fd6dc19) e o banco de dados sintético
+  ✔ banco publicado: 12 migrations
+  ✔ vm.sh saude: OK (18 verificações)
+  ✔ login do gestor na versão publicada (via proxy)
+
+■ 0b. Auditoria SOMENTE LEITURA (como no Cloud Shell → VM): nada muda
+  ✔ auditoria concluída (34 ✔ · 0 ✘)
+  ✔ banco e contêineres idênticos após a auditoria
+
+■ 1. Recusas de segurança antes de começar
+  ✔ saída 2: 
+  ✔ saída 1: ✘ API/web em execução: rode 'vm.sh manutencao'.
+  ✔ saída 3: 
+
+■ 2. preparar-versao b5b9bb7 (imagens, digests, regra de migração explícita; nada reiniciado)
+    ✔ api: local/cenario/api:b5b9bb7
+        digest: local/cenario/api@sha256:b608c1fe0c4b7eb5f1627619a899e47bfd168625546c46d4cca7b3b8e53306db
+        id: sha256:b608c1fe0c4b7eb5f1627619a899e47bfd168625546c46d4cca7b3b8e53306db · tamanho: 3463 MB
+    ✔ web: local/cenario/web:b5b9bb7
+        digest: local/cenario/web@sha256:ba09a0bad97fe0fb40b1b6462f8eef513e0d6476c8425376de0574d8e776093d
+        id: sha256:ba09a0bad97fe0fb40b1b6462f8eef513e0d6476c8425376de0574d8e776093d · tamanho: 3463 MB
+    ✔ a imagem nova NÃO migra na partida (infra/homolog/api-iniciar.sh presente)
+    • migrations na imagem: 17 · aplicadas no banco: 12
+    ✔ disco livre: 14 GB
+    PREPARAR-VERSÃO: OK (imagens presentes; nada reiniciado; banco intocado)
+  ✔ nenhum contêiner recriado
+  ✔ saída 1: ✔ api: local/cenario/api:fd6dc19
+
+■ 3. Manutenção: API e web paradas; proxy 503
+  ✔ manutencao
+  ✔ API pelo proxy: 503 JSON MANUTENCAO
+  ✔ painel pelo proxy: 503 'em manutenção'
+  ✔ saída 1: ✘ sem ponto de recuperação: rode 'vm.sh ponto-recuperacao'.
+
+■ 4. Falha INTERMEDIÁRIA de migration (objeto conflitante só na 4ª migration da Evolução)
+  ✔ ponto de recuperação (inclui o objeto conflitante)
+  ✔ saída 1: ✔ banco idêntico ao ponto de recuperação cenario-staging-20261010T100119Z (0 min)
+    20261018000000_fila_semanal t f
+    20261025000000_distribuicao_automatica t f
+    20261101000000_mao_de_obra_revisao t f
+    20261108000000_custos_logistica f f
+    coluna logistics_costs.status criada pela migration que falhou: 0 (estado parcial)
+
+■ 4b. Ativar com migration falha: a API RECUSA iniciar (nada sobe em estado parcial)
+  ✔ saída 1: [2026-10-10T10:02:39Z] ✘ API não ficou saudável. Recuperação: vm.sh recuperar --sim
+    api-1  | API NÃO iniciada: há migrations pendentes ou com falha (MIGRATE_ON_START=0).
+
+■ 4c. Recuperação para o ponto (versão fd6dc19)
+  ✔ saída 1: ✘ metadado cenario-tag='b5b9bb7' ≠ versão do ponto (fd6dc19). Ajuste com 'operador.sh definir-etiqueta fd6dc19'.
+  ✔ recuperar --sim
+    [2026-10-10T10:02:44Z] ✔ banco IDÊNTICO ao ponto de recuperação (impressão 5bf4c5a13619cc7fb63e37fa408c3fcb)
+  ✔ de volta a 12 migrations
+  ✔ vm.sh saude: OK (18 verificações)
+  ✔ objeto conflitante removido (correção do operador)
+
+■ 5. Caminho feliz: manutenção → ponto → migrar → ativar
+  ✔ ponto de recuperação
+    tabelas: 99 · colunas financeiras: 22 · 12 migrations
+    [2026-10-10T10:03:00Z] ✔ Restauração de teste de cenario-staging-20261010T100256Z IDÊNTICA ao banco atual (conteúdo, vínculos, catálogo e valores).
+    [2026-10-10T10:03:01Z] ✔ PONTO DE RECUPERAÇÃO: cenario-staging-20261010T100256Z (versão fd6dc19, impressão 6dd45b6247a672251067b805a999d81c). Tudo o que for gravado depois dele se perde numa recuperação.
+  ✔ saída 1: ✘ o banco mudou depois do ponto de recuperação cenario-staging-20261010T100256Z: faça outro antes de migrar.
+  ✔ migrar em 8 s
+    ✔ pré-verificação das migrations da Evolução sem bloqueios
+    Applying migration `20261018000000_fila_semanal`
+    Applying migration `20261025000000_distribuicao_automatica`
+    Applying migration `20261101000000_mao_de_obra_revisao`
+    Applying migration `20261108000000_custos_logistica`
+    Applying migration `20261115000000_fechamento_semanal`
+    [2026-10-10T10:03:15Z] ✔ migrations aplicadas em 6 s. Próximo: (operador) cenario-tag=b5b9bb7 nos metadados → vm.sh ativar b5b9bb7
+  ✔ saída 1: ✘ metadado cenario-tag='fd6dc19' ≠ b5b9bb7: num reinício da VM a versão errada subiria. Ajuste com 'operador.sh definir-etiqueta b5b9b
+  ✔ ativar b5b9bb7 + saúde
+  ✔ 17 migrations
+
+■ 6. Testes após a publicação (HTTP real pelo proxy, dados sintéticos)
+  ✔ login do gestor
+  ✔ GET /api/v1/service-orders: 200
+  ✔ GET /api/v1/production-plans: 200
+  ✔ GET /api/v1/finance/weekly-closings/2026-10-05: 200
+  ✔ GET /api/v1/finance/labor: 200
+  ✔ GET /api/v1/finance/logistics-costs: 200
+  ✔ GET /api/v1/finance/dashboard: 200
+  ✔ GET /api/v1/quality/inspections: 200
+  ✔ web /painel/financeiro: 200
+    memória dos contêineres:
+cenario-homolog-web-1 119.3MiB / 448MiB
+cenario-homolog-api-1 87.6MiB / 512MiB
+cenario-homolog-caddy-1 15.05MiB / 192MiB
+cenario-homolog-backup-1 4.387MiB / 256MiB
+cenario-homolog-postgres-1 76.65MiB / 448MiB
+
+■ 7. Reaplicação e guarda contra migrar de novo
+  ✔ migrate deploy repetido: nenhuma pendente (idempotente)
+  ✔ saída 1: ✘ o banco mudou depois do ponto de recuperação cenario-staging-20261010T100302Z: faça outro antes de migrar.
+
+■ 8. Falha de INICIALIZAÇÃO (configuração errada) e correção sem tocar no banco
+  ✔ saída 1: [2026-10-10T10:04:22Z] ✘ API não ficou saudável. Recuperação: vm.sh recuperar --sim
+  ✔ configuração corrigida: ativar OK (banco intocado)
+
+■ 9. Recuperação DEPOIS do uso: registro novo é perdido (risco documentado)
+  ✔ recuperar --sim
+  ✔ cliente criado após o ponto: existia (1) e foi PERDIDO na recuperação (0)
+  ✔ versão fd6dc19 com 12 migrations
+  ✔ vm.sh saude: OK (18 verificações)
+
+■ Resultado
+Evidências em $SP/ensaio
+ENSAIO: OK
+EXIT 0

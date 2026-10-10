@@ -1,0 +1,50 @@
+
+■ Preparação: PostgreSQL 16 (alpine, como na VM), migrations aplicadas diretamente, dados sintéticos
+  ✔ 12 migrations aplicadas sem dump/restore; 99 tabelas; dados fictícios
+  ✔ backup.sh: cenario-staging-20261010T131257Z (SHA-256)
+
+■ 1. Comparador ANTIGO reproduz a falha (dados idênticos, catálogo com texto reescrito)
+NOTICE:  database "restaurado" does not exist, skipping
+  ✔ antigo: restauração de teste NÃO idêntica
+  ✔ única diferença: a linha agregada do catálogo (mesma contagem, md5 diferente)
+  ✔ o diagnóstico antigo (cut -f1-3) não mostrava NADA
+
+■ 2. Comparador novo aprova a restauração fiel
+  ✔ aprovada (código 0)
+  ✔ dados, estrutura, sequências, migrations e financeiro iguais
+  ✔ 22 definição(ões) reescrita(s) pelo PostgreSQL listadas (iguais à referência)
+  ✔ itens: 3313 · tabelas: 99 · colunas financeiras: 22 · migrations: 12 · restrições: 486 · índices: 312 · gatilhos: 46 · sequências: 23
+
+■ 3. Configurações do banco original (fuso, DateStyle) não mudam o resultado
+  ✔ aprovada com fuso America/Sao_Paulo e DateStyle SQL, DMY no original
+
+■ 4. Alterações reais na restauração são RECUSADAS e localizadas
+  ✔ valor financeiro +1 centavo → recusada: ✘ financeiro account_payables.amount_cents: linhas 2→2 · soma original=19990 · restaurado=19991 (centavo
+  ✔ texto de uma linha → recusada: colunas com valores diferentes: beneficiary
+  ✔ linha a menos → recusada: linhas só no original 1 (chaves: cccccccc-0000-4000-8000-000000000001)
+  ✔ linha a mais → recusada: linhas só na restauração 1 (chaves: 33333333-3333-4333-8333-333333333333)
+  ✔ índice removido → recusada: ✘ indice users_email_key: ausente em restaurado
+  ✔ chave estrangeira removida → recusada: ✘ restricao account_payables.account_payables_supplier_id_fkey: ausente em restaurado
+  ✔ CHECK alterada (mesmo nome) → recusada: ✘ def-restricao account_payables.account_payables_status
+  ✔ gatilho desativado → recusada: ✘ gatilho audit_logs.audit_logs_immutable
+  ✔ sequência adiantada → recusada: ✘ sequência account_payables_number_seq: original=2 chamada=true · restaurado=999 chamada=true
+  ✔ migration desfeita → recusada: ✘ migrations aplicadas: original=12 · restaurado=11
+  ✔ padrão de coluna alterado → recusada: ✘ def-padrao account_payables.paid_cents
+  ✔ tipo de coluna alterado → recusada: ✘ coluna account_payables.description
+  ✔ tabela removida → recusada: ✘ tabela auth_throttle: ausente em restaurado
+  ✔ linha de outra tabela financeira → recusada: ✘ financeiro account_payables.paid_cents: linhas 2→2 · soma original=0 · restaurado=100 (centavos)
+  ✔ diagnóstico sem valores de linhas (só nomes, contagens, somas e chaves técnicas)
+
+■ 5. Gravação no ORIGINAL durante a conferência
+  ✔ detectada (código 2): original mudou, tabela users apontada, sem aprovar nem reprovar o backup
+  ✔ lista as conexões ao banco (sem texto de consulta)
+
+■ 6. Backup corrompido é recusado antes de restaurar
+  ✔ recusado pelo SHA-256; banco de destino intocado
+
+■ 7. A pasta vem da saída do próprio backup (não da última por nome)
+  ✔ saída do backup: cenario-staging-20261010T131506Z
+  ✔ a regra antiga (ls | tail -1) escolheria 'cenario-zz-isca' — o erro que a correção evita
+  ✔ vm.sh usa a saída do backup e não usa mais 'ls | tail -1'
+
+RESULTADO: todos os cenários OK

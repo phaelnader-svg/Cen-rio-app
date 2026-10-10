@@ -1,0 +1,10 @@
+✔ api: local/cenario/api:b5b9bb7
+    digest: local/cenario/api@sha256:b608c1fe0c4b7eb5f1627619a899e47bfd168625546c46d4cca7b3b8e53306db
+    id: sha256:b608c1fe0c4b7eb5f1627619a899e47bfd168625546c46d4cca7b3b8e53306db · tamanho: 3463 MB
+✔ web: local/cenario/web:b5b9bb7
+    digest: local/cenario/web@sha256:ba09a0bad97fe0fb40b1b6462f8eef513e0d6476c8425376de0574d8e776093d
+    id: sha256:ba09a0bad97fe0fb40b1b6462f8eef513e0d6476c8425376de0574d8e776093d · tamanho: 3463 MB
+✔ a imagem nova NÃO migra na partida (infra/homolog/api-iniciar.sh presente)
+• migrations na imagem: 17 · aplicadas no banco: 12
+✔ disco livre: 14 GB
+PREPARAR-VERSÃO: OK (imagens presentes; nada reiniciado; banco intocado)

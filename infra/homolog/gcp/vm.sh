@@ -299,7 +299,7 @@ saude() {
     # (certificado interno de 12 h) use CENARIO_CERT_MIN_DIAS=0.
     (( dias >= ${CENARIO_CERT_MIN_DIAS:-10} )) && ok "certificado válido por mais $dias dias (até $fim)" || ruim "certificado vence em $dias dias"
   else ruim "certificado não lido"; fi
-  local ultimo; ultimo="$(compose exec -T backup sh -c 'ls -1d /data/backups/cenario-* 2>/dev/null | tail -1' || true)"
+  local ultimo; ultimo="$(compose exec -T backup sh -c 'ls -1dt /data/backups/cenario-*/ 2>/dev/null | head -1' | sed 's#/$##' || true)"
   if [[ -n "$ultimo" ]]; then
     local idade; idade="$(compose exec -T backup sh -c "echo \$(( (\$(date +%s) - \$(stat -c %Y '$ultimo')) / 3600 ))")"
     (( idade <= 26 )) && ok "último backup há ${idade} h ($(basename "$ultimo"))" || ruim "último backup há ${idade} h"
@@ -444,12 +444,17 @@ FICTICIO
   else echo "PREPARO DA VM: $falhas problema(s) (nada foi iniciado)"; return 1; fi
 }
 
-# Impressão digital SÓ LEITURA de um banco (contagem + md5 por tabela, catálogo de gatilhos/índices/
-# restrições, migrations e somas de todas as colunas *_cents). Igualdade = mesmo banco, por valor.
+# Impressão digital SÓ LEITURA de um banco, item a item (sql/impressao-digital.sql): conteúdo de
+# todas as tabelas, colunas, restrições, índices, gatilhos, funções, tipos, sequências, definições,
+# migrations e somas de todas as colunas *_cents. Conferência da restauração: conferencia-restauracao.sh.
+psql_em() { local db="$1"; shift; compose exec -T postgres psql -U cenario -d "$db" -At -F'|' -v ON_ERROR_STOP=1 "$@"; }
+pg_sh() { compose exec -T postgres sh -c "$1"; }
+CONF_SQL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sql"
+# shellcheck source=conferencia-restauracao.sh
+source "$(dirname "${BASH_SOURCE[0]}")/conferencia-restauracao.sh"
 impressao_digital() { # impressao_digital [banco]
   need_env
-  compose exec -T postgres psql -U cenario -d "${1:-cenario_homolog}" -At -F'|' -v ON_ERROR_STOP=1 \
-    < "$DIR/infra/homolog/gcp/sql/impressao-digital.sql" | grep -vE '^(BEGIN|ROLLBACK)$'
+  impressao_de "${1:-cenario_homolog}"
 }
 preflight() {
   need_env
@@ -472,28 +477,35 @@ restaurar_em() { # restaurar_em <pasta> <banco> [--com-arquivos]
   fi
 }
 
-# Restauração de TESTE: banco SEPARADO, comparado por impressão digital, removido no fim.
-restaurar_teste() {
+# Restauração de TESTE: bancos SEPARADOS (cenario_restore_check com o backup; cenario_restore_ref só
+# com o esquema atual do original), conferidos item a item (conferencia-restauracao.sh) e removidos
+# no fim. O banco original só é lido. Sem <pasta>: o backup mais RECENTE pela data de criação.
+# Saída: 0 idêntica · 1 diverge · 2 o original mudou durante a conferência · 3 referência inválida.
+restaurar_teste() { # restaurar_teste [pasta] [arquivo-impressao-do-original] [dir-de-saida]
   need_env
   set -a
   # shellcheck source=/dev/null
   source "$ENV_FILE"
   set +a
-  local pasta="${1:-}"
-  [[ -n "$pasta" ]] || pasta="$(compose exec -T backup sh -c 'ls -1d /data/backups/cenario-* | tail -1' | xargs basename)"
-  local db=cenario_restore_check tmp; tmp="$(mktemp -d)"
-  restaurar_em "$pasta" "$db"
-  impressao_digital cenario_homolog > "$tmp/atual"
-  impressao_digital "$db" > "$tmp/restaurado"
-  compose exec -T postgres psql -qU cenario -d postgres -c "DROP DATABASE $db WITH (FORCE)"
-  echo "tabelas: $(grep -c '^tabela|' "$tmp/restaurado") · colunas financeiras: $(grep -c '^financeiro|' "$tmp/restaurado") · $(grep '^migracoes|aplicadas' "$tmp/restaurado" | cut -d'|' -f3) migrations"
-  if cmp -s "$tmp/atual" "$tmp/restaurado"; then
-    log "✔ Restauração de teste de $pasta IDÊNTICA ao banco atual (conteúdo, vínculos, catálogo e valores)."
-    rm -rf "$tmp"; return 0
-  fi
-  echo "Diferenças (restaurado × atual; esperadas se houve uso depois do backup):"
-  diff <(cut -d'|' -f1-3 "$tmp/restaurado") <(cut -d'|' -f1-3 "$tmp/atual") | head -20 || true
-  rm -rf "$tmp"; return 1
+  local pasta="${1:-}" antes="${2:-}" saida="${3:-}"
+  [[ -n "$pasta" ]] || pasta="$(compose exec -T backup sh -c 'ls -1dt /data/backups/cenario-*/ | head -1' | sed 's#/$##' | xargs basename)"
+  [[ "$pasta" =~ ^cenario-[A-Za-z0-9._-]+$ ]] || { echo "✘ pasta de backup inválida: '$pasta'" >&2; return 1; }
+  echo "• backup conferido: $pasta"
+  local db=cenario_restore_check ref=cenario_restore_ref tmp rc=0; tmp="$(mktemp -d)"
+  if [[ -z "$antes" ]]; then impressao_digital > "$tmp/antes"; antes="$tmp/antes"; fi
+  restaurar_em "$pasta" "$db" || { psql_em postgres -q -c "DROP DATABASE IF EXISTS $db WITH (FORCE)"; rm -rf "$tmp"; log "✘ restauração de teste de $pasta falhou"; return 1; }
+  criar_referencia cenario_homolog "$ref" || rc=3
+  (( rc == 0 )) && { conferir_restauracao "$antes" cenario_homolog "$db" "$ref" "$tmp" || rc=$?; }
+  psql_em postgres -q -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" -c "DROP DATABASE IF EXISTS $ref WITH (FORCE)"
+  [[ -n "$saida" && -f "$tmp/restaurado" ]] && cp "$tmp/restaurado" "$saida/"
+  rm -rf "$tmp"
+  case "$rc" in
+    0) log "✔ Restauração de teste de $pasta IDÊNTICA ao banco atual (conteúdo, vínculos, catálogo e valores)." ;;
+    2) log "✘ o banco original foi ALTERADO durante a conferência: refaça com a aplicação parada." ;;
+    3) log "✘ não foi possível montar a referência do esquema atual: conferência não concluída." ;;
+    *) log "✘ Restauração de teste de $pasta NÃO idêntica (itens acima). Backup NÃO aprovado." ;;
+  esac
+  return "$rc"
 }
 
 # Restauração SOBRE a homologação. Exige --sim e faz um backup de segurança antes. O banco é
@@ -580,14 +592,26 @@ ponto_recuperacao() {
   set +a
   app_parada || { echo "✘ API/web em execução: rode 'vm.sh manutencao' antes (o ponto precisa ser estável)." >&2; return 1; }
   install -d -m 700 "$STATE_DIR"
+  local tmp; tmp="$(mktemp -d)"; trap "rm -rf '$tmp'; trap - RETURN" RETURN
+  impressao_digital > "$tmp/antes"
+  log "Impressão do banco antes do backup: $(md5sum < "$tmp/antes" | cut -d' ' -f1) ($(wc -l < "$tmp/antes") itens)"
   log "Backup completo (banco + arquivos + SHA-256)…"
-  compose exec -T backup bash /scripts/backup.sh /data/backups
-  local pasta; pasta="$(compose exec -T backup sh -c 'ls -1d /data/backups/cenario-* | tail -1' | xargs basename)"
+  # A pasta é a que ESTE backup informou (não a "última" por nome, que pode ser outra).
+  local saida pasta; saida="$(compose exec -T backup bash /scripts/backup.sh /data/backups)" || { echo "$saida"; log "✘ backup falhou"; return 1; }
+  echo "$saida"
+  pasta="$(sed -n 's#^✔ Backup concluído: /data/backups/\(cenario-[A-Za-z0-9._-]*\)$#\1#p' <<<"$saida")"
+  [[ -n "$pasta" && "$(wc -l <<<"$pasta")" == 1 ]] || { log "✘ não identifiquei a pasta criada por este backup"; return 1; }
+  compose exec -T backup test -s "/data/backups/$pasta/database.dump" || { log "✘ $pasta sem database.dump"; return 1; }
+  log "• pasta deste backup: $pasta"
   compose exec -T backup sh -c "cd /data/backups/$pasta && sha256sum --check --quiet SHA256SUMS" \
     || { log "✘ checksum do backup $pasta inválido"; return 1; }
   log "✔ $pasta íntegro (SHA256SUMS). Restauração de teste em banco separado…"
-  restaurar_teste "$pasta" || { log "✘ restauração de teste NÃO idêntica: ponto de recuperação NÃO registrado"; return 1; }
-  local fp; fp="$(impressao_digital | md5sum | cut -d' ' -f1)"
+  restaurar_teste "$pasta" "$tmp/antes" "$tmp" || { log "✘ ponto de recuperação NÃO registrado"; return 1; }
+  local fp; fp="$(md5sum < "$tmp/antes" | cut -d' ' -f1)"
+  # Impressão esperada de QUALQUER restauração deste backup (já conferida acima): é com ela que o
+  # "recuperar" compara o banco restaurado.
+  install -m 600 "$tmp/antes" "$STATE_DIR/ponto-original.impressao"
+  install -m 600 "$tmp/restaurado" "$STATE_DIR/ponto-restaurado.impressao"
   if [[ -n "$BUCKET" ]]; then enviar_backups || { log "✘ cópia fora da VM falhou: ponto NÃO registrado"; return 1; }; fi
   umask 077
   cat > "$(PONTO_ARQ)" <<EOF
@@ -595,6 +619,7 @@ PASTA=$pasta
 DATA=$(date -u +%s)
 ETIQUETA=$(etiqueta_ativa)
 IMPRESSAO=$fp
+RESTAURADA=$(md5sum < "$tmp/restaurado" | cut -d' ' -f1)
 EOF
   log "✔ PONTO DE RECUPERAÇÃO: $pasta (versão $(etiqueta_ativa), impressão $fp). Tudo o que for gravado depois dele se perde numa recuperação."
 }
@@ -603,6 +628,10 @@ ponto_carregar() { # carrega PASTA, DATA, ETIQUETA, IMPRESSAO
   [[ -f "$(PONTO_ARQ)" ]] || { echo "✘ sem ponto de recuperação: rode 'vm.sh ponto-recuperacao'." >&2; return 1; }
   # shellcheck source=/dev/null
   source "$(PONTO_ARQ)"
+  # Ponto anterior a esta versão do script (sem a impressão esperada da restauração): refazer.
+  [[ -n "${RESTAURADA:-}" && -f "$STATE_DIR/ponto-restaurado.impressao" \
+     && "$(md5sum < "$STATE_DIR/ponto-restaurado.impressao" | cut -d' ' -f1)" == "$RESTAURADA" ]] \
+    || { echo "✘ ponto de recuperação incompleto ou de versão anterior do script: rode 'vm.sh ponto-recuperacao' de novo." >&2; return 1; }
 }
 
 migrar() {
@@ -665,9 +694,13 @@ recuperar() {
   log "Backup de segurança do estado atual (análise posterior)…"
   compose exec -T backup bash /scripts/backup.sh /data/backups || log "⚠ backup de segurança falhou (seguindo)"
   restaurar_em "$PASTA" cenario_homolog --com-arquivos
-  [[ "$(impressao_digital | md5sum | cut -d' ' -f1)" == "$IMPRESSAO" ]] \
-    && log "✔ banco IDÊNTICO ao ponto de recuperação (impressão $IMPRESSAO)" \
-    || { log "✘ banco restaurado difere do ponto: NÃO iniciado. Verifique antes de prosseguir."; return 1; }
+  local agora; agora="$(mktemp)"; impressao_digital > "$agora"
+  if cmp -s "$agora" "$STATE_DIR/ponto-restaurado.impressao"; then
+    log "✔ banco IDÊNTICO ao ponto de recuperação (impressão $IMPRESSAO; restauração conferida no ponto)"; rm -f "$agora"
+  else
+    listar_diferencas "$STATE_DIR/ponto-restaurado.impressao" "$agora" esperado restaurado "" "" "$(dirname "$agora")"
+    rm -f "$agora"; log "✘ banco restaurado difere do ponto: NÃO iniciado. Verifique antes de prosseguir."; return 1
+  fi
   sed -i "s#^\(CENARIO_\(API\|WEB\)_IMAGE='.*/\(api\|web\):\)[^']*'#\1$ETIQUETA'#" "$ENV_FILE"
   # Recarrega: as variáveis exportadas acima (imagens antigas) teriam precedência sobre o
   # --env-file do Compose e subiriam de novo a versão nova.

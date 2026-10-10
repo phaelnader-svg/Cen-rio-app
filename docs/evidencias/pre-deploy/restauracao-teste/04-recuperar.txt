@@ -1,0 +1,51 @@
+[2026-10-10T13:19:18Z] Recuperação para o ponto cenario-staging-20261010T131747Z (versão fd6dc19)…
+ Container cenario-homolog-web-1 Stopping 
+ Container cenario-homolog-web-1 Stopped 
+ Container cenario-homolog-api-1 Stopping 
+ Container cenario-homolog-api-1 Stopped 
+[2026-10-10T13:19:18Z] Backup de segurança do estado atual (análise posterior)…
+→ Banco de dados…
+→ Arquivos privados (/data/storage)…
+✔ Backup concluído: /data/backups/cenario-staging-20261010T131918Z
+ Container cenario-homolog-backup-run-5e76a05c3fea Creating 
+ Container cenario-homolog-backup-run-5e76a05c3fea Created 
+→ Verificando integridade…
+→ Restaurando banco…
+→ Restaurando arquivos em /data/storage-rw…
+✔ Restauração concluída. Rode 'pnpm db:status' para conferir as migrations.
+[2026-10-10T13:19:23Z] ✔ banco IDÊNTICO ao ponto de recuperação (impressão cb53cfb9649dcc0cb0ea251e57d34965; restauração conferida no ponto)
+ Container cenario-homolog-caddy-1 Running 
+ Container cenario-homolog-backup-1 Running 
+ Container cenario-homolog-postgres-1 Running 
+ Container cenario-homolog-api-1 Recreate 
+ Container cenario-homolog-api-1 Recreated 
+ Container cenario-homolog-web-1 Recreate 
+ Container cenario-homolog-web-1 Recreated 
+ Container cenario-homolog-postgres-1 Waiting 
+ Container cenario-homolog-postgres-1 Healthy 
+ Container cenario-homolog-api-1 Starting 
+ Container cenario-homolog-api-1 Started 
+ Container cenario-homolog-web-1 Starting 
+ Container cenario-homolog-api-1 Waiting 
+ Container cenario-homolog-web-1 Started 
+ Container cenario-homolog-api-1 Healthy 
+[2026-10-10T13:19:30Z] Versão fd6dc19 em execução (API: healthy).
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ proxy exige autenticação (sem credencial: 401)
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ web (tela de entrada): 200
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy (homologacao) aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-8a1b3805b5ed95cc.js: 200)
+✔ certificado válido por mais 0 dias (até Oct 11 01:16:10 2026 GMT)
+✔ último backup há 0 h (cenario-staging-20261010T131918Z)
+✔ migrations: 12 aplicadas, nenhuma pendente/com falha
+✔ disco em 67%
+✔ memória disponível 14978 MB
+Saúde: OK

@@ -1,0 +1,5 @@
+ Container cenario-homolog-web-1 Stopping 
+ Container cenario-homolog-web-1 Stopped 
+ Container cenario-homolog-api-1 Stopping 
+ Container cenario-homolog-api-1 Stopped 
+[2026-10-10T10:01:18Z] ✔ API e web paradas: o proxy responde 503 'em manutenção'; nenhuma operação chega ao banco.

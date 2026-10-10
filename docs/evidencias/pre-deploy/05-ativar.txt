@@ -1,0 +1,34 @@
+ Container cenario-homolog-caddy-1 Running 
+ Container cenario-homolog-backup-1 Running 
+ Container cenario-homolog-postgres-1 Running 
+ Container cenario-homolog-api-1 Recreate 
+ Container cenario-homolog-api-1 Recreated 
+ Container cenario-homolog-web-1 Recreate 
+ Container cenario-homolog-web-1 Recreated 
+ Container cenario-homolog-postgres-1 Waiting 
+ Container cenario-homolog-postgres-1 Healthy 
+ Container cenario-homolog-api-1 Starting 
+ Container cenario-homolog-api-1 Started 
+ Container cenario-homolog-api-1 Waiting 
+ Container cenario-homolog-web-1 Starting 
+ Container cenario-homolog-web-1 Started 
+ Container cenario-homolog-api-1 Healthy 
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ proxy exige autenticação (sem credencial: 401)
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ web (tela de entrada): 200
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy (homologacao) aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-8a1b3805b5ed95cc.js: 200)
+✔ certificado válido por mais 0 dias (até Oct 10 22:00:18 2026 GMT)
+✔ último backup há 0 h (cenario-staging-20261010T100302Z)
+✔ migrations: 17 aplicadas, nenhuma pendente/com falha
+✔ disco em 66%
+✔ memória disponível 14805 MB
+Saúde: OK

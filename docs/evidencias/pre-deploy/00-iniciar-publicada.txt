@@ -1,0 +1,63 @@
+ Network cenario-homolog_interna Creating 
+ Volume cenario-homolog_storage Creating 
+ Volume cenario-homolog_storage Creating 
+ Volume cenario-homolog_caddy_data Creating 
+ Volume cenario-homolog_caddy_data Creating 
+ Volume cenario-homolog_pgdata Creating 
+ Network cenario-homolog_interna Creating 
+ Volume cenario-homolog_backups Creating 
+ Volume cenario-homolog_backups Creating 
+ Volume cenario-homolog_pgdata Creating 
+ Volume cenario-homolog_pgdata Created 
+ Volume cenario-homolog_pgdata Created 
+ Volume cenario-homolog_storage Created 
+ Volume cenario-homolog_storage Created 
+ Volume cenario-homolog_caddy_data Created 
+ Volume cenario-homolog_caddy_data Created 
+ Volume cenario-homolog_backups Created 
+ Volume cenario-homolog_backups Created 
+ Network cenario-homolog_interna Created 
+ Network cenario-homolog_interna Created 
+ Container cenario-homolog-postgres-1 Creating 
+ Container cenario-homolog-postgres-1 Created 
+ Container cenario-homolog-api-1 Creating 
+ Container cenario-homolog-api-1 Created 
+ Container cenario-homolog-web-1 Creating 
+ Container cenario-homolog-backup-1 Creating 
+ Container cenario-homolog-web-1 Created 
+ Container cenario-homolog-caddy-1 Creating 
+ Container cenario-homolog-backup-1 Created 
+ Container cenario-homolog-caddy-1 Created 
+ Container cenario-homolog-postgres-1 Starting 
+ Container cenario-homolog-postgres-1 Started 
+ Container cenario-homolog-postgres-1 Waiting 
+ Container cenario-homolog-postgres-1 Healthy 
+ Container cenario-homolog-api-1 Starting 
+ Container cenario-homolog-api-1 Started 
+ Container cenario-homolog-api-1 Waiting 
+ Container cenario-homolog-web-1 Starting 
+ Container cenario-homolog-web-1 Started 
+ Container cenario-homolog-caddy-1 Starting 
+ Container cenario-homolog-caddy-1 Started 
+ Container cenario-homolog-api-1 Healthy 
+ Container cenario-homolog-backup-1 Starting 
+ Container cenario-homolog-backup-1 Started 
+SERVICE    STATUS
+api        Up 6 seconds (healthy)
+backup     Up Less than a second
+caddy      Up 5 seconds
+postgres   Up 11 seconds (healthy)
+web        Up 5 seconds (healthy)
+
+NAME                         MEM USAGE / LIMIT     CPU %
+caddy-1      13.44MiB / 192MiB     0.00%
+backup-1     1.941MiB / 256MiB     0.00%
+web-1        129.7MiB / 448MiB     0.00%
+api-1        81.86MiB / 512MiB     0.00%
+postgres-1   42.1MiB / 448MiB      0.04%
+f2pg                         126.4MiB / 15.72GiB   0.00%
+
+               total        used        free      shared  buff/cache   available
+Mem:           16093        1247        9532          93        5712       14845
+Swap:              0           0           0
+/dev/vda        252G   26G   14G  66% /

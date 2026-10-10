@@ -1,0 +1,20 @@
+ Container cenario-homolog-api-run-4c47adc2c5e1 Creating 
+ Container cenario-homolog-api-run-4c47adc2c5e1 Created 
+
+> cenario-gestao@0.1.0 db:migrate /app
+> pnpm --filter @cenario/db migrate:deploy
+
+
+> @cenario/db@0.1.0 migrate:deploy /app/packages/db
+> dotenv -e ../../.env -- prisma migrate deploy
+
+warn The configuration property `package.json#prisma` is deprecated and will be removed in Prisma 7. Please migrate to a Prisma config file (e.g., `prisma.config.ts`).
+For more information, see: https://pris.ly/prisma-config
+
+Prisma schema loaded from prisma/schema.prisma
+Datasource "db": PostgreSQL database "cenario_homolog", schema "public" at "postgres:5432"
+
+17 migrations found in prisma/migrations
+
+
+No pending migrations to apply.

@@ -1,0 +1,24 @@
+✔ banco idêntico ao ponto de recuperação cenario-staging-20261010T100119Z (0 min)
+✔ pré-verificação das migrations da Evolução sem bloqueios
+[2026-10-10T10:01:25Z] Aplicando as migrations com local/cenario/api:b5b9bb7 (log: /tmp/tmp.l0kDtL4arI/estado/migracao-b5b9bb7-20261010T100125Z.log)…
+Applying migration `20261108000000_custos_logistica`
+Error: P3018
+
+A migration failed to apply. New migrations cannot be applied before the error is recovered from. Read more about how to resolve migration issues in a production database: https://pris.ly/d/migrate-resolve
+
+Migration name: 20261108000000_custos_logistica
+
+Database error code: 42P07
+
+Database error:
+ERROR: relation "logistics_costs_payee_user_id_due_at_idx" already exists
+
+DbError { severity: "ERROR", parsed_severity: Some(Error), code: SqlState(E42P07), message: "relation \"logistics_costs_payee_user_id_due_at_idx\" already exists", detail: None, hint: None, position: None, where_: None, schema: None, table: None, column: None, datatype: None, constraint: None, file: Some("index.c"), line: Some(892), routine: Some("index_create") }
+
+
+/app/packages/db:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @cenario/db@0.1.0 migrate:deploy: `dotenv -e ../../.env -- prisma migrate deploy`
+Exit status 1
+ ELIFECYCLE  Command failed with exit code 1.
+
+[2026-10-10T10:01:29Z] ✘ MIGRATION FALHOU (banco pode estar em estado PARCIAL). NÃO inicie a API. Recupere com: vm.sh recuperar --sim (ponto cenario-staging-20261010T100119Z).

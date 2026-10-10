@@ -76,12 +76,17 @@ CENARIO_TAG="$PUB" vm iniciar > "$OUT/00-iniciar-publicada.log" 2>&1 || true
 "${COMPOSE[@]}" cp caddy:/data/caddy/pki/authorities/local/root.crt "$W/ca.crt" > /dev/null 2>&1
 export CENARIO_CACERT="$W/ca.crt"
 "${COMPOSE[@]}" stop api web > /dev/null 2>&1
-psqlp -c "DROP DATABASE cenario_homolog WITH (FORCE)" -c "CREATE DATABASE cenario_homolog OWNER cenario" > /dev/null
-"${COMPOSE[@]}" exec -T postgres pg_restore -U cenario -d cenario_homolog --no-owner < "$FIXTURE"
+# Como na VM real: o esquema é o criado pelas migrations da imagem publicada (NUNCA passou por um
+# dump/restore — o texto de algumas CHECK muda na 1ª restauração). Só os DADOS vêm do FIXTURE.
+psqlh -q -c "DO \$\$ BEGIN EXECUTE (SELECT 'TRUNCATE ' || string_agg(format('%I', tablename), ', ') || ' CASCADE'
+  FROM pg_tables WHERE schemaname = 'public'); END \$\$" > /dev/null
+"${COMPOSE[@]}" exec -T postgres pg_restore -U cenario -d cenario_homolog --no-owner --data-only --disable-triggers --exit-on-error < "$FIXTURE"
 "${COMPOSE[@]}" up -d --no-build > /dev/null 2>&1
 sleep 25
 for _ in $(seq 1 30); do [[ "$(docker inspect -f '{{.State.Health.Status}}' "$("${COMPOSE[@]}" ps -q api)")" == healthy ]] && break; sleep 5; done
 "${COMPOSE[@]}" exec -T backup bash /scripts/backup.sh /data/backups > /dev/null 2>&1
+[[ "$(psqlh -c "select count(*) from pg_constraint where pg_get_constraintdef(oid) like '%])::text[])%'")" -gt 0 ]] \
+  && ok "esquema criado pelas migrations (CHECKs com o texto original, nunca restaurado)" || ruim "esquema já normalizado: o ensaio não reproduz a VM"
 [[ "$(psqlh -c 'select count(*) from _prisma_migrations')" == 12 ]] && ok "banco publicado: 12 migrations" || ruim "banco publicado sem 12 migrations"
 saude_ok
 [[ "$(login)" == 200 ]] && ok "login do gestor na versão publicada (via proxy)" || ruim "login na versão publicada"
@@ -95,6 +100,20 @@ grep -q FIM-AUDITORIA "$OUT/00-auditoria-somente-leitura.txt" && ok "auditoria c
 grep -E '✘' "$OUT/00-auditoria-somente-leitura.txt" | head -5 | sed 's/^/    /'
 [[ "$(vm impressao-digital | md5sum)" == "$fp0" && "$("${COMPOSE[@]}" ps -q | sort | xargs)" == "$ids0" ]] \
   && ok "banco e contêineres idênticos após a auditoria" || ruim "a auditoria alterou algo"
+
+etapa "0c. Script ANTERIOR (4f9b1ae) no mesmo banco: reproduz 'restauração de teste NÃO idêntica'"
+if git -C "$RAIZ" cat-file -e 4f9b1ae:infra/homolog/gcp/vm.sh 2>/dev/null; then
+  mkdir -p "$W/antigo"; git -C "$RAIZ" archive 4f9b1ae infra/homolog scripts | tar -x -C "$W/antigo"
+  vm manutencao > /dev/null 2>&1
+  CENARIO_DIR="$W/antigo" CENARIO_STATE_DIR="$W/estado-antigo" bash "$W/antigo/infra/homolog/gcp/vm.sh" ponto-recuperacao > "$OUT/00c-ponto-script-antigo.log" 2>&1
+  rc=$?
+  [[ "$rc" != 0 ]] && grep -q 'NÃO idêntica' "$OUT/00c-ponto-script-antigo.log" \
+    && ok "script antigo: 'restauração de teste NÃO idêntica' e ponto NÃO registrado (saída $rc) — a falha da homologação" \
+    || ruim "script antigo não reproduziu (saída $rc)"
+  sed -n '/^Diferenças/,/NÃO/p' "$OUT/00c-ponto-script-antigo.log" | sed 's/^/    /'
+  "${COMPOSE[@]}" exec -T postgres psql -U cenario -d postgres -qc 'DROP DATABASE IF EXISTS cenario_restore_check WITH (FORCE)'
+  CENARIO_TAG="$PUB" vm ativar "$PUB" > /dev/null 2>&1 && ok "versão publicada de volta (nada migrado)" || ruim "reativar $PUB"
+else echo "  • commit 4f9b1ae ausente neste clone: etapa pulada"; fi
 
 etapa "1. Recusas de segurança antes de começar"
 CENARIO_TAG="$PUB" espera_codigo 2 vm atualizar "$CAND"
@@ -116,6 +135,9 @@ r="$(http -o "$W/m.html" -w '%{http_code}' "$BASE/painel")"
 espera_codigo 1 vm migrar "$CAND"   # sem ponto de recuperação
 
 etapa "4. Falha INTERMEDIÁRIA de migration (objeto conflitante só na 4ª migration da Evolução)"
+# Isca: cópia íntegra (SHA-256 válido) de um backup ANTIGO com nome que ordena por último. A regra
+# antiga ("ls | tail -1") a escolheria no ponto de recuperação e acusaria divergência.
+"${COMPOSE[@]}" exec -T backup sh -c 'cp -a "$(ls -1d /data/backups/cenario-* | tail -1)" /data/backups/cenario-staging-29991231T235959Z'
 psqlh -c 'CREATE INDEX "logistics_costs_payee_user_id_due_at_idx" ON audit_logs (created_at)' > /dev/null
 vm ponto-recuperacao > "$OUT/04-ponto-com-conflito.log" 2>&1 && ok "ponto de recuperação (inclui o objeto conflitante)" || ruim "ponto de recuperação"
 espera_codigo 1 vm migrar "$CAND"
@@ -138,7 +160,8 @@ psqlh -c 'DROP INDEX "logistics_costs_payee_user_id_due_at_idx"' > /dev/null && 
 etapa "5. Caminho feliz: manutenção → ponto → migrar → ativar"
 vm manutencao > /dev/null 2>&1
 vm ponto-recuperacao > "$OUT/05-ponto-recuperacao.log" 2>&1 && ok "ponto de recuperação" || ruim "ponto de recuperação"
-grep -E 'IDÊNTICA|PONTO|tabelas:' "$OUT/05-ponto-recuperacao.log" | sed 's/^/    /'
+grep -E 'IDÊNTICA|PONTO|itens:|pasta deste backup|reescrito' "$OUT/05-ponto-recuperacao.log" | sed 's/^/    /'
+grep -q 'pasta deste backup: cenario-staging-29991231T235959Z' "$OUT/05-ponto-recuperacao.log" && ruim "o ponto usou a isca" || ok "o ponto usou a pasta do próprio backup (não a isca)"
 psqlh -c "insert into audit_logs (id, action, entity_type, summary) values (gen_random_uuid(), 'ensaio.escrita', 'system', 'Escrita depois do ponto')" > /dev/null
 espera_codigo 1 vm migrar "$CAND"     # banco mudou depois do ponto: recusa
 vm ponto-recuperacao > /dev/null 2>&1

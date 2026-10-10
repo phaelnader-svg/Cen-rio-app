@@ -146,7 +146,7 @@ recriado vazio antes do `pg_restore` (`restaurar_em`), também em `vm.sh restaur
 (`docker-compose.homolog.yml`, Caddy com HTTPS e autenticação, PostgreSQL 16, contêiner de backup)
 e o `vm.sh` deste commit, com imagens `fd6dc19` (conferidas pelas impressões gravadas na preparação
 GCP) e candidata `b5b9bb7`, e um banco sintético no schema publicado (12 migrations). Resultado:
-**`ENSAIO: OK`** (`docs/evidencias/pre-deploy/ensaio-atualizacao.log`).
+**`ENSAIO: OK`** (`docs/evidencias/pre-deploy/ensaio-atualizacao.txt`).
 
 | Etapa | Verificação                                                                                                                                                                                                        | Resultado |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
@@ -427,3 +427,137 @@ gcloud compute ssh $VM --zone=$Z --project=$P --tunnel-through-iap --command='
 | Qualquer aumento de VM/disco, snapshots, serviços | Custo                                                                   |
 
 Nada desta lista foi executado.
+
+## 13. Incidente na homologação: “restauração de teste NÃO idêntica” (investigação e correção)
+
+**Relato (homologação real):** configuração `4f9b1ae` instalada; imagens novas baixadas;
+`ponto-recuperacao` criou o backup e conferiu o SHA-256; a restauração em `cenario_restore_check`
+terminou; o comparador acusou **NÃO idêntica**; ponto **não** registrado; nenhuma migration
+executada. **Não tenho acesso à VM:** a causa abaixo foi **reproduzida localmente**, não observada
+na VM. A confirmação real é o passo 3 da §13.4.
+
+### 13.1 Causa raiz (reproduzida em PostgreSQL 16 local, dados sintéticos)
+
+O comparador antigo juntava **todo o catálogo** (gatilhos + índices + restrições) num único md5
+do **texto** gerado pelo PostgreSQL (`pg_get_constraintdef`, `indexdef`). Esse texto não é estável
+na **primeira** ida e volta dump/restore de um banco criado pelas migrations. O PostgreSQL reescreve
+expressões equivalentes:
+
+```
+original : CHECK (((status)::text = ANY ((ARRAY['ABERTO'::character varying, …])::text[])))
+restaurado: CHECK (((status)::text = ANY (ARRAY[('ABERTO'::character varying)::text, …])))
+```
+
+- O banco da homologação foi criado pelo `prisma migrate deploy` e **nunca** tinha sido restaurado.
+  Reproduzido com a imagem `fd6dc19` + `backup.sh` + `restore.sh` reais: **22 restrições CHECK**
+  com texto reescrito. A mesma contagem de itens do catálogo (844), md5 diferente; **todas** as tabelas,
+  migrations e somas financeiras idênticas.
+- O diagnóstico antigo (`cut -d'|' -f1-3`) cortava justamente o md5, então **não mostrava nada**.
+- O ensaio anterior não pegou o problema porque o banco “publicado” do ensaio vinha de um
+  `pg_restore` (texto já normalizado; a 2ª ida e volta é estável).
+- O script antigo, rodado no mesmo banco do novo ensaio, reproduz a mensagem exata
+  (`restauracao-teste/00c-ponto-script-antigo.txt`: “Diferenças …” seguida de nada).
+
+**Outras hipóteses verificadas:**
+
+| Hipótese                       | Resultado                                                                                                                                                                                                                                                                                            |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ordem das linhas               | `ORDER BY r::text` já era determinística; agora com ordenação binária (`COLLATE "C"`), independente da collation do banco                                                                                                                                                                            |
+| Fuso/DateStyle/formatos        | Uma configuração no nível do banco (`ALTER DATABASE … SET`), que o `pg_dump` não leva, mudaria o texto de datas. Agora fixados na sessão; teste aprova com fuso `America/Sao_Paulo` e `DateStyle SQL, DMY` no original                                                                               |
+| Sequências, índices, gatilhos  | Estáveis no dump/restore; agora comparados item a item                                                                                                                                                                                                                                               |
+| Gravações durante a comparação | API/web paradas na manutenção; o serviço `backup` só faz `pg_dump` (leitura) e o timer de envio não toca no banco. Ainda assim a impressão do original agora é tirada **antes** do backup e **depois** da conferência; se mudou, o resultado é “original mudou” (código 2), com as conexões listadas |
+| Escolha do backup              | **Defeito real, independente:** `ls -1d cenario-* \| tail -1` escolhe pelo **nome**. Uma pasta com nome que ordene depois (ex.: `cenario-staging-2999…`, `cenario-zz…`) seria comparada no lugar do backup recém-criado. Corrigido: a pasta vem da saída do próprio `backup.sh`                      |
+| `recuperar` com a mesma causa  | **Defeito latente:** `recuperar` comparava o banco restaurado com o md5 do original e **recusaria uma recuperação legítima** na VM. Corrigido (§13.2)                                                                                                                                                |
+
+### 13.2 Correção (sem afrouxar a verificação)
+
+- `sql/impressao-digital.sql`: 3.313 itens em vez de 1 linha de catálogo: conteúdo de cada tabela,
+  cada coluna (tipo, nulidade, identidade, collation, posição), cada restrição/índice/gatilho
+  pela **estrutura** (colunas, referências, ações, validação, sem texto), funções (md5 do corpo),
+  tipos/enums, **sequências** (antes não comparadas), definições em texto (`def-*`), migrations e
+  as 22 somas financeiras. A saída é determinística (fuso, formatos, `search_path` e ordenação fixos).
+- `conferencia-restauracao.sh`: aprova **só se**:
+  1. o original não mudou durante a conferência;
+  2. dados, estrutura, sequências, migrations e financeiro da restauração forem **iguais** ao original;
+  3. as definições `def-*` forem o mesmo conjunto e, em texto, **iguais** às de uma restauração
+     **só de esquema** do original feita na mesma hora (banco `cenario_restore_ref`, separado);
+  4. a referência reproduzir a estrutura do original.
+
+  Diferenças são listadas item a item. Nas tabelas aparecem só as colunas divergentes e as chaves
+  técnicas (uuid/inteiro), nunca valores; nas somas financeiras aparecem os totais.
+
+- `vm.sh ponto-recuperacao`: impressão antes do backup; pasta tirada da saída do backup; grava a
+  impressão esperada de qualquer restauração daquele backup (`ponto-restaurado.impressao`, com
+  md5 no arquivo do ponto). `recuperar` compara com ela, e um ponto antigo sem esse arquivo é
+  recusado.
+- `restaurar-teste` sem pasta usa o backup mais recente **por data**; `saude` também.
+- Nenhuma mudança na aplicação nem nas imagens: as imagens `4f9b1ae` já baixadas continuam válidas
+  (o código da aplicação é o mesmo); **não é preciso novo build**.
+
+### 13.3 Testes
+
+- `testes/test_conferencia_restauracao.sh`. PostgreSQL 16 alpine (como a VM), migrations aplicadas
+  diretamente, scripts reais de backup e restauração. Resultado: **todos os cenários OK**
+  (`restauracao-teste/test_conferencia_restauracao.txt`):
+  - o comparador antigo reproduz a falha;
+  - o novo aprova e lista as 22 reescritas;
+  - fuso/DateStyle do banco não interferem;
+  - **recusa e localiza** 14 alterações reais: +1 centavo, texto de linha, linha a menos, linha a
+    mais, índice, chave estrangeira, CHECK com mesmo nome, gatilho desativado, sequência,
+    migration desfeita, padrão, tipo de coluna, tabela removida, outra coluna financeira;
+  - gravação no original durante a conferência → código 2;
+  - backup corrompido → recusado pelo SHA-256, destino intocado;
+  - com uma isca de nome posterior, a pasta usada é a do backup recém-criado;
+  - o diagnóstico não mostra valores de linhas.
+- Ensaio completo com a pilha real e o `vm.sh` novo, banco criado pelas migrations da `fd6dc19` e
+  isca de backup: **`ENSAIO: OK`** (`restauracao-teste/ensaio-atualizacao.txt`). Destaques:
+  - etapa 0c: o script antigo falha como na VM;
+  - etapa 4: o 1º ponto aprova, com 22 definições reescritas listadas;
+  - etapas 4c e 9: `recuperar` passa a comparar com a impressão esperada;
+  - etapa 5: o ponto usa a pasta do próprio backup, não a isca.
+- `test_vm_sh.sh` e `test_homolog_sh.sh`: todos OK.
+
+### 13.4 Procedimento seguro na homologação (SÓ COM AUTORIZAÇÃO, um passo por vez)
+
+Estado esperado: configuração `4f9b1ae` na VM, API/web em manutenção, sem ponto, banco com 12
+migrations. O backup da tentativa que falhou fica onde está (nada é apagado).
+
+```bash
+# 0. Cloud Shell: clone no SHA desta correção (ver §1 / mensagem de entrega)
+cd ~/cenario-pre-deploy && git fetch origin claude/cenario-gestao-fase-1-zf3bj2
+git checkout --detach <SHA-FINAL> && git log --oneline -1 && git status --short    # limpo
+
+# 1. SOMENTE LEITURA — confirma o estado e o indício da causa no banco real (nada é alterado)
+bash infra/homolog/gcp/operador.sh auditar
+gcloud compute ssh cenario-homolog --zone=us-east1-b --project=cenariogestao --tunnel-through-iap --command='
+  sudo docker exec cenario-homolog-postgres-1 psql -U cenario -d cenario_homolog -At \
+    -c "set default_transaction_read_only = on" \
+    -c "select count(*) from pg_constraint where pg_get_constraintdef(oid) like '\''%])::text[])%'\''" \
+    -c "select count(*), count(*) filter (where finished_at is null) from _prisma_migrations";
+  sudo ls -1t /var/lib/docker/volumes/cenario-homolog_backups/_data | head -5'
+#    Esperado: 1ª contagem > 0 (CHECKs com o texto que a restauração reescreve); 12|0; o backup da
+#    tentativa no topo. Se a 1ª contagem for 0, a causa provável é outra: NÃO prossiga, envie-me a saída.
+
+# 2. (AUTORIZAÇÃO) Leva à VM os scripts corrigidos; recria SÓ o proxy; guarda a cópia anterior.
+#    Com a manutenção ativa, a "saude" ao final acusa API/web paradas: esperado.
+bash infra/homolog/gcp/operador.sh atualizar-config
+
+# 3. (AUTORIZAÇÃO) Confirma a causa no backup REAL da tentativa, sem tocar no original:
+#    restaura em bancos separados (cenario_restore_check / cenario_restore_ref), confere e apaga os dois.
+gcloud compute ssh cenario-homolog --zone=us-east1-b --project=cenariogestao --tunnel-through-iap \
+  --command='sudo /opt/cenario/infra/homolog/gcp/vm.sh restaurar-teste <pasta-do-backup-da-tentativa>'
+#    Esperado: "✔ dados, estrutura, … IGUAIS", "• N definição(ões) com texto reescrito",
+#    "✔ Restauração de teste … IDÊNTICA". Qualquer "✘": PARE e me envie a saída (não contém
+#    valores de linhas nem segredos).
+
+# 4. (AUTORIZAÇÃO) Novo ponto de recuperação (novo backup + conferência + bucket)
+bash infra/homolog/gcp/operador.sh passo ponto-recuperacao
+#    Esperado: "• pasta deste backup: cenario-staging-<agora>", "✔ … IDÊNTICA",
+#    "✔ PONTO DE RECUPERAÇÃO: …". Anote a pasta.
+
+# 5. PARE. migrar / definir-etiqueta / ativar exigem nova autorização (runbook §7, itens 9–16).
+#    Se for interromper aqui: operador.sh passo ativar fd6dc19 (volta ao ar sem migrar).
+```
+
+A etiqueta das imagens nos passos seguintes continua `4f9b1ae` (`passo migrar 4f9b1ae`,
+`definir-etiqueta 4f9b1ae`, `passo ativar 4f9b1ae`).
