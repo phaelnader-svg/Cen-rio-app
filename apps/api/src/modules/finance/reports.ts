@@ -1,7 +1,7 @@
 import {
   EXPENSE_CATEGORY_LABEL,
   LABOR_STATUS_LABEL,
-  LOGISTICS_COST_KIND_LABEL,
+  ALL_LOGISTICS_COST_KIND_LABEL,
   PAYMENT_METHOD_LABEL,
   SERVICE_TYPE_LABEL,
   csvMoney,
@@ -181,8 +181,13 @@ export async function buildReport(
       });
       const logistics = await tx.logisticsCost.groupBy({
         by: ['kind'],
-        where: { cancelledAt: null, date: { gte: p.fromDate, lte: p.toDate } },
-        _sum: { amountCents: true },
+        // Evolução Fase 6: combinado no agendamento (PREVISTO) ainda não é custo.
+        where: {
+          cancelledAt: null,
+          status: { not: 'PREVISTO' },
+          date: { gte: p.fromDate, lte: p.toDate },
+        },
+        _sum: { amountCents: true, adjustmentsCents: true },
         _count: true,
       });
       const labor = await tx.productionPayable.findMany({
@@ -224,9 +229,9 @@ export async function buildReport(
             : []),
           ...logistics.map((l) => [
             'Logística',
-            LOGISTICS_COST_KIND_LABEL[l.kind as LogisticsCostKind] ?? l.kind,
+            ALL_LOGISTICS_COST_KIND_LABEL[l.kind as LogisticsCostKind] ?? l.kind,
             l._count,
-            csvMoney(l._sum.amountCents ?? 0),
+            csvMoney((l._sum.amountCents ?? 0) + (l._sum.adjustmentsCents ?? 0)),
           ]),
           ...expenses.map((e) => [
             'Despesa operacional',

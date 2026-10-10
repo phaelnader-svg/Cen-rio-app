@@ -30,6 +30,7 @@ import {
 } from '../commercial/common';
 import { itemAllocations, refreshOrderStatus } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
+import { syncTripCost, upsertTripCost } from '../finance/trip-costs';
 
 const VIEW = { session: 'WEB', permissions: ['retiradas.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['retiradas.gerenciar'] } as const;
@@ -189,6 +190,8 @@ export async function pickupRoutes(app: FastifyInstance) {
     { config: { access: MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createPickupSchema.parse(request.body);
+      if (input.tripCost && !request.auth!.permissions.has('financeiro.gerenciar'))
+        throw Errors.forbidden('Informar o custo da viagem exige permissão do financeiro.');
       const id = await prisma.$transaction(async (tx) => {
         if (!(await lockOrder(tx, input.orderId))) throw Errors.notFound('Pedido');
         await lockOrderItems(tx, input.orderId);
@@ -248,6 +251,8 @@ export async function pickupRoutes(app: FastifyInstance) {
             },
           },
         });
+        if (input.tripCost)
+          await upsertTripCost(tx, actor, { pickupId: pickup.id, ...input.tripCost });
         await refreshOrderStatus(tx, order.id);
         await audit(tx, actor, {
           action: 'pickup.created',
@@ -367,6 +372,7 @@ export async function pickupRoutes(app: FastifyInstance) {
         id,
         status !== before.status ? EVENT_TYPES.PICKUP_STATUS_CHANGED : EVENT_TYPES.PICKUP_UPDATED,
       );
+      await syncTripCost(tx, actor, { pickupId: id });
       await emitOrderEvent(tx, request, before.orderId);
     });
     return loadPickupDto(prisma, id);
@@ -426,6 +432,7 @@ export async function pickupRoutes(app: FastifyInstance) {
         changes: { status: { from: before.status, to: input.toStatus }, note: input.note ?? null },
       });
       await emitPickupEvent(tx, request, id, EVENT_TYPES.PICKUP_STATUS_CHANGED);
+      await syncTripCost(tx, actor, { pickupId: id }, input.note ?? undefined);
       await emitOrderEvent(tx, request, before.orderId);
     });
     return loadPickupDto(prisma, id);

@@ -92,22 +92,29 @@ export async function orderResult(
     include: laborInclude,
   });
   const labor = await Promise.all(laborRows.map((p) => toLaborDto(tx, p)));
-  const logistics = await tx.logisticsCostAllocation.findMany({
-    where: { serviceOrderId, cost: { cancelledAt: null } },
-    include: { cost: true },
-  });
+  // Evolução Fase 6: só a revisão vigente do rateio; combinado no agendamento (PREVISTO) é
+  // previsão, não custo realizado.
+  const logistics = (
+    await tx.logisticsCostAllocation.findMany({
+      where: { serviceOrderId, cost: { cancelledAt: null } },
+      include: { cost: true },
+    })
+  ).filter((l) => l.revision === l.cost.allocationRevision);
   const other = await tx.serviceOrderCost.aggregate({
     where: { serviceOrderId, category: 'OUTRO_VARIAVEL' },
     _sum: { amountCents: true },
   });
   const tax = await taxRate(tx);
-  const logisticsCents = logistics.reduce((a, l) => a + l.amountCents, 0);
+  const logisticsForecast = logistics.reduce((a, l) => a + l.amountCents, 0);
+  const logisticsActual = logistics
+    .filter((l) => l.cost.status !== 'PREVISTO')
+    .reduce((a, l) => a + l.amountCents, 0);
   const otherCents = other._sum.amountCents ?? 0;
   const laborForecast = laborRows.reduce((a, p) => a + laborDue(p), 0);
   const laborActual = laborRows
     .filter((p) => isEligible(p) || p.paidCents > 0)
     .reduce((a, p) => a + laborDue(p), 0);
-  const col = (materialsCents: number, laborCents: number) => {
+  const col = (materialsCents: number, laborCents: number, logisticsCents: number) => {
     const m = contributionMargin({
       revenueCents: revenue.revenueCents,
       materialsCents,
@@ -145,8 +152,12 @@ export async function orderResult(
     delivered: c.delivered,
     completedAt: c.completedAt?.toISOString() ?? null,
     revenueCents: revenue.revenueCents,
-    forecast: col(Math.max(materials.forecastCents, materials.consumedCents), laborForecast),
-    actual: col(materials.consumedCents, laborActual),
+    forecast: col(
+      Math.max(materials.forecastCents, materials.consumedCents),
+      laborForecast,
+      logisticsForecast,
+    ),
+    actual: col(materials.consumedCents, laborActual, logisticsActual),
     taxRateBps: tax,
     fixedTeamEstimateCents: await fixedTeamEstimate(tx, serviceOrderId),
     materials,

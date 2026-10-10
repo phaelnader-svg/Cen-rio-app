@@ -680,7 +680,8 @@ describe('Logística, equipe fixa e despesas', () => {
       .customerId;
     const customer = (await admin.get(`/api/v1/customers/${customerId}`)).body;
     const pickup = await createPickup(admin, await createOrder(admin, customer));
-    const body = {
+    // Evolução Fase 6: retirada de viagem cadastrada não é lançamento avulso (fonte única).
+    const manual = await post(admin, F('/logistics-costs'), {
       kind: 'RETIRADA',
       description: 'Retirada com van terceirizada',
       amountCents: 12000,
@@ -690,23 +691,45 @@ describe('Logística, equipe fixa e despesas', () => {
       splitMethod: 'IGUAL',
       allocations: [{ serviceOrderId: so.id }],
       payableDueDate: day(7),
-    };
-    const c = await post(admin, F('/logistics-costs'), body);
-    expect(c.status).toBe(201);
-    expect(c.body).toMatchObject({
-      code: 'LG-00001',
-      amountCents: 12000,
-      payable: { status: 'ABERTO' },
     });
-    expect(c.body.allocations).toEqual([
+    expect(manual.status).toBe(422);
+    const andre = (await db().user.findFirstOrThrow({ where: { displayName: 'André' } })).id;
+    await admin.req(
+      'PUT',
+      F('/logistics-defaults'),
+      { defaultPickupCostCents: null, defaultDeliveryCostCents: null, logisticsPayeeUserId: andre },
+      { 'idempotency-key': idemKey() },
+    );
+    const body = { pickupId: pickup.id, amountCents: 12000, serviceOrderIds: [so.id] };
+    const c = await admin.req('PUT', F('/trip-costs'), body, { 'idempotency-key': idemKey() });
+    expect(c.status).toBe(200);
+    expect(c.body.cost).toMatchObject({ code: 'LG-00001', amountCents: 12000, payable: null });
+    expect(c.body.cost.allocations).toEqual([
       { serviceOrderId: so.id, code: so.code, amountCents: 12000 },
     ]);
-    const dup = await post(admin, F('/logistics-costs'), body);
-    expect(dup.status).toBe(409);
-    const payable = (await admin.get(F(`/payables/${c.body.payable.id}`))).body;
+    // Combinado ≠ realizado; a obrigação nasce na realização (uma vez).
+    expect((await result(admin, so.id)).actual.logisticsCents).toBe(0);
+    for (const toStatus of ['EM_EXECUCAO', 'RETIRADA_REALIZADA']) {
+      const cur = (await admin.get(`/api/v1/pickups/${pickup.id}`)).body;
+      await post(admin, `/api/v1/pickups/${pickup.id}/transition`, {
+        toStatus,
+        version: cur.version,
+      });
+    }
+    const cost = (await admin.get(F(`/trip-costs?pickupId=${pickup.id}`))).body.cost;
+    expect(cost.payable).toMatchObject({ status: 'ABERTO' });
+    const dup = await admin.req(
+      'PUT',
+      F('/trip-costs'),
+      { ...body, reason: 'Repetido', version: cost.version },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(dup.status).toBe(422);
+    const payable = (await admin.get(F(`/payables/${cost.payable.id}`))).body;
     expect(payable).toMatchObject({
       category: 'LOGISTICA',
       amountCents: 12000,
+      beneficiary: 'André',
       origin: { kind: 'LOGISTICA' },
     });
     expect((await result(admin, so.id)).actual.logisticsCents).toBe(12000);

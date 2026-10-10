@@ -486,20 +486,35 @@ describe('Fluxo completo de produção (32 passos)', () => {
       }),
       'recebimento',
     );
+    // Evolução Fase 6: custo total da viagem com recebedor único (André); como a entrega já foi
+    // realizada, o valor devido e a conta a pagar nascem no registro (uma vez).
+    const andreId = (await db().user.findFirstOrThrow({ where: { displayName: 'André' } })).id;
     ok2(
-      await post(admin, '/api/v1/finance/logistics-costs', {
-        kind: 'ENTREGA',
-        description: 'Entrega terceirizada',
-        amountCents: 15000,
-        date: today(),
-        deliveryId: delivery.id,
-        beneficiary: 'André (logística)',
-        splitMethod: 'IGUAL',
-        allocations: [{ serviceOrderId: so.id }],
-        payableDueDate: day(7),
-      }),
-      'frete',
+      await admin.req(
+        'PUT',
+        '/api/v1/finance/logistics-defaults',
+        {
+          defaultPickupCostCents: null,
+          defaultDeliveryCostCents: 15000,
+          logisticsPayeeUserId: andreId,
+        },
+        { 'idempotency-key': idemKey() },
+      ),
+      'padrões logística',
+      [200],
     );
+    const frete = ok2(
+      await admin.req(
+        'PUT',
+        '/api/v1/finance/trip-costs',
+        { deliveryId: delivery.id, amountCents: 15000, participantUserIds: [andreId] },
+        { 'idempotency-key': idemKey() },
+      ),
+      'frete',
+      [200],
+    );
+    expect(frete.cost).toMatchObject({ status: 'DEVIDO', dueCents: 15000 });
+
     const mo = (await admin.get(`/api/v1/finance/labor/${moRicardo.id}`)).body;
     expect(mo.status).toBe('LIBERADO');
     ok2(

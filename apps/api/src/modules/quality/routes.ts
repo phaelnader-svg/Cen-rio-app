@@ -107,6 +107,7 @@ import {
   toDeliveryJob,
   updateDelivery,
 } from './shipping';
+import { syncTripCost, upsertTripCost } from '../finance/trip-costs';
 
 const PACKAGING_ACCESS = {
   session: 'any',
@@ -725,7 +726,17 @@ export async function qualityRoutes(app: FastifyInstance) {
     { config: { access: DELIVERY_MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createDeliverySchema.parse(request.body);
-      const d = await prisma.$transaction((tx) => createDelivery(tx, actorFrom(request), input));
+      if (input.tripCost && !request.auth!.permissions.has('financeiro.gerenciar'))
+        throw Errors.forbidden('Informar o custo da viagem exige permissão do financeiro.');
+      const d = await prisma.$transaction(async (tx) => {
+        const created = await createDelivery(tx, actorFrom(request), input);
+        if (input.tripCost)
+          await upsertTripCost(tx, actorFrom(request), {
+            deliveryId: created.id,
+            ...input.tripCost,
+          });
+        return created;
+      });
       return reply.status(201).send(await deliveryDto(d.id));
     },
   );
@@ -1067,6 +1078,7 @@ export async function qualityRoutes(app: FastifyInstance) {
           },
           audience: `${PICKUP_AUDIENCE}|user:${request.auth!.userId}` as typeof PICKUP_AUDIENCE,
         });
+        await syncTripCost(tx, actor, { pickupId: id });
         await emitOrderEvent(tx, request, p.orderId);
       });
       return { ok: true };

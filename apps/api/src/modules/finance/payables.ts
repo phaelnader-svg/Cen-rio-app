@@ -37,7 +37,7 @@ import {
 
 export const payableInclude = {
   supplier: { select: { id: true, name: true } },
-  payments: { orderBy: { createdAt: 'asc' } },
+  payments: { orderBy: { createdAt: 'asc' }, include: { reversal: true } },
   expense: { select: { id: true, number: true } },
   logisticsCost: { select: { id: true, number: true } },
 } as const satisfies Prisma.AccountPayableInclude;
@@ -85,6 +85,9 @@ export async function toPayableDto(db: Tx | PrismaClient, p: PayableRow): Promis
       method: x.method as PaymentMethod,
       note: x.note,
       createdBy: x.createdById ? (users.get(x.createdById) ?? null) : null,
+      reversal: x.reversal
+        ? { reason: x.reversal.reason, createdAt: x.reversal.createdAt.toISOString() }
+        : null,
     })),
     history: await historyOf(db, 'account_payable', p.id),
     attachments: await db.attachment.count({
@@ -196,10 +199,16 @@ export async function cancelPayable(
   actor: ActorContext,
   id: string,
   input: { reason: string; version?: number },
+  viaCost = false,
 ) {
   await lockRow(tx, 'account_payables', id, 'Conta a pagar');
   const p = await tx.accountPayable.findUniqueOrThrow({ where: { id } });
   if (p.status === 'CANCELADO') return p;
+  // Evolução Fase 6: a obrigação de uma viagem só é cancelada pelo custo (fonte única).
+  if (!viaCost && (await tx.logisticsCost.count({ where: { payableId: id, status: 'DEVIDO' } })))
+    throw Errors.business(
+      'Conta de custo de viagem: corrija pelo custo da logística (ajuste ou cancelamento com motivo).',
+    );
   if (input.version !== undefined) checkVersion(p, input.version);
   if (p.paidCents > 0) throw Errors.business('Há pagamentos registrados: não pode ser cancelada.');
   const u = await tx.accountPayable.update({
@@ -365,47 +374,6 @@ export async function cancelExpense(
 
 // ─────────────────────────── Logística ───────────────────────────
 
-export const logisticsInclude = {
-  delivery: { select: { id: true, number: true } },
-  pickup: { select: { id: true, number: true } },
-  payable: { select: { id: true, number: true, status: true } },
-  allocations: { include: { serviceOrder: { select: { number: true } } } },
-} as const satisfies Prisma.LogisticsCostInclude;
-
-export function toLogisticsDto(
-  c: Prisma.LogisticsCostGetPayload<{ include: typeof logisticsInclude }>,
-): LogisticsCostDto {
-  return {
-    id: c.id,
-    number: c.number,
-    code: logisticsCostCode(c.number),
-    kind: c.kind as LogisticsCostKind,
-    description: c.description,
-    amountCents: c.amountCents,
-    date: dateOnly(c.date)!,
-    delivery: c.delivery ? { id: c.delivery.id, code: deliveryCode(c.delivery.number) } : null,
-    pickup: c.pickup ? { id: c.pickup.id, code: pickupCode(c.pickup.number) } : null,
-    beneficiary: c.beneficiary,
-    splitMethod: c.splitMethod as SplitMethod,
-    splitNote: c.splitNote,
-    allocations: c.allocations.map((a) => ({
-      serviceOrderId: a.serviceOrderId,
-      code: serviceOrderCode(a.serviceOrder.number),
-      amountCents: a.amountCents,
-    })),
-    payable: c.payable
-      ? {
-          id: c.payable.id,
-          code: payableCode(c.payable.number),
-          status: c.payable.status as PayableStatus,
-        }
-      : null,
-    cancelled: Boolean(c.cancelledAt),
-    cancelReason: c.cancelReason,
-    version: c.version,
-  };
-}
-
 /**
  * Um custo por viagem, rateado entre as OS atendidas (igual, por peça ou manual) — a soma do
  * rateio é sempre o valor total, então uma viagem com várias OS nunca é contada duas vezes.
@@ -436,6 +404,15 @@ export async function createLogisticsCost(
     throw Errors.business('Entrega inválida.');
   if (input.pickupId && !(await tx.pickupRequest.count({ where: { id: input.pickupId } })))
     throw Errors.business('Retirada inválida.');
+  // Evolução Fase 6: retirada/entrega de uma viagem cadastrada tem custo único, combinado no
+  // agendamento e devido só na realização (fonte única). O lançamento avulso fica para os demais.
+  if (
+    (input.deliveryId || input.pickupId) &&
+    (input.kind === 'RETIRADA' || input.kind === 'ENTREGA')
+  )
+    throw Errors.business(
+      'O custo desta viagem é combinado no agendamento (Custo da viagem) e só fica devido na realização.',
+    );
   // Evita lançar duas vezes o mesmo custo da mesma viagem.
   if (input.deliveryId || input.pickupId) {
     const dup = await tx.logisticsCost.findFirst({
@@ -534,10 +511,15 @@ export async function cancelLogisticsCost(
   const c = await tx.logisticsCost.findUniqueOrThrow({ where: { id } });
   if (c.cancelledAt) return c;
   checkVersion(c, input.version);
-  if (c.payableId) await cancelPayable(tx, actor, c.payableId, { reason: input.reason });
+  if (c.payableId) await cancelPayable(tx, actor, c.payableId, { reason: input.reason }, true);
   const u = await tx.logisticsCost.update({
     where: { id },
-    data: { cancelledAt: new Date(), cancelReason: input.reason, version: { increment: 1 } },
+    data: {
+      cancelledAt: new Date(),
+      cancelReason: input.reason,
+      status: 'CANCELADO',
+      version: { increment: 1 },
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'logistics_cost',

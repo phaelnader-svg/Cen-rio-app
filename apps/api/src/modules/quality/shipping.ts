@@ -44,6 +44,7 @@ import {
   refreshItemStage,
   usersWith,
 } from './common';
+import { syncTripCost } from '../finance/trip-costs';
 
 type AddressInput = {
   street: string;
@@ -568,6 +569,7 @@ export async function updateDelivery(
   const touched = new Set([...d.items.map((i) => i.serviceOrderItemId), ...keep]);
   for (const itemId of touched) await refreshItemStage(tx, actor, itemId);
   if (status === 'AGENDADA') await announceScheduled(tx, actor, d.id);
+  await syncTripCost(tx, actor, { deliveryId: id }, input.reason);
   return u;
 }
 
@@ -630,6 +632,7 @@ export async function cancelDelivery(
   });
   await deliveryDomainEvent(tx, actor, u);
   for (const i of d.items) await refreshItemStage(tx, actor, i.serviceOrderItemId);
+  await syncTripCost(tx, actor, { deliveryId: id }, input.reason);
   return u;
 }
 
@@ -991,6 +994,7 @@ export async function completeDelivery(
     `ENTREGA_CONCLUIDA:${id}`,
     `${deliveryCode(d.number)} · ${d.customer.name}: ${active.length - notDelivered.length} peça(s) entregue(s)${d.requiresInstallation ? (d.installedAt ? ', instalação concluída' : ', instalação incompleta') : ''}.`,
   );
+  await syncTripCost(tx, actor, { deliveryId: id });
   return u;
 }
 

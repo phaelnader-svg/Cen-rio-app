@@ -38,6 +38,7 @@ import {
   refreshOrderStatus,
   serviceStates,
 } from '../commercial/status';
+import { syncTripCost } from '../finance/trip-costs';
 
 const VIEW = { session: 'WEB', permissions: ['pedidos.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['pedidos.gerenciar'] } as const;
@@ -442,6 +443,7 @@ export async function orderRoutes(app: FastifyInstance) {
               recordedById: actor.userId,
             },
           });
+          await syncTripCost(tx, actor, { pickupId: p.id }, `pedido cancelado: ${input.reason}`);
         }
         await audit(tx, actor, {
           action: 'order.cancelled',

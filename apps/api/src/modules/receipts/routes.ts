@@ -23,6 +23,7 @@ import {
 import { refreshOrderStatus } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { emitPickupEvent } from '../pickups/routes';
+import { syncTripCost } from '../finance/trip-costs';
 
 /** Quem registra recebimentos pode usar painel ou (futuramente) tablet. */
 const REGISTER = { session: 'any', permissions: ['recebimentos.registrar'] } as const;
@@ -265,6 +266,7 @@ export async function receiptRoutes(app: FastifyInstance) {
               recordedById: actor.userId,
             },
           });
+          await syncTripCost(tx, actor, { pickupId: pickup.id });
         }
         const status = await refreshOrderStatus(tx, order.id);
         const total = input.lines.reduce((a, l) => a + l.quantity, 0);

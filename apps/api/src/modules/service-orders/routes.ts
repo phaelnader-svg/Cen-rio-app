@@ -39,6 +39,7 @@ import {
 } from '../commercial/common';
 import { itemAllocations } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
+import { syncPickupCostsOfOrder } from '../finance/trip-costs';
 
 const VIEW = { session: 'any', permissions: ['os.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['os.gerenciar'] } as const;
@@ -448,6 +449,8 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
             },
           },
         });
+        // Evolução Fase 6: a OS entra no rateio automático da retirada do pedido.
+        await syncPickupCostsOfOrder(tx, actor, order.id);
         await recordChange(
           tx,
           request,

@@ -48,6 +48,7 @@ import {
   period,
 } from './common';
 import { syncMaterialCosts } from './costs';
+import { loadTripCost, toTripCostDto, tripCostInclude } from './trip-costs';
 import {
   adjustLabor,
   cancelLabor,
@@ -68,11 +69,9 @@ import {
   createPayable,
   expenseInclude,
   generateRecurring,
-  logisticsInclude,
   payPayable,
   payableInclude,
   toExpenseDto,
-  toLogisticsDto,
   toPayableDto,
   upsertTeamCost,
 } from './payables';
@@ -476,11 +475,11 @@ export async function financeRoutes(app: FastifyInstance) {
     if (q.to) date.lte = parseDate(q.to);
     const rows = await prisma.logisticsCost.findMany({
       where: q.from || q.to ? { date } : {},
-      include: logisticsInclude,
+      include: tripCostInclude,
       orderBy: [{ date: 'desc' }, { number: 'desc' }],
       take: 300,
     });
-    return rows.map(toLogisticsDto);
+    return Promise.all(rows.map((r) => toTripCostDto(prisma, r)));
   });
 
   app.post(
@@ -489,14 +488,7 @@ export async function financeRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const input = logisticsCostSchema.parse(request.body);
       const row = await tx((t) => createLogisticsCost(t, actorFrom(request), input));
-      return reply.status(201).send(
-        toLogisticsDto(
-          await prisma.logisticsCost.findUniqueOrThrow({
-            where: { id: row.id },
-            include: logisticsInclude,
-          }),
-        ),
-      );
+      return reply.status(201).send(await loadTripCost(prisma, row.id));
     },
   );
 
@@ -507,9 +499,7 @@ export async function financeRoutes(app: FastifyInstance) {
       const { id } = idParams.parse(request.params);
       const input = cancelFinanceSchema.parse(request.body);
       await tx((t) => cancelLogisticsCost(t, actorFrom(request), id, input));
-      return toLogisticsDto(
-        await prisma.logisticsCost.findUniqueOrThrow({ where: { id }, include: logisticsInclude }),
-      );
+      return loadTripCost(prisma, id);
     },
   );
 
