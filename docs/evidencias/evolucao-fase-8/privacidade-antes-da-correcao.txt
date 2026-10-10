@@ -1,0 +1,5 @@
+     × tablet: só “Maria F.” em tarefas, fila, detalhe, ações e WebSocket; painel mantém o nome completo 2971ms
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+Expected: "Maria F."
+Received: "Maria Aparecida Fictícia"
+      Tests  1 failed (1)

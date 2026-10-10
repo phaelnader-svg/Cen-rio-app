@@ -47,6 +47,7 @@ import {
   taskMaterialsReady,
   toTaskDto,
 } from './common';
+import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 // ─────────────────────────── Pessoas ───────────────────────────
 
@@ -480,6 +481,7 @@ export async function announceAssignments(
 
 export async function productionPlanRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
+  minimizeCustomerForDevices(app);
 
   // Modelos
   const toTemplate = (

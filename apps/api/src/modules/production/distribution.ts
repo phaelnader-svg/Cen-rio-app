@@ -54,6 +54,7 @@ import {
   taskEvent,
 } from './common';
 import { announceAssignments, reviseIfPublishedBy } from './plans';
+import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 const STARTED = ['EM_EXECUCAO', 'PAUSADA'];
 const DONE = ['CONCLUIDA', 'CANCELADA'];
@@ -716,6 +717,7 @@ export async function assertUpholstererRule(
 
 export async function productionDistributionRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
+  minimizeCustomerForDevices(app);
 
   /** Distribuição proposta/atual do plano: titular, responsáveis e pendências por peça. */
   app.get('/api/v1/production-plans/:id/distribution', { config: { access: VIEW } }, (request) =>

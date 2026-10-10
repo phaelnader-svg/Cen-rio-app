@@ -46,6 +46,7 @@ import {
   toTaskDto,
 } from './common';
 import { announceAssignments, reviseIfPublished } from './plans';
+import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 const OPEN = ['BLOQUEADA', 'PROGRAMADA', 'LIBERADA', 'EM_EXECUCAO', 'PAUSADA'] as const;
 const CARRYABLE = ['BLOQUEADA', 'PROGRAMADA', 'LIBERADA', 'PAUSADA'];
@@ -136,6 +137,7 @@ export async function weekEnded(db: Tx | PrismaClient, weekStart: Date) {
 
 export async function productionQueueRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
+  minimizeCustomerForDevices(app);
 
   /** Minha fila (tablet): ordem, tarefa atual, próxima executável e bloqueadas à frente. */
   app.get('/api/v1/production-tasks/mine/queue', { config: { access: EXECUTE } }, (request) =>

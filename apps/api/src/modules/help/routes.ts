@@ -47,6 +47,7 @@ import { HELP_AUDIENCE, helpDomainEvent, helpEvent } from './engine';
 import { cancelHelp, lockHelpRequest, manualAssign, processHelpQueue, tryAssign } from './queue';
 import { evaluateCandidates } from './engine';
 import { decideProposal } from './reschedule';
+import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -189,6 +190,7 @@ const proposalInclude = {
 
 export async function helpRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
+  minimizeCustomerForDevices(app);
   /** Mudanças de disponibilidade reavaliam a fila (depois da transação principal). */
   const requeue = () =>
     processHelpQueue(prisma).catch((err: unknown) =>
