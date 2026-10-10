@@ -374,3 +374,79 @@ export function taskTimings(events: readonly { kind: string; at: Date }[]) {
         : null,
   };
 }
+
+// ─────────────────────────── Evolução Fase 5: situação e revisão ───────────────────────────
+
+/**
+ * Situação exibida (derivada; o status gravado continua o da Fase 11). Distingue o que está
+ * combinado, o que terminou e aguarda a qualidade, o liberado, o pago, o saldo e o que está
+ * travado por revisão financeira.
+ */
+export const LABOR_SITUATIONS = [
+  'PREVISTO',
+  'AGUARDANDO_QUALIDADE',
+  'LIBERADO',
+  'PAGO_PARCIAL',
+  'PAGO',
+  'EM_REVISAO',
+  'CANCELADO',
+] as const;
+export type LaborSituation = (typeof LABOR_SITUATIONS)[number];
+export const LABOR_SITUATION_LABEL: Record<LaborSituation, string> = {
+  PREVISTO: 'Combinado (previsto)',
+  AGUARDANDO_QUALIDADE: 'Concluído, aguardando qualidade',
+  LIBERADO: 'Liberado para pagamento',
+  PAGO_PARCIAL: 'Pago em parte (saldo pendente)',
+  PAGO: 'Pago',
+  EM_REVISAO: 'Em revisão financeira',
+  CANCELADO: 'Cancelado',
+};
+const AWAITING_QUALITY_STAGES = ['AGUARDANDO_INSPECAO', 'EM_INSPECAO', 'EM_CORRECAO'];
+export function laborSituation(p: {
+  status: LaborStatus;
+  inReview: boolean;
+  eligibility: EligibilityRule;
+  stages: readonly string[];
+}): LaborSituation {
+  if (p.status === 'CANCELADO') return 'CANCELADO';
+  if (p.status === 'PAGO') return 'PAGO';
+  if (p.inReview) return 'EM_REVISAO';
+  if (p.status === 'PAGO_PARCIAL') return 'PAGO_PARCIAL';
+  if (p.status === 'LIBERADO') return 'LIBERADO';
+  if (
+    p.eligibility === 'QUALIDADE_APROVADA' &&
+    p.stages.length > 0 &&
+    p.stages.every((s) => AWAITING_QUALITY_STAGES.includes(s))
+  )
+    return 'AGUARDANDO_QUALIDADE';
+  return 'PREVISTO';
+}
+
+/**
+ * Resolução de uma revisão financeira: o gestor informa o valor devido a cada profissional.
+ * Todos os que já têm obrigação no escopo precisam constar; ninguém fica abaixo do que já
+ * recebeu; novos profissionais só com valor positivo. Sem rateio automático.
+ */
+export function reviewResolutionProblem(
+  lines: readonly { professionalUserId: string; amountCents: number }[],
+  existing: readonly { professionalUserId: string; dueCents: number; paidCents: number }[],
+): string | null {
+  if (!lines.length) return 'Informe o valor devido a cada profissional.';
+  const seen = new Set<string>();
+  for (const l of lines) {
+    if (seen.has(l.professionalUserId)) return 'Cada profissional aparece uma única vez.';
+    seen.add(l.professionalUserId);
+    if (!Number.isInteger(l.amountCents) || l.amountCents < 0)
+      return 'Valores em centavos, sem valores negativos.';
+  }
+  for (const e of existing) {
+    const l = lines.find((x) => x.professionalUserId === e.professionalUserId);
+    if (!l) return 'Inclua todos os profissionais que já têm valor combinado nesta peça/OS.';
+    if (l.amountCents < e.paidCents)
+      return `O valor devido não pode ficar abaixo do já pago (${formatCents(e.paidCents)}).`;
+  }
+  for (const l of lines)
+    if (!existing.some((e) => e.professionalUserId === l.professionalUserId) && l.amountCents === 0)
+      return 'Novo profissional só com valor maior que zero.';
+  return null;
+}

@@ -4,6 +4,7 @@ import type {
   EligibilityRule,
   ExpenseCategory,
   FinancialStatus,
+  LaborSituation,
   LaborStatus,
   LogisticsCostKind,
   PayableCategory,
@@ -131,6 +132,11 @@ export interface LaborPayableDto {
   notes: string | null;
   /** Fase 12: peça devolvida ou OS cancelada com valor ainda ativo — revisar. */
   withdrawn: boolean;
+  /** Evolução Fase 5: situação exibida e revisão financeira aberta no escopo. */
+  situation: LaborSituation;
+  review: { id: string; code: string } | null;
+  /** Mão de obra da OS inteira com peças de titulares diferentes: ratear exige revisão. */
+  needsPieceReview: boolean;
   adjustments: {
     id: string;
     amountCents: number;
@@ -346,8 +352,75 @@ export interface MyProductionDto {
     dueCents: number;
     paidCents: number;
     status: LaborStatus;
+    situation: LaborSituation;
     eligibility: EligibilityRule;
     payments: { amountCents: number; paidAt: string }[];
   }[];
   totals: { dueCents: number; paidCents: number; releasedOpenCents: number; forecastCents: number };
+}
+
+// ─────────────────────────── Evolução Fase 5 ───────────────────────────
+
+export interface LaborReviewDto {
+  id: string;
+  code: string;
+  status: 'ABERTA' | 'RESOLVIDA';
+  serviceOrder: { id: string; code: string };
+  piece: { id: string; code: string } | null;
+  reason: string;
+  /** Obrigações no escopo (valor devido e pago por profissional). */
+  lines: { professionalUserId: string; displayName: string; dueCents: number; paidCents: number }[];
+  resolution:
+    | {
+        professionalUserId: string;
+        beforeCents: number;
+        afterCents: number;
+        paidCents: number;
+        payableId: string | null;
+      }[]
+    | null;
+  resolutionNote: string | null;
+  openedBy: string | null;
+  resolvedBy: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  version: number;
+}
+
+/** Mão de obra por peça da OS (gestor). Sem valor combinado ≠ R$ 0. */
+export interface ServiceOrderLaborDto {
+  serviceOrder: { id: string; code: string };
+  pieces: {
+    id: string;
+    code: string;
+    description: string;
+    stage: string;
+    upholsterer: { userId: string; displayName: string } | null;
+    payables: LaborPayableDto[];
+    /** Há titular e nenhuma obrigação viva para ele. */
+    missingValue: boolean;
+    openReview: { id: string; code: string } | null;
+  }[];
+  /** Obrigações da OS inteira (legado). */
+  wholeOrder: LaborPayableDto[];
+  openReviews: LaborReviewDto[];
+}
+
+/** Base do fechamento semanal (Fase 7): por profissional e semana (segunda). */
+export interface LaborWeeklyDto {
+  from: string;
+  to: string;
+  rows: {
+    professionalUserId: string;
+    displayName: string;
+    weekStart: string;
+    /** Combinado no período (data de criação da obrigação). */
+    agreedCents: number;
+    /** Liberado no período (data de liberação = eligibleAt). */
+    releasedCents: number;
+    /** Pago no período (data do pagamento). */
+    paidCents: number;
+  }[];
+  /** Saldo atual por profissional (liberado e não pago), independente do período. */
+  openByProfessional: { professionalUserId: string; displayName: string; openCents: number }[];
 }

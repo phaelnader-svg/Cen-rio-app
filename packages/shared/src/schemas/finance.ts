@@ -131,6 +131,41 @@ export const payLaborSchema = z.object({
   version: versionSchema,
 });
 
+/** Evolução Fase 5: corrigir o valor combinado (antes de qualquer pagamento), com motivo. */
+export const editLaborAgreedSchema = z.object({
+  agreedCents: cents('Valor combinado'),
+  reason: reason('Motivo'),
+  version: versionSchema,
+});
+
+/** Resolução da revisão financeira: valor devido por profissional (sem rateio automático). */
+export const resolveLaborReviewSchema = z.object({
+  lines: z
+    .array(
+      z.object({
+        professionalUserId: idSchema,
+        amountCents: z.number().int().min(0).max(1_000_000_000),
+      }),
+    )
+    .min(1)
+    .max(10),
+  reason: reason('Justificativa'),
+  version: versionSchema,
+});
+
+/** "Meus valores" no tablet: confirmação do PIN a cada abertura (sessão do tablet é longa). */
+export const myProductionUnlockSchema = z.object({
+  pin: z.string().regex(/^\d{6}$/, 'PIN de 6 dígitos.'),
+});
+
+export const laborWeeklyQuerySchema = z
+  .object({ from: dateOnly, to: dateOnly })
+  .refine((q) => q.from <= q.to, { message: 'Período inválido.', path: ['to'] })
+  .refine((q) => Date.parse(q.to) - Date.parse(q.from) <= 400 * 86_400_000, {
+    message: 'Período máximo: 400 dias.',
+    path: ['to'],
+  });
+
 export const laborQuerySchema = z.object({
   status: z.string().max(60).optional(),
   professionalUserId: idSchema.optional(),

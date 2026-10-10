@@ -119,6 +119,8 @@ model User {
   // Fase 11: financeiro operacional.
   commercialAdjustments CommercialAdjustment[] @relation("CommercialAdjustmentBy")
   productionPayables    ProductionPayable[]    @relation("ProductionPayableProfessional")
+  laborReviewsOpened    LaborReview[]          @relation("LaborReviewOpenedBy")
+  laborReviewsResolved  LaborReview[]          @relation("LaborReviewResolvedBy")
   financialAdjustments  FinancialAdjustment[]  @relation("FinancialAdjustmentBy")
   teamMonthlyCosts      TeamMonthlyCost[]      @relation("TeamMonthlyCostUser")
 
@@ -873,6 +875,7 @@ model ServiceOrder {
   costs                ServiceOrderCost[]
   productionPayables   ProductionPayable[]
   logisticsAllocations LogisticsCostAllocation[]
+  laborReviews         LaborReview[]
 
   @@index([orderId])
   @@index([customerId])
@@ -934,6 +937,7 @@ model ServiceOrderItem {
   upholstererUserId String?                       @map("upholsterer_user_id") @db.Uuid
   upholsterer       User?                         @relation("ItemUpholsterer", fields: [upholstererUserId], references: [id], onDelete: Restrict)
   ownerChanges      ServiceOrderItemOwnerChange[]
+  laborReviews      LaborReview[]
 
   @@unique([serviceOrderId, position])
   @@index([orderItemId])
@@ -2865,6 +2869,10 @@ model ProductionPayable {
   adjustments  FinancialAdjustment[]
   payments     ProfessionalPayment[]
 
+  /// Evolução Fase 5: criada na resolução de uma revisão financeira (divisão entre titulares).
+  reviewId String?      @map("review_id") @db.Uuid
+  review   LaborReview? @relation("LaborReviewPayables", fields: [reviewId], references: [id], onDelete: Restrict)
+
   @@index([professionalUserId, status])
   @@index([serviceOrderId])
   @@map("production_payables")
@@ -3096,11 +3104,45 @@ model ServiceOrderItemOwnerChange {
   createdById             String?  @map("created_by_id") @db.Uuid
   createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  item      ServiceOrderItem @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
-  fromUser  User?            @relation("OwnerChangeFrom", fields: [fromUserId], references: [id], onDelete: Restrict)
-  toUser    User             @relation("OwnerChangeTo", fields: [toUserId], references: [id], onDelete: Restrict)
-  createdBy User?            @relation("OwnerChangeBy", fields: [createdById], references: [id], onDelete: SetNull)
+  item        ServiceOrderItem @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  laborReview LaborReview?
+  fromUser    User?            @relation("OwnerChangeFrom", fields: [fromUserId], references: [id], onDelete: Restrict)
+  toUser      User             @relation("OwnerChangeTo", fields: [toUserId], references: [id], onDelete: Restrict)
+  createdBy   User?            @relation("OwnerChangeBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   @@index([serviceOrderItemId, createdAt])
   @@map("service_order_item_owner_changes")
+}
+
+/// Evolução Fase 5: revisão financeira da mão de obra (troca de titular com valor combinado).
+/// Enquanto ABERTA, bloqueia liberação e pagamento da mão de obra no escopo (peça ou OS).
+model LaborReview {
+  id                 String    @id @default(uuid()) @db.Uuid
+  number             Int       @unique @default(autoincrement())
+  serviceOrderId     String    @map("service_order_id") @db.Uuid
+  /// Escopo: a peça (mão de obra por peça) ou nulo (mão de obra da OS inteira).
+  serviceOrderItemId String?   @map("service_order_item_id") @db.Uuid
+  ownerChangeId      String?   @unique @map("owner_change_id") @db.Uuid
+  /// ABERTA ou RESOLVIDA.
+  status             String    @default("ABERTA") @db.VarChar(20)
+  reason             String    @db.VarChar(500)
+  /// Resolução: [{professionalUserId, beforeCents, afterCents, paidCents, payableId}].
+  resolution         Json?
+  resolutionNote     String?   @map("resolution_note") @db.VarChar(500)
+  openedById         String?   @map("opened_by_id") @db.Uuid
+  resolvedById       String?   @map("resolved_by_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  resolvedAt         DateTime? @map("resolved_at") @db.Timestamptz(3)
+  version            Int       @default(1)
+
+  serviceOrder ServiceOrder                 @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  item         ServiceOrderItem?            @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  ownerChange  ServiceOrderItemOwnerChange? @relation(fields: [ownerChangeId], references: [id], onDelete: Restrict)
+  openedBy     User?                        @relation("LaborReviewOpenedBy", fields: [openedById], references: [id], onDelete: SetNull)
+  resolvedBy   User?                        @relation("LaborReviewResolvedBy", fields: [resolvedById], references: [id], onDelete: SetNull)
+  payables     ProductionPayable[]          @relation("LaborReviewPayables")
+
+  @@index([status, createdAt])
+  @@index([serviceOrderId])
+  @@map("labor_reviews")
 }
