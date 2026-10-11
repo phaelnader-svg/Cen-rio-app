@@ -345,7 +345,7 @@ function OwnTeamCard() {
               onClick={() => save.mutate()}
               data-testid="own-team-save"
             >
-              Salvar
+              Definir responsável
             </Button>
           </div>
         )}

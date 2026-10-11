@@ -72,7 +72,10 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await form.getByLabel('Referência / instruções de acesso').fill('Portaria lateral');
     await page.getByTestId('ns-piece-desc-0').fill('Sofá retrátil');
     await page.getByTestId('ns-add-piece').click();
-    await page.getByTestId('ns-piece-1').getByLabel('Peça', { exact: true }).selectOption('POLTRONA');
+    await page
+      .getByTestId('ns-piece-1')
+      .getByLabel('Peça', { exact: true })
+      .selectOption('POLTRONA');
     await page.getByTestId('ns-piece-desc-1').fill('Poltronas da sala');
     await page.getByTestId('ns-piece-qty-1').fill('2');
     await page.getByTestId('ns-value').fill('2.500,00');
