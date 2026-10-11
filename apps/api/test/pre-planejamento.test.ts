@@ -155,7 +155,10 @@ describe('A. Fila "A planejar"', () => {
       data: { receivedQuantity: 0 },
     });
     const c = await sofa(admin, 'Cliente Cancelada');
-    await db().serviceOrder.update({ where: { id: c.id }, data: { status: 'CANCELADA', cancelledAt: new Date() } });
+    await db().serviceOrder.update({
+      where: { id: c.id },
+      data: { status: 'CANCELADA', cancelledAt: new Date() },
+    });
     const ids = (await pipeline(admin)).items.map((i) => i.serviceOrder.id);
     expect(ids).toContain(a.id);
     expect(ids).not.toContain(b.id);
