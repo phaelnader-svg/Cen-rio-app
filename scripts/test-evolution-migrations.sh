@@ -26,13 +26,13 @@ cleanup() {
   rm -rf "$WORK"
 }
 trap cleanup EXIT
-DOWNS=(20261206000000_recebimentos_compartilhados 20261129000000_novo_servico 20261115000000_fechamento_semanal 20261108000000_custos_logistica
+DOWNS=(20261213000000_pre_planejamento 20261206000000_recebimentos_compartilhados 20261129000000_novo_servico 20261115000000_fechamento_semanal 20261108000000_custos_logistica
   20261101000000_mao_de_obra_revisao 20261025000000_distribuicao_automatica
   20261018000000_fila_semanal)
 # Correção global: roteiro (só a ordem das paradas; reversão sem perda de compromisso).
-# Simplificação Fases 2–3: as mais recentes são revertidas primeiro (sem dados novos).
-ALL_DOWNS=(20261206000000_recebimentos_compartilhados 20261129000000_novo_servico
-  20261122000000_roteiro_logistica "${DOWNS[@]:2}")
+# Simplificação Fases 2–4: as mais recentes são revertidas primeiro (sem dados novos).
+ALL_DOWNS=(20261213000000_pre_planejamento 20261206000000_recebimentos_compartilhados
+  20261129000000_novo_servico 20261122000000_roteiro_logistica "${DOWNS[@]:3}")
 
 step() { echo; echo "■ $*"; }
 q() { psql "$URL" -At -v ON_ERROR_STOP=1 -c "$1"; }
@@ -104,7 +104,7 @@ step "4. Código atual sobre o legado migrado (leitura)"
 PRE_RB="$(snapshot "$COLS")"
 echo "tabelas alteradas pela etapa 4 (uso normal do sistema): $(diff <(echo "$AFTER") <(echo "$PRE_RB") | grep '^>' | cut -d'|' -f1 | sed 's/^> //' | tr '\n' ' ')"
 
-step "5. Rollbacks sem dados novos (recebimentos → novo serviço → roteiro → 7 → 6 → 5 → 3 → 2)"
+step "5. Rollbacks sem dados novos (pré-planejamento → recebimentos → novo serviço → roteiro → 7 → 6 → 5 → 3 → 2)"
 for d in "${ALL_DOWNS[@]}"; do
   psql "$URL" -q -v ON_ERROR_STOP=1 -f "$ROOT/packages/db/rollback/$d.down.sql" > /dev/null
   echo "  revertida: $d"

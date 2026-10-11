@@ -233,5 +233,33 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     expect(
       await db().logisticsTripParticipant.count({ where: { pickupId: own.body.pickup.id } }),
     ).toBe(1);
+    // Simplificação Fase 4: OS recebida planejada pela fila "A planejar" (data de início).
+    const ownSo = await db().commercialOrder.findUniqueOrThrow({
+      where: { id: own.body.order.id },
+      include: { items: true },
+    });
+    const ownRec = await post('/api/v1/receipts', {
+      orderId: ownSo.id,
+      pickupId: null,
+      origin: 'ENTREGUE_PELO_CLIENTE',
+      lines: [
+        { orderItemId: ownSo.items[0]!.id, quantity: 1, condition: 'BOA', location: 'Oficina' },
+      ],
+    });
+    expect(ownRec.status, JSON.stringify(ownRec.body)).toBe(201);
+    const autoSo = ownRec.body.generatedServiceOrder as { id: string };
+    const soItem = await db().serviceOrderItem.findFirstOrThrow({
+      where: { serviceOrderId: autoSo.id },
+    });
+    const planned = await post('/api/v1/production/plan-services', {
+      entries: [
+        {
+          serviceOrderId: autoSo.id,
+          startDate: day(28),
+          pieces: [{ serviceOrderItemId: soItem.id, upholstererUserId: ids.ricardo }],
+        },
+      ],
+    });
+    expect(planned.status, JSON.stringify(planned.body)).toBe(201);
   });
 });

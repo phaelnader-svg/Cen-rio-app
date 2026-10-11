@@ -552,6 +552,32 @@ describe('D. Semana publicada, reprogramação e histórico', () => {
       reason: 'Cliente pediu',
     });
     expect(blocked.status).toBe(422);
+    // Conclui a etapa iniciada e muda a data dentro da semana: a concluída não é reiniciada.
+    const v2 = (await db().productionTask.findUniqueOrThrow({ where: { id: t.id } })).version;
+    const done = await act(joao, t.id, 'complete', { version: v2 });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    const doneRow = await db().productionTask.findUniqueOrThrow({ where: { id: t.id } });
+    expect(doneRow.status).toBe('CONCLUIDA');
+    const fresh = (await entryOf(admin, so.id))!;
+    const sameWeekLater = [1, 2, 3, 4, 5, 6]
+      .map((k) =>
+        new Date(Date.parse(`${next}T12:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10),
+      )
+      .find((d) => mondayOf(d) === mondayOf(next));
+    if (sameWeekLater) {
+      const moveDate = await put(admin, `/api/v1/production/planned/${fresh.plan!.itemId}`, {
+        version: fresh.plan!.version,
+        startDate: sameWeekLater,
+        reason: 'Ajuste de agenda',
+      });
+      expect(moveDate.status, JSON.stringify(moveDate.body)).toBe(200);
+    }
+    const after = await db().productionTask.findUniqueOrThrow({ where: { id: t.id } });
+    expect(after).toMatchObject({
+      status: 'CONCLUIDA',
+      version: doneRow.version,
+      completedAt: doneRow.completedAt,
+    });
     // Histórico preservado: transferência registrada nas tarefas.
     expect(
       await db().productionTaskEvent.count({
