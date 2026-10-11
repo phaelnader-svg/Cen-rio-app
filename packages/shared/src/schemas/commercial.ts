@@ -228,12 +228,19 @@ export const createPickupSchema = z
     logisticsUserId: idSchema.nullable().optional(),
     /** Evolução Fase 6: custo total da viagem (exige financeiro.gerenciar). */
     tripCost: tripCostInputSchema.optional(),
+    /** Simplificação Fase 3: participantes operacionais (veem a parada; não são credores). */
+    participantUserIds: z.array(idSchema).max(6).optional(),
   })
   .superRefine(refineWindow);
 export type CreatePickupInput = z.input<typeof createPickupSchema>;
 
 export const updatePickupSchema = z
-  .object({ ...pickupFields, version: versionSchema })
+  .object({
+    ...pickupFields,
+    version: versionSchema,
+    /** Simplificação Fase 3: participantes operacionais (ausente = mantém os atuais). */
+    participantUserIds: z.array(idSchema).max(6).optional(),
+  })
   .superRefine(refineWindow);
 export type UpdatePickupInput = z.input<typeof updatePickupSchema>;
 
@@ -490,3 +497,22 @@ export const ownTeamSettingsSchema = z.object({
   userId: idSchema.nullable(),
   version: versionSchema,
 });
+
+// ─────────────── Simplificação Fase 3 — chegada compartilhada nos tablets ───────────────
+
+/** Confirmação rápida da chegada das peças de uma retirada (padrão: tudo o que falta). */
+export const confirmPieceArrivalSchema = z.object({
+  /** Versão da retirada vista na tela (recusa confirmação desatualizada). */
+  version: versionSchema,
+  /** Peças que chegaram agora; ausente = todo o saldo da retirada. */
+  lines: z
+    .array(z.object({ orderItemId: idSchema, quantity: z.number().int().min(0).max(200) }))
+    .max(50)
+    .optional(),
+  /** Opcional — divergência/avaria percebida na chegada. */
+  problem: z
+    .object({ note: z.string().trim().min(3, 'Descreva o problema.').max(1000) })
+    .nullable()
+    .optional(),
+});
+export type ConfirmPieceArrivalInput = z.input<typeof confirmPieceArrivalSchema>;

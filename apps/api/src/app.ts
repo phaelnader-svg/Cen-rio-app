@@ -50,6 +50,7 @@ import { supplierRoutes } from './modules/purchasing/suppliers';
 import { orderRoutes } from './modules/orders/routes';
 import { pickupRoutes } from './modules/pickups/routes';
 import { serviceRoutes } from './modules/services/routes';
+import { arrivalRoutes } from './modules/arrivals/routes';
 import { receiptRoutes } from './modules/receipts/routes';
 import { serviceOrderRoutes } from './modules/service-orders/routes';
 import { companyRoutes } from './modules/company/routes';
@@ -182,6 +183,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(orderRoutes);
   await app.register(pickupRoutes);
   await app.register(serviceRoutes);
+  await app.register(arrivalRoutes);
   await app.register(receiptRoutes);
   await app.register(serviceOrderRoutes);
   await app.register(attachmentRoutes);

@@ -406,6 +406,8 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
+      // Simplificação Fase 3: confirmar a chegada de peças na central compartilhada.
+      'recebimentos.registrar',
       'ocorrencias.registrar',
       'ajuda.solicitar',
       'presenca.registrar',
@@ -421,6 +423,8 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
+      // Simplificação Fase 3: confirmar a chegada de peças na central compartilhada.
+      'recebimentos.registrar',
       'qualidade.inspecionar',
       'ocorrencias.registrar',
       'ajuda.solicitar',
@@ -436,6 +440,8 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
+      // Simplificação Fase 3: confirmar a chegada de peças na central compartilhada.
+      'recebimentos.registrar',
       'ocorrencias.registrar',
       'presenca.registrar',
       'sincronizacao.diagnosticar',

@@ -278,16 +278,6 @@ export async function serviceRoutes(app: FastifyInstance) {
           return person;
         });
         const hasCost = Boolean(p.amountCents);
-        const teamNotes = [
-          p.notes,
-          !hasCost && participants.length
-            ? `Participantes: ${participants.map((x) => x.displayName).join(', ')}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(' · ')
-          .slice(0, 200);
-
         // 4. Retirada de TODAS as peças, com o custo total único da viagem (Fase 6).
         const items = await tx.commercialOrderItem.findMany({
           where: { orderId: order.id },
@@ -300,7 +290,9 @@ export async function serviceRoutes(app: FastifyInstance) {
           windowStart: p.windowStart ?? null,
           windowEnd: null,
           team: p.team,
-          teamNotes: teamNotes || null,
+          // Fase 3: participantes são vínculo estruturado (não mais texto nas observações).
+          teamNotes: p.notes ?? null,
+          participantUserIds: p.participantUserIds,
           instructions: p.instructions ?? null,
           externalReference: null,
           items: items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),

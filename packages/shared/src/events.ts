@@ -50,6 +50,8 @@ export const EVENT_TYPES = {
   PURCHASE_ORDER_CANCELLED: 'purchase_order.cancelled',
   MATERIAL_PARTIALLY_RECEIVED: 'material.partially_received',
   MATERIAL_RECEIVED: 'material.received',
+  /** Simplificação Fase 3: chegada física (ex.: rolos) aguardando conferência técnica. */
+  MATERIAL_ARRIVAL_REGISTERED: 'material.arrival_registered',
   MATERIAL_RECEIPT_REVERSED: 'material_receipt.reversed',
   STOCK_RESERVED: 'stock.reserved',
   STOCK_RELEASED: 'stock.released',

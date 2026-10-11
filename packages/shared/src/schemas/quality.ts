@@ -172,6 +172,8 @@ export const createDeliverySchema = z
     provisional: z.boolean().default(false),
     /** Evolução Fase 6: custo total da viagem (exige financeiro.gerenciar). */
     tripCost: tripCostInputSchema.optional(),
+    /** Simplificação Fase 3: participantes operacionais (veem a parada; não são credores). */
+    participantUserIds: z.array(idSchema).max(6).optional(),
   })
   .superRefine(refineWindow);
 export type CreateDeliveryInput = z.input<typeof createDeliverySchema>;

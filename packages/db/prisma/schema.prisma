@@ -136,6 +136,10 @@ model User {
 
   ownTeamDefaultFor CompanySettings[] @relation("OwnTeamDefault")
 
+  tripParticipations        LogisticsTripParticipant[] @relation("TripParticipant")
+  materialArrivals          MaterialArrival[]          @relation("MaterialArrivalBy")
+  materialArrivalsConferred MaterialArrival[]          @relation("MaterialArrivalConferredBy")
+
   @@map("users")
 }
 
@@ -241,6 +245,7 @@ enum DeviceStatus {
 
 model Device {
   id                   String       @id @default(uuid()) @db.Uuid
+  receipts             Receipt[]    @relation("ReceiptDevice")
   name                 String       @unique @db.VarChar(60)
   kind                 DeviceKind   @default(TABLET)
   location             String?      @db.VarChar(80)
@@ -706,12 +711,14 @@ model PickupRequest {
   createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  order     CommercialOrder     @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  address   CustomerAddress?    @relation(fields: [addressId], references: [id], onDelete: Restrict)
-  createdBy User?               @relation("PickupCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  items     PickupRequestItem[]
-  events    PickupEvent[]
-  receipts  Receipt[]
+  order            CommercialOrder            @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  address          CustomerAddress?           @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  createdBy        User?                      @relation("PickupCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  items            PickupRequestItem[]
+  events           PickupEvent[]
+  receipts         Receipt[]
+  /// Simplificação Fase 3: participantes OPERACIONAIS (veem a parada; não são credores).
+  tripParticipants LogisticsTripParticipant[]
 
   /// Fase 10: responsável logístico (equipe terceirizada ou própria).
   logisticsUserId String?               @map("logistics_user_id") @db.Uuid
@@ -803,6 +810,9 @@ model Receipt {
   lines        ReceiptLine[]
   /// Simplificação Fase 2: OS gerada automaticamente por este recebimento (no máximo uma).
   serviceOrder ServiceOrder?
+  /// Simplificação Fase 3: dispositivo (tablet) usado na confirmação da chegada.
+  deviceId     String?         @map("device_id") @db.Uuid
+  device       Device?         @relation("ReceiptDevice", fields: [deviceId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([receivedAt(sort: Desc)])
@@ -1463,6 +1473,8 @@ model PurchaseOrder {
   balanceClosedById  String?             @map("balance_closed_by_id") @db.Uuid
   balanceCloseReason String?             @map("balance_close_reason") @db.VarChar(500)
   version            Int                 @default(1)
+  /// Simplificação Fase 3: chegadas físicas aguardando conferência (tecido em metros etc.).
+  arrivals           MaterialArrival[]
   createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -2591,36 +2603,38 @@ enum DeliveryStatus {
 
 /// Entrega (EN-00001) combinada pelo gestor; provisória não é confirmada ao cliente.
 model Delivery {
-  id                   String         @id @default(uuid()) @db.Uuid
-  number               Int            @unique @default(autoincrement())
-  customerId           String         @map("customer_id") @db.Uuid
-  addressId            String?        @map("address_id") @db.Uuid
-  addressSnapshot      Json           @map("address_snapshot")
-  contactName          String?        @map("contact_name") @db.VarChar(120)
-  contactPhone         String?        @map("contact_phone") @db.VarChar(30)
-  scheduledDate        DateTime       @map("scheduled_date") @db.Date
-  windowStart          String?        @map("window_start") @db.Char(5)
-  windowEnd            String?        @map("window_end") @db.Char(5)
+  id                   String                     @id @default(uuid()) @db.Uuid
+  number               Int                        @unique @default(autoincrement())
+  customerId           String                     @map("customer_id") @db.Uuid
+  addressId            String?                    @map("address_id") @db.Uuid
+  addressSnapshot      Json                       @map("address_snapshot")
+  contactName          String?                    @map("contact_name") @db.VarChar(120)
+  contactPhone         String?                    @map("contact_phone") @db.VarChar(30)
+  scheduledDate        DateTime                   @map("scheduled_date") @db.Date
+  windowStart          String?                    @map("window_start") @db.Char(5)
+  windowEnd            String?                    @map("window_end") @db.Char(5)
   /// Correção global: posição no roteiro do dia (null = ainda não ordenada; vai ao fim).
-  routeSequence        Int?           @map("route_sequence")
-  team                 PickupTeam     @default(EQUIPE_PROPRIA)
-  responsibleUserId    String?        @map("responsible_user_id") @db.Uuid
-  requiresInstallation Boolean        @default(false) @map("requires_installation")
-  instructions         String?        @db.VarChar(1000)
-  notes                String?        @db.VarChar(1000)
-  status               DeliveryStatus @default(PROVISORIA)
-  attempts             Int            @default(0)
-  departedAt           DateTime?      @map("departed_at") @db.Timestamptz(3)
-  arrivedAt            DateTime?      @map("arrived_at") @db.Timestamptz(3)
-  installedAt          DateTime?      @map("installed_at") @db.Timestamptz(3)
-  installationNote     String?        @map("installation_note") @db.VarChar(1000)
-  completedAt          DateTime?      @map("completed_at") @db.Timestamptz(3)
-  completionNote       String?        @map("completion_note") @db.VarChar(1000)
-  cancelReason         String?        @map("cancel_reason") @db.VarChar(500)
-  version              Int            @default(1)
-  createdById          String?        @map("created_by_id") @db.Uuid
-  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  routeSequence        Int?                       @map("route_sequence")
+  /// Simplificação Fase 3: participantes OPERACIONAIS (veem a parada; não são credores).
+  tripParticipants     LogisticsTripParticipant[]
+  team                 PickupTeam                 @default(EQUIPE_PROPRIA)
+  responsibleUserId    String?                    @map("responsible_user_id") @db.Uuid
+  requiresInstallation Boolean                    @default(false) @map("requires_installation")
+  instructions         String?                    @db.VarChar(1000)
+  notes                String?                    @db.VarChar(1000)
+  status               DeliveryStatus             @default(PROVISORIA)
+  attempts             Int                        @default(0)
+  departedAt           DateTime?                  @map("departed_at") @db.Timestamptz(3)
+  arrivedAt            DateTime?                  @map("arrived_at") @db.Timestamptz(3)
+  installedAt          DateTime?                  @map("installed_at") @db.Timestamptz(3)
+  installationNote     String?                    @map("installation_note") @db.VarChar(1000)
+  completedAt          DateTime?                  @map("completed_at") @db.Timestamptz(3)
+  completionNote       String?                    @map("completion_note") @db.VarChar(1000)
+  cancelReason         String?                    @map("cancel_reason") @db.VarChar(500)
+  version              Int                        @default(1)
+  createdById          String?                    @map("created_by_id") @db.Uuid
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   customer    Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
   address     CustomerAddress?      @relation(fields: [addressId], references: [id], onDelete: Restrict)
@@ -3384,4 +3398,54 @@ model LaborReview {
   @@index([status, createdAt])
   @@index([serviceOrderId])
   @@map("labor_reviews")
+}
+
+// ─────────────── Simplificação Fase 3: recebimentos compartilhados ───────────────
+
+/// Participante operacional de uma retirada OU entrega: vê a parada no próprio roteiro.
+/// Não é credor (o recebedor financeiro é o configurado na Fase 6) e não gera pagamento.
+model LogisticsTripParticipant {
+  id          String   @id @default(uuid()) @db.Uuid
+  pickupId    String?  @map("pickup_id") @db.Uuid
+  deliveryId  String?  @map("delivery_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  pickup   PickupRequest? @relation(fields: [pickupId], references: [id], onDelete: Cascade)
+  delivery Delivery?      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  user     User           @relation("TripParticipant", fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([pickupId, userId])
+  @@unique([deliveryId, userId])
+  @@index([userId])
+  @@map("logistics_trip_participants")
+}
+
+/// Chegada FÍSICA de material medido em metros (ex.: rolos de tecido): registra o que chegou
+/// (quantidade e unidade física) sem inventar metragem. Não movimenta estoque; a conferência
+/// técnica posterior (recebimento com a medida real) libera o material.
+model MaterialArrival {
+  id                String    @id @default(uuid()) @db.Uuid
+  number            Int       @unique @default(autoincrement())
+  purchaseOrderId   String    @map("purchase_order_id") @db.Uuid
+  /// [{ purchaseOrderItemId, description, unit, physicalCount, physicalUnit }]
+  lines             Json
+  status            String    @default("PENDENTE_CONFERENCIA") @db.VarChar(30)
+  problemKind       String?   @map("problem_kind") @db.VarChar(30)
+  problemNote       String?   @map("problem_note") @db.VarChar(500)
+  receivedById      String    @map("received_by_id") @db.Uuid
+  deviceId          String?   @map("device_id") @db.Uuid
+  receivedAt        DateTime  @default(now()) @map("received_at") @db.Timestamptz(3)
+  /// Recebimento (com a medida conferida) que encerrou esta chegada.
+  materialReceiptId String?   @unique @map("material_receipt_id") @db.Uuid
+  conferredById     String?   @map("conferred_by_id") @db.Uuid
+  conferredAt       DateTime? @map("conferred_at") @db.Timestamptz(3)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  receivedBy    User          @relation("MaterialArrivalBy", fields: [receivedById], references: [id], onDelete: Restrict)
+  conferredBy   User?         @relation("MaterialArrivalConferredBy", fields: [conferredById], references: [id], onDelete: SetNull)
+
+  @@index([purchaseOrderId, status])
+  @@map("material_arrivals")
 }

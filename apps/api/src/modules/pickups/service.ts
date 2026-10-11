@@ -90,6 +90,38 @@ export function tripCostTeamProblem(team: PickupTeam, hasTripCost: boolean): str
   return null;
 }
 
+/**
+ * Simplificação Fase 3 — participantes OPERACIONAIS da viagem (retirada ou entrega): quem vai
+ * junto vê a parada no próprio roteiro, com ou sem custo combinado. Não é credor e não gera
+ * pagamento (o recebedor financeiro continua o configurado na Fase 6). Substitui o conjunto.
+ */
+export async function setTripParticipants(
+  tx: Tx,
+  actor: ActorContext,
+  ref: { pickupId: string } | { deliveryId: string },
+  userIds: string[],
+  responsibleUserId?: string | null,
+) {
+  const unique = [...new Set(userIds)].filter((u) => u !== responsibleUserId);
+  for (const userId of unique) {
+    if (await pickupExecutorProblem(tx, userId))
+      throw Errors.validation(
+        [{ path: 'participantUserIds', message: 'Participante inválido ou inativo.' }],
+        'Participante inválido ou inativo.',
+      );
+  }
+  const where = 'pickupId' in ref ? { pickupId: ref.pickupId } : { deliveryId: ref.deliveryId };
+  const before = await tx.logisticsTripParticipant.findMany({ where });
+  const same = before.length === unique.length && before.every((b) => unique.includes(b.userId));
+  if (same) return false;
+  await tx.logisticsTripParticipant.deleteMany({ where });
+  if (unique.length)
+    await tx.logisticsTripParticipant.createMany({
+      data: unique.map((userId) => ({ ...where, userId, createdById: actor.userId })),
+    });
+  return true;
+}
+
 export async function createPickup(
   tx: Tx,
   actor: ActorContext,
@@ -168,6 +200,14 @@ export async function createPickup(
     },
   });
   if (input.tripCost) await upsertTripCost(tx, actor, { pickupId: pickup.id, ...input.tripCost });
+  // Fase 3: participação operacional estruturada (independe de haver custo).
+  await setTripParticipants(
+    tx,
+    actor,
+    { pickupId: pickup.id },
+    input.participantUserIds ?? input.tripCost?.participantUserIds ?? [],
+    executor?.id ?? null,
+  );
   await refreshOrderStatus(tx, order.id);
   await audit(tx, actor, {
     action: 'pickup.created',

@@ -74,14 +74,28 @@ async function collect(db: Tx | PrismaClient, date: string): Promise<Stop[]> {
     },
     include: { participants: { include: { user: { select: { id: true, displayName: true } } } } },
   });
-  const people = (ref: { deliveryId?: string; pickupId?: string }) =>
-    costs
-      .filter((c) =>
-        ref.deliveryId ? c.deliveryId === ref.deliveryId : c.pickupId === ref.pickupId,
-      )
-      .flatMap((c) =>
-        c.participants.map((p) => ({ userId: p.user.id, displayName: p.user.displayName })),
-      );
+  // Simplificação Fase 3: participantes OPERACIONAIS (com ou sem custo) + os do custo (Fase 6).
+  const trip = await db.logisticsTripParticipant.findMany({
+    where: {
+      OR: [
+        { deliveryId: { in: deliveries.map((d) => d.id) } },
+        { pickupId: { in: pickups.map((p) => p.id) } },
+      ],
+    },
+    include: { user: { select: { id: true, displayName: true } } },
+  });
+  const people = (ref: { deliveryId?: string; pickupId?: string }) => {
+    const same = (x: { deliveryId: string | null; pickupId: string | null }) =>
+      ref.deliveryId ? x.deliveryId === ref.deliveryId : x.pickupId === ref.pickupId;
+    const all = [
+      ...trip.filter(same).map((t) => t.user),
+      ...costs.filter(same).flatMap((c) => c.participants.map((p) => p.user)),
+    ];
+    return [...new Map(all.map((u) => [u.id, u])).values()].map((u) => ({
+      userId: u.id,
+      displayName: u.displayName,
+    }));
+  };
   const stops: Stop[] = [];
   for (const d of deliveries) {
     const job = toDeliveryJob(d);
@@ -321,7 +335,13 @@ export async function logisticsRouteRoutes(app: FastifyInstance) {
       config: {
         access: {
           session: 'any',
-          anyPermissions: ['entregas.ver', 'retiradas.ver', 'logistica.executar'],
+          // Fase 3: equipe própria (Thiago, João) também vê as paradas em que foi designada.
+          anyPermissions: [
+            'entregas.ver',
+            'retiradas.ver',
+            'logistica.executar',
+            'producao.executar',
+          ],
         },
       },
     },

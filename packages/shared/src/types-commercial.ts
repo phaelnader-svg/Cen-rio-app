@@ -181,6 +181,8 @@ export interface ReceiptDto {
   lines: ReceiptLineDto[];
   /** Simplificação Fase 2: OS gerada automaticamente por este recebimento (pedidos do Novo serviço). */
   generatedServiceOrder: { id: string; code: string } | null;
+  /** Simplificação Fase 3: tablet usado na confirmação (quando houver). */
+  device: string | null;
   createdAt: string;
 }
 
@@ -343,4 +345,87 @@ export interface NewServiceResultDto {
   };
   /** Custo previsto da logística (null sem custo ou sem permissão financeira). */
   tripCost: { code: string; amountCents: number; status: string } | null;
+}
+
+// ─────────────── Simplificação Fase 3 — Aguardando chegada ───────────────
+
+export type PieceArrivalStage =
+  | 'RETIRADA_HOJE'
+  | 'RETIRADA_PREVISTA'
+  | 'EM_COLETA'
+  | 'A_CAMINHO'
+  | 'CHEGOU_EM_PARTE'
+  | 'COM_OCORRENCIA';
+
+export interface PieceArrivalDto {
+  pickupId: string;
+  pickupCode: string;
+  orderId: string;
+  orderCode: string;
+  /** Tablet: só "Primeiro I." (privacidade); painel: nome completo. */
+  customerName: string;
+  stage: PieceArrivalStage;
+  stageLabel: string;
+  scheduledDate: string | null;
+  windowStart: string | null;
+  items: { orderItemId: string; pieceType: PieceType; description: string; pending: number }[];
+  pendingTotal: number;
+  version: number;
+}
+
+export interface MaterialArrivalDueDto {
+  purchaseOrderId: string;
+  code: string;
+  supplierName: string | null;
+  expectedDate: string | null;
+  dueLabel: string;
+  items: {
+    purchaseOrderItemId: string;
+    description: string;
+    unit: string;
+    unitLabel: string;
+    pending: number;
+    /** CONTAGEM = conta-se na porta (peças, placas); FISICA = controle em metros (rolos etc.). */
+    mode: 'CONTAGEM' | 'FISICA';
+  }[];
+  /** Chegadas físicas aguardando conferência técnica neste pedido. */
+  awaitingConference: number;
+  version: number;
+}
+
+export interface ArrivalsDto {
+  /** null = sem permissão de receber peças de clientes. */
+  pieces: PieceArrivalDto[] | null;
+  materials: MaterialArrivalDueDto[];
+}
+
+export interface ArrivalConfirmationDto {
+  kind: 'PECAS' | 'MATERIAIS';
+  receipt: { id: string; code: string } | null;
+  arrival: { id: string; code: string } | null;
+  serviceOrder: { id: string; code: string } | null;
+  remaining: number;
+  confirmedBy: string | null;
+  confirmedAt: string;
+}
+
+export interface MaterialArrivalDto {
+  id: string;
+  code: string;
+  purchaseOrder: { id: string; code: string };
+  status: 'PENDENTE_CONFERENCIA' | 'CONFERIDA' | 'CANCELADA';
+  lines: {
+    purchaseOrderItemId: string;
+    description: string;
+    unit: string;
+    physicalCount: number;
+    physicalUnit: string;
+  }[];
+  problemKind: string | null;
+  problemNote: string | null;
+  receivedBy: string | null;
+  device: string | null;
+  receivedAt: string;
+  conferredBy: string | null;
+  conferredAt: string | null;
 }

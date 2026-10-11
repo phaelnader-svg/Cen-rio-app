@@ -194,6 +194,10 @@ export type MaterialReceiptLineInput = z.input<typeof materialReceiptLineSchema>
 export const materialReceiptSchema = z.object({
   purchaseOrderId: idSchema,
   notes: optionalText(1000),
+  /** Simplificação Fase 3: versão do pedido vista na tela (recusa confirmação desatualizada). */
+  expectedVersion: z.number().int().min(1).optional(),
+  /** Simplificação Fase 3: chegada física (ex.: rolos) que esta conferência encerra. */
+  arrivalId: idSchema.optional(),
   lines: z.array(materialReceiptLineSchema).min(1).max(100),
 });
 export type MaterialReceiptInput = z.input<typeof materialReceiptSchema>;
@@ -320,3 +324,63 @@ export const leftoverTransferSchema = z.object({
   reason: reason('Motivo da transferência'),
 });
 export const leftoverDiscardSchema = z.object({ reason: reason() });
+
+// ─────────────── Simplificação Fase 3 — chegada compartilhada nos tablets ───────────────
+
+/** Unidade FÍSICA do que chegou (o que se conta na porta), diferente da unidade de controle. */
+export const PHYSICAL_UNITS = ['ROLO', 'VOLUME', 'PECA', 'PLACA', 'PACOTE', 'UNIDADE'] as const;
+export const PHYSICAL_UNIT_LABEL: Record<(typeof PHYSICAL_UNITS)[number], string> = {
+  ROLO: 'rolo(s)',
+  VOLUME: 'volume(s)',
+  PECA: 'peça(s)',
+  PLACA: 'placa(s)',
+  PACOTE: 'pacote(s)',
+  UNIDADE: 'unidade(s)',
+};
+
+export const ARRIVAL_PROBLEMS = [
+  'FALTANDO',
+  'DIFERENTE',
+  'DANIFICADO',
+  'QUANTIDADE',
+  'OUTRO',
+] as const;
+export const ARRIVAL_PROBLEM_LABEL: Record<(typeof ARRIVAL_PROBLEMS)[number], string> = {
+  FALTANDO: 'Material faltando',
+  DIFERENTE: 'Material diferente',
+  DANIFICADO: 'Material danificado',
+  QUANTIDADE: 'Quantidade divergente',
+  OUTRO: 'Outro problema',
+};
+
+/** Confirmação rápida de materiais: só as quantidades FÍSICAS que chegaram. */
+export const confirmMaterialArrivalSchema = z
+  .object({
+    /** Versão do pedido de compra vista na tela (recusa confirmação desatualizada). */
+    version: z.number().int().min(1),
+    lines: z
+      .array(
+        z.object({
+          purchaseOrderItemId: idSchema,
+          quantity: z.number().positive().max(100_000),
+          /** Para itens controlados em metros: como chegou (rolos, volumes…). */
+          physicalUnit: z.enum(PHYSICAL_UNITS).optional(),
+        }),
+      )
+      .min(1, { message: 'Informe o que chegou.' })
+      .max(100),
+    /** Opcional — só quando algo não está certo. */
+    problem: z
+      .object({
+        kind: z.enum(ARRIVAL_PROBLEMS),
+        purchaseOrderItemId: idSchema.nullable().optional(),
+        note: z.string().trim().min(3, 'Descreva o problema.').max(500),
+      })
+      .nullable()
+      .optional(),
+  })
+  .refine((v) => new Set(v.lines.map((l) => l.purchaseOrderItemId)).size === v.lines.length, {
+    message: 'Item repetido.',
+    path: ['lines'],
+  });
+export type ConfirmMaterialArrivalInput = z.input<typeof confirmMaterialArrivalSchema>;

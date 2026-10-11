@@ -108,7 +108,7 @@ import {
   updateDelivery,
 } from './shipping';
 import { syncTripCost, upsertTripCost } from '../finance/trip-costs';
-import { tripCostTeamProblem } from '../pickups/service';
+import { setTripParticipants, tripCostTeamProblem } from '../pickups/service';
 
 const PACKAGING_ACCESS = {
   session: 'any',
@@ -739,6 +739,13 @@ export async function qualityRoutes(app: FastifyInstance) {
             deliveryId: created.id,
             ...input.tripCost,
           });
+        await setTripParticipants(
+          tx,
+          actorFrom(request),
+          { deliveryId: created.id },
+          input.participantUserIds ?? input.tripCost?.participantUserIds ?? [],
+          created.responsibleUserId,
+        );
         return created;
       });
       return reply.status(201).send(await deliveryDto(d.id));
@@ -886,7 +893,8 @@ export async function qualityRoutes(app: FastifyInstance) {
     const since = new Date(Date.now() - 2 * 86_400_000);
     const deliveries = await prisma.delivery.findMany({
       where: {
-        responsibleUserId: me,
+        // Fase 3: responsável OU participante operacional da viagem.
+        AND: [{ OR: [{ responsibleUserId: me }, { tripParticipants: { some: { userId: me } } }] }],
         OR: [
           { status: { in: ['AGENDADA', 'EM_TRANSPORTE', 'NO_DESTINO'] } },
           { status: { in: ['CONCLUIDA', 'FRUSTRADA'] }, updatedAt: { gte: since } },
@@ -897,7 +905,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     });
     const pickups = await prisma.pickupRequest.findMany({
       where: {
-        logisticsUserId: me,
+        AND: [{ OR: [{ logisticsUserId: me }, { tripParticipants: { some: { userId: me } } }] }],
         OR: [
           { status: { in: ['AGENDADA', 'EM_EXECUCAO', 'COM_OCORRENCIA'] } },
           { status: 'RETIRADA_REALIZADA', updatedAt: { gte: since } },

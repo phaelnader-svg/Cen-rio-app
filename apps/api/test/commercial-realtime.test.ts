@@ -124,6 +124,44 @@ describe('Sincronização do fluxo comercial', () => {
 
   it('tablet sem permissões comerciais não recebe esses eventos', async () => {
     const admin = await loginAdmin(app);
+    // Simplificação Fase 3: as funções padrão de produção passaram a ter "recebimentos.registrar"
+    // (confirmar chegada na central compartilhada). O isolamento continua provado com um tablet
+    // cuja função NÃO tem nenhuma permissão comercial.
+    const role = await admin.post(
+      '/api/roles',
+      {
+        name: 'Produção sem recebimento',
+        permissions: ['producao.acessar', 'producao.executar', 'sincronizacao.diagnosticar'],
+      },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(role.status).toBe(201);
+    const emp = await admin.post(
+      '/api/employees',
+      {
+        fullName: 'Pessoa Sem Comercial',
+        displayName: 'SemComercial',
+        jobTitle: 'Teste',
+        color: '#445566',
+        roleIds: [role.body.id],
+      },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(emp.status).toBe(201);
+    const { tablet } = await setupTablet(app, admin, {
+      name: 'Tablet R',
+      employee: 'SemComercial',
+      pin: '482915',
+    });
+    const w = track(await WsClient.connect(app, tablet));
+    await createOrder(admin, await createCustomer(admin));
+    await admin.post('/api/sync/signal', { message: 'marcador' }, { 'idempotency-key': idemKey() });
+    await w.waitFor((m) => m.event?.payload?.message === 'marcador');
+    expect(w.events().filter((e) => /^(customer|order|pickup)\./.test(e.type))).toHaveLength(0);
+  });
+
+  it('tablet da produção (pode confirmar chegada) recebe só identificação e situação, sem valores', async () => {
+    const admin = await loginAdmin(app);
     const { tablet } = await setupTablet(app, admin, {
       name: 'Tablet R',
       employee: 'Ricardo',
@@ -133,7 +171,9 @@ describe('Sincronização do fluxo comercial', () => {
     await createOrder(admin, await createCustomer(admin));
     await admin.post('/api/sync/signal', { message: 'marcador' }, { 'idempotency-key': idemKey() });
     await w.waitFor((m) => m.event?.payload?.message === 'marcador');
-    expect(w.events().filter((e) => /^(customer|order|pickup)\./.test(e.type))).toHaveLength(0);
+    expect(w.events().filter((e) => /^customer\./.test(e.type))).toHaveLength(0);
+    for (const e of w.events().filter((x) => /^order\./.test(x.type)))
+      expect(Object.keys(e.payload).sort()).toEqual(['code', 'id', 'status', 'version']);
   });
 
   it('reconexão: alterações de retirada feitas durante a queda são reenviadas em ordem', async () => {

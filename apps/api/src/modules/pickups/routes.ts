@@ -32,7 +32,7 @@ import {
 import { refreshOrderStatus } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { syncTripCost } from '../finance/trip-costs';
-import { createPickup, validatePickupItems } from './service';
+import { createPickup, setTripParticipants, validatePickupItems } from './service';
 
 const VIEW = { session: 'WEB', permissions: ['retiradas.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['retiradas.gerenciar'] } as const;
@@ -283,6 +283,16 @@ export async function pickupRoutes(app: FastifyInstance) {
         status !== before.status ? EVENT_TYPES.PICKUP_STATUS_CHANGED : EVENT_TYPES.PICKUP_UPDATED,
       );
       await syncTripCost(tx, actor, { pickupId: id });
+      if (input.participantUserIds !== undefined) {
+        const now = await tx.pickupRequest.findUniqueOrThrow({ where: { id } });
+        await setTripParticipants(
+          tx,
+          actor,
+          { pickupId: id },
+          input.participantUserIds,
+          now.logisticsUserId,
+        );
+      }
       await emitOrderEvent(tx, request, before.orderId);
     });
     return loadPickupDto(prisma, id);

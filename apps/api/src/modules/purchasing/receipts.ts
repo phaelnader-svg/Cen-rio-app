@@ -115,6 +115,216 @@ async function autoReserve(
   return reserved;
 }
 
+/**
+ * Simplificação Fase 3 — serviço de domínio do recebimento de material (único caminho: painel,
+ * confirmação rápida dos tablets e conferência de chegada física). Mesmas regras de antes, mais:
+ * versão esperada do pedido (concorrência otimista) e versão sempre incrementada.
+ */
+export async function registerMaterialReceipt(
+  tx: Tx,
+  actor: ActorContext,
+  input: z.output<typeof materialReceiptSchema>,
+  opts: { deviceId?: string | null; expectedVersion?: number; arrivalId?: string } = {},
+): Promise<string> {
+  const po = await lockPurchaseOrder(tx, input.purchaseOrderId);
+  // Simplificação Fase 3: confirmação sobre tela desatualizada (outro aparelho já registrou)
+  // é recusada — dois tablets nunca somam a mesma chegada.
+  if (opts.expectedVersion !== undefined && po.version !== opts.expectedVersion)
+    throw Errors.conflict(
+      'Este recebimento já foi atualizado em outro aparelho. Confira o saldo atual.',
+      { currentVersion: po.version },
+    );
+  if (!(PURCHASE_ORDER_RECEIVABLE as readonly string[]).includes(po.status)) {
+    throw Errors.business(
+      po.status === 'RASCUNHO'
+        ? 'Pedido ainda não confirmado pelo gestor.'
+        : 'Este pedido não está aguardando recebimento.',
+    );
+  }
+  await lockRows(
+    tx,
+    'purchase_order_items',
+    po.items.map((i) => i.id),
+  );
+  const items = new Map(
+    (
+      await tx.purchaseOrderItem.findMany({
+        where: { purchaseOrderId: po.id },
+        include: { allocations: true },
+      })
+    ).map((i) => [i.id, i]),
+  );
+  const seen = new Set<string>();
+  for (const [idx, l] of input.lines.entries()) {
+    const item = items.get(l.purchaseOrderItemId);
+    if (!item)
+      throw Errors.validation(
+        [{ path: `lines.${idx}`, message: 'Item não pertence ao pedido.' }],
+        'Item não pertence ao pedido.',
+      );
+    if (seen.has(item.id)) throw Errors.validation(undefined, 'Item repetido no recebimento.');
+    seen.add(item.id);
+    for (const v of [l.acceptedQuantity, l.rejectedQuantity ?? 0]) {
+      const err = v > 0 ? unitError(item.kind, item.unit, v) : null;
+      if (err) throw Errors.validation([{ path: `lines.${idx}`, message: err }], err);
+    }
+    const limit = num(item.quantity) + num(item.extraAuthorized);
+    if (num(item.receivedQuantity) + l.acceptedQuantity > limit + EPS) {
+      throw Errors.conflict(
+        `Item ${item.position} (${item.description}): recebimento acima do pedido ` +
+          `(pedido ${limit}, já recebido ${num(item.receivedQuantity)}). ` +
+          'O gestor precisa autorizar o excedente antes.',
+      );
+    }
+  }
+
+  const receipt = await tx.materialReceipt.create({
+    data: {
+      purchaseOrderId: po.id,
+      receivedById: actor.userId!,
+      deviceId: opts.deviceId ?? null,
+      notes: input.notes ?? null,
+    },
+  });
+  const affected = new Set(poServiceOrderIds(po));
+  const reservations: { reservationId: string; serviceOrderId: string; quantity: number }[] = [];
+  let issues = 0;
+  for (const l of input.lines) {
+    const item = items.get(l.purchaseOrderItemId)!;
+    const line = await tx.materialReceiptLine.create({
+      data: {
+        receiptId: receipt.id,
+        purchaseOrderItemId: item.id,
+        acceptedQuantity: l.acceptedQuantity,
+        rejectedQuantity: l.rejectedQuantity ?? 0,
+        specConfirmed: l.specConfirmed,
+        issue: l.issue ?? null,
+        issueNote: l.issueNote ?? null,
+      },
+    });
+    if (l.issue) issues++;
+    if (l.acceptedQuantity <= 0) continue;
+    await tx.purchaseOrderItem.update({
+      where: { id: item.id },
+      data: { receivedQuantity: q3(num(item.receivedQuantity) + l.acceptedQuantity) },
+    });
+    item.receivedQuantity = q3(num(item.receivedQuantity) + l.acceptedQuantity) as never;
+    if (item.sourcing === 'ESTOQUE' && item.stockItemId) {
+      const stock = await lockStockItem(tx, item.stockItemId);
+      await changeStock(tx, actor, stock, {
+        onHand: l.acceptedQuantity,
+        movement: {
+          type: 'ENTRADA_COMPRA',
+          materialReceiptLineId: line.id,
+          reason: `${materialReceiptCode(receipt.number)} / ${purchaseOrderCode(po.number)}`,
+        },
+      });
+      reservations.push(...(await autoReserve(tx, actor, stock, item.allocations)));
+    }
+  }
+  const status = statusFromItems([...items.values()]);
+  // Fase 3: TODA chegada registrada muda a versão do pedido (não só a mudança de situação),
+  // para que a próxima confirmação parcial feita sobre a versão antiga seja recusada.
+  await tx.purchaseOrder.update({
+    where: { id: po.id },
+    data: { ...(status !== po.status ? { status } : {}), version: { increment: 1 } },
+  });
+  if (opts.arrivalId) await closeArrival(tx, actor, po.id, opts.arrivalId, receipt.id);
+  await poHistory(tx, actor, po.id, {
+    kind: 'RECEBIMENTO',
+    summary: `${materialReceiptCode(receipt.number)}: material do pedido ${purchaseOrderCode(po.number)} recebido${issues ? ` com ${issues} divergência(s)` : ''}.`,
+    changes: {
+      receipt: materialReceiptCode(receipt.number),
+      lines: input.lines.map((l) => ({
+        item: items.get(l.purchaseOrderItemId)!.position,
+        accepted: l.acceptedQuantity,
+        rejected: l.rejectedQuantity ?? 0,
+        issue: l.issue ?? null,
+      })),
+      status,
+    },
+  });
+  await refreshReadiness(tx, actor, [...affected]);
+  for (const r of reservations) {
+    await appendEvent(tx, actor, {
+      type: EVENT_TYPES.STOCK_RESERVED,
+      aggregateType: 'stock_reservation',
+      aggregateId: r.reservationId,
+      payload: {
+        id: r.reservationId,
+        serviceOrderId: r.serviceOrderId,
+        quantity: r.quantity,
+      },
+      audience: MANAGEMENT_AUDIENCE,
+    });
+  }
+  if (issues) {
+    await appendEvent(tx, actor, {
+      type: EVENT_TYPES.MATERIAL_SHORTAGE_DETECTED,
+      aggregateType: 'purchase_order',
+      aggregateId: po.id,
+      payload: {
+        reason: 'DIVERGENCIA_RECEBIMENTO',
+        purchaseOrderId: po.id,
+        code: purchaseOrderCode(po.number),
+        receipt: materialReceiptCode(receipt.number),
+        serviceOrderIds: [...affected],
+      },
+      audience: MANAGEMENT_AUDIENCE,
+    });
+  }
+  await appendEvent(tx, actor, {
+    type:
+      status === 'RECEBIDO'
+        ? EVENT_TYPES.MATERIAL_RECEIVED
+        : EVENT_TYPES.MATERIAL_PARTIALLY_RECEIVED,
+    aggregateType: 'purchase_order',
+    aggregateId: po.id,
+    payload: {
+      id: po.id,
+      code: purchaseOrderCode(po.number),
+      receiptId: receipt.id,
+      receipt: materialReceiptCode(receipt.number),
+      status,
+      issues,
+    },
+    audience: 'all',
+  });
+  return receipt.id;
+}
+
+/** Conferência técnica: o recebimento com a medida real encerra a chegada física pendente. */
+async function closeArrival(
+  tx: Tx,
+  actor: ActorContext,
+  purchaseOrderId: string,
+  arrivalId: string,
+  receiptId: string,
+) {
+  const rows = await tx.$queryRaw<{ id: string; status: string; purchase_order_id: string }[]>`
+    SELECT id, status, purchase_order_id FROM material_arrivals WHERE id = ${arrivalId}::uuid FOR UPDATE`;
+  const a = rows[0];
+  if (!a || a.purchase_order_id !== purchaseOrderId)
+    throw Errors.validation(undefined, 'Chegada não pertence a este pedido.');
+  if (a.status !== 'PENDENTE_CONFERENCIA') throw Errors.conflict('Esta chegada já foi conferida.');
+  const updated = await tx.materialArrival.update({
+    where: { id: arrivalId },
+    data: {
+      status: 'CONFERIDA',
+      materialReceiptId: receiptId,
+      conferredById: actor.userId,
+      conferredAt: new Date(),
+    },
+  });
+  await audit(tx, actor, {
+    action: 'material_arrival.conferred',
+    entityType: 'material_arrival',
+    entityId: arrivalId,
+    summary: `Chegada física CH-${String(updated.number).padStart(5, '0')} conferida.`,
+    changes: { materialReceiptId: receiptId },
+  });
+}
+
 export async function materialReceiptRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -204,167 +414,13 @@ export async function materialReceiptRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const input = materialReceiptSchema.parse(request.body);
       const actor = actorFrom(request);
-      const receiptId = await prisma.$transaction(async (tx) => {
-        const po = await lockPurchaseOrder(tx, input.purchaseOrderId);
-        if (!(PURCHASE_ORDER_RECEIVABLE as readonly string[]).includes(po.status)) {
-          throw Errors.business(
-            po.status === 'RASCUNHO'
-              ? 'Pedido ainda não confirmado pelo gestor.'
-              : 'Este pedido não está aguardando recebimento.',
-          );
-        }
-        await lockRows(
-          tx,
-          'purchase_order_items',
-          po.items.map((i) => i.id),
-        );
-        const items = new Map(
-          (
-            await tx.purchaseOrderItem.findMany({
-              where: { purchaseOrderId: po.id },
-              include: { allocations: true },
-            })
-          ).map((i) => [i.id, i]),
-        );
-        const seen = new Set<string>();
-        for (const [idx, l] of input.lines.entries()) {
-          const item = items.get(l.purchaseOrderItemId);
-          if (!item)
-            throw Errors.validation(
-              [{ path: `lines.${idx}`, message: 'Item não pertence ao pedido.' }],
-              'Item não pertence ao pedido.',
-            );
-          if (seen.has(item.id))
-            throw Errors.validation(undefined, 'Item repetido no recebimento.');
-          seen.add(item.id);
-          for (const v of [l.acceptedQuantity, l.rejectedQuantity ?? 0]) {
-            const err = v > 0 ? unitError(item.kind, item.unit, v) : null;
-            if (err) throw Errors.validation([{ path: `lines.${idx}`, message: err }], err);
-          }
-          const limit = num(item.quantity) + num(item.extraAuthorized);
-          if (num(item.receivedQuantity) + l.acceptedQuantity > limit + EPS) {
-            throw Errors.conflict(
-              `Item ${item.position} (${item.description}): recebimento acima do pedido ` +
-                `(pedido ${limit}, já recebido ${num(item.receivedQuantity)}). ` +
-                'O gestor precisa autorizar o excedente antes.',
-            );
-          }
-        }
-
-        const receipt = await tx.materialReceipt.create({
-          data: {
-            purchaseOrderId: po.id,
-            receivedById: actor.userId!,
-            deviceId: request.auth?.deviceId ?? null,
-            notes: input.notes ?? null,
-          },
-        });
-        const affected = new Set(poServiceOrderIds(po));
-        const reservations: { reservationId: string; serviceOrderId: string; quantity: number }[] =
-          [];
-        let issues = 0;
-        for (const l of input.lines) {
-          const item = items.get(l.purchaseOrderItemId)!;
-          const line = await tx.materialReceiptLine.create({
-            data: {
-              receiptId: receipt.id,
-              purchaseOrderItemId: item.id,
-              acceptedQuantity: l.acceptedQuantity,
-              rejectedQuantity: l.rejectedQuantity ?? 0,
-              specConfirmed: l.specConfirmed,
-              issue: l.issue ?? null,
-              issueNote: l.issueNote ?? null,
-            },
-          });
-          if (l.issue) issues++;
-          if (l.acceptedQuantity <= 0) continue;
-          await tx.purchaseOrderItem.update({
-            where: { id: item.id },
-            data: { receivedQuantity: q3(num(item.receivedQuantity) + l.acceptedQuantity) },
-          });
-          item.receivedQuantity = q3(num(item.receivedQuantity) + l.acceptedQuantity) as never;
-          if (item.sourcing === 'ESTOQUE' && item.stockItemId) {
-            const stock = await lockStockItem(tx, item.stockItemId);
-            await changeStock(tx, actor, stock, {
-              onHand: l.acceptedQuantity,
-              movement: {
-                type: 'ENTRADA_COMPRA',
-                materialReceiptLineId: line.id,
-                reason: `${materialReceiptCode(receipt.number)} / ${purchaseOrderCode(po.number)}`,
-              },
-            });
-            reservations.push(...(await autoReserve(tx, actor, stock, item.allocations)));
-          }
-        }
-        const status = statusFromItems([...items.values()]);
-        if (status !== po.status) {
-          await tx.purchaseOrder.update({
-            where: { id: po.id },
-            data: { status, version: { increment: 1 } },
-          });
-        }
-        await poHistory(tx, actor, po.id, {
-          kind: 'RECEBIMENTO',
-          summary: `${materialReceiptCode(receipt.number)}: material do pedido ${purchaseOrderCode(po.number)} recebido${issues ? ` com ${issues} divergência(s)` : ''}.`,
-          changes: {
-            receipt: materialReceiptCode(receipt.number),
-            lines: input.lines.map((l) => ({
-              item: items.get(l.purchaseOrderItemId)!.position,
-              accepted: l.acceptedQuantity,
-              rejected: l.rejectedQuantity ?? 0,
-              issue: l.issue ?? null,
-            })),
-            status,
-          },
-        });
-        await refreshReadiness(tx, actor, [...affected]);
-        for (const r of reservations) {
-          await appendEvent(tx, actor, {
-            type: EVENT_TYPES.STOCK_RESERVED,
-            aggregateType: 'stock_reservation',
-            aggregateId: r.reservationId,
-            payload: {
-              id: r.reservationId,
-              serviceOrderId: r.serviceOrderId,
-              quantity: r.quantity,
-            },
-            audience: MANAGEMENT_AUDIENCE,
-          });
-        }
-        if (issues) {
-          await appendEvent(tx, actor, {
-            type: EVENT_TYPES.MATERIAL_SHORTAGE_DETECTED,
-            aggregateType: 'purchase_order',
-            aggregateId: po.id,
-            payload: {
-              reason: 'DIVERGENCIA_RECEBIMENTO',
-              purchaseOrderId: po.id,
-              code: purchaseOrderCode(po.number),
-              receipt: materialReceiptCode(receipt.number),
-              serviceOrderIds: [...affected],
-            },
-            audience: MANAGEMENT_AUDIENCE,
-          });
-        }
-        await appendEvent(tx, actor, {
-          type:
-            status === 'RECEBIDO'
-              ? EVENT_TYPES.MATERIAL_RECEIVED
-              : EVENT_TYPES.MATERIAL_PARTIALLY_RECEIVED,
-          aggregateType: 'purchase_order',
-          aggregateId: po.id,
-          payload: {
-            id: po.id,
-            code: purchaseOrderCode(po.number),
-            receiptId: receipt.id,
-            receipt: materialReceiptCode(receipt.number),
-            status,
-            issues,
-          },
-          audience: 'all',
-        });
-        return receipt.id;
-      });
+      const receiptId = await prisma.$transaction((tx) =>
+        registerMaterialReceipt(tx, actor, input, {
+          deviceId: request.auth?.deviceId ?? null,
+          expectedVersion: input.expectedVersion,
+          arrivalId: input.arrivalId,
+        }),
+      );
       const r = await prisma.materialReceipt.findUniqueOrThrow({
         where: { id: receiptId },
         include: receiptInclude,
