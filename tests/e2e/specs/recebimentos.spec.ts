@@ -99,7 +99,7 @@ test.describe.serial('Simplificação Fase 3 — Aguardando chegada', () => {
       },
       pickup: {
         scheduledDate: today(),
-        windowStart: '00:00',
+        windowStart: '23:00',
         team: 'EQUIPE_PROPRIA',
         logisticsUserId: THIAGO.userId,
         participantUserIds: [JOAO.userId],

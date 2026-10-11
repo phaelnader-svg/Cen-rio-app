@@ -196,7 +196,8 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
     ])
       expect((await andre.page.request.get(path)).status(), path).toBe(403);
     const jobs = await andre.page.request.get('/api/v1/logistics/jobs');
-    expect(await jobs.text()).not.toMatch(/Cents|9000|10000/);
+    // Valores como números isolados (o CEP fictício 01000000 contém "10000" e não é valor).
+    expect(await jobs.text()).not.toMatch(/Cents|(?<!\d)(9000|10000)(?!\d)/);
     await andre.context.close();
   });
 });
