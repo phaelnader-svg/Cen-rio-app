@@ -79,7 +79,7 @@ async function pieceArrivals(db: PrismaClient | Tx, device: boolean): Promise<Pi
     },
     include: {
       order: { include: { customer: { select: { name: true } } } },
-      items: { include: { orderItem: true } },
+      items: { include: { orderItem: true }, orderBy: { orderItem: { position: 'asc' } } },
       receipts: { select: { id: true } },
     },
     orderBy: [{ scheduledDate: 'asc' }, { windowStart: 'asc' }],
