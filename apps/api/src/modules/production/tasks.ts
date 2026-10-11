@@ -792,6 +792,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       if (!canViewAll(request) && t.assigneeUserId !== me) {
         throw Errors.forbidden('Esta tarefa é de outra pessoa.');
       }
+      // Simplificação Fase 4: rascunho (pré-planejamento) não existe para quem executa.
+      if (!canViewAll(request) && t.status === 'RASCUNHO') throw Errors.notFound('Tarefa');
       const { timezone } = await company(prisma);
       const [events, so, readiness, osTasks, links, revisions] = await Promise.all([
         prisma.productionTaskEvent.findMany({

@@ -228,6 +228,12 @@ describe('B. Planejamento individual e publicação', () => {
     const joao = await tabletOf(app, admin, 'João', '730561');
     expect((await queue(ricardo)).items).toHaveLength(0);
     expect((await queue(joao)).items).toHaveLength(0);
+    // Nem por chamada direta: lista, detalhe e início recusam o rascunho.
+    const mineList = (await joao.get('/api/v1/production-tasks/mine')).body;
+    expect(JSON.stringify(mineList)).not.toContain(prep[0]!.id);
+    expect((await joao.get(`/api/v1/production-tasks/${prep[0]!.id}`)).status).toBe(404);
+    expect((await act(joao, prep[0]!.id, 'start', { version: prep[0]!.version })).status).toBe(422);
+    expect(await db().productionTask.count({ where: { startedAt: { not: null } } })).toBe(0);
     // Prévia e publicação em uma ação.
     const prev = (await admin.get(`/api/v1/production-plans/${planned.planId}/publication-preview`))
       .body;
@@ -278,7 +284,12 @@ describe('B. Planejamento individual e publicação', () => {
     // Tentar iniciar antes da data: recusado.
     const first = q1.items[0]!.task;
     const v = (await db().productionTask.findUniqueOrThrow({ where: { id: first.id } })).version;
-    expect((await act(joao, first.id, 'start', { version: v })).status).not.toBe(200);
+    const early = await act(joao, first.id, 'start', { version: v });
+    expect(early.status).toBe(422);
+    expect(early.body.error.message).toMatch(/data de início/);
+    expect(
+      (await db().productionTask.findUniqueOrThrow({ where: { id: first.id } })).startedAt,
+    ).toBeNull();
     expect((await entryOf(admin, so.id))!.blockers.join(' ')).toMatch(
       /Aguardando a data de início/,
     );
