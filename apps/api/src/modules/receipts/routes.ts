@@ -18,12 +18,14 @@ import {
   orderCode,
   pickupCode,
   receiptCode,
+  serviceOrderCode,
   toCustomerSummary,
 } from '../commercial/common';
 import { refreshOrderStatus } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { emitPickupEvent } from '../pickups/routes';
 import { syncTripCost } from '../finance/trip-costs';
+import { autoServiceOrderForReceipt } from '../service-orders/auto';
 
 /** Quem registra recebimentos pode usar painel ou (futuramente) tablet. */
 const REGISTER = { session: 'any', permissions: ['recebimentos.registrar'] } as const;
@@ -35,6 +37,7 @@ const FUTURE_TOLERANCE_MS = 5 * 60_000;
 const fullInclude = {
   order: { include: { customer: true } },
   pickup: { select: { id: true, number: true } },
+  serviceOrder: { select: { id: true, number: true } },
   receivedBy: true,
   registeredBy: { select: { displayName: true } },
   lines: {
@@ -73,6 +76,9 @@ async function loadReceiptDto(db: PrismaClient | Tx, id: string): Promise<Receip
       location: l.location,
       correctedQuantity: l.corrections[0]?.newQuantity ?? null,
     })),
+    generatedServiceOrder: r.serviceOrder
+      ? { id: r.serviceOrder.id, code: serviceOrderCode(r.serviceOrder.number) }
+      : null,
     createdAt: r.createdAt.toISOString(),
   };
 }
@@ -269,6 +275,9 @@ export async function receiptRoutes(app: FastifyInstance) {
           await syncTripCost(tx, actor, { pickupId: pickup.id });
         }
         const status = await refreshOrderStatus(tx, order.id);
+        // Simplificação Fase 2 (D1): pedido do Novo serviço → a OS das peças que chegaram nasce
+        // aqui, na MESMA transação (falhou a OS, nada do recebimento é gravado).
+        const generated = await autoServiceOrderForReceipt(tx, actor, receipt.id);
         const total = input.lines.reduce((a, l) => a + l.quantity, 0);
         await audit(tx, actor, {
           action: 'receipt.registered',
@@ -284,6 +293,7 @@ export async function receiptRoutes(app: FastifyInstance) {
               condition: l.condition,
             })),
             divergences: input.divergences ?? null,
+            ...(generated ? { generatedServiceOrderId: generated.id } : {}),
           },
         });
         await appendEvent(tx, actor, {
@@ -297,6 +307,7 @@ export async function receiptRoutes(app: FastifyInstance) {
             pickupId: pickup?.id ?? null,
             pieces: total,
             orderStatus: status,
+            serviceOrderId: generated?.id ?? null,
           },
           audience: AUDIENCE,
         });

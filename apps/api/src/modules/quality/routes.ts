@@ -108,6 +108,7 @@ import {
   updateDelivery,
 } from './shipping';
 import { syncTripCost, upsertTripCost } from '../finance/trip-costs';
+import { tripCostTeamProblem } from '../pickups/service';
 
 const PACKAGING_ACCESS = {
   session: 'any',
@@ -728,6 +729,9 @@ export async function qualityRoutes(app: FastifyInstance) {
       const input = createDeliverySchema.parse(request.body);
       if (input.tripCost && !request.auth!.permissions.has('financeiro.gerenciar'))
         throw Errors.forbidden('Informar o custo da viagem exige permissão do financeiro.');
+      const teamProblem = tripCostTeamProblem(input.team, Boolean(input.tripCost));
+      if (teamProblem)
+        throw Errors.validation([{ path: 'tripCost', message: teamProblem }], teamProblem);
       const d = await prisma.$transaction(async (tx) => {
         const created = await createDelivery(tx, actorFrom(request), input);
         if (input.tripCost)

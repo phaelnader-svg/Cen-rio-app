@@ -11,6 +11,11 @@ export function actorFrom(request: FastifyRequest): ActorContext {
   };
 }
 
+/** Aceita a requisição (rotas) ou um ator já resolvido (serviços de domínio reutilizáveis). */
+export function actorOf(source: FastifyRequest | ActorContext): ActorContext {
+  return 'headers' in source ? actorFrom(source) : source;
+}
+
 export interface AuditEntry {
   action: string;
   entityType: string;

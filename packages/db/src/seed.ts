@@ -210,6 +210,22 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
       }
     }
 
+    // Simplificação Fase 2 (D3): Thiago é o responsável padrão da retirada pela equipe própria —
+    // só quando NADA estiver configurado (nunca sobrescreve a escolha feita em Empresa).
+    const settings = await prisma.companySettings.findUnique({ where: { id: 1 } });
+    if (settings && !settings.ownTeamDefaultUserId) {
+      const thiago = await prisma.employee.findFirst({
+        where: { displayName: 'Thiago', active: true, user: { active: true } },
+      });
+      if (thiago) {
+        await prisma.companySettings.update({
+          where: { id: 1 },
+          data: { ownTeamDefaultUserId: thiago.userId },
+        });
+        log('✔ Thiago definido como responsável padrão da equipe própria.');
+      }
+    }
+
     // Fase 8: competências iniciais por função (só para quem ainda não tem nenhuma).
     const employees = await prisma.employee.findMany({
       where: { skills: { none: {} } },

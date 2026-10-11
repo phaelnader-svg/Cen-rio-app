@@ -134,6 +134,8 @@ model User {
   weeklyClosingsChecked WeeklyClosing[]  @relation("WeeklyClosingCheckedBy")
   closingPayments       ClosingPayment[] @relation("ClosingPaymentBeneficiary")
 
+  ownTeamDefaultFor CompanySettings[] @relation("OwnTeamDefault")
+
   @@map("users")
 }
 
@@ -363,6 +365,11 @@ model CompanySettings {
   /// Recebedor único da logística (André). Vazio/inativo = obrigação não é gerada (pendência).
   logisticsPayeeUserId     String? @map("logistics_payee_user_id") @db.Uuid
   logisticsPayee           User?   @relation("LogisticsPayee", fields: [logisticsPayeeUserId], references: [id], onDelete: SetNull)
+
+  // Simplificação Fase 2: responsável padrão da retirada pela equipe própria (Thiago). Vazio ou
+  // inelegível = pendência para o gestor escolher; nunca um funcionário qualquer.
+  ownTeamDefaultUserId String? @map("own_team_default_user_id") @db.Uuid
+  ownTeamDefault       User?   @relation("OwnTeamDefault", fields: [ownTeamDefaultUserId], references: [id], onDelete: SetNull)
 
   @@map("company_settings")
 }
@@ -608,6 +615,15 @@ model CommercialOrder {
   adjustments CommercialAdjustment[]
   receivables CustomerReceivable[]
 
+  // Simplificação Fase 2 — "Novo serviço": o pedido é o registro do serviço fechado antes da
+  // chegada. Com `autoServiceOrder`, cada recebimento confirmado gera a OS das peças recebidas.
+  /// Pedido criado pelo fluxo Novo serviço: a OS nasce automaticamente na chegada das peças.
+  autoServiceOrder Boolean   @default(false) @map("auto_service_order")
+  /// Prazo de entrega combinado com o cliente (copiado para a OS gerada).
+  promisedDate     DateTime? @map("promised_date") @db.Date
+  /// Observações técnicas conhecidas no fechamento (copiadas para a OS gerada).
+  technicalNotes   String?   @map("technical_notes") @db.VarChar(4000)
+
   @@index([customerId])
   @@index([status])
   @@index([createdAt(sort: Desc)])
@@ -635,6 +651,14 @@ model CommercialOrderItem {
   /// Fase 10: peças devolvidas ao cliente (confirmadas).
   returnedQuantity Int               @default(0) @map("returned_quantity")
   returnLines      PieceReturnLine[]
+
+  // Simplificação Fase 2: especificações conhecidas no fechamento (opcionais), usadas na OS
+  // gerada automaticamente na chegada. Nada técnico é exigido antes da peça chegar.
+  serviceType     ServiceType? @map("service_type")
+  fabricName      String?      @map("fabric_name") @db.VarChar(120)
+  fabricColor     String?      @map("fabric_color") @db.VarChar(80)
+  fabricReference String?      @map("fabric_reference") @db.VarChar(80)
+  technicalNotes  String?      @map("technical_notes") @db.VarChar(2000)
 
   @@unique([orderId, position])
   @@map("commercial_order_items")
@@ -777,6 +801,8 @@ model Receipt {
   receivedBy   Employee?       @relation("ReceiptReceivedBy", fields: [receivedByEmployeeId], references: [id], onDelete: SetNull)
   registeredBy User?           @relation("ReceiptRegisteredBy", fields: [registeredById], references: [id], onDelete: SetNull)
   lines        ReceiptLine[]
+  /// Simplificação Fase 2: OS gerada automaticamente por este recebimento (no máximo uma).
+  serviceOrder ServiceOrder?
 
   @@index([orderId])
   @@index([receivedAt(sort: Desc)])
@@ -896,6 +922,11 @@ model ServiceOrder {
   productionPayables   ProductionPayable[]
   logisticsAllocations LogisticsCostAllocation[]
   laborReviews         LaborReview[]
+
+  /// Simplificação Fase 2: recebimento que gerou esta OS automaticamente (único). Vazio = OS
+  /// criada manualmente (fluxo anterior, preservado).
+  sourceReceiptId String?  @unique @map("source_receipt_id") @db.Uuid
+  sourceReceipt   Receipt? @relation(fields: [sourceReceiptId], references: [id], onDelete: Restrict)
 
   @@index([orderId])
   @@index([customerId])

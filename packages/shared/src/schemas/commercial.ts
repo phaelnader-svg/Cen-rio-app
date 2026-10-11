@@ -403,3 +403,90 @@ export const serviceOrderQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
 });
+
+// ───────────────────── Simplificação Fase 2 — Novo serviço ─────────────────────
+
+/** Cliente do Novo serviço: um já cadastrado (com endereço existente ou novo) ou um cliente novo. */
+const newServiceCustomerSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('EXISTENTE'),
+    customerId: idSchema,
+    /** Endereço de retirada já cadastrado. */
+    addressId: idSchema.nullable().optional(),
+    /** Endereço novo, cadastrado no cliente na mesma operação (exige clientes.gerenciar). */
+    newAddress: customerAddressSchema.nullable().optional(),
+  }),
+  z
+    .object({
+      mode: z.literal('NOVO'),
+      ...customerFields,
+      address: customerAddressSchema,
+      /** Confirma o cadastro mesmo havendo clientes com contato/nome semelhantes. */
+      allowSimilar: z.boolean().default(false),
+    })
+    .superRefine(refineDocument),
+]);
+
+/** Peça do serviço fechado: só o que já se sabe no fechamento (nada técnico é obrigatório). */
+export const newServiceItemSchema = orderItemSchema.omit({ id: true }).extend({
+  serviceType: z.enum(SERVICE_TYPES),
+  fabricName: optionalText(120),
+  fabricColor: optionalText(80),
+  fabricReference: optionalText(80),
+  technicalNotes: optionalText(2000),
+});
+
+export const newServicePickupSchema = z
+  .object({
+    scheduledDate: dateOnly.nullable().optional(),
+    /** Horário de CHEGADA ao endereço do cliente (não há horário de término). */
+    windowStart: timeOnly.nullable().optional(),
+    team: z.enum(PICKUP_TEAMS),
+    /** Profissional responsável (equipe própria: padrão da empresa; terceirizada: André). */
+    logisticsUserId: idSchema.nullable().optional(),
+    /** Quem executa junto (ex.: Izaías). Não são credores (Fase 6). */
+    participantUserIds: z.array(idSchema).max(6).default([]),
+    /** Valor TOTAL combinado com a equipe terceirizada (exige financeiro.gerenciar). */
+    amountCents: z.number().int().min(1).max(10_000_000).nullable().optional(),
+    instructions: optionalText(1000),
+    notes: optionalText(200),
+  })
+  .superRefine((v, ctx) => {
+    refineWindow(v, ctx);
+    if (new Set(v.participantUserIds).size !== v.participantUserIds.length)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['participantUserIds'],
+        message: 'Participante repetido.',
+      });
+    if (v.amountCents && v.team === 'EQUIPE_PROPRIA')
+      ctx.addIssue({
+        code: 'custom',
+        path: ['amountCents'],
+        message: 'Equipe própria não gera custo de terceirização.',
+      });
+  });
+
+export const newServiceSchema = z.object({
+  customer: newServiceCustomerSchema,
+  service: z.object({
+    contractedService: trimmed(2, 300, 'Serviço contratado'),
+    description: optionalText(2000),
+    /** Valor total fechado com o cliente (exige pedidos.valores). */
+    agreedValueCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
+    paymentTerms: optionalText(1000),
+    /** Prazo de entrega combinado (copiado para a OS gerada na chegada). */
+    promisedDate: dateOnly.nullable().optional(),
+    technicalNotes: optionalText(4000),
+    notes: optionalText(2000),
+    items: z.array(newServiceItemSchema).min(1, { message: 'Inclua ao menos uma peça.' }).max(50),
+  }),
+  pickup: newServicePickupSchema,
+});
+export type NewServiceInput = z.input<typeof newServiceSchema>;
+
+/** Responsável padrão da equipe própria (Empresa). `null` remove a configuração. */
+export const ownTeamSettingsSchema = z.object({
+  userId: idSchema.nullable(),
+  version: versionSchema,
+});

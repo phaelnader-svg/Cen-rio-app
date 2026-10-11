@@ -110,6 +110,10 @@ export interface OrderDto extends OrderSummaryDto {
   cancelledAt: string | null;
   cancelReason: string | null;
   createdBy: string | null;
+  /** Simplificação Fase 2: a OS nasce automaticamente na confirmação da chegada das peças. */
+  autoServiceOrder: boolean;
+  promisedDate: string | null;
+  technicalNotes: string | null;
   version: number;
   updatedAt: string;
 }
@@ -175,6 +179,8 @@ export interface ReceiptDto {
   divergences: string | null;
   notes: string | null;
   lines: ReceiptLineDto[];
+  /** Simplificação Fase 2: OS gerada automaticamente por este recebimento (pedidos do Novo serviço). */
+  generatedServiceOrder: { id: string; code: string } | null;
   createdAt: string;
 }
 
@@ -290,4 +296,51 @@ export interface AttachmentDto {
 export interface PageDto<T> {
   items: T[];
   total: number;
+}
+
+// ───────────────────── Simplificação Fase 2 — Novo serviço ─────────────────────
+
+export type OwnTeamProblem = 'NAO_CONFIGURADO' | 'INATIVO' | 'INELEGIVEL';
+
+export interface OwnTeamSettingsDto {
+  /** Responsável padrão configurado (referência ao usuário real). */
+  userId: string | null;
+  displayName: string | null;
+  /** Pendência para o gestor resolver — o sistema nunca escolhe outro silenciosamente. */
+  problem: OwnTeamProblem | null;
+  candidates: { userId: string; displayName: string }[];
+  version: number;
+}
+
+export interface NewServiceDefaultsDto {
+  ownTeam: OwnTeamSettingsDto;
+  /** Responsável padrão da terceirizada = recebedor configurado (André), se elegível. */
+  outsourced: { userId: string | null; displayName: string | null };
+  people: {
+    EQUIPE_PROPRIA: { userId: string; displayName: string }[];
+    LOGISTICA_TERCEIRIZADA: { userId: string; displayName: string }[];
+  };
+  /** Valor sugerido (Fase 6). Só com permissão financeira; senão null. */
+  suggestedPickupCostCents: number | null;
+  canSetValues: boolean;
+  canSetTripCost: boolean;
+  canCreateCustomer: boolean;
+}
+
+export interface NewServiceResultDto {
+  customer: { id: string; name: string; created: boolean };
+  order: { id: string; code: string; totalPieces: number; agreedValueCents: number | null };
+  pickup: {
+    id: string;
+    code: string;
+    status: PickupStatus;
+    scheduledDate: string | null;
+    windowStart: string | null;
+    team: PickupTeam;
+    responsible: string | null;
+    participants: string[];
+    address: AddressSnapshot | null;
+  };
+  /** Custo previsto da logística (null sem custo ou sem permissão financeira). */
+  tripCost: { code: string; amountCents: number; status: string } | null;
 }

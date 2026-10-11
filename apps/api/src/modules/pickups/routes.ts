@@ -12,7 +12,8 @@ import {
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { actorFrom, audit } from '../../core/audit';
+import { actorFrom, actorOf, audit } from '../../core/audit';
+import type { ActorContext } from '../../core/types';
 import { appendEvent } from '../../core/events/append';
 import { Errors } from '../../lib/errors';
 import { idParams } from '../presenters';
@@ -28,11 +29,10 @@ import {
   snapshotAddress,
   toCustomerSummary,
 } from '../commercial/common';
-import { itemAllocations, refreshOrderStatus } from '../commercial/status';
+import { refreshOrderStatus } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
-import { syncTripCost, upsertTripCost } from '../finance/trip-costs';
-import { loadUserPermissions } from '../../core/permissions';
-import { notify } from '../notifications/notify';
+import { syncTripCost } from '../finance/trip-costs';
+import { createPickup, validatePickupItems } from './service';
 
 const VIEW = { session: 'WEB', permissions: ['retiradas.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['retiradas.gerenciar'] } as const;
@@ -99,12 +99,12 @@ export async function loadPickupDto(db: PrismaClient | Tx, id: string): Promise<
 
 export async function emitPickupEvent(
   tx: Tx,
-  request: FastifyRequest,
+  request: FastifyRequest | ActorContext,
   pickupId: string,
   type: (typeof EVENT_TYPES)['PICKUP_CREATED' | 'PICKUP_UPDATED' | 'PICKUP_STATUS_CHANGED'],
 ) {
   const p = await tx.pickupRequest.findUniqueOrThrow({ where: { id: pickupId } });
-  await appendEvent(tx, actorFrom(request), {
+  await appendEvent(tx, actorOf(request), {
     type,
     aggregateType: 'pickup_request',
     aggregateId: pickupId,
@@ -118,39 +118,6 @@ export async function emitPickupEvent(
     },
     audience: PICKUP_AUDIENCE,
   });
-}
-
-/** Valida as peças da retirada contra o que ainda falta retirar/receber. */
-async function validateItems(
-  tx: Tx,
-  orderId: string,
-  items: { orderItemId: string; quantity: number }[],
-  currentPickupId?: string,
-) {
-  const orderItems = await tx.commercialOrderItem.findMany({ where: { orderId } });
-  const alloc = await itemAllocations(tx, orderId);
-  const current = currentPickupId
-    ? new Map(
-        (await tx.pickupRequestItem.findMany({ where: { pickupId: currentPickupId } })).map((i) => [
-          i.orderItemId,
-          i.quantity,
-        ]),
-      )
-    : new Map<string, number>();
-  const seen = new Set<string>();
-  for (const it of items) {
-    const oi = orderItems.find((o) => o.id === it.orderItemId);
-    if (!oi) throw Errors.validation(undefined, 'Peça não pertence a este pedido.');
-    if (seen.has(it.orderItemId)) throw Errors.validation(undefined, 'Peça repetida na retirada.');
-    seen.add(it.orderItemId);
-    const reservedElsewhere = alloc.inPickups(oi.id) - (current.get(oi.id) ?? 0);
-    const available = oi.quantity - oi.receivedQuantity - reservedElsewhere;
-    if (it.quantity > available) {
-      throw Errors.business(
-        `"${oi.description}": ${available} peça(s) disponível(is) para retirada (já recebidas ou em outra retirada).`,
-      );
-    }
-  }
 }
 
 export async function pickupRoutes(app: FastifyInstance) {
@@ -192,110 +159,10 @@ export async function pickupRoutes(app: FastifyInstance) {
     { config: { access: MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createPickupSchema.parse(request.body);
-      if (input.tripCost && !request.auth!.permissions.has('financeiro.gerenciar'))
-        throw Errors.forbidden('Informar o custo da viagem exige permissão do financeiro.');
-      const id = await prisma.$transaction(async (tx) => {
-        if (!(await lockOrder(tx, input.orderId))) throw Errors.notFound('Pedido');
-        await lockOrderItems(tx, input.orderId);
-        const order = await tx.commercialOrder.findUniqueOrThrow({ where: { id: input.orderId } });
-        if (order.status === 'CANCELADO') throw Errors.business('Pedido cancelado.');
-        if (order.status === 'RECEBIDO')
-          throw Errors.business('Todas as peças deste pedido já foram recebidas.');
-        await validateItems(tx, order.id, input.items);
-        const address = input.addressId
-          ? await activeAddress(tx, order.customerId, input.addressId)
-          : null;
-        const snapshot = address
-          ? snapshotAddress(address)
-          : asSnapshot(order.pickupAddressSnapshot);
-        if (!snapshot) throw Errors.validation(undefined, 'Informe o endereço da retirada.');
-        const status: PickupStatus = input.scheduledDate ? 'AGENDADA' : 'AGUARDANDO_AGENDAMENTO';
-        const actor = actorFrom(request);
-        // Correção global: responsável pela execução já na solicitação (mesma regra da atribuição).
-        let executor: { id: string; displayName: string } | null = null;
-        if (input.logisticsUserId) {
-          const perms = await loadUserPermissions(tx, input.logisticsUserId);
-          const u = await tx.user.findUnique({ where: { id: input.logisticsUserId } });
-          if (!u?.active || (!perms.has('logistica.executar') && !perms.has('producao.executar')))
-            throw Errors.business('Responsável inválido para a retirada.');
-          executor = { id: u.id, displayName: u.displayName };
-        }
-        const pickup = await tx.pickupRequest.create({
-          data: {
-            orderId: order.id,
-            addressId: address?.id ?? order.pickupAddressId,
-            addressSnapshot: snapshot as unknown as Prisma.InputJsonValue,
-            scheduledDate: parseDateOnly(input.scheduledDate),
-            windowStart: input.windowStart ?? null,
-            windowEnd: input.windowEnd ?? null,
-            team: input.team,
-            teamNotes: input.teamNotes ?? null,
-            instructions: input.instructions ?? null,
-            externalReference: input.externalReference ?? null,
-            logisticsUserId: executor?.id ?? null,
-            status,
-            createdById: actor.userId,
-            items: {
-              create: input.items.map((i) => ({
-                orderItemId: i.orderItemId,
-                quantity: i.quantity,
-              })),
-            },
-            events: {
-              create: [
-                {
-                  kind: 'SOLICITADA',
-                  toStatus: 'AGUARDANDO_AGENDAMENTO',
-                  recordedById: actor.userId,
-                },
-                ...(status === 'AGENDADA'
-                  ? [
-                      {
-                        kind: 'AGENDADA',
-                        fromStatus: 'AGUARDANDO_AGENDAMENTO' as const,
-                        toStatus: 'AGENDADA' as const,
-                        note: `${input.scheduledDate}${input.windowStart ? ` chegada ${input.windowStart}${input.windowEnd ? `–${input.windowEnd}` : ''}` : ''}`,
-                        recordedById: actor.userId,
-                      },
-                    ]
-                  : []),
-                ...(executor
-                  ? [
-                      {
-                        kind: 'RESPONSAVEL',
-                        note: `Responsável: ${executor.displayName}`,
-                        recordedById: actor.userId,
-                      },
-                    ]
-                  : []),
-              ],
-            },
-          },
-        });
-        if (input.tripCost)
-          await upsertTripCost(tx, actor, { pickupId: pickup.id, ...input.tripCost });
-        await refreshOrderStatus(tx, order.id);
-        await audit(tx, actor, {
-          action: 'pickup.created',
-          entityType: 'pickup_request',
-          entityId: pickup.id,
-          summary: `Retirada ${pickupCode(pickup.number)} solicitada para o pedido ${orderCode(order.number)}.`,
-          changes: { status, scheduledDate: input.scheduledDate ?? null, team: input.team },
-        });
-        if (executor)
-          await notify(tx, actor, [
-            {
-              userId: executor.id,
-              kind: 'ENTREGA_ATRIBUIDA',
-              dedupeKey: `RETIRADA_ATRIBUIDA:${pickup.id}:${pickup.version}`,
-              body: `Retirada ${pickupCode(pickup.number)}${input.scheduledDate ? ` em ${input.scheduledDate.split('-').reverse().join('/')}${input.windowStart ? `, chegada ${input.windowStart}` : ''}` : ''}.`,
-              includeActor: true,
-            },
-          ]);
-        await emitPickupEvent(tx, request, pickup.id, EVENT_TYPES.PICKUP_CREATED);
-        await emitOrderEvent(tx, request, order.id);
-        return pickup.id;
-      });
+      const id = await prisma.$transaction(
+        async (tx) =>
+          (await createPickup(tx, actorFrom(request), request.auth!.permissions, input)).id,
+      );
       return reply.status(201).send(await loadPickupDto(prisma, id));
     },
   );
@@ -316,7 +183,17 @@ export async function pickupRoutes(app: FastifyInstance) {
           `Retirada "${PICKUP_STATUS_LABEL[before.status]}" não pode ser alterada.`,
         );
       }
-      await validateItems(tx, before.orderId, input.items, id);
+      await validatePickupItems(tx, before.orderId, input.items, id);
+      // Simplificação Fase 2: viagem com custo de terceirização não vira "equipe própria" sem
+      // antes tratar o custo (senão o recebedor terceirizado seria credor de viagem própria).
+      if (
+        input.team === 'EQUIPE_PROPRIA' &&
+        before.team !== 'EQUIPE_PROPRIA' &&
+        (await tx.logisticsCost.count({ where: { pickupId: id, status: { not: 'CANCELADO' } } }))
+      )
+        throw Errors.business(
+          'Esta retirada tem custo de logística terceirizada. Ajuste o custo no financeiro antes de mudar para equipe própria.',
+        );
       const order = await tx.commercialOrder.findUniqueOrThrow({ where: { id: before.orderId } });
       const address =
         input.addressId && input.addressId !== before.addressId

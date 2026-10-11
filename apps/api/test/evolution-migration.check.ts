@@ -54,6 +54,9 @@ describe.runIf(STEP === 'read')('Legado migrado: leitura pelo código atual', ()
       F(`/weekly-closings/${week}?format=csv`),
       F(`/productivity?from=${day(-60)}&to=${today()}`),
       F('/reports/margens'),
+      // Simplificação Fase 2: Novo serviço sobre o legado (sem configuração = pendência, não erro).
+      '/api/v1/services/new-defaults',
+      '/api/v1/company/own-team',
     ];
     const bad: string[] = [];
     for (const p of paths) {
@@ -171,5 +174,44 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       where: { serviceOrderItemId: so.items[0].id, status: { not: 'CANCELADO' } },
     });
     expect(split).toBe(2);
+    // Simplificação Fase 2: Novo serviço (pedido com OS automática) + chegada → OS gerada.
+    const ns = await post('/api/v1/services', {
+      customer: {
+        mode: 'NOVO',
+        kind: 'PF',
+        name: 'Cliente Migração Novo Serviço',
+        phone: null,
+        allowSimilar: true,
+        address: {
+          label: 'Retirada',
+          street: 'Rua da Migração',
+          number: '1',
+          city: 'Cidade Teste',
+          state: 'SP',
+        },
+      },
+      service: {
+        contractedService: 'Reforma',
+        items: [
+          { pieceType: 'SOFA', description: 'Sofá', quantity: 1, serviceType: 'REFORMA_COMPLETA' },
+        ],
+      },
+      pickup: { team: 'LOGISTICA_TERCEIRIZADA' },
+    });
+    expect(ns.status, JSON.stringify(ns.body)).toBe(201);
+    const nsOrder = await db().commercialOrder.findUniqueOrThrow({
+      where: { id: ns.body.order.id },
+      include: { items: true },
+    });
+    const rec = await post('/api/v1/receipts', {
+      orderId: nsOrder.id,
+      pickupId: null,
+      origin: 'ENTREGUE_PELO_CLIENTE',
+      lines: [
+        { orderItemId: nsOrder.items[0]!.id, quantity: 1, condition: 'BOA', location: 'Oficina' },
+      ],
+    });
+    expect(rec.status, JSON.stringify(rec.body)).toBe(201);
+    expect(rec.body.generatedServiceOrder).toBeTruthy();
   });
 });

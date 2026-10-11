@@ -18,7 +18,8 @@ import type {
   Tx,
 } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { actorFrom, audit } from '../../core/audit';
+import { actorFrom, actorOf, audit } from '../../core/audit';
+import type { ActorContext } from '../../core/types';
 import { appendEvent } from '../../core/events/append';
 import { Errors } from '../../lib/errors';
 import { idParams } from '../presenters';
@@ -39,6 +40,7 @@ import {
   serviceStates,
 } from '../commercial/status';
 import { syncTripCost } from '../finance/trip-costs';
+import { createOrder } from './service';
 
 const VIEW = { session: 'WEB', permissions: ['pedidos.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['pedidos.gerenciar'] } as const;
@@ -118,6 +120,9 @@ export async function loadOrderDto(
     cancelledAt: o.cancelledAt?.toISOString() ?? null,
     cancelReason: o.cancelReason,
     createdBy: o.createdBy?.displayName ?? null,
+    autoServiceOrder: o.autoServiceOrder,
+    promisedDate: o.promisedDate ? o.promisedDate.toISOString().slice(0, 10) : null,
+    technicalNotes: o.technicalNotes,
     version: o.version,
     updatedAt: o.updatedAt.toISOString(),
   };
@@ -125,7 +130,7 @@ export async function loadOrderDto(
 
 export async function emitOrderEvent(
   tx: Tx,
-  request: FastifyRequest,
+  request: FastifyRequest | ActorContext,
   orderId: string,
   type: (typeof EVENT_TYPES)[
     | 'ORDER_CREATED'
@@ -133,7 +138,7 @@ export async function emitOrderEvent(
     | 'ORDER_CANCELLED'] = EVENT_TYPES.ORDER_UPDATED,
 ) {
   const o = await tx.commercialOrder.findUniqueOrThrow({ where: { id: orderId } });
-  await appendEvent(tx, actorFrom(request), {
+  await appendEvent(tx, actorOf(request), {
     type,
     aggregateType: 'commercial_order',
     aggregateId: orderId,
@@ -191,60 +196,10 @@ export async function orderRoutes(app: FastifyInstance) {
     { config: { access: MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createOrderSchema.parse(request.body);
-      const hasValues =
-        (input.agreedValueCents !== null && input.agreedValueCents !== undefined) ||
-        Boolean(input.paymentTerms);
-      if (hasValues && !can(request, 'pedidos.valores')) {
-        throw Errors.forbidden(
-          'Você não tem permissão para informar valores e condições comerciais.',
-        );
-      }
-      const id = await prisma.$transaction(async (tx) => {
-        const customer = await tx.customer.findUnique({ where: { id: input.customerId } });
-        if (!customer || !customer.active)
-          throw Errors.validation(undefined, 'Cliente inválido ou arquivado.');
-        const address = input.pickupAddressId
-          ? await activeAddress(tx, customer.id, input.pickupAddressId)
-          : null;
-        const actor = actorFrom(request);
-        const order = await tx.commercialOrder.create({
-          data: {
-            customerId: customer.id,
-            pickupAddressId: address?.id ?? null,
-            pickupAddressSnapshot: address
-              ? (snapshotAddress(address) as unknown as Prisma.InputJsonValue)
-              : undefined,
-            contractedService: input.contractedService,
-            description: input.description ?? null,
-            agreedValueCents: input.agreedValueCents ?? null,
-            paymentTerms: input.paymentTerms ?? null,
-            notes: input.notes ?? null,
-            createdById: actor.userId,
-            items: {
-              create: input.items.map((i, idx) => ({
-                position: idx + 1,
-                pieceType: i.pieceType,
-                description: i.description,
-                quantity: i.quantity,
-                notes: i.notes ?? null,
-              })),
-            },
-          },
-        });
-        await audit(tx, actor, {
-          action: 'order.created',
-          entityType: 'commercial_order',
-          entityId: order.id,
-          summary: `Pedido ${orderCode(order.number)} criado para ${customer.name}.`,
-          changes: {
-            items: input.items.map((i) => `${i.quantity}× ${i.description}`),
-            agreedValueCents: order.agreedValueCents,
-            paymentTerms: order.paymentTerms,
-          },
-        });
-        await emitOrderEvent(tx, request, order.id, EVENT_TYPES.ORDER_CREATED);
-        return order.id;
-      });
+      const id = await prisma.$transaction(
+        async (tx) =>
+          (await createOrder(tx, actorFrom(request), request.auth!.permissions, input)).id,
+      );
       return reply.status(201).send(await loadOrderDto(prisma, request, id));
     },
   );

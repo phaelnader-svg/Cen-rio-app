@@ -19,7 +19,8 @@ import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { emitItemTechnicalChange } from '../../core/item-changes';
-import { actorFrom, audit } from '../../core/audit';
+import { actorFrom, actorOf, audit } from '../../core/audit';
+import type { ActorContext } from '../../core/types';
 import { appendEvent } from '../../core/events/append';
 import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
@@ -30,7 +31,6 @@ import { idParams, toEmployeeSummary } from '../presenters';
 import {
   can,
   dateOnly,
-  lockOrder,
   lockOrderItems,
   orderCode,
   parseDateOnly,
@@ -39,10 +39,9 @@ import {
 } from '../commercial/common';
 import { itemAllocations } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
-import { syncPickupCostsOfOrder } from '../finance/trip-costs';
-import { createLabor } from '../finance/labor';
 import { orderRevenue } from '../finance/revenue';
-import { loadTeam, setUpholsterer, upholsterersOf } from '../production/distribution';
+import { loadTeam, upholsterersOf } from '../production/distribution';
+import { createServiceOrder } from './service';
 
 const VIEW = { session: 'any', permissions: ['os.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['os.gerenciar'] } as const;
@@ -169,9 +168,9 @@ async function lockForRevision(tx: Tx, id: string): Promise<number> {
   return (last._max.revision ?? 0) + 1;
 }
 
-async function recordChange(
+export async function recordChange(
   tx: Tx,
-  request: FastifyRequest,
+  request: FastifyRequest | ActorContext,
   so: { id: string; number: number },
   revision: number,
   entry: {
@@ -186,7 +185,7 @@ async function recordChange(
     | 'SERVICE_ORDER_CREATED'
     | 'SERVICE_ORDER_UPDATED'] = EVENT_TYPES.SERVICE_ORDER_UPDATED,
 ) {
-  const actor = actorFrom(request);
+  const actor = actorOf(request);
   // Fase 10: alteração técnica da peça → a qualidade reavalia a aprovação (regra explícita).
   if ((entry.scope === 'ITEM' || entry.scope === 'MEDICAO') && entry.itemId) {
     await emitItemTechnicalChange(tx, actor, {
@@ -422,139 +421,10 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     { config: { access: MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createServiceOrderSchema.parse(request.body);
-      // Correção global: titular e mão de obra opcionais NA CRIAÇÃO, cada parte com a permissão
-      // da tela própria (nada é concedido por estar na criação da OS).
-      const perms = request.auth!.permissions;
-      if (input.items.some((i) => i.upholstererUserId) && !perms.has('producao.planejar'))
-        throw Errors.forbidden(
-          'Definir o tapeceiro titular exige a permissão de planejar a produção.',
-        );
-      if (
-        input.items.some((i) => i.labor) &&
-        !(perms.has('financeiro.ver') && perms.has('financeiro.gerenciar'))
-      )
-        throw Errors.forbidden(
-          'Combinar a mão de obra exige a permissão de gerenciar o financeiro.',
-        );
-      const id = await prisma.$transaction(async (tx) => {
-        if (!(await lockOrder(tx, input.orderId))) throw Errors.notFound('Pedido');
-        await lockOrderItems(tx, input.orderId);
-        const order = await tx.commercialOrder.findUniqueOrThrow({
-          where: { id: input.orderId },
-          include: { items: true },
-        });
-        if (order.status === 'CANCELADO') throw Errors.business('Pedido cancelado.');
-        const totalReceived = order.items.reduce((a, i) => a + i.receivedQuantity, 0);
-        if (totalReceived === 0) {
-          throw Errors.business(
-            'A OS técnica só pode ser criada depois que a peça chegar à oficina. Registre o recebimento primeiro.',
-          );
-        }
-        const alloc = await itemAllocations(tx, order.id);
-        const requested = new Map<string, number>();
-        for (const it of input.items) {
-          requested.set(it.orderItemId, (requested.get(it.orderItemId) ?? 0) + it.quantity);
-        }
-        for (const [orderItemId, qty] of requested) {
-          const item = order.items.find((i) => i.id === orderItemId);
-          if (!item) throw Errors.validation(undefined, 'Peça não pertence a este pedido.');
-          const available =
-            item.receivedQuantity - item.returnedQuantity - alloc.inServiceOrders(item.id);
-          if (qty > available) {
-            throw Errors.business(
-              available <= 0
-                ? `"${item.description}" ainda não foi recebida ou já está em outra OS.`
-                : `"${item.description}": apenas ${available} peça(s) recebida(s) disponível(is) para OS.`,
-            );
-          }
-        }
-        if (input.technicalLeadId) {
-          const lead = await tx.employee.findUnique({ where: { id: input.technicalLeadId } });
-          if (!lead || !lead.active)
-            throw Errors.validation(undefined, 'Responsável técnico inválido.');
-        }
-        const actor = actorFrom(request);
-        const so = await tx.serviceOrder.create({
-          data: {
-            orderId: order.id,
-            customerId: order.customerId,
-            technicalInstructions: input.technicalInstructions ?? null,
-            notes: input.notes ?? null,
-            promisedDate: parseDateOnly(input.promisedDate),
-            priority: input.priority,
-            technicalLeadId: input.technicalLeadId ?? null,
-            createdById: actor.userId,
-            items: {
-              create: input.items.map((it, idx) => {
-                const oi = order.items.find((i) => i.id === it.orderItemId)!;
-                return {
-                  orderItemId: oi.id,
-                  position: idx + 1,
-                  pieceType: oi.pieceType,
-                  description: it.description,
-                  quantity: it.quantity,
-                  serviceType: it.serviceType,
-                  fabricName: it.fabricName ?? null,
-                  fabricColor: it.fabricColor ?? null,
-                  fabricReference: it.fabricReference ?? null,
-                  foamSpecs: it.foamSpecs ?? null,
-                  technicalNotes: it.technicalNotes ?? null,
-                };
-              }),
-            },
-          },
-        });
-        // Correção global: titular e mão de obra por peça na MESMA transação — qualquer recusa
-        // (titular inelegível, valor inválido, duplicidade) desfaz a OS inteira.
-        const created = await tx.serviceOrderItem.findMany({
-          where: { serviceOrderId: so.id },
-          orderBy: { position: 'asc' },
-        });
-        for (const [idx, it] of input.items.entries()) {
-          const item = created[idx]!;
-          if (it.upholstererUserId)
-            await setUpholsterer(tx, actor, item.id, {
-              userId: it.upholstererUserId,
-              expectedUserId: null,
-              confirm: false,
-            });
-          if (it.labor)
-            await createLabor(tx, actor, {
-              professionalUserId: it.upholstererUserId!,
-              serviceOrderId: so.id,
-              serviceOrderItemId: item.id,
-              service: it.labor.service?.trim() || `Tapeçaria — ${it.description}`,
-              agreedCents: it.labor.agreedCents,
-              eligibility: it.labor.eligibility,
-              notes: it.labor.notes ?? null,
-            });
-        }
-        // Evolução Fase 6: a OS entra no rateio automático da retirada do pedido.
-        await syncPickupCostsOfOrder(tx, actor, order.id);
-        await recordChange(
-          tx,
-          request,
-          so,
-          1,
-          {
-            scope: 'CRIACAO',
-            changes: {
-              items: input.items.map((i) => ({
-                description: i.description,
-                quantity: i.quantity,
-                serviceType: i.serviceType,
-              })),
-              priority: input.priority,
-              promisedDate: input.promisedDate ?? null,
-            },
-            summary: `OS ${serviceOrderCode(so.number)} criada a partir do pedido ${orderCode(order.number)}.`,
-            action: 'service_order.created',
-          },
-          EVENT_TYPES.SERVICE_ORDER_CREATED,
-        );
-        await emitOrderEvent(tx, request, order.id);
-        return so.id;
-      });
+      const id = await prisma.$transaction(
+        async (tx) =>
+          (await createServiceOrder(tx, actorFrom(request), request.auth!.permissions, input)).id,
+      );
       return reply.status(201).send(await loadServiceOrderDto(prisma, id));
     },
   );
