@@ -15,7 +15,7 @@ export function MaterialReceivingPage() {
         title="Recebimento de materiais"
         description="Confira referência, cor e quantidade. Só o que chegou em ordem fica disponível; problemas são registrados como divergência."
       />
-      <MaterialReceiving initialId={initial} />
+      <MaterialReceiving initialId={initial} conference />
     </>
   );
 }

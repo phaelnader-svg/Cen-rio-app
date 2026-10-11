@@ -4,6 +4,7 @@ import { RECEIPT_ORIGIN_LABEL } from '@cenario/shared';
 import { PackageCheck } from 'lucide-react';
 import Link from 'next/link';
 import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
+import { useArrivals } from '@/lib/arrivals';
 import { usePendingReceipts, useReceipts } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
@@ -16,6 +17,12 @@ export function ReceiptsPage() {
   const register = can('recebimentos.registrar');
   const pending = usePendingReceipts(register);
   const receipts = useReceipts(undefined);
+  // Simplificação Fase 3: a mesma central "Aguardando chegada" dos tablets (situação de cada
+  // retirada; nunca "atrasada" — o horário é a chegada da equipe ao cliente).
+  const arrivals = useArrivals(register);
+  const stageOf = new Map(
+    (arrivals.data?.pieces ?? []).map((p) => [p.orderId, p.stageLabel] as const),
+  );
   return (
     <>
       <PageHeader
@@ -44,6 +51,11 @@ export function ReceiptsPage() {
                   <span className="w-24 font-mono text-sm font-semibold">{o.code}</span>
                   <div className="min-w-0 flex-1">
                     <p className="font-medium">{o.customer.name}</p>
+                    {stageOf.get(o.id) && (
+                      <p className="text-sm text-info-600" data-testid="pending-stage">
+                        {stageOf.get(o.id)}
+                      </p>
+                    )}
                     <p className="text-sm text-ink-muted">
                       {o.items
                         .filter((i) => i.pending > 0)
@@ -104,6 +116,21 @@ export function ReceiptsPage() {
                     )
                     .join(' · ')}
                   {r.receivedBy ? ` · ${r.receivedBy.displayName}` : ''}
+                </p>
+                <p className="mt-0.5 text-ink-muted" data-testid={`receipt-who-${r.code}`}>
+                  Confirmado por {r.registeredBy ?? '—'}
+                  {r.device ? ` no aparelho ${r.device}` : ''}
+                  {r.generatedServiceOrder ? (
+                    <>
+                      {' · '}
+                      <Link
+                        href={`/painel/os/${r.generatedServiceOrder.id}`}
+                        className="text-brand-700 hover:underline"
+                      >
+                        {r.generatedServiceOrder.code} criada
+                      </Link>
+                    </>
+                  ) : null}
                 </p>
                 {can('devolucoes.gerenciar') && (
                   <div className="mt-1 flex flex-wrap gap-2">

@@ -1,7 +1,18 @@
 'use client';
 
-import type { MaterialReceiptDto, PendingMaterialReceiptDto, ReceiptIssue } from '@cenario/shared';
-import { MATERIAL_SOURCING_LABEL, RECEIPT_ISSUES, RECEIPT_ISSUE_LABEL } from '@cenario/shared';
+import type {
+  MaterialArrivalDto,
+  MaterialReceiptDto,
+  PendingMaterialReceiptDto,
+  ReceiptIssue,
+} from '@cenario/shared';
+import {
+  ARRIVAL_PROBLEM_LABEL,
+  MATERIAL_SOURCING_LABEL,
+  PHYSICAL_UNIT_LABEL,
+  RECEIPT_ISSUES,
+  RECEIPT_ISSUE_LABEL,
+} from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { CheckCircle2, ChevronRight, PackageCheck, Truck } from 'lucide-react';
@@ -10,7 +21,9 @@ import { Button } from '@/components/ui/button';
 import { Field, Input, Select } from '@/components/ui/field';
 import { Alert, Card, EmptyState, Spinner } from '@/components/ui/misc';
 import { api, errorMessage, fieldErrors, newIdempotencyKey } from '@/lib/api';
+import { useMaterialArrivals } from '@/lib/arrivals';
 import { formatDay } from '@/lib/commercial';
+import { formatDateTime } from '@/lib/format';
 import { parseDecimal } from '@/lib/measurements';
 import { usePendingReceipts } from '@/lib/purchasing';
 import { qtyText, specText } from './format';
@@ -30,12 +43,17 @@ interface LineState {
 export function MaterialReceiving({
   large,
   initialId,
+  conference,
 }: {
   large?: boolean;
   initialId?: string | null;
+  /** Painel (Fase 3): lista as chegadas físicas (rolos etc.) aguardando conferência técnica. */
+  conference?: boolean;
 }) {
   const pending = usePendingReceipts();
+  const arrivals = useMaterialArrivals('PENDENTE_CONFERENCIA', Boolean(conference));
   const [selected, setSelected] = useState<string | null>(initialId ?? null);
+  const [arrival, setArrival] = useState<MaterialArrivalDto | null>(null);
   const [done, setDone] = useState<MaterialReceiptDto | null>(null);
   if (pending.isPending) return <Spinner />;
   if (pending.isError) return <Alert tone="danger">{pending.error.message}</Alert>;
@@ -61,6 +79,7 @@ export function MaterialReceiving({
           onClick={() => {
             setDone(null);
             setSelected(null);
+            setArrival(null);
           }}
         >
           Voltar aos pedidos
@@ -73,14 +92,69 @@ export function MaterialReceiving({
   if (po) {
     return (
       <ReceiveForm
-        key={po.id}
+        key={`${po.id}:${arrival?.id ?? ''}`}
         po={po}
+        arrival={arrival}
         large={large}
         onDone={setDone}
-        onBack={() => setSelected(null)}
+        onBack={() => {
+          setSelected(null);
+          setArrival(null);
+        }}
       />
     );
   }
+  const physical =
+    conference && arrivals.data?.length ? (
+      <Card className="mb-6 overflow-hidden" data-testid="material-arrivals">
+        <h2 className="border-b border-line px-5 py-3.5 font-semibold">
+          Chegadas físicas aguardando conferência
+        </h2>
+        <ul className="divide-y divide-line">
+          {arrivals.data.map((a) => (
+            <li
+              key={a.id}
+              className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5 text-sm"
+              data-testid={`material-arrival-${a.code}`}
+            >
+              <span className="font-mono font-semibold">{a.code}</span>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">
+                  {a.purchaseOrder.code} ·{' '}
+                  {a.lines
+                    .map(
+                      (l) =>
+                        `${l.physicalCount} ${PHYSICAL_UNIT_LABEL[l.physicalUnit as keyof typeof PHYSICAL_UNIT_LABEL] ?? l.physicalUnit} de ${l.description}`,
+                    )
+                    .join('; ')}
+                </p>
+                <p className="text-ink-muted">
+                  Chegou {formatDateTime(a.receivedAt)} · confirmado por {a.receivedBy ?? '—'}
+                  {a.device ? ` no aparelho ${a.device}` : ''}
+                </p>
+                {a.problemKind && (
+                  <p className="text-warn-600">
+                    {ARRIVAL_PROBLEM_LABEL[a.problemKind as keyof typeof ARRIVAL_PROBLEM_LABEL] ??
+                      a.problemKind}
+                    {a.problemNote ? `: ${a.problemNote}` : ''}
+                  </p>
+                )}
+              </div>
+              <Button
+                size="sm"
+                disabled={!pending.data.some((p) => p.id === a.purchaseOrder.id)}
+                onClick={() => {
+                  setArrival(a);
+                  setSelected(a.purchaseOrder.id);
+                }}
+              >
+                Conferir
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </Card>
+    ) : null;
   if (pending.data.length === 0) {
     return (
       <Card>
@@ -93,51 +167,58 @@ export function MaterialReceiving({
     );
   }
   return (
-    <ul className={clsx('grid gap-4', large && 'lg:grid-cols-2')} data-testid="pending-receipts">
-      {pending.data.map((p) => (
-        <li key={p.id}>
-          <button
-            type="button"
-            onClick={() => setSelected(p.id)}
-            data-testid={`pending-${p.code}`}
-            className="flex w-full items-center gap-4 rounded-2xl border border-line bg-surface p-5 text-left shadow-[var(--shadow-card)] transition hover:border-brand-200 active:scale-[0.99]"
-          >
-            <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700">
-              <PackageCheck className="size-7" aria-hidden />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className={clsx('block font-semibold', large ? 'text-xl' : 'text-lg')}>
-                {p.code} · {p.supplierName ?? 'Fornecedor'}
+    <>
+      {physical}
+      <ul className={clsx('grid gap-4', large && 'lg:grid-cols-2')} data-testid="pending-receipts">
+        {pending.data.map((p) => (
+          <li key={p.id}>
+            <button
+              type="button"
+              onClick={() => setSelected(p.id)}
+              data-testid={`pending-${p.code}`}
+              className="flex w-full items-center gap-4 rounded-2xl border border-line bg-surface p-5 text-left shadow-[var(--shadow-card)] transition hover:border-brand-200 active:scale-[0.99]"
+            >
+              <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700">
+                <PackageCheck className="size-7" aria-hidden />
               </span>
-              <span className="mt-0.5 block text-ink-muted">
-                {p.items.filter((i) => i.remaining > 0).length} item(ns) a receber
-                {p.expectedDate ? ` · previsto ${formatDay(p.expectedDate)}` : ''}
+              <span className="min-w-0 flex-1">
+                <span className={clsx('block font-semibold', large ? 'text-xl' : 'text-lg')}>
+                  {p.code} · {p.supplierName ?? 'Fornecedor'}
+                </span>
+                <span className="mt-0.5 block text-ink-muted">
+                  {p.items.filter((i) => i.remaining > 0).length} item(ns) a receber
+                  {p.expectedDate ? ` · previsto ${formatDay(p.expectedDate)}` : ''}
+                </span>
+                <span className="mt-1 block truncate text-sm text-ink-soft">
+                  {p.items.map((i) => i.description).join(', ')}
+                </span>
               </span>
-              <span className="mt-1 block truncate text-sm text-ink-soft">
-                {p.items.map((i) => i.description).join(', ')}
-              </span>
-            </span>
-            <ChevronRight className="size-6 text-ink-muted" aria-hidden />
-          </button>
-        </li>
-      ))}
-    </ul>
+              <ChevronRight className="size-6 text-ink-muted" aria-hidden />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
 function ReceiveForm({
   po,
+  arrival,
   large,
   onDone,
   onBack,
 }: {
   po: PendingMaterialReceiptDto;
+  /** Conferência técnica de uma chegada física: só os itens dela, com a medida real. */
+  arrival?: MaterialArrivalDto | null;
   large?: boolean;
   onDone: (r: MaterialReceiptDto) => void;
   onBack: () => void;
 }) {
   const qc = useQueryClient();
-  const open = po.items.filter((i) => i.remaining > 0);
+  const onlyIds = arrival ? new Set(arrival.lines.map((l) => l.purchaseOrderItemId)) : null;
+  const open = po.items.filter((i) => i.remaining > 0 && (!onlyIds || onlyIds.has(i.id)));
   const [state, setState] = useState<Record<string, LineState>>(() =>
     Object.fromEntries(
       open.map((i) => [
@@ -180,6 +261,7 @@ function ReceiveForm({
         idempotencyKey: key,
         body: {
           purchaseOrderId: po.id,
+          ...(arrival ? { arrivalId: arrival.id } : {}),
           lines: lines.map((l) => ({
             purchaseOrderItemId: l.i.id,
             acceptedQuantity: l.accepted,
@@ -211,6 +293,18 @@ function ReceiveForm({
           Escolher outro pedido
         </Button>
       </div>
+      {arrival && (
+        <Alert tone="info" className="mb-4" title={`Conferência da chegada ${arrival.code}`}>
+          Chegou:{' '}
+          {arrival.lines
+            .map(
+              (l) =>
+                `${l.physicalCount} ${PHYSICAL_UNIT_LABEL[l.physicalUnit as keyof typeof PHYSICAL_UNIT_LABEL] ?? l.physicalUnit} de ${l.description}`,
+            )
+            .join('; ')}
+          . Informe a medida real conferida — só ela entra no estoque.
+        </Alert>
+      )}
       {error && (
         <Alert tone="danger" className="mb-4">
           {error}

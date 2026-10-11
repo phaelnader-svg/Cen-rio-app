@@ -6,6 +6,7 @@ import clsx from 'clsx';
 import {
   ArrowLeft,
   BadgeCheck,
+  Inbox,
   LogOut,
   PackageCheck,
   RadioTower,
@@ -22,6 +23,7 @@ import { MaterialReceiving } from '@/components/purchasing/material-receiving';
 import { usePendingReceipts } from '@/lib/purchasing';
 import { useMyAttendance } from '@/lib/attendance';
 import { MyMeasurementDetail, MyMeasurements, useMyOpenCount } from './measurements';
+import { ArrivalsCenter, MyTripsToday, useArrivalsCount } from './arrivals';
 import { LogisticsJobs } from './logistics';
 import { MyValues } from './my-values';
 import { DepartScreen, PresenceCard } from './presence';
@@ -44,6 +46,7 @@ type Screen =
   | 'measurements'
   | 'measurement'
   | 'materials'
+  | 'arrivals'
   | 'depart'
   | 'inspections'
   | 'inspection'
@@ -111,6 +114,8 @@ export function TabletHome({ me }: { me: MeDto }) {
   const inspectionCount = useMyInspectionCount(canInspect);
   const [inspectionId, setInspectionId] = useState<string | null>(null);
   const pendingMaterials = usePendingReceipts(!logisticsOnly);
+  // Simplificação Fase 3: central compartilhada "Aguardando chegada" (peças + materiais).
+  const arrivalsCount = useArrivalsCount(!logisticsOnly);
 
   const openTask = (id: string, from: Screen = 'home') => {
     setTaskId(id);
@@ -226,6 +231,18 @@ export function TabletHome({ me }: { me: MeDto }) {
               {canExecute ? 'Outras atividades' : 'Atividades'}
             </h2>
             <ul className="grid gap-4 md:grid-cols-2">
+              <li>
+                <Tile
+                  onClick={() => setScreen('arrivals')}
+                  testId="tile-arrivals"
+                  icon={<Inbox className="size-7" aria-hidden />}
+                  title="Aguardando chegada"
+                  text="Peças de clientes e materiais comprados."
+                  count={arrivalsCount}
+                  countTestId="arrivals-count"
+                  countLabel="aviso(s) aguardando chegada"
+                />
+              </li>
               {canInspect && (
                 <li>
                   <Tile
@@ -289,6 +306,13 @@ export function TabletHome({ me }: { me: MeDto }) {
                 </li>
               )}
             </ul>
+            {canExecute && <MyTripsToday />}
+          </>
+        ) : screen === 'arrivals' ? (
+          <>
+            {back('Voltar ao início', 'home')}
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Aguardando chegada</h1>
+            <ArrivalsCenter />
           </>
         ) : screen === 'queue' ? (
           <>

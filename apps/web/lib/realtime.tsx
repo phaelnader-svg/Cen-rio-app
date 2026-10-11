@@ -59,6 +59,13 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     keys.push(...flow, ['customer']);
   if (t.startsWith('service_order.')) keys.push(['service-orders'], ['service-order'], ...flow);
   if (t === 'attachment.changed') keys.push(['attachments']);
+  // Simplificação Fase 3 — central "Aguardando chegada" (peças e materiais) nos tablets.
+  if (
+    ['order.', 'pickup.', 'receipt.', 'service_order.', 'purchase_order.', 'material'].some((p) =>
+      t.startsWith(p),
+    )
+  )
+    keys.push(['arrivals'], ['material-arrivals'], ['logistics-route']);
   // Fase 3 — medições e solicitações de materiais
   if (t.startsWith('measurement.') || t.startsWith('material_request.')) {
     keys.push(
