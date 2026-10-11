@@ -238,6 +238,7 @@ test.describe.serial('Interface — geometria dos formulários', () => {
       [ids.cliente && `/painel/clientes/${ids.cliente}`, null, null],
       ['/painel/pedidos', null, null],
       ['/painel/pedidos/novo', null, null],
+      ['/painel/servicos/novo', null, null],
       [ids.pedido && `/painel/pedidos/${ids.pedido}`, null, null],
       [`/painel/pedidos/${semRecebimento.id}`, null, 'Solicitar retirada'],
       [ids.pedido && `/painel/pedidos/${ids.pedido}/editar`, null, null],
