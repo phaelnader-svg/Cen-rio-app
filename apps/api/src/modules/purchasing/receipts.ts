@@ -146,6 +146,26 @@ export async function registerMaterialReceipt(
     'purchase_order_items',
     po.items.map((i) => i.id),
   );
+  // Simplificação Fase 3: item com chegada física aguardando conferência só entra no estoque
+  // PELA conferência dessa chegada (senão a mesma remessa seria contada duas vezes).
+  const waiting = await tx.materialArrival.findMany({
+    where: { purchaseOrderId: po.id, status: 'PENDENTE_CONFERENCIA' },
+    select: { id: true, number: true, lines: true },
+  });
+  const itemsOf = (lines: unknown) =>
+    new Set((lines as { purchaseOrderItemId: string }[]).map((l) => l.purchaseOrderItemId));
+  const conferring = opts.arrivalId ? waiting.find((w) => w.id === opts.arrivalId) : null;
+  for (const line of input.lines) {
+    const other = waiting.find(
+      (w) => w.id !== opts.arrivalId && itemsOf(w.lines).has(line.purchaseOrderItemId),
+    );
+    if (other)
+      throw Errors.conflict(
+        `Este material chegou na chegada CH-${String(other.number).padStart(5, '0')} e aguarda conferência: use "Conferir".`,
+      );
+    if (conferring && !itemsOf(conferring.lines).has(line.purchaseOrderItemId))
+      throw Errors.validation(undefined, 'A conferência inclui só os itens desta chegada.');
+  }
   const items = new Map(
     (
       await tx.purchaseOrderItem.findMany({

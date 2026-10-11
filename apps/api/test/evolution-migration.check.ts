@@ -213,5 +213,25 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     });
     expect(rec.status, JSON.stringify(rec.body)).toBe(201);
     expect(rec.body.generatedServiceOrder).toBeTruthy();
+    // Simplificação Fase 3: participante OPERACIONAL estruturado (equipe própria, sem custo) —
+    // bloqueia a reversão de recebimentos_compartilhados.
+    const own = await post('/api/v1/services', {
+      customer: { mode: 'EXISTENTE', customerId: nsOrder.customerId },
+      service: {
+        contractedService: 'Reforma',
+        items: [
+          { pieceType: 'POLTRONA', description: 'Poltrona', quantity: 1, serviceType: 'REPARO' },
+        ],
+      },
+      pickup: {
+        team: 'EQUIPE_PROPRIA',
+        logisticsUserId: ids.ricardo,
+        participantUserIds: [ids.marcio],
+      },
+    });
+    expect(own.status, JSON.stringify(own.body)).toBe(201);
+    expect(
+      await db().logisticsTripParticipant.count({ where: { pickupId: own.body.pickup.id } }),
+    ).toBe(1);
   });
 });

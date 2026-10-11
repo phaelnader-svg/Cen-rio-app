@@ -47,6 +47,9 @@ export function useArrivalsCount(enabled: boolean) {
 export function ArrivalsCenter() {
   const q = useArrivals();
   const [view, setView] = useState<View>({ kind: 'list' });
+  // Recarregar a confirmação aberta com o saldo atual (depois de outro aparelho confirmar).
+  const [nonce, setNonce] = useState(0);
+  const reload = () => setNonce((n) => n + 1);
   if (q.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
   const back = () => setView({ kind: 'list' });
@@ -57,8 +60,9 @@ export function ArrivalsCenter() {
     if (!p) return <Gone onBack={back} />;
     return (
       <PieceConfirm
-        key={`${p.pickupId}:${p.version}`}
+        key={`${p.pickupId}:${nonce}`}
         p={p}
+        onReload={reload}
         onBack={back}
         onDone={(result) => setView({ kind: 'done', result, title: `Retirada ${p.pickupCode}` })}
       />
@@ -69,8 +73,9 @@ export function ArrivalsCenter() {
     if (!m) return <Gone onBack={back} />;
     return (
       <MaterialConfirm
-        key={`${m.purchaseOrderId}:${m.version}`}
+        key={`${m.purchaseOrderId}:${nonce}`}
         m={m}
+        onReload={reload}
         onBack={back}
         onDone={(result) => setView({ kind: 'done', result, title: `Pedido ${m.code}` })}
       />
@@ -320,6 +325,8 @@ function ConfirmShell({
   canConfirm,
   busy,
   error,
+  stale,
+  onReload,
 }: {
   eyebrow: string;
   title: string;
@@ -330,6 +337,9 @@ function ConfirmShell({
   canConfirm: boolean;
   busy: boolean;
   error: { msg: string; stale: boolean } | null;
+  /** Outro aparelho confirmou depois que esta tela abriu: confere o saldo antes de enviar. */
+  stale: boolean;
+  onReload: () => void;
 }) {
   const online = useOnline();
   return (
@@ -338,6 +348,19 @@ function ConfirmShell({
         <p className="text-sm font-semibold tracking-wide text-ink-muted uppercase">{eyebrow}</p>
         <h2 className="mt-1 text-2xl font-semibold break-words">{title}</h2>
       </div>
+      {stale && (
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-2xl border border-warn-600/20 bg-warn-50 p-4"
+          data-testid="arrival-stale"
+        >
+          <p className="min-w-0 flex-1 text-lg text-warn-600">
+            Já atualizado em outro aparelho. Confira o saldo atual antes de confirmar.
+          </p>
+          <Button size="lg" onClick={onReload} data-testid="arrival-reload">
+            Ver saldo atual
+          </Button>
+        </div>
+      )}
       {children}
       {error && (
         <Alert
@@ -356,7 +379,7 @@ function ConfirmShell({
         <Button
           size="xl"
           className="w-full sm:flex-1"
-          disabled={!online || !canConfirm}
+          disabled={!online || !canConfirm || stale}
           loading={busy}
           onClick={onConfirm}
           data-testid="arrival-submit"
@@ -405,14 +428,18 @@ function ProblemBox({
 }
 
 function PieceConfirm({
-  p,
+  p: live,
   onBack,
   onDone,
+  onReload,
 }: {
   p: PieceArrivalDto;
   onBack: () => void;
   onDone: (r: ArrivalConfirmationDto) => void;
+  onReload: () => void;
 }) {
+  // A tela trabalha sobre o que a pessoa VIU; a versão enviada é a dela (409 se mudou).
+  const [p] = useState(live);
   const [qty, setQty] = useState<Record<string, number>>(() =>
     Object.fromEntries(p.items.map((i) => [i.orderItemId, i.pending])),
   );
@@ -429,6 +456,8 @@ function PieceConfirm({
       onBack={onBack}
       busy={busy}
       error={error}
+      stale={live.version !== p.version}
+      onReload={onReload}
       canConfirm={total > 0 && problemOk}
       confirmLabel={partial ? `Confirmar ${total} peça(s)` : 'Confirmar chegada'}
       onConfirm={() =>
@@ -474,14 +503,17 @@ function PieceConfirm({
 }
 
 function MaterialConfirm({
-  m,
+  m: live,
   onBack,
   onDone,
+  onReload,
 }: {
   m: MaterialArrivalDueDto;
   onBack: () => void;
   onDone: (r: ArrivalConfirmationDto) => void;
+  onReload: () => void;
 }) {
+  const [m] = useState(live);
   // Contáveis: começa no saldo. Em metros: conta-se o que chegou (rolos/volumes), começa em 0.
   const [qty, setQty] = useState<Record<string, number>>(() =>
     Object.fromEntries(
@@ -503,6 +535,8 @@ function MaterialConfirm({
       onBack={onBack}
       busy={busy}
       error={error}
+      stale={live.version !== m.version}
+      onReload={onReload}
       canConfirm={lines.length > 0 && problemOk}
       confirmLabel="Confirmar materiais"
       onConfirm={() =>

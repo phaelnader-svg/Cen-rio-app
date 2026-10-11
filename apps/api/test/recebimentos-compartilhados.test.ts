@@ -544,6 +544,20 @@ describe('C. Materiais comprados', () => {
     const pending = (await admin.get('/api/v1/material-arrivals?status=PENDENTE_CONFERENCIA')).body;
     expect(pending.map((a: { id: string }) => a.id)).toEqual([arrival.id]);
     expect(pending[0]).toMatchObject({ receivedBy: 'João', device: 'Tablet João' });
+    // Recebimento comum do mesmo tecido (sem a conferência) é recusado: contaria a remessa 2×.
+    const bypass = await post(admin, '/api/v1/material-receipts', {
+      purchaseOrderId: po.id,
+      lines: [{ purchaseOrderItemId: fabricItem.id, acceptedQuantity: 14.5, specConfirmed: true }],
+    });
+    expect(bypass.status).toBe(409);
+    expect(bypass.body.error.message).toMatch(/aguarda conferência/);
+    // A conferência só inclui os itens da própria chegada.
+    const outside = await post(admin, '/api/v1/material-receipts', {
+      purchaseOrderId: po.id,
+      arrivalId: arrival.id,
+      lines: [{ purchaseOrderItemId: stapleItem.id, acceptedQuantity: 1, specConfirmed: true }],
+    });
+    expect(outside.status).toBe(400);
     const conf = await post(admin, '/api/v1/material-receipts', {
       purchaseOrderId: po.id,
       arrivalId: arrival.id,
