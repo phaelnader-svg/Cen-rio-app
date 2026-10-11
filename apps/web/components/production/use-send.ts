@@ -13,6 +13,9 @@ export const PRODUCTION_KEYS = [
   'production-board',
   'production-task',
   'production-templates',
+  // Simplificação Fase 4 — pré-planejamento
+  'production-pipeline',
+  'publication-preview',
   'my-tasks',
   'os-production',
   'service-order',

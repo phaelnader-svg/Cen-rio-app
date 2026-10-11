@@ -35,6 +35,7 @@ import {
   Workflow,
   Route,
   type LucideIcon,
+  ListTodo,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -104,6 +105,13 @@ export const NAV: NavItem[] = [
     label: 'Planejamento de sexta',
     icon: CalendarCheck,
     anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
+  },
+  {
+    // Simplificação Fase 4: Produção → A planejar (fila de serviços recebidos e planejamento).
+    href: '/painel/producao/a-planejar',
+    label: 'Produção — A planejar',
+    icon: ListTodo,
+    anyOf: ['producao.ver', 'producao.planejar'],
   },
   {
     href: '/painel/producao/planejamento',

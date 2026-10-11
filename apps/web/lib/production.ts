@@ -5,7 +5,9 @@ import type {
   PlanDistributionDto,
   NotificationDto,
   PlanCandidateDto,
+  ProductionPipelineDto,
   ProductionPlanDto,
+  PublicationPreviewDto,
   ProductionTaskDetailDto,
   ProductionTaskDto,
   ProductionTemplateDto,
@@ -130,4 +132,19 @@ export const useNotifications = (enabled = true) =>
     queryFn: () =>
       api<{ items: NotificationDto[]; unread: number }>('/api/v1/notifications?limit=50'),
     enabled,
+  });
+
+// Simplificação Fase 4 — pré-planejamento.
+export const usePipeline = () =>
+  useQuery({
+    queryKey: ['production-pipeline'],
+    queryFn: () => api<ProductionPipelineDto>('/api/v1/production/pipeline'),
+  });
+
+export const usePublicationPreview = (planId: string | null) =>
+  useQuery({
+    queryKey: ['publication-preview', planId],
+    queryFn: () =>
+      api<PublicationPreviewDto>(`/api/v1/production-plans/${planId}/publication-preview`),
+    enabled: Boolean(planId),
   });

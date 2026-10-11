@@ -116,6 +116,14 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     );
   }
   if (t === 'production.template_changed') keys.push(['production-templates']);
+  // Simplificação Fase 4: fila "A planejar" e prévia da publicação (OS nova, recebimento,
+  // planejamento, tarefas e materiais mudam a situação de cada serviço).
+  if (
+    ['production.', 'service_order.', 'receipt.', 'material', 'purchase_order.'].some((p) =>
+      t.startsWith(p),
+    )
+  )
+    keys.push(['production-pipeline'], ['publication-preview']);
   // Fase 6 — notificações (só chegam ao destinatário). Uma atualização da OS também
   // recarrega o detalhe técnico aberto no tablet.
   if (t.startsWith('notification.')) keys.push(['notifications']);

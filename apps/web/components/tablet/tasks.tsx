@@ -322,6 +322,8 @@ const generatedTitle = (t: ProductionTaskDto) =>
 function waitingText(t: ProductionTaskDto) {
   if (t.status === 'PROGRAMADA' && t.scheduledDate)
     return `Programada: libera em ${formatDay(t.scheduledDate)} às ${t.scheduledTime}.`;
+  // Simplificação Fase 4: fila semanal — aguarda a data de início escolhida pelo gestor.
+  if (t.status === 'PROGRAMADA') return 'Aguarda a data de início do serviço.';
   if (t.status !== 'BLOQUEADA') return null;
   const parts = t.blockers
     .filter((b) => b !== 'BLOQUEIO')
@@ -895,7 +897,9 @@ function WhyWaiting({ t }: { t: ProductionTaskDetailDto }) {
   if (t.status === 'PROGRAMADA') {
     return (
       <Alert tone="info" title="Programada">
-        Libera em {t.scheduledDate ? formatDay(t.scheduledDate) : ''} às {t.scheduledTime}.
+        {t.scheduledDate
+          ? `Libera em ${formatDay(t.scheduledDate)} às ${t.scheduledTime}.`
+          : 'Aguarda a data de início do serviço definida pelo gestor.'}
       </Alert>
     );
   }
