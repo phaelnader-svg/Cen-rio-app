@@ -146,6 +146,7 @@ test.describe.serial('Fase 12 — auditoria visual', () => {
       ['/painel/estoque', 'estoque'],
       ['/painel/prontidao', 'prontidao'],
       ['/painel/planejamento', 'planejamento-sexta'],
+      ['/painel/producao/a-planejar', 'a-planejar'],
       ['/painel/producao/planejamento', 'planejamento-producao'],
       ['/painel/producao', 'quadro'],
       ['/painel/producao/modelos', 'modelos'],

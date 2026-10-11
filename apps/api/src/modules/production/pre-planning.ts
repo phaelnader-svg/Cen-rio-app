@@ -57,6 +57,8 @@ import { distributeServiceOrder } from './distribution';
 import { reviseIfPublishedBy } from './plans';
 
 const STARTED = ['EM_EXECUCAO', 'PAUSADA', 'CONCLUIDA'];
+/** Bloqueios de rotina (não são "condição"): ainda não publicada, aguardando a etapa anterior. */
+const ROUTINE = ['NAO_PUBLICADA', 'DEPENDENCIAS'];
 
 async function todayIn(db: Tx | PrismaClient) {
   const { timezone } = await company(db);
@@ -184,7 +186,11 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
     )
       stage = 'PLANEJADO_RASCUNHO';
     else if (
-      tasks.some((t) => t.status === 'BLOQUEADA' && t.blockers.some((b) => b !== 'NAO_PUBLICADA'))
+      // Impedimento real (material, ocorrência, bloqueio, sem responsável…) — a espera normal
+      // pela etapa anterior (DEPENDENCIAS) não conta, salvo se nada da OS puder andar.
+      tasks.some((t) => t.status === 'BLOQUEADA' && t.blockers.some((b) => !ROUTINE.includes(b))) ||
+      (tasks.some((t) => t.status === 'BLOQUEADA') &&
+        !tasks.some((t) => t.status === 'LIBERADA' || t.status === 'PROGRAMADA'))
     )
       stage = 'AGUARDANDO_CONDICAO';
     else stage = 'PLANEJADO_PUBLICADO';
@@ -195,7 +201,7 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
         tasks
           .filter((t) => t.status === 'BLOQUEADA')
           .flatMap((t) => t.blockers)
-          .filter((b) => b !== 'NAO_PUBLICADA')
+          .filter((b) => !ROUTINE.includes(b))
           .map((b) => RELEASE_BLOCKER_LABEL[b as ReleaseBlocker] ?? b),
       ),
     ];

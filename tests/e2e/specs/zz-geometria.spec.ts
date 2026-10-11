@@ -262,6 +262,7 @@ test.describe.serial('Interface — geometria dos formulários', () => {
       ['/painel/estoque', null, 'Novo material'],
       ['/painel/prontidao', null, null],
       ['/painel/planejamento', null, null],
+      ['/painel/producao/a-planejar', null, null],
       ['/painel/producao/planejamento', null, null],
       ['/painel/producao', null, null],
       ['/painel/producao/modelos', null, 'Novo modelo'],

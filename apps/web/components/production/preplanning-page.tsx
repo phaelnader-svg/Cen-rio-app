@@ -277,21 +277,28 @@ function ToPlanList({
           {items.map((i) => (
             <li
               key={i.serviceOrder.id}
-              className="flex flex-wrap items-start gap-3 px-4 py-3.5 sm:px-5"
+              className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-start sm:px-5"
               data-testid={`to-plan-${i.serviceOrder.code}`}
             >
+              <div className="flex min-w-0 flex-1 items-start gap-3">
+                {canPlan && (
+                  <input
+                    type="checkbox"
+                    aria-label={`Selecionar ${i.serviceOrder.code}`}
+                    className="mt-1 size-5 shrink-0 accent-brand-700"
+                    checked={selected.includes(i.serviceOrder.id)}
+                    onChange={() => toggle(i.serviceOrder.id)}
+                  />
+                )}
+                <ServiceHead i={i} />
+              </div>
               {canPlan && (
-                <input
-                  type="checkbox"
-                  aria-label={`Selecionar ${i.serviceOrder.code}`}
-                  className="mt-1 size-5 shrink-0 accent-brand-700"
-                  checked={selected.includes(i.serviceOrder.id)}
-                  onChange={() => toggle(i.serviceOrder.id)}
-                />
-              )}
-              <ServiceHead i={i} />
-              {canPlan && (
-                <Button size="sm" onClick={() => onPlan([i])} data-testid="plan-one">
+                <Button
+                  size="sm"
+                  className="self-start"
+                  onClick={() => onPlan([i])}
+                  data-testid="plan-one"
+                >
                   Planejar serviço
                 </Button>
               )}
@@ -373,11 +380,11 @@ function PlannedList({
                     {g.list.map((i) => (
                       <li
                         key={i.serviceOrder.id}
-                        className="flex flex-wrap items-start gap-3 px-4 py-3.5 sm:px-5"
+                        className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-start sm:px-5"
                         data-testid={`planned-${i.serviceOrder.code}`}
                       >
                         <ServiceHead i={i} />
-                        <div className="text-sm text-ink-soft">
+                        <div className="text-sm text-ink-soft sm:w-44 sm:shrink-0">
                           <p>
                             Início: <strong>{day(i.plan!.startDate)}</strong>
                           </p>
@@ -387,7 +394,12 @@ function PlannedList({
                           )}
                         </div>
                         {canPlan && (
-                          <Button size="sm" variant="secondary" onClick={() => onReschedule(i)}>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="self-start"
+                            onClick={() => onReschedule(i)}
+                          >
                             Reprogramar
                           </Button>
                         )}
@@ -428,11 +440,11 @@ function SimpleList({
         {items.map((i) => (
           <li
             key={i.serviceOrder.id}
-            className="flex flex-wrap items-start gap-3 px-4 py-3.5 sm:px-5"
+            className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-start sm:px-5"
             data-testid={`stage-${i.serviceOrder.code}`}
           >
             <ServiceHead i={i} />
-            <div className="min-w-0 text-sm text-ink-soft sm:max-w-xs">
+            <div className="min-w-0 text-sm text-ink-soft sm:w-72 sm:shrink-0">
               {i.plan && (
                 <p>
                   Semana de {day(i.plan.weekStart)} · início {day(i.plan.startDate)}
@@ -464,7 +476,12 @@ function SimpleList({
               )}
             </div>
             {canPlan && onReschedule && i.plan && (
-              <Button size="sm" variant="secondary" onClick={() => onReschedule(i)}>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="self-start"
+                onClick={() => onReschedule(i)}
+              >
                 Reprogramar
               </Button>
             )}
