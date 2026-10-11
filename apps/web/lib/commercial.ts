@@ -6,7 +6,9 @@ import type {
   CustomerAddressDto,
   CustomerDto,
   CustomerSummaryDto,
+  NewServiceDefaultsDto,
   OrderDto,
+  OwnTeamSettingsDto,
   OrderSummaryDto,
   PageDto,
   PickupDto,
@@ -268,3 +270,18 @@ export function arrivalText(windowStart: string | null, windowEnd?: string | nul
   if (!windowStart) return 'sem horário';
   return windowEnd ? `janela ${windowStart}–${windowEnd}` : `chegada ${windowStart}`;
 }
+
+// ───────────────────── Simplificação Fase 2 — Novo serviço ─────────────────────
+
+export const useNewServiceDefaults = () =>
+  useQuery({
+    queryKey: ['new-service-defaults'],
+    queryFn: () => api<NewServiceDefaultsDto>('/api/v1/services/new-defaults'),
+  });
+
+export const useOwnTeamSettings = (enabled = true) =>
+  useQuery({
+    queryKey: ['own-team-settings'],
+    queryFn: () => api<OwnTeamSettingsDto>('/api/v1/company/own-team'),
+    enabled,
+  });

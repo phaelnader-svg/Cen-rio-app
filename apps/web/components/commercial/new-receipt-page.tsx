@@ -368,6 +368,12 @@ function ReceiptDone({ receipt }: { receipt: ReceiptDto }) {
               {receipt.lines.map((l) => `${l.quantity}× ${l.description}`).join(' · ')} — pedido{' '}
               {receipt.order.code}
             </p>
+            {receipt.generatedServiceOrder && (
+              <p className="mt-1 text-sm font-medium text-ok-600">
+                OS {receipt.generatedServiceOrder.code} criada automaticamente com as peças
+                recebidas (aguardando planejamento).
+              </p>
+            )}
           </div>
         </div>
         <div className="mt-6">
@@ -375,7 +381,17 @@ function ReceiptDone({ receipt }: { receipt: ReceiptDto }) {
           <PhotoGallery entityType="RECEIPT" entityId={receipt.id} canManage />
         </div>
         <div className="mt-6 flex flex-wrap gap-2">
-          {can('os.gerenciar') && (
+          {receipt.generatedServiceOrder && can('os.ver') && (
+            <Link
+              href={`/painel/os/${receipt.generatedServiceOrder.id}`}
+              className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-700 px-4 font-semibold text-white hover:bg-brand-800"
+              data-testid="receipt-generated-os"
+            >
+              <ClipboardPlus className="size-4" aria-hidden /> Abrir OS{' '}
+              {receipt.generatedServiceOrder.code}
+            </Link>
+          )}
+          {!receipt.generatedServiceOrder && can('os.gerenciar') && (
             <Link
               href={`/painel/os/nova?pedido=${receipt.order.id}`}
               className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-700 px-4 font-semibold text-white hover:bg-brand-800"

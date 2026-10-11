@@ -105,7 +105,8 @@ export function PickupForm({
           ...base,
           orderId: order.id,
           ...(executor ? { logisticsUserId: executor } : {}),
-          ...(trip.v ? { tripCost: trip.v } : {}),
+          // Simplificação Fase 2: equipe própria não gera custo de terceirização.
+          ...(trip.v && team === 'LOGISTICA_TERCEIRIZADA' ? { tripCost: trip.v } : {}),
         }),
         idempotencyKey: idem.current,
       });
@@ -151,7 +152,9 @@ export function PickupForm({
           </Button>
           <Button
             loading={m.isPending}
-            disabled={(!pickup && !trip.ok) || (scheduling && !start)}
+            disabled={
+              (!pickup && team === 'LOGISTICA_TERCEIRIZADA' && !trip.ok) || (scheduling && !start)
+            }
             onClick={() => m.mutate()}
           >
             {pickup ? 'Salvar' : scheduling ? 'Solicitar e agendar' : 'Solicitar retirada'}
@@ -251,7 +254,9 @@ export function PickupForm({
             ))}
           </SelectField>
         </FormGrid>
-        {!pickup && <TripCostFields kind="RETIRADA" onChange={(v, ok) => setTrip({ v, ok })} />}
+        {!pickup && team === 'LOGISTICA_TERCEIRIZADA' && (
+          <TripCostFields kind="RETIRADA" onChange={(v, ok) => setTrip({ v, ok })} />
+        )}
         <fieldset>
           <legend className="mb-2 text-sm font-semibold">Peças a retirar</legend>
           {errors.items && <p className="mb-2 text-sm text-danger-600">{errors.items}</p>}

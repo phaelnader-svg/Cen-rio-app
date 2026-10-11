@@ -1,6 +1,6 @@
 'use client';
 
-import type { CompanySettingsDto } from '@cenario/shared';
+import type { CompanySettingsDto, OwnTeamSettingsDto } from '@cenario/shared';
 import { WEEKDAYS, companySettingsSchema } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Save } from 'lucide-react';
@@ -13,6 +13,7 @@ import { ApiError, api, errorMessage, fieldErrors } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { useCompany } from '@/lib/queries';
+import { useOwnTeamSettings } from '@/lib/commercial';
 
 type Form = Omit<
   CompanySettingsDto,
@@ -255,9 +256,100 @@ export function CompanyPage() {
           </div>
         </Card>
       </div>
+      <OwnTeamCard />
       <p className="mt-4 text-xs text-ink-muted">
         Última alteração: {formatDateTime(company.data.updatedAt)} · versão {company.data.version}
       </p>
     </>
+  );
+}
+
+/**
+ * Simplificação Fase 2: responsável padrão da retirada pela equipe própria (Thiago). Referência ao
+ * cadastro real do funcionário; inativo/inelegível vira pendência visível (nunca troca sozinho).
+ */
+function OwnTeamCard() {
+  const can = useCan();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const settings = useOwnTeamSettings();
+  const editable = can('empresa.configurar');
+  const [userId, setUserId] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: () =>
+      api<OwnTeamSettingsDto>('/api/v1/company/own-team', {
+        method: 'PUT',
+        body: { userId: userId || null, version: settings.data!.version },
+      }),
+    onSuccess: (r) => {
+      qc.setQueryData(['own-team-settings'], r);
+      void qc.invalidateQueries({ queryKey: ['company'] });
+      void qc.invalidateQueries({ queryKey: ['new-service-defaults'] });
+      setUserId(null);
+      toast('ok', 'Responsável padrão da equipe própria salvo.');
+    },
+    onError: (e) => {
+      if (e instanceof ApiError && e.code === 'VERSION_CONFLICT')
+        void qc.invalidateQueries({ queryKey: ['own-team-settings'] });
+      toast('danger', errorMessage(e));
+    },
+  });
+  if (settings.isPending) return <Spinner />;
+  if (!settings.data) return null;
+  const s = settings.data;
+  const current = userId ?? s.userId ?? '';
+  return (
+    <Card className="mt-6 p-6" data-testid="own-team-card">
+      <h2 className="font-semibold">Retiradas da equipe própria</h2>
+      <p className="mt-1 text-sm text-ink-muted">
+        Sugerido automaticamente no Novo serviço quando a retirada é feita pela equipe própria.
+      </p>
+      {s.problem && (
+        <Alert tone="warn" className="mt-4">
+          {s.problem === 'NAO_CONFIGURADO'
+            ? 'Nenhum responsável padrão configurado: o gestor escolhe a cada retirada.'
+            : `${s.displayName ?? 'O responsável configurado'} está ${s.problem === 'INATIVO' ? 'inativo' : 'sem permissão para executar'}. Escolha outro.`}
+        </Alert>
+      )}
+      <div className="mt-4 grid gap-4 sm:grid-cols-12">
+        <Field label="Responsável padrão da equipe própria" className="sm:col-span-6">
+          {(p) => (
+            <Select
+              {...p}
+              disabled={!editable}
+              value={current}
+              onChange={(e) => setUserId(e.target.value)}
+              data-testid="own-team-select"
+            >
+              <option value="">Nenhum (escolher a cada retirada)</option>
+              {s.candidates.map((c) => (
+                <option key={c.userId} value={c.userId}>
+                  {c.displayName}
+                </option>
+              ))}
+              {s.userId && !s.candidates.some((c) => c.userId === s.userId) && (
+                <option value={s.userId} disabled>
+                  {s.displayName} (indisponível)
+                </option>
+              )}
+            </Select>
+          )}
+        </Field>
+        {editable && (
+          <div className="field-action sm:col-span-3">
+            <Button
+              type="button"
+              icon={<Save className="size-4" />}
+              loading={save.isPending}
+              disabled={userId === null || (userId || null) === s.userId}
+              onClick={() => save.mutate()}
+              data-testid="own-team-save"
+            >
+              Salvar
+            </Button>
+          </div>
+        )}
+      </div>
+    </Card>
   );
 }

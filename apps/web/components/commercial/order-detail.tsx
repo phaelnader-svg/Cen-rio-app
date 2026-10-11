@@ -115,6 +115,18 @@ export function OrderDetail({ id }: { id: string }) {
           )
         }
       />
+      {o.autoServiceOrder && pendingReceipt && active && (
+        <div data-testid="order-auto-os" className="mb-4">
+          <Alert tone="info">
+            Serviço registrado pelo Novo serviço: a OS é criada automaticamente quando as peças
+            chegarem à oficina
+            {o.promisedDate
+              ? ` · prazo combinado ${o.promisedDate.split('-').reverse().join('/')}`
+              : ''}
+            .
+          </Alert>
+        </div>
+      )}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <span data-testid="order-status">
           <OrderStatusBadge status={o.status} />

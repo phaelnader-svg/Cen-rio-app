@@ -1,5 +1,6 @@
 import type { Permission } from '@cenario/shared';
 import {
+  ClipboardPlus,
   Boxes,
   Building2,
   ListChecks,
@@ -45,6 +46,13 @@ export interface NavItem {
 
 export const NAV: NavItem[] = [
   { href: '/painel', label: 'Início', icon: LayoutDashboard },
+  // Simplificação Fase 2: entrada principal do gestor (cliente + serviço + retirada).
+  {
+    href: '/painel/servicos/novo',
+    label: 'Novo serviço',
+    icon: ClipboardPlus,
+    anyOf: ['pedidos.gerenciar'],
+  },
   {
     href: '/painel/atencao',
     label: 'Central de atenção',

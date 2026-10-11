@@ -570,7 +570,7 @@ export function ScheduleDialog({
               !date ||
               (!provisional && !windowStart) ||
               (Boolean(delivery) && reason.trim().length < 3) ||
-              (!delivery && !trip.ok)
+              (!delivery && team === 'LOGISTICA_TERCEIRIZADA' && !trip.ok)
             }
             loading={m.isPending}
             onClick={() =>
@@ -592,7 +592,9 @@ export function ScheduleDialog({
                           ...body,
                           customerId,
                           provisional,
-                          ...(trip.v ? { tripCost: trip.v } : {}),
+                          ...(trip.v && team === 'LOGISTICA_TERCEIRIZADA'
+                            ? { tripCost: trip.v }
+                            : {}),
                         },
                         idempotencyKey: key,
                       }),
@@ -744,7 +746,9 @@ export function ScheduleDialog({
             />
           )}
         </FormGrid>
-        {!delivery && <TripCostFields kind="ENTREGA" onChange={(v, ok) => setTrip({ v, ok })} />}
+        {!delivery && team === 'LOGISTICA_TERCEIRIZADA' && (
+          <TripCostFields kind="ENTREGA" onChange={(v, ok) => setTrip({ v, ok })} />
+        )}
       </div>
     </Dialog>
   );

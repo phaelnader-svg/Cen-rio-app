@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ClipboardPlus,
   Activity,
   ClipboardList,
   FileSignature,
@@ -93,11 +94,23 @@ export function Dashboard() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <p className="text-sm font-medium text-ink-muted first-letter:uppercase">{todayLabel}</p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-          {greeting()}, {me.data?.user.displayName}.
-        </h1>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-ink-muted first-letter:uppercase">{todayLabel}</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+            {greeting()}, {me.data?.user.displayName}.
+          </h1>
+        </div>
+        {can('pedidos.gerenciar') && can('retiradas.gerenciar') && (
+          <Link
+            href="/painel/servicos/novo"
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand-700 px-4 text-[15px] font-medium text-white shadow-sm hover:bg-brand-800"
+            data-testid="dashboard-new-service"
+          >
+            <ClipboardPlus className="size-4" aria-hidden />
+            Novo serviço
+          </Link>
+        )}
       </div>
 
       {(can('retiradas.ver') || can('pedidos.ver') || can('os.ver')) && (
