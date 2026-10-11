@@ -302,6 +302,11 @@ export interface ReleaseInput {
   now: Date;
   /** Modo do planejamento da tarefa (sem plano ou ausente = LEGADO). */
   mode?: PlanMode | null;
+  /**
+   * Simplificação Fase 4: início pretendido da OS na fila semanal (00:00 do dia, no fuso da
+   * empresa). Antes dele a tarefa fica "Programada" — nunca "Liberada".
+   */
+  notBefore?: Date | null;
 }
 
 /**
@@ -324,7 +329,10 @@ export function evaluateRelease(i: ReleaseInput): {
   if (i.openIssue) blockers.push('OCORRENCIA');
   if (blockers.length) return { status: 'BLOQUEADA', blockers };
   // Fila semanal: o horário não é pré-condição (nem ausente, nem futuro).
-  if (i.mode === 'FILA_SEMANAL') return { status: 'LIBERADA', blockers };
+  if (i.mode === 'FILA_SEMANAL')
+    return i.notBefore && i.notBefore.getTime() > i.now.getTime()
+      ? { status: 'PROGRAMADA', blockers }
+      : { status: 'LIBERADA', blockers };
   if (!i.scheduledAt || i.scheduledAt.getTime() > i.now.getTime()) {
     return { status: 'PROGRAMADA', blockers };
   }

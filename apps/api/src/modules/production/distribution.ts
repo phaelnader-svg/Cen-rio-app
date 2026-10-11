@@ -249,6 +249,8 @@ export async function distributeServiceOrder(
     regenerate?: boolean;
     reason?: string | null;
     generate?: boolean;
+    /** Simplificação Fase 4: pré-planejamento — tarefas em rascunho mesmo em semana publicada. */
+    draft?: boolean;
   },
 ) {
   const plan = await tx.productionPlan.findUniqueOrThrow({ where: { id: args.planId } });
@@ -389,7 +391,7 @@ export async function distributeServiceOrder(
           templateId: template.id,
           templateVersion: template.version,
           templateStepPosition: step.position,
-          status: plan.status === 'PUBLICADO' ? 'BLOQUEADA' : 'RASCUNHO',
+          status: plan.status === 'PUBLICADO' && !args.draft ? 'BLOQUEADA' : 'RASCUNHO',
         },
       });
       for (const d of deps)
@@ -745,7 +747,15 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
         const plan = await lockPlan(tx, id);
         const planItem = await tx.productionPlanItem.findUnique({ where: { id: itemId } });
         if (!planItem || planItem.planId !== id) throw Errors.notFound('OS do planejamento');
+        // Simplificação Fase 4: OS pré-planejada (rascunho) numa semana publicada continua em
+        // rascunho — reprocessar nunca publica por conta própria.
+        const draft =
+          plan.status === 'PUBLICADO' &&
+          (await tx.productionTask.count({
+            where: { planId: id, serviceOrderId: planItem.serviceOrderId, status: 'RASCUNHO' },
+          })) > 0;
         const r = await distributeServiceOrder(tx, actor, {
+          draft,
           planId: id,
           serviceOrderId: planItem.serviceOrderId,
           priority: planItem.priority,
@@ -755,7 +765,7 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
         });
         const touched = [...r.created, ...r.assigned];
         if (!touched.length) return; // nada a fazer: repetir é seguro
-        if (plan.status === 'PUBLICADO') {
+        if (plan.status === 'PUBLICADO' && !draft) {
           for (const tId of r.created)
             await taskEvent(
               tx,

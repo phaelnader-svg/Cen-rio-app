@@ -55,6 +55,7 @@ import {
   taskInclude,
   taskMaterialsReady,
   toTaskDto,
+  taskNotBefore,
 } from './common';
 import { announceAssignments, assertWorker, reviseIfPublished } from './plans';
 import { cancelHelpForClosedTask, processHelpQueue } from '../help/queue';
@@ -964,11 +965,14 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           scheduledAt: t.scheduledAt,
           now,
           mode: t.plan?.mode ?? 'LEGADO',
+          notBefore: await taskNotBefore(tx, t.planId, t.serviceOrderId),
         });
         if (check.status !== 'LIBERADA') {
           const why = check.blockers.length
             ? check.blockers.map((b) => RELEASE_BLOCKER_LABEL[b]).join('; ')
-            : 'o horário programado ainda não chegou';
+            : t.plan?.mode === 'FILA_SEMANAL'
+              ? 'a data de início do serviço ainda não chegou'
+              : 'o horário programado ainda não chegou';
           throw Errors.business(`A tarefa ainda não está liberada: ${why}.`);
         }
         await assertSingleActive(tx, t);

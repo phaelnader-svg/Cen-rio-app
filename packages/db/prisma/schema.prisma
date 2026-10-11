@@ -78,6 +78,7 @@ model User {
   createdPlans              ProductionPlan[]              @relation("PlanCreatedBy")
   publishedPlans            ProductionPlan[]              @relation("PlanPublishedBy")
   principalPlanItems        ProductionPlanItem[]          @relation("PlanItemPrincipal")
+  planItemsPlanned          ProductionPlanItem[]          @relation("PlanItemPlannedBy")
   upholsteredItems          ServiceOrderItem[]            @relation("ItemUpholsterer")
   itemOwnerChangesFrom      ServiceOrderItemOwnerChange[] @relation("OwnerChangeFrom")
   itemOwnerChangesTo        ServiceOrderItemOwnerChange[] @relation("OwnerChangeTo")
@@ -1815,16 +1816,23 @@ model ProductionPlan {
 
 /// OS selecionada para a semana, com o tapeceiro principal e a prioridade.
 model ProductionPlanItem {
-  id              String   @id @default(uuid()) @db.Uuid
-  planId          String   @map("plan_id") @db.Uuid
-  serviceOrderId  String   @map("service_order_id") @db.Uuid
-  principalUserId String?  @map("principal_user_id") @db.Uuid
-  priority        Priority @default(NORMAL)
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id              String    @id @default(uuid()) @db.Uuid
+  planId          String    @map("plan_id") @db.Uuid
+  serviceOrderId  String    @map("service_order_id") @db.Uuid
+  principalUserId String?   @map("principal_user_id") @db.Uuid
+  priority        Priority  @default(NORMAL)
+  /// Simplificação Fase 4: data pretendida de início (nenhuma tarefa da OS é liberada antes).
+  /// Nula = sem restrição (itens anteriores à Fase 4 e pendências transferidas).
+  startDate       DateTime? @map("start_date") @db.Date
+  plannedById     String?   @map("planned_by_id") @db.Uuid
+  /// Concorrência otimista da reprogramação (data, semana).
+  version         Int       @default(1)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   plan         ProductionPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
   serviceOrder ServiceOrder   @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
   principal    User?          @relation("PlanItemPrincipal", fields: [principalUserId], references: [id], onDelete: Restrict)
+  plannedBy    User?          @relation("PlanItemPlannedBy", fields: [plannedById], references: [id], onDelete: SetNull)
 
   @@unique([planId, serviceOrderId])
   @@index([serviceOrderId])

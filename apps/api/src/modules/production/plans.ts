@@ -479,6 +479,75 @@ export async function announceAssignments(
 
 // ─────────────────────────── Rotas ───────────────────────────
 
+/**
+ * Simplificação Fase 4: publica as tarefas em rascunho de uma semana JÁ publicada (serviços
+ * pré-planejados depois da publicação) como nova revisão — nada do que já valia é alterado.
+ */
+async function publishDrafts(
+  tx: Tx,
+  actor: ActorContext,
+  plan: { id: string; weekStart: Date; revision: number },
+  notes: string | null,
+) {
+  const tasks = await tx.productionTask.findMany({
+    where: { planId: plan.id, status: 'RASCUNHO' },
+  });
+  await tx.productionTask.updateMany({
+    where: { id: { in: tasks.map((t) => t.id) } },
+    data: { status: 'BLOQUEADA' },
+  });
+  for (const t of tasks)
+    await taskEvent(tx, actor, null, t, { kind: 'PUBLICADA', from: 'RASCUNHO', to: 'BLOQUEADA' });
+  const now = clockNow();
+  const { planningWeekday, timezone } = await company(tx);
+  const revision = plan.revision + 1;
+  const reason =
+    notes ??
+    `Publicação de ${new Set(tasks.map((t) => t.serviceOrderId)).size} serviço(s) pré-planejado(s)`;
+  await tx.productionPlanRevision.create({
+    data: {
+      planId: plan.id,
+      revision,
+      reason: reason.slice(0, 500),
+      offSchedule: weekdayIn(timezone) !== planningWeekday,
+      snapshot: (await snapshot(tx, plan.id)) as Prisma.InputJsonValue,
+      createdById: actor.userId,
+    },
+  });
+  await tx.productionPlan.update({
+    where: { id: plan.id },
+    data: { revision, version: { increment: 1 } },
+  });
+  await audit(tx, actor, {
+    action: 'production.plan_published',
+    entityType: 'production_plan',
+    entityId: plan.id,
+    summary: `Programação da semana ${dateOnly(plan.weekStart)} publicada (revisão ${revision}) com ${tasks.length} tarefa(s) pré-planejada(s).`,
+  });
+  await appendEvent(tx, actor, {
+    type: EVENT_TYPES.PRODUCTION_PLAN_REVISED,
+    aggregateType: 'production_plan',
+    aggregateId: plan.id,
+    payload: { id: plan.id, revision },
+    audience: 'all',
+  });
+  await reevaluateTasks(
+    tx,
+    actor,
+    tasks.map((t) => t.id),
+    now,
+  );
+  await announceAssignments(
+    tx,
+    actor,
+    tasks.map((t) => t.id),
+    {
+      key: `PUBLICACAO:${plan.id}:${revision}`,
+      lead: `Novos serviços na programação da semana de ${dateOnly(plan.weekStart)!.split('-').reverse().join('/')}`,
+    },
+  );
+}
+
 export async function productionPlanRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
   minimizeCustomerForDevices(app);
@@ -937,7 +1006,12 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         const plan = await lockPlan(tx, id);
         if (plan.version !== input.version) throw Errors.versionConflict(plan.version);
         if (plan.status === 'PUBLICADO') {
-          throw Errors.business('A programação já foi publicada; alterações geram revisões.');
+          // Simplificação Fase 4: semana publicada com serviços pré-planejados (rascunho) —
+          // "Publicar semana" publica só o rascunho, como nova revisão.
+          if (!(await tx.productionTask.count({ where: { planId: id, status: 'RASCUNHO' } })))
+            throw Errors.business('A programação já foi publicada; alterações geram revisões.');
+          await publishDrafts(tx, actor, plan, input.notes ?? null);
+          return;
         }
         const tasks = await tx.productionTask.findMany({
           where: { planId: id, status: 'RASCUNHO' },

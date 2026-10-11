@@ -14,6 +14,7 @@ import {
   type ProductionTaskDto,
   type TaskRefDto,
   type TaskStatus,
+  zonedDateTime,
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyRequest } from 'fastify';
@@ -22,7 +23,7 @@ import { now as clockNow } from '../../core/clock';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
-import { dateOnly, serviceOrderCode } from '../commercial/common';
+import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { notify, taskNotice } from '../notifications/notify';
 import { onReadinessChanged, readinessOf } from '../purchasing/common';
 
@@ -377,6 +378,25 @@ export async function emitTaskBlocked(tx: Tx, actor: ActorContext, task: Blocked
 }
 
 /**
+ * Simplificação Fase 4: início pretendido (00:00 da data, fuso da empresa) da OS na semana da
+ * tarefa — nulo quando o item do plano não tem data (planos anteriores, pendências transferidas).
+ */
+export async function taskNotBefore(
+  db: Tx | PrismaClient,
+  planId: string | null,
+  serviceOrderId: string,
+  timezone?: string,
+): Promise<Date | null> {
+  if (!planId) return null;
+  const it = await db.productionPlanItem.findUnique({
+    where: { planId_serviceOrderId: { planId, serviceOrderId } },
+    select: { startDate: true },
+  });
+  if (!it?.startDate) return null;
+  return zonedDateTime(dateOnly(it.startDate)!, '00:00', timezone ?? (await company(db)).timezone);
+}
+
+/**
  * Reavalia (com bloqueio) as tarefas que aguardam início e grava a transição
  * Bloqueada ⇄ Programada ⇄ Liberada quando muda, com histórico e evento. É a
  * única forma de uma tarefa ficar "Liberada": nenhuma mensagem do cliente ou
@@ -392,6 +412,15 @@ export async function reevaluateTasks(
   await lockTasks(tx, taskIds);
   const readiness = new Map<string, Readiness>();
   const blocked: BlockedTask[] = [];
+  const tz = (await company(tx)).timezone;
+  const starts = new Map<string, Date | null>();
+  /** Fase 4: início pretendido da OS na semana da tarefa (item do plano). */
+  const notBeforeOf = async (planId: string | null, serviceOrderId: string) => {
+    if (!planId) return null;
+    const k = `${planId}:${serviceOrderId}`;
+    if (!starts.has(k)) starts.set(k, await taskNotBefore(tx, planId, serviceOrderId, tz));
+    return starts.get(k)!;
+  };
   for (const id of [...new Set(taskIds)].sort()) {
     const t = await tx.productionTask.findUnique({
       where: { id },
@@ -432,6 +461,7 @@ export async function reevaluateTasks(
       now,
       // Fila semanal: horário não é pré-condição; legado (ou sem plano): regra por horário.
       mode: t.plan?.mode ?? 'LEGADO',
+      notBefore: await notBeforeOf(t.planId, t.serviceOrderId),
     });
     const sameBlockers =
       result.blockers.length === t.blockers.length &&
@@ -499,8 +529,22 @@ onReadinessChanged(async (tx, actor, serviceOrderId) => {
  * idempotente: tarefas já liberadas não geram novos eventos).
  */
 export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
+  const { timezone } = await company(prisma);
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now);
   const due = await prisma.productionTask.findMany({
-    where: { status: 'PROGRAMADA', scheduledAt: { lte: now } },
+    where: {
+      status: 'PROGRAMADA',
+      OR: [
+        { scheduledAt: { lte: now } },
+        // Fase 4: fila semanal aguardando a data pretendida de início da OS.
+        {
+          plan: {
+            mode: 'FILA_SEMANAL',
+            items: { some: { startDate: { lte: parseDateOnly(today)! } } },
+          },
+        },
+      ],
+    },
     select: { id: true },
     take: 500,
   });

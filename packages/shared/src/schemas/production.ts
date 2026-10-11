@@ -238,3 +238,39 @@ export const boardQuerySchema = z.object({
   status: csv(TASK_STATUSES),
   activity: z.enum(PRODUCTION_ACTIVITIES).optional(),
 });
+
+// ─────────────────────── Simplificação Fase 4 — pré-planejamento ───────────────────────
+
+const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.');
+
+/** Uma OS da fila "A planejar": data pretendida de início e titular de cada peça. */
+export const planServiceEntrySchema = z.object({
+  serviceOrderId: idSchema,
+  startDate: isoDay,
+  priority: z.enum(PRIORITIES).optional(),
+  /** Titular por peça (peças sem tapeçaria podem ser omitidas). */
+  pieces: z
+    .array(z.object({ serviceOrderItemId: idSchema, upholstererUserId: idSchema }))
+    .max(50)
+    .default([]),
+});
+
+/** Planejamento individual (1 OS) ou em lote (várias) — uma única transação. */
+export const planServicesSchema = z.object({
+  entries: z
+    .array(planServiceEntrySchema)
+    .min(1, { message: 'Selecione ao menos um serviço.' })
+    .max(50)
+    .refine((e) => new Set(e.map((x) => x.serviceOrderId)).size === e.length, {
+      message: 'Serviço repetido na seleção.',
+    }),
+});
+export type PlanServicesInput = z.input<typeof planServicesSchema>;
+
+/** Reprogramação de uma OS já planejada (data e/ou semana, prioridade). */
+export const reschedulePlannedSchema = z.object({
+  version: versionSchema,
+  startDate: isoDay.optional(),
+  priority: z.enum(PRIORITIES).optional(),
+  reason: optionalText(500),
+});

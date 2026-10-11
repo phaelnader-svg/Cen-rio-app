@@ -340,3 +340,96 @@ export interface PlanDistributionDto {
   pieces: PieceDistributionDto[];
   pendencyCount: number;
 }
+
+// ─────────────────────── Simplificação Fase 4 — pré-planejamento ───────────────────────
+
+/**
+ * Onde a OS está na produção — mutuamente exclusivo, calculado dos vínculos reais do banco
+ * (item de plano e tarefas), nunca de marcação visual.
+ */
+export type PipelineStage =
+  | 'A_PLANEJAR'
+  | 'PLANEJADO_RASCUNHO'
+  | 'PLANEJADO_PUBLICADO'
+  | 'AGUARDANDO_CONDICAO'
+  | 'EM_PRODUCAO'
+  | 'CONCLUIDO';
+
+export const PIPELINE_STAGE_LABEL: Record<PipelineStage, string> = {
+  A_PLANEJAR: 'A planejar',
+  PLANEJADO_RASCUNHO: 'Planejado — rascunho',
+  PLANEJADO_PUBLICADO: 'Planejado — publicado',
+  AGUARDANDO_CONDICAO: 'Aguardando condição',
+  EM_PRODUCAO: 'Em produção',
+  CONCLUIDO: 'Concluído',
+};
+
+export interface PipelinePieceDto {
+  id: string;
+  code: string;
+  pieceType: string;
+  description: string;
+  quantity: number;
+  serviceType: string;
+  /** Peça com etapa de tapeçaria no modelo atual (exige titular). */
+  needsUpholsterer: boolean;
+  template: string | null;
+  upholsterer: { userId: string; displayName: string } | null;
+}
+
+export interface PipelineServiceDto {
+  serviceOrder: { id: string; code: string; promisedDate: string | null; priority: string };
+  customerName: string;
+  receivedAt: string | null;
+  pieces: PipelinePieceDto[];
+  materials: { state: string; label: string; inConference: boolean };
+  stage: PipelineStage;
+  /** Item do plano (semana) — nulo em "A planejar". */
+  plan: {
+    planId: string;
+    itemId: string;
+    weekStart: string;
+    planStatus: 'RASCUNHO' | 'PUBLICADO';
+    startDate: string | null;
+    version: number;
+    plannedBy: string | null;
+  } | null;
+  tasks: { total: number; done: number; started: number; blocked: number; draft: number };
+  /** Motivos legíveis de impedimento (Aguardando condição) — "planejado" ≠ "liberado". */
+  blockers: string[];
+  /** Pendências para o gestor decidir (sem titular, sem modelo, sem responsável elegível…). */
+  pendencies: string[];
+}
+
+export interface ProductionPipelineDto {
+  counts: Record<PipelineStage, number>;
+  items: PipelineServiceDto[];
+}
+
+export interface PlanServicesResultDto {
+  planned: {
+    serviceOrderId: string;
+    code: string;
+    planId: string;
+    weekStart: string;
+    startDate: string;
+    tasksCreated: number;
+  }[];
+}
+
+export interface PublicationPreviewDto {
+  planId: string;
+  weekStart: string;
+  planStatus: 'RASCUNHO' | 'PUBLICADO';
+  version: number;
+  /** Só o que esta publicação vai liberar (tarefas em rascunho). */
+  serviceOrders: number;
+  pieces: number;
+  tasks: number;
+  byAssignee: { userId: string | null; displayName: string; tasks: number }[];
+  startDates: { code: string; startDate: string | null }[];
+  pendencies: string[];
+  materialsBlocked: { code: string; label: string }[];
+  conflicts: string[];
+  publishable: boolean;
+}
