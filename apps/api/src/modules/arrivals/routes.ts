@@ -253,9 +253,15 @@ export async function arrivalRoutes(app: FastifyInstance) {
           [...balance.entries()].map(([orderItemId, quantity]) => ({ orderItemId, quantity }))
         ).filter((l) => l.quantity > 0);
         if (!lines.length) {
-          if (pickup.version !== input.version)
+          // Versão relida DEPOIS do saldo: se outra confirmação foi gravada entre a leitura da
+          // retirada e a do saldo, o saldo zerado é dela — é conflito (409), não pedido vazio.
+          const current = await tx.pickupRequest.findUniqueOrThrow({
+            where: { id },
+            select: { version: true },
+          });
+          if (current.version !== input.version)
             throw Errors.conflict('Este recebimento já foi atualizado em outro aparelho.', {
-              currentVersion: pickup.version,
+              currentVersion: current.version,
             });
           throw Errors.validation(undefined, 'Informe ao menos uma peça que chegou.');
         }
