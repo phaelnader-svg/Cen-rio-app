@@ -164,19 +164,42 @@ export class WsClient {
     return w;
   }
 
+  /**
+   * Espera, por evento (cada mensagem recebida é testada no ato), a primeira mensagem que
+   * satisfaz `pred`. Prazo padrão de 15 s: sob carga (suíte da API em paralelo com o E2E) a
+   * entrega pelo outbox passou de 5 s. Esgotar o prazo ou o socket fechar continua sendo FALHA.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async waitFor(pred: (m: any) => boolean, timeoutMs = 5000): Promise<any> {
-    const start = Date.now();
-    for (;;) {
-      const found = this.messages.find(pred);
-      if (found) return found;
-      if (Date.now() - start > timeoutMs) {
-        throw new Error(
-          `mensagem não recebida; recebidas: ${JSON.stringify(this.messages.map((m) => m.kind + ':' + (m.event?.type ?? '')))}`,
-        );
-      }
-      await new Promise((r) => setTimeout(r, 25));
-    }
+  waitFor(pred: (m: any) => boolean, timeoutMs = 15_000): Promise<any> {
+    const found = this.messages.find(pred);
+    if (found) return Promise.resolve(found);
+    const received = () =>
+      JSON.stringify(this.messages.map((m) => m.kind + ':' + (m.event?.type ?? '')));
+    return new Promise((resolve, reject) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.ws.off('message', onMessage);
+        this.ws.off('close', onClose);
+      };
+      // Roda depois do listener que acumula `messages` (registrado na conexão).
+      const onMessage = () => {
+        const m = this.messages.find(pred);
+        if (m) {
+          done();
+          resolve(m);
+        }
+      };
+      const onClose = (code: number) => {
+        done();
+        reject(new Error(`conexão fechada (${code}) antes da mensagem; recebidas: ${received()}`));
+      };
+      const timer = setTimeout(() => {
+        done();
+        reject(new Error(`mensagem não recebida em ${timeoutMs} ms; recebidas: ${received()}`));
+      }, timeoutMs);
+      this.ws.on('message', onMessage);
+      this.ws.on('close', onClose);
+    });
   }
 
   events(type?: string) {
