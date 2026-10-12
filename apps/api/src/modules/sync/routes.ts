@@ -10,6 +10,10 @@ import { toRealtimeEvent } from '../../core/realtime/serialize';
  * para o gestor verificar, a qualquer momento, que painel e tablets estão
  * recebendo atualizações (inclusive após queda de conexão).
  */
+/** Eventos examinados por lote e, no máximo, por chamada de `/api/sync/events`. */
+export const SYNC_SCAN_BATCH = 500;
+export const SYNC_MAX_SCANNED = 5000;
+
 export async function syncRoutes(app: FastifyInstance) {
   const { prisma, hub } = app.ctx;
 
@@ -58,28 +62,53 @@ export async function syncRoutes(app: FastifyInstance) {
   });
 
   /**
-   * Reconciliação por HTTP (alternativa ao reenvio pelo WebSocket): eventos
-   * visíveis para a sessão a partir de `since`.
+   * Reconciliação por HTTP (alternativa ao reenvio pelo WebSocket): eventos visíveis para a
+   * sessão a partir de `since`, em ordem de `seq`.
+   *
+   * Leitura LIMITADA por chamada (auditoria P4): no máximo `SYNC_MAX_SCANNED` eventos são
+   * examinados, mesmo que poucos sejam visíveis para a sessão. A continuação é o cursor
+   * `nextSince`, com a garantia: todo evento com `since < seq <= nextSince` foi examinado e, se
+   * visível, está nesta página ou numa anterior. Por isso:
+   * - página cheia (`limit`): `nextSince` = `seq` do último evento DEVOLVIDO (os visíveis depois
+   *   dele não são pulados);
+   * - limite de leitura atingido: `nextSince` = último `seq` EXAMINADO (eventos invisíveis não
+   *   são perdidos — não pertencem à sessão — e o cursor avança sem repetir a varredura).
+   * `seq` segue a ordem de commit (trava em `appendEvent`), então o cursor não pula eventos
+   * confirmados depois. `hasMore` indica que há eventos a examinar depois de `nextSince`.
    */
   app.get('/api/sync/events', { config: { access: { session: 'any' } } }, async (request) => {
     const q = eventsSinceSchema.parse(request.query);
     const auth = request.auth!;
-    // A audiência pode combinar várias regras ("a|b"); o filtro é feito aqui,
-    // em lotes, para que eventos invisíveis não reduzam a página devolvida.
-    const visible: Awaited<ReturnType<typeof prisma.domainEvent.findMany>> = [];
-    let cursor = BigInt(q.since);
+    const page: Awaited<ReturnType<typeof prisma.domainEvent.findMany>> = [];
+    let next = BigInt(q.since);
+    let scanned = 0;
     let exhausted = false;
-    while (visible.length <= q.limit && !exhausted) {
+    let full = false;
+    while (!exhausted && !full && scanned < SYNC_MAX_SCANNED) {
+      const take = Math.min(SYNC_SCAN_BATCH, SYNC_MAX_SCANNED - scanned);
       const batch = await prisma.domainEvent.findMany({
-        where: { seq: { gt: cursor } },
+        where: { seq: { gt: next } },
         orderBy: { seq: 'asc' },
-        take: 500,
+        take,
       });
-      exhausted = batch.length < 500;
-      for (const e of batch) if (audienceAllows(e.audience, auth)) visible.push(e);
-      if (batch.length) cursor = batch[batch.length - 1]!.seq;
+      exhausted = batch.length < take;
+      for (const [i, e] of batch.entries()) {
+        scanned++;
+        next = e.seq;
+        if (!audienceAllows(e.audience, auth)) continue;
+        page.push(e);
+        if (page.length === q.limit) {
+          full = true;
+          // Só não há mais nada se este era o último de um lote que não veio cheio.
+          exhausted = exhausted && i === batch.length - 1;
+          break;
+        }
+      }
     }
-    const page = visible.slice(0, q.limit);
-    return { events: page.map(toRealtimeEvent), hasMore: visible.length > q.limit };
+    return {
+      events: page.map(toRealtimeEvent),
+      hasMore: !exhausted,
+      nextSince: next.toString(),
+    };
   });
 }
