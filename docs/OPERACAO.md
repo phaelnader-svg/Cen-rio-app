@@ -12,7 +12,16 @@
 Cada ambiente tem seu **próprio** banco, `TOKEN_HASH_SECRET` e `STORAGE_DIR`. Nunca reutilize
 segredos entre ambientes. Todas as variáveis estão descritas em `.env.example`.
 
-## Deploy (referência — nenhum deploy foi feito nesta fase)
+## Deploy (referência genérica, sem contêineres)
+
+> **Estado real (auditoria de 12/10/2026, `AUDITORIA-TECNICA-OPERACAO.md`):** a homologação no
+> Google Cloud é operada por `infra/homolog/gcp/vm.sh` com imagens do Artifact Registry e
+> migrations **explícitas** (`MIGRATE_ON_START=0`; ver `HOMOLOGACAO.md` §2 e
+> `EVOLUCAO-PRE-DEPLOY-HOMOLOGACAO.md`). Qual versão está publicada na homologação **não foi
+> verificada** nesta auditoria (sem acesso ao projeto GCP nem ao domínio). Produção: **não
+> publicada** — não há evidência de ambiente de produção.
+
+Os passos abaixo valem para uma instalação sem contêineres:
 
 1. `pnpm install --frozen-lockfile`
 2. `pnpm db:migrate` (aplica migrations pendentes; nunca use `migrate dev`/`reset` fora do
@@ -198,7 +207,11 @@ pnpm test:backup                      # teste automático de backup + restauraç
 
 - O backup contém o banco (formato custom do `pg_dump`, verificado após a geração), os arquivos
   privados (fotos de funcionários e dos registros) e checksums SHA-256. O teste automático
-  restaura também dados da Fase 2 (cliente, pedido, recebimento) e confere a imutabilidade. Retenção padrão: 30 dias (`BACKUP_RETENTION_DAYS`).
+  restaura também dados da Fase 2 (cliente, pedido, recebimento) e confere a imutabilidade.
+- Retenção: o `scripts/backup.sh` apaga cópias locais com mais de `BACKUP_RETENTION_DAYS` dias
+  (padrão **30**; `0` desativa). Na homologação o Compose define **14** dias para o volume
+  `backups` da VM; as cópias enviadas ao bucket do Cloud Storage expiram em **30** dias
+  (`infra/homolog/gcp/lifecycle-30d.json`).
 - A restauração exige destino explícito e `--yes`, confere os checksums e roda numa única
   transação.
 - Após restaurar, os clientes conectados recebem `resync.required` e recarregam os dados.
@@ -243,6 +256,14 @@ TEST_DATABASE_URL=postgresql://…/cenario_perf_test pnpm --filter @cenario/api 
 
 Gera volume sintético pela API e grava latências em `docs/evidencias/fase-12/desempenho.json`.
 Não acessa serviços externos. Resultados da Fase 12 em `docs/FASE-12-RELATORIO.md` §10.
+
+## Reconciliação por HTTP (`GET /api/sync/events`)
+
+Parâmetros: `since` (último `seq` visto, padrão `0`) e `limit` (1–500, padrão 200). Resposta:
+`events` (visíveis para a sessão, em ordem de `seq`), `hasMore` e `nextSince` (cursor da próxima
+chamada). Cada chamada examina no máximo 5000 eventos (lotes de 500), mesmo que poucos sejam
+visíveis para a sessão — por isso uma página pode vir vazia com `hasMore: true`; o cliente
+continua com `since=nextSince` até `hasMore: false`. Nenhum evento visível é pulado nem repetido.
 
 ## Homologação
 

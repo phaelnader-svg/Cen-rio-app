@@ -4,7 +4,13 @@ Ambiente de **testes** em nuvem, separado da produção, para validar o sistema 
 quatro tablets da oficina (Ricardo, Márcio, João, Thiago) e os celulares da logística (André e
 Izaías) **antes** de qualquer uso real.
 
-> **Nada foi publicado nem contratado na Fase 12.** Este documento e os arquivos de
+> **Estado de publicação (auditoria de 12/10/2026):** os documentos registram uma VM de
+> homologação no Google Cloud (`HOMOLOGACAO-GCP-*.md`), mas a versão em execução **não foi
+> verificada** nesta auditoria (sem credenciais do projeto e sem acesso ao domínio). Não trate a
+> homologação como atualizada sem conferir `vm.sh status`/`vm.sh saude` na própria VM. Detalhes em
+> [`AUDITORIA-TECNICA-OPERACAO.md`](AUDITORIA-TECNICA-OPERACAO.md).
+
+> **Histórico — Fase 12:** nada foi publicado nem contratado naquela fase. Este documento e os arquivos de
 > `infra/homolog/` são a preparação; a pilha completa foi verificada **localmente** (contêineres,
 > HTTPS do Caddy com certificado local, login, tempo real, backup e restauração — detalhes em
 > `FASE-12-RELATORIO.md` §17). Subir o ambiente depende da sua autorização, de uma VM e de
@@ -17,16 +23,16 @@ Izaías) **antes** de qualquer uso real.
 
 ## 1. O que compõe o ambiente
 
-| Peça            | Como                                                       | Arquivo                                    |
-| --------------- | ---------------------------------------------------------- | ------------------------------------------ |
-| Frontend (web)  | Next.js em contêiner (`target web`)                        | `infra/homolog/Dockerfile`                 |
-| API + WebSocket | Fastify em contêiner (`target api`), migrations na partida | `infra/homolog/Dockerfile`                 |
-| PostgreSQL 16   | Contêiner com volume próprio, **sem porta exposta**        | `infra/homolog/docker-compose.homolog.yml` |
-| Armazenamento   | Volume `storage` (fotos e anexos privados)                 | idem                                       |
-| HTTPS           | Caddy 2 com certificado automático; `noindex`              | `infra/homolog/Caddyfile.homolog`          |
-| Backups         | Contêiner `backup` (`postgres:16`): diário, 14 dias        | idem (usa `scripts/backup.sh`)             |
-| Variáveis       | Modelo sem segredos                                        | `infra/homolog/env.homolog.example`        |
-| Dados de teste  | Script pela API (clientes, pedidos, recebimentos e OS)     | `scripts/homolog-dados-sinteticos.mjs`     |
+| Peça            | Como                                                          | Arquivo                                      |
+| --------------- | ------------------------------------------------------------- | -------------------------------------------- |
+| Frontend (web)  | Next.js em contêiner (`target web`)                           | `infra/homolog/Dockerfile`                   |
+| API + WebSocket | Fastify em contêiner (`target api`); **não** migra na partida | `infra/homolog/Dockerfile`, `api-iniciar.sh` |
+| PostgreSQL 16   | Contêiner com volume próprio, **sem porta exposta**           | `infra/homolog/docker-compose.homolog.yml`   |
+| Armazenamento   | Volume `storage` (fotos e anexos privados)                    | idem                                         |
+| HTTPS           | Caddy 2 com certificado automático; `noindex`                 | `infra/homolog/Caddyfile.homolog`            |
+| Backups         | Contêiner `backup` (`postgres:16`): diário, 14 dias           | idem (usa `scripts/backup.sh`)               |
+| Variáveis       | Modelo sem segredos                                           | `infra/homolog/env.homolog.example`          |
+| Dados de teste  | Script pela API (clientes, pedidos, recebimentos e OS)        | `scripts/homolog-dados-sinteticos.mjs`       |
 
 A API recusa iniciar em `APP_ENV=staging` sem `COOKIE_SECURE=true`, sem `NODE_ENV=production`
 ou com origem que não seja `https://`. O relógio de teste (`ENABLE_TEST_CLOCK`) é recusado fora
@@ -46,12 +52,23 @@ git clone … && cd Cen-rio-app
 cp infra/homolog/env.homolog.example infra/homolog/.env.homolog
 #   preencha: HOMOLOG_DOMAIN, POSTGRES_PASSWORD (openssl rand -base64 24),
 #   TOKEN_HASH_SECRET (openssl rand -base64 48), SEED_ADMIN_* (e-mail de teste)
-docker compose -f infra/homolog/docker-compose.homolog.yml \
-  --env-file infra/homolog/.env.homolog up -d --build
-docker compose -f infra/homolog/docker-compose.homolog.yml \
-  --env-file infra/homolog/.env.homolog exec api pnpm db:seed
-#   funções padrão, checklists, gestor de teste e a equipe (sem PIN)
+C="docker compose -f infra/homolog/docker-compose.homolog.yml --env-file infra/homolog/.env.homolog"
+$C build api web                          # ou: imagens do registro (CENARIO_API_IMAGE/CENARIO_WEB_IMAGE)
+$C up -d postgres
+$C run --rm --no-deps -T --entrypoint sh api -c 'pnpm db:migrate && pnpm db:status'
+$C up -d --no-build                       # API recusa iniciar se houver migration pendente
+$C exec api pnpm db:seed                  # uma vez: funções, checklists, gestor de teste, equipe (sem PIN)
 ```
+
+**Migrations são um passo explícito.** O Compose de homologação define `MIGRATE_ON_START=0`
+(`CENARIO_MIGRATE_ON_START`): a API só confere `db:status` na partida e **sai com código 78** se
+houver migration pendente ou com falha (`infra/homolog/api-iniciar.sh`). Só a imagem usada fora
+desse Compose (padrão `MIGRATE_ON_START=1`) aplica migrations ao iniciar.
+
+**Na VM do Google Cloud** não use os comandos acima: as imagens vêm do Artifact Registry
+(`vm.sh iniciar` faz `compose pull` + `up -d --no-build`) e a atualização segue a sequência
+controlada `preparar-versao → manutencao → ponto-recuperacao → migrar → ativar` (falha:
+`recuperar --sim`). `vm.sh atualizar` está desativado. Veja `EVOLUCAO-PRE-DEPLOY-HOMOLOGACAO.md`.
 
 Verificação: `https://<domínio>/api/health` → `{"status":"ok"}`, `https://<domínio>/api/ready`
 → banco pronto, e `https://<domínio>/painel` abre a tela de entrada.
@@ -132,7 +149,8 @@ Registre cada divergência com data, tela, pessoa e captura de tela.
   dados de senha, PIN ou token nos logs.
 - **Backups**: o contêiner `backup` (imagem oficial `postgres:16`, com `pg_dump` da mesma versão
   do servidor) grava ao iniciar e depois diariamente no volume `backups` (banco + arquivos +
-  SHA-256, 14 dias). Backup manual: `docker compose … exec backup bash /scripts/backup.sh
+  SHA-256, 14 dias no volume; o `scripts/backup.sh` usa 30 por padrão, mas o Compose fixa
+  `BACKUP_RETENTION_DAYS=14`; no Google Cloud, as cópias no bucket expiram em 30 dias). Backup manual: `docker compose … exec backup bash /scripts/backup.sh
 /data/backups`. Teste de restauração num banco **separado** (nunca sobre o de homologação):
 
   ```bash
