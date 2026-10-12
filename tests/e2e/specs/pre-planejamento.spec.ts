@@ -26,7 +26,8 @@ const mondayOf = (iso: string) => {
   return d.toISOString().slice(0, 10);
 };
 // Semana própria no futuro: não colide com semanas usadas por outros testes.
-const WEEK = mondayOf(addDays(today(), 63));
+// 91 dias: nenhuma outra especificação usa esta semana (35, 49 e 63 já são usadas).
+const WEEK = mondayOf(addDays(today(), 91));
 const START = addDays(WEEK, 1); // terça-feira
 const shot = (page: Page, name: string) =>
   process.env.E2E_GEOMETRIA
