@@ -173,6 +173,27 @@ describe('A. Fila "A planejar"', () => {
       },
     ]);
     expect(r.status).toBe(422);
+    // OS com a produção concluída: aparece em "Concluídos", nunca como pendência de planejamento.
+    const d = await sofa(admin, 'Cliente Concluída');
+    const planned = await planServices(admin, [
+      {
+        serviceOrderId: d.id,
+        startDate: today(),
+        pieces: [{ serviceOrderItemId: d.items[0]!.id, upholstererUserId: p.ricardo }],
+      },
+    ]);
+    expect(planned.status).toBe(201);
+    await db().productionTask.updateMany({
+      where: { serviceOrderId: d.id },
+      data: { status: 'CONCLUIDA', startedAt: new Date(), completedAt: new Date() },
+    });
+    const done = await entryOf(admin, d.id);
+    expect(done!.stage).toBe('CONCLUIDO');
+    expect(
+      (await pipeline(admin)).items
+        .filter((i) => i.stage === 'A_PLANEJAR')
+        .map((i) => i.serviceOrder.id),
+    ).not.toContain(d.id);
   });
 });
 
