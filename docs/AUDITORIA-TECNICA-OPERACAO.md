@@ -41,12 +41,12 @@ nenhum segredo versionado.
 
 ## 3. Correções executadas
 
-| Item | O quê                                                                                                                                                                                                                          | Commit      |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- |
-| C1   | `.prettierignore` passa a ignorar **só** `docs/evidencias/**/geometria.json` (5 arquivos, todos gerados pelo E2E de geometria). Código-fonte e demais documentos continuam verificados (`prettier --file-info`).               | `d40d354`   |
-| C2   | `WsClient.waitFor` (testes) reage a cada mensagem em vez de consultar em intervalos; prazo 5 s → 15 s. Timeout ou conexão fechada continuam **reprovando**, com as mensagens recebidas na mensagem de erro.                    | `ff9cfc5`   |
-| C4   | `/api/sync/events`: leitura em lotes de 500, no máximo 5000 eventos examinados por chamada, cursor `nextSince`. Contrato anterior (`events`, `hasMore`) mantido; `nextSince` é aditivo. Sem migration, sem alteração de dados. | `6d37184`   |
-| C5   | `OPERACAO.md` e `HOMOLOGACAO.md` alinhados ao código (migrations explícitas, imagens do registro, retenção, estado de publicação não verificado) e este relatório.                                                             | este commit |
+| Item | O quê                                                                                                                                                                                                                          | Commit    |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
+| C1   | `.prettierignore` passa a ignorar **só** `docs/evidencias/**/geometria.json` (5 arquivos, todos gerados pelo E2E de geometria). Código-fonte e demais documentos continuam verificados (`prettier --file-info`).               | `d40d354` |
+| C2   | `WsClient.waitFor` (testes) reage a cada mensagem em vez de consultar em intervalos; prazo 5 s → 15 s. Timeout ou conexão fechada continuam **reprovando**, com as mensagens recebidas na mensagem de erro.                    | `ff9cfc5` |
+| C4   | `/api/sync/events`: leitura em lotes de 500, no máximo 5000 eventos examinados por chamada, cursor `nextSince`. Contrato anterior (`events`, `hasMore`) mantido; `nextSince` é aditivo. Sem migration, sem alteração de dados. | `6d37184` |
+| C5   | `OPERACAO.md` e `HOMOLOGACAO.md` alinhados ao código (migrations explícitas, imagens do registro, retenção, estado de publicação não verificado) e este relatório.                                                             | `b94ee66` |
 
 Garantias do cursor de C4 (`nextSince`): todo evento com `since < seq ≤ nextSince` foi examinado
 e, se visível, está nesta página ou numa anterior. Página cheia → cursor no último evento
@@ -59,13 +59,14 @@ sessão, então nada se perde). A ordem de `seq` segue a ordem de commit (trava 
 - `apps/api/test/helpers.ts` (C2)
 - `apps/api/src/modules/sync/routes.ts`, `apps/api/test/sync-events.test.ts` (novo) (C4)
 - `docs/OPERACAO.md`, `docs/HOMOLOGACAO.md`, `docs/AUDITORIA-TECNICA-OPERACAO.md` (novo) (C5)
+- `apps/api/src/modules/arrivals/routes.ts` (falha revelada pelo CI nº 88, ver §6.1)
 
 Migrations: **nenhuma**.
 
 ## 5. Commits
 
-`d40d354` (C1) → `ff9cfc5` (C2) → `6d37184` (C4) → commit de C5 (documentação), todos na branch
-`claude/cenario-gestao-fase-1-zf3bj2`.
+`d40d354` (C1) → `ff9cfc5` (C2) → `6d37184` (C4) → `b94ee66` (C5) → `87f7103` (corrida na
+confirmação de chegada), todos na branch `claude/cenario-gestao-fase-1-zf3bj2`.
 
 ## 6. Testes e resultados (executados nesta auditoria)
 
@@ -77,7 +78,7 @@ Migrations: **nenhuma**.
 | `sync-events.test.ts` (novo, C4): 6 cenários                                   | 6/6                       |
 | Consumidores existentes de `/api/sync/events` (realtime, finance, permissions) | 41/41                     |
 | Lint e typecheck da API (após C4)                                              | ok                        |
-| CI nº 87 (`d40d354`, primeira execução completa desde o nº 63)                 | ver §6.1                  |
+| CI (GitHub Actions)                                                            | ver §6.1                  |
 
 Cenários de C4: paginação 200/200/50 sem duplicar nem pular; página com exatamente `limit`
 eventos; visíveis entre milhares de invisíveis, inclusive nas fronteiras de lote e do limite de
@@ -85,9 +86,24 @@ leitura (cursor avança exatamente 5000); visibilidade por permissão e por usu�
 gestor); 30 gravações concorrentes durante a paginação (todas chegam, uma vez, em ordem);
 contrato anterior com valores padrão.
 
-### 6.1 CI
+### 6.1 CI (GitHub Actions, resultados reais)
 
-Preenchido em §6.1 do relatório de entrega (a execução estava em andamento ao escrever).
+| Execução | Commit    | Resultado                                                                                                              |
+| -------- | --------- | ---------------------------------------------------------------------------------------------------------------------- |
+| nº 87    | `d40d354` | **verde** — primeira execução completa desde o nº 63 (format, lint, typecheck, migrations, build, testes, backup, E2E) |
+| nº 88    | `6d37184` | **vermelho** — 1 teste: `recebimentos-compartilhados` CA3-10 recebeu `[201, 400]` em vez de `[201, 409]`               |
+| nº 89    | `b94ee66` | **verde**                                                                                                              |
+| nº 90    | `87f7103` | **verde** (pipeline completo, inclusive E2E)                                                                           |
+
+Causa do nº 88 **[FATO]**: corrida na confirmação de peças (`POST /api/v1/arrivals/pickups/:id/confirm`),
+não relacionada a C4. A retirada era lida sem trava antes do saldo; se outra confirmação era
+gravada entre as duas leituras, o saldo vinha zerado com a versão antiga e a rota respondia 400
+("Informe ao menos uma peça") em vez de 409. Reproduzida localmente com atraso injetado só na
+segunda requisição (`[201, 400]`), corrigida relendo a versão depois do saldo (`[201, 409]`
+com o mesmo atraso) e o atraso removido. Nenhum teste foi alterado ou desativado; não havia
+duplicação de dados (as travas em `registerReceipt` impediam) — o erro era só o código de resposta.
+
+Local, após C4: suíte completa da API 432 aprovados, 5 ignorados por desenho (50 arquivos).
 
 ## 7. Estado de produção e homologação
 
