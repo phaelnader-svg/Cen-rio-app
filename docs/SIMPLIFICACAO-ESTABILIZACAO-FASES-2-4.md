@@ -34,3 +34,16 @@ teste local, CI, homologação e produção.
 Fora deste trabalho (registrado, não tratado): D9 previa que a data de início também definisse a
 **ordem** na fila (não implementado; a data virou trava de liberação) — exige decisão; geometria
 estrita e script de migrações encadeadas fora do CI; Safari/WebKit e tablets físicos.
+
+## Lote 1 — Fase 4 (pré-planejamento) — concluído
+
+| Item | Resultado                                                                                                                                                                                                                                                                                                                                                                                      | Commit    |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| 1.1  | `releaseDueTasks` seleciona, na fila semanal, só tarefas cuja **própria** OS (par plano + OS) chegou à data de início; auditoria só quando alguma tarefa muda; seleção ordenada. Regras de liberação inalteradas. Testes de regressão (duas OS em dias diferentes; liberação concorrente) **falhavam antes** e passam depois.                                                                  | `4a2830c` |
+| 1.2  | CA4-21 com data fixa numa quarta-feira futura: a verificação final roda sempre (antes era pulada aos domingos). Nenhuma asserção removida.                                                                                                                                                                                                                                                     | `e71c2ed` |
+| 1.3  | CA4-23: pipeline, prévia, planejar, reprogramar e publicar — tablet 403 em todas, painel só leitura 403 nas de escrita e 200 nas de leitura, anônimo 401; plano, item, tarefas, auditoria e eventos idênticos. Corrigido teste antigo que chamava `PUT /planned/undefined`. Autorização: regra de acesso da rota (hook `onRequest`, antes do corpo e do handler) — ponto único da arquitetura. | `1587616` |
+| 1.4  | Rascunho esquecido em semana passada: comportamento explícito atual testado (segue visível como rascunho, nada é liberado nem transferido sozinho, tablet não vê, prévia avisa "data já passou", gestor reprograma). **Regra automática não definida no requisito → decisão pendente** (opções: manter manual; alerta na Central; transferir para a semana atual).                             | `ffb6da8` |
+
+Resultados (locais nesta máquina, no commit `ebc8f36`): pré-planejamento 16/16; suíte completa da API
+457 aprovados, 5 ignorados por desenho; lint, typecheck, formatação e build sem erros; E2E 32/32.
+**CI nº 95 (`ebc8f36`): verde.** Homologação e produção: não publicado.
