@@ -16,6 +16,7 @@ import { refreshOrderStatus } from '../commercial/status';
 import { syncTripCost } from '../finance/trip-costs';
 import { emitOrderEvent } from '../orders/routes';
 import { emitPickupEvent } from '../pickups/routes';
+import { reevaluateTasks, waitingTaskIds } from '../production/common';
 import { autoServiceOrderForReceipt } from '../service-orders/auto';
 
 /**
@@ -182,6 +183,20 @@ export async function registerReceipt(
   // Simplificação Fase 2 (D1): pedido do Novo serviço → a OS das peças que chegaram nasce aqui,
   // na MESMA transação (falhou a OS, nada do recebimento é gravado).
   const generated = await autoServiceOrderForReceipt(tx, actor, receipt.id);
+  // Simplificação Fase 3 (plano CA3-10): a chegada reavalia as tarefas que aguardam início nas
+  // OS abertas com estas peças (ex.: OS anterior à chegada, de dados legados, bloqueada por
+  // "peça não recebida"). Mesma transação do recebimento (falhou, nada muda); idempotente:
+  // sem mudança de situação nada é gravado; nunca cria tarefa nem inicia trabalho.
+  const taskStatusChanges = await reevaluateTasks(
+    tx,
+    actor,
+    await waitingTaskIds(tx, {
+      serviceOrder: {
+        status: 'ABERTA',
+        items: { some: { orderItemId: { in: input.lines.map((l) => l.orderItemId) } } },
+      },
+    }),
+  );
   const total = input.lines.reduce((a, l) => a + l.quantity, 0);
   await audit(tx, actor, {
     action: 'receipt.registered',
@@ -199,6 +214,7 @@ export async function registerReceipt(
       divergences: input.divergences ?? null,
       ...(ctx.deviceId ? { deviceId: ctx.deviceId } : {}),
       ...(generated ? { generatedServiceOrderId: generated.id } : {}),
+      ...(taskStatusChanges ? { taskStatusChanges } : {}),
     },
   });
   await appendEvent(tx, actor, {
