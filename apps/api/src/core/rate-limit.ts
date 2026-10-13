@@ -75,7 +75,7 @@ export async function registerRateLimits(app: FastifyInstance, settings: RateLim
   const check = async (limiter: typeof beforeAuth, request: FastifyRequest) => {
     const r = await limiter(request);
     if (!r.isAllowed && r.isExceeded) {
-      request.log.info({ chave: r.key.split(':')[0] }, 'Limite de requisições atingido');
+      request.log.warn({ chave: r.key.split(':')[0] }, 'Limite de requisições atingido');
       throw Errors.rateLimited(r.ttlInSeconds);
     }
   };
