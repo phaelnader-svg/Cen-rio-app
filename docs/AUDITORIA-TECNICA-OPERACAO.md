@@ -88,12 +88,15 @@ contrato anterior com valores padrão.
 
 ### 6.1 CI (GitHub Actions, resultados reais)
 
-| Execução | Commit    | Resultado                                                                                                              |
-| -------- | --------- | ---------------------------------------------------------------------------------------------------------------------- |
-| nº 87    | `d40d354` | **verde** — primeira execução completa desde o nº 63 (format, lint, typecheck, migrations, build, testes, backup, E2E) |
-| nº 88    | `6d37184` | **vermelho** — 1 teste: `recebimentos-compartilhados` CA3-10 recebeu `[201, 400]` em vez de `[201, 409]`               |
-| nº 89    | `b94ee66` | **verde**                                                                                                              |
-| nº 90    | `87f7103` | **verde** (pipeline completo, inclusive E2E)                                                                           |
+| Execução | Commit    | Resultado                                                                                                                                                |
+| -------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| nº 87    | `d40d354` | **verde** — primeira execução completa desde o nº 63 (format, lint, typecheck, migrations, build, testes, backup, E2E)                                   |
+| nº 88    | `6d37184` | **vermelho** — 1 teste: `recebimentos-compartilhados` CA3-10 recebeu `[201, 400]` em vez de `[201, 409]`                                                 |
+| nº 89    | `b94ee66` | **verde**                                                                                                                                                |
+| nº 90    | `87f7103` | **verde** (pipeline completo, inclusive E2E)                                                                                                             |
+| nº 91    | `ecbbd6e` | **verde**                                                                                                                                                |
+| nº 92    | `b64f214` | **verde** (C3, parte 1)                                                                                                                                  |
+| nº 93    | `04176b4` | **verde** — C3 completo: API 453 aprovados/5 ignorados por desenho; `proxy-caddy` 5/5 com o Caddy 2.10.2 (soma SHA-512 conferida, não pulado); E2E 32/32 |
 
 Causa do nº 88 **[FATO]**: corrida na confirmação de peças (`POST /api/v1/arrivals/pickups/:id/confirm`),
 não relacionada a C4. A retirada era lida sem trava antes do saldo; se outra confirmação era
