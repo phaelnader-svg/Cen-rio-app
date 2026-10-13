@@ -46,6 +46,9 @@ interface Res {
 /** Cliente HTTP com "pote de cookies", simulando um navegador (painel ou tablet). */
 export class Client {
   cookies = new Map<string, string>();
+  /** Endereço da conexão vista pela API e cabeçalhos de rede extras (ex.: X-Forwarded-For). */
+  remoteAddress = '127.0.0.1';
+  networkHeaders: Record<string, string> = {};
   constructor(
     private readonly app: App,
     public origin: string | null = ORIGIN,
@@ -64,8 +67,10 @@ export class Client {
     const res = await this.app.app.inject({
       method,
       url,
+      remoteAddress: this.remoteAddress,
       payload: body === undefined ? undefined : (body as object),
       headers: {
+        ...this.networkHeaders,
         ...(this.origin ? { origin: this.origin } : {}),
         ...(this.cookies.size ? { cookie: this.cookieHeader } : {}),
         ...headers,

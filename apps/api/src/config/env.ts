@@ -27,6 +27,16 @@ const envSchema = z
       .string()
       .default('false')
       .transform((v): boolean | string => (v === 'true' ? true : v === 'false' ? false : v)),
+    /**
+     * Limites de requisições por minuto (core/rate-limit.ts). Teto por IP real (todas as
+     * requisições; comporta a oficina atrás de um IP público), teto global com IP desconhecido,
+     * por sessão/dispositivo validado e sem credencial válida (por IP / global).
+     */
+    RATE_LIMIT_IP_PER_MIN: z.coerce.number().int().min(1).default(3000),
+    RATE_LIMIT_UNKNOWN_IP_PER_MIN: z.coerce.number().int().min(1).default(10_000),
+    RATE_LIMIT_SESSION_PER_MIN: z.coerce.number().int().min(1).default(600),
+    RATE_LIMIT_ANON_PER_MIN: z.coerce.number().int().min(1).default(120),
+    RATE_LIMIT_UNKNOWN_ANON_PER_MIN: z.coerce.number().int().min(1).default(1200),
     COOKIE_SECURE: bool.default(false),
     TOKEN_HASH_SECRET: z
       .string()

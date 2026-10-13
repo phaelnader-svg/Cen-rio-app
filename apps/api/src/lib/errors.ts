@@ -28,6 +28,14 @@ export const Errors = {
       { retryAfterSeconds },
       { 'retry-after': String(retryAfterSeconds) },
     ),
+  rateLimited: (retryAfterSeconds: number) =>
+    new AppError(
+      429,
+      ERROR_CODES.RATE_LIMITED,
+      'Muitas requisições. Aguarde alguns instantes.',
+      { retryAfterSeconds },
+      { 'retry-after': String(retryAfterSeconds) },
+    ),
   forbidden: (message = 'Você não tem permissão para esta ação.') =>
     new AppError(403, ERROR_CODES.FORBIDDEN, message),
   originNotAllowed: () =>

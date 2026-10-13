@@ -1,14 +1,14 @@
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
-import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
 import { EVENT_TYPES } from '@cenario/shared';
 import { createPrismaClient, type PrismaClient } from '@cenario/db';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { Env } from './config/env';
 import { buildClientIpConfig } from './core/client-ip';
+import { registerRateLimits } from './core/rate-limit';
 import { appendEvent } from './core/events/append';
 import { EventFeed } from './core/events/feed';
 import { EventProcessor } from './core/events/processor';
@@ -148,21 +148,12 @@ export async function buildApp(options: BuildOptions): Promise<App> {
     hsts: env.COOKIE_SECURE ? { maxAge: 31_536_000, includeSubDomains: true } : false,
   });
   await app.register(cookie);
-  await app.register(rateLimit, {
-    global: true,
-    max: 600,
-    timeWindow: '1 minute',
-    // O WebSocket tem controle próprio; limitar o upgrade atrapalharia reconexões.
-    allowList: (request) => request.url === '/api/realtime',
-    // Atrás do proxy do Next todos os navegadores chegam do mesmo IP: o limite é por sessão
-    // (cookie de sessão ou de dispositivo), com o IP apenas como alternativa.
-    keyGenerator: (request) => {
-      const c = request.cookies ?? {};
-      const token = c[ctx.cookies.session] ?? c[ctx.cookies.device];
-      return token
-        ? `s:${createHash('sha256').update(token).digest('hex').slice(0, 32)}`
-        : request.ip;
-    },
+  await registerRateLimits(app, {
+    ipPerMinute: env.RATE_LIMIT_IP_PER_MIN,
+    unknownIpPerMinute: env.RATE_LIMIT_UNKNOWN_IP_PER_MIN,
+    sessionPerMinute: env.RATE_LIMIT_SESSION_PER_MIN,
+    anonymousPerMinute: env.RATE_LIMIT_ANON_PER_MIN,
+    unknownAnonymousPerMinute: env.RATE_LIMIT_UNKNOWN_ANON_PER_MIN,
   });
   await app.register(multipart, {
     limits: { fileSize: env.MAX_UPLOAD_MB * 1024 * 1024, files: 1, fields: 5 },
