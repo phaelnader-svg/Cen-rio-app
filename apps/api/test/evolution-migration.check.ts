@@ -261,5 +261,27 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       ],
     });
     expect(planned.status, JSON.stringify(planned.body)).toBe(201);
+    // Estabilização da Fase 2: cliente entrega as peças (sem retirada) + titular e mão de obra
+    // previstos — bloqueiam as reversões de servico_sem_retirada e titular_mao_de_obra_prevista.
+    const dropOff = await post('/api/v1/services', {
+      customer: { mode: 'EXISTENTE', customerId: nsOrder.customerId },
+      service: {
+        contractedService: 'Reforma',
+        items: [
+          {
+            pieceType: 'SOFA',
+            description: 'Sofá entregue',
+            quantity: 1,
+            serviceType: 'REFORMA_COMPLETA',
+            plannedUpholstererUserId: ids.ricardo,
+            plannedLaborUnitCents: 30000,
+          },
+        ],
+      },
+      pickup: null,
+    });
+    expect(dropOff.status, JSON.stringify(dropOff.body)).toBe(201);
+    expect(dropOff.body.order.customerDropOff).toBe(true);
+    expect(dropOff.body.pickup).toBeNull();
   });
 });

@@ -26,7 +26,9 @@ cleanup() {
   rm -rf "$WORK"
 }
 trap cleanup EXIT
-DOWNS=(20261228000000_titular_mao_de_obra_prevista 20261227000000_servico_sem_retirada 20261220000000_recebimentos_permissao_funcoes 20261213000000_pre_planejamento 20261206000000_recebimentos_compartilhados 20261129000000_novo_servico 20261115000000_fechamento_semanal 20261108000000_custos_logistica
+# 20261220000000_recebimentos_permissao_funcoes fica fora de DOWNS (só em ALL_DOWNS): é migration
+# só de dados cuja reversão é incondicional por desenho (limitação documentada no próprio .down.sql).
+DOWNS=(20261228000000_titular_mao_de_obra_prevista 20261227000000_servico_sem_retirada 20261213000000_pre_planejamento 20261206000000_recebimentos_compartilhados 20261129000000_novo_servico 20261115000000_fechamento_semanal 20261108000000_custos_logistica
   20261101000000_mao_de_obra_revisao 20261025000000_distribuicao_automatica
   20261018000000_fila_semanal)
 # Correção global: roteiro (só a ordem das paradas; reversão sem perda de compromisso).
@@ -34,7 +36,7 @@ DOWNS=(20261228000000_titular_mao_de_obra_prevista 20261227000000_servico_sem_re
 ALL_DOWNS=(20261228000000_titular_mao_de_obra_prevista 20261227000000_servico_sem_retirada 20261220000000_recebimentos_permissao_funcoes
   20261213000000_pre_planejamento
   20261206000000_recebimentos_compartilhados 20261129000000_novo_servico
-  20261122000000_roteiro_logistica "${DOWNS[@]:6}")
+  20261122000000_roteiro_logistica "${DOWNS[@]:5}")
 
 step() { echo; echo "■ $*"; }
 q() { psql "$URL" -At -v ON_ERROR_STOP=1 -c "$1"; }
@@ -74,16 +76,26 @@ soma_mo=$(q 'SELECT coalesce(sum(agreed_cents),0) FROM production_payables') som
 
 step "2. Fotografia do legado"
 COLS="$(columns | grep -v '^_prisma_migrations|')"
-BEFORE="$(snapshot "$COLS")"
+# role_permissions é conferida à parte: a migration 20261220000000_recebimentos_permissao_funcoes
+# ACRESCENTA, por desenho, recebimentos.registrar a três funções da oficina.
+COLS_RP="$(echo "$COLS" | grep -v '^role_permissions|')"
+rp_rows() { q "SELECT r.key || ':' || p.permission FROM role_permissions p JOIN roles r ON r.id = p.role_id ORDER BY 1"; }
+RP_BEFORE="$(rp_rows)"
+BEFORE="$(snapshot "$COLS_RP")"
 IDX_BEFORE="$(indexes)"
 SCHEMA_BEFORE="$(schema_dump)"
 echo "tabelas fotografadas: $(echo "$BEFORE" | wc -l)"
 
 step "3. Migrations da Evolução (Fases 2–7)"
 ( cd "$ROOT/packages/db" && DATABASE_URL="$URL" pnpm exec prisma migrate deploy 2>&1 | grep -E 'Applying|applied|Error' )
-AFTER="$(snapshot "$COLS")"
+AFTER="$(snapshot "$COLS_RP")"
 if [[ "$BEFORE" != "$AFTER" ]]; then diff <(echo "$BEFORE") <(echo "$AFTER") >&2 || true; echo "✖ Dados legados alterados" >&2; exit 1; fi
-echo "✔ dados legados idênticos (todas as colunas existentes, $(echo "$AFTER" | wc -l) tabelas)"
+RP_AFTER="$(rp_rows)"
+[[ -z "$(comm -23 <(echo "$RP_BEFORE") <(echo "$RP_AFTER"))" ]] \
+  || { echo "✖ Permissões legadas removidas" >&2; exit 1; }
+RP_ADDED="$(comm -13 <(echo "$RP_BEFORE") <(echo "$RP_AFTER") | grep -v ':recebimentos.registrar$' || true)"
+[[ -z "$RP_ADDED" ]] || { echo "✖ Permissões inesperadas: $RP_ADDED" >&2; exit 1; }
+echo "✔ dados legados idênticos (todas as colunas existentes, $(echo "$AFTER" | wc -l) tabelas); permissões legadas preservadas; acrescentadas: $(comm -13 <(echo "$RP_BEFORE") <(echo "$RP_AFTER") | tr '\n' ' ')"
 # Substituições DOCUMENTADAS (regra nova mais específica no lugar da antiga):
 #  - Fase 5: production_payables_item_active/order_active → uma obrigação viva por
 #    peça E profissional (production_payables_one_live_per_piece_professional/_os_professional);
@@ -103,7 +115,7 @@ step "4. Código atual sobre o legado migrado (leitura)"
 
 # A leitura pelo código atual grava sessão/auditoria (login) e pode recalcular a situação da mão
 # de obra; registra o que mudou e passa a comparar o rollback com o estado imediatamente anterior.
-PRE_RB="$(snapshot "$COLS")"
+PRE_RB="$(snapshot "$COLS_RP")"
 echo "tabelas alteradas pela etapa 4 (uso normal do sistema): $(diff <(echo "$AFTER") <(echo "$PRE_RB") | grep '^>' | cut -d'|' -f1 | sed 's/^> //' | tr '\n' ' ')"
 
 step "5. Rollbacks sem dados novos (pré-planejamento → recebimentos → novo serviço → roteiro → 7 → 6 → 5 → 3 → 2)"
@@ -113,8 +125,9 @@ for d in "${ALL_DOWNS[@]}"; do
 done
 diff <(echo "$SCHEMA_BEFORE") <(schema_dump) > "$WORK/schema.diff" \
   || { cat "$WORK/schema.diff" >&2; echo "✖ Schema difere do legado após rollback" >&2; exit 1; }
-RB="$(snapshot "$COLS")"
+RB="$(snapshot "$COLS_RP")"
 if [[ "$RB" != "$PRE_RB" ]]; then diff <(echo "$PRE_RB") <(echo "$RB") >&2 || true; echo "✖ Dados diferem após rollback" >&2; exit 1; fi
+[[ "$(rp_rows)" == "$RP_BEFORE" ]] || { echo "✖ Permissões diferem do legado após rollback" >&2; exit 1; }
 echo "✔ schema idêntico ao legado (pg_dump -s) e dados idênticos"
 
 step "6. Reaplica, cria dados novos e prova a RECUSA de cada rollback"
