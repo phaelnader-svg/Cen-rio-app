@@ -532,7 +532,12 @@ describe('D. Semana publicada, reprogramação e histórico', () => {
     const planId = r.body.planned[0].planId;
     let e = (await entryOf(admin, so.id))!;
     // Rascunho: muda de semana sem motivo; tarefas vão juntas, versão sobe.
-    const next = day(9);
+    // Data fixa numa quarta-feira futura: sempre há outro dia depois dela na mesma semana
+    // (com day(9) o teste ficava sem a verificação final quando caía num domingo).
+    const weekAhead = mondayOf(day(14));
+    const atDay = (n: number) =>
+      new Date(Date.parse(`${weekAhead}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+    const next = atDay(2);
     const mv = await put(admin, `/api/v1/production/planned/${e.plan!.itemId}`, {
       version: e.plan!.version,
       startDate: next,
@@ -580,7 +585,7 @@ describe('D. Semana publicada, reprogramação e histórico', () => {
     expect(cur.stage).toBe('EM_PRODUCAO');
     const blocked = await put(admin, `/api/v1/production/planned/${cur.plan!.itemId}`, {
       version: cur.plan!.version,
-      startDate: day(20),
+      startDate: atDay(14),
       reason: 'Cliente pediu',
     });
     expect(blocked.status).toBe(422);
@@ -596,14 +601,14 @@ describe('D. Semana publicada, reprogramação e histórico', () => {
         new Date(Date.parse(`${next}T12:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10),
       )
       .find((d) => mondayOf(d) === mondayOf(next));
-    if (sameWeekLater) {
-      const moveDate = await put(admin, `/api/v1/production/planned/${fresh.plan!.itemId}`, {
-        version: fresh.plan!.version,
-        startDate: sameWeekLater,
-        reason: 'Ajuste de agenda',
-      });
-      expect(moveDate.status, JSON.stringify(moveDate.body)).toBe(200);
-    }
+    expect(sameWeekLater).toBe(atDay(3));
+    const moveDate = await put(admin, `/api/v1/production/planned/${fresh.plan!.itemId}`, {
+      version: fresh.plan!.version,
+      startDate: sameWeekLater,
+      reason: 'Ajuste de agenda',
+    });
+    expect(moveDate.status, JSON.stringify(moveDate.body)).toBe(200);
+    expect((await entryOf(admin, so.id))!.plan!.startDate).toBe(sameWeekLater);
     const after = await db().productionTask.findUniqueOrThrow({ where: { id: t.id } });
     expect(after).toMatchObject({
       status: 'CONCLUIDA',
