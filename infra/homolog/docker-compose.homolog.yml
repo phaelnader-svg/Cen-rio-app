@@ -79,7 +79,9 @@ services:
       API_HOST: 0.0.0.0
       API_PORT: 4000
       ALLOWED_ORIGINS: https://${HOMOLOG_DOMAIN:?defina HOMOLOG_DOMAIN}
-      TRUST_PROXY: 172.28.0.0/24
+      # Só o proxy (Caddy, IP fixo abaixo) é confiável para informar o IP real do cliente.
+      # Nunca a rede interna inteira: outro contêiner poderia forjar X-Forwarded-For.
+      TRUST_PROXY: 172.28.0.250
       COOKIE_SECURE: 'true'
       TOKEN_HASH_SECRET: ${TOKEN_HASH_SECRET:?defina TOKEN_HASH_SECRET}
       LOG_LEVEL: info
@@ -127,7 +129,11 @@ services:
       - ./Caddyfile.homolog:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
     mem_limit: 192m
-    networks: [interna]
+    # IP fixo: é o único endereço em TRUST_PROXY da API. Fora do início da faixa, que o Docker
+    # usa para os endereços automáticos dos demais contêineres.
+    networks:
+      interna:
+        ipv4_address: 172.28.0.250
     logging: *logging
 
   # Backup diário (banco + arquivos), retenção de 14 dias no volume "backups". Imagem oficial do

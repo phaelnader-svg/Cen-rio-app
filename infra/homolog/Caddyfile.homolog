@@ -21,16 +21,30 @@
 	}
 }
 
+# IP real do cliente (auditoria C3): sem "trusted_proxies", o Caddy já descarta o X-Forwarded-For
+# recebido; aqui isso fica EXPLÍCITO (o cabeçalho passa a ser só o IP da conexão) e os cabeçalhos
+# alternativos enviados pelo cliente são removidos. A API confia só no IP fixo deste contêiner
+# (TRUST_PROXY no Compose). Comprovado por apps/api/test/proxy-caddy.test.ts.
+(cabecalhos_cliente) {
+	header_up X-Forwarded-For {remote_host}
+	header_up -X-Real-IP
+	header_up -Forwarded
+}
+
 (cenario_app) {
 	encode zstd gzip
 
 	@api path /api/*
 	handle @api {
-		reverse_proxy api:4000
+		reverse_proxy api:4000 {
+			import cabecalhos_cliente
+		}
 	}
 
 	handle {
-		reverse_proxy web:3000
+		reverse_proxy web:3000 {
+			import cabecalhos_cliente
+		}
 	}
 }
 

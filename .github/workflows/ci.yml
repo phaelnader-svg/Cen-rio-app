@@ -49,6 +49,16 @@ jobs:
           pnpm db:status
           pnpm --filter @cenario/db exec prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
       - run: pnpm build
+      # Caddy da mesma versão da imagem de homologação (caddy:2.10-alpine), com soma conferida:
+      # apps/api/test/proxy-caddy.test.ts sobe o Caddyfile real na frente da API (obrigatório no CI).
+      - name: Caddy para o teste do proxy
+        run: |
+          V=2.10.2
+          F=caddy_${V}_linux_amd64.tar.gz
+          curl -fsSL -o "$RUNNER_TEMP/$F" "https://github.com/caddyserver/caddy/releases/download/v$V/$F"
+          echo "747df7ee74de188485157a383633a1a963fd9233b71fbb4a69ddcbcc589ce4e2cc82dacf5dbbe136cb51d17e14c59daeb5d9bc92487610b0f3b93680b2646546  $RUNNER_TEMP/$F" | sha512sum -c -
+          tar -xzf "$RUNNER_TEMP/$F" -C "$RUNNER_TEMP" caddy
+          echo "CADDY_BIN=$RUNNER_TEMP/caddy" >> "$GITHUB_ENV"
       - run: pnpm test
       - run: pnpm test:backup
       - run: pnpm --filter @cenario/e2e exec playwright install --with-deps chromium
