@@ -141,6 +141,8 @@ model User {
   materialArrivals          MaterialArrival[]          @relation("MaterialArrivalBy")
   materialArrivalsConferred MaterialArrival[]          @relation("MaterialArrivalConferredBy")
 
+  plannedUpholsteredItems CommercialOrderItem[] @relation("PlannedUpholsterer")
+
   @@map("users")
 }
 
@@ -668,7 +670,15 @@ model CommercialOrderItem {
   fabricReference String?      @map("fabric_reference") @db.VarChar(80)
   technicalNotes  String?      @map("technical_notes") @db.VarChar(2000)
 
+  // Estabilização da Fase 2 (Fase 1 §4.3 B): titular e mão de obra PREVISTOS no fechamento.
+  // Intenção, não obrigação: a mão de obra combinada nasce com a OS, na chegada
+  // (valor por unidade × quantidade que chegou). CHECK no banco: mão de obra exige titular.
+  plannedUpholstererUserId String? @map("planned_upholsterer_user_id") @db.Uuid
+  plannedLaborUnitCents    Int?    @map("planned_labor_unit_cents")
+  plannedUpholsterer       User?   @relation("PlannedUpholsterer", fields: [plannedUpholstererUserId], references: [id], onDelete: Restrict)
+
   @@unique([orderId, position])
+  @@index([plannedUpholstererUserId])
   @@map("commercial_order_items")
 }
 

@@ -15,6 +15,8 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { lockRow } from '../../core/locking';
 import { loadUserPermissions } from '../../core/permissions';
+import { canPlanLabor, canPlanUpholsterer } from '../orders/planned-intent';
+import { loadTeam, upholsterersOf } from '../production/distribution';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { asSnapshot, dateOnly, orderCode, pickupCode } from '../commercial/common';
@@ -158,6 +160,9 @@ export async function serviceRoutes(app: FastifyInstance) {
         canSetValues: perms.has('pedidos.valores'),
         canSetTripCost: perms.has('financeiro.gerenciar'),
         canCreateCustomer: perms.has('clientes.gerenciar'),
+        upholsterers: canPlanUpholsterer(perms) ? upholsterersOf(await loadTeam(prisma)) : [],
+        canPlanUpholsterer: canPlanUpholsterer(perms),
+        canPlanLabor: canPlanLabor(perms),
       };
     },
   );

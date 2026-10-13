@@ -204,4 +204,58 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await expect(page.getByTestId('receipt-done')).toContainText(/Recebimento RC-\d{5} registrado/);
     await expect(page.getByTestId('receipt-generated-os')).toContainText(/OS-\d{5}/);
   });
+  test('titular e mão de obra previstos no fechamento; alteração antes da chegada; OS nasce com eles', async ({
+    page,
+  }) => {
+    await loginAdmin(page);
+    await page.goto('/painel/servicos/novo');
+    await page.getByTestId('ns-mode-new').click();
+    await page.getByTestId('ns-name').fill('Cliente Titular Fictício E2E');
+    await page.getByTestId('ns-phone').fill('(11) 94444-5566');
+    await page.getByTestId('ns-piece-desc-0').fill('Sofá previsto');
+    await page.getByTestId('ns-delivery-dropoff').click();
+    // Fechamento: titular + mão de obra prevista por unidade (previsão, não pagamento).
+    await page.getByTestId('ns-piece-owner-0').selectOption({ label: 'Ricardo' });
+    await page.getByTestId('ns-piece-labor-0').fill('250,00');
+    await expect(page.getByTestId('ns-sum-owners')).toContainText(
+      /Sofá previsto: Ricardo \(R\$\s250,00\/un\.\)/,
+    );
+    await page.getByTestId('ns-submit').click();
+    await expect(page.getByTestId('ns-confirmation')).toBeVisible();
+    await page.getByTestId('ns-open-order').click();
+    await page.waitForURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
+    const orderId = page.url().split('/').pop()!;
+    const owner = page.getByTestId('order-item-owner-0');
+    await expect(owner).toContainText('Titular previsto: Ricardo');
+    await expect(owner).toContainText(/mão de obra prevista R\$\s250,00\/un\./);
+    // Nada financeiro antes da chegada.
+    const before = await call(page, 'GET', `/api/v1/service-orders?orderId=${orderId}`);
+    expect(Array.isArray(before) ? before : before.items).toHaveLength(0);
+
+    // Alteração antes da chegada: Márcio, R$ 280,00 por unidade.
+    await page.getByTestId('order-planned-edit').click();
+    const dlg = page.getByRole('dialog');
+    await dlg.getByTestId('planned-owner-0').selectOption({ label: 'Márcio' });
+    await dlg.getByTestId('planned-labor-0').fill('280,00');
+    await dlg.getByTestId('planned-save').click();
+    await expect(dlg).toHaveCount(0);
+    await expect(owner).toContainText('Titular previsto: Márcio');
+    await expect(owner).toContainText(/R\$\s280,00\/un\./);
+
+    // Chegada no painel → OS com o titular e a mão de obra combinada (prevista, não paga).
+    await page.goto(`/painel/recebimentos/novo?pedido=${orderId}`);
+    await page
+      .getByTestId('receipt-line-Sofá previsto')
+      .getByLabel('Localização inicial na oficina')
+      .fill('Área de recebimento');
+    await page.getByRole('button', { name: 'Confirmar recebimento' }).click();
+    await expect(page.getByTestId('receipt-generated-os')).toContainText(/OS-\d{5}/);
+    await page.getByTestId('receipt-generated-os').click();
+    await page.waitForURL(/\/painel\/os\/[0-9a-f-]{36}$/);
+    await page.getByRole('tab', { name: 'Mão de obra' }).click();
+    const labor = page.getByTestId('os-labor');
+    await expect(labor).toContainText('Titular: Márcio');
+    await expect(labor).toContainText(/R\$\s280,00/);
+    await expect(labor).toContainText('Combinado (previsto)');
+  });
 });

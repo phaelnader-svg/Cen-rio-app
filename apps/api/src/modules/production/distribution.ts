@@ -95,9 +95,9 @@ export async function loadTeam(db: Tx | PrismaClient) {
   }
   return team;
 }
-type Team = Awaited<ReturnType<typeof loadTeam>>;
+export type Team = Awaited<ReturnType<typeof loadTeam>>;
 
-const upholstererOk = (team: Team, userId: string | null | undefined) => {
+export const upholstererOk = (team: Team, userId: string | null | undefined) => {
   const m = userId ? team.get(userId) : undefined;
   return Boolean(m && m.canExecute && (m.isTapeceiro || m.skills.has('CORTE_COSTURA')));
 };

@@ -435,6 +435,31 @@ const newServiceCustomerSchema = z.discriminatedUnion('mode', [
     .superRefine(refineDocument),
 ]);
 
+const plannedLaborCents = z
+  .number({ message: 'Valor da mão de obra prevista inválido.' })
+  .int('Valor da mão de obra em centavos.')
+  .min(1, 'Mão de obra prevista deve ser maior que zero.')
+  .max(10_000_000);
+
+/** Mão de obra prevista só existe com titular previsto (o valor é do titular). */
+function refinePlannedIntent(
+  items: readonly {
+    plannedUpholstererUserId?: string | null;
+    plannedLaborUnitCents?: number | null;
+  }[],
+  ctx: z.RefinementCtx,
+  path: (string | number)[],
+) {
+  items.forEach((it, idx) => {
+    if (it.plannedLaborUnitCents && !it.plannedUpholstererUserId)
+      ctx.addIssue({
+        code: 'custom',
+        path: [...path, idx, 'plannedLaborUnitCents'],
+        message: 'Escolha o tapeceiro titular antes de informar a mão de obra prevista.',
+      });
+  });
+}
+
 /** Peça do serviço fechado: só o que já se sabe no fechamento (nada técnico é obrigatório). */
 export const newServiceItemSchema = orderItemSchema.omit({ id: true }).extend({
   serviceType: z.enum(SERVICE_TYPES),
@@ -442,6 +467,10 @@ export const newServiceItemSchema = orderItemSchema.omit({ id: true }).extend({
   fabricColor: optionalText(80),
   fabricReference: optionalText(80),
   technicalNotes: optionalText(2000),
+  /** Estabilização da Fase 2: titular previsto (intenção; aplicado na OS gerada na chegada). */
+  plannedUpholstererUserId: idSchema.nullable().optional(),
+  /** Mão de obra PREVISTA por unidade, em centavos (exige titular previsto). Não é pagamento. */
+  plannedLaborUnitCents: plannedLaborCents.nullable().optional(),
 });
 
 export const newServicePickupSchema = z
@@ -497,6 +526,7 @@ export const newServiceSchema = z
     pickup: newServicePickupSchema.nullable().optional(),
   })
   .superRefine((v, ctx) => {
+    refinePlannedIntent(v.service.items, ctx, ['service', 'items']);
     if (v.pickup && v.customer.mode === 'NOVO' && !v.customer.address)
       ctx.addIssue({
         code: 'custom',
@@ -505,6 +535,31 @@ export const newServiceSchema = z
       });
   });
 export type NewServiceInput = z.input<typeof newServiceSchema>;
+
+/**
+ * Estabilização da Fase 2: alterar o titular / a mão de obra previstos de um pedido depois do
+ * fechamento. Vale só para as OS geradas a partir de agora (as já geradas não mudam).
+ */
+export const orderPlannedIntentSchema = z
+  .object({
+    version: versionSchema,
+    items: z
+      .array(
+        z.object({
+          orderItemId: idSchema,
+          plannedUpholstererUserId: idSchema.nullable(),
+          plannedLaborUnitCents: plannedLaborCents.nullable(),
+        }),
+      )
+      .min(1)
+      .max(50),
+  })
+  .superRefine((v, ctx) => {
+    refinePlannedIntent(v.items, ctx, ['items']);
+    if (new Set(v.items.map((i) => i.orderItemId)).size !== v.items.length)
+      ctx.addIssue({ code: 'custom', path: ['items'], message: 'Peça repetida.' });
+  });
+export type OrderPlannedIntentInput = z.input<typeof orderPlannedIntentSchema>;
 
 /** Responsável padrão da equipe própria (Empresa). `null` remove a configuração. */
 export const ownTeamSettingsSchema = z.object({

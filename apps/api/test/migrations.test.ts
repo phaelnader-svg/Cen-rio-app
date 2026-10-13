@@ -5,6 +5,23 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Prisma } from '@cenario/db';
 import { db, resetDatabase } from './helpers';
 
+/** Separa os comandos de um script de reversão respeitando blocos $$ … $$ (sem BEGIN/COMMIT). */
+function splitSql(sql: string): string[] {
+  const statements: string[] = [];
+  let cur = '';
+  let quoted = false;
+  for (const line of sql.replace(/--.*$/gm, '').split('\n')) {
+    cur += line + '\n';
+    quoted = quoted !== ((line.match(/\$\$/g) ?? []).length % 2 === 1);
+    if (!quoted && line.trim().endsWith(';')) {
+      const st = cur.trim().replace(/;$/, '');
+      if (!/^(BEGIN|COMMIT)$/i.test(st)) statements.push(st);
+      cur = '';
+    }
+  }
+  return statements;
+}
+
 describe('Banco de dados e migrations', () => {
   beforeAll(resetDatabase);
   afterAll(async () => undefined);
@@ -265,19 +282,7 @@ describe('Banco de dados e migrations', () => {
     const NAME = '20261227000000_servico_sem_retirada';
     const up = readFileSync(resolve(DB, `prisma/migrations/${NAME}/migration.sql`), 'utf8');
     const down = readFileSync(resolve(DB, `rollback/${NAME}.down.sql`), 'utf8');
-    // Separa os comandos respeitando blocos $$ … $$ (o DO da verificação contém ";").
-    const statements: string[] = [];
-    let cur = '';
-    let quoted = false;
-    for (const line of down.replace(/--.*$/gm, '').split('\n')) {
-      cur += line + '\n';
-      quoted = quoted !== ((line.match(/\$\$/g) ?? []).length % 2 === 1);
-      if (!quoted && line.trim().endsWith(';')) {
-        const st = cur.trim().replace(/;$/, '');
-        if (!/^(BEGIN|COMMIT)$/i.test(st)) statements.push(st);
-        cur = '';
-      }
-    }
+    const statements = splitSql(down);
     expect(statements).toHaveLength(3);
     const column = (tx: Pick<Prisma.TransactionClient, '$queryRawUnsafe'>) =>
       tx.$queryRawUnsafe<{ default: string | null; nullable: string }[]>(
@@ -320,5 +325,78 @@ describe('Banco de dados e migrations', () => {
     expect(
       (await db().commercialOrder.findUniqueOrThrow({ where: { id: order.id } })).customerDropOff,
     ).toBe(true);
+  });
+  it('estabilização da Fase 2: titular e mão de obra previstos (CHECK, migration e reversão condicionada)', async () => {
+    const DB = resolve(__dirname, '../../../packages/db');
+    const NAME = '20261228000000_titular_mao_de_obra_prevista';
+    const up = splitSql(
+      readFileSync(resolve(DB, `prisma/migrations/${NAME}/migration.sql`), 'utf8'),
+    );
+    const down = splitSql(readFileSync(resolve(DB, `rollback/${NAME}.down.sql`), 'utf8'));
+    expect(down).toHaveLength(7);
+    const columns = (tx: Pick<Prisma.TransactionClient, '$queryRawUnsafe'>) =>
+      tx.$queryRawUnsafe<{ name: string }[]>(
+        `SELECT column_name AS name FROM information_schema.columns
+          WHERE table_name = 'commercial_order_items' AND column_name LIKE 'planned_%' ORDER BY 1`,
+      );
+    expect(await columns(db())).toEqual([
+      { name: 'planned_labor_unit_cents' },
+      { name: 'planned_upholsterer_user_id' },
+    ]);
+    const customer = await db().customer.create({
+      data: { kind: 'PF', name: 'Cliente Intenção', searchText: 'cliente intencao' },
+    });
+    const order = await db().commercialOrder.create({
+      data: {
+        customerId: customer.id,
+        contractedService: 'Reforma',
+        items: { create: [{ position: 1, pieceType: 'SOFA', description: 'Sofá', quantity: 1 }] },
+      },
+      include: { items: true },
+    });
+    const item = order.items[0]!;
+    // Item anterior à migration: sem intenção.
+    expect(item).toMatchObject({ plannedUpholstererUserId: null, plannedLaborUnitCents: null });
+    // CHECK: mão de obra sem titular, ou não positiva, é recusada pelo próprio banco.
+    const owner = (await db().user.findFirstOrThrow({ where: { displayName: 'Ricardo' } })).id;
+    await expect(
+      db().commercialOrderItem.update({
+        where: { id: item.id },
+        data: { plannedLaborUnitCents: 1000 },
+      }),
+    ).rejects.toThrow(/planned_labor_ck/);
+    await expect(
+      db().commercialOrderItem.update({
+        where: { id: item.id },
+        data: { plannedUpholstererUserId: owner, plannedLaborUnitCents: 0 },
+      }),
+    ).rejects.toThrow(/planned_labor_ck/);
+    const run = async (tx: Prisma.TransactionClient, sql: string[]) => {
+      for (const st of sql) await tx.$executeRawUnsafe(st);
+    };
+    // Sem intenção registrada: a reversão remove tudo; reaplicar a migration funciona.
+    await expect(
+      db().$transaction(async (tx) => {
+        await run(tx, down);
+        expect(await columns(tx)).toEqual([]);
+        expect(
+          await tx.$queryRawUnsafe<{ n: bigint }[]>(
+            `SELECT count(*) AS n FROM "_prisma_migrations" WHERE "migration_name" = '${NAME}'`,
+          ),
+        ).toEqual([{ n: 0n }]);
+        await run(tx, up);
+        expect(await columns(tx)).toHaveLength(2);
+        throw new Error('desfazer');
+      }),
+    ).rejects.toThrow('desfazer');
+    // Com intenção registrada: a reversão é bloqueada (a intenção se perderia).
+    await db().commercialOrderItem.update({
+      where: { id: item.id },
+      data: { plannedUpholstererUserId: owner, plannedLaborUnitCents: 1000 },
+    });
+    await expect(db().$transaction(async (tx) => run(tx, down))).rejects.toThrow(
+      /Reversão bloqueada: 1 item/,
+    );
+    expect(await columns(db())).toHaveLength(2);
   });
 });

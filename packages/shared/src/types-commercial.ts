@@ -80,6 +80,13 @@ export interface OrderItemDto {
   inServiceOrders: number;
   /** Fase 12: quantidade devolvida ao cliente. */
   returnedQuantity: number;
+  /**
+   * Estabilização da Fase 2: titular previsto no fechamento (intenção). A OS gerada na chegada
+   * usa-o se ele ainda puder ser titular.
+   */
+  plannedUpholsterer: { userId: string; displayName: string } | null;
+  /** Mão de obra PREVISTA por unidade (não é pagamento). null sem `financeiro.ver`. */
+  plannedLaborUnitCents: number | null;
 }
 
 export interface OrderSummaryDto {
@@ -116,6 +123,8 @@ export interface OrderDto extends OrderSummaryDto {
   autoServiceOrder: boolean;
   promisedDate: string | null;
   technicalNotes: string | null;
+  /** Pode ver a mão de obra prevista dos itens (`financeiro.ver`). */
+  plannedLaborVisible: boolean;
   version: number;
   updatedAt: string;
 }
@@ -329,6 +338,12 @@ export interface NewServiceDefaultsDto {
   canSetValues: boolean;
   canSetTripCost: boolean;
   canCreateCustomer: boolean;
+  /** Estabilização da Fase 2: quem pode ser titular previsto (vazio sem `producao.planejar`). */
+  upholsterers: { userId: string; displayName: string; isTapeceiro: boolean }[];
+  /** Definir o titular previsto (`producao.planejar`). */
+  canPlanUpholsterer: boolean;
+  /** Definir a mão de obra prevista (`financeiro.ver` + `financeiro.gerenciar`). */
+  canPlanLabor: boolean;
 }
 
 export interface NewServiceResultDto {

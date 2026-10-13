@@ -3,6 +3,7 @@ import {
   anyPermissionAudience,
   cancelOrderSchema,
   createOrderSchema,
+  orderPlannedIntentSchema,
   orderQuerySchema,
   updateOrderSchema,
   type OrderDto,
@@ -40,6 +41,7 @@ import {
   serviceStates,
 } from '../commercial/status';
 import { syncTripCost } from '../finance/trip-costs';
+import { assertIntentEligible, canPlanLabor, canPlanUpholsterer } from './planned-intent';
 import { createOrder } from './service';
 
 const VIEW = { session: 'WEB', permissions: ['pedidos.ver'] } as const;
@@ -52,13 +54,16 @@ export const ORDER_AUDIENCE = anyPermissionAudience(
 
 type OrderFull = CommercialOrder & {
   customer: Customer;
-  items: CommercialOrderItem[];
+  items: (CommercialOrderItem & { plannedUpholsterer: { displayName: string } | null })[];
   createdBy: { displayName: string } | null;
 };
 
 const fullInclude = {
   customer: true,
-  items: { orderBy: { position: 'asc' as const } },
+  items: {
+    orderBy: { position: 'asc' as const },
+    include: { plannedUpholsterer: { select: { displayName: true } } },
+  },
   createdBy: { select: { displayName: true } },
 } satisfies Prisma.CommercialOrderInclude;
 
@@ -97,6 +102,7 @@ export async function loadOrderDto(
   if (!o) throw Errors.notFound('Pedido');
   const alloc = await itemAllocations(db as Tx, id);
   const valuesVisible = can(request, 'pedidos.valores');
+  const plannedLaborVisible = can(request, 'financeiro.ver');
   return {
     ...toSummary(o, (await serviceStates(db, [o])).get(o.id)!),
     pickupAddressId: o.pickupAddressId,
@@ -117,6 +123,11 @@ export async function loadOrderDto(
       inActivePickups: alloc.inPickups(i.id),
       inServiceOrders: alloc.inServiceOrders(i.id),
       returnedQuantity: i.returnedQuantity,
+      plannedUpholsterer:
+        i.plannedUpholstererUserId && i.plannedUpholsterer
+          ? { userId: i.plannedUpholstererUserId, displayName: i.plannedUpholsterer.displayName }
+          : null,
+      plannedLaborUnitCents: plannedLaborVisible ? i.plannedLaborUnitCents : null,
     })),
     cancelledAt: o.cancelledAt?.toISOString() ?? null,
     cancelReason: o.cancelReason,
@@ -124,6 +135,7 @@ export async function loadOrderDto(
     autoServiceOrder: o.autoServiceOrder,
     promisedDate: o.promisedDate ? o.promisedDate.toISOString().slice(0, 10) : null,
     technicalNotes: o.technicalNotes,
+    plannedLaborVisible,
     version: o.version,
     updatedAt: o.updatedAt.toISOString(),
   };
@@ -191,6 +203,111 @@ export async function orderRoutes(app: FastifyInstance) {
     const { id } = idParams.parse(request.params);
     return loadOrderDto(prisma, request, id);
   });
+
+  /**
+   * Estabilização da Fase 2: alterar o titular / a mão de obra PREVISTOS depois do fechamento.
+   * Vale só para as OS geradas a partir de agora (OS e mão de obra já geradas não mudam — para
+   * elas, use a troca de titular e a revisão financeira). Sem `financeiro.ver` a mão de obra
+   * prevista não é vista nem alterada (fica preservada).
+   */
+  app.put(
+    '/api/v1/orders/:id/planned-intent',
+    // Como o PUT do pedido: a versão (CAS) impede aplicar duas vezes a mesma alteração.
+    { config: { access: MANAGE } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const input = orderPlannedIntentSchema.parse(request.body);
+      const perms = request.auth!.permissions;
+      const laborVisible = perms.has('financeiro.ver');
+      await prisma.$transaction(async (tx) => {
+        if (!(await lockOrder(tx, id))) throw Errors.notFound('Pedido');
+        await lockOrderItems(tx, id);
+        const before = await tx.commercialOrder.findUniqueOrThrow({
+          where: { id },
+          include: { items: true },
+        });
+        if (before.version !== input.version) throw Errors.versionConflict(before.version);
+        if (before.status === 'CANCELADO')
+          throw Errors.business('Pedido cancelado não pode ser alterado.');
+        if (!before.autoServiceOrder)
+          throw Errors.business(
+            'Titular e mão de obra previstos valem para serviços com OS gerada na chegada. Neste pedido, defina-os na OS.',
+          );
+        const changes: {
+          id: string;
+          description: string;
+          owner: { from: string | null; to: string | null };
+          labor: { from: number | null; to: number | null };
+        }[] = [];
+        for (const it of input.items) {
+          const old = before.items.find((i) => i.id === it.orderItemId);
+          if (!old) throw Errors.validation(undefined, 'Item não pertence ao pedido.');
+          const owner = it.plannedUpholstererUserId;
+          const labor = laborVisible ? it.plannedLaborUnitCents : old.plannedLaborUnitCents;
+          if (owner === old.plannedUpholstererUserId && labor === old.plannedLaborUnitCents)
+            continue;
+          if (labor && !owner)
+            throw Errors.business(
+              `"${old.description}" tem mão de obra prevista: ela é do titular — remova-a antes de tirar o titular.`,
+            );
+          changes.push({
+            id: old.id,
+            description: old.description,
+            owner: { from: old.plannedUpholstererUserId, to: owner },
+            labor: { from: old.plannedLaborUnitCents, to: labor },
+          });
+        }
+        if (!changes.length) return;
+        if (changes.some((c) => c.owner.from !== c.owner.to) && !canPlanUpholsterer(perms))
+          throw Errors.forbidden(
+            'Definir o tapeceiro titular exige a permissão de planejar a produção.',
+          );
+        // A mão de obra prevista é do titular: mudá-la, ou mudar o titular de quem a tem, é
+        // decisão financeira.
+        if (
+          changes.some(
+            (c) => c.labor.from !== c.labor.to || (c.labor.to && c.owner.from !== c.owner.to),
+          ) &&
+          !canPlanLabor(perms)
+        )
+          throw Errors.forbidden(
+            'Combinar a mão de obra exige a permissão de gerenciar o financeiro.',
+          );
+        await assertIntentEligible(
+          tx,
+          changes.map((c) => ({
+            description: c.description,
+            plannedUpholstererUserId: c.owner.to,
+            plannedLaborUnitCents: c.labor.to,
+          })),
+        );
+        for (const c of changes)
+          await tx.commercialOrderItem.update({
+            where: { id: c.id },
+            data: { plannedUpholstererUserId: c.owner.to, plannedLaborUnitCents: c.labor.to },
+          });
+        const after = await tx.commercialOrder.update({
+          where: { id, version: input.version },
+          data: { version: { increment: 1 } },
+        });
+        await audit(tx, actorFrom(request), {
+          action: 'order.planned_intent_updated',
+          entityType: 'commercial_order',
+          entityId: id,
+          summary: `Pedido ${orderCode(after.number)}: titular/mão de obra previstos alterados (valem para as OS geradas a partir de agora).`,
+          changes: {
+            items: changes.map((c) => ({
+              description: c.description,
+              plannedUpholstererUserId: c.owner,
+              ...(c.labor.from !== c.labor.to ? { plannedLaborUnitCents: c.labor } : {}),
+            })),
+          },
+        });
+        await emitOrderEvent(tx, request, id);
+      });
+      return loadOrderDto(prisma, request, id);
+    },
+  );
 
   app.post(
     '/api/v1/orders',

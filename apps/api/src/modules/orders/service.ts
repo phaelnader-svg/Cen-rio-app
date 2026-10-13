@@ -4,6 +4,7 @@ import { audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { activeAddress, orderCode, parseDateOnly, snapshotAddress } from '../commercial/common';
+import { assertPlannedIntent } from './planned-intent';
 import { emitOrderEvent } from './routes';
 
 /**
@@ -36,6 +37,9 @@ export interface NewOrderInput {
     fabricColor?: string | null;
     fabricReference?: string | null;
     technicalNotes?: string | null;
+    /** Estabilização da Fase 2: titular e mão de obra (por unidade) PREVISTOS — intenção. */
+    plannedUpholstererUserId?: string | null;
+    plannedLaborUnitCents?: number | null;
   }[];
 }
 
@@ -51,6 +55,7 @@ export async function createOrder(
   if (hasValues && !perms.has('pedidos.valores')) {
     throw Errors.forbidden('Você não tem permissão para informar valores e condições comerciais.');
   }
+  await assertPlannedIntent(tx, perms, input.items);
   const customer = await tx.customer.findUnique({ where: { id: input.customerId } });
   if (!customer || !customer.active)
     throw Errors.validation(undefined, 'Cliente inválido ou arquivado.');
@@ -86,6 +91,8 @@ export async function createOrder(
           fabricColor: i.fabricColor ?? null,
           fabricReference: i.fabricReference ?? null,
           technicalNotes: i.technicalNotes ?? null,
+          plannedUpholstererUserId: i.plannedUpholstererUserId ?? null,
+          plannedLaborUnitCents: i.plannedLaborUnitCents ?? null,
         })),
       },
     },
@@ -101,6 +108,15 @@ export async function createOrder(
       paymentTerms: order.paymentTerms,
       ...(order.autoServiceOrder ? { autoServiceOrder: true } : {}),
       ...(order.customerDropOff ? { customerDropOff: true } : {}),
+      ...(input.items.some((i) => i.plannedUpholstererUserId)
+        ? {
+            plannedIntent: input.items.map((i) => ({
+              description: i.description,
+              plannedUpholstererUserId: i.plannedUpholstererUserId ?? null,
+              plannedLaborUnitCents: i.plannedLaborUnitCents ?? null,
+            })),
+          }
+        : {}),
     },
   });
   await emitOrderEvent(tx, actor, order.id, EVENT_TYPES.ORDER_CREATED);

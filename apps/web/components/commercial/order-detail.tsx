@@ -1,10 +1,12 @@
 'use client';
 
+import type { OrderDto } from '@cenario/shared';
 import {
   PIECE_TYPE_LABEL,
   RECEIPT_ORIGIN_LABEL,
   cancelOrderSchema,
   formatMoney,
+  orderPlannedIntentSchema,
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ban, ClipboardPlus, PackageCheck, Pencil, Truck } from 'lucide-react';
@@ -13,11 +15,13 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Textarea } from '@/components/ui/field';
+import { MoneyField, SelectField } from '@/components/ui/form';
 import { Alert, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { api, errorMessage } from '@/lib/api';
 import {
   formatDay,
+  useNewServiceDefaults,
   useOrder,
   usePickups,
   useReceipts,
@@ -50,6 +54,7 @@ export function OrderDetail({ id }: { id: string }) {
   const [requesting, setRequesting] = useState(false);
   const [openPickup, setOpenPickup] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [planning, setPlanning] = useState(false);
 
   if (order.isPending) return <Spinner />;
   if (order.isError) return <Alert tone="danger">{order.error.message}</Alert>;
@@ -198,7 +203,7 @@ export function OrderDetail({ id }: { id: string }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {o.items.map((i) => (
+                {o.items.map((i, idx) => (
                   <tr key={i.id}>
                     <td>
                       <p className="font-medium">{i.description}</p>
@@ -206,6 +211,16 @@ export function OrderDetail({ id }: { id: string }) {
                         {PIECE_TYPE_LABEL[i.pieceType]}
                         {i.notes ? ` · ${i.notes}` : ''}
                       </p>
+                      {i.plannedUpholsterer && (
+                        <p
+                          className="text-xs text-ink-soft"
+                          data-testid={`order-item-owner-${idx}`}
+                        >
+                          Titular previsto: {i.plannedUpholsterer.displayName}
+                          {i.plannedLaborUnitCents !== null &&
+                            ` · mão de obra prevista ${formatMoney(i.plannedLaborUnitCents)}/un.`}
+                        </p>
+                      )}
                     </td>
                     <td className="text-right tabular-nums">{i.quantity}</td>
                     <td className="text-right tabular-nums">{i.inActivePickups}</td>
@@ -216,6 +231,25 @@ export function OrderDetail({ id }: { id: string }) {
               </tbody>
             </table>
           </div>
+          {o.autoServiceOrder &&
+            active &&
+            can('pedidos.gerenciar') &&
+            can('retiradas.gerenciar') &&
+            can('producao.planejar') && (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3">
+                <p className="text-sm text-ink-muted">
+                  Titular e mão de obra previstos valem para as OS geradas nas próximas chegadas.
+                </p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setPlanning(true)}
+                  data-testid="order-planned-edit"
+                >
+                  Titular e mão de obra previstos
+                </Button>
+              </div>
+            )}
           {can('os.gerenciar') && active && !o.items.some((i) => i.receivedQuantity > 0) && (
             <p className="border-t border-line px-5 py-3 text-sm text-ink-muted">
               A OS técnica fica disponível após o registro do recebimento físico das peças.
@@ -313,6 +347,7 @@ export function OrderDetail({ id }: { id: string }) {
 
       {requesting && <PickupForm order={o} onClose={() => setRequesting(false)} />}
       {openPickup && <PickupDetailDialog id={openPickup} onClose={() => setOpenPickup(null)} />}
+      {planning && <PlannedIntentDialog order={o} onClose={() => setPlanning(false)} />}
       {cancelling && (
         <CancelOrderDialog
           id={o.id}
@@ -393,6 +428,126 @@ function CancelOrderDialog({
           />
         )}
       </Field>
+    </Dialog>
+  );
+}
+
+/**
+ * Estabilização da Fase 2: alterar o titular / a mão de obra PREVISTOS depois do fechamento.
+ * Só as OS geradas a partir de agora usam a alteração; as já geradas não mudam.
+ */
+function PlannedIntentDialog({ order, onClose }: { order: OrderDto; onClose: () => void }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const defaults = useNewServiceDefaults();
+  const [rows, setRows] = useState(() =>
+    order.items.map((i) => ({
+      orderItemId: i.id,
+      description: i.description,
+      owner: i.plannedUpholsterer?.userId ?? '',
+      labor: i.plannedLaborUnitCents,
+      laborOk: true,
+    })),
+  );
+  const [error, setError] = useState<string | null>(null);
+  const d = defaults.data;
+  const isTapeceiro = (userId: string) =>
+    Boolean(d?.upholsterers.find((u) => u.userId === userId)?.isTapeceiro);
+  const m = useMutation({
+    mutationFn: () => {
+      if (rows.some((r) => !r.laborOk)) throw new Error('Mão de obra prevista inválida.');
+      return api(`/api/v1/orders/${order.id}/planned-intent`, {
+        method: 'PUT',
+        body: orderPlannedIntentSchema.parse({
+          version: order.version,
+          items: rows.map((r) => ({
+            orderItemId: r.orderItemId,
+            plannedUpholstererUserId: r.owner || null,
+            plannedLaborUnitCents: r.owner ? r.labor : null,
+          })),
+        }),
+      });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['order', order.id] });
+      toast('ok', 'Previsão atualizada. Vale para as próximas chegadas.');
+      onClose();
+    },
+    onError: (e) =>
+      setError(
+        e instanceof Error && 'issues' in e
+          ? 'Mão de obra prevista exige um titular tapeceiro.'
+          : errorMessage(e),
+      ),
+  });
+  const patch = (idx: number, p: Partial<(typeof rows)[number]>) =>
+    setRows((l) => l.map((r, i) => (i === idx ? { ...r, ...p } : r)));
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title="Titular e mão de obra previstos"
+      description="Usados na OS gerada quando as peças chegarem. OS e valores já gerados não mudam — para eles, use a troca de titular na OS."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Voltar
+          </Button>
+          <Button
+            loading={m.isPending}
+            disabled={!d}
+            onClick={() => m.mutate()}
+            data-testid="planned-save"
+          >
+            Salvar previsão
+          </Button>
+        </>
+      }
+    >
+      {error && (
+        <Alert tone="danger" className="mb-3">
+          {error}
+        </Alert>
+      )}
+      {defaults.isPending ? (
+        <Spinner />
+      ) : defaults.isError || !d ? (
+        <Alert tone="danger">{errorMessage(defaults.error)}</Alert>
+      ) : (
+        <div className="space-y-4">
+          {rows.map((r, idx) => (
+            <div key={r.orderItemId} className="grid gap-3 sm:grid-cols-2">
+              <SelectField
+                label={r.description}
+                value={r.owner}
+                onChange={(e) =>
+                  patch(idx, {
+                    owner: e.target.value,
+                    ...(isTapeceiro(e.target.value) ? {} : { labor: null, laborOk: true }),
+                  })
+                }
+                data-testid={`planned-owner-${idx}`}
+              >
+                <option value="">Definir no planejamento</option>
+                {d.upholsterers.map((u) => (
+                  <option key={u.userId} value={u.userId}>
+                    {u.displayName}
+                  </option>
+                ))}
+              </SelectField>
+              {order.plannedLaborVisible && r.owner && isTapeceiro(r.owner) && (
+                <MoneyField
+                  label="Mão de obra prevista (por unidade)"
+                  cents={r.labor}
+                  disabled={!d.canPlanLabor}
+                  onCents={(v, ok) => patch(idx, { labor: v, laborOk: ok })}
+                  data-testid={`planned-labor-${idx}`}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </Dialog>
   );
 }

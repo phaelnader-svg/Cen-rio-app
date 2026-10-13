@@ -56,6 +56,10 @@ interface PieceRow {
   description: string;
   quantity: string;
   fabricName: string;
+  /** Titular previsto ('' = definir no planejamento) e mão de obra prevista por unidade. */
+  upholsterer: string;
+  laborCents: number | null;
+  laborOk: boolean;
 }
 
 const newPiece = (): PieceRow => ({
@@ -64,6 +68,9 @@ const newPiece = (): PieceRow => ({
   description: '',
   quantity: '1',
   fabricName: '',
+  upholsterer: '',
+  laborCents: null,
+  laborOk: true,
 });
 
 const brl = (cents: number | null | undefined) =>
@@ -71,6 +78,10 @@ const brl = (cents: number | null | undefined) =>
     ? '—'
     : (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const brDate = (d: string | null | undefined) => (d ? d.split('-').reverse().join('/') : '—');
+
+/** Mão de obra por produção é só do tapeceiro principal (titular com corte e costura não recebe). */
+const laborAllowed = (d: NewServiceDefaultsDto | undefined, userId: string) =>
+  Boolean(d?.upholsterers.find((u) => u.userId === userId)?.isTapeceiro);
 
 const blank = (v: string) => (v.trim() === '' ? null : v.trim());
 
@@ -190,6 +201,11 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
           quantity: Number(p.quantity),
           serviceType,
           fabricName: blank(p.fabricName),
+          plannedUpholstererUserId: d?.canPlanUpholsterer ? p.upholsterer || null : null,
+          plannedLaborUnitCents:
+            d?.canPlanLabor && p.upholsterer && laborAllowed(d, p.upholsterer)
+              ? p.laborCents
+              : null,
         })),
       },
       pickup: withPickup
@@ -241,6 +257,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const save = useMutation({
     mutationFn: () => {
       if (!valueOk) throw new Error('Valor fechado inválido.');
+      if (pieces.some((p) => !p.laborOk)) throw new Error('Mão de obra prevista inválida.');
       if (!amountOk) throw new Error('Valor da logística inválido.');
       if (mode === 'EXISTENTE' && !customer) throw new Error('Selecione o cliente.');
       const parsed = newServiceSchema.safeParse(payload);
@@ -285,6 +302,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   });
 
   const err = (k: string) => errors[k];
+  const ownerName = (id: string) => d.upholsterers.find((u) => u.userId === id)?.displayName ?? '—';
   const setPiece = (key: string, patch: Partial<PieceRow>) =>
     setPieces((list) => list.map((p) => (p.key === key ? { ...p, ...patch } : p)));
 
@@ -656,6 +674,45 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
                   icon={<Trash2 className="size-4" />}
                 />
               </FieldAction>
+              {d.canPlanUpholsterer && (
+                <SelectField
+                  label="Tapeceiro titular (previsto)"
+                  cols={4}
+                  value={p.upholsterer}
+                  onChange={(e) =>
+                    setPiece(p.key, {
+                      upholsterer: e.target.value,
+                      ...(laborAllowed(d, e.target.value)
+                        ? {}
+                        : { laborCents: null, laborOk: true }),
+                    })
+                  }
+                  error={err(`service.items.${idx}.plannedUpholstererUserId`)}
+                  data-testid={`ns-piece-owner-${idx}`}
+                >
+                  <option value="">Definir no planejamento</option>
+                  {d.upholsterers.map((u) => (
+                    <option key={u.userId} value={u.userId}>
+                      {u.displayName}
+                    </option>
+                  ))}
+                </SelectField>
+              )}
+              {d.canPlanLabor && p.upholsterer && laborAllowed(d, p.upholsterer) && (
+                <MoneyField
+                  label="Mão de obra prevista (por unidade)"
+                  cols={4}
+                  cents={p.laborCents}
+                  onCents={(v, ok) => setPiece(p.key, { laborCents: v, laborOk: ok })}
+                  hint="Previsão: vira valor combinado só quando a peça chegar."
+                  error={
+                    !p.laborOk
+                      ? 'Valor inválido.'
+                      : err(`service.items.${idx}.plannedLaborUnitCents`)
+                  }
+                  data-testid={`ns-piece-labor-${idx}`}
+                />
+              )}
             </FormGrid>
           ))}
           <Button
@@ -901,6 +958,22 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
           <SummaryRow label="Serviço" value={`${contractedText} · ${totalPieces} peça(s)`} />
           {d.canSetValues && (
             <SummaryRow label="Valor fechado" value={brl(value)} testId="ns-sum-value" />
+          )}
+          {pieces.some((p) => p.upholsterer) && (
+            <SummaryRow
+              label="Titular previsto"
+              value={pieces
+                .filter((p) => p.upholsterer)
+                .map(
+                  (p) =>
+                    `${p.description || PIECE_TYPE_LABEL[p.pieceType]}: ${ownerName(p.upholsterer)}${
+                      p.laborCents ? ` (${brl(p.laborCents)}/un.)` : ''
+                    }`,
+                )
+                .join(' · ')}
+              hint="Aplicado na OS gerada na chegada; mão de obra prevista não é pagamento."
+              testId="ns-sum-owners"
+            />
           )}
           <SummaryRow
             label="Retirada"
