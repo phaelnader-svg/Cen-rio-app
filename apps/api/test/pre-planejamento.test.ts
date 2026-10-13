@@ -919,4 +919,47 @@ describe('F. Estabilização (auditoria): liberação por OS e rascunhos antigos
       ).status,
     ).toBe(200);
   });
+
+  it('rascunho esquecido numa semana passada: segue visível, invisível ao tablet e reprogramável', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const so = await sofa(admin, 'Cliente Rascunho Esquecido');
+    const start = today();
+    const r = await planServices(admin, [
+      {
+        serviceOrderId: so.id,
+        startDate: start,
+        pieces: [{ serviceOrderItemId: so.items[0]!.id, upholstererUserId: p.ricardo }],
+      },
+    ]);
+    expect(r.status).toBe(201);
+    const oldPlanId = r.body.planned[0].planId as string;
+    // Três semanas depois, ninguém publicou.
+    const later = plusDays(start, 21);
+    setClock(() => new Date(`${later}T12:00:00Z`));
+    await releaseDueTasks(app.ctx.prisma);
+    const e = (await entryOf(admin, so.id))!;
+    expect(e.plan).toMatchObject({ planId: oldPlanId, startDate: start, planStatus: 'RASCUNHO' });
+    expect(e.tasks.draft).toBeGreaterThan(0);
+    // Nada foi liberado nem transferido sozinho; o tablet não vê o rascunho.
+    expect(
+      (await tasksOf(so.id)).every((t) => t.status === 'RASCUNHO' && t.planId === oldPlanId),
+    ).toBe(true);
+    const ricardo = await tabletOf(app, admin, 'Ricardo', '482913');
+    expect((await queue(ricardo)).items).toHaveLength(0);
+    // A prévia da publicação avisa que a data já passou.
+    const preview = await admin.get(`/api/v1/production-plans/${oldPlanId}/publication-preview`);
+    expect(preview.status).toBe(200);
+    expect(JSON.stringify(preview.body)).toMatch(/já passou/);
+    // Caminho explícito: o gestor reprograma para hoje (nova semana, ainda em rascunho).
+    const moved = await put(admin, `/api/v1/production/planned/${e.plan!.itemId}`, {
+      version: e.plan!.version,
+      startDate: later,
+    });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    const after = (await entryOf(admin, so.id))!;
+    expect(after.plan!.startDate).toBe(later);
+    expect(after.plan!.planId).not.toBe(oldPlanId);
+    expect((await tasksOf(so.id)).every((t) => t.planId === after.plan!.planId)).toBe(true);
+  });
 });
