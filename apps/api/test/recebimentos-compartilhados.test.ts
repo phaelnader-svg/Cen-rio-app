@@ -10,6 +10,7 @@ import {
   resetDatabase,
   setupTablet,
 } from './helpers';
+import { arrivalTestHooks } from '../src/modules/arrivals/routes';
 import { address, createCustomer, createOrder } from './commercial-helpers';
 import { foam } from './measurement-helpers';
 import {
@@ -282,6 +283,56 @@ describe('B. Peças de clientes', () => {
     const items = await db().commercialOrderItem.findMany({ where: { orderId: order.id } });
     expect(items.reduce((s, i) => s + i.receivedQuantity, 0)).toBe(4);
     expect(await db().accountPayable.count()).toBe(1);
+  });
+
+  it('corrida forçada (determinística): B lê a retirada, A confirma e grava, B lê o saldo → 409 (CA3-10)', async () => {
+    const admin = await loginAdmin(app);
+    await logistics(admin);
+    const { res, order } = await service(admin, { amountCents: 10000 });
+    const { joao, marcio } = await tablets(admin);
+    const v = (await pieceCard(joao, res.pickup.id)).version;
+    const url = `/api/v1/arrivals/pickups/${res.pickup.id}/confirm`;
+    // Intercalação exata da corrida original (CI nº 88), sem atrasos: B pausa logo após ler a
+    // retirada (versão v) e só continua depois que A terminou e gravou.
+    let bReadPickup!: () => void;
+    const bPaused = new Promise<void>((r) => (bReadPickup = r));
+    let resumeB!: () => void;
+    const gate = new Promise<void>((r) => (resumeB = r));
+    let calls = 0;
+    arrivalTestHooks.afterPickupRead = async () => {
+      if (++calls === 1) {
+        bReadPickup();
+        await gate;
+      }
+    };
+    try {
+      const bReq = post(marcio, url, { version: v });
+      await bPaused; // B já leu a retirada com a versão v
+      const a = await post(joao, url, { version: v }); // A confirma tudo e grava
+      expect(a.status, JSON.stringify(a.body)).toBe(201);
+      resumeB(); // B lê o saldo (já zerado pela confirmação de A)
+      const b = await bReq;
+      expect(calls).toBe(2);
+      expect(b.status, JSON.stringify(b.body)).toBe(409);
+      expect(b.body.error.message).toMatch(/já foi atualizado/);
+      expect(b.body.error.details).toMatchObject({ currentVersion: v + 1 });
+    } finally {
+      arrivalTestHooks.afterPickupRead = undefined;
+    }
+    // Integridade: um recebimento, uma OS, saldo coerente, uma obrigação, retirada concluída.
+    expect(await db().receipt.count({ where: { orderId: order.id } })).toBe(1);
+    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(1);
+    const items = await db().commercialOrderItem.findMany({ where: { orderId: order.id } });
+    expect(items.reduce((s, i) => s + i.receivedQuantity, 0)).toBe(4);
+    expect(await db().accountPayable.count()).toBe(1);
+    const pk = await db().pickupRequest.findUniqueOrThrow({ where: { id: res.pickup.id } });
+    expect(pk).toMatchObject({ version: v + 1, status: 'RECEBIDA_NA_OFICINA' });
+    // Persistência coerente: o recebimento é o de A (João) e o aviso sumiu do tablet de B.
+    const receipt = await db().receipt.findFirstOrThrow({ where: { orderId: order.id } });
+    expect(receipt.receivedByEmployeeId).toBe(
+      (await db().employee.findFirstOrThrow({ where: { displayName: 'João' } })).id,
+    );
+    expect(await pieceCard(marcio, res.pickup.id)).toBeUndefined();
   });
 
   it('falha de rede: repetir a mesma confirmação devolve o mesmo resultado (CA3-11)', async () => {

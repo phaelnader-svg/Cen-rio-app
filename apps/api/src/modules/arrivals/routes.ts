@@ -215,6 +215,14 @@ const ISSUE_OF: Record<string, ReceiptIssue> = {
   OUTRO: 'OUTRO',
 };
 
+/**
+ * Ponto de sincronização SÓ para testes de concorrência (sempre indefinido em produção: nenhum
+ * código da aplicação o define). Permite pausar uma confirmação exatamente entre a leitura da
+ * retirada e a do saldo — a janela da corrida corrigida em 87f7103 — e provar o resultado de forma
+ * determinística, sem depender de atrasos.
+ */
+export const arrivalTestHooks: { afterPickupRead?: () => Promise<void> } = {};
+
 export async function arrivalRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -247,6 +255,7 @@ export async function arrivalRoutes(app: FastifyInstance) {
       const result = await prisma.$transaction(async (tx) => {
         const pickup = await tx.pickupRequest.findUnique({ where: { id } });
         if (!pickup) throw Errors.notFound('Retirada');
+        if (arrivalTestHooks.afterPickupRead) await arrivalTestHooks.afterPickupRead();
         const balance = await pickupBalance(tx, id);
         const lines = (
           input.lines ??
