@@ -1,4 +1,10 @@
-import { expect, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
+import {
+  expect,
+  type Browser,
+  type BrowserContext,
+  type BrowserContextOptions,
+  type Page,
+} from '@playwright/test';
 import { E2E } from '../env';
 
 export async function loginAdmin(page: Page) {
@@ -39,6 +45,8 @@ export async function openTablet(
   pin: string,
   device: { width: number; height: number; isMobile?: boolean } = { width: 1280, height: 800 },
   extra: BrowserContextOptions = {},
+  /** Preparação do contexto antes de abrir a página (ex.: interceptar o tempo real). */
+  setup?: (context: BrowserContext) => Promise<void>,
 ) {
   const context = await browser.newContext({
     ...extra,
@@ -46,6 +54,7 @@ export async function openTablet(
     isMobile: device.isMobile ?? false,
     hasTouch: true,
   });
+  if (setup) await setup(context);
   const page = await context.newPage();
   await page.goto('/tablet');
   await page.getByLabel('Código de vinculação').fill(code);
