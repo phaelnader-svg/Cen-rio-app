@@ -184,3 +184,8 @@ Além disso, "data **e horário**": não existe horário de início no modo fila
 original exclui horário); incluir horário exige campo novo, migration e tela. **Decisão
 pendente:** escolher A, B ou C e confirmar se o horário deve ser criado. Recomendação técnica:
 **C, só com a data** (não muda a reordenação nem a trava de liberação). Nada foi alterado na fila.
+
+Resultados verificados das decisões finais (locais, commit `e6b347e`): API completa 486 aprovados,
+5 ignorados por desenho; E2E completo **36/36**; lint, typecheck, formatação e build sem erros.
+**CI nº 102 (`c8a69fb`), 103 (`8921cd4`) e 104 (`e6b347e`): verdes.** Homologação e produção:
+não publicado; nenhuma alteração remota.
