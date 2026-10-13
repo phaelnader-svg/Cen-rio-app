@@ -47,3 +47,21 @@ estrita e script de migrações encadeadas fora do CI; Safari/WebKit e tablets f
 Resultados (locais nesta máquina, no commit `ebc8f36`): pré-planejamento 16/16; suíte completa da API
 457 aprovados, 5 ignorados por desenho; lint, typecheck, formatação e build sem erros; E2E 32/32.
 **CI nº 95 (`ebc8f36`): verde.** Homologação e produção: não publicado.
+
+## Lote 2 — Fase 3 (recebimentos compartilhados) — concluído
+
+| Item | Resultado                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Commit               |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| 2.1  | Teste **determinístico** da corrida do CA3-10: ponto de sincronização só para testes (`arrivalTestHooks`, indefinido em produção) força B a ler a retirada, A a confirmar e gravar, e só então B a ler o saldo. Confere 201/409, recebimento e OS únicos, saldo, obrigação única, retirada concluída, autoria e aviso removido. **Controle negativo**: sem a correção `87f7103`, o teste falha com o 400 original.                                                                           | `aa58c22`            |
+| 2.2  | Reavaliação após a chegada (plano CA3-10): `registerReceipt` (ponto único — tablet e painel) reavalia, na mesma transação, as tarefas que aguardam início nas OS abertas com as peças recebidas. Com a OS gerada na chegada (D1), o caso real é a OS anterior à chegada (dados legados). Testes: normal, repetição, falha intermediária (desfaz junto) e concorrência (uma liberação). Controle negativo: sem a chamada, 3 dos 4 falham. Materiais já eram reavaliados (`refreshReadiness`). | `c1db2ee`            |
+| 2.3  | Cobertura: data/hora gravadas (janela da requisição, resposta e auditoria; valor informado no painel gravado exatamente); recusas sem efeito (404, 403, retirada cancelada 409); pedido antigo confirmado no tablet sem OS automática; **E2E** da chave de idempotência no navegador (resposta perdida + tempo real retido → nova tentativa com a mesma chave, um recebimento e uma OS; controle negativo com chave nova falha).                                                             | `53ab31a`, `683c942` |
+| 2.4  | `recebimentos.registrar` em instalações existentes: o seed só preenche funções vazias e a migration da Fase 3 não concedia. Nova migration `20261220000000_recebimentos_permissao_funcoes` (só dados, idempotente, mesmo padrão das migrations de produção e presença) + reversão manual (limitação documentada: não distingue concessão manual anterior); encadeada no script de migrações. Testada com os arquivos reais. **Não aplicada em nenhum ambiente remoto.**                      | `8f62287`            |
+
+Observação (não alterada): com o tempo real ativo, uma resposta perdida é recuperada pelo
+evento e o tablet mostra "Este aviso já foi atualizado… em outro aparelho ou não está mais
+pendente" — seguro (sem duplicação), mas o texto não diz que foi o próprio aparelho.
+
+Resultados (locais, commit `683c942`): API 466 aprovados, 5 ignorados por desenho; lint,
+typecheck, formatação e build sem erros; E2E 33/33 (inclui o novo `recebimentos-rede`).
+**CI nº 96 (`683c942`): verde.** O `scripts/test-evolution-migrations.sh` foi atualizado, mas
+**não foi executado** nesta etapa. Homologação e produção: não publicado.
