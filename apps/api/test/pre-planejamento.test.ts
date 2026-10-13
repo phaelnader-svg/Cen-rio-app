@@ -963,3 +963,132 @@ describe('F. Estabilização (auditoria): liberação por OS e rascunhos antigos
     expect((await tasksOf(so.id)).every((t) => t.planId === after.plan!.planId)).toBe(true);
   });
 });
+
+describe('G. Rascunhos de semanas passadas — aviso na Central de atenção (decisão: tratamento manual)', () => {
+  type Item = { key: string; type: string; category: string; title: string; link: string };
+  const plusDays = (iso: string, n: number) =>
+    new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  const drafts = async (c: Client) => {
+    const r = await c.get('/api/v1/attention');
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    return (r.body.items as Item[]).filter((i) => i.type === 'RASCUNHO_ANTIGO');
+  };
+  const snapshot = async () =>
+    (
+      await db().productionTask.findMany({
+        orderBy: { id: 'asc' },
+        select: { id: true, status: true, version: true, planId: true, assigneeUserId: true },
+      })
+    ).map((t) => JSON.stringify(t));
+  const items = async () =>
+    (
+      await db().productionPlanItem.findMany({
+        orderBy: { id: 'asc' },
+        select: { id: true, planId: true, startDate: true, version: true },
+      })
+    ).map((i) => JSON.stringify(i));
+
+  it('sem rascunho antigo: nenhum aviso (nem para rascunho da semana atual)', async () => {
+    const admin = await loginAdmin(app);
+    expect(await drafts(admin)).toEqual([]);
+    const p = await team();
+    const so = await sofa(admin, 'Cliente Rascunho Atual');
+    const r = await planServices(admin, [
+      {
+        serviceOrderId: so.id,
+        startDate: today(),
+        pieces: [{ serviceOrderItemId: so.items[0]!.id, upholstererUserId: p.ricardo }],
+      },
+    ]);
+    expect(r.status).toBe(201);
+    expect(await drafts(admin)).toEqual([]);
+  });
+
+  it('rascunho antigo: um aviso por semana; consultas e ciclos repetidos não duplicam nem alteram nada', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const start = today();
+    const a = await sofa(admin, 'Cliente Antigo A');
+    const b = await sofa(admin, 'Cliente Antigo B');
+    const r = await planServices(admin, [
+      {
+        serviceOrderId: a.id,
+        startDate: start,
+        pieces: [{ serviceOrderItemId: a.items[0]!.id, upholstererUserId: p.ricardo }],
+      },
+      {
+        serviceOrderId: b.id,
+        startDate: start,
+        pieces: [{ serviceOrderItemId: b.items[0]!.id, upholstererUserId: p.marcio }],
+      },
+    ]);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    const planId = r.body.planned[0].planId as string;
+    // Duas semanas depois, ninguém publicou; um rascunho da semana atual também existe.
+    const later = plusDays(start, 14);
+    setClock(() => new Date(`${later}T12:00:00Z`));
+    const current = await sofa(admin, 'Cliente Semana Atual');
+    expect(
+      (
+        await planServices(admin, [
+          {
+            serviceOrderId: current.id,
+            startDate: later,
+            pieces: [{ serviceOrderItemId: current.items[0]!.id, upholstererUserId: p.ricardo }],
+          },
+        ])
+      ).status,
+    ).toBe(201);
+    const tasksBefore = await snapshot();
+    const itemsBefore = await items();
+    const audits = await db().auditLog.count();
+    const events = await db().domainEvent.count();
+    const first = await drafts(admin);
+    expect(first).toEqual([
+      expect.objectContaining({
+        key: `RASCUNHO_ANTIGO:${planId}`,
+        category: 'ACAO',
+        title: `Semana de ${mondayOf(start).split('-').reverse().join('/')}: 2 serviço(s) ainda em rascunho`,
+        link: '/painel/producao/a-planejar',
+      }),
+    ]);
+    // Repetição: consultas e ciclos de liberação seguidos → o mesmo aviso, uma vez só.
+    for (let i = 0; i < 3; i++) {
+      await releaseDueTasks(app.ctx.prisma);
+      expect(await drafts(admin)).toEqual(first);
+    }
+    // Nada mudou: rascunhos, itens, auditoria e eventos intactos.
+    expect(await snapshot()).toEqual(tasksBefore);
+    expect(await items()).toEqual(itemsBefore);
+    expect(await db().auditLog.count()).toBe(audits);
+    expect(await db().domainEvent.count()).toBe(events);
+  });
+
+  it('o aviso não bloqueia: o gestor reprograma e o aviso some; quem não vê produção não recebe', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const start = today();
+    const so = await sofa(admin, 'Cliente Reprograma');
+    const r = await planServices(admin, [
+      {
+        serviceOrderId: so.id,
+        startDate: start,
+        pieces: [{ serviceOrderItemId: so.items[0]!.id, upholstererUserId: p.ricardo }],
+      },
+    ]);
+    expect(r.status).toBe(201);
+    const later = plusDays(start, 21);
+    setClock(() => new Date(`${later}T12:00:00Z`));
+    expect(await drafts(admin)).toHaveLength(1);
+    const e = (await entryOf(admin, so.id))!;
+    const moved = await put(admin, `/api/v1/production/planned/${e.plan!.itemId}`, {
+      version: e.plan!.version,
+      startDate: later,
+    });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    expect(await drafts(admin)).toEqual([]);
+    // Tablet não acessa a Central de atenção.
+    const ricardo = await tabletOf(app, admin, 'Ricardo', '482913');
+    expect((await ricardo.get('/api/v1/attention')).status).toBe(403);
+  });
+});

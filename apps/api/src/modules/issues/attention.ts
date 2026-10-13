@@ -11,6 +11,7 @@ import {
   attentionQuerySchema,
   helpRequestCode,
   localParts,
+  mondayOf,
   proposalCode,
   taskCode,
   type AttentionCategory,
@@ -258,6 +259,11 @@ export async function attentionRoutes(app: FastifyInstance) {
       // prontas sem entrega) e logística (ocorrências, entregas frustradas).
       items.push(...(await qualityAttention(prisma, realToday)));
 
+      // 7. Rascunhos de semanas passadas (decisão aprovada: tratamento MANUAL). Só leitura — o
+      // aviso é derivado a cada consulta (um item por semana, chave estável), nada é gravado,
+      // movido ou alterado; o gestor reprograma ou publica pelo pré-planejamento.
+      items.push(...(await pastWeekDrafts(prisma, mondayOf(cfg.today))));
+
       // Filtros.
       const dayOf = (iso: string) => localParts(new Date(iso), cfg.timezone).date;
       const filtered = items.filter(
@@ -282,4 +288,62 @@ export async function attentionRoutes(app: FastifyInstance) {
       return { generatedAt: now.toISOString(), counts, items: filtered };
     },
   );
+}
+
+/** Semanas anteriores à atual com tarefas ainda em rascunho (planejadas e nunca publicadas). */
+export async function pastWeekDrafts(
+  db: Pick<FastifyInstance['ctx']['prisma'], 'productionTask'>,
+  currentMonday: string,
+): Promise<AttentionItemDto[]> {
+  const drafts = await db.productionTask.findMany({
+    where: {
+      status: 'RASCUNHO',
+      plan: { mode: 'FILA_SEMANAL', weekStart: { lt: dbDate(currentMonday) } },
+    },
+    select: {
+      serviceOrderId: true,
+      createdAt: true,
+      plan: { select: { id: true, weekStart: true, status: true } },
+    },
+    orderBy: [{ plan: { weekStart: 'asc' } }, { createdAt: 'asc' }],
+  });
+  const byPlan = new Map<
+    string,
+    { weekStart: string; status: string; services: Set<string>; at: Date }
+  >();
+  for (const t of drafts) {
+    if (!t.plan) continue;
+    const g = byPlan.get(t.plan.id) ?? {
+      weekStart: dateOnly(t.plan.weekStart)!,
+      status: t.plan.status,
+      services: new Set<string>(),
+      at: t.createdAt,
+    };
+    g.services.add(t.serviceOrderId);
+    if (t.createdAt > g.at) g.at = t.createdAt;
+    byPlan.set(t.plan.id, g);
+  }
+  return [...byPlan.entries()].map(([planId, g]) => {
+    const week = g.weekStart.split('-').reverse().join('/');
+    const n = g.services.size;
+    return {
+      key: `RASCUNHO_ANTIGO:${planId}`,
+      type: 'RASCUNHO_ANTIGO',
+      category: 'ACAO',
+      title: `Semana de ${week}: ${n} serviço(s) ainda em rascunho`,
+      description: `A semana já passou e ${n === 1 ? 'este serviço continua' : 'estes serviços continuam'} em rascunho: nada foi liberado, transferido ou alterado automaticamente.`,
+      serviceOrder: null,
+      task: null,
+      employee: null,
+      priority: 'NORMAL',
+      status: 'RASCUNHO',
+      statusLabel: g.status === 'PUBLICADO' ? 'Rascunho em semana publicada' : 'Rascunho',
+      at: g.at.toISOString(),
+      deadline: null,
+      solver: null,
+      impacts: [],
+      nextActions: ['Reprogramar a data de início ou publicar a semana em Produção → A planejar'],
+      link: '/painel/producao/a-planejar',
+    } satisfies AttentionItemDto;
+  });
 }
