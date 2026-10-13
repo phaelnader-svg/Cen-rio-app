@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Prisma } from '@cenario/db';
 import { db, resetDatabase } from './helpers';
 
 describe('Banco de dados e migrations', () => {
@@ -258,5 +259,66 @@ describe('Banco de dados e migrations', () => {
     ).rejects.toThrow('desfazer');
     expect(await granted()).toEqual(['ajudante', 'cabeceiras_qualidade', 'gestor', 'tapeceiro']);
     await db().role.delete({ where: { id: custom.id } });
+  });
+  it('estabilização da Fase 2: pedido "cliente entrega" (migration aditiva e reversão condicionada)', async () => {
+    const DB = resolve(__dirname, '../../../packages/db');
+    const NAME = '20261227000000_servico_sem_retirada';
+    const up = readFileSync(resolve(DB, `prisma/migrations/${NAME}/migration.sql`), 'utf8');
+    const down = readFileSync(resolve(DB, `rollback/${NAME}.down.sql`), 'utf8');
+    // Separa os comandos respeitando blocos $$ … $$ (o DO da verificação contém ";").
+    const statements: string[] = [];
+    let cur = '';
+    let quoted = false;
+    for (const line of down.replace(/--.*$/gm, '').split('\n')) {
+      cur += line + '\n';
+      quoted = quoted !== ((line.match(/\$\$/g) ?? []).length % 2 === 1);
+      if (!quoted && line.trim().endsWith(';')) {
+        const st = cur.trim().replace(/;$/, '');
+        if (!/^(BEGIN|COMMIT)$/i.test(st)) statements.push(st);
+        cur = '';
+      }
+    }
+    expect(statements).toHaveLength(3);
+    const column = (tx: Pick<Prisma.TransactionClient, '$queryRawUnsafe'>) =>
+      tx.$queryRawUnsafe<{ default: string | null; nullable: string }[]>(
+        `SELECT column_default AS "default", is_nullable AS nullable FROM information_schema.columns
+          WHERE table_name = 'commercial_orders' AND column_name = 'customer_drop_off'`,
+      );
+    expect(await column(db())).toEqual([{ default: 'false', nullable: 'NO' }]);
+    const customer = await db().customer.create({
+      data: { kind: 'PF', name: 'Cliente Migração', searchText: 'cliente migracao' },
+    });
+    const order = await db().commercialOrder.create({
+      data: { customerId: customer.id, contractedService: 'Reforma' },
+    });
+    // Pedido anterior à migration (sem a informação) fica como "aguardando retirada" (false).
+    expect(order.customerDropOff).toBe(false);
+    const run = async (tx: Prisma.TransactionClient) => {
+      for (const st of statements) await tx.$executeRawUnsafe(st);
+    };
+    // Reversão sem pedidos "cliente entrega": remove a coluna e o registro; reaplicar funciona.
+    await expect(
+      db().$transaction(async (tx) => {
+        await run(tx);
+        expect(await column(tx)).toEqual([]);
+        expect(
+          await tx.$queryRawUnsafe<{ n: bigint }[]>(
+            `SELECT count(*) AS n FROM "_prisma_migrations" WHERE "migration_name" = '${NAME}'`,
+          ),
+        ).toEqual([{ n: 0n }]);
+        await tx.$executeRawUnsafe(up);
+        expect(await column(tx)).toEqual([{ default: 'false', nullable: 'NO' }]);
+        throw new Error('desfazer');
+      }),
+    ).rejects.toThrow('desfazer');
+    // Com um pedido "cliente entrega", a reversão é bloqueada (a informação se perderia).
+    await db().commercialOrder.update({ where: { id: order.id }, data: { customerDropOff: true } });
+    await expect(db().$transaction(async (tx) => run(tx))).rejects.toThrow(
+      /Reversão bloqueada: 1 pedido/,
+    );
+    expect(await column(db())).toEqual([{ default: 'false', nullable: 'NO' }]);
+    expect(
+      (await db().commercialOrder.findUniqueOrThrow({ where: { id: order.id } })).customerDropOff,
+    ).toBe(true);
   });
 });

@@ -427,7 +427,8 @@ const newServiceCustomerSchema = z.discriminatedUnion('mode', [
     .object({
       mode: z.literal('NOVO'),
       ...customerFields,
-      address: customerAddressSchema,
+      /** Endereço de retirada. Opcional quando o cliente entrega as peças (sem retirada). */
+      address: customerAddressSchema.nullable().optional(),
       /** Confirma o cadastro mesmo havendo clientes com contato/nome semelhantes. */
       allowSimilar: z.boolean().default(false),
     })
@@ -474,22 +475,35 @@ export const newServicePickupSchema = z
       });
   });
 
-export const newServiceSchema = z.object({
-  customer: newServiceCustomerSchema,
-  service: z.object({
-    contractedService: trimmed(2, 300, 'Serviço contratado'),
-    description: optionalText(2000),
-    /** Valor total fechado com o cliente (exige pedidos.valores). */
-    agreedValueCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
-    paymentTerms: optionalText(1000),
-    /** Prazo de entrega combinado (copiado para a OS gerada na chegada). */
-    promisedDate: dateOnly.nullable().optional(),
-    technicalNotes: optionalText(4000),
-    notes: optionalText(2000),
-    items: z.array(newServiceItemSchema).min(1, { message: 'Inclua ao menos uma peça.' }).max(50),
-  }),
-  pickup: newServicePickupSchema,
-});
+export const newServiceSchema = z
+  .object({
+    customer: newServiceCustomerSchema,
+    service: z.object({
+      contractedService: trimmed(2, 300, 'Serviço contratado'),
+      description: optionalText(2000),
+      /** Valor total fechado com o cliente (exige pedidos.valores). */
+      agreedValueCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
+      paymentTerms: optionalText(1000),
+      /** Prazo de entrega combinado (copiado para a OS gerada na chegada). */
+      promisedDate: dateOnly.nullable().optional(),
+      technicalNotes: optionalText(4000),
+      notes: optionalText(2000),
+      items: z.array(newServiceItemSchema).min(1, { message: 'Inclua ao menos uma peça.' }).max(50),
+    }),
+    /**
+     * Retirada na casa do cliente. `null` (ou ausente) = o CLIENTE ENTREGA as peças na tapeçaria:
+     * nenhuma retirada, responsável, custo de logística ou agenda é criado (estabilização da Fase 2).
+     */
+    pickup: newServicePickupSchema.nullable().optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.pickup && v.customer.mode === 'NOVO' && !v.customer.address)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['customer', 'address'],
+        message: 'Informe o endereço de retirada (ou marque que o cliente entrega as peças).',
+      });
+  });
 export type NewServiceInput = z.input<typeof newServiceSchema>;
 
 /** Responsável padrão da equipe própria (Empresa). `null` remove a configuração. */

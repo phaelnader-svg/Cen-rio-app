@@ -24,6 +24,8 @@ export interface NewOrderInput {
   technicalNotes?: string | null;
   /** Fase 2: pedido do fluxo Novo serviço — a OS nasce na confirmação da chegada. */
   autoServiceOrder?: boolean;
+  /** Estabilização da Fase 2: o cliente entrega as peças na tapeçaria (sem retirada). */
+  customerDropOff?: boolean;
   items: {
     pieceType: PieceType;
     description: string;
@@ -70,6 +72,7 @@ export async function createOrder(
       promisedDate: parseDateOnly(input.promisedDate ?? undefined),
       technicalNotes: input.technicalNotes ?? null,
       autoServiceOrder: input.autoServiceOrder ?? false,
+      customerDropOff: input.customerDropOff ?? false,
       createdById: actor.userId,
       items: {
         create: input.items.map((i, idx) => ({
@@ -97,6 +100,7 @@ export async function createOrder(
       agreedValueCents: order.agreedValueCents,
       paymentTerms: order.paymentTerms,
       ...(order.autoServiceOrder ? { autoServiceOrder: true } : {}),
+      ...(order.customerDropOff ? { customerDropOff: true } : {}),
     },
   });
   await emitOrderEvent(tx, actor, order.id, EVENT_TYPES.ORDER_CREATED);

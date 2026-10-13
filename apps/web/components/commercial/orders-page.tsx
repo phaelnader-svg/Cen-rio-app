@@ -84,7 +84,7 @@ export function OrdersPage() {
                   <span className="text-sm text-ink-muted tabular-nums">
                     {o.receivedPieces}/{o.totalPieces} peças na oficina
                   </span>
-                  <OrderStatusBadge status={o.status} />{' '}
+                  <OrderStatusBadge status={o.status} customerDropOff={o.customerDropOff} />{' '}
                   <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />
                   <span className="hidden w-32 text-right text-xs text-ink-muted md:block">
                     {formatDateTime(o.createdAt)}

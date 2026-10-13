@@ -137,6 +137,9 @@ export async function createPickup(
   await lockOrderItems(tx, input.orderId);
   const order = await tx.commercialOrder.findUniqueOrThrow({ where: { id: input.orderId } });
   if (order.status === 'CANCELADO') throw Errors.business('Pedido cancelado.');
+  // Estabilização da Fase 2: o cliente ia entregar, mas agora haverá retirada.
+  if (order.customerDropOff)
+    await tx.commercialOrder.update({ where: { id: order.id }, data: { customerDropOff: false } });
   if (order.status === 'RECEBIDO')
     throw Errors.business('Todas as peças deste pedido já foram recebidas.');
   await validatePickupItems(tx, order.id, input.items);

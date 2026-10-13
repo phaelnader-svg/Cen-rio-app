@@ -26,14 +26,15 @@ cleanup() {
   rm -rf "$WORK"
 }
 trap cleanup EXIT
-DOWNS=(20261220000000_recebimentos_permissao_funcoes 20261213000000_pre_planejamento 20261206000000_recebimentos_compartilhados 20261129000000_novo_servico 20261115000000_fechamento_semanal 20261108000000_custos_logistica
+DOWNS=(20261227000000_servico_sem_retirada 20261220000000_recebimentos_permissao_funcoes 20261213000000_pre_planejamento 20261206000000_recebimentos_compartilhados 20261129000000_novo_servico 20261115000000_fechamento_semanal 20261108000000_custos_logistica
   20261101000000_mao_de_obra_revisao 20261025000000_distribuicao_automatica
   20261018000000_fila_semanal)
 # Correção global: roteiro (só a ordem das paradas; reversão sem perda de compromisso).
 # Simplificação Fases 2–4: as mais recentes são revertidas primeiro (sem dados novos).
-ALL_DOWNS=(20261220000000_recebimentos_permissao_funcoes 20261213000000_pre_planejamento
+ALL_DOWNS=(20261227000000_servico_sem_retirada 20261220000000_recebimentos_permissao_funcoes
+  20261213000000_pre_planejamento
   20261206000000_recebimentos_compartilhados 20261129000000_novo_servico
-  20261122000000_roteiro_logistica "${DOWNS[@]:4}")
+  20261122000000_roteiro_logistica "${DOWNS[@]:5}")
 
 step() { echo; echo "■ $*"; }
 q() { psql "$URL" -At -v ON_ERROR_STOP=1 -c "$1"; }

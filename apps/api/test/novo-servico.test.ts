@@ -800,3 +800,166 @@ describe('D. Segurança, permissões e tempo real', () => {
     await ws.close();
   });
 });
+
+describe('E. Estabilização: serviço sem retirada (cliente entrega as peças)', () => {
+  const noPickup = async (
+    customer: unknown = newCustomer('Cliente Entrega', { address: undefined }),
+  ) => {
+    const b = await body({ customer });
+    return { ...b, pickup: null };
+  };
+
+  it('sem retirada é válido: nada de retirada, custo, agenda ou endereço inventado; a chegada gera a OS', async () => {
+    const admin = await loginAdmin(app);
+    await logisticsSetup(admin);
+    const before = await counts();
+    const r = await post(admin, '/api/v1/services', await noPickup());
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.pickup).toBeNull();
+    expect(r.body.tripCost).toBeNull();
+    expect(r.body.order.customerDropOff).toBe(true);
+    const after = await counts();
+    expect(after).toMatchObject({
+      customers: before.customers + 1,
+      orders: before.orders + 1,
+      pickups: before.pickups,
+      costs: before.costs,
+      payables: before.payables,
+      serviceOrders: before.serviceOrders,
+    });
+    const order = await db().commercialOrder.findUniqueOrThrow({
+      where: { id: r.body.order.id },
+      include: {
+        items: { orderBy: { position: 'asc' } },
+        customer: { include: { addresses: true } },
+      },
+    });
+    expect(order).toMatchObject({
+      customerDropOff: true,
+      autoServiceOrder: true,
+      pickupAddressId: null,
+      status: 'AGUARDANDO_RETIRADA',
+    });
+    expect(order.pickupAddressSnapshot).toBeNull();
+    expect(order.customer.addresses).toHaveLength(0); // nenhum endereço inventado
+    // A lista de pedidos informa a situação real (cliente entrega).
+    const list = await admin.get('/api/v1/orders');
+    const row = (list.body.items ?? list.body).find((o: { id: string }) => o.id === order.id);
+    expect(row.customerDropOff).toBe(true);
+    // Agenda/roteiro: nenhuma parada para este pedido.
+    expect(await db().pickupRequest.count({ where: { orderId: order.id } })).toBe(0);
+    // O cliente entrega as peças: recebimento "entregue pelo cliente" gera a OS automática.
+    const rec = await receive(
+      admin,
+      order.id,
+      order.items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
+      null,
+    );
+    expect(rec.status, JSON.stringify(rec.body)).toBe(201);
+    const so = await db().serviceOrder.findMany({
+      where: { orderId: order.id },
+      include: { items: true },
+    });
+    expect(so).toHaveLength(1);
+    expect(so[0]!.items.reduce((a, i) => a + i.quantity, 0)).toBe(3);
+    expect((await db().commercialOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
+      'RECEBIDO',
+    );
+    expect((await counts()).payables).toBe(before.payables); // nenhum custo de transporte
+  });
+
+  it('retirada omitida (campo ausente) também vale; cliente existente sem endereço escolhido não ganha endereço automático', async () => {
+    const admin = await loginAdmin(app);
+    const c = await createCustomer(admin, {
+      name: 'Cliente Existente Entrega',
+      phone: null,
+      allowSimilar: true,
+    });
+    const b = await body({ customer: { mode: 'EXISTENTE', customerId: c.id } });
+    delete b.pickup;
+    const r = await post(admin, '/api/v1/services', b);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.pickup).toBeNull();
+    const order = await db().commercialOrder.findUniqueOrThrow({ where: { id: r.body.order.id } });
+    expect(order).toMatchObject({ customerDropOff: true, pickupAddressId: null });
+  });
+
+  it('com retirada, cliente novo sem endereço é recusado; nada é criado', async () => {
+    const admin = await loginAdmin(app);
+    await logisticsSetup(admin);
+    const before = await counts();
+    const r = await post(
+      admin,
+      '/api/v1/services',
+      await body({ customer: newCustomer('Sem Endereço', { address: undefined }) }),
+    );
+    expect(r.status).toBe(400);
+    expect(JSON.stringify(r.body)).toMatch(/endereço de retirada/);
+    expect(await counts()).toEqual(before);
+  });
+
+  it('falha intermediária sem retirada desfaz tudo; repetição com a mesma chave não duplica', async () => {
+    const admin = await loginAdmin(app);
+    const before = await counts();
+    // Peça com quantidade inválida: recusada antes de gravar qualquer coisa.
+    const bad = await noPickup();
+    (bad as unknown as { service: { items: unknown[] } }).service.items = [
+      { ...ITEMS[0], quantity: 0 },
+    ];
+    expect((await post(admin, '/api/v1/services', bad)).status).toBe(400);
+    expect(await counts()).toEqual(before);
+    // Documento já cadastrado: cliente recusado na transação → pedido também não fica.
+    const doc = await createCustomer(admin, {
+      name: 'Dono do CPF',
+      document: '52998224725',
+      allowSimilar: true,
+    });
+    expect(doc.id).toBeTruthy();
+    const mid = await counts();
+    const dup = await post(
+      admin,
+      '/api/v1/services',
+      await noPickup(
+        newCustomer('Outro com o mesmo CPF', { address: undefined, document: '52998224725' }),
+      ),
+    );
+    expect(dup.status).toBe(409);
+    expect(await counts()).toEqual(mid);
+    // Idempotência.
+    const key = idemKey();
+    const okBody = await noPickup(newCustomer('Cliente Idempotente', { address: undefined }));
+    const a = await post(admin, '/api/v1/services', okBody, key);
+    const b2 = await post(admin, '/api/v1/services', okBody, key);
+    expect(a.status).toBe(201);
+    expect(b2.body).toEqual(a.body);
+    expect((await counts()).orders).toBe(mid.orders + 1);
+  });
+
+  it('o cliente mudou de ideia: agendar uma retirada depois desmarca "cliente entrega"', async () => {
+    const admin = await loginAdmin(app);
+    await logisticsSetup(admin);
+    const r = await post(
+      admin,
+      '/api/v1/services',
+      await noPickup(newCustomer('Cliente Mudou', {})),
+    );
+    expect(r.status).toBe(201);
+    const order = await db().commercialOrder.findUniqueOrThrow({
+      where: { id: r.body.order.id },
+      include: { items: true, customer: { include: { addresses: true } } },
+    });
+    expect(order.customerDropOff).toBe(true);
+    const pk = await post(admin, '/api/v1/pickups', {
+      orderId: order.id,
+      addressId: order.customer.addresses[0]!.id,
+      scheduledDate: day(3),
+      windowStart: '10:00',
+      windowEnd: null,
+      team: 'LOGISTICA_TERCEIRIZADA',
+      items: order.items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
+    });
+    expect(pk.status, JSON.stringify(pk.body)).toBe(201);
+    const after = await db().commercialOrder.findUniqueOrThrow({ where: { id: order.id } });
+    expect(after).toMatchObject({ customerDropOff: false, status: 'RETIRADA_AGENDADA' });
+  });
+});

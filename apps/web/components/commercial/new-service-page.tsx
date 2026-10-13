@@ -114,7 +114,9 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const [promised, setPromised] = useState('');
   const [technicalNotes, setTechnicalNotes] = useState('');
 
-  // ── Retirada
+  // ── Retirada (opcional: o cliente pode entregar as peças na tapeçaria)
+  const [delivery, setDelivery] = useState<'RETIRADA' | 'CLIENTE_ENTREGA'>('RETIRADA');
+  const withPickup = delivery === 'RETIRADA';
   const [date, setDate] = useState('');
   const [arrival, setArrival] = useState('');
   const [team, setTeam] = useState<PickupTeam>('LOGISTICA_TERCEIRIZADA');
@@ -162,7 +164,8 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
             email,
             document,
             notes: customerNotes,
-            address: { ...address, isPrimary: true },
+            // Sem retirada, o endereço é opcional: só vai se foi preenchido (nada inventado).
+            address: withPickup || address.street.trim() ? { ...address, isPrimary: true } : null,
             allowSimilar,
           }
         : {
@@ -170,7 +173,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
             customerId: customer?.id ?? '',
             ...(useNewAddress
               ? { newAddress: address }
-              : { addressId: addressId || chosenAddress?.id || null }),
+              : { addressId: addressId || (withPickup ? chosenAddress?.id : null) || null }),
           };
     const outsourced = team === 'LOGISTICA_TERCEIRIZADA';
     return {
@@ -189,18 +192,21 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
           fabricName: blank(p.fabricName),
         })),
       },
-      pickup: {
-        scheduledDate: date || null,
-        windowStart: arrival || null,
-        team,
-        logisticsUserId: responsible || null,
-        participantUserIds: participants,
-        amountCents: outsourced && d?.canSetTripCost && amount ? amount : null,
-        instructions: blank(instructions),
-        notes: blank(pickupNotes),
-      },
+      pickup: withPickup
+        ? {
+            scheduledDate: date || null,
+            windowStart: arrival || null,
+            team,
+            logisticsUserId: responsible || null,
+            participantUserIds: participants,
+            amountCents: outsourced && d?.canSetTripCost && amount ? amount : null,
+            instructions: blank(instructions),
+            notes: blank(pickupNotes),
+          }
+        : null,
     };
   }, [
+    withPickup,
     mode,
     kind,
     name,
@@ -515,7 +521,9 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
                 error={err('customer.notes')}
               />
             </FormGrid>
-            <h3 className="text-sm font-semibold">Endereço de retirada</h3>
+            <h3 className="text-sm font-semibold">
+              Endereço de retirada{!withPickup && ' (opcional — o cliente entrega as peças)'}
+            </h3>
             <AddressFields
               value={address}
               onChange={setAddress}
@@ -700,134 +708,187 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
         </FormGrid>
       </FormSection>
 
-      {/* 3. Retirada */}
+      {/* 3. Retirada (opcional) */}
       <FormSection
         step={3}
         title="Retirada"
         id="ns-retirada"
-        description="O horário é o de CHEGADA ao endereço do cliente."
+        description={
+          withPickup
+            ? 'O horário é o de CHEGADA ao endereço do cliente.'
+            : 'O cliente traz as peças até a tapeçaria: nenhuma retirada é agendada.'
+        }
       >
-        <FormGrid>
-          <DateField
-            label="Data da retirada"
-            cols={4}
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            error={err('pickup.scheduledDate')}
-            data-testid="ns-date"
-          />
-          <TimeField
-            label="Horário de chegada ao cliente"
-            cols={4}
-            value={arrival}
-            required={Boolean(date)}
-            onChange={(e) => setArrival(e.target.value)}
-            error={err('pickup.windowStart')}
-            data-testid="ns-arrival"
-          />
-        </FormGrid>
-        <div className="mt-5">
-          <p className="label mb-2">Equipe responsável</p>
-          <div
-            className="grid gap-2 sm:grid-cols-2"
-            role="radiogroup"
-            aria-label="Equipe responsável"
-          >
-            {(['EQUIPE_PROPRIA', 'LOGISTICA_TERCEIRIZADA'] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                role="radio"
-                aria-checked={team === t}
-                onClick={() => changeTeam(t)}
-                className="rounded-xl border border-line p-3 text-left aria-checked:border-brand-500 aria-checked:ring-4 aria-checked:ring-brand-100"
-                data-testid={t === 'EQUIPE_PROPRIA' ? 'ns-team-own' : 'ns-team-outsourced'}
-              >
-                <span className="block font-medium">{PICKUP_TEAM_LABEL[t]}</span>
-                <span className="text-sm text-ink-muted">
-                  {t === 'EQUIPE_PROPRIA'
-                    ? `Padrão: ${d.ownTeam.displayName ?? 'não configurado'} · sem custo de terceirização`
-                    : `Padrão: ${d.outsourced.displayName ?? 'não configurado'} · valor total único`}
-                </span>
-              </button>
-            ))}
-          </div>
+        <div
+          className="mb-5 grid gap-2 sm:grid-cols-2"
+          role="radiogroup"
+          aria-label="Como as peças chegam"
+        >
+          {(
+            [
+              ['RETIRADA', 'Buscar na casa do cliente', 'Agenda a retirada com a equipe'],
+              [
+                'CLIENTE_ENTREGA',
+                'Cliente entrega na tapeçaria',
+                'Sem retirada, sem custo de logística',
+              ],
+            ] as const
+          ).map(([k, title, hint]) => (
+            <button
+              key={k}
+              type="button"
+              role="radio"
+              aria-checked={delivery === k}
+              onClick={() => setDelivery(k)}
+              className="rounded-xl border border-line p-3 text-left aria-checked:border-brand-500 aria-checked:ring-4 aria-checked:ring-brand-100"
+              data-testid={k === 'RETIRADA' ? 'ns-delivery-pickup' : 'ns-delivery-dropoff'}
+            >
+              <span className="block font-medium">{title}</span>
+              <span className="text-sm text-ink-muted">{hint}</span>
+            </button>
+          ))}
         </div>
-        {team === 'EQUIPE_PROPRIA' && ownProblem && (
-          <Alert tone="warn" className="mt-4" title="Responsável padrão da equipe própria pendente">
-            {ownProblem === 'NAO_CONFIGURADO'
-              ? 'Nenhum responsável padrão configurado em Empresa. Escolha quem fará a retirada.'
-              : `${d.ownTeam.displayName ?? 'O responsável padrão'} está ${ownProblem === 'INATIVO' ? 'inativo' : 'sem permissão para executar'}. Escolha outro responsável.`}
-          </Alert>
+        {!withPickup && (
+          <div data-testid="ns-dropoff-info">
+            <Alert tone="info">
+              Quando o cliente chegar com as peças, registre em Recebimentos (&quot;Entregue pelo
+              cliente&quot;): a OS é criada automaticamente com o que chegou.
+            </Alert>
+          </div>
         )}
-        <FormGrid className="mt-5">
-          <SelectField
-            label="Profissional responsável"
-            cols={6}
-            value={responsible}
-            onChange={(e) => setResponsible(e.target.value)}
-            error={err('pickup.logisticsUserId')}
-            data-testid="ns-responsible"
-          >
-            <option value="">{team === 'EQUIPE_PROPRIA' ? 'Escolha…' : 'Definir depois'}</option>
-            {people.map((p) => (
-              <option key={p.userId} value={p.userId}>
-                {p.displayName}
-              </option>
-            ))}
-          </SelectField>
-          {team === 'LOGISTICA_TERCEIRIZADA' && d.canSetTripCost && (
-            <MoneyField
-              label="Valor total combinado da equipe"
-              cols={6}
-              cents={amount}
-              hint="Valor único da operação — não é dividido entre os participantes."
-              onCents={(v, ok) => {
-                setAmount(v);
-                setAmountOk(ok);
-              }}
-              error={!amountOk ? 'Valor inválido.' : err('pickup.amountCents')}
-              data-testid="ns-amount"
-            />
-          )}
-        </FormGrid>
-        {people.filter((p) => p.userId !== responsible).length > 0 && (
-          <fieldset className="mt-4">
-            <legend className="label mb-2">Participantes</legend>
-            <div className="flex flex-wrap gap-x-6 gap-y-2">
-              {people
-                .filter((p) => p.userId !== responsible)
-                .map((p) => (
-                  <Checkbox
-                    key={p.userId}
-                    label={p.displayName}
-                    checked={participants.includes(p.userId)}
-                    onChange={(e) =>
-                      setParticipants((list) =>
-                        e.target.checked ? [...list, p.userId] : list.filter((x) => x !== p.userId),
-                      )
-                    }
-                    data-testid={`ns-participant-${p.displayName}`}
-                  />
+        {withPickup && (
+          <>
+            <FormGrid>
+              <DateField
+                label="Data da retirada"
+                cols={4}
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                error={err('pickup.scheduledDate')}
+                data-testid="ns-date"
+              />
+              <TimeField
+                label="Horário de chegada ao cliente"
+                cols={4}
+                value={arrival}
+                required={Boolean(date)}
+                onChange={(e) => setArrival(e.target.value)}
+                error={err('pickup.windowStart')}
+                data-testid="ns-arrival"
+              />
+            </FormGrid>
+            <div className="mt-5">
+              <p className="label mb-2">Equipe responsável</p>
+              <div
+                className="grid gap-2 sm:grid-cols-2"
+                role="radiogroup"
+                aria-label="Equipe responsável"
+              >
+                {(['EQUIPE_PROPRIA', 'LOGISTICA_TERCEIRIZADA'] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    role="radio"
+                    aria-checked={team === t}
+                    onClick={() => changeTeam(t)}
+                    className="rounded-xl border border-line p-3 text-left aria-checked:border-brand-500 aria-checked:ring-4 aria-checked:ring-brand-100"
+                    data-testid={t === 'EQUIPE_PROPRIA' ? 'ns-team-own' : 'ns-team-outsourced'}
+                  >
+                    <span className="block font-medium">{PICKUP_TEAM_LABEL[t]}</span>
+                    <span className="text-sm text-ink-muted">
+                      {t === 'EQUIPE_PROPRIA'
+                        ? `Padrão: ${d.ownTeam.displayName ?? 'não configurado'} · sem custo de terceirização`
+                        : `Padrão: ${d.outsourced.displayName ?? 'não configurado'} · valor total único`}
+                    </span>
+                  </button>
                 ))}
+              </div>
             </div>
-          </fieldset>
+            {team === 'EQUIPE_PROPRIA' && ownProblem && (
+              <Alert
+                tone="warn"
+                className="mt-4"
+                title="Responsável padrão da equipe própria pendente"
+              >
+                {ownProblem === 'NAO_CONFIGURADO'
+                  ? 'Nenhum responsável padrão configurado em Empresa. Escolha quem fará a retirada.'
+                  : `${d.ownTeam.displayName ?? 'O responsável padrão'} está ${ownProblem === 'INATIVO' ? 'inativo' : 'sem permissão para executar'}. Escolha outro responsável.`}
+              </Alert>
+            )}
+            <FormGrid className="mt-5">
+              <SelectField
+                label="Profissional responsável"
+                cols={6}
+                value={responsible}
+                onChange={(e) => setResponsible(e.target.value)}
+                error={err('pickup.logisticsUserId')}
+                data-testid="ns-responsible"
+              >
+                <option value="">
+                  {team === 'EQUIPE_PROPRIA' ? 'Escolha…' : 'Definir depois'}
+                </option>
+                {people.map((p) => (
+                  <option key={p.userId} value={p.userId}>
+                    {p.displayName}
+                  </option>
+                ))}
+              </SelectField>
+              {team === 'LOGISTICA_TERCEIRIZADA' && d.canSetTripCost && (
+                <MoneyField
+                  label="Valor total combinado da equipe"
+                  cols={6}
+                  cents={amount}
+                  hint="Valor único da operação — não é dividido entre os participantes."
+                  onCents={(v, ok) => {
+                    setAmount(v);
+                    setAmountOk(ok);
+                  }}
+                  error={!amountOk ? 'Valor inválido.' : err('pickup.amountCents')}
+                  data-testid="ns-amount"
+                />
+              )}
+            </FormGrid>
+            {people.filter((p) => p.userId !== responsible).length > 0 && (
+              <fieldset className="mt-4">
+                <legend className="label mb-2">Participantes</legend>
+                <div className="flex flex-wrap gap-x-6 gap-y-2">
+                  {people
+                    .filter((p) => p.userId !== responsible)
+                    .map((p) => (
+                      <Checkbox
+                        key={p.userId}
+                        label={p.displayName}
+                        checked={participants.includes(p.userId)}
+                        onChange={(e) =>
+                          setParticipants((list) =>
+                            e.target.checked
+                              ? [...list, p.userId]
+                              : list.filter((x) => x !== p.userId),
+                          )
+                        }
+                        data-testid={`ns-participant-${p.displayName}`}
+                      />
+                    ))}
+                </div>
+              </fieldset>
+            )}
+            <FormGrid className="mt-5">
+              <TextAreaField
+                label="Instruções para a retirada"
+                cols={8}
+                rows={2}
+                value={instructions}
+                onChange={(e) => setInstructions(e.target.value)}
+              />
+              <TextField
+                label="Observações"
+                cols={4}
+                value={pickupNotes}
+                onChange={(e) => setPickupNotes(e.target.value)}
+              />
+            </FormGrid>
+          </>
         )}
-        <FormGrid className="mt-5">
-          <TextAreaField
-            label="Instruções para a retirada"
-            cols={8}
-            rows={2}
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-          />
-          <TextField
-            label="Observações"
-            cols={4}
-            value={pickupNotes}
-            onChange={(e) => setPickupNotes(e.target.value)}
-          />
-        </FormGrid>
       </FormSection>
 
       {/* 4. Resumo */}
@@ -843,13 +904,22 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
           )}
           <SummaryRow
             label="Retirada"
-            value={date ? `${brDate(date)}, chegada ${arrival || '—'}` : 'Aguardando agendamento'}
+            value={
+              !withPickup
+                ? 'Cliente entrega na tapeçaria'
+                : date
+                  ? `${brDate(date)}, chegada ${arrival || '—'}`
+                  : 'Aguardando agendamento'
+            }
+            testId="ns-sum-pickup"
           />
-          <SummaryRow
-            label="Equipe"
-            value={`${PICKUP_TEAM_LABEL[team]} · ${people.find((p) => p.userId === responsible)?.displayName ?? 'sem responsável'}`}
-          />
-          {team === 'LOGISTICA_TERCEIRIZADA' && d.canSetTripCost && (
+          {withPickup && (
+            <SummaryRow
+              label="Equipe"
+              value={`${PICKUP_TEAM_LABEL[team]} · ${people.find((p) => p.userId === responsible)?.displayName ?? 'sem responsável'}`}
+            />
+          )}
+          {withPickup && team === 'LOGISTICA_TERCEIRIZADA' && d.canSetTripCost && (
             <SummaryRow
               label="Valor previsto da logística"
               value={brl(amount)}
@@ -870,7 +940,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
             disabled={save.isPending}
             data-testid="ns-submit"
           >
-            Salvar serviço e agendar retirada
+            {withPickup ? 'Salvar serviço e agendar retirada' : 'Salvar serviço'}
           </Button>
         </FormActions>
       </FormSection>
@@ -888,7 +958,9 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
         <div className="mb-4 flex items-center gap-3">
           <CheckCircle2 className="size-7 text-ok-600" aria-hidden />
           <div>
-            <p className="font-semibold">Aguardando retirada</p>
+            <p className="font-semibold">
+              {p ? 'Aguardando retirada' : 'Aguardando entrega do cliente'}
+            </p>
             <p className="text-sm text-ink-muted">
               A OS será criada automaticamente quando as peças chegarem à oficina.
             </p>
@@ -900,21 +972,31 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
             value={`${result.customer.name}${result.customer.created ? ' (novo)' : ''}`}
           />
           <SummaryRow label="Pedido" value={result.order.code} testId="ns-done-order" />
-          <SummaryRow label="Retirada" value={p.code} />
-          <SummaryRow
-            label="Data e horário de chegada"
-            value={
-              p.scheduledDate
-                ? `${brDate(p.scheduledDate)}, ${p.windowStart}`
-                : 'Aguardando agendamento'
-            }
-            testId="ns-done-when"
-          />
-          <SummaryRow
-            label="Equipe responsável"
-            value={`${PICKUP_TEAM_LABEL[p.team]} · ${p.responsible ?? 'sem responsável'}${p.participants.length ? ` + ${p.participants.join(', ')}` : ''}`}
-            testId="ns-done-team"
-          />
+          {p ? (
+            <>
+              <SummaryRow label="Retirada" value={p.code} />
+              <SummaryRow
+                label="Data e horário de chegada"
+                value={
+                  p.scheduledDate
+                    ? `${brDate(p.scheduledDate)}, ${p.windowStart}`
+                    : 'Aguardando agendamento'
+                }
+                testId="ns-done-when"
+              />
+              <SummaryRow
+                label="Equipe responsável"
+                value={`${PICKUP_TEAM_LABEL[p.team]} · ${p.responsible ?? 'sem responsável'}${p.participants.length ? ` + ${p.participants.join(', ')}` : ''}`}
+                testId="ns-done-team"
+              />
+            </>
+          ) : (
+            <SummaryRow
+              label="Retirada"
+              value="Sem retirada — o cliente entrega as peças na tapeçaria"
+              testId="ns-done-dropoff"
+            />
+          )}
           {result.tripCost && (
             <SummaryRow
               label="Valor previsto da logística"
@@ -927,7 +1009,7 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
           <Button type="button" variant="secondary" onClick={onNew}>
             Novo serviço
           </Button>
-          {p.scheduledDate && (
+          {p?.scheduledDate && (
             <Button
               type="button"
               variant="secondary"

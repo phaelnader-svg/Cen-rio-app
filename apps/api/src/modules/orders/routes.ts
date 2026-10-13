@@ -74,6 +74,7 @@ function toSummary(
     number: o.number,
     code: orderCode(o.number),
     status: o.status,
+    customerDropOff: o.customerDropOff,
     customer: toCustomerSummary(o.customer),
     contractedService: o.contractedService,
     totalPieces: o.items.reduce((a, i) => a + i.quantity, 0),

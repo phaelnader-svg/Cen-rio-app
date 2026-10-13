@@ -129,7 +129,7 @@ export function OrderDetail({ id }: { id: string }) {
       )}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <span data-testid="order-status">
-          <OrderStatusBadge status={o.status} />
+          <OrderStatusBadge status={o.status} customerDropOff={o.customerDropOff} />
         </span>
         <span data-testid="order-service-state">
           <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />

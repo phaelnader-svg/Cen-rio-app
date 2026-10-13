@@ -37,9 +37,21 @@ const PRIORITY_TONE: Record<Priority, Tone> = {
   URGENTE: 'danger',
 };
 
-export const OrderStatusBadge = ({ status }: { status: OrderStatus }) => (
+/** Rótulo da situação do pedido: sem retirada, "aguardando" é a entrega pelo cliente. */
+export const orderStatusLabel = (status: OrderStatus, customerDropOff?: boolean) =>
+  status === 'AGUARDANDO_RETIRADA' && customerDropOff
+    ? 'Aguardando entrega do cliente'
+    : ORDER_STATUS_LABEL[status];
+
+export const OrderStatusBadge = ({
+  status,
+  customerDropOff,
+}: {
+  status: OrderStatus;
+  customerDropOff?: boolean;
+}) => (
   <Badge tone={ORDER_TONE[status]} dot>
-    {ORDER_STATUS_LABEL[status]}
+    {orderStatusLabel(status, customerDropOff)}
   </Badge>
 );
 export const PickupStatusBadge = ({ status }: { status: PickupStatus }) => (

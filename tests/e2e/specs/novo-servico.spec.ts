@@ -169,4 +169,39 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     ]);
     expect(order.code).toBe(orderCode);
   });
+
+  test('cliente entrega na tapeçaria: sem retirada; o recebimento no painel gera a OS', async ({
+    page,
+  }) => {
+    await loginAdmin(page);
+    await page.goto('/painel/servicos/novo');
+    await page.getByTestId('ns-mode-new').click();
+    await page.getByTestId('ns-name').fill('Cliente Entrega Fictícia E2E');
+    await page.getByTestId('ns-phone').fill('(11) 94444-3322');
+    await page.getByTestId('ns-piece-desc-0').fill('Cabeceira entregue');
+    await page.getByTestId('ns-delivery-dropoff').click();
+    await expect(page.getByTestId('ns-dropoff-info')).toBeVisible();
+    await expect(page.getByTestId('ns-date')).toHaveCount(0);
+    await expect(page.getByTestId('ns-sum-pickup')).toHaveText('Cliente entrega na tapeçaria');
+    await expect(page.getByTestId('ns-submit')).toHaveText('Salvar serviço');
+    await page.getByTestId('ns-submit').click();
+    const done = page.getByTestId('ns-confirmation');
+    await expect(done).toContainText('Aguardando entrega do cliente');
+    await expect(page.getByTestId('ns-done-dropoff')).toBeVisible();
+    await page.getByTestId('ns-open-order').click();
+    await page.waitForURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
+    await expect(page.getByText('Aguardando entrega do cliente').first()).toBeVisible();
+    const orderId = page.url().split('/').pop()!;
+    const pickups = await call(page, 'GET', `/api/v1/pickups?orderId=${orderId}`);
+    expect(Array.isArray(pickups) ? pickups : pickups.items).toHaveLength(0);
+    // O cliente chega com a peça: recebimento "entregue pelo cliente" → OS automática.
+    await page.goto(`/painel/recebimentos/novo?pedido=${orderId}`);
+    await page
+      .getByTestId('receipt-line-Cabeceira entregue')
+      .getByLabel('Localização inicial na oficina')
+      .fill('Área de recebimento');
+    await page.getByRole('button', { name: 'Confirmar recebimento' }).click();
+    await expect(page.getByTestId('receipt-done')).toContainText(/Recebimento RC-\d{5} registrado/);
+    await expect(page.getByTestId('receipt-generated-os')).toContainText(/OS-\d{5}/);
+  });
 });

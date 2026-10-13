@@ -195,12 +195,12 @@ export async function serviceRoutes(app: FastifyInstance) {
             whatsapp: c.whatsapp,
             email: c.email,
             notes: c.notes,
-            addresses: [{ ...c.address, isPrimary: true }],
+            addresses: c.address ? [{ ...c.address, isPrimary: true }] : [],
             allowSimilar: c.allowSimilar,
           });
           customerId = cust.id;
           customerName = cust.name;
-          addressId = cust.addresses[0]!.id;
+          addressId = cust.addresses[0]?.id ?? null;
           created = true;
         } else {
           const cust = await tx.customer.findUnique({ where: { id: c.customerId } });
@@ -210,7 +210,8 @@ export async function serviceRoutes(app: FastifyInstance) {
           customerName = cust.name;
           if (c.newAddress) addressId = (await addCustomerAddress(tx, actor, cust.id, c)).id;
           else if (c.addressId) addressId = c.addressId;
-          else {
+          else if (p) {
+            // Só a retirada exige endereço; sem retirada (cliente entrega), nenhum é inventado.
             const primary = await tx.customerAddress.findFirst({
               where: { customerId: cust.id, archivedAt: null },
               orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
@@ -237,87 +238,95 @@ export async function serviceRoutes(app: FastifyInstance) {
           promisedDate: s.promisedDate,
           technicalNotes: s.technicalNotes,
           autoServiceOrder: true,
+          customerDropOff: !p,
           items: s.items,
         });
 
-        // 3. Responsável: escolhido, ou o padrão da equipe (nunca um qualquer).
-        const people = await peopleOf(tx, p.team);
+        // 3–4. Retirada (opcional): sem ela o cliente entrega as peças na tapeçaria — nada de
+        // responsável, participantes, custo de logística ou agenda.
         let responsible: Person | null = null;
-        if (p.logisticsUserId) {
-          responsible = people.find((x) => x.userId === p.logisticsUserId) ?? null;
-          if (!responsible)
-            throw Errors.validation(
-              [
-                {
-                  path: 'pickup.logisticsUserId',
-                  message: 'Responsável não pertence à equipe escolhida.',
-                },
-              ],
-              'Responsável não pertence à equipe escolhida.',
-            );
-        } else if (p.team === 'EQUIPE_PROPRIA') {
-          const own = await ownTeamSettings(tx);
-          if (own.problem)
-            throw Errors.business(
-              own.problem === 'NAO_CONFIGURADO'
-                ? 'Responsável padrão da equipe própria não configurado. Escolha o responsável (ou configure em Empresa).'
-                : `Responsável padrão da equipe própria (${own.displayName ?? '—'}) está ${own.problem === 'INATIVO' ? 'inativo' : 'sem permissão para executar'}. Escolha outro responsável.`,
-            );
-          responsible = { userId: own.userId!, displayName: own.displayName! };
-        } else {
-          responsible = await outsourcedDefault(tx);
-        }
-        const allPeople = [...(await ownTeamPeople(tx)), ...(await outsourcedPeople(tx))];
-        const participants = p.participantUserIds.map((id) => {
-          const person = allPeople.find((x) => x.userId === id);
-          if (!person)
-            throw Errors.validation(
-              [{ path: 'pickup.participantUserIds', message: 'Participante inválido.' }],
-              'Participante inválido ou inativo.',
-            );
-          return person;
-        });
-        const hasCost = Boolean(p.amountCents);
-        // 4. Retirada de TODAS as peças, com o custo total único da viagem (Fase 6).
+        let participants: Person[] = [];
+        let pickup: Awaited<ReturnType<typeof createPickup>> | null = null;
+        let cost: Awaited<ReturnType<typeof tx.logisticsCost.findFirst>> = null;
         const items = await tx.commercialOrderItem.findMany({
           where: { orderId: order.id },
           orderBy: { position: 'asc' },
         });
-        const pickup = await createPickup(tx, actor, perms, {
-          orderId: order.id,
-          addressId,
-          scheduledDate: p.scheduledDate ?? null,
-          windowStart: p.windowStart ?? null,
-          windowEnd: null,
-          team: p.team,
-          // Fase 3: participantes são vínculo estruturado (não mais texto nas observações).
-          teamNotes: p.notes ?? null,
-          participantUserIds: p.participantUserIds,
-          instructions: p.instructions ?? null,
-          externalReference: null,
-          items: items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
-          logisticsUserId: responsible?.userId ?? null,
-          tripCost: hasCost
-            ? { amountCents: p.amountCents!, participantUserIds: p.participantUserIds }
-            : undefined,
-        });
-        const cost = hasCost
-          ? await tx.logisticsCost.findFirst({
-              where: { pickupId: pickup.id, status: { not: 'CANCELADO' } },
-            })
-          : null;
-
+        if (p) {
+          // 3. Responsável: escolhido, ou o padrão da equipe (nunca um qualquer).
+          const people = await peopleOf(tx, p.team);
+          if (p.logisticsUserId) {
+            responsible = people.find((x) => x.userId === p.logisticsUserId) ?? null;
+            if (!responsible)
+              throw Errors.validation(
+                [
+                  {
+                    path: 'pickup.logisticsUserId',
+                    message: 'Responsável não pertence à equipe escolhida.',
+                  },
+                ],
+                'Responsável não pertence à equipe escolhida.',
+              );
+          } else if (p.team === 'EQUIPE_PROPRIA') {
+            const own = await ownTeamSettings(tx);
+            if (own.problem)
+              throw Errors.business(
+                own.problem === 'NAO_CONFIGURADO'
+                  ? 'Responsável padrão da equipe própria não configurado. Escolha o responsável (ou configure em Empresa).'
+                  : `Responsável padrão da equipe própria (${own.displayName ?? '—'}) está ${own.problem === 'INATIVO' ? 'inativo' : 'sem permissão para executar'}. Escolha outro responsável.`,
+              );
+            responsible = { userId: own.userId!, displayName: own.displayName! };
+          } else {
+            responsible = await outsourcedDefault(tx);
+          }
+          const allPeople = [...(await ownTeamPeople(tx)), ...(await outsourcedPeople(tx))];
+          participants = p.participantUserIds.map((id) => {
+            const person = allPeople.find((x) => x.userId === id);
+            if (!person)
+              throw Errors.validation(
+                [{ path: 'pickup.participantUserIds', message: 'Participante inválido.' }],
+                'Participante inválido ou inativo.',
+              );
+            return person;
+          });
+          const hasCost = Boolean(p.amountCents);
+          // 4. Retirada de TODAS as peças, com o custo total único da viagem (Fase 6).
+          pickup = await createPickup(tx, actor, perms, {
+            orderId: order.id,
+            addressId,
+            scheduledDate: p.scheduledDate ?? null,
+            windowStart: p.windowStart ?? null,
+            windowEnd: null,
+            team: p.team,
+            // Fase 3: participantes são vínculo estruturado (não mais texto nas observações).
+            teamNotes: p.notes ?? null,
+            participantUserIds: p.participantUserIds,
+            instructions: p.instructions ?? null,
+            externalReference: null,
+            items: items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
+            logisticsUserId: responsible?.userId ?? null,
+            tripCost: hasCost
+              ? { amountCents: p.amountCents!, participantUserIds: p.participantUserIds }
+              : undefined,
+          });
+          cost = hasCost
+            ? await tx.logisticsCost.findFirst({
+                where: { pickupId: pickup.id, status: { not: 'CANCELADO' } },
+              })
+            : null;
+        }
         await audit(tx, actor, {
           action: 'service.created',
           entityType: 'commercial_order',
           entityId: order.id,
-          summary: `Novo serviço: ${customerName} — pedido ${orderCode(order.number)} e retirada ${pickupCode(pickup.number)}${created ? ' (cliente novo)' : ''}.`,
+          summary: `Novo serviço: ${customerName} — pedido ${orderCode(order.number)} e ${pickup ? `retirada ${pickupCode(pickup.number)}` : 'entrega das peças pelo cliente (sem retirada)'}${created ? ' (cliente novo)' : ''}.`,
           changes: {
             customerId,
             customerCreated: created,
             orderId: order.id,
-            pickupId: pickup.id,
-            team: p.team,
+            pickupId: pickup?.id ?? null,
+            team: p?.team ?? null,
+            customerDropOff: !p,
             responsible: responsible?.userId ?? null,
             tripCostId: cost?.id ?? null,
           },
@@ -330,7 +339,9 @@ export async function serviceRoutes(app: FastifyInstance) {
           audience: 'permission:pedidos.ver',
         });
 
-        const fresh = await tx.pickupRequest.findUniqueOrThrow({ where: { id: pickup.id } });
+        const fresh = pickup
+          ? await tx.pickupRequest.findUniqueOrThrow({ where: { id: pickup.id } })
+          : null;
         const dto: NewServiceResultDto = {
           customer: { id: customerId, name: customerName, created },
           order: {
@@ -338,8 +349,9 @@ export async function serviceRoutes(app: FastifyInstance) {
             code: orderCode(order.number),
             totalPieces: items.reduce((a, i) => a + i.quantity, 0),
             agreedValueCents: perms.has('pedidos.valores') ? order.agreedValueCents : null,
+            customerDropOff: !p,
           },
-          pickup: {
+          pickup: fresh && {
             id: fresh.id,
             code: pickupCode(fresh.number),
             status: fresh.status,

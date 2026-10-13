@@ -87,6 +87,8 @@ export interface OrderSummaryDto {
   number: number;
   code: string;
   status: OrderStatus;
+  /** Estabilização da Fase 2: o cliente entrega as peças (sem retirada). */
+  customerDropOff: boolean;
   customer: CustomerSummaryDto;
   contractedService: string;
   totalPieces: number;
@@ -331,7 +333,15 @@ export interface NewServiceDefaultsDto {
 
 export interface NewServiceResultDto {
   customer: { id: string; name: string; created: boolean };
-  order: { id: string; code: string; totalPieces: number; agreedValueCents: number | null };
+  order: {
+    id: string;
+    code: string;
+    totalPieces: number;
+    agreedValueCents: number | null;
+    /** O cliente entrega as peças na tapeçaria (sem retirada). */
+    customerDropOff: boolean;
+  };
+  /** null quando o cliente entrega as peças (sem retirada). */
   pickup: {
     id: string;
     code: string;
@@ -342,7 +352,7 @@ export interface NewServiceResultDto {
     responsible: string | null;
     participants: string[];
     address: AddressSnapshot | null;
-  };
+  } | null;
   /** Custo previsto da logística (null sem custo ou sem permissão financeira). */
   tripCost: { code: string; amountCents: number; status: string } | null;
 }

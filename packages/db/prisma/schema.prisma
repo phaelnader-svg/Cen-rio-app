@@ -625,6 +625,8 @@ model CommercialOrder {
   // chegada. Com `autoServiceOrder`, cada recebimento confirmado gera a OS das peças recebidas.
   /// Pedido criado pelo fluxo Novo serviço: a OS nasce automaticamente na chegada das peças.
   autoServiceOrder Boolean   @default(false) @map("auto_service_order")
+  /// Estabilização da Fase 2: o cliente entrega as peças na tapeçaria (Novo serviço sem retirada).
+  customerDropOff  Boolean   @default(false) @map("customer_drop_off")
   /// Prazo de entrega combinado com o cliente (copiado para a OS gerada).
   promisedDate     DateTime? @map("promised_date") @db.Date
   /// Observações técnicas conhecidas no fechamento (copiadas para a OS gerada).
