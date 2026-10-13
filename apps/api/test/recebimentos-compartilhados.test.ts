@@ -264,7 +264,9 @@ describe('B. Peças de clientes', () => {
       version: seen.version,
     });
     expect(stale.status).toBe(409);
-    expect(stale.body.error.message).toMatch(/já foi atualizado/);
+    expect(stale.body.error.message).toBe(
+      'Este recebimento já foi atualizado. Confira o saldo atual antes de confirmar.',
+    );
     expect(await db().receipt.count({ where: { orderId: order.id } })).toBe(1);
     expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(1);
     // Custo da viagem: UMA obrigação (André), nenhuma para quem confirmou.
@@ -320,7 +322,9 @@ describe('B. Peças de clientes', () => {
       const b = await bReq;
       expect(calls).toBe(2);
       expect(b.status, JSON.stringify(b.body)).toBe(409);
-      expect(b.body.error.message).toMatch(/já foi atualizado/);
+      expect(b.body.error.message).toBe(
+        'Este recebimento já foi atualizado. Confira o saldo atual antes de confirmar.',
+      );
       expect(b.body.error.details).toMatchObject({ currentVersion: v + 1 });
     } finally {
       arrivalTestHooks.afterPickupRead = undefined;

@@ -269,9 +269,12 @@ export async function arrivalRoutes(app: FastifyInstance) {
             select: { version: true },
           });
           if (current.version !== input.version)
-            throw Errors.conflict('Este recebimento já foi atualizado em outro aparelho.', {
-              currentVersion: current.version,
-            });
+            throw Errors.conflict(
+              'Este recebimento já foi atualizado. Confira o saldo atual antes de confirmar.',
+              {
+                currentVersion: current.version,
+              },
+            );
           throw Errors.validation(undefined, 'Informe ao menos uma peça que chegou.');
         }
         const receipt = await registerReceipt(
@@ -337,9 +340,12 @@ export async function arrivalRoutes(app: FastifyInstance) {
       const result = await prisma.$transaction(async (tx) => {
         const po = await lockPurchaseOrder(tx, id);
         if (po.version !== input.version)
-          throw Errors.conflict('Este recebimento já foi atualizado em outro aparelho.', {
-            currentVersion: po.version,
-          });
+          throw Errors.conflict(
+            'Este recebimento já foi atualizado. Confira o saldo atual antes de confirmar.',
+            {
+              currentVersion: po.version,
+            },
+          );
         if (!['CONFIRMADO', 'PARCIALMENTE_RECEBIDO'].includes(po.status))
           throw Errors.business('Este pedido não está aguardando recebimento.');
         const items = new Map(po.items.map((i) => [i.id, i]));

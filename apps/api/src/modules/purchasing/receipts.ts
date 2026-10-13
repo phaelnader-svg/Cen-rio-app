@@ -127,11 +127,11 @@ export async function registerMaterialReceipt(
   opts: { deviceId?: string | null; expectedVersion?: number; arrivalId?: string } = {},
 ): Promise<string> {
   const po = await lockPurchaseOrder(tx, input.purchaseOrderId);
-  // Simplificação Fase 3: confirmação sobre tela desatualizada (outro aparelho já registrou)
+  // Simplificação Fase 3: confirmação sobre tela desatualizada (já houve outro registro)
   // é recusada — dois tablets nunca somam a mesma chegada.
   if (opts.expectedVersion !== undefined && po.version !== opts.expectedVersion)
     throw Errors.conflict(
-      'Este recebimento já foi atualizado em outro aparelho. Confira o saldo atual.',
+      'Este recebimento já foi atualizado. Confira o saldo atual antes de confirmar.',
       { currentVersion: po.version },
     );
   if (!(PURCHASE_ORDER_RECEIVABLE as readonly string[]).includes(po.status)) {

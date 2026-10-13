@@ -85,7 +85,7 @@ export async function registerReceipt(
     if (!pickup) throw Errors.validation(undefined, 'Retirada não pertence a este pedido.');
     if (ctx.expectedPickupVersion !== undefined && pickup.version !== ctx.expectedPickupVersion)
       throw Errors.conflict(
-        'Este recebimento já foi atualizado em outro aparelho. Confira o saldo atual.',
+        'Este recebimento já foi atualizado. Confira o saldo atual antes de confirmar.',
         {
           currentVersion: pickup.version,
         },

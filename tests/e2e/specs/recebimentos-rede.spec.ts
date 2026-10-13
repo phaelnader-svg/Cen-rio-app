@@ -11,6 +11,8 @@ import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
 const origin = `http://localhost:${E2E.webPort}`;
 const TZ = 'America/Sao_Paulo';
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
+const LOST =
+  'Não foi possível confirmar se sua ação foi concluída. Atualize a tela e confira o status antes de tentar novamente.';
 
 async function call(page: Page, method: 'POST' | 'GET', path: string, data?: unknown) {
   const r = await page.request.fetch(path, {
@@ -102,7 +104,10 @@ test('queda de rede depois do envio: nova tentativa usa a mesma chave e nada dup
       }
     });
     await joao.page.getByTestId('arrival-submit').click();
-    await expect(joao.page.getByText('Sem conexão com o servidor')).toBeVisible();
+    // Mensagem aprovada: não atribui a causa a outro aparelho nem afirma que falhou.
+    await expect(joao.page.getByTestId('arrival-error')).toHaveText(LOST);
+    await expect(joao.page.getByText(/outro aparelho/)).toHaveCount(0);
+    expect(keys).toHaveLength(1); // nenhuma repetição automática
     // Já gravado no servidor, embora o tablet não tenha recebido a resposta.
     const afterFirst = await call(page, 'GET', `/api/v1/receipts?orderId=${orderId}`);
     expect(afterFirst).toHaveLength(1);
@@ -119,6 +124,79 @@ test('queda de rede depois do envio: nova tentativa usa a mesma chave e nada dup
     expect(receipts).toHaveLength(1);
     const sos = await call(page, 'GET', `/api/v1/service-orders?orderId=${orderId}`);
     expect(Array.isArray(sos) ? sos : sos.items).toHaveLength(1);
+  } finally {
+    await joao.context.close();
+  }
+});
+
+test('resposta perdida com o tempo real ativo: aviso some, mensagem aprovada, nada reenviado sozinho', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(180_000);
+  await loginAdmin(page);
+  const people = (await call(page, 'GET', '/api/v1/logistics/people')) as {
+    userId: string;
+    displayName: string;
+  }[];
+  const thiago = people.find((p) => p.displayName.startsWith('Thiago'))!;
+  const svc = await call(page, 'POST', '/api/v1/services', {
+    customer: {
+      mode: 'NOVO',
+      kind: 'PF',
+      name: 'Rita Rede Dois',
+      phone: null,
+      allowSimilar: true,
+      address: {
+        label: 'Residência',
+        street: 'Rua da Rede',
+        number: '7',
+        district: 'Bairro Fictício',
+        postalCode: '01000-000',
+        city: 'Cidade Teste',
+        state: 'SP',
+        isPrimary: true,
+      },
+    },
+    service: {
+      contractedService: 'Reforma completa',
+      items: [
+        { pieceType: 'SOFA', description: 'Sofá', quantity: 1, serviceType: 'REFORMA_COMPLETA' },
+      ],
+    },
+    pickup: {
+      scheduledDate: today(),
+      windowStart: '23:00',
+      team: 'EQUIPE_PROPRIA',
+      logisticsUserId: thiago.userId,
+    },
+  });
+  const pickupCode = svc.pickup.code as string;
+  const orderId = svc.order.id as string;
+  await setPin(page, 'João', '731903');
+  const code = await registerDevice(page, 'Tablet João (Rede 2)', 'João');
+  const joao = await openTablet(browser, code, '731903');
+  try {
+    await joao.page.getByTestId('tile-arrivals').click();
+    await joao.page
+      .getByTestId(`arrival-piece-${pickupCode}`)
+      .getByRole('button', { name: 'Confirmar chegada' })
+      .click();
+    let sent = 0;
+    await joao.page.route('**/api/v1/arrivals/pickups/*/confirm', async (route) => {
+      sent++;
+      const served = await route.fetch(); // o servidor grava…
+      expect(served.status()).toBe(201);
+      await route.abort('connectionreset'); // …mas a resposta se perde
+    });
+    await joao.page.getByTestId('arrival-submit').click();
+    // O tempo real tira o aviso da lista; a tela não diz que foi outro aparelho.
+    await expect(joao.page.getByTestId('arrival-gone-message')).toHaveText(LOST);
+    await expect(joao.page.getByText(/outro aparelho/)).toHaveCount(0);
+    await joao.page.waitForTimeout(1500);
+    expect(sent).toBe(1); // nenhuma repetição automática
+    const receipts = await call(page, 'GET', `/api/v1/receipts?orderId=${orderId}`);
+    expect(receipts).toHaveLength(1);
   } finally {
     await joao.context.close();
   }

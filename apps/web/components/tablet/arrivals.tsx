@@ -44,12 +44,22 @@ export function useArrivalsCount(enabled: boolean) {
   return (q.data.pieces?.length ?? 0) + q.data.materials.length;
 }
 
+/**
+ * Resposta perdida (o envio pode ou não ter chegado ao servidor): nunca se atribui a mudança a
+ * outro aparelho — pode ter sido este mesmo. Mensagem aprovada pelo responsável.
+ */
+export const LOST_RESPONSE_MESSAGE =
+  'Não foi possível confirmar se sua ação foi concluída. Atualize a tela e confira o status antes de tentar novamente.';
+
 export function ArrivalsCenter() {
   const q = useArrivals();
   const [view, setView] = useState<View>({ kind: 'list' });
-  // Recarregar a confirmação aberta com o saldo atual (depois de outro aparelho confirmar).
+  // Recarregar a confirmação aberta com o saldo atual (depois de um novo registro).
   const [nonce, setNonce] = useState(0);
   const reload = () => setNonce((n) => n + 1);
+  // Avisos cuja última confirmação ficou sem resposta (falha de rede durante o envio).
+  const [lost, setLost] = useState<ReadonlySet<string>>(new Set());
+  const markLost = (id: string) => setLost((s) => new Set(s).add(id));
   if (q.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
   const back = () => setView({ kind: 'list' });
@@ -57,11 +67,13 @@ export function ArrivalsCenter() {
   if (view.kind === 'done') return <Done view={view} onBack={back} />;
   if (view.kind === 'piece') {
     const p = q.data.pieces?.find((x) => x.pickupId === view.id);
-    if (!p) return <Gone onBack={back} />;
+    if (!p) return <Gone lostResponse={lost.has(view.id)} onBack={back} />;
     return (
       <PieceConfirm
         key={`${p.pickupId}:${nonce}`}
         p={p}
+        lostResponse={lost.has(p.pickupId)}
+        onLost={() => markLost(p.pickupId)}
         onReload={reload}
         onBack={back}
         onDone={(result) => setView({ kind: 'done', result, title: `Retirada ${p.pickupCode}` })}
@@ -70,11 +82,13 @@ export function ArrivalsCenter() {
   }
   if (view.kind === 'material') {
     const m = q.data.materials.find((x) => x.purchaseOrderId === view.id);
-    if (!m) return <Gone onBack={back} />;
+    if (!m) return <Gone lostResponse={lost.has(view.id)} onBack={back} />;
     return (
       <MaterialConfirm
         key={`${m.purchaseOrderId}:${nonce}`}
         m={m}
+        lostResponse={lost.has(m.purchaseOrderId)}
+        onLost={() => markLost(m.purchaseOrderId)}
         onReload={reload}
         onBack={back}
         onDone={(result) => setView({ kind: 'done', result, title: `Pedido ${m.code}` })}
@@ -229,11 +243,13 @@ function ArrivalCard({
   );
 }
 
-function Gone({ onBack }: { onBack: () => void }) {
+function Gone({ lostResponse, onBack }: { lostResponse: boolean; onBack: () => void }) {
   return (
     <div className="space-y-4" data-testid="arrival-gone">
-      <Alert tone="info" title="Este aviso já foi atualizado">
-        A chegada foi confirmada em outro aparelho ou não está mais pendente.
+      <Alert tone={lostResponse ? 'warn' : 'info'} title="Este aviso já foi atualizado">
+        <span data-testid="arrival-gone-message">
+          {lostResponse ? LOST_RESPONSE_MESSAGE : 'Esta chegada não está mais pendente.'}
+        </span>
       </Alert>
       <Button size="xl" variant="secondary" onClick={onBack}>
         Voltar ao Aguardando chegada
@@ -242,8 +258,11 @@ function Gone({ onBack }: { onBack: () => void }) {
   );
 }
 
-/** Envio com a mesma chave na nova tentativa (rede caiu) — o servidor não duplica. */
-function useConfirm(onDone: (r: ArrivalConfirmationDto) => void) {
+/**
+ * Envio com a mesma chave na nova tentativa (rede caiu) — o servidor não duplica. Nada é
+ * reenviado sozinho: depois de uma resposta perdida a pessoa confere o status e decide.
+ */
+function useConfirm(onDone: (r: ArrivalConfirmationDto) => void, onLost: () => void) {
   const qc = useQueryClient();
   const [key, setKey] = useState(newIdempotencyKey);
   const [busy, setBusy] = useState(false);
@@ -265,7 +284,8 @@ function useConfirm(onDone: (r: ArrivalConfirmationDto) => void) {
       // Erro de rede: mantém a chave (a próxima tentativa é a MESMA confirmação).
       if (!network) setKey(newIdempotencyKey());
       const stale = e instanceof ApiError && e.status === 409;
-      setError({ msg: errorMessage(e), stale });
+      if (network) onLost();
+      setError({ msg: network ? LOST_RESPONSE_MESSAGE : errorMessage(e), stale });
       if (stale) void qc.invalidateQueries({ queryKey: ['arrivals'] });
     } finally {
       setBusy(false);
@@ -326,6 +346,7 @@ function ConfirmShell({
   busy,
   error,
   stale,
+  lostResponse,
   onReload,
 }: {
   eyebrow: string;
@@ -337,8 +358,10 @@ function ConfirmShell({
   canConfirm: boolean;
   busy: boolean;
   error: { msg: string; stale: boolean } | null;
-  /** Outro aparelho confirmou depois que esta tela abriu: confere o saldo antes de enviar. */
+  /** Houve novo registro depois que esta tela abriu: confere o saldo antes de enviar. */
   stale: boolean;
+  /** A última confirmação desta tela ficou sem resposta (pode ter sido gravada). */
+  lostResponse: boolean;
   onReload: () => void;
 }) {
   const online = useOnline();
@@ -353,8 +376,10 @@ function ConfirmShell({
           className="flex flex-wrap items-center gap-3 rounded-2xl border border-warn-600/20 bg-warn-50 p-4"
           data-testid="arrival-stale"
         >
-          <p className="min-w-0 flex-1 text-lg text-warn-600">
-            Já atualizado em outro aparelho. Confira o saldo atual antes de confirmar.
+          <p className="min-w-0 flex-1 text-lg text-warn-600" data-testid="arrival-stale-message">
+            {lostResponse
+              ? LOST_RESPONSE_MESSAGE
+              : 'Este aviso foi atualizado depois que a tela abriu. Confira o saldo atual antes de confirmar.'}
           </p>
           <Button size="lg" onClick={onReload} data-testid="arrival-reload">
             Ver saldo atual
@@ -429,11 +454,15 @@ function ProblemBox({
 
 function PieceConfirm({
   p: live,
+  lostResponse,
+  onLost,
   onBack,
   onDone,
   onReload,
 }: {
   p: PieceArrivalDto;
+  lostResponse: boolean;
+  onLost: () => void;
   onBack: () => void;
   onDone: (r: ArrivalConfirmationDto) => void;
   onReload: () => void;
@@ -445,7 +474,7 @@ function PieceConfirm({
   );
   const [problemOpen, setProblemOpen] = useState(false);
   const [note, setNote] = useState('');
-  const { send, busy, error } = useConfirm(onDone);
+  const { send, busy, error } = useConfirm(onDone, onLost);
   const total = Object.values(qty).reduce((a, b) => a + b, 0);
   const partial = total < p.pendingTotal;
   const problemOk = !problemOpen || note.trim().length >= 3;
@@ -457,6 +486,7 @@ function PieceConfirm({
       busy={busy}
       error={error}
       stale={live.version !== p.version}
+      lostResponse={lostResponse}
       onReload={onReload}
       canConfirm={total > 0 && problemOk}
       confirmLabel={partial ? `Confirmar ${total} peça(s)` : 'Confirmar chegada'}
@@ -504,11 +534,15 @@ function PieceConfirm({
 
 function MaterialConfirm({
   m: live,
+  lostResponse,
+  onLost,
   onBack,
   onDone,
   onReload,
 }: {
   m: MaterialArrivalDueDto;
+  lostResponse: boolean;
+  onLost: () => void;
   onBack: () => void;
   onDone: (r: ArrivalConfirmationDto) => void;
   onReload: () => void;
@@ -525,7 +559,7 @@ function MaterialConfirm({
   const [kind, setKind] = useState<(typeof ARRIVAL_PROBLEMS)[number]>('FALTANDO');
   const [itemId, setItemId] = useState('');
   const [note, setNote] = useState('');
-  const { send, busy, error } = useConfirm(onDone);
+  const { send, busy, error } = useConfirm(onDone, onLost);
   const lines = m.items.filter((i) => (qty[i.purchaseOrderItemId] ?? 0) > 0);
   const problemOk = !problemOpen || note.trim().length >= 3;
   return (
@@ -536,6 +570,7 @@ function MaterialConfirm({
       busy={busy}
       error={error}
       stale={live.version !== m.version}
+      lostResponse={lostResponse}
       onReload={onReload}
       canConfirm={lines.length > 0 && problemOk}
       confirmLabel="Confirmar materiais"

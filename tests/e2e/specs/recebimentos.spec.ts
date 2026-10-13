@@ -194,6 +194,10 @@ test.describe.serial('Simplificação Fase 3 — Aguardando chegada', () => {
 
     // Tela do Márcio desatualizada → aviso em tempo real; confirmar fica bloqueado.
     await expect(marcio.page.getByTestId('arrival-stale')).toBeVisible();
+    // Sem resposta perdida neste tablet: texto neutro, sem atribuir a causa a outro aparelho.
+    await expect(marcio.page.getByTestId('arrival-stale-message')).toHaveText(
+      'Este aviso foi atualizado depois que a tela abriu. Confira o saldo atual antes de confirmar.',
+    );
     await expect(marcio.page.getByTestId('arrival-submit')).toBeDisabled();
     await shot(marcio.page, '05-tablet-marcio-ja-atualizado');
     await marcio.page.getByTestId('arrival-reload').click();
