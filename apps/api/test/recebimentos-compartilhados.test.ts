@@ -11,7 +11,13 @@ import {
   setupTablet,
 } from './helpers';
 import { arrivalTestHooks } from '../src/modules/arrivals/routes';
-import { address, createCustomer, createOrder } from './commercial-helpers';
+import {
+  address,
+  createCustomer,
+  createOrder,
+  createPickup,
+  panelUserWith,
+} from './commercial-helpers';
 import { foam } from './measurement-helpers';
 import {
   approvedNeeds,
@@ -774,5 +780,134 @@ describe('D. Participantes operacionais e permissões', () => {
     await post(joao, `/api/v1/arrivals/pickups/${res.pickup.id}/confirm`, { version: v });
     const list = (await joao.get('/api/v1/receipts')).body;
     expect(list[0].customer.name).toBe('Maria F.');
+  });
+});
+
+describe('E. Estabilização: data/hora, recusas e dados legados', () => {
+  it('data e hora efetivamente gravadas na confirmação (CA3-05)', async () => {
+    const admin = await loginAdmin(app);
+    await logistics(admin);
+    const { res, order } = await service(admin);
+    const { joao } = await tablets(admin);
+    const v = (await pieceCard(joao, res.pickup.id)).version;
+    const t0 = Date.now();
+    const r = await post(joao, `/api/v1/arrivals/pickups/${res.pickup.id}/confirm`, { version: v });
+    const t1 = Date.now();
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    const receipt = await db().receipt.findFirstOrThrow({ where: { orderId: order.id } });
+    for (const at of [receipt.receivedAt, receipt.createdAt]) {
+      expect(at.getTime()).toBeGreaterThanOrEqual(t0 - 1000);
+      expect(at.getTime()).toBeLessThanOrEqual(t1 + 1000);
+    }
+    expect(r.body.confirmedAt).toBe(receipt.createdAt.toISOString());
+    // O mesmo instante aparece na auditoria do recebimento.
+    const log = await db().auditLog.findFirstOrThrow({
+      where: { action: 'receipt.registered', entityId: receipt.id },
+    });
+    expect(Math.abs(log.createdAt.getTime() - receipt.createdAt.getTime())).toBeLessThan(1000);
+    // Recebimento pelo painel com data/hora informadas: grava exatamente o informado.
+    const legacyCustomer = await createCustomer(admin, {
+      name: 'Cliente Hora Informada',
+      phone: null,
+      allowSimilar: true,
+    });
+    const legacy = await createOrder(admin, legacyCustomer, [
+      { pieceType: 'SOFA', description: 'Sofá', quantity: 1 },
+    ]);
+    const at = '2026-10-10T14:35:00-03:00';
+    const p = await post(admin, '/api/v1/receipts', {
+      orderId: legacy.id,
+      pickupId: null,
+      origin: 'ENTREGUE_PELO_CLIENTE',
+      receivedAt: at,
+      lines: [{ orderItemId: legacy.items[0].id, quantity: 1, condition: 'BOA', location: 'Área' }],
+    });
+    expect(p.status, JSON.stringify(p.body)).toBe(201);
+    const saved = await db().receipt.findUniqueOrThrow({ where: { id: p.body.id } });
+    expect(saved.receivedAt.toISOString()).toBe(new Date(at).toISOString());
+  });
+
+  it('recusas sem efeito colateral: retirada inexistente, cancelada e sem permissão', async () => {
+    const admin = await loginAdmin(app);
+    await logistics(admin);
+    const { res, order } = await service(admin);
+    const { joao } = await tablets(admin);
+    const counts = async () => ({
+      receipts: await db().receipt.count(),
+      os: await db().serviceOrder.count(),
+      received: (await db().commercialOrderItem.findMany({ where: { orderId: order.id } })).reduce(
+        (a, i) => a + i.receivedQuantity,
+        0,
+      ),
+      payables: await db().accountPayable.count(),
+    });
+    const before = await counts();
+    const v = (await pieceCard(joao, res.pickup.id)).version;
+    // Retirada inexistente → 404.
+    const missing = await post(joao, `/api/v1/arrivals/pickups/${crypto.randomUUID()}/confirm`, {
+      version: 1,
+    });
+    expect(missing.status).toBe(404);
+    // Painel sem "recebimentos.registrar" → 403.
+    const viewer = await panelUserWith(app, admin, 'so-pedidos', ['pedidos.ver']);
+    expect(
+      (await post(viewer, `/api/v1/arrivals/pickups/${res.pickup.id}/confirm`, { version: v }))
+        .status,
+    ).toBe(403);
+    // Retirada cancelada → recusada (a peça não vai chegar por ela).
+    const pk = await db().pickupRequest.findUniqueOrThrow({ where: { id: res.pickup.id } });
+    const cancel = await admin.post(
+      `/api/v1/pickups/${res.pickup.id}/transition`,
+      { toStatus: 'CANCELADA', note: 'Cliente desistiu', version: pk.version },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(cancel.status, JSON.stringify(cancel.body)).toBe(200);
+    const after = await db().pickupRequest.findUniqueOrThrow({ where: { id: res.pickup.id } });
+    const refused = await post(joao, `/api/v1/arrivals/pickups/${res.pickup.id}/confirm`, {
+      version: after.version,
+    });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(409);
+    expect(refused.body.error.message).toMatch(/não está em situação de recebimento/);
+    expect(await counts()).toEqual(before);
+  });
+
+  it('pedido antigo (sem OS automática) confirmado no tablet: recebe as peças e não cria OS', async () => {
+    const admin = await loginAdmin(app);
+    await logistics(admin);
+    const customer = await createCustomer(admin, {
+      name: 'Cliente Pedido Antigo',
+      phone: null,
+      allowSimilar: true,
+    });
+    const order = await createOrder(admin, customer, [
+      { pieceType: 'SOFA', description: 'Sofá antigo', quantity: 2 },
+    ]);
+    const pickup = await createPickup(admin, order, today());
+    const { joao } = await tablets(admin);
+    const card = await pieceCard(joao, pickup.id);
+    expect(card).toBeTruthy();
+    const r = await post(joao, `/api/v1/arrivals/pickups/${pickup.id}/confirm`, {
+      version: card.version,
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.serviceOrder).toBeNull();
+    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(0);
+    const item = await db().commercialOrderItem.findFirstOrThrow({ where: { orderId: order.id } });
+    expect(item.receivedQuantity).toBe(2);
+    const o = await db().commercialOrder.findUniqueOrThrow({ where: { id: order.id } });
+    expect(o.autoServiceOrder).toBe(false);
+    // A OS segue manual, como antes da Fase 2.
+    const so = await post(admin, '/api/v1/service-orders', {
+      orderId: order.id,
+      items: [
+        {
+          orderItemId: item.id,
+          quantity: 2,
+          description: 'Sofá antigo',
+          serviceType: 'REFORMA_COMPLETA',
+        },
+      ],
+    });
+    expect(so.status, JSON.stringify(so.body)).toBe(201);
   });
 });
