@@ -2,8 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import { releaseDueTasks } from '../src/modules/production/common';
-import type { Client } from './helpers';
-import { WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import { Client, WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
 import { createCustomer, createOrder, panelUserWith, receiptBody } from './commercial-helpers';
 import { mondayOf } from '@cenario/shared';
 import {
@@ -670,10 +669,14 @@ describe('E. Materiais, permissões e compatibilidade', () => {
     ).toBe(403);
     expect(
       (
-        await put(viewer, `/api/v1/production/planned/${r.body.planned[0].planId}`, {
-          version: 1,
-          startDate: today(),
-        })
+        await put(
+          viewer,
+          `/api/v1/production/planned/${(await entryOf(admin, so.id))!.plan!.itemId}`,
+          {
+            version: 1,
+            startDate: today(),
+          },
+        )
       ).status,
     ).toBe(403);
     // Fila operacional sem valores financeiros.
@@ -829,5 +832,91 @@ describe('F. Estabilização (auditoria): liberação por OS e rascunhos antigos
       }),
     ).toBe(released.length);
     expect((await releaseTicks()).length).toBe(ticksBefore + 1);
+  });
+
+  it('todas as rotas do pré-planejamento: tablet, painel só leitura e anônimo recusados sem efeito colateral (CA4-23)', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const so = await sofa(admin, 'Cliente Rotas Protegidas');
+    const other = await sofa(admin, 'Cliente Ainda Não Planejado');
+    const start = plusDays(futureWeek(), 1);
+    const r = await planServices(admin, [
+      {
+        serviceOrderId: so.id,
+        startDate: start,
+        pieces: [{ serviceOrderItemId: so.items[0]!.id, upholstererUserId: p.ricardo }],
+      },
+    ]);
+    expect(r.status).toBe(201);
+    const planned = (await entryOf(admin, so.id))!.plan!;
+    const { planId, itemId, version: itemVersion } = planned;
+    const planVersion = (await planDto(admin, planId)).version;
+    const ricardo = await tabletOf(app, admin, 'Ricardo', '482913');
+    const viewer = await panelUserWith(app, admin, 'somente-leitura', ['producao.ver']);
+    const anon = new Client(app);
+
+    const state = async () => ({
+      plan: await db().productionPlan.findUniqueOrThrow({
+        where: { id: planId },
+        select: { version: true, status: true },
+      }),
+      item: await db().productionPlanItem.findUniqueOrThrow({
+        where: { id: itemId },
+        select: { version: true, startDate: true, priority: true },
+      }),
+      tasks: (await db().productionTask.findMany({ orderBy: { id: 'asc' } })).map((t) => [
+        t.id,
+        t.status,
+        t.version,
+        t.planId,
+      ]),
+      planItems: await db().productionPlanItem.count(),
+      audits: await db().auditLog.count(),
+      events: await db().domainEvent.count(),
+    });
+    const before = await state();
+
+    const writes = (c: Client) => [
+      planServices(c, [
+        {
+          serviceOrderId: other.id,
+          startDate: start,
+          pieces: [{ serviceOrderItemId: other.items[0]!.id, upholstererUserId: p.marcio }],
+        },
+      ]),
+      put(c, `/api/v1/production/planned/${itemId}`, {
+        version: itemVersion,
+        startDate: plusDays(start, 1),
+      }),
+      post(c, `/api/v1/production-plans/${planId}/publish`, { version: planVersion }),
+    ];
+    const reads = (c: Client) => [
+      c.get('/api/v1/production/pipeline'),
+      c.get(`/api/v1/production-plans/${planId}/publication-preview`),
+    ];
+    // Tablet: nenhuma rota do pré-planejamento (sessão de painel exigida).
+    for (const res of await Promise.all([...writes(ricardo), ...reads(ricardo)])) {
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
+    }
+    // Painel só com "ver": lê, mas não planeja, não reprograma e não publica.
+    for (const res of await Promise.all(writes(viewer))) {
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
+    }
+    for (const res of await Promise.all(reads(viewer))) expect(res.status).toBe(200);
+    // Sem sessão: 401 em todas.
+    for (const res of await Promise.all([...writes(anon), ...reads(anon)])) {
+      expect(res.status).toBe(401);
+    }
+    // Nenhum efeito: plano, item, tarefas, auditoria e eventos idênticos.
+    expect(await state()).toEqual(before);
+    // O gestor continua podendo (a recusa não "travou" nada).
+    expect(
+      (
+        await put(admin, `/api/v1/production/planned/${itemId}`, {
+          version: itemVersion,
+          startDate: plusDays(start, 1),
+        })
+      ).status,
+    ).toBe(200);
   });
 });
