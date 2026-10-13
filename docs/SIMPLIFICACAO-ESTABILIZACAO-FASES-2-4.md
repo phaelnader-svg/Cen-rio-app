@@ -189,3 +189,15 @@ Resultados verificados das decisões finais (locais, commit `e6b347e`): API comp
 5 ignorados por desenho; E2E completo **36/36**; lint, typecheck, formatação e build sem erros.
 **CI nº 102 (`c8a69fb`), 103 (`8921cd4`) e 104 (`e6b347e`): verdes.** Homologação e produção:
 não publicado; nenhuma alteração remota.
+
+**CI nº 105 (`86eab88`, só documentação): falhou na 1ª tentativa e passou na reexecução.** Falha
+real, anterior a este trabalho e fora do escopo das decisões: `closing.test.ts` › "8. ajuste de
+custo durante a conferência…" recebeu 422 na conferência. Causa (verificada no código): a
+conferência do fechamento (`finance/closing.ts`, Evolução Fase 7, `d854ba2`) lê o custo de
+logística e a conta a pagar dele com `include` do Prisma — duas consultas em READ COMMITTED, sem
+`relationJoins`. Se um ajuste de custo concorrente é gravado entre as duas, a conferência vê o
+custo antigo e a conta nova e acusa a pendência bloqueante "conta a pagar difere do custo devido".
+Não reproduziu em 25 execuções locais. **Pendente (decisão):** corrigir com leitura consistente na
+conferência (ex.: travar em modo compartilhado os custos/contas lidos antes do cálculo, já que o
+ajuste trava o custo antes de alterar a conta) — mexe no fechamento financeiro, por isso não foi
+alterado aqui.
