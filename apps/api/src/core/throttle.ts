@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@cenario/db';
 import type { FastifyRequest } from 'fastify';
 import { Errors } from '../lib/errors';
+import { knownClientIp } from './client-ip';
 
 /**
  * Proteção persistente contra força bruta. Cada chave (ex.: e-mail, IP,
@@ -28,19 +29,15 @@ export const POLICIES = {
   pairingGlobal: { maxFailures: 50, windowSeconds: 900, baseLockSeconds: 60, maxLockSeconds: 900 },
 } as const satisfies Record<string, ThrottlePolicy>;
 
-const LOOPBACK = /^(127\.|::1$|::ffff:127\.)/;
-
 /**
- * Chave de IP para limitação. Retorna null quando o IP visto é o de um proxy
- * local não declarado como confiável (ex.: servidor Next.js encaminhando /api):
- * nesse caso todos os clientes compartilhariam o mesmo IP e um bloqueio por IP
- * afetaria todos os tablets. Em produção, o proxy reverso deve ser declarado em
- * TRUST_PROXY para que o IP real seja usado.
+ * Chave de IP para limitação. Retorna null quando o IP real é desconhecido (ex.: servidor
+ * Next.js encaminhando /api por loopback, ou proxy não declarado): nesse caso todos os clientes
+ * compartilhariam o mesmo IP e um bloqueio por IP afetaria todos os tablets. Em homologação e
+ * produção, o proxy reverso deve ser declarado em TRUST_PROXY (ver core/client-ip.ts).
  */
 export function clientIpKey(request: FastifyRequest, prefix: string): string | null {
-  const ip = request.ip ?? '';
-  if (!ip || LOOPBACK.test(ip)) return null;
-  return `${prefix}:${ip}`;
+  const ip = knownClientIp(request);
+  return ip ? `${prefix}:${ip}` : null;
 }
 
 export class AuthThrottle {

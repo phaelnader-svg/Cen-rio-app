@@ -8,6 +8,7 @@ import { createPrismaClient, type PrismaClient } from '@cenario/db';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { createHash, randomUUID } from 'node:crypto';
 import type { Env } from './config/env';
+import { buildClientIpConfig } from './core/client-ip';
 import { appendEvent } from './core/events/append';
 import { EventFeed } from './core/events/feed';
 import { EventProcessor } from './core/events/processor';
@@ -89,6 +90,7 @@ const REQUEST_ID = /^[A-Za-z0-9-]{8,64}$/;
 export async function buildApp(options: BuildOptions): Promise<App> {
   const { env } = options;
   const isDev = env.APP_ENV === 'development';
+  const clientIp = buildClientIpConfig(env);
   const app = Fastify({
     logger:
       options.logger === false
@@ -100,7 +102,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
               ? { transport: { target: 'pino-pretty', options: { translateTime: 'SYS:HH:MM:ss' } } }
               : {}),
           },
-    trustProxy: env.TRUST_PROXY,
+    // Só o proxy declarado em TRUST_PROXY, e só como salto imediato (core/client-ip.ts).
+    trustProxy: clientIp.trust,
     bodyLimit: 256 * 1024,
     genReqId: (req) => {
       const incoming = req.headers['x-request-id'];
@@ -125,8 +128,10 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       session: secure ? '__Host-cen_sid' : 'cen_sid',
       device: secure ? '__Host-cen_dev' : 'cen_dev',
     },
+    clientIp,
   };
   app.decorate('ctx', ctx);
+  for (const warning of clientIp.warnings) app.log.warn({ alerta: 'ip-do-cliente' }, warning);
 
   app.addHook('onSend', async (request, reply, payload) => {
     void reply.header('x-request-id', request.id);

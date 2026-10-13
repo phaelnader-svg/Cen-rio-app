@@ -2,6 +2,7 @@ import type { Permission, SessionKind } from '@cenario/shared';
 import type { PrismaClient } from '@cenario/db';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Env } from '../config/env';
+import type { ClientIpConfig } from './client-ip';
 import type { RealtimeHub } from './realtime/hub';
 import type { FileStorage } from './storage/storage';
 import type { EventProcessor } from './events/processor';
@@ -50,6 +51,8 @@ export interface AppContext {
   storage: FileStorage;
   processor: EventProcessor;
   cookies: { session: string; device: string };
+  /** Proxy confiável e avisos de configuração do IP real (core/client-ip.ts). */
+  clientIp: ClientIpConfig;
 }
 
 /** Metadados do autor de uma alteração (auditoria e eventos). */
