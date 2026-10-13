@@ -112,9 +112,75 @@ Resultados verificados (locais, nesta máquina):
 
 ## Situação final das Fases 2–4
 
-Requisitos obrigatórios das três fases atendidos e com evidência local e de CI. Ficam **decisões
-pendentes** (não implementadas por não haver regra aprovada): regra automática para rascunhos
-esquecidos em semana passada (1.4); D9 — data de início definindo também a ordem na fila; texto
-"outro aparelho" após resposta perdida (2.3). Dependem da VM/homologação (não executados): aplicar
-as migrations `20261220`, `20261227` e `20261228` com backup prévio; testes físicos em tablets
-reais e Safari/WebKit. Fase 5 **não** iniciada.
+Requisitos obrigatórios das três fases atendidos e com evidência local e de CI (não validados em
+ambiente real). Das três decisões que estavam pendentes, duas foram aprovadas e implementadas
+(rascunhos de semanas passadas: tratamento manual com aviso; mensagem após resposta perdida) e
+uma continua em aberto (D9 — ver abaixo). Dependem da VM/homologação (não executados): aplicar as
+migrations `20261220`, `20261227` e `20261228` com backup prévio; testes físicos em tablets reais e
+Safari/WebKit. Fase 5 **não** iniciada.
+
+## Decisões funcionais finais (pós-estabilização)
+
+Três decisões aprovadas pelo responsável após o Lote 3. Resultados abaixo só do que foi
+verificado; homologação e produção continuam **não** validadas (dependem da verificação e da
+homologação controlada).
+
+### 1. Rascunhos de semanas passadas — tratamento manual (implementado, `8921cd4`)
+
+- Nada é transferido, reagendado ou alterado automaticamente (comportamento testado no Lote 1,
+  item 1.4, mantido).
+- Aviso ao gestor pela **Central de atenção** (mecanismo existente, derivado a cada consulta;
+  nada é gravado): tipo `RASCUNHO_ANTIGO`, um item por semana anterior à atual com tarefas ainda
+  em rascunho (plano em rascunho ou serviço acrescentado a semana publicada e não republicado),
+  chave estável `RASCUNHO_ANTIGO:<plano>`, categoria "Ação necessária", contagem de serviços e
+  link para Produção → A planejar.
+- Sem duplicidade por ciclo: o aviso não é armazenado, então consultas e ciclos de liberação
+  repetidos devolvem o mesmo item; testado que tarefas, itens, auditoria e eventos ficam
+  idênticos. O aviso não bloqueia nada (reprogramação continua livre e faz o aviso sumir).
+- Testes (`pre-planejamento`, describe G): sem rascunho antigo; rascunho da semana atual (sem
+  aviso); rascunho antigo (um aviso); repetição; não bloqueio; tablet sem acesso (403).
+  Controle negativo: sem o aviso, 2 dos 3 testes falham.
+
+### 3. Mensagem do tablet após resposta perdida (implementado, `c8a69fb`)
+
+- Resposta perdida na confirmação de chegada (falha de rede no envio): "Não foi possível
+  confirmar se sua ação foi concluída. Atualize a tela e confira o status antes de tentar
+  novamente." Mesma mensagem quando, depois disso, o aviso some da lista ou muda de versão.
+- Sem resposta perdida neste tablet, os textos deixaram de atribuir a causa a outro aparelho
+  (não comprovável): "Esta chegada não está mais pendente." e "Este aviso foi atualizado depois
+  que a tela abriu. Confira o saldo atual antes de confirmar."
+- API (409 de versão, tablet de chegada, recebimento no painel e materiais): "Este recebimento
+  já foi atualizado. Confira o saldo atual antes de confirmar."
+- Idempotência preservada: a nova tentativa manual reaproveita a mesma chave; nada é reenviado
+  sozinho (E2E confere uma única chamada e um único recebimento).
+- Testes: API com a mensagem exata; E2E `recebimentos-rede` (resposta perdida sem e com tempo
+  real) e `recebimentos` (tela desatualizada, texto neutro).
+
+### 2. D9 — data de início e ordem da fila — **NÃO implementado (ambiguidade)**
+
+Decisão D9 original (Fase 1, §6 e tabela de decisões): a data de início "define semana e ordem,
+**não horário**" e mantém a fila semanal. Implementação atual (verificada no código):
+
+- Ordem da fila (`compareQueue`, `shared/production-domain.ts`, usada pela API e pelo painel):
+  **semana → prioridade (Urgente/Alta/Normal/Baixa) → posição definida pelo gestor
+  (`queuePosition`) → sequência da etapa → número da tarefa**. A data de início não entra.
+- A data de início (`production_plan_items.start_date`, só **data**, sem horário) é apenas a
+  trava de liberação (nenhuma tarefa é liberada antes dela).
+- A posição do gestor é gravada só pela reordenação manual, que posiciona **todas** as tarefas
+  da pessoa naquela semana e é validada por faixa de prioridade e dependências; reprogramar ou
+  transferir a OS volta a posição para vazia.
+
+Por que parou: a prioridade pode ser preservada (data depois da prioridade), mas a regra
+aprovada não diz como a data convive com a **posição definida pelo gestor**, que é uma regra
+operacional existente. As alternativas mudam comportamento de forma diferente:
+
+| Opção | Ordem                                            | Efeito                                                                                                                                                                            |
+| ----- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A     | semana → prioridade → **data** → posição → …     | a data manda; o gestor só reordena dentro da mesma data e a reordenação passa a recusar ordem contra a data (muda a regra de reordenação)                                         |
+| B     | semana → prioridade → posição → **data** → …     | a posição manda; depois de qualquer reordenação a data deixa de influenciar aquela pessoa/semana, e um serviço reprogramado (posição vazia) vai para o fim mesmo se começar antes |
+| C     | ordem atual; a data define a **posição inicial** | ao planejar/reprogramar, a tarefa entra na posição correspondente à data (dentro da faixa de prioridade); o gestor continua podendo reordenar depois                              |
+
+Além disso, "data **e horário**": não existe horário de início no modo fila semanal (a decisão
+original exclui horário); incluir horário exige campo novo, migration e tela. **Decisão
+pendente:** escolher A, B ou C e confirmar se o horário deve ser criado. Recomendação técnica:
+**C, só com a data** (não muda a reordenação nem a trava de liberação). Nada foi alterado na fila.
