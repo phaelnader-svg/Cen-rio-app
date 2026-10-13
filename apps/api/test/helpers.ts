@@ -18,9 +18,19 @@ export async function resetDatabase() {
   const prisma = db();
   const tables = await prisma.$queryRaw<{ tablename: string }[]>`
     SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
-  await prisma.$executeRawUnsafe(
-    `TRUNCATE ${tables.map((t) => `"${t.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`,
-  );
+  // Suítes com `startBackground()` mantêm tarefas periódicas gravando entre os testes; o TRUNCATE
+  // de várias tabelas pode entrar em deadlock com uma delas (40P01 — o PostgreSQL aborta um dos
+  // lados). Repetir o TRUNCATE é a resolução padrão; qualquer outro erro sobe na hora.
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await prisma.$executeRawUnsafe(
+        `TRUNCATE ${tables.map((t) => `"${t.tablename}"`).join(', ')} RESTART IDENTITY CASCADE`,
+      );
+      break;
+    } catch (e) {
+      if (attempt >= 3 || !/40P01|deadlock detected/.test(String(e))) throw e;
+    }
+  }
   await runSeed({ withTeam: true, log: () => undefined });
 }
 
