@@ -11,7 +11,21 @@
   (verificação "fictícia" de hash).
 - **Força bruta:** bloqueio progressivo persistido no banco — 5 falhas por conta/PIN em 15 min
   bloqueiam (1–2 min, dobrando até 1 h); limite por IP quando o IP real é conhecido;
-  vinculação de dispositivos limitada; limite geral de 600 req/min por IP.
+  vinculação de dispositivos limitada.
+- **Limite de requisições** (`core/rate-limit.ts`), em duas camadas:
+  - antes da autenticação, teto por IP real de 3000 req/min (a oficina inteira atrás de um NAT);
+    com IP desconhecido, contador global de 10000 req/min;
+  - depois da autenticação, 600 req/min por sessão ou dispositivo **validados** no banco; sem
+    credencial válida, 120 req/min por IP (ou 1200 req/min no contador anônimo global, com IP
+    desconhecido). Cookies inventados nunca viram chave de contador.
+  - WebSocket `/api/realtime`: isento do limite por sessão (reconexões após queda de Wi-Fi;
+    uma conexão aberta não gera novas requisições), mas conta no teto por IP — tentativas de
+    upgrade sem sessão válida não ficam ilimitadas.
+- **IP real** (`core/client-ip.ts`): só o proxy declarado em `TRUST_PROXY` é confiável, e só como
+  salto imediato; `X-Forwarded-For` enviado pelo cliente nunca vira o IP real. `TRUST_PROXY=true`
+  é ignorado em homologação/produção. Sem proxy confiável, a API avisa na partida (sem impedir o
+  início) e usa os contadores globais. O Caddy de homologação repassa só o IP da conexão e remove
+  `X-Real-IP`/`Forwarded` (`test/proxy-caddy.test.ts`, com o Caddy real).
 
 ## Sessões e dispositivos
 
@@ -276,11 +290,11 @@ Verificações automatizadas que passam a rodar em todo `pnpm test` (e no CI):
 
 ## Riscos conhecidos e decisões aceitas
 
-| Item                                 | Situação                                                                                                                                                                                                                                                  |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| IP real atrás de proxy               | O Next.js (dev) não informa o IP do cliente. Sem `TRUST_PROXY`, o limite por IP é ignorado para não bloquear todos os tablets juntos (limites por conta/PIN continuam). Em produção use proxy reverso com `TRUST_PROXY` (veja `infra/Caddyfile.example`). |
-| Limite geral de requisições          | Em memória, por instância. Com várias instâncias, usar armazenamento compartilhado (ex.: Redis) — não necessário agora.                                                                                                                                   |
-| Resposta idempotente guardada        | A resposta do cadastro de dispositivo (que contém o código de vinculação) fica até 24 h na tabela de idempotência. O código expira em 15 min e é de uso único; quem lê o banco já tem acesso total.                                                       |
-| CSP com `'unsafe-inline'` em scripts | Exigido pelo Next.js sem _nonce_. Nenhuma origem externa é permitida. Evolução: CSP com nonce.                                                                                                                                                            |
-| PIN de 6 dígitos                     | Adequado somado ao vínculo do dispositivo e ao bloqueio progressivo; não substitui senha no painel.                                                                                                                                                       |
-| Dependência `braces` (alerta alto)   | Só no lint (`@next/eslint-plugin-next`), sem versão corrigida publicada; não é executada pela API nem pelo navegador. Reavaliar a cada atualização do Next.js.                                                                                            |
+| Item                                 | Situação                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| IP real atrás de proxy               | O Next.js (dev) não informa o IP do cliente. Sem `TRUST_PROXY`, o IP é desconhecido: limites por IP de login/PIN são ignorados (por conta/PIN continuam) e o limite geral usa contadores globais, mais tolerantes, que um abusador poderia esgotar para todos. Em homologação/produção, `TRUST_PROXY` = endereço exato do proxy (aviso na partida se faltar). |
+| Limite geral de requisições          | Em memória, por instância. Com várias instâncias, usar armazenamento compartilhado (ex.: Redis) — não necessário agora. Conexões WebSocket simultâneas por sessão não têm teto próprio (exige sessão válida; a sessão pode ser revogada pelo gestor).                                                                                                         |
+| Resposta idempotente guardada        | A resposta do cadastro de dispositivo (que contém o código de vinculação) fica até 24 h na tabela de idempotência. O código expira em 15 min e é de uso único; quem lê o banco já tem acesso total.                                                                                                                                                           |
+| CSP com `'unsafe-inline'` em scripts | Exigido pelo Next.js sem _nonce_. Nenhuma origem externa é permitida. Evolução: CSP com nonce.                                                                                                                                                                                                                                                                |
+| PIN de 6 dígitos                     | Adequado somado ao vínculo do dispositivo e ao bloqueio progressivo; não substitui senha no painel.                                                                                                                                                                                                                                                           |
+| Dependência `braces` (alerta alto)   | Só no lint (`@next/eslint-plugin-next`), sem versão corrigida publicada; não é executada pela API nem pelo navegador. Reavaliar a cada atualização do Next.js.                                                                                                                                                                                                |

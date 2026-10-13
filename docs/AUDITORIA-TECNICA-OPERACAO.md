@@ -126,56 +126,67 @@ migrar → ativar` (`recuperar --sim` em falha).
 
 ## 9. Pendências, riscos e decisões
 
-### C3 — desenho proposto (não implementado; aguarda aprovação)
+### C3 — implementado (autorizado em 13/10/2026)
 
-**Situação atual [FATO]:**
+Commits `b64f214` (IP real), `0fb08b6` (limites), `a8044e9` (Caddy/Compose/CI) e o desta
+documentação. Nada foi aplicado na VM.
 
-- `keyGenerator` usa `sha256(cookie)` sem validar o cookie → cookie aleatório por requisição
-  anula o limite global de 600/min.
-- Na homologação o Caddy envia `/api/*` direto à API (`Caddyfile.homolog`);
-  `TRUST_PROXY=172.28.0.0/24` confia em **toda** a rede interna do Compose, inclusive no
-  contêiner `web`.
-- Em desenvolvimento e no E2E, `/api` passa pelo rewrite do Next (IP visto = loopback).
-  `core/throttle.ts` já trata esse caso: com IP de loopback não confiável, não usa chave por IP.
+**[FATO] Comportamento verificado por teste:**
 
-**[INFERÊNCIA]** O Caddy 2 sem `trusted_proxies` descarta o `X-Forwarded-For` recebido do cliente
-e grava o IP da conexão; o `request.ip` da API seria, então, o IP real. Isso precisa ser provado
-por teste (abaixo).
+- **IP real** (`core/client-ip.ts`): só o proxy de `TRUST_PROXY` é confiável, e só como salto
+  imediato. Valores de `X-Forwarded-For` anteriores ao do proxy são ignorados. Uma conexão
+  direta de quem não é o proxy tem o cabeçalho ignorado. `TRUST_PROXY=true` é ignorado em
+  homologação/produção.
+- **IP desconhecido**: loopback (proxy do Next em desenvolvimento) ou proxy sem
+  `X-Forwarded-For`. Nunca vira o IP do proxy.
+- **Aviso na partida** (`alerta: "ip-do-cliente"`), sem impedir o início: em
+  homologação/produção quando o proxy está ausente, configurado com `true` ou com uma faixa
+  inteira.
+- **Limites** (`core/rate-limit.ts`, por minuto):
 
-**Desenho:**
+  | Camada                 | Contador                            | Limite |
+  | ---------------------- | ----------------------------------- | ------ |
+  | Antes da autenticação  | por IP real                         | 3000   |
+  | Antes da autenticação  | global, IP desconhecido             | 10000  |
+  | Depois da autenticação | sessão ou dispositivo **validados** | 600    |
+  | Depois da autenticação | anônimo por IP                      | 120    |
+  | Depois da autenticação | anônimo global                      | 1200   |
 
-1. **Identificação do IP.**
-   - Fixar o IP do Caddy na rede interna (`ipv4_address`) e reduzir `TRUST_PROXY` a esse único
-     endereço, em vez da sub-rede inteira.
-   - No Caddyfile, explicitar `header_up X-Forwarded-For {remote_host}`, para não depender de
-     padrão de versão.
-   - A API usa `request.ip` (proxy-addr do Fastify percorre o XFF só até o primeiro salto não
-     confiável).
-2. **Dois limites.**
-   - **Teto por IP**, sempre aplicado. Chave `ip:<request.ip>`, por exemplo 3000/min: a oficina
-     inteira (cerca de 8 tablets e celulares) sai pelo mesmo IP de NAT.
-   - **Limite por sessão** (600/min) só para sessão **validada**. Para isso, o rate limit passa a
-     rodar no gancho `preHandler`, depois do plugin de autenticação, e usa `request.auth.sessionId`.
-   - Cookie ausente, inválido ou expirado: só o balde por IP, com limite anônimo menor (por exemplo
-     120/min).
-   - Cookie aleatório deixa de criar balde novo.
-   - O WebSocket `/api/realtime` continua isento (tem controle próprio).
-3. **IP não confiável** (loopback ou proxy não declarado, caso do rewrite do Next):
-   - requisições anônimas caem num balde global `ip:desconhecido` com teto alto, só para conter
-     abuso;
-   - sessões válidas mantêm o limite por sessão.
-   - Em `APP_ENV=staging|production` com `TRUST_PROXY=false`, a API registra um aviso na partida.
-     Recusar a partida é a opção mais rígida, a decidir.
-4. **Testes de regressão** (com `inject({ remoteAddress })` e app com limites baixos):
-   - N+1 requisições com cookies aleatórios distintos → 429;
-   - duas sessões válidas no mesmo IP → baldes separados até o teto por IP;
-   - `X-Forwarded-For` forjado vindo de endereço não confiável → ignorado;
-   - vindo do proxy confiável → IP do cliente usado;
-   - loopback sem `TRUST_PROXY` → balde `desconhecido` sem bloquear sessões válidas;
-   - `/api/realtime` isento;
-   - `throttle.ts` (login/PIN/pareamento) continua com o mesmo IP;
-   - verificação do Caddyfile com `caddy validate` e, opcionalmente, teste com a pilha em
-     contêineres enviando XFF forjado.
+  Cookies inventados não criam contadores.
+
+- **WebSocket**: isento da camada por sessão (reconexões), mas conta no teto por IP. Upgrades
+  sem sessão válida, que consultam o banco antes do 401, não ficam ilimitados.
+- **Caddy de homologação**: `X-Forwarded-For` explícito = IP da conexão; `X-Real-IP` e
+  `Forwarded` do cliente removidos (antes chegavam intactos). A prova roda com o Caddy 2.10.2
+  real e o Caddyfile versionado (`test/proxy-caddy.test.ts`, obrigatório no CI).
+  - Controle negativo: com o Caddyfile enfraquecido, o teste falha.
+  - Defesa em profundidade: mesmo com o Caddy enfraquecido, a API continuou usando só o IP da
+    conexão.
+- **Compose**: Caddy com IP fixo `172.28.0.250`; `TRUST_PROXY` só nesse endereço, em vez de
+  `172.28.0.0/24`.
+- **Teste anterior reescrito**: o antigo `test/rate-limit.test.ts` afirmava o próprio defeito
+  (cookie inventado ganhava contador novo). A intenção dele agora é verificada com sessões reais.
+
+**Dependem da VM (não verificados; publicação não autorizada):**
+
+1. Na próxima atualização autorizada, recriar o contêiner do Caddy com o IP fixo e conferir:
+   - `docker inspect` do Caddy mostra `172.28.0.250`;
+   - a API registra **nenhum** aviso `ip-do-cliente` na partida.
+2. Conferir na prática que o IP gravado (auditoria, `lastIp` dos dispositivos) é o IP público
+   da oficina, e não `172.28.0.250`.
+3. Conflito de endereço: se outro contêiner já ocupar `172.28.0.250` (alocação automática do
+   Docker), o Caddy **não sobe**. A falha é visível e não abre brecha. Correção: recriar a rede
+   com `docker compose down` + `up`; os volumes são preservados.
+4. Se houver CDN ou balanceador na frente da VM no futuro, `TRUST_PROXY` e o Caddy precisam ser
+   revistos. Hoje não há: a VM recebe as conexões diretamente.
+
+**Riscos restantes:**
+
+- Com IP desconhecido, os contadores globais podem ser esgotados por um abusador, afetando todos.
+  Nesse caso a API emite o aviso na partida.
+- Os contadores ficam em memória, por instância.
+- Não há teto de conexões WebSocket simultâneas por sessão. Uma sessão válida já é exigida, e o
+  gestor pode revogá-la.
 
 ### Outras pendências
 
@@ -195,6 +206,7 @@ por teste (abaixo).
 
 ## 10. Próxima ação recomendada
 
-1. Aprovar ou ajustar o desenho de C3 para implementação.
-2. Verificar a homologação na própria VM (P2) antes de qualquer nova publicação.
+1. Verificar a homologação na própria VM (P2) e, na próxima atualização autorizada, os itens
+   de C3 que dependem da VM (acima).
+2. Antes disso, nenhuma publicação.
 3. Tratar P8 em lote pequeno, com testes.

@@ -31,7 +31,9 @@ Os passos abaixo valem para uma instalação sem contêineres:
 4. Web: `API_INTERNAL_URL=<url interna da API> pnpm --filter @cenario/web build` e
    `pnpm --filter @cenario/web start`. **O `API_INTERNAL_URL` é gravado no build.**
 5. Proxy reverso com HTTPS encaminhando `/api/*` (incluindo WebSocket) direto à API e o resto
-   ao Next.js — exemplo em `infra/Caddyfile.example`. Defina `TRUST_PROXY` na API.
+   ao Next.js — exemplo em `infra/Caddyfile.example`. Defina `TRUST_PROXY` na API com o
+   endereço **exato** de onde o proxy conecta (nunca `true` nem uma faixa inteira); sem isso, a
+   API avisa na partida (`alerta: "ip-do-cliente"`) e usa limites globais.
 6. Verificação: `GET /api/health` (processo) e `GET /api/ready` (banco).
 
 A API encerra com segurança em `SIGTERM` (fecha conexões e tarefas em até 10 s). Várias

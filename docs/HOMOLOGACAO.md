@@ -167,6 +167,11 @@ Registre cada divergência com data, tela, pessoa e captura de tela.
 - **Acesso**: só HTTPS; banco sem porta pública; páginas com `X-Robots-Tag: noindex`; limitar o
   acesso por firewall ao IP da oficina é recomendado; contas de testadores com funções mínimas;
   revogar dispositivos e contas ao fim da homologação.
+- **IP real dos clientes**: o Caddy tem IP fixo (`172.28.0.250`) e é o único endereço em
+  `TRUST_PROXY`. Ele repassa só o IP da conexão e descarta `X-Forwarded-For`, `X-Real-IP` e
+  `Forwarded` enviados pelo cliente. Se a API registrar o aviso `ip-do-cliente` na partida, o IP
+  real está desconhecido e os limites de requisições ficam globais: confira o IP do contêiner
+  do Caddy e o `TRUST_PROXY` (detalhes em `SEGURANCA.md` e `AUDITORIA-TECNICA-OPERACAO.md` §9).
 
 ## 9. Encerramento da homologação
 
