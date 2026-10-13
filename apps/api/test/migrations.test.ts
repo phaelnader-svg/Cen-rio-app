@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, resetDatabase } from './helpers';
@@ -190,5 +191,72 @@ describe('Banco de dados e migrations', () => {
     expect(await db().qualityTemplate.count()).toBe(4);
     expect(await db().itemLocation.count()).toBe(8);
     expect(team.every((u) => u.pinHash === null && u.passwordHash === null)).toBe(true);
+  });
+
+  it('estabilização da Fase 3: instalação existente passa a ter recebimentos.registrar nas funções da oficina (migration e reversão)', async () => {
+    const DB = resolve(__dirname, '../../../packages/db');
+    const NAME = '20261220000000_recebimentos_permissao_funcoes';
+    const up = readFileSync(resolve(DB, `prisma/migrations/${NAME}/migration.sql`), 'utf8');
+    const down = readFileSync(resolve(DB, `rollback/${NAME}.down.sql`), 'utf8');
+    const KEYS = ['tapeceiro', 'cabeceiras_qualidade', 'ajudante'];
+    const granted = async () =>
+      (
+        await db().rolePermission.findMany({
+          where: { permission: 'recebimentos.registrar' },
+          include: { role: { select: { key: true } } },
+        })
+      )
+        .map((p) => p.role.key)
+        .sort();
+    // Instalação existente: funções já tinham permissões (o seed não as completa) e não tinham esta.
+    const roles = await db().role.findMany({ where: { key: { in: KEYS } } });
+    expect(roles).toHaveLength(3);
+    await db().rolePermission.deleteMany({
+      where: { permission: 'recebimentos.registrar', roleId: { in: roles.map((r) => r.id) } },
+    });
+    const custom = await db().role.create({
+      data: {
+        key: 'funcao_personalizada',
+        name: 'Personalizada',
+        description: 'teste',
+        system: false,
+      },
+    });
+    expect(await granted()).toEqual(['gestor']);
+    const others = await db().rolePermission.count({
+      where: { permission: { not: 'recebimentos.registrar' } },
+    });
+    // Migration: concede às três funções; repetir não duplica; nada mais muda.
+    await db().$executeRawUnsafe(up);
+    await db().$executeRawUnsafe(up);
+    expect(await granted()).toEqual(['ajudante', 'cabeceiras_qualidade', 'gestor', 'tapeceiro']);
+    expect(await db().rolePermission.count({ where: { roleId: custom.id } })).toBe(0);
+    expect(
+      await db().rolePermission.count({ where: { permission: { not: 'recebimentos.registrar' } } }),
+    ).toBe(others);
+    // Reversão (executada numa transação desfeita no fim, para não alterar o banco de teste).
+    const statements = down
+      .split(';')
+      .map((st) => st.replace(/--.*$/gm, '').trim())
+      .filter((st) => st && !/^(BEGIN|COMMIT)$/i.test(st));
+    expect(statements).toHaveLength(2);
+    await expect(
+      db().$transaction(async (tx) => {
+        for (const st of statements) await tx.$executeRawUnsafe(st);
+        const left = await tx.rolePermission.findMany({
+          where: { permission: 'recebimentos.registrar' },
+          include: { role: { select: { key: true } } },
+        });
+        expect(left.map((p) => p.role.key)).toEqual(['gestor']);
+        expect(
+          await tx.$queryRawUnsafe<{ n: bigint }[]>(
+            `SELECT count(*) AS n FROM "_prisma_migrations" WHERE "migration_name" = '${NAME}'`,
+          ),
+        ).toEqual([{ n: 0n }]);
+        throw new Error('desfazer');
+      }),
+    ).rejects.toThrow('desfazer');
+    expect(await granted()).toEqual(['ajudante', 'cabeceiras_qualidade', 'gestor', 'tapeceiro']);
+    await db().role.delete({ where: { id: custom.id } });
   });
 });
