@@ -8,7 +8,8 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # A suíte completa (API + backup + E2E) já leva ~25–30 min; 45 dá folga sem esconder travamentos.
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16-alpine
