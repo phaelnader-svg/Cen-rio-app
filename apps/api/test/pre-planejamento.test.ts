@@ -721,3 +721,108 @@ describe('E. Materiais, permissões e compatibilidade', () => {
     expect(log.actorUserId).toBeTruthy();
   });
 });
+
+describe('F. Estabilização (auditoria): liberação por OS e rascunhos antigos', () => {
+  /** Semana futura fixa (segunda-feira daqui a ~2 semanas): independe do dia da execução. */
+  const futureWeek = () => mondayOf(day(14));
+  const plusDays = (iso: string, n: number) =>
+    new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  const releaseTicks = () =>
+    db().auditLog.findMany({
+      where: { action: 'production.release_tick' },
+      orderBy: { createdAt: 'asc' },
+    });
+
+  it('duas OS na mesma semana, dias diferentes: a OS futura não é reprocessada antes do dia (CA4-10)', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const monday = futureWeek();
+    const tuesday = plusDays(monday, 1);
+    const thursday = plusDays(monday, 3);
+    const early = await sofa(admin, 'Cliente Terça');
+    const late = await sofa(admin, 'Cliente Quinta');
+    const r = await planServices(admin, [
+      {
+        serviceOrderId: early.id,
+        startDate: tuesday,
+        pieces: [{ serviceOrderItemId: early.items[0]!.id, upholstererUserId: p.ricardo }],
+      },
+      {
+        serviceOrderId: late.id,
+        startDate: thursday,
+        pieces: [{ serviceOrderItemId: late.items[0]!.id, upholstererUserId: p.marcio }],
+      },
+    ]);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect((await publishWeek(admin, r.body.planned[0].planId)).status).toBe(200);
+    const snapshot = async (soId: string) =>
+      (await tasksOf(soId)).map((t) => ({ id: t.id, status: t.status, version: t.version }));
+    const lateBefore = await snapshot(late.id);
+    expect(lateBefore.some((t) => t.status === 'PROGRAMADA')).toBe(true);
+    const ticksBefore = (await releaseTicks()).length;
+
+    // Terça, meio-dia: só a OS de terça é liberada; a de quinta não é tocada.
+    setClock(() => new Date(`${tuesday}T15:00:00Z`));
+    await releaseDueTasks(app.ctx.prisma);
+    const earlyTasks = await tasksOf(early.id);
+    expect(earlyTasks.some((t) => t.status === 'LIBERADA')).toBe(true);
+    expect(earlyTasks.some((t) => t.status === 'PROGRAMADA')).toBe(false);
+    expect(await snapshot(late.id)).toEqual(lateBefore);
+    const ticks = await releaseTicks();
+    expect(ticks.length).toBe(ticksBefore + 1);
+    // Só a(s) tarefa(s) da OS de terça entram na contagem do registro.
+    const releasedEarly = earlyTasks.filter((t) => t.status === 'LIBERADA').length;
+    expect(ticks.at(-1)!.summary).toContain(`${releasedEarly} tarefa(s)`);
+
+    // Novos ciclos no mesmo dia: nada muda → nenhum registro de auditoria novo.
+    for (let i = 0; i < 3; i++) await releaseDueTasks(app.ctx.prisma);
+    expect((await releaseTicks()).length).toBe(ticksBefore + 1);
+    expect(await snapshot(late.id)).toEqual(lateBefore);
+
+    // Quarta: a de quinta continua Programada (nunca antes da data).
+    setClock(() => new Date(`${plusDays(monday, 2)}T23:00:00Z`));
+    await releaseDueTasks(app.ctx.prisma);
+    expect(await snapshot(late.id)).toEqual(lateBefore);
+
+    // Quinta: chega a vez dela.
+    setClock(() => new Date(`${thursday}T12:00:00Z`));
+    await releaseDueTasks(app.ctx.prisma);
+    const lateTasks = await tasksOf(late.id);
+    expect(lateTasks.some((t) => t.status === 'LIBERADA')).toBe(true);
+    expect(lateTasks.some((t) => t.status === 'PROGRAMADA')).toBe(false);
+    expect((await releaseTicks()).length).toBe(ticksBefore + 2);
+    // Ordem e integridade: nenhuma tarefa nova, nenhuma sequência alterada.
+    expect(lateTasks.map((t) => t.id).sort()).toEqual(lateBefore.map((t) => t.id).sort());
+  });
+
+  it('liberação concorrente (duas instâncias) é idempotente', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const day1 = plusDays(futureWeek(), 2);
+    const so = await sofa(admin, 'Cliente Concorrência Liberação');
+    const r = await planServices(admin, [
+      {
+        serviceOrderId: so.id,
+        startDate: day1,
+        pieces: [{ serviceOrderItemId: so.items[0]!.id, upholstererUserId: p.ricardo }],
+      },
+    ]);
+    expect((await publishWeek(admin, r.body.planned[0].planId)).status).toBe(200);
+    const ticksBefore = (await releaseTicks()).length;
+    setClock(() => new Date(`${day1}T12:00:00Z`));
+    const counts = await Promise.all([
+      releaseDueTasks(app.ctx.prisma),
+      releaseDueTasks(app.ctx.prisma),
+    ]);
+    const released = (await tasksOf(so.id)).filter((t) => t.status === 'LIBERADA');
+    expect(released.length).toBeGreaterThan(0);
+    // Uma única transição por tarefa (evento LIBERADA) e um único registro com mudança.
+    expect(counts.reduce((a, b) => a + b, 0)).toBe(released.length);
+    expect(
+      await db().productionTaskEvent.count({
+        where: { taskId: { in: released.map((t) => t.id) }, kind: 'LIBERADA' },
+      }),
+    ).toBe(released.length);
+    expect((await releaseTicks()).length).toBe(ticksBefore + 1);
+  });
+});

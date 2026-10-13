@@ -407,8 +407,9 @@ export async function reevaluateTasks(
   actor: ActorContext,
   taskIds: string[],
   now = clockNow(),
-) {
-  if (!taskIds.length) return;
+): Promise<number> {
+  if (!taskIds.length) return 0;
+  let changed = 0;
   await lockTasks(tx, taskIds);
   const readiness = new Map<string, Readiness>();
   const blocked: BlockedTask[] = [];
@@ -472,6 +473,7 @@ export async function reevaluateTasks(
       data: { status: result.status, blockers: result.blockers, version: { increment: 1 } },
     });
     if (result.status === t.status) continue;
+    changed++;
     await taskEvent(tx, actor, null, t, {
       kind:
         result.status === 'LIBERADA'
@@ -501,6 +503,7 @@ export async function reevaluateTasks(
     );
   }
   for (const b of blocked) await emitTaskBlocked(tx, actor, b);
+  return changed;
 }
 
 /** Tarefas que aguardam início de uma OS (para reavaliar após mudanças na OS/materiais). */
@@ -527,41 +530,59 @@ onReadinessChanged(async (tx, actor, serviceOrderId) => {
 /**
  * Libera as tarefas cujo horário programado chegou (executado periodicamente e
  * idempotente: tarefas já liberadas não geram novos eventos).
+ *
+ * Seleção (estabilização da Fase 4): no planejamento por horário, a tarefa cujo horário passou;
+ * na fila semanal, só a tarefa cuja PRÓPRIA OS (item do plano) já chegou à data de início — uma
+ * OS de quinta-feira não é reavaliada na terça só por estar na mesma semana. A auditoria só é
+ * gravada quando alguma tarefa muda de situação (ciclos sem mudança não deixam rastro).
+ * Devolve quantas tarefas mudaram.
  */
 export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
   const { timezone } = await company(prisma);
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now);
-  const due = await prisma.productionTask.findMany({
-    where: {
-      status: 'PROGRAMADA',
-      OR: [
-        { scheduledAt: { lte: now } },
-        // Fase 4: fila semanal aguardando a data pretendida de início da OS.
-        {
-          plan: {
-            mode: 'FILA_SEMANAL',
-            items: { some: { startDate: { lte: parseDateOnly(today)! } } },
-          },
-        },
-      ],
-    },
+  const today = parseDateOnly(
+    new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(now),
+  )!;
+  const byTime = await prisma.productionTask.findMany({
+    where: { status: 'PROGRAMADA', scheduledAt: { lte: now } },
     select: { id: true },
+    orderBy: { id: 'asc' },
     take: 500,
   });
-  if (!due.length) return 0;
-  const system: ActorContext = { userId: null, sessionId: null, ip: null, requestId: null };
-  await prisma.$transaction(async (tx) => {
-    await reevaluateTasks(
-      tx,
-      system,
-      due.map((d) => d.id),
-      now,
-    );
-    await audit(tx, system, {
-      action: 'production.release_tick',
-      entityType: 'production_task',
-      summary: `${due.length} tarefa(s) reavaliada(s) pelo horário programado.`,
-    });
+  // Fila semanal: pares (plano, OS) cuja data de início chegou e que ainda têm tarefa Programada.
+  const dueItems = await prisma.productionPlanItem.findMany({
+    where: {
+      startDate: { lte: today },
+      plan: {
+        mode: 'FILA_SEMANAL',
+        tasks: { some: { status: 'PROGRAMADA' } },
+      },
+    },
+    select: { planId: true, serviceOrderId: true },
+    orderBy: [{ planId: 'asc' }, { serviceOrderId: 'asc' }],
+    take: 500,
   });
-  return due.length;
+  const byStart = dueItems.length
+    ? await prisma.productionTask.findMany({
+        where: {
+          status: 'PROGRAMADA',
+          OR: dueItems.map((i) => ({ planId: i.planId, serviceOrderId: i.serviceOrderId })),
+        },
+        select: { id: true },
+        orderBy: { id: 'asc' },
+        take: 500,
+      })
+    : [];
+  const ids = [...new Set([...byTime, ...byStart].map((t) => t.id))].sort();
+  if (!ids.length) return 0;
+  const system: ActorContext = { userId: null, sessionId: null, ip: null, requestId: null };
+  return prisma.$transaction(async (tx) => {
+    const changed = await reevaluateTasks(tx, system, ids, now);
+    if (changed > 0)
+      await audit(tx, system, {
+        action: 'production.release_tick',
+        entityType: 'production_task',
+        summary: `${changed} tarefa(s) reavaliada(s) pelo horário programado ou data de início.`,
+      });
+    return changed;
+  });
 }
