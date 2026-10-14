@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Prisma } from '@cenario/db';
+import { SIMPLIFIED_PRODUCTION_TEMPLATES, classifyStep } from '@cenario/shared';
 import { db, resetDatabase } from './helpers';
 
 /** Separa os comandos de um script de reversão respeitando blocos $$ … $$ (sem BEGIN/COMMIT). */
@@ -398,5 +399,122 @@ describe('Banco de dados e migrations', () => {
       /Reversão bloqueada: 1 item/,
     );
     expect(await columns(db())).toHaveLength(2);
+  });
+  it('Simplificação Fase 5: modelos simplificados (colunas, CHECK, registros novos e reversão condicionada)', async () => {
+    const DB = resolve(__dirname, '../../../packages/db');
+    const NAME = '20261230000000_modelos_simplificados';
+    const up = splitSql(
+      readFileSync(resolve(DB, `prisma/migrations/${NAME}/migration.sql`), 'utf8'),
+    );
+    const down = splitSql(readFileSync(resolve(DB, `rollback/${NAME}.down.sql`), 'utf8'));
+    const inserts = up.filter((st) => st.startsWith('INSERT'));
+    expect(inserts).toHaveLength(2);
+    const ids = SIMPLIFIED_PRODUCTION_TEMPLATES.map((t) => t.id);
+    const run = async (tx: Prisma.TransactionClient, sql: string[]) => {
+      for (const st of sql) await tx.$executeRawUnsafe(st);
+    };
+    const legacyBefore = await db().productionTemplate.findMany({
+      include: { steps: { orderBy: { position: 'asc' } } },
+      orderBy: { id: 'asc' },
+    });
+    expect(legacyBefore.length).toBeGreaterThan(0);
+    // Os registros da migration (só os INSERTs; colunas já existem) = constante compartilhada.
+    await run(db() as unknown as Prisma.TransactionClient, inserts);
+    await run(db() as unknown as Prisma.TransactionClient, inserts); // repetir não duplica
+    const created = await db().productionTemplate.findMany({
+      where: { id: { in: ids } },
+      include: { steps: { orderBy: { position: 'asc' } } },
+    });
+    expect(created).toHaveLength(2);
+    for (const def of SIMPLIFIED_PRODUCTION_TEMPLATES) {
+      const t = created.find((x) => x.id === def.id)!;
+      expect(t).toMatchObject({
+        name: def.name,
+        pieceTypes: [...def.pieceTypes],
+        serviceTypes: [...def.serviceTypes],
+        active: true,
+        version: 1,
+      });
+      expect(
+        t.steps.map((s) => ({
+          activity: s.activity,
+          name: s.name,
+          role: s.role,
+          requiresMaterials: s.requiresMaterials,
+          optional: s.optional,
+          dependsOn: s.dependsOn,
+          stepClass: s.stepClass,
+          defaultAssigneeUserId: s.defaultAssigneeUserId,
+        })),
+      ).toEqual(
+        def.steps.map((s) => ({
+          ...s,
+          dependsOn: [...s.dependsOn],
+          stepClass: classifyStep(s.activity, s.role),
+          defaultAssigneeUserId: null,
+        })),
+      );
+    }
+    // Modelos antigos intactos (mesmos registros, etapas e versão; viram "gerais").
+    const legacyAfter = await db().productionTemplate.findMany({
+      where: { id: { notIn: ids } },
+      include: { steps: { orderBy: { position: 'asc' } } },
+      orderBy: { id: 'asc' },
+    });
+    expect(legacyAfter.every((t) => t.serviceTypes.length === 0)).toBe(true);
+    expect(legacyAfter.map(({ serviceTypes: _s, ...t }) => t)).toEqual(
+      legacyBefore.map(({ serviceTypes: _s, ...t }) => t),
+    );
+    // CHECK: etapa de tapeçaria nunca tem responsável padrão (titular da peça).
+    const ricardo = (await db().user.findFirstOrThrow({ where: { displayName: 'Ricardo' } })).id;
+    const upholstery = created[0]!.steps.find((s) => s.stepClass === 'TAPECARIA')!;
+    await expect(
+      db().productionTemplateStep.update({
+        where: { id: upholstery.id },
+        data: { defaultAssigneeUserId: ricardo },
+      }),
+    ).rejects.toThrow(/default_assignee_not_upholstery/);
+    const columns = (tx: Pick<Prisma.TransactionClient, '$queryRawUnsafe'>) =>
+      tx.$queryRawUnsafe<{ name: string }[]>(
+        `SELECT column_name AS name FROM information_schema.columns
+          WHERE table_name LIKE 'production_template%'
+            AND column_name IN ('service_types', 'default_assignee_user_id') ORDER BY 1`,
+      );
+    expect(await columns(db())).toHaveLength(2);
+    // Sem uso: a reversão remove colunas, registros novos e o registro da migration; reaplicar
+    // funciona. Tudo numa transação desfeita no fim.
+    await expect(
+      db().$transaction(async (tx) => {
+        await run(tx, down);
+        expect(await columns(tx)).toEqual([]);
+        expect(
+          await tx.$queryRawUnsafe<{ n: bigint }[]>(
+            `SELECT count(*) AS n FROM "production_templates" WHERE id IN ('${ids.join("','")}')`,
+          ),
+        ).toEqual([{ n: 0n }]);
+        expect(
+          await tx.$queryRawUnsafe<{ n: bigint }[]>(
+            `SELECT count(*) AS n FROM "_prisma_migrations" WHERE "migration_name" = '${NAME}'`,
+          ),
+        ).toEqual([{ n: 0n }]);
+        await run(tx, up);
+        expect(await columns(tx)).toHaveLength(2);
+        throw new Error('desfazer');
+      }),
+    ).rejects.toThrow('desfazer');
+    // Configuração do gestor em OUTRO modelo (tipo de serviço) bloqueia a reversão.
+    const legacy = legacyAfter[0]!;
+    await db().productionTemplate.update({
+      where: { id: legacy.id },
+      data: { serviceTypes: ['REPARO'] },
+    });
+    await expect(db().$transaction(async (tx) => run(tx, down))).rejects.toThrow(
+      /Reversão bloqueada: 1 configuração/,
+    );
+    await db().productionTemplate.update({ where: { id: legacy.id }, data: { serviceTypes: [] } });
+    // (Tarefa gerada por modelo simplificado bloqueando a reversão: provado em
+    // modelos-simplificados.test.ts e no script de migrações encadeadas.)
+    expect(await columns(db())).toHaveLength(2);
+    expect(await db().productionTemplate.count({ where: { id: { in: ids } } })).toBe(2);
   });
 });

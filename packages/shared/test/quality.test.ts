@@ -68,17 +68,34 @@ describe('Fase 10 — regras de qualidade e expedição', () => {
       isManager: false,
       isAssignedInspector: true,
       executedService: false,
-      executorAuthorized: false,
     };
     expect(canDecideInspection(base).allowed).toBe(true);
     expect(canDecideInspection({ ...base, executedService: true }).allowed).toBe(false);
-    expect(
-      canDecideInspection({ ...base, executedService: true, executorAuthorized: true }).allowed,
-    ).toBe(true);
     expect(canDecideInspection({ ...base, isAssignedInspector: false }).allowed).toBe(false);
     expect(
       canDecideInspection({ ...base, isAssignedInspector: false, isManager: true }).allowed,
     ).toBe(true);
+  });
+
+  it('Simplificação Fase 5 (D8): ninguém aprova a própria peça — nem o gestor', () => {
+    const executor = { isAssignedInspector: false, executedService: true };
+    const gestor = canDecideInspection({ ...executor, isManager: true });
+    expect(gestor.allowed).toBe(false);
+    expect(gestor.reason).toMatch(/substituto/);
+    // Inspetor designado que executou (antes liberado por "autorização do gestor"): recusado.
+    expect(
+      canDecideInspection({ isManager: false, isAssignedInspector: true, executedService: true })
+        .allowed,
+    ).toBe(false);
+    // Gestor e inspetor que NÃO executaram continuam decidindo; terceiros, não.
+    expect(
+      canDecideInspection({ isManager: true, isAssignedInspector: false, executedService: false })
+        .allowed,
+    ).toBe(true);
+    expect(
+      canDecideInspection({ isManager: false, isAssignedInspector: false, executedService: false })
+        .allowed,
+    ).toBe(false);
   });
 
   it('aprovação e reprovação: checklist, motivo e defeito', () => {

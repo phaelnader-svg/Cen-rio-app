@@ -34,16 +34,18 @@ model User {
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  employee        Employee?
-  roles           UserRole[]
-  permissions     UserPermission[]
-  sessions        Session[]        @relation("SessionUser")
-  revokedSessions Session[]        @relation("SessionRevokedBy")
-  auditLogs       AuditLog[]
-  idempotencyKeys IdempotencyKey[]
-  uploadedFiles   StoredFile[]
-  createdDevices  Device[]         @relation("DeviceCreatedBy")
-  revokedDevices  Device[]         @relation("DeviceRevokedBy")
+  employee             Employee?
+  /// Simplificação Fase 5: etapas de modelo em que é o responsável padrão.
+  templateStepDefaults ProductionTemplateStep[] @relation("TemplateStepDefaultAssignee")
+  roles                UserRole[]
+  permissions          UserPermission[]
+  sessions             Session[]                @relation("SessionUser")
+  revokedSessions      Session[]                @relation("SessionRevokedBy")
+  auditLogs            AuditLog[]
+  idempotencyKeys      IdempotencyKey[]
+  uploadedFiles        StoredFile[]
+  createdDevices       Device[]                 @relation("DeviceCreatedBy")
+  revokedDevices       Device[]                 @relation("DeviceRevokedBy")
 
   createdCustomers       Customer[]             @relation("CustomerCreatedBy")
   createdOrders          CommercialOrder[]      @relation("OrderCreatedBy")
@@ -1747,13 +1749,15 @@ enum PlanStatus {
 
 /// Modelo configurável de etapas por tipo de peça (sugestão inicial; cada OS pode ser adaptada).
 model ProductionTemplate {
-  id         String      @id @default(uuid()) @db.Uuid
-  name       String      @db.VarChar(80)
-  pieceTypes PieceType[] @map("piece_types")
-  active     Boolean     @default(true)
-  version    Int         @default(1)
-  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt  DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id           String        @id @default(uuid()) @db.Uuid
+  name         String        @db.VarChar(80)
+  pieceTypes   PieceType[]   @map("piece_types")
+  /// Simplificação Fase 5: tipos de serviço do modelo; vazio = modelo geral (qualquer serviço).
+  serviceTypes ServiceType[] @default([]) @map("service_types")
+  active       Boolean       @default(true)
+  version      Int           @default(1)
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   steps ProductionTemplateStep[]
 
@@ -1774,8 +1778,12 @@ model ProductionTemplateStep {
   completionRequirement CompletionRequirement @default(NENHUM) @map("completion_requirement")
   /// Evolução Fase 3: classificação explícita (nula = ambígua, exige revisão do gestor).
   stepClass             StepClass?            @map("step_class")
+  /// Simplificação Fase 5: responsável padrão da etapa (nunca em tapeçaria); nulo = responsável
+  /// padrão global da preparação.
+  defaultAssigneeUserId String?               @map("default_assignee_user_id") @db.Uuid
 
-  template ProductionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  template        ProductionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  defaultAssignee User?              @relation("TemplateStepDefaultAssignee", fields: [defaultAssigneeUserId], references: [id], onDelete: Restrict)
 
   @@unique([templateId, position])
   @@map("production_template_steps")

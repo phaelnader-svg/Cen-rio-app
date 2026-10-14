@@ -8,6 +8,7 @@ import {
   PLAN_MODE_LABEL,
   STEP_CLASS_ROLE,
   classifyStep,
+  stepAssigneeProblem,
   publishPlanSchema,
   taskCode,
   templateSchema,
@@ -570,12 +571,16 @@ export async function productionPlanRoutes(app: FastifyInstance) {
   minimizeCustomerForDevices(app);
 
   // Modelos
+  const templateInclude = {
+    steps: { include: { defaultAssignee: { select: { id: true, displayName: true } } } },
+  } as const;
   const toTemplate = (
-    t: Prisma.ProductionTemplateGetPayload<{ include: { steps: true } }>,
+    t: Prisma.ProductionTemplateGetPayload<{ include: typeof templateInclude }>,
   ): ProductionTemplateDto => ({
     id: t.id,
     name: t.name,
     pieceTypes: t.pieceTypes,
+    serviceTypes: t.serviceTypes,
     active: t.active,
     version: t.version,
     steps: [...t.steps]
@@ -591,13 +596,16 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         dependsOn: s.dependsOn,
         completionRequirement: s.completionRequirement,
         stepClass: s.stepClass,
+        defaultAssignee: s.defaultAssignee
+          ? { userId: s.defaultAssignee.id, displayName: s.defaultAssignee.displayName }
+          : null,
       })),
   });
 
   app.get('/api/v1/production-templates', { config: { access: VIEW } }, async () =>
     (
       await prisma.productionTemplate.findMany({
-        include: { steps: true },
+        include: templateInclude,
         orderBy: { name: 'asc' },
       })
     ).map(toTemplate),
@@ -622,6 +630,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           data: {
             name: input.name,
             pieceTypes: input.pieceTypes,
+            serviceTypes: input.serviceTypes,
             active: input.active,
             version: { increment: 1 },
           },
@@ -629,7 +638,12 @@ export async function productionPlanRoutes(app: FastifyInstance) {
       } else {
         templateId = (
           await tx.productionTemplate.create({
-            data: { name: input.name, pieceTypes: input.pieceTypes, active: input.active },
+            data: {
+              name: input.name,
+              pieceTypes: input.pieceTypes,
+              serviceTypes: input.serviceTypes,
+              active: input.active,
+            },
           })
         ).id;
       }
@@ -638,6 +652,17 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         // tapeçaria é sempre do responsável principal (titular da peça).
         const stepClass =
           s.stepClass === undefined ? classifyStep(s.activity, s.role) : s.stepClass;
+        // Simplificação Fase 5: responsável padrão da etapa — nunca em tapeçaria (titular) e
+        // sempre alguém que executa tarefas de produção (a competência é conferida na geração).
+        if (s.defaultAssigneeUserId) {
+          const problem = stepAssigneeProblem(stepClass);
+          if (problem)
+            throw Errors.validation(
+              [{ path: `steps.${i}.defaultAssigneeUserId`, message: problem }],
+              problem,
+            );
+          await assertWorker(tx, s.defaultAssigneeUserId, `Responsável padrão da etapa ${i + 1}`);
+        }
         await tx.productionTemplateStep.create({
           data: {
             ...s,
@@ -664,7 +689,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
       return toTemplate(
         await tx.productionTemplate.findUniqueOrThrow({
           where: { id: templateId! },
-          include: { steps: true },
+          include: templateInclude,
         }),
       );
     });

@@ -1,6 +1,6 @@
-import { STEP_CLASSES, stepClassProblem } from '../distribution-domain';
+import { STEP_CLASSES, stepAssigneeProblem, stepClassProblem } from '../distribution-domain';
 import { z } from 'zod';
-import { PIECE_TYPES, PRIORITIES } from '../domain';
+import { PIECE_TYPES, PRIORITIES, SERVICE_TYPES } from '../domain';
 import {
   COMPLETION_REQUIREMENTS,
   PAUSE_REASONS,
@@ -40,12 +40,16 @@ export const templateStepSchema = z.object({
   completionRequirement: z.enum(COMPLETION_REQUIREMENTS).default('NENHUM'),
   /** Evolução Fase 3: classe explícita; ausente = derivada de atividade + papel (ou nula). */
   stepClass: z.enum(STEP_CLASSES).nullable().optional(),
+  /** Simplificação Fase 5: responsável padrão da etapa (vazio = responsável global da preparação). */
+  defaultAssigneeUserId: idSchema.nullable().default(null),
 });
 
 export const templateSchema = z
   .object({
     name: trimmed(2, 80, 'Nome do modelo'),
     pieceTypes: z.array(z.enum(PIECE_TYPES)).max(10).default([]),
+    /** Simplificação Fase 5: tipos de serviço do modelo (vazio = qualquer serviço, como antes). */
+    serviceTypes: z.array(z.enum(SERVICE_TYPES)).max(10).default([]),
     active: z.boolean().default(true),
     steps: z.array(templateStepSchema).min(1).max(30),
   })
@@ -54,6 +58,13 @@ export const templateSchema = z
       const problem = s.stepClass ? stepClassProblem(s.activity, s.stepClass) : null;
       if (problem)
         ctx.addIssue({ code: 'custom', path: ['steps', i, 'stepClass'], message: problem });
+      const assignee = s.defaultAssigneeUserId ? stepAssigneeProblem(s.stepClass) : null;
+      if (assignee)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['steps', i, 'defaultAssigneeUserId'],
+          message: assignee,
+        });
       if (s.dependsOn.some((d) => d >= i + 1)) {
         ctx.addIssue({
           code: 'custom',

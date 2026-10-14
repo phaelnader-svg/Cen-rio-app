@@ -5,6 +5,7 @@ import type {
   PieceType,
   ProductionActivity,
   ProductionTemplateDto,
+  ServiceType,
   StepClass,
   TaskRole,
 } from '@cenario/shared';
@@ -16,6 +17,8 @@ import {
   PLANNABLE_ACTIVITIES,
   ACTIVITY_STEP_CLASS,
   PRODUCTION_ACTIVITY_LABEL,
+  SERVICE_TYPES,
+  SERVICE_TYPE_LABEL,
   STEP_CLASSES,
   STEP_CLASS_LABEL,
   STEP_CLASS_ROLE,
@@ -28,7 +31,7 @@ import { Checkbox, Input, Select } from '@/components/ui/field';
 import { Alert, Badge, PageHeader, Spinner } from '@/components/ui/misc';
 import { api } from '@/lib/api';
 import { useCan } from '@/lib/hooks';
-import { useTemplates } from '@/lib/production';
+import { useTemplates, useWorkers } from '@/lib/production';
 import { useSend } from './use-send';
 
 interface StepDraft {
@@ -41,10 +44,14 @@ interface StepDraft {
   completionRequirement: CompletionRequirement;
   /** Evolução Fase 3: classe explícita (nula = ambígua; a distribuição deixa pendente). */
   stepClass: StepClass | null;
+  /** Simplificação Fase 5: responsável padrão da etapa (vazio = responsável global). */
+  defaultAssigneeUserId: string | null;
 }
 interface Draft {
   name: string;
   pieceTypes: PieceType[];
+  /** Simplificação Fase 5: vazio = modelo geral (qualquer serviço). */
+  serviceTypes: ServiceType[];
   active: boolean;
   steps: StepDraft[];
 }
@@ -52,6 +59,7 @@ interface Draft {
 const fromDto = (t: ProductionTemplateDto): Draft => ({
   name: t.name,
   pieceTypes: t.pieceTypes,
+  serviceTypes: t.serviceTypes,
   active: t.active,
   steps: t.steps.map((s) => ({
     activity: s.activity,
@@ -62,6 +70,7 @@ const fromDto = (t: ProductionTemplateDto): Draft => ({
     dependsOn: s.dependsOn,
     completionRequirement: s.completionRequirement,
     stepClass: s.stepClass,
+    defaultAssigneeUserId: s.defaultAssignee?.userId ?? null,
   })),
 });
 
@@ -74,7 +83,7 @@ export function ProductionTemplatesPage() {
     <>
       <PageHeader
         title="Modelos de produção"
-        description="Etapas sugeridas por tipo de peça ao incluir uma OS na semana. O gestor pode retirar, acrescentar e reorganizar etapas em cada OS; etapas opcionais não são geradas para peças de fabricação."
+        description="Etapas sugeridas por tipo de peça e de serviço ao incluir uma OS na semana. Modelo com tipos de serviço vale só para eles; sem tipo de serviço, vale para os demais. Etapas opcionais não são geradas para peças de fabricação."
         actions={
           can('producao.planejar') && !creating ? (
             <Button
@@ -91,6 +100,7 @@ export function ProductionTemplatesPage() {
           initial={{
             name: '',
             pieceTypes: [],
+            serviceTypes: [],
             active: true,
             steps: [
               {
@@ -102,6 +112,7 @@ export function ProductionTemplatesPage() {
                 dependsOn: [],
                 completionRequirement: 'NENHUM',
                 stepClass: 'PREPARACAO',
+                defaultAssigneeUserId: null,
               },
             ],
           }}
@@ -140,6 +151,13 @@ function TemplateEditor({
   onDone?: () => void;
 }) {
   const [d, setD] = useState<Draft>(initial);
+  const team = useWorkers(!readOnly);
+  /** Nomes dos responsáveis já gravados (inclusive quem não executa mais produção). */
+  const known = new Map(
+    (template?.steps ?? []).flatMap((s) =>
+      s.defaultAssignee ? [[s.defaultAssignee.userId, s.defaultAssignee.displayName] as const] : [],
+    ),
+  );
   const [dirty, setDirty] = useState(!template);
   const { m, error } = useSend(onDone);
   const set = (next: Draft) => {
@@ -172,6 +190,11 @@ function TemplateEditor({
           {d.pieceTypes.map((p) => (
             <Badge key={p} tone="info">
               {PIECE_TYPE_LABEL[p]}
+            </Badge>
+          ))}
+          {d.serviceTypes.map((t) => (
+            <Badge key={t} tone="neutral">
+              {SERVICE_TYPE_LABEL[t]}
             </Badge>
           ))}
         </>
@@ -215,14 +238,33 @@ function TemplateEditor({
             onChange={(e) => set({ ...d, active: e.target.checked })}
           />
         </div>
+        <div className="flex flex-wrap items-center gap-3" data-testid="template-service-types">
+          <span className="label">Tipos de serviço (vazio = qualquer)</span>
+          {SERVICE_TYPES.map((t) => (
+            <Checkbox
+              key={t}
+              label={SERVICE_TYPE_LABEL[t]}
+              checked={d.serviceTypes.includes(t)}
+              onChange={(e) =>
+                set({
+                  ...d,
+                  serviceTypes: e.target.checked
+                    ? [...d.serviceTypes, t]
+                    : d.serviceTypes.filter((x) => x !== t),
+                })
+              }
+            />
+          ))}
+        </div>
         <div className="overflow-x-auto">
-          <table className="data-table min-w-[1080px]">
+          <table className="data-table min-w-[1240px]">
             <thead>
               <tr>
                 <th>#</th>
                 <th>Etapa</th>
                 <th>Nome</th>
                 <th>Classe (quem faz)</th>
+                <th>Responsável padrão</th>
                 <th>Depende de</th>
                 <th>Materiais</th>
                 <th>Opcional</th>
@@ -267,7 +309,11 @@ function TemplateEditor({
                       value={s.stepClass ?? ''}
                       onChange={(e) => {
                         const c = (e.target.value || null) as StepClass | null;
-                        setStep(i, { stepClass: c, ...(c ? { role: STEP_CLASS_ROLE[c] } : {}) });
+                        setStep(i, {
+                          stepClass: c,
+                          ...(c ? { role: STEP_CLASS_ROLE[c] } : {}),
+                          ...(c === 'TAPECARIA' ? { defaultAssigneeUserId: null } : {}),
+                        });
                       }}
                     >
                       <option value="">Sem classe — revisar</option>
@@ -277,6 +323,33 @@ function TemplateEditor({
                         </option>
                       ))}
                     </Select>
+                  </td>
+                  <td>
+                    {s.stepClass === 'TAPECARIA' ? (
+                      <span className="text-sm text-ink-muted">Titular da peça</span>
+                    ) : (
+                      <Select
+                        className="input-sm"
+                        aria-label={`Responsável padrão da etapa ${i + 1}`}
+                        value={s.defaultAssigneeUserId ?? ''}
+                        onChange={(e) =>
+                          setStep(i, { defaultAssigneeUserId: e.target.value || null })
+                        }
+                      >
+                        <option value="">Padrão da preparação</option>
+                        {s.defaultAssigneeUserId &&
+                          !team.data?.some((w) => w.userId === s.defaultAssigneeUserId) && (
+                            <option value={s.defaultAssigneeUserId}>
+                              {known.get(s.defaultAssigneeUserId) ?? 'Responsável atual'}
+                            </option>
+                          )}
+                        {team.data?.map((w) => (
+                          <option key={w.userId} value={w.userId}>
+                            {w.displayName}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
                   </td>
                   <td>
                     <Input
@@ -389,6 +462,7 @@ function TemplateEditor({
                       dependsOn: [],
                       completionRequirement: 'NENHUM',
                       stepClass: 'OUTRA',
+                      defaultAssigneeUserId: null,
                     },
                   ],
                 })

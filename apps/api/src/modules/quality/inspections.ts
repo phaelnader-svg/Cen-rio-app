@@ -126,8 +126,6 @@ export async function toInspectionDto(
         isManager: viewer.isManager,
         isAssignedInspector: r.inspectorUserId === viewer.userId,
         executedService: executors.has(viewer.userId),
-        executorAuthorized:
-          Boolean(r.executorAuthorizedById) && r.inspectorUserId === viewer.userId,
       })
     : { allowed: false, reason: null };
   const mayWork = Boolean(viewer && (viewer.isManager || r.inspectorUserId === viewer.userId));
@@ -448,7 +446,6 @@ async function assertDecider(tx: Tx, i: InspectionRow, viewer: Viewer) {
     isManager: viewer.isManager,
     isAssignedInspector: i.inspectorUserId === viewer.userId,
     executedService: executors.has(viewer.userId),
-    executorAuthorized: Boolean(i.executorAuthorizedById) && i.inspectorUserId === viewer.userId,
   });
   if (!d.allowed) throw Errors.business(d.reason ?? 'Você não pode decidir esta inspeção.');
 }
@@ -691,7 +688,11 @@ export async function rejectInspection(
 
 // ─────────────────────────── Gestor ───────────────────────────
 
-/** Designa o inspetor (substituto). Quem executou o serviço só com autorização explícita. */
+/**
+ * Designa o inspetor (substituto). Simplificação Fase 5 (D8): quem executou o serviço nunca é
+ * designado — nem com autorização (`authorizeExecutor` é recusado para executores); registros
+ * antigos de autorização não dão mais direito de decidir (`canDecideInspection`).
+ */
 export async function assignInspector(
   tx: Tx,
   actor: ActorContext,
@@ -717,16 +718,15 @@ export async function assignInspector(
     throw Errors.business(
       `${user.displayName} não está autorizado a inspecionar (permissão "Inspecionar peças").`,
     );
-  const executed = (await executorsOf(tx, i.serviceOrderItem)).has(user.id);
-  if (executed && !input.authorizeExecutor)
+  if ((await executorsOf(tx, i.serviceOrderItem)).has(user.id))
     throw Errors.business(
-      `${user.displayName} executou este serviço: para evitar autoaprovação, escolha outro inspetor ou autorize explicitamente (com justificativa).`,
+      `${user.displayName} executou este serviço: ninguém aprova a própria peça (sem autoaprovação, nem com autorização). Escolha outro inspetor autorizado.`,
     );
   const u = await tx.qualityInspection.update({
     where: { id },
     data: {
       inspectorUserId: user.id,
-      executorAuthorizedById: executed ? actor.userId : null,
+      executorAuthorizedById: null,
       substituteReason:
         user.id === i.inspectorUserId
           ? i.substituteReason
@@ -738,14 +738,14 @@ export async function assignInspector(
   await qualityEvent(tx, actor, i.serviceOrderItemId, {
     kind: 'INSPETOR_DESIGNADO',
     inspectionId: id,
-    note: `${user.displayName}${executed ? ' (executor, autorizado pelo gestor)' : ''}${input.reason ? ` — ${input.reason}` : ''}`,
-    data: { from: i.inspectorUserId, to: user.id, executorAuthorized: executed },
+    note: `${user.displayName}${input.reason ? ` — ${input.reason}` : ''}`,
+    data: { from: i.inspectorUserId, to: user.id },
   });
   await audit(tx, actor, {
-    action: executed ? 'quality.executor_authorized' : 'quality.inspector_assigned',
+    action: 'quality.inspector_assigned',
     entityType: 'quality_inspection',
     entityId: id,
-    summary: `Inspeção ${code}: inspetor ${user.displayName}${executed ? ' (executou o serviço — autorizado pelo gestor)' : ''}.${input.reason ? ` Motivo: ${input.reason}` : ''}`,
+    summary: `Inspeção ${code}: inspetor ${user.displayName}.${input.reason ? ` Motivo: ${input.reason}` : ''}`,
   });
   await inspectionEvent(tx, actor, EVENT_TYPES.INSPECTION_UPDATED, u);
   await notify(tx, actor, [

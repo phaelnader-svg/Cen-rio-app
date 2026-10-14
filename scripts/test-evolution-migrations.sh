@@ -28,15 +28,16 @@ cleanup() {
 trap cleanup EXIT
 # 20261220000000_recebimentos_permissao_funcoes fica fora de DOWNS (só em ALL_DOWNS): é migration
 # só de dados cuja reversão é incondicional por desenho (limitação documentada no próprio .down.sql).
-DOWNS=(20261228000000_titular_mao_de_obra_prevista 20261227000000_servico_sem_retirada 20261213000000_pre_planejamento 20261206000000_recebimentos_compartilhados 20261129000000_novo_servico 20261115000000_fechamento_semanal 20261108000000_custos_logistica
+DOWNS=(20261230000000_modelos_simplificados 20261228000000_titular_mao_de_obra_prevista 20261227000000_servico_sem_retirada 20261213000000_pre_planejamento 20261206000000_recebimentos_compartilhados 20261129000000_novo_servico 20261115000000_fechamento_semanal 20261108000000_custos_logistica
   20261101000000_mao_de_obra_revisao 20261025000000_distribuicao_automatica
   20261018000000_fila_semanal)
 # Correção global: roteiro (só a ordem das paradas; reversão sem perda de compromisso).
 # Simplificação Fases 2–4: as mais recentes são revertidas primeiro (sem dados novos).
-ALL_DOWNS=(20261228000000_titular_mao_de_obra_prevista 20261227000000_servico_sem_retirada 20261220000000_recebimentos_permissao_funcoes
+# Simplificação Fase 5: modelos simplificados (novos registros + colunas) é a mais recente.
+ALL_DOWNS=(20261230000000_modelos_simplificados 20261228000000_titular_mao_de_obra_prevista 20261227000000_servico_sem_retirada 20261220000000_recebimentos_permissao_funcoes
   20261213000000_pre_planejamento
   20261206000000_recebimentos_compartilhados 20261129000000_novo_servico
-  20261122000000_roteiro_logistica "${DOWNS[@]:5}")
+  20261122000000_roteiro_logistica "${DOWNS[@]:6}")
 
 step() { echo; echo "■ $*"; }
 q() { psql "$URL" -At -v ON_ERROR_STOP=1 -c "$1"; }
@@ -78,9 +79,23 @@ step "2. Fotografia do legado"
 COLS="$(columns | grep -v '^_prisma_migrations|')"
 # role_permissions é conferida à parte: a migration 20261220000000_recebimentos_permissao_funcoes
 # ACRESCENTA, por desenho, recebimentos.registrar a três funções da oficina.
-COLS_RP="$(echo "$COLS" | grep -v '^role_permissions|')"
+# production_templates/_steps também: a migration 20261230000000_modelos_simplificados ACRESCENTA,
+# por desenho, dois modelos (ids fixos) — os registros legados são conferidos à parte (tpl_rows).
+COLS_RP="$(echo "$COLS" | grep -v -E '^(role_permissions|production_templates|production_template_steps)\|')"
 rp_rows() { q "SELECT r.key || ':' || p.permission FROM role_permissions p JOIN roles r ON r.id = p.role_id ORDER BY 1"; }
 RP_BEFORE="$(rp_rows)"
+SIMPLIFIED="'5f5e0000-0000-4000-8000-000000000001','5f5e0000-0000-4000-8000-000000000002'"
+TPL_COLS="$(echo "$COLS" | grep -E '^production_template(s|_steps)\|')"
+tpl_rows() {
+  while IFS='|' read -r t c; do
+    local expr key
+    expr="$(echo "$c" | sed 's/,/","/g')"
+    [[ "$t" == production_templates ]] && key=id || key=template_id
+    echo "$t|$(q "SELECT count(*) || ':' || coalesce(md5(string_agg(r::text, '/' ORDER BY r::text)), '-')
+      FROM (SELECT (\"$expr\") AS r FROM \"$t\" WHERE \"$key\" NOT IN ($SIMPLIFIED)) x")"
+  done <<< "$TPL_COLS"
+}
+TPL_BEFORE="$(tpl_rows)"
 BEFORE="$(snapshot "$COLS_RP")"
 IDX_BEFORE="$(indexes)"
 SCHEMA_BEFORE="$(schema_dump)"
@@ -90,6 +105,8 @@ step "3. Migrations da Evolução (Fases 2–7)"
 ( cd "$ROOT/packages/db" && DATABASE_URL="$URL" pnpm exec prisma migrate deploy 2>&1 | grep -E 'Applying|applied|Error' )
 AFTER="$(snapshot "$COLS_RP")"
 if [[ "$BEFORE" != "$AFTER" ]]; then diff <(echo "$BEFORE") <(echo "$AFTER") >&2 || true; echo "✖ Dados legados alterados" >&2; exit 1; fi
+[[ "$(tpl_rows)" == "$TPL_BEFORE" ]] || { echo "✖ Modelos de produção legados alterados" >&2; exit 1; }
+echo "✔ modelos legados idênticos; modelos simplificados acrescentados: $(q "SELECT count(*) FROM production_templates WHERE id IN ($SIMPLIFIED)")"
 RP_AFTER="$(rp_rows)"
 [[ -z "$(comm -23 <(echo "$RP_BEFORE") <(echo "$RP_AFTER"))" ]] \
   || { echo "✖ Permissões legadas removidas" >&2; exit 1; }
@@ -128,6 +145,8 @@ diff <(echo "$SCHEMA_BEFORE") <(schema_dump) > "$WORK/schema.diff" \
 RB="$(snapshot "$COLS_RP")"
 if [[ "$RB" != "$PRE_RB" ]]; then diff <(echo "$PRE_RB") <(echo "$RB") >&2 || true; echo "✖ Dados diferem após rollback" >&2; exit 1; fi
 [[ "$(rp_rows)" == "$RP_BEFORE" ]] || { echo "✖ Permissões diferem do legado após rollback" >&2; exit 1; }
+[[ "$(tpl_rows)" == "$TPL_BEFORE" && "$(q "SELECT count(*) FROM production_templates WHERE id IN ($SIMPLIFIED)")" == 0 ]] \
+  || { echo "✖ Modelos de produção diferem do legado após rollback" >&2; exit 1; }
 echo "✔ schema idêntico ao legado (pg_dump -s) e dados idênticos"
 
 step "6. Reaplica, cria dados novos e prova a RECUSA de cada rollback"

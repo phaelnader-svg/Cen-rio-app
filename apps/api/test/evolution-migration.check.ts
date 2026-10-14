@@ -57,6 +57,8 @@ describe.runIf(STEP === 'read')('Legado migrado: leitura pelo código atual', ()
       // Simplificação Fase 2: Novo serviço sobre o legado (sem configuração = pendência, não erro).
       '/api/v1/services/new-defaults',
       '/api/v1/company/own-team',
+      // Simplificação Fase 5: modelos antigos + simplificados lado a lado.
+      '/api/v1/production-templates',
     ];
     const bad: string[] = [];
     for (const p of paths) {
@@ -98,6 +100,20 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       ).status,
     ).toBe(201);
     await publish(admin, (await admin.get(`/api/v1/production-plans/${plan.id}`)).body);
+    // Simplificação Fase 5: sofá em reforma completa → modelo simplificado (3 tarefas); poltronas
+    // em troca de tecido → modelo antigo (geral). Bloqueia a reversão de modelos_simplificados.
+    const byItem = async (itemId: string) =>
+      db().productionTask.findMany({ where: { serviceOrderItemId: itemId, planId: plan.id } });
+    const sofaTasks = await byItem(so.items[0].id);
+    expect(sofaTasks).toHaveLength(3);
+    expect(sofaTasks.every((t) => t.templateId === '5f5e0000-0000-4000-8000-000000000001')).toBe(
+      true,
+    );
+    expect(
+      (await byItem(so.items[1].id)).every(
+        (t) => t.templateId !== null && !t.templateId.startsWith('5f5e0000-'),
+      ),
+    ).toBe(true);
     // Fase 5: valor por peça, substituição → revisão → divisão entre os dois.
     const mo = await post(F('/labor'), {
       professionalUserId: ids.ricardo,

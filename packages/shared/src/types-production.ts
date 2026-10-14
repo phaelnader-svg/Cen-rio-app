@@ -1,5 +1,5 @@
 import type { IssueKind } from './issue-domain';
-import type { PieceType, Priority } from './domain';
+import type { PieceType, Priority, ServiceType } from './domain';
 import type { MaterialReadiness } from './purchasing-domain';
 import type { DistributionPendency, OwnerChangeKind, StepClass } from './distribution-domain';
 import type {
@@ -20,6 +20,8 @@ export interface ProductionTemplateDto {
   id: string;
   name: string;
   pieceTypes: PieceType[];
+  /** Simplificação Fase 5: vazio = modelo geral (qualquer serviço). */
+  serviceTypes: ServiceType[];
   active: boolean;
   steps: {
     id: string;
@@ -33,6 +35,8 @@ export interface ProductionTemplateDto {
     completionRequirement: CompletionRequirement;
     /** Evolução Fase 3: null = ambígua (pendência de revisão). */
     stepClass: StepClass | null;
+    /** Simplificação Fase 5: responsável padrão da etapa (null = global da preparação). */
+    defaultAssignee: { userId: string; displayName: string } | null;
   }[];
   version: number;
 }

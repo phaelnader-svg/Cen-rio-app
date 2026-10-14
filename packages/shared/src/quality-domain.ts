@@ -63,26 +63,28 @@ export type SubstituteReason = keyof typeof SUBSTITUTE_REASONS;
 
 /**
  * Quem pode aprovar ou reprovar uma inspeção (regra única):
- * - o gestor (qualidade.gerenciar) sempre pode;
- * - o inspetor designado pode, desde que não tenha executado o serviço — salvo autorização
- *   específica registrada pelo gestor (evita autoaprovação);
+ * - ninguém decide sobre a peça que executou — nem o gestor, nem com autorização
+ *   (Simplificação Fase 5, D8): a decisão fica com outro gestor ou com um inspetor substituto
+ *   designado pelo gestor;
+ * - o gestor (qualidade.gerenciar) que não executou pode;
+ * - o inspetor designado que não executou pode;
  * - qualquer outra pessoa, não.
  */
 export function canDecideInspection(i: {
   isManager: boolean;
   isAssignedInspector: boolean;
   executedService: boolean;
-  executorAuthorized: boolean;
 }): { allowed: boolean; reason: string | null } {
+  if (i.executedService)
+    return {
+      allowed: false,
+      reason: i.isManager
+        ? 'Você executou este serviço: ninguém aprova a própria peça. Designe um inspetor substituto autorizado.'
+        : 'Você executou este serviço: ninguém aprova a própria peça. A decisão fica com o gestor ou com outro inspetor autorizado.',
+    };
   if (i.isManager) return { allowed: true, reason: null };
   if (!i.isAssignedInspector)
     return { allowed: false, reason: 'A inspeção está designada para outra pessoa.' };
-  if (i.executedService && !i.executorAuthorized)
-    return {
-      allowed: false,
-      reason:
-        'Você executou este serviço: a aprovação precisa do gestor ou de outro inspetor autorizado.',
-    };
   return { allowed: true, reason: null };
 }
 

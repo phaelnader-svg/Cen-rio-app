@@ -529,6 +529,86 @@ export function queueOrderProblem(
   return null;
 }
 
+/**
+ * Simplificação Fase 5 (D6): modelos simplificados, gravados pela migration
+ * `20261230000000_modelos_simplificados` como registros NOVOS (ids fixos abaixo), com escolha
+ * por tipo de serviço. Os modelos antigos continuam existindo e valem para as demais
+ * combinações; tarefas já geradas nunca mudam de modelo. Responsável por etapa: titular nas
+ * etapas de tapeçaria (regra existente); nas de preparação, o responsável padrão da etapa
+ * (configurável) ou, sem ele, o responsável padrão global da preparação.
+ */
+export const SIMPLIFIED_PRODUCTION_TEMPLATES: readonly {
+  id: string;
+  name: string;
+  pieceTypes: readonly string[];
+  serviceTypes: readonly string[];
+  steps: readonly {
+    activity: ProductionActivity;
+    name: string;
+    role: TaskRole;
+    requiresMaterials: boolean;
+    optional: boolean;
+    dependsOn: readonly number[];
+  }[];
+}[] = [
+  {
+    id: '5f5e0000-0000-4000-8000-000000000001',
+    name: 'Reforma de estofados (simplificado)',
+    pieceTypes: ['SOFA', 'CANTO_ALEMAO'],
+    serviceTypes: ['REFORMA_COMPLETA'],
+    steps: [
+      {
+        activity: 'DESMONTAGEM',
+        name: 'Desmontagem e preparação',
+        role: 'APOIO',
+        requiresMaterials: false,
+        optional: false,
+        dependsOn: [],
+      },
+      {
+        activity: 'CORTE_TECIDO',
+        name: 'Corte e costura',
+        role: 'PRINCIPAL',
+        requiresMaterials: true,
+        optional: false,
+        dependsOn: [],
+      },
+      {
+        activity: 'MONTAGEM',
+        name: 'Montagem e acabamento',
+        role: 'PRINCIPAL',
+        requiresMaterials: true,
+        optional: false,
+        dependsOn: [1, 2],
+      },
+    ],
+  },
+  {
+    id: '5f5e0000-0000-4000-8000-000000000002',
+    name: 'Fabricação de cabeceiras (simplificado)',
+    pieceTypes: ['CABECEIRA'],
+    serviceTypes: ['FABRICACAO'],
+    steps: [
+      {
+        activity: 'PREPARACAO_MDF',
+        name: 'Corte e preparação',
+        role: 'APOIO',
+        requiresMaterials: true,
+        optional: false,
+        dependsOn: [],
+      },
+      {
+        activity: 'REVESTIMENTO',
+        name: 'Tapeçaria e acabamento',
+        role: 'PRINCIPAL',
+        requiresMaterials: true,
+        optional: false,
+        dependsOn: [1],
+      },
+    ],
+  },
+];
+
 /** Modelos iniciais (os mesmos criados pela migration; o seed os recria se não houver nenhum). */
 export const DEFAULT_PRODUCTION_TEMPLATES: readonly {
   name: string;

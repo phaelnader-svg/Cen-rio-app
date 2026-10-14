@@ -24,6 +24,7 @@ import {
   mondayOf,
   planServicesSchema,
   reschedulePlannedSchema,
+  selectProductionTemplate,
   type MaterialReadiness,
   type PipelineServiceDto,
   type PipelineStage,
@@ -70,12 +71,13 @@ async function activeTemplates(db: Tx | PrismaClient) {
   return db.productionTemplate.findMany({
     where: { active: true },
     include: { steps: { select: { stepClass: true } } },
-    orderBy: { createdAt: 'asc' },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   });
 }
 type Templates = Awaited<ReturnType<typeof activeTemplates>>;
-const templateOf = (all: Templates, pieceType: string) =>
-  all.find((t) => (t.pieceTypes as string[]).includes(pieceType)) ?? null;
+/** Simplificação Fase 5: mesma regra da geração (tipo de peça + tipo de serviço). */
+const templateOf = (all: Templates, piece: { pieceType: string; serviceType: string }) =>
+  selectProductionTemplate(all, piece);
 
 /** Trava por OS (dois gestores planejando a mesma OS) e por semana (criação do plano). */
 async function advisory(tx: Tx, keys: string[]) {
@@ -211,7 +213,7 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
         `Aguardando a data de início${planItem?.startDate ? ` (${dateOnly(planItem.startDate)!.split('-').reverse().join('/')})` : ''}`,
       );
     const pieces = so.items.map((i) => {
-      const tpl = templateOf(templates, i.pieceType);
+      const tpl = templateOf(templates, i);
       return {
         id: i.id,
         code: formatServiceOrderItemCode(so.number, i.position),
@@ -435,7 +437,7 @@ export async function preplanningRoutes(app: FastifyInstance) {
             if (!so.items.some((i) => i.id === p.serviceOrderItemId))
               throw Errors.validation(undefined, `${code}: peça não pertence à OS.`);
           for (const i of so.items) {
-            const tpl = templateOf(templates, i.pieceType);
+            const tpl = templateOf(templates, i);
             const needs = Boolean(tpl?.steps.some((s) => s.stepClass === 'TAPECARIA'));
             const chosen = entry.pieces.find((p) => p.serviceOrderItemId === i.id);
             if (needs && !chosen && !i.upholstererUserId)

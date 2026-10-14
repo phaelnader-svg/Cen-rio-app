@@ -629,7 +629,6 @@ function AssignInspectorDialog({ i, onClose }: { i: InspectionDto; onClose: () =
   const inspectors = useInspectors();
   const [userId, setUserId] = useState('');
   const [reason, setReason] = useState('');
-  const [authorize, setAuthorize] = useState(false);
   const [key] = useState(newIdempotencyKey);
   const { m, error } = useSend(onClose);
   return (
@@ -637,7 +636,7 @@ function AssignInspectorDialog({ i, onClose }: { i: InspectionDto; onClose: () =
       open
       onClose={onClose}
       title="Designar inspetor"
-      description="Substituto autorizado (permissão de inspecionar). Quem executou o serviço só com autorização explícita e justificativa."
+      description="Substituto autorizado (permissão de inspecionar). Quem executou o serviço nunca inspeciona a própria peça."
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -654,7 +653,6 @@ function AssignInspectorDialog({ i, onClose }: { i: InspectionDto; onClose: () =
                     body: {
                       inspectorUserId: userId,
                       reason: reason.trim() || null,
-                      authorizeExecutor: authorize,
                       version: i.version,
                     },
                     idempotencyKey: key,
@@ -690,11 +688,6 @@ function AssignInspectorDialog({ i, onClose }: { i: InspectionDto; onClose: () =
         <Field label="Motivo">
           {(f) => <Textarea {...f} value={reason} onChange={(e) => setReason(e.target.value)} />}
         </Field>
-        <Checkbox
-          label="Autorizo quem executou o serviço a inspecionar (exige motivo)"
-          checked={authorize}
-          onChange={(e) => setAuthorize(e.target.checked)}
-        />
       </div>
     </Dialog>
   );

@@ -65,6 +65,40 @@ export function stepClassProblem(
   return null;
 }
 
+/**
+ * Simplificação Fase 5 — escolha do modelo de uma peça para uma NOVA geração (regra única):
+ * 1. só modelos ATIVOS que incluem o tipo de peça;
+ * 2. primeiro os específicos do tipo de serviço (lista de serviços contendo o da peça);
+ * 3. sem específico, os gerais (lista de serviços vazia) — o comportamento anterior;
+ * 4. empate: o mais antigo (ordem recebida, por criação).
+ * Modelo com lista de serviços que não inclui o da peça nunca é escolhido. Tarefas já geradas
+ * não passam por aqui: guardam o próprio modelo e versão.
+ */
+export function selectProductionTemplate<
+  T extends {
+    active: boolean;
+    pieceTypes: readonly string[];
+    serviceTypes: readonly string[];
+  },
+>(templates: readonly T[], piece: { pieceType: string; serviceType: string }): T | null {
+  const fits = templates.filter((t) => t.active && t.pieceTypes.includes(piece.pieceType));
+  return (
+    fits.find((t) => t.serviceTypes.length > 0 && t.serviceTypes.includes(piece.serviceType)) ??
+    fits.find((t) => t.serviceTypes.length === 0) ??
+    null
+  );
+}
+
+/**
+ * Responsável padrão próprio da etapa: só em etapas que não são de tapeçaria (a tapeçaria é
+ * sempre do titular da peça).
+ */
+export function stepAssigneeProblem(stepClass: StepClass | null | undefined): string | null {
+  return stepClass === 'TAPECARIA'
+    ? 'Etapa de tapeçaria é sempre do titular da peça: não aceita responsável padrão.'
+    : null;
+}
+
 export const DISTRIBUTION_PENDENCIES = [
   'SEM_MODELO',
   'SEM_TITULAR',
@@ -79,7 +113,7 @@ export const DISTRIBUTION_PENDENCIES = [
 ] as const;
 export type DistributionPendency = (typeof DISTRIBUTION_PENDENCIES)[number];
 export const DISTRIBUTION_PENDENCY_LABEL: Record<DistributionPendency, string> = {
-  SEM_MODELO: 'Nenhum modelo ativo para este tipo de peça',
+  SEM_MODELO: 'Nenhum modelo ativo para este tipo de peça e de serviço',
   SEM_TITULAR: 'Peça sem tapeceiro titular definido',
   TITULAR_INELEGIVEL: 'Titular inativo ou sem permissão de produção',
   SEM_RESPONSAVEL_PADRAO: 'Sem responsável padrão elegível para a preparação',

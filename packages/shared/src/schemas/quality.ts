@@ -59,7 +59,10 @@ export const rejectInspectionSchema = z.object({
   version: versionSchema,
 });
 
-/** Gestor: designa o inspetor (substituto) e, se for o executor, autoriza explicitamente. */
+/**
+ * Gestor: designa o inspetor (substituto). Simplificação Fase 5 (D8): quem executou o serviço
+ * nunca é designado; `authorizeExecutor` fica só por compatibilidade e não libera o executor.
+ */
 export const assignInspectorSchema = z
   .object({
     inspectorUserId: idSchema,

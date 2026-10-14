@@ -14,6 +14,7 @@ import { hash } from '@node-rs/argon2';
 import {
   DEFAULT_LOCATIONS,
   DEFAULT_PRODUCTION_TEMPLATES,
+  SIMPLIFIED_PRODUCTION_TEMPLATES,
   classifyStep,
   DEFAULT_QUALITY_TEMPLATES,
   DEFAULT_ROLES,
@@ -262,6 +263,43 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
         });
       }
       log('✔ Modelos de produção iniciais criados.');
+    }
+
+    // Simplificação Fase 5: responsável padrão inicial das etapas de preparação dos modelos
+    // simplificados (criados pela migration) — João na desmontagem da reforma, Thiago na
+    // preparação da cabeceira. Só enquanto o modelo NUNCA foi editado (versão 1: toda gravação
+    // pelo cadastro incrementa a versão) e a etapa está vazia — uma etapa vazia num modelo
+    // editado é decisão do gestor (usar o responsável global) e nunca é preenchida. Os
+    // funcionários não têm identificador estável além do id: só vale um ÚNICO funcionário ativo
+    // com o nome exato; ausente ou repetido, nada é configurado (nunca uma escolha arbitrária).
+    // A elegibilidade (ativo, competência) é conferida a cada geração.
+    const initialStepAssignees = [
+      { templateId: SIMPLIFIED_PRODUCTION_TEMPLATES[0]!.id, position: 1, name: 'João' },
+      { templateId: SIMPLIFIED_PRODUCTION_TEMPLATES[1]!.id, position: 1, name: 'Thiago' },
+    ];
+    for (const a of initialStepAssignees) {
+      const template = await prisma.productionTemplate.findUnique({
+        where: { id: a.templateId },
+        include: { steps: { where: { position: a.position } } },
+      });
+      const step = template?.steps[0];
+      if (!template || template.version !== 1 || !step) continue;
+      if (step.defaultAssigneeUserId || step.stepClass !== 'PREPARACAO') continue;
+      const people = await prisma.employee.findMany({
+        where: { displayName: a.name, active: true, user: { active: true } },
+        take: 2,
+      });
+      if (people.length !== 1) {
+        log(
+          `• Responsável da etapa "${step.name}" não configurado: ${people.length ? `mais de um funcionário ativo chamado ${a.name}` : `nenhum funcionário ativo chamado ${a.name}`} — defina em Produção → Modelos.`,
+        );
+        continue;
+      }
+      await prisma.productionTemplateStep.update({
+        where: { id: step.id },
+        data: { defaultAssigneeUserId: people[0]!.userId },
+      });
+      log(`✔ ${a.name} definido como responsável padrão da etapa "${step.name}".`);
     }
 
     // Fase 10: checklists de qualidade e localizações internas iniciais.

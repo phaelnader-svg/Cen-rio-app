@@ -104,7 +104,12 @@ type Insp = {
  * `thiagoOnSofa` coloca o Thiago como executor do sofá (regra de autoaprovação).
  */
 async function scenario(
-  opts: { arrive?: string[]; thiagoOnSofa?: boolean; absent?: string[] } = {},
+  opts: {
+    arrive?: string[];
+    thiagoOnSofa?: boolean;
+    gestorOnSofa?: boolean;
+    absent?: string[];
+  } = {},
 ) {
   const admin = await loginAdmin(app);
   const so = await openServiceOrder(admin, 'Cliente Qualidade');
@@ -144,7 +149,7 @@ async function scenario(
     title: 'Revestimento do sofá',
     serviceOrderItemId: sofa.id,
     role: 'PRINCIPAL',
-    assigneeUserId: opts.thiagoOnSofa ? ids.thiago : ids.ricardo,
+    assigneeUserId: opts.gestorOnSofa ? ids.gestor : opts.thiagoOnSofa ? ids.thiago : ids.ricardo,
   });
   const poltronaTask = await task({
     activity: 'ACABAMENTO',
@@ -363,7 +368,7 @@ describe('Inspeção e responsabilidade', () => {
     expect((await approve(s.admin, pi)).status).toBe(200);
   });
 
-  it('4. Thiago executou o serviço: não se autoaprova sem autorização específica do gestor', async () => {
+  it('4. Thiago executou o serviço: nunca aprova a própria peça (D8), nem com autorização do gestor', async () => {
     const s = await scenario({ thiagoOnSofa: true });
     await finish(s.tablets.Thiago!, s.sofaTask.id);
     const row = await openOf(s.sofa.id);
@@ -374,21 +379,86 @@ describe('Inspeção e responsabilidade', () => {
       version: row.version,
     });
     expect(plain.status).toBe(422);
-    expect(plain.body.error.message).toMatch(/autoaprova/);
+    expect(plain.body.error.message).toMatch(/própria peça/);
+    // Simplificação Fase 5 (D8): a antiga "autorização do executor" não libera mais ninguém.
     const auth = await post(s.admin, `/api/v1/quality/inspections/${row.id}/assign`, {
       inspectorUserId: s.ids.thiago,
       authorizeExecutor: true,
       reason: 'Único inspetor hoje; conferido por foto',
       version: row.version,
     });
-    expect(auth.status).toBe(200);
-    expect(auth.body).toMatchObject({ inspectorExecuted: true, executorAuthorized: true });
-    const i = await inspection(s.tablets.Thiago!, row.id);
+    expect(auth.status).toBe(422);
+    expect(auth.body.error.message).toMatch(/própria peça/);
+    const unchanged = await db().qualityInspection.findUniqueOrThrow({ where: { id: row.id } });
+    expect(unchanged).toMatchObject({
+      inspectorUserId: null,
+      executorAuthorizedById: null,
+      version: row.version,
+    });
+    // O próprio Thiago também não decide pelo tablet (aprovar nem reprovar): nem vê a inspeção.
+    const tabletRead = await s.tablets.Thiago!.get(`/api/v1/quality/inspections/${row.id}`);
+    const tabletApprove = await post(
+      s.tablets.Thiago!,
+      `/api/v1/quality/inspections/${row.id}/approve`,
+      { version: row.version },
+    );
+    const tabletReject = await post(
+      s.tablets.Thiago!,
+      `/api/v1/quality/inspections/${row.id}/reject`,
+      { reason: 'Tentativa do executor', version: row.version },
+    );
+    for (const st of [tabletRead.status, tabletApprove.status, tabletReject.status])
+      expect([403, 404, 422]).toContain(st);
+    expect((await db().qualityInspection.findUniqueOrThrow({ where: { id: row.id } })).status).toBe(
+      'PENDENTE',
+    );
+    // O gestor, que não executou, decide (ou designa um substituto, como no caso 3).
+    const i = await inspection(s.admin, row.id);
     expect(i.can.decide).toBe(true);
-    await checkAll(s.tablets.Thiago!, i);
-    expect((await approve(s.tablets.Thiago!, i)).status).toBe(200);
-    const log = await db().auditLog.findFirst({ where: { action: 'quality.executor_authorized' } });
-    expect(log?.summary).toMatch(/autorizado pelo gestor/);
+    await checkAll(s.admin, i);
+    expect((await approve(s.admin, i)).status).toBe(200);
+    expect(
+      (await db().qualityInspection.findUniqueOrThrow({ where: { id: row.id } })).decidedById,
+    ).toBe(s.ids.gestor);
+    expect(await db().auditLog.count({ where: { action: 'quality.executor_authorized' } })).toBe(0);
+  });
+
+  it('4b. D8: o gestor que executou a peça não a aprova; o inspetor designado (não executor) decide', async () => {
+    const s = await scenario({ gestorOnSofa: true });
+    await finish(s.admin, s.sofaTask.id);
+    const row = await openOf(s.sofa.id);
+    expect(row.inspectorUserId).toBe(s.ids.thiago); // Thiago não executou: segue como inspetor
+    const i = await checkAll(s.admin, await inspection(s.admin, row.id));
+    expect(i.can.decide).toBe(false);
+    expect(i.can.decideReason).toMatch(/própria peça/);
+    const denied = await approve(s.admin, i);
+    expect(denied.status).toBe(422);
+    expect(denied.body.error.message).toMatch(/própria peça/);
+    expect(
+      (
+        await post(s.admin, `/api/v1/quality/inspections/${row.id}/reject`, {
+          reason: 'Tentativa do gestor executor',
+          version: i.version,
+        })
+      ).status,
+    ).toBe(422);
+    // Designar a si mesmo como inspetor também é recusado.
+    const self = await post(s.admin, `/api/v1/quality/inspections/${row.id}/assign`, {
+      inspectorUserId: s.ids.gestor,
+      reason: 'Eu mesmo',
+      version: i.version,
+    });
+    expect(self.status).toBe(422);
+    expect((await db().qualityInspection.findUniqueOrThrow({ where: { id: row.id } })).status).toBe(
+      'EM_ANDAMENTO',
+    );
+    // O inspetor designado (substituto do gestor, não executor) decide normalmente.
+    const t = await inspection(s.tablets.Thiago!, row.id);
+    expect(t.can.decide).toBe(true);
+    expect((await approve(s.tablets.Thiago!, t)).status).toBe(200);
+    expect(
+      (await db().qualityInspection.findUniqueOrThrow({ where: { id: row.id } })).decidedById,
+    ).toBe(s.ids.thiago);
   });
 
   it('5. checklist por tipo de peça e de serviço (sem itens irrelevantes); modelo configurável', async () => {

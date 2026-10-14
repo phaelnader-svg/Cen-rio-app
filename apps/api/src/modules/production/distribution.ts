@@ -20,6 +20,7 @@ import {
   STEP_CLASS_ROLE,
   distributeSchema,
   formatServiceOrderItemCode,
+  selectProductionTemplate,
   setUpholstererSchema,
   taskCode,
   type DistributionPendency,
@@ -109,15 +110,21 @@ export function upholsterersOf(team: Team) {
     .map((m) => ({ userId: m.userId, displayName: m.displayName, isTapeceiro: m.isTapeceiro }));
 }
 
-/** Responsável padrão de uma etapa de preparação (ou o motivo de não haver). */
+/**
+ * Responsável de uma etapa de preparação (ou null = pendência). Simplificação Fase 5: o
+ * responsável padrão da PRÓPRIA etapa vem primeiro; sem ele, vale o responsável padrão global.
+ * Em ambos, configurado mas inelegível (inativo, sem competência) = pendência, nunca outro.
+ */
 async function preparationAssignee(
   db: Tx | PrismaClient,
   team: Team,
   activity: keyof typeof ACTIVITY_SKILL,
+  stepAssigneeUserId: string | null = null,
 ): Promise<string | null> {
   const skill = ACTIVITY_SKILL[activity];
-  const settings = await db.companySettings.findUnique({ where: { id: 1 } });
   const ok = (m: Member | undefined) => Boolean(m && m.canExecute && m.skills.has(skill));
+  if (stepAssigneeUserId) return ok(team.get(stepAssigneeUserId)) ? stepAssigneeUserId : null;
+  const settings = await db.companySettings.findUnique({ where: { id: 1 } });
   if (settings?.preparationAssigneeUserId) {
     // Configurado mas inelegível (inativo, sem competência): pendência, nunca outro no lugar.
     return ok(team.get(settings.preparationAssigneeUserId))
@@ -156,7 +163,16 @@ async function lockItems(tx: Tx, ids: string[]) {
   await tx.$queryRaw`SELECT id FROM service_order_items WHERE id = ANY(${sorted}::uuid[]) ORDER BY id FOR UPDATE`;
 }
 
-async function templateFor(tx: Tx, pieceType: string, templateId?: string | null) {
+/**
+ * Modelo para uma NOVA geração: o escolhido explicitamente (ativo) ou o selecionado pela regra
+ * única de `selectProductionTemplate` (tipo de peça + tipo de serviço; modelos gerais como
+ * fallback). Simplificação Fase 5.
+ */
+async function templateFor(
+  tx: Tx | PrismaClient,
+  piece: { pieceType: string; serviceType: string },
+  templateId?: string | null,
+) {
   const include = { steps: { orderBy: { position: 'asc' as const } } };
   if (templateId) {
     const t = await tx.productionTemplate.findUnique({ where: { id: templateId }, include });
@@ -166,9 +182,9 @@ async function templateFor(tx: Tx, pieceType: string, templateId?: string | null
   const all = await tx.productionTemplate.findMany({
     where: { active: true },
     include,
-    orderBy: { createdAt: 'asc' },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   });
-  return all.find((t) => t.pieceTypes.includes(pieceType as never)) ?? null;
+  return selectProductionTemplate(all, piece);
 }
 
 /** Grava o titular (definição ou substituição) com histórico imutável. Uso interno. */
@@ -276,7 +292,7 @@ export async function distributeServiceOrder(
   const assigned: string[] = [];
   for (const item of items) {
     const input = args.pieces?.find((p) => p.serviceOrderItemId === item.id);
-    const template = await templateFor(tx, item.pieceType, input?.templateId);
+    const template = await templateFor(tx, item, input?.templateId);
     const needsUpholstery = Boolean(template?.steps.some((s) => s.stepClass === 'TAPECARIA'));
 
     // 1. Titular: escolha explícita da peça > titular já definido > proposta da OS (principal).
@@ -356,12 +372,24 @@ export async function distributeServiceOrder(
       let who: string | null = null;
       if (cls === 'TAPECARIA') who = owner && upholstererOk(team, owner) ? owner : null;
       else if (cls === 'PREPARACAO') {
-        if (!prepCache.has(step.activity))
+        const key = `${step.activity}:${step.defaultAssigneeUserId ?? ''}`;
+        if (!prepCache.has(key))
           prepCache.set(
-            step.activity,
-            await preparationAssignee(tx, team, step.activity as keyof typeof ACTIVITY_SKILL),
+            key,
+            await preparationAssignee(
+              tx,
+              team,
+              step.activity as keyof typeof ACTIVITY_SKILL,
+              step.defaultAssigneeUserId,
+            ),
           );
-        who = prepCache.get(step.activity)!;
+        who = prepCache.get(key)!;
+      } else if (cls === 'OUTRA' && step.defaultAssigneeUserId) {
+        // Simplificação Fase 5: "outra" continua sem responsável automático, salvo o padrão
+        // da própria etapa — e só se for elegível (senão fica para o gestor).
+        const m = team.get(step.defaultAssigneeUserId);
+        const skill = ACTIVITY_SKILL[step.activity as keyof typeof ACTIVITY_SKILL];
+        who = m && m.canExecute && m.skills.has(skill) ? m.userId : null;
       }
       const current = keep.find((t) => t.templateStepPosition === step.position);
       if (current) {
@@ -432,13 +460,14 @@ export async function pieceDistribution(
         where: { id: templateId },
         include: { steps: true },
       })
-    : ((
+    : selectProductionTemplate(
         await db.productionTemplate.findMany({
           where: { active: true },
           include: { steps: true },
-          orderBy: { createdAt: 'asc' },
-        })
-      ).find((t) => t.pieceTypes.includes(item.pieceType as never)) ?? null);
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        }),
+        item,
+      );
   if (!template) add('SEM_MODELO');
   const needsUpholstery = Boolean(
     template?.steps.some((s) => s.stepClass === 'TAPECARIA') ||

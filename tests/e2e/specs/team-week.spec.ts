@@ -67,10 +67,19 @@ test.describe.serial('Evolução Fase 4 — Minha semana', () => {
       let plan = (await call(page, 'GET', `/api/v1/production-plans?week=${WEEK}`))[0];
       if (!plan) plan = await call(page, 'POST', '/api/v1/production-plans', { weekStart: WEEK });
       planId = plan.id;
+      // Simplificação Fase 5: este cenário precisa de 4 tarefas do João (destaque + até três
+      // próximas, CA4-03); o sofá usa explicitamente o modelo antigo de reforma (6 etapas). O
+      // modelo simplificado tem seu próprio teste (modelos-simplificados.spec.ts).
+      const templates = await call(page, 'GET', '/api/v1/production-templates');
+      const legacySofa = templates.find((t: { name: string }) => t.name === 'Reforma de sofá');
       await call(page, 'POST', `/api/v1/production-plans/${planId}/items`, {
         serviceOrderId: so.id,
         pieces: [
-          { serviceOrderItemId: so.items[0]!.id, upholstererUserId: w('Ricardo').userId },
+          {
+            serviceOrderItemId: so.items[0]!.id,
+            upholstererUserId: w('Ricardo').userId,
+            templateId: legacySofa.id,
+          },
           { serviceOrderItemId: so.items[1]!.id, upholstererUserId: w('Márcio').userId },
         ],
       });
