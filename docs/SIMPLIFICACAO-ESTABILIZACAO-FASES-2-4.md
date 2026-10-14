@@ -270,3 +270,9 @@ alterado aqui.
   anterior ao ajuste, divergência real apontada depois); divergência real continua bloqueando
   (422, nada alterado); fechamento normal. Controle negativo: sem a trava, o teste determinístico
   falha com o 422 original. Repetidos 5 vezes, estáveis.
+
+Resultados verificados das pendências pós-estabilização (locais, commit `6ce073b`): API completa
+496 aprovados, 5 ignorados por desenho; `shared` 82/82; E2E completo **37/37**; lint, typecheck,
+formatação e build sem erros. **CI nº 108 (`db07e3e`, D9), 109 (`d854957`, fechamento) e 110
+(`6ce073b`, textos): verdes.** Nenhuma migration nova. Homologação e produção: não publicado;
+nenhuma alteração remota; as Fases 2–4 continuam dependendo da homologação controlada.
