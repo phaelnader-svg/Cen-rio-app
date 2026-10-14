@@ -224,3 +224,41 @@ Não reproduziu em 25 execuções locais. **Pendente (decisão):** corrigir com 
 conferência (ex.: travar em modo compartilhado os custos/contas lidos antes do cálculo, já que o
 ajuste trava o custo antes de alterar a conta) — mexe no fechamento financeiro, por isso não foi
 alterado aqui.
+
+### Correção — corrida na conferência do fechamento (falha do CI nº 105)
+
+- **Transação e isolamento (verificados):** a conferência (`confirmClosing`) roda em
+  `prisma.$transaction` sem nível explícito, ou seja, **READ COMMITTED** (padrão do PostgreSQL:
+  cada comando vê o último estado gravado). Conferências da mesma semana já eram serializadas por
+  trava consultiva (`closing:<semana>`); ajustes de custo não usam essa trava.
+- **Causa:** o cálculo lia o custo de logística e a conta a pagar dele em consultas separadas
+  (o `include` do Prisma). Um ajuste gravado entre as duas fazia a conferência ver o custo antigo
+  com a conta nova e acusar a pendência bloqueante "conta a pagar difere do custo devido".
+  Reproduzido de forma **determinística** (gancho só de teste entre as duas leituras): sem a
+  correção, a conferência devolve exatamente o 422 do CI nº 105
+  ("LG-00001: conta a pagar (105.00) difere do custo devido (100.00)").
+- **Mecanismo escolhido:** antes do cálculo, a conferência trava em modo **compartilhado**
+  (`SELECT … FOR SHARE`, em ordem de id) os custos de logística com conta a pagar que podem entrar
+  na semana (superconjunto dos lidos). O ajuste (`adjustTripCost`) já travava o custo
+  (`FOR UPDATE`) antes de alterar custo e conta: se está em andamento, a conferência espera o
+  commit e lê os dois depois; se a conferência travou antes, o ajuste espera ela terminar e então
+  é gravado normalmente (sem erro). Sem ciclo de travas (a conferência só trava custos; o ajuste
+  trava custo e depois conta). Descartado: REPEATABLE READ — o retrato seria tirado antes da
+  espera pela trava da semana e duas conferências simultâneas deixariam de receber o 409 de
+  versão (mudaria a semântica).
+- **O que não mudou:** regras e critérios de cálculo, pendências, auditoria, eventos, valores. A
+  leitura das contas foi separada explicitamente do `include` (mesmas consultas que o Prisma já
+  fazia) só para permitir o gancho de teste (`closingTestHooks`, indefinido em produção).
+- **Garantias:** dentro da conferência, custo e conta de cada custo de logística são lidos no
+  mesmo estado gravado; um ajuste concorrente nunca produz falsa divergência e nunca é perdido
+  (grava depois e aparece como divergência real do retrato, como já acontecia). Divergências
+  reais continuam bloqueando; nada é ajustado automaticamente.
+- **Limite:** a garantia cobre o par custo de logística × conta a pagar (a corrida observada).
+  Outras leituras do fechamento continuam em READ COMMITTED sem trava (ex.: pagamentos
+  registrados durante a conferência); não há evidência de falsa pendência nelas, e travá-las
+  seria ampliar o escopo.
+- **Testes** (`closing.test.ts`, describe "Conferência com leitura consistente"): ajuste
+  concorrente determinístico (conferência 200, ajuste esperou a trava e gravou 200, retrato
+  anterior ao ajuste, divergência real apontada depois); divergência real continua bloqueando
+  (422, nada alterado); fechamento normal. Controle negativo: sem a trava, o teste determinístico
+  falha com o 422 original. Repetidos 5 vezes, estáveis.

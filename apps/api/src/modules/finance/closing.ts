@@ -61,6 +61,12 @@ import { payPayable } from './payables';
 import { reversePayablePayment, tripCostInclude } from './trip-costs';
 
 type Db = Tx | PrismaClient;
+
+/**
+ * Só para testes: ponto entre a leitura dos custos de logística e a das contas a pagar deles
+ * (indefinido em produção). Permite reproduzir de forma determinística um ajuste concorrente.
+ */
+export const closingTestHooks: { afterCostsRead?: () => Promise<void> } = {};
 export const closingPaymentCode = (n: number) => formatNumber('PF', n);
 
 const plusDays = (iso: string, n: number) => {
@@ -202,7 +208,7 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
   const configured = settings?.logisticsPayee
     ? { userId: settings.logisticsPayee.id, displayName: settings.logisticsPayee.displayName }
     : { userId: null, displayName: 'Recebedor não configurado' };
-  const costs = await db.logisticsCost.findMany({
+  const rows = await db.logisticsCost.findMany({
     where: {
       cancelledAt: null,
       OR: [
@@ -229,12 +235,22 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
         },
       ],
     },
-    include: {
-      ...tripCostInclude,
-      payable: { include: { payments: { include: { reversal: true } } } },
-    },
+    include: { ...tripCostInclude, payable: false },
     orderBy: { number: 'asc' },
   });
+  // Contas a pagar lidas à parte (o mesmo que o `include` já fazia, em outra consulta). Na
+  // conferência, os custos lidos estão travados em modo compartilhado (`lockClosingCosts`), então
+  // um ajuste não consegue alterar custo e conta entre as duas leituras.
+  await closingTestHooks.afterCostsRead?.();
+  const costPayables = await db.accountPayable.findMany({
+    where: { id: { in: rows.flatMap((r) => (r.payableId ? [r.payableId] : [])) } },
+    include: { payments: { include: { reversal: true } } },
+  });
+  const payableOf = new Map(costPayables.map((p) => [p.id, p]));
+  const costs = rows.map((r) => ({
+    ...r,
+    payable: r.payableId ? (payableOf.get(r.payableId) ?? null) : null,
+  }));
   for (const c of costs) {
     if (c.status === 'LANCADO' && c.payable?.status === 'CANCELADO') continue;
     const allocations = c.allocations
@@ -625,6 +641,29 @@ async function closingEvent(
 }
 
 /** Conferência: retrato versionado; recusada com pendência bloqueante não resolvida. */
+/**
+ * Leitura consistente na conferência (corrida "ajuste de custo durante a conferência"): a
+ * transação usa READ COMMITTED (padrão do PostgreSQL) e o cálculo lê o custo e a conta a pagar
+ * em consultas separadas. Trava, em modo COMPARTILHADO e em ordem de id, os custos de logística
+ * com conta a pagar que podem entrar na semana (superconjunto dos lidos em
+ * `buildClosingItems`). O ajuste (`adjustTripCost`) trava o custo FOR UPDATE antes de alterar a
+ * conta: se ele já está em andamento, a conferência espera o commit e lê custo e conta depois;
+ * se a conferência travou antes, o ajuste espera a conferência terminar. Nenhum valor ou regra
+ * de cálculo muda; divergências reais continuam sendo apontadas.
+ */
+async function lockClosingCosts(tx: Tx, weekStart: string) {
+  const tz = await tzOf(tx);
+  const weekEnd = closingWeekEnd(weekStart);
+  const endAt = zonedDateTime(plusDays(weekEnd, 1), '00:00', tz);
+  await tx.$queryRaw`
+    SELECT id FROM logistics_costs
+     WHERE cancelled_at IS NULL AND payable_id IS NOT NULL
+       AND ((status = 'DEVIDO' AND due_at < ${endAt})
+         OR (status = 'LANCADO' AND date <= ${new Date(`${weekEnd}T00:00:00Z`)}))
+     ORDER BY id
+       FOR SHARE`;
+}
+
 export async function confirmClosing(
   tx: Tx,
   actor: ActorContext,
@@ -639,6 +678,7 @@ export async function confirmClosing(
   if ((row?.version ?? 0) !== input.version) throw Errors.versionConflict(row?.version ?? 0);
   if (row?.status === 'CONFERIDO')
     throw Errors.business('Semana já conferida: reabra (com motivo) para conferir de novo.');
+  await lockClosingCosts(tx, weekStart);
   const built = await buildClosingItems(tx, weekStart);
   const blocking = built.pendencies.filter((p) => p.blocking);
   if (blocking.length)

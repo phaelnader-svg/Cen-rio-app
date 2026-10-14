@@ -1,6 +1,7 @@
 import { closingWeekStart, zonedDateTime } from '@cenario/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
+import { closingTestHooks } from '../src/modules/finance/closing';
 import type { Client } from './helpers';
 import {
   WsClient,
@@ -783,5 +784,107 @@ describe('Concorrência (CA7-11, 18)', () => {
     }
     const parts = await db().closingPaymentPart.aggregate({ _sum: { amountCents: true } });
     expect(parts._sum.amountCents ?? 0).toBe(paid._sum.amountCents ?? 0);
+  });
+});
+
+describe('Conferência com leitura consistente (estabilização — corrida do CI nº 105)', () => {
+  /** Espera a promessa terminar OU alguma sessão ficar esperando uma trava do banco. */
+  async function settledOrWaitingLock(p: Promise<unknown>) {
+    let done = false;
+    void p.finally(() => {
+      done = true;
+    });
+    for (let i = 0; i < 400; i++) {
+      if (done) return 'terminou';
+      const [r] = await db().$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM pg_stat_activity
+         WHERE datname = current_database() AND wait_event_type = 'Lock'`;
+      if (r!.n > 0n) return 'esperando trava';
+      await new Promise((ok) => setTimeout(ok, 25));
+    }
+    throw new Error('nem terminou nem esperou trava');
+  }
+
+  it('ajuste gravado entre a leitura do custo e a da conta: sem falsa divergência (determinístico)', async () => {
+    const { admin } = await exampleA();
+    const cost = await db().logisticsCost.findFirstOrThrow({ where: { status: 'DEVIDO' } });
+    let adj: Promise<{ status: number; body: unknown }> | null = null;
+    let seen: string | null = null;
+    // Exatamente entre as duas leituras da conferência, chega um ajuste de custo.
+    closingTestHooks.afterCostsRead = async () => {
+      closingTestHooks.afterCostsRead = undefined; // só na conferência
+      adj = post(admin, F(`/logistics-costs/${cost.id}/adjustments`), {
+        amountCents: 500,
+        reason: 'Pedágio',
+        version: cost.version,
+      });
+      seen = await settledOrWaitingLock(adj);
+    };
+    try {
+      const conf = await post(admin, C(WEEK, '/confirm'), { version: 0 });
+      // Sem leitura consistente, aqui vinha o 422 "conta a pagar … difere do custo devido".
+      expect(conf.status, JSON.stringify(conf.body)).toBe(200);
+      // O custo lido está travado pela conferência: o ajuste espera (não grava no meio).
+      expect(seen).toBe('esperando trava');
+      expect((await adj!).status).toBe(200); // e é gravado logo depois, sem erro
+    } finally {
+      closingTestHooks.afterCostsRead = undefined;
+    }
+    const d = (await admin.get(C())).body;
+    // O retrato conferido é anterior ao ajuste; o ajuste aparece como divergência REAL.
+    expect(d.totals.dueCents).toBe(810500);
+    expect(d.divergent).toBe(true);
+    expect(d.divergences.join(' ')).toContain('LG-');
+    const closing = await db().weeklyClosing.findFirstOrThrow();
+    expect(closing.dueCents).toBe(810000);
+    expect(
+      await db().auditLog.count({ where: { action: 'finance.weekly_closing_confirmed' } }),
+    ).toBe(1);
+  });
+
+  it('divergência real entre conta e custo continua bloqueando a conferência (nada é corrigido sozinho)', async () => {
+    const { admin } = await exampleA();
+    const cost = await db().logisticsCost.findFirstOrThrow({
+      where: { status: 'DEVIDO', payableId: { not: null } },
+    });
+    const payable = await db().accountPayable.findUniqueOrThrow({ where: { id: cost.payableId! } });
+    await db().accountPayable.update({
+      where: { id: payable.id },
+      data: { amountCents: payable.amountCents + 700 },
+    });
+    const conf = await post(admin, C(WEEK, '/confirm'), { version: 0 });
+    expect(conf.status).toBe(422);
+    expect(conf.body.error.message).toMatch(/difere do custo devido/);
+    // Nenhum valor foi alterado para "fazer passar".
+    expect(
+      (await db().accountPayable.findUniqueOrThrow({ where: { id: payable.id } })).amountCents,
+    ).toBe(payable.amountCents + 700);
+    expect(
+      (await db().logisticsCost.findUniqueOrThrow({ where: { id: cost.id } })).adjustmentsCents,
+    ).toBe(cost.adjustmentsCents);
+    expect(await db().weeklyClosing.count()).toBe(0);
+  });
+
+  it('fechamento normal: conferido com o retrato completo; ajuste depois aparece como divergência', async () => {
+    const { admin } = await exampleA();
+    const conf = await post(admin, C(WEEK, '/confirm'), { version: 0 });
+    expect(conf.status, JSON.stringify(conf.body)).toBe(200);
+    const d = (await admin.get(C())).body;
+    expect(d.status).toBe('CONFERIDO');
+    expect(d.divergent).toBe(false);
+    expect(d.totals.dueCents).toBe(810000);
+    const cost = await db().logisticsCost.findFirstOrThrow({ where: { status: 'DEVIDO' } });
+    expect(
+      (
+        await post(admin, F(`/logistics-costs/${cost.id}/adjustments`), {
+          amountCents: 500,
+          reason: 'Pedágio',
+          version: cost.version,
+        })
+      ).status,
+    ).toBe(200);
+    const after = (await admin.get(C())).body;
+    expect(after.divergent).toBe(true);
+    expect(after.divergences.join(' ')).toContain('LG-');
   });
 });
