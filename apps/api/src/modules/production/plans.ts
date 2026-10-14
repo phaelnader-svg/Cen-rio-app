@@ -47,6 +47,7 @@ import {
   taskMaterialsReady,
   toTaskDto,
 } from './common';
+import { placeServiceInQueue } from './queue-placement';
 import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 // ─────────────────────────── Pessoas ───────────────────────────
@@ -496,6 +497,22 @@ async function publishDrafts(
     where: { id: { in: tasks.map((t) => t.id) } },
     data: { status: 'BLOQUEADA' },
   });
+  // D9 (decisão C): os serviços pré-planejados entram na fila publicada pela data de início
+  // (a fila publicada pode ter sido reordenada desde que foram planejados). Ordem estável:
+  // data, momento do planejamento e OS — empate fica com quem foi planejado antes.
+  const drafted = await tx.productionPlanItem.findMany({
+    where: {
+      planId: plan.id,
+      serviceOrderId: { in: [...new Set(tasks.map((t) => t.serviceOrderId))] },
+    },
+    orderBy: [
+      { startDate: { sort: 'asc', nulls: 'first' } },
+      { createdAt: 'asc' },
+      { serviceOrderId: 'asc' },
+    ],
+    select: { serviceOrderId: true },
+  });
+  for (const d of drafted) await placeServiceInQueue(tx, plan.id, d.serviceOrderId);
   for (const t of tasks)
     await taskEvent(tx, actor, null, t, { kind: 'PUBLICADA', from: 'RASCUNHO', to: 'BLOQUEADA' });
   const now = clockNow();

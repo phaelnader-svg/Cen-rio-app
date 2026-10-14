@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   compareQueue,
+  placeByStartDate,
   compareTasks,
   createPlanSchema,
   evaluateRelease,
@@ -206,5 +207,52 @@ describe('Evolução Fase 2 — fila semanal', () => {
     expect(onlyReassignableBlockers(['DEPENDENCIAS'])).toBe(true);
     expect(onlyReassignableBlockers(['HORARIO'])).toBe(false);
     expect(onlyReassignableBlockers(['MATERIAIS'])).toBe(false);
+  });
+});
+
+describe('D9 (decisão C) — posição inicial pela data de início', () => {
+  const t = (id: string, startDate: string | null, priority = 'NORMAL') => ({
+    id,
+    priority,
+    startDate,
+  });
+  it('entra depois da última da mesma faixa com data ≤ a sua; empate fica atrás', () => {
+    const cur = [t('a', '2026-11-02'), t('b', '2026-11-04'), t('c', '2026-11-06')];
+    expect(placeByStartDate(cur, [t('x', '2026-11-04')])).toEqual(['a', 'b', 'x', 'c']);
+    expect(placeByStartDate(cur, [t('x', '2026-11-01')])).toEqual(['x', 'a', 'b', 'c']);
+    expect(placeByStartDate(cur, [t('x', '2026-11-09')])).toEqual(['a', 'b', 'c', 'x']);
+  });
+  it('preserva a ordem manual das demais, mesmo fora da ordem de datas', () => {
+    // Gestor pôs c (sexta) na frente: c, a, b.
+    const cur = [t('c', '2026-11-06'), t('a', '2026-11-02'), t('b', '2026-11-04')];
+    const out = placeByStartDate(cur, [t('x', '2026-11-03')]);
+    expect(out).toEqual(['c', 'a', 'x', 'b']);
+    expect(out.filter((id) => id !== 'x')).toEqual(['c', 'a', 'b']);
+  });
+  it('etapas da mesma OS ficam juntas e na ordem; data ausente conta como a mais cedo', () => {
+    const cur = [t('legado', null), t('a', '2026-11-02')];
+    expect(placeByStartDate(cur, [t('x1', '2026-11-02'), t('x2', '2026-11-02')])).toEqual([
+      'legado',
+      'a',
+      'x1',
+      'x2',
+    ]);
+    expect(placeByStartDate([t('a', '2026-11-02')], [t('n', null)])).toEqual(['n', 'a']);
+  });
+  it('prioridade: posiciona só dentro da própria faixa; faixa vazia entra no lugar da faixa', () => {
+    const cur = [
+      t('u', '2026-11-06', 'URGENTE'),
+      t('n1', '2026-11-02'),
+      t('b1', '2026-11-01', 'BAIXA'),
+    ];
+    expect(placeByStartDate(cur, [t('x', '2026-11-01')])).toEqual(['u', 'x', 'n1', 'b1']);
+    expect(placeByStartDate(cur, [t('h', '2026-11-09', 'ALTA')])).toEqual(['u', 'h', 'n1', 'b1']);
+    expect(placeByStartDate([], [t('x', '2026-11-03')])).toEqual(['x']);
+  });
+  it('determinístico: mesma entrada, mesma saída', () => {
+    const cur = [t('a', '2026-11-02'), t('b', '2026-11-02')];
+    const inc = [t('x', '2026-11-02')];
+    expect(placeByStartDate(cur, inc)).toEqual(placeByStartDate(cur, inc));
+    expect(placeByStartDate(cur, inc)).toEqual(['a', 'b', 'x']);
   });
 });

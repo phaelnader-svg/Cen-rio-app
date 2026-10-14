@@ -473,6 +473,44 @@ export function compareQueue(
   );
 }
 
+/**
+ * D9 (decisão C): a data de início define a POSIÇÃO INICIAL na fila; depois o gestor reordena
+ * livremente dentro da faixa de prioridade. `current` é a fila atual da pessoa no plano (já na
+ * ordem vigente, com as decisões manuais), SEM as tarefas a posicionar; `incoming` são as tarefas
+ * do serviço planejado/reprogramado, na ordem das etapas. Cada uma entra logo depois da última
+ * tarefa da mesma prioridade com data de início ≤ a sua (data ausente = sem restrição = mais
+ * cedo; empate = quem já estava fica à frente). Sem tarefa da mesma prioridade, entra na posição
+ * da faixa. A ordem relativa de `current` nunca muda. Devolve os ids na ordem final.
+ */
+export function placeByStartDate(
+  current: readonly { id: string; priority: string; startDate: string | null }[],
+  incoming: readonly { id: string; priority: string; startDate: string | null }[],
+): string[] {
+  const list = [...current];
+  const rank = (p: string) => PRIORITY_ORDER[p] ?? 9;
+  for (const x of incoming) {
+    const date = x.startDate ?? '';
+    let at = -1;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const t = list[i]!;
+      if (t.priority === x.priority && (t.startDate ?? '') <= date) {
+        at = i + 1;
+        break;
+      }
+    }
+    if (at < 0) {
+      const sameBand = list.findIndex((t) => t.priority === x.priority);
+      if (sameBand >= 0) at = sameBand;
+      else {
+        const after = list.findIndex((t) => rank(t.priority) > rank(x.priority));
+        at = after < 0 ? list.length : after;
+      }
+    }
+    list.splice(at, 0, x);
+  }
+  return list.map((t) => t.id);
+}
+
 /** Uma reordenação respeita as faixas de prioridade (para mudar de faixa, altere a prioridade). */
 export function queueOrderProblem(
   ordered: { id: string; priority: string; dependsOn: string[] }[],

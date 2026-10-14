@@ -54,6 +54,7 @@ import {
   taskEvent,
 } from './common';
 import { distributeServiceOrder } from './distribution';
+import { placeServiceInQueue } from './queue-placement';
 import { reviseIfPublishedBy } from './plans';
 
 const STARTED = ['EM_EXECUCAO', 'PAUSADA', 'CONCLUIDA'];
@@ -466,6 +467,8 @@ export async function preplanningRoutes(app: FastifyInstance) {
             })),
             draft: true,
           });
+          // D9 (decisão C): a data de início define a posição inicial na fila de cada pessoa.
+          await placeServiceInQueue(tx, plan.id, so.id);
           const owners = await tx.serviceOrderItem.findMany({
             where: { serviceOrderId: so.id },
             include: { upholsterer: { select: { displayName: true } } },
@@ -618,6 +621,8 @@ export async function preplanningRoutes(app: FastifyInstance) {
               );
           }
           await tx.productionPlanItem.delete({ where: { id: item.id } });
+          // D9 (decisão C): na semana de destino, a nova data define a posição inicial.
+          await placeServiceInQueue(tx, target.id, item.serviceOrderId);
           if (published)
             await reviseIfPublishedBy(
               tx,
@@ -655,6 +660,8 @@ export async function preplanningRoutes(app: FastifyInstance) {
                 where: { id: t.id },
                 data: { priority: data.priority, version: { increment: 1 } },
               });
+          // D9 (decisão C): a reprogramação recalcula a posição inicial só desta OS.
+          await placeServiceInQueue(tx, item.planId, item.serviceOrderId);
           if (published)
             await reviseIfPublishedBy(
               tx,

@@ -156,34 +156,57 @@ homologação controlada).
 - Testes: API com a mensagem exata; E2E `recebimentos-rede` (resposta perdida sem e com tempo
   real) e `recebimentos` (tela desatualizada, texto neutro).
 
-### 2. D9 — data de início e ordem da fila — **NÃO implementado (ambiguidade)**
+### 2. D9 — data de início e ordem da fila — decisão C (implementado)
 
-Decisão D9 original (Fase 1, §6 e tabela de decisões): a data de início "define semana e ordem,
-**não horário**" e mantém a fila semanal. Implementação atual (verificada no código):
+Decisão aprovada (C): a data de início define a **posição inicial** de uma tarefa quando ela é
+planejada ou reprogramada; depois o gestor pode reordenar manualmente. Sem horário de início,
+sem campo novo e sem migration (usa `production_tasks.queue_position` e
+`production_plan_items.start_date`, que já existiam).
 
-- Ordem da fila (`compareQueue`, `shared/production-domain.ts`, usada pela API e pelo painel):
-  **semana → prioridade (Urgente/Alta/Normal/Baixa) → posição definida pelo gestor
-  (`queuePosition`) → sequência da etapa → número da tarefa**. A data de início não entra.
-- A data de início (`production_plan_items.start_date`, só **data**, sem horário) é apenas a
-  trava de liberação (nenhuma tarefa é liberada antes dela).
-- A posição do gestor é gravada só pela reordenação manual, que posiciona **todas** as tarefas
-  da pessoa naquela semana e é validada por faixa de prioridade e dependências; reprogramar ou
-  transferir a OS volta a posição para vazia.
+**Como data, prioridade e posição manual convivem**
 
-Por que parou: a prioridade pode ser preservada (data depois da prioridade), mas a regra
-aprovada não diz como a data convive com a **posição definida pelo gestor**, que é uma regra
-operacional existente. As alternativas mudam comportamento de forma diferente:
+1. A ordem da fila continua sendo `compareQueue` (inalterada): semana → **prioridade** →
+   posição (`queue_position`) → sequência da etapa → número da tarefa. A prioridade vem antes
+   da posição, então nenhuma posição consegue furar a faixa de prioridade.
+2. A data **não** é critério de ordenação; ela só **escreve a posição inicial**
+   (`placeServiceInQueue`, `production/queue-placement.ts`, regra pura `placeByStartDate` em
+   `shared/production-domain.ts`). Para cada pessoa com tarefa principal ainda não iniciada da
+   OS no plano:
+   - lê a fila atual da pessoa no plano na ordem vigente (com as posições manuais);
+   - retira as tarefas da OS e reinsere cada uma, na ordem das etapas, **logo depois da última
+     tarefa da mesma prioridade com data de início ≤ a sua**; data ausente (itens antigos e
+     pendências transferidas) conta como a mais cedo; sem tarefa da mesma prioridade, entra no
+     lugar da faixa;
+   - grava as posições 1..n. A ordem relativa das demais tarefas não muda (por isso a versão
+     delas não muda); só as tarefas posicionadas ganham nova versão.
+3. Quando acontece: ao planejar a OS (`POST /production/plan-services`); ao reprogramar
+   (`PUT /production/planned/:id` — nova data na mesma semana, nova prioridade ou outra semana,
+   já na fila da semana de destino); e ao publicar o rascunho de uma semana já publicada (os
+   serviços acrescentados entram na fila publicada pela data, em ordem estável: data, momento do
+   planejamento, OS — a fila publicada pode ter sido reordenada desde o planejamento).
+4. Depois disso, a reordenação manual (`PUT /production-plans/:id/queue`) funciona como antes,
+   dentro da faixa de prioridade e respeitando dependências. Planejar ou reprogramar **outra**
+   OS não desfaz a ordem escolhida pelo gestor: só insere a OS nova entre as existentes.
+5. Empates: mesma data e mesma prioridade → quem já estava na fila fica à frente (ao
+   reprogramar, a OS reprogramada entra depois das que já tinham a nova data). Etapas da mesma
+   OS ficam juntas e na ordem.
+6. **Ordem não é liberação**: a trava pela data continua em `evaluateRelease` (tarefa antes da
+   data fica PROGRAMADA). Uma tarefa colocada na frente com data futura aparece primeiro no
+   tablet, mas não é executável nem pode ser iniciada (422).
+7. Concorrência: planejar, reprogramar, publicar e reordenar travam o mesmo plano (`lockPlan`)
+   na mesma transação; posições nunca se intercalam. Uma reordenação feita sobre uma lista
+   desatualizada (outra OS entrou na fila) é recusada (422) — nada é sobrescrito.
 
-| Opção | Ordem                                            | Efeito                                                                                                                                                                            |
-| ----- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A     | semana → prioridade → **data** → posição → …     | a data manda; o gestor só reordena dentro da mesma data e a reordenação passa a recusar ordem contra a data (muda a regra de reordenação)                                         |
-| B     | semana → prioridade → posição → **data** → …     | a posição manda; depois de qualquer reordenação a data deixa de influenciar aquela pessoa/semana, e um serviço reprogramado (posição vazia) vai para o fim mesmo se começar antes |
-| C     | ordem atual; a data define a **posição inicial** | ao planejar/reprogramar, a tarefa entra na posição correspondente à data (dentro da faixa de prioridade); o gestor continua podendo reordenar depois                              |
+Fora do escopo (comportamento anterior mantido): a transferência explícita de pendências ao fim
+da semana (carry-over) e a reordenação manual não usam a data; tarefas de apoio e tarefas sem
+responsável não têm fila própria.
 
-Além disso, "data **e horário**": não existe horário de início no modo fila semanal (a decisão
-original exclui horário); incluir horário exige campo novo, migration e tela. **Decisão
-pendente:** escolher A, B ou C e confirmar se o horário deve ser criado. Recomendação técnica:
-**C, só com a data** (não muda a reordenação nem a trava de liberação). Nada foi alterado na fila.
+Testes: `pre-planejamento` describe H (7): planejamento fora de ordem de inclusão e datas
+iguais; prioridade × data; posição manual preservada ao planejar outra OS e lista desatualizada
+recusada; reprogramação na mesma semana, só de prioridade e para outra semana; data futura na
+frente da fila continua programada e não inicia; semana publicada com rascunho acrescentado após
+reordenação; 4 planejamentos simultâneos (posições únicas, ordem pela data). `shared` (5) para a
+regra pura. Controle negativo: sem o posicionamento, os 7 falham. Repetidos 5 vezes, estáveis.
 
 Resultados verificados das decisões finais (locais, commit `e6b347e`): API completa 486 aprovados,
 5 ignorados por desenho; E2E completo **36/36**; lint, typecheck, formatação e build sem erros.

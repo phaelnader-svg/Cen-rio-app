@@ -4,7 +4,7 @@ import { setClock } from '../src/core/clock';
 import { releaseDueTasks } from '../src/modules/production/common';
 import { Client, WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
 import { createCustomer, createOrder, panelUserWith, receiptBody } from './commercial-helpers';
-import { mondayOf } from '@cenario/shared';
+import { compareQueue, mondayOf } from '@cenario/shared';
 import {
   act,
   createPlan,
@@ -1090,5 +1090,296 @@ describe('G. Rascunhos de semanas passadas — aviso na Central de atenção (de
     // Tablet não acessa a Central de atenção.
     const ricardo = await tabletOf(app, admin, 'Ricardo', '482913');
     expect((await ricardo.get('/api/v1/attention')).status).toBe(403);
+  });
+});
+
+describe('H. D9 (decisão C) — a data de início define a posição inicial na fila', () => {
+  const plusDays = (iso: string, n: number) =>
+    new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+  // Semana seguinte (sempre futura): segunda = base.
+  const base = () => mondayOf(plusDays(today(), 7));
+  /** Fila de uma pessoa num plano: OS na ordem final (compareQueue) + posições gravadas. */
+  async function orderOf(userId: string, planId: string) {
+    const rows = await db().productionTask.findMany({
+      where: {
+        planId,
+        assigneeUserId: userId,
+        supportForTaskId: null,
+        status: { notIn: ['CONCLUIDA', 'CANCELADA'] },
+      },
+      select: {
+        id: true,
+        serviceOrderId: true,
+        priority: true,
+        queuePosition: true,
+        sequence: true,
+        number: true,
+      },
+    });
+    const sorted = [...rows].sort((a, b) =>
+      compareQueue({ ...a, weekStart: null }, { ...b, weekStart: null }),
+    );
+    return {
+      services: [...new Set(sorted.map((t) => t.serviceOrderId))],
+      taskIds: sorted.map((t) => t.id),
+      positions: sorted.map((t) => t.queuePosition),
+    };
+  }
+  async function plan(
+    admin: Client,
+    so: { id: string; items: { id: string }[] },
+    startDate: string,
+    owner: string,
+    priority?: string,
+  ) {
+    const r = await planServices(admin, [
+      {
+        serviceOrderId: so.id,
+        startDate,
+        ...(priority ? { priority } : {}),
+        pieces: [{ serviceOrderItemId: so.items[0]!.id, upholstererUserId: owner }],
+      },
+    ]);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    return r.body.planned[0].planId as string;
+  }
+  const contiguous = (positions: (number | null)[]) =>
+    expect(positions).toEqual(positions.map((_, i) => i + 1));
+
+  it('planejamento: ordem pela data, não pela ordem de inclusão; datas iguais = quem veio antes', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const wed = await sofa(admin, 'Cliente Quarta');
+    const mon = await sofa(admin, 'Cliente Segunda');
+    const fri = await sofa(admin, 'Cliente Sexta');
+    const tue1 = await sofa(admin, 'Cliente Terça 1');
+    const tue2 = await sofa(admin, 'Cliente Terça 2');
+    const planId = await plan(admin, wed, plusDays(base(), 2), p.ricardo);
+    await plan(admin, mon, base(), p.ricardo);
+    await plan(admin, fri, plusDays(base(), 4), p.ricardo);
+    await plan(admin, tue1, plusDays(base(), 1), p.ricardo);
+    await plan(admin, tue2, plusDays(base(), 1), p.ricardo);
+    const o = await orderOf(p.ricardo, planId);
+    expect(o.services).toEqual([mon.id, tue1.id, tue2.id, wed.id, fri.id]);
+    contiguous(o.positions);
+    // As etapas de uma OS ficam juntas e na ordem (dependência respeitada).
+    const seqs = (await tasksOf(mon.id)).filter((t) => t.assigneeUserId === p.ricardo);
+    expect(o.taskIds.slice(0, seqs.length)).toEqual(seqs.map((t) => t.id));
+  });
+
+  it('prioridade: urgente com data posterior fica à frente; dentro da faixa, vale a data', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const a = await sofa(admin, 'Cliente Normal Segunda');
+    const b = await sofa(admin, 'Cliente Urgente Sexta');
+    const c = await sofa(admin, 'Cliente Urgente Terça');
+    const planId = await plan(admin, a, base(), p.ricardo);
+    await plan(admin, b, plusDays(base(), 4), p.ricardo, 'URGENTE');
+    await plan(admin, c, plusDays(base(), 1), p.ricardo, 'URGENTE');
+    const o = await orderOf(p.ricardo, planId);
+    expect(o.services).toEqual([c.id, b.id, a.id]);
+    contiguous(o.positions);
+  });
+
+  it('posição manual: preservada ao planejar outro serviço; o novo entra pela data', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const a = await sofa(admin, 'Cliente A Segunda');
+    const b = await sofa(admin, 'Cliente B Quarta');
+    const c = await sofa(admin, 'Cliente C Quinta');
+    const planId = await plan(admin, a, base(), p.ricardo);
+    await plan(admin, b, plusDays(base(), 2), p.ricardo);
+    await plan(admin, c, plusDays(base(), 3), p.ricardo);
+    // O gestor coloca C (quinta) na frente: C, A, B.
+    const now = await orderOf(p.ricardo, planId);
+    const taskSo = new Map(
+      (
+        await db().productionTask.findMany({
+          where: { id: { in: now.taskIds } },
+          select: { id: true, serviceOrderId: true },
+        })
+      ).map((t) => [t.id, t.serviceOrderId]),
+    );
+    const tasksBy = (so: string) => now.taskIds.filter((id) => taskSo.get(id) === so);
+    const manual = [...tasksBy(c.id), ...tasksBy(a.id), ...tasksBy(b.id)];
+    const v = (await planDto(admin, planId)).version;
+    const r = await put(admin, `/api/v1/production-plans/${planId}/queue`, {
+      userId: p.ricardo,
+      taskIds: manual,
+      version: v,
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    expect((await orderOf(p.ricardo, planId)).services).toEqual([c.id, a.id, b.id]);
+    // Novo serviço na terça: entra depois da última tarefa com data ≤ terça (A) — C, A, D, B.
+    const d = await sofa(admin, 'Cliente D Terça');
+    await plan(admin, d, plusDays(base(), 1), p.ricardo);
+    const after = await orderOf(p.ricardo, planId);
+    expect(after.services).toEqual([c.id, a.id, d.id, b.id]);
+    contiguous(after.positions);
+    // Reordenação com a lista antiga é recusada (nada é sobrescrito por uma tela desatualizada).
+    const stale = await put(admin, `/api/v1/production-plans/${planId}/queue`, {
+      userId: p.ricardo,
+      taskIds: manual,
+      version: (await planDto(admin, planId)).version,
+    });
+    expect(stale.status).toBe(422);
+    expect((await orderOf(p.ricardo, planId)).services).toEqual([c.id, a.id, d.id, b.id]);
+  });
+
+  it('reprogramação: só a OS reprogramada é reposicionada (mesma semana e outra semana)', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const a = await sofa(admin, 'Cliente A');
+    const b = await sofa(admin, 'Cliente B');
+    const c = await sofa(admin, 'Cliente C');
+    const planId = await plan(admin, a, base(), p.ricardo);
+    await plan(admin, b, plusDays(base(), 1), p.ricardo);
+    await plan(admin, c, plusDays(base(), 2), p.ricardo);
+    expect((await orderOf(p.ricardo, planId)).services).toEqual([a.id, b.id, c.id]);
+    // A: segunda → sexta (mesma semana) → vai para o fim; B e C mantêm a ordem entre si.
+    const ea = (await entryOf(admin, a.id))!;
+    const moved = await put(admin, `/api/v1/production/planned/${ea.plan!.itemId}`, {
+      version: ea.plan!.version,
+      startDate: plusDays(base(), 4),
+    });
+    expect(moved.status, JSON.stringify(moved.body)).toBe(200);
+    let o = await orderOf(p.ricardo, planId);
+    expect(o.services).toEqual([b.id, c.id, a.id]);
+    contiguous(o.positions);
+    // Só prioridade: A urgente → frente (faixa de prioridade).
+    const ea2 = (await entryOf(admin, a.id))!;
+    expect(
+      (
+        await put(admin, `/api/v1/production/planned/${ea2.plan!.itemId}`, {
+          version: ea2.plan!.version,
+          priority: 'URGENTE',
+        })
+      ).status,
+    ).toBe(200);
+    o = await orderOf(p.ricardo, planId);
+    expect(o.services).toEqual([a.id, b.id, c.id]);
+    // C para a semana seguinte, numa terça: na fila de destino, pela data.
+    const other = await sofa(admin, 'Cliente Próxima Quarta');
+    const next = plusDays(base(), 7);
+    const nextPlan = await plan(admin, other, plusDays(next, 2), p.ricardo);
+    const ec = (await entryOf(admin, c.id))!;
+    expect(
+      (
+        await put(admin, `/api/v1/production/planned/${ec.plan!.itemId}`, {
+          version: ec.plan!.version,
+          startDate: plusDays(next, 1),
+        })
+      ).status,
+    ).toBe(200);
+    const dest = await orderOf(p.ricardo, nextPlan);
+    expect(dest.services).toEqual([c.id, other.id]);
+    contiguous(dest.positions);
+    expect((await orderOf(p.ricardo, planId)).services).toEqual([a.id, b.id]);
+  });
+
+  it('ordem visual não libera: posição na frente com data futura continua programada e não inicia', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const later = await sofa(admin, 'Cliente Quarta');
+    const first = await sofa(admin, 'Cliente Segunda');
+    const planId = await plan(admin, later, plusDays(base(), 2), p.ricardo);
+    await plan(admin, first, base(), p.ricardo);
+    // João (desmontagem): o gestor põe a OS de quarta na frente.
+    const j = await orderOf(p.joao, planId);
+    expect(j.services).toEqual([first.id, later.id]);
+    const ids = await db().productionTask.findMany({
+      where: { id: { in: j.taskIds } },
+      select: { id: true, serviceOrderId: true },
+    });
+    const manual = [
+      ...ids.filter((t) => t.serviceOrderId === later.id).map((t) => t.id),
+      ...ids.filter((t) => t.serviceOrderId === first.id).map((t) => t.id),
+    ];
+    expect(
+      (
+        await put(admin, `/api/v1/production-plans/${planId}/queue`, {
+          userId: p.joao,
+          taskIds: manual,
+          version: (await planDto(admin, planId)).version,
+        })
+      ).status,
+    ).toBe(200);
+    expect((await publishWeek(admin, planId)).status).toBe(200);
+    setClock(() => new Date(`${base()}T12:00:00Z`));
+    await releaseDueTasks(app.ctx.prisma);
+    const laterTask = (await tasksOf(later.id)).find((t) => t.assigneeUserId === p.joao)!;
+    const firstTask = (await tasksOf(first.id)).find((t) => t.assigneeUserId === p.joao)!;
+    expect(laterTask.status).toBe('PROGRAMADA');
+    expect(firstTask.status).toBe('LIBERADA');
+    const joao = await tabletOf(app, admin, 'João', '482917');
+    const q = await queue(joao);
+    expect(q.items[0]!.task.id).toBe(laterTask.id); // primeira na ordem visual…
+    expect(q.items[0]!.executable).toBe(false); // …mas não executável antes da data
+    expect(q.items.find((i) => i.executable)!.task.id).toBe(firstTask.id);
+    expect((await act(joao, laterTask.id, 'start')).status).toBe(422);
+  });
+
+  it('semana publicada: serviço acrescentado entra na fila publicada pela data ao publicar o rascunho', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const a = await sofa(admin, 'Cliente A Segunda');
+    const c = await sofa(admin, 'Cliente C Quinta');
+    const planId = await plan(admin, a, base(), p.ricardo);
+    await plan(admin, c, plusDays(base(), 3), p.ricardo);
+    expect((await publishWeek(admin, planId)).status).toBe(200);
+    // Gestor reordena a fila publicada: C antes de A.
+    const live = await orderOf(p.ricardo, planId);
+    const ids = await db().productionTask.findMany({
+      where: { id: { in: live.taskIds } },
+      select: { id: true, serviceOrderId: true },
+    });
+    const soOf = new Map(ids.map((t) => [t.id, t.serviceOrderId]));
+    // Na ordem atual das etapas (dependências), só trocando as OS de lugar.
+    const manual = [
+      ...live.taskIds.filter((id) => soOf.get(id) === c.id),
+      ...live.taskIds.filter((id) => soOf.get(id) === a.id),
+    ];
+    expect(
+      (
+        await put(admin, `/api/v1/production-plans/${planId}/queue`, {
+          userId: p.ricardo,
+          taskIds: manual,
+          version: (await planDto(admin, planId)).version,
+          reason: 'Cliente C pediu urgência',
+        })
+      ).status,
+    ).toBe(200);
+    // B (terça) acrescentado e publicado: entra depois de A (última com data ≤ terça).
+    const b = await sofa(admin, 'Cliente B Terça');
+    await plan(admin, b, plusDays(base(), 1), p.ricardo);
+    expect((await publishWeek(admin, planId, 'Inclusão de B')).status).toBe(200);
+    const o = await orderOf(p.ricardo, planId);
+    expect(o.services).toEqual([c.id, a.id, b.id]);
+    contiguous(o.positions);
+  });
+
+  it('concorrência: planejamentos simultâneos na mesma semana → posições únicas e ordem pela data', async () => {
+    const admin = await loginAdmin(app);
+    const p = await team();
+    const sos = [];
+    for (const n of ['W', 'X', 'Y', 'Z']) sos.push(await sofa(admin, `Cliente ${n}`));
+    const days = [3, 0, 2, 1];
+    const results = await Promise.all(
+      sos.map((so, i) =>
+        planServices(admin, [
+          {
+            serviceOrderId: so.id,
+            startDate: plusDays(base(), days[i]!),
+            pieces: [{ serviceOrderItemId: so.items[0]!.id, upholstererUserId: p.ricardo }],
+          },
+        ]),
+      ),
+    );
+    expect(results.map((r) => r.status)).toEqual([201, 201, 201, 201]);
+    const planId = results[0]!.body.planned[0].planId as string;
+    const o = await orderOf(p.ricardo, planId);
+    expect(o.services).toEqual([sos[1]!.id, sos[3]!.id, sos[2]!.id, sos[0]!.id]);
+    contiguous(o.positions);
+    expect(new Set(o.positions).size).toBe(o.positions.length);
   });
 });
