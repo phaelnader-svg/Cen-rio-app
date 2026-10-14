@@ -156,6 +156,14 @@ homologação controlada).
 - Testes: API com a mensagem exata; E2E `recebimentos-rede` (resposta perdida sem e com tempo
   real) e `recebimentos` (tela desatualizada, texto neutro).
 
+- **Textos aprovados pelo responsável** (sem alteração em relação ao implementado): aviso que
+  sumiu — "Esta chegada não está mais pendente."; aviso que mudou — "Este aviso foi atualizado
+  depois que a tela abriu. Confira o saldo atual antes de confirmar."; conflito 409 da API —
+  "Este recebimento já foi atualizado. Confira o saldo atual antes de confirmar."; resposta
+  perdida — mensagem aprovada acima. Cobertura com o texto exato: API (409) e E2E (resposta
+  perdida com e sem tempo real; tela desatualizada; aviso que some sem resposta perdida — este
+  último acrescentado nesta etapa).
+
 ### 2. D9 — data de início e ordem da fila — decisão C (implementado)
 
 Decisão aprovada (C): a data de início define a **posição inicial** de uma tarefa quando ela é

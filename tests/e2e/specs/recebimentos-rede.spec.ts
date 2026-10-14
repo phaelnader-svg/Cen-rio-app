@@ -201,3 +201,79 @@ test('resposta perdida com o tempo real ativo: aviso some, mensagem aprovada, na
     await joao.context.close();
   }
 });
+
+test('aviso some sem resposta perdida neste tablet: texto neutro, sem atribuir a outro aparelho', async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(180_000);
+  await loginAdmin(page);
+  const people = (await call(page, 'GET', '/api/v1/logistics/people')) as {
+    userId: string;
+    displayName: string;
+  }[];
+  const thiago = people.find((p) => p.displayName.startsWith('Thiago'))!;
+  const svc = await call(page, 'POST', '/api/v1/services', {
+    customer: {
+      mode: 'NOVO',
+      kind: 'PF',
+      name: 'Rita Rede Três',
+      phone: null,
+      allowSimilar: true,
+      address: {
+        label: 'Residência',
+        street: 'Rua da Rede',
+        number: '9',
+        district: 'Bairro Fictício',
+        postalCode: '01000-000',
+        city: 'Cidade Teste',
+        state: 'SP',
+        isPrimary: true,
+      },
+    },
+    service: {
+      contractedService: 'Reforma completa',
+      items: [
+        { pieceType: 'SOFA', description: 'Sofá', quantity: 1, serviceType: 'REFORMA_COMPLETA' },
+      ],
+    },
+    pickup: {
+      scheduledDate: today(),
+      windowStart: '23:00',
+      team: 'EQUIPE_PROPRIA',
+      logisticsUserId: thiago.userId,
+    },
+  });
+  const pickupCode = svc.pickup.code as string;
+  const order = await call(page, 'GET', `/api/v1/orders/${svc.order.id}`);
+  await setPin(page, 'João', '731904');
+  const code = await registerDevice(page, 'Tablet João (Rede 3)', 'João');
+  const joao = await openTablet(browser, code, '731904');
+  try {
+    await joao.page.getByTestId('tile-arrivals').click();
+    await joao.page
+      .getByTestId(`arrival-piece-${pickupCode}`)
+      .getByRole('button', { name: 'Confirmar chegada' })
+      .click();
+    await expect(joao.page.getByTestId('arrival-confirm')).toBeVisible();
+    // A chegada é registrada no painel (este tablet não enviou nada).
+    await call(page, 'POST', '/api/v1/receipts', {
+      orderId: svc.order.id,
+      pickupId: svc.pickup.id,
+      origin: 'RETIRADA',
+      lines: order.items.map((i: { id: string }) => ({
+        orderItemId: i.id,
+        quantity: 1,
+        condition: 'BOA',
+        location: 'Área de recebimento',
+      })),
+    });
+    await expect(joao.page.getByTestId('arrival-gone-message')).toHaveText(
+      'Esta chegada não está mais pendente.',
+    );
+    await expect(joao.page.getByText(/outro aparelho/)).toHaveCount(0);
+    await expect(joao.page.getByText(LOST)).toHaveCount(0);
+  } finally {
+    await joao.context.close();
+  }
+});
