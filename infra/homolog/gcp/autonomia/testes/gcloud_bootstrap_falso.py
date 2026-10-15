@@ -1,11 +1,27 @@
 #!/usr/bin/env python3
 """gcloud FALSO para os testes do bootstrap.sh/revogar.sh: guarda o estado num JSON e registra
-toda chamada em $GCLOUD_LOG. Variações: FALSO_CONTA, FALSO_ESCOPOS, FALSO_VM_SA, FALSO_OUTRO_COM_OP=1."""
+toda chamada em $GCLOUD_LOG. Variações: FALSO_CONTA, FALSO_ESCOPOS, FALSO_VM_SA, FALSO_OUTRO_COM_OP=1,
+FALSO_BUILD_PADRAO (conta padrão do Cloud Build; padrão: a do Compute), FALSO_BUILD_PADRAO_ERRO=1,
+FALSO_LEGADA=1 (conta legada com cloudbuild.builds.builder), FALSO_ACTAS_EXTRA=1 (operador com actAs na
+conta do Compute), FALSO_PAPEL_PERIGOSO=1 (monitoring.viewer com actAs), FALSO_BUILD_ACTAS=1."""
 import json
 import os
 import sys
 
 P = "cenariogestao"
+COMPUTE = "123456-compute@developer.gserviceaccount.com"
+LEGADA = "123456@cloudbuild.gserviceaccount.com"
+OP = "serviceAccount:claude-operador@cenariogestao.iam.gserviceaccount.com"
+PERMS = {  # amostra fiel do essencial de cada papel predefinido
+    "roles/compute.viewer": ["compute.instances.get", "compute.instances.list", "compute.zoneOperations.get", "resourcemanager.projects.get"],
+    "roles/logging.viewer": ["logging.logEntries.list", "logging.logs.list"],
+    "roles/monitoring.viewer": ["monitoring.timeSeries.list"],
+    "roles/serviceusage.serviceUsageConsumer": ["serviceusage.services.use", "serviceusage.services.get"],
+    "roles/logging.logWriter": ["logging.logEntries.create"],
+    "roles/cloudbuild.builds.builder": ["cloudbuild.builds.create", "storage.objects.get", "storage.objects.create", "artifactregistry.repositories.uploadArtifacts"],
+    "roles/editor": ["compute.instances.setMetadata", "iam.serviceAccounts.actAs", "storage.objects.get"],
+    "roles/cloudbuild.builds.editor": ["cloudbuild.builds.create", "cloudbuild.builds.get", "cloudbuild.builds.list", "cloudbuild.builds.update"],
+}
 
 
 def carregar():
@@ -13,7 +29,7 @@ def carregar():
     if os.path.exists(c):
         with open(c, encoding="utf-8") as f:
             return json.load(f)
-    return {"apis": ["compute.googleapis.com", "artifactregistry.googleapis.com"], "sas": ["cenario-homolog-vm@cenariogestao.iam.gserviceaccount.com"],
+    return {"apis": ["compute.googleapis.com", "artifactregistry.googleapis.com"], "sas": ["cenario-homolog-vm@cenariogestao.iam.gserviceaccount.com", COMPUTE],
             "papeis": {}, "topicos": [], "assinaturas": [], "buckets": ["cenariogestao-homolog-backups"], "ligacoes": [], "chaves": {},
             "objetos": {}, "desativadas": []}
 
@@ -63,7 +79,26 @@ def main():
         membros = [l for l in e["ligacoes"] if l["recurso"] == f"projeto:{alvo}"]
         if alvo == "verificapro-8d3c8" and os.environ.get("FALSO_OUTRO_COM_OP") == "1":
             membros.append({"membro": "serviceAccount:claude-operador@cenariogestao.iam.gserviceaccount.com", "papel": "roles/viewer"})
+        if alvo == P:  # contas do Google que existem em todo projeto real
+            membros.append({"membro": f"serviceAccount:{COMPUTE}", "papel": "roles/editor"})
+            if os.environ.get("FALSO_LEGADA") == "1":
+                membros.append({"membro": f"serviceAccount:{LEGADA}", "papel": "roles/cloudbuild.builds.builder"})
         out = {"bindings": [{"role": l["papel"], "members": [l["membro"]]} for l in membros]}
+    elif cmd.startswith("builds get-default-service-account"):
+        if os.environ.get("FALSO_BUILD_PADRAO_ERRO") == "1":
+            return 1
+        print(os.environ.get("FALSO_BUILD_PADRAO", f"projects/{P}/serviceAccounts/{COMPUTE}"))
+    elif cmd.startswith("builds list"):
+        print(f"b-antiga-1\t{COMPUTE}")
+    elif cmd.startswith("iam service-accounts list"):
+        print("\n".join(e["sas"]))
+    elif cmd.startswith("iam roles describe roles/"):
+        perms = list(PERMS.get(pos[-1], []))
+        if pos[-1] == "roles/monitoring.viewer" and os.environ.get("FALSO_PAPEL_PERIGOSO") == "1":
+            perms.append("iam.serviceAccounts.actAs")
+        if not perms:
+            return 1
+        out = {"name": pos[-1], "includedPermissions": perms}
     elif cmd.startswith("projects add-iam-policy-binding"):
         lig(f"projeto:{pos[-1]}")
     elif cmd.startswith("projects remove-iam-policy-binding"):
@@ -106,7 +141,12 @@ def main():
     elif cmd.startswith("iam service-accounts remove-iam-policy-binding"):
         rc = deslig(f"sa:{pos[-1]}")
     elif cmd.startswith("iam service-accounts get-iam-policy"):
-        out = {"bindings": [{"role": l["papel"], "members": [l["membro"]]} for l in e["ligacoes"] if l["recurso"] == f"sa:{pos[-1]}"]}
+        b = [{"role": l["papel"], "members": [l["membro"]]} for l in e["ligacoes"] if l["recurso"] == f"sa:{pos[-1]}"]
+        if pos[-1] == COMPUTE and os.environ.get("FALSO_ACTAS_EXTRA") == "1":
+            b.append({"role": "roles/iam.serviceAccountUser", "members": [OP]})
+        if pos[-1] == COMPUTE and os.environ.get("FALSO_BUILD_ACTAS") == "1":
+            b.append({"role": "roles/iam.serviceAccountTokenCreator", "members": ["serviceAccount:cenario-build@cenariogestao.iam.gserviceaccount.com"]})
+        out = {"bindings": b}
     elif cmd.startswith("iam service-accounts keys list"):
         print("\n".join(e["chaves"].get(opt["iam-account"], [])))
     elif cmd.startswith("iam service-accounts keys create"):
@@ -124,6 +164,8 @@ def main():
             rc = 1
         elif opt.get("format", "").startswith("value(includedPermissions)"):
             print(";".join(r))
+        elif opt.get("format") == "json":
+            out = {"name": pos[-1], "includedPermissions": r}
     elif cmd.startswith("iam roles create") or cmd.startswith("iam roles update"):
         e["papeis"][pos[-1]] = opt["permissions"].split(","); salvar(e)
     elif cmd.startswith("iam roles delete"):

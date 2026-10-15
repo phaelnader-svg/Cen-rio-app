@@ -38,15 +38,20 @@ B_VERSOES="$PROJECT-homolog-runner-versoes"
 REPO_AR=cenario-homolog
 PAPEL_VM=cenarioOperadorVm
 PAPEL_JWT=cenarioAssinaJwt
+PAPEL_BUILD=cenarioOperadorBuild
 PERM_VM="compute.instances.get,compute.instances.getSerialPortOutput,compute.instances.reset,compute.instances.start,compute.instances.stop"
 PERM_JWT="iam.serviceAccounts.signJwt"
+# No lugar de roles/cloudbuild.builds.editor: só criar/consultar builds (sem cancelar, sem aprovar,
+# sem gatilhos). A conta que a build usa é escolhida por quem cria a build; o Cloud Build exige
+# iam.serviceAccounts.actAs nela (exceto a conta legada, que a auditoria abaixo bloqueia).
+PERM_BUILD="cloudbuild.builds.create,cloudbuild.builds.get,cloudbuild.builds.list"
 APIS=(pubsub.googleapis.com iamcredentials.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com logging.googleapis.com iam.googleapis.com)
 RUNNER_DIR=infra/homolog/gcp/autonomia/runner
 OPERAR=(python3 -I infra/homolog/gcp/autonomia/operar.py)
 [[ -n "${CENARIO_OPERAR_CMD:-}" ]] && read -r -a OPERAR <<<"$CENARIO_OPERAR_CMD"  # só nos testes
 
 # Papéis concedidos (o plano mostra exatamente estes). Nada além disto é concedido.
-PROJ_OP=(roles/compute.viewer roles/logging.viewer roles/monitoring.viewer roles/cloudbuild.builds.editor roles/serviceusage.serviceUsageConsumer)
+PROJ_OP=(roles/compute.viewer roles/logging.viewer roles/monitoring.viewer "projects/$PROJECT/roles/$PAPEL_BUILD" roles/serviceusage.serviceUsageConsumer)
 PROJ_BUILD=(roles/logging.logWriter)
 PROJ_VMSA=(roles/logging.logWriter)
 PROIBIDOS='^roles/(owner|editor|iam\.securityAdmin|iam\.serviceAccountAdmin|iam\.roleAdmin|resourcemanager\..*|secretmanager\..*|compute\.admin|compute\.instanceAdmin.*|storage\.admin)$'
@@ -63,6 +68,10 @@ confirmar() { # confirmar <frase exata>
   local r; read -r r || true
   [[ "$r" == "$1" ]] || { echo "Cancelado. Nada foi alterado depois deste ponto."; exit 1; }
 }
+
+# Permissões que permitiriam agir como outra conta, mudar IAM ou executar código fora do desenho.
+PERIGOSAS='^(iam\.serviceAccounts\.(actAs|getAccessToken|getOpenIdToken|signBlob|signJwt|implicitDelegation)|iam\.serviceAccountKeys\.create|iam\.roles\.(create|update|delete)|[A-Za-z0-9.]+\.setIamPolicy|compute\.instances\.(setMetadata|setServiceAccount)|compute\.projects\.setCommonInstanceMetadata|cloudbuild\.builds\.approve|cloudbuild\.workerpools\.(create|update)|deploymentmanager\..*|cloudfunctions\.functions\.(create|update)|run\.(services|jobs)\.(create|update)|container\.clusters\.(create|update)|composer\.environments\.(create|update)|dataflow\.jobs\.create|notebooks\.instances\.create)$'
+BLOQUEIOS=()
 
 # ============================================================ 1. conferências (só leitura)
 requisitos() {
@@ -98,6 +107,124 @@ existe() { # existe <tipo> <nome>
   esac
 }
 
+bloquear() { echo "⛔ $*"; BLOQUEIOS+=("$*"); }
+
+permissoes() { # permissoes <papel> → uma permissão por linha. Os papéis deste desenho valem pela definição
+  local p="$1" c="$T/perm-${1//[\/.]/_}"  # planejada (o bootstrap atualiza um papel existente para ela).
+  if [[ ! -f "$c" ]]; then
+    case "$p" in
+      "projects/$PROJECT/roles/$PAPEL_VM") tr ',' '\n' <<<"$PERM_VM" ;;
+      "projects/$PROJECT/roles/$PAPEL_JWT") tr ',' '\n' <<<"$PERM_JWT" ;;
+      "projects/$PROJECT/roles/$PAPEL_BUILD") tr ',' '\n' <<<"$PERM_BUILD" ;;
+      projects/*) g iam roles describe "${p##*/}" --format=json 2>/dev/null | jq -r '.includedPermissions[]?' ;;
+      *) gcloud iam roles describe "$p" --format=json 2>/dev/null | jq -r '.includedPermissions[]?' ;;
+    esac > "$c" || true
+  fi
+  cat "$c"
+}
+papeis_no_projeto() { jq -r --arg m "$1" '[.bindings[]? | select(.members | index($m)) | .role] | unique | .[]' "$T/proj-iam.json"; }
+
+# Uma build roda como a conta escolhida por quem a cria (ou a padrão do projeto). O Cloud Build exige
+# iam.serviceAccounts.actAs na conta, EXCETO na conta legada (NUM@cloudbuild.gserviceaccount.com).
+# Esta auditoria prova que claude-operador só consegue usar cenario-build; senão o bootstrap PARA,
+# explica e NÃO altera IAM para contornar (a correção é decisão sua).
+auditar_cloud_build() {
+  secao "Cloud Build: que contas uma build de claude-operador poderia usar (só leitura)"
+  BLOQUEIOS=()
+  : > "$T/bloq.txt"
+  g projects get-iam-policy "$PROJECT" --format=json > "$T/proj-iam.json" 2>/dev/null \
+    || { bloquear "política IAM do projeto ilegível com $CONTA"; return; }
+  local legada="$NUM@cloudbuild.gserviceaccount.com" padrao="" r sa
+  jq -e '[.bindings[]?.members[]? | select(. == "allUsers" or . == "allAuthenticatedUsers")] | length == 0' "$T/proj-iam.json" >/dev/null \
+    || bloquear "o projeto tem papel concedido a allUsers/allAuthenticatedUsers"
+
+  if padrao="$(g builds get-default-service-account --region="$REGION" --format='value(serviceAccountEmail)' 2>/dev/null)" && [[ -n "$padrao" ]]; then
+    padrao="${padrao##*/}"
+    echo "• conta PADRÃO das builds em $REGION: $padrao"
+  else
+    padrao=""
+    bloquear "não consegui ler a conta padrão do Cloud Build em $REGION (API desativada ou sem permissão): sem ela não há como provar que uma build sem conta explícita não roda como uma conta mais ampla"
+  fi
+  local pl; pl="$(papeis_no_projeto "serviceAccount:$legada" | paste -sd' ' -)"
+  echo "• conta LEGADA do Cloud Build $legada · papéis no projeto: ${pl:-nenhum}"
+  if [[ "$padrao" == "$legada" ]]; then
+    bloquear "a conta padrão das builds é a LEGADA $legada: o Cloud Build a usa SEM exigir actAs, então claude-operador rodaria builds como ela${pl:+ (papéis: $pl)}, além de cenario-build"
+  elif [[ -n "$pl" ]]; then
+    bloquear "a conta LEGADA $legada tem papéis no projeto ($pl) e pode ser indicada numa build sem exigir actAs: caminho de escalada além de cenario-build"
+  fi
+  [[ -n "$padrao" && "$padrao" != "$legada" ]] && echo "• $padrao exige actAs para ser usada numa build (conferido abaixo que claude-operador não o terá)"
+
+  g iam service-accounts list --format='value(email)' > "$T/sas.txt" 2>/dev/null || { bloquear "contas de serviço do projeto ilegíveis"; return; }
+  while read -r sa; do
+    [[ -n "$sa" ]] || continue
+    g iam service-accounts get-iam-policy "$sa" --format=json > "$T/sa-iam.json" 2>/dev/null || echo '{}' > "$T/sa-iam.json"
+    local quem; quem="$(jq -r '[.bindings[]? | "\(.role) → \(.members | join(", "))"] | join("; ")' "$T/sa-iam.json")"
+    local psa; psa="$(papeis_no_projeto "serviceAccount:$sa" | paste -sd' ' -)"
+    echo "• conta $sa · papéis no projeto: ${psa:-nenhum} · quem age sobre ela: ${quem:-só Owners}"
+    jq -e '[.bindings[]?.members[]? | select(. == "allUsers" or . == "allAuthenticatedUsers" or startswith("domain:"))] | length == 0' "$T/sa-iam.json" >/dev/null \
+      || echo "$sa: ligação pública ou de domínio na política da conta" >> "$T/bloq.txt"
+    while read -r r; do  # claude-operador: só serviceAccountUser em cenario-build e a assinatura do próprio JWT
+      [[ -z "$r" || "$sa:$r" == "$BUILD:roles/iam.serviceAccountUser" || "$sa:$r" == "$OP:projects/$PROJECT/roles/$PAPEL_JWT" ]] && continue
+      echo "claude-operador já tem $r sobre $sa (poderia agir como ela numa build)" >> "$T/bloq.txt"
+    done < <(jq -r --arg m "serviceAccount:$OP" '.bindings[]? | select(.members | index($m)) | .role' "$T/sa-iam.json")
+    while read -r r; do  # cenario-build não pode agir sobre nenhuma conta
+      [[ -n "$r" ]] && echo "cenario-build tem $r sobre $sa (uma build poderia agir como ela)" >> "$T/bloq.txt"
+    done < <(jq -r --arg m "serviceAccount:$BUILD" '.bindings[]? | select(.members | index($m)) | .role' "$T/sa-iam.json")
+  done < "$T/sas.txt"
+
+  local conta planejados atuais
+  for conta in "$OP" "$BUILD"; do  # papéis no projeto (atuais + planejados): nenhuma permissão de escalada
+    if [[ "$conta" == "$OP" ]]; then planejados="${PROJ_OP[*]}"; else planejados="${PROJ_BUILD[*]}"; fi
+    atuais="$(papeis_no_projeto "serviceAccount:$conta" | paste -sd' ' -)"
+    for r in $atuais; do [[ " $planejados " == *" $r "* ]] || echo "$conta já tem no projeto o papel $r, fora do desenho" >> "$T/bloq.txt"; done
+    for r in $(printf '%s\n' $atuais $planejados | sort -u); do
+      local perms; perms="$(permissoes "$r")"
+      [[ -n "$perms" ]] || { echo "permissões do papel $r ilegíveis (falha fechada)" >> "$T/bloq.txt"; continue; }
+      local ruins; ruins="$(grep -E "$PERIGOSAS" <<<"$perms" | paste -sd' ' - || true)"
+      [[ -z "$ruins" ]] || echo "$conta: o papel $r inclui $ruins" >> "$T/bloq.txt"
+    done
+  done
+  while read -r r; do [[ -n "$r" ]] && bloquear "$r"; done < "$T/bloq.txt"
+
+  local antigas; antigas="$(g builds list --region="$REGION" --limit=100 --format='value(id,serviceAccount)' 2>/dev/null | awk -v b="$BUILD" '$2 !~ b {n++} END {print n+0}')"
+  echo "• builds anteriores em $REGION com outra conta: $antigas (uma re-execução repete os MESMOS passos e fonte, sem escolha de código nem de conta)"
+  if (( ${#BLOQUEIOS[@]} == 0 )); then
+    ok "Cloud Build: claude-operador só consegue iniciar builds como $BUILD (custom $PAPEL_BUILD: $PERM_BUILD)"
+  else
+    echo "⛔ Cloud Build BLOQUEADO: ${#BLOQUEIOS[@]} caminho(s) de escalada (acima). O bootstrap NÃO continua e NÃO altera IAM para"
+    echo "   contorná-los. Corrija você (ex.: mudar a conta padrão do Cloud Build para uma conta que exija actAs, ou remover os"
+    echo "   papéis da conta legada) e rode o plano de novo."
+  fi
+}
+
+conflitos() {
+  secao "Conflitos e recursos existentes"
+  local n=0 c
+  if existe sa "$OP"; then
+    c="$(g iam service-accounts keys list --iam-account="$OP" --managed-by=user --format='value(name.basename())' | wc -l | tr -d ' ')"
+    (( c == 0 )) && ok "$OP existe, sem chaves" || { echo "⚠ $OP já tem $c chave(s) (o bootstrap só cria outra se você pedir; revogue as antigas)"; n=$((n + 1)); }
+  fi
+  local id perm alvo
+  for id in "$PAPEL_VM:$PERM_VM" "$PAPEL_JWT:$PERM_JWT" "$PAPEL_BUILD:$PERM_BUILD"; do
+    perm="${id#*:}"; id="${id%%:*}"
+    existe papel "$id" || continue
+    alvo="$(tr ',' '\n' <<<"$perm" | sort | paste -sd, -)"
+    [[ "$(g iam roles describe "$id" --format='value(includedPermissions)' | tr ';' '\n' | sort | paste -sd, -)" == "$alvo" ]] \
+      && ok "papel $id existe com as permissões previstas" || { echo "⚠ papel $id existe com OUTRAS permissões: será ajustado para $perm"; n=$((n + 1)); }
+  done
+  if existe topico "$TOPICO"; then
+    local pubs; pubs="$(g pubsub topics get-iam-policy "$TOPICO" --format=json | jq -r '[.bindings[]? | select(.role == "roles/pubsub.publisher") | .members[]] | join(", ")')"
+    echo "• publicadores atuais de $TOPICO: ${pubs:-nenhum}"
+    [[ -z "$pubs" || "$pubs" == "serviceAccount:$OP" ]] || { echo "⚠ há outros publicadores em $TOPICO (só assinaturas de claude-operador são aceitas pelo runner)"; n=$((n + 1)); }
+  fi
+  (( n == 0 )) && ok "nenhum conflito com recursos existentes"
+  cat <<EOF
+• Outros projetos: o bootstrap só ESCREVE com --project=$PROJECT. Em $OUTRO_PROJETO e nos demais projetos ele apenas
+  LÊ a política IAM, para provar que as contas claude-operador e cenario-build não têm acesso. Nada é alterado neles.
+• Produção: nenhum recurso de produção é lido, criado ou alterado.
+EOF
+}
+
 plano() {
   secao "Plano (✔ já existe · ◻ será criado/aplicado)"
   g services list --enabled --format='value(config.name)' > "$T/apis.txt" 2>/dev/null || : > "$T/apis.txt"
@@ -106,6 +233,7 @@ plano() {
   existe sa "$BUILD" && ok "conta $BUILD" || echo "◻ criar conta $BUILD (Cloud Build: só publica imagens no repositório $REPO_AR)"
   existe papel "$PAPEL_VM" && ok "papel $PAPEL_VM" || echo "◻ criar papel $PAPEL_VM: $PERM_VM"
   existe papel "$PAPEL_JWT" && ok "papel $PAPEL_JWT" || echo "◻ criar papel $PAPEL_JWT: $PERM_JWT"
+  existe papel "$PAPEL_BUILD" && ok "papel $PAPEL_BUILD" || echo "◻ criar papel $PAPEL_BUILD: $PERM_BUILD (no lugar de roles/cloudbuild.builds.editor)"
   existe topico "$TOPICO" && ok "tópico $TOPICO" || echo "◻ criar tópico $TOPICO"
   existe assinatura "$ASSINATURA" && ok "assinatura $ASSINATURA" || echo "◻ criar assinatura $ASSINATURA (confirmação 60 s, retenção 10 min, sem expiração)"
   local b; for b in "$B_OPS" "$B_BUILD" "$B_VERSOES"; do existe bucket "$b" && ok "bucket gs://$b" || echo "◻ criar bucket gs://$b ($REGION, acesso uniforme, sem acesso público)"; done
@@ -114,6 +242,7 @@ plano() {
 ◻ IAM (idempotente; nada é removido):
     $OP
       projeto: ${PROJ_OP[*]}
+               ($PAPEL_BUILD = $PERM_BUILD; builds SEMPRE com --service-account=$BUILD)
       VM $VM: projects/$PROJECT/roles/$PAPEL_VM          (sem metadados, sem SSH, sem troca de conta)
       conta $OP: projects/$PROJECT/roles/$PAPEL_JWT      (assina o próprio JWT; não cria tokens nem chaves)
       conta $BUILD: roles/iam.serviceAccountUser          (só para usar no Cloud Build)
@@ -133,6 +262,8 @@ plano() {
 ◻ chave JSON de $OP: SÓ depois da sua confirmação de que o Network Secret do tipo
   "GCP access token (with Service Account Key)" existe no ambiente; nunca exibida
 EOF
+  conflitos
+  auditar_cloud_build
 }
 
 # ============================================================ 2. aplicação (idempotente)
@@ -173,6 +304,10 @@ aplicar() {
   ok "conta $BUILD"
   papel "$PAPEL_VM" "Cenario - operar a VM da homologacao" "$PERM_VM"
   papel "$PAPEL_JWT" "Cenario - assinar JWT do operador" "$PERM_JWT"
+  papel "$PAPEL_BUILD" "Cenario - iniciar e consultar builds" "$PERM_BUILD"
+  # Antes de QUALQUER ligação IAM, a auditoria é refeita (o estado pode ter mudado desde o plano).
+  auditar_cloud_build
+  (( ${#BLOQUEIOS[@]} == 0 )) || { echo "✘ nenhuma ligação IAM foi feita."; exit 1; }
   existe topico "$TOPICO" || g pubsub topics create "$TOPICO" --format=none
   ok "tópico $TOPICO"
   existe assinatura "$ASSINATURA" || g pubsub subscriptions create "$ASSINATURA" --topic="$TOPICO" --ack-deadline=60 \
@@ -333,13 +468,17 @@ registrar() { # registro sem segredos (a etapa da chave fica fora dele); criado 
 }
 
 case "${1:-tudo}" in
-  plano) requisitos; plano ;;
+  plano) requisitos; plano; (( ${#BLOQUEIOS[@]} == 0 )) || exit 1 ;;
   publicar-runner) registrar publicar; requisitos; publicar_runner ;;
   verificar) registrar verificar; requisitos; isolamento; teste_canal ;;
   tudo)
     registrar tudo
     requisitos
     plano
+    if (( ${#BLOQUEIOS[@]} > 0 )); then
+      echo; echo "✘ Bootstrap interrompido ANTES de qualquer alteração: resolva os bloqueios do Cloud Build acima e rode de novo."
+      exit 1
+    fi
     confirmar "autorizar claude-operador na homologacao"
     aplicar
     publicar_runner

@@ -150,20 +150,20 @@ Em falha: `rollback_to_recovery_point`, ou `rollback_version` quando o banco é 
 
 ## 4. IAM exato
 
-| Identidade           | Onde                                         | Papel                                                                                                                    |
-| -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `claude-operador`    | projeto                                      | `compute.viewer`, `logging.viewer`, `monitoring.viewer`, `cloudbuild.builds.editor`, `serviceusage.serviceUsageConsumer` |
-| `claude-operador`    | VM `cenario-homolog`                         | `cenarioOperadorVm` = `compute.instances.{get,getSerialPortOutput,start,stop,reset}`                                     |
-| `claude-operador`    | a própria conta                              | `cenarioAssinaJwt` = `iam.serviceAccounts.signJwt` (não cria tokens nem chaves)                                          |
-| `claude-operador`    | conta `cenario-build`                        | `iam.serviceAccountUser` (só para o Cloud Build)                                                                         |
-| `claude-operador`    | tópico `cenario-homolog-comandos`            | `pubsub.publisher`                                                                                                       |
-| `claude-operador`    | `gs://cenariogestao-homolog-operacoes`       | `storage.objectViewer`                                                                                                   |
-| `claude-operador`    | `gs://cenariogestao-homolog-build`           | `storage.objectAdmin`, `storage.legacyBucketReader`                                                                      |
-| `claude-operador`    | repositório `cenario-homolog`                | `artifactregistry.reader`                                                                                                |
-| `cenario-build`      | projeto / repositório / build                | `logging.logWriter` / `artifactregistry.writer` / `storage.objectViewer`                                                 |
-| `cenario-homolog-vm` | projeto                                      | `logging.logWriter`                                                                                                      |
-| `cenario-homolog-vm` | assinatura `cenario-homolog-comandos-vm`     | `pubsub.subscriber`                                                                                                      |
-| `cenario-homolog-vm` | `gs://…-operacoes` / `gs://…-runner-versoes` | `storage.objectCreator` / `storage.objectViewer`                                                                         |
+| Identidade           | Onde                                         | Papel                                                                                                                                                        |
+| -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `claude-operador`    | projeto                                      | `compute.viewer`, `logging.viewer`, `monitoring.viewer`, `cenarioOperadorBuild` (`cloudbuild.builds.{create,get,list}`), `serviceusage.serviceUsageConsumer` |
+| `claude-operador`    | VM `cenario-homolog`                         | `cenarioOperadorVm` = `compute.instances.{get,getSerialPortOutput,start,stop,reset}`                                                                         |
+| `claude-operador`    | a própria conta                              | `cenarioAssinaJwt` = `iam.serviceAccounts.signJwt` (não cria tokens nem chaves)                                                                              |
+| `claude-operador`    | conta `cenario-build`                        | `iam.serviceAccountUser` (só para o Cloud Build)                                                                                                             |
+| `claude-operador`    | tópico `cenario-homolog-comandos`            | `pubsub.publisher`                                                                                                                                           |
+| `claude-operador`    | `gs://cenariogestao-homolog-operacoes`       | `storage.objectViewer`                                                                                                                                       |
+| `claude-operador`    | `gs://cenariogestao-homolog-build`           | `storage.objectAdmin`, `storage.legacyBucketReader`                                                                                                          |
+| `claude-operador`    | repositório `cenario-homolog`                | `artifactregistry.reader`                                                                                                                                    |
+| `cenario-build`      | projeto / repositório / build                | `logging.logWriter` / `artifactregistry.writer` / `storage.objectViewer`                                                                                     |
+| `cenario-homolog-vm` | projeto                                      | `logging.logWriter`                                                                                                                                          |
+| `cenario-homolog-vm` | assinatura `cenario-homolog-comandos-vm`     | `pubsub.subscriber`                                                                                                                                          |
+| `cenario-homolog-vm` | `gs://…-operacoes` / `gs://…-runner-versoes` | `storage.objectCreator` / `storage.objectViewer`                                                                                                             |
 
 **Não concedido:**
 
@@ -217,8 +217,23 @@ Na VM: `touch /etc/cenario/runner-desativado`.
   imagens roda nos contêineres, com acesso ao banco e às variáveis da aplicação. É inerente ao deploy autônomo.
   Mitigações: só commits do repositório, imagens identificadas pelo SHA, histórico no git e auditoria de cada
   `activate_version`.
-- **Cloud Build.** `cloudbuild.builds.editor` permite iniciar builds com a conta padrão do Cloud Build, se o
-  projeto ainda usa a conta legada. O cliente sempre usa `cenario-build`. Confira as permissões da conta legada.
+- **Cloud Build (auditado e bloqueante).** Quem cria uma build escolhe a conta em que ela roda. O Cloud
+  Build exige `iam.serviceAccounts.actAs` nessa conta, **exceto** na conta legada `NUM@cloudbuild.gserviceaccount.com`.
+  - O operador não recebe `cloudbuild.builds.editor`: recebe só o papel `cenarioOperadorBuild`
+    (`cloudbuild.builds.{create,get,list}`), e `actAs` apenas em `cenario-build`.
+  - `operar.py` sempre passa `--service-account=cenario-build`, sem variável que o redirecione, e recusa um
+    `cloudbuild.yaml` com `serviceAccount` ou sem `CLOUD_LOGGING_ONLY`.
+  - O bootstrap (e o `plano`) **para antes de qualquer alteração** em qualquer um destes casos:
+    - a conta padrão das builds é a legada ou não pode ser lida;
+    - a conta legada tem algum papel no projeto;
+    - o operador tem papel sobre outra conta de serviço;
+    - `cenario-build` pode agir sobre alguma conta;
+    - algum papel de projeto do operador ou de `cenario-build`, atual ou planejado, contém permissão de escalada
+      (`actAs`, `getAccessToken`, `signBlob`, `setIamPolicy`, `setMetadata`, …);
+    - há ligação pública.
+  - O bootstrap **não altera IAM** para contornar esses casos.
+  - Limite conhecido: uma _re-execução_ de build antiga repete os mesmos passos e a mesma fonte com a conta
+    original, sem escolha de código nem de conta. O plano mostra quantas existem.
 - **Alcance do Network Secret.** A credencial vale para todas as sessões do ambiente do Claude Code onde está.
   Mantenha esse ambiente pessoal.
 - **Chave JSON.** É persistente, porque não há credencial federada aceita pelos Network Secrets. Fica só no proxy.

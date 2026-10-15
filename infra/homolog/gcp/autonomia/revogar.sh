@@ -62,7 +62,7 @@ case "${1:-}" in
   remover-tudo)
     confirmar "remover autonomia da homologacao"
     bash "$0" revogar-chaves
-    for r in roles/compute.viewer roles/logging.viewer roles/monitoring.viewer roles/cloudbuild.builds.editor roles/serviceusage.serviceUsageConsumer; do
+    for r in roles/compute.viewer roles/logging.viewer roles/monitoring.viewer "projects/$PROJECT/roles/cenarioOperadorBuild" roles/serviceusage.serviceUsageConsumer; do
       tira g projects remove-iam-policy-binding "$PROJECT" --member="serviceAccount:$OP" --role="$r" --condition=None
     done
     tira g projects remove-iam-policy-binding "$PROJECT" --member="serviceAccount:$BUILD" --role=roles/logging.logWriter --condition=None
@@ -82,6 +82,7 @@ case "${1:-}" in
     tira g iam service-accounts delete "$BUILD"
     tira g iam roles delete cenarioOperadorVm
     tira g iam roles delete cenarioAssinaJwt
+    tira g iam roles delete cenarioOperadorBuild
     if conferir_chave_ssh 2>&1; then
       g compute ssh "$VM" --zone="$ZONE" --tunnel-through-iap --quiet "${SSH_SEM_PERGUNTA[@]}" \
         --command='sudo systemctl disable --now cenario-runner.service; sudo rm -f /etc/systemd/system/cenario-runner.service; sudo systemctl daemon-reload; echo runner desinstalado (estado e auditoria em /var/lib/cenario-runner e /var/log/cenario-runner mantidos)' \

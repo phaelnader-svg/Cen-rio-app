@@ -46,7 +46,8 @@ ZONA = os.environ.get("CENARIO_ZONE", "us-east1-b")
 REGIAO = os.environ.get("CENARIO_REGION", "us-east1")
 VM = os.environ.get("CENARIO_VM", "cenario-homolog")
 OPERADOR = os.environ.get("CENARIO_OPERADOR", f"claude-operador@{PROJETO}.iam.gserviceaccount.com")
-BUILD_SA = os.environ.get("CENARIO_BUILD_SA", f"cenario-build@{PROJETO}.iam.gserviceaccount.com")
+# Sempre esta conta nas builds (nunca a padrão do projeto; não é configurável por variável).
+BUILD_SA = f"cenario-build@{PROJETO}.iam.gserviceaccount.com"
 TOPICO = os.environ.get("CENARIO_TOPICO", f"projects/{PROJETO}/topics/cenario-homolog-comandos")
 BUCKET = os.environ.get("CENARIO_BUCKET_OPERACOES", f"{PROJETO}-homolog-operacoes")
 BUCKET_BUILD = os.environ.get("CENARIO_BUCKET_BUILD", f"{PROJETO}-homolog-build")
@@ -288,6 +289,10 @@ def build_iniciar(sha: str) -> int:
     try:
         completo = subprocess.run(["git", "-C", wt, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
         etiqueta = sha  # a etiqueta das imagens é exatamente o SHA pedido (o mesmo usado em prepare/activate)
+        with open(os.path.join(wt, "infra/homolog/gcp/cloudbuild.yaml"), encoding="utf-8") as f:
+            config = f.read()
+        if re.search(r"(?m)^\s*serviceAccount\s*:", config) or not re.search(r"(?m)^\s*logging:\s*CLOUD_LOGGING_ONLY\s*$", config):
+            erro("cloudbuild.yaml do commit define serviceAccount ou não usa logging CLOUD_LOGGING_ONLY: build NÃO enviado", 1)
         r = subprocess.run(["bash", "infra/homolog/gcp/conferir-contexto.sh"], cwd=wt)
         if r.returncode != 0:
             erro("contexto de build incompleto (.gcloudignore): build NÃO enviado", 1)

@@ -586,6 +586,18 @@ class TestSemExecucaoArbitraria(unittest.TestCase):
             self.assertNotIn("pickle", fonte)
         self.assertNotIn('"script"', runner.replace('"script": "id"', ""))
 
+    def test_build_sempre_com_cenario_build(self):
+        _, cliente = self.fontes()
+        self.assertIn('BUILD_SA = f"cenario-build@{PROJETO}.iam.gserviceaccount.com"', cliente)
+        self.assertNotIn("CENARIO_BUILD_SA", cliente)  # não é redirecionável por variável de ambiente
+        self.assertEqual(cliente.count('"builds", "submit"'), 1)
+        self.assertIn('f"--service-account=projects/{PROJETO}/serviceAccounts/{BUILD_SA}"', cliente)
+        self.assertIn("define serviceAccount ou não usa logging CLOUD_LOGGING_ONLY", cliente)
+        with open(os.path.join(BASE, "..", "cloudbuild.yaml"), encoding="utf-8") as f:
+            config = f.read()
+        self.assertNotRegex(config, r"(?m)^\s*serviceAccount\s*:")
+        self.assertRegex(config, r"(?m)^\s*logging:\s*CLOUD_LOGGING_ONLY\s*$")
+
     def test_sql_so_constante(self):
         runner, _ = self.fontes()
         self.assertIn("if sql not in (SQL_MIGRACOES, SQL_BANCO, SQL_CONTAGENS):", runner)

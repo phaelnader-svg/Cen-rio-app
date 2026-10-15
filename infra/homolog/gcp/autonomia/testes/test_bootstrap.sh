@@ -37,9 +37,17 @@ roda() { # roda <saida> <entrada> <script> <args…>
   set +e; ( cd "$REPO" && printf '%b' "$entrada" | bash "infra/homolog/gcp/autonomia/$s" "$@" ) > "$out" 2>&1; echo $? > "$out.rc"; set -e
 }
 
-echo "1. plano: só leitura"
+echo "1. plano: só leitura, com Cloud Build, IAM existente, conflitos e outros projetos"
 novo base
 roda "$TMP/1.out" "" bootstrap.sh plano
+afirma "$TMP/1.out" "• conta PADRÃO das builds em us-east1: 123456-compute@developer.gserviceaccount.com"
+afirma "$TMP/1.out" "• conta LEGADA do Cloud Build 123456@cloudbuild.gserviceaccount.com · papéis no projeto: nenhum"
+afirma "$TMP/1.out" "• conta 123456-compute@developer.gserviceaccount.com · papéis no projeto: roles/editor"
+afirma "$TMP/1.out" "✔ Cloud Build: claude-operador só consegue iniciar builds como cenario-build@cenariogestao.iam.gserviceaccount.com"
+afirma "$TMP/1.out" "◻ criar papel cenarioOperadorBuild: cloudbuild.builds.create,cloudbuild.builds.get,cloudbuild.builds.list"
+afirma "$TMP/1.out" "Nada é alterado neles."
+afirma "$TMP/1.out" "✔ nenhum conflito com recursos existentes"
+afirma "$TMP/1.out" "projeto: roles/compute.viewer roles/logging.viewer roles/monitoring.viewer projects/cenariogestao/roles/cenarioOperadorBuild roles/serviceusage.serviceUsageConsumer"
 afirma "$TMP/1.out" "◻ criar conta claude-operador@cenariogestao.iam.gserviceaccount.com"
 afirma "$TMP/1.out" "◻ criar papel cenarioOperadorVm: compute.instances.get,compute.instances.getSerialPortOutput,compute.instances.reset,compute.instances.start,compute.instances.stop"
 afirma "$TMP/1.out" "gs://cenariogestao-homolog-runner-versoes: NENHUM (só você publica versões do runner)"
@@ -70,7 +78,7 @@ OP = "serviceAccount:claude-operador@cenariogestao.iam.gserviceaccount.com"
 B = "serviceAccount:cenario-build@cenariogestao.iam.gserviceaccount.com"
 VM = "serviceAccount:cenario-homolog-vm@cenariogestao.iam.gserviceaccount.com"
 esperado = {
-  ("projeto:cenariogestao", OP, r) for r in ("roles/compute.viewer", "roles/logging.viewer", "roles/monitoring.viewer", "roles/cloudbuild.builds.editor", "roles/serviceusage.serviceUsageConsumer")
+  ("projeto:cenariogestao", OP, r) for r in ("roles/compute.viewer", "roles/logging.viewer", "roles/monitoring.viewer", "projects/cenariogestao/roles/cenarioOperadorBuild", "roles/serviceusage.serviceUsageConsumer")
 } | {("projeto:cenariogestao", B, "roles/logging.logWriter"), ("projeto:cenariogestao", VM, "roles/logging.logWriter"),
      ("vm:cenario-homolog", OP, "projects/cenariogestao/roles/cenarioOperadorVm"),
      ("sa:claude-operador@cenariogestao.iam.gserviceaccount.com", OP, "projects/cenariogestao/roles/cenarioAssinaJwt"),
@@ -95,6 +103,9 @@ assert not any("Admin" in l["papel"] or "admin" in l["papel"] for l in e["ligaco
 assert [l for l in e["ligacoes"] if "Admin" in l["papel"]] == [{"recurso": "bucket:cenariogestao-homolog-build", "membro": OP, "papel": "roles/storage.objectAdmin"}]
 assert not any(l["membro"].startswith("user:") for l in e["ligacoes"]), "permissão temporária ficou"
 assert e["papeis"]["cenarioAssinaJwt"] == ["iam.serviceAccounts.signJwt"]
+assert sorted(e["papeis"]["cenarioOperadorBuild"]) == ["cloudbuild.builds.create", "cloudbuild.builds.get", "cloudbuild.builds.list"]
+assert not any(l["papel"] == "roles/cloudbuild.builds.editor" for l in e["ligacoes"])
+assert [l["recurso"] for l in e["ligacoes"] if l["membro"] == OP and l["papel"] == "roles/iam.serviceAccountUser"] == ["sa:cenario-build@cenariogestao.iam.gserviceaccount.com"]
 assert "compute.instances.setMetadata" not in e["papeis"]["cenarioOperadorVm"]
 assert not e["chaves"]
 PY
@@ -131,6 +142,27 @@ roda "$TMP/6d.out" "autorizar claude-operador na homologacao\n" bootstrap.sh
 afirma "$TMP/6d.out" "mudanças não commitadas"; sem_escritas
 ( cd "$REPO" && git checkout -q -- infra )
 
+echo "6e. Cloud Build: qualquer caminho para uma conta mais ampla BLOQUEIA antes de alterar algo"
+novo cb
+bloqueio() { # bloqueio <rótulo> <trecho esperado> <variável=valor>
+  env "$3" bash -c "cd '$REPO' && printf 'autorizar claude-operador na homologacao\nnao\n' | bash infra/homolog/gcp/autonomia/bootstrap.sh" > "$TMP/cb-$1.out" 2>&1 && echo "  ✘ $1: terminou com 0" && FALHAS=$((FALHAS + 1))
+  afirma "$TMP/cb-$1.out" "$2"
+  afirma "$TMP/cb-$1.out" "Bootstrap interrompido ANTES de qualquer alteração"
+  nega "$TMP/cb-$1.out" "Para prosseguir, digite"
+  : > "$GCLOUD_LOG"
+}
+: > "$GCLOUD_LOG"
+bloqueio legada-padrao "a conta padrão das builds é a LEGADA 123456@cloudbuild.gserviceaccount.com" FALSO_BUILD_PADRAO=projects/cenariogestao/serviceAccounts/123456@cloudbuild.gserviceaccount.com
+bloqueio legada-com-papel "a conta LEGADA 123456@cloudbuild.gserviceaccount.com tem papéis no projeto (roles/cloudbuild.builds.builder)" FALSO_LEGADA=1
+bloqueio actas-extra "claude-operador já tem roles/iam.serviceAccountUser sobre 123456-compute@developer.gserviceaccount.com" FALSO_ACTAS_EXTRA=1
+bloqueio padrao-ilegivel "não consegui ler a conta padrão do Cloud Build" FALSO_BUILD_PADRAO_ERRO=1
+bloqueio papel-perigoso "o papel roles/monitoring.viewer inclui iam.serviceAccounts.actAs" FALSO_PAPEL_PERIGOSO=1
+bloqueio build-actas "cenario-build tem roles/iam.serviceAccountTokenCreator sobre 123456-compute@developer.gserviceaccount.com" FALSO_BUILD_ACTAS=1
+python3 -c "import json,os; p='$FALSO_ESTADO'; e=json.load(open(p)) if os.path.exists(p) else {'ligacoes':[], 'sas':[]}; assert not e['ligacoes'] and 'claude-operador@cenariogestao.iam.gserviceaccount.com' not in e['sas']" \
+  && echo "  ✔ nenhum recurso nem IAM criado em nenhum bloqueio" || { echo "  ✘ algo foi criado num bloqueio"; FALHAS=$((FALHAS + 1)); }
+FALSO_LEGADA=1 roda "$TMP/6f.out" "" bootstrap.sh plano
+afirma "$TMP/6f.out" "⛔ Cloud Build BLOQUEADO"; rc_e "$TMP/6f.out" 1; sem_escritas
+
 echo "7. isolamento: conta presente em outro projeto é acusada"
 export FALSO_ESTADO="$TMP/estado-base.json"
 FALSO_OUTRO_COM_OP=1 roda "$TMP/7.out" "" bootstrap.sh verificar
@@ -139,7 +171,7 @@ rc_e "$TMP/7.out" 1
 
 echo "8. revogação"
 roda "$TMP/8a.out" "" revogar.sh estado
-afirma "$TMP/8a.out" "roles/cloudbuild.builds.editor"
+afirma "$TMP/8a.out" "projects/cenariogestao/roles/cenarioOperadorBuild"
 roda "$TMP/8b.out" "" revogar.sh pausar-runner
 afirma "$TMP/8b.out" "removido"
 roda "$TMP/8c.out" "" revogar.sh suspender
