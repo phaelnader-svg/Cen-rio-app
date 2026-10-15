@@ -163,7 +163,8 @@ def publicar(envelope: dict) -> str:
 
 
 def objeto(nome: str) -> bytes | None:
-    st, corpo = http("GET", f"{URL['storage']}/storage/v1/b/{BUCKET}/o/{urllib.parse.quote(nome, safe='')}?alt=media")
+    # XML API: o nome vai com "/" literal; a JSON API exige %2F, que o proxy do ambiente decodifica (→ 404).
+    st, corpo = http("GET", f"{URL['storage']}/{BUCKET}/{urllib.parse.quote(nome, safe='/')}")
     if st == 200:
         return corpo
     if st == 404:

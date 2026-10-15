@@ -121,6 +121,10 @@ def criar(d: str):
                 glob = q.get("matchGlob", ["*"])[0]
                 itens = [{"name": n} for (b, n) in sorted(est.objetos) if b == bucket and n.startswith(prefixo) and fnmatch.fnmatch(n, glob)]
                 return self.responder(200, {"items": itens} if itens else {})
+            if p.startswith("/storage/") and not p.startswith(("/storage/storage/", "/storage/upload/")):  # XML API
+                bucket, _, nome = p[len("/storage/"):].partition("/")
+                v = est.objetos.get((bucket, urllib.parse.unquote(nome)))
+                return self.responder(200, v, "application/octet-stream") if v is not None else self.responder(404, {})
             self.responder(404, {"erro": p})
 
         def do_POST(self):
