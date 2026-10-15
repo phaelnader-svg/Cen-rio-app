@@ -30,7 +30,9 @@
 #   vm.sh recuperar --sim             # volta ao ponto: recria o banco, restaura, confere a impressão
 #                                     # digital e sobe a versão anterior (perde o que veio depois)
 #   vm.sh impressao-digital [banco]   # SÓ LEITURA: conteúdo, vínculos, catálogo e valores do banco
-#   vm.sh preflight                   # SÓ LEITURA: dados que fariam as migrations da Evolução falharem
+#   vm.sh preflight [etiqueta]        # SÓ LEITURA: cadeia de migrations do banco × imagem da versão
+#                                     # (incompleta, desconhecida, divergente, fora de ordem, esquema
+#                                     # e dados incompatíveis com as pendentes); padrão: a candidata
 #
 # Configuração não secreta: atributos da VM (metadata) "cenario-*" ou, fora do Google Cloud,
 # variáveis de ambiente com o mesmo nome em maiúsculas (ex.: CENARIO_TAG). Segredos: só no
@@ -456,10 +458,31 @@ impressao_digital() { # impressao_digital [banco]
   need_env
   impressao_de "${1:-cenario_homolog}"
 }
-preflight() {
+# Pré-verificação da cadeia de migrations (somente leitura) para a versão <etiqueta>: lê as
+# migrations da IMAGEM (sem iniciar a aplicação) e, do banco, só o estado das migrations, o catálogo
+# do esquema e as verificações de dados (consultas fixas em sql/preflight-*.sql). A comparação é do
+# preflight_migracoes.py. Código 1 = bloqueio (nada foi alterado).
+preflight() { # preflight [etiqueta]
   need_env
-  compose exec -T postgres psql -U cenario -d cenario_homolog -At -F'|' -v ON_ERROR_STOP=1 \
-    < "$DIR/infra/homolog/gcp/sql/preflight-evolucao.sql" | grep -vE '^(BEGIN|ROLLBACK)$'
+  local tag="${1:-}"
+  [[ -n "$tag" ]] || tag="$(cat "$STATE_DIR/candidata" 2>/dev/null || true)"
+  etiqueta_valida "$tag"
+  local ref sqld="$DIR/infra/homolog/gcp/sql" tmp
+  ref="$(imagem api "$tag")"
+  docker image inspect "$ref" >/dev/null 2>&1 || { echo "✘ imagem $ref ausente na VM: rode 'vm.sh preparar-versao $tag'." >&2; return 1; }
+  tmp="$(mktemp -d)"; trap "rm -rf '$tmp'; trap - RETURN" RETURN
+  docker run --rm --entrypoint tar "$ref" -C packages/db/prisma -cf - migrations > "$tmp/m.tar" \
+    || { echo "✘ não consegui ler as migrations da imagem $ref" >&2; return 1; }
+  mkdir "$tmp/img"
+  tar -xf "$tmp/m.tar" -C "$tmp/img" --no-same-owner --no-same-permissions
+  : > "$tmp/estado"
+  if [[ "$(psql_em cenario_homolog -c "SELECT to_regclass('public._prisma_migrations') IS NOT NULL")" == t ]]; then
+    psql_em cenario_homolog < "$sqld/preflight-estado.sql" | sed -E '/^(BEGIN|ROLLBACK|SET)$/d' > "$tmp/estado"
+  fi
+  psql_em cenario_homolog < "$sqld/preflight-catalogo.sql" | sed -E '/^(BEGIN|ROLLBACK)$/d' > "$tmp/catalogo"
+  psql_em cenario_homolog < "$sqld/preflight-migracoes.sql" | sed -E '/^(BEGIN|ROLLBACK)$/d' > "$tmp/dados"
+  python3 -I "$DIR/infra/homolog/gcp/preflight_migracoes.py" --versao "$tag" --migracoes "$tmp/img/migrations" \
+    --estado "$tmp/estado" --catalogo "$tmp/catalogo" --verificacoes "$tmp/dados"
 }
 
 # Restaura <pasta> num banco <destino> (recriado VAZIO antes: um pg_restore --clean sobre um schema
@@ -644,11 +667,7 @@ migrar() {
   [[ "$(impressao_digital | md5sum | cut -d' ' -f1)" == "$IMPRESSAO" ]] \
     || { echo "✘ o banco mudou depois do ponto de recuperação $PASTA: faça outro antes de migrar." >&2; return 1; }
   echo "✔ banco idêntico ao ponto de recuperação $PASTA (${idade} min)"
-  if [[ "$(impressao_digital | grep -c '^tabela|weekly_closings|')" == 0 ]]; then
-    local ruins; ruins="$(preflight | awk -F'|' '$1 !~ /^volume/ && $(NF-1) != $NF')"
-    [[ -z "$ruins" ]] || { echo "✘ pré-verificação: dados que fariam a migration falhar:"; echo "$ruins"; return 1; }
-    echo "✔ pré-verificação das migrations da Evolução sem bloqueios"
-  fi
+  preflight "$tag" || { echo "✘ pré-verificação da cadeia de migrations BLOQUEOU: nada foi aplicado." >&2; return 1; }
   local ref log_m; ref="$(imagem api "$tag")"; log_m="$STATE_DIR/migracao-$tag-$(date -u +%Y%m%dT%H%M%SZ).log"
   log "Aplicando as migrations com $ref (log: $log_m)…"
   local ini; ini="$(date +%s)"
@@ -744,7 +763,7 @@ case "${1:-}" in
   ativar) ativar "${2:-}" ;;
   recuperar) recuperar "${2:-}" ;;
   impressao-digital) impressao_digital "${2:-}" ;;
-  preflight) preflight ;;
+  preflight) preflight "${2:-}" ;;
   parar) parar ;;
   *) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 2 ;;
 esac
