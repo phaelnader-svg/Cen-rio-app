@@ -52,7 +52,7 @@ import urllib.parse
 import urllib.request
 from typing import Callable
 
-VERSAO = "2.1.0"
+VERSAO = "2.1.1"
 CONFIG_PADRAO = "/etc/cenario/runner.json"
 LIMITE_MENSAGEM = 16 * 1024
 LIMITE_SAIDA = 10 * 1024 * 1024
@@ -1328,7 +1328,9 @@ class Runner:
         base = self.cfg.dir_cenario
         j.saida.linha(f"✔ pacote scripts-{v} íntegro (commit {commit}, {len(arquivos)} arquivos)")
         env = ler_env(self.cfg.env_arquivo)
-        with tempfile.TemporaryDirectory(prefix="cenario-scripts-") as tmp:
+        # Fora de /tmp: o serviço roda com PrivateTmp=true e o daemon do Docker (que monta o Caddyfile
+        # no contêiner de validação) não enxerga o /tmp privado. O diretório de estado (root, 700) sim.
+        with tempfile.TemporaryDirectory(prefix="validacao-scripts-", dir=self.cfg.estado) as tmp:
             for nome, (dados, modo) in arquivos.items():
                 destino = os.path.join(tmp, nome)
                 os.makedirs(os.path.dirname(destino), mode=0o755, exist_ok=True)

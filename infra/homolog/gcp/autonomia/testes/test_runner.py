@@ -785,6 +785,11 @@ class TestScriptsDaVm(unittest.TestCase):
         self.assertIn("config -q", log)
         self.assertRegex(log, r"run --rm --network none -v \S+Caddyfile\.homolog:/etc/caddy/Caddyfile:ro -e HOMOLOG_DOMAIN")
         self.assertNotIn(TOKEN_PORTAO, log)  # segredos só por variável de ambiente, nunca nos argumentos
+        # O Caddyfile montado no contêiner de validação fica no diretório de estado, não no /tmp
+        # (PrivateTmp do serviço: o daemon do Docker não enxerga o /tmp privado).
+        montado = re.search(r"-v (\S+)/infra/homolog/Caddyfile\.homolog:/etc/caddy/Caddyfile:ro", log).group(1)
+        self.assertTrue(montado.startswith(self.a.cfg["estado"] + "/validacao-scripts-"), montado)
+        self.assertFalse([n for n in os.listdir(self.a.cfg["estado"]) if n.startswith("validacao-scripts-")])  # removido
         self.assertIn("Nada foi reiniciado", out)
         self.assertNotIn("vm.sh", self.a.log("vmsh.log"))  # nenhum comando do vm.sh foi executado
         # restauração

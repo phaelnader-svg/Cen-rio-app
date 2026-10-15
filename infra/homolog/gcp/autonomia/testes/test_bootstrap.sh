@@ -70,7 +70,7 @@ rc_e "$TMP/2.out" 1; sem_escritas
 echo "3. tudo confirmado, sem criar chave (tipo 'nao')"
 roda "$TMP/3.out" "autorizar claude-operador na homologacao\nnao\n" bootstrap.sh
 rc_e "$TMP/3.out" 0
-afirma "$TMP/3.out" "✔ runner 2.1.0 publicado"
+afirma "$TMP/3.out" "✔ runner $(cat "$REPO/infra/homolog/gcp/autonomia/runner/VERSAO") publicado"
 afirma "$TMP/3.out" "✔ gatilho cenario-homolog-build-autonomo criado e conferido"
 afirma "$TMP/3.out" "✔ canal de ponta a ponta"
 afirma "$TMP/3.out" "✔ permissão temporária de dono@gmail.com removida"
@@ -128,7 +128,7 @@ PY
 echo "4. segunda rodada: idempotente (nada criado de novo, runner já publicado)"
 roda "$TMP/4.out" "autorizar claude-operador na homologacao\nnao\n" bootstrap.sh
 rc_e "$TMP/4.out" 0
-afirma "$TMP/4.out" "✔ runner 2.1.0 já publicado (SHA-256 idêntico)"
+afirma "$TMP/4.out" "✔ runner $(cat "$REPO/infra/homolog/gcp/autonomia/runner/VERSAO") já publicado (SHA-256 idêntico)"
 afirma "$TMP/4.out" "✔ gatilho cenario-homolog-build-autonomo existe e é idêntico ao do repositório"
 afirma "$TMP/4.out" "✔ gatilho cenario-homolog-build-autonomo conferido"
 nega "$GCLOUD_LOG" "triggers create"
