@@ -105,6 +105,12 @@ exit 0
         escrever(os.path.join(self.bin, "docker"), f"""#!/bin/bash
 printf '%s\\n' "$*" >> {c}/docker.log
 case "$*" in
+  "image ls "*) cat {c}/imagens.jsonl 2>/dev/null; exit 0 ;;
+  "ps -a "*) cat {c}/conteineres 2>/dev/null; exit 0 ;;
+  "inspect --format {{{{.Image}}}} "*) cat {c}/imagens-em-uso; exit 0 ;;
+  "image rm "*) [ -f {c}/recusar-rm ] && exit 1; ref="$3"
+    grep -vF "\\"Repository\\":\\"${{ref%:*}}\\",\\"Tag\\":\\"${{ref##*:}}\\"" {c}/imagens.jsonl > {c}/imagens.tmp; mv {c}/imagens.tmp {c}/imagens.jsonl; exit 0 ;;
+  *"caddy validate"*) [ -f {c}/caddy-invalido ] && exit 1; echo "Valid configuration"; exit 0 ;;
   *" restart"*) echo "$(date +%s.%N) INICIO restart" >> {c}/restart.log; sleep "$(cat {c}/dormir-restart 2>/dev/null || echo 0)"; echo "$(date +%s.%N) FIM restart" >> {c}/restart.log ;;
   *" ps "*) printf 'postgres running healthy\\napi running healthy\\nweb running \\ncaddy running \\nbackup running \\n' ;;
   *psql*) printf '20261008000000_fundacao|2026-10-08T00:00:00||1\\n20261018000000_fila_semanal|2026-10-18T00:00:00||1\\n' ;;
@@ -582,6 +588,272 @@ class TestUpdateRunner(unittest.TestCase):
         self.assertEqual(self.a.resultado(c["jti"])["status"], "falhou")
 
 
+REPO = "us-east1-docker.pkg.dev/cenariogestao/cenario-homolog"
+
+
+def imagem_json(servico: str, tag: str, ident: str, criada: str, tamanho: str = "3.7GB") -> str:
+    return json.dumps({"Repository": f"{REPO}/{servico}", "Tag": tag, "ID": f"sha256:{ident * 8}"[:71], "Digest": f"sha256:d{ident}",
+                       "CreatedAt": criada, "Size": tamanho}, separators=(",", ":"))
+
+
+class TestLimpezaDeImagens(unittest.TestCase):
+    """P1: só imagens da aplicação, sem contêiner e fora das versões protegidas; nunca prune/--force."""
+
+    def setUp(self):
+        self.a = Ambiente().iniciar()  # versão ativa (ambiente da pilha): abc1234
+        linhas = []
+        for tag, ident, criada in (("1111111", "a1", "2026-10-01 10:00:00 +0000 UTC"), ("2222222", "a2", "2026-10-02 10:00:00 +0000 UTC"),
+                                   ("4444444", "a4", "2026-10-03 10:00:00 +0000 UTC"), ("3333333", "a3", "2026-10-04 10:00:00 +0000 UTC"),
+                                   ("5555555", "a5", "2026-09-01 10:00:00 +0000 UTC"), ("abc1234", "ab", "2026-10-05 10:00:00 +0000 UTC")):
+            for serv, sufixo in (("api", "0"), ("web", "1")):
+                linhas.append(imagem_json(serv, tag, ident + sufixo, criada))
+        linhas.append(imagem_json("api", "6666666", "ab0", "2026-10-05 10:00:00 +0000 UTC"))  # mesmo ID da ativa
+        linhas.append(imagem_json("api", "latest", "c90", "2026-10-05 10:00:00 +0000 UTC"))   # etiqueta não-SHA
+        linhas.append(imagem_json("api", "<none>", "c91", "2026-10-05 10:00:00 +0000 UTC"))
+        for repo, tag, ident in (("postgres", "16", "p1"), ("caddy", "2.10-alpine", "c1"), ("postgres", "16-alpine", "p2")):
+            linhas.append(json.dumps({"Repository": repo, "Tag": tag, "ID": f"sha256:{ident * 8}"[:71], "Digest": "", "CreatedAt": "2026-01-01",
+                                      "Size": "400MB"}, separators=(",", ":")))
+        escrever(os.path.join(self.a.ctrl, "imagens.jsonl"), "\n".join(linhas) + "\n")
+        escrever(os.path.join(self.a.ctrl, "conteineres"), "c-api\nc-web\nc-pg\nc-parado\n")
+        uso = [f"sha256:{'ab0' * 8}"[:71], f"sha256:{'ab1' * 8}"[:71], f"sha256:{'p2' * 8}"[:71], f"sha256:{'a50' * 8}"[:71]]
+        escrever(os.path.join(self.a.ctrl, "imagens-em-uso"), "\n".join(uso) + "\n")  # 5555555/api: contêiner parado
+        escrever(os.path.join(self.a.cfg["estado_cenario"], "ponto-recuperacao"), "PASTA=cenario-x\nETIQUETA=4444444\n")
+
+    def tearDown(self):
+        self.a.parar()
+
+    def rodar(self, op: str) -> dict:
+        c = self.a.claims(op)
+        self.a.publicar(c)
+        return self.a.resultado(c["jti"])
+
+    def saida(self, res: dict) -> str:
+        return (self.a.objeto(f"operacoes/{res['jti']}/stdout.txt") or b"").decode()
+
+    def removidas(self) -> list[str]:
+        return [l.split("image rm ", 1)[1] for l in self.a.log("docker.log").splitlines() if l.startswith("image rm ")]
+
+    def test_plano_nao_remove_nada(self):
+        res = self.rodar("images_cleanup_plan")
+        self.assertEqual(res["status"], "concluido", res)
+        out = self.saida(res)
+        self.assertIn("• candidatas à remoção: 4", out)
+        for tag in ("1111111", "2222222"):
+            self.assertIn(f"✘ remover  {REPO}/api:{tag}", out)
+        self.assertEqual(self.removidas(), [])
+
+    def test_remove_so_candidatas_e_e_idempotente(self):
+        res = self.rodar("images_cleanup")
+        self.assertEqual(res["status"], "concluido", res)
+        esperado = sorted(f"{REPO}/{s}:{t}" for t in ("1111111", "2222222") for s in ("api", "web"))
+        self.assertEqual(sorted(self.removidas()), sorted(esperado))
+        out = self.saida(res)
+        self.assertIn("PROTEGIDA (versão ativa)", out)
+        self.assertIn("PROTEGIDA (versão do ponto de recuperação)", out)          # 4444444
+        self.assertIn("PROTEGIDA (mais recente além da ativa (rollback))", out)   # 3333333
+        self.assertIn("5555555 (em uso por contêiner)", out)                     # api em contêiner parado: api e web ficam
+        self.assertRegex(out, r"✔ manter   \S+/api:6666666 .*PROTEGIDA")             # 6666666 = apelido da ativa
+        self.assertIn("3333333 (mais recente além da ativa (rollback))", out)     # não o apelido 6666666
+        self.assertIn("fora do repositório da aplicação: nunca removida", out)    # postgres, caddy, latest, <none>
+        self.assertRegex(out, r"recuperado -?[0-9.]+ GiB · removidas 4/4")
+        # segunda vez: nada a remover
+        res2 = self.rodar("images_cleanup")
+        self.assertEqual(res2["status"], "concluido", res2)
+        self.assertIn("✔ nada a remover (idempotente)", self.saida(res2))
+        self.assertEqual(len(self.removidas()), 4)
+
+    def test_nunca_prune_force_volume_ou_conteiner(self):
+        self.rodar("images_cleanup")
+        log = self.a.log("docker.log")
+        for proibido in ("prune", "--force", " -f ", "volume", "container rm", "rm -f", "rmi"):
+            self.assertNotIn(proibido, log)
+        for l in log.splitlines():
+            if l.startswith("image rm "):
+                self.assertRegex(l, r"^image rm us-east1-docker\.pkg\.dev/cenariogestao/cenario-homolog/(api|web):[0-9a-f]{7,40}$")
+
+    def test_protege_candidata_migrada_e_ativacao_anterior(self):
+        escrever(os.path.join(self.a.cfg["estado_cenario"], "candidata"), "1111111\n")
+        escrever(os.path.join(self.a.cfg["estado"], "ativacoes.jsonl"),
+                 json.dumps({"versao": "2222222"}) + "\n" + json.dumps({"versao": "abc1234"}) + "\n")
+        res = self.rodar("images_cleanup")
+        self.assertEqual(res["status"], "concluido", res)
+        self.assertEqual(self.removidas(), [])
+        out = self.saida(res)
+        self.assertIn("1111111 (candidata)", out)
+        self.assertIn("2222222 (ativada antes da atual (rollback))", out)
+
+    def test_ativa_desconhecida_nada_removido(self):
+        escrever(os.path.join(self.a.d, "run/env"), f"POSTGRES_PASSWORD='{SEGREDO}'\n", 0o600)
+        res = self.rodar("images_cleanup")
+        self.assertEqual(res["status"], "falhou")
+        self.assertIn("versão ativa desconhecida", res["motivo"])
+        self.assertEqual(self.removidas(), [])
+
+    def test_recusa_do_docker_falha_sem_forcar(self):
+        open(os.path.join(self.a.ctrl, "recusar-rm"), "w").close()
+        res = self.rodar("images_cleanup")
+        self.assertEqual(res["status"], "falhou")
+        self.assertIn("recusada", res["motivo"])
+        self.assertNotIn("--force", self.a.log("docker.log"))
+
+
+def pacote_scripts_git(commit: str) -> bytes:
+    raiz = os.path.abspath(os.path.join(BASE, "..", "..", "..", ".."))
+    tar = subprocess.run(["git", "-C", raiz, "archive", "--format=tar", commit, "infra/homolog", "scripts/backup.sh",
+                          "scripts/restore.sh"], check=True, capture_output=True).stdout
+    return subprocess.run(["gzip", "-n"], input=tar, check=True, capture_output=True).stdout
+
+
+def pacote_scripts_manual(commit: str, membros: dict) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz", format=tarfile.PAX_FORMAT, pax_headers={"comment": commit}) as t:
+        for nome, conteudo in membros.items():
+            info = tarfile.TarInfo(nome)
+            if conteudo is None:
+                info.type, info.linkname = tarfile.SYMTYPE, "/etc/passwd"
+                t.addfile(info)
+                continue
+            dados = conteudo.encode()
+            info.size, info.mode = len(dados), 0o755 if nome.endswith(".sh") else 0o644
+            t.addfile(info, io.BytesIO(dados))
+    return buf.getvalue()
+
+
+class TestScriptsDaVm(unittest.TestCase):
+    """P2: só pacotes publicados (bucket de versões, gravação humana), conferidos; cópia anterior; restauração."""
+
+    @classmethod
+    def setUpClass(cls):
+        raiz = os.path.abspath(os.path.join(BASE, "..", "..", "..", ".."))
+        cls.commit = subprocess.run(["git", "-C", raiz, "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+        cls.v = cls.commit[:12]
+        cls.pacote = pacote_scripts_git(cls.commit)
+
+    def setUp(self):
+        self.a = Ambiente().iniciar()
+        self.base = self.a.cfg["dir_cenario"]
+        escrever(os.path.join(self.base, "VERSAO"), "9f2930028b2b\n")
+        escrever(os.path.join(self.base, "infra/homolog/local.conf"), "configuração local\n")
+        with open(os.path.join(self.base, "infra/homolog/gcp/vm.sh"), "rb") as f:
+            self.vm_falso = f.read()
+
+    def tearDown(self):
+        self.a.parar()
+
+    def publicar(self, v: str, pacote: bytes, sha: str | None = None):
+        b = "cenariogestao-homolog-runner-versoes"
+        self.a.est.objetos[(b, f"scripts-{v}.tar.gz")] = pacote
+        self.a.est.objetos[(b, f"scripts-{v}.sha256")] = (sha or hashlib.sha256(pacote).hexdigest()).encode()
+
+    def rodar(self, op: str, **p) -> tuple[dict, str]:
+        c = self.a.claims(op, p)
+        c["timeout_s"] = 120
+        self.a.publicar(c)
+        res = self.a.resultado(c["jti"], limite=60)
+        return res, (self.a.objeto(f"operacoes/{c['jti']}/stdout.txt") or b"").decode()
+
+    def vm_sh_atual(self) -> bytes:
+        with open(os.path.join(self.base, "infra/homolog/gcp/vm.sh"), "rb") as f:
+            return f.read()
+
+    def test_diff_nao_altera_nada(self):
+        self.publicar(self.v, self.pacote)
+        res, out = self.rodar("vm_scripts_diff", version=self.v)
+        self.assertEqual(res["status"], "concluido", res)
+        self.assertIn(f"commit {self.commit}", out)
+        self.assertIn("• /opt/cenario atual: 9f2930028b2b", out)
+        self.assertIn("== vm.sh: 1 mudança(s)", out)
+        self.assertIn("~ alterado  infra/homolog/gcp/vm.sh", out)
+        self.assertIn("diff infra/homolog/gcp/vm.sh", out)
+        self.assertIn("+ novo      infra/homolog/docker-compose.homolog.yml", out)
+        self.assertIn("= infra/homolog/local.conf", out)
+        self.assertEqual(self.vm_sh_atual(), self.vm_falso)
+
+    def test_atualiza_preserva_locais_e_restaura(self):
+        self.publicar(self.v, self.pacote)
+        res, out = self.rodar("vm_scripts_update", version=self.v)
+        self.assertEqual(res["status"], "concluido", res)
+        self.assertNotEqual(self.vm_sh_atual(), self.vm_falso)
+        self.assertTrue(os.access(os.path.join(self.base, "infra/homolog/gcp/vm.sh"), os.X_OK))
+        with open(os.path.join(self.base, "VERSAO")) as f:
+            self.assertEqual(f.read().strip(), self.v)
+        self.assertTrue(os.path.exists(os.path.join(self.base, "infra/homolog/local.conf")))
+        copias = [n for n in os.listdir(os.path.dirname(self.base)) if n.startswith("cenario.anterior-")]
+        self.assertEqual(len(copias), 1)
+        log = self.a.log("docker.log")
+        self.assertIn("compose -f", log)
+        self.assertIn("config -q", log)
+        self.assertRegex(log, r"run --rm --network none -v \S+Caddyfile\.homolog:/etc/caddy/Caddyfile:ro -e HOMOLOG_DOMAIN")
+        self.assertNotIn(TOKEN_PORTAO, log)  # segredos só por variável de ambiente, nunca nos argumentos
+        self.assertIn("Nada foi reiniciado", out)
+        self.assertNotIn("vm.sh", self.a.log("vmsh.log"))  # nenhum comando do vm.sh foi executado
+        # restauração
+        res, out = self.rodar("vm_scripts_restore")
+        self.assertEqual(res["status"], "concluido", res)
+        self.assertEqual(self.vm_sh_atual(), self.vm_falso)
+        with open(os.path.join(self.base, "VERSAO")) as f:
+            self.assertEqual(f.read().strip(), "9f2930028b2b")
+        res, _ = self.rodar("vm_scripts_restore")
+        self.assertEqual(res["status"], "falhou")  # só uma vez por atualização
+
+    def test_recusa_sha_divergente(self):
+        self.publicar(self.v, self.pacote, sha="0" * 64)
+        res, _ = self.rodar("vm_scripts_update", version=self.v)
+        self.assertIn("SHA-256", res["motivo"])
+        self.assertEqual(self.vm_sh_atual(), self.vm_falso)
+
+    def test_recusa_pacote_de_outro_commit(self):
+        outro = "1234567890ab"
+        self.publicar(outro, self.pacote)  # conteúdo íntegro, mas é o git archive de OUTRO commit
+        res, _ = self.rodar("vm_scripts_update", version=outro)
+        self.assertIn("não é o git archive do commit pedido", res["motivo"])
+        self.assertEqual(self.vm_sh_atual(), self.vm_falso)
+
+    def test_recusa_caminhos_e_links(self):
+        base = {o: "x\n" for o in ("infra/homolog/gcp/vm.sh", "infra/homolog/docker-compose.homolog.yml",
+                                   "infra/homolog/Caddyfile.homolog", "scripts/backup.sh", "scripts/restore.sh")}
+        for i, (extra, trecho) in enumerate(((("etc/cron.d/x", "y"), "caminho não permitido"),
+                                             (("infra/homolog/../../etc/passwd", "y"), "caminho não permitido"),
+                                             (("/infra/homolog/x.sh", "y"), "caminho não permitido"),
+                                             (("scripts/outro.sh", "y"), "caminho não permitido"),
+                                             (("infra", "y"), "arquivo no lugar de diretório"),
+                                             (("infra/homolog/gcp/link.sh", None), "link ou arquivo especial"))):
+            commit = f"{i:x}" * 40
+            v = commit[:12]
+            self.publicar(v, pacote_scripts_manual(commit, {**base, extra[0]: extra[1]}))
+            res, _ = self.rodar("vm_scripts_update", version=v)
+            self.assertEqual(res["status"], "falhou", extra)
+            self.assertIn(trecho, res["motivo"], extra)
+        self.assertEqual(self.vm_sh_atual(), self.vm_falso)
+
+    def test_recusa_sem_obrigatorios(self):
+        commit = "c" * 40
+        self.publicar(commit[:12], pacote_scripts_manual(commit, {"infra/homolog/gcp/vm.sh": "x\n"}))
+        res, _ = self.rodar("vm_scripts_update", version=commit[:12])
+        self.assertIn("sem arquivos obrigatórios", res["motivo"])
+
+    def test_caddyfile_invalido_nada_muda(self):
+        open(os.path.join(self.a.ctrl, "caddy-invalido"), "w").close()
+        self.publicar(self.v, self.pacote)
+        res, _ = self.rodar("vm_scripts_update", version=self.v)
+        self.assertEqual(res["status"], "falhou")
+        self.assertEqual(self.vm_sh_atual(), self.vm_falso)
+        self.assertFalse([n for n in os.listdir(os.path.dirname(self.base)) if n.startswith("cenario.anterior-")])
+
+    def test_versao_nao_publicada(self):
+        res, _ = self.rodar("vm_scripts_update", version="abcdef123456")
+        self.assertEqual(res["status"], "falhou")
+        self.assertIn("HTTP 404", res["motivo"])
+
+    def test_apply_stack_config_mantem_a_versao_ativa(self):
+        res, out = self.rodar("apply_stack_config")
+        self.assertEqual(res["status"], "concluido", res)
+        log = self.a.log("vmsh.log")
+        self.assertRegex(log, r"INICIO aplicar-config  TAG=abc1234[\s\S]*INICIO ativar abc1234 TAG=abc1234")
+        self.assertNotIn("migrar", log)
+        self.assertIn("versão ativa mantida: abc1234", out)
+
+
 class TestPartida(unittest.TestCase):
     def test_vm_errada_nao_inicia(self):
         a = Ambiente(vm="outra-vm").iniciar()
@@ -651,6 +923,15 @@ class TestSemExecucaoArbitraria(unittest.TestCase):
         for passo in cfg["steps"][1:]:
             self.assertEqual(passo["name"], "gcr.io/cloud-builders/docker")
             self.assertNotIn("entrypoint", passo)
+
+    def test_limpeza_sem_prune_nem_forca(self):
+        runner, _ = self.fontes()
+        self.assertNotIn("prune", runner)
+        self.assertNotIn('"--force"', runner)
+        self.assertNotIn('"-f"', runner.replace('"compose", "-f"', ""))
+        self.assertNotIn('"rmi"', runner)
+        self.assertNotIn('"volume"', runner)
+        self.assertEqual(len(re.findall(r'\["docker", "image", "rm"', runner)), 1)
 
     def test_sql_so_constante(self):
         runner, _ = self.fontes()

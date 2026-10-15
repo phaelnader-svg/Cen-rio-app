@@ -4,7 +4,8 @@
 #
 #   bash infra/homolog/gcp/autonomia/bootstrap.sh            # tudo: confere → mostra o plano → confirma → aplica → testa
 #   bash infra/homolog/gcp/autonomia/bootstrap.sh plano      # SÓ mostra o que existe e o que seria criado (nada muda)
-#   bash infra/homolog/gcp/autonomia/bootstrap.sh publicar-runner   # publica a versão do runner deste commit (gravação humana)
+#   bash infra/homolog/gcp/autonomia/bootstrap.sh publicar-runner   # publica (gravação humana) o runner e os scripts da
+#                                                                   # VM deste commit; quem INSTALA é o runner na VM
 #   bash infra/homolog/gcp/autonomia/bootstrap.sh verificar  # isolamento + teste do canal (sem criar nada)
 #
 # Cria (se ausente; nunca duplica nem remove o que já existe):
@@ -412,6 +413,30 @@ publicar_runner() {
     --if-generation-match=0 --format=none && ok "runner $RVER publicado em gs://$B_VERSOES (SHA-256 $local_sha)"
 }
 
+# Pacote dos scripts administrativos da VM (/opt/cenario): git archive DESTE commit, só infra/homolog e
+# os scripts de backup (o mesmo conteúdo que homolog.sh preparar-vm copiava). gzip -n: reprodutível.
+pacote_scripts() {
+  [[ -z "$(git status --porcelain -- infra/homolog scripts/backup.sh scripts/restore.sh)" ]] \
+    || { echo "✘ há mudanças não commitadas em infra/homolog ou scripts/: os scripts publicados precisam ser um commit"; exit 1; }
+  SVER="$(git rev-parse HEAD | cut -c1-12)"
+  git archive --format=tar HEAD infra/homolog scripts/backup.sh scripts/restore.sh | gzip -n -9 > "$T/scripts-$SVER.tar.gz"
+  sha256sum "$T/scripts-$SVER.tar.gz" | cut -d' ' -f1 > "$T/scripts-$SVER.sha256"
+}
+
+publicar_scripts() {
+  pacote_scripts
+  secao "Scripts da VM $SVER (commit $COMMIT)"
+  local local_sha; local_sha="$(cat "$T/scripts-$SVER.sha256")"
+  local remoto; remoto="$(gcloud storage cat "gs://$B_VERSOES/scripts-$SVER.sha256" --project="$PROJECT" 2>/dev/null | tr -dc '0-9a-f' || true)"
+  if [[ -n "$remoto" ]]; then
+    [[ "$remoto" == "$local_sha" ]] && { ok "scripts $SVER já publicados (SHA-256 idêntico)"; return 0; }
+    echo "✘ scripts $SVER já foram publicados com OUTRO conteúdo (versões são imutáveis)"; exit 1
+  fi
+  gcloud storage cp "$T/scripts-$SVER.tar.gz" "$T/scripts-$SVER.sha256" "gs://$B_VERSOES/" --project="$PROJECT" \
+    --if-generation-match=0 --format=none && ok "scripts $SVER publicados em gs://$B_VERSOES (SHA-256 $local_sha)"
+  echo "  Nada muda na VM agora: o runner confere e instala (vm_scripts_diff → vm_scripts_update → apply_stack_config)."
+}
+
 instalar_runner() {
   secao "Instalação do runner $RVER na VM (pela sua sessão SSH)"
   conferir_chave_ssh 2>&1 || exit 1
@@ -524,7 +549,7 @@ registrar() { # registro sem segredos (a etapa da chave fica fora dele); criado 
 
 case "${1:-tudo}" in
   plano) requisitos; plano; (( ${#BLOQUEIOS[@]} == 0 )) || exit 1 ;;
-  publicar-runner) registrar publicar; requisitos; publicar_runner ;;
+  publicar-runner) registrar publicar; requisitos; publicar_runner; publicar_scripts ;;
   verificar) registrar verificar; requisitos; isolamento; teste_canal ;;
   tudo)
     registrar tudo

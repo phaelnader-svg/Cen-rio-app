@@ -11,6 +11,7 @@ ORIGEM="$(cd "$AQUI/../../../../.." && pwd)"
 TMP="$(mktemp -d)"; [[ -n "${CENARIO_TESTE_MANTER:-}" ]] || trap 'rm -rf "$TMP"' EXIT; echo "tmp: $TMP"
 REPO="$TMP/repo"; mkdir -p "$REPO"
 cp -r "$ORIGEM/infra" "$REPO/"
+mkdir -p "$REPO/scripts" && cp "$ORIGEM/scripts/backup.sh" "$ORIGEM/scripts/restore.sh" "$REPO/scripts/"
 ( cd "$REPO" && git init -q && git -c user.email=t@t -c user.name=t add -A && git -c user.email=t@t -c user.name=t commit -qm teste )
 mkdir -p "$TMP/bin" "$TMP/home/.ssh"
 printf '#!/usr/bin/env bash\nexec python3 %q "$@"\n' "$AQUI/gcloud_bootstrap_falso.py" > "$TMP/bin/gcloud"
@@ -69,7 +70,7 @@ rc_e "$TMP/2.out" 1; sem_escritas
 echo "3. tudo confirmado, sem criar chave (tipo 'nao')"
 roda "$TMP/3.out" "autorizar claude-operador na homologacao\nnao\n" bootstrap.sh
 rc_e "$TMP/3.out" 0
-afirma "$TMP/3.out" "✔ runner 2.0.0 publicado"
+afirma "$TMP/3.out" "✔ runner 2.1.0 publicado"
 afirma "$TMP/3.out" "✔ gatilho cenario-homolog-build-autonomo criado e conferido"
 afirma "$TMP/3.out" "✔ canal de ponta a ponta"
 afirma "$TMP/3.out" "✔ permissão temporária de dono@gmail.com removida"
@@ -127,7 +128,7 @@ PY
 echo "4. segunda rodada: idempotente (nada criado de novo, runner já publicado)"
 roda "$TMP/4.out" "autorizar claude-operador na homologacao\nnao\n" bootstrap.sh
 rc_e "$TMP/4.out" 0
-afirma "$TMP/4.out" "✔ runner 2.0.0 já publicado (SHA-256 idêntico)"
+afirma "$TMP/4.out" "✔ runner 2.1.0 já publicado (SHA-256 idêntico)"
 afirma "$TMP/4.out" "✔ gatilho cenario-homolog-build-autonomo existe e é idêntico ao do repositório"
 afirma "$TMP/4.out" "✔ gatilho cenario-homolog-build-autonomo conferido"
 nega "$GCLOUD_LOG" "triggers create"
@@ -235,10 +236,36 @@ set -e
 afirma "$TMP/9a.out" "sem configuração"
 afirma "$TMP/9b.out" "configuração inválida: assinante"
 rc_e "$TMP/9c.out" 0
-afirma "$TMP/9c.out" "✔ runner 2.0.0 instalado e ativo"
+afirma "$TMP/9c.out" "✔ runner $(cat "$SRC/VERSAO") instalado e ativo"
 afirma "$TMP/9d.out" "VERSAO difere do código"
 [[ "$(stat -c %a "$RR/etc/cenario/runner.json")" == 600 ]] && echo "  ✔ runner.json com permissão 600" || { echo "  ✘ permissão de runner.json"; FALHAS=$((FALHAS + 1)); }
 cmp -s "$SRC/cenario-runner.service" "$RR/etc/systemd/system/cenario-runner.service" && echo "  ✔ unidade systemd instalada" || { echo "  ✘ unidade"; FALHAS=$((FALHAS + 1)); }
 afirma "$GCLOUD_LOG" "systemctl enable cenario-runner.service"
+
+echo "10. publicar-runner: publica runner E scripts da VM (só no bucket de versões; nada na VM), idempotente"
+novo publicar
+roda "$TMP/10a.out" "" bootstrap.sh publicar-runner
+roda "$TMP/10b.out" "" bootstrap.sh publicar-runner
+SV="$(cd "$REPO" && git rev-parse HEAD | cut -c1-12)"
+rc_e "$TMP/10a.out" 0
+afirma "$TMP/10a.out" "scripts $SV publicados em gs://cenariogestao-homolog-runner-versoes"
+afirma "$TMP/10a.out" "Nada muda na VM agora"
+afirma "$TMP/10b.out" "scripts $SV já publicados (SHA-256 idêntico)"
+afirma "$TMP/10b.out" "já publicado (SHA-256 idêntico)"
+nega "$GCLOUD_LOG" "compute ssh"
+nega "$GCLOUD_LOG" "compute scp"
+python3 - "$FALSO_ESTADO" "$SV" "$REPO" <<'PY' && echo "  ✔ pacote = git archive do commit (só infra/homolog e scripts de backup; SHA-256 publicado confere)" || { echo "  ✘ pacote de scripts"; FALHAS=$((FALHAS + 1)); }
+import hashlib, json, subprocess, sys
+e = json.load(open(sys.argv[1])); sv, repo = sys.argv[2], sys.argv[3]
+sha = e["objetos"][f"gs://cenariogestao-homolog-runner-versoes/scripts-{sv}.sha256"]
+tar = subprocess.run(["git", "-C", repo, "archive", "--format=tar", "HEAD", "infra/homolog", "scripts/backup.sh", "scripts/restore.sh"], capture_output=True, check=True).stdout
+gz = subprocess.run(["gzip", "-n", "-9"], input=tar, capture_output=True, check=True).stdout
+assert hashlib.sha256(gz).hexdigest() == sha, "sha"
+assert f"gs://cenariogestao-homolog-runner-versoes/scripts-{sv}.tar.gz" in e["objetos"]
+PY
+( cd "$REPO" && echo "# alteração local" >> scripts/backup.sh )
+roda "$TMP/10c.out" "" bootstrap.sh publicar-runner
+afirma "$TMP/10c.out" "há mudanças não commitadas em infra/homolog ou scripts/"
+( cd "$REPO" && git checkout -q scripts/backup.sh )
 
 echo; if (( FALHAS == 0 )); then echo "RESULTADO: todos os cenários OK"; else echo "RESULTADO: $FALHAS falha(s)"; exit 1; fi

@@ -21,6 +21,8 @@ Antes de qualquer execução, o envelope inteiro é validado e tudo falha fechad
 
 Novas operações: acrescentar à tabela, revisar, testar e publicar uma nova versão do runner
 (o bucket de versões só aceita gravação humana; update_runner instala só de lá, com SHA-256).
+Os scripts administrativos da VM (/opt/cenario) seguem a mesma regra: vm_scripts_update só instala um
+pacote scripts-<commit>.tar.gz publicado por humano nesse bucket, conferido por SHA-256 e pelo commit.
 Somente biblioteca padrão do Python 3.11+ e os binários do sistema (openssl, docker, journalctl…).
 """
 from __future__ import annotations
@@ -29,7 +31,9 @@ import base64
 import collections
 import dataclasses
 import datetime as dt
+import difflib
 import hashlib
+import io
 import json
 import os
 import re
@@ -48,7 +52,7 @@ import urllib.parse
 import urllib.request
 from typing import Callable
 
-VERSAO = "2.0.0"
+VERSAO = "2.1.0"
 CONFIG_PADRAO = "/etc/cenario/runner.json"
 LIMITE_MENSAGEM = 16 * 1024
 LIMITE_SAIDA = 10 * 1024 * 1024
@@ -64,6 +68,14 @@ RE_KID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 RE_SHA = re.compile(r"^[0-9a-f]{7,40}$")
 RE_PASTA = re.compile(r"^cenario-[A-Za-z0-9._-]{1,100}$")
 RE_VERSAO_RUNNER = re.compile(r"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$")
+# Pacote de scripts da VM: só estes caminhos (git archive de infra/homolog + scripts de backup).
+RE_MEMBRO_SCRIPTS = re.compile(r"^(infra|infra/homolog(/[A-Za-z0-9_.-]+)*|scripts(/(backup|restore)\.sh)?)/?$")
+DIRETORIOS_SCRIPTS = ("infra", "infra/homolog", "scripts")  # só podem ser diretórios
+SCRIPTS_OBRIGATORIOS = ("infra/homolog/gcp/vm.sh", "infra/homolog/docker-compose.homolog.yml",
+                        "infra/homolog/Caddyfile.homolog", "scripts/backup.sh", "scripts/restore.sh")
+LIMITE_PACOTE_SCRIPTS = 30 * 1024 * 1024
+IMAGEM_CADDY = "caddy:2.10-alpine"
+VARS_CADDY = ("HOMOLOG_DOMAIN", "HOMOLOG_BASIC_USER", "HOMOLOG_BASIC_HASH", "HOMOLOG_GATE_TOKEN")
 SERVICOS = ("postgres", "api", "web", "caddy", "backup")
 UNIDADES = ("cenario-homolog", "cenario-backup-upload", "cenario-runner", "docker")
 SUITES = ("saude", "acesso", "websocket", "completo")
@@ -355,7 +367,9 @@ OPERACOES: dict[str, Operacao] = {
     # -- banco
     "database_fingerprint": Operacao(READ_ONLY, 300, 1200, {}, "database_fingerprint", "vm.sh impressao-digital"),
     "database_counts": Operacao(READ_ONLY, 120, 600, {}, "database_counts", "linhas por tabela (estatísticas do PostgreSQL)"),
-    "migration_precheck": Operacao(READ_ONLY, 300, 1200, {}, "migration_precheck", "vm.sh preflight (dados que fariam a migration falhar)"),
+    "migration_precheck": Operacao(READ_ONLY, 300, 1200, {"version": Param("sha")}, "migration_precheck",
+                                   "vm.sh preflight <versão> (cadeia banco × imagem: incompleta, desconhecida, divergente, "
+                                   "fora de ordem, esquema e dados); sem versão: a candidata"),
     "migrate": Operacao(DESTRUCTIVE, 1800, 3600, {"version": VERSAO_P}, "migrate", "vm.sh migrar <versão> (exige ponto de recuperação)"),
     "migration_verify": Operacao(READ_ONLY, 120, 600, {"version": VERSAO_P}, "migration_verify",
                                  "banco × migrations da imagem: nenhuma pendente, com falha ou desconhecida"),
@@ -377,6 +391,22 @@ OPERACOES: dict[str, Operacao] = {
     "gate_close": Operacao(MUTATING, 30, 60, {}, "gate_close", "fecha o portão de publicação"),
     "update_runner": Operacao(DESTRUCTIVE, 300, 600, {"version": Param("versao_runner", True)}, "update_runner",
                               "instala uma versão PUBLICADA (bucket de versões, gravação humana) com SHA-256"),
+    # -- espaço em disco: só imagens da aplicação, nunca as protegidas (ativa, rollback, em uso)
+    "images_cleanup_plan": Operacao(READ_ONLY, 60, 300, {}, "images_cleanup_plan",
+                                    "lista as imagens da aplicação e o que seria removido (nada é removido)"),
+    "images_cleanup": Operacao(MUTATING, 300, 900, {}, "images_cleanup",
+                               "remove SÓ imagens da aplicação sem contêiner e fora das versões protegidas (sem --force)"),
+    # -- scripts administrativos da VM (/opt/cenario): só pacotes PUBLICADOS por humano
+    "vm_scripts_diff": Operacao(READ_ONLY, 120, 600, {"version": VERSAO_P}, "vm_scripts_diff",
+                                "diferença exata entre /opt/cenario e o pacote publicado scripts-<versão> (nada muda)"),
+    "vm_scripts_update": Operacao(DESTRUCTIVE, 300, 900, {"version": VERSAO_P}, "vm_scripts_update",
+                                  "instala o pacote publicado scripts-<versão> em /opt/cenario (cópia anterior guardada; "
+                                  "nada reiniciado)"),
+    "vm_scripts_restore": Operacao(DESTRUCTIVE, 120, 600, {}, "vm_scripts_restore",
+                                   "volta /opt/cenario à cópia guardada pelo último vm_scripts_update (nada reiniciado)"),
+    "apply_stack_config": Operacao(MUTATING, 900, 1800, {}, "apply_stack_config",
+                                   "aplica a configuração de /opt/cenario na versão ATIVA: vm.sh aplicar-config (proxy) + "
+                                   "vm.sh ativar <ativa> (recria só o que mudou; mesmas imagens; exige o portão)"),
     # -- testes de homologação (na VM)
     "run_homologation_tests": Operacao(READ_ONLY, 600, 1800, {"suite": Param("escolha", True, opcoes=SUITES)},
                                        "run_homologation_tests", "suítes da VM: saude | acesso | websocket | completo"),
@@ -977,7 +1007,7 @@ class Runner:
         j.vmsh("impressao-digital")
 
     def op_migration_precheck(self, j: Job):
-        j.vmsh("preflight")
+        j.vmsh("preflight", *([j.p["version"]] if "version" in j.p else []))
 
     def op_migrate(self, j: Job):
         j.vmsh("migrar", j.p["version"])
@@ -1076,6 +1106,291 @@ class Runner:
                     raise FalhaPasso("VERSAO do pacote difere da pedida")
             j.cmd(["/bin/bash", os.path.join(destino, "instalar.sh"), destino], env={"CENARIO_RUNNER_ADIAR_REINICIO": "1"})
 
+    # ======================================================================== P1: imagens Docker
+    def inventario_imagens(self, j: Job) -> tuple[list[dict], dict[str, str]]:
+        """Imagens da APLICAÇÃO (repositório api/web do ambiente) com a decisão de cada uma.
+        Protegidas: versão ativa, candidata, migrada, a do ponto de recuperação, a ativada antes da
+        atual (rollback) e a mais recente além da ativa; qualquer imagem usada por contêiner (mesmo
+        parado); e o mesmo ID de qualquer imagem protegida. Fora do repositório da aplicação: nunca."""
+        ativa = self.etiqueta_dropin() or self.etiqueta_env()
+        if not RE_SHA.match(ativa or ""):
+            raise FalhaPasso("versão ativa desconhecida: nada é removido")
+        bases = {self.imagem(s, "x").rsplit(":", 1)[0] for s in ("api", "web")}
+        _, bruto = j.cmd(["docker", "image", "ls", "--no-trunc", "--format", "{{json .}}"], capturar=True)
+        imagens = []
+        for l in bruto.decode(errors="replace").splitlines():
+            if l.strip():
+                try:
+                    imagens.append(json.loads(l))
+                except ValueError as e:
+                    raise FalhaPasso(f"saída inesperada do docker image ls: {e}") from e
+        _, ids = j.cmd(["docker", "ps", "-a", "--no-trunc", "--format", "{{.ID}}"], capturar=True)
+        ids = ids.decode(errors="replace").split()
+        em_uso: set[str] = set()
+        if ids:
+            _, s = j.cmd(["docker", "inspect", "--format", "{{.Image}}", *ids], capturar=True)
+            em_uso = set(s.decode(errors="replace").split())
+            if len(em_uso) == 0:
+                raise FalhaPasso("não identifiquei as imagens dos contêineres: nada é removido")
+        ponto = ler_env(os.path.join(self.cfg.estado_cenario, "ponto-recuperacao")).get("ETIQUETA", "")
+        motivos: dict[str, str] = {}
+
+        def proteger(v: str, motivo: str) -> None:
+            if RE_SHA.match(v or ""):
+                motivos.setdefault(v, motivo)
+
+        proteger(ativa, "versão ativa")
+        proteger(self.etiqueta_env(), "versão do ambiente da pilha")
+        proteger(self.ler_estado("candidata"), "candidata")
+        proteger(self.ler_estado("migrada"), "migrada")
+        proteger(ponto, "versão do ponto de recuperação")
+        anteriores = [v for v in self.historico_ativacoes() if not (v.startswith(ativa) or ativa.startswith(v))]
+        if anteriores:
+            proteger(anteriores[-1], "ativada antes da atual (rollback)")
+        app = [i for i in imagens if i.get("Repository") in bases and RE_SHA.match(i.get("Tag", ""))]
+        # Versão inteira (api + web) em uso se QUALQUER imagem dela é usada por um contêiner, mesmo parado.
+        for i in app:
+            if i["ID"] in em_uso:
+                proteger(i["Tag"], "em uso por contêiner")
+        # A mais recente além da ativa é uma VERSÃO diferente: etiquetas que apontam para as mesmas
+        # imagens da ativa (mesmo ID) são apelidos dela, não a versão anterior.
+        ids_ativa = {i["ID"] for i in app if i["Tag"].startswith(ativa) or ativa.startswith(i["Tag"])}
+        outras = sorted({i["Tag"] for i in app if not (i["Tag"].startswith(ativa) or ativa.startswith(i["Tag"]))
+                         and not ({x["ID"] for x in app if x["Tag"] == i["Tag"]} & ids_ativa)},
+                        key=lambda t: max(i.get("CreatedAt", "") for i in app if i["Tag"] == t), reverse=True)
+        if outras:
+            proteger(outras[0], "mais recente além da ativa (rollback)")
+
+        def motivo_de(tag: str) -> str:
+            return next((m for v, m in motivos.items() if tag.startswith(v) or v.startswith(tag)), "")
+
+        ids_protegidos = {i["ID"] for i in imagens
+                          if not (i.get("Repository") in bases and RE_SHA.match(i.get("Tag", ""))) or motivo_de(i["Tag"])}
+        for i in imagens:
+            ref = f"{i.get('Repository')}:{i.get('Tag')}"
+            if i.get("Repository") not in bases or not RE_SHA.match(i.get("Tag", "")):
+                i["decisao"], i["ref"] = "fora do repositório da aplicação: nunca removida", ref
+            elif motivo_de(i["Tag"]):
+                i["decisao"], i["ref"] = f"PROTEGIDA ({motivo_de(i['Tag'])})", ref
+            elif i["ID"] in em_uso:
+                i["decisao"], i["ref"] = "PROTEGIDA (usada por contêiner)", ref
+            elif i["ID"] in ids_protegidos:
+                i["decisao"], i["ref"] = "PROTEGIDA (mesmo ID de imagem protegida)", ref
+            else:
+                i["decisao"], i["ref"] = "REMOVER", ref
+        return imagens, motivos
+
+    def mostrar_inventario(self, j: Job, imagens: list[dict], motivos: dict[str, str]) -> list[dict]:
+        j.saida.linha("versões protegidas: " + ", ".join(f"{v} ({m})" for v, m in motivos.items()))
+        for i in sorted(imagens, key=lambda x: (x["decisao"] != "REMOVER", x["ref"])):
+            j.saida.linha(f"  {'✘ remover ' if i['decisao'] == 'REMOVER' else '✔ manter  '} {i['ref']}  {i['ID'][:19]}  "
+                          f"{i.get('Size', '?')}  {i.get('CreatedAt', '')[:19]}  — {i['decisao']}")
+        candidatas = [i for i in imagens if i["decisao"] == "REMOVER"]
+        j.saida.linha(f"• candidatas à remoção: {len(candidatas)}")
+        return candidatas
+
+    def op_images_cleanup_plan(self, j: Job):
+        self.mostrar_inventario(j, *self.inventario_imagens(j))
+        j.cmd(["docker", "system", "df"], permitir=(0, 1))
+        j.saida.linha(f"• disco livre em /: {shutil.disk_usage('/').free / 2**30:.2f} GiB (nada foi removido)")
+
+    def op_images_cleanup(self, j: Job):
+        antes = shutil.disk_usage("/").free
+        candidatas = self.mostrar_inventario(j, *self.inventario_imagens(j))
+        j.cmd(["docker", "system", "df"], permitir=(0, 1))
+        falhas = 0
+        for i in candidatas:
+            # Sem --force: o Docker recusa remover imagem ainda usada por qualquer contêiner.
+            codigo, _ = j.cmd(["docker", "image", "rm", i["ref"]], permitir=(0, 1))
+            if codigo == 0:
+                j.saida.linha(f"✔ removida {i['ref']} (ID {i['ID']}, digest {i.get('Digest') or '-'})")
+            else:
+                falhas += 1
+                j.saida.linha(f"✘ não removida {i['ref']} (o Docker recusou)")
+        depois = shutil.disk_usage("/").free
+        j.cmd(["docker", "system", "df"], permitir=(0, 1))
+        j.saida.linha(f"• disco livre em /: antes {antes / 2**30:.2f} GiB · depois {depois / 2**30:.2f} GiB · "
+                      f"recuperado {(depois - antes) / 2**30:.2f} GiB · removidas {len(candidatas) - falhas}/{len(candidatas)}")
+        if not candidatas:
+            j.saida.linha("✔ nada a remover (idempotente)")
+        if falhas:
+            raise FalhaPasso(f"{falhas} remoção(ões) recusada(s) pelo Docker")
+
+    # ======================================================================== P2: scripts da VM
+    def pacote_scripts(self, v: str) -> tuple[str, dict[str, tuple[bytes, int]]]:
+        """Baixa e confere o pacote scripts-<v>.tar.gz PUBLICADO (bucket de versões, gravação humana):
+        SHA-256, commit do git archive (começa por <v>), só caminhos de infra/homolog e scripts de backup,
+        só arquivos regulares e diretórios, tamanho limitado e arquivos obrigatórios presentes."""
+        pacote = self.g.baixar_versao(f"scripts-{v}.tar.gz")
+        esperado = self.g.baixar_versao(f"scripts-{v}.sha256").decode(errors="replace").split()[0]
+        obtido = hashlib.sha256(pacote).hexdigest()
+        if not re.fullmatch(r"[0-9a-f]{64}", esperado) or obtido != esperado:
+            raise FalhaPasso(f"SHA-256 do pacote não confere (esperado {esperado[:16]}…, obtido {obtido[:16]}…)")
+        arquivos: dict[str, tuple[bytes, int]] = {}
+        total = 0
+        try:
+            with tarfile.open(fileobj=io.BytesIO(pacote), mode="r:gz") as t:
+                membros = t.getmembers()
+                commit = t.pax_headers.get("comment", "")
+                if not re.fullmatch(r"[0-9a-f]{40}", commit) or not commit.startswith(v):
+                    raise FalhaPasso("o pacote não é o git archive do commit pedido")
+                for m in membros:
+                    nome = m.name.rstrip("/")
+                    if not RE_MEMBRO_SCRIPTS.match(m.name) or any(p in (".", "..") for p in nome.split("/")):
+                        raise FalhaPasso(f"pacote com caminho não permitido: {m.name!r}")
+                    if m.isdir():
+                        continue
+                    if nome in DIRETORIOS_SCRIPTS:
+                        raise FalhaPasso(f"pacote com arquivo no lugar de diretório: {m.name!r}")
+                    if not m.isfile():
+                        raise FalhaPasso(f"pacote com link ou arquivo especial: {m.name!r}")
+                    total += m.size
+                    if total > LIMITE_PACOTE_SCRIPTS:
+                        raise FalhaPasso("pacote grande demais")
+                    with t.extractfile(m) as f:
+                        arquivos[nome] = (f.read(), 0o755 if m.mode & 0o111 else 0o644)
+        except (tarfile.TarError, OSError, EOFError) as e:
+            raise FalhaPasso(f"pacote ilegível: {e}") from e
+        faltam = [o for o in SCRIPTS_OBRIGATORIOS if o not in arquivos]
+        if faltam:
+            raise FalhaPasso(f"pacote sem arquivos obrigatórios: {faltam}")
+        return commit, arquivos
+
+    @staticmethod
+    def categoria(nome: str) -> str:
+        if nome == "infra/homolog/gcp/vm.sh":
+            return "vm.sh"
+        if nome.startswith("infra/homolog/docker-compose"):
+            return "Compose"
+        if nome.startswith("infra/homolog/Caddyfile"):
+            return "Caddy"
+        if nome.startswith("infra/homolog/gcp/autonomia/"):
+            return "autonomia (não executado a partir de /opt/cenario)"
+        if "/testes/" in nome or nome.endswith((".md", ".test.ts")):
+            return "testes/documentação"
+        return "scripts auxiliares"
+
+    def op_vm_scripts_diff(self, j: Job):
+        v = j.p["version"]
+        commit, arquivos = self.pacote_scripts(v)
+        base = self.cfg.dir_cenario
+        try:
+            with open(os.path.join(base, "VERSAO"), encoding="utf-8") as f:
+                atual = f.read().strip()
+        except OSError:
+            atual = "desconhecida"
+        j.saida.linha(f"✔ pacote scripts-{v} íntegro (commit {commit}, {len(arquivos)} arquivos)")
+        j.saida.linha(f"• /opt/cenario atual: {atual} → pacote: {v}")
+        mudancas: dict[str, list[str]] = collections.defaultdict(list)
+        diffs: list[tuple[str, bytes, bytes]] = []
+        for nome in sorted(arquivos):
+            dados, modo = arquivos[nome]
+            local = os.path.join(base, nome)
+            try:
+                with open(local, "rb") as f:
+                    atual_b = f.read()
+                modo_atual = os.stat(local).st_mode & 0o777
+            except OSError:
+                mudancas[self.categoria(nome)].append(f"+ novo      {nome} ({len(dados)} bytes, sha256 {hashlib.sha256(dados).hexdigest()[:16]}…)")
+                continue
+            if atual_b != dados:
+                mudancas[self.categoria(nome)].append(f"~ alterado  {nome}")
+                diffs.append((nome, atual_b, dados))
+            elif (modo_atual & 0o111 != 0) != (modo & 0o111 != 0):
+                mudancas[self.categoria(nome)].append(f"~ permissão {nome}: {oct(modo_atual)} → {oct(modo)}")
+        so_vm = []
+        for raiz, _, nomes in os.walk(base):
+            for n in nomes:
+                rel = os.path.relpath(os.path.join(raiz, n), base)
+                if rel != "VERSAO" and rel not in arquivos:
+                    so_vm.append(rel)
+        for cat in ("vm.sh", "Compose", "Caddy", "scripts auxiliares", "autonomia (não executado a partir de /opt/cenario)",
+                    "testes/documentação"):
+            linhas = mudancas.get(cat, [])
+            j.saida.linha(f"== {cat}: {len(linhas)} mudança(s)")
+            for l in linhas:
+                j.saida.linha("   " + l)
+        j.saida.linha(f"== só na VM (mantidos, nunca apagados): {len(so_vm)}")
+        for n in sorted(so_vm):
+            j.saida.linha(f"   = {n}")
+        for nome, a, b in diffs:
+            j.saida.linha(f"---------------------------------------------------------------- diff {nome}")
+            for l in difflib.unified_diff(a.decode("utf-8", errors="replace").splitlines(),
+                                          b.decode("utf-8", errors="replace").splitlines(),
+                                          f"/opt/cenario/{nome}", f"scripts-{v}/{nome}", lineterm="", n=3):
+                j.saida.linha(l)
+        if not diffs and not any(mudancas.values()):
+            j.saida.linha("✔ /opt/cenario já é idêntico ao pacote")
+
+    def op_vm_scripts_update(self, j: Job):
+        v = j.p["version"]
+        commit, arquivos = self.pacote_scripts(v)
+        base = self.cfg.dir_cenario
+        j.saida.linha(f"✔ pacote scripts-{v} íntegro (commit {commit}, {len(arquivos)} arquivos)")
+        env = ler_env(self.cfg.env_arquivo)
+        with tempfile.TemporaryDirectory(prefix="cenario-scripts-") as tmp:
+            for nome, (dados, modo) in arquivos.items():
+                destino = os.path.join(tmp, nome)
+                os.makedirs(os.path.dirname(destino), mode=0o755, exist_ok=True)
+                self.gravar(destino, dados, modo)
+            os.chmod(tmp, 0o755)
+            # Antes de trocar qualquer arquivo: o vm.sh novo é bash válido, o Compose novo é válido com o
+            # ambiente atual e o Caddyfile novo é aceito pelo Caddy da pilha (sem rede, nada iniciado).
+            j.cmd(["bash", "-n", os.path.join(tmp, "infra/homolog/gcp/vm.sh")])
+            j.cmd(["docker", "compose", "-f", os.path.join(tmp, "infra/homolog/docker-compose.homolog.yml"),
+                   "--env-file", self.cfg.env_arquivo, "config", "-q"])
+            j.cmd(["docker", "run", "--rm", "--network", "none", "-v",
+                   f"{os.path.join(tmp, 'infra/homolog/Caddyfile.homolog')}:/etc/caddy/Caddyfile:ro",
+                   *[x for n in VARS_CADDY for x in ("-e", n)], IMAGEM_CADDY,
+                   "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"],
+                  env={n: env.get(n, "") for n in VARS_CADDY})
+        copia = f"{base}.anterior-{dt.datetime.now(dt.timezone.utc):%Y%m%dT%H%M%S}Z-{j.jti[:8]}"
+        shutil.copytree(base, copia, symlinks=True)
+        j.saida.linha(f"✔ cópia anterior guardada: {copia}")
+        trocados = 0
+        for nome, (dados, modo) in sorted(arquivos.items()):
+            destino = os.path.join(base, nome)
+            try:
+                with open(destino, "rb") as f:
+                    if f.read() == dados and (os.stat(destino).st_mode & 0o777) == modo:
+                        continue
+            except OSError:
+                pass
+            os.makedirs(os.path.dirname(destino), mode=0o755, exist_ok=True)
+            self.gravar(destino + ".cenario-novo", dados, modo)
+            os.chmod(destino + ".cenario-novo", modo)
+            os.replace(destino + ".cenario-novo", destino)
+            trocados += 1
+            j.saida.linha(f"  ✔ {nome}")
+        self.gravar(os.path.join(base, "VERSAO"), v + "\n", 0o644)
+        self.gravar(os.path.join(self.cfg.estado, "scripts-anterior"), copia + "\n")
+        j.saida.linha(f"✔ /opt/cenario na versão {v}: {trocados} arquivo(s) atualizado(s); arquivos locais fora do "
+                      f"pacote mantidos. Nada foi reiniciado: aplique com apply_stack_config.")
+
+    def op_vm_scripts_restore(self, j: Job):
+        base = self.cfg.dir_cenario
+        try:
+            with open(os.path.join(self.cfg.estado, "scripts-anterior"), encoding="utf-8") as f:
+                copia = f.read().strip()
+        except OSError as e:
+            raise FalhaPasso("nenhuma cópia registrada por vm_scripts_update") from e
+        if not copia.startswith(base + ".anterior-") or "/" in copia[len(base):] or not os.path.isdir(copia):
+            raise FalhaPasso("cópia registrada inválida ou ausente")
+        substituido = f"{base}.substituido-{dt.datetime.now(dt.timezone.utc):%Y%m%dT%H%M%S}Z-{j.jti[:8]}"
+        os.rename(base, substituido)
+        os.rename(copia, base)
+        os.remove(os.path.join(self.cfg.estado, "scripts-anterior"))
+        j.saida.linha(f"✔ /opt/cenario restaurado de {copia}; a versão substituída ficou em {substituido}. "
+                      f"Nada foi reiniciado: aplique com apply_stack_config.")
+
+    def op_apply_stack_config(self, j: Job):
+        v = self.etiqueta_dropin() or self.etiqueta_env()
+        if not RE_SHA.match(v or ""):
+            raise FalhaPasso("versão ativa desconhecida")
+        j.saida.linha(f"• versão ativa mantida: {v} (mesmas imagens; nenhuma migration)")
+        j.vmsh("aplicar-config", env={"CENARIO_TAG": v})
+        self.ativar(j, v, registrar=False)
+
     # ======================================================================== auxiliares
     def imagem(self, servico: str, versao: str) -> str:
         env = ler_env(self.cfg.env_arquivo)
@@ -1125,11 +1440,15 @@ class Runner:
             f.write(json.dumps({"versao": v, "operacao": operacao, "jti": jti, "quando": iso(agora())}) + "\n")
 
     def versoes_ativadas(self) -> set[str]:
+        return set(self.historico_ativacoes())
+
+    def historico_ativacoes(self) -> list[str]:
+        """Versões ativadas por este runner, na ordem (a última é a ativação mais recente)."""
         try:
             with open(self.historico, encoding="utf-8") as f:
-                return {json.loads(l)["versao"] for l in f if l.strip()}
+                return [json.loads(l)["versao"] for l in f if l.strip()]
         except (OSError, ValueError, KeyError):
-            return set()
+            return []
 
     def _conectar(self) -> ssl.SSLSocket:
         ctx = ssl.create_default_context()
