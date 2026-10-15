@@ -1,0 +1,26 @@
+# Executor de OPERAÇÕES NOMEADAS da homologação (fila Pub/Sub cenario-homolog-comandos).
+# Instalado por infra/homolog/gcp/autonomia/runner/instalar.sh. Não executa scripts nem comandos
+# livres: só as operações da tabela OPERACOES do cenario_runner.py, com parâmetros validados.
+# Independe do portão de publicação (precisa funcionar com a pilha parada: diagnóstico e recuperação).
+# Desligamento de emergência: touch /etc/cenario/runner-desativado, ou systemctl disable --now cenario-runner.
+[Unit]
+Description=Cenario Gestao - operacoes nomeadas da homologacao (fila Pub/Sub)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I /opt/cenario-runner/cenario_runner.py
+Environment=CENARIO_RUNNER_CONFIG=/etc/cenario/runner.json
+Restart=always
+RestartSec=5
+# Configuração ou VM errada (78): fica parado em vez de tentar para sempre.
+RestartPreventExitStatus=78
+KillMode=mixed
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
