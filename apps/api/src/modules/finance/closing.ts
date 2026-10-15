@@ -918,6 +918,13 @@ export async function confirmFreeTrip(
     },
   });
   if (live) throw Errors.business('A viagem já tem custo combinado: não pode ser gratuita.');
+  // Repetição: mensagem clara (a corrida simultânea segue barrada pelo índice único → 409).
+  if (
+    await tx.logisticsFreeTrip.count({
+      where: input.pickupId ? { pickupId: input.pickupId } : { deliveryId: input.deliveryId! },
+    })
+  )
+    throw Errors.conflict('Esta viagem já foi confirmada como sem custo.');
   if (input.pickupId && !(await tx.pickupRequest.count({ where: { id: input.pickupId } })))
     throw Errors.notFound('Retirada');
   if (input.deliveryId && !(await tx.delivery.count({ where: { id: input.deliveryId } })))

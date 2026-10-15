@@ -806,7 +806,7 @@ function RescheduleDialog({ item, onClose }: { item: PipelineServiceDto; onClose
             />
           )}
         </Field>
-        <Field label="Prioridade">
+        <Field label="Prioridade" hint="É a prioridade do serviço: altera também a OS.">
           {(p) => (
             <Select
               {...p}

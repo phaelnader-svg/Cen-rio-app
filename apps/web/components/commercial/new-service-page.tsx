@@ -53,6 +53,8 @@ import { AddressFields, addressLines, emptyAddress, type AddressState } from './
 interface PieceRow {
   key: string;
   pieceType: PieceType;
+  /** Tipo de serviço DA PEÇA: define o modelo de produção dela (peças podem ter tipos diferentes). */
+  serviceType: ServiceType;
   description: string;
   quantity: string;
   fabricName: string;
@@ -62,9 +64,10 @@ interface PieceRow {
   laborOk: boolean;
 }
 
-const newPiece = (): PieceRow => ({
+const newPiece = (serviceType: ServiceType = 'REFORMA_COMPLETA'): PieceRow => ({
   key: crypto.randomUUID(),
   pieceType: 'SOFA',
+  serviceType,
   description: '',
   quantity: '1',
   fabricName: '',
@@ -116,7 +119,6 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const [candidates, setCandidates] = useState<DuplicateCandidateDto[] | null>(null);
 
   // ── Serviço fechado
-  const [serviceType, setServiceType] = useState<ServiceType>('REFORMA_COMPLETA');
   const [contracted, setContracted] = useState('');
   const [pieces, setPieces] = useState<PieceRow[]>([newPiece()]);
   const [value, setValue] = useState<number | null>(null);
@@ -157,7 +159,11 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
     );
   };
 
-  const contractedText = contracted || SERVICE_TYPE_LABEL[serviceType];
+  // Descrição padrão: os tipos das peças, sem repetir (ex.: "Reforma completa + Fabricação").
+  const serviceSummary = [...new Set(pieces.map((p) => SERVICE_TYPE_LABEL[p.serviceType]))].join(
+    ' + ',
+  );
+  const contractedText = contracted || serviceSummary;
   const totalPieces = pieces.reduce((a, p) => a + (Number(p.quantity) || 0), 0);
   const chosenAddress: CustomerAddressDto | null =
     addresses.data?.find((a) => a.id === addressId) ??
@@ -199,7 +205,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
           pieceType: p.pieceType,
           description: p.description,
           quantity: Number(p.quantity),
-          serviceType,
+          serviceType: p.serviceType,
           fabricName: blank(p.fabricName),
           plannedUpholstererUserId: d?.canPlanUpholsterer ? p.upholsterer || null : null,
           plannedLaborUnitCents:
@@ -244,7 +250,6 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
     promised,
     technicalNotes,
     pieces,
-    serviceType,
     date,
     arrival,
     responsible,
@@ -601,23 +606,11 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
         description="Só o que já foi combinado. Detalhes técnicos ficam para quando as peças chegarem."
       >
         <FormGrid>
-          <SelectField
-            label="Tipo de serviço"
-            cols={4}
-            value={serviceType}
-            onChange={(e) => setServiceType(e.target.value as ServiceType)}
-            data-testid="ns-service-type"
-          >
-            {SERVICE_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {SERVICE_TYPE_LABEL[t]}
-              </option>
-            ))}
-          </SelectField>
           <TextField
             label="Descrição do serviço"
-            cols={8}
-            placeholder={SERVICE_TYPE_LABEL[serviceType]}
+            cols={12}
+            placeholder={serviceSummary}
+            hint="O tipo de serviço é escolhido em cada peça."
             value={contracted}
             onChange={(e) => setContracted(e.target.value)}
             error={err('service.contractedService')}
@@ -635,6 +628,20 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
                 {PIECE_TYPES.map((t) => (
                   <option key={t} value={t}>
                     {PIECE_TYPE_LABEL[t]}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                label="Tipo de serviço"
+                cols={3}
+                value={p.serviceType}
+                onChange={(e) => setPiece(p.key, { serviceType: e.target.value as ServiceType })}
+                error={err(`service.items.${idx}.serviceType`)}
+                data-testid={`ns-piece-service-${idx}`}
+              >
+                {SERVICE_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {SERVICE_TYPE_LABEL[t]}
                   </option>
                 ))}
               </SelectField>
@@ -659,7 +666,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
               />
               <TextField
                 label="Tecido"
-                cols={2}
+                cols={3}
                 placeholder="Se já escolhido"
                 value={p.fabricName}
                 onChange={(e) => setPiece(p.key, { fabricName: e.target.value })}
@@ -720,7 +727,8 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
             size="sm"
             variant="secondary"
             icon={<Plus className="size-4" />}
-            onClick={() => setPieces((l) => [...l, newPiece()])}
+            // A peça nova começa com o tipo da última (o mais comum: várias do mesmo serviço).
+            onClick={() => setPieces((l) => [...l, newPiece(l[l.length - 1]?.serviceType)])}
             data-testid="ns-add-piece"
           >
             Adicionar peça
@@ -956,6 +964,16 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
             value={mode === 'NOVO' ? name || '—' : (customer?.name ?? '—')}
           />
           <SummaryRow label="Serviço" value={`${contractedText} · ${totalPieces} peça(s)`} />
+          <SummaryRow
+            label="Peças"
+            value={pieces
+              .map(
+                (p) =>
+                  `${p.quantity}× ${p.description || PIECE_TYPE_LABEL[p.pieceType]} — ${SERVICE_TYPE_LABEL[p.serviceType]}`,
+              )
+              .join(' · ')}
+            testId="ns-sum-pieces"
+          />
           {d.canSetValues && (
             <SummaryRow label="Valor fechado" value={brl(value)} testId="ns-sum-value" />
           )}

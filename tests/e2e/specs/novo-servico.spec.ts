@@ -78,6 +78,16 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
       .selectOption('POLTRONA');
     await page.getByTestId('ns-piece-desc-1').fill('Poltronas da sala');
     await page.getByTestId('ns-piece-qty-1').fill('2');
+    // Saneamento: o tipo de serviço é de cada peça (a nova herda o da anterior).
+    await expect(page.getByTestId('ns-piece-service-1')).toHaveValue('REFORMA_COMPLETA');
+    await page.getByTestId('ns-piece-service-1').selectOption('TROCA_DE_TECIDO');
+    await expect(page.getByTestId('ns-piece-service-0')).toHaveValue('REFORMA_COMPLETA');
+    await expect(page.getByTestId('ns-sum-pieces')).toContainText(
+      '1× Sofá retrátil — Reforma completa',
+    );
+    await expect(page.getByTestId('ns-sum-pieces')).toContainText(
+      '2× Poltronas da sala — Troca de tecido',
+    );
     await page.getByTestId('ns-value').fill('2.500,00');
     await page.getByTestId('ns-date').fill(day);
     await page.getByTestId('ns-arrival').fill('15:30');
@@ -162,11 +172,16 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await expect(page).toHaveURL(/\/painel\/os\/[0-9a-f-]{36}$/);
     const so = await call(page, 'GET', `/api/v1/service-orders/${page.url().split('/').pop()}`);
     expect(
-      so.items.map((i: { description: string; quantity: number }) => [i.description, i.quantity]),
+      so.items.map((i: { description: string; quantity: number; serviceType: string }) => [
+        i.description,
+        i.quantity,
+        i.serviceType,
+      ]),
     ).toEqual([
-      ['Sofá retrátil', 1],
-      ['Poltronas da sala', 1],
+      ['Sofá retrátil', 1, 'REFORMA_COMPLETA'],
+      ['Poltronas da sala', 1, 'TROCA_DE_TECIDO'],
     ]);
+
     expect(order.code).toBe(orderCode);
   });
 

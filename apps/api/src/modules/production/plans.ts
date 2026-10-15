@@ -21,6 +21,7 @@ import {
   type ProductionTemplateDto,
   type WorkerDto,
 } from '@cenario/shared';
+import { applyServicePriority, lockServicePlanning } from './service-priority';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -871,6 +872,12 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         if (plan.mode !== 'FILA_SEMANAL' && input.pieces.length)
           throw Errors.business('Titular por peça vale para planejamentos em fila semanal.');
         const priority = input.priority ?? so.priority;
+        // Saneamento: a prioridade é do serviço — escolhida no planejamento, vale também na OS.
+        if (priority !== so.priority)
+          await tx.serviceOrder.update({
+            where: { id: so.id },
+            data: { priority, version: { increment: 1 } },
+          });
         await tx.productionPlanItem.create({
           data: { planId: id, serviceOrderId: so.id, principalUserId: principal, priority },
         });
@@ -953,6 +960,10 @@ export async function productionPlanRoutes(app: FastifyInstance) {
       const input = updatePlanItemSchema.parse(request.body);
       const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {
+        // Trava da OS antes da do plano (mesma ordem da OS e da reprogramação: sem impasse).
+        const head = await tx.productionPlanItem.findUnique({ where: { id: itemId } });
+        if (!head || head.planId !== id) throw Errors.notFound('OS do planejamento');
+        await lockServicePlanning(tx, head.serviceOrderId);
         await lockPlan(tx, id);
         const item = await tx.productionPlanItem.findUnique({
           where: { id: itemId },
@@ -1012,6 +1023,17 @@ export async function productionPlanRoutes(app: FastifyInstance) {
             });
           }
         }
+        // Saneamento: a prioridade é do serviço — vale na OS e em TODAS as tarefas não iniciadas
+        // dela (antes só as principais mudavam), com a posição inicial recalculada só desta OS.
+        if (input.priority && input.priority !== item.priority)
+          await applyServicePriority(
+            tx,
+            actorFrom(request),
+            item.serviceOrderId,
+            input.priority,
+            input.reason,
+            { updateServiceOrder: true, revisedPlanId: id },
+          );
         await reviseIfPublished(
           tx,
           request,

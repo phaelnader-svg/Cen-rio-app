@@ -145,6 +145,56 @@ test.describe.serial('Evolução Fase 7 — fechamento semanal geral', () => {
         });
       }
     }
+    // Saneamento: retirada realizada sem custo informado (padrão desligado só para ela).
+    await call(page, 'PUT', '/api/v1/finance/logistics-defaults', {
+      defaultPickupCostCents: null,
+      defaultDeliveryCostCents: 10000,
+      logisticsPayeeUserId: ANDRE.userId,
+    });
+    const freeCustomer = await post(page, '/api/v1/customers', {
+      kind: 'PF',
+      name: 'Cliente Viagem Sem Custo',
+      phone: null,
+      allowSimilar: true,
+      addresses: [
+        {
+          label: 'Casa',
+          street: 'Rua Teste',
+          number: '99',
+          district: 'Centro',
+          city: 'Cidade Teste',
+          state: 'SP',
+          postalCode: '01000-000',
+        },
+      ],
+    });
+    const freeOrder = await post(page, '/api/v1/orders', {
+      customerId: freeCustomer.id,
+      pickupAddressId: freeCustomer.addresses[0].id,
+      contractedService: 'Reforma',
+      agreedValueCents: 50000,
+      paymentTerms: 'À vista',
+      items: [{ pieceType: 'POLTRONA', description: 'Poltrona', quantity: 1 }],
+    });
+    const freePk = await post(page, '/api/v1/pickups', {
+      orderId: freeOrder.id,
+      scheduledDate: today(),
+      windowStart: '11:00',
+      team: 'LOGISTICA_TERCEIRIZADA',
+      items: [{ orderItemId: freeOrder.items[0].id, quantity: 1 }],
+    });
+    await call(page, 'PUT', '/api/v1/finance/logistics-defaults', {
+      defaultPickupCostCents: 10000,
+      defaultDeliveryCostCents: 10000,
+      logisticsPayeeUserId: ANDRE.userId,
+    });
+    for (const toStatus of ['EM_EXECUCAO', 'RETIRADA_REALIZADA']) {
+      const cur = await call(page, 'GET', `/api/v1/pickups/${freePk.id}`);
+      await call(page, 'POST', `/api/v1/pickups/${freePk.id}/transition`, {
+        toStatus,
+        version: cur.version,
+      });
+    }
     const before = (await call(page, 'GET', `/api/v1/finance/weekly-closings/${WEEK}`)) as {
       rows: Row[];
       pendencies: { kind: string; blocking: boolean; ref: { kind: string; id: string } | null }[];
@@ -166,8 +216,33 @@ test.describe.serial('Evolução Fase 7 — fechamento semanal geral', () => {
     await expect(closing.getByTestId('closing-rows')).toContainText(ANDRE.displayName);
     await expect(closing.getByTestId('closing-totals')).toContainText('Previsto (não pagável)');
     await evidence(page, '01-fechamento-semana');
+    // Saneamento: "Confirmar viagem sem custo" na própria pendência, com confirmação explícita.
+    const freeBtn = closing.getByTestId(`free-trip-${freePk.code}`);
+    await expect(freeBtn).toHaveText('Confirmar viagem sem custo');
+    await freeBtn.click();
+    const freeDlg = page.getByRole('dialog');
+    await expect(freeDlg).toContainText(
+      'Confirma que esta viagem não teve custo? Ela será registrada com valor de R$ 0.',
+    );
+    // Sem motivo não confirma.
+    await expect(freeDlg.getByRole('button', { name: 'Confirmar sem custo' })).toBeDisabled();
+    await freeDlg.getByLabel('Motivo (por que não teve custo)').fill('Cortesia ao cliente (E2E)');
+    await freeDlg.getByRole('button', { name: 'Confirmar sem custo' }).click();
+    await expect(freeDlg).toBeHidden();
+    // A tela se atualiza sozinha: a pendência e o botão somem.
+    await expect(closing.getByTestId(`free-trip-${freePk.code}`)).toHaveCount(0);
+    const afterFree = (await call(page, 'GET', `/api/v1/finance/weekly-closings/${WEEK}`)) as {
+      pendencies: { kind: string; blocking: boolean; ref: { kind: string; id: string } | null }[];
+    };
+    expect(afterFree.pendencies.some((p) => p.ref?.id === freePk.id)).toBe(false);
+    // Repetição (tela antiga): recusada com mensagem clara, nada duplicado.
+    const again = await page.request.post('/api/v1/finance/trip-costs/free', {
+      data: { pickupId: freePk.id, reason: 'De novo' },
+      headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
+    });
+    expect(again.status()).toBe(409);
     // Pendências de outras etapas da suíte (retirada realizada sem custo): resolução explícita.
-    for (const p of before.pendencies.filter((x) => x.blocking)) {
+    for (const p of afterFree.pendencies.filter((x) => x.blocking)) {
       expect(p.kind).toBe('CUSTO_NAO_INFORMADO');
       await call(page, 'POST', '/api/v1/finance/trip-costs/free', {
         [p.ref!.kind === 'pickup' ? 'pickupId' : 'deliveryId']: p.ref!.id,

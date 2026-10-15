@@ -500,11 +500,22 @@ export async function analyzeAbsence(
   const userId = att.employee.userId;
   const name = att.employee.displayName;
   const endOfDay = zonedDateTime(cfg.today, '23:59', cfg.timezone);
+  // Trabalho que dependia desta pessoa HOJE (saneamento): tarefa com horário até o fim do dia
+  // (agenda, correção, embalagem, apoio — nascem com horário) e, na fila semanal (sem horário),
+  // só a que ela pegaria agora — o destaque da fila, como no tablet — ou a com prazo interno até
+  // hoje. O restante da fila não depende do dia: continua na ordem e segue quando ela voltar.
+  // (Antes, toda tarefa sem horário entrava: a fila inteira, de todas as semanas.)
+  const queue = await loadQueue(tx, userId);
+  const queueToday = queue.current ?? queue.next;
   const own = await tx.productionTask.findMany({
     where: {
       assigneeUserId: userId,
       status: { in: [...WAITING] },
-      OR: [{ scheduledAt: { lte: endOfDay } }, { scheduledAt: null }],
+      OR: [
+        { scheduledAt: { lte: endOfDay } },
+        { scheduledAt: null, dueDate: { lte: dbDate(cfg.today) } },
+        ...(queueToday ? [{ scheduledAt: null, id: queueToday.id }] : []),
+      ],
     },
     include: { serviceOrder: { select: { promisedDate: true } } },
     orderBy: [{ scheduledAt: 'asc' }, { sequence: 'asc' }],

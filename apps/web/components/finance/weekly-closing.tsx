@@ -56,6 +56,11 @@ export function WeeklyClosingTab() {
   const [confirm, setConfirm] = useState(false);
   const [reopen, setReopen] = useState(false);
   const [reverse, setReverse] = useState<{ id: string; code: string } | null>(null);
+  const [freeTrip, setFreeTrip] = useState<{
+    kind: 'pickup' | 'delivery';
+    id: string;
+    code: string;
+  } | null>(null);
   const q = useWeeklyClosing(week, filters);
   const manage = can('financeiro.gerenciar');
   const adjust = can('financeiro.ajustes');
@@ -217,6 +222,25 @@ export function WeeklyClosingTab() {
                     <li key={i}>
                       {p.blocking ? '[bloqueia a conferência] ' : ''}
                       {p.message}
+                      {manage &&
+                        p.kind === 'CUSTO_NAO_INFORMADO' &&
+                        (p.ref?.kind === 'pickup' || p.ref?.kind === 'delivery') && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="ml-2"
+                            data-testid={`free-trip-${p.ref.code}`}
+                            onClick={() =>
+                              setFreeTrip({
+                                kind: p.ref!.kind as 'pickup' | 'delivery',
+                                id: p.ref!.id,
+                                code: p.ref!.code,
+                              })
+                            }
+                          >
+                            Confirmar viagem sem custo
+                          </Button>
+                        )}
                     </li>
                   ))}
                 </ul>
@@ -454,6 +478,35 @@ export function WeeklyClosingTab() {
             api(`/api/v1/finance/weekly-closings/${week}/confirm`, {
               method: 'POST',
               body: { version: d.version, note: v.note || null },
+              idempotencyKey: key,
+            })
+          }
+        />
+      )}
+      {freeTrip && (
+        <FormDialog
+          title={`Confirmar viagem sem custo — ${freeTrip.code}`}
+          description="Confirma que esta viagem não teve custo? Ela será registrada com valor de R$ 0. Use só quando a viagem foi de fato gratuita — não é para deixar um custo de lado."
+          submitLabel="Confirmar sem custo"
+          okMessage="Viagem confirmada sem custo."
+          onClose={() => setFreeTrip(null)}
+          fields={[
+            {
+              name: 'reason',
+              label: 'Motivo (por que não teve custo)',
+              type: 'textarea',
+              required: true,
+            },
+          ]}
+          onSubmit={(v, _c, key) =>
+            api('/api/v1/finance/trip-costs/free', {
+              method: 'POST',
+              body: {
+                ...(freeTrip.kind === 'pickup'
+                  ? { pickupId: freeTrip.id }
+                  : { deliveryId: freeTrip.id }),
+                reason: v.reason,
+              },
               idempotencyKey: key,
             })
           }

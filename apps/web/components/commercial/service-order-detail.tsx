@@ -533,7 +533,10 @@ function EditServiceOrderDialog({ so, onClose }: { so: ServiceOrderDto; onClose:
         </Alert>
       )}
       <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="Prioridade">
+        <Field
+          label="Prioridade"
+          hint="Vale também no planejamento (tarefas ainda não iniciadas). Programação publicada: informe o motivo."
+        >
           {(p) => (
             <Select
               {...p}

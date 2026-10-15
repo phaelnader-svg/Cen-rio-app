@@ -15,6 +15,7 @@ import {
   type ServiceOrderRevisionDto,
   type ServiceOrderSummaryDto,
 } from '@cenario/shared';
+import { applyServicePriority, lockServicePlanning } from '../production/service-priority';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -433,6 +434,8 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     const { id } = idParams.parse(request.params);
     const input = updateServiceOrderSchema.parse(request.body);
     await prisma.$transaction(async (tx) => {
+      // Mesma ordem de travas do planejamento (a prioridade da OS vale também nele).
+      await lockServicePlanning(tx, id);
       const revision = await lockForRevision(tx, id);
       const before = await tx.serviceOrder.findUniqueOrThrow({ where: { id } });
       if (before.version !== input.version) throw Errors.versionConflict(before.version);
@@ -467,6 +470,12 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         summary: `OS ${serviceOrderCode(after.number)} alterada.`,
         action: 'service_order.updated',
       });
+      // Saneamento: a prioridade é do serviço — já planejada, vale também no planejamento
+      // (itens e tarefas não iniciadas; D9 só reposiciona esta OS). Sem planejamento, só a OS.
+      if (before.priority !== after.priority)
+        await applyServicePriority(tx, actorFrom(request), id, after.priority, input.reason, {
+          updateServiceOrder: false,
+        });
     });
     return loadServiceOrderDto(prisma, id);
   });

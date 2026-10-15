@@ -57,6 +57,7 @@ import {
 import { distributeServiceOrder } from './distribution';
 import { placeServiceInQueue } from './queue-placement';
 import { reviseIfPublishedBy } from './plans';
+import { applyServicePriority } from './service-priority';
 
 const STARTED = ['EM_EXECUCAO', 'PAUSADA', 'CONCLUIDA'];
 /** Bloqueios de rotina (não são "condição"): ainda não publicada, aguardando a etapa anterior. */
@@ -449,6 +450,12 @@ export async function preplanningRoutes(app: FastifyInstance) {
           const weekStart = mondayOf(entry.startDate);
           const plan = await weekPlan(tx, actor, weekStart);
           const priority = entry.priority ?? so.priority;
+          // Saneamento: a prioridade é do serviço — escolhida no planejamento, vale também na OS.
+          if (priority !== so.priority)
+            await tx.serviceOrder.update({
+              where: { id: so.id },
+              data: { priority, version: { increment: 1 } },
+            });
           await tx.productionPlanItem.create({
             data: {
               planId: plan.id,
@@ -591,6 +598,12 @@ export async function preplanningRoutes(app: FastifyInstance) {
             },
           });
           targetItemId = moved.id;
+          // Saneamento: prioridade nova na troca de semana também vale para a OS.
+          if (input.priority && input.priority !== item.priority)
+            await tx.serviceOrder.update({
+              where: { id: item.serviceOrderId },
+              data: { priority: input.priority, version: { increment: 1 } },
+            });
           for (const t of open) {
             const u = await tx.productionTask.update({
               where: { id: t.id },
@@ -662,6 +675,19 @@ export async function preplanningRoutes(app: FastifyInstance) {
                 where: { id: t.id },
                 data: { priority: data.priority, version: { increment: 1 } },
               });
+          // Saneamento: a prioridade é do serviço — a OS (e outro planejamento dela) acompanha.
+          if (data.priority)
+            await applyServicePriority(
+              tx,
+              actor,
+              item.serviceOrderId,
+              data.priority,
+              input.reason,
+              {
+                updateServiceOrder: true,
+                revisedPlanId: item.planId,
+              },
+            );
           // D9 (decisão C): a reprogramação recalcula a posição inicial só desta OS.
           await placeServiceInQueue(tx, item.planId, item.serviceOrderId);
           if (published)
