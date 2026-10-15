@@ -35,8 +35,31 @@ case "$*" in
   *) echo '{}' ;;
 esac
 EOF
-chmod +x "$TMP/bin/gcloud" "$TMP/bin/curl"
+# ssh-keygen e ssh-add FALSOS (ssh-agente.sh): FALSO_CHAVE=com-senha|sem-senha e
+# FALSO_AGENTE=carregado|vazio|ausente. Padrão: chave com passphrase já carregada no agente.
+cat > "$TMP/bin/ssh-keygen" <<'EOF2'
+#!/usr/bin/env bash
+echo "ssh-keygen $*" >> "$GCLOUD_LOG"
+case "$1" in
+  -y) [[ "${FALSO_CHAVE:-com-senha}" == sem-senha ]] && { echo "ssh-ed25519 AAAA falso"; exit 0; }
+      echo "Load key: incorrect passphrase supplied to decrypt private key" >&2; exit 1 ;;
+  -lf) echo "256 SHA256:impressaoFalsa123 usuario@cloudshell (ED25519)" ;;
+  *) exit 1 ;;
+esac
+EOF2
+cat > "$TMP/bin/ssh-add" <<'EOF2'
+#!/usr/bin/env bash
+echo "ssh-add $*" >> "$GCLOUD_LOG"
+case "${FALSO_AGENTE:-carregado}" in
+  ausente) echo "Could not open a connection to your authentication agent." >&2; exit 2 ;;
+  vazio) echo "The agent has no identities."; exit 1 ;;
+  *) echo "256 SHA256:impressaoFalsa123 usuario@cloudshell (ED25519)" ;;
+esac
+EOF2
+mkdir -p "$TMP/home/.ssh"; : > "$TMP/home/.ssh/google_compute_engine"; : > "$TMP/home/.ssh/google_compute_engine.pub"
+chmod +x "$TMP/bin/gcloud" "$TMP/bin/curl" "$TMP/bin/ssh-keygen" "$TMP/bin/ssh-add"
 export PATH="$TMP/bin:$PATH" GCLOUD_LOG="$TMP/gcloud.log" CENARIO_SEM_SONDA=1 CENARIO_RELATORIOS="$TMP/rel"
+export CENARIO_CHAVE_SSH="$TMP/home/.ssh/google_compute_engine" SSH_AUTH_SOCK="$TMP/agente.sock"
 
 FALHAS=0
 afirma() { if grep -qF -- "$2" "$1"; then echo "  ✔ contém: $2"; else echo "  ✘ NÃO contém: $2"; FALHAS=$((FALHAS + 1)); fi; }
@@ -89,6 +112,41 @@ rc_e "$TMP/1.out" 0
 sem_escritas; sem_proibidos
 afirma "$GCLOUD_LOG.ssh" "### sudo bash -s"
 afirma "$GCLOUD_LOG.ssh" "Inspeção SOMENTE LEITURA"
+afirma "$GCLOUD_LOG" "--tunnel-through-iap --quiet --ssh-flag=-oBatchMode=yes --command=sudo bash -s"
+nega "$GCLOUD_LOG" "ssh-add -t"; nega "$GCLOUD_LOG" "ssh-keygen -t"; nega "$GCLOUD_LOG" "ssh-keygen -p"
+
+echo "1b. auditar: chave com passphrase e SEM ssh-agent → nada de pedir passphrase; para na hora e explica"
+novo_estado agente
+FALSO_AGENTE=ausente roda "$TMP/1b.out" "" auditar
+afirma "$TMP/1b.out" "tem passphrase e nenhum ssh-agent acessível neste terminal"
+afirma "$TMP/1b.out" 'eval "$(ssh-agent -s)"'
+afirma "$TMP/1b.out" "ssh-add -t 1h $CENARIO_CHAVE_SSH"
+afirma "$TMP/1b.out" "✘ inspeção dentro da VM NÃO executada"
+nega "$GCLOUD_LOG" "compute ssh"
+[[ ! -f "$GCLOUD_LOG.ssh" ]] && echo "  ✔ nenhuma conexão SSH tentada" || { echo "  ✘ houve conexão SSH"; FALHAS=$((FALHAS + 1)); }
+rc_nao0 "$TMP/1b.out"; sem_escritas; sem_proibidos
+
+echo "1c. auditar: agente ativo mas SEM a chave → só o ssh-add (o agente já existe)"
+SSH_AUTH_SOCK="$TMP/agente.sock" FALSO_AGENTE=vazio roda "$TMP/1c.out" "" auditar
+afirma "$TMP/1c.out" "tem passphrase e a chave não está carregada no ssh-agent"
+afirma "$TMP/1c.out" "ssh-add -t 1h"
+nega "$TMP/1c.out" 'eval "$(ssh-agent -s)"'
+nega "$GCLOUD_LOG" "compute ssh"; rc_nao0 "$TMP/1c.out"
+
+echo "1d. auditar: SSH_AUTH_SOCK ausente → tratado como sem agente"
+( unset SSH_AUTH_SOCK; roda "$TMP/1d.out" "" auditar )
+afirma "$TMP/1d.out" "nenhum ssh-agent acessível neste terminal"; nega "$GCLOUD_LOG" "compute ssh"; rc_nao0 "$TMP/1d.out"
+
+echo "1e. auditar: chave SEM passphrase (escolha do usuário) → conecta com BatchMode, sem exigir agente"
+FALSO_CHAVE=sem-senha FALSO_AGENTE=ausente roda "$TMP/1e.out" "" auditar
+afirma "$TMP/1e.out" "FIM-INSPECAO"; afirma "$GCLOUD_LOG" "--ssh-flag=-oBatchMode=yes"; nega "$GCLOUD_LOG" "ssh-add -l"
+rc_e "$TMP/1e.out" 0
+
+echo "1f. auditar: chave do gcloud inexistente → não gera chave nem chama o gcloud ssh (que a criaria sem passphrase)"
+CENARIO_CHAVE_SSH="$TMP/home/.ssh/nao-existe" roda "$TMP/1f.out" "" auditar
+afirma "$TMP/1f.out" "Chave SSH do gcloud não encontrada"
+afirma "$TMP/1f.out" "gcloud compute ssh cenario-homolog --zone=us-east1-b --project=cenariogestao --tunnel-through-iap"
+nega "$GCLOUD_LOG" "compute ssh"; nega "$GCLOUD_LOG" "ssh-keygen"; rc_nao0 "$TMP/1f.out"; sem_escritas
 
 echo "2. auditar: escopos padrão (sem cloud-platform) → problema e decisão, sem alterar nada"
 novo_estado escopos
@@ -178,10 +236,16 @@ afirma "$TMP/10.out" "Cancelado. Nada foi alterado."
 nega "$GCLOUD_LOG" "compute scp"
 rc_nao0 "$TMP/10.out"
 
+echo "10b. preparar-vm sem a chave no agente → para antes de copiar ou conectar"
+FALSO_AGENTE=ausente roda "$TMP/10b.out" "preparar cenario-homolog" preparar-vm
+afirma "$TMP/10b.out" "nenhum ssh-agent acessível"
+nega "$GCLOUD_LOG" "compute scp"; nega "$GCLOUD_LOG" "compute ssh"; rc_nao0 "$TMP/10b.out"
+
 echo "11. preparar-vm confirmado → copia o commit e instala com portão fechado, sem iniciar"
 roda "$TMP/11.out" "preparar cenario-homolog" preparar-vm
 afirma "$TMP/11.out" "PREPARAÇÃO DA VM: OK"
 afirma "$GCLOUD_LOG" "compute scp"
+afirma "$GCLOUD_LOG" "--scp-flag=-oBatchMode=yes"
 afirma "$GCLOUD_LOG.ssh" "bash /opt/cenario/infra/homolog/gcp/startup.sh"
 afirma "$GCLOUD_LOG.ssh" "test ! -f /etc/cenario/publicacao-autorizada"
 nega "$GCLOUD_LOG.ssh" "rm -rf /opt/cenario;"

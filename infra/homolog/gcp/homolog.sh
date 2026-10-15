@@ -17,12 +17,18 @@
 #   bash infra/homolog/gcp/homolog.sh plano-publicacao      # SÓ IMPRIME os comandos da publicação futura
 #   bash infra/homolog/gcp/homolog.sh plano-encerramento    # SÓ IMPRIME os comandos para zerar cobranças
 #
+# SSH: com a chave ~/.ssh/google_compute_engine protegida por passphrase, carregue-a antes no ssh-agent
+# (eval "$(ssh-agent -s)"; ssh-add -t 1h ~/.ssh/google_compute_engine). Os scripts nunca pedem a
+# passphrase (BatchMode=yes) e param na hora, com a instrução, se a chave não estiver no agente.
+#
 # Garantias: opera só no projeto cenariogestao (todo comando leva --project); nunca cria VM, rede,
 # firewall, IP, Artifact Registry, Cloud Build nem DNS; nunca abre portas; nunca inicia PostgreSQL,
 # aplicação ou migrations; nunca apaga nem sobrescreve; nunca exibe segredos. Registros em
 # ~/cenario-homolog-relatorios/ (sem segredos). Snapshots só com --com-snapshots e confirmação.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
+# shellcheck source=ssh-agente.sh
+source infra/homolog/gcp/ssh-agente.sh
 
 PROJECT=cenariogestao
 REGION=us-east1
@@ -71,8 +77,9 @@ confirmar() { # confirmar <frase exata>
   local r; read -r r || true
   [[ "$r" == "$1" ]] || { echo "Cancelado. Nada foi alterado."; exit 1; }
 }
-ssh_vm() { # comando remoto; a entrada padrão é repassada
-  g compute ssh "$VM" --zone="$ZONE" --tunnel-through-iap --quiet --command="$1"
+ssh_vm() { # comando remoto; a entrada padrão é repassada. Nunca pede passphrase (ssh-agente.sh).
+  conferir_chave_ssh || return 1
+  g compute ssh "$VM" --zone="$ZONE" --tunnel-through-iap --quiet "${SSH_SEM_PERGUNTA[@]}" --command="$1"
 }
 
 requisitos() {
@@ -334,14 +341,16 @@ auditar() {
 
   if (( sem_ssh == 0 )); then
     secao "11. Dentro da VM (via IAP, somente leitura)"
-    if ssh_vm 'sudo bash -s' < infra/homolog/gcp/vm-inspecao.sh > "$T/inspecao.txt" 2>"$T/inspecao.err"; then
+    if ! conferir_chave_ssh 2>&1; then
+      falha "inspeção dentro da VM NÃO executada: chave SSH não utilizável sem perguntar (instruções acima)"
+    elif ssh_vm 'sudo bash -s' < infra/homolog/gcp/vm-inspecao.sh > "$T/inspecao.txt" 2>"$T/inspecao.err"; then
       cat "$T/inspecao.txt"
       OKS=$((OKS + $(grep -c '^✔' "$T/inspecao.txt" || true)))
       AVISOS=$((AVISOS + $(grep -c '^⚠' "$T/inspecao.txt" || true)))
       FALHAS=$((FALHAS + $(grep -c '^✘' "$T/inspecao.txt" || true)))
       grep -q FIM-INSPECAO "$T/inspecao.txt" || falha "inspeção da VM incompleta"
     else
-      falha "não foi possível entrar na VM pelo IAP: $(tail -2 "$T/inspecao.err" | xargs)"
+      falha "não foi possível entrar na VM pelo IAP (BatchMode: o ssh não pergunta nada): $(tail -3 "$T/inspecao.err" | xargs)"
     fi
   else echo; echo "(inspeção dentro da VM omitida: --sem-ssh)"; fi
 
@@ -473,6 +482,7 @@ preparar_vm() {
   local commit; commit="$(git rev-parse --short=12 HEAD)"
   ler_vm
   [[ "$(jq -r .status "$T/vm.json")" == RUNNING ]] || { echo "✘ VM não está RUNNING"; exit 1; }
+  conferir_chave_ssh 2>&1 || exit 1
   local estado; estado="$(ssh_vm "test -f $PORTAO && echo PORTAO-ABERTO || echo PORTAO-FECHADO" < /dev/null 2>/dev/null | tail -1)"
   [[ "$estado" == PORTAO-FECHADO ]] || { echo "✘ Portão da VM: '${estado:-sem resposta}'. Com a publicação autorizada, use 'operador.sh atualizar-config' e a sequência 'operador.sh passo …'. Nada foi copiado."; exit 1; }
   secao "Preparação da VM $VM com o commit $commit"
@@ -485,7 +495,7 @@ preparar_vm() {
 EOF
   confirmar "preparar $VM"
   git archive --format=tar.gz -o "$T/pacote.tgz" HEAD infra/homolog scripts/backup.sh scripts/restore.sh
-  g compute scp "$T/pacote.tgz" "$VM:/tmp/cenario-pacote.tgz" --zone="$ZONE" --tunnel-through-iap --quiet
+  g compute scp "$T/pacote.tgz" "$VM:/tmp/cenario-pacote.tgz" --zone="$ZONE" --tunnel-through-iap --quiet "${SCP_SEM_PERGUNTA[@]}"
   ssh_vm "sudo CENARIO_COMMIT=$commit bash -s" <<'REMOTO'
 set -euo pipefail
 test ! -f /etc/cenario/publicacao-autorizada || { echo "portão aberto: abortado"; exit 1; }
@@ -528,7 +538,8 @@ testar_config() {
   else aviso "Docker Compose ausente no Cloud Shell: validação feita na VM"; fi
   sondar_portas
   secao "Na VM (via IAP; nada é iniciado)"
-  if ssh_vm "sudo /opt/cenario/infra/homolog/gcp/vm.sh verificar-preparo" < /dev/null > "$T/preparo.txt" 2>&1; then cat "$T/preparo.txt"
+  if ! conferir_chave_ssh 2>&1; then falha "verificação na VM NÃO executada: chave SSH não utilizável sem perguntar (instruções acima)"
+  elif ssh_vm "sudo /opt/cenario/infra/homolog/gcp/vm.sh verificar-preparo" < /dev/null > "$T/preparo.txt" 2>&1; then cat "$T/preparo.txt"
   else cat "$T/preparo.txt"; falha "verificação na VM com problemas (ou preparar-vm não executado)"; fi
   resumo "TESTE DAS CONFIGURAÇÕES"
 }

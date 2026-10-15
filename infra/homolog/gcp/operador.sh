@@ -41,7 +41,12 @@ confirma() {
   read -r -p "Confirma? (digite sim) " r
   [[ "$r" == sim ]] || { echo "Cancelado."; exit 1; }
 }
-ssh_vm() { gcloud compute ssh "$VM" --zone="$ZONE" --project="$PROJECT" --tunnel-through-iap --command="$1"; }
+# shellcheck source=ssh-agente.sh
+source infra/homolog/gcp/ssh-agente.sh
+ssh_vm() { # nunca pede passphrase (ssh-agente.sh)
+  conferir_chave_ssh || return 1
+  gcloud compute ssh "$VM" --zone="$ZONE" --project="$PROJECT" --tunnel-through-iap "${SSH_SEM_PERGUNTA[@]}" --command="$1"
+}
 
 criar_segredos() {
   confirma "criar ${#SECRETS[@]} segredos no Secret Manager (${SECRETS[*]})"
@@ -111,10 +116,11 @@ atualizar_config() {
   [[ -z "$(git status --porcelain -- infra/homolog scripts/backup.sh scripts/restore.sh)" ]] \
     || { echo "Há mudanças não commitadas em infra/homolog ou scripts/: faça commit antes." >&2; exit 2; }
   local commit; commit="$(git rev-parse --short=12 HEAD)"
+  conferir_chave_ssh || exit 1
   confirma "copiar a configuração do commit $commit para /opt/cenario e recriar SÓ o proxy (banco, API e web intocados)"
   local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
   git archive --format=tar.gz -o "$tmp/config.tgz" HEAD infra/homolog scripts/backup.sh scripts/restore.sh
-  gcloud compute scp "$tmp/config.tgz" "$VM:/tmp/cenario-config.tgz" --zone="$ZONE" --project="$PROJECT" --tunnel-through-iap
+  gcloud compute scp "$tmp/config.tgz" "$VM:/tmp/cenario-config.tgz" --zone="$ZONE" --project="$PROJECT" --tunnel-through-iap "${SCP_SEM_PERGUNTA[@]}"
   ssh_vm "sudo CENARIO_COMMIT=$commit bash -s" <<'REMOTO'
 set -euo pipefail
 copia="/opt/cenario.anterior-$(date -u +%Y%m%dT%H%M%S.%NZ)"
@@ -160,10 +166,11 @@ mostrar_credencial() {
 # pela SUA conta (a conta da VM não lê o bucket, por desenho). Nada é restaurado aqui.
 trazer_backup() {
   local nome="${1:-}"; [[ "$nome" =~ ^cenario-[A-Za-z0-9._-]+$ ]] || { echo "Uso: operador.sh trazer-backup <cenario-…> (nome da pasta do backup)" >&2; exit 2; }
+  conferir_chave_ssh || exit 1
   confirma "copiar gs://cenariogestao-homolog-backups/backups/$nome.tar para a VM (/var/lib/cenario/restaurar/)"
   local tmp; tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
   gcloud storage cp "gs://cenariogestao-homolog-backups/backups/$nome.tar" "$tmp/" --project="$PROJECT"
-  gcloud compute scp "$tmp/$nome.tar" "$VM:/tmp/" --zone="$ZONE" --project="$PROJECT" --tunnel-through-iap
+  gcloud compute scp "$tmp/$nome.tar" "$VM:/tmp/" --zone="$ZONE" --project="$PROJECT" --tunnel-through-iap "${SCP_SEM_PERGUNTA[@]}"
   ssh_vm "sudo install -d -m 700 /var/lib/cenario/restaurar && sudo tar -xf /tmp/$nome.tar -C /var/lib/cenario/restaurar && rm -f /tmp/$nome.tar && cd /var/lib/cenario/restaurar/$nome && sudo sha256sum --check --quiet SHA256SUMS && echo '✔ backup copiado e íntegro (SHA256SUMS conferido)'"
 }
 
