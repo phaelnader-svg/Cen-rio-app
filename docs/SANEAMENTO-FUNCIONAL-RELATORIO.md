@@ -93,6 +93,90 @@ Repetição devolve 409 "Esta viagem já foi confirmada como sem custo." A corri
   - `novo-servico.spec.ts`: tipos diferentes por peça, até a OS;
   - `team-closing.spec.ts`: botão, confirmação, atualização da tela, repetição 409.
 
+## CI
+
+**CI nº 122** (run 38786937417) sobre `c239e84`: **verde**. Passaram:
+
+- `pnpm audit`, format, lint, typecheck;
+- migrations do zero, com `migrate diff` sem divergência;
+- build;
+- `pnpm test` (API, shared e web, inclusive o proxy Caddy real);
+- `pnpm test:backup`;
+- E2E Playwright.
+
+Local:
+
+- API: 521 aprovados, 10 ignorados, 0 falhas;
+- shared: 87; web: 6;
+- E2E: 38/38 após corrigir o próprio teste (botão desabilitado sem motivo).
+
+## Homologação (`cenario-homolog`, autonomia do runner 2.1.1)
+
+Tudo pelo `claude-operador` com operações nomeadas: sem SSH, sem Cloud Shell, sem infraestrutura nova.
+
+**Build** pelo gatilho (Pub/Sub → `cenario-homolog-build-autonomo`, conta `cenario-build`):
+
+| Item        | Valor                                                                      |
+| ----------- | -------------------------------------------------------------------------- |
+| Build       | `15f61be9-645f-4e1b-83e4-faa6a794e35a` — SUCCESS (18:36:18 → 18:41:09 UTC) |
+| api:c239e84 | `sha256:4ebdada740100a23c9bce113884db262cabe85a1d5ba1c96e6da3389e77f47c8`  |
+| web:c239e84 | `sha256:684203f8dd25738bfbe6caa5e01bafc4a30a0c50daa7b5af0850b5344ca826cd`  |
+
+**Sequência:**
+
+1. Estado inicial, somente leitura: ativa/candidata/migrada `406fde7`; 25 migrations; 5 contêineres
+   saudáveis; disco 61% (7,3 GB livres); portão fechado; impressão `f82f4c4f…`.
+2. `gate_open`.
+3. `prepare_version c239e84`: imagens com os digests acima; a imagem não migra na partida.
+4. **`migration_precheck version=c239e84`: OK.** Imagem 25 · banco 25 · **0 pendentes**. Nenhuma migration
+   nova nesta rodada.
+5. Somente depois do CI nº 122 verde:
+   1. `maintenance_on` (19:03:40);
+   2. `recovery_point_create`: `cenario-staging-20261015T190346Z`; restauração de teste **idêntica**; cópia
+      fora da VM; impressão `f82f4c4f…`, igual à inicial;
+   3. `backup_validate`: SHA256SUMS conferido.
+6. `migrate c239e84`: banco idêntico ao ponto, preflight OK, "Database schema is up to date!" →
+   **0 migrations aplicadas**.
+7. `activate_version c239e84`: api e web recriadas, `healthy`.
+8. `gate_close`: portão fechado.
+
+**Validação depois da ativação:**
+
+- `version`: drop-in, pilha, candidata e migrada = **`c239e84`**.
+- Os contêineres usam exatamente as imagens `4ebdada7…` (api) e `684203f8…` (web) do build acima.
+- `406fde7` fica guardada como versão do ponto de recuperação.
+- Contêineres: api, web e postgres `healthy`; caddy e backup em execução.
+- `migration_verify`: **25/25**, 0 pendentes.
+- `health`, `smoke_test`: Saúde OK.
+  - `/api/ready` 200; proxy 401 + Basic; `/entrar` 200; JS 200;
+  - sem HTTP/3; certificado com 83 dias;
+  - disco 73%; memória 1 GB.
+- `websocket_test`: 401 sem sessão (encaminhamento até a API OK).
+- `run_homologation_tests suite=completo`: saude ✔, acesso ✔, websocket ✔.
+- Logs dos últimos 20 min:
+  - API: 26 linhas, todas `info`;
+  - web e postgres: sem erros;
+  - Caddy: 200/307/401/101, **nenhum 5xx**.
+- Impressão digital depois: **esquema idêntico**. Só mudou o conteúdo de 3 tabelas operacionais:
+  - `devices` e `sessions`: mesma quantidade de linhas;
+  - `domain_events`: 442 → 443;
+  - causa: sessão real de tablet encerrada na manutenção (Caddy `101`) e nova partida da API.
+  - Nenhuma tabela de negócio ou financeira mudou.
+- Nenhum dado sintético foi criado.
+
+**Ressalva (caveat).** Os quatro fluxos funcionais não puderam ser clicados direto na homologação:
+
+- Novo serviço com tipos por peça;
+- ausência;
+- prioridade/D9;
+- viagem sem custo.
+
+O runner não tem login da aplicação, por desenho; nenhuma credencial, infraestrutura ou desvio foi criado para
+contornar isso. A validação funcional vem do CI nº 122 (API + E2E) executado sobre o **mesmo commit**
+`c239e84`, cujas imagens são as ativas.
+
+**Classificação: GO WITH CAVEATS.**
+
 ## Pendências reais (não implementadas)
 
 - Ausência presumida (9h30) no modo fila: `detectImpacts` não conta a tarefa liberada em destaque e mostra
