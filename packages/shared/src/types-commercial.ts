@@ -1,3 +1,4 @@
+import type { OrderDeadlineState, ServiceDeadline } from './deadline-domain';
 import type { MaterialReadiness } from './purchasing-domain';
 import type {
   AttachmentEntity,
@@ -121,12 +122,27 @@ export interface OrderDto extends OrderSummaryDto {
   createdBy: string | null;
   /** Simplificação Fase 2: a OS nasce automaticamente na confirmação da chegada das peças. */
   autoServiceOrder: boolean;
+  /** Promessa vigente para as peças/OS que ainda vão nascer (OS novas copiam este prazo). */
   promisedDate: string | null;
+  /** Atenção do pedido antes da OS: prazo vencido/próximo com peça ainda não recebida. */
+  deadline: OrderDeadlineState | null;
+  /** Histórico das alterações do prazo do pedido (auditoria), da mais recente à mais antiga. */
+  promisedDateHistory: OrderPromisedDateChangeDto[];
   technicalNotes: string | null;
   /** Pode ver a mão de obra prevista dos itens (`financeiro.ver`). */
   plannedLaborVisible: boolean;
   version: number;
   updatedAt: string;
+}
+
+export interface OrderPromisedDateChangeDto {
+  from: string | null;
+  to: string | null;
+  reason: string;
+  /** OS abertas que receberam o novo prazo junto (opção "aplicar às OS"). */
+  appliedTo: string[];
+  by: string | null;
+  at: string;
 }
 
 export interface PickupEventDto {
@@ -265,6 +281,8 @@ export interface ServiceOrderSummaryDto {
   customer: CustomerSummaryDto;
   priority: Priority;
   promisedDate: string | null;
+  /** Estado do prazo prometido (regra única da API; a tela não recalcula). */
+  deadline: ServiceDeadline;
   technicalLead: EmployeeSummaryDto | null;
   itemCount: number;
   pieceCount: number;

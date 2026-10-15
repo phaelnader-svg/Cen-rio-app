@@ -26,6 +26,7 @@ import type { FastifyInstance } from 'fastify';
 import { attendanceConfig, clock, dbDate } from '../attendance/common';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { WAIT_ALERT_MINUTES } from '../help/engine';
+import { deadlineAttention } from '../deadlines/attention';
 import { qualityAttention } from '../quality/attention';
 import { OPEN_STATUSES, VIEW, issueDto, issueInclude } from './common';
 
@@ -258,6 +259,10 @@ export async function attentionRoutes(app: FastifyInstance) {
       // Fase 10: qualidade (inspeção sem inspetor, correções, embalagem sem responsável, peças
       // prontas sem entrega) e logística (ocorrências, entregas frustradas).
       items.push(...(await qualityAttention(prisma, realToday)));
+
+      // Prazos e serviços em risco: um item por OS atrasada/em risco e um por pedido com peças
+      // ainda não recebidas (derivados; mesma regra da lista/detalhe da OS e do Início).
+      items.push(...(await deadlineAttention(prisma)));
 
       // 7. Rascunhos de semanas passadas (decisão aprovada: tratamento MANUAL). Só leitura — o
       // aviso é derivado a cada consulta (um item por semana, chave estável), nada é gravado,

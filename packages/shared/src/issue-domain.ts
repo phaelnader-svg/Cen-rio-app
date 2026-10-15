@@ -91,6 +91,8 @@ export const ATTENTION_TYPES = [
   'QUALIDADE',
   'LOGISTICA',
   'RASCUNHO_ANTIGO',
+  'PRAZO_OS',
+  'PRAZO_PEDIDO',
 ] as const;
 export type AttentionType = (typeof ATTENTION_TYPES)[number];
 export const ATTENTION_TYPE_LABEL: Record<AttentionType, string> = {
@@ -99,10 +101,12 @@ export const ATTENTION_TYPE_LABEL: Record<AttentionType, string> = {
   PROPOSTA: 'Reprogramação',
   PRESENCA: 'Presença',
   IMPEDIMENTO: 'Pausa por impedimento',
-  PRAZO: 'Prazo em risco',
+  PRAZO: 'Prazo interno da tarefa',
   QUALIDADE: 'Qualidade e embalagem',
   LOGISTICA: 'Entregas e logística',
   RASCUNHO_ANTIGO: 'Rascunho de semana passada',
+  PRAZO_OS: 'Prazo da OS',
+  PRAZO_PEDIDO: 'Prazo do pedido (peças não recebidas)',
 };
 
 /**

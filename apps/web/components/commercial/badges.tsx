@@ -1,4 +1,7 @@
 import {
+  DEADLINE_REASON_LABEL,
+  DEADLINE_STATE_LABEL,
+  ORDER_DEADLINE_LABEL,
   ORDER_SERVICE_STATE_LABEL,
   ORDER_STATUS_LABEL,
   PICKUP_STATUS_LABEL,
@@ -9,6 +12,8 @@ import {
   type Priority,
   type ServiceOrderStatus,
   type OrderServiceState,
+  type OrderDeadlineState,
+  type ServiceDeadline,
 } from '@cenario/shared';
 import { Badge } from '@/components/ui/misc';
 
@@ -92,3 +97,43 @@ export const ServiceStateBadge = ({
       {returned > 0 && state === 'SERVICO_CONCLUIDO' ? ` · ${returned} devolvida(s)` : ''}
     </Badge>
   );
+
+/**
+ * Prazos e serviços em risco: rótulo discreto do estado do prazo (calculado pela API — a tela
+ * não recalcula). Só ATRASADO, EM_RISCO e PROXIMO aparecem; o resto fica sem rótulo.
+ */
+export function DeadlineBadge({
+  deadline,
+  withReasons = false,
+}: {
+  deadline: ServiceDeadline;
+  withReasons?: boolean;
+}) {
+  const tone: Partial<Record<ServiceDeadline['state'], Tone>> = {
+    ATRASADO: 'danger',
+    EM_RISCO: 'warn',
+    PROXIMO: 'neutral',
+  };
+  const t = tone[deadline.state];
+  if (!t) return null;
+  const why = [...deadline.reasons.map((r) => DEADLINE_REASON_LABEL[r]), ...deadline.context];
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2" data-testid="deadline-state">
+      <Badge tone={t}>{DEADLINE_STATE_LABEL[deadline.state]}</Badge>
+      {withReasons && why.length > 0 && (
+        <span className="text-sm text-ink-muted" data-testid="deadline-reasons">
+          {why.join(' · ')}
+        </span>
+      )}
+    </span>
+  );
+}
+
+export function OrderDeadlineBadge({ state }: { state: OrderDeadlineState | null }) {
+  if (!state) return null;
+  return (
+    <Badge tone={state === 'PRAZO_VENCIDO' ? 'danger' : 'warn'}>
+      {ORDER_DEADLINE_LABEL[state]} · peça não recebida
+    </Badge>
+  );
+}

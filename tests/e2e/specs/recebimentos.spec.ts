@@ -80,6 +80,7 @@ test.describe.serial('Simplificação Fase 3 — Aguardando chegada', () => {
         },
       },
       service: {
+        promisedDate: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
         contractedService: 'Reforma completa',
         agreedValueCents: 300000,
         items: [

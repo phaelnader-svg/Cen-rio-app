@@ -49,7 +49,7 @@ import { OsMaterialsOverview } from '@/components/purchasing/os-materials';
 import { OsProduction } from '@/components/production/os-production';
 import { MeasurementList } from '@/components/measurements/measurements-page';
 import { useMeasurements } from '@/lib/measurements';
-import { PriorityBadge, ServiceOrderStatusBadge } from './badges';
+import { DeadlineBadge, PriorityBadge, ServiceOrderStatusBadge } from './badges';
 import { PhotoGallery } from './photo-gallery';
 import { BackLink, Detail, Section } from './section';
 import { OsLabor } from '@/components/finance/service-order-labor';
@@ -192,6 +192,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
             Prazo prometido: {formatDay(s.promisedDate, true)}
           </span>
         )}
+        <DeadlineBadge deadline={s.deadline} withReasons />
       </div>
       {!open && (
         <Alert tone="warn" className="mb-6" title={`Cancelada em ${formatDateTime(s.cancelledAt)}`}>

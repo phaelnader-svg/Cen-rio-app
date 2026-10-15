@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  AlarmClock,
   ClipboardPlus,
   Activity,
   ClipboardList,
@@ -19,6 +20,7 @@ import { Avatar, Badge, Card, Spinner } from '@/components/ui/misc';
 import { relativeTime } from '@/lib/format';
 import { useCan, useMe } from '@/lib/hooks';
 import { todayIso, useOrders, usePickups, useServiceOrders } from '@/lib/commercial';
+import { useAttention } from '@/lib/issues';
 import { useDevices, useEmployees, useRecentAudit, useSessions } from '@/lib/queries';
 import { useRealtime } from '@/lib/realtime';
 import { UPCOMING } from './nav';
@@ -77,6 +79,11 @@ export function Dashboard() {
   const awaiting = useOrders({ status: 'AGUARDANDO_RETIRADA' }, can('pedidos.ver'));
   const partial = useOrders({ status: 'RECEBIDO_PARCIAL' }, can('pedidos.ver'));
   const openOs = useServiceOrders({ status: 'ABERTA' }, can('os.ver'));
+  // Prazos: as MESMAS contagens da Central de atenção (mesma rota, mesma regra; nada é
+  // recalculado aqui). Só para quem gerencia a Central.
+  const deadlinesVisible = can('ocorrencias.gerenciar');
+  const osDeadlines = useAttention({ type: 'PRAZO_OS' }, deadlinesVisible);
+  const orderDeadlines = useAttention({ type: 'PRAZO_PEDIDO' }, deadlinesVisible);
 
   const activeEmployees = employees.data?.filter((e) => e.active) ?? [];
   const withPin = activeEmployees.filter((e) => e.hasPin).length;
@@ -112,6 +119,38 @@ export function Dashboard() {
           </Link>
         )}
       </div>
+
+      {deadlinesVisible && (
+        <Link
+          href="/painel/atencao?type=PRAZO_OS"
+          className="block rounded-2xl"
+          data-testid="dashboard-deadlines"
+        >
+          <Card className="flex flex-wrap items-center gap-x-6 gap-y-1 p-5 transition-shadow hover:shadow-[var(--shadow-pop)]">
+            <span className="flex items-center gap-2 text-sm font-medium text-ink-muted">
+              <span className="rounded-lg bg-brand-50 p-1.5 text-brand-700">
+                <AlarmClock className="size-4" aria-hidden />
+              </span>
+              Prazos
+            </span>
+            <span className="text-lg font-semibold tabular-nums">
+              <span data-testid="dashboard-deadlines-late">
+                {osDeadlines.data?.counts.CRITICO ?? '—'}
+              </span>{' '}
+              atrasado(s) ·{' '}
+              <span data-testid="dashboard-deadlines-risk">
+                {osDeadlines.data?.counts.ACAO ?? '—'}
+              </span>{' '}
+              em risco
+            </span>
+            {(orderDeadlines.data?.items.length ?? 0) > 0 && (
+              <span className="text-sm text-ink-muted" data-testid="dashboard-deadlines-orders">
+                {orderDeadlines.data!.items.length} pedido(s) com peça ainda não recebida
+              </span>
+            )}
+          </Card>
+        </Link>
+      )}
 
       {(can('retiradas.ver') || can('pedidos.ver') || can('os.ver')) && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="flow-stats">

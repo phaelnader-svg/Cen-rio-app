@@ -5,8 +5,10 @@ import {
   createOrderSchema,
   orderPlannedIntentSchema,
   orderQuerySchema,
+  updateOrderPromisedDateSchema,
   updateOrderSchema,
   type OrderDto,
+  type OrderPromisedDateChangeDto,
   type OrderSummaryDto,
   type PageDto,
 } from '@cenario/shared';
@@ -28,9 +30,11 @@ import {
   activeAddress,
   asSnapshot,
   can,
+  dateOnly,
   lockOrder,
   lockOrderItems,
   orderCode,
+  parseDateOnly,
   snapshotAddress,
   toCustomerSummary,
 } from '../commercial/common';
@@ -43,6 +47,11 @@ import {
 import { syncTripCost } from '../finance/trip-costs';
 import { assertIntentEligible, canPlanLabor, canPlanUpholsterer } from './planned-intent';
 import { createOrder } from './service';
+import { orderDeadlines, serviceDeadlines } from '../deadlines/service';
+import { changeServiceOrderPromisedDate } from '../service-orders/routes';
+
+const PROMISED_ACTION = 'order.promised_date_changed';
+const br = (d: string | null) => (d ? d.split('-').reverse().join('/') : 'sem prazo');
 
 const VIEW = { session: 'WEB', permissions: ['pedidos.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['pedidos.gerenciar'] } as const;
@@ -134,6 +143,29 @@ export async function loadOrderDto(
     createdBy: o.createdBy?.displayName ?? null,
     autoServiceOrder: o.autoServiceOrder,
     promisedDate: o.promisedDate ? o.promisedDate.toISOString().slice(0, 10) : null,
+    deadline: (await orderDeadlines(db, { id }))[0]?.state ?? null,
+    promisedDateHistory: (
+      await db.auditLog.findMany({
+        where: { entityType: 'commercial_order', entityId: id, action: PROMISED_ACTION },
+        include: { actor: { select: { displayName: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      })
+    ).map((a): OrderPromisedDateChangeDto => {
+      const c = (a.changes ?? {}) as {
+        promisedDate?: { from: string | null; to: string | null };
+        reason?: string;
+        appliedToServiceOrders?: string[];
+      };
+      return {
+        from: c.promisedDate?.from ?? null,
+        to: c.promisedDate?.to ?? null,
+        reason: c.reason ?? '',
+        appliedTo: c.appliedToServiceOrders ?? [],
+        by: a.actor?.displayName ?? null,
+        at: a.createdAt.toISOString(),
+      };
+    }),
     technicalNotes: o.technicalNotes,
     plannedLaborVisible,
     version: o.version,
@@ -465,6 +497,78 @@ export async function orderRoutes(app: FastifyInstance) {
     });
     return loadOrderDto(prisma, request, id);
   });
+
+  /**
+   * Prazos e serviços em risco: altera o prazo prometido do PEDIDO (promessa vigente para as
+   * peças/OS que ainda vão nascer), com motivo, auditoria (prazo anterior, novo, autor, data e
+   * motivo) e versão. As OS existentes só mudam se o usuário responder SIM a "Aplicar este novo
+   * prazo também às OS abertas deste pedido?" — e então só as abertas com peça por entregar, pela
+   * regra central de alteração de prazo da OS. Nada de fila, prioridade, D9 ou planejamento.
+   */
+  app.put(
+    '/api/v1/orders/:id/promised-date',
+    { config: { access: MANAGE, idempotent: true } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const input = updateOrderPromisedDateSchema.parse(request.body);
+      // Alterar OS exige a permissão de OS (não amplia acesso de quem só gerencia pedidos).
+      if (input.applyToServiceOrders && !can(request, 'os.gerenciar'))
+        throw Errors.forbidden('Sem permissão para alterar o prazo das OS.');
+      const actor = actorFrom(request);
+      await prisma.$transaction(async (tx) => {
+        if (!(await lockOrder(tx, id))) throw Errors.notFound('Pedido');
+        const before = await tx.commercialOrder.findUniqueOrThrow({ where: { id } });
+        if (before.version !== input.version) throw Errors.versionConflict(before.version);
+        if (before.status === 'CANCELADO')
+          throw Errors.business('Pedido cancelado não pode ser alterado.');
+        const from = dateOnly(before.promisedDate);
+        if (from === input.promisedDate && !input.applyToServiceOrders)
+          throw Errors.business('O prazo informado é igual ao atual.');
+        await tx.commercialOrder.update({
+          where: { id, version: input.version },
+          data: { promisedDate: parseDateOnly(input.promisedDate), version: { increment: 1 } },
+        });
+        const code = orderCode(before.number);
+        const applied: string[] = [];
+        if (input.applyToServiceOrders) {
+          const open = await tx.serviceOrder.findMany({
+            where: { orderId: id, status: 'ABERTA' },
+            select: { id: true },
+            orderBy: { number: 'asc' },
+          });
+          // Pertinentes: abertas com peça ativa ainda por entregar (entregue/encerrada não muda).
+          const states = await serviceDeadlines(tx, { id: { in: open.map((o) => o.id) } });
+          for (const so of open) {
+            if (states.get(so.id)?.state === 'ENCERRADA') continue;
+            const changed = await changeServiceOrderPromisedDate(
+              tx,
+              actor,
+              so.id,
+              input.promisedDate,
+              input.reason,
+              `prazo do pedido ${code}`,
+            );
+            if (changed) applied.push(changed);
+          }
+        }
+        await audit(tx, actor, {
+          action: PROMISED_ACTION,
+          entityType: 'commercial_order',
+          entityId: id,
+          summary: `Pedido ${code}: prazo prometido ${br(from)} → ${br(input.promisedDate)}${
+            applied.length ? ` (também em ${applied.join(', ')})` : ''
+          }.`,
+          changes: {
+            promisedDate: { from, to: input.promisedDate },
+            reason: input.reason,
+            appliedToServiceOrders: applied,
+          },
+        });
+        await emitOrderEvent(tx, request, id);
+      });
+      return loadOrderDto(prisma, request, id);
+    },
+  );
 
   app.post(
     '/api/v1/orders/:id/cancel',

@@ -163,6 +163,10 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   ) {
     keys.push(['attention'], ['help-candidates']);
   }
+  // Prazos e serviços em risco: prazo/andamento da OS, prazo do pedido, chegada das peças e
+  // planejamento mudam os itens PRAZO_OS / PRAZO_PEDIDO (Central e Início) e o estado na OS.
+  if (['service_order.', 'order.', 'receipt.', 'production.plan_'].some((p) => t.startsWith(p)))
+    keys.push(['attention'], ['service-orders'], ['service-order']);
   if (t === 'attachment.changed') keys.push(['issue']);
   // Fase 10 — qualidade, embalagem, expedição, entregas, logística e devoluções.
   const quality = [

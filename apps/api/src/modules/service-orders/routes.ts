@@ -16,6 +16,7 @@ import {
   type ServiceOrderSummaryDto,
 } from '@cenario/shared';
 import { applyServicePriority, lockServicePlanning } from '../production/service-priority';
+import { serviceDeadlineOf, serviceDeadlines } from '../deadlines/service';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -94,6 +95,7 @@ export async function loadServiceOrderDto(
     customer: toCustomerSummary(so.customer),
     priority: so.priority,
     promisedDate: dateOnly(so.promisedDate),
+    deadline: await serviceDeadlineOf(db, id),
     technicalLead: so.technicalLead ? toEmployeeSummary(so.technicalLead) : null,
     itemCount: so.items.length,
     pieceCount: so.items.reduce((a, i) => a + i.quantity, 0),
@@ -167,6 +169,39 @@ async function lockForRevision(tx: Tx, id: string): Promise<number> {
     _max: { revision: true },
   });
   return (last._max.revision ?? 0) + 1;
+}
+
+/**
+ * Regra central de alteração do prazo prometido de UMA OS (usada pela opção "aplicar às OS
+ * abertas" do pedido): trava a OS, grava revisão + auditoria + evento e avisa quem tem tarefa
+ * aberta — o mesmo registro da edição da OS. NUNCA mexe em fila, prioridade, tarefas ou
+ * planejamento (D9). Devolve o código da OS alterada, ou null quando nada mudou.
+ */
+export async function changeServiceOrderPromisedDate(
+  tx: Tx,
+  actor: ActorContext,
+  id: string,
+  to: string,
+  reason: string,
+  origin: string,
+): Promise<string | null> {
+  const revision = await lockForRevision(tx, id);
+  const so = await tx.serviceOrder.findUniqueOrThrow({ where: { id } });
+  const from = dateOnly(so.promisedDate);
+  if (so.status !== 'ABERTA' || from === to) return null;
+  await tx.serviceOrder.update({
+    where: { id },
+    data: { promisedDate: parseDateOnly(to), version: { increment: 1 } },
+  });
+  const br = (d: string | null) => (d ? d.split('-').reverse().join('/') : 'sem prazo');
+  await recordChange(tx, actor, so, revision, {
+    scope: 'OS',
+    changes: { promisedDate: { from, to } },
+    reason,
+    summary: `OS ${serviceOrderCode(so.number)}: prazo prometido ${br(from)} → ${br(to)} (${origin}).`,
+    action: 'service_order.updated',
+  });
+  return serviceOrderCode(so.number);
 }
 
 export async function recordChange(
@@ -302,6 +337,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         skip: q.offset,
       }),
     ]);
+    const deadlines = await serviceDeadlines(prisma, { id: { in: rows.map((r) => r.id) } });
     return {
       total,
       items: rows.map(
@@ -314,6 +350,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
           customer: toCustomerSummary(so.customer),
           priority: so.priority,
           promisedDate: dateOnly(so.promisedDate),
+          deadline: deadlines.get(so.id)!,
           technicalLead: so.technicalLead ? toEmployeeSummary(so.technicalLead) : null,
           itemCount: so.items.length,
           pieceCount: so.items.reduce((a, i) => a + i.quantity, 0),

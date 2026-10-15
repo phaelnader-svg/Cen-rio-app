@@ -199,7 +199,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
         contractedService: contractedText,
         agreedValueCents: d?.canSetValues ? value : null,
         paymentTerms: d?.canSetValues ? blank(terms) : null,
-        promisedDate: promised || null,
+        promisedDate: promised,
         technicalNotes: blank(technicalNotes),
         items: pieces.map((p) => ({
           pieceType: p.pieceType,
@@ -759,9 +759,11 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
           <DateField
             label="Prazo de entrega combinado"
             cols={3}
+            required
             value={promised}
             onChange={(e) => setPromised(e.target.value)}
             error={err('service.promisedDate')}
+            data-testid="ns-promised"
           />
           <TextAreaField
             label="Observações técnicas"

@@ -7,7 +7,7 @@ import { useDeferredValue, useState } from 'react';
 import { Input, Select } from '@/components/ui/field';
 import { Alert, Avatar, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { formatDay, useServiceOrders } from '@/lib/commercial';
-import { PriorityBadge, ServiceOrderStatusBadge } from './badges';
+import { DeadlineBadge, PriorityBadge, ServiceOrderStatusBadge } from './badges';
 
 export function ServiceOrdersPage() {
   const [q, setQ] = useState('');
@@ -71,6 +71,7 @@ export function ServiceOrdersPage() {
                       {s.promisedDate ? ` · prazo ${formatDay(s.promisedDate, true)}` : ''}
                     </p>
                   </div>
+                  <DeadlineBadge deadline={s.deadline} />
                   {s.technicalLead && (
                     <span className="flex items-center gap-1.5 text-sm text-ink-soft">
                       <Avatar

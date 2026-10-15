@@ -54,6 +54,7 @@ test('queda de rede depois do envio: nova tentativa usa a mesma chave e nada dup
       },
     },
     service: {
+      promisedDate: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
       contractedService: 'Reforma completa',
       agreedValueCents: 150000,
       items: [
@@ -159,6 +160,7 @@ test('resposta perdida com o tempo real ativo: aviso some, mensagem aprovada, na
       },
     },
     service: {
+      promisedDate: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
       contractedService: 'Reforma completa',
       items: [
         { pieceType: 'SOFA', description: 'Sofá', quantity: 1, serviceType: 'REFORMA_COMPLETA' },
@@ -232,6 +234,7 @@ test('aviso some sem resposta perdida neste tablet: texto neutro, sem atribuir a
       },
     },
     service: {
+      promisedDate: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
       contractedService: 'Reforma completa',
       items: [
         { pieceType: 'SOFA', description: 'Sofá', quantity: 1, serviceType: 'REFORMA_COMPLETA' },

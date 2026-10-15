@@ -39,7 +39,7 @@ export const useIssueImpacts = (id: string | null) =>
     enabled: Boolean(id),
   });
 
-export const useAttention = (filters: Record<string, string | undefined>) => {
+export const useAttention = (filters: Record<string, string | undefined>, enabled = true) => {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
   const qs = p.toString();
@@ -48,6 +48,7 @@ export const useAttention = (filters: Record<string, string | undefined>) => {
     queryFn: () => api<AttentionDto>(`/api/v1/attention${qs ? `?${qs}` : ''}`),
     placeholderData: keepPreviousData,
     refetchInterval: 60_000,
+    enabled,
   });
 };
 

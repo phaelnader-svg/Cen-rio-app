@@ -207,6 +207,7 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
         },
       },
       service: {
+        promisedDate: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
         contractedService: 'Reforma',
         items: [
           { pieceType: 'SOFA', description: 'Sofá', quantity: 1, serviceType: 'REFORMA_COMPLETA' },
@@ -234,6 +235,7 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     const own = await post('/api/v1/services', {
       customer: { mode: 'EXISTENTE', customerId: nsOrder.customerId },
       service: {
+        promisedDate: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
         contractedService: 'Reforma',
         items: [
           { pieceType: 'POLTRONA', description: 'Poltrona', quantity: 1, serviceType: 'REPARO' },
@@ -282,6 +284,7 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     const dropOff = await post('/api/v1/services', {
       customer: { mode: 'EXISTENTE', customerId: nsOrder.customerId },
       service: {
+        promisedDate: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
         contractedService: 'Reforma',
         items: [
           {

@@ -68,6 +68,7 @@ async function receivedService(page: Page, name: string, pieces: string[]) {
       },
     },
     service: {
+      promisedDate: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
       contractedService: 'Reforma completa',
       agreedValueCents: 200000,
       items: pieces.map((d) => ({

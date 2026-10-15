@@ -25,6 +25,11 @@ const dateOnly = z
   .refine((v) => !Number.isNaN(new Date(`${v}T12:00:00Z`).getTime()), {
     message: 'Data inválida.',
   });
+/** Prazo prometido obrigatório (Novo serviço e alteração do prazo do pedido). */
+const requiredPromisedDate = z
+  .string({ error: 'Informe o prazo de entrega combinado com o cliente.' })
+  .min(1, { message: 'Informe o prazo de entrega combinado com o cliente.' })
+  .pipe(dateOnly);
 const timeOnly = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, { message: 'Horário deve estar no formato HH:MM.' });
@@ -163,6 +168,19 @@ export const cancelOrderSchema = z.object({
   reason: trimmed(3, 500, 'Motivo do cancelamento'),
   version: versionSchema,
 });
+
+/**
+ * Alteração do prazo prometido do pedido (promessa vigente para as OS que ainda vão nascer).
+ * `applyToServiceOrders`: resposta explícita à pergunta "Aplicar este novo prazo também às OS
+ * abertas deste pedido?" — nunca há atualização silenciosa das OS existentes.
+ */
+export const updateOrderPromisedDateSchema = z.object({
+  promisedDate: requiredPromisedDate,
+  reason: trimmed(3, 300, 'Motivo da alteração do prazo'),
+  applyToServiceOrders: z.boolean({ error: 'Responda se o prazo vale também para as OS abertas.' }),
+  version: versionSchema,
+});
+export type UpdateOrderPromisedDateInput = z.input<typeof updateOrderPromisedDateSchema>;
 
 export const orderQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
@@ -513,8 +531,8 @@ export const newServiceSchema = z
       /** Valor total fechado com o cliente (exige pedidos.valores). */
       agreedValueCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
       paymentTerms: optionalText(1000),
-      /** Prazo de entrega combinado (copiado para a OS gerada na chegada). */
-      promisedDate: dateOnly.nullable().optional(),
+      /** Prazo de entrega combinado (obrigatório; copiado para a OS gerada na chegada). */
+      promisedDate: requiredPromisedDate,
       technicalNotes: optionalText(4000),
       notes: optionalText(2000),
       items: z.array(newServiceItemSchema).min(1, { message: 'Inclua ao menos uma peça.' }).max(50),

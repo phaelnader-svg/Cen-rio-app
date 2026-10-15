@@ -20,6 +20,7 @@ import {
 import clsx from 'clsx';
 import { ArrowRight, Siren } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { BackLink, Section } from '@/components/commercial/section';
 import { PhotoGallery } from '@/components/commercial/photo-gallery';
@@ -52,7 +53,12 @@ const CATEGORY_CARD: Record<AttentionCategory, string> = {
 /** Central de atenção: só exceções (o que pede decisão ou acompanhamento do gestor). */
 export function AttentionPage() {
   const workers = useWorkers();
-  const [f, setF] = useState<Record<string, string | undefined>>({});
+  // Filtro inicial pela URL (ex.: o cartão "Prazos" do Início abre ?type=PRAZO_OS).
+  const params = useSearchParams();
+  const [f, setF] = useState<Record<string, string | undefined>>(() => ({
+    type: params.get('type') ?? undefined,
+    category: params.get('category') ?? undefined,
+  }));
   const q = useAttention(f);
   const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v || undefined }));
   const orders = useMemo(() => {
@@ -65,7 +71,7 @@ export function AttentionPage() {
     <>
       <PageHeader
         title="Central de atenção"
-        description="Só o que pede atenção: ocorrências, pedidos de ajuda atrasados, reprogramações aguardando decisão, ausências com impacto, pausas por impedimento e prazos vencidos. A operação normal não aparece aqui."
+        description="Só o que pede atenção: ocorrências, pedidos de ajuda atrasados, reprogramações aguardando decisão, ausências com impacto, pausas por impedimento, prazos vencidos e OS atrasadas ou em risco. A operação normal não aparece aqui."
       />
       <div className="mb-4 grid gap-3 sm:grid-cols-4" data-testid="attention-counts">
         {ATTENTION_CATEGORIES.map((c) => (

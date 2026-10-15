@@ -6,6 +6,7 @@ import {
   RECEIPT_ORIGIN_LABEL,
   cancelOrderSchema,
   formatMoney,
+  updateOrderPromisedDateSchema,
   orderPlannedIntentSchema,
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -14,11 +15,11 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { Field, Textarea } from '@/components/ui/field';
+import { Field, Input, Textarea } from '@/components/ui/field';
 import { MoneyField, SelectField } from '@/components/ui/form';
 import { Alert, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
-import { api, errorMessage } from '@/lib/api';
+import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import {
   formatDay,
   useNewServiceDefaults,
@@ -32,6 +33,7 @@ import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { addressLines } from './address-form';
 import {
+  OrderDeadlineBadge,
   OrderStatusBadge,
   PickupStatusBadge,
   ServiceOrderStatusBadge,
@@ -55,6 +57,7 @@ export function OrderDetail({ id }: { id: string }) {
   const [openPickup, setOpenPickup] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [planning, setPlanning] = useState(false);
+  const [changingDate, setChangingDate] = useState(false);
 
   if (order.isPending) return <Spinner />;
   if (order.isError) return <Alert tone="danger">{order.error.message}</Alert>;
@@ -167,6 +170,40 @@ export function OrderDetail({ id }: { id: string }) {
                 </Link>
               ) : (
                 o.customer.name
+              )}
+            </Detail>
+            <Detail label="Prazo prometido">
+              <span
+                className="inline-flex flex-wrap items-center gap-2"
+                data-testid="order-promised"
+              >
+                <span>{o.promisedDate ? formatDay(o.promisedDate, true) : 'Sem prazo'}</span>
+                <OrderDeadlineBadge state={o.deadline} />
+                {active && can('pedidos.gerenciar') && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setChangingDate(true)}
+                    data-testid="order-promised-edit"
+                  >
+                    Alterar prazo
+                  </Button>
+                )}
+              </span>
+              {o.promisedDateHistory.length > 0 && (
+                <ul
+                  className="mt-2 space-y-1 text-sm text-ink-muted"
+                  data-testid="order-promised-history"
+                >
+                  {o.promisedDateHistory.map((h) => (
+                    <li key={h.at}>
+                      {formatDateTime(h.at)} · {h.by ?? 'Sistema'}:{' '}
+                      {h.from ? formatDay(h.from, true) : 'sem prazo'} →{' '}
+                      {h.to ? formatDay(h.to, true) : 'sem prazo'} — {h.reason}
+                      {h.appliedTo.length > 0 ? ` (também em ${h.appliedTo.join(', ')})` : ''}
+                    </li>
+                  ))}
+                </ul>
               )}
             </Detail>
             <Detail label="Serviço contratado">{o.contractedService}</Detail>
@@ -348,6 +385,17 @@ export function OrderDetail({ id }: { id: string }) {
       {requesting && <PickupForm order={o} onClose={() => setRequesting(false)} />}
       {openPickup && <PickupDetailDialog id={openPickup} onClose={() => setOpenPickup(null)} />}
       {planning && <PlannedIntentDialog order={o} onClose={() => setPlanning(false)} />}
+      {changingDate && (
+        <PromisedDateDialog
+          order={o}
+          openServiceOrders={
+            serviceOrders.data?.items.filter(
+              (x) => x.status === 'ABERTA' && x.deadline.state !== 'ENCERRADA',
+            ) ?? []
+          }
+          onClose={() => setChangingDate(false)}
+        />
+      )}
       {cancelling && (
         <CancelOrderDialog
           id={o.id}
@@ -357,6 +405,151 @@ export function OrderDetail({ id }: { id: string }) {
         />
       )}
     </>
+  );
+}
+
+/**
+ * Prazos e serviços em risco: altera a promessa vigente do pedido (OS que ainda vão nascer
+ * herdam este prazo). Pergunta SEMPRE, de forma explícita, se vale também para as OS abertas —
+ * nada é atualizado em silêncio. Motivo obrigatório; fica no histórico do pedido.
+ */
+function PromisedDateDialog({
+  order,
+  openServiceOrders,
+  onClose,
+}: {
+  order: OrderDto;
+  openServiceOrders: { id: string; code: string; promisedDate: string | null }[];
+  onClose: () => void;
+}) {
+  const can = useCan();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [key] = useState(newIdempotencyKey);
+  const [date, setDate] = useState(order.promisedDate ?? '');
+  const [reason, setReason] = useState('');
+  const [apply, setApply] = useState<'' | 'SIM' | 'NAO'>('');
+  const [error, setError] = useState<string | null>(null);
+  const ask = openServiceOrders.length > 0 && can('os.gerenciar');
+  const m = useMutation({
+    mutationFn: () =>
+      api<OrderDto>(`/api/v1/orders/${order.id}/promised-date`, {
+        method: 'PUT',
+        idempotencyKey: key,
+        body: updateOrderPromisedDateSchema.parse({
+          promisedDate: date,
+          reason,
+          applyToServiceOrders: ask && apply === 'SIM',
+          version: order.version,
+        }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['order', order.id] });
+      void qc.invalidateQueries({ queryKey: ['service-orders'] });
+      void qc.invalidateQueries({ queryKey: ['service-order'] });
+      void qc.invalidateQueries({ queryKey: ['attention'] });
+      toast('ok', `Prazo do pedido ${order.code} alterado.`);
+      onClose();
+    },
+    onError: (e) =>
+      setError(
+        e instanceof Error && 'issues' in e
+          ? 'Informe a nova data e o motivo (mín. 3 caracteres).'
+          : errorMessage(e),
+      ),
+  });
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      size="sm"
+      title={`Alterar o prazo do pedido ${order.code}`}
+      description="O novo prazo vale para as OS que ainda vão nascer (próximas chegadas). Não muda fila, prioridade nem planejamento."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Voltar
+          </Button>
+          <Button
+            loading={m.isPending}
+            disabled={!date || reason.trim().length < 3 || (ask && !apply)}
+            onClick={() => m.mutate()}
+            data-testid="order-promised-save"
+          >
+            Salvar prazo
+          </Button>
+        </>
+      }
+    >
+      {error && (
+        <Alert tone="danger" className="mb-3">
+          {error}
+        </Alert>
+      )}
+      <div className="space-y-4">
+        <Field label="Novo prazo prometido">
+          {(p) => (
+            <Input
+              {...p}
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              data-testid="order-promised-date"
+            />
+          )}
+        </Field>
+        <Field label="Motivo da alteração">
+          {(p) => (
+            <Textarea
+              {...p}
+              rows={2}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              data-testid="order-promised-reason"
+            />
+          )}
+        </Field>
+        {ask ? (
+          <fieldset className="space-y-2" data-testid="order-promised-apply">
+            <legend className="label">
+              Aplicar este novo prazo também às OS abertas deste pedido?
+            </legend>
+            <p className="text-sm text-ink-muted">
+              {openServiceOrders
+                .map(
+                  (x) =>
+                    `${x.code} (${x.promisedDate ? formatDay(x.promisedDate, true) : 'sem prazo'})`,
+                )
+                .join(', ')}
+            </p>
+            {(
+              [
+                ['SIM', 'Sim — as OS abertas passam a ter o novo prazo'],
+                ['NAO', 'Não — as OS existentes mantêm o prazo delas'],
+              ] as const
+            ).map(([v, label]) => (
+              <label key={v} className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="apply"
+                  value={v}
+                  checked={apply === v}
+                  onChange={() => setApply(v)}
+                  data-testid={`order-promised-apply-${v}`}
+                />
+                {label}
+              </label>
+            ))}
+          </fieldset>
+        ) : (
+          openServiceOrders.length > 0 && (
+            <p className="text-sm text-ink-muted">
+              As OS existentes mantêm o prazo delas (alterar OS exige a permissão de OS).
+            </p>
+          )
+        )}
+      </div>
+    </Dialog>
   );
 }
 
