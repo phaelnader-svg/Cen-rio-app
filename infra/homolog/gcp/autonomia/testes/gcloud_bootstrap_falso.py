@@ -3,7 +3,9 @@
 toda chamada em $GCLOUD_LOG. Variações: FALSO_CONTA, FALSO_ESCOPOS, FALSO_VM_SA, FALSO_OUTRO_COM_OP=1,
 FALSO_BUILD_PADRAO (conta padrão do Cloud Build; padrão: a do Compute), FALSO_BUILD_PADRAO_ERRO=1,
 FALSO_LEGADA=1 (conta legada com cloudbuild.builds.builder), FALSO_ACTAS_EXTRA=1 (operador com actAs na
-conta do Compute), FALSO_PAPEL_PERIGOSO=1 (monitoring.viewer com actAs), FALSO_BUILD_ACTAS=1."""
+conta do Compute), FALSO_PAPEL_PERIGOSO=1 (monitoring.viewer com actAs), FALSO_BUILD_ACTAS=1,
+FALSO_OP_BUILDS_EDITOR=1 (operador já com cloudbuild.builds.editor), FALSO_GATILHO_DIVERGENTE=1 (gatilho
+com o nome esperado mas a conta do Compute), FALSO_GATILHO_ALHEIO=1 (outro gatilho no tópico de build)."""
 import json
 import os
 import sys
@@ -81,6 +83,8 @@ def main():
             membros.append({"membro": "serviceAccount:claude-operador@cenariogestao.iam.gserviceaccount.com", "papel": "roles/viewer"})
         if alvo == P:  # contas do Google que existem em todo projeto real
             membros.append({"membro": f"serviceAccount:{COMPUTE}", "papel": "roles/editor"})
+            if os.environ.get("FALSO_OP_BUILDS_EDITOR") == "1":
+                membros.append({"membro": OP, "papel": "roles/cloudbuild.builds.editor"})
             if os.environ.get("FALSO_LEGADA") == "1":
                 membros.append({"membro": f"serviceAccount:{LEGADA}", "papel": "roles/cloudbuild.builds.builder"})
         out = {"bindings": [{"role": l["papel"], "members": [l["membro"]]} for l in membros]}
@@ -89,7 +93,33 @@ def main():
             return 1
         print(os.environ.get("FALSO_BUILD_PADRAO", f"projects/{P}/serviceAccounts/{COMPUTE}"))
     elif cmd.startswith("builds list"):
-        print(f"b-antiga-1\t{COMPUTE}")
+        out = [{"id": "b0a1c2d3-0000-4000-8000-000000000001", "createTime": "2026-10-09T12:00:00Z", "status": "SUCCESS",
+                "serviceAccount": f"projects/{P}/serviceAccounts/{COMPUTE}", "source": {"storageSource": {"bucket": f"{P}_cloudbuild"}}}]
+    elif cmd.startswith("builds triggers list"):
+        out = list(e.get("gatilhos", {}).values()) if "--region=us-east1" in a else []
+        if "--region=us-east1" in a and os.environ.get("FALSO_GATILHO_DIVERGENTE") == "1":
+            out = [dict(g, serviceAccount=f"projects/{P}/serviceAccounts/{COMPUTE}") for g in out] or [
+                {"name": "cenario-homolog-build-autonomo", "serviceAccount": f"projects/{P}/serviceAccounts/{COMPUTE}",
+                 "pubsubConfig": {"topic": f"projects/{P}/topics/cenario-homolog-build"}, "build": {"steps": []}}]
+        if "--region=us-east1" in a and os.environ.get("FALSO_GATILHO_ALHEIO") == "1":
+            out.append({"name": "gatilho-antigo", "pubsubConfig": {"topic": f"projects/{P}/topics/cenario-homolog-build"}, "build": {"steps": []}})
+    elif cmd.startswith("builds triggers describe"):
+        gat = e.get("gatilhos", {}).get(pos[-1])
+        if os.environ.get("FALSO_GATILHO_DIVERGENTE") == "1":
+            gat = {"name": pos[-1], "serviceAccount": f"projects/{P}/serviceAccounts/{COMPUTE}", "pubsubConfig": {"topic": "x"}, "build": {"steps": []}}
+        if gat is None:
+            return 1
+        out = gat
+    elif cmd.startswith("builds triggers create pubsub"):
+        with open(opt["inline-config"], encoding="utf-8") as f:
+            build = json.load(f)
+        subst = dict(x.split("=", 1) for x in opt["substitutions"].split(","))
+        e.setdefault("gatilhos", {})[opt["name"]] = {"name": opt["name"], "serviceAccount": opt["service-account"],
+                                                     "pubsubConfig": {"topic": opt["topic"]}, "substitutions": subst, "build": build}
+        salvar(e)
+    elif cmd.startswith("builds triggers delete"):
+        rc = 0 if e.get("gatilhos", {}).pop(pos[-1], None) else 1
+        salvar(e)
     elif cmd.startswith("iam service-accounts list"):
         print("\n".join(e["sas"]))
     elif cmd.startswith("iam roles describe roles/"):

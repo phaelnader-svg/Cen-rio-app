@@ -41,10 +41,18 @@ echo "1. plano: só leitura, com Cloud Build, IAM existente, conflitos e outros 
 novo base
 roda "$TMP/1.out" "" bootstrap.sh plano
 afirma "$TMP/1.out" "• conta PADRÃO das builds em us-east1: 123456-compute@developer.gserviceaccount.com"
-afirma "$TMP/1.out" "• conta LEGADA do Cloud Build 123456@cloudbuild.gserviceaccount.com · papéis no projeto: nenhum"
-afirma "$TMP/1.out" "• conta 123456-compute@developer.gserviceaccount.com · papéis no projeto: roles/editor"
-afirma "$TMP/1.out" "✔ Cloud Build: claude-operador só consegue iniciar builds como cenario-build@cenariogestao.iam.gserviceaccount.com"
-afirma "$TMP/1.out" "◻ criar papel cenarioOperadorBuild: cloudbuild.builds.create,cloudbuild.builds.get,cloudbuild.builds.list"
+afirma "$TMP/1.out" "• conta LEGADA 123456@cloudbuild.gserviceaccount.com · papéis: nenhum"
+afirma "$TMP/1.out" "• conta Compute padrão 123456-compute@developer.gserviceaccount.com · papéis: roles/editor"
+afirma "$TMP/1.out" "• 123456-compute@developer.gserviceaccount.com · papéis no projeto: roles/editor · quem age sobre ela: só Owners"
+afirma "$TMP/1.out" "• uso atual da conta legada: padrão=não · gatilhos=0 · builds recentes=0"
+afirma "$TMP/1.out" "conta=123456-compute@developer.gserviceaccount.com status=SUCCESS"
+afirma "$TMP/1.out" "• re-execução das builds antigas: exige cloudbuild.builds.create; claude-operador não tem"
+afirma "$TMP/1.out" "✔ Cloud Build: claude-operador NÃO cria, re-executa nem gatilha builds com outra conta; builds autônomas só pelo gatilho cenario-homolog-build-autonomo com cenario-build@cenariogestao.iam.gserviceaccount.com"
+afirma "$TMP/1.out" "◻ criar papel cenarioOperadorBuild: cloudbuild.builds.get,cloudbuild.builds.list"
+afirma "$TMP/1.out" "◻ criar gatilho cenario-homolog-build-autonomo (Pub/Sub cenario-homolog-build → build com cenario-build@cenariogestao.iam.gserviceaccount.com"
+afirma "$TMP/1.out" "◻ criar tópico cenario-homolog-build (pedidos de build)"
+afirma "$TMP/1.out" "NENHUM cloudbuild.builds.create, NENHUM actAs"
+nega "$TMP/1.out" "serviceAccountUser"
 afirma "$TMP/1.out" "Nada é alterado neles."
 afirma "$TMP/1.out" "✔ nenhum conflito com recursos existentes"
 afirma "$TMP/1.out" "projeto: roles/compute.viewer roles/logging.viewer roles/monitoring.viewer projects/cenariogestao/roles/cenarioOperadorBuild roles/serviceusage.serviceUsageConsumer"
@@ -62,6 +70,7 @@ echo "3. tudo confirmado, sem criar chave (tipo 'nao')"
 roda "$TMP/3.out" "autorizar claude-operador na homologacao\nnao\n" bootstrap.sh
 rc_e "$TMP/3.out" 0
 afirma "$TMP/3.out" "✔ runner 2.0.0 publicado"
+afirma "$TMP/3.out" "✔ gatilho cenario-homolog-build-autonomo criado e conferido"
 afirma "$TMP/3.out" "✔ canal de ponta a ponta"
 afirma "$TMP/3.out" "✔ permissão temporária de dono@gmail.com removida"
 afirma "$TMP/3.out" "✔ verificapro-8d3c8: nenhuma das contas tem acesso"
@@ -82,13 +91,13 @@ esperado = {
 } | {("projeto:cenariogestao", B, "roles/logging.logWriter"), ("projeto:cenariogestao", VM, "roles/logging.logWriter"),
      ("vm:cenario-homolog", OP, "projects/cenariogestao/roles/cenarioOperadorVm"),
      ("sa:claude-operador@cenariogestao.iam.gserviceaccount.com", OP, "projects/cenariogestao/roles/cenarioAssinaJwt"),
-     ("sa:cenario-build@cenariogestao.iam.gserviceaccount.com", OP, "roles/iam.serviceAccountUser"),
      ("topico:cenario-homolog-comandos", OP, "roles/pubsub.publisher"),
+     ("topico:cenario-homolog-build", OP, "roles/pubsub.publisher"),
      ("assinatura:cenario-homolog-comandos-vm", VM, "roles/pubsub.subscriber"),
      ("bucket:cenariogestao-homolog-operacoes", OP, "roles/storage.objectViewer"),
      ("bucket:cenariogestao-homolog-operacoes", VM, "roles/storage.objectCreator"),
-     ("bucket:cenariogestao-homolog-build", OP, "roles/storage.objectAdmin"),
-     ("bucket:cenariogestao-homolog-build", OP, "roles/storage.legacyBucketReader"),
+     ("bucket:cenariogestao-homolog-build", OP, "roles/storage.objectCreator"),
+     ("bucket:cenariogestao-homolog-build", OP, "roles/storage.objectViewer"),
      ("bucket:cenariogestao-homolog-build", B, "roles/storage.objectViewer"),
      ("bucket:cenariogestao-homolog-runner-versoes", VM, "roles/storage.objectViewer"),
      ("repo:cenario-homolog", OP, "roles/artifactregistry.reader"),
@@ -99,13 +108,18 @@ print("    extras:", sorted(extra)); print("    faltando:", sorted(falta))
 assert not extra and not falta
 assert not any("verificapro" in l["recurso"] for l in e["ligacoes"])
 assert not any(l["papel"] in ("roles/owner", "roles/editor") for l in e["ligacoes"])
-assert not any("Admin" in l["papel"] or "admin" in l["papel"] for l in e["ligacoes"] if l["recurso"].startswith("projeto:"))
-assert [l for l in e["ligacoes"] if "Admin" in l["papel"]] == [{"recurso": "bucket:cenariogestao-homolog-build", "membro": OP, "papel": "roles/storage.objectAdmin"}]
+assert not any("Admin" in l["papel"] or "admin" in l["papel"] for l in e["ligacoes"])
 assert not any(l["membro"].startswith("user:") for l in e["ligacoes"]), "permissão temporária ficou"
 assert e["papeis"]["cenarioAssinaJwt"] == ["iam.serviceAccounts.signJwt"]
-assert sorted(e["papeis"]["cenarioOperadorBuild"]) == ["cloudbuild.builds.create", "cloudbuild.builds.get", "cloudbuild.builds.list"]
+assert sorted(e["papeis"]["cenarioOperadorBuild"]) == ["cloudbuild.builds.get", "cloudbuild.builds.list"]
 assert not any(l["papel"] == "roles/cloudbuild.builds.editor" for l in e["ligacoes"])
-assert [l["recurso"] for l in e["ligacoes"] if l["membro"] == OP and l["papel"] == "roles/iam.serviceAccountUser"] == ["sa:cenario-build@cenariogestao.iam.gserviceaccount.com"]
+assert not any(l["membro"] == OP and l["recurso"].startswith("sa:") and l["papel"] != "projects/cenariogestao/roles/cenarioAssinaJwt" for l in e["ligacoes"]), "actAs para o operador"
+gat = e["gatilhos"]["cenario-homolog-build-autonomo"]
+assert gat["serviceAccount"] == "projects/cenariogestao/serviceAccounts/cenario-build@cenariogestao.iam.gserviceaccount.com"
+assert gat["pubsubConfig"]["topic"] == "projects/cenariogestao/topics/cenario-homolog-build"
+assert gat["substitutions"] == {"_TAG": "$(body.message.attributes.tag)", "_FONTE": "$(body.message.attributes.fonte)",
+    "_BUCKET": "cenariogestao-homolog-build", "_REGION": "us-east1", "_REPO": "cenario-homolog"}, gat["substitutions"]
+assert gat["build"]["options"]["logging"] == "CLOUD_LOGGING_ONLY" and "serviceAccount" not in gat["build"]
 assert "compute.instances.setMetadata" not in e["papeis"]["cenarioOperadorVm"]
 assert not e["chaves"]
 PY
@@ -114,6 +128,9 @@ echo "4. segunda rodada: idempotente (nada criado de novo, runner já publicado)
 roda "$TMP/4.out" "autorizar claude-operador na homologacao\nnao\n" bootstrap.sh
 rc_e "$TMP/4.out" 0
 afirma "$TMP/4.out" "✔ runner 2.0.0 já publicado (SHA-256 idêntico)"
+afirma "$TMP/4.out" "✔ gatilho cenario-homolog-build-autonomo existe e é idêntico ao do repositório"
+afirma "$TMP/4.out" "✔ gatilho cenario-homolog-build-autonomo conferido"
+nega "$GCLOUD_LOG" "triggers create"
 if grep -E ' (service-accounts create|roles create|topics create|subscriptions create|buckets create|services enable)( |$)' "$GCLOUD_LOG" >/dev/null; then
   echo "  ✘ recriou recursos"; FALHAS=$((FALHAS + 1)); else echo "  ✔ nenhum recurso recriado"; fi
 python3 -c "import json,sys; e=json.load(open('$FALSO_ESTADO')); l=[(x['recurso'],x['membro'],x['papel']) for x in e['ligacoes']]; assert len(l)==len(set(l)) and len(l)==20, len(l)" \
@@ -142,7 +159,7 @@ roda "$TMP/6d.out" "autorizar claude-operador na homologacao\n" bootstrap.sh
 afirma "$TMP/6d.out" "mudanças não commitadas"; sem_escritas
 ( cd "$REPO" && git checkout -q -- infra )
 
-echo "6e. Cloud Build: qualquer caminho para uma conta mais ampla BLOQUEIA antes de alterar algo"
+echo "6e. Cloud Build: qualquer capacidade do operador de criar build ou agir como outra conta BLOQUEIA antes de alterar algo"
 novo cb
 bloqueio() { # bloqueio <rótulo> <trecho esperado> <variável=valor>
   env "$3" bash -c "cd '$REPO' && printf 'autorizar claude-operador na homologacao\nnao\n' | bash infra/homolog/gcp/autonomia/bootstrap.sh" > "$TMP/cb-$1.out" 2>&1 && echo "  ✘ $1: terminou com 0" && FALHAS=$((FALHAS + 1))
@@ -152,16 +169,27 @@ bloqueio() { # bloqueio <rótulo> <trecho esperado> <variável=valor>
   : > "$GCLOUD_LOG"
 }
 : > "$GCLOUD_LOG"
-bloqueio legada-padrao "a conta padrão das builds é a LEGADA 123456@cloudbuild.gserviceaccount.com" FALSO_BUILD_PADRAO=projects/cenariogestao/serviceAccounts/123456@cloudbuild.gserviceaccount.com
-bloqueio legada-com-papel "a conta LEGADA 123456@cloudbuild.gserviceaccount.com tem papéis no projeto (roles/cloudbuild.builds.builder)" FALSO_LEGADA=1
-bloqueio actas-extra "claude-operador já tem roles/iam.serviceAccountUser sobre 123456-compute@developer.gserviceaccount.com" FALSO_ACTAS_EXTRA=1
-bloqueio padrao-ilegivel "não consegui ler a conta padrão do Cloud Build" FALSO_BUILD_PADRAO_ERRO=1
+bloqueio actas-extra "claude-operador tem roles/iam.serviceAccountUser sobre 123456-compute@developer.gserviceaccount.com" FALSO_ACTAS_EXTRA=1
+bloqueio op-builds-editor "o papel roles/cloudbuild.builds.editor inclui cloudbuild.builds.create cloudbuild.builds.update" FALSO_OP_BUILDS_EDITOR=1
+bloqueio gatilho-divergente "o gatilho cenario-homolog-build-autonomo existe mas DIFERE do repositório" FALSO_GATILHO_DIVERGENTE=1
+bloqueio gatilho-alheio "o gatilho gatilho-antigo escuta um tópico em que claude-operador publica" FALSO_GATILHO_ALHEIO=1
 bloqueio papel-perigoso "o papel roles/monitoring.viewer inclui iam.serviceAccounts.actAs" FALSO_PAPEL_PERIGOSO=1
 bloqueio build-actas "cenario-build tem roles/iam.serviceAccountTokenCreator sobre 123456-compute@developer.gserviceaccount.com" FALSO_BUILD_ACTAS=1
 python3 -c "import json,os; p='$FALSO_ESTADO'; e=json.load(open(p)) if os.path.exists(p) else {'ligacoes':[], 'sas':[]}; assert not e['ligacoes'] and 'claude-operador@cenariogestao.iam.gserviceaccount.com' not in e['sas']" \
   && echo "  ✔ nenhum recurso nem IAM criado em nenhum bloqueio" || { echo "  ✘ algo foi criado num bloqueio"; FALHAS=$((FALHAS + 1)); }
-FALSO_LEGADA=1 roda "$TMP/6f.out" "" bootstrap.sh plano
+FALSO_GATILHO_DIVERGENTE=1 roda "$TMP/6f.out" "" bootstrap.sh plano
 afirma "$TMP/6f.out" "⛔ Cloud Build BLOQUEADO"; rc_e "$TMP/6f.out" 1; sem_escritas
+
+echo "6g. conta legada/padrão: inalcançáveis pelo operador → informadas (com uso atual e recomendação), sem bloquear"
+FALSO_LEGADA=1 FALSO_BUILD_PADRAO=projects/cenariogestao/serviceAccounts/123456@cloudbuild.gserviceaccount.com roda "$TMP/6g.out" "" bootstrap.sh plano
+afirma "$TMP/6g.out" "• conta LEGADA 123456@cloudbuild.gserviceaccount.com · papéis: roles/cloudbuild.builds.builder"
+afirma "$TMP/6g.out" "• uso atual da conta legada: padrão=SIM"
+afirma "$TMP/6g.out" "⚠ recomendação (opcional, NÃO feita pelo bootstrap)"
+afirma "$TMP/6g.out" "✔ Cloud Build: claude-operador NÃO cria"
+rc_e "$TMP/6g.out" 0; sem_escritas
+FALSO_BUILD_PADRAO_ERRO=1 roda "$TMP/6h.out" "" bootstrap.sh plano
+afirma "$TMP/6h.out" "• conta padrão das builds em us-east1: não lida"
+rc_e "$TMP/6h.out" 0; sem_escritas
 
 echo "7. isolamento: conta presente em outro projeto é acusada"
 export FALSO_ESTADO="$TMP/estado-base.json"
@@ -185,6 +213,9 @@ rc_e "$TMP/8f.out" 0
 python3 -c "import json; e=json.load(open('$FALSO_ESTADO')); assert not [l for l in e['ligacoes'] if 'claude-operador' in l['membro'] or 'cenario-build' in l['membro']], e['ligacoes']; assert 'claude-operador@cenariogestao.iam.gserviceaccount.com' not in e['sas']" \
   && echo "  ✔ contas e ligações removidas" || { echo "  ✘ restou acesso"; FALHAS=$((FALHAS + 1)); }
 afirma "$GCLOUD_LOG.ssh" "systemctl disable --now cenario-runner.service"
+afirma "$GCLOUD_LOG" "builds triggers delete --region=us-east1 cenario-homolog-build-autonomo"
+afirma "$GCLOUD_LOG" "pubsub topics delete cenario-homolog-build"
+python3 -c "import json; e=json.load(open('$FALSO_ESTADO')); assert not e.get('gatilhos')" && echo "  ✔ gatilho removido" || { echo "  ✘ gatilho restou"; FALHAS=$((FALHAS + 1)); }
 
 echo "9. instalar.sh (raiz temporária)"
 RR="$TMP/raiz"; mkdir -p "$RR"

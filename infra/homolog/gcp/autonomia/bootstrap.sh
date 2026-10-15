@@ -9,9 +9,11 @@
 #
 # Cria (se ausente; nunca duplica nem remove o que já existe):
 #   contas claude-operador (operador) e cenario-build (Cloud Build); papéis personalizados
-#   cenarioOperadorVm (get/start/stop/reset SÓ na VM) e cenarioAssinaJwt (signJwt); tópico e assinatura
-#   Pub/Sub; buckets de operações (auditoria, 90 d), de build (7 d) e de versões do runner (só você grava);
-#   as ligações IAM listadas no plano; o runner na VM (pela SUA sessão SSH).
+#   cenarioOperadorVm (get/start/stop/reset SÓ na VM), cenarioAssinaJwt (signJwt) e cenarioOperadorBuild
+#   (só consultar builds); tópicos e assinatura Pub/Sub; o GATILHO de build (conta cenario-build e
+#   passos fixos, criado por você); buckets de operações (auditoria, 90 d), de fonte do build (7 d) e de
+#   versões do runner (só você grava); as ligações IAM listadas no plano; o runner na VM (pela SUA sessão SSH).
+# claude-operador NÃO cria builds: só envia a fonte de um commit e publica o pedido no tópico do gatilho.
 # Não cria: chave da conta antes da sua confirmação explícita no final; nada em outros projetos;
 # Owner/Editor/IAM Admin; permissão de metadados da VM; acesso a segredos.
 set -euo pipefail
@@ -41,10 +43,14 @@ PAPEL_JWT=cenarioAssinaJwt
 PAPEL_BUILD=cenarioOperadorBuild
 PERM_VM="compute.instances.get,compute.instances.getSerialPortOutput,compute.instances.reset,compute.instances.start,compute.instances.stop"
 PERM_JWT="iam.serviceAccounts.signJwt"
-# No lugar de roles/cloudbuild.builds.editor: só criar/consultar builds (sem cancelar, sem aprovar,
-# sem gatilhos). A conta que a build usa é escolhida por quem cria a build; o Cloud Build exige
-# iam.serviceAccounts.actAs nela (exceto a conta legada, que a auditoria abaixo bloqueia).
-PERM_BUILD="cloudbuild.builds.create,cloudbuild.builds.get,cloudbuild.builds.list"
+# claude-operador só CONSULTA builds. Quem cria a build é o gatilho Pub/Sub (definido por você, com a
+# conta cenario-build e os passos de cloudbuild-autonomo.json fixos nele). Sem cloudbuild.builds.create,
+# o operador não consegue criar, re-executar nem gatilhar builds com outra conta (legada, Compute, VM…).
+PERM_BUILD="cloudbuild.builds.get,cloudbuild.builds.list"
+TOPICO_BUILD=cenario-homolog-build
+GATILHO=cenario-homolog-build-autonomo
+CONFIG_BUILD=infra/homolog/gcp/autonomia/cloudbuild-autonomo.json
+SUBST_BUILD="_TAG=\$(body.message.attributes.tag),_FONTE=\$(body.message.attributes.fonte),_BUCKET=$B_BUILD,_REGION=$REGION,_REPO=$REPO_AR"
 APIS=(pubsub.googleapis.com iamcredentials.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com logging.googleapis.com iam.googleapis.com)
 RUNNER_DIR=infra/homolog/gcp/autonomia/runner
 OPERAR=(python3 -I infra/homolog/gcp/autonomia/operar.py)
@@ -70,7 +76,7 @@ confirmar() { # confirmar <frase exata>
 }
 
 # Permissões que permitiriam agir como outra conta, mudar IAM ou executar código fora do desenho.
-PERIGOSAS='^(iam\.serviceAccounts\.(actAs|getAccessToken|getOpenIdToken|signBlob|signJwt|implicitDelegation)|iam\.serviceAccountKeys\.create|iam\.roles\.(create|update|delete)|[A-Za-z0-9.]+\.setIamPolicy|compute\.instances\.(setMetadata|setServiceAccount)|compute\.projects\.setCommonInstanceMetadata|cloudbuild\.builds\.approve|cloudbuild\.workerpools\.(create|update)|deploymentmanager\..*|cloudfunctions\.functions\.(create|update)|run\.(services|jobs)\.(create|update)|container\.clusters\.(create|update)|composer\.environments\.(create|update)|dataflow\.jobs\.create|notebooks\.instances\.create)$'
+PERIGOSAS='^(cloudbuild\.builds\.(create|update)|iam\.serviceAccounts\.(actAs|getAccessToken|getOpenIdToken|signBlob|signJwt|implicitDelegation)|iam\.serviceAccountKeys\.create|iam\.roles\.(create|update|delete)|[A-Za-z0-9.]+\.setIamPolicy|compute\.instances\.(setMetadata|setServiceAccount)|compute\.projects\.setCommonInstanceMetadata|cloudbuild\.builds\.approve|cloudbuild\.workerpools\.(create|update)|deploymentmanager\..*|cloudfunctions\.functions\.(create|update)|run\.(services|jobs)\.(create|update)|container\.clusters\.(create|update)|composer\.environments\.(create|update)|dataflow\.jobs\.create|notebooks\.instances\.create)$'
 BLOQUEIOS=()
 
 # ============================================================ 1. conferências (só leitura)
@@ -103,6 +109,7 @@ existe() { # existe <tipo> <nome>
     assinatura) g pubsub subscriptions describe "$2" >/dev/null 2>&1 ;;
     bucket) gcloud storage buckets describe "gs://$2" --project="$PROJECT" >/dev/null 2>&1 ;;
     repo) g artifacts repositories describe "$2" --location="$REGION" >/dev/null 2>&1 ;;
+    gatilho) g builds triggers describe "$2" --region="$REGION" >/dev/null 2>&1 ;;
     api) grep -qx "$2" "$T/apis.txt" ;;
   esac
 }
@@ -124,56 +131,57 @@ permissoes() { # permissoes <papel> → uma permissão por linha. Os papéis des
 }
 papeis_no_projeto() { jq -r --arg m "$1" '[.bindings[]? | select(.members | index($m)) | .role] | unique | .[]' "$T/proj-iam.json"; }
 
-# Uma build roda como a conta escolhida por quem a cria (ou a padrão do projeto). O Cloud Build exige
-# iam.serviceAccounts.actAs na conta, EXCETO na conta legada (NUM@cloudbuild.gserviceaccount.com).
-# Esta auditoria prova que claude-operador só consegue usar cenario-build; senão o bootstrap PARA,
-# explica e NÃO altera IAM para contornar (a correção é decisão sua).
+# Cloud Build: quem CRIA uma build escolhe a conta em que ela roda (ou a padrão do projeto); o Cloud Build
+# exige iam.serviceAccounts.actAs na conta, EXCETO na conta legada (NUM@cloudbuild.gserviceaccount.com).
+# Por isso claude-operador não recebe cloudbuild.builds.create em lugar nenhum: as builds autônomas só
+# nascem do gatilho Pub/Sub que VOCÊ define (conta cenario-build e passos fixos). Esta auditoria prova
+# que o operador não consegue criar, re-executar nem gatilhar builds com outra conta; senão o bootstrap
+# PARA, explica e NÃO altera IAM para contornar.
+config_esperada() { # forma normalizada do gatilho esperado (conta, tópico, substituições, passos, imagens)
+  jq -S -c --arg sa "projects/$PROJECT/serviceAccounts/$BUILD" --arg t "projects/$PROJECT/topics/$TOPICO_BUILD" \
+    --arg subst "$SUBST_BUILD" '
+    {sa: $sa, topico: $t,
+     subst: ($subst | gsub("\\\\"; "") | split(",") | map(split("=") | {(.[0]): (.[1:] | join("="))}) | add),
+     passos: [.steps[] | {id, name, entrypoint, env, args, dir, waitFor} | with_entries(select(.value != null))],
+     imagens: .images, etiquetas: .tags, logging: .options.logging}' "$CONFIG_BUILD"
+}
+config_do_gatilho() { # mesma forma, lida do gatilho existente
+  jq -S -c '{sa: .serviceAccount, topico: .pubsubConfig.topic, subst: .substitutions,
+     passos: [.build.steps[] | {id, name, entrypoint, env, args, dir, waitFor} | with_entries(select(.value != null))],
+     imagens: .build.images, etiquetas: .build.tags, logging: .build.options.logging}' "$1"
+}
+
 auditar_cloud_build() {
-  secao "Cloud Build: que contas uma build de claude-operador poderia usar (só leitura)"
+  secao "Cloud Build: o que claude-operador e as builds conseguem fazer (só leitura)"
   BLOQUEIOS=()
   : > "$T/bloq.txt"
   g projects get-iam-policy "$PROJECT" --format=json > "$T/proj-iam.json" 2>/dev/null \
     || { bloquear "política IAM do projeto ilegível com $CONTA"; return; }
-  local legada="$NUM@cloudbuild.gserviceaccount.com" padrao="" r sa
+  local legada="$NUM@cloudbuild.gserviceaccount.com" compute="$NUM-compute@developer.gserviceaccount.com" padrao="" r sa
   jq -e '[.bindings[]?.members[]? | select(. == "allUsers" or . == "allAuthenticatedUsers")] | length == 0' "$T/proj-iam.json" >/dev/null \
     || bloquear "o projeto tem papel concedido a allUsers/allAuthenticatedUsers"
 
-  if padrao="$(g builds get-default-service-account --region="$REGION" --format='value(serviceAccountEmail)' 2>/dev/null)" && [[ -n "$padrao" ]]; then
-    padrao="${padrao##*/}"
-    echo "• conta PADRÃO das builds em $REGION: $padrao"
-  else
-    padrao=""
-    bloquear "não consegui ler a conta padrão do Cloud Build em $REGION (API desativada ou sem permissão): sem ela não há como provar que uma build sem conta explícita não roda como uma conta mais ampla"
-  fi
-  local pl; pl="$(papeis_no_projeto "serviceAccount:$legada" | paste -sd' ' -)"
-  echo "• conta LEGADA do Cloud Build $legada · papéis no projeto: ${pl:-nenhum}"
-  if [[ "$padrao" == "$legada" ]]; then
-    bloquear "a conta padrão das builds é a LEGADA $legada: o Cloud Build a usa SEM exigir actAs, então claude-operador rodaria builds como ela${pl:+ (papéis: $pl)}, além de cenario-build"
-  elif [[ -n "$pl" ]]; then
-    bloquear "a conta LEGADA $legada tem papéis no projeto ($pl) e pode ser indicada numa build sem exigir actAs: caminho de escalada além de cenario-build"
-  fi
-  [[ -n "$padrao" && "$padrao" != "$legada" ]] && echo "• $padrao exige actAs para ser usada numa build (conferido abaixo que claude-operador não o terá)"
-
+  echo "-- contas de serviço do projeto e quem pode agir sobre cada uma"
   g iam service-accounts list --format='value(email)' > "$T/sas.txt" 2>/dev/null || { bloquear "contas de serviço do projeto ilegíveis"; return; }
   while read -r sa; do
     [[ -n "$sa" ]] || continue
     g iam service-accounts get-iam-policy "$sa" --format=json > "$T/sa-iam.json" 2>/dev/null || echo '{}' > "$T/sa-iam.json"
     local quem; quem="$(jq -r '[.bindings[]? | "\(.role) → \(.members | join(", "))"] | join("; ")' "$T/sa-iam.json")"
     local psa; psa="$(papeis_no_projeto "serviceAccount:$sa" | paste -sd' ' -)"
-    echo "• conta $sa · papéis no projeto: ${psa:-nenhum} · quem age sobre ela: ${quem:-só Owners}"
+    echo "• $sa · papéis no projeto: ${psa:-nenhum} · quem age sobre ela: ${quem:-só Owners}"
     jq -e '[.bindings[]?.members[]? | select(. == "allUsers" or . == "allAuthenticatedUsers" or startswith("domain:"))] | length == 0' "$T/sa-iam.json" >/dev/null \
       || echo "$sa: ligação pública ou de domínio na política da conta" >> "$T/bloq.txt"
-    while read -r r; do  # claude-operador: só serviceAccountUser em cenario-build e a assinatura do próprio JWT
-      [[ -z "$r" || "$sa:$r" == "$BUILD:roles/iam.serviceAccountUser" || "$sa:$r" == "$OP:projects/$PROJECT/roles/$PAPEL_JWT" ]] && continue
-      echo "claude-operador já tem $r sobre $sa (poderia agir como ela numa build)" >> "$T/bloq.txt"
+    while read -r r; do  # claude-operador: só a assinatura do próprio JWT; actAs em NENHUMA conta
+      [[ -z "$r" || "$sa:$r" == "$OP:projects/$PROJECT/roles/$PAPEL_JWT" ]] && continue
+      echo "claude-operador tem $r sobre $sa (poderia agir como ela)" >> "$T/bloq.txt"
     done < <(jq -r --arg m "serviceAccount:$OP" '.bindings[]? | select(.members | index($m)) | .role' "$T/sa-iam.json")
-    while read -r r; do  # cenario-build não pode agir sobre nenhuma conta
+    while read -r r; do  # cenario-build (conta das builds) não pode agir sobre nenhuma conta
       [[ -n "$r" ]] && echo "cenario-build tem $r sobre $sa (uma build poderia agir como ela)" >> "$T/bloq.txt"
     done < <(jq -r --arg m "serviceAccount:$BUILD" '.bindings[]? | select(.members | index($m)) | .role' "$T/sa-iam.json")
   done < "$T/sas.txt"
 
   local conta planejados atuais
-  for conta in "$OP" "$BUILD"; do  # papéis no projeto (atuais + planejados): nenhuma permissão de escalada
+  for conta in "$OP" "$BUILD"; do  # papéis no projeto (atuais + planejados): sem criar build e sem escalada
     if [[ "$conta" == "$OP" ]]; then planejados="${PROJ_OP[*]}"; else planejados="${PROJ_BUILD[*]}"; fi
     atuais="$(papeis_no_projeto "serviceAccount:$conta" | paste -sd' ' -)"
     for r in $atuais; do [[ " $planejados " == *" $r "* ]] || echo "$conta já tem no projeto o papel $r, fora do desenho" >> "$T/bloq.txt"; done
@@ -184,16 +192,45 @@ auditar_cloud_build() {
       [[ -z "$ruins" ]] || echo "$conta: o papel $r inclui $ruins" >> "$T/bloq.txt"
     done
   done
+
+  echo "-- gatilhos do Cloud Build (região $REGION e global)"
+  { g builds triggers list --region="$REGION" --format=json 2>/dev/null || echo '[]'; g builds triggers list --format=json 2>/dev/null || echo '[]'; } \
+    | jq -s 'add // []' > "$T/gatilhos.json"
+  jq -r '.[] | "• gatilho \(.name) · conta: \(.serviceAccount // "PADRÃO DO PROJETO") · evento: \(if .pubsubConfig then "Pub/Sub " + .pubsubConfig.topic elif .webhookConfig then "webhook" elif .github or .repositoryEventConfig or .triggerTemplate then "repositório" else "manual" end)"' "$T/gatilhos.json"
+  [[ "$(jq length "$T/gatilhos.json")" == 0 ]] && echo "• nenhum gatilho existente"
+  jq -r --arg a "projects/$PROJECT/topics/$TOPICO" --arg b "projects/$PROJECT/topics/$TOPICO_BUILD" --arg g "$GATILHO" \
+    '.[] | select(.name != $g and (.pubsubConfig.topic == $a or .pubsubConfig.topic == $b)) | "o gatilho \(.name) escuta um tópico em que claude-operador publica"' "$T/gatilhos.json" >> "$T/bloq.txt"
+  jq -r --arg g "$GATILHO" '.[] | select(.name == $g)' "$T/gatilhos.json" > "$T/gatilho.json"
+  if [[ -s "$T/gatilho.json" ]]; then
+    if [[ "$(config_do_gatilho "$T/gatilho.json")" == "$(config_esperada)" ]]; then ok "gatilho $GATILHO existe e é idêntico ao do repositório (conta $BUILD, passos fixos)"
+    else echo "o gatilho $GATILHO existe mas DIFERE do repositório (conta, tópico, substituições ou passos): não é reutilizado nem alterado automaticamente" >> "$T/bloq.txt"; fi
+  else echo "• gatilho $GATILHO: será criado (conta $BUILD, tópico $TOPICO_BUILD, passos de $CONFIG_BUILD)"; fi
+
   while read -r r; do [[ -n "$r" ]] && bloquear "$r"; done < "$T/bloq.txt"
 
-  local antigas; antigas="$(g builds list --region="$REGION" --limit=100 --format='value(id,serviceAccount)' 2>/dev/null | awk -v b="$BUILD" '$2 !~ b {n++} END {print n+0}')"
-  echo "• builds anteriores em $REGION com outra conta: $antigas (uma re-execução repete os MESMOS passos e fonte, sem escolha de código nem de conta)"
+  echo "-- contas padrão e legada (informação: inalcançáveis por claude-operador sem cloudbuild.builds.create)"
+  if padrao="$(g builds get-default-service-account --region="$REGION" --format='value(serviceAccountEmail)' 2>/dev/null)" && [[ -n "$padrao" ]]; then
+    padrao="${padrao##*/}"; echo "• conta PADRÃO das builds em $REGION: $padrao"
+  else padrao=""; echo "• conta padrão das builds em $REGION: não lida"; fi
+  local pl pc; pl="$(papeis_no_projeto "serviceAccount:$legada" | paste -sd' ' -)"; pc="$(papeis_no_projeto "serviceAccount:$compute" | paste -sd' ' -)"
+  echo "• conta LEGADA $legada · papéis: ${pl:-nenhum}"
+  echo "• conta Compute padrão $compute · papéis: ${pc:-nenhum}"
+  g builds list --region="$REGION" --limit=100 --format=json > "$T/builds.json" 2>/dev/null || echo '[]' > "$T/builds.json"
+  echo "• builds anteriores em $REGION: $(jq length "$T/builds.json")"
+  jq -r '.[] | "    \(.createTime // "?") \(.id[0:8]) conta=\(.serviceAccount // "padrão" | split("/") | last) status=\(.status) gatilho=\(.buildTriggerId // "nenhum") fonte=\(.source.storageSource.bucket // "-")"' "$T/builds.json"
+  local usa_legada; usa_legada="$(jq -r --arg l "$legada" '[.[] | select((.serviceAccount // "") | endswith($l))] | length' "$T/builds.json")"
+  local gat_legada; gat_legada="$(jq -r --arg l "$legada" '[.[] | select((.serviceAccount // "") | endswith($l))] | length' "$T/gatilhos.json")"
+  echo "• uso atual da conta legada: padrão=$([[ "$padrao" == "$legada" ]] && echo SIM || echo não) · gatilhos=$gat_legada · builds recentes=$usa_legada"
+  if [[ -n "$pl" ]]; then
+    echo "  ⚠ recomendação (opcional, NÃO feita pelo bootstrap): a conta legada tem $pl sem uso atual detectado; remover reduz"
+    echo "    a superfície para OUTRAS identidades com cloudbuild.builds.create (não para claude-operador, que não tem)."
+  fi
+  echo "• re-execução das builds antigas: exige cloudbuild.builds.create; claude-operador não tem"
+
   if (( ${#BLOQUEIOS[@]} == 0 )); then
-    ok "Cloud Build: claude-operador só consegue iniciar builds como $BUILD (custom $PAPEL_BUILD: $PERM_BUILD)"
+    ok "Cloud Build: claude-operador NÃO cria, re-executa nem gatilha builds com outra conta; builds autônomas só pelo gatilho $GATILHO com $BUILD"
   else
-    echo "⛔ Cloud Build BLOQUEADO: ${#BLOQUEIOS[@]} caminho(s) de escalada (acima). O bootstrap NÃO continua e NÃO altera IAM para"
-    echo "   contorná-los. Corrija você (ex.: mudar a conta padrão do Cloud Build para uma conta que exija actAs, ou remover os"
-    echo "   papéis da conta legada) e rode o plano de novo."
+    echo "⛔ Cloud Build BLOQUEADO: ${#BLOQUEIOS[@]} problema(s) acima. O bootstrap NÃO continua e NÃO altera IAM para contorná-los."
   fi
 }
 
@@ -212,11 +249,13 @@ conflitos() {
     [[ "$(g iam roles describe "$id" --format='value(includedPermissions)' | tr ';' '\n' | sort | paste -sd, -)" == "$alvo" ]] \
       && ok "papel $id existe com as permissões previstas" || { echo "⚠ papel $id existe com OUTRAS permissões: será ajustado para $perm"; n=$((n + 1)); }
   done
-  if existe topico "$TOPICO"; then
-    local pubs; pubs="$(g pubsub topics get-iam-policy "$TOPICO" --format=json | jq -r '[.bindings[]? | select(.role == "roles/pubsub.publisher") | .members[]] | join(", ")')"
-    echo "• publicadores atuais de $TOPICO: ${pubs:-nenhum}"
-    [[ -z "$pubs" || "$pubs" == "serviceAccount:$OP" ]] || { echo "⚠ há outros publicadores em $TOPICO (só assinaturas de claude-operador são aceitas pelo runner)"; n=$((n + 1)); }
-  fi
+  local tp pubs
+  for tp in "$TOPICO" "$TOPICO_BUILD"; do
+    existe topico "$tp" || continue
+    pubs="$(g pubsub topics get-iam-policy "$tp" --format=json | jq -r '[.bindings[]? | select(.role == "roles/pubsub.publisher") | .members[]] | join(", ")')"
+    echo "• publicadores atuais de $tp: ${pubs:-nenhum}"
+    [[ -z "$pubs" || "$pubs" == "serviceAccount:$OP" ]] || { echo "⚠ há outros publicadores em $tp (quem publica ali pede operações/builds; confira)"; n=$((n + 1)); }
+  done
   (( n == 0 )) && ok "nenhum conflito com recursos existentes"
   cat <<EOF
 • Outros projetos: o bootstrap só ESCREVE com --project=$PROJECT. Em $OUTRO_PROJETO e nos demais projetos ele apenas
@@ -235,6 +274,8 @@ plano() {
   existe papel "$PAPEL_JWT" && ok "papel $PAPEL_JWT" || echo "◻ criar papel $PAPEL_JWT: $PERM_JWT"
   existe papel "$PAPEL_BUILD" && ok "papel $PAPEL_BUILD" || echo "◻ criar papel $PAPEL_BUILD: $PERM_BUILD (no lugar de roles/cloudbuild.builds.editor)"
   existe topico "$TOPICO" && ok "tópico $TOPICO" || echo "◻ criar tópico $TOPICO"
+  existe topico "$TOPICO_BUILD" && ok "tópico $TOPICO_BUILD" || echo "◻ criar tópico $TOPICO_BUILD (pedidos de build)"
+  existe gatilho "$GATILHO" && ok "gatilho $GATILHO" || echo "◻ criar gatilho $GATILHO (Pub/Sub $TOPICO_BUILD → build com $BUILD e os passos de $CONFIG_BUILD)"
   existe assinatura "$ASSINATURA" && ok "assinatura $ASSINATURA" || echo "◻ criar assinatura $ASSINATURA (confirmação 60 s, retenção 10 min, sem expiração)"
   local b; for b in "$B_OPS" "$B_BUILD" "$B_VERSOES"; do existe bucket "$b" && ok "bucket gs://$b" || echo "◻ criar bucket gs://$b ($REGION, acesso uniforme, sem acesso público)"; done
   existe repo "$REPO_AR" || { echo "✘ repositório Artifact Registry $REPO_AR ausente (criado na preparação da homologação)"; exit 1; }
@@ -242,13 +283,13 @@ plano() {
 ◻ IAM (idempotente; nada é removido):
     $OP
       projeto: ${PROJ_OP[*]}
-               ($PAPEL_BUILD = $PERM_BUILD; builds SEMPRE com --service-account=$BUILD)
+               ($PAPEL_BUILD = $PERM_BUILD: só consulta; NENHUM cloudbuild.builds.create, NENHUM actAs)
       VM $VM: projects/$PROJECT/roles/$PAPEL_VM          (sem metadados, sem SSH, sem troca de conta)
       conta $OP: projects/$PROJECT/roles/$PAPEL_JWT      (assina o próprio JWT; não cria tokens nem chaves)
-      conta $BUILD: roles/iam.serviceAccountUser          (só para usar no Cloud Build)
-      tópico $TOPICO: roles/pubsub.publisher
+      tópico $TOPICO: roles/pubsub.publisher             (operações para o runner)
+      tópico $TOPICO_BUILD: roles/pubsub.publisher       (pedidos de build ao gatilho $GATILHO)
       gs://$B_OPS: roles/storage.objectViewer            (lê resultados e auditoria)
-      gs://$B_BUILD: roles/storage.objectAdmin + roles/storage.legacyBucketReader (fonte do build)
+      gs://$B_BUILD: roles/storage.objectCreator + roles/storage.objectViewer (envia a fonte; não apaga nem sobrescreve)
       repositório $REPO_AR: roles/artifactregistry.reader
       gs://$B_VERSOES: NENHUM (só você publica versões do runner)
     $BUILD
@@ -310,6 +351,8 @@ aplicar() {
   (( ${#BLOQUEIOS[@]} == 0 )) || { echo "✘ nenhuma ligação IAM foi feita."; exit 1; }
   existe topico "$TOPICO" || g pubsub topics create "$TOPICO" --format=none
   ok "tópico $TOPICO"
+  existe topico "$TOPICO_BUILD" || g pubsub topics create "$TOPICO_BUILD" --format=none
+  ok "tópico $TOPICO_BUILD"
   existe assinatura "$ASSINATURA" || g pubsub subscriptions create "$ASSINATURA" --topic="$TOPICO" --ack-deadline=60 \
     --message-retention-duration=10m --expiration-period=never --format=none
   ok "assinatura $ASSINATURA"
@@ -323,18 +366,30 @@ aplicar() {
   for r in "${PROJ_VMSA[@]}"; do ligar "$VM_SA: $r (projeto)" g projects add-iam-policy-binding "$PROJECT" --member="serviceAccount:$VM_SA" --role="$r" --condition=None; done
   ligar "$OP: $PAPEL_VM só na VM $VM" g compute instances add-iam-policy-binding "$VM" --zone="$ZONE" --member="serviceAccount:$OP" --role="projects/$PROJECT/roles/$PAPEL_VM"
   ligar "$OP: assinar o próprio JWT" g iam service-accounts add-iam-policy-binding "$OP" --member="serviceAccount:$OP" --role="projects/$PROJECT/roles/$PAPEL_JWT"
-  ligar "$OP: usar $BUILD no Cloud Build" g iam service-accounts add-iam-policy-binding "$BUILD" --member="serviceAccount:$OP" --role=roles/iam.serviceAccountUser
   ligar "$OP: publicar em $TOPICO" g pubsub topics add-iam-policy-binding "$TOPICO" --member="serviceAccount:$OP" --role=roles/pubsub.publisher
+  ligar "$OP: pedir builds em $TOPICO_BUILD" g pubsub topics add-iam-policy-binding "$TOPICO_BUILD" --member="serviceAccount:$OP" --role=roles/pubsub.publisher
   ligar "$VM_SA: ler $ASSINATURA" g pubsub subscriptions add-iam-policy-binding "$ASSINATURA" --member="serviceAccount:$VM_SA" --role=roles/pubsub.subscriber
   ligar "$OP: ler gs://$B_OPS" gcloud storage buckets add-iam-policy-binding "gs://$B_OPS" --project="$PROJECT" --member="serviceAccount:$OP" --role=roles/storage.objectViewer
   ligar "$VM_SA: criar em gs://$B_OPS" gcloud storage buckets add-iam-policy-binding "gs://$B_OPS" --project="$PROJECT" --member="serviceAccount:$VM_SA" --role=roles/storage.objectCreator
-  ligar "$OP: fonte do build gs://$B_BUILD" gcloud storage buckets add-iam-policy-binding "gs://$B_BUILD" --project="$PROJECT" --member="serviceAccount:$OP" --role=roles/storage.objectAdmin
-  ligar "$OP: ler o bucket gs://$B_BUILD" gcloud storage buckets add-iam-policy-binding "gs://$B_BUILD" --project="$PROJECT" --member="serviceAccount:$OP" --role=roles/storage.legacyBucketReader
+  ligar "$OP: enviar fonte a gs://$B_BUILD" gcloud storage buckets add-iam-policy-binding "gs://$B_BUILD" --project="$PROJECT" --member="serviceAccount:$OP" --role=roles/storage.objectCreator
+  ligar "$OP: conferir fonte em gs://$B_BUILD" gcloud storage buckets add-iam-policy-binding "gs://$B_BUILD" --project="$PROJECT" --member="serviceAccount:$OP" --role=roles/storage.objectViewer
   ligar "$BUILD: ler gs://$B_BUILD" gcloud storage buckets add-iam-policy-binding "gs://$B_BUILD" --project="$PROJECT" --member="serviceAccount:$BUILD" --role=roles/storage.objectViewer
   ligar "$VM_SA: ler versões gs://$B_VERSOES" gcloud storage buckets add-iam-policy-binding "gs://$B_VERSOES" --project="$PROJECT" --member="serviceAccount:$VM_SA" --role=roles/storage.objectViewer
   ligar "$OP: ler imagens $REPO_AR" g artifacts repositories add-iam-policy-binding "$REPO_AR" --location="$REGION" --member="serviceAccount:$OP" --role=roles/artifactregistry.reader
   ligar "$BUILD: publicar imagens $REPO_AR" g artifacts repositories add-iam-policy-binding "$REPO_AR" --location="$REGION" --member="serviceAccount:$BUILD" --role=roles/artifactregistry.writer
   (( FALHAS == 0 )) || { echo "✘ $FALHAS ligação(ões) falharam: corrija e rode de novo (idempotente)"; exit 1; }
+  gatilho
+}
+
+gatilho() { # o gatilho é criado pela SUA conta (você tem actAs em cenario-build); nunca alterado depois
+  if existe gatilho "$GATILHO"; then
+    g builds triggers describe "$GATILHO" --region="$REGION" --format=json > "$T/gatilho.json"
+    [[ "$(config_do_gatilho "$T/gatilho.json")" == "$(config_esperada)" ]] && { ok "gatilho $GATILHO conferido"; return 0; }
+    echo "✘ o gatilho $GATILHO difere do repositório: nada foi alterado nele (remova-o com revogar.sh para recriar)"; exit 1
+  fi
+  g builds triggers create pubsub --region="$REGION" --name="$GATILHO" --topic="projects/$PROJECT/topics/$TOPICO_BUILD"     --inline-config="$CONFIG_BUILD" --service-account="projects/$PROJECT/serviceAccounts/$BUILD"     --substitutions="$SUBST_BUILD" --description="Homologacao: build das imagens api/web de um commit (pedido pelo claude-operador)" --format=none
+  g builds triggers describe "$GATILHO" --region="$REGION" --format=json > "$T/gatilho.json"
+  [[ "$(config_do_gatilho "$T/gatilho.json")" == "$(config_esperada)" ]] && ok "gatilho $GATILHO criado e conferido"     || { echo "✘ o gatilho criado não corresponde ao esperado: confira com revogar.sh estado"; exit 1; }
 }
 
 # ============================================================ 3. runner: publicação (humana) e instalação

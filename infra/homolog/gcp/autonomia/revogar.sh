@@ -24,6 +24,8 @@ OP="claude-operador@$PROJECT.iam.gserviceaccount.com"
 BUILD="cenario-build@$PROJECT.iam.gserviceaccount.com"
 VM_SA="cenario-homolog-vm@$PROJECT.iam.gserviceaccount.com"
 TOPICO=cenario-homolog-comandos
+TOPICO_BUILD=cenario-homolog-build
+GATILHO=cenario-homolog-build-autonomo
 ASSINATURA=cenario-homolog-comandos-vm
 B_OPS="$PROJECT-homolog-operacoes"
 B_BUILD="$PROJECT-homolog-build"
@@ -43,6 +45,7 @@ estado() {
   echo "== fila"
   g pubsub subscriptions get-iam-policy "$ASSINATURA" --format=json 2>/dev/null | jq -r '.bindings[]? | "• assinatura: \(.role) → \(.members | join(", "))"' || echo "• assinatura ausente"
   g pubsub topics get-iam-policy "$TOPICO" --format=json 2>/dev/null | jq -r '.bindings[]? | "• tópico: \(.role) → \(.members | join(", "))"' || echo "• tópico ausente"
+  g builds triggers describe "$GATILHO" --region="$REGION" --format='value(name,serviceAccount,pubsubConfig.topic)' 2>/dev/null | sed 's/^/• gatilho (nome, conta, tópico): /' || echo "• gatilho ausente"
 }
 
 case "${1:-}" in
@@ -69,7 +72,7 @@ case "${1:-}" in
     tira g projects remove-iam-policy-binding "$PROJECT" --member="serviceAccount:$VM_SA" --role=roles/logging.logWriter --condition=None
     tira g compute instances remove-iam-policy-binding "$VM" --zone="$ZONE" --member="serviceAccount:$OP" --role="projects/$PROJECT/roles/cenarioOperadorVm"
     for b in "$B_OPS:serviceAccount:$OP:roles/storage.objectViewer" "$B_OPS:serviceAccount:$VM_SA:roles/storage.objectCreator" \
-             "$B_BUILD:serviceAccount:$OP:roles/storage.objectAdmin" "$B_BUILD:serviceAccount:$OP:roles/storage.legacyBucketReader" \
+             "$B_BUILD:serviceAccount:$OP:roles/storage.objectCreator" "$B_BUILD:serviceAccount:$OP:roles/storage.objectViewer" \
              "$B_BUILD:serviceAccount:$BUILD:roles/storage.objectViewer" "$B_VERSOES:serviceAccount:$VM_SA:roles/storage.objectViewer"; do
       IFS=: read -r bk tipo conta papel <<<"$b"
       tira gcloud storage buckets remove-iam-policy-binding "gs://$bk" --project="$PROJECT" --member="$tipo:$conta" --role="$papel"
@@ -77,6 +80,8 @@ case "${1:-}" in
     tira g artifacts repositories remove-iam-policy-binding cenario-homolog --location="$REGION" --member="serviceAccount:$OP" --role=roles/artifactregistry.reader
     tira g artifacts repositories remove-iam-policy-binding cenario-homolog --location="$REGION" --member="serviceAccount:$BUILD" --role=roles/artifactregistry.writer
     tira g pubsub subscriptions delete "$ASSINATURA"
+    tira g builds triggers delete --region="$REGION" "$GATILHO"
+    tira g pubsub topics delete "$TOPICO_BUILD"
     tira g pubsub topics delete "$TOPICO"
     tira g iam service-accounts delete "$OP"
     tira g iam service-accounts delete "$BUILD"

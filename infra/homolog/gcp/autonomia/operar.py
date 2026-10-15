@@ -19,7 +19,8 @@ Uso:
   operar.py teste-seguranca                # replay, adulteração, kid forjado, envelope com script, operação inexistente
   operar.py vm-status | vm-reiniciar | vm-ligar | vm-desligar
   operar.py imagens <sha>                  # existência das imagens api/web no Artifact Registry
-  operar.py build-iniciar <sha> | build-status <id> | build-acompanhar <id>
+  operar.py build-iniciar <sha>            # envia a fonte do commit e pede o build ao gatilho (conta cenario-build)
+  operar.py build-status <id> | build-acompanhar <id|sha>
   operar.py testes-locais <suite> [--versao SHA]   # suites: api web shared e2e lint typecheck format
 Saída: 0 ok; 1 falhou; 124 tempo esgotado; 125 recusado/interrompido; 126 sem resultado/erro de API; 2 uso.
 """
@@ -51,6 +52,9 @@ BUILD_SA = f"cenario-build@{PROJETO}.iam.gserviceaccount.com"
 TOPICO = os.environ.get("CENARIO_TOPICO", f"projects/{PROJETO}/topics/cenario-homolog-comandos")
 BUCKET = os.environ.get("CENARIO_BUCKET_OPERACOES", f"{PROJETO}-homolog-operacoes")
 BUCKET_BUILD = os.environ.get("CENARIO_BUCKET_BUILD", f"{PROJETO}-homolog-build")
+# Builds autônomas: SÓ pelo gatilho (conta e passos fixos nele); não configuráveis por variável.
+TOPICO_BUILD = f"projects/{PROJETO}/topics/cenario-homolog-build"
+GATILHO = "cenario-homolog-build-autonomo"
 REPO_AR = os.environ.get("CENARIO_REPO", "cenario-homolog")
 AUD = "cenario-homolog-runner"
 URL = {
@@ -284,29 +288,48 @@ def worktree(sha: str) -> str:
 
 
 def build_iniciar(sha: str) -> int:
-    """Cloud Build do commit EXATO (árvore limpa via git worktree), com a conta cenario-build."""
-    wt = worktree(sha)
-    try:
-        completo = subprocess.run(["git", "-C", wt, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-        etiqueta = sha  # a etiqueta das imagens é exatamente o SHA pedido (o mesmo usado em prepare/activate)
-        with open(os.path.join(wt, "infra/homolog/gcp/cloudbuild.yaml"), encoding="utf-8") as f:
-            config = f.read()
-        if re.search(r"(?m)^\s*serviceAccount\s*:", config) or not re.search(r"(?m)^\s*logging:\s*CLOUD_LOGGING_ONLY\s*$", config):
-            erro("cloudbuild.yaml do commit define serviceAccount ou não usa logging CLOUD_LOGGING_ONLY: build NÃO enviado", 1)
-        r = subprocess.run(["bash", "infra/homolog/gcp/conferir-contexto.sh"], cwd=wt)
-        if r.returncode != 0:
-            erro("contexto de build incompleto (.gcloudignore): build NÃO enviado", 1)
-        r = subprocess.run(["gcloud", "builds", "submit", f"--project={PROJETO}", f"--region={REGIAO}", "--async",
-                            "--config=infra/homolog/gcp/cloudbuild.yaml", f"--substitutions=_TAG={etiqueta},_REGION={REGIAO}",
-                            f"--service-account=projects/{PROJETO}/serviceAccounts/{BUILD_SA}",
-                            f"--gcs-source-staging-dir=gs://{BUCKET_BUILD}/source", "--format=value(id)", "."],
-                           cwd=wt, capture_output=True, text=True)
-        if r.returncode != 0:
-            erro(f"builds submit: {r.stderr.strip()[-600:]}", 1)
-        print(json.dumps({"build": r.stdout.strip().splitlines()[-1], "commit": completo, "etiqueta": etiqueta}))
-        return 0
-    finally:
-        subprocess.run(["git", "-C", RAIZ, "worktree", "remove", "--force", wt], capture_output=True)
+    """Pede o build das imagens do commit EXATO ao gatilho do Cloud Build (conta cenario-build, passos fixos
+    definidos por você). claude-operador não cria builds: só envia a fonte (git archive do commit) e publica
+    o pedido; quem cria a build é o gatilho, com a conta e os passos dele."""
+    if not RE_SHA.match(sha):
+        erro("SHA inválido")
+    subprocess.run(["git", "-C", RAIZ, "fetch", "--quiet", "origin"], check=False)
+    r = subprocess.run(["git", "-C", RAIZ, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"], capture_output=True, text=True)
+    if r.returncode != 0:
+        erro(f"commit {sha} indisponível")
+    completo = r.stdout.strip()
+    if not completo.startswith(sha):
+        erro("SHA ambíguo")
+    g = api_ok("GET", f"{URL['build']}/projects/{PROJETO}/locations/{REGIAO}/triggers/{GATILHO}")
+    if g.get("serviceAccount", "").rsplit("/", 1)[-1] != BUILD_SA or g.get("pubsubConfig", {}).get("topic") != TOPICO_BUILD:
+        erro(f"o gatilho {GATILHO} não usa {BUILD_SA} com o tópico {TOPICO_BUILD}: pedido NÃO enviado", 1)
+    nome = f"source/{completo}.tgz"
+    with tempfile.TemporaryDirectory(prefix="cenario-fonte-") as d:
+        arq = os.path.join(d, "fonte.tgz")
+        subprocess.run(["git", "-C", RAIZ, "archive", "--format=tar.gz", "-o", arq, completo], check=True)
+        with open(arq, "rb") as f:
+            dados = f.read()
+    q = urllib.parse.urlencode({"uploadType": "media", "name": nome, "ifGenerationMatch": "0"})
+    st, corpo = http("POST", f"{URL['storage']}/upload/storage/v1/b/{BUCKET_BUILD}/o?{q}", dados, timeout=300, tipo="application/gzip")
+    if st not in (200, 412):  # 412: a fonte deste commit já foi enviada (o conteúdo é o mesmo commit)
+        erro(f"envio da fonte: HTTP {st} {corpo[:200]!r}", 126)
+    publicado = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    r = api_ok("POST", f"{URL['pubsub']}/{TOPICO_BUILD}:publish", {"messages": [{
+        "data": base64.b64encode(b"build").decode(), "attributes": {"tag": sha, "fonte": nome}}]})
+    print(json.dumps({"pedido": r["messageIds"][0], "commit": completo, "etiqueta": sha, "fonte": f"gs://{BUCKET_BUILD}/{nome}",
+                      "gatilho": GATILHO, "conta": BUILD_SA, "publicado": publicado}, ensure_ascii=False))
+    return 0
+
+
+def build_da_etiqueta(sha: str) -> str | None:
+    """Id da build mais recente do gatilho para a etiqueta (filtro feito aqui: só leitura)."""
+    if not RE_SHA.match(sha):
+        erro("SHA inválido")
+    r = api_ok("GET", f"{URL['build']}/projects/{PROJETO}/locations/{REGIAO}/builds?pageSize=50")
+    for b in r.get("builds", []):
+        if (b.get("substitutions") or {}).get("_TAG") == sha and "cenario-autonomo" in (b.get("tags") or []):
+            return b.get("id")
+    return None
 
 
 def build_status(bid: str) -> dict:
@@ -450,7 +473,15 @@ def main() -> int:
         print(json.dumps(build_status(a.id), ensure_ascii=False))
         return 0
     if a.cmd == "build-acompanhar":
-        return build_acompanhar(a.id)
+        bid = a.id
+        if RE_SHA.match(bid) and not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f-]{27}", bid):
+            fim = time.time() + 300
+            while (achado := build_da_etiqueta(a.id)) is None and time.time() < fim:
+                time.sleep(10)
+            if achado is None:
+                erro(f"nenhuma build do gatilho para {a.id} em 5 min", 126)
+            bid = achado
+        return build_acompanhar(bid)
     if a.cmd == "testes-locais":
         return testes_locais(a.suite, a.versao)
     return 2

@@ -1,0 +1,53 @@
+{
+  "steps": [
+    {
+      "id": "fonte",
+      "name": "gcr.io/cloud-builders/gcloud",
+      "entrypoint": "bash",
+      "env": ["TAG=${_TAG}", "FONTE=${_FONTE}", "BUCKET=${_BUCKET}"],
+      "args": [
+        "-c",
+        "set -euo pipefail; [[ \"$$TAG\" =~ ^[0-9a-f]{7,40}$ ]] || { echo 'etiqueta inválida'; exit 1; }; [[ \"$$FONTE\" =~ ^source/[0-9a-f]{40}[.]tgz$ ]] || { echo 'fonte inválida'; exit 1; }; [[ \"$${FONTE#source/}\" == \"$$TAG\"* ]] || { echo 'fonte não corresponde à etiqueta'; exit 1; }; gcloud storage cp \"gs://$$BUCKET/$$FONTE\" /workspace/fonte.tgz; mkdir -p /workspace/src; tar -xzf /workspace/fonte.tgz -C /workspace/src; echo \"fonte $$FONTE extraída para a etiqueta $$TAG\""
+      ]
+    },
+    {
+      "id": "api",
+      "name": "gcr.io/cloud-builders/docker",
+      "dir": "src",
+      "waitFor": ["fonte"],
+      "args": [
+        "build",
+        "-f",
+        "infra/homolog/Dockerfile",
+        "--target",
+        "api",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${_TAG}",
+        "."
+      ]
+    },
+    {
+      "id": "web",
+      "name": "gcr.io/cloud-builders/docker",
+      "dir": "src",
+      "waitFor": ["api"],
+      "args": [
+        "build",
+        "-f",
+        "infra/homolog/Dockerfile",
+        "--target",
+        "web",
+        "-t",
+        "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/web:${_TAG}",
+        "."
+      ]
+    }
+  ],
+  "images": [
+    "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/api:${_TAG}",
+    "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/web:${_TAG}"
+  ],
+  "tags": ["cenario-autonomo"],
+  "timeout": "1800s",
+  "options": { "logging": "CLOUD_LOGGING_ONLY" }
+}

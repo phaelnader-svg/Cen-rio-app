@@ -208,7 +208,7 @@ esac
     def operar(self, *args: str, timeout: float = 120) -> subprocess.CompletedProcess:
         u = f"http://127.0.0.1:{self.porta}"
         env = {**os.environ, "CLOUDSDK_AUTH_ACCESS_TOKEN": "marcador-do-proxy", "CENARIO_URL_IAMCREDENTIALS": f"{u}/iam",
-               "CENARIO_URL_PUBSUB": f"{u}/pubsub", "CENARIO_URL_STORAGE": f"{u}/storage"}
+               "CENARIO_URL_PUBSUB": f"{u}/pubsub", "CENARIO_URL_STORAGE": f"{u}/storage", "CENARIO_URL_CLOUDBUILD": f"{u}/build"}
         return subprocess.run([sys.executable, "-I", OPERAR, *args], env=env, capture_output=True, text=True, timeout=timeout)
 
 
@@ -485,6 +485,49 @@ class TestRunner(unittest.TestCase):
         self.assertEqual(oct(os.stat(self.a.cfg["log_auditoria"]).st_mode & 0o777), "0o600")
 
 
+class TestBuildPeloGatilho(unittest.TestCase):
+    """O cliente não cria builds: envia a fonte e publica o pedido ao gatilho (que tem a conta e os passos)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.a = Ambiente()
+        cls.sha = subprocess.run(["git", "-C", BASE, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.a.parar()
+
+    def test_pedido_ao_gatilho(self):
+        curto = self.sha[:12]
+        r = self.a.operar("build-iniciar", curto, timeout=300)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        pedido = json.loads(r.stdout)
+        self.assertEqual(pedido["conta"], "cenario-build@cenariogestao.iam.gserviceaccount.com")
+        nome = f"source/{self.sha}.tgz"
+        fonte = self.a.objeto(nome, "cenariogestao-homolog-build")
+        self.assertIsNotNone(fonte)
+        with tarfile.open(fileobj=io.BytesIO(fonte), mode="r:gz") as t:
+            self.assertIn("infra/homolog/Dockerfile", t.getnames())
+        msg = [m for m in self.a.est.publicados if m["topico"].endswith("/topics/cenario-homolog-build")][-1]
+        self.assertEqual(msg["attributes"], {"tag": curto, "fonte": nome})
+        # o mesmo commit de novo: a fonte já existe (412) e o pedido sai normalmente
+        self.assertEqual(self.a.operar("build-iniciar", curto, timeout=300).returncode, 0)
+
+    def test_recusa_gatilho_com_outra_conta(self):
+        antes = len(self.a.est.publicados)
+        self.a.est.gatilho = dict(self.a.est.gatilho, serviceAccount="projects/cenariogestao/serviceAccounts/123-compute@developer.gserviceaccount.com")
+        try:
+            r = self.a.operar("build-iniciar", self.sha[:12], timeout=120)
+        finally:
+            self.a.est.gatilho = dict(self.a.est.gatilho, serviceAccount="projects/cenariogestao/serviceAccounts/cenario-build@cenariogestao.iam.gserviceaccount.com")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("pedido NÃO enviado", r.stderr)
+        self.assertEqual(len(self.a.est.publicados), antes)
+
+    def test_sha_invalido(self):
+        self.assertEqual(self.a.operar("build-iniciar", "nao-e-sha").returncode, 2)
+
+
 class TestUpdateRunner(unittest.TestCase):
     def setUp(self):
         self.a = Ambiente().iniciar()
@@ -586,17 +629,28 @@ class TestSemExecucaoArbitraria(unittest.TestCase):
             self.assertNotIn("pickle", fonte)
         self.assertNotIn('"script"', runner.replace('"script": "id"', ""))
 
-    def test_build_sempre_com_cenario_build(self):
+    def test_cliente_nao_cria_builds(self):
         _, cliente = self.fontes()
+        self.assertNotIn("builds submit", cliente.replace("gcloud builds submit", "X"))
+        self.assertNotIn('"builds", "submit"', cliente)
+        self.assertNotIn("--service-account", cliente)
+        self.assertNotRegex(cliente, r'/builds"?\s*,\s*\{')  # nenhum POST de criação de build
+        self.assertNotIn(":run", cliente)  # nem execução manual de gatilho
+        self.assertIn('TOPICO_BUILD = f"projects/{PROJETO}/topics/cenario-homolog-build"', cliente)
         self.assertIn('BUILD_SA = f"cenario-build@{PROJETO}.iam.gserviceaccount.com"', cliente)
-        self.assertNotIn("CENARIO_BUILD_SA", cliente)  # não é redirecionável por variável de ambiente
-        self.assertEqual(cliente.count('"builds", "submit"'), 1)
-        self.assertIn('f"--service-account=projects/{PROJETO}/serviceAccounts/{BUILD_SA}"', cliente)
-        self.assertIn("define serviceAccount ou não usa logging CLOUD_LOGGING_ONLY", cliente)
-        with open(os.path.join(BASE, "..", "cloudbuild.yaml"), encoding="utf-8") as f:
-            config = f.read()
-        self.assertNotRegex(config, r"(?m)^\s*serviceAccount\s*:")
-        self.assertRegex(config, r"(?m)^\s*logging:\s*CLOUD_LOGGING_ONLY\s*$")
+        self.assertNotIn("CENARIO_BUILD_SA", cliente)
+
+    def test_config_do_gatilho(self):
+        with open(os.path.join(BASE, "cloudbuild-autonomo.json"), encoding="utf-8") as f:
+            cfg = json.load(f)
+        self.assertNotIn("serviceAccount", cfg)  # a conta é a do gatilho (cenario-build)
+        self.assertEqual(cfg["options"]["logging"], "CLOUD_LOGGING_ONLY")
+        script = cfg["steps"][0]["args"][1]
+        self.assertNotIn("${_", script)  # parâmetros do pedido entram só por variável de ambiente, nunca no texto do script
+        self.assertEqual(cfg["steps"][0]["env"], ["TAG=${_TAG}", "FONTE=${_FONTE}", "BUCKET=${_BUCKET}"])
+        for passo in cfg["steps"][1:]:
+            self.assertEqual(passo["name"], "gcr.io/cloud-builders/docker")
+            self.assertNotIn("entrypoint", passo)
 
     def test_sql_so_constante(self):
         runner, _ = self.fontes()

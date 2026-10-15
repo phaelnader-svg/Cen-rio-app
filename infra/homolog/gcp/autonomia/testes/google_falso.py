@@ -52,6 +52,10 @@ class Estado:
         self.publicacoes = 0
         self.logs: list[dict] = []
         self.falhar_certs = False
+        self.gatilho = {"name": "cenario-homolog-build-autonomo",
+                        "serviceAccount": "projects/cenariogestao/serviceAccounts/cenario-build@cenariogestao.iam.gserviceaccount.com",
+                        "pubsubConfig": {"topic": "projects/cenariogestao/topics/cenario-homolog-build"}}
+        self.publicados: list[dict] = []
 
     def publicar(self, data_b64: str) -> str:
         with self.lock:
@@ -104,6 +108,8 @@ def criar(d: str):
                     return self.responder(404, {})
                 with open(est.chave.cert, encoding="utf-8") as f:
                     return self.responder(200, {est.chave.kid: f.read()})
+            if p.startswith("/build/") and "/triggers/" in p:
+                return self.responder(200, est.gatilho) if p.endswith("/" + est.gatilho["name"]) else self.responder(404, {})
             if p.startswith("/storage/storage/v1/b/"):
                 resto = p[len("/storage/storage/v1/b/"):]
                 bucket, _, objeto = resto.partition("/o")
@@ -129,6 +135,9 @@ def criar(d: str):
                 return self.responder(200, {"keyId": est.chave.kid, "signedJwt": est.chave.assinar(payload)})
             if p.startswith("/pubsub/") and p.endswith(":publish"):
                 msgs = json.loads(dados)["messages"]
+                est.publicados += [{"topico": p[len("/pubsub/"):-len(":publish")], **m} for m in msgs]
+                if p.endswith("/topics/cenario-homolog-build:publish"):  # pedidos de build não vão para o runner
+                    return self.responder(200, {"messageIds": [f"b{len(est.publicados)}" for _ in msgs]})
                 return self.responder(200, {"messageIds": [est.publicar(m["data"]) for m in msgs]})
             if p.startswith("/pubsub/") and p.endswith(":pull"):
                 maximo = json.loads(dados).get("maxMessages", 1)

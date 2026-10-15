@@ -84,16 +84,16 @@ texto livre, caminho, comando, SQL ou script.
 
 **Operações do cliente** (`operar.py`, pelas APIs do Google, sem passar pela VM):
 
-| Comando                                      | Faz                                                                                                                                                                        |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `vm-status`                                  | estado da VM (Compute API)                                                                                                                                                 |
-| `vm-reiniciar`, `vm-ligar`, `vm-desligar`    | reset, start e stop, somente desta VM                                                                                                                                      |
-| `imagens <sha>`                              | se `api:<sha>` e `web:<sha>` existem no Artifact Registry                                                                                                                  |
-| `build-iniciar <sha>`                        | Cloud Build do commit **exato**, a partir de um `git worktree` limpo; confere o contexto com `conferir-contexto.sh`; conta `cenario-build`                                 |
-| `build-status <id>`, `build-acompanhar <id>` | estado do build                                                                                                                                                            |
-| `testes-locais <suite> [--versao SHA]`       | suítes do repositório no container: api, web, shared, e2e, lint, typecheck, format (comandos fixos)                                                                        |
-| `verificar`                                  | `status` + `version` pela fila (canal de ponta a ponta)                                                                                                                    |
-| `teste-seguranca`                            | replay, claims adulteradas, kid forjado, envelope com campo de script, operação fora do catálogo assinada, parâmetro fora da allowlist assinado; todos devem ser recusados |
+| Comando                                      | Faz                                                                                                                                                                                                             |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vm-status`                                  | estado da VM (Compute API)                                                                                                                                                                                      |
+| `vm-reiniciar`, `vm-ligar`, `vm-desligar`    | reset, start e stop, somente desta VM                                                                                                                                                                           |
+| `imagens <sha>`                              | se `api:<sha>` e `web:<sha>` existem no Artifact Registry                                                                                                                                                       |
+| `build-iniciar <sha>`                        | envia a fonte do commit **exato** (`git archive`) e publica o pedido no tópico do gatilho `cenario-homolog-build-autonomo` (conta `cenario-build` fixa no gatilho); antes, confere que o gatilho usa essa conta |
+| `build-status <id>`, `build-acompanhar <id>` | estado do build                                                                                                                                                                                                 |
+| `testes-locais <suite> [--versao SHA]`       | suítes do repositório no container: api, web, shared, e2e, lint, typecheck, format (comandos fixos)                                                                                                             |
+| `verificar`                                  | `status` + `version` pela fila (canal de ponta a ponta)                                                                                                                                                         |
+| `teste-seguranca`                            | replay, claims adulteradas, kid forjado, envelope com campo de script, operação fora do catálogo assinada, parâmetro fora da allowlist assinado; todos devem ser recusados                                      |
 
 **Fluxo "Homologue o commit X"**, sem comandos intermediários seus:
 
@@ -150,20 +150,20 @@ Em falha: `rollback_to_recovery_point`, ou `rollback_version` quando o banco é 
 
 ## 4. IAM exato
 
-| Identidade           | Onde                                         | Papel                                                                                                                                                        |
-| -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `claude-operador`    | projeto                                      | `compute.viewer`, `logging.viewer`, `monitoring.viewer`, `cenarioOperadorBuild` (`cloudbuild.builds.{create,get,list}`), `serviceusage.serviceUsageConsumer` |
-| `claude-operador`    | VM `cenario-homolog`                         | `cenarioOperadorVm` = `compute.instances.{get,getSerialPortOutput,start,stop,reset}`                                                                         |
-| `claude-operador`    | a própria conta                              | `cenarioAssinaJwt` = `iam.serviceAccounts.signJwt` (não cria tokens nem chaves)                                                                              |
-| `claude-operador`    | conta `cenario-build`                        | `iam.serviceAccountUser` (só para o Cloud Build)                                                                                                             |
-| `claude-operador`    | tópico `cenario-homolog-comandos`            | `pubsub.publisher`                                                                                                                                           |
-| `claude-operador`    | `gs://cenariogestao-homolog-operacoes`       | `storage.objectViewer`                                                                                                                                       |
-| `claude-operador`    | `gs://cenariogestao-homolog-build`           | `storage.objectAdmin`, `storage.legacyBucketReader`                                                                                                          |
-| `claude-operador`    | repositório `cenario-homolog`                | `artifactregistry.reader`                                                                                                                                    |
-| `cenario-build`      | projeto / repositório / build                | `logging.logWriter` / `artifactregistry.writer` / `storage.objectViewer`                                                                                     |
-| `cenario-homolog-vm` | projeto                                      | `logging.logWriter`                                                                                                                                          |
-| `cenario-homolog-vm` | assinatura `cenario-homolog-comandos-vm`     | `pubsub.subscriber`                                                                                                                                          |
-| `cenario-homolog-vm` | `gs://…-operacoes` / `gs://…-runner-versoes` | `storage.objectCreator` / `storage.objectViewer`                                                                                                             |
+| Identidade           | Onde                                         | Papel                                                                                                                                                              |
+| -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `claude-operador`    | projeto                                      | `compute.viewer`, `logging.viewer`, `monitoring.viewer`, `cenarioOperadorBuild` (`cloudbuild.builds.{get,list}`: só consulta), `serviceusage.serviceUsageConsumer` |
+| `claude-operador`    | VM `cenario-homolog`                         | `cenarioOperadorVm` = `compute.instances.{get,getSerialPortOutput,start,stop,reset}`                                                                               |
+| `claude-operador`    | a própria conta                              | `cenarioAssinaJwt` = `iam.serviceAccounts.signJwt` (não cria tokens nem chaves)                                                                                    |
+| `claude-operador`    | tópico `cenario-homolog-comandos`            | `pubsub.publisher`                                                                                                                                                 |
+| `claude-operador`    | tópico `cenario-homolog-build`               | `pubsub.publisher` (pedidos de build ao gatilho)                                                                                                                   |
+| `claude-operador`    | `gs://cenariogestao-homolog-operacoes`       | `storage.objectViewer`                                                                                                                                             |
+| `claude-operador`    | `gs://cenariogestao-homolog-build`           | `storage.objectCreator`, `storage.objectViewer` (envia a fonte; não apaga nem sobrescreve)                                                                         |
+| `claude-operador`    | repositório `cenario-homolog`                | `artifactregistry.reader`                                                                                                                                          |
+| `cenario-build`      | projeto / repositório / build                | `logging.logWriter` / `artifactregistry.writer` / `storage.objectViewer`                                                                                           |
+| `cenario-homolog-vm` | projeto                                      | `logging.logWriter`                                                                                                                                                |
+| `cenario-homolog-vm` | assinatura `cenario-homolog-comandos-vm`     | `pubsub.subscriber`                                                                                                                                                |
+| `cenario-homolog-vm` | `gs://…-operacoes` / `gs://…-runner-versoes` | `storage.objectCreator` / `storage.objectViewer`                                                                                                                   |
 
 **Não concedido:**
 
@@ -217,23 +217,24 @@ Na VM: `touch /etc/cenario/runner-desativado`.
   imagens roda nos contêineres, com acesso ao banco e às variáveis da aplicação. É inerente ao deploy autônomo.
   Mitigações: só commits do repositório, imagens identificadas pelo SHA, histórico no git e auditoria de cada
   `activate_version`.
-- **Cloud Build (auditado e bloqueante).** Quem cria uma build escolhe a conta em que ela roda. O Cloud
-  Build exige `iam.serviceAccounts.actAs` nessa conta, **exceto** na conta legada `NUM@cloudbuild.gserviceaccount.com`.
-  - O operador não recebe `cloudbuild.builds.editor`: recebe só o papel `cenarioOperadorBuild`
-    (`cloudbuild.builds.{create,get,list}`), e `actAs` apenas em `cenario-build`.
-  - `operar.py` sempre passa `--service-account=cenario-build`, sem variável que o redirecione, e recusa um
-    `cloudbuild.yaml` com `serviceAccount` ou sem `CLOUD_LOGGING_ONLY`.
-  - O bootstrap (e o `plano`) **para antes de qualquer alteração** em qualquer um destes casos:
-    - a conta padrão das builds é a legada ou não pode ser lida;
-    - a conta legada tem algum papel no projeto;
-    - o operador tem papel sobre outra conta de serviço;
-    - `cenario-build` pode agir sobre alguma conta;
-    - algum papel de projeto do operador ou de `cenario-build`, atual ou planejado, contém permissão de escalada
-      (`actAs`, `getAccessToken`, `signBlob`, `setIamPolicy`, `setMetadata`, …);
-    - há ligação pública.
-  - O bootstrap **não altera IAM** para contornar esses casos.
-  - Limite conhecido: uma _re-execução_ de build antiga repete os mesmos passos e a mesma fonte com a conta
-    original, sem escolha de código nem de conta. O plano mostra quantas existem.
+- **Cloud Build: o operador não cria builds.** Quem cria uma build escolhe a conta em que ela roda, e o
+  Cloud Build não exige `actAs` para a conta legada `NUM@cloudbuild.gserviceaccount.com`. Por isso
+  `claude-operador` **não tem `cloudbuild.builds.create`** em lugar nenhum. As builds autônomas vêm de um
+  **gatilho Pub/Sub** (`cenario-homolog-build-autonomo`) que você cria no bootstrap.
+  - A conta (`cenario-build`) e os passos (`cloudbuild-autonomo.json`) ficam fixos no gatilho.
+  - O operador só envia a fonte do commit (`git archive`) para `gs://…-homolog-build/source/<sha>.tgz` e publica
+    `{tag, fonte}` no tópico `cenario-homolog-build`.
+  - A build valida esses dois valores por expressão regular. Eles entram nos passos só como variáveis de
+    ambiente, nunca como texto de script.
+  - Sem `builds.create`, o operador não cria, não re-executa e não gatilha builds com nenhuma outra conta: nem a
+    legada, nem a Compute com Editor, nem a da VM. Também não precisa de `actAs` em conta alguma.
+  - O bootstrap bloqueia, sem alterar IAM, nestes casos:
+    - o operador ou `cenario-build` tem papel com `builds.create`/`update`, `actAs`, tokens ou `setIamPolicy`;
+    - o operador ou `cenario-build` age sobre alguma conta;
+    - o gatilho existente difere do repositório;
+    - outro gatilho escuta os tópicos do operador.
+  - A conta legada e a conta padrão aparecem no plano com o uso atual. Remover o
+    `cloudbuild.builds.builder` da legada fica como recomendação opcional: não afeta o operador.
 - **Alcance do Network Secret.** A credencial vale para todas as sessões do ambiente do Claude Code onde está.
   Mantenha esse ambiente pessoal.
 - **Chave JSON.** É persistente, porque não há credencial federada aceita pelos Network Secrets. Fica só no proxy.
