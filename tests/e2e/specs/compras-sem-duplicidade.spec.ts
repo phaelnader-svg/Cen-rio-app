@@ -26,7 +26,10 @@ async function call(page: Page, method: 'POST' | 'PUT' | 'GET', path: string, da
 /** Medição de rotina enviada e aprovada pela API (o fluxo de telas está em measurements.spec). */
 async function approve(page: Page, serviceOrderId: string, items: unknown[]) {
   const me = await call(page, 'GET', '/api/auth/me');
-  const due = new Date(Date.now() + 3 * 86_400_000).toISOString().slice(0, 10);
+  // Medição de rotina: no dia de medição configurado (sexta-feira), na próxima semana.
+  const d = new Date(Date.now() + 86_400_000);
+  while (d.getUTCDay() !== 5) d.setUTCDate(d.getUTCDate() + 1);
+  const due = d.toISOString().slice(0, 10);
   const m = await call(page, 'POST', '/api/v1/measurements', {
     serviceOrderId,
     kind: 'ROTINA',
@@ -102,7 +105,7 @@ test.describe.serial('Compras e materiais sem duplicidade', () => {
       {
         kind: 'TECIDO',
         sourcing: 'EXCLUSIVO_OS',
-        serviceOrderItemId: a.items[0].id,
+        serviceOrderItemId: a.items[0]!.id,
         description: FABRIC,
         color: 'Cru',
         quantity: 10,
@@ -131,7 +134,7 @@ test.describe.serial('Compras e materiais sem duplicidade', () => {
       purchaseOrderId: po.id,
       lines: [
         {
-          purchaseOrderItemId: po.items[0].id,
+          purchaseOrderItemId: po.items[0]!.id,
           acceptedQuantity: 6,
           rejectedQuantity: 4,
           specConfirmed: true,
