@@ -190,6 +190,10 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
     await expect(manhaStop).toContainText('confira o deslocamento');
     await expect(page.getByTestId('route-history')).toContainText('Cliente pediu prioridade');
     await evidence(page, '03-roteiro-gestor');
+    // Numeração do dia inteiro (outras paradas do mesmo dia podem existir): o celular repete a
+    // posição que o gestor gravou, não uma posição absoluta fixa.
+    const tardePos = await pos(tardeStop);
+    const manhaCode = (await manhaStop.locator('.font-mono').first().textContent())!.trim();
 
     // ── 4. André no celular: roteiro de hoje, na ordem do gestor, sem valores ──
     await setPin(page, 'André', '640218');
@@ -203,7 +207,21 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
     await expect(at.getByTestId('logistics-route')).toBeVisible();
     const tardeA = at.getByTestId(`route-stop-${tardeCode}`);
     await expect(tardeA).toContainText('chegada 16:00');
-    await expect(tardeA.getByLabel('Parada 1')).toBeVisible();
+    await expect(tardeA.getByLabel(`Parada ${tardePos}`)).toBeVisible();
+    // Na ordem do gestor: a da tarde antes da da manhã.
+    const manhaA = at.getByTestId(`route-stop-${manhaCode}`);
+    await expect(manhaA).toBeVisible();
+    const [ti, mi] = await at
+      .locator('[data-testid^="route-stop-"]')
+      .evaluateAll(
+        (els, codes) =>
+          codes.map((c) =>
+            els.findIndex((e) => e.getAttribute('data-testid') === `route-stop-${c}`),
+          ),
+        [tardeCode, manhaCode],
+      );
+    expect(ti).toBeGreaterThanOrEqual(0);
+    expect(ti).toBeLessThan(mi!);
     await expect(at.getByText(/R\$/)).toHaveCount(0);
     expect(
       await at.evaluate(() => document.documentElement.scrollWidth - window.innerWidth),
