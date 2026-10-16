@@ -12,7 +12,6 @@ import {
   PackageOpen,
   CalendarCheck,
   CalendarRange,
-  Layers,
   Ruler,
   ClipboardList,
   FileSignature,
@@ -148,12 +147,6 @@ export const NAV: NavItem[] = [
     label: 'Modelos de produção',
     icon: Workflow,
     anyOf: ['producao.ver', 'producao.planejar'],
-  },
-  {
-    href: '/painel/materiais',
-    label: 'Materiais aprovados',
-    icon: Layers,
-    anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
   },
   {
     href: '/painel/compras',

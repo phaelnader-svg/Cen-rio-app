@@ -1,7 +1,13 @@
 'use client';
 
-import type { PurchaseOrderDto } from '@cenario/shared';
-import { MATERIAL_SOURCING_LABEL, RECEIPT_ISSUE_LABEL, formatCents } from '@cenario/shared';
+import type { PurchaseOrderDto, RejectionDecision } from '@cenario/shared';
+import {
+  MATERIAL_SOURCING_LABEL,
+  RECEIPT_ISSUE_LABEL,
+  REJECTION_DECISIONS,
+  REJECTION_DECISION_LABEL,
+  formatCents,
+} from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Ban, CheckCircle2, PackageCheck, PlusCircle, Undo2 } from 'lucide-react';
 import Link from 'next/link';
@@ -29,6 +35,9 @@ const HISTORY_LABEL: Record<string, string> = {
   RECEBIMENTO: 'Recebimento registrado',
   ESTORNO: 'Estorno de recebimento',
   EXCEDENTE_AUTORIZADO: 'Excedente autorizado',
+  SALDO_ENCERRADO: 'Saldo pendente encerrado',
+  RECUSA_REPOR: 'Recusa: será reposta pelo fornecedor',
+  RECUSA_NAO_REPOR: 'Recusa: não será reposta (voltou para A comprar)',
 };
 
 function useAction(id: string, success: string, onDone?: () => void) {
@@ -61,6 +70,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
     | { kind: 'confirm' | 'cancel' | 'close' }
     | { kind: 'extra'; itemId: string; label: string }
     | { kind: 'reverse'; lineId: string; max: number; label: string }
+    | { kind: 'rejection'; lineId: string; label: string; quantity: string }
     | null
   >(null);
   if (q.isPending) return <Spinner />;
@@ -123,7 +133,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
         <PurchaseStatusBadge status={po.status} />
         {po.hasIssues && (
           <span className="text-sm font-semibold text-danger-600">
-            Recebimento com divergência pendente
+            Recusa no recebimento aguardando decisão (repor ou não repor)
           </span>
         )}
         {po.expectedDate && (
@@ -132,6 +142,17 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
           </span>
         )}
       </div>
+      {po.withoutDestination.length > 0 && (
+        <div className="mb-6" data-testid="po-without-destination">
+          <Alert tone="warn" title="Compra sem destino operacional">
+            {po.withoutDestination.map((s) => s.code).join(', ')} foi cancelada e esta compra
+            continua aberta. Nada é cancelado ou redistribuído automaticamente: material comum entra
+            no estoque livre ao chegar; material exclusivo continua identificado na OS cancelada
+            para reaproveitamento manual (sobra). Se não quiser mais o material, cancele o pedido ou
+            encerre o saldo.
+          </Alert>
+        </div>
+      )}
       {po.status === 'CANCELADO' && (
         <Alert
           tone="warn"
@@ -248,6 +269,16 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
                                   {l.issue ? RECEIPT_ISSUE_LABEL[l.issue] : ''}: {l.issueNote})
                                 </span>
                               )}
+                              {l.rejectionDecision && (
+                                <span
+                                  className="block text-xs text-ink-muted"
+                                  data-testid={`rejection-decision-${l.id}`}
+                                >
+                                  {l.rejectionDecision === 'REPOR'
+                                    ? 'Recusa: o fornecedor vai repor (saldo continua aguardando).'
+                                    : 'Recusa: não será reposta — voltou para A comprar.'}
+                                </span>
+                              )}
                               {l.reversals.map((x) => (
                                 <span key={x.id} className="block text-xs text-warn-600">
                                   Estorno de {qtyText(x.quantity, l.unit)} em{' '}
@@ -255,6 +286,28 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
                                 </span>
                               ))}
                             </span>
+                            {l.rejectionPending && po.can.decideRejection && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                data-testid={`rejection-decide-${l.id}`}
+                                onClick={() =>
+                                  setDialog({
+                                    kind: 'rejection',
+                                    lineId: l.id,
+                                    label: specText(l, false),
+                                    quantity: qtyText(l.rejectedQuantity, l.unit),
+                                  })
+                                }
+                              >
+                                Decidir recusa
+                              </Button>
+                            )}
+                            {l.rejectionPending && !po.can.decideRejection && (
+                              <span className="text-xs text-danger-600">
+                                Recusa aguardando decisão do gestor de compras
+                              </span>
+                            )}
                             {can('estoque.autorizar') && reversible > 0 && (
                               <Button
                                 size="sm"
@@ -340,6 +393,15 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
           }
         />
       )}
+      {dialog?.kind === 'rejection' && (
+        <RejectionDialog
+          po={po}
+          lineId={dialog.lineId}
+          label={dialog.label}
+          quantity={dialog.quantity}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {dialog?.kind === 'reverse' && (
         <QuantityReasonDialog
           title="Estornar recebimento"
@@ -358,6 +420,89 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
         />
       )}
     </>
+  );
+}
+
+/** V4: decisão explícita sobre a quantidade recusada — nenhuma opção vem marcada. */
+function RejectionDialog({
+  po,
+  lineId,
+  label,
+  quantity,
+  onClose,
+}: {
+  po: PurchaseOrderDto;
+  lineId: string;
+  label: string;
+  quantity: string;
+  onClose: () => void;
+}) {
+  const { m, error } = useAction(po.id, 'Decisão registrada.', onClose);
+  const [key] = useState(newIdempotencyKey);
+  const [decision, setDecision] = useState<RejectionDecision | null>(null);
+  const [note, setNote] = useState('');
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      size="sm"
+      title={`Recusa de ${quantity} — ${label}`}
+      description="O fornecedor vai repor o material recusado?"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Voltar
+          </Button>
+          <Button
+            loading={m.isPending}
+            disabled={!decision}
+            onClick={() =>
+              m.mutate(() =>
+                api(`/api/v1/material-receipts/lines/${lineId}/rejection-decision`, {
+                  method: 'POST',
+                  idempotencyKey: key,
+                  body: { decision, note, version: po.version },
+                }),
+              )
+            }
+          >
+            Registrar decisão
+          </Button>
+        </>
+      }
+    >
+      {error && (
+        <Alert tone="danger" className="mb-3">
+          {error}
+        </Alert>
+      )}
+      <fieldset className="grid gap-2" data-testid="rejection-options">
+        <legend className="sr-only">Decisão</legend>
+        {REJECTION_DECISIONS.map((d) => (
+          <label key={d} className="flex items-start gap-2 text-sm">
+            <input
+              type="radio"
+              name="rejection-decision"
+              className="mt-1 size-4 accent-brand-700"
+              checked={decision === d}
+              onChange={() => setDecision(d)}
+              data-testid={`rejection-${d}`}
+            />
+            <span>
+              <strong>{REJECTION_DECISION_LABEL[d]}</strong>
+              <span className="block text-ink-muted">
+                {d === 'REPOR'
+                  ? 'O saldo continua aguardando fornecimento e recebimento.'
+                  : 'O saldo recusado é encerrado e a quantidade volta para A comprar.'}
+              </span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      <Field label="Observação (opcional)" className="mt-3">
+        {(p) => <Textarea {...p} rows={2} value={note} onChange={(e) => setNote(e.target.value)} />}
+      </Field>
+    </Dialog>
   );
 }
 

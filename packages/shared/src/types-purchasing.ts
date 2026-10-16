@@ -1,3 +1,4 @@
+import type { DeadlineState } from './deadline-domain';
 import type { MaterialKind, MaterialSourcing, Priority } from './domain';
 import type { MaterialUnit } from './measurements-domain';
 import type {
@@ -7,6 +8,7 @@ import type {
   MaterialReadiness,
   PurchaseOrderStatus,
   ReceiptIssue,
+  RejectionDecision,
   ReservationStatus,
   StockMovementType,
 } from './purchasing-domain';
@@ -81,8 +83,10 @@ export interface PurchaseOrderSummaryDto {
   itemCount: number;
   totalCents: number | null;
   serviceOrders: Ref[];
-  /** Há recebimento com divergência ainda pendente. */
+  /** Há recusa no recebimento aguardando a decisão repor/não repor. */
   hasIssues: boolean;
+  /** V8: compra (ou parte dela) para OS cancelada — sem destino operacional. */
+  withoutDestination: Ref[];
   version: number;
 }
 
@@ -105,6 +109,10 @@ export interface MaterialReceiptLineDto extends SpecDto {
   issueNote: string | null;
   serviceOrder: Ref | null;
   reversals: ReceiptReversalDto[];
+  /** V4: decisão sobre a quantidade recusada (null = ainda não decidida). */
+  rejectionDecision: RejectionDecision | null;
+  /** Recusa com saldo ainda em aberto aguardando a decisão repor/não repor. */
+  rejectionPending: boolean;
 }
 
 export interface MaterialReceiptDto {
@@ -146,6 +154,7 @@ export interface PurchaseOrderDto extends PurchaseOrderSummaryDto {
     cancel: boolean;
     authorizeExtra: boolean;
     closeBalance: boolean;
+    decideRejection: boolean;
   };
 }
 
@@ -177,8 +186,16 @@ export interface PurchaseNeedDto extends SpecDto {
   purchasedDraft: number;
   purchased: number;
   received: number;
+  /** Reservado + entregue à OS (estoque). */
+  reserved: number;
+  transferredIn: number;
   covered: number;
+  /** Comprado (confirmado) e ainda não chegou. */
+  awaiting: number;
+  /** Falta comprar para esta OS (regra única `requirementCoverage`). */
   pendingToBuy: number;
+  /** Recusa no recebimento aguardando decisão (repor / não repor). */
+  divergence: boolean;
   stage: LineStage;
   purchases: {
     purchaseOrderId: string;
@@ -188,6 +205,43 @@ export interface PurchaseNeedDto extends SpecDto {
     quantity: number;
     unitPriceCents: number | null;
   }[];
+}
+
+/** Linha de uma OS dentro do material consolidado de "A comprar". */
+export interface PurchaseShortageRowDto extends PurchaseNeedDto {
+  /** Estado do prazo da OS (só leitura; regra de Prazos). */
+  deadlineState: DeadlineState;
+  /** Há tarefa aguardando início bloqueada por este material. */
+  blocksProduction: boolean;
+}
+
+/**
+ * Material de "A comprar" consolidado por especificação. Estoque: somado entre OS pela chave do
+ * catálogo; exclusivo/tecido: agrupado pela especificação completa, mas a compra continua por OS.
+ */
+export interface PurchaseShortageDto extends SpecDto {
+  key: string;
+  sourcing: MaterialSourcing;
+  need: number;
+  /** Disponível para as OS (reservado/entregue, recebido exclusivo, sobra transferida). */
+  covered: number;
+  /** Em compra: confirmado aguardando chegada + rascunho, das OS. */
+  inPurchase: number;
+  awaiting: number;
+  inDraft: number;
+  /** Falta das OS (soma). */
+  shortfall: number;
+  /** Estoque: saldo − reservas ativas de todas as OS (null para exclusivo). */
+  freeStock: number | null;
+  /** Estoque: compra para o estoque pendente sem destino (não alocada a OS aberta). */
+  freePending: number;
+  /** Quanto comprar: falta − estoque livre − compra de estoque pendente (estoque); falta (exclusivo). */
+  suggestion: number;
+  stockItem: (Ref & { available: number }) | null;
+  /** Sobras compatíveis pela especificação: só sugestão (conferir cor/lote/tonalidade). */
+  leftovers: { id: string; serviceOrder: Ref; quantity: number; location: string }[];
+  blocksProduction: boolean;
+  rows: PurchaseShortageRowDto[];
 }
 
 export interface StockItemDto extends SpecDto {
@@ -230,6 +284,8 @@ export interface StockReservationDto {
   createdAt: string;
   closedAt: string | null;
   closeReason: string | null;
+  /** V5: reserva ativa de OS já entregue — consumo ainda não confirmado. */
+  unconfirmedConsumption: boolean;
   version: number;
 }
 
@@ -273,6 +329,12 @@ export interface ReadinessLineDto extends SpecDto {
   reserved: number;
   transferredIn: number;
   covered: number;
+  /** Comprado (confirmado) e ainda não chegou. */
+  awaiting: number;
+  /** Em rascunho de compra. */
+  inDraft: number;
+  /** Falta comprar (regra única). */
+  shortfall: number;
   divergence: boolean;
   stage: LineStage;
 }
@@ -303,6 +365,8 @@ export interface MaterialReadinessDto {
   }[];
   reservations: StockReservationDto[];
   leftovers: LeftoverDto[];
+  /** V5: OS entregue com reserva ativa (material sem consumo confirmado). */
+  unconfirmedConsumption: boolean;
   /** Sempre falso: materiais completos não autorizam o início da produção. */
   canStartProduction: false;
 }

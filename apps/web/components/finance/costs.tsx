@@ -292,6 +292,12 @@ function ResultDialog({ id, onClose }: { id: string; onClose: () => void }) {
               Previsto {money(r.materials.forecastCents)} · comprado{' '}
               {money(r.materials.purchasedCents)} · reservado {money(r.materials.reservedCents)} ·
               consumido/destinado <strong>{money(r.materials.consumedCents)}</strong>
+              {r.materials.unpricedLines > 0 && (
+                <span className="text-warn-600" data-testid="result-unpriced">
+                  {' '}
+                  (+ {r.materials.unpricedLines} lançamento(s) sem preço, fora do valor)
+                </span>
+              )}
             </p>
             {r.materials.lines.length > 0 && (
               <ul className="divide-y divide-line rounded-xl border border-line">
@@ -301,10 +307,11 @@ function ResultDialog({ id, onClose }: { id: string; onClose: () => void }) {
                     <span className="flex-1">
                       {SOURCE_LABEL[l.source] ?? l.source}: {l.description}
                       {l.quantity !== null ? ` · ${l.quantity.toLocaleString('pt-BR')}` : ''}
-                      {!l.priced ? ' · sem preço' : ''}
                       {l.note ? ` · ${l.note}` : ''}
                     </span>
-                    <span className="tabular-nums">{money(l.amountCents)}</span>
+                    <span className="tabular-nums">
+                      {l.priced ? money(l.amountCents) : 'sem preço'}
+                    </span>
                   </li>
                 ))}
               </ul>

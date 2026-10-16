@@ -16,6 +16,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Boxes, Plus } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -65,8 +66,14 @@ function useSend(success: string, onDone: () => void) {
   return { m, error };
 }
 
+const STOCK_TABS = ['materiais', 'movimentacoes', 'reservas', 'sobras'];
+
 export function StockPage() {
-  const [tab, setTab] = useState('materiais');
+  const params = useSearchParams();
+  const [tab, setTab] = useState(() => {
+    const t = params.get('tab') ?? '';
+    return STOCK_TABS.includes(t) ? t : 'materiais';
+  });
   return (
     <>
       <PageHeader
@@ -583,11 +590,30 @@ function MovementsTab() {
 function ReservationsTab() {
   const can = useCan();
   const [status, setStatus] = useState('ATIVA');
+  const [onlyUnconfirmed, setOnlyUnconfirmed] = useState(false);
   const list = useReservations(status);
   const { m, error } = useSend('Reserva atualizada.', () => undefined);
+  const unconfirmed = (list.data ?? []).filter((r) => r.unconfirmedConsumption);
+  const rows = onlyUnconfirmed ? unconfirmed : (list.data ?? []);
   return (
     <>
-      <div className="mb-4 flex justify-end">
+      {unconfirmed.length > 0 && (
+        <div className="mb-4" data-testid="unconfirmed-consumption">
+          <Alert tone="warn" title="Material reservado ainda não teve consumo confirmado.">
+            {unconfirmed.length} reserva(s) de OS já entregue(s). Enquanto a reserva estiver ativa,
+            o material fica fora do custo da OS (resultado artificialmente maior). Confirme o
+            consumo (“Entregar à OS”) ou libere a reserva — nada é feito automaticamente.
+          </Alert>
+        </div>
+      )}
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
+        {unconfirmed.length > 0 && (
+          <Checkbox
+            label="Só OS entregues com consumo não confirmado"
+            checked={onlyUnconfirmed}
+            onChange={(e) => setOnlyUnconfirmed(e.target.checked)}
+          />
+        )}
         <Select
           aria-label="Situação"
           className="max-w-60"
@@ -607,14 +633,14 @@ function ReservationsTab() {
         <Spinner />
       ) : list.isError ? (
         <Alert tone="danger">{list.error.message}</Alert>
-      ) : list.data.length === 0 ? (
+      ) : rows.length === 0 ? (
         <Card>
           <EmptyState title="Nenhuma reserva" />
         </Card>
       ) : (
         <Card className="overflow-hidden">
           <ul className="divide-y divide-line" data-testid="reservations">
-            {list.data.map((r) => (
+            {rows.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
                 <Link
                   href={`/painel/os/${r.serviceOrder.id}`}
@@ -630,6 +656,11 @@ function ReservationsTab() {
                     {r.closeReason ? ` · ${r.closeReason}` : ''}
                   </span>
                 </span>
+                {r.unconfirmedConsumption && (
+                  <span data-testid={`unconfirmed-${r.id}`}>
+                    <Badge tone="warn">OS entregue · consumo não confirmado</Badge>
+                  </span>
+                )}
                 <ReservationBadge status={r.status} />
                 {r.status === 'ATIVA' && can('estoque.gerenciar') && (
                   <>

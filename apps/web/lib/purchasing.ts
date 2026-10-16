@@ -7,6 +7,7 @@ import type {
   PurchaseNeedDto,
   PurchaseOrderDto,
   PurchaseOrderSummaryDto,
+  PurchaseShortageDto,
   ReadinessSummaryDto,
   StockItemDto,
   StockMovementDto,
@@ -28,6 +29,14 @@ export const useNeeds = (pendingOnly = true, enabled = true) =>
     queryKey: ['needs', pendingOnly],
     queryFn: () =>
       api<PurchaseNeedDto[]>(`/api/v1/purchasing/needs${qs({ pendingOnly: String(pendingOnly) })}`),
+    enabled,
+  });
+
+/** "A comprar" consolidado por especificação (regra única de falta da API). */
+export const useShortages = (enabled = true) =>
+  useQuery({
+    queryKey: ['needs', 'shortages'],
+    queryFn: () => api<PurchaseShortageDto[]>('/api/v1/purchasing/shortages'),
     enabled,
   });
 

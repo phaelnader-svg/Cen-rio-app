@@ -191,6 +191,74 @@ export async function syncMaterialCosts(tx: Tx, actor: ActorContext, serviceOrde
   return fresh.length;
 }
 
+/** Sincroniza a razão de material de todas as OS com fatos de material (relatórios agregados). */
+export async function syncAllMaterialCosts(tx: Tx, actor: ActorContext) {
+  const [exclusive, movements, transfers] = await Promise.all([
+    tx.purchaseOrderItem.findMany({
+      where: {
+        sourcing: 'EXCLUSIVO_OS',
+        serviceOrderId: { not: null },
+        receiptLines: { some: {} },
+      },
+      select: { serviceOrderId: true },
+      distinct: ['serviceOrderId'],
+    }),
+    tx.stockMovement.findMany({
+      where: { serviceOrderId: { not: null }, type: { in: ['SAIDA_OS', 'AJUSTE_ENTRADA'] } },
+      select: { serviceOrderId: true },
+      distinct: ['serviceOrderId'],
+    }),
+    tx.materialLeftoverTransfer.findMany({
+      select: { fromServiceOrderId: true, toServiceOrderId: true },
+    }),
+  ]);
+  const ids = new Set<string>();
+  for (const r of [...exclusive, ...movements]) if (r.serviceOrderId) ids.add(r.serviceOrderId);
+  for (const t of transfers) {
+    ids.add(t.fromServiceOrderId);
+    ids.add(t.toServiceOrderId);
+  }
+  for (const id of [...ids].sort()) await syncMaterialCosts(tx, actor, id);
+}
+
+/**
+ * Reservas ATIVAS de OS já operacionalmente concluídas (todas as peças ativas entregues): o
+ * consumo nunca foi confirmado e o material não entrou no custo (V5). Nada é consumido
+ * automaticamente: o aviso some quando a reserva é entregue à OS ou liberada.
+ */
+export async function forgottenReservations(
+  db: Tx | PrismaClient,
+  where: { serviceOrderId?: string } = {},
+) {
+  const active = await db.stockReservation.findMany({
+    where: {
+      status: 'ATIVA',
+      ...(where.serviceOrderId ? { serviceOrderId: where.serviceOrderId } : {}),
+    },
+    select: { id: true, serviceOrderId: true },
+  });
+  const delivered = await deliveredServiceOrders(db, [
+    ...new Set(active.map((r) => r.serviceOrderId)),
+  ]);
+  return active.filter((r) => delivered.has(r.serviceOrderId));
+}
+
+/** OS cujas peças ativas (fora devolvidas/canceladas) foram todas entregues. */
+export async function deliveredServiceOrders(db: Tx | PrismaClient, ids: string[]) {
+  if (!ids.length) return new Set<string>();
+  const items = await db.serviceOrderItem.findMany({
+    where: { serviceOrderId: { in: ids }, fulfillmentStage: { notIn: ['DEVOLVIDA', 'CANCELADA'] } },
+    select: { serviceOrderId: true, fulfillmentStage: true },
+  });
+  const state = new Map<string, boolean>();
+  for (const i of items)
+    state.set(
+      i.serviceOrderId,
+      (state.get(i.serviceOrderId) ?? true) && i.fulfillmentStage === 'ENTREGUE',
+    );
+  return new Set([...state].filter(([, v]) => v).map(([k]) => k));
+}
+
 /** Previsto × comprado × reservado × consumido (sem duplicar: cada um é uma visão). */
 export async function materialSummary(
   db: Tx | PrismaClient,
@@ -251,6 +319,7 @@ export async function materialSummary(
     reservedCents,
     consumedCents: ledger.reduce((a, l) => a + l.amountCents, 0),
     unpricedLines: ledger.filter((l) => !l.priced).length,
+    activeReservations: reservations.length,
     lines: ledger.map((l) => ({
       id: l.id,
       source: l.source,

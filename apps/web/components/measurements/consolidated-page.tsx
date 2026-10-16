@@ -68,7 +68,7 @@ export function ConsolidatedPage() {
     <>
       <PageHeader
         title="Materiais aprovados"
-        description="Lista consolidada das solicitações aprovadas para compra (quantidades conferidas). Tecidos ficam separados por OS; materiais comuns são somados entre OS com a origem de cada quantidade."
+        description="Lista BRUTA das solicitações aprovadas (quantidades conferidas), para exportar ou copiar. Não desconta estoque, compras nem reservas: para saber o que comprar use Compras → A comprar."
         actions={
           <>
             <Button

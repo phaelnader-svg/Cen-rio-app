@@ -20,6 +20,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { Errors } from '../../lib/errors';
 import { serviceOrderCode } from '../commercial/common';
+import { deliveredServiceOrders } from '../finance/costs';
 import { idParams } from '../presenters';
 import {
   MANAGEMENT_AUDIENCE,
@@ -308,7 +309,10 @@ export async function stockRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
       take: 500,
     });
-    return rows.map(toReservationDto);
+    const delivered = await deliveredServiceOrders(prisma, [
+      ...new Set(rows.filter((r) => r.status === 'ATIVA').map((r) => r.serviceOrderId)),
+    ]);
+    return rows.map((r) => toReservationDto(r, delivered));
   });
 
   /**

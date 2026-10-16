@@ -238,3 +238,75 @@ export function lineStage(l: {
   if (q3(l.purchased) >= q3(l.need)) return 'COMPRADO';
   return 'APROVADO';
 }
+
+// ─────────────────────────── Cobertura e falta (regra única) ───────────────────────────
+
+/**
+ * Fatos de UMA necessidade aprovada, já separados sem sobreposição:
+ * - `ordered`: alocado em pedidos confirmados, líquido do saldo encerrado/recusado sem reposição
+ *   (inclui o que já chegou);
+ * - `received`: parte do `ordered` que já chegou (cota FIFO da OS no item consolidado);
+ * - `reserved`/`consumed`: reservas de estoque ativas/entregues da OS para esta necessidade
+ *   (vinculadas ou atribuídas pela especificação);
+ * - `draft`: alocado em rascunhos (intenção de compra — D10);
+ * - `transferredIn`: sobras transferidas para esta necessidade.
+ */
+export interface CoverageInput {
+  exclusive: boolean;
+  need: number;
+  ordered: number;
+  received: number;
+  reserved: number;
+  consumed: number;
+  draft: number;
+  transferredIn: number;
+}
+
+export interface Coverage {
+  /** Disponível para a OS: recebido (exclusivo) ou reservado/entregue (estoque), mais sobras. */
+  covered: number;
+  /** Comprado (confirmado) e ainda não chegou. */
+  awaiting: number;
+  /** Em rascunho de compra. */
+  draft: number;
+  /** Falta comprar. */
+  shortfall: number;
+}
+
+/**
+ * Regra única da falta (lista de compras, prontidão, aba da OS e Central): cada quantidade conta
+ * uma única vez. O recebido de estoque que virou reserva conta como reservado — nunca também como
+ * "em compra"; o recebido de estoque ainda não reservado é estoque livre (não cobre a OS: exige
+ * "Reservar"). A soma nunca passa da necessidade.
+ */
+export function requirementCoverage(i: CoverageInput): Coverage {
+  const need = q3(i.need);
+  const base = i.exclusive ? i.received : i.reserved + i.consumed;
+  const covered = q3(Math.min(need, base + i.transferredIn));
+  const awaiting = q3(Math.min(Math.max(0, i.ordered - i.received), Math.max(0, need - covered)));
+  const draft = q3(Math.min(Math.max(0, i.draft), Math.max(0, need - covered - awaiting)));
+  const shortfall = q3(Math.max(0, need - covered - awaiting - draft));
+  return { covered, awaiting, draft, shortfall };
+}
+
+/**
+ * Sugestão de compra de um material de ESTOQUE consolidado por especificação: a falta das OS
+ * menos o estoque realmente livre (saldo − reservas ativas de TODAS as OS) e menos o que já está
+ * em compra para o estoque sem destino (pendente, não alocado a nenhuma OS aberta). O estoque
+ * livre só desconta da sugestão: não é reservado automaticamente.
+ */
+export function stockPurchaseSuggestion(i: {
+  shortfall: number;
+  freeStock: number;
+  freePending: number;
+}): number {
+  return q3(Math.max(0, i.shortfall - Math.max(0, i.freeStock) - Math.max(0, i.freePending)));
+}
+
+/** Decisão sobre a quantidade recusada no recebimento (V4). */
+export const REJECTION_DECISIONS = ['REPOR', 'NAO_REPOR'] as const;
+export type RejectionDecision = (typeof REJECTION_DECISIONS)[number];
+export const REJECTION_DECISION_LABEL: Record<RejectionDecision, string> = {
+  REPOR: 'Repor (o fornecedor vai entregar)',
+  NAO_REPOR: 'Não repor (volta para A comprar)',
+};

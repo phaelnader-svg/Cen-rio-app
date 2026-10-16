@@ -127,9 +127,7 @@ export function PlanningPage() {
   const needs = useNeeds(false, canBuy);
   const progress = useMemo(() => purchaseProgress(needs.data ?? []), [needs.data]);
   const toBuy = (needs.data ?? []).filter((n) => n.pendingToBuy > 0).length;
-  const toReceive = (needs.data ?? []).filter(
-    (n) => n.pendingToBuy <= 0 && n.received < n.purchased,
-  ).length;
+  const toReceive = (needs.data ?? []).filter((n) => n.pendingToBuy <= 0 && n.awaiting > 0).length;
 
   return (
     <>
@@ -232,8 +230,8 @@ export function PlanningPage() {
               <CheckItem
                 testId="check-approved"
                 state={plan.data.materials.approved.length ? 'ok' : 'pending'}
-                title="Lista de materiais aprovados"
-                detail={`${plan.data.materials.approved.length} linha(s) prontas para compra`}
+                title="Lista bruta de materiais aprovados (CSV)"
+                detail={`${plan.data.materials.approved.length} linha(s) aprovadas · o que comprar fica em Compras → A comprar`}
                 href="/painel/materiais"
               />
               <CheckItem

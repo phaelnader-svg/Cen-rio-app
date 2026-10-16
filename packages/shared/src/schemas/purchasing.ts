@@ -5,6 +5,7 @@ import {
   LEFTOVER_CONDITIONS,
   PURCHASE_ORDER_STATUSES,
   RECEIPT_ISSUES,
+  REJECTION_DECISIONS,
   RESERVATION_STATUSES,
 } from '../purchasing-domain';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
@@ -201,6 +202,13 @@ export const materialReceiptSchema = z.object({
   lines: z.array(materialReceiptLineSchema).min(1).max(100),
 });
 export type MaterialReceiptInput = z.input<typeof materialReceiptSchema>;
+
+/** V4: decisão explícita sobre a quantidade recusada no recebimento (nada é presumido). */
+export const rejectionDecisionSchema = z.object({
+  decision: z.enum(REJECTION_DECISIONS, { message: 'Escolha repor ou não repor.' }),
+  note: optionalText(500),
+  version: versionSchema,
+});
 
 export const reverseReceiptSchema = z.object({
   quantity: qty('Quantidade estornada'),

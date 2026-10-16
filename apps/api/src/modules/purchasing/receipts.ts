@@ -5,6 +5,7 @@ import {
   materialReceiptSchema,
   purchaseOrderCode,
   q3,
+  rejectionDecisionSchema,
   reverseReceiptSchema,
   unitError,
   type PendingMaterialReceiptDto,
@@ -21,8 +22,11 @@ import { idParams } from '../presenters';
 import {
   ANY_EMPLOYEE,
   MANAGEMENT_AUDIENCE,
+  PURCHASE_APPROVE,
+  REJECTION_HISTORY_KINDS,
   STOCK_AUTHORIZE,
   changeStock,
+  decidedRejectionLines,
   lockRows,
   lockStockItem,
   num,
@@ -446,6 +450,98 @@ export async function materialReceiptRoutes(app: FastifyInstance) {
         include: receiptInclude,
       });
       return reply.status(201).send(toReceiptDto(r));
+    },
+  );
+
+  /**
+   * V4 — decisão explícita sobre a quantidade recusada de uma linha de recebimento (gestor de
+   * compras). REPOR: o saldo continua aguardando o fornecedor. NÃO REPOR: a quantidade recusada
+   * (até o saldo ainda pendente do item) é encerrada — o mesmo mecanismo do "encerrar saldo",
+   * só para esta linha — e volta para "A comprar". Os recebimentos aceitos ficam como estão.
+   */
+  app.post(
+    '/api/v1/material-receipts/lines/:id/rejection-decision',
+    { config: { access: PURCHASE_APPROVE, idempotent: true } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const input = rejectionDecisionSchema.parse(request.body);
+      const actor = actorFrom(request);
+      const receiptId = await prisma.$transaction(async (tx) => {
+        const found = await tx.materialReceiptLine.findUnique({
+          where: { id },
+          include: { receipt: true },
+        });
+        if (!found) throw Errors.notFound('Linha de recebimento');
+        const po = await lockPurchaseOrder(tx, found.receipt.purchaseOrderId);
+        if (po.version !== input.version) throw Errors.versionConflict(po.version);
+        if (!(PURCHASE_ORDER_RECEIVABLE as readonly string[]).includes(po.status))
+          throw Errors.business('Este pedido não está aguardando recebimento.');
+        await lockRows(tx, 'purchase_order_items', [found.purchaseOrderItemId]);
+        const line = await tx.materialReceiptLine.findUniqueOrThrow({
+          where: { id },
+          include: { item: true },
+        });
+        const rejected = num(line.rejectedQuantity);
+        if (rejected <= 0) throw Errors.business('Esta linha não tem quantidade recusada.');
+        const history = await tx.purchaseOrderHistory.findMany({
+          where: { purchaseOrderId: po.id, kind: { in: REJECTION_HISTORY_KINDS } },
+          select: { kind: true, changes: true },
+        });
+        if (decidedRejectionLines(history).has(id))
+          throw Errors.conflict('A recusa desta linha já foi decidida.');
+        const item = line.item;
+        const pending = q3(
+          num(item.quantity) - num(item.receivedQuantity) - num(item.closedQuantity),
+        );
+        if (pending <= EPS)
+          throw Errors.business('Não há saldo pendente neste item: nada a repor ou encerrar.');
+        const code = purchaseOrderCode(po.number);
+        let status = po.status;
+        if (input.decision === 'NAO_REPOR') {
+          const closing = q3(Math.min(rejected, pending));
+          await tx.purchaseOrderItem.update({
+            where: { id: item.id },
+            data: { closedQuantity: q3(num(item.closedQuantity) + closing) },
+          });
+          const items = await tx.purchaseOrderItem.findMany({ where: { purchaseOrderId: po.id } });
+          status = statusFromItems(items);
+          await poHistory(tx, actor, po.id, {
+            kind: 'RECUSA_NAO_REPOR',
+            note: input.note ?? null,
+            summary: `${code}: recusa de ${closing} de ${item.description} não será reposta — volta para A comprar.`,
+            changes: { receiptLineId: id, item: item.position, quantity: closing, status },
+          });
+        } else {
+          await poHistory(tx, actor, po.id, {
+            kind: 'RECUSA_REPOR',
+            note: input.note ?? null,
+            summary: `${code}: recusa de ${rejected} de ${item.description} será reposta pelo fornecedor.`,
+            changes: {
+              receiptLineId: id,
+              item: item.position,
+              quantity: Math.min(rejected, pending),
+            },
+          });
+        }
+        await tx.purchaseOrder.update({
+          where: { id: po.id },
+          data: { ...(status !== po.status ? { status } : {}), version: { increment: 1 } },
+        });
+        await refreshReadiness(tx, actor, poServiceOrderIds(po));
+        await appendEvent(tx, actor, {
+          type: EVENT_TYPES.PURCHASE_ORDER_UPDATED,
+          aggregateType: 'purchase_order',
+          aggregateId: po.id,
+          payload: { id: po.id, code, status },
+          audience: 'all',
+        });
+        return line.receiptId;
+      });
+      const r = await prisma.materialReceipt.findUniqueOrThrow({
+        where: { id: receiptId },
+        include: receiptInclude,
+      });
+      return toReceiptDto(r);
     },
   );
 

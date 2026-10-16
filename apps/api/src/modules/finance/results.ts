@@ -142,6 +142,10 @@ export async function orderResult(
     warnings.push(
       'Há materiais sem preço conhecido: o custo está subestimado até o gestor ajustar.',
     );
+  if (c.delivered && materials.activeReservations)
+    warnings.push(
+      `Material reservado ainda não teve consumo confirmado (${materials.activeReservations} reserva(s)): o custo realizado está subestimado até registrar o consumo ou liberar a reserva.`,
+    );
   if (!laborRows.length)
     warnings.push('Mão de obra por produção ainda não combinada para esta OS.');
   return {

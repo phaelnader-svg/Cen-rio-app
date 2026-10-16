@@ -21,6 +21,7 @@ import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { orderCode, serviceOrderCode } from '../commercial/common';
 import { dateOnly, parseDate, period, shopTimezone } from './common';
+import { syncAllMaterialCosts } from './costs';
 import { dashboard, orderResult, productivity } from './results';
 
 /** Relatório tabular: mesmas linhas em JSON (tela) e CSV (exportação). */
@@ -173,6 +174,16 @@ export async function buildReport(
       };
     }
     case 'custos': {
+      // A razão de custos de material é preenchida sob demanda: sincroniza antes de agregar,
+      // para o relatório (tela e CSV) nunca sair desatualizado.
+      await syncAllMaterialCosts(tx, actor);
+      const unpriced = await tx.serviceOrderCost.count({
+        where: {
+          category: 'MATERIAL',
+          priced: false,
+          occurredAt: { gte: p.fromTs, lt: p.toExclusive },
+        },
+      });
       const ledger = await tx.serviceOrderCost.groupBy({
         by: ['category', 'source'],
         where: { occurredAt: { gte: p.fromTs, lt: p.toExclusive } },
@@ -246,6 +257,11 @@ export async function buildReport(
         notes: [
           'Material: lançamentos da razão de custos da OS (compras exclusivas recebidas, saídas de estoque, devoluções e sobras).',
           'Compra de estoque comum não é custo de OS até sair para a OS.',
+          ...(unpriced
+            ? [
+                `${unpriced} lançamento(s) de material sem preço no período: valor 0 até o gestor ajustar (custo subestimado).`,
+              ]
+            : []),
         ],
       };
     }

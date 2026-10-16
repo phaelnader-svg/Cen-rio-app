@@ -3,6 +3,7 @@ import {
   PURCHASE_ORDER_COMMITTED,
   anyPermissionAudience,
   computeReadiness,
+  requirementCoverage,
   formatServiceOrderItemCode,
   lineStage,
   q3,
@@ -244,6 +245,7 @@ export const reservationInclude = {
 
 export function toReservationDto(
   r: Prisma.StockReservationGetPayload<{ include: typeof reservationInclude }>,
+  delivered: ReadonlySet<string> = new Set(),
 ): StockReservationDto {
   return {
     id: r.id,
@@ -261,6 +263,7 @@ export function toReservationDto(
     createdAt: r.createdAt.toISOString(),
     closedAt: r.closedAt?.toISOString() ?? null,
     closeReason: r.closeReason,
+    unconfirmedConsumption: r.status === 'ATIVA' && delivered.has(r.serviceOrderId),
     version: r.version,
   };
 }
@@ -313,6 +316,20 @@ export function toLeftoverDto(
 
 // ─────────────────────────── Necessidades e prontidão ───────────────────────────
 
+/** Decisões sobre recusa no recebimento (histórico do pedido de compra — V4). */
+export const REJECTION_HISTORY_KINDS: string[] = ['RECUSA_REPOR', 'RECUSA_NAO_REPOR'];
+
+/** Linhas de recebimento com recusa já decididas (REPOR/NÃO REPOR), pelo histórico do pedido. */
+export function decidedRejectionLines(history: { kind: string; changes: unknown }[]) {
+  const out = new Set<string>();
+  for (const h of history) {
+    if (!REJECTION_HISTORY_KINDS.includes(h.kind)) continue;
+    const id = (h.changes as { receiptLineId?: unknown } | null)?.receiptLineId;
+    if (typeof id === 'string') out.add(id);
+  }
+  return out;
+}
+
 /** Tudo o que é preciso para saber em que ponto está cada necessidade aprovada. */
 export const requirementProgressInclude = {
   serviceOrderItem: { select: { position: true } },
@@ -330,9 +347,17 @@ export const requirementProgressInclude = {
     include: {
       item: {
         include: {
-          purchaseOrder: { include: { supplier: { select: { name: true } } } },
+          purchaseOrder: {
+            include: {
+              supplier: { select: { name: true } },
+              history: {
+                where: { kind: { in: REJECTION_HISTORY_KINDS } },
+                select: { kind: true, changes: true },
+              },
+            },
+          },
           allocations: { select: { id: true, quantity: true, createdAt: true } },
-          receiptLines: { select: { rejectedQuantity: true } },
+          receiptLines: { select: { id: true, rejectedQuantity: true } },
         },
       },
     },
@@ -347,21 +372,37 @@ export type RequirementWithProgress = Prisma.MaterialRequirementGetPayload<{
 export interface RequirementProgress {
   need: number;
   purchasedDraft: number;
+  /** Em pedidos confirmados, líquido do saldo encerrado (inclui o recebido). */
   purchased: number;
   received: number;
   reserved: number;
   consumed: number;
   transferredIn: number;
   covered: number;
+  /** Comprado e ainda não chegou. */
+  awaiting: number;
+  /** Falta comprar (regra única `requirementCoverage`). */
+  shortfall: number;
   divergence: boolean;
+}
+
+/** Reservas de estoque da OS sem necessidade vinculada, atribuídas pela especificação (E3). */
+export interface AttributedReservations {
+  reserved: number;
+  consumed: number;
 }
 
 /**
  * Quanto de cada necessidade já foi comprado, recebido, reservado e está
- * disponível. O recebido de um item consolidado é distribuído entre as origens
- * na ordem em que foram incluídas (FIFO), sem nunca ultrapassar a cota de cada OS.
+ * disponível. O recebido (e o saldo ainda esperado) de um item consolidado é distribuído entre
+ * as origens na ordem em que foram incluídas (FIFO), sem nunca ultrapassar a cota de cada OS.
+ * Saldo encerrado (Fase 12) ou recusado sem reposição (V4) deixa de ser esperado.
  */
-export function requirementProgress(r: RequirementWithProgress): RequirementProgress {
+export function requirementProgress(
+  r: RequirementWithProgress,
+  attributed: AttributedReservations = { reserved: 0, consumed: 0 },
+  opts: { excludePurchaseOrderId?: string } = {},
+): RequirementProgress {
   const need = num(r.quantity);
   let purchasedDraft = 0;
   let purchased = 0;
@@ -370,11 +411,8 @@ export function requirementProgress(r: RequirementWithProgress): RequirementProg
   for (const a of r.allocations) {
     const po = a.item.purchaseOrder;
     if (po.status === 'CANCELADO') continue;
+    if (opts.excludePurchaseOrderId && po.id === opts.excludePurchaseOrderId) continue;
     const qtyA = num(a.quantity);
-    if (po.status === 'RASCUNHO') {
-      purchasedDraft += qtyA;
-      continue;
-    }
     const ordered = [...a.item.allocations].sort(
       (x, y) => x.createdAt.getTime() - y.createdAt.getTime() || x.id.localeCompare(y.id),
     );
@@ -384,25 +422,42 @@ export function requirementProgress(r: RequirementWithProgress): RequirementProg
         ordered.findIndex((x) => x.id === a.id),
       )
       .reduce((s, x) => s + num(x.quantity), 0);
-    const share = Math.min(qtyA, Math.max(0, num(a.item.receivedQuantity) - before));
-    received += share;
-    // Fase 12: saldo encerrado não é mais "comprado" — só o recebido conta para esta OS.
+    if (po.status === 'RASCUNHO') {
+      // A quantidade do item manda: alocações além dela não viram "em compra" (FIFO).
+      purchasedDraft += Math.min(qtyA, Math.max(0, num(a.item.quantity) - before));
+      continue;
+    }
+    const itemReceived = num(a.item.receivedQuantity);
+    const expected = Math.max(itemReceived, num(a.item.quantity) - num(a.item.closedQuantity));
+    received += Math.min(qtyA, Math.max(0, itemReceived - before));
     if ((PURCHASE_ORDER_COMMITTED as readonly string[]).includes(po.status))
-      purchased += num(a.item.closedQuantity) > 0 ? share : qtyA;
+      purchased += Math.min(qtyA, Math.max(0, expected - before));
     const itemOpen =
       num(a.item.receivedQuantity) + num(a.item.closedQuantity) < num(a.item.quantity);
-    if (itemOpen && a.item.receiptLines.some((l) => num(l.rejectedQuantity) > 0)) divergence = true;
+    if (itemOpen) {
+      const decided = decidedRejectionLines(po.history);
+      if (a.item.receiptLines.some((l) => num(l.rejectedQuantity) > 0 && !decided.has(l.id)))
+        divergence = true;
+    }
   }
-  const reserved = r.reservations
-    .filter((x) => x.status === 'ATIVA')
-    .reduce((s, x) => s + num(x.quantity), 0);
-  const consumed = r.reservations
-    .filter((x) => x.status === 'CONSUMIDA')
-    .reduce((s, x) => s + num(x.quantity), 0);
+  const reserved =
+    r.reservations.filter((x) => x.status === 'ATIVA').reduce((s, x) => s + num(x.quantity), 0) +
+    attributed.reserved;
+  const consumed =
+    r.reservations
+      .filter((x) => x.status === 'CONSUMIDA')
+      .reduce((s, x) => s + num(x.quantity), 0) + attributed.consumed;
   const transferredIn = r.transfersIn.reduce((s, x) => s + num(x.quantity), 0);
-  const exclusive = r.sourcing === 'EXCLUSIVO_OS';
-  // Exclusivo: recebido e conferido já pertence à OS. Estoque: só conta o reservado/entregue.
-  const covered = Math.min(need, q3((exclusive ? received : reserved + consumed) + transferredIn));
+  const c = requirementCoverage({
+    exclusive: r.sourcing === 'EXCLUSIVO_OS',
+    need,
+    ordered: purchased,
+    received,
+    reserved,
+    consumed,
+    draft: purchasedDraft,
+    transferredIn,
+  });
   return {
     need,
     purchasedDraft: q3(purchasedDraft),
@@ -411,9 +466,77 @@ export function requirementProgress(r: RequirementWithProgress): RequirementProg
     reserved: q3(reserved),
     consumed: q3(consumed),
     transferredIn: q3(transferredIn),
-    covered,
+    covered: c.covered,
+    awaiting: c.awaiting,
+    shortfall: c.shortfall,
     divergence,
   };
+}
+
+/**
+ * Regra única de carregamento: necessidades aprovadas das OS indicadas, com o progresso de cada
+ * uma. Reservas de estoque feitas para a OS sem indicar a necessidade (E3) são atribuídas às
+ * necessidades de estoque da mesma OS com a mesma especificação do catálogo, na ordem em que
+ * foram aprovadas, sem passar do que falta cobrir em cada uma.
+ */
+export async function requirementsWithProgress(
+  db: Tx | PrismaClient,
+  where: Prisma.MaterialRequirementWhereInput,
+  opts: { excludePurchaseOrderId?: string } = {},
+) {
+  const scope = await db.materialRequirement.findMany({
+    where: { ...where, origin: 'SOLICITACAO_APROVADA' },
+    select: { id: true, serviceOrderId: true },
+  });
+  if (!scope.length) return [];
+  const wanted = new Set(scope.map((r) => r.id));
+  const osIds = [...new Set(scope.map((r) => r.serviceOrderId))];
+  const [all, unlinked] = await Promise.all([
+    db.materialRequirement.findMany({
+      where: { serviceOrderId: { in: osIds }, origin: 'SOLICITACAO_APROVADA' },
+      include: requirementProgressInclude,
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    }),
+    db.stockReservation.findMany({
+      where: {
+        serviceOrderId: { in: osIds },
+        materialRequirementId: null,
+        status: { in: ['ATIVA', 'CONSUMIDA'] },
+      },
+      include: { stockItem: { select: { specKey: true } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    }),
+  ]);
+  const extra = new Map<string, AttributedReservations>();
+  const room = new Map<string, number>();
+  for (const r of all) {
+    if (r.sourcing !== 'ESTOQUE') continue;
+    const p = requirementProgress(r);
+    room.set(r.id, q3(p.need - p.covered));
+  }
+  for (const u of unlinked) {
+    let left = num(u.quantity);
+    for (const r of all) {
+      if (left <= 0) break;
+      if (r.serviceOrderId !== u.serviceOrderId || r.sourcing !== 'ESTOQUE') continue;
+      if (
+        stockSpecKey(specOf(r, (r.unitCode ?? 'UNIDADE') as MaterialUnit)) !== u.stockItem.specKey
+      )
+        continue;
+      const free = room.get(r.id) ?? 0;
+      const take = q3(Math.min(free, left));
+      if (take <= 0) continue;
+      room.set(r.id, q3(free - take));
+      left = q3(left - take);
+      const cur = extra.get(r.id) ?? { reserved: 0, consumed: 0 };
+      if (u.status === 'ATIVA') cur.reserved = q3(cur.reserved + take);
+      else cur.consumed = q3(cur.consumed + take);
+      extra.set(r.id, cur);
+    }
+  }
+  return all
+    .filter((r) => wanted.has(r.id))
+    .map((r) => ({ r, p: requirementProgress(r, extra.get(r.id), opts) }));
 }
 
 export function itemCodeOf(r: RequirementWithProgress) {
@@ -422,8 +545,10 @@ export function itemCodeOf(r: RequirementWithProgress) {
     : null;
 }
 
-export function toReadinessLine(r: RequirementWithProgress): ReadinessLineDto {
-  const p = requirementProgress(r);
+export function toReadinessLine(
+  r: RequirementWithProgress,
+  p: RequirementProgress,
+): ReadinessLineDto {
   const unit = (r.unitCode ?? 'UNIDADE') as MaterialUnit;
   return {
     requirementId: r.id,
@@ -436,25 +561,28 @@ export function toReadinessLine(r: RequirementWithProgress): ReadinessLineDto {
     reserved: q3(p.reserved + p.consumed),
     transferredIn: p.transferredIn,
     covered: p.covered,
+    awaiting: p.awaiting,
+    inDraft: p.purchasedDraft,
+    shortfall: p.shortfall,
     divergence: p.divergence,
-    stage: lineStage({
-      need: p.need,
-      purchased: p.purchased,
-      received: p.received,
-      reserved: p.reserved + p.consumed,
-      covered: p.covered,
-      exclusive: r.sourcing === 'EXCLUSIVO_OS',
-    }),
+    stage: stageOf(r, p),
   };
 }
 
+export const stageOf = (r: { sourcing: string }, p: RequirementProgress) =>
+  lineStage({
+    need: p.need,
+    // Coberto ou comprado-aguardando (o recebido que virou reserva não conta duas vezes).
+    purchased: q3(p.covered + p.awaiting),
+    received: p.received,
+    reserved: p.reserved + p.consumed,
+    covered: p.covered,
+    exclusive: r.sourcing === 'EXCLUSIVO_OS',
+  });
+
 export async function readinessOf(db: Tx | PrismaClient, serviceOrderId: string) {
-  const [requirements, openMeasurements, pendingRequests] = await Promise.all([
-    db.materialRequirement.findMany({
-      where: { serviceOrderId, origin: 'SOLICITACAO_APROVADA' },
-      include: requirementProgressInclude,
-      orderBy: { createdAt: 'asc' },
-    }),
+  const [rows, openMeasurements, pendingRequests] = await Promise.all([
+    requirementsWithProgress(db, { serviceOrderId }),
     db.measurement.count({
       where: { serviceOrderId, status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } },
     }),
@@ -465,13 +593,15 @@ export async function readinessOf(db: Tx | PrismaClient, serviceOrderId: string)
       },
     }),
   ]);
-  const lines = requirements.map(toReadinessLine);
+  const requirements = rows.map((x) => x.r);
+  const lines = rows.map(({ r, p }) => toReadinessLine(r, p));
   const state = computeReadiness(
-    lines.map((l) => ({
-      need: l.need,
-      covered: l.covered,
-      purchased: l.purchased,
-      divergence: l.divergence,
+    rows.map(({ p }) => ({
+      need: p.need,
+      covered: p.covered,
+      // Coberto + comprado aguardando chegada (rascunho não conta como comprado).
+      purchased: q3(p.covered + p.awaiting),
+      divergence: p.divergence,
     })),
     openMeasurements + pendingRequests > 0,
   );
@@ -498,7 +628,12 @@ export async function refreshReadiness(tx: Tx, actor: ActorContext, serviceOrder
     });
     if (!so) continue;
     const { state } = await readinessOf(tx, id);
-    if (state === so.materialsReadiness) continue;
+    if (state === so.materialsReadiness) {
+      // A situação da OS não mudou, mas a cobertura de um material pode ter mudado: as tarefas
+      // vinculadas a materiais e as ocorrências de material são reavaliadas (idempotente).
+      for (const l of readinessListeners) await l(tx, actor, id);
+      continue;
+    }
     await tx.serviceOrder.update({
       where: { id },
       data: { materialsReadiness: state, materialsReadinessAt: new Date() },

@@ -46,6 +46,7 @@ import { processHelpQueue } from './modules/help/queue';
 import { testClockRoutes } from './modules/testing/routes';
 import { leftoverRoutes } from './modules/purchasing/leftovers';
 import { purchaseOrderRoutes } from './modules/purchasing/purchase-orders';
+import { shortageRoutes } from './modules/purchasing/shortages';
 import { materialReceiptRoutes } from './modules/purchasing/receipts';
 import { stockRoutes } from './modules/purchasing/stock';
 import { supplierRoutes } from './modules/purchasing/suppliers';
@@ -189,6 +190,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(materialRoutes);
   await app.register(supplierRoutes);
   await app.register(purchaseOrderRoutes);
+  await app.register(shortageRoutes);
   await app.register(materialReceiptRoutes);
   await app.register(stockRoutes);
   await app.register(leftoverRoutes);

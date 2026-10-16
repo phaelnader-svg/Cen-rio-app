@@ -5,6 +5,8 @@ import {
   lineTotalCents,
   materialReceiptLineSchema,
   purchaseOrderItemSchema,
+  requirementCoverage,
+  stockPurchaseSuggestion,
   specKey,
   specMismatch,
 } from '../src';
@@ -115,5 +117,61 @@ describe('Especificação e valores', () => {
         issueNote: 'Molhado',
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('Compras sem duplicidade — regra única da falta (Etapa 1)', () => {
+  const base = {
+    exclusive: false,
+    need: 10,
+    ordered: 0,
+    received: 0,
+    reserved: 0,
+    consumed: 0,
+    draft: 0,
+    transferredIn: 0,
+  };
+  it('E2: reserva manual 8 + compra de 2 não recebida → falta 0 (cada quantidade conta uma vez)', () => {
+    expect(requirementCoverage({ ...base, reserved: 8, ordered: 2 })).toEqual({
+      covered: 8,
+      awaiting: 2,
+      draft: 0,
+      shortfall: 0,
+    });
+  });
+  it('estoque: recebido que virou reserva não conta também como em compra', () => {
+    expect(requirementCoverage({ ...base, ordered: 10, received: 6, reserved: 6 })).toEqual({
+      covered: 6,
+      awaiting: 4,
+      draft: 0,
+      shortfall: 0,
+    });
+    // Recebido ainda não reservado é estoque livre: não cobre a OS.
+    expect(requirementCoverage({ ...base, ordered: 10, received: 10 }).shortfall).toBe(10);
+  });
+  it('exclusivo: recebido cobre; 20 = 8 confirmado + 7 rascunho → falta 5', () => {
+    const ex = { ...base, exclusive: true, need: 20 };
+    expect(requirementCoverage({ ...ex, ordered: 8, draft: 7 })).toEqual({
+      covered: 0,
+      awaiting: 8,
+      draft: 7,
+      shortfall: 5,
+    });
+    expect(requirementCoverage({ ...ex, ordered: 20, received: 6 })).toMatchObject({
+      covered: 6,
+      awaiting: 14,
+      shortfall: 0,
+    });
+  });
+  it('sobra transferida cobre; nada passa da necessidade', () => {
+    expect(
+      requirementCoverage({ ...base, exclusive: true, transferredIn: 8, ordered: 10, draft: 5 }),
+    ).toEqual({ covered: 8, awaiting: 2, draft: 0, shortfall: 0 });
+  });
+  it('sugestão de estoque: falta − livre − compra de estoque pendente, nunca negativa', () => {
+    expect(stockPurchaseSuggestion({ shortfall: 11, freeStock: 8, freePending: 0 })).toBe(3);
+    expect(stockPurchaseSuggestion({ shortfall: 10, freeStock: 2, freePending: 4 })).toBe(4);
+    expect(stockPurchaseSuggestion({ shortfall: 3, freeStock: 8, freePending: 0 })).toBe(0);
+    expect(stockPurchaseSuggestion({ shortfall: 3, freeStock: -1, freePending: 0 })).toBe(3);
   });
 });

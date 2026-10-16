@@ -19,6 +19,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { Errors } from '../../lib/errors';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
+import { deliveredServiceOrders } from '../finance/costs';
 import { idParams } from '../presenters';
 import {
   MANAGEMENT_AUDIENCE,
@@ -31,8 +32,7 @@ import {
   num,
   readinessOf,
   refreshReadiness,
-  requirementProgress,
-  requirementProgressInclude,
+  requirementsWithProgress,
   reservationInclude,
   specOf,
   toLeftoverDto,
@@ -155,11 +155,14 @@ export async function leftoverRoutes(app: FastifyInstance) {
         if (target.status !== 'ABERTA') throw Errors.business('A OS de destino não está aberta.');
         if (input.targetRequirementId) {
           await lockRows(tx, 'material_requirements', [input.targetRequirementId]);
-          const req = await tx.materialRequirement.findUnique({
-            where: { id: input.targetRequirementId },
-            include: requirementProgressInclude,
-          });
-          if (!req || req.serviceOrderId !== target.id || req.origin !== 'SOLICITACAO_APROVADA') {
+          const found = (
+            await requirementsWithProgress(tx, {
+              id: input.targetRequirementId,
+              serviceOrderId: target.id,
+            })
+          )[0];
+          const req = found?.r;
+          if (!found || !req) {
             throw Errors.business(
               'A necessidade de destino não é uma necessidade aprovada desta OS.',
             );
@@ -169,7 +172,7 @@ export async function leftoverRoutes(app: FastifyInstance) {
             specOf({ ...req, lengthCm: null, widthCm: null }, req.unitCode as MaterialUnit),
           );
           if (mismatch) throw Errors.business(mismatch);
-          const p = requirementProgress(req);
+          const p = found.p;
           if (input.quantity > q3(p.need - p.covered) + EPS) {
             throw Errors.business(
               `A OS de destino precisa de apenas ${q3(p.need - p.covered)} deste material.`,
@@ -348,6 +351,7 @@ export async function leftoverRoutes(app: FastifyInstance) {
           orderBy: { createdAt: 'asc' },
         }),
       ]);
+      const delivered = await deliveredServiceOrders(prisma, [id]);
       return {
         serviceOrder: {
           id: so.id,
@@ -383,8 +387,11 @@ export async function leftoverRoutes(app: FastifyInstance) {
           accepted: q3(rc.lines.reduce((s, l) => s + num(l.acceptedQuantity), 0)),
           issues: rc.lines.filter((l) => l.issue).length,
         })),
-        reservations: reservations.map(toReservationDto),
+        reservations: reservations.map((x) => toReservationDto(x, delivered)),
         leftovers: leftovers.map(toLeftoverDto),
+        unconfirmedConsumption: reservations.some(
+          (x) => x.status === 'ATIVA' && delivered.has(x.serviceOrderId),
+        ),
         canStartProduction: false,
       };
     },

@@ -19,6 +19,21 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
   const pending = r.lines.filter((l) => l.covered < l.need);
   return (
     <div className="space-y-6" data-testid="os-materials-overview">
+      {r.unconfirmedConsumption && (
+        <div data-testid="os-unconfirmed-consumption">
+          <Alert tone="warn" title="Material reservado ainda não teve consumo confirmado.">
+            A OS já foi entregue e ainda há reserva de estoque ativa: o material está fora do custo
+            da OS. Em{' '}
+            <Link
+              href="/painel/estoque?tab=reservas"
+              className="font-medium text-brand-700 hover:underline"
+            >
+              Estoque → Reservas por OS
+            </Link>
+            , confirme o consumo (“Entregar à OS”) ou libere a reserva.
+          </Alert>
+        </div>
+      )}
       <Section title="Prontidão de materiais">
         <div className="flex flex-wrap items-center gap-3">
           <span data-testid="os-readiness-state">
@@ -51,7 +66,7 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="data-table min-w-[760px]" data-testid="os-material-lines">
+            <table className="data-table min-w-[960px]" data-testid="os-material-lines">
               <thead>
                 <tr>
                   <th>Material</th>
@@ -60,6 +75,8 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
                   <th className="text-right">Recebido</th>
                   <th className="text-right">Reservado</th>
                   <th className="text-right">Disponível</th>
+                  <th className="text-right">Aguardando chegada</th>
+                  <th className="text-right">Falta comprar</th>
                   <th>Situação</th>
                 </tr>
               </thead>
@@ -73,7 +90,9 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
                         {l.transferredIn
                           ? ` · ${qtyText(l.transferredIn, l.unit)} de sobra transferida`
                           : ''}
-                        {l.divergence ? ' · recebimento com divergência' : ''}
+                        {l.divergence
+                          ? ' · recusa no recebimento aguardando decisão (repor/não repor)'
+                          : ''}
                       </span>
                     </td>
                     <td className="text-right tabular-nums">{qtyText(l.need, l.unit)}</td>
@@ -84,6 +103,18 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
                     </td>
                     <td className="text-right font-semibold tabular-nums">
                       {qtyText(l.covered, l.unit)}
+                    </td>
+                    <td className="text-right tabular-nums">{qtyText(l.awaiting, l.unit)}</td>
+                    <td
+                      className={`text-right tabular-nums ${l.shortfall > 0 ? 'font-semibold text-danger-600' : ''}`}
+                      data-testid={`os-shortfall-${l.requirementId}`}
+                    >
+                      {qtyText(l.shortfall, l.unit)}
+                      {l.inDraft > 0 && (
+                        <span className="block text-xs font-normal text-ink-muted">
+                          + {qtyText(l.inDraft, l.unit)} em rascunho
+                        </span>
+                      )}
                     </td>
                     <td>
                       <StageBadge stage={l.stage} />

@@ -1,30 +1,21 @@
 'use client';
 
-import {
-  MATERIAL_SOURCING_LABEL,
-  PURCHASE_ORDER_STATUSES,
-  PURCHASE_ORDER_STATUS_LABEL,
-  formatCents,
-} from '@cenario/shared';
-import { PackageSearch, Search, ShoppingCart } from 'lucide-react';
+import { PURCHASE_ORDER_STATUSES, PURCHASE_ORDER_STATUS_LABEL, formatCents } from '@cenario/shared';
+import { Search, ShoppingCart } from 'lucide-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useDeferredValue, useState } from 'react';
-import { PriorityBadge } from '@/components/commercial/badges';
-import { Button } from '@/components/ui/button';
-import { Checkbox, Input, Select } from '@/components/ui/field';
+import { Input, Select } from '@/components/ui/field';
 import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { Tabs } from '@/components/ui/tabs';
 import { formatDay } from '@/lib/commercial';
-import { useCan } from '@/lib/hooks';
-import { useNeeds, usePurchaseOrders } from '@/lib/purchasing';
-import { PurchaseStatusBadge, StageBadge } from './badges';
-import { qtyText, specText } from './format';
+import { usePurchaseOrders, useShortages } from '@/lib/purchasing';
+import { PurchaseStatusBadge } from './badges';
+import { ShortagesTab } from './shortages-tab';
 
 /** Central de compras: necessidades aprovadas (Fase 3) → pedidos de compra. */
 export function PurchasingPage() {
   const [tab, setTab] = useState('necessidades');
-  const needs = useNeeds(true);
+  const needs = useShortages();
   return (
     <>
       <PageHeader
@@ -47,135 +38,8 @@ export function PurchasingPage() {
           { key: 'pedidos', label: 'Pedidos de compra' },
         ]}
       >
-        {tab === 'necessidades' ? <NeedsTab /> : <OrdersTab />}
+        {tab === 'necessidades' ? <ShortagesTab /> : <OrdersTab />}
       </Tabs>
-    </>
-  );
-}
-
-function NeedsTab() {
-  const can = useCan();
-  const router = useRouter();
-  const [all, setAll] = useState(false);
-  const needs = useNeeds(!all);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const toggle = (id: string) =>
-    setSelected((s) => {
-      const n = new Set(s);
-      if (n.has(id)) n.delete(id);
-      else n.add(id);
-      return n;
-    });
-  if (needs.isPending) return <Spinner />;
-  if (needs.isError) return <Alert tone="danger">{needs.error.message}</Alert>;
-  const canBuy = can('compras.gerenciar');
-  return (
-    <>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Checkbox
-          label="Mostrar também o que já está em compra"
-          checked={all}
-          onChange={(e) => setAll(e.target.checked)}
-        />
-        <span className="flex-1" />
-        {canBuy && (
-          <Button
-            icon={<ShoppingCart className="size-4" aria-hidden />}
-            disabled={selected.size === 0}
-            onClick={() => router.push(`/painel/compras/novo?req=${[...selected].join(',')}`)}
-          >
-            Criar pedido de compra ({selected.size})
-          </Button>
-        )}
-      </div>
-      {needs.data.length === 0 ? (
-        <Card>
-          <EmptyState
-            icon={<PackageSearch className="size-6" aria-hidden />}
-            title="Nada pendente de compra"
-            description="Materiais aparecem aqui quando o gestor aprova as solicitações das medições."
-          />
-        </Card>
-      ) : (
-        <Card className="overflow-x-auto">
-          <table className="data-table min-w-[980px]" data-testid="needs">
-            <thead>
-              <tr>
-                {canBuy && <th className="w-10" />}
-                <th>OS / cliente</th>
-                <th>Material</th>
-                <th className="text-right">Aprovado</th>
-                <th className="text-right">Em compra</th>
-                <th className="text-right">A comprar</th>
-                <th>Compras</th>
-                <th>Situação</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {needs.data.map((n) => (
-                <tr
-                  key={n.requirementId}
-                  data-testid={`need-${n.serviceOrder.code}-${n.description}`}
-                >
-                  {canBuy && (
-                    <td>
-                      <input
-                        type="checkbox"
-                        aria-label={`Selecionar ${n.description} da ${n.serviceOrder.code}`}
-                        className="size-5 accent-brand-700"
-                        checked={selected.has(n.requirementId)}
-                        disabled={n.pendingToBuy <= 0}
-                        onChange={() => toggle(n.requirementId)}
-                      />
-                    </td>
-                  )}
-                  <td>
-                    <Link
-                      href={`/painel/os/${n.serviceOrder.id}`}
-                      className="font-mono font-semibold text-brand-700 hover:underline"
-                    >
-                      {n.serviceOrder.code}
-                    </Link>
-                    <span className="block text-xs text-ink-muted">
-                      {n.customerName} · prazo {formatDay(n.serviceOrder.promisedDate)}
-                    </span>
-                    <PriorityBadge priority={n.serviceOrder.priority} />
-                  </td>
-                  <td>
-                    {specText(n)}
-                    <span className="block text-xs text-ink-muted">
-                      {n.itemCode ?? 'Toda a OS'} · {MATERIAL_SOURCING_LABEL[n.sourcing]}
-                    </span>
-                  </td>
-                  <td className="text-right tabular-nums">{qtyText(n.need, n.unit)}</td>
-                  <td className="text-right tabular-nums">
-                    {qtyText(n.purchased + n.purchasedDraft, n.unit)}
-                  </td>
-                  <td className="text-right font-semibold tabular-nums">
-                    {qtyText(n.pendingToBuy, n.unit)}
-                  </td>
-                  <td className="text-xs">
-                    {n.purchases.map((p) => (
-                      <Link
-                        key={p.purchaseOrderId}
-                        href={`/painel/compras/${p.purchaseOrderId}`}
-                        className="block text-brand-700 hover:underline"
-                      >
-                        {p.code} · {p.supplierName ?? 'sem fornecedor'} ·{' '}
-                        {PURCHASE_ORDER_STATUS_LABEL[p.status]}
-                        {p.unitPriceCents !== null ? ` · ${formatCents(p.unitPriceCents)}/un.` : ''}
-                      </Link>
-                    ))}
-                  </td>
-                  <td>
-                    <StageBadge stage={n.stage} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </Card>
-      )}
     </>
   );
 }
@@ -245,7 +109,12 @@ function OrdersTab() {
                     <span className="font-semibold tabular-nums">{formatCents(po.totalCents)}</span>
                   )}
                   {po.hasIssues && (
-                    <span className="text-sm font-semibold text-danger-600">Divergência</span>
+                    <span className="text-sm font-semibold text-danger-600">Recusa a decidir</span>
+                  )}
+                  {po.withoutDestination.length > 0 && (
+                    <span className="text-sm font-semibold text-warn-600">
+                      Sem destino ({po.withoutDestination.map((x) => x.code).join(', ')} cancelada)
+                    </span>
                   )}
                   <PurchaseStatusBadge status={po.status} />
                 </Link>

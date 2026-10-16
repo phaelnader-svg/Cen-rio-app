@@ -961,7 +961,7 @@ function MaterialsTab({ so, manage }: { so: ServiceOrderDto; manage: boolean }) 
                 {mt.origin === 'SOLICITACAO_APROVADA' ? (
                   <Badge tone="ok">Aprovado para compra</Badge>
                 ) : (
-                  <Badge>Previsão manual</Badge>
+                  <Badge>Previsão manual · não entra na compra</Badge>
                 )}
                 {manage && mt.origin !== 'SOLICITACAO_APROVADA' && (
                   <Button
@@ -979,6 +979,10 @@ function MaterialsTab({ so, manage }: { so: ServiceOrderDto; manage: boolean }) 
       </Section>
       {manage && (
         <Section title="Prever material">
+          <p className="mb-4 text-sm text-ink-muted" data-testid="forecast-hint">
+            Previsão é só uma anotação: ainda não gera necessidade de compra nem aparece em Compras
+            → A comprar. Para comprar, o material precisa vir de uma medição aprovada.
+          </p>
           {error && (
             <Alert tone="danger" className="mb-4">
               {error}

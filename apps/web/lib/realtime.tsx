@@ -103,6 +103,8 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   // Fase 5 — produção
   if (t.startsWith('production.') || t === 'material.readiness_changed') {
     keys.push(
+      // "A comprar" mostra se o material está bloqueando produção.
+      ['needs'],
       ['production-plans'],
       ['production-plan'],
       ['production-candidates'],

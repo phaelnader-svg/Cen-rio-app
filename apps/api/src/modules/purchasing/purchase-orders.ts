@@ -4,7 +4,6 @@ import {
   authorizeExtraSchema,
   cancelPurchaseOrderSchema,
   formatServiceOrderItemCode,
-  lineStage,
   lineTotalCents,
   materialReceiptCode,
   needsQuerySchema,
@@ -23,6 +22,7 @@ import {
   type PurchaseOrderDto,
   type PurchaseOrderItemInput,
   type PurchaseOrderSummaryDto,
+  type RejectionDecision,
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -44,16 +44,25 @@ import {
   num,
   poHistory,
   refreshReadiness,
-  requirementProgress,
-  requirementProgressInclude,
+  REJECTION_HISTORY_KINDS,
+  decidedRejectionLines,
+  requirementsWithProgress,
   specOf,
+  stageOf,
   stockSpecKey,
+  type RequirementProgress,
+  type RequirementWithProgress,
 } from './common';
 
 // ─────────────────────────── Leitura ───────────────────────────
 
+const decisionHistory = {
+  where: { kind: { in: REJECTION_HISTORY_KINDS } },
+  select: { kind: true, changes: true },
+} as const;
+
 export const receiptInclude = {
-  purchaseOrder: { select: { id: true, number: true } },
+  purchaseOrder: { select: { id: true, number: true, history: decisionHistory } },
   receivedBy: { select: { displayName: true } },
   lines: {
     include: {
@@ -69,6 +78,7 @@ export const receiptInclude = {
 export function toReceiptDto(
   r: Prisma.MaterialReceiptGetPayload<{ include: typeof receiptInclude }>,
 ): MaterialReceiptDto {
+  const decisions = rejectionDecisions(r.purchaseOrder.history);
   return {
     id: r.id,
     number: r.number,
@@ -97,8 +107,25 @@ export function toReceiptDto(
         authorizedBy: x.authorizedBy.displayName,
         createdAt: x.createdAt.toISOString(),
       })),
+      rejectionDecision: decisions.get(l.id) ?? null,
+      rejectionPending:
+        num(l.rejectedQuantity) > 0 &&
+        !decisions.has(l.id) &&
+        num(l.item.receivedQuantity) + num(l.item.closedQuantity) < num(l.item.quantity),
     })),
   };
+}
+
+/** Decisão gravada (histórico do pedido) para cada linha de recebimento com recusa. */
+export function rejectionDecisions(history: { kind: string; changes: unknown }[]) {
+  const out = new Map<string, RejectionDecision>();
+  for (const h of history) {
+    const id = (h.changes as { receiptLineId?: unknown } | null)?.receiptLineId;
+    if (typeof id !== 'string') continue;
+    if (h.kind === 'RECUSA_REPOR') out.set(id, 'REPOR');
+    if (h.kind === 'RECUSA_NAO_REPOR') out.set(id, 'NAO_REPOR');
+  }
+  return out;
 }
 
 const itemsInclude = {
@@ -113,13 +140,27 @@ const itemsInclude = {
         requirement: { include: { serviceOrderItem: { select: { position: true } } } },
       },
     },
-    receiptLines: { select: { rejectedQuantity: true } },
+    receiptLines: { select: { id: true, rejectedQuantity: true } },
   },
 } as const;
 
 const summaryInclude = {
   supplier: { select: { id: true, name: true } },
-  items: itemsInclude,
+  items: {
+    ...itemsInclude,
+    include: {
+      ...itemsInclude.include,
+      serviceOrder: { select: { id: true, number: true, status: true } },
+      allocations: {
+        ...itemsInclude.include.allocations,
+        include: {
+          ...itemsInclude.include.allocations.include,
+          serviceOrder: { select: { id: true, number: true, status: true } },
+        },
+      },
+    },
+  },
+  history: decisionHistory,
 } as const;
 
 const detailInclude = {
@@ -135,7 +176,25 @@ const detailInclude = {
 
 type SummaryRow = Prisma.PurchaseOrderGetPayload<{ include: typeof summaryInclude }>;
 
+/**
+ * V8: OS cancelada com compra ainda viva (não cancelada) — o material fica sem destino
+ * operacional. Nada é cancelado ou redistribuído automaticamente: comum entra no estoque livre
+ * pelo fluxo normal; exclusivo continua identificado na OS cancelada (sobra/reaproveitamento).
+ */
+function withoutDestination(po: SummaryRow) {
+  const out = new Map<string, string>();
+  for (const i of po.items) {
+    if (i.serviceOrder?.status === 'CANCELADA')
+      out.set(i.serviceOrder.id, serviceOrderCode(i.serviceOrder.number));
+    for (const a of i.allocations)
+      if (a.serviceOrder.status === 'CANCELADA')
+        out.set(a.serviceOrder.id, serviceOrderCode(a.serviceOrder.number));
+  }
+  return [...out].map(([id, code]) => ({ id, code })).sort((a, b) => a.code.localeCompare(b.code));
+}
+
 function toSummary(po: SummaryRow, prices: boolean): PurchaseOrderSummaryDto {
+  const decided = decidedRejectionLines(po.history);
   const priced = po.items.filter((i) => i.unitPriceCents !== null);
   const sos = new Map<string, string>();
   for (const i of po.items) {
@@ -162,8 +221,9 @@ function toSummary(po: SummaryRow, prices: boolean): PurchaseOrderSummaryDto {
     hasIssues: po.items.some(
       (i) =>
         num(i.receivedQuantity) + num(i.closedQuantity) < num(i.quantity) &&
-        i.receiptLines.some((l) => num(l.rejectedQuantity) > 0),
+        i.receiptLines.some((l) => num(l.rejectedQuantity) > 0 && !decided.has(l.id)),
     ),
+    withoutDestination: po.status === 'CANCELADO' ? [] : withoutDestination(po),
     version: po.version,
   };
 }
@@ -246,6 +306,9 @@ export async function loadPurchaseOrder(
         (PURCHASE_ORDER_RECEIVABLE as readonly string[]).includes(po.status) &&
         has(request, 'compras.aprovar'),
       closeBalance: po.status === 'PARCIALMENTE_RECEBIDO' && has(request, 'compras.aprovar'),
+      decideRejection:
+        (PURCHASE_ORDER_RECEIVABLE as readonly string[]).includes(po.status) &&
+        has(request, 'compras.aprovar'),
     },
   };
 }
@@ -276,6 +339,13 @@ async function prepareItems(
     },
   });
   const byId = new Map(reqs.map((r) => [r.id, r]));
+  // Regra única (E2): só se compra o que realmente falta — reservado, entregue, sobra recebida,
+  // comprado e rascunhos (fora este pedido, na edição) já cobrem a necessidade.
+  const shortfallOf = new Map(
+    (await requirementsWithProgress(tx, { id: { in: reqIds } }, { excludePurchaseOrderId })).map(
+      ({ r, p }) => [r.id, p],
+    ),
+  );
   const usedHere = new Map<string, number>();
   const out: (Prisma.PurchaseOrderItemCreateWithoutPurchaseOrderInput & {
     allocationRows: { materialRequirementId: string; serviceOrderId: string; quantity: number }[];
@@ -294,18 +364,14 @@ async function prepareItems(
       const osCode = serviceOrderCode(r.serviceOrder.number);
       if (r.serviceOrder.status !== 'ABERTA')
         throw Errors.business(`${label}: a ${osCode} não está aberta.`);
-      const already = r.allocations
-        .filter(
-          (x) =>
-            x.item.purchaseOrder.status !== 'CANCELADO' &&
-            x.item.purchaseOrder.id !== excludePurchaseOrderId,
-        )
-        .reduce((s, x) => s + num(x.quantity), 0);
-      const total = already + (usedHere.get(r.id) ?? 0) + a.quantity;
-      if (total > num(r.quantity) + EPS) {
+      const p = shortfallOf.get(r.id);
+      const missing = p?.shortfall ?? 0;
+      const total = (usedHere.get(r.id) ?? 0) + a.quantity;
+      if (total > missing + EPS) {
+        const already = p ? q3(p.need - p.shortfall) : 0;
         throw Errors.conflict(
           `${label}: quantidade acima da necessidade aprovada da ${osCode} ` +
-            `(aprovado ${num(r.quantity)}, já em compras ${q3(already)}).`,
+            `(aprovado ${num(r.quantity)}, já em compras ou atendido ${already}; falta ${missing}).`,
         );
       }
       usedHere.set(r.id, (usedHere.get(r.id) ?? 0) + a.quantity);
@@ -456,6 +522,56 @@ export const poServiceOrderIds = (po: {
   ),
 ];
 
+/** Prazo da OS (sem prazo por último), depois a ordem de aprovação. */
+export function sortByDeadline<T extends { r: RequirementWithProgress }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const da = a.r.serviceOrder.promisedDate?.getTime() ?? Number.POSITIVE_INFINITY;
+    const db = b.r.serviceOrder.promisedDate?.getTime() ?? Number.POSITIVE_INFINITY;
+    return da - db || a.r.createdAt.getTime() - b.r.createdAt.getTime();
+  });
+}
+
+export function toNeedDto(
+  r: RequirementWithProgress,
+  p: RequirementProgress,
+  prices: boolean,
+): PurchaseNeedDto {
+  return {
+    requirementId: r.id,
+    serviceOrder: {
+      id: r.serviceOrder.id,
+      code: serviceOrderCode(r.serviceOrder.number),
+      promisedDate: dateOnly(r.serviceOrder.promisedDate),
+      priority: r.serviceOrder.priority,
+    },
+    customerName: r.serviceOrder.customer.name,
+    itemCode: itemCodeOf(r),
+    ...specOf(r, (r.unitCode ?? 'UNIDADE') as MaterialUnit),
+    sourcing: r.sourcing,
+    need: p.need,
+    purchasedDraft: p.purchasedDraft,
+    purchased: p.purchased,
+    received: p.received,
+    reserved: q3(p.reserved + p.consumed),
+    transferredIn: p.transferredIn,
+    covered: p.covered,
+    awaiting: p.awaiting,
+    pendingToBuy: p.shortfall,
+    divergence: p.divergence,
+    stage: stageOf(r, p),
+    purchases: r.allocations
+      .filter((a) => a.item.purchaseOrder.status !== 'CANCELADO')
+      .map((a) => ({
+        purchaseOrderId: a.item.purchaseOrderId,
+        code: purchaseOrderCode(a.item.purchaseOrder.number),
+        status: a.item.purchaseOrder.status,
+        supplierName: a.item.purchaseOrder.supplier?.name ?? null,
+        quantity: num(a.quantity),
+        unitPriceCents: prices ? a.item.unitPriceCents : null,
+      })),
+  };
+}
+
 // ─────────────────────────── Rotas ───────────────────────────
 
 export async function purchaseOrderRoutes(app: FastifyInstance) {
@@ -465,66 +581,12 @@ export async function purchaseOrderRoutes(app: FastifyInstance) {
   app.get('/api/v1/purchasing/needs', { config: { access: PURCHASE_VIEW } }, async (request) => {
     const q = needsQuerySchema.parse(request.query);
     const prices = canSeePrices(request);
-    const rows = await prisma.materialRequirement.findMany({
-      where: {
-        origin: 'SOLICITACAO_APROVADA',
-        serviceOrder: { status: 'ABERTA' },
-        ...(q.kind ? { kind: q.kind } : {}),
-        ...(q.serviceOrderId ? { serviceOrderId: q.serviceOrderId } : {}),
-      },
-      include: requirementProgressInclude,
-      orderBy: [{ serviceOrder: { promisedDate: 'asc' } }, { createdAt: 'asc' }],
+    const rows = await requirementsWithProgress(prisma, {
+      serviceOrder: { status: 'ABERTA' },
+      ...(q.kind ? { kind: q.kind } : {}),
+      ...(q.serviceOrderId ? { serviceOrderId: q.serviceOrderId } : {}),
     });
-    const out: PurchaseNeedDto[] = rows.map((r) => {
-      const p = requirementProgress(r);
-      const exclusive = r.sourcing === 'EXCLUSIVO_OS';
-      const pipeline = p.purchased + p.purchasedDraft;
-      const pendingToBuy = Math.max(
-        0,
-        q3(
-          p.need -
-            p.transferredIn -
-            (exclusive ? pipeline : Math.max(pipeline, p.reserved + p.consumed)),
-        ),
-      );
-      return {
-        requirementId: r.id,
-        serviceOrder: {
-          id: r.serviceOrder.id,
-          code: serviceOrderCode(r.serviceOrder.number),
-          promisedDate: dateOnly(r.serviceOrder.promisedDate),
-          priority: r.serviceOrder.priority,
-        },
-        customerName: r.serviceOrder.customer.name,
-        itemCode: itemCodeOf(r),
-        ...specOf(r, (r.unitCode ?? 'UNIDADE') as MaterialUnit),
-        sourcing: r.sourcing,
-        need: p.need,
-        purchasedDraft: p.purchasedDraft,
-        purchased: p.purchased,
-        received: p.received,
-        covered: p.covered,
-        pendingToBuy,
-        stage: lineStage({
-          need: p.need,
-          purchased: p.purchased,
-          received: p.received,
-          reserved: p.reserved + p.consumed,
-          covered: p.covered,
-          exclusive,
-        }),
-        purchases: r.allocations
-          .filter((a) => a.item.purchaseOrder.status !== 'CANCELADO')
-          .map((a) => ({
-            purchaseOrderId: a.item.purchaseOrderId,
-            code: purchaseOrderCode(a.item.purchaseOrder.number),
-            status: a.item.purchaseOrder.status,
-            supplierName: a.item.purchaseOrder.supplier?.name ?? null,
-            quantity: num(a.quantity),
-            unitPriceCents: prices ? a.item.unitPriceCents : null,
-          })),
-      };
-    });
+    const out: PurchaseNeedDto[] = sortByDeadline(rows).map(({ r, p }) => toNeedDto(r, p, prices));
     return q.pendingOnly ? out.filter((n) => n.pendingToBuy > 0) : out;
   });
 

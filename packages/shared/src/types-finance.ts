@@ -185,6 +185,8 @@ export interface MaterialCostSummaryDto {
   /** Destinado/consumido: razão de custos (compras exclusivas recebidas, saídas, sobras). */
   consumedCents: number;
   unpricedLines: number;
+  /** Reservas de estoque ativas (consumo ainda não confirmado: fora do custo realizado). */
+  activeReservations: number;
   lines: MaterialCostLineDto[];
 }
 

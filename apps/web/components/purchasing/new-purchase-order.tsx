@@ -1,6 +1,6 @@
 'use client';
 
-import type { PurchaseNeedDto, PurchaseOrderDto } from '@cenario/shared';
+import type { PurchaseNeedDto, PurchaseOrderDto, PurchaseShortageDto } from '@cenario/shared';
 import { MATERIAL_SOURCING_LABEL, formatCents, lineTotalCents, specKey } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ShoppingCart } from 'lucide-react';
@@ -15,7 +15,7 @@ import { Alert, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { decimalText, parseDecimal } from '@/lib/measurements';
-import { useNeeds, useSuppliers } from '@/lib/purchasing';
+import { useNeeds, useShortages, useSuppliers } from '@/lib/purchasing';
 import { qtyText, specText } from './format';
 
 interface Line {
@@ -25,10 +25,33 @@ interface Line {
   allocations: { requirementId: string; label: string; quantity: number }[];
   quantity: string;
   priceCents: number | null;
+  /** Estoque: quanto da falta já é atendido por estoque livre / compra de estoque pendente. */
+  offset?: { free: number; pending: number };
+  /** Estoque com desconto: faltas de origem (as alocações saem delas, por prazo, até a quantidade). */
+  pending?: { requirementId: string; label: string; quantity: number }[];
+  stockItemId?: string | null;
 }
 
-/** Tecidos e exclusivos: uma linha por OS. Comuns iguais: uma linha consolidada com as origens. */
-function buildLines(needs: PurchaseNeedDto[]): Line[] {
+/** Distribui a quantidade comprada entre as origens, na ordem (prazo), sem passar de cada falta. */
+function distribute(pending: NonNullable<Line['pending']>, quantity: number) {
+  let left = quantity;
+  const out: Line['allocations'] = [];
+  for (const p of pending) {
+    const q = Math.round(Math.min(p.quantity, Math.max(0, left)) * 1000) / 1000;
+    if (q <= 0) break;
+    out.push({ ...p, quantity: q });
+    left -= q;
+  }
+  return out;
+}
+
+const stockKey = (n: PurchaseNeedDto) => `E|${specKey({ ...n, color: null, reference: null })}`;
+
+/**
+ * Tecidos e exclusivos: uma linha por OS. Comuns iguais: uma linha consolidada com as origens e a
+ * quantidade SUGERIDA (falta − estoque livre − compra de estoque pendente), editável.
+ */
+function buildLines(needs: PurchaseNeedDto[], shortages: PurchaseShortageDto[] = []): Line[] {
   const lines = new Map<string, Line>();
   for (const n of needs) {
     if (n.pendingToBuy <= 0) continue;
@@ -58,6 +81,21 @@ function buildLines(needs: PurchaseNeedDto[]): Line[] {
       });
     }
   }
+  for (const l of lines.values()) {
+    if (l.sourcing !== 'ESTOQUE') continue;
+    const g = shortages.find((x) => x.key === stockKey(l.spec));
+    if (!g) continue;
+    const free = Math.max(0, g.freeStock ?? 0);
+    const pending = Math.max(0, g.freePending);
+    if (free + pending <= 0) continue;
+    const wanted = parseDecimal(l.quantity);
+    const qty = Math.max(0, Math.round((wanted - free - pending) * 1000) / 1000);
+    l.offset = { free, pending };
+    l.pending = l.allocations;
+    l.stockItemId = g.stockItem?.id ?? null;
+    l.allocations = distribute(l.pending, qty);
+    l.quantity = decimalText(qty);
+  }
   return [...lines.values()];
 }
 
@@ -68,7 +106,8 @@ export function NewPurchaseOrderPage() {
     [params],
   );
   const needs = useNeeds(false);
-  if (needs.isPending) return <Spinner />;
+  const shortages = useShortages();
+  if (needs.isPending || shortages.isPending) return <Spinner />;
   if (needs.isError) return <Alert tone="danger">{needs.error.message}</Alert>;
   const chosen = needs.data.filter((n) => ids.has(n.requirementId));
   return (
@@ -90,7 +129,7 @@ export function NewPurchaseOrderPage() {
           }
         />
       ) : (
-        <PurchaseForm initial={buildLines(chosen)} />
+        <PurchaseForm initial={buildLines(chosen, shortages.data ?? [])} />
       )}
     </>
   );
@@ -113,7 +152,16 @@ function PurchaseForm({ initial }: { initial: Line[] }) {
     0,
   );
   const set = (k: string, patch: Partial<Line>) =>
-    setLines((ls) => ls.map((l) => (l.key === k ? { ...l, ...patch } : l)));
+    setLines((ls) =>
+      ls.map((l) => {
+        if (l.key !== k) return l;
+        const next = { ...l, ...patch };
+        // Estoque com desconto: a quantidade comprada define quanto vai para cada OS.
+        if (patch.quantity !== undefined && l.pending)
+          next.allocations = distribute(l.pending, parseDecimal(patch.quantity) || 0);
+        return next;
+      }),
+    );
 
   const save = useMutation({
     mutationFn: () =>
@@ -126,6 +174,7 @@ function PurchaseForm({ initial }: { initial: Line[] }) {
           notes,
           items: lines.map((l) => ({
             sourcing: l.sourcing,
+            ...(l.stockItemId ? { stockItemId: l.stockItemId } : {}),
             allocations: l.allocations.map((a) => ({
               materialRequirementId: a.requirementId,
               quantity: a.quantity,
@@ -194,8 +243,21 @@ function PurchaseForm({ initial }: { initial: Line[] }) {
                   {MATERIAL_SOURCING_LABEL[l.sourcing]} · origem:{' '}
                   {l.allocations
                     .map((a) => `${a.label} ${qtyText(a.quantity, l.spec.unit)}`)
-                    .join(' + ')}
+                    .join(' + ') || 'estoque (sem OS de destino)'}
                 </p>
+                {l.offset && (
+                  <p className="text-sm text-ink-muted" data-testid={`po-line-offset-${i + 1}`}>
+                    Quantidade sugerida já desconta{' '}
+                    {l.offset.free > 0
+                      ? `estoque livre ${qtyText(l.offset.free, l.spec.unit)}`
+                      : ''}
+                    {l.offset.free > 0 && l.offset.pending > 0 ? ' e ' : ''}
+                    {l.offset.pending > 0
+                      ? `compra de estoque pendente ${qtyText(l.offset.pending, l.spec.unit)}`
+                      : ''}
+                    . O estoque livre não fica reservado: use “Reservar” em A comprar.
+                  </p>
+                )}
               </div>
               <Field label={`Quantidade (${qtyText(0, l.spec.unit).replace(/^0 /, '')})`}>
                 {(p) => (
