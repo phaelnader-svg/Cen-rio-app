@@ -36,7 +36,7 @@ import {
   taskEvent,
 } from '../production/common';
 import { assertWorker, reviseIfPublishedBy } from '../production/plans';
-import { onReadinessChanged, readinessOf } from '../purchasing/common';
+import { activeHeadOf, onReadinessChanged, readinessOf } from '../purchasing/common';
 import {
   OPEN_STATUSES,
   impactOf,
@@ -330,11 +330,19 @@ export async function openIssue(
   if (kind === 'MATERIAL' && input.material) {
     const m = input.material;
     let description = m.description ?? '';
+    let requirementId = m.requirementId ?? null;
     if (m.requirementId) {
       const req = await tx.materialRequirement.findUnique({ where: { id: m.requirementId } });
       if (!req || req.serviceOrderId !== task.serviceOrderId)
         throw Errors.business('O material escolhido não pertence a esta OS.');
-      description = description || req.description;
+      // Etapa 2: tela antiga pode citar a necessidade já substituída — vale a atual da cadeia.
+      const head = await activeHeadOf(tx, req.id);
+      if (!head)
+        throw Errors.conflict(
+          'Este material foi cancelado na OS. Atualize a tela e descreva o problema novamente.',
+        );
+      requirementId = head.id;
+      description = description || head.description;
     }
     if (m.stockItemId) {
       const item = await tx.stockItem.findUnique({ where: { id: m.stockItemId } });
@@ -342,7 +350,7 @@ export async function openIssue(
       description = description || item.description;
     }
     material = {
-      requirementId: m.requirementId ?? null,
+      requirementId,
       stockItemId: m.stockItemId ?? null,
       description: description.slice(0, 200),
       quantity: q3(m.quantity),
@@ -793,8 +801,10 @@ export async function recordAction(tx: Tx, actor: ActorContext, id: string, note
 async function materialStillMissing(tx: Tx, issue: IssueRow): Promise<string | null> {
   if (issue.kind !== 'MATERIAL') return null;
   if (issue.materialRequirementId) {
-    const r = await readinessOf(tx, issue.serviceOrderId);
-    const line = r.lines.find((l) => l.requirementId === issue.materialRequirementId);
+    // Etapa 2: segue a cadeia até a necessidade ATIVA; cancelada → a causa deixou de existir.
+    const head = await activeHeadOf(tx, issue.materialRequirementId);
+    const r = head ? await readinessOf(tx, issue.serviceOrderId) : null;
+    const line = r?.lines.find((l) => l.requirementId === head!.id);
     if (line && q3(line.covered) < q3(line.need))
       return `${line.description}: ${line.covered} de ${line.need} disponível/reservado para a OS.`;
   }

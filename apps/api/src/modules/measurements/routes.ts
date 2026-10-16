@@ -1,6 +1,9 @@
 import {
   EVENT_TYPES,
   MATERIAL_REQUEST_STATUS_LABEL,
+  MATERIAL_UNIT_SHORT,
+  approveRequestSchema,
+  cancelRequirementSchema,
   assignMeasurementSchema,
   cancelMeasurementSchema,
   createMeasurementSchema,
@@ -14,17 +17,24 @@ import {
   submitMeasurementSchema,
   type AwaitingMeasurementDto,
   type MeasurementAssigneeDto,
+  type MaterialUnit,
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { emitItemTechnicalChange } from '../../core/item-changes';
-import { actorFrom } from '../../core/audit';
+import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { loadUserPermissions } from '../../core/permissions';
 import { Errors } from '../../lib/errors';
 import { dateOnly, parseDateOnly, serviceOrderCode, toCustomerSummary } from '../commercial/common';
 import { idParams } from '../presenters';
+import { lockRows } from '../purchasing/common';
+import {
+  assertActiveRequirement,
+  cancelRequirements,
+  moveTaskLinks,
+} from '../purchasing/requirements';
 import {
   audienceFor,
   eligibleAssignee,
@@ -81,10 +91,98 @@ async function assertOsReady(
     );
   }
   const targets = itemId ? so.items.filter((i) => i.id === itemId) : so.items;
+  // Etapa 2: peça devolvida (ou cancelada) não gera necessidade nova de material.
+  if (
+    itemId &&
+    targets.some((i) => i.fulfillmentStage === 'DEVOLVIDA' || i.fulfillmentStage === 'CANCELADA')
+  ) {
+    throw Errors.business('Esta peça foi devolvida ou cancelada: não pode receber nova medição.');
+  }
   if (targets.some((i) => i.orderItem.receivedQuantity <= 0)) {
     throw Errors.business('A medição operacional só é possível após o recebimento físico da peça.');
   }
   return so;
+}
+
+/**
+ * Etapa 2 — valida as decisões explícitas do gestor sob bloqueio (OS + necessidades envolvidas):
+ * cada necessidade escolhida continua ATIVA, é da mesma OS (medição de peça: da mesma peça) e é
+ * usada uma única vez; nenhuma peça da medição foi devolvida. Concorrente que chegou antes → 409.
+ */
+async function planSubstitutions(
+  tx: Tx,
+  m: Awaited<ReturnType<typeof lockMeasurement>>,
+  input: {
+    substitutions: { requestItemId: string; replacesRequirementId: string }[];
+    cancellations: string[];
+  },
+) {
+  const itemIds = new Set(m.request!.items.map((i) => i.id));
+  const subs = new Map<string, string>();
+  const used = new Set<string>();
+  for (const x of input.substitutions) {
+    if (!itemIds.has(x.requestItemId))
+      throw Errors.validation(undefined, 'Item da substituição não pertence a esta solicitação.');
+    if (subs.has(x.requestItemId))
+      throw Errors.validation(undefined, 'Cada item substitui no máximo uma necessidade.');
+    if (used.has(x.replacesRequirementId))
+      throw Errors.validation(
+        undefined,
+        'A mesma necessidade não pode ser substituída por dois itens.',
+      );
+    subs.set(x.requestItemId, x.replacesRequirementId);
+    used.add(x.replacesRequirementId);
+  }
+  const cancels = [...new Set(input.cancellations)];
+  if (cancels.some((c) => used.has(c)))
+    throw Errors.validation(
+      undefined,
+      'Uma necessidade não pode ser substituída e cancelada ao mesmo tempo.',
+    );
+  const targets = [...used, ...cancels];
+  await lockRows(tx, 'material_requirements', targets);
+  // Ordem de bloqueio única (necessidades → OS), a mesma da compra e da devolução: sem deadlock.
+  await tx.$queryRaw`SELECT id FROM service_orders WHERE id = ${m.serviceOrderId}::uuid FOR UPDATE`;
+  const pieceIds = [
+    ...new Set(
+      [m.serviceOrderItemId, ...m.request!.items.map((i) => i.serviceOrderItemId)].filter(
+        (x): x is string => Boolean(x),
+      ),
+    ),
+  ];
+  if (pieceIds.length) {
+    const gone = await tx.serviceOrderItem.findFirst({
+      where: { id: { in: pieceIds }, fulfillmentStage: { in: ['DEVOLVIDA', 'CANCELADA'] } },
+    });
+    if (gone)
+      throw Errors.conflict(
+        'Uma peça desta medição foi devolvida ou cancelada: os materiais dela não podem ser aprovados.',
+      );
+  }
+  const rows = new Map(
+    (await tx.materialRequirement.findMany({ where: { id: { in: targets } } })).map((r) => [
+      r.id,
+      r,
+    ]),
+  );
+  for (const id of targets) {
+    const r = rows.get(id);
+    const inScope =
+      r &&
+      r.serviceOrderId === m.serviceOrderId &&
+      r.origin === 'SOLICITACAO_APROVADA' &&
+      (!m.serviceOrderItemId || r.serviceOrderItemId === m.serviceOrderItemId);
+    if (!inScope)
+      throw Errors.validation(
+        undefined,
+        'A necessidade escolhida não pertence ao escopo desta medição.',
+      );
+    assertActiveRequirement(r, 'A necessidade escolhida');
+  }
+  return {
+    substitutions: new Map([...subs].map(([item, req]) => [item, rows.get(req)!])),
+    cancellations: cancels,
+  };
 }
 
 export async function measurementRoutes(app: FastifyInstance) {
@@ -738,7 +836,7 @@ export async function measurementRoutes(app: FastifyInstance) {
     { config: { access: APPROVE, idempotent: true } },
     async (request) => {
       const { id } = reqParams.parse(request.params);
-      const input = requestDecisionSchema.parse(request.body);
+      const input = approveRequestSchema.parse(request.body);
       return decision(request, id, input.version, async (tx, m) => {
         const from = m.request!.status;
         if (from !== 'ENVIADA' && from !== 'EM_REVISAO') {
@@ -747,6 +845,7 @@ export async function measurementRoutes(app: FastifyInstance) {
           );
         }
         if (m.request!.items.length === 0) throw Errors.business('Não há materiais para aprovar.');
+        const plan = await planSubstitutions(tx, m, input);
         const now = new Date();
         await tx.materialRequest.update({
           where: { id: m.request!.id },
@@ -757,10 +856,26 @@ export async function measurementRoutes(app: FastifyInstance) {
             version: { increment: 1 },
           },
         });
-        // Necessidades aprovadas da OS (base das compras na Fase 4).
+        // Necessidades aprovadas da OS (base das compras na Fase 4). Etapa 2: a predecessora
+        // escolhida pelo gestor é encerrada (SUBSTITUIDA) e a nova aponta para ela — nada é apagado.
+        const actor = actorFrom(request);
+        const replaced: { from: string; to: string; before: string; after: string }[] = [];
         for (const it of m.request!.items) {
-          await tx.materialRequirement.create({
+          const prev = plan.substitutions.get(it.id);
+          if (prev) {
+            await tx.materialRequirement.update({
+              where: { id: prev.id },
+              data: {
+                status: 'SUBSTITUIDA',
+                closedAt: now,
+                closedById: actor.userId,
+                closeReason: `Substituída pela medição ${measurementCode(m.number)}`,
+              },
+            });
+          }
+          const created = await tx.materialRequirement.create({
             data: {
+              replacesRequirementId: prev?.id ?? null,
               serviceOrderId: m.serviceOrderId,
               serviceOrderItemId: it.serviceOrderItemId,
               kind: it.kind,
@@ -781,13 +896,43 @@ export async function measurementRoutes(app: FastifyInstance) {
               approvedAt: now,
             },
           });
+          if (prev) {
+            await moveTaskLinks(tx, actor, prev.id, created.id);
+            const qty = (q: number, u: string | null) =>
+              `${q.toLocaleString('pt-BR')} ${u ? MATERIAL_UNIT_SHORT[u as MaterialUnit] : ''}`.trim();
+            const before = qty(Number(prev.quantity ?? 0), prev.unitCode);
+            const after = qty(Number(it.quantity), it.unit);
+            replaced.push({ from: prev.id, to: created.id, before, after });
+            await audit(tx, actor, {
+              action: 'material_requirement.replaced',
+              entityType: 'service_order',
+              entityId: m.serviceOrderId,
+              summary: `Necessidade alterada: ${prev.description} ${before} → ${
+                it.description === prev.description ? '' : `${it.description} `
+              }${after} (medição ${measurementCode(m.number)}).`.slice(0, 500),
+              changes: { from: prev.id, to: created.id, before, after },
+            });
+          }
         }
+        const cancelled = plan.cancellations.length
+          ? await cancelRequirements(
+              tx,
+              actor,
+              { id: { in: plan.cancellations } },
+              `Cancelada na aprovação da medição ${measurementCode(m.number)}${input.note ? `: ${input.note}` : ''}`,
+              { refresh: false },
+            )
+          : [];
         await record(tx, request, m, {
           kind: 'APROVADA',
           fromStatus: from,
           toStatus: 'APROVADA',
           note: input.note ?? null,
-          changes: { items: snapshotItems(m.request!.items) },
+          changes: {
+            items: snapshotItems(m.request!.items),
+            ...(replaced.length ? { substitutions: replaced } : {}),
+            ...(cancelled.length ? { cancelledRequirements: cancelled } : {}),
+          },
           summary: `Materiais da medição ${measurementCode(m.number)} aprovados para compra (quantidades conferidas; ainda não comprados).`,
           event: EVENT_TYPES.MATERIAL_REQUEST_APPROVED,
         });
@@ -834,6 +979,35 @@ export async function measurementRoutes(app: FastifyInstance) {
     },
   );
 
+  /**
+   * Etapa 2 (V7): o gestor cancela conscientemente uma necessidade ATIVA aprovada (ex.: material
+   * "Toda a OS" depois de uma devolução). Nada de compra, reserva ou custo é alterado; repetir a
+   * chamada sobre a já cancelada não muda nada; substituída → 409.
+   */
+  app.post(
+    '/api/v1/material-requirements/:id/cancel',
+    { config: { access: APPROVE, idempotent: true } },
+    async (request) => {
+      const { id } = reqParams.parse(request.params);
+      const input = cancelRequirementSchema.parse(request.body);
+      const actor = actorFrom(request);
+      return prisma.$transaction(async (tx) => {
+        await lockRows(tx, 'material_requirements', [id]);
+        const r = await tx.materialRequirement.findUnique({
+          where: { id },
+          include: { serviceOrder: { select: { status: true } } },
+        });
+        if (!r || r.origin !== 'SOLICITACAO_APROVADA') throw Errors.notFound('Necessidade');
+        if (r.status === 'SUBSTITUIDA') assertActiveRequirement(r);
+        if (r.status === 'ATIVA') {
+          if (r.serviceOrder.status !== 'ABERTA') throw Errors.business('A OS não está aberta.');
+          await cancelRequirements(tx, actor, { id }, input.reason);
+        }
+        return { id, status: 'CANCELADA' as const };
+      });
+    },
+  );
+
   /** Reabre uma solicitação aprovada para revisão (alteração explícita e auditada). */
   app.post(
     '/api/v1/measurements/:id/request/reopen',
@@ -846,6 +1020,8 @@ export async function measurementRoutes(app: FastifyInstance) {
           throw Errors.business('Só solicitações aprovadas podem ser reabertas.');
         // Fase 4: depois de comprar/reservar, a aprovação não pode mais ser desfeita aqui.
         const itemIds = m.request!.items.map((i) => i.id);
+        // Etapa 2: só a necessidade "virgem" (ATIVA, sem predecessora, sem sucessora, sem compra,
+        // reserva, sobra, ocorrência ou tarefa vinculada) pode ser desfeita; o resto é histórico.
         const linked = await tx.materialRequirement.count({
           where: {
             materialRequestItemId: { in: itemIds },
@@ -853,12 +1029,17 @@ export async function measurementRoutes(app: FastifyInstance) {
               { allocations: { some: {} } },
               { reservations: { some: {} } },
               { transfersIn: { some: {} } },
+              { issues: { some: {} } },
+              { productionTasks: { some: {} } },
+              { status: { not: 'ATIVA' } },
+              { replacesRequirementId: { not: null } },
+              { replacedBy: { isNot: null } },
             ],
           },
         });
         if (linked > 0) {
           throw Errors.business(
-            'Há compras, reservas ou transferências vinculadas a estes materiais; a aprovação não pode ser reaberta. Ajuste pelas compras.',
+            'Há compras, reservas, transferências, tarefas, ocorrências ou substituições vinculadas a estes materiais; a aprovação não pode ser reaberta. Ajuste pelas compras ou por uma nova medição.',
           );
         }
         const removed = await tx.materialRequirement.deleteMany({

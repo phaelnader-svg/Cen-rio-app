@@ -16,6 +16,7 @@ import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/component
 import { api, newIdempotencyKey } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { useOrder, useOrders } from '@/lib/commercial';
+import { useCan } from '@/lib/hooks';
 import { useEmployees } from '@/lib/queries';
 import { usePieces, useReturns } from '@/lib/quality';
 
@@ -435,9 +436,14 @@ function ReturnDetailDialog({ r, onClose }: { r: PieceReturnDto; onClose: () => 
         <p>
           <strong>Destino:</strong> {r.destination ?? 'não informado'}
         </p>
-        {(r.review.reservations.length > 0 || r.review.laborToReview > 0) && (
+        {(r.review.reservations.length > 0 ||
+          r.review.laborToReview > 0 ||
+          r.review.requirements.length > 0) && (
           <Alert tone="warn" title="Revisão do gestor">
             <ul className="list-disc space-y-0.5 pl-4">
+              {r.review.requirements.map((x) => (
+                <ReviewRequirement key={x.id} x={x} returnCode={r.code} />
+              ))}
               {r.review.reservations.map((x) => (
                 <li key={x.id}>
                   {x.serviceOrder}: reserva de {x.quantity} × {x.material} sem peça definida —
@@ -529,5 +535,48 @@ export function ReceiptCorrectionButton({ line }: { line: ReceiptLineDto }) {
         </div>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * Etapa 2 (V7): material "Toda a OS" de uma OS com peça devolvida — a devolução não o cancela
+ * sozinha. O gestor decide: Manter (nada muda) ou Cancelar (registrado com motivo).
+ */
+function ReviewRequirement({
+  x,
+  returnCode,
+}: {
+  x: PieceReturnDto['review']['requirements'][number];
+  returnCode: string;
+}) {
+  const can = useCan();
+  const [key] = useState(newIdempotencyKey);
+  const { m, error } = useSend();
+  return (
+    <li data-testid={`return-requirement-${x.id}`}>
+      {x.serviceOrder}: material para toda a OS ({x.quantity} × {x.material}) — confira se ainda é
+      necessário.{' '}
+      {can('materiais.aprovar') && (
+        <Button
+          size="sm"
+          variant="secondary"
+          loading={m.isPending}
+          onClick={() =>
+            m.mutate({
+              ok: 'Necessidade cancelada.',
+              run: () =>
+                api(`/api/v1/material-requirements/${x.id}/cancel`, {
+                  method: 'POST',
+                  idempotencyKey: key,
+                  body: { reason: `Revisão da devolução ${returnCode}` },
+                }),
+            })
+          }
+        >
+          Cancelar necessidade
+        </Button>
+      )}
+      {error && <span className="block text-danger-600">{error}</span>}
+    </li>
   );
 }

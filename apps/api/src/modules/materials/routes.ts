@@ -42,6 +42,7 @@ async function approvedInputs(
   const rows = await prisma.materialRequirement.findMany({
     where: {
       origin: 'SOLICITACAO_APROVADA',
+      status: 'ATIVA',
       serviceOrder: { status: 'ABERTA' },
       ...(from || to
         ? {

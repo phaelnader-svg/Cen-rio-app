@@ -5,6 +5,7 @@ import {
   lineTotalCents,
   materialReceiptLineSchema,
   purchaseOrderItemSchema,
+  coverageExcess,
   requirementCoverage,
   stockPurchaseSuggestion,
   specKey,
@@ -173,5 +174,48 @@ describe('Compras sem duplicidade — regra única da falta (Etapa 1)', () => {
     expect(stockPurchaseSuggestion({ shortfall: 10, freeStock: 2, freePending: 4 })).toBe(4);
     expect(stockPurchaseSuggestion({ shortfall: 3, freeStock: 8, freePending: 0 })).toBe(0);
     expect(stockPurchaseSuggestion({ shortfall: 3, freeStock: -1, freePending: 0 })).toBe(3);
+  });
+});
+
+describe('coverageExcess (Etapa 2) — derivado das mesmas entradas de requirementCoverage', () => {
+  const base = {
+    exclusive: true,
+    need: 8,
+    ordered: 0,
+    received: 0,
+    reserved: 0,
+    consumed: 0,
+    draft: 0,
+    transferredIn: 0,
+  };
+  it('redução 10 → 8 por estágio: rascunho, confirmado, recebido, consumido', () => {
+    expect(coverageExcess({ ...base, draft: 10 })).toMatchObject({ draft: 2, total: 2 });
+    expect(coverageExcess({ ...base, ordered: 10 })).toMatchObject({ awaiting: 2, total: 2 });
+    expect(coverageExcess({ ...base, ordered: 10, received: 10 })).toMatchObject({
+      available: 2,
+      awaiting: 0,
+      total: 2,
+    });
+    expect(coverageExcess({ ...base, exclusive: false, reserved: 2, consumed: 10 })).toMatchObject({
+      consumed: 2,
+      available: 2,
+      total: 4,
+    });
+  });
+  it('sem excedente quando a necessidade cobre tudo; a cobertura não muda', () => {
+    const i = { ...base, need: 12, ordered: 10, received: 8 };
+    expect(coverageExcess(i).total).toBe(0);
+    expect(requirementCoverage(i)).toEqual({ covered: 8, awaiting: 2, draft: 0, shortfall: 2 });
+  });
+  it('a necessidade é atendida primeiro pelo que não volta atrás (consumido, depois disponível)', () => {
+    const e = coverageExcess({
+      ...base,
+      exclusive: false,
+      need: 5,
+      consumed: 4,
+      reserved: 3,
+      draft: 2,
+    });
+    expect(e).toEqual({ consumed: 0, available: 2, awaiting: 0, draft: 2, total: 4 });
   });
 });

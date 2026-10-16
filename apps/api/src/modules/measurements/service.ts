@@ -6,6 +6,7 @@ import {
   type EventAudience,
   type EventType,
   type MaterialRequestItemDto,
+  type MaterialUnit,
   type MaterialRequestItemInput,
   type MeasurementDetailDto,
   type MeasurementDto,
@@ -119,6 +120,39 @@ export function isManager(actor: ActorInfo) {
   return actor.permissions.has('medicoes.gerenciar');
 }
 
+/**
+ * Etapa 2 — necessidades que a aprovação desta medição pode substituir ou cancelar: ATIVAS e
+ * aprovadas da mesma OS; medição de uma peça só enxerga as necessidades daquela peça (as de outra
+ * peça e as "Toda a OS" nunca entram). Nada é inferido pela especificação.
+ */
+export async function substitutionScope(
+  db: PrismaClient | Tx,
+  m: { serviceOrderId: string; serviceOrderItemId: string | null },
+) {
+  return db.materialRequirement.findMany({
+    where: {
+      serviceOrderId: m.serviceOrderId,
+      origin: 'SOLICITACAO_APROVADA',
+      status: 'ATIVA',
+      ...(m.serviceOrderItemId ? { serviceOrderItemId: m.serviceOrderItemId } : {}),
+    },
+    include: { serviceOrderItem: { select: { position: true } } },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  });
+}
+
+/** Pré-seleção segura: exatamente UM candidato da mesma peça (não nula) e do mesmo tipo. */
+export function suggestedReplacement(
+  item: { serviceOrderItemId: string | null; kind: string },
+  candidates: { id: string; serviceOrderItemId: string | null; kind: string }[],
+) {
+  if (!item.serviceOrderItemId) return null;
+  const same = candidates.filter(
+    (c) => c.serviceOrderItemId === item.serviceOrderItemId && c.kind === item.kind,
+  );
+  return same.length === 1 ? same[0]!.id : null;
+}
+
 export async function loadDetail(
   db: PrismaClient | Tx,
   id: string,
@@ -163,8 +197,37 @@ export async function loadDetail(
   const targetItems = m.serviceOrderItemId
     ? m.serviceOrder.items.filter((i) => i.id === m.serviceOrderItemId)
     : m.serviceOrder.items;
+  const inReview =
+    actor.permissions.has('materiais.aprovar') &&
+    ['ENVIADA', 'EM_REVISAO'].includes(m.request?.status ?? '');
+  const candidates = inReview ? await substitutionScope(db, m) : [];
   return {
     ...toSummary(m, today),
+    substitution: inReview
+      ? {
+          candidates: candidates.map((c) => ({
+            requirementId: c.id,
+            serviceOrderItemId: c.serviceOrderItemId,
+            itemCode: c.serviceOrderItem
+              ? formatServiceOrderItemCode(osNumber, c.serviceOrderItem.position)
+              : null,
+            kind: c.kind,
+            sourcing: c.sourcing,
+            description: c.description,
+            color: c.color,
+            reference: c.reference,
+            foamDensity: c.foamDensity,
+            thicknessCm: c.thicknessCm === null ? null : Number(c.thicknessCm),
+            lengthCm: c.lengthCm === null ? null : Number(c.lengthCm),
+            widthCm: c.widthCm === null ? null : Number(c.widthCm),
+            quantity: Number(c.quantity ?? 0),
+            unit: (c.unitCode ?? 'UNIDADE') as MaterialUnit,
+          })),
+          suggested: Object.fromEntries(
+            (m.request?.items ?? []).map((i) => [i.id, suggestedReplacement(i, candidates)]),
+          ),
+        }
+      : null,
     serviceOrderInfo: {
       technicalInstructions: m.serviceOrder.technicalInstructions,
       notes: m.serviceOrder.notes,

@@ -20,6 +20,8 @@ import {
   serviceOrderCode,
 } from '../commercial/common';
 import { settleLaborOfWithdrawal } from '../finance/withdrawal';
+import { lockRows } from '../purchasing/common';
+import { cancelRequirements } from '../purchasing/requirements';
 import { releaseReservationsOfItems } from '../purchasing/withdrawal';
 import { itemAllocations, refreshOrderStatus } from '../commercial/status';
 import { notify, taskNotice } from '../notifications/notify';
@@ -100,7 +102,8 @@ async function reviewOf(
   r: ReturnRow,
   soItems: { id: string; serviceOrderId: string }[],
 ): Promise<PieceReturnDto['review']> {
-  if (r.status !== 'CONFIRMADA' || !soItems.length) return { reservations: [], laborToReview: 0 };
+  if (r.status !== 'CONFIRMADA' || !soItems.length)
+    return { reservations: [], requirements: [], laborToReview: 0 };
   const soIds = [...new Set(soItems.map((i) => i.serviceOrderId))];
   const reservations = await db.stockReservation.findMany({
     where: {
@@ -114,6 +117,19 @@ async function reviewOf(
       serviceOrder: { select: { number: true } },
     },
   });
+  // Etapa 2: necessidades "Toda a OS" não são canceladas pela devolução de uma peça (podem valer
+  // para as peças que ficaram): ficam aqui para o gestor manter ou cancelar.
+  const requirements = await db.materialRequirement.findMany({
+    where: {
+      serviceOrderId: { in: soIds },
+      serviceOrderItemId: null,
+      origin: 'SOLICITACAO_APROVADA',
+      status: 'ATIVA',
+      serviceOrder: { status: 'ABERTA' },
+    },
+    include: { serviceOrder: { select: { number: true } } },
+    orderBy: { createdAt: 'asc' },
+  });
   const laborToReview = await db.productionPayable.count({
     where: {
       serviceOrderItemId: { in: soItems.map((i) => i.id) },
@@ -126,6 +142,13 @@ async function reviewOf(
       serviceOrder: serviceOrderCode(x.serviceOrder.number),
       material: x.stockItem.description,
       quantity: Number(x.quantity),
+    })),
+    requirements: requirements.map((x) => ({
+      id: x.id,
+      serviceOrderId: x.serviceOrderId,
+      serviceOrder: serviceOrderCode(x.serviceOrder.number),
+      material: x.description,
+      quantity: Number(x.quantity ?? 0),
     })),
     laborToReview,
   };
@@ -337,6 +360,26 @@ export async function confirmReturn(
   await lockOrder(tx, r.orderId);
   await lockOrderItems(tx, r.orderId);
   await validateLines(tx, r.orderId, r.lines, r.id);
+  // Etapa 2: mesma ordem de bloqueio da aprovação de medição (necessidades → OS). Uma aprovação
+  // concorrente ou termina antes (e a sucessora criada é vista e cancelada abaixo) ou espera e
+  // encontra a peça devolvida (409).
+  const pieces = r.lines.flatMap((l) => l.serviceOrderItemIds);
+  if (pieces.length) {
+    const reqs = await tx.materialRequirement.findMany({
+      where: { serviceOrderItemId: { in: pieces }, status: 'ATIVA' },
+      select: { id: true },
+    });
+    await lockRows(
+      tx,
+      'material_requirements',
+      reqs.map((x) => x.id),
+    );
+    const sos = await tx.serviceOrderItem.findMany({
+      where: { id: { in: pieces } },
+      select: { serviceOrderId: true },
+    });
+    await lockRows(tx, 'service_orders', [...new Set(sos.map((x) => x.serviceOrderId))]);
+  }
   const code = returnCode(r.number);
   const reason = `Devolvida ao cliente (${code}): ${r.reason}`;
   const touchedOrders = new Set<string>();
@@ -387,6 +430,14 @@ export async function confirmReturn(
     if (so.items.some((i) => i.fulfillmentStage !== 'DEVOLVIDA')) {
       // Devolução parcial (Fase 12): só as reservas e os valores das peças devolvidas.
       const items = returnedBySo.get(so.id) ?? [];
+      // Etapa 2: a necessidade da peça devolvida deixa de existir operacionalmente (CANCELADA,
+      // com o motivo da devolução) ANTES de liberar as reservas — não volta para "A comprar".
+      await cancelRequirements(
+        tx,
+        actor,
+        { serviceOrderId: so.id, serviceOrderItemId: { in: items } },
+        `Peça devolvida (${code}): ${r.reason}`,
+      );
       await releaseReservationsOfItems(tx, actor, so.id, items, `Peça devolvida (${code})`);
       await settleLaborOfWithdrawal(
         tx,

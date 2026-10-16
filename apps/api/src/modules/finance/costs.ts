@@ -266,7 +266,7 @@ export async function materialSummary(
 ): Promise<MaterialCostSummaryDto> {
   const now = new Date();
   const reqs = await db.materialRequirement.findMany({
-    where: { serviceOrderId, quantity: { not: null } },
+    where: { serviceOrderId, quantity: { not: null }, status: 'ATIVA' },
     include: {
       allocations: { include: { item: { select: { unitPriceCents: true } } } },
       reservations: { select: { stockItemId: true } },

@@ -9,6 +9,7 @@ import type {
   PurchaseOrderStatus,
   ReceiptIssue,
   RejectionDecision,
+  RequirementStatus,
   ReservationStatus,
   StockMovementType,
 } from './purchasing-domain';
@@ -337,6 +338,37 @@ export interface ReadinessLineDto extends SpecDto {
   shortfall: number;
   divergence: boolean;
   stage: LineStage;
+  /** Etapa 2: o que passa da necessidade atual (depois de uma redução), por estágio. */
+  excess: { draft: number; awaiting: number; available: number; consumed: number; total: number };
+  /** Necessidades anteriores substituídas por esta (mais recente primeiro) e se herdou cobertura. */
+  replaces: { requirementId: string; quantity: number; description: string; inherited: boolean }[];
+  /**
+   * Excedente exclusivo recebido: dados para "Registrar sobra" (o usuário revisa e confirma).
+   * `unitPriceCents` só quando há um único preço de origem conhecido (e quem vê preços).
+   */
+  leftoverDraft: {
+    quantity: number;
+    unitPriceCents: number | null;
+    purchaseOrders: string[];
+  } | null;
+}
+
+/**
+ * Etapa 2: fatos de uma necessidade SUBSTITUÍDA (sem herança) ou CANCELADA que ficaram sem
+ * necessidade ativa — exigem decisão humana; nada é cancelado, liberado ou movido sozinho.
+ */
+export interface RequirementOrphanDto extends SpecDto {
+  requirementId: string;
+  status: RequirementStatus;
+  itemCode: string | null;
+  closeReason: string | null;
+  /** Compra confirmada ainda não recebida (decidir: manter, encerrar saldo ou cancelar). */
+  awaiting: number;
+  draft: number;
+  /** Exclusivo recebido (candidato a sobra) ou reservado/entregue (estoque). */
+  receivedExclusive: number;
+  reservations: { id: string; quantity: number; status: ReservationStatus }[];
+  purchaseOrders: { id: string; code: string; status: PurchaseOrderStatus }[];
 }
 
 export interface MaterialReadinessDto {
@@ -367,6 +399,8 @@ export interface MaterialReadinessDto {
   leftovers: LeftoverDto[];
   /** V5: OS entregue com reserva ativa (material sem consumo confirmado). */
   unconfirmedConsumption: boolean;
+  /** Etapa 2: material/compra de necessidades encerradas sem necessidade ativa. */
+  orphans: RequirementOrphanDto[];
   /** Sempre falso: materiais completos não autorizam o início da produção. */
   canStartProduction: false;
 }

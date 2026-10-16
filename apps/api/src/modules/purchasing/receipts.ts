@@ -25,6 +25,7 @@ import {
   PURCHASE_APPROVE,
   REJECTION_HISTORY_KINDS,
   STOCK_AUTHORIZE,
+  activeHeadOf,
   changeStock,
   decidedRejectionLines,
   lockRows,
@@ -32,6 +33,7 @@ import {
   num,
   poHistory,
   refreshReadiness,
+  requirementsWithProgress,
   specOf,
 } from './common';
 import {
@@ -87,26 +89,26 @@ async function autoReserve(
   const reserved: { reservationId: string; serviceOrderId: string; quantity: number }[] = [];
   const ordered = [...allocations].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   for (const a of ordered) {
+    // Etapa 2: a compra vale para a necessidade ATIVA que herdou a cobertura (mesma
+    // especificação); substituída por outra especificação ou cancelada → fica no estoque livre.
+    const head = (await activeHeadOf(tx, a.materialRequirementId, true))?.id;
+    if (!head) continue;
+    await lockRows(tx, 'material_requirements', [head]);
+    const found = (await requirementsWithProgress(tx, { id: head }))[0];
+    if (!found) continue;
     const req = await tx.materialRequirement.findUnique({
-      where: { id: a.materialRequirementId },
-      include: {
-        reservations: { where: { status: { in: ['ATIVA', 'CONSUMIDA'] } } },
-        transfersIn: true,
-        serviceOrder: { select: { status: true } },
-      },
+      where: { id: head },
+      include: { serviceOrder: { select: { status: true } } },
     });
-    if (!req || req.serviceOrder.status !== 'ABERTA') continue;
-    const have =
-      req.reservations.reduce((s, r) => s + num(r.quantity), 0) +
-      req.transfersIn.reduce((s, t) => s + num(t.quantity), 0);
+    if (!req || req.status !== 'ATIVA' || req.serviceOrder.status !== 'ABERTA') continue;
     const available = num(stock.onHand) - num(stock.reserved);
-    const qty = q3(Math.min(num(req.quantity) - have, num(a.quantity as never), available));
+    const qty = q3(Math.min(found.p.need - found.p.covered, num(a.quantity as never), available));
     if (qty <= 0) continue;
     if (unitError(stock.kind, stock.unit, qty)) continue;
     const r = await tx.stockReservation.create({
       data: {
         stockItemId: stock.id,
-        serviceOrderId: a.serviceOrderId,
+        serviceOrderId: req.serviceOrderId,
         materialRequirementId: req.id,
         quantity: qty,
         notes: 'Reserva automática no recebimento da compra',
@@ -114,7 +116,7 @@ async function autoReserve(
       },
     });
     await changeStock(tx, actor, stock, { reserved: qty });
-    reserved.push({ reservationId: r.id, serviceOrderId: a.serviceOrderId, quantity: qty });
+    reserved.push({ reservationId: r.id, serviceOrderId: req.serviceOrderId, quantity: qty });
   }
   return reserved;
 }

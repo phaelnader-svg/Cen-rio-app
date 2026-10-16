@@ -10,6 +10,7 @@ import {
   num,
   refreshReadiness,
 } from '../purchasing/common';
+import { cancelRequirements } from '../purchasing/requirements';
 import { notify, taskNotice } from '../notifications/notify';
 import { domainTaskEvent, lockTasks, taskEvent } from './common';
 
@@ -102,6 +103,11 @@ export async function protectCancelledServiceOrder(
       summary: `OS cancelada: ${tasks.length} tarefa(s) cancelada(s) e ${reservations.length} reserva(s) liberada(s).`,
     });
   }
+  // Etapa 2 (V5): as necessidades ATIVAS da OS cancelada são encerradas (CANCELADA, com motivo);
+  // compras, recebimentos, reservas históricas, movimentos e custos ficam como estão.
+  await cancelRequirements(tx, actor, { serviceOrderId }, `OS cancelada: ${reason}`, {
+    refresh: false,
+  });
   await refreshReadiness(tx, actor, [serviceOrderId]);
   for (const l of cancelListeners) await l(tx, actor, serviceOrderId, reason);
 }

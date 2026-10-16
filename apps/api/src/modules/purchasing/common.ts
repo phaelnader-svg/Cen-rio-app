@@ -3,6 +3,7 @@ import {
   PURCHASE_ORDER_COMMITTED,
   anyPermissionAudience,
   computeReadiness,
+  coverageExcess,
   requirementCoverage,
   formatServiceOrderItemCode,
   lineStage,
@@ -15,6 +16,9 @@ import {
   type MaterialUnit,
   type Permission,
   type ReadinessLineDto,
+  type RequirementOrphanDto,
+  type PurchaseOrderStatus,
+  purchaseOrderCode,
   type SpecDto,
   type StockItemDto,
   type StockReservationDto,
@@ -362,7 +366,7 @@ export const requirementProgressInclude = {
       },
     },
   },
-  reservations: { select: { quantity: true, status: true } },
+  reservations: { select: { id: true, quantity: true, status: true } },
   transfersIn: { select: { quantity: true } },
 } as const;
 export type RequirementWithProgress = Prisma.MaterialRequirementGetPayload<{
@@ -383,6 +387,8 @@ export interface RequirementProgress {
   awaiting: number;
   /** Falta comprar (regra única `requirementCoverage`). */
   shortfall: number;
+  /** Etapa 2: o que passa da necessidade atual, por estágio (derivado das mesmas entradas). */
+  excess: ReturnType<typeof coverageExcess>;
   divergence: boolean;
 }
 
@@ -448,7 +454,7 @@ export function requirementProgress(
       .filter((x) => x.status === 'CONSUMIDA')
       .reduce((s, x) => s + num(x.quantity), 0) + attributed.consumed;
   const transferredIn = r.transfersIn.reduce((s, x) => s + num(x.quantity), 0);
-  const c = requirementCoverage({
+  const input = {
     exclusive: r.sourcing === 'EXCLUSIVO_OS',
     need,
     ordered: purchased,
@@ -457,7 +463,8 @@ export function requirementProgress(
     consumed,
     draft: purchasedDraft,
     transferredIn,
-  });
+  };
+  const c = requirementCoverage(input);
   return {
     need,
     purchasedDraft: q3(purchasedDraft),
@@ -469,28 +476,80 @@ export function requirementProgress(
     covered: c.covered,
     awaiting: c.awaiting,
     shortfall: c.shortfall,
+    excess: coverageExcess(input),
     divergence,
   };
 }
 
 /**
- * Regra única de carregamento: necessidades aprovadas das OS indicadas, com o progresso de cada
- * uma. Reservas de estoque feitas para a OS sem indicar a necessidade (E3) são atribuídas às
- * necessidades de estoque da mesma OS com a mesma especificação do catálogo, na ordem em que
- * foram aprovadas, sem passar do que falta cobrir em cada uma.
+ * Etapa 2: a cobertura de uma predecessora passa para a sucessora só quando a especificação é
+ * estritamente a mesma pela regra do domínio — exclusivo: mesma origem e `specKey` completa;
+ * estoque: mesma chave do catálogo. Tecido X → tecido Y nunca herda nada.
  */
-export async function requirementsWithProgress(
+export function coverageCompatible(
+  a: Parameters<typeof specOf>[0] & { sourcing: string; unitCode: string | null },
+  b: Parameters<typeof specOf>[0] & { sourcing: string; unitCode: string | null },
+) {
+  if (a.sourcing !== b.sourcing || a.kind !== b.kind || a.unitCode !== b.unitCode) return false;
+  const sa = specOf(a, (a.unitCode ?? 'UNIDADE') as MaterialUnit);
+  const sb = specOf(b, (b.unitCode ?? 'UNIDADE') as MaterialUnit);
+  return a.sourcing === 'ESTOQUE'
+    ? stockSpecKey(sa) === stockSpecKey(sb)
+    : specKey(sa) === specKey(sb);
+}
+
+/** Uma necessidade ATIVA com as predecessoras cuja cobertura ela herda (mais nova primeiro). */
+export interface RequirementChain {
+  r: RequirementWithProgress;
+  p: RequirementProgress;
+  inherited: RequirementWithProgress[];
+  /** Predecessora imediata quando a especificação mudou (cadeia quebrada: nada herdado dela). */
+  broken?: RequirementWithProgress;
+}
+
+/** Junta os fatos da cadeia na sucessora (mesma necessidade da cabeça; nada é movido no banco). */
+function merged(head: RequirementWithProgress, chain: RequirementWithProgress[]) {
+  if (!chain.length) return head;
+  return {
+    ...head,
+    allocations: [...head.allocations, ...chain.flatMap((c) => c.allocations)],
+    reservations: [...head.reservations, ...chain.flatMap((c) => c.reservations)],
+    transfersIn: [...head.transfersIn, ...chain.flatMap((c) => c.transfersIn)],
+  } as RequirementWithProgress;
+}
+
+/**
+ * Regra única de carregamento. Só necessidades ATIVAS geram falta, prontidão e "A comprar". Para
+ * cada ATIVA, caminha pelas predecessoras enquanto a cadeia é compatível e agrega seus fatos
+ * (compras, recebidos, reservas, sobras) antes de chamar `requirementCoverage` — a mesma função.
+ * Reservas de estoque da OS sem necessidade indicada (E3) são atribuídas só a necessidades ATIVAS
+ * de estoque da mesma OS e mesma chave do catálogo, na ordem de aprovação, sem passar da falta.
+ * Também devolve os "órfãos": necessidades não ATIVAS cujos fatos não passaram a nenhuma ATIVA.
+ */
+export async function requirementChains(
   db: Tx | PrismaClient,
   where: Prisma.MaterialRequirementWhereInput,
   opts: { excludePurchaseOrderId?: string } = {},
 ) {
   const scope = await db.materialRequirement.findMany({
-    where: { ...where, origin: 'SOLICITACAO_APROVADA' },
+    where: { ...where, origin: 'SOLICITACAO_APROVADA', status: 'ATIVA' },
     select: { id: true, serviceOrderId: true },
   });
-  if (!scope.length) return [];
-  const wanted = new Set(scope.map((r) => r.id));
-  const osIds = [...new Set(scope.map((r) => r.serviceOrderId))];
+  return chainsOf(
+    db,
+    [...new Set(scope.map((r) => r.serviceOrderId))],
+    new Set(scope.map((r) => r.id)),
+    opts,
+  );
+}
+
+export async function chainsOf(
+  db: Tx | PrismaClient,
+  osIds: string[],
+  wanted: Set<string> | null,
+  opts: { excludePurchaseOrderId?: string } = {},
+) {
+  if (!osIds.length) return { heads: [] as RequirementChain[], orphans: [] as RequirementChain[] };
   const [all, unlinked] = await Promise.all([
     db.materialRequirement.findMany({
       where: { serviceOrderId: { in: osIds }, origin: 'SOLICITACAO_APROVADA' },
@@ -507,16 +566,38 @@ export async function requirementsWithProgress(
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     }),
   ]);
+  const byId = new Map(all.map((r) => [r.id, r]));
+  const carried = new Set<string>();
+  const chainOf = new Map<string, RequirementWithProgress[]>();
+  const brokenOf = new Map<string, RequirementWithProgress>();
+  for (const head of all) {
+    if (head.status !== 'ATIVA') continue;
+    const chain: RequirementWithProgress[] = [];
+    let cur = head;
+    while (cur.replacesRequirementId) {
+      const prev = byId.get(cur.replacesRequirementId);
+      if (!prev || chain.includes(prev)) break;
+      if (!coverageCompatible(prev, cur)) {
+        if (cur === head) brokenOf.set(head.id, prev);
+        break;
+      }
+      chain.push(prev);
+      carried.add(prev.id);
+      cur = prev;
+    }
+    chainOf.set(head.id, chain);
+  }
+  const heads = all.filter((r) => r.status === 'ATIVA');
   const extra = new Map<string, AttributedReservations>();
   const room = new Map<string, number>();
-  for (const r of all) {
+  for (const r of heads) {
     if (r.sourcing !== 'ESTOQUE') continue;
-    const p = requirementProgress(r);
+    const p = requirementProgress(merged(r, chainOf.get(r.id)!));
     room.set(r.id, q3(p.need - p.covered));
   }
   for (const u of unlinked) {
     let left = num(u.quantity);
-    for (const r of all) {
+    for (const r of heads) {
       if (left <= 0) break;
       if (r.serviceOrderId !== u.serviceOrderId || r.sourcing !== 'ESTOQUE') continue;
       if (
@@ -534,9 +615,55 @@ export async function requirementsWithProgress(
       extra.set(r.id, cur);
     }
   }
-  return all
-    .filter((r) => wanted.has(r.id))
-    .map((r) => ({ r, p: requirementProgress(r, extra.get(r.id), opts) }));
+  return {
+    heads: heads
+      .filter((r) => !wanted || wanted.has(r.id))
+      .map((r) => {
+        const inherited = chainOf.get(r.id)!;
+        return {
+          r,
+          p: requirementProgress(merged(r, inherited), extra.get(r.id), opts),
+          inherited,
+          broken: brokenOf.get(r.id),
+        } as RequirementChain;
+      }),
+    // Fatos de necessidades encerradas que não passaram a nenhuma ATIVA: tudo é "sem destino".
+    orphans: all
+      .filter((r) => r.status !== 'ATIVA' && !carried.has(r.id))
+      .map((r) => ({
+        r,
+        p: requirementProgress({ ...r, quantity: 0 } as unknown as RequirementWithProgress),
+        inherited: [] as RequirementWithProgress[],
+      })) as RequirementChain[],
+  };
+}
+
+/** Compatível com a Etapa 1: só as ATIVAS (com a cobertura herdada da cadeia). */
+export async function requirementsWithProgress(
+  db: Tx | PrismaClient,
+  where: Prisma.MaterialRequirementWhereInput,
+  opts: { excludePurchaseOrderId?: string } = {},
+) {
+  return (await requirementChains(db, where, opts)).heads;
+}
+
+/**
+ * A necessidade ATIVA que hoje responde por `id`: ela mesma, ou a sucessora (seguindo a cadeia).
+ * `compatibleOnly`: só segue enquanto a cobertura passa (reserva/compra herdada). Nulo quando a
+ * cadeia termina CANCELADA ou incompatível.
+ */
+export async function activeHeadOf(db: Tx | PrismaClient, id: string, compatibleOnly = false) {
+  let cur = await db.materialRequirement.findUnique({ where: { id } });
+  const seen = new Set<string>();
+  while (cur && cur.status === 'SUBSTITUIDA' && !seen.has(cur.id)) {
+    seen.add(cur.id);
+    const next = await db.materialRequirement.findUnique({
+      where: { replacesRequirementId: cur.id },
+    });
+    if (!next || (compatibleOnly && !coverageCompatible(cur, next))) return null;
+    cur = next;
+  }
+  return cur && cur.status === 'ATIVA' ? cur : null;
 }
 
 export function itemCodeOf(r: RequirementWithProgress) {
@@ -548,8 +675,42 @@ export function itemCodeOf(r: RequirementWithProgress) {
 export function toReadinessLine(
   r: RequirementWithProgress,
   p: RequirementProgress,
+  inherited: RequirementWithProgress[] = [],
+  opts: { prices?: boolean; broken?: RequirementWithProgress } = {},
 ): ReadinessLineDto {
   const unit = (r.unitCode ?? 'UNIDADE') as MaterialUnit;
+  // Predecessoras: as herdadas (cadeia compatível) e a imediatamente anterior quando incompatível.
+  const replaces = inherited.map((x) => ({
+    requirementId: x.id,
+    quantity: num(x.quantity),
+    description: x.description,
+    inherited: true,
+  }));
+  if (opts.broken)
+    replaces.push({
+      requirementId: opts.broken.id,
+      quantity: num(opts.broken.quantity),
+      description: opts.broken.description,
+      inherited: false,
+    });
+  const exclusive = r.sourcing === 'EXCLUSIVO_OS';
+  let leftoverDraft: ReadinessLineDto['leftoverDraft'] = null;
+  if (exclusive && p.excess.available > 0) {
+    const items = new Map<string, { code: string; price: number | null }>();
+    for (const x of [r, ...inherited])
+      for (const a of x.allocations)
+        if (a.item.purchaseOrder.status !== 'CANCELADO' && num(a.item.receivedQuantity) > 0)
+          items.set(a.item.id, {
+            code: purchaseOrderCode(a.item.purchaseOrder.number),
+            price: a.item.unitPriceCents,
+          });
+    const prices = [...new Set([...items.values()].map((i) => i.price))];
+    leftoverDraft = {
+      quantity: p.excess.available,
+      unitPriceCents: opts.prices && prices.length === 1 ? (prices[0] ?? null) : null,
+      purchaseOrders: [...new Set([...items.values()].map((i) => i.code))],
+    };
+  }
   return {
     requirementId: r.id,
     itemCode: itemCodeOf(r),
@@ -566,8 +727,43 @@ export function toReadinessLine(
     shortfall: p.shortfall,
     divergence: p.divergence,
     stage: stageOf(r, p),
+    excess: p.excess,
+    replaces,
+    leftoverDraft,
   };
 }
+
+export function toOrphanDto(
+  r: RequirementWithProgress,
+  p: RequirementProgress,
+): RequirementOrphanDto {
+  const unit = (r.unitCode ?? 'UNIDADE') as MaterialUnit;
+  const pos = new Map<string, { id: string; code: string; status: PurchaseOrderStatus }>();
+  for (const a of r.allocations)
+    pos.set(a.item.purchaseOrder.id, {
+      id: a.item.purchaseOrder.id,
+      code: purchaseOrderCode(a.item.purchaseOrder.number),
+      status: a.item.purchaseOrder.status,
+    });
+  return {
+    requirementId: r.id,
+    status: r.status,
+    itemCode: itemCodeOf(r),
+    ...specOf(r, unit),
+    closeReason: r.closeReason,
+    awaiting: q3(Math.max(0, p.purchased - p.received)),
+    draft: p.purchasedDraft,
+    receivedExclusive: r.sourcing === 'EXCLUSIVO_OS' ? p.received : 0,
+    reservations: r.reservations
+      .filter((x) => x.status === 'ATIVA')
+      .map((x) => ({ id: x.id, quantity: num(x.quantity), status: x.status })),
+    purchaseOrders: [...pos.values()].filter((x) => x.status !== 'CANCELADO'),
+  };
+}
+
+/** Órfão que pede decisão (algo ainda a caminho, em rascunho, recebido exclusivo ou reservado). */
+export const orphanNeedsAction = (o: RequirementOrphanDto) =>
+  o.awaiting > 0 || o.draft > 0 || o.receivedExclusive > 0 || o.reservations.length > 0;
 
 export const stageOf = (r: { sourcing: string }, p: RequirementProgress) =>
   lineStage({
@@ -580,9 +776,13 @@ export const stageOf = (r: { sourcing: string }, p: RequirementProgress) =>
     exclusive: r.sourcing === 'EXCLUSIVO_OS',
   });
 
-export async function readinessOf(db: Tx | PrismaClient, serviceOrderId: string) {
-  const [rows, openMeasurements, pendingRequests] = await Promise.all([
-    requirementsWithProgress(db, { serviceOrderId }),
+export async function readinessOf(
+  db: Tx | PrismaClient,
+  serviceOrderId: string,
+  opts: { prices?: boolean } = {},
+) {
+  const [chains, openMeasurements, pendingRequests] = await Promise.all([
+    chainsOf(db, [serviceOrderId], null),
     db.measurement.count({
       where: { serviceOrderId, status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } },
     }),
@@ -593,19 +793,57 @@ export async function readinessOf(db: Tx | PrismaClient, serviceOrderId: string)
       },
     }),
   ]);
+  const rows = chains.heads;
   const requirements = rows.map((x) => x.r);
-  const lines = rows.map(({ r, p }) => toReadinessLine(r, p));
-  const state = computeReadiness(
-    rows.map(({ p }) => ({
-      need: p.need,
-      covered: p.covered,
-      // Coberto + comprado aguardando chegada (rascunho não conta como comprado).
-      purchased: q3(p.covered + p.awaiting),
-      divergence: p.divergence,
-    })),
-    openMeasurements + pendingRequests > 0,
+  const lines = rows.map(({ r, p, inherited, broken }) =>
+    toReadinessLine(r, p, inherited, { ...opts, broken }),
   );
-  return { state, lines, requirements, openMeasurements, pendingRequests };
+  const orphans = chains.orphans.map(({ r, p }) => toOrphanDto(r, p));
+  // V8: sobra já registrada nesta OS (mesma especificação completa) deixa de ser oferecida.
+  const registered = new Map<string, number>();
+  for (const l of await db.materialLeftover.findMany({ where: { serviceOrderId } })) {
+    const k = specKey(specOf(l, l.unit));
+    registered.set(k, (registered.get(k) ?? 0) + num(l.initialQuantity));
+  }
+  const take = (k: string, q: number) => {
+    const used = Math.min(q, registered.get(k) ?? 0);
+    registered.set(k, q3((registered.get(k) ?? 0) - used));
+    return q3(q - used);
+  };
+  for (const l of lines)
+    if (l.leftoverDraft) {
+      const left = take(specKey(l), l.leftoverDraft.quantity);
+      l.leftoverDraft = left > 0 ? { ...l.leftoverDraft, quantity: left } : null;
+    }
+  for (const o of orphans)
+    if (o.receivedExclusive > 0) o.receivedExclusive = take(specKey(o), o.receivedExclusive);
+  const pendingOrphans = orphans.filter(orphanNeedsAction);
+  // Etapa 2: levantamento feito e todas as necessidades encerradas (substituídas sem herdeira
+  // ou canceladas) = nada falta — não volta para "sem levantamento" (tarefa não fica presa).
+  const surveyedNothingLeft = rows.length === 0 && orphans.length > 0;
+  const state = surveyedNothingLeft
+    ? computeReadiness(
+        [{ need: 0, covered: 0, purchased: 0, divergence: false }],
+        openMeasurements + pendingRequests > 0,
+      )
+    : computeReadiness(
+        rows.map(({ p }) => ({
+          need: p.need,
+          covered: p.covered,
+          // Coberto + comprado aguardando chegada (rascunho não conta como comprado).
+          purchased: q3(p.covered + p.awaiting),
+          divergence: p.divergence,
+        })),
+        openMeasurements + pendingRequests > 0,
+      );
+  return {
+    state,
+    lines,
+    requirements,
+    orphans: pendingOrphans,
+    openMeasurements,
+    pendingRequests,
+  };
 }
 
 /**

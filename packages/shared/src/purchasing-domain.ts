@@ -310,3 +310,45 @@ export const REJECTION_DECISION_LABEL: Record<RejectionDecision, string> = {
   REPOR: 'Repor (o fornecedor vai entregar)',
   NAO_REPOR: 'Não repor (volta para A comprar)',
 };
+
+// ─────────────────────────── Etapa 2: substituição e cancelamento ───────────────────────────
+
+export const REQUIREMENT_STATUSES = ['ATIVA', 'SUBSTITUIDA', 'CANCELADA'] as const;
+export type RequirementStatus = (typeof REQUIREMENT_STATUSES)[number];
+export const REQUIREMENT_STATUS_LABEL: Record<RequirementStatus, string> = {
+  ATIVA: 'Ativa',
+  SUBSTITUIDA: 'Substituída',
+  CANCELADA: 'Cancelada',
+};
+
+/**
+ * O que, dos fatos de uma necessidade, passa da necessidade atual (derivado das MESMAS entradas
+ * de `requirementCoverage`; não é outra regra de cobertura). A necessidade é atendida primeiro
+ * pelo que não volta atrás (consumido), depois pelo disponível (recebido/reservado/sobra), depois
+ * pelo que está a caminho e por último pelo rascunho — o resto é excedente, por estágio.
+ */
+export function coverageExcess(i: CoverageInput): {
+  draft: number;
+  awaiting: number;
+  available: number;
+  consumed: number;
+  total: number;
+} {
+  let left = Math.max(0, q3(i.need));
+  const take = (v: number) => {
+    const used = Math.min(left, Math.max(0, v));
+    left = q3(left - used);
+    return q3(Math.max(0, v) - used);
+  };
+  const consumed = take(i.exclusive ? 0 : i.consumed);
+  const available = take((i.exclusive ? i.received : i.reserved) + i.transferredIn);
+  const awaiting = take(Math.max(0, i.ordered - i.received));
+  const draft = take(i.draft);
+  return {
+    draft,
+    awaiting,
+    available,
+    consumed,
+    total: q3(draft + awaiting + available + consumed),
+  };
+}

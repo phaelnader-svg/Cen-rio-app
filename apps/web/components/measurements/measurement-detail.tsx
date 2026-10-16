@@ -1,7 +1,7 @@
 'use client';
 
 import type { MeasurementDetailDto } from '@cenario/shared';
-import { MEASUREMENT_KIND_LABEL } from '@cenario/shared';
+import { MATERIAL_UNIT_SHORT, MEASUREMENT_KIND_LABEL, type MaterialUnit } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Ban,
@@ -386,15 +386,50 @@ function AssignDialog({ m, onClose }: { m: MeasurementDetailDto; onClose: () => 
   );
 }
 
+/** "Linho cru — 10 m — Sofá A" (peça) ou "— Toda a OS". */
+function needLabel(c: {
+  description: string;
+  color: string | null;
+  quantity: number;
+  unit: MaterialUnit;
+  itemCode: string | null;
+}) {
+  return [
+    [c.description, c.color].filter(Boolean).join(' '),
+    `${String(c.quantity).replace('.', ',')} ${MATERIAL_UNIT_SHORT[c.unit]}`,
+    c.itemCode ?? 'Toda a OS',
+  ].join(' — ');
+}
+
+/**
+ * Etapa 2: a aprovação registra, item a item, se o material é necessidade nova ou substitui uma
+ * necessidade anterior da OS (decisão explícita; só vem pré-selecionado quando há um único
+ * candidato seguro). Necessidade anterior não repetida: Manter (padrão) ou Cancelar.
+ */
 function ApproveDialog({ m, onClose }: { m: MeasurementDetailDto; onClose: () => void }) {
   const [note, setNote] = useState('');
   const [key] = useState(newIdempotencyKey);
   const { m: mut, error } = useAction(m.id, 'Solicitação aprovada para compra.', onClose);
+  const candidates = m.substitution?.candidates ?? [];
+  const [choice, setChoice] = useState<Record<string, string>>(() =>
+    Object.fromEntries(m.items.map((i) => [i.id, m.substitution?.suggested[i.id] ?? ''])),
+  );
+  const [cancel, setCancel] = useState<Record<string, boolean>>({});
+  const chosen = new Set(Object.values(choice).filter(Boolean));
+  const leftover = candidates.filter((c) => !chosen.has(c.requirementId));
+  const body = {
+    note: note || null,
+    version: m.request!.version,
+    substitutions: Object.entries(choice)
+      .filter(([, r]) => r)
+      .map(([requestItemId, replacesRequirementId]) => ({ requestItemId, replacesRequirementId })),
+    cancellations: leftover.filter((c) => cancel[c.requirementId]).map((c) => c.requirementId),
+  };
   return (
     <Dialog
       open
       onClose={onClose}
-      size="sm"
+      size={candidates.length ? 'lg' : 'sm'}
       title="Aprovar para compra?"
       description="Confirma que as quantidades foram conferidas. Isso não registra compra nem recebimento e não libera a produção."
       footer={
@@ -409,7 +444,7 @@ function ApproveDialog({ m, onClose }: { m: MeasurementDetailDto; onClose: () =>
                 api(`/api/v1/measurements/${m.id}/request/approve`, {
                   method: 'POST',
                   idempotencyKey: key,
-                  body: { note: note || null, version: m.request!.version },
+                  body,
                 }),
               )
             }
@@ -425,6 +460,76 @@ function ApproveDialog({ m, onClose }: { m: MeasurementDetailDto; onClose: () =>
         </Alert>
       )}
       <p className="mb-3 text-sm text-ink-soft">{m.items.length} material(is) na solicitação.</p>
+      {candidates.length > 0 && (
+        <div className="mb-4 space-y-4" data-testid="substitution">
+          <p className="text-sm text-ink-soft">
+            Esta OS já tem materiais aprovados. Diga se cada item é uma necessidade nova ou se
+            substitui uma anterior (a anterior deixa de valer e fica no histórico).
+          </p>
+          <ul className="space-y-3">
+            {m.items.map((i) => (
+              <li key={i.id}>
+                <Field label={needLabel(i)}>
+                  {(p) => (
+                    <Select
+                      {...p}
+                      data-testid={`replaces-${i.id}`}
+                      value={choice[i.id] ?? ''}
+                      onChange={(e) => setChoice((c) => ({ ...c, [i.id]: e.target.value }))}
+                    >
+                      <option value="">Nova necessidade</option>
+                      {candidates
+                        .filter(
+                          (c) => c.requirementId === choice[i.id] || !chosen.has(c.requirementId),
+                        )
+                        .map((c) => (
+                          <option key={c.requirementId} value={c.requirementId}>
+                            Substitui: {needLabel(c)}
+                          </option>
+                        ))}
+                    </Select>
+                  )}
+                </Field>
+              </li>
+            ))}
+          </ul>
+          {leftover.length > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-medium">Necessidades anteriores não repetidas</p>
+              <ul className="divide-y divide-line rounded-lg border border-line">
+                {leftover.map((c) => (
+                  <li
+                    key={c.requirementId}
+                    className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm"
+                    data-testid={`previous-${c.requirementId}`}
+                  >
+                    <span className="flex-1">{needLabel(c)}</span>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name={`keep-${c.requirementId}`}
+                        checked={!cancel[c.requirementId]}
+                        onChange={() => setCancel((x) => ({ ...x, [c.requirementId]: false }))}
+                      />
+                      Manter
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name={`keep-${c.requirementId}`}
+                        data-testid={`cancel-${c.requirementId}`}
+                        checked={Boolean(cancel[c.requirementId])}
+                        onChange={() => setCancel((x) => ({ ...x, [c.requirementId]: true }))}
+                      />
+                      Cancelar
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
       <Field label="Observação (opcional)">
         {(p) => <Input {...p} value={note} onChange={(e) => setNote(e.target.value)} />}
       </Field>

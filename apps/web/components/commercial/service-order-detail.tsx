@@ -206,7 +206,11 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         tabs={[
           { key: 'resumo', label: 'Resumo' },
           { key: 'pecas', label: 'Peças e especificações', count: s.items.length },
-          { key: 'materiais', label: 'Materiais', count: s.materials.length },
+          {
+            key: 'materiais',
+            label: 'Materiais',
+            count: s.materials.filter((m) => m.status === 'ATIVA').length,
+          },
           { key: 'fotos', label: 'Fotografias' },
           { key: 'historico', label: 'Histórico', count: revisions.data?.length },
           ...(canProduction ? [{ key: 'producao', label: 'Produção' }] : []),
@@ -958,7 +962,15 @@ function MaterialsTab({ so, manage }: { so: ServiceOrderDto; manage: boolean }) 
                     : ''}
                 </span>
                 <span className="text-ink-muted">{MATERIAL_SOURCING_LABEL[mt.sourcing]}</span>
-                {mt.origin === 'SOLICITACAO_APROVADA' ? (
+                {mt.status === 'SUBSTITUIDA' ? (
+                  <span title={mt.closeReason ?? undefined}>
+                    <Badge>Substituído por nova medição</Badge>
+                  </span>
+                ) : mt.status === 'CANCELADA' ? (
+                  <span title={mt.closeReason ?? undefined}>
+                    <Badge>Cancelado</Badge>
+                  </span>
+                ) : mt.origin === 'SOLICITACAO_APROVADA' ? (
                   <Badge tone="ok">Aprovado para compra</Badge>
                 ) : (
                   <Badge>Previsão manual · não entra na compra</Badge>

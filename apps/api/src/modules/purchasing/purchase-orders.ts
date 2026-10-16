@@ -53,6 +53,7 @@ import {
   type RequirementProgress,
   type RequirementWithProgress,
 } from './common';
+import { assertActiveRequirement } from './requirements';
 
 // ─────────────────────────── Leitura ───────────────────────────
 
@@ -356,6 +357,7 @@ async function prepareItems(
     const label = `Item ${idx + 1}`;
     const linked = allocations.map((a) => {
       const r = byId.get(a.materialRequirementId);
+      assertActiveRequirement(r, `${label}: a necessidade de material`);
       if (!r || r.origin !== 'SOLICITACAO_APROVADA') {
         throw Errors.business(
           `${label}: somente materiais de solicitações aprovadas podem ser comprados.`,
@@ -732,12 +734,22 @@ export async function purchaseOrderRoutes(app: FastifyInstance) {
           throw Errors.business('Informe o preço unitário de todos os itens antes de confirmar.');
         }
         // As necessidades continuam aprovadas e das OS abertas (revalida no momento da confirmação).
+        const reqIds = po.items.flatMap((i) => i.allocations.map((a) => a.materialRequirementId));
+        // Etapa 2: rascunho antigo é revalidado sob bloqueio — necessidade substituída ou
+        // cancelada depois do rascunho não recebe compra confirmada (409, edite o rascunho).
+        await lockRows(tx, 'material_requirements', reqIds);
         const reqs = await tx.materialRequirement.findMany({
-          where: {
-            id: { in: po.items.flatMap((i) => i.allocations.map((a) => a.materialRequirementId)) },
-          },
+          where: { id: { in: reqIds } },
           include: { serviceOrder: { select: { status: true, number: true } } },
         });
+        const stale = reqs.find((r) => r.status !== 'ATIVA');
+        if (stale)
+          throw Errors.conflict(
+            `A necessidade "${stale.description}" (${serviceOrderCode(stale.serviceOrder.number)}) foi ${
+              stale.status === 'SUBSTITUIDA' ? 'substituída por uma nova medição' : 'cancelada'
+            } depois deste rascunho. Edite o rascunho e vincule a necessidade atual.`,
+            { requirementId: stale.id, status: stale.status },
+          );
         const closed = reqs.find((r) => r.serviceOrder.status !== 'ABERTA');
         if (closed)
           throw Errors.business(

@@ -1,24 +1,64 @@
 'use client';
 
-import { MATERIAL_SOURCING_LABEL, formatCents } from '@cenario/shared';
+import {
+  MATERIAL_SOURCING_LABEL,
+  REQUIREMENT_STATUS_LABEL,
+  formatCents,
+  type MaterialReadinessDto,
+  type ReadinessLineDto,
+  type RequirementOrphanDto,
+} from '@cenario/shared';
 import Link from 'next/link';
+import { useState } from 'react';
 import { Section } from '@/components/commercial/section';
+import { Button } from '@/components/ui/button';
 import { Alert, Spinner } from '@/components/ui/misc';
+import { useCan } from '@/lib/hooks';
 import { formatDay } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useOsReadiness } from '@/lib/purchasing';
 import { PurchaseStatusBadge, ReadinessBadge, ReservationBadge, StageBadge } from './badges';
 import { qtyText, specText } from './format';
+import { LeftoverDialog, type LeftoverPrefill } from './stock-page';
 
 /** Aba Materiais da OS: solicitações aprovadas, compras, recebimentos, reservas, pendências e prontidão. */
 export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string }) {
   const q = useOsReadiness(serviceOrderId);
+  const can = useCan();
+  const [leftover, setLeftover] = useState<LeftoverPrefill | null>(null);
   if (q.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
   const r = q.data;
   const pending = r.lines.filter((l) => l.covered < l.need);
+  const canLeftover = can('estoque.gerenciar');
+  const prefillOf = (
+    x: ReadinessLineDto | RequirementOrphanDto,
+    quantity: number,
+    unitPriceCents: number | null,
+    purchaseOrders: string[],
+  ): LeftoverPrefill => ({
+    serviceOrderId: r.serviceOrder.id,
+    serviceOrderLabel: `${r.serviceOrder.code} — ${r.customerName}`,
+    kind: x.kind,
+    description: x.description,
+    color: x.color,
+    reference: x.reference,
+    foamDensity: x.foamDensity,
+    thicknessCm: x.thicknessCm,
+    quantity,
+    unit: x.unit,
+    // Custo/origem só quando conhecidos (nada é inventado).
+    notes:
+      [
+        purchaseOrders.length ? `Origem: ${purchaseOrders.join(', ')}` : null,
+        unitPriceCents !== null ? `custo unitário ${formatCents(unitPriceCents)}` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || null,
+  });
   return (
     <div className="space-y-6" data-testid="os-materials-overview">
+      {leftover && <LeftoverDialog prefill={leftover} onClose={() => setLeftover(null)} />}
       {r.unconfirmedConsumption && (
         <div data-testid="os-unconfirmed-consumption">
           <Alert tone="warn" title="Material reservado ainda não teve consumo confirmado.">
@@ -94,6 +134,34 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
                           ? ' · recusa no recebimento aguardando decisão (repor/não repor)'
                           : ''}
                       </span>
+                      {l.replaces[0] && (
+                        <span
+                          className="block text-xs text-ink-soft"
+                          data-testid={`os-replaces-${l.requirementId}`}
+                        >
+                          Necessidade alterada: {qtyText(l.replaces[0].quantity, l.unit)} →{' '}
+                          {qtyText(l.need, l.unit)}
+                          {l.replaces[0].inherited
+                            ? ''
+                            : ' · especificação nova: começa sem a cobertura anterior'}
+                        </span>
+                      )}
+                      <ExcessWarnings
+                        l={l}
+                        onLeftover={
+                          canLeftover && l.leftoverDraft
+                            ? () =>
+                                setLeftover(
+                                  prefillOf(
+                                    l,
+                                    l.leftoverDraft!.quantity,
+                                    l.leftoverDraft!.unitPriceCents,
+                                    l.leftoverDraft!.purchaseOrders,
+                                  ),
+                                )
+                            : null
+                        }
+                      />
                     </td>
                     <td className="text-right tabular-nums">{qtyText(l.need, l.unit)}</td>
                     <td className="text-right tabular-nums">{qtyText(l.purchased, l.unit)}</td>
@@ -126,6 +194,25 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
           </div>
         )}
       </Section>
+
+      {r.orphans.length > 0 && (
+        <Orphans
+          r={r}
+          onLeftover={
+            canLeftover
+              ? (o) =>
+                  setLeftover(
+                    prefillOf(
+                      o,
+                      o.receivedExclusive,
+                      null,
+                      o.purchaseOrders.map((p) => p.code),
+                    ),
+                  )
+              : null
+          }
+        />
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Section title="Compras" bodyClassName="p-0">
@@ -206,5 +293,155 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
         </Section>
       </div>
     </div>
+  );
+}
+
+/**
+ * Etapa 2: o que passa da necessidade atual (redução), por estágio — só avisos que pedem ação.
+ * Nada é cancelado, liberado ou movido sozinho.
+ */
+function ExcessWarnings({
+  l,
+  onLeftover,
+}: {
+  l: ReadinessLineDto;
+  onLeftover: (() => void) | null;
+}) {
+  const e = l.excess;
+  if (e.total <= 0) return null;
+  const stock = l.sourcing === 'ESTOQUE';
+  return (
+    <ul
+      className="mt-1 space-y-0.5 text-xs text-warn-600"
+      data-testid={`os-excess-${l.requirementId}`}
+    >
+      {e.draft > 0 && (
+        <li>
+          Compra excedente: rascunho com {qtyText(e.draft, l.unit)} além da necessidade — edite o
+          rascunho.
+        </li>
+      )}
+      {e.awaiting > 0 && (
+        <li>
+          Compra excedente: {qtyText(e.awaiting, l.unit)} confirmado(s) além da necessidade — decida
+          no pedido (manter ou encerrar o saldo).
+        </li>
+      )}
+      {e.available > 0 &&
+        (stock ? (
+          <li>
+            Reserva excedente: {qtyText(e.available, l.unit)} além da necessidade — libere em{' '}
+            <Link
+              href="/painel/estoque?tab=reservas"
+              className="font-medium text-brand-700 hover:underline"
+            >
+              Estoque → Reservas
+            </Link>{' '}
+            se não for usar.
+          </li>
+        ) : (
+          <li className="flex flex-wrap items-center gap-2">
+            <span>Recebido {qtyText(e.available, l.unit)} além da necessidade.</span>
+            {onLeftover && (
+              <Button size="sm" variant="secondary" onClick={onLeftover}>
+                Registrar sobra
+              </Button>
+            )}
+          </li>
+        ))}
+      {e.consumed > 0 && (
+        <li className="text-ink-muted">
+          {qtyText(e.consumed, l.unit)} já entregue(s) à OS além da necessidade (informativo).
+        </li>
+      )}
+    </ul>
+  );
+}
+
+/** Compras/reservas que ficaram sem necessidade ativa (substituída por outra especificação ou cancelada). */
+function Orphans({
+  r,
+  onLeftover,
+}: {
+  r: MaterialReadinessDto;
+  onLeftover: ((o: RequirementOrphanDto) => void) | null;
+}) {
+  return (
+    <Section title="Sem necessidade ativa" bodyClassName="p-0">
+      <ul className="divide-y divide-line" data-testid="os-orphans">
+        {r.orphans.map((o) => {
+          const active = o.reservations.filter((x) => x.status === 'ATIVA');
+          return (
+            <li
+              key={o.requirementId}
+              className="space-y-1 px-5 py-3 text-sm"
+              data-testid={`os-orphan-${o.requirementId}`}
+            >
+              <div>
+                <strong>{specText(o)}</strong>{' '}
+                <span className="text-ink-muted">
+                  · {o.itemCode ?? 'Toda a OS'} · {REQUIREMENT_STATUS_LABEL[o.status]}
+                  {o.closeReason ? ` (${o.closeReason})` : ''}
+                </span>
+              </div>
+              <ul className="space-y-0.5 text-xs text-warn-600">
+                {(o.awaiting > 0 || o.draft > 0) && (
+                  <li>
+                    Compra sem necessidade ativa:{' '}
+                    {[
+                      o.awaiting > 0 ? `${qtyText(o.awaiting, o.unit)} aguardando chegada` : null,
+                      o.draft > 0 ? `${qtyText(o.draft, o.unit)} em rascunho` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}{' '}
+                    —{' '}
+                    {o.purchaseOrders.map((p, i) => (
+                      <span key={p.id}>
+                        {i ? ', ' : ''}
+                        <Link
+                          href={`/painel/compras/${p.id}`}
+                          className="font-medium text-brand-700 hover:underline"
+                        >
+                          {p.code}
+                        </Link>
+                      </span>
+                    ))}
+                  </li>
+                )}
+                {active.length > 0 && (
+                  <li>
+                    Reserva sem necessidade ativa:{' '}
+                    {qtyText(
+                      active.reduce((s, x) => s + x.quantity, 0),
+                      o.unit,
+                    )}{' '}
+                    — libere em{' '}
+                    <Link
+                      href="/painel/estoque?tab=reservas"
+                      className="font-medium text-brand-700 hover:underline"
+                    >
+                      Estoque → Reservas
+                    </Link>{' '}
+                    se não for usar.
+                  </li>
+                )}
+                {o.receivedExclusive > 0 && (
+                  <li className="flex flex-wrap items-center gap-2">
+                    <span>
+                      Recebido {qtyText(o.receivedExclusive, o.unit)} sem necessidade ativa.
+                    </span>
+                    {onLeftover && (
+                      <Button size="sm" variant="secondary" onClick={() => onLeftover(o)}>
+                        Registrar sobra
+                      </Button>
+                    )}
+                  </li>
+                )}
+              </ul>
+            </li>
+          );
+        })}
+      </ul>
+    </Section>
   );
 }

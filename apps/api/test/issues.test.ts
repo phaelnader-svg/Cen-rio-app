@@ -28,6 +28,13 @@ import {
   uploadPhoto,
   userIdOf,
 } from './production-helpers';
+import {
+  createMeasurement,
+  fabric,
+  fillAndSubmit,
+  gestorUserId,
+  nextFriday,
+} from './measurement-helpers';
 import { confirmedFabricPurchase, createSupplier, ok, receive } from './purchasing-helpers';
 
 /**
@@ -857,5 +864,98 @@ describe('Permissões, concorrência, idempotência e tempo real', () => {
         .some((e: { payload: { kind: string } }) => e.payload.kind === 'OCORRENCIA_ATRIBUIDA'),
     ).toBe(true);
     await wAdmin.waitFor((m) => m.kind === 'event' && m.event.type === 'issue.assigned');
+  });
+});
+
+describe('Etapa 2 — ocorrência de material segue a cadeia da necessidade', () => {
+  /** Remedição aprovada substituindo a necessidade do tecido (mesma especificação, 10 m). */
+  async function remeasureLinen(s: Awaited<ReturnType<typeof scenario>>, color = 'Bege') {
+    const m = await createMeasurement(s.admin, {
+      serviceOrderId: s.so.id,
+      kind: 'EXTRAORDINARIA',
+      reason: 'Nova medição',
+      assigneeUserId: await gestorUserId(),
+      dueDate: nextFriday(),
+    });
+    const sub = await fillAndSubmit(s.admin, m.body, {
+      items: [fabric({ serviceOrderItemId: s.so.items[0].id, color, quantity: 10 })],
+    });
+    expect(sub.status, JSON.stringify(sub.body)).toBe(200);
+    const d = (await s.admin.get(`/api/v1/measurements/${m.body.id}`)).body;
+    const r = await s.admin.post(
+      `/api/v1/measurements/${m.body.id}/request/approve`,
+      {
+        version: d.request.version,
+        substitutions: [{ requestItemId: d.items[0].id, replacesRequirementId: s.reqs[0]!.id }],
+      },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    return db().materialRequirement.findFirstOrThrow({
+      where: { serviceOrderId: s.so.id, status: 'ATIVA' },
+    });
+  }
+
+  it('tela antiga cita a necessidade substituída: a ocorrência fica na ATIVA e resolve com ela', async () => {
+    const s = await scenario({ materials: 'missing' });
+    const corte = s.t('CORTE_TECIDO');
+    const head = await remeasureLinen(s);
+    const r = await openIssue(s.tablets.Márcio!, {
+      taskId: corte.id,
+      kind: 'MATERIAL',
+      impact: 'IMPEDIDO',
+      material: { requirementId: s.reqs[0]!.id, quantity: 10, unit: 'METRO' },
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect(r.body.material.requirementId).toBe(head.id);
+    const supplier = await createSupplier(s.admin, 'Fornecedor Cadeia');
+    const po = await confirmedFabricPurchase(s.admin, supplier.id, head);
+    await receive(s.admin, po.id, [ok(po.items[0].id, 10)]);
+    expect((await s.admin.get(`/api/v1/issues/${r.body.id}`)).body.status).toBe(
+      'AGUARDANDO_VERIFICACAO',
+    );
+    const done = await post(s.admin, `/api/v1/issues/${r.body.id}/verify`, {
+      resolved: true,
+      note: 'Recebido para a necessidade atual',
+    });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+  });
+
+  it('necessidade cancelada: a causa deixou de existir (verificação aceita); nova ocorrência nela → 409', async () => {
+    const s = await scenario({ materials: 'missing' });
+    const corte = s.t('CORTE_TECIDO');
+    const r = await openIssue(s.tablets.Márcio!, {
+      taskId: corte.id,
+      kind: 'MATERIAL',
+      impact: 'IMPEDIDO',
+      material: { requirementId: s.reqs[0]!.id, quantity: 12, unit: 'METRO' },
+    });
+    expect(r.status).toBe(201);
+    await post(s.admin, `/api/v1/issues/${r.body.id}/request-verification`, {
+      note: 'Conferir o tecido',
+    });
+    const early = await post(s.admin, `/api/v1/issues/${r.body.id}/verify`, {
+      resolved: true,
+      note: 'Ainda falta',
+    });
+    expect(early.status).toBe(422);
+    const c = await s.admin.post(
+      `/api/v1/material-requirements/${s.reqs[0]!.id}/cancel`,
+      { reason: 'Cliente trouxe o tecido' },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(c.status, JSON.stringify(c.body)).toBe(200);
+    const done = await post(s.admin, `/api/v1/issues/${r.body.id}/verify`, {
+      resolved: true,
+      note: 'Tecido do cliente',
+    });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    const again = await openIssue(s.tablets.Márcio!, {
+      taskId: corte.id,
+      kind: 'MATERIAL',
+      impact: 'IMPEDIDO',
+      material: { requirementId: s.reqs[0]!.id, quantity: 12, unit: 'METRO' },
+    });
+    expect(again.status).toBe(409);
   });
 });

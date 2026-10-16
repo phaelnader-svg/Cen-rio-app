@@ -67,6 +67,7 @@ model User {
   stockMovements              StockMovement[]            @relation("StockMovementActor")
   createdReservations         StockReservation[]         @relation("ReservationCreatedBy")
   closedReservations          StockReservation[]         @relation("ReservationClosedBy")
+  closedRequirements          MaterialRequirement[]      @relation("RequirementClosedBy")
   createdPurchaseOrders       PurchaseOrder[]            @relation("PurchaseOrderCreatedBy")
   confirmedPurchaseOrders     PurchaseOrder[]            @relation("PurchaseOrderConfirmedBy")
   cancelledPurchaseOrders     PurchaseOrder[]            @relation("PurchaseOrderCancelledBy")
@@ -1080,8 +1081,18 @@ model MaterialRequirement {
   lengthCm              Decimal?                  @map("length_cm") @db.Decimal(8, 2)
   widthCm               Decimal?                  @map("width_cm") @db.Decimal(8, 2)
   approvedAt            DateTime?                 @map("approved_at") @db.Timestamptz(3)
+  // Etapa 2 (compras sem duplicidade): substituição/cancelamento sem apagar histórico.
+  status                MaterialRequirementStatus @default(ATIVA)
+  /// Necessidade anterior que esta substitui (no máximo uma sucessora por necessidade).
+  replacesRequirementId String?                   @unique @map("replaces_requirement_id") @db.Uuid
+  closedAt              DateTime?                 @map("closed_at") @db.Timestamptz(3)
+  closedById            String?                   @map("closed_by_id") @db.Uuid
+  closeReason           String?                   @map("close_reason") @db.VarChar(500)
 
   serviceOrder        ServiceOrder               @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  replaces            MaterialRequirement?       @relation("RequirementSubstitution", fields: [replacesRequirementId], references: [id], onDelete: Restrict)
+  replacedBy          MaterialRequirement?       @relation("RequirementSubstitution")
+  closedBy            User?                      @relation("RequirementClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
   serviceOrderItem    ServiceOrderItem?          @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
   materialRequestItem MaterialRequestItem?       @relation(fields: [materialRequestItemId], references: [id], onDelete: Restrict)
   allocations         PurchaseAllocation[]
@@ -1092,6 +1103,7 @@ model MaterialRequirement {
 
   @@index([serviceOrderId])
   @@index([serviceOrderItemId])
+  @@index([serviceOrderId, status])
   @@map("material_requirements")
 }
 
@@ -1131,6 +1143,14 @@ model Attachment {
 }
 
 // ═══════════════════════ FASE 3 — Medições e solicitações de materiais ═══════════════════════
+
+enum MaterialRequirementStatus {
+  ATIVA
+  SUBSTITUIDA
+  CANCELADA
+
+  @@map("material_requirement_status")
+}
 
 enum MaterialRequirementOrigin {
   PREVISAO_MANUAL

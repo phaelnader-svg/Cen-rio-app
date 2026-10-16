@@ -788,20 +788,48 @@ function LeftoversTab() {
   );
 }
 
-function LeftoverDialog({ onClose }: { onClose: () => void }) {
+/** Etapa 2: dados que a OS já conhece (excedente exclusivo recebido); o usuário revisa e confirma. */
+export interface LeftoverPrefill {
+  serviceOrderId: string;
+  serviceOrderLabel: string;
+  kind: MaterialKind;
+  description: string;
+  color: string | null;
+  reference: string | null;
+  foamDensity: string | null;
+  thicknessCm: number | null;
+  quantity: number;
+  unit: MaterialUnit;
+  notes: string | null;
+}
+
+export function LeftoverDialog({
+  onClose,
+  prefill,
+}: {
+  onClose: () => void;
+  prefill?: LeftoverPrefill;
+}) {
   const sos = useServiceOrders({ status: 'ABERTA' });
   const [v, setV] = useState({
-    serviceOrderId: '',
-    kind: 'TECIDO' as MaterialKind,
-    description: '',
-    color: '',
-    reference: '',
-    quantity: '',
+    serviceOrderId: prefill?.serviceOrderId ?? '',
+    kind: prefill?.kind ?? ('TECIDO' as MaterialKind),
+    description: prefill?.description ?? '',
+    color: prefill?.color ?? '',
+    reference: prefill?.reference ?? '',
+    quantity: prefill ? String(prefill.quantity).replace('.', ',') : '',
     location: '',
     condition: 'BOA',
     reusable: true,
   });
-  const [unit, setUnit] = useState<MaterialUnit>('METRO');
+  const [unit, setUnit] = useState<MaterialUnit>(prefill?.unit ?? 'METRO');
+  const extra = prefill
+    ? {
+        foamDensity: prefill.foamDensity,
+        thicknessCm: prefill.thicknessCm,
+        notes: prefill.notes,
+      }
+    : {};
   const { m, error } = useSend('Sobra registrada.', onClose);
   return (
     <Dialog
@@ -819,7 +847,7 @@ function LeftoverDialog({ onClose }: { onClose: () => void }) {
               m.mutate(() =>
                 api('/api/v1/material-leftovers', {
                   method: 'POST',
-                  body: { ...v, unit, quantity: parseDecimal(v.quantity) },
+                  body: { ...v, ...extra, unit, quantity: parseDecimal(v.quantity) },
                 }),
               )
             }
@@ -836,20 +864,24 @@ function LeftoverDialog({ onClose }: { onClose: () => void }) {
       )}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="OS de origem" className="sm:col-span-2">
-          {(p) => (
-            <Select
-              {...p}
-              value={v.serviceOrderId}
-              onChange={(e) => setV({ ...v, serviceOrderId: e.target.value })}
-            >
-              <option value="">Selecione…</option>
-              {sos.data?.items.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.code} — {s.customer.name}
-                </option>
-              ))}
-            </Select>
-          )}
+          {(p) =>
+            prefill ? (
+              <Input {...p} value={prefill.serviceOrderLabel} readOnly />
+            ) : (
+              <Select
+                {...p}
+                value={v.serviceOrderId}
+                onChange={(e) => setV({ ...v, serviceOrderId: e.target.value })}
+              >
+                <option value="">Selecione…</option>
+                {sos.data?.items.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.code} — {s.customer.name}
+                  </option>
+                ))}
+              </Select>
+            )
+          }
         </Field>
         <Field label="Tipo">
           {(p) => (

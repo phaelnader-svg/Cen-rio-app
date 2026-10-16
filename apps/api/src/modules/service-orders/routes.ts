@@ -135,6 +135,8 @@ export async function loadServiceOrderDto(
       notes: m.notes,
       createdAt: m.createdAt.toISOString(),
       origin: m.origin,
+      status: m.status,
+      closeReason: m.closeReason,
       color: m.color,
       foamDensity: m.foamDensity,
       thicknessCm: m.thicknessCm ? Number(m.thicknessCm) : null,

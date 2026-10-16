@@ -93,6 +93,15 @@ export interface MeasurementDetailDto extends MeasurementSummaryDto {
   items: MaterialRequestItemDto[];
   returnReason: string | null;
   revisions: MeasurementRevisionDto[];
+  /**
+   * Etapa 2: necessidades ATIVAS que esta aprovação pode substituir ou cancelar (mesma OS; medição
+   * de uma peça: só a peça). `suggested` pré-seleciona só quando há exatamente UM candidato seguro
+   * (mesma peça não nula e mesmo tipo). Nulo fora da revisão.
+   */
+  substitution: {
+    candidates: SubstitutionCandidateDto[];
+    suggested: Record<string, string | null>;
+  } | null;
   /** O que a sessão atual pode fazer (o servidor valida de novo em cada ação). */
   can: {
     edit: boolean;
@@ -136,4 +145,21 @@ export interface PlanningDto {
     /** Itens de solicitações aprovadas para compra. */
     approved: ConsolidatedLine[];
   };
+}
+
+export interface SubstitutionCandidateDto {
+  requirementId: string;
+  serviceOrderItemId: string | null;
+  itemCode: string | null;
+  kind: MaterialKind;
+  sourcing: MaterialSourcing;
+  description: string;
+  color: string | null;
+  reference: string | null;
+  foamDensity: string | null;
+  thicknessCm: number | null;
+  lengthCm: number | null;
+  widthCm: number | null;
+  quantity: number;
+  unit: MaterialUnit;
 }

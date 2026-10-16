@@ -37,6 +37,7 @@ import {
   toReservationDto,
   toStockItemDto,
 } from './common';
+import { assertActiveRequirement } from './requirements';
 
 const EPS = 1e-6;
 
@@ -348,6 +349,7 @@ export async function stockRoutes(app: FastifyInstance) {
           if (req.origin !== 'SOLICITACAO_APROVADA') {
             throw Errors.business('Só necessidades aprovadas podem ser atendidas pelo estoque.');
           }
+          assertActiveRequirement(req);
           if (req.kind === 'TECIDO' || req.sourcing !== 'ESTOQUE') {
             throw Errors.business(
               'Tecido e materiais exclusivos pertencem à OS que os comprou e não saem do estoque comum.',

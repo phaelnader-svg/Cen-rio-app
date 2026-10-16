@@ -130,9 +130,27 @@ export const requestDecisionSchema = z.object({
   version: versionSchema,
 });
 
+/**
+ * Etapa 2 (compras sem duplicidade): aprovação com decisões EXPLÍCITAS do gestor. Cada item novo é
+ * "nova necessidade" (padrão) ou substitui uma necessidade anterior ATIVA; anteriores não repetidas
+ * são mantidas (padrão) ou canceladas. Nada é inferido pelo texto.
+ */
+export const approveRequestSchema = requestDecisionSchema.extend({
+  substitutions: z
+    .array(z.object({ requestItemId: idSchema, replacesRequirementId: idSchema }))
+    .max(200)
+    .default([]),
+  cancellations: z.array(idSchema).max(200).default([]),
+});
+
 export const returnRequestSchema = z.object({
   reason: trimmed(3, 500, 'Motivo da devolução'),
   version: versionSchema,
+});
+
+/** Etapa 2: cancelamento consciente de uma necessidade ATIVA (revisão do gestor). */
+export const cancelRequirementSchema = z.object({
+  reason: trimmed(3, 500, 'Motivo do cancelamento'),
 });
 
 export const measurementQuerySchema = z.object({

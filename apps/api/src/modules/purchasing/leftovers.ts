@@ -38,6 +38,7 @@ import {
   toLeftoverDto,
   toReservationDto,
 } from './common';
+import { assertActiveRequirement } from './requirements';
 
 const EPS = 1e-6;
 
@@ -155,6 +156,13 @@ export async function leftoverRoutes(app: FastifyInstance) {
         if (target.status !== 'ABERTA') throw Errors.business('A OS de destino não está aberta.');
         if (input.targetRequirementId) {
           await lockRows(tx, 'material_requirements', [input.targetRequirementId]);
+          assertActiveRequirement(
+            await tx.materialRequirement.findUnique({
+              where: { id: input.targetRequirementId },
+              select: { status: true },
+            }),
+            'A necessidade de destino',
+          );
           const found = (
             await requirementsWithProgress(tx, {
               id: input.targetRequirementId,
@@ -307,8 +315,8 @@ export async function leftoverRoutes(app: FastifyInstance) {
         include: { customer: { select: { name: true } } },
       });
       if (!so) throw Errors.notFound('Ordem de serviço');
-      const r = await readinessOf(prisma, id);
       const prices = canSeePrices(request);
+      const r = await readinessOf(prisma, id, { prices });
       const [pos, receipts, reservations, leftovers] = await Promise.all([
         prisma.purchaseOrder.findMany({
           where: {
@@ -389,6 +397,7 @@ export async function leftoverRoutes(app: FastifyInstance) {
         })),
         reservations: reservations.map((x) => toReservationDto(x, delivered)),
         leftovers: leftovers.map(toLeftoverDto),
+        orphans: r.orphans,
         unconfirmedConsumption: reservations.some(
           (x) => x.status === 'ATIVA' && delivered.has(x.serviceOrderId),
         ),

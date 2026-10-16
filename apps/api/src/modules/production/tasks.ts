@@ -532,10 +532,11 @@ export async function productionTaskRoutes(app: FastifyInstance) {
             id: { in: ids },
             serviceOrderId: t.serviceOrderId,
             origin: 'SOLICITACAO_APROVADA',
+            status: 'ATIVA',
           },
         });
         if (valid !== ids.length) {
-          throw Errors.business('Use somente materiais aprovados desta OS.');
+          throw Errors.business('Use somente materiais aprovados e atuais desta OS.');
         }
         const before = await tx.productionTaskMaterial.findMany({ where: { taskId: id } });
         await tx.productionTaskMaterial.deleteMany({ where: { taskId: id } });

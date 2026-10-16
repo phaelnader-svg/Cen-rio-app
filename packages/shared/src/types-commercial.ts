@@ -254,6 +254,9 @@ export interface MaterialRequirementDto {
   createdAt: string;
   /** PREVISAO_MANUAL (não conferida) ou SOLICITACAO_APROVADA (conferida na Fase 3). */
   origin: 'PREVISAO_MANUAL' | 'SOLICITACAO_APROVADA';
+  /** Etapa 2: ATIVA (vale hoje), SUBSTITUIDA (por nova medição) ou CANCELADA (histórico). */
+  status: 'ATIVA' | 'SUBSTITUIDA' | 'CANCELADA';
+  closeReason: string | null;
   color: string | null;
   foamDensity: string | null;
   thicknessCm: number | null;
