@@ -1,5 +1,7 @@
 # Compras e materiais sem duplicidade: Etapa 2
 
+**Classificação: GO WITH CAVEATS.**
+
 Data: 2026-10-16. Ramo `claude/cenario-gestao-fase-1-zf3bj2`. Base homologada `56192c1` (CI nº 128 verde,
 25/25 migrations). Produção fora do escopo e não tocada.
 
@@ -94,3 +96,67 @@ sucessora, sem compra, reserva, sobra, ocorrência ou tarefa). Caso contrário, 
 
 Etapa 3, compra antecipada, necessidade prevista e Cobrança. D9 ("prazo não reorganiza a fila"), prazos e
 D11 sem alteração. Tablet sem funções administrativas novas.
+
+## Versões e CI
+
+| Item                     | Valor                                                                     |
+| ------------------------ | ------------------------------------------------------------------------- |
+| Base                     | `56192c1` (homologada, CI nº 128 verde, 25/25 migrations)                 |
+| Implementação            | `23de047`. CI nº 130 vermelho só por `team-route-os.spec.ts` (ver abaixo) |
+| Candidato final          | `0c9262c` (correção só do teste E2E do roteiro). **CI nº 131 verde**      |
+| Versão ativa homologação | **`0c9262c`**                                                             |
+| Imagens                  | api `sha256:0878a143befa…`, web `sha256:d3c705aa4626…` (build `5583da14`) |
+
+**Teste do roteiro (pré-existente):** CI nº 129 (commit só de documentação, código idêntico ao nº 128) e
+nº 130 falharam em `team-route-os.spec.ts`. Causa: a numeração das paradas é do dia inteiro e outras
+specs agendam paradas no mesmo dia com o André; "Parada 1" fixa dependia de não haver outras paradas.
+O teste passou a conferir a mesma posição gravada pelo gestor e a ordem tarde → manhã. Nenhum código de
+produção mudou por isso; nenhum teste foi desligado.
+
+## Testes
+
+- **API nova** (`compras-etapa2.test.ts`): 27 testes — migration e constraints; V1/V3 (pré-seleção,
+  decisões inválidas); cadeia 10 → 8 (sobra pré-preenchida e oculta após registrar), 10 → 12 com 8
+  cobertos = falta 4, troca de especificação, cadeia de 3 medições quebrada por cor, estoque/reserva
+  excedente (nada liberado), E3 só em ATIVA; V2 Manter/Cancelar; travas (rascunho antigo 409, compra,
+  reserva, sobra, reabrir); tarefas (vínculo move, troca de especificação, cancelamento sem tarefa presa);
+  OS cancelada; devolução parcial com "Toda a OS" em revisão; concorrência real com `Promise.all`
+  (duas aprovações, aprovação × compra, × recebimento, × devolução) e repetição idempotente; custo
+  histórico intacto. Bloco de concorrência repetido 5× sem falha.
+- **Ocorrências:** +2 testes (cadeia até a ATIVA; cancelada resolve; nova ocorrência nela → 409).
+- **API completa:** 582 aprovados, 10 ignorados, 0 falhas. Etapa 1 (`compras-sem-duplicidade`) verde.
+- **Unidade (shared):** 112 (inclui `coverageExcess`; `requirementCoverage` inalterada).
+- **Web:** 6. **E2E completo local:** 41/41 (inclui `compras-etapa2.spec.ts`).
+- **Qualidade:** lint, typecheck, format e build OK.
+
+## Homologação (autonomia)
+
+1. Estado inicial: `56192c1`, portão fechado. Impressão digital 3.805 linhas (`e35c92fcdb22…`); desde a
+   Etapa 1 só mudaram tabelas de rotinas automáticas (presença, impactos, propostas de reprogramação,
+   avisos, eventos, sessões) — nenhuma de compras/materiais.
+2. Build `0c9262c`: SUCCESS. `gate_open`, `prepare_version` OK.
+3. `migration_precheck`: imagem 26, banco 25, **1 pendente** (`20270105000000_necessidade_substituicao`,
+   8 comandos), esquema compatível.
+4. `maintenance_on`; `recovery_point_create` **`cenario-staging-20261016T151253Z`** (restauração de teste
+   idêntica, enviado ao bucket); `backup_validate` OK.
+5. `migrate`: **1 aplicada** em 23 s. `activate_version 0c9262c`, `gate_close`.
+6. Depois: etiquetas e migrada `0c9262c`; `migration_verify` 26/26, nenhuma pendente/incompleta; health
+   OK; smoke OK; WebSocket 401 sem sessão (esperado); suítes acesso e websocket ✔; logs de api, web,
+   postgres e caddy sem erro.
+7. **Impressão digital depois** (3.824 linhas, `6662594aa68d…`) — diferenças, todas esperadas:
+   `_prisma_migrations` 25 → 26; em `material_requirements` 5 colunas, 2 índices, 2 CHECK, 2 FK, padrão
+   `ATIVA` e o tipo `material_requirement_status`; as mesmas **4** linhas (hash muda só pelas colunas
+   novas). **Nenhuma outra tabela mudou** (compras, recebimentos, reservas, movimentos, custos, fila,
+   prazos). Sem backfill além de `ATIVA`.
+8. Limpeza: imagens `03ab53b` removidas (2,12 GiB); `0c9262c` e `56192c1` protegidas.
+
+## Ressalvas
+
+1. Fluxos não clicados na homologação (sem login de aplicação no runner, por desenho); validação
+   funcional pelo CI nº 131 e E2E 41/41 sobre o mesmo commit das imagens ativas.
+2. A cobertura herdada só existe para cadeias estritamente compatíveis; trocas de especificação deixam
+   fatos "sem necessidade ativa" que exigem ação humana na aba Materiais (por desenho, V4/V6).
+3. A oferta de "Registrar sobra" desconta sobras já registradas na mesma OS com a mesma especificação
+   completa; sobra registrada com especificação diferente não é reconhecida (sem aproximação).
+4. Endpoint novo `POST /api/v1/material-requirements/:id/cancel` (gestor com `materiais.aprovar`) para a
+   decisão da revisão de devolução (V7).
