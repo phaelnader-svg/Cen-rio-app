@@ -73,9 +73,10 @@ async function approvedInputs(
     widthCm: n(r.widthCm),
     unit: r.unitCode!,
     quantity: Number(r.quantity),
-    serviceOrder: { id: r.serviceOrderId, code: serviceOrderCode(r.serviceOrder.number) },
+    // Consulta limitada a OS abertas: a OS sempre existe aqui.
+    serviceOrder: { id: r.serviceOrderId!, code: serviceOrderCode(r.serviceOrder!.number) },
     itemCode: r.serviceOrderItem
-      ? formatServiceOrderItemCode(r.serviceOrder.number, r.serviceOrderItem.position)
+      ? formatServiceOrderItemCode(r.serviceOrder!.number, r.serviceOrderItem.position)
       : null,
     measurementCode: r.materialRequestItem
       ? measurementCode(r.materialRequestItem.request.measurement.number)

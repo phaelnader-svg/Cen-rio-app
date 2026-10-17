@@ -86,6 +86,9 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
             {r.pending.pendingRequests
               ? `${r.pending.pendingRequests} solicitação(ões) aguardando aprovação · `
               : ''}
+            {r.pending.forecasts
+              ? `${r.pending.forecasts} previsão(ões) aguardando a medição real · `
+              : ''}
             {pending.length
               ? `${pending.length} material(is) pendente(s)`
               : r.lines.length
@@ -125,6 +128,14 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
                   <tr key={l.requirementId}>
                     <td>
                       {specText(l)}
+                      {l.forecast && (
+                        <span
+                          className="ml-2 rounded bg-warn-50 px-1.5 py-0.5 text-xs font-medium text-warn-600"
+                          data-testid={`os-forecast-${l.requirementId}`}
+                        >
+                          Previsão — não medido
+                        </span>
+                      )}
                       <span className="block text-xs text-ink-muted">
                         {l.itemCode ?? 'Toda a OS'} · {MATERIAL_SOURCING_LABEL[l.sourcing]}
                         {l.transferredIn
@@ -139,8 +150,9 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
                           className="block text-xs text-ink-soft"
                           data-testid={`os-replaces-${l.requirementId}`}
                         >
-                          Necessidade alterada: {qtyText(l.replaces[0].quantity, l.unit)} →{' '}
-                          {qtyText(l.need, l.unit)}
+                          {l.replaces[0].forecast
+                            ? `Previsto ${qtyText(l.replaces[0].quantity, l.unit)} / Medido ${qtyText(l.need, l.unit)} / Substitui previsão`
+                            : `Necessidade alterada: ${qtyText(l.replaces[0].quantity, l.unit)} → ${qtyText(l.need, l.unit)}`}
                           {l.replaces[0].inherited
                             ? ''
                             : ' · especificação nova: começa sem a cobertura anterior'}
@@ -283,7 +295,7 @@ export function OsMaterialsOverview({ serviceOrderId }: { serviceOrderId: string
               {r.leftovers.map((x) => (
                 <li key={x.id} className="px-5 py-3 text-sm">
                   {x.description} {x.color} · {qtyText(x.quantity, x.unit)} · {x.location}
-                  {x.serviceOrder.id !== serviceOrderId && (
+                  {x.serviceOrder && x.serviceOrder.id !== serviceOrderId && (
                     <span className="text-ink-muted"> · recebida da {x.serviceOrder.code}</span>
                   )}
                 </li>

@@ -149,6 +149,8 @@ export interface PlanningDto {
 
 export interface SubstitutionCandidateDto {
   requirementId: string;
+  /** Etapa 3: previsão de compra (não medida) que a medição real pode substituir. */
+  forecast: boolean;
   serviceOrderItemId: string | null;
   itemCode: string | null;
   kind: MaterialKind;

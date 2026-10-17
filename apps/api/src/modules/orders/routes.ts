@@ -49,6 +49,7 @@ import { assertIntentEligible, canPlanLabor, canPlanUpholsterer } from './planne
 import { createOrder } from './service';
 import { orderDeadlines, serviceDeadlines } from '../deadlines/service';
 import { changeServiceOrderPromisedDate } from '../service-orders/routes';
+import { cancelForecastsOfOrder, removeForecastsOfItems } from '../purchasing/forecasts';
 
 const PROMISED_ACTION = 'order.promised_date_changed';
 const br = (d: string | null) => (d ? d.split('-').reverse().join('/') : 'sem prazo');
@@ -401,6 +402,13 @@ export async function orderRoutes(app: FastifyInstance) {
           );
         }
       }
+      // Etapa 3 (AB-7): previsão virgem sai junto com a peça; com qualquer vínculo, recusa.
+      await removeForecastsOfItems(
+        tx,
+        actorFrom(request),
+        id,
+        before.items.filter((i) => !keepIds.has(i.id)),
+      );
       await tx.commercialOrderItem.deleteMany({
         where: { orderId: id, id: { notIn: [...keepIds] } },
       });
@@ -600,6 +608,9 @@ export async function orderRoutes(app: FastifyInstance) {
             version: { increment: 1 },
           },
         });
+        // Etapa 3: previsões de compra (pré-OS) deixam de gerar compra; compras e recebidos
+        // existentes permanecem (sem destino / candidato a sobra).
+        const cancelledForecasts = await cancelForecastsOfOrder(tx, actor, id, input.reason);
         // Retiradas ainda ativas são canceladas junto, com registro na linha do tempo.
         const pickups = await tx.pickupRequest.findMany({
           where: { orderId: id, status: { in: [...ACTIVE_PICKUP_STATUSES] } },
@@ -627,7 +638,11 @@ export async function orderRoutes(app: FastifyInstance) {
           entityType: 'commercial_order',
           entityId: id,
           summary: `Pedido ${orderCode(before.number)} cancelado.`,
-          changes: { reason: input.reason, cancelledPickups: pickups.length },
+          changes: {
+            reason: input.reason,
+            cancelledPickups: pickups.length,
+            cancelledForecasts: cancelledForecasts.length,
+          },
         });
         await emitOrderEvent(tx, request, id, EVENT_TYPES.ORDER_CANCELLED);
       });

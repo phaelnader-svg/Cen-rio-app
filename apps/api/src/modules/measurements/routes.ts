@@ -170,7 +170,7 @@ async function planSubstitutions(
     const inScope =
       r &&
       r.serviceOrderId === m.serviceOrderId &&
-      r.origin === 'SOLICITACAO_APROVADA' &&
+      (r.origin === 'SOLICITACAO_APROVADA' || r.origin === 'PREVISAO_COMPRA') &&
       (!m.serviceOrderItemId || r.serviceOrderItemId === m.serviceOrderItemId);
     if (!inScope)
       throw Errors.validation(
@@ -992,15 +992,29 @@ export async function measurementRoutes(app: FastifyInstance) {
       const input = cancelRequirementSchema.parse(request.body);
       const actor = actorFrom(request);
       return prisma.$transaction(async (tx) => {
+        // Etapa 3: previsão pré-OS — ordem única de bloqueio (pedido → necessidade).
+        const pre = await tx.materialRequirement.findUnique({
+          where: { id },
+          select: { serviceOrderId: true, orderItem: { select: { orderId: true } } },
+        });
+        if (pre && !pre.serviceOrderId && pre.orderItem)
+          await lockRows(tx, 'commercial_orders', [pre.orderItem.orderId]);
         await lockRows(tx, 'material_requirements', [id]);
         const r = await tx.materialRequirement.findUnique({
           where: { id },
-          include: { serviceOrder: { select: { status: true } } },
+          include: {
+            serviceOrder: { select: { status: true } },
+            orderItem: { select: { order: { select: { status: true } } } },
+          },
         });
-        if (!r || r.origin !== 'SOLICITACAO_APROVADA') throw Errors.notFound('Necessidade');
+        if (!r || (r.origin !== 'SOLICITACAO_APROVADA' && r.origin !== 'PREVISAO_COMPRA'))
+          throw Errors.notFound('Necessidade');
         if (r.status === 'SUBSTITUIDA') assertActiveRequirement(r);
         if (r.status === 'ATIVA') {
-          if (r.serviceOrder.status !== 'ABERTA') throw Errors.business('A OS não está aberta.');
+          if (r.serviceOrder && r.serviceOrder.status !== 'ABERTA')
+            throw Errors.business('A OS não está aberta.');
+          if (!r.serviceOrder && r.orderItem?.order.status === 'CANCELADO')
+            throw Errors.business('O pedido está cancelado.');
           await cancelRequirements(tx, actor, { id }, input.reason);
         }
         return { id, status: 'CANCELADA' as const };

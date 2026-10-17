@@ -198,7 +198,7 @@ export function ShortagesTab() {
                 >
                   Sobra disponível:{' '}
                   {g.leftovers
-                    .map((l) => `${qtyText(l.quantity, g.unit)} na ${l.serviceOrder.code}`)
+                    .map((l) => `${qtyText(l.quantity, g.unit)} na ${l.origin}`)
                     .join(' · ')}{' '}
                   — conferir compatibilidade (cor, lote, tonalidade) antes de usar.
                 </p>
@@ -219,15 +219,12 @@ export function ShortagesTab() {
                   </thead>
                   <tbody className="divide-y divide-line">
                     {g.rows.map((n) => (
-                      <tr
-                        key={n.requirementId}
-                        data-testid={`need-${n.serviceOrder.code}-${n.description}`}
-                      >
+                      <tr key={n.requirementId} data-testid={`need-${rowCode(n)}-${n.description}`}>
                         {canBuy && (
                           <td>
                             <input
                               type="checkbox"
-                              aria-label={`Selecionar ${n.description} da ${n.serviceOrder.code}`}
+                              aria-label={`Selecionar ${n.description} da ${rowCode(n)}`}
                               className="size-5 accent-brand-700"
                               checked={selected.has(n.requirementId)}
                               disabled={n.pendingToBuy <= 0}
@@ -236,17 +233,44 @@ export function ShortagesTab() {
                           </td>
                         )}
                         <td>
-                          <Link
-                            href={`/painel/os/${n.serviceOrder.id}`}
-                            className="font-mono font-semibold text-brand-700 hover:underline"
-                          >
-                            {n.serviceOrder.code}
-                          </Link>
-                          <span className="block text-xs text-ink-muted">
-                            {n.customerName} · prazo {formatDay(n.serviceOrder.promisedDate)}
-                          </span>
+                          {n.serviceOrder ? (
+                            <>
+                              <Link
+                                href={`/painel/os/${n.serviceOrder.id}`}
+                                className="font-mono font-semibold text-brand-700 hover:underline"
+                              >
+                                {n.serviceOrder.code}
+                              </Link>
+                              <span className="block text-xs text-ink-muted">
+                                {n.customerName} · prazo {formatDay(n.serviceOrder.promisedDate)}
+                              </span>
+                            </>
+                          ) : (
+                            n.preArrival && (
+                              <>
+                                <Link
+                                  href={`/painel/pedidos/${n.preArrival.order.id}`}
+                                  className="font-mono font-semibold text-brand-700 hover:underline"
+                                >
+                                  {n.preArrival.order.code}
+                                </Link>
+                                <span className="block text-xs text-ink-muted">
+                                  {n.customerName} · {n.preArrival.piece} · prazo prometido{' '}
+                                  {formatDay(n.preArrival.order.promisedDate)}
+                                </span>
+                              </>
+                            )
+                          )}
                           <span className="flex flex-wrap gap-1">
-                            <PriorityBadge priority={n.serviceOrder.priority} />
+                            {n.serviceOrder ? (
+                              <PriorityBadge priority={n.serviceOrder.priority} />
+                            ) : (
+                              <Badge tone="info">Pré-chegada</Badge>
+                            )}
+                            {n.forecast && <Badge tone="warn">Previsão — não medido</Badge>}
+                            {n.preArrival?.pendingLink && (
+                              <Badge tone="danger">Vincular à OS</Badge>
+                            )}
                             {n.deadlineState in DEADLINE_TONE && (
                               <Badge
                                 tone={DEADLINE_TONE[n.deadlineState as keyof typeof DEADLINE_TONE]}
@@ -256,7 +280,9 @@ export function ShortagesTab() {
                             )}
                           </span>
                         </td>
-                        <td className="text-sm">{n.itemCode ?? 'Toda a OS'}</td>
+                        <td className="text-sm">
+                          {n.itemCode ?? n.preArrival?.piece ?? 'Toda a OS'}
+                        </td>
                         <td className="text-right tabular-nums">{qtyText(n.need, n.unit)}</td>
                         <td className="text-right tabular-nums">{qtyText(n.covered, n.unit)}</td>
                         <td className="text-right tabular-nums">
@@ -275,7 +301,7 @@ export function ShortagesTab() {
                         </td>
                         <td
                           className="text-right font-semibold tabular-nums"
-                          data-testid={`to-buy-${n.serviceOrder.code}-${n.description}`}
+                          data-testid={`to-buy-${rowCode(n)}-${n.description}`}
                         >
                           {qtyText(n.pendingToBuy, n.unit)}
                         </td>
@@ -370,9 +396,20 @@ function useAction(success: string, onDone: () => void) {
   return { m, error };
 }
 
+type ShortageRow = PurchaseShortageDto['rows'][number];
+
+/** Código da linha: a OS, ou o pedido da peça ainda não chegada (Pré-chegada). */
+const rowCode = (n: ShortageRow) => n.serviceOrder?.code ?? n.preArrival?.order.code ?? '';
+
+const withOs = (
+  r: ShortageRow,
+): r is ShortageRow & { serviceOrder: NonNullable<ShortageRow['serviceOrder']> } =>
+  r.serviceOrder !== null;
+
 /** Reserva explícita do estoque livre para uma OS (a ação existente de reserva). */
 function ReserveDialog({ group, onClose }: { group: PurchaseShortageDto; onClose: () => void }) {
-  const rows = group.rows.filter((r) => r.need - r.covered > 0);
+  // Reserva e transferência são para uma OS: a previsão pré-chegada não recebe (AB-5).
+  const rows = group.rows.filter(withOs).filter((r) => r.need - r.covered > 0);
   const [rid, setRid] = useState(rows[0]?.requirementId ?? '');
   const row = rows.find((r) => r.requirementId === rid);
   const max = row ? Math.min(group.freeStock ?? 0, row.need - row.covered) : 0;
@@ -461,7 +498,8 @@ function ReserveDialog({ group, onClose }: { group: PurchaseShortageDto; onClose
 
 /** Transferência de sobra (ação existente, com autorização): só depois de conferir a peça. */
 function TransferDialog({ group, onClose }: { group: PurchaseShortageDto; onClose: () => void }) {
-  const rows = group.rows.filter((r) => r.need - r.covered > 0);
+  // Reserva e transferência são para uma OS: a previsão pré-chegada não recebe (AB-5).
+  const rows = group.rows.filter(withOs).filter((r) => r.need - r.covered > 0);
   const [lid, setLid] = useState(group.leftovers[0]?.id ?? '');
   const [rid, setRid] = useState(rows[0]?.requirementId ?? '');
   const [qty, setQty] = useState('');
@@ -514,7 +552,7 @@ function TransferDialog({ group, onClose }: { group: PurchaseShortageDto; onClos
             <Select {...p} value={lid} onChange={(e) => setLid(e.target.value)}>
               {group.leftovers.map((l) => (
                 <option key={l.id} value={l.id}>
-                  {qtyText(l.quantity, group.unit)} da {l.serviceOrder.code} · {l.location}
+                  {qtyText(l.quantity, group.unit)} da {l.origin} · {l.location}
                 </option>
               ))}
             </Select>

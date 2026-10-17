@@ -341,7 +341,7 @@ export async function taskMaterialsReady(
     select: { requirementId: true },
   });
   if (!links.length) return r.state === 'COMPLETO';
-  if (r.openMeasurements + r.pendingRequests > 0) return false;
+  if (r.openMeasurements + r.pendingRequests + r.forecasts > 0) return false;
   return links.every((l) => {
     const line = r.lines.find((x) => x.requirementId === l.requirementId);
     return Boolean(line) && q3(line!.covered) >= q3(line!.need);

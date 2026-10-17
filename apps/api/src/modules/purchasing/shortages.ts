@@ -9,7 +9,7 @@ import {
 import type { PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { serviceOrderCode } from '../commercial/common';
+import { orderCode, serviceOrderCode } from '../commercial/common';
 import { serviceDeadlines } from '../deadlines/service';
 import {
   PURCHASE_VIEW,
@@ -43,7 +43,15 @@ async function freePendingByStockItem(db: Db, stockItemIds: string[]) {
     include: {
       purchaseOrder: { select: { status: true } },
       allocations: {
-        include: { serviceOrder: { select: { status: true } } },
+        include: {
+          serviceOrder: { select: { status: true } },
+          requirement: {
+            select: {
+              status: true,
+              orderItem: { select: { order: { select: { status: true } } } },
+            },
+          },
+        },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       },
     },
@@ -62,7 +70,11 @@ async function freePendingByStockItem(db: Db, stockItemIds: string[]) {
       const orderedShare = Math.min(qty, Math.max(0, expected - before));
       const receivedShare = Math.min(qty, Math.max(0, received - before));
       before += qty;
-      if (a.serviceOrder.status === 'ABERTA') allocatedPending += orderedShare - receivedShare;
+      // Destino vivo: OS aberta ou, antes da chegada (Etapa 3), previsão ATIVA de pedido não cancelado.
+      const live = a.serviceOrder
+        ? a.serviceOrder.status === 'ABERTA'
+        : a.requirement.status === 'ATIVA' && a.requirement.orderItem?.order.status !== 'CANCELADO';
+      if (live) allocatedPending += orderedShare - receivedShare;
     }
     const free = q3(Math.max(0, pending - allocatedPending));
     out.set(i.stockItemId!, q3((out.get(i.stockItemId!) ?? 0) + free));
@@ -80,10 +92,20 @@ export async function purchaseShortages(
   opts: { prices: boolean },
 ): Promise<PurchaseShortageDto[]> {
   const rows = sortByDeadline(
-    await requirementsWithProgress(db, { serviceOrder: { status: 'ABERTA' } }),
+    await requirementsWithProgress(db, {
+      OR: [
+        { serviceOrder: { status: 'ABERTA' } },
+        // Etapa 3: previsão de compra antes da chegada ("Pré-chegada"), pedido não cancelado.
+        {
+          serviceOrderId: null,
+          origin: 'PREVISAO_COMPRA',
+          orderItem: { order: { status: { not: 'CANCELADO' } } },
+        },
+      ],
+    }),
   );
   if (!rows.length) return [];
-  const osIds = [...new Set(rows.map(({ r }) => r.serviceOrderId))];
+  const osIds = [...new Set(rows.flatMap(({ r }) => (r.serviceOrderId ? [r.serviceOrderId] : [])))];
   const keyOf = (r: (typeof rows)[number]['r']) => {
     const spec = specOf(r, (r.unitCode ?? 'UNIDADE') as MaterialUnit);
     return r.sourcing === 'ESTOQUE' ? `E|${stockSpecKey(spec)}` : `X|${specKey(spec)}`;
@@ -104,7 +126,10 @@ export async function purchaseShortages(
     }),
     db.materialLeftover.findMany({
       where: { status: 'DISPONIVEL', reusable: true },
-      include: { serviceOrder: { select: { id: true, number: true } } },
+      include: {
+        serviceOrder: { select: { id: true, number: true } },
+        orderItem: { select: { order: { select: { number: true } } } },
+      },
       orderBy: { createdAt: 'asc' },
     }),
   ]);
@@ -122,8 +147,10 @@ export async function purchaseShortages(
     if (q3(p.covered) >= q3(p.need)) continue;
     const key = keyOf(r);
     const unit = (r.unitCode ?? 'UNIDADE') as MaterialUnit;
+    // Pré-OS não bloqueia produção (não existe OS nem tarefa).
     const blocks = tasks.some(
       (t) =>
+        r.serviceOrderId !== null &&
         t.serviceOrderId === r.serviceOrderId &&
         (t.materials.length === 0 || t.materials.some((m) => m.requirementId === r.id)),
     );
@@ -156,10 +183,9 @@ export async function purchaseShortages(
                 .filter((l) => leftoverKey(l, l.unit) === lk)
                 .map((l) => ({
                   id: l.id,
-                  serviceOrder: {
-                    id: l.serviceOrder.id,
-                    code: serviceOrderCode(l.serviceOrder.number),
-                  },
+                  origin: l.serviceOrder
+                    ? serviceOrderCode(l.serviceOrder.number)
+                    : orderCode(l.orderItem!.order.number),
                   quantity: num(l.quantity),
                   location: l.location,
                 }))
@@ -179,7 +205,8 @@ export async function purchaseShortages(
     g.blocksProduction ||= blocks;
     g.rows.push({
       ...toNeedDto(r, p, opts.prices),
-      deadlineState: deadlines.get(r.serviceOrderId)?.state ?? 'SEM_PRAZO',
+      // Pré-OS: o prazo do pedido aparece só como contexto (preArrival); sem situação de prazo.
+      deadlineState: (r.serviceOrderId && deadlines.get(r.serviceOrderId)?.state) || 'SEM_PRAZO',
       blocksProduction: blocks,
     });
   }

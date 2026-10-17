@@ -39,6 +39,7 @@ import {
   ServiceOrderStatusBadge,
   ServiceStateBadge,
 } from './badges';
+import { OrderForecasts } from '@/components/purchasing/order-forecasts';
 import { PhotoGallery } from './photo-gallery';
 import { PickupDetailDialog } from './pickup-detail';
 import { PickupForm } from './pickup-form';
@@ -293,6 +294,10 @@ export function OrderDetail({ id }: { id: string }) {
             </p>
           )}
         </Section>
+
+        {(can('materiais.aprovar') || can('materiais.ver') || can('compras.ver')) && (
+          <OrderForecasts orderId={o.id} />
+        )}
 
         {can('retiradas.ver') && (
           <Section title="Retiradas" className="lg:col-span-5" bodyClassName="p-0">

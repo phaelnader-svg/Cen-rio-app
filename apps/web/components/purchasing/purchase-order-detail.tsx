@@ -25,7 +25,7 @@ import { useCan } from '@/lib/hooks';
 import { parseDecimal } from '@/lib/measurements';
 import { usePurchaseOrder } from '@/lib/purchasing';
 import { PurchaseStatusBadge } from './badges';
-import { qtyText, specText } from './format';
+import { destinationText, qtyText, specText } from './format';
 
 const HISTORY_LABEL: Record<string, string> = {
   CRIADO: 'Pedido criado (rascunho)',
@@ -180,7 +180,7 @@ export function PurchaseOrderDetail({ id }: { id: string }) {
                         {i.allocations
                           .map(
                             (a) =>
-                              `${a.itemCode ?? a.serviceOrder.code} ${qtyText(a.quantity, i.unit)}`,
+                              `${a.itemCode ?? destinationText(a)} ${qtyText(a.quantity, i.unit)}`,
                           )
                           .join(' + ') || 'reposição de estoque'}
                       </p>

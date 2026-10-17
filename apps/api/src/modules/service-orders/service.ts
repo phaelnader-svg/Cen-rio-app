@@ -15,6 +15,7 @@ import { createLabor } from '../finance/labor';
 import { syncPickupCostsOfOrder } from '../finance/trip-costs';
 import { emitOrderEvent } from '../orders/routes';
 import { setUpholsterer } from '../production/distribution';
+import { linkForecastsOnArrival } from '../purchasing/forecasts';
 import { recordChange } from './routes';
 
 /**
@@ -136,6 +137,9 @@ export async function createServiceOrder(
   }
   // Evolução Fase 6: a OS entra no rateio automático da retirada do pedido.
   await syncPickupCostsOfOrder(tx, actor, order.id);
+  // Compras sem duplicidade, Etapa 3: previsões de compra das peças desta OS são vinculadas
+  // (as mesmas linhas) quando o destino é inequívoco; chegada parcial ambígua fica pendente.
+  await linkForecastsOnArrival(tx, actor, so.id);
   await recordChange(
     tx,
     actor,

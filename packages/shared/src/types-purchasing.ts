@@ -45,10 +45,23 @@ export interface SupplierDto {
   version: number;
 }
 
+/**
+ * Etapa 3: destino de uma previsão de compra ainda sem OS — a peça do pedido. `pendingLink`: a
+ * peça já chegou mas a vinculação à OS exige decisão do gestor (quantidade > 1 com chegada parcial).
+ */
+export interface PreArrivalDto {
+  order: Ref & { promisedDate: string | null };
+  orderItemId: string;
+  piece: string;
+  pendingLink: boolean;
+}
+
 export interface PurchaseAllocationDto {
   id: string;
   materialRequirementId: string;
-  serviceOrder: Ref;
+  /** Nulo antes da chegada (Etapa 3): ver `preArrival`. */
+  serviceOrder: Ref | null;
+  preArrival: PreArrivalDto | null;
   itemCode: string | null;
   quantity: number;
 }
@@ -179,7 +192,11 @@ export interface PendingMaterialReceiptDto {
 
 export interface PurchaseNeedDto extends SpecDto {
   requirementId: string;
-  serviceOrder: Ref & { promisedDate: string | null; priority: Priority };
+  /** Nulo para a previsão de compra antes da chegada da peça ("Pré-chegada"). */
+  serviceOrder: (Ref & { promisedDate: string | null; priority: Priority }) | null;
+  preArrival: PreArrivalDto | null;
+  /** Previsão de compra (não medida). */
+  forecast: boolean;
   customerName: string;
   itemCode: string | null;
   sourcing: MaterialSourcing;
@@ -240,7 +257,7 @@ export interface PurchaseShortageDto extends SpecDto {
   suggestion: number;
   stockItem: (Ref & { available: number }) | null;
   /** Sobras compatíveis pela especificação: só sugestão (conferir cor/lote/tonalidade). */
-  leftovers: { id: string; serviceOrder: Ref; quantity: number; location: string }[];
+  leftovers: { id: string; origin: string; quantity: number; location: string }[];
   blocksProduction: boolean;
   rows: PurchaseShortageRowDto[];
 }
@@ -292,7 +309,9 @@ export interface StockReservationDto {
 
 export interface LeftoverDto {
   id: string;
-  serviceOrder: Ref;
+  /** Nulo para sobra de origem pré-OS (Etapa 3): ver `preArrival`. */
+  serviceOrder: Ref | null;
+  preArrival: { order: Ref; piece: string; requirementId: string } | null;
   kind: MaterialKind;
   description: string;
   color: string | null;
@@ -341,7 +360,15 @@ export interface ReadinessLineDto extends SpecDto {
   /** Etapa 2: o que passa da necessidade atual (depois de uma redução), por estágio. */
   excess: { draft: number; awaiting: number; available: number; consumed: number; total: number };
   /** Necessidades anteriores substituídas por esta (mais recente primeiro) e se herdou cobertura. */
-  replaces: { requirementId: string; quantity: number; description: string; inherited: boolean }[];
+  replaces: {
+    requirementId: string;
+    quantity: number;
+    description: string;
+    inherited: boolean;
+    forecast: boolean;
+  }[];
+  /** Etapa 3: previsão de compra (não medida) — não libera produção sozinha. */
+  forecast: boolean;
   /**
    * Excedente exclusivo recebido: dados para "Registrar sobra" (o usuário revisa e confirma).
    * `unitPriceCents` só quando há um único preço de origem conhecido (e quem vê preços).
@@ -376,7 +403,11 @@ export interface MaterialReadinessDto {
   customerName: string;
   state: MaterialReadiness;
   updatedAt: string | null;
-  pending: { openMeasurements: number; pendingRequests: number };
+  /**
+   * `forecasts`: previsões de compra ATIVAS vinculadas à OS ainda não substituídas pela medição real
+   * (Etapa 3, AB-4) — a prontidão não fica COMPLETO só com previsão.
+   */
+  pending: { openMeasurements: number; pendingRequests: number; forecasts: number };
   lines: ReadinessLineDto[];
   purchaseOrders: {
     id: string;
@@ -412,4 +443,29 @@ export interface ReadinessSummaryDto {
   updatedAt: string | null;
   lines: number;
   coveredLines: number;
+}
+
+/** Etapa 3: previsões de compra das peças de um pedido (antes e depois da chegada). */
+export interface OrderForecastsDto {
+  order: Ref & { status: string; promisedDate: string | null };
+  pieces: {
+    orderItemId: string;
+    position: number;
+    description: string;
+    quantity: number;
+    receivedQuantity: number;
+    /** Itens de OS desta peça (para a vinculação manual quando a chegada foi parcial). */
+    serviceOrderItems: { id: string; serviceOrder: Ref; quantity: number; code: string }[];
+    /** A peça pode receber previsão nova (ainda não chegou nem entrou em OS). */
+    canForecast: boolean;
+  }[];
+  forecasts: (ReadinessLineDto & {
+    orderItemId: string;
+    serviceOrder: Ref | null;
+    pendingLink: boolean;
+    /** Sem nenhum vínculo: editável no lugar (AB-9). */
+    virgin: boolean;
+  })[];
+  /** Fatos de previsões encerradas ainda sem destino (compra, recebido exclusivo, sobra). */
+  orphans: (RequirementOrphanDto & { orderItemId: string })[];
 }

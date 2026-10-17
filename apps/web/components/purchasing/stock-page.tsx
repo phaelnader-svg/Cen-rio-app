@@ -38,7 +38,7 @@ import {
   useStockItems,
 } from '@/lib/purchasing';
 import { ReservationBadge } from './badges';
-import { qtyText, specText } from './format';
+import { destinationText, qtyText, specText } from './format';
 
 /** Mutação simples com toast e erro (invalida as listas de estoque). */
 function useSend(success: string, onDone: () => void) {
@@ -56,6 +56,7 @@ function useSend(success: string, onDone: () => void) {
         'readiness',
         'os-readiness',
         'needs',
+        'order-forecasts',
       ])
         void qc.invalidateQueries({ queryKey: [k] });
       toast('ok', success);
@@ -439,11 +440,14 @@ function AdjustDialog({ item, onClose }: { item: StockItemDto; onClose: () => vo
 function ReserveDialog({ item, onClose }: { item: StockItemDto; onClose: () => void }) {
   const needs = useNeeds(false);
   const key = specKey({ ...item, color: null, reference: null });
-  const matching = (needs.data ?? []).filter(
-    (n) =>
-      n.sourcing === 'ESTOQUE' &&
-      specKey({ ...n, color: null, reference: null }) === key &&
-      n.covered < n.need,
+  // A reserva é para uma OS: previsão pré-chegada não reserva estoque (AB-5).
+  const matching = (needs.data ?? []).flatMap((n) =>
+    n.serviceOrder &&
+    n.sourcing === 'ESTOQUE' &&
+    specKey({ ...n, color: null, reference: null }) === key &&
+    n.covered < n.need
+      ? [{ ...n, serviceOrder: n.serviceOrder }]
+      : [],
   );
   const [req, setReq] = useState('');
   const [qty, setQty] = useState('');
@@ -747,7 +751,7 @@ function LeftoversTab() {
           <ul className="divide-y divide-line" data-testid="leftovers">
             {list.data.map((l) => (
               <li key={l.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
-                <span className="font-mono text-sm font-semibold">{l.serviceOrder.code}</span>
+                <span className="font-mono text-sm font-semibold">{destinationText(l)}</span>
                 <span className="min-w-0 flex-1">
                   {MATERIAL_KIND_LABEL[l.kind]}:{' '}
                   {[l.description, l.color, l.reference && `ref. ${l.reference}`]
@@ -790,7 +794,9 @@ function LeftoversTab() {
 
 /** Etapa 2: dados que a OS já conhece (excedente exclusivo recebido); o usuário revisa e confirma. */
 export interface LeftoverPrefill {
-  serviceOrderId: string;
+  /** Nulo para sobra de previsão pré-OS (Etapa 3, AB-8): origem em `sourceRequirementId`. */
+  serviceOrderId: string | null;
+  sourceRequirementId?: string;
   serviceOrderLabel: string;
   kind: MaterialKind;
   description: string;
@@ -812,7 +818,7 @@ export function LeftoverDialog({
 }) {
   const sos = useServiceOrders({ status: 'ABERTA' });
   const [v, setV] = useState({
-    serviceOrderId: prefill?.serviceOrderId ?? '',
+    serviceOrderId: prefill ? prefill.serviceOrderId : '',
     kind: prefill?.kind ?? ('TECIDO' as MaterialKind),
     description: prefill?.description ?? '',
     color: prefill?.color ?? '',
@@ -828,6 +834,7 @@ export function LeftoverDialog({
         foamDensity: prefill.foamDensity,
         thicknessCm: prefill.thicknessCm,
         notes: prefill.notes,
+        sourceRequirementId: prefill.sourceRequirementId ?? null,
       }
     : {};
   const { m, error } = useSend('Sobra registrada.', onClose);
@@ -863,14 +870,17 @@ export function LeftoverDialog({
         </Alert>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="OS de origem" className="sm:col-span-2">
+        <Field
+          label={prefill && !prefill.serviceOrderId ? 'Origem' : 'OS de origem'}
+          className="sm:col-span-2"
+        >
           {(p) =>
             prefill ? (
               <Input {...p} value={prefill.serviceOrderLabel} readOnly />
             ) : (
               <Select
                 {...p}
-                value={v.serviceOrderId}
+                value={v.serviceOrderId ?? ''}
                 onChange={(e) => setV({ ...v, serviceOrderId: e.target.value })}
               >
                 <option value="">Selecione…</option>
@@ -997,7 +1007,7 @@ function TransferDialog({ l, onClose }: { l: LeftoverDto; onClose: () => void })
       open
       onClose={onClose}
       title="Transferir sobra (autorização do gestor)"
-      description={`${l.description} ${l.color ?? ''} · ${qtyText(l.quantity, l.unit)} na ${l.serviceOrder.code}`}
+      description={`${l.description} ${l.color ?? ''} · ${qtyText(l.quantity, l.unit)} na ${destinationText(l)}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -1044,7 +1054,7 @@ function TransferDialog({ l, onClose }: { l: LeftoverDto; onClose: () => void })
             >
               <option value="">Selecione…</option>
               {sos.data?.items
-                .filter((s) => s.id !== l.serviceOrder.id)
+                .filter((s) => s.id !== l.serviceOrder?.id)
                 .map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.code} — {s.customer.name}

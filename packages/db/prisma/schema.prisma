@@ -656,10 +656,12 @@ model CommercialOrderItem {
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  order             CommercialOrder     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  order             CommercialOrder       @relation(fields: [orderId], references: [id], onDelete: Restrict)
   pickupItems       PickupRequestItem[]
   receiptLines      ReceiptLine[]
   serviceOrderItems ServiceOrderItem[]
+  materialForecasts MaterialRequirement[]
+  leftovers         MaterialLeftover[]
 
   /// Fase 10: peças devolvidas ao cliente (confirmadas).
   returnedQuantity Int               @default(0) @map("returned_quantity")
@@ -1059,7 +1061,7 @@ enum MaterialSourcing {
 /// Tecido é sempre de compra exclusiva da OS. Não dispara produção.
 model MaterialRequirement {
   id                 String           @id @default(uuid()) @db.Uuid
-  serviceOrderId     String           @map("service_order_id") @db.Uuid
+  serviceOrderId     String?          @map("service_order_id") @db.Uuid
   serviceOrderItemId String?          @map("service_order_item_id") @db.Uuid
   kind               MaterialKind
   description        String           @db.VarChar(200)
@@ -1088,8 +1090,12 @@ model MaterialRequirement {
   closedAt              DateTime?                 @map("closed_at") @db.Timestamptz(3)
   closedById            String?                   @map("closed_by_id") @db.Uuid
   closeReason           String?                   @map("close_reason") @db.VarChar(500)
+  /// Etapa 3: peça do pedido (identidade antes da OS) da previsão de compra.
+  orderItemId           String?                   @map("order_item_id") @db.Uuid
 
-  serviceOrder        ServiceOrder               @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  serviceOrder        ServiceOrder?              @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  orderItem           CommercialOrderItem?       @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  leftoversFrom       MaterialLeftover[]         @relation("LeftoverSourceRequirement")
   replaces            MaterialRequirement?       @relation("RequirementSubstitution", fields: [replacesRequirementId], references: [id], onDelete: Restrict)
   replacedBy          MaterialRequirement?       @relation("RequirementSubstitution")
   closedBy            User?                      @relation("RequirementClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
@@ -1104,6 +1110,7 @@ model MaterialRequirement {
   @@index([serviceOrderId])
   @@index([serviceOrderItemId])
   @@index([serviceOrderId, status])
+  @@index([orderItemId, status])
   @@map("material_requirements")
 }
 
@@ -1155,6 +1162,7 @@ enum MaterialRequirementStatus {
 enum MaterialRequirementOrigin {
   PREVISAO_MANUAL
   SOLICITACAO_APROVADA
+  PREVISAO_COMPRA
 
   @@map("material_requirement_origin")
 }
@@ -1570,13 +1578,13 @@ model PurchaseAllocation {
   id                    String   @id @default(uuid()) @db.Uuid
   purchaseOrderItemId   String   @map("purchase_order_item_id") @db.Uuid
   materialRequirementId String   @map("material_requirement_id") @db.Uuid
-  serviceOrderId        String   @map("service_order_id") @db.Uuid
+  serviceOrderId        String?  @map("service_order_id") @db.Uuid
   quantity              Decimal  @db.Decimal(12, 3)
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   item         PurchaseOrderItem   @relation(fields: [purchaseOrderItemId], references: [id], onDelete: Cascade)
   requirement  MaterialRequirement @relation(fields: [materialRequirementId], references: [id], onDelete: Restrict)
-  serviceOrder ServiceOrder        @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  serviceOrder ServiceOrder?       @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
 
   @@unique([purchaseOrderItemId, materialRequirementId])
   @@index([materialRequirementId])
@@ -1658,32 +1666,38 @@ model MaterialReceiptReversal {
 
 /// Sobra de material após o uso. Tecido continua da OS de origem; só sai por transferência autorizada.
 model MaterialLeftover {
-  id              String            @id @default(uuid()) @db.Uuid
-  serviceOrderId  String            @map("service_order_id") @db.Uuid
-  kind            MaterialKind
-  description     String            @db.VarChar(160)
-  color           String?           @db.VarChar(60)
-  reference       String?           @db.VarChar(80)
-  foamDensity     String?           @map("foam_density") @db.VarChar(30)
-  thicknessCm     Decimal?          @map("thickness_cm") @db.Decimal(8, 2)
-  quantity        Decimal           @db.Decimal(12, 3)
-  initialQuantity Decimal           @map("initial_quantity") @db.Decimal(12, 3)
-  unit            MaterialUnit
-  location        String            @db.VarChar(120)
-  condition       LeftoverCondition
-  reusable        Boolean
-  status          LeftoverStatus    @default(DISPONIVEL)
-  notes           String?           @db.VarChar(500)
-  createdById     String?           @map("created_by_id") @db.Uuid
-  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
-  version         Int               @default(1)
+  id                  String            @id @default(uuid()) @db.Uuid
+  serviceOrderId      String?           @map("service_order_id") @db.Uuid
+  /// Etapa 3: origem pré-OS (pedido/peça cancelados com material exclusivo recebido).
+  orderItemId         String?           @map("order_item_id") @db.Uuid
+  sourceRequirementId String?           @map("source_requirement_id") @db.Uuid
+  kind                MaterialKind
+  description         String            @db.VarChar(160)
+  color               String?           @db.VarChar(60)
+  reference           String?           @db.VarChar(80)
+  foamDensity         String?           @map("foam_density") @db.VarChar(30)
+  thicknessCm         Decimal?          @map("thickness_cm") @db.Decimal(8, 2)
+  quantity            Decimal           @db.Decimal(12, 3)
+  initialQuantity     Decimal           @map("initial_quantity") @db.Decimal(12, 3)
+  unit                MaterialUnit
+  location            String            @db.VarChar(120)
+  condition           LeftoverCondition
+  reusable            Boolean
+  status              LeftoverStatus    @default(DISPONIVEL)
+  notes               String?           @db.VarChar(500)
+  createdById         String?           @map("created_by_id") @db.Uuid
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version             Int               @default(1)
 
-  serviceOrder ServiceOrder               @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
-  createdBy    User?                      @relation("LeftoverCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  transfers    MaterialLeftoverTransfer[]
+  serviceOrder      ServiceOrder?              @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  createdBy         User?                      @relation("LeftoverCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  transfers         MaterialLeftoverTransfer[]
+  orderItem         CommercialOrderItem?       @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  sourceRequirement MaterialRequirement?       @relation("LeftoverSourceRequirement", fields: [sourceRequirementId], references: [id], onDelete: Restrict)
 
   @@index([serviceOrderId])
+  @@index([orderItemId])
   @@map("material_leftovers")
 }
 
@@ -1691,7 +1705,7 @@ model MaterialLeftover {
 model MaterialLeftoverTransfer {
   id                 String   @id @default(uuid()) @db.Uuid
   leftoverId         String   @map("leftover_id") @db.Uuid
-  fromServiceOrderId String   @map("from_service_order_id") @db.Uuid
+  fromServiceOrderId String?  @map("from_service_order_id") @db.Uuid
   toServiceOrderId   String   @map("to_service_order_id") @db.Uuid
   toRequirementId    String?  @map("to_requirement_id") @db.Uuid
   quantity           Decimal  @db.Decimal(12, 3)
@@ -1700,7 +1714,7 @@ model MaterialLeftoverTransfer {
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   leftover         MaterialLeftover     @relation(fields: [leftoverId], references: [id], onDelete: Restrict)
-  fromServiceOrder ServiceOrder         @relation("LeftoverTransferFrom", fields: [fromServiceOrderId], references: [id], onDelete: Restrict)
+  fromServiceOrder ServiceOrder?        @relation("LeftoverTransferFrom", fields: [fromServiceOrderId], references: [id], onDelete: Restrict)
   toServiceOrder   ServiceOrder         @relation("LeftoverTransferTo", fields: [toServiceOrderId], references: [id], onDelete: Restrict)
   toRequirement    MaterialRequirement? @relation(fields: [toRequirementId], references: [id], onDelete: Restrict)
   authorizedBy     User                 @relation("LeftoverTransferAuthorizedBy", fields: [authorizedById], references: [id], onDelete: Restrict)

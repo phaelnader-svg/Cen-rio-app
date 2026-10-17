@@ -253,7 +253,7 @@ export interface MaterialRequirementDto {
   notes: string | null;
   createdAt: string;
   /** PREVISAO_MANUAL (não conferida) ou SOLICITACAO_APROVADA (conferida na Fase 3). */
-  origin: 'PREVISAO_MANUAL' | 'SOLICITACAO_APROVADA';
+  origin: 'PREVISAO_MANUAL' | 'SOLICITACAO_APROVADA' | 'PREVISAO_COMPRA';
   /** Etapa 2: ATIVA (vale hoje), SUBSTITUIDA (por nova medição) ou CANCELADA (histórico). */
   status: 'ATIVA' | 'SUBSTITUIDA' | 'CANCELADA';
   closeReason: string | null;

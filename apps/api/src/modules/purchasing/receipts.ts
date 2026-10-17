@@ -81,7 +81,7 @@ async function autoReserve(
   stock: Awaited<ReturnType<typeof lockStockItem>>,
   allocations: {
     materialRequirementId: string;
-    serviceOrderId: string;
+    serviceOrderId: string | null;
     quantity: unknown;
     createdAt: Date;
   }[],
@@ -91,8 +91,11 @@ async function autoReserve(
   for (const a of ordered) {
     // Etapa 2: a compra vale para a necessidade ATIVA que herdou a cobertura (mesma
     // especificação); substituída por outra especificação ou cancelada → fica no estoque livre.
-    const head = (await activeHeadOf(tx, a.materialRequirementId, true))?.id;
-    if (!head) continue;
+    const headRow = await activeHeadOf(tx, a.materialRequirementId, true);
+    // Etapa 3 (AB-5): antes da OS não há reserva — o recebido fica no estoque e a reserva é tentada
+    // na chegada da peça. A previsão pré-OS nem é bloqueada aqui (ordem de bloqueio da chegada).
+    if (!headRow?.serviceOrderId) continue;
+    const head = headRow.id;
     await lockRows(tx, 'material_requirements', [head]);
     const found = (await requirementsWithProgress(tx, { id: head }))[0];
     if (!found) continue;
@@ -100,7 +103,8 @@ async function autoReserve(
       where: { id: head },
       include: { serviceOrder: { select: { status: true } } },
     });
-    if (!req || req.status !== 'ATIVA' || req.serviceOrder.status !== 'ABERTA') continue;
+    if (!req?.serviceOrder || req.status !== 'ATIVA' || req.serviceOrder.status !== 'ABERTA')
+      continue;
     const available = num(stock.onHand) - num(stock.reserved);
     const qty = q3(Math.min(found.p.need - found.p.covered, num(a.quantity as never), available));
     if (qty <= 0) continue;
@@ -108,7 +112,7 @@ async function autoReserve(
     const r = await tx.stockReservation.create({
       data: {
         stockItemId: stock.id,
-        serviceOrderId: req.serviceOrderId,
+        serviceOrderId: req.serviceOrderId!,
         materialRequirementId: req.id,
         quantity: qty,
         notes: 'Reserva automática no recebimento da compra',
@@ -116,7 +120,7 @@ async function autoReserve(
       },
     });
     await changeStock(tx, actor, stock, { reserved: qty });
-    reserved.push({ reservationId: r.id, serviceOrderId: req.serviceOrderId, quantity: qty });
+    reserved.push({ reservationId: r.id, serviceOrderId: req.serviceOrderId!, quantity: qty });
   }
   return reserved;
 }
@@ -396,7 +400,11 @@ export async function materialReceiptRoutes(app: FastifyInstance) {
             ? { id: i.serviceOrder.id, code: serviceOrderCode(i.serviceOrder.number) }
             : null,
           destinations: [
-            ...new Set(i.allocations.map((a) => serviceOrderCode(a.serviceOrder.number))),
+            ...new Set(
+              i.allocations.map((a) =>
+                a.serviceOrder ? serviceOrderCode(a.serviceOrder.number) : 'Pré-chegada',
+              ),
+            ),
           ],
         })),
       }),

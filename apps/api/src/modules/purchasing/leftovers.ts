@@ -13,12 +13,13 @@ import {
   type MaterialUnit,
   type ReadinessSummaryDto,
 } from '@cenario/shared';
+import type { Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { Errors } from '../../lib/errors';
-import { dateOnly, serviceOrderCode } from '../commercial/common';
+import { dateOnly, orderCode, serviceOrderCode } from '../commercial/common';
 import { deliveredServiceOrders } from '../finance/costs';
 import { idParams } from '../presenters';
 import {
@@ -27,6 +28,7 @@ import {
   STOCK_MANAGE,
   STOCK_VIEW,
   canSeePrices,
+  chainsOf,
   leftoverInclude,
   lockRows,
   num,
@@ -78,11 +80,18 @@ export async function leftoverRoutes(app: FastifyInstance) {
       const err = unitError(input.kind, input.unit, input.quantity);
       if (err) throw Errors.validation([{ path: 'quantity', message: err }], err);
       const id = await prisma.$transaction(async (tx) => {
-        const so = await tx.serviceOrder.findUnique({ where: { id: input.serviceOrderId } });
-        if (!so) throw Errors.notFound('Ordem de serviço');
+        const so = input.serviceOrderId
+          ? await tx.serviceOrder.findUnique({ where: { id: input.serviceOrderId } })
+          : null;
+        if (input.serviceOrderId && !so) throw Errors.notFound('Ordem de serviço');
+        // Etapa 3 (AB-8): sobra de previsão pré-OS (pedido/peça cancelados com exclusivo
+        // recebido) — sem OS inventada, presa à peça do pedido e à previsão de origem.
+        const pre = so ? null : await preOsLeftoverOrigin(tx, input);
         const l = await tx.materialLeftover.create({
           data: {
-            serviceOrderId: so.id,
+            serviceOrderId: so?.id ?? null,
+            orderItemId: pre?.orderItemId ?? null,
+            sourceRequirementId: pre?.requirementId ?? null,
             kind: input.kind,
             description: input.description,
             color: input.color ?? null,
@@ -103,13 +112,16 @@ export async function leftoverRoutes(app: FastifyInstance) {
           action: 'leftover.recorded',
           entityType: 'material_leftover',
           entityId: l.id,
-          summary: `Sobra de ${input.quantity} (${input.description}) registrada na ${serviceOrderCode(so.number)}.`,
+          summary: `Sobra de ${input.quantity} (${input.description}) registrada ${
+            so ? `na ${serviceOrderCode(so.number)}` : `do ${pre!.label} (antes da chegada)`
+          }.`,
+          changes: pre ? { sourceRequirementId: pre.requirementId } : undefined,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.LEFTOVER_CHANGED,
           aggregateType: 'material_leftover',
           aggregateId: l.id,
-          payload: { id: l.id, serviceOrderId: so.id },
+          payload: { id: l.id, serviceOrderId: so?.id ?? null },
           audience: MANAGEMENT_AUDIENCE,
         });
         return l.id;
@@ -211,10 +223,15 @@ export async function leftoverRoutes(app: FastifyInstance) {
           action: 'leftover.transferred',
           entityType: 'material_leftover',
           entityId: id,
-          summary: `Sobra (${l.description}) transferida: ${input.quantity} da ${serviceOrderCode(l.serviceOrder.number)} para a ${serviceOrderCode(target.number)}. Motivo: ${input.reason}`,
+          summary: `Sobra (${l.description}) transferida: ${input.quantity} da ${
+            l.serviceOrder ? serviceOrderCode(l.serviceOrder.number) : 'origem pré-chegada'
+          } para a ${serviceOrderCode(target.number)}. Motivo: ${input.reason}`,
           changes: { transferId: t.id, quantity: input.quantity, remaining },
         });
-        await refreshReadiness(tx, actor, [target.id, l.serviceOrderId]);
+        await refreshReadiness(tx, actor, [
+          target.id,
+          ...(l.serviceOrderId ? [l.serviceOrderId] : []),
+        ]);
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.LEFTOVER_CHANGED,
           aggregateType: 'material_leftover',
@@ -371,7 +388,11 @@ export async function leftoverRoutes(app: FastifyInstance) {
         customerName: so.customer.name,
         state: r.state,
         updatedAt: so.materialsReadinessAt?.toISOString() ?? null,
-        pending: { openMeasurements: r.openMeasurements, pendingRequests: r.pendingRequests },
+        pending: {
+          openMeasurements: r.openMeasurements,
+          pendingRequests: r.pendingRequests,
+          forecasts: r.forecasts,
+        },
         lines: r.lines,
         purchaseOrders: pos.map((po) => ({
           id: po.id,
@@ -405,4 +426,46 @@ export async function leftoverRoutes(app: FastifyInstance) {
       };
     },
   );
+}
+
+/**
+ * Etapa 3 (AB-8): valida a origem pré-OS de uma sobra — previsão de compra exclusiva ainda sem OS,
+ * com material exclusivo recebido além do que a necessidade ativa usa (pedido/peça cancelados ou
+ * excedente). A quantidade não passa do recebido disponível, descontadas as sobras já registradas.
+ */
+async function preOsLeftoverOrigin(tx: Tx, input: z.output<typeof leftoverSchema>) {
+  const reqId = input.sourceRequirementId!;
+  await lockRows(tx, 'material_requirements', [reqId]);
+  const req = await tx.materialRequirement.findUnique({
+    where: { id: reqId },
+    include: {
+      orderItem: { select: { id: true, description: true, order: { select: { number: true } } } },
+    },
+  });
+  if (!req || req.origin !== 'PREVISAO_COMPRA' || req.serviceOrderId || !req.orderItem)
+    throw Errors.business('A sobra sem OS precisa vir de uma previsão de compra ainda sem OS.');
+  if (req.sourcing !== 'EXCLUSIVO_OS')
+    throw Errors.business('Material de estoque já está no estoque: não é sobra.');
+  if (req.kind !== input.kind || (req.unitCode && req.unitCode !== input.unit))
+    throw Errors.business('A sobra deve ter o mesmo tipo e unidade da previsão de origem.');
+  const chains = await chainsOf(tx, [], null, {}, [req.orderItem.id]);
+  const orphan = chains.orphans.find((o) => o.r.id === req.id);
+  const head = chains.heads.find((h) => h.r.id === req.id);
+  const offered = orphan ? orphan.p.received : head ? head.p.excess.available : 0;
+  const registered = await tx.materialLeftover.aggregate({
+    where: { sourceRequirementId: req.id },
+    _sum: { initialQuantity: true },
+  });
+  const free = q3(offered - num(registered._sum.initialQuantity ?? 0));
+  if (input.quantity > free + 1e-6)
+    throw Errors.business(
+      free > 0
+        ? `Só ${free} recebido(s) desta previsão pode(m) virar sobra.`
+        : 'Não há material recebido desta previsão disponível para virar sobra.',
+    );
+  return {
+    orderItemId: req.orderItem.id,
+    requirementId: req.id,
+    label: `pedido ${orderCode(req.orderItem.order.number)} (${req.orderItem.description})`,
+  };
 }

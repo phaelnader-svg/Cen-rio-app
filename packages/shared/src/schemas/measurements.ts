@@ -153,6 +153,15 @@ export const cancelRequirementSchema = z.object({
   reason: trimmed(3, 500, 'Motivo do cancelamento'),
 });
 
+/**
+ * Etapa 3: previsão de compra de uma peça do pedido, antes da chegada. Mesma especificação
+ * estruturada da necessidade medida — mas é PREVISÃO, nunca medição.
+ */
+export const materialForecastSchema = materialRequestItemSchema;
+export type MaterialForecastInput = z.input<typeof materialForecastSchema>;
+/** Vinculação manual (AB-3): o gestor escolhe a peça da OS que recebe a previsão. */
+export const forecastLinkSchema = z.object({ serviceOrderItemId: idSchema });
+
 export const measurementQuerySchema = z.object({
   status: z
     .string()

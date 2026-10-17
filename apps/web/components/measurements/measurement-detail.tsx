@@ -387,6 +387,24 @@ function AssignDialog({ m, onClose }: { m: MeasurementDetailDto; onClose: () => 
 }
 
 /** "Linho cru — 10 m — Sofá A" (peça) ou "— Toda a OS". */
+/** Etapa 3: a medição real substitui a previsão de compra — "Previsto 12 m / Medido 10 m". */
+function ForecastCompare({
+  measured,
+  forecast,
+}: {
+  measured: { quantity: number; unit: MaterialUnit };
+  forecast: { quantity: number; unit: MaterialUnit } | undefined;
+}) {
+  if (!forecast) return null;
+  const q = (v: { quantity: number; unit: MaterialUnit }) =>
+    `${String(v.quantity).replace('.', ',')} ${MATERIAL_UNIT_SHORT[v.unit]}`;
+  return (
+    <p className="mt-1 text-xs text-ink-soft" data-testid="forecast-compare">
+      Previsto {q(forecast)} / Medido {q(measured)} / Substitui previsão
+    </p>
+  );
+}
+
 function needLabel(c: {
   description: string;
   color: string | null;
@@ -484,12 +502,18 @@ function ApproveDialog({ m, onClose }: { m: MeasurementDetailDto; onClose: () =>
                         )
                         .map((c) => (
                           <option key={c.requirementId} value={c.requirementId}>
-                            Substitui: {needLabel(c)}
+                            {c.forecast
+                              ? `Substitui previsão: ${needLabel(c)} (previsto)`
+                              : `Substitui: ${needLabel(c)}`}
                           </option>
                         ))}
                     </Select>
                   )}
                 </Field>
+                <ForecastCompare
+                  measured={i}
+                  forecast={candidates.find((c) => c.forecast && c.requirementId === choice[i.id])}
+                />
               </li>
             ))}
           </ul>
@@ -503,7 +527,10 @@ function ApproveDialog({ m, onClose }: { m: MeasurementDetailDto; onClose: () =>
                     className="flex flex-wrap items-center gap-3 px-3 py-2 text-sm"
                     data-testid={`previous-${c.requirementId}`}
                   >
-                    <span className="flex-1">{needLabel(c)}</span>
+                    <span className="flex-1">
+                      {needLabel(c)}
+                      {c.forecast ? ' · previsão (não medido)' : ''}
+                    </span>
                     <label className="flex items-center gap-1">
                       <input
                         type="radio"

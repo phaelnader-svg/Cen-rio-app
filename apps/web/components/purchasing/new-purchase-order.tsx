@@ -16,7 +16,7 @@ import { useToast } from '@/components/ui/toast';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { decimalText, parseDecimal } from '@/lib/measurements';
 import { useNeeds, useShortages, useSuppliers } from '@/lib/purchasing';
-import { qtyText, specText } from './format';
+import { destinationText, qtyText, specText } from './format';
 
 interface Line {
   key: string;
@@ -57,7 +57,7 @@ function buildLines(needs: PurchaseNeedDto[], shortages: PurchaseShortageDto[] =
     if (n.pendingToBuy <= 0) continue;
     const alloc = {
       requirementId: n.requirementId,
-      label: `${n.serviceOrder.code}${n.itemCode ? ` (${n.itemCode})` : ''}`,
+      label: `${destinationText(n)}${n.itemCode ? ` (${n.itemCode})` : ''}`,
       quantity: n.pendingToBuy,
     };
     const key =

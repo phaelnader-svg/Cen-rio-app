@@ -132,7 +132,8 @@ export async function substitutionScope(
   return db.materialRequirement.findMany({
     where: {
       serviceOrderId: m.serviceOrderId,
-      origin: 'SOLICITACAO_APROVADA',
+      // Etapa 3: a previsão de compra vinculada à OS é substituída pela medição real.
+      origin: { in: ['SOLICITACAO_APROVADA', 'PREVISAO_COMPRA'] },
       status: 'ATIVA',
       ...(m.serviceOrderItemId ? { serviceOrderItemId: m.serviceOrderItemId } : {}),
     },
@@ -207,6 +208,7 @@ export async function loadDetail(
       ? {
           candidates: candidates.map((c) => ({
             requirementId: c.id,
+            forecast: c.origin === 'PREVISAO_COMPRA',
             serviceOrderItemId: c.serviceOrderItemId,
             itemCode: c.serviceOrderItem
               ? formatServiceOrderItemCode(osNumber, c.serviceOrderItem.position)

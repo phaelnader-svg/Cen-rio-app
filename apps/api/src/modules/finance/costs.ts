@@ -33,11 +33,19 @@ export async function stockAverageCost(db: Tx | PrismaClient, stockItemId: strin
 /** Preço unitário de origem de uma sobra: compra exclusiva da OS com o mesmo material. */
 async function leftoverUnitCost(
   db: Tx | PrismaClient,
-  leftover: { serviceOrderId: string; kind: string; description: string },
+  leftover: {
+    serviceOrderId: string | null;
+    sourceRequirementId: string | null;
+    kind: string;
+    description: string;
+  },
 ) {
   const items = await db.purchaseOrderItem.findMany({
     where: {
-      serviceOrderId: leftover.serviceOrderId,
+      // Etapa 3: sobra de origem pré-OS — o preço vem da compra da própria previsão de origem.
+      ...(leftover.serviceOrderId
+        ? { serviceOrderId: leftover.serviceOrderId }
+        : { allocations: { some: { materialRequirementId: leftover.sourceRequirementId ?? '' } } }),
       sourcing: 'EXCLUSIVO_OS',
       kind: leftover.kind as never,
       unitPriceCents: { not: null },
@@ -215,7 +223,7 @@ export async function syncAllMaterialCosts(tx: Tx, actor: ActorContext) {
   const ids = new Set<string>();
   for (const r of [...exclusive, ...movements]) if (r.serviceOrderId) ids.add(r.serviceOrderId);
   for (const t of transfers) {
-    ids.add(t.fromServiceOrderId);
+    if (t.fromServiceOrderId) ids.add(t.fromServiceOrderId);
     ids.add(t.toServiceOrderId);
   }
   for (const id of [...ids].sort()) await syncMaterialCosts(tx, actor, id);

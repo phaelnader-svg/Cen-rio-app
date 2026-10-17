@@ -3,6 +3,7 @@
 import type {
   LeftoverDto,
   MaterialReadinessDto,
+  OrderForecastsDto,
   PendingMaterialReceiptDto,
   PurchaseNeedDto,
   PurchaseOrderDto,
@@ -103,5 +104,13 @@ export const useOsReadiness = (serviceOrderId: string, enabled = true) =>
     queryKey: ['os-readiness', serviceOrderId],
     queryFn: () =>
       api<MaterialReadinessDto>(`/api/v1/service-orders/${serviceOrderId}/material-readiness`),
+    enabled,
+  });
+
+/** Etapa 3: previsões de material das peças de um pedido (antes e depois da chegada). */
+export const useOrderForecasts = (orderId: string, enabled = true) =>
+  useQuery({
+    queryKey: ['order-forecasts', orderId],
+    queryFn: () => api<OrderForecastsDto>(`/api/v1/orders/${orderId}/material-forecasts`),
     enabled,
   });

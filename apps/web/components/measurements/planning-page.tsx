@@ -69,23 +69,26 @@ function CheckItem({
 
 /** Comprado/recebido por linha consolidada (mesma chave da consolidação da Fase 3). */
 function purchaseProgress(needs: PurchaseNeedDto[]) {
+  // Previsões pré-chegada (Etapa 3) não têm OS nem medição: ficam fora do progresso por OS.
   const input = (field: 'purchased' | 'received') =>
-    needs.map((n) => ({
-      kind: n.kind,
-      sourcing: n.sourcing,
-      description: n.description,
-      color: n.color,
-      reference: n.reference,
-      foamDensity: n.foamDensity,
-      thicknessCm: n.thicknessCm,
-      lengthCm: n.lengthCm,
-      widthCm: n.widthCm,
-      unit: n.unit,
-      quantity: n[field],
-      serviceOrder: { id: n.serviceOrder.id, code: n.serviceOrder.code },
-      itemCode: n.itemCode,
-      measurementCode: null,
-    }));
+    needs
+      .flatMap((n) => (n.serviceOrder ? [{ ...n, serviceOrder: n.serviceOrder }] : []))
+      .map((n) => ({
+        kind: n.kind,
+        sourcing: n.sourcing,
+        description: n.description,
+        color: n.color,
+        reference: n.reference,
+        foamDensity: n.foamDensity,
+        thicknessCm: n.thicknessCm,
+        lengthCm: n.lengthCm,
+        widthCm: n.widthCm,
+        unit: n.unit,
+        quantity: n[field],
+        serviceOrder: { id: n.serviceOrder.id, code: n.serviceOrder.code },
+        itemCode: n.itemCode,
+        measurementCode: null,
+      }));
   const out = new Map<string, { purchased: number; received: number }>();
   for (const l of consolidateMaterials(input('purchased')))
     out.set(l.key, { purchased: l.totalQuantity, received: 0 });

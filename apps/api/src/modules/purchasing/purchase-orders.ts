@@ -30,7 +30,7 @@ import { z } from 'zod';
 import { actorFrom } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { Errors } from '../../lib/errors';
-import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
+import { dateOnly, orderCode, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
 import {
   MANAGEMENT_AUDIENCE,
@@ -40,6 +40,8 @@ import {
   canSeePrices,
   has,
   itemCodeOf,
+  orderItemRefSelect,
+  preArrivalOf,
   lockRows,
   num,
   poHistory,
@@ -138,7 +140,12 @@ const itemsInclude = {
       orderBy: { createdAt: 'asc' },
       include: {
         serviceOrder: { select: { id: true, number: true } },
-        requirement: { include: { serviceOrderItem: { select: { position: true } } } },
+        requirement: {
+          include: {
+            serviceOrderItem: { select: { position: true } },
+            orderItem: orderItemRefSelect,
+          },
+        },
       },
     },
     receiptLines: { select: { id: true, rejectedQuantity: true } },
@@ -187,9 +194,14 @@ function withoutDestination(po: SummaryRow) {
   for (const i of po.items) {
     if (i.serviceOrder?.status === 'CANCELADA')
       out.set(i.serviceOrder.id, serviceOrderCode(i.serviceOrder.number));
-    for (const a of i.allocations)
-      if (a.serviceOrder.status === 'CANCELADA')
+    for (const a of i.allocations) {
+      if (a.serviceOrder?.status === 'CANCELADA')
         out.set(a.serviceOrder.id, serviceOrderCode(a.serviceOrder.number));
+      // Etapa 3: previsão pré-OS cancelada (pedido/peça cancelados) — a compra fica sem destino.
+      const o = a.requirement.orderItem?.order;
+      if (!a.serviceOrder && o && a.requirement.status === 'CANCELADA')
+        out.set(o.id, orderCode(o.number));
+    }
   }
   return [...out].map(([id, code]) => ({ id, code })).sort((a, b) => a.code.localeCompare(b.code));
 }
@@ -200,7 +212,7 @@ function toSummary(po: SummaryRow, prices: boolean): PurchaseOrderSummaryDto {
   const sos = new Map<string, string>();
   for (const i of po.items) {
     for (const a of i.allocations)
-      sos.set(a.serviceOrder.id, serviceOrderCode(a.serviceOrder.number));
+      if (a.serviceOrder) sos.set(a.serviceOrder.id, serviceOrderCode(a.serviceOrder.number));
     if (i.serviceOrder) sos.set(i.serviceOrder.id, serviceOrderCode(i.serviceOrder.number));
   }
   return {
@@ -268,13 +280,17 @@ export async function loadPurchaseOrder(
         allocations: i.allocations.map((a) => ({
           id: a.id,
           materialRequirementId: a.materialRequirementId,
-          serviceOrder: { id: a.serviceOrder.id, code: serviceOrderCode(a.serviceOrder.number) },
-          itemCode: a.requirement.serviceOrderItem
-            ? formatServiceOrderItemCode(
-                a.serviceOrder.number,
-                a.requirement.serviceOrderItem.position,
-              )
+          serviceOrder: a.serviceOrder
+            ? { id: a.serviceOrder.id, code: serviceOrderCode(a.serviceOrder.number) }
             : null,
+          preArrival: preArrivalOf(a.requirement),
+          itemCode:
+            a.requirement.serviceOrderItem && a.serviceOrder
+              ? formatServiceOrderItemCode(
+                  a.serviceOrder.number,
+                  a.requirement.serviceOrderItem.position,
+                )
+              : null,
           quantity: num(a.quantity),
         })),
         notes: i.notes,
@@ -316,6 +332,17 @@ export async function loadPurchaseOrder(
 
 // ─────────────────────────── Montagem dos itens ───────────────────────────
 
+/** "OS-0012" ou, antes da chegada (Etapa 3), "pedido PED-0034 (Sofá)". */
+function destinationCode(r: {
+  serviceOrder: { number: number } | null;
+  orderItem: { description: string; order: { number: number } } | null;
+}) {
+  if (r.serviceOrder) return serviceOrderCode(r.serviceOrder.number);
+  return r.orderItem
+    ? `pedido ${orderCode(r.orderItem.order.number)} (${r.orderItem.description})`
+    : 'destino desconhecido';
+}
+
 const EPS = 1e-6;
 
 /**
@@ -329,11 +356,25 @@ async function prepareItems(
   excludePurchaseOrderId?: string,
 ) {
   const reqIds = items.flatMap((i) => (i.allocations ?? []).map((a) => a.materialRequirementId));
+  // Ordem única de bloqueio (Etapa 3): pedido → necessidades → OS. A previsão pré-OS revalida o
+  // pedido sob bloqueio (cancelamento concorrente do pedido espera ou é visto).
+  const preOs = await tx.materialRequirement.findMany({
+    where: { id: { in: reqIds }, serviceOrderId: null },
+    select: { orderItem: { select: { orderId: true } } },
+  });
+  await lockRows(
+    tx,
+    'commercial_orders',
+    preOs.flatMap((x) => (x.orderItem ? [x.orderItem.orderId] : [])),
+  );
   await lockRows(tx, 'material_requirements', reqIds);
   const reqs = await tx.materialRequirement.findMany({
     where: { id: { in: reqIds } },
     include: {
       serviceOrder: { select: { id: true, number: true, status: true } },
+      orderItem: {
+        select: { description: true, order: { select: { number: true, status: true } } },
+      },
       allocations: {
         include: { item: { include: { purchaseOrder: { select: { id: true, status: true } } } } },
       },
@@ -349,7 +390,11 @@ async function prepareItems(
   );
   const usedHere = new Map<string, number>();
   const out: (Prisma.PurchaseOrderItemCreateWithoutPurchaseOrderInput & {
-    allocationRows: { materialRequirementId: string; serviceOrderId: string; quantity: number }[];
+    allocationRows: {
+      materialRequirementId: string;
+      serviceOrderId: string | null;
+      quantity: number;
+    }[];
   })[] = [];
 
   for (const [idx, item] of items.entries()) {
@@ -358,14 +403,20 @@ async function prepareItems(
     const linked = allocations.map((a) => {
       const r = byId.get(a.materialRequirementId);
       assertActiveRequirement(r, `${label}: a necessidade de material`);
-      if (!r || r.origin !== 'SOLICITACAO_APROVADA') {
+      if (!r || (r.origin !== 'SOLICITACAO_APROVADA' && r.origin !== 'PREVISAO_COMPRA')) {
         throw Errors.business(
-          `${label}: somente materiais de solicitações aprovadas podem ser comprados.`,
+          `${label}: somente materiais de solicitações aprovadas (ou previsões de compra) podem ser comprados.`,
         );
       }
-      const osCode = serviceOrderCode(r.serviceOrder.number);
-      if (r.serviceOrder.status !== 'ABERTA')
-        throw Errors.business(`${label}: a ${osCode} não está aberta.`);
+      const osCode = destinationCode(r);
+      if (r.serviceOrder) {
+        if (r.serviceOrder.status !== 'ABERTA')
+          throw Errors.business(`${label}: a ${osCode} não está aberta.`);
+      } else if (r.origin !== 'PREVISAO_COMPRA' || !r.orderItem) {
+        throw Errors.business(`${label}: necessidade sem destino.`);
+      } else if (r.orderItem.order.status === 'CANCELADO') {
+        throw Errors.business(`${label}: o ${osCode} foi cancelado.`);
+      }
       const p = shortfallOf.get(r.id);
       const missing = p?.shortfall ?? 0;
       const total = (usedHere.get(r.id) ?? 0) + a.quantity;
@@ -405,7 +456,8 @@ async function prepareItems(
         quantity: item.quantity,
         unitPriceCents: item.unitPriceCents ?? null,
         notes: item.notes ?? null,
-        serviceOrder: { connect: { id: r.serviceOrderId } },
+        // Pré-OS (Etapa 3): o destino é a única alocação; a OS é preenchida na chegada da peça.
+        ...(r.serviceOrderId ? { serviceOrder: { connect: { id: r.serviceOrderId } } } : {}),
         allocationRows: [
           { materialRequirementId: r.id, serviceOrderId: r.serviceOrderId, quantity },
         ],
@@ -450,7 +502,7 @@ async function prepareItems(
       const mismatch = specMismatch(stockSpec, reqSpec);
       if (mismatch) {
         throw Errors.business(
-          `${label}: ${serviceOrderCode(r.serviceOrder.number)} pede "${r.description}" — ${mismatch}`,
+          `${label}: ${destinationCode(r)} pede "${r.description}" — ${mismatch}`,
         );
       }
     }
@@ -493,7 +545,13 @@ async function writeItems(
       await tx.purchaseAllocation.create({ data: { ...a, purchaseOrderItemId: created.id } });
     }
   }
-  return [...new Set(prepared.flatMap((p) => p.allocationRows.map((a) => a.serviceOrderId)))];
+  return [
+    ...new Set(
+      prepared.flatMap((p) =>
+        p.allocationRows.flatMap((a) => (a.serviceOrderId ? [a.serviceOrderId] : [])),
+      ),
+    ),
+  ];
 }
 
 async function assertSupplier(tx: Tx, supplierId: string | null | undefined) {
@@ -514,12 +572,12 @@ export async function lockPurchaseOrder(tx: Tx, id: string) {
 }
 
 export const poServiceOrderIds = (po: {
-  items: { serviceOrderId: string | null; allocations: { serviceOrderId: string }[] }[];
+  items: { serviceOrderId: string | null; allocations: { serviceOrderId: string | null }[] }[];
 }) => [
   ...new Set(
     po.items.flatMap((i) => [
       ...(i.serviceOrderId ? [i.serviceOrderId] : []),
-      ...i.allocations.map((a) => a.serviceOrderId),
+      ...i.allocations.flatMap((a) => (a.serviceOrderId ? [a.serviceOrderId] : [])),
     ]),
   ),
 ];
@@ -527,8 +585,11 @@ export const poServiceOrderIds = (po: {
 /** Prazo da OS (sem prazo por último), depois a ordem de aprovação. */
 export function sortByDeadline<T extends { r: RequirementWithProgress }>(rows: T[]): T[] {
   return [...rows].sort((a, b) => {
-    const da = a.r.serviceOrder.promisedDate?.getTime() ?? Number.POSITIVE_INFINITY;
-    const db = b.r.serviceOrder.promisedDate?.getTime() ?? Number.POSITIVE_INFINITY;
+    const date = (x: T) =>
+      (x.r.serviceOrder?.promisedDate ?? x.r.orderItem?.order.promisedDate)?.getTime() ??
+      Number.POSITIVE_INFINITY;
+    const da = date(a);
+    const db = date(b);
     return da - db || a.r.createdAt.getTime() - b.r.createdAt.getTime();
   });
 }
@@ -540,13 +601,17 @@ export function toNeedDto(
 ): PurchaseNeedDto {
   return {
     requirementId: r.id,
-    serviceOrder: {
-      id: r.serviceOrder.id,
-      code: serviceOrderCode(r.serviceOrder.number),
-      promisedDate: dateOnly(r.serviceOrder.promisedDate),
-      priority: r.serviceOrder.priority,
-    },
-    customerName: r.serviceOrder.customer.name,
+    serviceOrder: r.serviceOrder
+      ? {
+          id: r.serviceOrder.id,
+          code: serviceOrderCode(r.serviceOrder.number),
+          promisedDate: dateOnly(r.serviceOrder.promisedDate),
+          priority: r.serviceOrder.priority,
+        }
+      : null,
+    preArrival: preArrivalOf(r),
+    forecast: r.origin === 'PREVISAO_COMPRA',
+    customerName: (r.serviceOrder?.customer ?? r.orderItem?.order.customer)?.name ?? '',
     itemCode: itemCodeOf(r),
     ...specOf(r, (r.unitCode ?? 'UNIDADE') as MaterialUnit),
     sourcing: r.sourcing,
@@ -584,9 +649,20 @@ export async function purchaseOrderRoutes(app: FastifyInstance) {
     const q = needsQuerySchema.parse(request.query);
     const prices = canSeePrices(request);
     const rows = await requirementsWithProgress(prisma, {
-      serviceOrder: { status: 'ABERTA' },
+      ...(q.serviceOrderId
+        ? { serviceOrderId: q.serviceOrderId, serviceOrder: { status: 'ABERTA' } }
+        : {
+            OR: [
+              { serviceOrder: { status: 'ABERTA' } },
+              // Etapa 3: previsão de compra antes da chegada (pedido não cancelado).
+              {
+                serviceOrderId: null,
+                origin: 'PREVISAO_COMPRA',
+                orderItem: { order: { status: { not: 'CANCELADO' } } },
+              },
+            ],
+          }),
       ...(q.kind ? { kind: q.kind } : {}),
-      ...(q.serviceOrderId ? { serviceOrderId: q.serviceOrderId } : {}),
     });
     const out: PurchaseNeedDto[] = sortByDeadline(rows).map(({ r, p }) => toNeedDto(r, p, prices));
     return q.pendingOnly ? out.filter((n) => n.pendingToBuy > 0) : out;
@@ -737,23 +813,44 @@ export async function purchaseOrderRoutes(app: FastifyInstance) {
         const reqIds = po.items.flatMap((i) => i.allocations.map((a) => a.materialRequirementId));
         // Etapa 2: rascunho antigo é revalidado sob bloqueio — necessidade substituída ou
         // cancelada depois do rascunho não recebe compra confirmada (409, edite o rascunho).
+        // Ordem única de bloqueio (Etapa 3): pedido (previsão pré-OS) → necessidades.
+        const preOs = await tx.materialRequirement.findMany({
+          where: { id: { in: reqIds }, serviceOrderId: null },
+          select: { orderItem: { select: { orderId: true } } },
+        });
+        await lockRows(
+          tx,
+          'commercial_orders',
+          preOs.flatMap((x) => (x.orderItem ? [x.orderItem.orderId] : [])),
+        );
         await lockRows(tx, 'material_requirements', reqIds);
         const reqs = await tx.materialRequirement.findMany({
           where: { id: { in: reqIds } },
-          include: { serviceOrder: { select: { status: true, number: true } } },
+          include: {
+            serviceOrder: { select: { status: true, number: true } },
+            orderItem: {
+              select: { description: true, order: { select: { number: true, status: true } } },
+            },
+          },
         });
         const stale = reqs.find((r) => r.status !== 'ATIVA');
         if (stale)
           throw Errors.conflict(
-            `A necessidade "${stale.description}" (${serviceOrderCode(stale.serviceOrder.number)}) foi ${
+            `A necessidade "${stale.description}" (${destinationCode(stale)}) foi ${
               stale.status === 'SUBSTITUIDA' ? 'substituída por uma nova medição' : 'cancelada'
             } depois deste rascunho. Edite o rascunho e vincule a necessidade atual.`,
             { requirementId: stale.id, status: stale.status },
           );
-        const closed = reqs.find((r) => r.serviceOrder.status !== 'ABERTA');
+        const closed = reqs.find((r) =>
+          r.serviceOrder
+            ? r.serviceOrder.status !== 'ABERTA'
+            : r.orderItem?.order.status === 'CANCELADO',
+        );
         if (closed)
           throw Errors.business(
-            `A ${serviceOrderCode(closed.serviceOrder.number)} não está aberta.`,
+            closed.serviceOrder
+              ? `A ${destinationCode(closed)} não está aberta.`
+              : `O ${destinationCode(closed)} foi cancelado.`,
           );
         await tx.purchaseOrder.update({
           where: { id },

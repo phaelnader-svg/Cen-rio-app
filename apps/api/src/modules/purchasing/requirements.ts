@@ -2,7 +2,7 @@ import type { Prisma, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
-import { lockRows, refreshReadiness } from './common';
+import { BUYABLE_ORIGINS, lockRows, refreshReadiness } from './common';
 
 /**
  * Etapa 2 (compras sem duplicidade) — ciclo de vida das necessidades sem apagar histórico.
@@ -24,7 +24,7 @@ export async function cancelRequirements(
   opts: { refresh?: boolean } = {},
 ) {
   const found = await tx.materialRequirement.findMany({
-    where: { ...where, origin: 'SOLICITACAO_APROVADA', status: 'ATIVA' },
+    where: { ...where, origin: { in: [...BUYABLE_ORIGINS] }, status: 'ATIVA' },
     select: { id: true },
   });
   if (!found.length) return [] as string[];
@@ -50,15 +50,19 @@ export async function cancelRequirements(
     await unlinkTasks(tx, actor, r.id, `necessidade cancelada: ${reason}`);
   }
   if (rows.length) {
+    const first = rows[0]!;
     await audit(tx, actor, {
       action: 'material_requirement.cancelled',
-      entityType: 'service_order',
-      entityId: rows[0]!.serviceOrderId,
+      // Previsão pré-OS (Etapa 3): o histórico fica na peça do pedido.
+      entityType: first.serviceOrderId ? 'service_order' : 'commercial_order_item',
+      entityId: first.serviceOrderId ?? first.orderItemId!,
       summary: `${rows.length} necessidade(s) de material cancelada(s): ${reason}`.slice(0, 500),
       changes: { requirements: rows.map((r) => r.id), reason },
     });
     if (opts.refresh !== false)
-      await refreshReadiness(tx, actor, [...new Set(rows.map((r) => r.serviceOrderId))]);
+      await refreshReadiness(tx, actor, [
+        ...new Set(rows.flatMap((r) => (r.serviceOrderId ? [r.serviceOrderId] : []))),
+      ]);
   }
   return rows.map((r) => r.id);
 }

@@ -304,7 +304,9 @@ export const reservationQuerySchema = z.object({
 
 export const leftoverSchema = z
   .object({
-    serviceOrderId: idSchema,
+    /** OS de origem; nula só para sobra de previsão pré-OS (Etapa 3), com `sourceRequirementId`. */
+    serviceOrderId: idSchema.nullable().optional(),
+    sourceRequirementId: idSchema.nullable().optional(),
     kind: z.enum(MATERIAL_KINDS),
     description: trimmed(2, 160, 'Descrição'),
     color: optionalText(60),
@@ -321,6 +323,13 @@ export const leftoverSchema = z
   .superRefine((v, ctx) => {
     if (!UNITS_BY_KIND[v.kind].includes(v.unit)) {
       ctx.addIssue({ code: 'custom', path: ['unit'], message: 'Unidade incompatível.' });
+    }
+    if (!v.serviceOrderId && !v.sourceRequirementId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['serviceOrderId'],
+        message: 'Informe a OS de origem.',
+      });
     }
   });
 export type LeftoverInput = z.input<typeof leftoverSchema>;

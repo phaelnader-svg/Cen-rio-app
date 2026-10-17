@@ -145,8 +145,8 @@ async function reviewOf(
     })),
     requirements: requirements.map((x) => ({
       id: x.id,
-      serviceOrderId: x.serviceOrderId,
-      serviceOrder: serviceOrderCode(x.serviceOrder.number),
+      serviceOrderId: x.serviceOrderId!,
+      serviceOrder: serviceOrderCode(x.serviceOrder!.number),
       material: x.description,
       quantity: Number(x.quantity ?? 0),
     })),

@@ -17,6 +17,7 @@ import {
   type Permission,
   type ReadinessLineDto,
   type RequirementOrphanDto,
+  type PreArrivalDto,
   type PurchaseOrderStatus,
   purchaseOrderCode,
   type SpecDto,
@@ -29,7 +30,7 @@ import { audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
-import { serviceOrderCode } from '../commercial/common';
+import { dateOnly, orderCode, serviceOrderCode } from '../commercial/common';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -274,6 +275,7 @@ export function toReservationDto(
 
 export const leftoverInclude = {
   serviceOrder: { select: { id: true, number: true } },
+  orderItem: { select: { description: true, order: { select: { id: true, number: true } } } },
   createdBy: { select: { displayName: true } },
   transfers: {
     include: {
@@ -289,7 +291,17 @@ export function toLeftoverDto(
 ): LeftoverDto {
   return {
     id: l.id,
-    serviceOrder: { id: l.serviceOrder.id, code: serviceOrderCode(l.serviceOrder.number) },
+    serviceOrder: l.serviceOrder
+      ? { id: l.serviceOrder.id, code: serviceOrderCode(l.serviceOrder.number) }
+      : null,
+    preArrival:
+      l.orderItem && l.sourceRequirementId
+        ? {
+            order: { id: l.orderItem.order.id, code: orderCode(l.orderItem.order.number) },
+            piece: l.orderItem.description,
+            requirementId: l.sourceRequirementId,
+          }
+        : null,
     kind: l.kind,
     description: l.description,
     color: l.color,
@@ -334,9 +346,36 @@ export function decidedRejectionLines(history: { kind: string; changes: unknown 
   return out;
 }
 
+/**
+ * Origens que geram compra: necessidade medida e aprovada (pós-OS) e, na Etapa 3, a previsão de
+ * compra (pode existir antes da OS, presa à peça do pedido). PREVISAO_MANUAL continua anotação.
+ */
+export const BUYABLE_ORIGINS = ['SOLICITACAO_APROVADA', 'PREVISAO_COMPRA'] as const;
+
+/** Peça do pedido (identidade pré-OS, Etapa 3) com o que é preciso para exibir o destino. */
+export const orderItemRefSelect = {
+  select: {
+    id: true,
+    position: true,
+    description: true,
+    quantity: true,
+    _count: { select: { serviceOrderItems: true } },
+    order: {
+      select: {
+        id: true,
+        number: true,
+        status: true,
+        promisedDate: true,
+        customer: { select: { name: true } },
+      },
+    },
+  },
+} as const;
+
 /** Tudo o que é preciso para saber em que ponto está cada necessidade aprovada. */
 export const requirementProgressInclude = {
   serviceOrderItem: { select: { position: true } },
+  orderItem: orderItemRefSelect,
   serviceOrder: {
     select: {
       id: true,
@@ -532,27 +571,40 @@ export async function requirementChains(
   opts: { excludePurchaseOrderId?: string } = {},
 ) {
   const scope = await db.materialRequirement.findMany({
-    where: { ...where, origin: 'SOLICITACAO_APROVADA', status: 'ATIVA' },
-    select: { id: true, serviceOrderId: true },
+    where: { ...where, origin: { in: [...BUYABLE_ORIGINS] }, status: 'ATIVA' },
+    select: { id: true, serviceOrderId: true, orderItemId: true },
   });
   return chainsOf(
     db,
-    [...new Set(scope.map((r) => r.serviceOrderId))],
+    [...new Set(scope.flatMap((r) => (r.serviceOrderId ? [r.serviceOrderId] : [])))],
     new Set(scope.map((r) => r.id)),
     opts,
+    [...new Set(scope.flatMap((r) => (!r.serviceOrderId && r.orderItemId ? [r.orderItemId] : [])))],
   );
 }
 
+/**
+ * Carrega as cadeias das OS informadas e, na Etapa 3, das previsões ainda sem OS das peças do
+ * pedido informadas (`preOsItems`). A cobertura continua a mesma função (`requirementCoverage`).
+ */
 export async function chainsOf(
   db: Tx | PrismaClient,
   osIds: string[],
   wanted: Set<string> | null,
   opts: { excludePurchaseOrderId?: string } = {},
+  preOsItems: string[] = [],
 ) {
-  if (!osIds.length) return { heads: [] as RequirementChain[], orphans: [] as RequirementChain[] };
+  if (!osIds.length && !preOsItems.length)
+    return { heads: [] as RequirementChain[], orphans: [] as RequirementChain[] };
   const [all, unlinked] = await Promise.all([
     db.materialRequirement.findMany({
-      where: { serviceOrderId: { in: osIds }, origin: 'SOLICITACAO_APROVADA' },
+      where: {
+        origin: { in: [...BUYABLE_ORIGINS] },
+        OR: [
+          ...(osIds.length ? [{ serviceOrderId: { in: osIds } }] : []),
+          ...(preOsItems.length ? [{ serviceOrderId: null, orderItemId: { in: preOsItems } }] : []),
+        ],
+      },
       include: requirementProgressInclude,
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     }),
@@ -667,9 +719,27 @@ export async function activeHeadOf(db: Tx | PrismaClient, id: string, compatible
 }
 
 export function itemCodeOf(r: RequirementWithProgress) {
-  return r.serviceOrderItem
+  return r.serviceOrderItem && r.serviceOrder
     ? formatServiceOrderItemCode(r.serviceOrder.number, r.serviceOrderItem.position)
     : null;
+}
+
+/**
+ * Etapa 3: destino de uma previsão ainda sem OS — a peça do pedido. `pendingLink` quando a peça já
+ * entrou em alguma OS mas a vinculação exigiu decisão do gestor (AB-3).
+ */
+export function preArrivalOf(
+  r: Pick<RequirementWithProgress, 'serviceOrderId' | 'orderItem'>,
+): PreArrivalDto | null {
+  if (r.serviceOrderId || !r.orderItem) return null;
+  const o = r.orderItem.order;
+  return {
+    order: { id: o.id, code: orderCode(o.number), promisedDate: dateOnly(o.promisedDate) },
+    orderItemId: r.orderItem.id,
+    piece: r.orderItem.description,
+    // A peça já entrou em OS, mas a vinculação desta previsão exige decisão do gestor (AB-3).
+    pendingLink: r.orderItem._count.serviceOrderItems > 0,
+  };
 }
 
 export function toReadinessLine(
@@ -685,6 +755,7 @@ export function toReadinessLine(
     quantity: num(x.quantity),
     description: x.description,
     inherited: true,
+    forecast: x.origin === 'PREVISAO_COMPRA',
   }));
   if (opts.broken)
     replaces.push({
@@ -692,6 +763,7 @@ export function toReadinessLine(
       quantity: num(opts.broken.quantity),
       description: opts.broken.description,
       inherited: false,
+      forecast: opts.broken.origin === 'PREVISAO_COMPRA',
     });
   const exclusive = r.sourcing === 'EXCLUSIVO_OS';
   let leftoverDraft: ReadinessLineDto['leftoverDraft'] = null;
@@ -730,6 +802,7 @@ export function toReadinessLine(
     excess: p.excess,
     replaces,
     leftoverDraft,
+    forecast: r.origin === 'PREVISAO_COMPRA',
   };
 }
 
@@ -820,12 +893,14 @@ export async function readinessOf(
   const pendingOrphans = orphans.filter(orphanNeedsAction);
   // Etapa 2: levantamento feito e todas as necessidades encerradas (substituídas sem herdeira
   // ou canceladas) = nada falta — não volta para "sem levantamento" (tarefa não fica presa).
+  // Etapa 3 (AB-4): previsão de compra vinculada à OS não substitui a medição real — enquanto
+  // houver previsão ATIVA (não substituída nem cancelada), a prontidão fica pendente, mesmo 100%
+  // coberta. Nunca libera produção só com previsão.
+  const forecasts = rows.filter(({ r }) => r.origin === 'PREVISAO_COMPRA').length;
+  const pending = openMeasurements + pendingRequests + forecasts > 0;
   const surveyedNothingLeft = rows.length === 0 && orphans.length > 0;
   const state = surveyedNothingLeft
-    ? computeReadiness(
-        [{ need: 0, covered: 0, purchased: 0, divergence: false }],
-        openMeasurements + pendingRequests > 0,
-      )
+    ? computeReadiness([{ need: 0, covered: 0, purchased: 0, divergence: false }], pending)
     : computeReadiness(
         rows.map(({ p }) => ({
           need: p.need,
@@ -834,7 +909,7 @@ export async function readinessOf(
           purchased: q3(p.covered + p.awaiting),
           divergence: p.divergence,
         })),
-        openMeasurements + pendingRequests > 0,
+        pending,
       );
   return {
     state,
@@ -843,6 +918,7 @@ export async function readinessOf(
     orphans: pendingOrphans,
     openMeasurements,
     pendingRequests,
+    forecasts,
   };
 }
 

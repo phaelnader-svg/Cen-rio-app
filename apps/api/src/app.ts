@@ -44,6 +44,7 @@ import { closingRoutes } from './modules/finance/closing';
 import { processIssueRisks } from './modules/issues/service';
 import { processHelpQueue } from './modules/help/queue';
 import { testClockRoutes } from './modules/testing/routes';
+import { forecastRoutes } from './modules/purchasing/forecasts';
 import { leftoverRoutes } from './modules/purchasing/leftovers';
 import { purchaseOrderRoutes } from './modules/purchasing/purchase-orders';
 import { shortageRoutes } from './modules/purchasing/shortages';
@@ -194,6 +195,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(materialReceiptRoutes);
   await app.register(stockRoutes);
   await app.register(leftoverRoutes);
+  await app.register(forecastRoutes);
   await app.register(productionPlanRoutes);
   await app.register(productionTaskRoutes);
   await app.register(productionQueueRoutes);
