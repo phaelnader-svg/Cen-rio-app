@@ -571,6 +571,7 @@ describe('Pagamentos (parcial, vários, a maior, data futura, estorno)', () => {
     let [entry, balance] = await recs(admin, orderId);
     entry = ok<Rec>(await pay(admin, entry!, 100000, { method: 'PIX' }));
     entry = ok<Rec>(await pay(admin, entry, 100000, { method: 'DINHEIRO' }));
+    expect(entry).toMatchObject({ status: 'RECEBIDO', receivedCents: 200000 });
     // 12. Acima do saldo: bloqueado, mensagem com o saldo disponível.
     const over = await pay(admin, balance!, 200001, { method: 'CARTAO_CREDITO', installments: 3 });
     expect(over.status).toBe(422);
