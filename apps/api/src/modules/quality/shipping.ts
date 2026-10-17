@@ -187,6 +187,8 @@ export function toDeliveryJob(r: DeliveryRow): LogisticsJobDto {
     arrivedAt: r.arrivedAt?.toISOString() ?? null,
     installedAt: r.installedAt?.toISOString() ?? null,
     completedAt: r.completedAt?.toISOString() ?? null,
+    // Cobrança (AM-9): preenchida só para o responsável (withPaymentInstructions).
+    paymentInstruction: null,
     version: r.version,
   };
 }

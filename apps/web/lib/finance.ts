@@ -11,7 +11,9 @@ import type {
   TripCostViewDto,
   WeeklyClosingDto,
   OrderResultDto,
+  OrderBalanceDto,
   OrderRevenueDto,
+  PaymentReportDto,
   PayableDto,
   ProductivityDto,
   ReceivableDto,
@@ -59,8 +61,27 @@ export const useFinOrders = (search: string, open: boolean) =>
   );
 export const useFinOrder = (id: string | null) =>
   useFin<OrderRevenueDto>(`/orders/${id}`, Boolean(id));
-export const useReceivables = (status?: string) =>
-  useFin<ReceivableDto[]>(`/receivables${qs({ status })}`);
+export const useReceivables = (status?: string, f: { orderId?: string; overdue?: boolean } = {}) =>
+  useFin<ReceivableDto[]>(
+    `/receivables${qs({ status, orderId: f.orderId, overdue: f.overdue ? '1' : undefined })}`,
+  );
+/** Cobrança: pagamentos informados pela equipe (pendentes de confirmação do escritório). */
+export const usePaymentReports = (enabled = true) =>
+  useFin<PaymentReportDto[]>('/payment-reports?status=PENDENTE', enabled);
+/** Cobrança: saldo dos pedidos de uma entrega (aviso do gestor; só com financeiro.ver). */
+export const useBalances = (
+  q: { deliveryId?: string; serviceOrderItemIds?: string[] },
+  enabled = true,
+) =>
+  useFin<OrderBalanceDto[]>(
+    `/balances${qs({
+      deliveryId: q.deliveryId,
+      serviceOrderItemIds: q.serviceOrderItemIds?.length
+        ? q.serviceOrderItemIds.join(',')
+        : undefined,
+    })}`,
+    enabled && Boolean(q.deliveryId || q.serviceOrderItemIds?.length),
+  );
 export const useReceivable = (id: string | null) =>
   useFin<ReceivableDto>(`/receivables/${id}`, Boolean(id));
 export const usePayables = (status?: string) => useFin<PayableDto[]>(`/payables${qs({ status })}`);

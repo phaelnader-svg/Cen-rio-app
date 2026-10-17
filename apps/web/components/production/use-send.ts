@@ -43,6 +43,7 @@ export const PRODUCTION_KEYS = [
   'deliveries',
   'delivery',
   'logistics-jobs',
+  'logistics-route',
   'logistics-occurrences',
   'logistics-occurrence',
   'returns',

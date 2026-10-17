@@ -40,6 +40,7 @@ import {
   usePieces,
 } from '@/lib/quality';
 import { TripCostCard, TripCostFields, type TripCostValue } from '@/components/finance/trip-cost';
+import { BalanceWarning, useDeliveryBalance } from '@/components/finance/balance-warning';
 import {
   DateField,
   FormGrid,
@@ -528,6 +529,9 @@ export function ScheduleDialog({
   const [trip, setTrip] = useState<{ v: TripCostValue; ok: boolean }>({ v: undefined, ok: true });
   const [key] = useState(newIdempotencyKey);
   const { m, error } = useSend(onClose);
+  // Cobrança (AM-5): saldo do cliente com aviso forte e confirmação consciente (não bloqueia).
+  const balance = useDeliveryBalance({ serviceOrderItemIds: ids });
+  const [balanceAck, setBalanceAck] = useState(false);
   const candidates = (pieces.data ?? []).filter(
     (p) =>
       p.customerId === customerId &&
@@ -570,7 +574,8 @@ export function ScheduleDialog({
               !date ||
               (!provisional && !windowStart) ||
               (Boolean(delivery) && reason.trim().length < 3) ||
-              (!delivery && team === 'LOGISTICA_TERCEIRIZADA' && !trip.ok)
+              (!delivery && team === 'LOGISTICA_TERCEIRIZADA' && !trip.ok) ||
+              (balance.open > 0 && !balanceAck)
             }
             loading={m.isPending}
             onClick={() =>
@@ -749,6 +754,7 @@ export function ScheduleDialog({
         {!delivery && team === 'LOGISTICA_TERCEIRIZADA' && (
           <TripCostFields kind="ENTREGA" onChange={(v, ok) => setTrip({ v, ok })} />
         )}
+        <BalanceWarning serviceOrderItemIds={ids} ack={balanceAck} onAck={setBalanceAck} />
       </div>
     </Dialog>
   );
@@ -763,6 +769,8 @@ export function DeliveryDetailPage({ id }: { id: string }) {
   const [edit, setEdit] = useState(false);
   const [cancel, setCancel] = useState(false);
   const { m, error } = useSend();
+  const balance = useDeliveryBalance({ deliveryId: id });
+  const [balanceAck, setBalanceAck] = useState(false);
   if (q.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
   const d = q.data;
@@ -780,6 +788,7 @@ export function DeliveryDetailPage({ id }: { id: string }) {
               {d.status === 'PROVISORIA' && (
                 <Button
                   loading={m.isPending}
+                  disabled={balance.open > 0 && !balanceAck}
                   onClick={() =>
                     m.mutate({
                       run: () =>
@@ -821,7 +830,13 @@ export function DeliveryDetailPage({ id }: { id: string }) {
         </span>
         {d.attempts > 0 && <Badge tone="danger">{d.attempts} tentativa(s) frustrada(s)</Badge>}
       </div>
-      <div className="mb-6">
+      <div className="mb-6 space-y-4">
+        <BalanceWarning
+          deliveryId={d.id}
+          delivered={d.status === 'CONCLUIDA'}
+          ack={balanceAck}
+          onAck={d.status === 'PROVISORIA' && manage ? setBalanceAck : undefined}
+        />
         <TripCostCard deliveryId={d.id} />
       </div>
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">

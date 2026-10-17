@@ -88,6 +88,8 @@ export interface OrderItemDto {
   plannedUpholsterer: { userId: string; displayName: string } | null;
   /** Mão de obra PREVISTA por unidade (não é pagamento). null sem `financeiro.ver`. */
   plannedLaborUnitCents: number | null;
+  /** Cobrança: valor fechado da peça (null sem valor por peça ou sem permissão de valores). */
+  agreedValueCents: number | null;
 }
 
 export interface OrderSummaryDto {

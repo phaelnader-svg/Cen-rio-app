@@ -11,6 +11,12 @@ import type {
   ServiceType,
 } from '@cenario/shared';
 import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABEL,
+  PAYMENT_MODELS,
+  PAYMENT_MODEL_LABEL,
+  type PaymentMethod,
+  type PaymentModel,
   CUSTOMER_KINDS,
   CUSTOMER_KIND_LABEL,
   PICKUP_TEAM_LABEL,
@@ -62,6 +68,9 @@ interface PieceRow {
   upholsterer: string;
   laborCents: number | null;
   laborOk: boolean;
+  /** Cobrança (AM-2): valor fechado da peça (opcional; todas ou nenhuma). */
+  valueCents: number | null;
+  valueOk: boolean;
 }
 
 const newPiece = (serviceType: ServiceType = 'REFORMA_COMPLETA'): PieceRow => ({
@@ -74,6 +83,8 @@ const newPiece = (serviceType: ServiceType = 'REFORMA_COMPLETA'): PieceRow => ({
   upholsterer: '',
   laborCents: null,
   laborOk: true,
+  valueCents: null,
+  valueOk: true,
 });
 
 const brl = (cents: number | null | undefined) =>
@@ -124,6 +135,13 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const [value, setValue] = useState<number | null>(null);
   const [valueOk, setValueOk] = useState(true);
   const [terms, setTerms] = useState('');
+  // Cobrança (AM-1): condição estruturada — gera as cobranças junto com o pedido.
+  const [payModel, setPayModel] = useState<PaymentModel>('ENTRADA_ENTREGA');
+  const [entry, setEntry] = useState<number | null>(null);
+  const [entryOk, setEntryOk] = useState(true);
+  const [entryMethod, setEntryMethod] = useState<PaymentMethod>('PIX');
+  const [balanceMethod, setBalanceMethod] = useState<PaymentMethod>('PIX');
+  const [installments, setInstallments] = useState('1');
   const [promised, setPromised] = useState('');
   const [technicalNotes, setTechnicalNotes] = useState('');
 
@@ -199,6 +217,19 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
         contractedService: contractedText,
         agreedValueCents: d?.canSetValues ? value : null,
         paymentTerms: d?.canSetValues ? blank(terms) : null,
+        payment:
+          d?.canSetValues && value
+            ? {
+                model: payModel,
+                entryCents: payModel === 'ENTRADA_ENTREGA' ? entry : null,
+                entryMethod: payModel === 'ENTRADA_ENTREGA' ? entryMethod : null,
+                balanceMethod: payModel === 'ENTRADA_ENTREGA' ? balanceMethod : null,
+                installments:
+                  payModel === 'CARTAO_100' || payModel === 'CARTAO_RETIRADA'
+                    ? Number(installments) || 1
+                    : null,
+              }
+            : null,
         promisedDate: promised,
         technicalNotes: blank(technicalNotes),
         items: pieces.map((p) => ({
@@ -207,6 +238,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
           quantity: Number(p.quantity),
           serviceType: p.serviceType,
           fabricName: blank(p.fabricName),
+          agreedValueCents: d?.canSetValues ? p.valueCents : null,
           plannedUpholstererUserId: d?.canPlanUpholsterer ? p.upholsterer || null : null,
           plannedLaborUnitCents:
             d?.canPlanLabor && p.upholsterer && laborAllowed(d, p.upholsterer)
@@ -247,6 +279,11 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
     d,
     value,
     terms,
+    payModel,
+    entry,
+    entryMethod,
+    balanceMethod,
+    installments,
     promised,
     technicalNotes,
     pieces,
@@ -262,6 +299,12 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const save = useMutation({
     mutationFn: () => {
       if (!valueOk) throw new Error('Valor fechado inválido.');
+      if (!entryOk || pieces.some((p) => !p.valueOk)) throw new Error('Valor inválido.');
+      const piecesWithValue = pieces.filter((p) => p.valueCents !== null).length;
+      if (piecesWithValue && piecesWithValue !== pieces.length)
+        throw new Error('Informe o valor de todas as peças ou de nenhuma.');
+      if (piecesWithValue && pieces.reduce((a, p) => a + (p.valueCents ?? 0), 0) !== value)
+        throw new Error('A soma dos valores das peças precisa ser igual ao valor fechado.');
       if (pieces.some((p) => !p.laborOk)) throw new Error('Mão de obra prevista inválida.');
       if (!amountOk) throw new Error('Valor da logística inválido.');
       if (mode === 'EXISTENTE' && !customer) throw new Error('Selecione o cliente.');
@@ -705,6 +748,19 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
                   ))}
                 </SelectField>
               )}
+              {d.canSetValues && (
+                <MoneyField
+                  label="Valor da peça (opcional)"
+                  cols={3}
+                  cents={p.valueCents}
+                  onCents={(v, ok) => setPiece(p.key, { valueCents: v, valueOk: ok })}
+                  hint="Todas ou nenhuma; a soma é o valor fechado."
+                  error={
+                    !p.valueOk ? 'Valor inválido.' : err(`service.items.${idx}.agreedValueCents`)
+                  }
+                  data-testid={`ns-piece-value-${idx}`}
+                />
+              )}
               {d.canPlanLabor && p.upholsterer && laborAllowed(d, p.upholsterer) && (
                 <MoneyField
                   label="Mão de obra prevista (por unidade)"
@@ -750,11 +806,88 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
           )}
           {d.canSetValues && (
             <TextField
-              label="Condições de pagamento"
+              label="Condições de pagamento (observação)"
               cols={5}
               value={terms}
               onChange={(e) => setTerms(e.target.value)}
             />
+          )}
+          {d.canSetValues && value !== null && value > 0 && (
+            <>
+              <SelectField
+                label="Condição de pagamento"
+                cols={4}
+                value={payModel}
+                onChange={(e) => setPayModel(e.target.value as PaymentModel)}
+                data-testid="ns-pay-model"
+              >
+                {PAYMENT_MODELS.filter((m) => withPickup || m !== 'CARTAO_RETIRADA').map((m) => (
+                  <option key={m} value={m}>
+                    {PAYMENT_MODEL_LABEL[m]}
+                  </option>
+                ))}
+              </SelectField>
+              {payModel === 'ENTRADA_ENTREGA' && (
+                <>
+                  <MoneyField
+                    label="Entrada"
+                    cols={3}
+                    cents={entry}
+                    onCents={(v, ok) => {
+                      setEntry(v);
+                      setEntryOk(ok);
+                    }}
+                    hint={`Vazio = metade (${brl(value - Math.floor(value / 2))}). Saldo vence na entrega.`}
+                    data-testid="ns-pay-entry"
+                  />
+                  <SelectField
+                    label="Forma da entrada"
+                    cols={2}
+                    value={entryMethod}
+                    onChange={(e) => setEntryMethod(e.target.value as PaymentMethod)}
+                  >
+                    {PAYMENT_METHODS.map((m) => (
+                      <option key={m} value={m}>
+                        {PAYMENT_METHOD_LABEL[m]}
+                      </option>
+                    ))}
+                  </SelectField>
+                  <SelectField
+                    label="Forma do saldo"
+                    cols={3}
+                    value={balanceMethod}
+                    onChange={(e) => setBalanceMethod(e.target.value as PaymentMethod)}
+                  >
+                    {PAYMENT_METHODS.map((m) => (
+                      <option key={m} value={m}>
+                        {PAYMENT_METHOD_LABEL[m]}
+                      </option>
+                    ))}
+                  </SelectField>
+                </>
+              )}
+              {(payModel === 'CARTAO_100' || payModel === 'CARTAO_RETIRADA') && (
+                <SelectField
+                  label="Parcelas"
+                  cols={2}
+                  value={installments}
+                  onChange={(e) => setInstallments(e.target.value)}
+                  data-testid="ns-pay-installments"
+                >
+                  {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((n) => (
+                    <option key={n} value={n}>
+                      {n}×
+                    </option>
+                  ))}
+                </SelectField>
+              )}
+              {pieces.every((p) => p.valueCents === null) && (
+                <p className="text-xs text-warn-600 sm:col-span-12" data-testid="ns-estimated-hint">
+                  Sem valor por peça: o Resultado de cada OS usará uma distribuição estimada
+                  (proporcional às peças).
+                </p>
+              )}
+            </>
           )}
           <DateField
             label="Prazo de entrega combinado"

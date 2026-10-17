@@ -22,6 +22,7 @@ import {
   serviceOrderCode,
 } from '../commercial/common';
 import { deliveryInclude, toDeliveryJob } from './shipping';
+import { withPaymentInstructions } from '../finance/billing';
 
 /**
  * Correção global — ROTEIRO DIÁRIO da logística (retiradas e entregas de um dia).
@@ -158,6 +159,7 @@ async function collect(db: Tx | PrismaClient, date: string): Promise<Stop[]> {
       arrivedAt: null,
       installedAt: null,
       completedAt: null,
+      paymentInstruction: null,
       version: p.version,
     };
     stops.push({
@@ -236,6 +238,15 @@ export async function loadRoute(
     s.responsible?.userId === viewer.userId ||
     s.participants.some((p) => p.userId === viewer.userId);
   const stops = viewer.manager ? all : all.filter(mine);
+  // Cobrança (AM-9): a equipe vê só a instrução de pagamento da parada da qual é responsável.
+  if (!viewer.manager) {
+    const jobs = await withPaymentInstructions(
+      db,
+      stops.map((s) => s.job),
+      viewer.userId,
+    );
+    stops.forEach((s, i) => (s.job = jobs[i]!));
+  }
   return {
     date,
     scope: viewer.manager ? 'GESTOR' : 'EQUIPE',

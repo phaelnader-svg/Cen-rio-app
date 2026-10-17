@@ -29,6 +29,9 @@ interface ItemRow {
   quantity: string;
   notes: string;
   locked?: number;
+  /** Cobrança (AM-2): valor da peça (opcional; todas ou nenhuma; soma = valor final). */
+  valueCents: number | null;
+  valueOk: boolean;
 }
 
 const newRow = (): ItemRow => ({
@@ -37,6 +40,8 @@ const newRow = (): ItemRow => ({
   description: '',
   quantity: '1',
   notes: '',
+  valueCents: null,
+  valueOk: true,
 });
 
 export function OrderForm({
@@ -74,6 +79,8 @@ export function OrderForm({
           quantity: String(i.quantity),
           notes: i.notes ?? '',
           locked: Math.max(i.receivedQuantity + i.inActivePickups, i.inServiceOrders),
+          valueCents: i.agreedValueCents,
+          valueOk: true,
         }))
       : [newRow()],
   );
@@ -86,7 +93,7 @@ export function OrderForm({
 
   const m = useMutation({
     mutationFn: async () => {
-      if (!valueValid) throw new Error('Valor negociado inválido.');
+      if (!valueValid || items.some((i) => !i.valueOk)) throw new Error('Valor inválido.');
       const base = {
         pickupAddressId: effectiveAddress || null,
         contractedService: service,
@@ -100,6 +107,7 @@ export function OrderForm({
           description: i.description,
           quantity: Number(i.quantity),
           notes: i.notes,
+          ...(canValues ? { agreedValueCents: i.valueCents } : {}),
         })),
       };
       if (order) {
@@ -376,6 +384,23 @@ export function OrderForm({
                   icon={<Trash2 className="size-4" aria-hidden />}
                 />
               </div>
+              {canValues && (
+                <Field
+                  label="Valor da peça (opcional)"
+                  className="sm:col-span-2"
+                  hint="Todas ou nenhuma; a soma é o valor final do pedido."
+                  error={!it.valueOk ? 'Valor inválido.' : errors[`items.${idx}.agreedValueCents`]}
+                >
+                  {(p) => (
+                    <MoneyInput
+                      {...p}
+                      cents={it.valueCents}
+                      onCents={(v, ok) => setItem(it.key, { valueCents: v, valueOk: ok })}
+                      data-testid={`order-item-value-${idx}`}
+                    />
+                  )}
+                </Field>
+              )}
               <Field label="Observações da peça" className="sm:col-span-4">
                 {(p) => (
                   <Input

@@ -86,6 +86,7 @@ export const FINANCIAL_STATUSES = [
   'SEM_COBRANCA',
   'A_RECEBER',
   'PARCIAL',
+  'VENCIDO',
   'QUITADO',
 ] as const;
 export type FinancialStatus = (typeof FINANCIAL_STATUSES)[number];
@@ -94,20 +95,232 @@ export const FINANCIAL_STATUS_LABEL: Record<FinancialStatus, string> = {
   SEM_COBRANCA: 'Cobrança não lançada',
   A_RECEBER: 'A receber',
   PARCIAL: 'Recebido em parte',
+  VENCIDO: 'Vencido',
   QUITADO: 'Quitado',
 };
-/** Situação financeira do pedido (derivada): valor final × lançado × recebido. */
+/**
+ * Situação financeira do pedido (derivada): valor final × lançado × recebido × vencido. Nada é
+ * gravado: VENCIDO aparece quando há saldo de cobrança com vencimento (data ou evento) atingido.
+ */
 export function orderFinancialStatus(i: {
   finalCents: number | null;
   billedCents: number;
   receivedCents: number;
+  overdueCents?: number;
 }): FinancialStatus {
   if (i.finalCents === null) return 'SEM_VALOR';
   if (i.receivedCents >= i.finalCents && i.finalCents > 0) return 'QUITADO';
+  if ((i.overdueCents ?? 0) > 0) return 'VENCIDO';
   if (i.receivedCents > 0) return 'PARCIAL';
   if (i.billedCents === 0) return 'SEM_COBRANCA';
   return 'A_RECEBER';
 }
+
+// ─────────────────────────── Cobrança do cliente ───────────────────────────
+
+/** Vencimento da cobrança: data combinada, ou a conclusão real da retirada/entrega. */
+export const DUE_TRIGGERS = ['DATA', 'RETIRADA', 'ENTREGA'] as const;
+export type DueTrigger = (typeof DUE_TRIGGERS)[number];
+export const DUE_TRIGGER_LABEL: Record<DueTrigger, string> = {
+  DATA: 'Na data',
+  RETIRADA: 'Na retirada',
+  ENTREGA: 'Na entrega',
+};
+export const CARD_METHODS = ['CARTAO_CREDITO', 'CARTAO_DEBITO'] as const;
+export const isCard = (m: string) => (CARD_METHODS as readonly string[]).includes(m);
+export const MAX_INSTALLMENTS = 12;
+
+/**
+ * Vencimento efetivo: DATA → a data; RETIRADA/ENTREGA → a data local da conclusão real do evento
+ * (null enquanto não aconteceu — reagendamento ou tentativa frustrada não vencem a cobrança).
+ */
+export function effectiveDueDate(r: {
+  dueTrigger: DueTrigger;
+  dueDate: string | null;
+  eventDate: string | null;
+}): string | null {
+  return r.dueTrigger === 'DATA' ? r.dueDate : r.eventDate;
+}
+
+/**
+ * Atraso derivado. DATA vence no dia seguinte ao vencimento (como antes); evento vence no próprio
+ * dia da conclusão (a cobrança era para aquele momento). `daysOverdue` só quando vencida.
+ */
+export function receivableOverdue(r: {
+  dueTrigger: DueTrigger;
+  effectiveDue: string | null;
+  openCents: number;
+  cancelled: boolean;
+  today: string;
+}) {
+  if (r.cancelled || r.openCents <= 0 || !r.effectiveDue) return { overdue: false, daysOverdue: 0 };
+  const overdue = r.dueTrigger === 'DATA' ? r.effectiveDue < r.today : r.effectiveDue <= r.today;
+  if (!overdue) return { overdue: false, daysOverdue: 0 };
+  const days = Math.round(
+    (Date.parse(`${r.today}T00:00:00Z`) - Date.parse(`${r.effectiveDue}T00:00:00Z`)) / 86_400_000,
+  );
+  return { overdue: true, daysOverdue: Math.max(0, days) };
+}
+
+/** Modelos de condição do Novo serviço: geram as cobranças (sem entidade de plano). */
+export const PAYMENT_MODELS = [
+  'ENTRADA_ENTREGA',
+  'PIX_100',
+  'CARTAO_100',
+  'CARTAO_RETIRADA',
+  'MANUAL',
+] as const;
+export type PaymentModel = (typeof PAYMENT_MODELS)[number];
+export const PAYMENT_MODEL_LABEL: Record<PaymentModel, string> = {
+  ENTRADA_ENTREGA: 'Entrada + saldo na entrega',
+  PIX_100: '100% Pix',
+  CARTAO_100: 'Cartão 100% (parcelado)',
+  CARTAO_RETIRADA: 'Cartão na retirada (parcelado)',
+  MANUAL: 'Manual (lançar depois)',
+};
+
+export interface ReceivableDraft {
+  description: string;
+  amountCents: number;
+  dueTrigger: DueTrigger;
+  dueDate: string | null;
+  expectedMethod: PaymentMethod;
+  installments: number | null;
+}
+
+/**
+ * Cobranças geradas pelo modelo. 50/50: entrada (padrão = metade, arredondada a favor da
+ * entrada) com data, saldo na entrega. Cartão N×: UMA cobrança com N parcelas.
+ */
+export function paymentPlan(
+  totalCents: number,
+  p: {
+    model: PaymentModel;
+    entryCents?: number | null;
+    entryDueDate?: string | null;
+    entryMethod?: PaymentMethod | null;
+    balanceMethod?: PaymentMethod | null;
+    dueDate?: string | null;
+    installments?: number | null;
+  },
+  today: string,
+): ReceivableDraft[] {
+  const n = p.installments ?? 1;
+  switch (p.model) {
+    case 'MANUAL':
+      return [];
+    case 'ENTRADA_ENTREGA': {
+      const entry = p.entryCents ?? totalCents - Math.floor(totalCents / 2);
+      const out: ReceivableDraft[] = [
+        {
+          description: 'Entrada',
+          amountCents: entry,
+          dueTrigger: 'DATA',
+          dueDate: p.entryDueDate ?? today,
+          expectedMethod: p.entryMethod ?? 'PIX',
+          installments: isCard(p.entryMethod ?? 'PIX') ? n : null,
+        },
+      ];
+      if (totalCents - entry > 0)
+        out.push({
+          description: 'Saldo na entrega',
+          amountCents: totalCents - entry,
+          dueTrigger: 'ENTREGA',
+          dueDate: null,
+          expectedMethod: p.balanceMethod ?? 'PIX',
+          installments: isCard(p.balanceMethod ?? 'PIX') ? n : null,
+        });
+      return out;
+    }
+    case 'PIX_100':
+      return [
+        {
+          description: 'Pagamento integral (Pix)',
+          amountCents: totalCents,
+          dueTrigger: 'DATA',
+          dueDate: p.dueDate ?? today,
+          expectedMethod: 'PIX',
+          installments: null,
+        },
+      ];
+    case 'CARTAO_100':
+      return [
+        {
+          description: `Cartão ${n}×`,
+          amountCents: totalCents,
+          dueTrigger: 'DATA',
+          dueDate: p.dueDate ?? today,
+          expectedMethod: 'CARTAO_CREDITO',
+          installments: n,
+        },
+      ];
+    case 'CARTAO_RETIRADA':
+      return [
+        {
+          description: `Cartão na retirada ${n}×`,
+          amountCents: totalCents,
+          dueTrigger: 'RETIRADA',
+          dueDate: null,
+          expectedMethod: 'CARTAO_CREDITO',
+          installments: n,
+        },
+      ];
+  }
+}
+
+/** Problema do modelo de condição (null se válido). */
+export function paymentPlanProblem(
+  totalCents: number | null,
+  p: { model: PaymentModel; entryCents?: number | null; installments?: number | null },
+  ctx: { customerDropOff: boolean },
+): string | null {
+  if (p.model === 'MANUAL') return null;
+  if (totalCents === null || totalCents <= 0)
+    return 'Informe o valor fechado para gerar as cobranças da condição.';
+  if (
+    p.installments !== null &&
+    p.installments !== undefined &&
+    (p.installments < 1 || p.installments > MAX_INSTALLMENTS)
+  )
+    return `Parcelas: de 1 a ${MAX_INSTALLMENTS}.`;
+  if (p.model === 'ENTRADA_ENTREGA' && p.entryCents !== null && p.entryCents !== undefined) {
+    if (p.entryCents <= 0 || p.entryCents > totalCents)
+      return 'A entrada precisa ser maior que zero e no máximo o valor fechado.';
+  }
+  if (p.model === 'CARTAO_RETIRADA' && ctx.customerDropOff)
+    return 'Sem retirada (o cliente traz as peças): use outra condição.';
+  return null;
+}
+
+/**
+ * Valores por peça: todos ou nenhum; soma EXATAMENTE igual ao valor final do pedido. Nada é
+ * distribuído em silêncio.
+ */
+export function itemValuesProblem(
+  values: readonly (number | null | undefined)[],
+  finalCents: number | null,
+): string | null {
+  const given = values.filter((v) => v !== null && v !== undefined);
+  if (!given.length) return null;
+  if (given.length !== values.length) return 'Informe o valor de todas as peças ou de nenhuma.';
+  if (given.some((v) => !Number.isInteger(v) || (v as number) < 0))
+    return 'Valor de peça inválido.';
+  if (finalCents === null) return 'Informe o valor fechado do pedido antes dos valores por peça.';
+  const sum = given.reduce<number>((a, v) => a + (v as number), 0);
+  if (sum !== finalCents)
+    return `A soma dos valores das peças (${formatCents(sum)}) precisa ser igual ao valor final do pedido (${formatCents(finalCents)}).`;
+  return null;
+}
+
+/**
+ * Receita por unidade de uma peça do pedido (soma exata do valor da peça). A unidade k é sempre a
+ * mesma, de modo que a OS que recebeu as primeiras unidades não perde receita quando outra nasce.
+ */
+export const unitValues = (valueCents: number, quantity: number) =>
+  splitCents(
+    valueCents,
+    Array.from({ length: Math.max(1, quantity) }, () => 1),
+  );
 
 // ─────────────────────────── Mão de obra por produção ───────────────────────────
 

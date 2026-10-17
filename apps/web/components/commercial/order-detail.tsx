@@ -1,7 +1,9 @@
 'use client';
 
-import type { OrderDto } from '@cenario/shared';
+import type { OrderDto, PaymentMethod } from '@cenario/shared';
 import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABEL,
   PIECE_TYPE_LABEL,
   RECEIPT_ORIGIN_LABEL,
   cancelOrderSchema,
@@ -15,7 +17,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
-import { Field, Input, Textarea } from '@/components/ui/field';
+import { Field, Input, Select, Textarea } from '@/components/ui/field';
 import { MoneyField, SelectField } from '@/components/ui/form';
 import { Alert, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
@@ -40,6 +42,8 @@ import {
   ServiceStateBadge,
 } from './badges';
 import { OrderForecasts } from '@/components/purchasing/order-forecasts';
+import { OrderFinance } from '@/components/finance/revenue';
+import { localToday, money, parseMoney, useFinOrder } from '@/lib/finance';
 import { PhotoGallery } from './photo-gallery';
 import { PickupDetailDialog } from './pickup-detail';
 import { PickupForm } from './pickup-form';
@@ -297,6 +301,12 @@ export function OrderDetail({ id }: { id: string }) {
 
         {(can('materiais.aprovar') || can('materiais.ver') || can('compras.ver')) && (
           <OrderForecasts orderId={o.id} />
+        )}
+
+        {can('financeiro.ver') && (
+          <Section title="Financeiro" className="lg:col-span-5">
+            <OrderFinance orderId={o.id} />
+          </Section>
         )}
 
         {can('retiradas.ver') && (
@@ -571,15 +581,38 @@ function CancelOrderDialog({
 }) {
   const qc = useQueryClient();
   const toast = useToast();
+  const can = useCan();
+  const fin = useFinOrder(can('financeiro.ver') ? id : null);
+  const received = fin.data?.receivedCents ?? 0;
   const [reason, setReason] = useState('');
+  const [retained, setRetained] = useState('');
+  const [refundDate, setRefundDate] = useState(localToday());
+  const [refundMethod, setRefundMethod] = useState<PaymentMethod>('PIX');
   const [error, setError] = useState<string | null>(null);
+  const retainedCents = retained.trim() ? parseMoney(retained) : 0;
+  const refundCents = received - (retainedCents ?? 0);
   const m = useMutation({
-    mutationFn: () =>
-      api(`/api/v1/orders/${id}/cancel`, {
+    mutationFn: () => {
+      if (received > 0 && (retainedCents === null || retainedCents < 0 || retainedCents > received))
+        throw new Error(`Valor retido inválido (máximo ${money(received)}).`);
+      return api(`/api/v1/orders/${id}/cancel`, {
         method: 'POST',
-        body: cancelOrderSchema.parse({ reason, version }),
-      }),
+        body: cancelOrderSchema.parse({
+          reason,
+          version,
+          // Cobrança (AM-11): com valor recebido, decisão explícita (reter e/ou reembolsar).
+          finance:
+            received > 0
+              ? {
+                  retainedCents,
+                  refund: refundCents > 0 ? { refundedAt: refundDate, method: refundMethod } : null,
+                }
+              : null,
+        }),
+      });
+    },
     onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['fin'] });
       void qc.invalidateQueries({ queryKey: ['order', id] });
       void qc.invalidateQueries({ queryKey: ['pickups'] });
       toast('ok', `Pedido ${code} cancelado.`);
@@ -626,6 +659,56 @@ function CancelOrderDialog({
           />
         )}
       </Field>
+      {received > 0 && (
+        <div className="mt-4 space-y-3" data-testid="cancel-finance">
+          <Alert tone="warn">
+            O cliente já pagou {money(received)}. Decida agora: reter (o valor do serviço passa a
+            ser o retido) e/ou reembolsar o restante. Cobranças sem recebimento são canceladas.
+          </Alert>
+          <Field label="Valor retido (R$)" hint="Vazio = reembolsar tudo.">
+            {(p) => (
+              <Input
+                {...p}
+                inputMode="decimal"
+                value={retained}
+                onChange={(e) => setRetained(e.target.value)}
+              />
+            )}
+          </Field>
+          {refundCents > 0 && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <p className="text-sm sm:col-span-2" data-testid="cancel-refund">
+                Reembolso ao cliente: <strong>{money(refundCents)}</strong>
+              </p>
+              <Field label="Data do reembolso">
+                {(p) => (
+                  <Input
+                    {...p}
+                    type="date"
+                    value={refundDate}
+                    onChange={(e) => setRefundDate(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Forma do reembolso">
+                {(p) => (
+                  <Select
+                    {...p}
+                    value={refundMethod}
+                    onChange={(e) => setRefundMethod(e.target.value as PaymentMethod)}
+                  >
+                    {PAYMENT_METHODS.map((k) => (
+                      <option key={k} value={k}>
+                        {PAYMENT_METHOD_LABEL[k]}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            </div>
+          )}
+        </div>
+      )}
     </Dialog>
   );
 }

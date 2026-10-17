@@ -1,9 +1,10 @@
-import { EVENT_TYPES, type PieceType, type ServiceType } from '@cenario/shared';
+import { EVENT_TYPES, itemValuesProblem, type PieceType, type ServiceType } from '@cenario/shared';
 import type { CommercialOrder, Prisma, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { activeAddress, orderCode, parseDateOnly, snapshotAddress } from '../commercial/common';
+import { recordAgreedValue } from '../finance/revenue';
 import { assertPlannedIntent } from './planned-intent';
 import { emitOrderEvent } from './routes';
 
@@ -37,6 +38,8 @@ export interface NewOrderInput {
     fabricColor?: string | null;
     fabricReference?: string | null;
     technicalNotes?: string | null;
+    /** Cobrança (AM-2): valor fechado da peça (todas ou nenhuma; soma = valor fechado). */
+    agreedValueCents?: number | null;
     /** Estabilização da Fase 2: titular e mão de obra (por unidade) PREVISTOS — intenção. */
     plannedUpholstererUserId?: string | null;
     plannedLaborUnitCents?: number | null;
@@ -51,10 +54,16 @@ export async function createOrder(
 ): Promise<CommercialOrder> {
   const hasValues =
     (input.agreedValueCents !== null && input.agreedValueCents !== undefined) ||
-    Boolean(input.paymentTerms);
+    Boolean(input.paymentTerms) ||
+    input.items.some((i) => i.agreedValueCents !== null && i.agreedValueCents !== undefined);
   if (hasValues && !perms.has('pedidos.valores')) {
     throw Errors.forbidden('Você não tem permissão para informar valores e condições comerciais.');
   }
+  const itemProblem = itemValuesProblem(
+    input.items.map((i) => i.agreedValueCents),
+    input.agreedValueCents ?? null,
+  );
+  if (itemProblem) throw Errors.business(itemProblem);
   await assertPlannedIntent(tx, perms, input.items);
   const customer = await tx.customer.findUnique({ where: { id: input.customerId } });
   if (!customer || !customer.active)
@@ -93,10 +102,13 @@ export async function createOrder(
           technicalNotes: i.technicalNotes ?? null,
           plannedUpholstererUserId: i.plannedUpholstererUserId ?? null,
           plannedLaborUnitCents: i.plannedLaborUnitCents ?? null,
+          agreedValueCents: i.agreedValueCents ?? null,
         })),
       },
     },
   });
+  if (order.agreedValueCents !== null)
+    await recordAgreedValue(tx, actor, order.id, null, order.agreedValueCents);
   await audit(tx, actor, {
     action: 'order.created',
     entityType: 'commercial_order',
@@ -106,6 +118,9 @@ export async function createOrder(
       items: input.items.map((i) => `${i.quantity}× ${i.description}`),
       agreedValueCents: order.agreedValueCents,
       paymentTerms: order.paymentTerms,
+      ...(input.items.some((i) => i.agreedValueCents !== null && i.agreedValueCents !== undefined)
+        ? { itemValues: input.items.map((i) => `${i.description}: ${i.agreedValueCents}`) }
+        : {}),
       ...(order.autoServiceOrder ? { autoServiceOrder: true } : {}),
       ...(order.customerDropOff ? { customerDropOff: true } : {}),
       ...(input.items.some((i) => i.plannedUpholstererUserId)

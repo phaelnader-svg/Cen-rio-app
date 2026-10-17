@@ -1,12 +1,13 @@
 'use client';
 
-import type { LogisticsJobDto, LogisticsKind } from '@cenario/shared';
+import type { LogisticsJobDto, LogisticsKind, PaymentMethod } from '@cenario/shared';
 import { addDays, arrivalText, todayIso } from '@/lib/commercial';
 import {
   DELIVERY_ITEM_STATUS_LABEL,
   DELIVERY_STATUS_LABEL,
   LOGISTICS_KINDS,
   LOGISTICS_KIND_LABEL,
+  PAYMENT_METHOD_LABEL,
   PICKUP_STATUS_LABEL,
   type DeliveryStatus,
   type PickupStatus,
@@ -24,8 +25,124 @@ import { useOnline } from './tasks';
 /**
  * Fase 10 — logística terceirizada (André e Izaías) e equipe própria: só as próprias
  * retiradas e entregas, com endereço, contato operacional, peças, data, horário e instruções.
- * Nunca exibe valores ou dados comerciais. Nada é marcado como entregue automaticamente.
+ * Nunca exibe valores ou dados comerciais — exceto o pagamento a executar na própria parada
+ * (cobrança, AM-9). Nada é marcado como entregue automaticamente.
  */
+
+const FIELD_METHODS = ['PIX', 'DINHEIRO', 'CARTAO_CREDITO', 'CARTAO_DEBITO', 'OUTRO'] as const;
+const brl = (cents: number) =>
+  (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/**
+ * Cobrança (AM-8/AM-9): só o necessário — ação, valor, forma e parcelas. A equipe INFORMA se o
+ * pagamento foi passado/coletado; a baixa é do escritório.
+ */
+function PaymentInstruction({ j }: { j: LogisticsJobDto }) {
+  const p = j.paymentInstruction!;
+  const { m, error } = useSend();
+  const [answer, setAnswer] = useState<'SIM' | 'NAO' | null>(null);
+  const [method, setMethod] = useState<string>(
+    (FIELD_METHODS as readonly string[]).includes(p.method) ? p.method : 'PIX',
+  );
+  const [note, setNote] = useState('');
+  const [key] = useState(newIdempotencyKey);
+  const path = `/api/v1/logistics/${j.kind === 'RETIRADA' ? 'pickups' : 'deliveries'}/${j.id}/payment-report`;
+  return (
+    <section
+      className="mt-3 rounded-xl border-2 border-brand-600 bg-brand-50 px-4 py-3"
+      data-testid="job-payment"
+    >
+      <p className="text-base font-bold tracking-wide text-brand-700">
+        {p.action === 'PAGAMENTO_NA_RETIRADA' ? 'PAGAMENTO NA RETIRADA' : 'PAGAMENTO NA ENTREGA'}
+      </p>
+      <p className="text-2xl font-semibold tabular-nums" data-testid="job-payment-amount">
+        {brl(p.amountCents)}
+      </p>
+      <p className="text-lg">
+        {PAYMENT_METHOD_LABEL[p.method as PaymentMethod] ?? p.method}
+        {p.installments ? ` · ${p.installments}×` : ''}
+      </p>
+      {p.reported ? (
+        <p className="mt-2 text-base text-ink-muted" data-testid="job-payment-reported">
+          Informado ao escritório — aguardando confirmação.
+        </p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <p className="text-lg font-medium">Pagamento realizado/coletado?</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="lg"
+              variant={answer === 'SIM' ? 'primary' : 'secondary'}
+              onClick={() => setAnswer('SIM')}
+            >
+              Sim
+            </Button>
+            <Button
+              size="lg"
+              variant={answer === 'NAO' ? 'primary' : 'secondary'}
+              onClick={() => setAnswer('NAO')}
+            >
+              Não
+            </Button>
+          </div>
+          {answer === 'SIM' && (
+            <label className="block text-lg">
+              Forma usada
+              <select
+                className="mt-1 block h-12 w-full rounded-xl border border-line bg-surface px-3"
+                value={method}
+                onChange={(e) => setMethod(e.target.value)}
+                data-testid="job-payment-method"
+              >
+                {FIELD_METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {PAYMENT_METHOD_LABEL[m]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {answer && (
+            <>
+              <label className="block text-lg">
+                Observação (opcional)
+                <input
+                  className="mt-1 block h-12 w-full rounded-xl border border-line bg-surface px-3"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                />
+              </label>
+              {error && <Alert tone="danger">{error}</Alert>}
+              <Button
+                size="lg"
+                loading={m.isPending}
+                onClick={() =>
+                  m.mutate({
+                    run: () =>
+                      api(path, {
+                        method: 'POST',
+                        body: {
+                          receivableId: p.receivableId,
+                          collected: answer === 'SIM',
+                          method: answer === 'SIM' ? method : null,
+                          note: note.trim() || null,
+                        },
+                        idempotencyKey: key,
+                      }),
+                    ok: 'Informado ao escritório.',
+                  })
+                }
+                data-testid="job-payment-send"
+              >
+                Informar ao escritório
+              </Button>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
 
 const day = (iso: string | null) => (iso ? iso.split('-').reverse().join('/') : 'sem data');
 
@@ -187,6 +304,7 @@ function JobCard({ j }: { j: LogisticsJobDto }) {
           {j.instructions}
         </p>
       )}
+      {j.paymentInstruction && <PaymentInstruction j={j} />}
       <ul className="mt-3 space-y-1 text-lg">
         {j.pieces.map((p) => (
           <li key={p.id}>

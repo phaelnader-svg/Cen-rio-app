@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
+  balanceQuerySchema,
+  refundSchema,
   cancelFinanceSchema,
   commercialAdjustmentSchema,
   createLaborSchema,
@@ -84,9 +86,12 @@ import {
   addCommercialAdjustment,
   cancelReceivable,
   createReceivable,
+  dueContext,
+  orderBalances,
   orderRevenueDto,
   receivableInclude,
   receivePayment,
+  refundOrder,
   reversePayment,
   setRevenueSplit,
   toReceivableDto,
@@ -203,7 +208,58 @@ export async function financeRoutes(app: FastifyInstance) {
       orderBy: [{ dueDate: 'asc' }, { number: 'asc' }],
       take: 300,
     });
-    return Promise.all(rows.map((r) => toReceivableDto(prisma, r)));
+    const ctx = await dueContext(
+      prisma,
+      rows.map((r) => r.orderId),
+    );
+    const dtos = await Promise.all(rows.map((r) => toReceivableDto(prisma, r, ctx)));
+    // Inadimplência: vencidas (data passada ou evento concluído) com saldo, mais antigas primeiro.
+    return q.overdue
+      ? dtos.filter((d) => d.overdue).sort((a, b) => b.daysOverdue - a.daysOverdue)
+      : dtos;
+  });
+
+  /** Cobrança (AM-7): reembolso — dinheiro que entrou e saiu (não é estorno). */
+  app.post(
+    '/api/v1/finance/orders/:id/refunds',
+    { config: { access: FIN_MANAGE, idempotent: true } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const input = refundSchema.parse(request.body);
+      await tx((t) => refundOrder(t, actorFrom(request), id, input));
+      return orderRevenueDto(prisma, id);
+    },
+  );
+
+  /** Saldos dos pedidos de uma entrega (ou de peças/pedidos) para o aviso do gestor (AM-5). */
+  app.get('/api/v1/finance/balances', { config: { access: FIN_VIEW } }, async (request) => {
+    const q = balanceQuerySchema.parse(request.query);
+    const orderIds = new Set<string>(q.orderIds ? q.orderIds.split(',').filter(Boolean) : []);
+    const itemIds = q.serviceOrderItemIds ? q.serviceOrderItemIds.split(',').filter(Boolean) : [];
+    if (q.deliveryId) {
+      const d = await prisma.delivery.findUnique({
+        where: { id: q.deliveryId },
+        select: {
+          items: {
+            where: { active: true },
+            select: {
+              serviceOrderItem: { select: { serviceOrder: { select: { orderId: true } } } },
+            },
+          },
+        },
+      });
+      if (!d) throw Errors.notFound('Entrega');
+      for (const i of d.items) orderIds.add(i.serviceOrderItem.serviceOrder.orderId);
+    }
+    if (itemIds.length) {
+      const sis = await prisma.serviceOrderItem.findMany({
+        where: { id: { in: itemIds.filter((x) => z.string().uuid().safeParse(x).success) } },
+        select: { serviceOrder: { select: { orderId: true } } },
+      });
+      for (const s of sis) orderIds.add(s.serviceOrder.orderId);
+    }
+    const valid = [...orderIds].filter((x) => z.string().uuid().safeParse(x).success);
+    return orderBalances(prisma, valid);
   });
 
   const receivableDto = async (id: string) =>
@@ -251,7 +307,7 @@ export async function financeRoutes(app: FastifyInstance) {
       const input = reversePaymentSchema.parse(request.body);
       const pay = await prisma.customerPayment.findUnique({ where: { id: paymentId } });
       if (!pay || pay.receivableId !== id) throw Errors.notFound('Recebimento');
-      await tx((t) => reversePayment(t, actorFrom(request), paymentId, input.reason));
+      await tx((t) => reversePayment(t, actorFrom(request), paymentId, input));
       return receivableDto(id);
     },
   );

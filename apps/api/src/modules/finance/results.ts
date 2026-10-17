@@ -137,6 +137,10 @@ export async function orderResult(
   const c = await completion(tx, serviceOrderId);
   const warnings: string[] = [];
   if (!revenue.hasValue) warnings.push('O pedido não tem valor contratado: receita zerada.');
+  if (revenue.estimated)
+    warnings.push(
+      'Receita estimada: o pedido não tem valor por peça (distribuição proporcional às peças).',
+    );
   if (tax === null) warnings.push('Alíquota de tributos estimados não configurada.');
   if (materials.unpricedLines || materials.forecastUnpriced)
     warnings.push(
@@ -156,6 +160,7 @@ export async function orderResult(
     delivered: c.delivered,
     completedAt: c.completedAt?.toISOString() ?? null,
     revenueCents: revenue.revenueCents,
+    revenueEstimated: revenue.estimated,
     forecast: col(
       Math.max(materials.forecastCents, materials.consumedCents),
       laborForecast,

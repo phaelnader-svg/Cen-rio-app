@@ -1,4 +1,5 @@
 import {
+  paymentReportSchema,
   EVENT_TYPES,
   PICKUP_STATUS_LABEL,
   approveInspectionSchema,
@@ -108,6 +109,11 @@ import {
   updateDelivery,
 } from './shipping';
 import { syncTripCost, upsertTripCost } from '../finance/trip-costs';
+import {
+  paymentInstructionsFor,
+  reportStopPayment,
+  withPaymentInstructions,
+} from '../finance/billing';
 import { setTripParticipants, tripCostTeamProblem } from '../pickups/service';
 
 const PACKAGING_ACCESS = {
@@ -800,7 +806,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     });
     return v.isManager && request.auth!.kind === 'WEB'
       ? toDeliveryDto(prisma, row)
-      : toDeliveryJob(row);
+      : (await withPaymentInstructions(prisma, [toDeliveryJob(row)], v.userId))[0];
   }
 
   app.post(
@@ -957,11 +963,13 @@ export async function qualityRoutes(app: FastifyInstance) {
           arrivedAt: null,
           installedAt: null,
           completedAt: null,
+          paymentInstruction: null,
           version: p.version,
         };
       }),
     ];
-    return jobs;
+    // Cobrança (AM-9): só a instrução de pagamento da parada da qual a pessoa é responsável.
+    return withPaymentInstructions(prisma, jobs, me);
   });
 
   /** Gestor atribui a retirada a quem executa (logística terceirizada ou equipe própria). */
@@ -1030,6 +1038,25 @@ export async function qualityRoutes(app: FastifyInstance) {
         }
       });
       return { ok: true };
+    },
+  );
+
+  /**
+   * Cobrança (AM-8): a equipe responsável INFORMA o pagamento da parada (sim/não, forma,
+   * observação). Não é baixa: o escritório confirma em Financeiro.
+   */
+  app.post(
+    '/api/v1/logistics/:kind/:id/payment-report',
+    { config: { access: DELIVERY_EXECUTE, idempotent: true } },
+    async (request) => {
+      const { kind, id } = z
+        .object({ kind: z.enum(['pickups', 'deliveries']), id: z.string().uuid() })
+        .parse(request.params);
+      const input = paymentReportSchema.parse(request.body);
+      const stop = { kind: kind === 'pickups' ? ('RETIRADA' as const) : ('ENTREGA' as const), id };
+      await prisma.$transaction((tx) => reportStopPayment(tx, actorFrom(request), stop, input));
+      const map = await paymentInstructionsFor(prisma, [stop], request.auth!.userId);
+      return { paymentInstruction: map.get(`${stop.kind}:${id}`) ?? null };
     },
   );
 

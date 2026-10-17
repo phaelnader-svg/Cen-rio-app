@@ -6,8 +6,11 @@ import {
   LOGISTICS_COST_KINDS,
   LOGISTICS_MAX_CENTS,
   PAYABLE_CATEGORIES,
+  DUE_TRIGGERS,
+  MAX_INSTALLMENTS,
   PAYMENT_METHODS,
   SPLIT_METHODS,
+  isCard,
 } from '../finance-domain';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
 import { periodQuerySchema } from './measurements';
@@ -34,6 +37,29 @@ export const commercialAdjustmentSchema = z.object({
     .max(1_000_000_000)
     .refine((v) => v !== 0, 'Informe o valor.'),
   reason: reason('Justificativa'),
+  /**
+   * Cobrança (AM-2): pedido com valores por peça exige a nova distribuição (soma = novo valor
+   * final). Nada é redistribuído em silêncio.
+   */
+  itemValues: z
+    .array(
+      z.object({
+        orderItemId: idSchema,
+        agreedValueCents: z.number().int().min(0).max(100_000_000),
+      }),
+    )
+    .max(50)
+    .nullable()
+    .optional(),
+  /**
+   * AM-6: redução explícita de cobranças lançadas quando o novo valor final fica abaixo do total
+   * lançado e a regra automática não se aplica (cobrança parcial/recebida).
+   */
+  receivableReductions: z
+    .array(z.object({ receivableId: idSchema, amountCents: cents('Redução') }))
+    .max(20)
+    .nullable()
+    .optional(),
 });
 
 export const revenueSplitSchema = z.object({
@@ -52,31 +78,117 @@ export const revenueSplitSchema = z.object({
 
 // ─────────────────────────── Contas a receber ───────────────────────────
 
-export const createReceivableSchema = z.object({
-  orderId: idSchema,
-  serviceOrderId: idSchema.nullable().optional(),
-  description: trimmed(2, 200, 'Descrição'),
-  amountCents: cents('Valor'),
-  dueDate: dateOnly,
-  expectedMethod: z.enum(PAYMENT_METHODS),
-  notes: optionalText(1000),
-});
+const installments = z.number().int().min(1).max(MAX_INSTALLMENTS).nullable().optional();
+const refineInstallments = (
+  v: { installments?: number | null },
+  method: string,
+  ctx: z.RefinementCtx,
+) => {
+  if (v.installments !== null && v.installments !== undefined && !isCard(method))
+    ctx.addIssue({
+      code: 'custom',
+      path: ['installments'],
+      message: 'Parcelas só para pagamento no cartão.',
+    });
+};
 
-export const receivePaymentSchema = z.object({
-  amountCents: cents('Valor recebido'),
-  receivedAt: dateOnly,
-  method: z.enum(PAYMENT_METHODS),
-  note: optionalText(500),
+export const createReceivableSchema = z
+  .object({
+    orderId: idSchema,
+    serviceOrderId: idSchema.nullable().optional(),
+    description: trimmed(2, 200, 'Descrição'),
+    amountCents: cents('Valor'),
+    /** Cobrança: DATA exige vencimento; RETIRADA/ENTREGA vencem na conclusão real do evento. */
+    dueTrigger: z.enum(DUE_TRIGGERS).default('DATA'),
+    dueDate: dateOnly.nullable().optional(),
+    expectedMethod: z.enum(PAYMENT_METHODS),
+    installments,
+    notes: optionalText(1000),
+  })
+  .superRefine((v, ctx) => {
+    if (v.dueTrigger === 'DATA' && !v.dueDate)
+      ctx.addIssue({ code: 'custom', path: ['dueDate'], message: 'Informe o vencimento.' });
+    refineInstallments(v, v.expectedMethod, ctx);
+  });
+
+export const receivePaymentSchema = z
+  .object({
+    amountCents: cents('Valor recebido'),
+    receivedAt: dateOnly,
+    method: z.enum(PAYMENT_METHODS),
+    installments,
+    note: optionalText(500),
+    version: versionSchema,
+  })
+  .superRefine((v, ctx) => refineInstallments(v, v.method, ctx));
+
+/** Estorno: corrige lançamento que não deveria existir. Confere a versão da cobrança. */
+export const reversePaymentSchema = z.object({
+  reason: reason('Motivo do estorno'),
   version: versionSchema,
 });
 
-export const reversePaymentSchema = z.object({ reason: reason('Motivo do estorno') });
+/**
+ * Cobrança (AM-7): reembolso — dinheiro que entrou e saiu. Gera recebimento negativo marcado e o
+ * ajuste comercial correspondente, na mesma transação.
+ */
+export const refundSchema = z.object({
+  amountCents: cents('Valor do reembolso'),
+  refundedAt: dateOnly,
+  method: z.enum(PAYMENT_METHODS),
+  reason: reason('Motivo do reembolso'),
+  /** Pedido com valores por peça: nova distribuição (soma = novo valor final). */
+  itemValues: z
+    .array(
+      z.object({
+        orderItemId: idSchema,
+        agreedValueCents: z.number().int().min(0).max(100_000_000),
+      }),
+    )
+    .max(50)
+    .nullable()
+    .optional(),
+});
+
+/** Cobrança (AM-8): a equipe informa o pagamento na parada (não é baixa financeira). */
+export const paymentReportSchema = z.object({
+  receivableId: idSchema,
+  collected: z.boolean(),
+  method: z.enum(PAYMENT_METHODS).nullable().optional(),
+  note: optionalText(500),
+});
+
+/** Escritório confirma o pagamento informado: cria o recebimento real. */
+export const confirmPaymentReportSchema = z
+  .object({
+    amountCents: cents('Valor recebido'),
+    receivedAt: dateOnly,
+    method: z.enum(PAYMENT_METHODS),
+    installments,
+    note: optionalText(500),
+    version: versionSchema,
+  })
+  .superRefine((v, ctx) => refineInstallments(v, v.method, ctx));
+
+export const discardPaymentReportSchema = z.object({
+  reason: reason('Motivo'),
+  version: versionSchema,
+});
+
+/** Saldos para o painel de entregas (só com financeiro.ver). */
+export const balanceQuerySchema = z.object({
+  deliveryId: idSchema.optional(),
+  orderIds: z.string().max(4000).optional(),
+  serviceOrderItemIds: z.string().max(8000).optional(),
+});
 
 export const cancelFinanceSchema = z.object({ reason: reason(), version: versionSchema });
 
 export const receivableQuerySchema = periodQuerySchema.extend({
   status: z.string().max(60).optional(),
   orderId: idSchema.optional(),
+  /** Inadimplência: só cobranças vencidas (data ou evento já ocorrido) com saldo. */
+  overdue: z.enum(['1', 'true']).optional(),
 });
 
 // ─────────────────────────── Contas a pagar ───────────────────────────

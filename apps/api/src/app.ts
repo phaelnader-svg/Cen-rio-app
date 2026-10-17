@@ -41,6 +41,7 @@ import { financeRoutes } from './modules/finance/routes';
 import { laborReviewRoutes } from './modules/finance/labor-review';
 import { tripCostRoutes } from './modules/finance/trip-costs';
 import { closingRoutes } from './modules/finance/closing';
+import { billingRoutes } from './modules/finance/billing';
 import { processIssueRisks } from './modules/issues/service';
 import { processHelpQueue } from './modules/help/queue';
 import { testClockRoutes } from './modules/testing/routes';
@@ -211,6 +212,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(laborReviewRoutes);
   await app.register(tripCostRoutes);
   await app.register(closingRoutes);
+  await app.register(billingRoutes);
   // Relógio de teste: só existe com ENABLE_TEST_CLOCK (validado para APP_ENV=test).
   if (env.ENABLE_TEST_CLOCK && env.APP_ENV === 'test') await app.register(testClockRoutes);
 

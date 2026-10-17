@@ -17,7 +17,12 @@ import {
 import { isValidCnpj, isValidCpf, onlyDigits } from '../documents';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
 import { tripCostInputSchema } from './finance';
-import { ELIGIBILITY_RULES } from '../finance-domain';
+import {
+  ELIGIBILITY_RULES,
+  MAX_INSTALLMENTS,
+  PAYMENT_METHODS,
+  PAYMENT_MODELS,
+} from '../finance-domain';
 
 const dateOnly = z
   .string()
@@ -144,6 +149,11 @@ export const orderItemSchema = z.object({
   description: trimmed(2, 300, 'Descrição da peça'),
   quantity: z.number().int().min(1, { message: 'Quantidade mínima: 1.' }).max(200),
   notes: optionalText(500),
+  /**
+   * Cobrança: valor fechado da peça (opcional, exige pedidos.valores). Todas ou nenhuma; a soma é
+   * igual ao valor final do pedido.
+   */
+  agreedValueCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
 });
 export type OrderItemInput = z.input<typeof orderItemSchema>;
 
@@ -164,9 +174,25 @@ export type CreateOrderInput = z.input<typeof createOrderSchema>;
 export const updateOrderSchema = z.object({ ...orderFields, version: versionSchema });
 export type UpdateOrderInput = z.input<typeof updateOrderSchema>;
 
+/**
+ * Cobrança (AM-11): pedido com valor líquido recebido exige decisão explícita — reter (o valor
+ * comercial passa a ser o retido) e/ou reembolsar o restante. Nunca "cancelar e tratar depois".
+ */
+export const orderCancelFinanceSchema = z.object({
+  retainedCents: z.number().int().min(0).max(1_000_000_000),
+  refund: z
+    .object({
+      refundedAt: dateOnly,
+      method: z.enum(PAYMENT_METHODS),
+    })
+    .nullable()
+    .optional(),
+});
+
 export const cancelOrderSchema = z.object({
   reason: trimmed(3, 500, 'Motivo do cancelamento'),
   version: versionSchema,
+  finance: orderCancelFinanceSchema.nullable().optional(),
 });
 
 /**
@@ -522,6 +548,20 @@ export const newServicePickupSchema = z
       });
   });
 
+export const newServicePaymentSchema = z.object({
+  model: z.enum(PAYMENT_MODELS),
+  /** 50/50: valor da entrada (padrão: metade). */
+  entryCents: z.number().int().min(1).max(100_000_000).nullable().optional(),
+  entryDueDate: dateOnly.nullable().optional(),
+  entryMethod: z.enum(PAYMENT_METHODS).nullable().optional(),
+  balanceMethod: z.enum(PAYMENT_METHODS).nullable().optional(),
+  /** Pix/cartão 100%: vencimento (padrão: hoje). */
+  dueDate: dateOnly.nullable().optional(),
+  /** Cartão: parcelas (1..12). */
+  installments: z.number().int().min(1).max(MAX_INSTALLMENTS).nullable().optional(),
+});
+export type NewServicePaymentInput = z.input<typeof newServicePaymentSchema>;
+
 export const newServiceSchema = z
   .object({
     customer: newServiceCustomerSchema,
@@ -531,6 +571,8 @@ export const newServiceSchema = z
       /** Valor total fechado com o cliente (exige pedidos.valores). */
       agreedValueCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
       paymentTerms: optionalText(1000),
+      /** Cobrança (AM-1): condição estruturada; gera as cobranças junto com o pedido. */
+      payment: newServicePaymentSchema.nullable().optional(),
       /** Prazo de entrega combinado (obrigatório; copiado para a OS gerada na chegada). */
       promisedDate: requiredPromisedDate,
       technicalNotes: optionalText(4000),

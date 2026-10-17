@@ -12,6 +12,7 @@ import type {
   PayableCategory,
   PayableStatus,
   PaymentMethod,
+  DueTrigger,
   ReceivableStatus,
   SplitMethod,
 } from './finance-domain';
@@ -37,7 +38,28 @@ export interface OrderRevenueDto {
   billedCents: number;
   receivedCents: number;
   openCents: number;
+  /** Cobrança: saldo de cobranças vencidas (data passada ou evento já concluído). */
+  overdueCents: number;
+  /** Valor final ainda não lançado em cobranças. */
+  toBillCents: number;
   financialStatus: FinancialStatus;
+  paymentTerms: string | null;
+  /**
+   * Cobrança (AM-2/AM-3): valores por peça (todos ou nenhum). `attributedCents` = parte da peça nas
+   * OS ativas; `pendingCents` = parte ainda sem OS (peça não chegou) ou devolvida/cancelada.
+   */
+  itemValuesUsed: boolean;
+  pieces: {
+    orderItemId: string;
+    position: number;
+    description: string;
+    quantity: number;
+    valueCents: number | null;
+    attributedCents: number;
+    pendingCents: number;
+  }[];
+  /** Receita das OS estimada (fallback proporcional às peças) — sem valores por peça. */
+  revenueEstimated: boolean;
   adjustments: {
     id: string;
     kind: AdjustmentKind;
@@ -46,7 +68,13 @@ export interface OrderRevenueDto {
     authorizedBy: string;
     createdAt: string;
   }[];
-  serviceOrders: { id: string; code: string; revenueCents: number; manual: boolean }[];
+  serviceOrders: {
+    id: string;
+    code: string;
+    revenueCents: number;
+    manual: boolean;
+    estimated: boolean;
+  }[];
 }
 
 export interface CustomerPaymentDto {
@@ -54,11 +82,50 @@ export interface CustomerPaymentDto {
   amountCents: number;
   receivedAt: string;
   method: PaymentMethod;
+  installments: number | null;
+  /** Reembolso (dinheiro que entrou e saiu) — distinto do estorno. */
+  refund: boolean;
   note: string | null;
   reversalOfId: string | null;
   reversed: boolean;
   createdBy: string | null;
   createdAt: string;
+}
+
+/** Pagamento informado pela equipe numa parada (registro operacional; não é baixa). */
+export interface PaymentReportDto {
+  id: string;
+  receivable: { id: string; code: string; description: string; openCents: number };
+  order: { id: string; code: string };
+  customerName: string;
+  stop: { kind: 'RETIRADA' | 'ENTREGA'; id: string; code: string };
+  collected: boolean;
+  method: PaymentMethod | null;
+  note: string | null;
+  reportedBy: string;
+  reportedAt: string;
+  status: 'PENDENTE' | 'CONFIRMADO' | 'DESCARTADO';
+  paymentId: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  /** Sugestão para a confirmação: forma e parcelas da cobrança. */
+  expectedMethod: PaymentMethod;
+  installments: number | null;
+  version: number;
+}
+
+/** Saldo do cliente por pedido para o painel de entregas (só com financeiro.ver). */
+export interface OrderBalanceDto {
+  orderId: string;
+  orderCode: string;
+  customerName: string;
+  finalCents: number | null;
+  receivedCents: number;
+  openCents: number;
+  overdueCents: number;
+  /** Saldo com vencimento na entrega (o que se espera coletar). */
+  dueOnDeliveryCents: number;
 }
 
 export interface ReceivableDto {
@@ -72,9 +139,17 @@ export interface ReceivableDto {
   amountCents: number;
   receivedCents: number;
   openCents: number;
-  dueDate: string;
+  /** DATA: obrigatória; RETIRADA/ENTREGA: nula (vence na conclusão do evento). */
+  dueDate: string | null;
+  dueTrigger: DueTrigger;
+  /** Vencimento real: a data, ou a conclusão do evento (null enquanto não aconteceu). */
+  effectiveDueDate: string | null;
   overdue: boolean;
+  daysOverdue: number;
   expectedMethod: PaymentMethod;
+  installments: number | null;
+  /** Pagamentos informados pela equipe (pendentes primeiro). */
+  reports: PaymentReportDto[];
   status: ReceivableStatus;
   notes: string | null;
   cancelReason: string | null;
@@ -198,6 +273,11 @@ export interface OrderResultDto {
   delivered: boolean;
   completedAt: string | null;
   revenueCents: number;
+  /**
+   * Cobrança (AM-3): receita ESTIMADA (pedido sem valores por peça → distribuição proporcional).
+   * Com valores por peça, a receita é a soma das peças da OS (estável).
+   */
+  revenueEstimated: boolean;
   /** Previsto (estimado) × realizado (registrado). */
   forecast: ResultColumns;
   actual: ResultColumns;

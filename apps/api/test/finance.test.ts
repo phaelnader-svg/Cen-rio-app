@@ -219,7 +219,8 @@ describe('Receita e recebimentos', () => {
       financialStatus: 'SEM_COBRANCA',
     });
     expect(r.serviceOrders).toEqual([
-      { id: so.id, code: so.code, revenueCents: 350000, manual: false },
+      // Cobrança: sem valor por peça, a receita da OS é ESTIMADA (fallback proporcional).
+      { id: so.id, code: so.code, revenueCents: 350000, manual: false, estimated: true },
     ]);
     // O resultado da OS usa a mesma receita (nada é digitado de novo).
     expect((await result(admin, so.id)).revenueCents).toBe(350000);
@@ -368,13 +369,21 @@ describe('Receita e recebimentos', () => {
     expect(await db().customerPayment.count()).toBe(1);
     // Estorno: uma única vez, gera linha negativa e reabre o saldo.
     const payId = a.body.payments[0].id;
+    // Cobrança: o estorno confere a versão da cobrança (versão antiga → 409).
+    const staleRev = await post(admin, F(`/receivables/${rc.id}/payments/${payId}/reverse`), {
+      reason: 'PIX devolvido pelo banco',
+      version: rc.version,
+    });
+    expect(staleRev.status).toBe(409);
     const rev = await post(admin, F(`/receivables/${rc.id}/payments/${payId}/reverse`), {
       reason: 'PIX devolvido pelo banco',
+      version: a.body.version,
     });
     expect(rev.status).toBe(200);
     expect(rev.body).toMatchObject({ status: 'ABERTO', receivedCents: 0 });
     const again = await post(admin, F(`/receivables/${rc.id}/payments/${payId}/reverse`), {
       reason: 'De novo',
+      version: rev.body.version,
     });
     expect([409, 422]).toContain(again.status);
     const rows = await db().customerPayment.findMany({ orderBy: { createdAt: 'asc' } });

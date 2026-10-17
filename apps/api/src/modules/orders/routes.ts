@@ -1,5 +1,6 @@
 import {
   EVENT_TYPES,
+  itemValuesProblem,
   anyPermissionAudience,
   cancelOrderSchema,
   createOrderSchema,
@@ -50,6 +51,7 @@ import { createOrder } from './service';
 import { orderDeadlines, serviceDeadlines } from '../deadlines/service';
 import { changeServiceOrderPromisedDate } from '../service-orders/routes';
 import { cancelForecastsOfOrder, removeForecastsOfItems } from '../purchasing/forecasts';
+import { cancelOrderFinance, lockOrderReceivables, recordAgreedValue } from '../finance/revenue';
 
 const PROMISED_ACTION = 'order.promised_date_changed';
 const br = (d: string | null) => (d ? d.split('-').reverse().join('/') : 'sem prazo');
@@ -138,6 +140,7 @@ export async function loadOrderDto(
           ? { userId: i.plannedUpholstererUserId, displayName: i.plannedUpholsterer.displayName }
           : null,
       plannedLaborUnitCents: plannedLaborVisible ? i.plannedLaborUnitCents : null,
+      agreedValueCents: valuesVisible ? i.agreedValueCents : null,
     })),
     cancelledAt: o.cancelledAt?.toISOString() ?? null,
     cancelReason: o.cancelReason,
@@ -376,6 +379,15 @@ export async function orderRoutes(app: FastifyInstance) {
       // Sem permissão de valores, os valores atuais são preservados (o usuário nem os vê).
       const nextValue = valuesAllowed ? (input.agreedValueCents ?? null) : before.agreedValueCents;
       const nextTerms = valuesAllowed ? (input.paymentTerms ?? null) : before.paymentTerms;
+      // Cobrança (AM-13): depois da primeira cobrança, o valor fechado só muda por ajuste
+      // comercial (auditado, com histórico) — nunca por edição direta.
+      if (nextValue !== before.agreedValueCents) {
+        await lockOrderReceivables(tx, id);
+        if (await tx.customerReceivable.count({ where: { orderId: id } }))
+          throw Errors.business(
+            'O pedido já tem cobranças lançadas: altere o valor por ajuste comercial (Financeiro → Ajuste).',
+          );
+      }
 
       const address =
         input.pickupAddressId && input.pickupAddressId !== before.pickupAddressId
@@ -436,6 +448,7 @@ export async function orderRoutes(app: FastifyInstance) {
               description: i.description,
               quantity: i.quantity,
               notes: i.notes ?? null,
+              ...(valuesAllowed ? { agreedValueCents: i.agreedValueCents ?? null } : {}),
             },
           });
         } else {
@@ -447,9 +460,25 @@ export async function orderRoutes(app: FastifyInstance) {
               description: i.description,
               quantity: i.quantity,
               notes: i.notes ?? null,
+              agreedValueCents: valuesAllowed ? (i.agreedValueCents ?? null) : null,
             },
           });
         }
+      }
+      // Cobrança (AM-2): valores por peça — todos ou nenhum, soma = valor final (com ajustes).
+      {
+        const items = await tx.commercialOrderItem.findMany({ where: { orderId: id } });
+        const adj = await tx.commercialAdjustment.aggregate({
+          where: { orderId: id },
+          _sum: { amountCents: true },
+        });
+        const final =
+          nextValue === null ? null : Math.max(0, nextValue + (adj._sum.amountCents ?? 0));
+        const problem = itemValuesProblem(
+          items.map((i) => i.agreedValueCents),
+          final,
+        );
+        if (problem) throw Errors.business(problem);
       }
 
       const after = await tx.commercialOrder.update({
@@ -481,6 +510,20 @@ export async function orderRoutes(app: FastifyInstance) {
         'paymentTerms',
       ] as const) {
         if (before[k] !== after[k]) changes[k] = { from: before[k], to: after[k] };
+      }
+      if (before.agreedValueCents !== after.agreedValueCents)
+        await recordAgreedValue(
+          tx,
+          actorFrom(request),
+          id,
+          before.agreedValueCents,
+          after.agreedValueCents,
+        );
+      {
+        const vals = (items: { description: string; agreedValueCents: number | null }[]) =>
+          items.map((x) => `${x.description}: ${x.agreedValueCents ?? '—'}`);
+        if (JSON.stringify(vals(before.items)) !== JSON.stringify(vals(after.items)))
+          changes.itemValues = { from: vals(before.items), to: vals(after.items) };
       }
       if (address)
         changes.pickupAddress = {
@@ -598,6 +641,9 @@ export async function orderRoutes(app: FastifyInstance) {
           );
         }
         const actor = actorFrom(request);
+        // Cobrança (AM-11): cobranças sem recebimento canceladas; com valor líquido recebido,
+        // decisão explícita (reter e/ou reembolsar) na mesma transação — antes de cancelar.
+        const finance = await cancelOrderFinance(tx, actor, id, input.reason, input.finance);
         await tx.commercialOrder.update({
           where: { id },
           data: {
@@ -642,6 +688,8 @@ export async function orderRoutes(app: FastifyInstance) {
             reason: input.reason,
             cancelledPickups: pickups.length,
             cancelledForecasts: cancelledForecasts.length,
+            receivedCents: finance.receivedCents,
+            retainedCents: finance.retainedCents,
           },
         });
         await emitOrderEvent(tx, request, id, EVENT_TYPES.ORDER_CANCELLED);

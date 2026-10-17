@@ -224,8 +224,24 @@ export interface DeliveryDto {
 }
 
 /**
+ * Cobrança (AM-9): a ÚNICA informação financeira que chega à equipe — o pagamento a executar
+ * naquela parada (retirada/entrega), só para o responsável e enquanto a cobrança estiver aberta.
+ * Nada de total do pedido, outros recebimentos, custos ou margem.
+ */
+export interface PaymentInstructionDto {
+  action: 'PAGAMENTO_NA_RETIRADA' | 'PAGAMENTO_NA_ENTREGA';
+  receivableId: string;
+  amountCents: number;
+  method: string;
+  installments: number | null;
+  /** A equipe já informou nesta parada (aguardando o escritório). */
+  reported: boolean;
+}
+
+/**
  * O que a logística terceirizada vê: endereço, contato operacional, peças, data, horário,
- * instruções e situação. Nada de valores, margens ou dados comerciais.
+ * instruções e situação. Nada de valores, margens ou dados comerciais — exceto a instrução de
+ * pagamento da própria parada (`paymentInstruction`).
  */
 export interface LogisticsJobDto {
   id: string;
@@ -252,6 +268,7 @@ export interface LogisticsJobDto {
   arrivedAt: string | null;
   installedAt: string | null;
   completedAt: string | null;
+  paymentInstruction: PaymentInstructionDto | null;
   version: number;
 }
 

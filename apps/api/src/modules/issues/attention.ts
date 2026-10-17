@@ -28,6 +28,7 @@ import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { WAIT_ALERT_MINUTES } from '../help/engine';
 import { deadlineAttention } from '../deadlines/attention';
 import { qualityAttention } from '../quality/attention';
+import { billingAttention } from '../finance/billing';
 import { OPEN_STATUSES, VIEW, issueDto, issueInclude } from './common';
 
 const addDays = (iso: string, n: number) => {
@@ -263,6 +264,11 @@ export async function attentionRoutes(app: FastifyInstance) {
       // Prazos e serviços em risco: um item por OS atrasada/em risco e um por pedido com peças
       // ainda não recebidas (derivados; mesma regra da lista/detalhe da OS e do Início).
       items.push(...(await deadlineAttention(prisma)));
+
+      // Cobrança: vencidas, entregas próximas com saldo, entregue com saldo e pagamentos
+      // informados pela equipe — só para quem vê o financeiro (derivado; nada é gravado).
+      if (request.auth!.permissions.has('financeiro.ver'))
+        items.push(...(await billingAttention(prisma)));
 
       // 7. Rascunhos de semanas passadas (decisão aprovada: tratamento MANUAL). Só leitura — o
       // aviso é derivado a cada consulta (um item por semana, chave estável), nada é gravado,

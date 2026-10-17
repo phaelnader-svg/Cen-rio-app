@@ -146,6 +146,9 @@ model User {
 
   plannedUpholsteredItems CommercialOrderItem[] @relation("PlannedUpholsterer")
 
+  paymentReportsMade    CustomerPaymentReport[] @relation("PaymentReportBy")
+  paymentReportsDecided CustomerPaymentReport[] @relation("PaymentReportDecidedBy")
+
   @@map("users")
 }
 
@@ -682,6 +685,10 @@ model CommercialOrderItem {
   plannedLaborUnitCents    Int?    @map("planned_labor_unit_cents")
   plannedUpholsterer       User?   @relation("PlannedUpholsterer", fields: [plannedUpholstererUserId], references: [id], onDelete: Restrict)
 
+  /// Cobrança: valor fechado da peça (opcional). Usado, a soma das peças é igual ao valor final
+  /// do pedido (validado no domínio) e a receita da OS é a soma das peças que estão nela.
+  agreedValueCents Int? @map("agreed_value_cents")
+
   @@unique([orderId, position])
   @@index([plannedUpholstererUserId])
   @@map("commercial_order_items")
@@ -745,6 +752,7 @@ model PickupRequest {
 
   // Fase 11: financeiro operacional.
   logisticsCosts LogisticsCost[]
+  paymentReports CustomerPaymentReport[]
 
   @@index([orderId])
   @@index([status])
@@ -2708,6 +2716,7 @@ model Delivery {
 
   // Fase 11: financeiro operacional.
   logisticsCosts LogisticsCost[]
+  paymentReports CustomerPaymentReport[]
 
   @@index([scheduledDate])
   @@index([status])
@@ -2896,7 +2905,12 @@ model CustomerReceivable {
   description    String    @db.VarChar(200)
   amountCents    Int       @map("amount_cents")
   receivedCents  Int       @default(0) @map("received_cents")
-  dueDate        DateTime  @map("due_date") @db.Date
+  /// Obrigatória para o gatilho DATA; RETIRADA/ENTREGA vencem na conclusão real do evento.
+  dueDate        DateTime? @map("due_date") @db.Date
+  /// DATA, RETIRADA, ENTREGA.
+  dueTrigger     String    @default("DATA") @map("due_trigger") @db.VarChar(10)
+  /// Parcelas do cartão (1..12), só para cartão. Uma cobrança, nunca N contas.
+  installments   Int?      @db.SmallInt
   /// PIX, DINHEIRO, CARTAO_CREDITO, CARTAO_DEBITO, BOLETO, TRANSFERENCIA, CHEQUE, OUTRO.
   expectedMethod String    @map("expected_method") @db.VarChar(20)
   /// ABERTO, PARCIAL, RECEBIDO, CANCELADO.
@@ -2909,10 +2923,11 @@ model CustomerReceivable {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  customer     Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  order        CommercialOrder   @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  serviceOrder ServiceOrder?     @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  customer     Customer                @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  order        CommercialOrder         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  serviceOrder ServiceOrder?           @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
   payments     CustomerPayment[]
+  reports      CustomerPaymentReport[]
 
   @@index([orderId])
   @@index([status, dueDate])
@@ -2931,14 +2946,51 @@ model CustomerPayment {
   note         String?  @db.VarChar(500)
   /// Estorno de outro recebimento (valor negativo).
   reversalOfId String?  @unique @map("reversal_of_id") @db.Uuid
+  /// Parcelas do cartão (1..12), só para cartão.
+  installments Int?     @db.SmallInt
+  /// Reembolso: dinheiro que entrou e saiu (valor negativo, sem estorno vinculado).
+  refund       Boolean  @default(false)
   createdById  String?  @map("created_by_id") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  receivable CustomerReceivable @relation(fields: [receivableId], references: [id], onDelete: Restrict)
+  receivable CustomerReceivable     @relation(fields: [receivableId], references: [id], onDelete: Restrict)
+  report     CustomerPaymentReport?
 
   @@index([receivableId])
   @@index([receivedAt])
   @@map("customer_payments")
+}
+
+/// Pagamento informado pela equipe numa retirada/entrega — registro operacional; só o escritório
+/// confirma (cria o recebimento real) ou descarta. Nunca apagado.
+model CustomerPaymentReport {
+  id           String    @id @default(uuid()) @db.Uuid
+  receivableId String    @map("receivable_id") @db.Uuid
+  pickupId     String?   @map("pickup_id") @db.Uuid
+  deliveryId   String?   @map("delivery_id") @db.Uuid
+  collected    Boolean
+  method       String?   @db.VarChar(20)
+  note         String?   @db.VarChar(500)
+  reportedById String    @map("reported_by_id") @db.Uuid
+  reportedAt   DateTime  @default(now()) @map("reported_at") @db.Timestamptz(3)
+  /// PENDENTE, CONFIRMADO, DESCARTADO.
+  status       String    @default("PENDENTE") @db.VarChar(12)
+  paymentId    String?   @unique @map("payment_id") @db.Uuid
+  decidedById  String?   @map("decided_by_id") @db.Uuid
+  decidedAt    DateTime? @map("decided_at") @db.Timestamptz(3)
+  decisionNote String?   @map("decision_note") @db.VarChar(500)
+  version      Int       @default(1)
+
+  receivable CustomerReceivable @relation(fields: [receivableId], references: [id], onDelete: Restrict)
+  pickup     PickupRequest?     @relation(fields: [pickupId], references: [id], onDelete: Restrict)
+  delivery   Delivery?          @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  payment    CustomerPayment?   @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  reportedBy User               @relation("PaymentReportBy", fields: [reportedById], references: [id], onDelete: Restrict)
+  decidedBy  User?              @relation("PaymentReportDecidedBy", fields: [decidedById], references: [id], onDelete: Restrict)
+
+  @@index([receivableId])
+  @@index([status])
+  @@map("customer_payment_reports")
 }
 
 /// Custo de material por OS (razão imutável derivada de compras, saídas de estoque e sobras;

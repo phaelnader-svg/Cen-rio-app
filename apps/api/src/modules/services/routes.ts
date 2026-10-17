@@ -1,4 +1,6 @@
 import {
+  paymentPlan,
+  paymentPlanProblem,
   EVENT_TYPES,
   logisticsCostCode,
   newServiceSchema,
@@ -8,6 +10,8 @@ import {
   type OwnTeamSettingsDto,
   type PickupTeam,
 } from '@cenario/shared';
+import { createReceivable } from '../finance/revenue';
+import { shopTimezone, todayIso } from '../finance/common';
 import type { PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { type z } from 'zod';
@@ -246,6 +250,31 @@ export async function serviceRoutes(app: FastifyInstance) {
           customerDropOff: !p,
           items: s.items,
         });
+
+        // Cobrança (AM-1): a condição estruturada gera as cobranças NA MESMA transação (e com a
+        // mesma idempotência do Novo serviço): nunca há pedido sem as cobranças da condição.
+        if (s.payment && s.payment.model !== 'MANUAL') {
+          if (!perms.has('pedidos.valores'))
+            throw Errors.forbidden(
+              'Você não tem permissão para informar valores e condições comerciais.',
+            );
+          const problem = paymentPlanProblem(s.agreedValueCents ?? null, s.payment, {
+            customerDropOff: !p,
+          });
+          if (problem) throw Errors.business(problem);
+          const today = todayIso(await shopTimezone(tx));
+          for (const d of paymentPlan(s.agreedValueCents!, s.payment, today))
+            await createReceivable(tx, actor, {
+              orderId: order.id,
+              description: d.description,
+              amountCents: d.amountCents,
+              dueTrigger: d.dueTrigger,
+              dueDate: d.dueDate,
+              expectedMethod: d.expectedMethod,
+              installments: d.installments,
+              notes: 'Gerada pela condição do Novo serviço',
+            });
+        }
 
         // 3–4. Retirada (opcional): sem ela o cliente entrega as peças na tapeçaria — nada de
         // responsável, participantes, custo de logística ou agenda.
