@@ -241,7 +241,7 @@ describe('Condição estruturada no Novo serviço (AM-1)', () => {
       overdue: false,
     });
     // 3/11. Entrada parcial (R$ 1.500 de R$ 2.000): PARCIAL, faltam R$ 500 — fato preservado.
-    let e = ok<Rec>(await pay(admin, entry, 150000));
+    let e = ok<Rec>(await pay(admin, entry!, 150000));
     expect(e).toMatchObject({ status: 'PARCIAL', receivedCents: 150000, openCents: 50000 });
     e = ok<Rec>(await pay(admin, e, 50000));
     expect(e).toMatchObject({ status: 'RECEBIDO', openCents: 0 });
