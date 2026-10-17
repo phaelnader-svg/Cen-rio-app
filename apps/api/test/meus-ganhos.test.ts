@@ -289,7 +289,7 @@ describe('Privacidade e permissões (25–28, 34, 35)', () => {
       const perms = role.permissions.map((p) => p.permission);
       expect(
         perms.filter((p) => p.startsWith('financeiro.')),
-        role.key,
+        role.key ?? undefined,
       ).toEqual(role.key === 'ajudante' ? [] : ['financeiro.producao_propria']);
     }
   });
