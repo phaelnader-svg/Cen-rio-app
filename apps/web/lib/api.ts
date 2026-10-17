@@ -18,6 +18,8 @@ export interface RequestOptions {
   /** Chave de idempotência (gere uma por intenção do usuário com `newIdempotencyKey`). */
   idempotencyKey?: string;
   signal?: AbortSignal;
+  /** Cabeçalhos extras (ex.: desbloqueio de "Meus Ganhos", só em memória). */
+  headers?: Record<string, string>;
 }
 
 export function newIdempotencyKey(): string {
@@ -26,7 +28,7 @@ export function newIdempotencyKey(): string {
 
 /** Cliente HTTP da API (mesma origem; cookies httpOnly enviados automaticamente). */
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = { accept: 'application/json' };
+  const headers: Record<string, string> = { ...options.headers, accept: 'application/json' };
   let body: BodyInit | undefined;
   if (options.body instanceof FormData) {
     body = options.body;

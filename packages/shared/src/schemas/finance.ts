@@ -484,6 +484,8 @@ const monday = dateOnly.refine(
   'A semana começa na segunda-feira.',
 );
 export const weekStartParamsSchema = z.object({ weekStart: monday });
+/** R1 — Meus Ganhos: semana (segunda-feira); ausente = semana atual no fuso da oficina. */
+export const myEarningsQuerySchema = z.object({ week: monday.optional() });
 export const closingQuerySchema = z.object({
   beneficiaryUserId: idSchema.optional(),
   category: z.enum(['TAPECARIA', 'LOGISTICA']).optional(),

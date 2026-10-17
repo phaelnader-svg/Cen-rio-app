@@ -4,7 +4,8 @@ import { audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { onServiceOrderCancelled } from '../production/cancellation';
 import { notifyUsersWith } from '../quality/common';
-import { financeEvent } from './common';
+import { financeEvent, lockRow } from './common';
+import { laborReviewCode, openReviewOf } from './labor';
 
 /**
  * Fase 12 — valores de produção de peças devolvidas (ou de OS cancelada).
@@ -14,6 +15,9 @@ import { financeEvent } from './common';
  * - Com trabalho executado, condição já atingida ou pagamento feito → nada é alterado
  *   automaticamente (nenhum desconto em pagamento de funcionário): o gestor é avisado para
  *   revisar e, se for o caso, ajustar com justificativa.
+ * - R1 (P0-2): devolução PARCIAL com mão de obra da OS inteira (legado, sem peça) → revisão
+ *   financeira aberta (valor integral EM REVISÃO, liberação e pagamento travados). Nada é
+ *   reduzido nem rateado: o gestor define o devido na resolução.
  */
 export async function settleLaborOfWithdrawal(
   tx: Tx,
@@ -90,7 +94,84 @@ export async function settleLaborOfWithdrawal(
       review.push(cur.id);
     }
   }
+  if (scope !== 'OS_INTEIRA')
+    review.push(...(await reviewWholeOrderLabor(tx, actor, serviceOrderId, reason)));
   return { cancelled, review };
+}
+
+/** Mão de obra da OS inteira numa devolução parcial: abre (uma) revisão financeira no escopo. */
+async function reviewWholeOrderLabor(
+  tx: Tx,
+  actor: ActorContext,
+  serviceOrderId: string,
+  reason: string,
+) {
+  const whole = await tx.productionPayable.findMany({
+    where: { serviceOrderId, serviceOrderItemId: null, status: { not: 'CANCELADO' } },
+    orderBy: { id: 'asc' },
+  });
+  if (!whole.length) return [];
+  for (const p of whole) await lockRow(tx, 'production_payables', p.id, 'Mão de obra');
+  const live = await tx.productionPayable.findMany({
+    where: { id: { in: whole.map((p) => p.id) }, status: { not: 'CANCELADO' } },
+  });
+  if (!live.length) return [];
+  const existing = await openReviewOf(tx, { serviceOrderId, serviceOrderItemId: null });
+  const codes = live.map((p) => productionPayableCode(p.number)).join(', ');
+  if (existing) {
+    // Repetição (outra devolução parcial): a revisão aberta já cobre o escopo.
+    for (const p of live)
+      await financeEvent(tx, actor, {
+        entityType: 'production_payable',
+        entityId: p.id,
+        kind: 'REVISAO_DEVOLUCAO',
+        note: `Nova devolução parcial (${reason}): segue na revisão ${laborReviewCode(existing.number)}.`,
+      });
+    return live.map((p) => p.id);
+  }
+  const r = await tx.laborReview.create({
+    data: {
+      serviceOrderId,
+      serviceOrderItemId: null,
+      reason:
+        `Devolução parcial (${reason}) com mão de obra combinada para a OS inteira: defina o valor devido (nada foi descontado).`.slice(
+          0,
+          500,
+        ),
+      openedById: actor.userId,
+    },
+  });
+  const code = laborReviewCode(r.number);
+  await audit(tx, actor, {
+    action: 'finance.labor_review_opened',
+    entityType: 'labor_review',
+    entityId: r.id,
+    summary: `${code} aberta: ${r.reason}`,
+  });
+  await financeEvent(tx, actor, {
+    entityType: 'labor_review',
+    entityId: r.id,
+    kind: 'REVISAO_ABERTA',
+    note: r.reason,
+    type: EVENT_TYPES.FINANCE_COST_UPDATED,
+  });
+  for (const p of live)
+    await financeEvent(tx, actor, {
+      entityType: 'production_payable',
+      entityId: p.id,
+      kind: 'REVISAO_DEVOLUCAO',
+      note: `Devolução parcial: valor da OS inteira em revisão (${code}); nenhum desconto automático.`,
+    });
+  await notifyUsersWith(
+    tx,
+    actor,
+    'financeiro.gerenciar',
+    'REVISAO_DEVOLUCAO',
+    `labor-review:${r.id}`,
+    `${codes}: ${reason}. Mão de obra da OS inteira em revisão (${code}) — defina o valor devido (nenhum desconto automático).`,
+    serviceOrderId,
+  );
+  return live.map((p) => p.id);
 }
 
 /** OS cancelada (inclusive por devolução total): valores de produção da OS inteira. */

@@ -28,22 +28,6 @@ async function call(page: Page, method: 'POST' | 'PUT' | 'GET', path: string, da
   return r.json();
 }
 
-/** Concede uma permissão individual pelo cadastro do funcionário (como no painel). */
-async function grant(page: Page, displayName: string, permission: string) {
-  const list = await call(page, 'GET', '/api/employees');
-  const summary = list.find((e: { displayName: string }) => e.displayName === displayName);
-  const e = await call(page, 'GET', `/api/employees/${summary.id}`);
-  await call(page, 'PUT', `/api/employees/${e.id}`, {
-    fullName: e.fullName,
-    displayName: e.displayName,
-    jobTitle: e.jobTitle,
-    color: e.color,
-    roleIds: e.roles.map((r: { id: string }) => r.id),
-    extraPermissions: [...new Set([...e.extraPermissions, permission])],
-    version: e.version,
-  });
-}
-
 test.describe.serial('Fase 11 — financeiro operacional', () => {
   test('cobrança, recebimento parcial, valor de produção, despesa, painel e "Meus valores" no tablet', async ({
     page,
@@ -144,7 +128,7 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     expect(csv.headers()['content-type']).toContain('text/csv');
     expect(await csv.text()).toContain(so.code);
 
-    // ── Tablet do Ricardo: sem financeiro até o gestor autorizar; depois, só os próprios ──
+    // ── Tablet do Ricardo: nunca o financeiro; os próprios ganhos por padrão (R1, DEC-9) ──
     await setPin(page, RICARDO, '482915');
     const ricardo = await openTablet(
       browser,
@@ -152,11 +136,8 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
       '482915',
     );
     const rt = ricardo.page;
-    await expect(rt.getByTestId('tile-values')).toHaveCount(0);
     const denied = await rt.request.get('/api/v1/finance/dashboard');
     expect(denied.status()).toBe(403);
-    await grant(page, RICARDO, 'financeiro.producao_propria');
-    await rt.reload();
     await rt.getByTestId('tile-values').click();
     // Evolução Fase 5: tablet compartilhado → PIN redigitado a cada abertura.
     await rt.getByTestId('my-values-pin').fill('482915');

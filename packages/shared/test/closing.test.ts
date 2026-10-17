@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allocateClosingPayment,
   closingFigures,
+  closingTimelineFigures,
   closingWeekEnd,
   closingWeekStart,
   isMonday,
@@ -129,5 +130,58 @@ describe('Evolução Fase 7 — regras do fechamento semanal', () => {
     const partial = allocateClosingPayment(25050, trips);
     expect(partial.parts.map((p) => p.amountCents)).toEqual([10000, 10000, 5050]);
     expect(allocateClosingPayment(150000, trips).leftoverCents).toBe(10000);
+  });
+});
+
+describe('R1 (DEC-7): mudança posterior entra na semana em que foi feita', () => {
+  const A = '2026-10-05';
+  const B = '2026-10-12';
+  const item = {
+    components: [
+      { competence: '2026-10-07', cents: 100000 },
+      { competence: '2026-10-14', cents: 20000 },
+    ],
+    payments: [] as { amountCents: number; paidAt: string; reversed: boolean }[],
+  };
+  it('semana A não vê o ajuste da semana B', () => {
+    const f = closingTimelineFigures(item, A, closingWeekEnd(A));
+    expect(f).toMatchObject({
+      bucket: 'WEEK',
+      dueCents: 100000,
+      previousCents: 0,
+      totalDueCents: 100000,
+    });
+  });
+  it('semana B: saldo anterior + ajuste, separados', () => {
+    const f = closingTimelineFigures(item, B, closingWeekEnd(B));
+    expect(f).toMatchObject({
+      bucket: 'WEEK',
+      dueCents: 120000,
+      previousCents: 100000,
+      totalDueCents: 120000,
+    });
+  });
+  it('pago na semana A: a semana B mostra só o ajuste', () => {
+    const paid = {
+      ...item,
+      payments: [{ amountCents: 100000, paidAt: '2026-10-09', reversed: false }],
+    };
+    expect(closingTimelineFigures(paid, B, closingWeekEnd(B))).toMatchObject({
+      bucket: 'WEEK',
+      dueCents: 20000,
+      previousCents: 0,
+      currentOpenCents: 20000,
+    });
+  });
+  it('uma parcela só: igual a closingFigures', () => {
+    const one = { dueCents: 50000, competence: '2026-10-07', payments: [] };
+    for (const w of [A, B])
+      expect(closingFigures(one, w, closingWeekEnd(w))).toEqual(
+        closingTimelineFigures(
+          { components: [{ competence: one.competence, cents: 50000 }], payments: [] },
+          w,
+          closingWeekEnd(w),
+        ),
+      );
   });
 });

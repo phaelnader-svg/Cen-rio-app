@@ -203,6 +203,8 @@ export interface ProposalAction {
   type: ProposalActionType;
   taskId: string;
   toUserId?: string | null;
+  /** CHANGE_PRINCIPAL: quem era o principal quando a proposta foi feita (proposta obsoleta se mudou). */
+  fromUserId?: string | null;
   toDate?: string | null;
   toTime?: string | null;
   helpRequestId?: string | null;

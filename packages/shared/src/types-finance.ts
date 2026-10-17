@@ -520,7 +520,67 @@ export interface MyProductionDto {
     eligibility: EligibilityRule;
     payments: { amountCents: number; paidAt: string }[];
   }[];
-  totals: { dueCents: number; paidCents: number; releasedOpenCents: number; forecastCents: number };
+  /** R1: o que está em revisão financeira aberta fica só em `inReviewCents` (nunca no devido). */
+  totals: {
+    dueCents: number;
+    paidCents: number;
+    releasedOpenCents: number;
+    forecastCents: number;
+    inReviewCents: number;
+  };
+}
+
+/**
+ * R1 — "Meus Ganhos" (tablet, PIN): visão do próprio profissional sobre a MESMA fonte do
+ * fechamento semanal. Só a remuneração variável própria (tapeçaria por peça e logística);
+ * nunca valores de outras pessoas, preço ao cliente, margem, materiais ou salário fixo.
+ */
+export type MyEarningsSituation =
+  | 'PREVISTO'
+  | 'AGUARDANDO_LIBERACAO'
+  | 'EM_REVISAO'
+  | 'LIBERADO'
+  | 'PAGO_PARCIAL'
+  | 'PAGO';
+export interface MyEarningsDto {
+  weekStart: string;
+  weekEnd: string;
+  currentWeekStart: string;
+  timezone: string;
+  /**
+   * Totais da semana (iguais aos do fechamento para a mesma pessoa e semana). Previsto,
+   * aguardando e em revisão são a situação atual e nunca entram no "a receber".
+   */
+  summary: {
+    forecastCents: number;
+    awaitingCents: number;
+    inReviewCents: number;
+    releasedCents: number;
+    paidInWeekCents: number;
+    paidAfterCents: number;
+    balanceCents: number;
+  };
+  items: {
+    id: string;
+    code: string;
+    category: 'TAPECARIA' | 'LOGISTICA';
+    situation: MyEarningsSituation;
+    /** WEEK: liberado na semana; PREVIOUS: saldo de semana anterior; FORECAST: ainda não liberado. */
+    bucket: 'WEEK' | 'PREVIOUS' | 'FORECAST';
+    description: string;
+    serviceOrders: string[];
+    piece: string | null;
+    agreedCents: number;
+    adjustmentsCents: number;
+    totalDueCents: number;
+    /** Liberado considerado nesta semana (0 se ainda não liberado). */
+    dueCents: number;
+    paidInWeekCents: number;
+    currentOpenCents: number;
+    releasedAt: string | null;
+    adjustments: { amountCents: number; reason: string; date: string; afterWeek: boolean }[];
+    payments: { amountCents: number; paidAt: string; reversed: boolean }[];
+  }[];
 }
 
 // ─────────────────────────── Evolução Fase 5 ───────────────────────────
@@ -609,6 +669,8 @@ export interface ClosingItemDto {
   adjustmentsCents: number;
   totalDueCents: number;
   dueCents: number;
+  /** Parte de `dueCents` que é saldo de semanas anteriores (R1: semana com ajuste posterior). */
+  previousCents: number;
   paidInWeekCents: number;
   openAtEndCents: number;
   paidAfterCents: number;
@@ -617,6 +679,17 @@ export interface ClosingItemDto {
   /** Pode ser quitado pelo lote (devido, sem revisão, com obrigação vinculada). */
   payable: boolean;
   notes: string[];
+  /**
+   * R1 (DEC-7): mudanças de valor feitas DEPOIS de o item ficar devido, cada uma com a sua
+   * competência (data local em que foi feita). As posteriores à semana não entram nela.
+   */
+  changes: {
+    competence: string;
+    amountCents: number;
+    reason: string;
+    kind: 'AJUSTE' | 'VALOR_ALTERADO';
+    afterWeek: boolean;
+  }[];
 }
 
 export interface ClosingRowDto {

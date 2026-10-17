@@ -348,9 +348,9 @@ export const PERMISSIONS = {
   },
   'financeiro.producao_propria': {
     group: 'financeiro',
-    label: 'Ver os próprios valores de produção',
+    label: 'Ver os próprios ganhos',
     description:
-      'O tapeceiro vê apenas os próprios valores de produção e pagamentos, quando o gestor autorizar. Nunca vê valores de outras pessoas nem dos clientes.',
+      'No tablet, com PIN: o tapeceiro (valores por peça) e a logística (valores de viagem) veem só os próprios ganhos, pagamentos e ajustes. Nunca valores de outras pessoas, dos clientes, margens ou salário. Não dá acesso ao financeiro.',
   },
   'auditoria.ver': {
     group: 'sistema',
@@ -412,6 +412,8 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
       'ajuda.solicitar',
       'presenca.registrar',
       'sincronizacao.diagnosticar',
+      // R1 (DEC-9): recebe por produção — vê os próprios ganhos no tablet (com PIN).
+      'financeiro.producao_propria',
     ],
   },
   {
@@ -453,7 +455,8 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     description:
       'Retiradas e entregas atribuídas: endereço, contato operacional, peças, data, horário e instruções. Sem valores comerciais.',
     system: true,
-    permissions: ['producao.acessar', 'logistica.executar'],
+    // R1 (DEC-9): recebedor de logística vê só os próprios valores de viagem (com PIN).
+    permissions: ['producao.acessar', 'logistica.executar', 'financeiro.producao_propria'],
   },
 ];
 

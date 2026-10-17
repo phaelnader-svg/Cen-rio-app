@@ -11,8 +11,8 @@
 import {
   EVENT_TYPES,
   allocateClosingPayment,
-  closingFigures,
   closingPaymentSchema,
+  closingTimelineFigures,
   closingQuerySchema,
   closingWeekEnd,
   confirmClosingSchema,
@@ -21,7 +21,7 @@ import {
   formatServiceOrderItemCode,
   freeTripSchema,
   laborDue,
-  laborSituation,
+  laborEligible,
   logisticsCostCode,
   productionPayableCode,
   reopenClosingSchema,
@@ -34,7 +34,6 @@ import {
   type ClosingPendencyDto,
   type ClosingRowDto,
   type EligibilityRule,
-  type LaborStatus,
   type PaymentMethod,
   type WeeklyClosingDto,
 } from '@cenario/shared';
@@ -56,7 +55,15 @@ import {
   lockRow,
   todayIso,
 } from './common';
-import { laborInclude, openReviewIndex, payLabor, reverseLaborPayment } from './labor';
+import {
+  coveredStages,
+  laborChangesAfterRelease,
+  laborInclude,
+  laborSituationOf,
+  openReviewIndex,
+  payLabor,
+  reverseLaborPayment,
+} from './labor';
 import { payPayable } from './payables';
 import { reversePayablePayment, tripCostInclude } from './trip-costs';
 
@@ -120,6 +127,10 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
     orderBy: { number: 'asc' },
   });
   const reviews = await openReviewIndex(db, labor);
+  const changes = await laborChangesAfterRelease(db, labor);
+  // R1: revisão só bloqueia a conferência das semanas a que as obrigações dela pertencem.
+  const relatedReviews = new Set<string>();
+  const todayLocal = todayIso(tz);
   for (const p of labor) {
     const review = reviews.get(`${p.serviceOrderId}|${p.serviceOrderItemId ?? ''}`) ?? null;
     const due = laborDue(p);
@@ -130,16 +141,27 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
       reversed: Boolean(x.reversal),
     }));
     const paidValid = payments.filter((x) => !x.reversed).reduce((a, x) => a + x.amountCents, 0);
-    const stages = p.item
-      ? [p.item.fulfillmentStage]
-      : p.serviceOrder.items.map((i) => i.fulfillmentStage);
-    const situation = laborSituation({
-      status: p.status as LaborStatus,
-      inReview: Boolean(review),
-      eligibility: p.eligibility as EligibilityRule,
-      stages,
-    });
+    const situation = laborSituationOf(p, Boolean(review));
     const competence = p.eligibleAt ? local(p.eligibleAt) : null;
+    // DEC-7: o valor ao ficar devido + cada mudança posterior na data em que foi feita.
+    const late = (changes.get(p.id) ?? []).map((c) => ({ ...c, competence: local(c.at) }));
+    const lateTotal = late.reduce((a, c) => a + c.amountCents, 0);
+    const components = competence
+      ? [
+          { competence, cents: p.agreedCents + p.adjustmentsCents - lateTotal },
+          ...late.map((c) => ({ competence: c.competence, cents: c.amountCents })),
+        ]
+      : [];
+    const f = competence
+      ? closingTimelineFigures({ components, payments }, weekStart, weekEnd)
+      : null;
+    if (review) {
+      const wouldRelease =
+        !competence &&
+        laborEligible(p.eligibility as EligibilityRule, coveredStages(p)) &&
+        todayLocal <= weekEnd;
+      if (f?.bucket || wouldRelease) relatedReviews.add(review.id);
+    }
     const state: ClosingItemDto['state'] = review
       ? 'EM_REVISAO'
       : competence
@@ -147,6 +169,10 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
         : situation === 'AGUARDANDO_QUALIDADE'
           ? 'AGUARDANDO_QUALIDADE'
           : 'PREVISTO';
+    // Valores como estavam no fim da semana (mudanças posteriores ficam fora, listadas).
+    const afterWeek = late.filter((c) => c.competence > weekEnd);
+    const afterSum = (k: 'AJUSTE' | 'VALOR_ALTERADO') =>
+      afterWeek.filter((c) => c.kind === k).reduce((a, c) => a + c.amountCents, 0);
     const base = {
       kind: 'MAO_DE_OBRA' as const,
       id: p.id,
@@ -165,13 +191,24 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
           }
         : null,
       competence,
-      agreedCents: p.agreedCents,
-      adjustmentsCents: p.adjustmentsCents,
-      totalDueCents: due,
+      agreedCents: p.agreedCents - (f ? afterSum('VALOR_ALTERADO') : 0),
+      adjustmentsCents: p.adjustmentsCents - (f ? afterSum('AJUSTE') : 0),
+      totalDueCents: f ? f.totalDueCents : due,
       payments,
       notes: [] as string[],
+      changes: late.map((c) => ({
+        competence: c.competence,
+        amountCents: c.amountCents,
+        reason: c.reason,
+        kind: c.kind,
+        afterWeek: c.competence > weekEnd,
+      })),
     };
     if (review) base.notes.push(`Revisão financeira aberta: liberação e pagamento travados.`);
+    for (const c of afterWeek)
+      base.notes.push(
+        `Mudança posterior de ${(c.amountCents / 100).toFixed(2)} em ${c.competence} (${c.reason}): entra no fechamento da semana em que foi feita.`,
+      );
     if (p.item?.fulfillmentStage === 'DEVOLVIDA' || p.serviceOrder.status === 'CANCELADA') {
       base.notes.push('Peça devolvida/OS cancelada com valor ativo: revisar.');
       pendencies.push({
@@ -181,16 +218,19 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
         ref: { kind: 'production_payable', id: p.id, code: base.code },
       });
     }
-    if (state === 'DEVIDO' && competence) {
-      const f = closingFigures({ dueCents: due, competence, payments }, weekStart, weekEnd);
+    if (state === 'DEVIDO' && f) {
       if (!f.bucket) continue;
-      items.push({ ...base, ...f, bucket: f.bucket, payable: f.currentOpenCents > 0 });
+      const { totalDueCents: _t, ...figures } = f;
+      void _t;
+      items.push({ ...base, ...figures, bucket: f.bucket, payable: f.currentOpenCents > 0 });
     } else {
       const open = Math.max(0, due - paidValid);
       items.push({
         ...base,
+        totalDueCents: due,
         bucket: 'FORECAST',
         dueCents: 0,
+        previousCents: 0,
         paidInWeekCents: 0,
         openAtEndCents: 0,
         paidAfterCents: 0,
@@ -289,6 +329,7 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
       adjustmentsCents: c.adjustmentsCents,
       payments,
       notes,
+      changes: [] as ClosingItemDto['changes'],
     };
     if (c.status === 'PREVISTO') {
       items.push({
@@ -299,6 +340,7 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
         competence: null,
         totalDueCents: baseDue,
         dueCents: 0,
+        previousCents: 0,
         paidInWeekCents: 0,
         openAtEndCents: 0,
         paidAfterCents: 0,
@@ -318,6 +360,7 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
         competence,
         totalDueCents: baseDue,
         dueCents: 0,
+        previousCents: 0,
         paidInWeekCents: 0,
         openAtEndCents: 0,
         paidAfterCents: 0,
@@ -343,14 +386,36 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
         message: `${code}: conta a pagar (${(payable.amountCents / 100).toFixed(2)}) difere do custo devido (${(baseDue / 100).toFixed(2)}).`,
         ref: { kind: 'logistics_cost', id: c.id, code },
       });
-    const f = closingFigures(
-      { dueCents: payable.amountCents, competence, payments },
+    // DEC-7: ajuste feito depois de devido entra na semana em que foi feito.
+    const late = legacy
+      ? []
+      : c.adjustments
+          .filter((a) => a.createdAt.getTime() > c.dueAt!.getTime() && a.amountCents !== 0)
+          .map((a) => ({
+            competence: local(a.createdAt),
+            amountCents: a.amountCents,
+            reason: a.reason,
+            kind: 'AJUSTE' as const,
+          }));
+    const lateTotal = late.reduce((a, x) => a + x.amountCents, 0);
+    const f = closingTimelineFigures(
+      {
+        components: [
+          { competence, cents: payable.amountCents - lateTotal },
+          ...late.map((x) => ({ competence: x.competence, cents: x.amountCents })),
+        ],
+        payments,
+      },
       weekStart,
       weekEnd,
     );
     if (!f.bucket) continue;
+    const afterWeek = late.filter((x) => x.competence > weekEnd);
+    const afterTotal = afterWeek.reduce((a, x) => a + x.amountCents, 0);
     items.push({
       ...common,
+      adjustmentsCents: c.adjustmentsCents - afterTotal,
+      changes: late.map((x) => ({ ...x, afterWeek: x.competence > weekEnd })),
       beneficiary: legacy
         ? { userId: null, displayName: `${payable.beneficiary} (lançamento avulso)` }
         : c.payee
@@ -358,11 +423,17 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
           : { userId: null, displayName: payable.beneficiary },
       state: 'DEVIDO',
       competence,
-      totalDueCents: payable.amountCents,
       ...f,
       bucket: f.bucket,
       payable: !legacy && f.currentOpenCents > 0,
-      notes: legacy ? [...notes, 'Custo avulso (Fase 11): pague pela conta a pagar.'] : notes,
+      notes: [
+        ...notes,
+        ...(legacy ? ['Custo avulso (Fase 11): pague pela conta a pagar.'] : []),
+        ...afterWeek.map(
+          (x) =>
+            `Ajuste posterior de ${(x.amountCents / 100).toFixed(2)} em ${x.competence} (${x.reason}): entra no fechamento da semana em que foi feito.`,
+        ),
+      ],
     });
   }
 
@@ -414,10 +485,13 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
   });
   for (const r of open) {
     const code = `RF-${String(r.number).padStart(5, '0')}`;
+    const related = relatedReviews.has(r.id);
     pendencies.push({
       kind: 'REVISAO_ABERTA',
-      blocking: true,
-      message: `${code} (${serviceOrderCode(r.serviceOrder.number)}): revisão financeira aberta — resolva antes de conferir.`,
+      blocking: related,
+      message: related
+        ? `${code} (${serviceOrderCode(r.serviceOrder.number)}): revisão financeira aberta — resolva antes de conferir.`
+        : `${code} (${serviceOrderCode(r.serviceOrder.number)}): revisão financeira aberta de outra semana — não afeta esta conferência.`,
       ref: { kind: 'labor_review', id: r.id, code },
     });
   }
@@ -442,8 +516,11 @@ function addItem(t: ReturnType<typeof emptyTotals>, i: ClosingItemDto) {
   t.items += 1;
   if (i.state === 'PREVISTO') t.forecastCents += i.currentOpenCents;
   else if (i.bucket === 'FORECAST') t.awaitingCents += i.currentOpenCents;
-  if (i.bucket === 'WEEK') t.weekDueCents += i.dueCents;
-  if (i.bucket === 'PREVIOUS') t.previousOpenCents += i.dueCents;
+  // Saldo anterior e devido da semana separados (um item pode ter os dois: ajuste posterior).
+  if (i.bucket === 'WEEK' || i.bucket === 'PREVIOUS') {
+    t.previousOpenCents += i.previousCents;
+    t.weekDueCents += i.dueCents - i.previousCents;
+  }
   if (i.bucket === 'WEEK' || i.bucket === 'PREVIOUS') {
     t.dueCents += i.dueCents;
     t.paidInWeekCents += i.paidInWeekCents;

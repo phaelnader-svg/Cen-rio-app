@@ -620,6 +620,18 @@ export const LABOR_SITUATION_LABEL: Record<LaborSituation, string> = {
   EM_REVISAO: 'Em revisão financeira',
   CANCELADO: 'Cancelado',
 };
+/** R1 — situações de "Meus Ganhos" (derivadas; nenhuma é gravada). */
+export const MY_EARNINGS_SITUATION_LABEL: Record<
+  'PREVISTO' | 'AGUARDANDO_LIBERACAO' | 'EM_REVISAO' | 'LIBERADO' | 'PAGO_PARCIAL' | 'PAGO',
+  string
+> = {
+  PREVISTO: 'Previsto',
+  AGUARDANDO_LIBERACAO: 'Aguardando liberação',
+  EM_REVISAO: 'Em revisão',
+  LIBERADO: 'Liberado',
+  PAGO_PARCIAL: 'Pago em parte',
+  PAGO: 'Pago',
+};
 const AWAITING_QUALITY_STAGES = ['AGUARDANDO_INSPECAO', 'EM_INSPECAO', 'EM_CORRECAO'];
 export function laborSituation(p: {
   status: LaborStatus;

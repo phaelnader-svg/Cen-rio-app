@@ -395,8 +395,8 @@ describe('Privacidade e tablet (CA5-05, 06)', () => {
     const R = s.tablets.Ricardo!;
     const M = s.tablets['Márcio']!;
     const J = s.tablets['João']!;
-    // Sem a permissão específica: nada.
-    expect((await post(R, F('/my-production/unlock'), { pin: PINS.Ricardo })).status).toBe(403);
+    // R1 (DEC-9): o tapeceiro tem a permissão por padrão; sem ela (ajudante João), nada —
+    // conferido abaixo.
     await grant(s.admin, 'Ricardo', ['financeiro.producao_propria']);
     await grant(s.admin, 'Márcio', ['financeiro.producao_propria']);
     // Tablet: a sessão do aparelho não basta.

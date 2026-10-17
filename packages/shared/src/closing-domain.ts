@@ -11,6 +11,9 @@
  *   semana; os posteriores aparecem como "pago depois" e reduzem o saldo anterior da próxima
  *   semana. Pagamento estornado não conta em período algum (o estorno fica no histórico).
  * - Previsto, aguardando qualidade e em revisão são a situação ATUAL e nunca entram no pagável.
+ * - R1 (DEC-7): mudança de valor DEPOIS de devido (ajuste, valor combinado corrigido) é um fato
+ *   próprio, com competência na data em que foi feita: entra na semana dela (rastreável, com a
+ *   obrigação de origem) e nunca reescreve a semana em que o valor ficou devido.
  */
 export const CLOSING_CATEGORIES = ['TAPECARIA', 'LOGISTICA'] as const;
 export type ClosingCategory = (typeof CLOSING_CATEGORIES)[number];
@@ -61,11 +64,19 @@ export interface ClosingFigures {
   bucket: 'WEEK' | 'PREVIOUS' | null;
   /** Devido considerado neste fechamento (devido − pago antes do início da semana). */
   dueCents: number;
+  /** Parte de `dueCents` que é saldo de semanas anteriores (o resto ficou devido nesta). */
+  previousCents: number;
   paidInWeekCents: number;
   openAtEndCents: number;
   paidAfterCents: number;
   /** Saldo atual (devido − todos os pagamentos não estornados). */
   currentOpenCents: number;
+}
+
+/** Parcela do devido com a sua competência (data local): o valor ao ficar devido e cada mudança posterior. */
+export interface DueComponent {
+  competence: string;
+  cents: number;
 }
 
 /** Números de um item DEVIDO dentro do fechamento [weekStart, weekEnd] (datas locais). */
@@ -74,24 +85,56 @@ export function closingFigures(
   weekStart: string,
   weekEnd: string,
 ): ClosingFigures {
+  return closingTimelineFigures(
+    {
+      components: [{ competence: item.competence, cents: item.dueCents }],
+      payments: item.payments,
+    },
+    weekStart,
+    weekEnd,
+  );
+}
+
+/**
+ * Mesmas regras de `closingFigures` para um devido composto por parcelas com competências
+ * diferentes (DEC-7): só o que tem competência até o fim da semana conta nela; uma mudança
+ * posterior entra na semana em que foi feita (grupo da semana) e nunca altera a anterior.
+ */
+export function closingTimelineFigures(
+  item: { components: readonly DueComponent[]; payments: readonly ClosingPaymentLine[] },
+  weekStart: string,
+  weekEnd: string,
+): ClosingFigures & { totalDueCents: number } {
   const valid = item.payments.filter((p) => !p.reversed);
   const sum = (f: (p: ClosingPaymentLine) => boolean) =>
     valid.filter(f).reduce((a, p) => a + p.amountCents, 0);
+  const due = (f: (c: DueComponent) => boolean) =>
+    item.components.filter(f).reduce((a, c) => a + c.cents, 0);
   const paidBefore = sum((p) => p.paidAt < weekStart);
   const paidInWeek = sum((p) => p.paidAt >= weekStart && p.paidAt <= weekEnd);
   const paidAfter = sum((p) => p.paidAt > weekEnd);
-  const current = Math.max(0, item.dueCents - paidBefore - paidInWeek - paidAfter);
-  const startOpen = Math.max(0, item.dueCents - paidBefore);
+  const dueBefore = due((c) => c.competence < weekStart);
+  const dueInWeek = due((c) => c.competence >= weekStart && c.competence <= weekEnd);
+  const dueAll = due(() => true);
+  // A primeira parcela é o valor ao ficar devido (conta mesmo se zero); as demais, só se mudam.
+  const inWeek = item.components.some(
+    (c, i) => (i === 0 || c.cents !== 0) && c.competence >= weekStart && c.competence <= weekEnd,
+  );
+  const current = Math.max(0, dueAll - paidBefore - paidInWeek - paidAfter);
+  const startOpen = Math.max(0, dueBefore - paidBefore);
+  const considered = Math.max(0, dueBefore + dueInWeek - paidBefore);
   let bucket: ClosingFigures['bucket'] = null;
-  if (item.competence >= weekStart && item.competence <= weekEnd) bucket = 'WEEK';
-  else if (item.competence < weekStart && startOpen > 0) bucket = 'PREVIOUS';
+  if (inWeek) bucket = 'WEEK';
+  else if (startOpen > 0) bucket = 'PREVIOUS';
   return {
     bucket,
-    dueCents: bucket ? startOpen : 0,
-    paidInWeekCents: bucket ? Math.min(paidInWeek, startOpen) : 0,
-    openAtEndCents: bucket ? Math.max(0, startOpen - paidInWeek) : 0,
+    dueCents: bucket ? considered : 0,
+    previousCents: bucket ? Math.min(startOpen, considered) : 0,
+    paidInWeekCents: bucket ? Math.min(paidInWeek, considered) : 0,
+    openAtEndCents: bucket ? Math.max(0, considered - paidInWeek) : 0,
     paidAfterCents: bucket ? paidAfter : 0,
     currentOpenCents: current,
+    totalDueCents: Math.max(0, dueBefore + dueInWeek),
   };
 }
 

@@ -14,7 +14,8 @@ test.describe.serial('Tablets, sessões e sincronização', () => {
     // Fase 11: o atalho antigo "Ocorrências — disponível na próxima fase" saiu do tablet
     // (ocorrências são registradas em "Tenho um problema", na tarefa, desde a Fase 9).
     await expect(tablet.page.getByText('Disponível na próxima fase')).toHaveCount(0);
-    await expect(tablet.page.getByTestId('tile-values')).toHaveCount(0);
+    // R1 (DEC-9): o tapeceiro vê os próprios ganhos por padrão (com PIN).
+    await expect(tablet.page.getByTestId('tile-values')).toBeVisible();
 
     // Sessão persistente: recarregar ou reabrir o navegador mantém o acesso.
     await tablet.page.reload();

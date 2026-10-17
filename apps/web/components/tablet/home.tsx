@@ -193,6 +193,17 @@ export function TabletHome({ me }: { me: MeDto }) {
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">
               Minhas entregas e retiradas
             </h1>
+            {canSeeValues && (
+              <div className="mb-5">
+                <Tile
+                  onClick={() => setScreen('values')}
+                  testId="tile-values"
+                  icon={<Wallet className="size-7" aria-hidden />}
+                  title="Meus ganhos"
+                  text="Seus valores de viagem por semana: liberado, pago e saldo."
+                />
+              </div>
+            )}
             <LogisticsJobs />
           </>
         ) : screen === 'home' ? (
@@ -300,8 +311,8 @@ export function TabletHome({ me }: { me: MeDto }) {
                     onClick={() => setScreen('values')}
                     testId="tile-values"
                     icon={<Wallet className="size-7" aria-hidden />}
-                    title="Meus valores"
-                    text="Valores de produção combinados e pagamentos registrados."
+                    title="Meus ganhos"
+                    text="Seus valores por semana: previsto, liberado, pago e saldo."
                   />
                 </li>
               )}
@@ -364,7 +375,7 @@ export function TabletHome({ me }: { me: MeDto }) {
         ) : screen === 'values' && canSeeValues ? (
           <>
             {back('Voltar ao início', 'home')}
-            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Meus valores</h1>
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Meus ganhos</h1>
             <MyValues />
           </>
         ) : screen === 'depart' && attendance.data ? (

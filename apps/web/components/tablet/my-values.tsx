@@ -1,36 +1,76 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ELIGIBILITY_LABEL, LABOR_SITUATION_LABEL, type MyProductionDto } from '@cenario/shared';
+import { useCallback, useEffect, useState } from 'react';
+import { MY_EARNINGS_SITUATION_LABEL, type MyEarningsDto } from '@cenario/shared';
 import { Alert, Badge, Card } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
 import { money } from '@/lib/finance';
 
-/** Tempo máximo com os valores na tela do tablet compartilhado. */
-const VISIBLE_MS = 2 * 60_000;
+type Unlock = { token: string; expiresAt: number };
+const br = (iso: string) => iso.split('-').reverse().join('/');
+const shiftWeek = (iso: string, weeks: number) => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + weeks * 7);
+  return d.toISOString().slice(0, 10);
+};
+const TONE = {
+  PREVISTO: 'neutral',
+  AGUARDANDO_LIBERACAO: 'neutral',
+  EM_REVISAO: 'warn',
+  LIBERADO: 'brand',
+  PAGO_PARCIAL: 'brand',
+  PAGO: 'ok',
+} as const;
 
 /**
- * "Meus valores" (Ricardo, Márcio): só os próprios valores de produção e pagamentos, e só
- * quando o gestor concede `financeiro.producao_propria`.
+ * R1 — "Meus Ganhos" (tapeceiro e logística): só a própria remuneração variável, por semana, com
+ * os mesmos números do fechamento semanal.
  *
- * Evolução Fase 5: o tablet é compartilhado e a sessão do aparelho é longa, então a sessão não
- * prova quem está diante da tela. A cada abertura a pessoa redigita o PIN; a resposta fica só
- * neste componente (sem cache de consultas) e some ao sair, ao tocar em "Ocultar" ou após
- * 2 minutos.
+ * D12: o tablet é compartilhado, então a pessoa redigita o PIN; ele libera a consulta por 5
+ * minutos NESTA sessão (token só em memória — some ao sair, ao ocultar ou ao recarregar). Dá
+ * para navegar entre as semanas sem novo PIN; ao expirar, volta a pedir.
  */
 export function MyValues() {
-  const [data, setData] = useState<MyProductionDto | null>(null);
+  const [unlock, setUnlock] = useState<Unlock | null>(null);
+  const [data, setData] = useState<MyEarningsDto | null>(null);
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (!data) return;
-    const t = window.setTimeout(() => setData(null), VISIBLE_MS);
-    return () => window.clearTimeout(t);
-  }, [data]);
+  const lock = useCallback((message: string | null = null) => {
+    setUnlock(null);
+    setData(null);
+    setError(message);
+  }, []);
 
-  const unlock = async (e: React.FormEvent) => {
+  useEffect(() => {
+    if (!unlock) return;
+    const t = window.setTimeout(
+      () => lock('O tempo de consulta terminou. Confirme seu PIN de novo.'),
+      Math.max(0, unlock.expiresAt - Date.now()),
+    );
+    return () => window.clearTimeout(t);
+  }, [unlock, lock]);
+
+  const load = async (u: Unlock, week?: string) => {
+    setBusy(true);
+    try {
+      setData(
+        await api<MyEarningsDto>(`/api/v1/finance/my-earnings${week ? `?week=${week}` : ''}`, {
+          headers: { 'x-earnings-unlock': u.token },
+        }),
+      );
+      setError(null);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403)
+        lock('Confirme seu PIN para ver seus ganhos.');
+      else setError(err instanceof ApiError ? err.message : 'Não foi possível abrir seus ganhos.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!/^\d{6}$/.test(pin) || busy) {
       setError('Digite os 6 dígitos do seu PIN.');
@@ -39,25 +79,27 @@ export function MyValues() {
     setBusy(true);
     setError(null);
     try {
-      setData(
-        await api<MyProductionDto>('/api/v1/finance/my-production/unlock', {
-          method: 'POST',
-          body: { pin },
-        }),
+      const r = await api<{ unlockToken: string; expiresAt: string }>(
+        '/api/v1/finance/my-earnings/unlock',
+        { method: 'POST', body: { pin } },
       );
+      const u = { token: r.unlockToken, expiresAt: new Date(r.expiresAt).getTime() };
+      setUnlock(u);
+      setPin('');
+      await load(u);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Não foi possível abrir seus valores.');
-    } finally {
       setPin('');
       setBusy(false);
+      setError(err instanceof ApiError ? err.message : 'Não foi possível abrir seus ganhos.');
     }
   };
 
-  if (!data)
+  if (!unlock || !data)
     return (
-      <form onSubmit={unlock} className="max-w-sm space-y-4" data-testid="my-values-lock">
+      <form onSubmit={submit} className="max-w-sm space-y-4" data-testid="my-values-lock">
         <p className="text-lg text-ink-muted">
-          Este tablet é usado por toda a equipe. Para ver seus valores, confirme seu PIN.
+          Este tablet é usado por toda a equipe. Para ver seus ganhos, confirme seu PIN (vale por{' '}
+          {5} minutos).
         </p>
         <label className="block">
           <span className="text-base font-medium">Seu PIN</span>
@@ -86,79 +128,125 @@ export function MyValues() {
           className="h-14 w-full rounded-xl bg-brand-700 text-lg font-semibold text-white disabled:opacity-50"
           data-testid="my-values-unlock"
         >
-          {busy ? 'Verificando…' : 'Ver meus valores'}
+          {busy ? 'Verificando…' : 'Ver meus ganhos'}
         </button>
       </form>
     );
 
-  const t = data.totals;
+  const s = data.summary;
+  const isCurrent = data.weekStart >= data.currentWeekStart;
+  const cards: [string, number, string][] = [
+    ['Previsto', s.forecastCents, 'forecast'],
+    ['Aguardando liberação', s.awaitingCents, 'awaiting'],
+    ['Em revisão', s.inReviewCents, 'review'],
+    ['Liberado', s.releasedCents, 'released'],
+    ['Pago na semana', s.paidInWeekCents, 'paid'],
+    ['Saldo a receber', s.balanceCents, 'balance'],
+  ];
   return (
     <div className="space-y-5" data-testid="my-values">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-base text-ink-muted">Os valores somem da tela em 2 minutos.</p>
+        <div className="flex flex-wrap items-center gap-2" data-testid="my-values-week">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void load(unlock, shiftWeek(data.weekStart, -1))}
+            className="rounded-xl border border-line px-4 py-2 text-base font-medium disabled:opacity-50"
+            data-testid="my-values-prev"
+          >
+            ← Semana anterior
+          </button>
+          <p className="px-2 text-lg font-semibold tabular-nums">
+            {br(data.weekStart)} a {br(data.weekEnd)}
+            {isCurrent ? ' (atual)' : ''}
+          </p>
+          <button
+            type="button"
+            disabled={busy || isCurrent}
+            onClick={() => void load(unlock, shiftWeek(data.weekStart, 1))}
+            className="rounded-xl border border-line px-4 py-2 text-base font-medium disabled:opacity-50"
+            data-testid="my-values-next"
+          >
+            Próxima semana →
+          </button>
+        </div>
         <button
           type="button"
-          onClick={() => setData(null)}
+          onClick={() => lock()}
           className="rounded-xl border border-line px-4 py-2 text-base font-medium"
           data-testid="my-values-hide"
         >
           Ocultar valores
         </button>
       </div>
+      {error && <Alert tone="danger">{error}</Alert>}
       <div className="grid gap-3 sm:grid-cols-3">
-        <Card className="p-5">
-          <p className="text-base text-ink-muted">Liberado a receber</p>
-          <p className="text-3xl font-semibold tabular-nums" data-testid="my-values-released">
-            {money(t.releasedOpenCents)}
-          </p>
-        </Card>
-        <Card className="p-5">
-          <p className="text-base text-ink-muted">Previsto (aguardando condição)</p>
-          <p className="text-3xl font-semibold tabular-nums">{money(t.forecastCents)}</p>
-        </Card>
-        <Card className="p-5">
-          <p className="text-base text-ink-muted">Já pago</p>
-          <p className="text-3xl font-semibold tabular-nums">{money(t.paidCents)}</p>
-        </Card>
+        {cards.map(([label, cents, key]) => (
+          <Card key={key} className="p-5">
+            <p className="text-base text-ink-muted">{label}</p>
+            <p className="text-3xl font-semibold tabular-nums" data-testid={`my-values-${key}`}>
+              {money(cents)}
+            </p>
+          </Card>
+        ))}
       </div>
+      <p className="text-base text-ink-muted">
+        Previsto, aguardando liberação e em revisão mostram a situação de agora e não entram no
+        saldo a receber. Os valores da semana são os mesmos do fechamento.
+      </p>
       {!data.items.length ? (
-        <p className="text-lg text-ink-muted">Nenhum valor de produção combinado.</p>
+        <p className="text-lg text-ink-muted">Nenhum ganho nesta semana.</p>
       ) : (
         <ul className="space-y-3">
           {data.items.map((i) => (
             <li key={i.id}>
-              <Card
-                className="flex flex-wrap items-center gap-4 p-5"
-                data-testid={`my-value-${i.code}`}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="text-lg font-semibold">
-                    {i.serviceOrder}
-                    {i.piece ? ` · ${i.piece}` : ''} — {i.service}
-                  </p>
-                  <p className="text-base text-ink-muted">
-                    {ELIGIBILITY_LABEL[i.eligibility]}
-                    {i.payments.length
-                      ? ` · pagamentos: ${i.payments.map((p) => `${money(p.amountCents)} em ${p.paidAt.split('-').reverse().join('/')}`).join(', ')}`
-                      : ''}
-                  </p>
+              <Card className="space-y-2 p-5" data-testid={`my-value-${i.code}`}>
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-lg font-semibold">
+                      {i.serviceOrders.join(', ')}
+                      {i.piece ? ` · ${i.piece}` : ''} — {i.description}
+                    </p>
+                    <p className="text-base text-ink-muted">
+                      {i.category === 'LOGISTICA' ? 'Logística' : 'Tapeçaria'} · {i.code}
+                      {i.releasedAt ? ` · liberado em ${br(i.releasedAt)}` : ''}
+                      {i.bucket === 'PREVIOUS' ? ' · saldo de semana anterior' : ''}
+                    </p>
+                  </div>
+                  <p className="text-2xl font-semibold tabular-nums">{money(i.totalDueCents)}</p>
+                  <span data-testid={`my-value-situation-${i.code}`}>
+                    <Badge tone={TONE[i.situation]}>
+                      {MY_EARNINGS_SITUATION_LABEL[i.situation]}
+                    </Badge>
+                  </span>
                 </div>
-                <p className="text-2xl font-semibold tabular-nums">{money(i.dueCents)}</p>
-                <span data-testid={`my-value-situation-${i.code}`}>
-                  <Badge
-                    tone={
-                      i.situation === 'PAGO'
-                        ? 'ok'
-                        : i.situation === 'EM_REVISAO'
-                          ? 'warn'
-                          : i.situation === 'LIBERADO' || i.situation === 'PAGO_PARCIAL'
-                            ? 'brand'
-                            : 'neutral'
-                    }
-                  >
-                    {LABOR_SITUATION_LABEL[i.situation]}
-                  </Badge>
-                </span>
+                <p className="text-base text-ink-muted">
+                  Combinado {money(i.agreedCents)}
+                  {i.adjustmentsCents ? ` · ajustes ${money(i.adjustmentsCents)}` : ''} · devido{' '}
+                  {money(i.totalDueCents)}
+                  {i.bucket !== 'FORECAST' ? ` · a receber ${money(i.currentOpenCents)}` : ''}
+                </p>
+                {i.adjustments.length > 0 && (
+                  <ul className="text-base text-ink-muted" data-testid={`my-value-adj-${i.code}`}>
+                    {i.adjustments.map((a, n) => (
+                      <li key={n}>
+                        Ajuste de {money(a.amountCents)} em {br(a.date)}: {a.reason}
+                        {a.afterWeek ? ' (entra na semana em que foi feito)' : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {i.payments.length > 0 && (
+                  <p className="text-base text-ink-muted">
+                    Pagamentos:{' '}
+                    {i.payments
+                      .map(
+                        (p) =>
+                          `${money(p.amountCents)} em ${br(p.paidAt)}${p.reversed ? ' (estornado)' : ''}`,
+                      )
+                      .join(', ')}
+                  </p>
+                )}
               </Card>
             </li>
           ))}
@@ -166,8 +254,8 @@ export function MyValues() {
       )}
       {data.items.some((i) => i.situation === 'EM_REVISAO') && (
         <Alert tone="warn">
-          Há valor em revisão pelo gestor (troca de responsável pela peça). Nada muda até ele
-          concluir a revisão.
+          Há valor em revisão pelo gestor (troca de responsável ou devolução de peça). Ele não entra
+          no saldo a receber até o gestor concluir a revisão.
         </Alert>
       )}
     </div>

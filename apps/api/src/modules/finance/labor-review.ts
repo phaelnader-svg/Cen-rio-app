@@ -44,6 +44,7 @@ import {
   shopTimezone,
 } from './common';
 import {
+  laborChangesAfterRelease,
   laborInclude,
   laborReviewCode,
   myProduction,
@@ -66,7 +67,8 @@ export async function openLaborReviews(
   actor: ActorContext,
   input: {
     serviceOrderId: string;
-    itemId: string;
+    /** Peça cujo titular mudou; nulo = troca do principal da OS inteira (legado, sem peça). */
+    itemId: string | null;
     newOwnerId: string;
     ownerChangeId: string | null;
   },
@@ -74,12 +76,19 @@ export async function openLaborReviews(
   const affected = await tx.productionPayable.findMany({
     where: {
       serviceOrderId: input.serviceOrderId,
-      OR: [{ serviceOrderItemId: input.itemId }, { serviceOrderItemId: null }],
+      OR: [
+        ...(input.itemId ? [{ serviceOrderItemId: input.itemId }] : []),
+        { serviceOrderItemId: null },
+      ],
       status: { not: 'CANCELADO' },
       professionalUserId: { not: input.newOwnerId },
     },
-    select: { serviceOrderItemId: true },
+    select: { id: true, serviceOrderItemId: true },
   });
+  // Trava as obrigações afetadas (ordem fixa): duas aberturas simultâneas no mesmo escopo não
+  // disputam o índice de "uma revisão aberta por escopo".
+  for (const a of [...affected].sort((x, y) => x.id.localeCompare(y.id)))
+    await lockRow(tx, 'production_payables', a.id, 'Mão de obra');
   const scopes = [...new Set(affected.map((a) => a.serviceOrderItemId))];
   const opened: string[] = [];
   for (const [i, scope] of scopes.entries()) {
@@ -447,13 +456,45 @@ export async function laborWeekly(
   const p = period({ from, to }, timeZone);
   const start = p.fromTs;
   const end = p.toExclusive;
+  // Só as obrigações com algum fato no período (ou saldo aberto), não a base inteira.
   const payables = await db.productionPayable.findMany({
-    where: { status: { not: 'CANCELADO' } },
-    include: {
-      professional: { select: { id: true, displayName: true } },
-      payments: true,
+    where: {
+      status: { not: 'CANCELADO' },
+      OR: [
+        { createdAt: { gte: start, lt: end } },
+        { eligibleAt: { gte: start, lt: end } },
+        {
+          payments: {
+            some: {
+              paidAt: { gte: new Date(`${from}T00:00:00Z`), lte: new Date(`${to}T00:00:00Z`) },
+            },
+          },
+        },
+        { adjustments: { some: { createdAt: { gte: start, lt: end } } } },
+        { status: { in: ['LIBERADO', 'PAGO_PARCIAL'] } },
+      ],
     },
+    include: laborInclude,
   });
+  // DEC-7: mudanças depois da liberação entram na semana em que foram feitas (nunca reescrevem a
+  // semana da liberação); o combinado é o valor inicial, na semana em que foi combinado.
+  const late = await laborChangesAfterRelease(db, payables);
+  const edits = await db.financialEvent.findMany({
+    where: {
+      entityType: 'production_payable',
+      kind: 'VALOR_ALTERADO',
+      entityId: { in: payables.map((p) => p.id) },
+    },
+    select: { entityId: true, data: true },
+  });
+  const editTotal = new Map<string, number>();
+  for (const e of edits) {
+    const d = (e.data ?? {}) as { fromCents?: number; toCents?: number };
+    editTotal.set(
+      e.entityId,
+      (editTotal.get(e.entityId) ?? 0) + (d.toCents ?? 0) - (d.fromCents ?? 0),
+    );
+  }
   const rows = new Map<string, LaborWeeklyDto['rows'][number]>();
   const row = (p: (typeof payables)[number], when: Date) => {
     const week = mondayOf(localDay(when, timeZone));
@@ -472,8 +513,13 @@ export async function laborWeekly(
   const inRange = (d: Date | null) => Boolean(d && d >= start && d < end);
   const open = new Map<string, LaborWeeklyDto['openByProfessional'][number]>();
   for (const p of payables) {
-    if (inRange(p.createdAt)) row(p, p.createdAt).agreedCents += laborDue(p);
-    if (inRange(p.eligibleAt)) row(p, p.eligibleAt!).releasedCents += laborDue(p);
+    const changes = late.get(p.id) ?? [];
+    const lateTotal = changes.reduce((a, c) => a + c.amountCents, 0);
+    if (inRange(p.createdAt))
+      row(p, p.createdAt).agreedCents += p.agreedCents - (editTotal.get(p.id) ?? 0);
+    if (inRange(p.eligibleAt))
+      row(p, p.eligibleAt!).releasedCents += Math.max(0, laborDue(p) - lateTotal);
+    for (const c of changes) if (inRange(c.at)) row(p, c.at).releasedCents += c.amountCents;
     for (const pay of p.payments) {
       const at = zonedDateTime(dateOnly(pay.paidAt)!, '12:00', timeZone);
       if (inRange(at)) row(p, at).paidCents += pay.amountCents;

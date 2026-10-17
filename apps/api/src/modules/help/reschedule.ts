@@ -29,7 +29,9 @@ import {
   reevaluateTasks,
   taskEvent,
 } from '../production/common';
+import { assertUpholstererRule, setUpholsterer } from '../production/distribution';
 import { assertWorker, reviseIfPublishedBy } from '../production/plans';
+import { openLaborReviews } from '../finance/labor-review';
 import { loadQueue } from '../production/queue';
 import { immediateAt } from '../../core/clock';
 import {
@@ -101,7 +103,11 @@ export async function changeTask(
       `${taskCode(t.number)} já começou ou foi encerrada: a proposta precisa ser reavaliada.`,
     );
   }
-  if (change.assigneeUserId) await assertWorker(tx, change.assigneeUserId);
+  if (change.assigneeUserId) {
+    await assertWorker(tx, change.assigneeUserId);
+    // R1: nenhum caminho lateral troca o executor da tapeçaria sem passar pela regra do titular.
+    await assertUpholstererRule(tx, { ...t, assigneeUserId: change.assigneeUserId });
+  }
   const updated = await tx.productionTask.update({
     where: { id: taskId },
     data: { ...change, version: { increment: 1 } },
@@ -529,6 +535,7 @@ export async function analyzeAbsence(
     const simple =
       mode === 'CONFIRMADA' &&
       !isPrincipal(t) &&
+      t.stepClass !== 'TAPECARIA' &&
       !isImportant(t.priority) &&
       (!t.dueDate || dateOnly(t.dueDate)! > cfg.today) &&
       !t.blockedReason &&
@@ -613,6 +620,7 @@ export async function analyzeAbsence(
           type: 'CHANGE_PRINCIPAL' as const,
           taskId: t.id,
           toUserId: other.userId,
+          fromUserId: userId,
         })),
         impacts: [
           `${principal.length} tarefa(s) de tapeceiro passam para ${other.name}, que já tem a própria programação.`,
@@ -751,7 +759,35 @@ async function applyAction(tx: Tx, actor: ActorContext, a: ProposalAction, reaso
     }
     case 'CHANGE_PRINCIPAL': {
       if (!a.toUserId) throw Errors.business('Escolha o novo tapeceiro principal.');
+      // Sem travar a tarefa aqui: a substituição trava peça → tarefas (mesma ordem da rota do
+      // titular) e confere o titular lido (CAS); uma troca concorrente vira conflito.
       const t = await tx.productionTask.findUniqueOrThrow({ where: { id: a.taskId } });
+      if (t.assigneeUserId === a.toUserId) return { action: a, result: 'já era o principal' };
+      if (a.fromUserId && t.assigneeUserId !== a.fromUserId)
+        throw Errors.business(
+          `${taskCode(t.number)} mudou de responsável depois da proposta: a proposta precisa ser reavaliada.`,
+        );
+      // R1 (P0-1): a troca de principal é a MESMA substituição de titular da peça (motivo,
+      // elegibilidade, histórico, tarefas pendentes da peça e revisão financeira) — nunca só a
+      // tarefa. Sem peça (OS inteira, legado): a mão de obra da OS com outra pessoa vai à revisão.
+      if (t.serviceOrderItemId) {
+        const item = await tx.serviceOrderItem.findUniqueOrThrow({
+          where: { id: t.serviceOrderItemId },
+        });
+        await setUpholsterer(tx, actor, item.id, {
+          userId: a.toUserId,
+          expectedUserId: item.upholstererUserId,
+          reason: reason.slice(0, 500),
+          confirm: true,
+        });
+      } else {
+        await openLaborReviews(tx, actor, {
+          serviceOrderId: t.serviceOrderId,
+          itemId: null,
+          newOwnerId: a.toUserId,
+          ownerChangeId: null,
+        });
+      }
       if (t.planId && t.assigneeUserId) {
         await tx.productionPlanItem.updateMany({
           where: {
@@ -762,6 +798,12 @@ async function applyAction(tx: Tx, actor: ActorContext, a: ProposalAction, reaso
           data: { principalUserId: a.toUserId },
         });
       }
+      const moved = await tx.productionTask.findUniqueOrThrow({ where: { id: a.taskId } });
+      if (moved.assigneeUserId === a.toUserId)
+        return {
+          action: a,
+          result: { assigneeUserId: { from: t.assigneeUserId, to: a.toUserId } },
+        };
       const r = await changeTask(
         tx,
         actor,

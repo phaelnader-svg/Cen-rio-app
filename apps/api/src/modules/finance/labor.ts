@@ -49,7 +49,7 @@ export const laborInclude = {
 type LaborRow = Prisma.ProductionPayableGetPayload<{ include: typeof laborInclude }>;
 
 /** Peças cobertas: a peça indicada ou todas as peças não devolvidas da OS. */
-function coveredStages(p: LaborRow) {
+export function coveredStages(p: LaborRow) {
   if (p.item) return [p.item.fulfillmentStage];
   return p.serviceOrder.items
     .map((i) => i.fulfillmentStage)
@@ -100,6 +100,78 @@ export async function openReviewIndex(
   return new Map(reviews.map((r) => [scopeKey(r), { id: r.id, number: r.number }]));
 }
 
+/**
+ * R1: situação ÚNICA de uma obrigação — a mesma na lista da OS, no fechamento, em Meus Ganhos e
+ * no pagamento (inclusive a da OS inteira, que considera só as peças não devolvidas).
+ */
+export function laborSituationOf(p: LaborRow, inReview: boolean) {
+  return laborSituation({
+    status: p.status as LaborStatus,
+    inReview,
+    eligibility: p.eligibility as EligibilityRule,
+    stages: coveredStages(p),
+  });
+}
+
+export type LaborChange = {
+  at: Date;
+  amountCents: number;
+  reason: string;
+  kind: 'AJUSTE' | 'VALOR_ALTERADO';
+};
+
+/**
+ * R1 (DEC-7): mudanças de valor feitas DEPOIS da liberação (`eligibleAt`) — ajustes e correções do
+ * valor combinado —, cada uma com a data real em que foi feita. Uma consulta para todas as linhas.
+ */
+export async function laborChangesAfterRelease(
+  db: Tx | PrismaClient,
+  rows: LaborRow[],
+): Promise<Map<string, LaborChange[]>> {
+  const released = rows.filter((p) => p.eligibleAt);
+  const edits = released.length
+    ? await db.financialEvent.findMany({
+        where: {
+          entityType: 'production_payable',
+          kind: 'VALOR_ALTERADO',
+          entityId: { in: released.map((p) => p.id) },
+        },
+        orderBy: { createdAt: 'asc' },
+      })
+    : [];
+  const out = new Map<string, LaborChange[]>();
+  for (const p of released) {
+    const after = (d: Date) => d.getTime() > p.eligibleAt!.getTime();
+    const list: LaborChange[] = [
+      ...p.adjustments
+        .filter((a) => after(a.createdAt))
+        .map((a) => ({
+          at: a.createdAt,
+          amountCents: a.amountCents,
+          reason: a.reason,
+          kind: 'AJUSTE' as const,
+        })),
+      ...edits
+        .filter((e) => e.entityId === p.id && after(e.createdAt))
+        .map((e) => {
+          const d = (e.data ?? {}) as { fromCents?: number; toCents?: number };
+          return {
+            at: e.createdAt,
+            amountCents: (d.toCents ?? 0) - (d.fromCents ?? 0),
+            reason: e.note ?? 'Valor combinado corrigido',
+            kind: 'VALOR_ALTERADO' as const,
+          };
+        }),
+    ].filter((c) => c.amountCents !== 0);
+    if (list.length)
+      out.set(
+        p.id,
+        list.sort((a, b) => a.at.getTime() - b.at.getTime()),
+      );
+  }
+  return out;
+}
+
 /** Mão de obra da OS inteira com peças cujo titular é outra pessoa: ratear exige revisão. */
 const needsPieceReview = (p: LaborRow) =>
   !p.item &&
@@ -142,12 +214,7 @@ export async function toLaborDto(
     withdrawn:
       p.status !== 'CANCELADO' &&
       (p.serviceOrder.status === 'CANCELADA' || p.item?.fulfillmentStage === 'DEVOLVIDA'),
-    situation: laborSituation({
-      status: p.status as LaborStatus,
-      inReview: Boolean(review),
-      eligibility: p.eligibility as EligibilityRule,
-      stages: coveredStages(p),
-    }),
+    situation: laborSituationOf(p, Boolean(review)),
     review: review ? { id: review.id, code: laborReviewCode(review.number) } : null,
     needsPieceReview: needsPieceReview(p),
     adjustments: p.adjustments.map((a) => ({
@@ -456,9 +523,14 @@ export async function reverseLaborPayment(
     where: { id: pay.productionPayableId },
     include: laborInclude,
   });
-  if (input.version !== undefined) checkVersion(p, input.version);
+  // R1: o estorno já feito é conferido antes da versão (repetição = conflito claro).
   if (await tx.professionalPaymentReversal.findUnique({ where: { paymentId } }))
     throw Errors.conflict('Este pagamento já foi estornado.');
+  if (input.version !== undefined) checkVersion(p, input.version);
+  if (p.status === 'CANCELADO') throw Errors.business('Mão de obra cancelada: nada a estornar.');
+  // Revisão aberta: os valores (inclusive o pago) estão sob decisão do gestor — estornar
+  // agora mudaria o "já pago" que a resolução usa. Resolva a revisão antes.
+  await assertNoReview(tx, p);
   await tx.professionalPaymentReversal.create({
     data: { paymentId, reason: input.reason, createdById: actor.userId },
   });
@@ -555,12 +627,7 @@ export async function myProduction(
     const status = laborStatus({ ...p, eligible, cancelled: false });
     const inReview = reviewed.has(`${p.serviceOrderId}:${p.serviceOrderItemId ?? ''}`);
     return {
-      situation: laborSituation({
-        status,
-        inReview,
-        eligibility: p.eligibility as EligibilityRule,
-        stages: coveredStages(p),
-      }),
+      situation: laborSituationOf({ ...p, status }, inReview),
       id: p.id,
       code: productionPayableCode(p.number),
       serviceOrder: serviceOrderCode(p.serviceOrder.number),
@@ -578,17 +645,22 @@ export async function myProduction(
         })),
     };
   });
+  // R1: valor em revisão aberta não entra como devido nem como liberado — aparece à parte.
+  const settled = items.filter((i) => i.situation !== 'EM_REVISAO');
   return {
     items,
     totals: {
-      dueCents: items.reduce((a, i) => a + i.dueCents, 0),
+      dueCents: settled.reduce((a, i) => a + i.dueCents, 0),
       paidCents: items.reduce((a, i) => a + i.paidCents, 0),
-      releasedOpenCents: items
+      releasedOpenCents: settled
         .filter((i) => i.status === 'LIBERADO' || i.status === 'PAGO_PARCIAL')
         .reduce((a, i) => a + i.dueCents - i.paidCents, 0),
-      forecastCents: items
+      forecastCents: settled
         .filter((i) => i.status === 'PREVISTO')
         .reduce((a, i) => a + i.dueCents, 0),
+      inReviewCents: items
+        .filter((i) => i.situation === 'EM_REVISAO')
+        .reduce((a, i) => a + Math.max(0, i.dueCents - i.paidCents), 0),
     },
   };
 }
