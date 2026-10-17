@@ -61,9 +61,13 @@ describe('Falhas no meio da transação não deixam registros parciais', () => {
       expectedMethod: 'PIX',
     });
     await failOn('financial_events');
+    // Cobrança (AM-12): data de recebimento futura é recusada — o teste usa a data de hoje.
+    const todayLocal = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(
+      new Date(),
+    );
     const body = {
       amountCents: 40000,
-      receivedAt: '2030-01-10',
+      receivedAt: todayLocal,
       method: 'PIX',
       version: rc.body.version,
     };

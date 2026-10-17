@@ -257,6 +257,11 @@ test.describe.serial('Fase 10 — qualidade, embalagem e entrega', () => {
       await dlg.getByLabel('Horário de chegada ao cliente').fill('09:00');
       await dlg.getByLabel('Responsável pela execução').selectOption({ label: 'André' });
       await dlg.getByLabel('Instruções para a equipe').fill('Portaria: avisar o zelador');
+      // Cobrança (AM-5): pedido com saldo em aberto — aviso forte e confirmação consciente
+      // (não bloqueia: o gestor só confirma que está ciente).
+      await expect(dlg.getByTestId('delivery-balance')).toContainText('Saldo pendente');
+      await expect(dlg.getByRole('button', { name: 'Agendar', exact: true })).toBeDisabled();
+      await dlg.getByLabel('Estou ciente do saldo pendente').check();
       await dlg.getByRole('button', { name: 'Agendar', exact: true }).click();
       await expect(dlg).toHaveCount(0);
       await page.getByRole('tab', { name: 'Agenda' }).click();
