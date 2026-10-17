@@ -137,10 +137,30 @@ describe('Meus Ganhos = fechamento (13–19)', () => {
     mine = await open(s.tablets.Ricardo!, PINS.Ricardo!);
     expect(mine.items[0]).toMatchObject({ code: ric.code, situation: 'EM_REVISAO' });
     expect(mine.summary).toMatchObject({ inReviewCents: 65000, balanceCents: 0, releasedCents: 0 });
+    // Resolução da revisão: o motivo (que descreve a divisão) não chega ao profissional.
+    const rv = (await s.admin.get(F('/labor-reviews?status=ABERTA'))).body[0];
+    const res = await post(s.admin, F(`/labor-reviews/${rv.id}/resolve`), {
+      lines: [
+        { professionalUserId: s.ids.ricardo, amountCents: 90000 },
+        { professionalUserId: s.ids.marcio, amountCents: 15000 },
+      ],
+      reason: 'Ricardo fez a base; Márcio termina por 150',
+      version: rv.version,
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const after = await open(s.tablets.Ricardo!, PINS.Ricardo!);
+    const text = JSON.stringify(after);
+    expect(text).not.toMatch(/Márcio|termina/);
+    expect(after.items[0].adjustments.at(-1)).toMatchObject({
+      amountCents: -15000,
+      reason: expect.stringMatching(/^Revisão financeira RF-\d{5}: valor definido pelo gestor\.$/),
+    });
+    await setOwner(s.admin, s.sofa.id, s.ids.ricardo, s.ids.marcio, 'Volta ao Ricardo');
     // O antigo "Meus valores" também não soma o que está em revisão.
     const old = await post(s.tablets.Ricardo!, F('/my-production/unlock'), { pin: PINS.Ricardo });
+    // (nova revisão aberta pela volta do titular: R$ 900 devidos − R$ 400 pagos em revisão)
     expect(old.body.totals).toMatchObject({
-      inReviewCents: 65000,
+      inReviewCents: 50000,
       releasedOpenCents: 0,
       dueCents: 0,
     });

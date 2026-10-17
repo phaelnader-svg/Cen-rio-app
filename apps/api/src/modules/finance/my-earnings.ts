@@ -82,13 +82,24 @@ export async function myEarnings(db: Db, userId: string, week?: string): Promise
       orderBy: { createdAt: 'asc' },
     }),
   ]);
+  // O motivo da resolução de revisão descreve a divisão entre profissionais (nomes e valores de
+  // outras pessoas): no "Meus Ganhos" aparece só a referência da revisão.
+  const ownReason = (reason: string) => {
+    const review = /^Revisão (RF-\d+):/.exec(reason);
+    return review ? `Revisão financeira ${review[1]}: valor definido pelo gestor.` : reason;
+  };
   const adjustmentsOf = (id: string) =>
     [
       ...laborAdj.filter((a) => a.productionPayableId === id),
       ...costAdj.filter((a) => a.logisticsCostId === id),
     ].map((a) => {
       const date = localDateOf(a.createdAt, tz);
-      return { amountCents: a.amountCents, reason: a.reason, date, afterWeek: date > weekEnd };
+      return {
+        amountCents: a.amountCents,
+        reason: ownReason(a.reason),
+        date,
+        afterWeek: date > weekEnd,
+      };
     });
   const items: MyEarningsDto['items'] = mine.map((i) => ({
     id: i.id,

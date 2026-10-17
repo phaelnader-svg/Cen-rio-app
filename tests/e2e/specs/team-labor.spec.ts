@@ -130,6 +130,14 @@ test.describe.serial('Evolução Fase 5 — mão de obra dos tapeceiros', () => 
     await expect(pieceSofa).toContainText('R$ 100,00');
     await expect(pieceSofa).toContainText('R$ 220,00');
     await evidence(page, '04-revisao-resolvida');
+    const marcioPayables = (
+      (await call(page, 'GET', `/api/v1/finance/service-orders/${so.id}/labor`)).pieces as {
+        payables: { code: string; professional: { userId: string } }[];
+      }[]
+    )
+      .flatMap((x) => x.payables)
+      .filter((x) => x.professional.userId === MAR.userId);
+    expect(marcioPayables).toHaveLength(2);
 
     // ── Tablets: Ricardo e Márcio autorizados (PIN a cada abertura); João sem permissão ──
     await grant(page, RIC.displayName, 'financeiro.producao_propria');
@@ -151,7 +159,10 @@ test.describe.serial('Evolução Fase 5 — mão de obra dos tapeceiros', () => 
     await rt.getByTestId('my-values-unlock').click();
     const rv = rt.getByTestId('my-values');
     await expect(rv).toContainText('R$ 100,00');
-    await expect(rv).not.toContainText('220,00');
+    // R1: o ajuste próprio da revisão (−R$ 220,00 no valor do Ricardo) aparece, com motivo neutro;
+    // as obrigações do Márcio (R$ 220,00 e R$ 450,00) e o nome dele, nunca.
+    await expect(rv).toContainText('valor definido pelo gestor');
+    for (const p of marcioPayables) await expect(rv).not.toContainText(p.code);
     await expect(rv).not.toContainText('450,00');
     await expect(rv).not.toContainText(MAR.displayName);
     await evidence(rt, '05-tablet-ricardo-meus-valores');
