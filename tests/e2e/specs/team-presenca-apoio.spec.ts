@@ -4,7 +4,7 @@ import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
 
 /**
  * Simplificação Fase 7 — presença simplificada no painel e no tablet (dados fictícios). Relógio
- * de teste num dia próprio (hoje + 35): expediente esquecido resolvido pelo gestor sem horário
+ * de teste num dia próprio (hoje + 77, fora das janelas das demais specs): expediente esquecido resolvido pelo gestor sem horário
  * inventado, calendário de feriados, férias por intervalo e o tablet sem avaliação de pontualidade.
  */
 const TZ = 'America/Sao_Paulo';
@@ -15,7 +15,7 @@ const addDays = (iso: string, n: number) => {
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 };
-const DAY = addDays(today(), 35);
+const DAY = addDays(today(), 77);
 const atLocal = (day: string, hhmm: string) => new Date(`${day}T${hhmm}:00-03:00`).toISOString();
 const br = (iso: string) => iso.split('-').reverse().slice(0, 2).join('/');
 const evidence = (page: Page, name: string) =>
