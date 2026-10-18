@@ -149,6 +149,11 @@ model User {
   paymentReportsMade    CustomerPaymentReport[] @relation("PaymentReportBy")
   paymentReportsDecided CustomerPaymentReport[] @relation("PaymentReportDecidedBy")
 
+  valueChangeRequests      ValueChangeRequest[]        @relation("ValueChangeBeneficiary")
+  valueChangeDecisions     ValueChangeRequest[]        @relation("ValueChangeDecidedBy")
+  closingConfirmations     WeeklyClosingConfirmation[] @relation("ConfirmationBeneficiary")
+  closingConfirmationsByMe WeeklyClosingConfirmation[] @relation("ConfirmationCreatedBy")
+
   @@map("users")
 }
 
@@ -3044,11 +3049,13 @@ model ProductionPayable {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  professional User                  @relation("ProductionPayableProfessional", fields: [professionalUserId], references: [id], onDelete: Restrict)
-  serviceOrder ServiceOrder          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
-  item         ServiceOrderItem?     @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
-  adjustments  FinancialAdjustment[]
-  payments     ProfessionalPayment[]
+  professional        User                  @relation("ProductionPayableProfessional", fields: [professionalUserId], references: [id], onDelete: Restrict)
+  serviceOrder        ServiceOrder          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  item                ServiceOrderItem?     @relation(fields: [serviceOrderItemId], references: [id], onDelete: Restrict)
+  adjustments         FinancialAdjustment[]
+  /// R2: solicitações de alteração de valor do próprio profissional.
+  valueChangeRequests ValueChangeRequest[]
+  payments            ProfessionalPayment[]
 
   /// Evolução Fase 5: criada na resolução de uma revisão financeira (divisão entre titulares).
   reviewId String?      @map("review_id") @db.Uuid
@@ -3146,21 +3153,23 @@ model LogisticsCost {
 
   // Evolução Fase 6: custo da viagem ligado ao agendamento.
   /// LANCADO (avulso/legado), PREVISTO (agendado), DEVIDO (realizado/taxa autorizada), CANCELADO.
-  status             String                     @default("LANCADO") @db.VarChar(20)
+  status              String                     @default("LANCADO") @db.VarChar(20)
   /// Recebedor vinculado (novos lançamentos). O texto `beneficiary` legado é preservado.
-  payeeUserId        String?                    @map("payee_user_id") @db.Uuid
-  payee              User?                      @relation("LogisticsCostPayee", fields: [payeeUserId], references: [id], onDelete: Restrict)
-  adjustmentsCents   Int                        @default(0) @map("adjustments_cents")
+  payeeUserId         String?                    @map("payee_user_id") @db.Uuid
+  payee               User?                      @relation("LogisticsCostPayee", fields: [payeeUserId], references: [id], onDelete: Restrict)
+  adjustmentsCents    Int                        @default(0) @map("adjustments_cents")
   /// Fato gerador do valor devido (realização ou taxa autorizada).
-  dueAt              DateTime?                  @map("due_at") @db.Timestamptz(3)
+  dueAt               DateTime?                  @map("due_at") @db.Timestamptz(3)
   /// Motivo de não ter gerado a obrigação (ex.: RECEBEDOR_AUSENTE).
-  pendingReason      String?                    @map("pending_reason") @db.VarChar(40)
+  pendingReason       String?                    @map("pending_reason") @db.VarChar(40)
   /// MANUAL (legado), AUTO (OS da viagem) ou ESCOLHIDA (OS escolhidas pelo gestor).
-  allocationMode     String                     @default("MANUAL") @map("allocation_mode") @db.VarChar(20)
+  allocationMode      String                     @default("MANUAL") @map("allocation_mode") @db.VarChar(20)
   /// Rateio vigente (rateios são imutáveis; um novo rateio é uma nova revisão).
-  allocationRevision Int                        @default(1) @map("allocation_revision")
-  participants       LogisticsCostParticipant[]
-  adjustments        LogisticsCostAdjustment[]
+  allocationRevision  Int                        @default(1) @map("allocation_revision")
+  participants        LogisticsCostParticipant[]
+  adjustments         LogisticsCostAdjustment[]
+  /// R2: solicitações de alteração de valor do recebedor.
+  valueChangeRequests ValueChangeRequest[]
 
   @@index([date])
   @@index([payeeUserId, dueAt])
@@ -3562,4 +3571,74 @@ model MaterialArrival {
 
   @@index([purchaseOrderId, status])
   @@map("material_arrivals")
+}
+
+// ─────────────────────────── R2 — negociação e confirmação semanal ───────────────────────────
+
+/// Pedido do próprio beneficiário para alterar um valor (mão de obra ou viagem). Não move dinheiro:
+/// a aprovação aplica pelas funções financeiras existentes (valor combinado ou ajuste).
+model ValueChangeRequest {
+  id                  String    @id @default(uuid()) @db.Uuid
+  number              Int       @unique @default(autoincrement())
+  /// PRODUCAO (production_payable) ou LOGISTICA (logistics_cost).
+  targetKind          String    @map("target_kind") @db.VarChar(20)
+  productionPayableId String?   @map("production_payable_id") @db.Uuid
+  logisticsCostId     String?   @map("logistics_cost_id") @db.Uuid
+  beneficiaryUserId   String    @map("beneficiary_user_id") @db.Uuid
+  /// Valor devido que o profissional viu ao pedir (CAS: mudou → OBSOLETA).
+  currentCents        Int       @map("current_cents")
+  requestedCents      Int       @map("requested_cents")
+  reason              String    @db.VarChar(500)
+  /// PENDENTE, APROVADA, RECUSADA, OBSOLETA.
+  status              String    @default("PENDENTE") @db.VarChar(20)
+  decisionNote        String?   @map("decision_note") @db.VarChar(500)
+  /// Como a aprovação foi aplicada: VALOR_COMBINADO ou AJUSTE.
+  appliedAs           String?   @map("applied_as") @db.VarChar(20)
+  decidedById         String?   @map("decided_by_id") @db.Uuid
+  decidedAt           DateTime? @map("decided_at") @db.Timestamptz(3)
+  sessionId           String?   @map("session_id") @db.Uuid
+  deviceId            String?   @map("device_id") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  version             Int       @default(1)
+
+  payable     ProductionPayable? @relation(fields: [productionPayableId], references: [id], onDelete: Restrict)
+  cost        LogisticsCost?     @relation(fields: [logisticsCostId], references: [id], onDelete: Restrict)
+  beneficiary User               @relation("ValueChangeBeneficiary", fields: [beneficiaryUserId], references: [id], onDelete: Restrict)
+  decidedBy   User?              @relation("ValueChangeDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@index([beneficiaryUserId, createdAt])
+  @@index([productionPayableId])
+  @@index([logisticsCostId])
+  @@map("value_change_requests")
+}
+
+/// Retrato imutável do que o profissional conferiu numa semana (ou de uma exceção administrativa
+/// do gestor). A validade é recalculada ao vivo comparando as linhas com o estado atual.
+model WeeklyClosingConfirmation {
+  id                String   @id @default(uuid()) @db.Uuid
+  number            Int      @unique @default(autoincrement())
+  beneficiaryUserId String   @map("beneficiary_user_id") @db.Uuid
+  weekStart         DateTime @map("week_start") @db.Date
+  /// PROFISSIONAL ou EXCECAO_ADMINISTRATIVA.
+  kind              String   @db.VarChar(30)
+  /// Linhas ordenadas: [{kind, id, code, bucket, dueCents, totalDueCents}].
+  items             Json
+  totalCents        Int      @map("total_cents")
+  /// SHA-256 do conteúdo canônico (pessoa, semana, linhas ordenadas).
+  hash              String   @db.Char(64)
+  /// Exceção: motivo interno (obrigatório) e mensagem neutra ao profissional.
+  reason            String?  @db.VarChar(500)
+  publicNote        String?  @map("public_note") @db.VarChar(300)
+  createdById       String?  @map("created_by_id") @db.Uuid
+  sessionId         String?  @map("session_id") @db.Uuid
+  deviceId          String?  @map("device_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  beneficiary User  @relation("ConfirmationBeneficiary", fields: [beneficiaryUserId], references: [id], onDelete: Restrict)
+  createdBy   User? @relation("ConfirmationCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([beneficiaryUserId, weekStart, createdAt])
+  @@index([weekStart])
+  @@map("weekly_closing_confirmations")
 }

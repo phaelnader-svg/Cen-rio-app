@@ -7,6 +7,7 @@ import {
   laborStatus,
   productionPayableCode,
   settlementProblem,
+  type ClosingItemDto,
   type EligibilityRule,
   type LaborPayableDto,
   type LaborStatus,
@@ -451,6 +452,9 @@ export async function payLabor(
     note?: string | null;
     earlyReason?: string | null;
     version: number;
+    /** R2 (D13): semana do fechamento que cobre o pagamento (lote) e a visão já calculada. */
+    weekStart?: string;
+    built?: { items: ClosingItemDto[] };
   },
 ) {
   await lockRow(tx, 'production_payables', id, 'Mão de obra');
@@ -466,6 +470,16 @@ export async function payLabor(
     );
   const problem = settlementProblem(laborDue(p), p.paidCents, input.amountCents);
   if (problem) throw Errors.business(problem);
+  // R2 (D13): sem confirmação do profissional (ou exceção administrativa) para esta linha da
+  // semana, não há pagamento — inclusive antecipado (a justificativa de antecipação não libera).
+  const { assertPaymentCovered, paymentWeek } = await import('./confirmations');
+  const coverage = await assertPaymentCovered(tx, {
+    userId: p.professionalUserId,
+    weekStart: paymentWeek(input.paidAt, input.weekStart),
+    kind: 'MAO_DE_OBRA',
+    itemId: id,
+    built: input.built,
+  });
   const pay = await tx.professionalPayment.create({
     data: {
       productionPayableId: id,
@@ -490,14 +504,19 @@ export async function payLabor(
     action: 'finance.labor_paid',
     entityType: 'production_payable',
     entityId: id,
-    summary: `${productionPayableCode(p.number)}: pagamento de ${(input.amountCents / 100).toFixed(2)} a ${p.professional.displayName}${eligible ? '' : ` (antecipado: ${input.earlyReason})`}.`,
+    summary: `${productionPayableCode(p.number)}: pagamento de ${(input.amountCents / 100).toFixed(2)} a ${p.professional.displayName}${eligible ? '' : ` (antecipado: ${input.earlyReason})`} — ${coverage.kind === 'PROFISSIONAL' ? 'confirmação' : 'exceção administrativa'} ${coverage.code}.`,
   });
   await financeEvent(tx, actor, {
     entityType: 'production_payable',
     entityId: id,
     kind: eligible ? 'PAGAMENTO' : 'PAGAMENTO_ANTECIPADO',
     note: input.note ?? input.earlyReason ?? null,
-    data: { amountCents: input.amountCents, method: input.method },
+    data: {
+      amountCents: input.amountCents,
+      method: input.method,
+      paymentId: pay.id,
+      coverage: { kind: coverage.kind, code: coverage.code },
+    },
     type: EVENT_TYPES.FINANCE_PAYABLE_PAID,
   });
   return {

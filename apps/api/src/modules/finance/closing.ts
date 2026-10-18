@@ -557,6 +557,7 @@ export async function summarize(db: Db, items: ClosingItemDto[]) {
       category: list[0]!.category,
       ...t,
       canPay: Boolean(b.userId && users.get(b.userId) && list.some((i) => i.payable)),
+      confirmation: null,
     };
   });
   rows.sort(
@@ -617,6 +618,15 @@ export async function weeklyClosing(
       (!filters.state || i.state === filters.state),
   );
   const { rows, totals } = await summarize(db, items);
+  // R2 (D13): situação da confirmação de cada profissional (sobre a visão completa da semana).
+  const { weekConfirmation } = await import('./confirmations');
+  const seen = new Map<string, Awaited<ReturnType<typeof weekConfirmation>>>();
+  for (const r of rows) {
+    const uid = r.beneficiary.userId;
+    if (!uid) continue;
+    if (!seen.has(uid)) seen.set(uid, await weekConfirmation(db, uid, weekStart, built));
+    r.confirmation = seen.get(uid)!;
+  }
   const payments = await db.closingPayment.findMany({
     where: { weekStart: new Date(`${weekStart}T00:00:00Z`) },
     include: {
@@ -857,13 +867,38 @@ export async function registerClosingPayment(
     .sort();
   for (const id of laborIds) await lockRow(tx, 'production_payables', id, 'Mão de obra');
   for (const id of payableIds) await lockRow(tx, 'account_payables', id, 'Conta a pagar');
-  const candidates = (await buildClosingItems(tx, weekStart)).items.filter(
+  const built = await buildClosingItems(tx, weekStart);
+  const open = built.items.filter(
     (i) => i.beneficiary.userId === user.id && i.category === input.category && i.payable,
   );
+  // R2 (D13): só entra no lote o que está coberto por confirmação do profissional ou exceção
+  // administrativa desta semana; o restante fica fora (e cada baixa confere de novo).
+  const { assertPaymentCovered } = await import('./confirmations');
+  const candidates: typeof open = [];
+  for (const i of open) {
+    const ok = await assertPaymentCovered(tx, {
+      userId: user.id,
+      weekStart,
+      kind: i.kind,
+      itemId: i.id,
+      built,
+    }).then(
+      () => true,
+      () => false,
+    );
+    if (ok) candidates.push(i);
+  }
+  const total = open.reduce((a, i) => a + i.currentOpenCents, 0);
   const available = candidates.reduce((a, i) => a + i.currentOpenCents, 0);
+  if (input.amountCents > total)
+    throw Errors.business(
+      `O valor passa do saldo a pagar de ${user.displayName} neste fechamento (${(total / 100).toFixed(2)}).`,
+    );
   if (input.amountCents > available)
     throw Errors.business(
-      `O valor passa do saldo a pagar de ${user.displayName} neste fechamento (${(available / 100).toFixed(2)}).`,
+      available
+        ? `Esta semana ainda não foi confirmada pelo profissional para todo o valor: há ${(available / 100).toFixed(2)} confirmados. Peça a conferência no tablet ou use a exceção administrativa.`
+        : 'Esta semana ainda não foi confirmada pelo profissional. Peça a conferência no tablet ou use a exceção administrativa.',
     );
   const { parts } = allocateClosingPayment(
     input.amountCents,
@@ -897,6 +932,8 @@ export async function registerClosingPayment(
         method: input.method,
         note,
         version: p.version,
+        weekStart,
+        built,
       });
       await tx.closingPaymentPart.create({
         data: {
@@ -914,6 +951,8 @@ export async function registerClosingPayment(
         method: input.method,
         note,
         version: p.version,
+        weekStart,
+        built,
       });
       await tx.closingPaymentPart.create({
         data: {

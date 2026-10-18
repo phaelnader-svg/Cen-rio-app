@@ -5,6 +5,7 @@ import { MY_EARNINGS_SITUATION_LABEL, type MyEarningsDto } from '@cenario/shared
 import { Alert, Badge, Card } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
 import { money } from '@/lib/finance';
+import { RequestChange, RequestStatus, WeekConfirmation } from './earnings-actions';
 
 type Unlock = { token: string; expiresAt: number };
 const br = (iso: string) => iso.split('-').reverse().join('/');
@@ -194,6 +195,11 @@ export function MyValues() {
         Previsto, aguardando liberação e em revisão mostram a situação de agora e não entram no
         saldo a receber. Os valores da semana são os mesmos do fechamento.
       </p>
+      <WeekConfirmation
+        data={data}
+        token={unlock.token}
+        onDone={() => load(unlock, data.weekStart)}
+      />
       {!data.items.length ? (
         <p className="text-lg text-ink-muted">Nenhum ganho nesta semana.</p>
       ) : (
@@ -242,11 +248,17 @@ export function MyValues() {
                     {i.payments
                       .map(
                         (p) =>
-                          `${money(p.amountCents)} em ${br(p.paidAt)}${p.reversed ? ' (estornado)' : ''}`,
+                          `${money(p.amountCents)} em ${br(p.paidAt)}${p.reversed ? ' (estornado)' : ''}${p.administrative ? ' (liberado administrativamente)' : ''}`,
                       )
                       .join(', ')}
                   </p>
                 )}
+                <RequestStatus item={i} />
+                <RequestChange
+                  item={i}
+                  token={unlock.token}
+                  onDone={() => load(unlock, data.weekStart)}
+                />
               </Card>
             </li>
           ))}

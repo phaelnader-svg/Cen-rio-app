@@ -1,4 +1,4 @@
-import { zonedDateTime } from '@cenario/shared';
+import { closingWeekStart, zonedDateTime } from '@cenario/shared';
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
@@ -164,7 +164,28 @@ export async function finish(c: Client, taskId: string) {
 
 export const row = (id: string) => db().productionPayable.findUniqueOrThrow({ where: { id } });
 
+/**
+ * R2 (D13): libera a semana por exceção administrativa (motivo registrado) — usado pelos testes
+ * que não tratam da confirmação do profissional, para pagar como antes.
+ */
+export async function allowWeek(
+  admin: Client,
+  userId: string,
+  weekStart: string,
+  itemIds?: string[],
+) {
+  const r = await post(admin, F(`/weekly-closings/${weekStart}/exceptions`), {
+    beneficiaryUserId: userId,
+    reason: 'Teste: liberação administrativa',
+    ...(itemIds ? { itemIds } : {}),
+  });
+  if (r.status !== 201) throw new Error(`exceção: ${JSON.stringify(r.body)}`);
+  return r.body as { code: string };
+}
+
 export async function pay(admin: Client, id: string, amountCents: number, paidAt = today()) {
+  const p = await row(id);
+  await allowWeek(admin, p.professionalUserId, closingWeekStart(paidAt));
   const r = await post(admin, F(`/labor/${id}/payments`), {
     amountCents,
     paidAt,

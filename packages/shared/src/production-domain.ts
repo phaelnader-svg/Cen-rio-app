@@ -174,6 +174,9 @@ export const NOTIFICATION_KINDS = [
   // Fase 12 — devoluções e compras
   'REVISAO_DEVOLUCAO',
   'SALDO_COMPRA_ENCERRADO',
+  // R2: negociação de valores (sem valores no texto).
+  'VALOR_SOLICITADO',
+  'VALOR_DECIDIDO',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -228,6 +231,8 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   OCORRENCIA_LOGISTICA: 'Ocorrência logística',
   REVISAO_DEVOLUCAO: 'Devolução: revisar reservas ou valores',
   SALDO_COMPRA_ENCERRADO: 'Saldo de compra encerrado',
+  VALOR_SOLICITADO: 'Pedido de alteração de valor',
+  VALOR_DECIDIDO: 'Pedido de alteração de valor decidido',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

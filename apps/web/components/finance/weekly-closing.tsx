@@ -4,6 +4,7 @@ import {
   CLOSING_CATEGORY_LABEL,
   CLOSING_ITEM_STATE_LABEL,
   PAYMENT_METHOD_LABEL,
+  WEEK_CONFIRMATION_LABEL,
   closingWeekStart,
   type ClosingRowDto,
   type WeeklyClosingDto,
@@ -22,6 +23,7 @@ import {
   money,
   parseMoney,
   useFinSend,
+  useValueRequests,
   useWeeklyClosing,
   weeklyClosingCsvUrl,
 } from '@/lib/finance';
@@ -56,6 +58,7 @@ export function WeeklyClosingTab() {
   const [confirm, setConfirm] = useState(false);
   const [reopen, setReopen] = useState(false);
   const [reverse, setReverse] = useState<{ id: string; code: string } | null>(null);
+  const [exception, setException] = useState<ClosingRowDto | null>(null);
   const [freeTrip, setFreeTrip] = useState<{
     kind: 'pickup' | 'delivery';
     id: string;
@@ -69,6 +72,7 @@ export function WeeklyClosingTab() {
     `${r.beneficiary.userId ?? r.beneficiary.displayName}|${r.category}`;
   return (
     <div className="space-y-5" data-testid="weekly-closing">
+      {adjust && <ValueRequestsPanel />}
       <div className="flex flex-wrap items-end gap-2">
         <Button
           size="sm"
@@ -313,11 +317,43 @@ export function WeeklyClosingTab() {
                         >
                           {open === rowKey(r) ? 'Ocultar' : 'Detalhar'}
                         </Button>
+                        {r.confirmation && (
+                          <span
+                            data-testid={`closing-confirmation-${r.beneficiary.displayName}-${r.category}`}
+                          >
+                            <Badge
+                              tone={
+                                r.confirmation.state === 'CONFIRMADA'
+                                  ? 'ok'
+                                  : r.confirmation.state === 'LIBERADA_POR_EXCECAO'
+                                    ? 'brand'
+                                    : r.confirmation.state === 'SEM_ITENS'
+                                      ? 'neutral'
+                                      : 'warn'
+                              }
+                            >
+                              {WEEK_CONFIRMATION_LABEL[r.confirmation.state]}
+                            </Badge>
+                          </span>
+                        )}
                         {manage && r.canPay && r.currentOpenCents > 0 && (
                           <Button size="sm" onClick={() => setPay(r)} data-testid="closing-pay">
                             Registrar Pix
                           </Button>
                         )}
+                        {manage &&
+                          r.confirmation &&
+                          (r.confirmation.state === 'SEM_CONFIRMACAO' ||
+                            r.confirmation.state === 'DESATUALIZADA') && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => setException(r)}
+                              data-testid="closing-exception"
+                            >
+                              Pagar por exceção administrativa
+                            </Button>
+                          )}
                       </div>
                     </td>
                   </tr>
@@ -467,6 +503,34 @@ export function WeeklyClosingTab() {
       )}
 
       {pay && d && <PayDialog week={week} row={pay} onClose={() => setPay(null)} />}
+      {exception && exception.beneficiary.userId && (
+        <FormDialog
+          title={`Exceção administrativa — ${exception.beneficiary.displayName}`}
+          description="Libera o pagamento SEM a confirmação do profissional, só para os valores devidos desta semana como estão agora. Fica registrado com seu nome e o motivo; se os valores mudarem, é preciso nova confirmação ou nova exceção."
+          submitLabel="Liberar por exceção"
+          okMessage="Pagamento liberado por exceção administrativa."
+          onClose={() => setException(null)}
+          fields={[
+            { name: 'reason', label: 'Motivo (interno)', type: 'textarea', required: true },
+            {
+              name: 'publicNote',
+              label: 'Mensagem ao profissional (opcional, neutra)',
+              type: 'textarea',
+            },
+          ]}
+          onSubmit={(v, _c, key) =>
+            api(`/api/v1/finance/weekly-closings/${week}/exceptions`, {
+              method: 'POST',
+              body: {
+                beneficiaryUserId: exception.beneficiary.userId,
+                reason: v.reason,
+                publicNote: v.publicNote || null,
+              },
+              idempotencyKey: key,
+            })
+          }
+        />
+      )}
       {confirm && d && (
         <FormDialog
           title={`Conferir semana de ${brDate(d.weekStart)}`}
@@ -689,5 +753,113 @@ function PayDialog({
         </div>
       )}
     </Dialog>
+  );
+}
+
+/** R2 — pedidos de alteração de valor dos profissionais: aprovar (aplica pelo ajuste) ou recusar. */
+function ValueRequestsPanel() {
+  const q = useValueRequests('PENDENTE');
+  const [decide, setDecide] = useState<{
+    id: string;
+    code: string;
+    version: number;
+    approve: boolean;
+  } | null>(null);
+  const list = q.data ?? [];
+  if (!list.length) return null;
+  return (
+    <section className="space-y-3" data-testid="value-requests">
+      <h3 className="text-base font-semibold">Pedidos de alteração de valor ({list.length})</h3>
+      <Table
+        head={[
+          'Pedido',
+          'Profissional',
+          'Semana',
+          'Item',
+          'Valor',
+          'Pedido',
+          'Diferença',
+          'Motivo',
+          '',
+        ]}
+      >
+        {list.map((r) => (
+          <tr key={r.id} data-testid={`value-request-${r.code}`}>
+            <td className="px-4 py-2.5 font-medium">{r.code}</td>
+            <td className="px-4 py-2.5">{r.beneficiary.displayName}</td>
+            <td className="px-4 py-2.5">{r.weekStart ? brDate(r.weekStart) : '—'}</td>
+            <td className="px-4 py-2.5">
+              {r.target.code} · {r.target.serviceOrders.join(', ')}
+              {r.target.piece ? ` · ${r.target.piece}` : ''} — {r.target.description}
+            </td>
+            <td className="px-4 py-2.5 tabular-nums">
+              {money(r.currentCents)}
+              {r.currentNowCents !== r.currentCents ? ` (agora ${money(r.currentNowCents)})` : ''}
+            </td>
+            <td className="px-4 py-2.5 tabular-nums">{money(r.requestedCents)}</td>
+            <td className="px-4 py-2.5 tabular-nums">{money(r.diffCents)}</td>
+            <td className="px-4 py-2.5">
+              {r.reason}
+              {r.staleReason && (
+                <p className="text-danger-600" data-testid="value-request-stale">
+                  Obsoleta: {r.staleReason}
+                </p>
+              )}
+            </td>
+            <td className="px-4 py-2.5">
+              <div className="flex flex-col items-end gap-1">
+                <Button
+                  size="sm"
+                  disabled={Boolean(r.staleReason)}
+                  onClick={() => setDecide({ ...r, approve: true })}
+                  data-testid="value-request-approve"
+                >
+                  Aprovar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setDecide({ ...r, approve: false })}
+                  data-testid="value-request-reject"
+                >
+                  Recusar
+                </Button>
+              </div>
+            </td>
+          </tr>
+        ))}
+      </Table>
+      {decide && (
+        <FormDialog
+          title={`${decide.approve ? 'Aprovar' : 'Recusar'} ${decide.code}`}
+          description={
+            decide.approve
+              ? 'O novo valor entra pelo valor combinado (antes da liberação e de pagamento) ou por um ajuste justificado. Se o item mudou, nada é aplicado.'
+              : 'Nenhum valor muda. O profissional vê a recusa e o motivo.'
+          }
+          submitLabel={decide.approve ? 'Aprovar' : 'Recusar'}
+          okMessage={decide.approve ? 'Pedido aprovado.' : 'Pedido recusado.'}
+          onClose={() => setDecide(null)}
+          fields={[
+            {
+              name: 'note',
+              label: decide.approve ? 'Observação (opcional)' : 'Motivo da recusa',
+              type: 'textarea',
+              required: !decide.approve,
+            },
+          ]}
+          onSubmit={(v, _c, key) =>
+            api(
+              `/api/v1/finance/value-requests/${decide.id}/${decide.approve ? 'approve' : 'reject'}`,
+              {
+                method: 'POST',
+                body: { version: decide.version, note: v.note || (decide.approve ? null : '') },
+                idempotencyKey: key,
+              },
+            )
+          }
+        />
+      )}
+    </section>
   );
 }

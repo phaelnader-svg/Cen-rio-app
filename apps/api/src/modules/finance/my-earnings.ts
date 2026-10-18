@@ -101,6 +101,38 @@ export async function myEarnings(db: Db, userId: string, week?: string): Promise
         afterWeek: date > weekEnd,
       };
     });
+  // R2: pedidos de alteração próprios, pagamentos liberados por exceção e a conferência da semana.
+  const { ownRequestIndex } = await import('./value-requests');
+  const { weekConfirmation } = await import('./confirmations');
+  const requests = await ownRequestIndex(
+    db,
+    userId,
+    mine.map((i) => i.id),
+  );
+  const costPayables = costIds.length
+    ? (
+        await db.logisticsCost.findMany({
+          where: { id: { in: costIds } },
+          select: { payableId: true },
+        })
+      ).flatMap((c) => (c.payableId ? [c.payableId] : []))
+    : [];
+  const paidEvents = await db.financialEvent.findMany({
+    where: {
+      OR: [
+        { entityType: 'production_payable', entityId: { in: laborIds } },
+        { entityType: 'account_payable', entityId: { in: costPayables } },
+      ],
+      kind: { in: ['PAGAMENTO', 'PAGAMENTO_ANTECIPADO', 'QUITADA', 'PAGAMENTO_PARCIAL'] },
+    },
+    select: { data: true },
+  });
+  const administrative = new Set(
+    paidEvents.flatMap((e) => {
+      const d = (e.data ?? {}) as { paymentId?: string; coverage?: { kind?: string } };
+      return d.paymentId && d.coverage?.kind === 'EXCECAO_ADMINISTRATIVA' ? [d.paymentId] : [];
+    }),
+  );
   const items: MyEarningsDto['items'] = mine.map((i) => ({
     id: i.id,
     code: i.code,
@@ -122,7 +154,14 @@ export async function myEarnings(db: Db, userId: string, week?: string): Promise
       amountCents: p.amountCents,
       paidAt: p.paidAt,
       reversed: p.reversed,
+      administrative: administrative.has(p.id),
     })),
+    request: requests.get(i.id) ?? null,
+    canRequest:
+      situationOf(i) !== 'PAGO' &&
+      i.state !== 'EM_REVISAO' &&
+      requests.get(i.id)?.status !== 'PENDENTE' &&
+      (i.category === 'TAPECARIA' || i.state === 'DEVIDO'),
   }));
   const sum = (f: (i: ClosingItemDto) => boolean, k: keyof ClosingItemDto) =>
     mine.filter(f).reduce((a, i) => a + (i[k] as number), 0);
@@ -145,6 +184,7 @@ export async function myEarnings(db: Db, userId: string, week?: string): Promise
       balanceCents: sum(settled, 'currentOpenCents'),
     },
     items,
+    confirmation: await weekConfirmation(db, userId, weekStart, built),
   };
 }
 

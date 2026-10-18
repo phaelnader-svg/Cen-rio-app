@@ -7,6 +7,7 @@ import {
   settlementProblem,
   settlementStatus,
   splitCents,
+  type ClosingItemDto,
   type ExpenseCategory,
   type ExpenseDto,
   type LogisticsCostKind,
@@ -149,6 +150,9 @@ export async function payPayable(
     method: PaymentMethod;
     note?: string | null;
     version: number;
+    /** R2 (D13): semana do fechamento que cobre o pagamento (lote) e a visão já calculada. */
+    weekStart?: string;
+    built?: { items: ClosingItemDto[] };
   },
 ) {
   await lockRow(tx, 'account_payables', id, 'Conta a pagar');
@@ -157,6 +161,20 @@ export async function payPayable(
   if (p.status === 'CANCELADO') throw Errors.business('Conta cancelada.');
   const problem = settlementProblem(p.amountCents, p.paidCents, input.amountCents);
   if (problem) throw Errors.business(problem);
+  // R2 (D13): conta a pagar de viagem com recebedor vinculado é pagamento de profissional —
+  // por esta rota genérica também (não há caminho lateral). Despesas e avulsos seguem iguais.
+  const cost = await tx.logisticsCost.findFirst({ where: { payableId: id } });
+  let coverage: { kind: string; code: string } | null = null;
+  if (cost?.payeeUserId && cost.status === 'DEVIDO') {
+    const { assertPaymentCovered, paymentWeek } = await import('./confirmations');
+    coverage = await assertPaymentCovered(tx, {
+      userId: cost.payeeUserId,
+      weekStart: paymentWeek(input.paidAt, input.weekStart),
+      kind: 'LOGISTICA',
+      itemId: cost.id,
+      built: input.built,
+    });
+  }
   const pay = await tx.payablePayment.create({
     data: {
       payableId: id,
@@ -178,14 +196,19 @@ export async function payPayable(
     action: 'finance.payable_paid',
     entityType: 'account_payable',
     entityId: id,
-    summary: `${payableCode(p.number)}: pagamento registrado de ${(input.amountCents / 100).toFixed(2)} (${input.method}).`,
+    summary: `${payableCode(p.number)}: pagamento registrado de ${(input.amountCents / 100).toFixed(2)} (${input.method})${coverage ? ` — ${coverage.kind === 'PROFISSIONAL' ? 'confirmação' : 'exceção administrativa'} ${coverage.code}` : ''}.`,
   });
   await financeEvent(tx, actor, {
     entityType: 'account_payable',
     entityId: id,
     kind: status === 'PAGO' ? 'QUITADA' : 'PAGAMENTO_PARCIAL',
     note: input.note ?? null,
-    data: { amountCents: input.amountCents, method: input.method },
+    data: {
+      amountCents: input.amountCents,
+      method: input.method,
+      paymentId: pay.id,
+      ...(coverage ? { coverage } : {}),
+    },
     type: EVENT_TYPES.FINANCE_PAYABLE_PAID,
     status,
   });

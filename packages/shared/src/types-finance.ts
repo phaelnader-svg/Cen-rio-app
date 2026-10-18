@@ -579,8 +579,77 @@ export interface MyEarningsDto {
     currentOpenCents: number;
     releasedAt: string | null;
     adjustments: { amountCents: number; reason: string; date: string; afterWeek: boolean }[];
-    payments: { amountCents: number; paidAt: string; reversed: boolean }[];
+    /** R2: `administrative` = pago com liberação administrativa (sem confirmação do profissional). */
+    payments: {
+      amountCents: number;
+      paidAt: string;
+      reversed: boolean;
+      administrative?: boolean;
+    }[];
+    /** R2: última solicitação de alteração deste item (só do próprio profissional). */
+    request: OwnValueChangeDto | null;
+    /** R2: pode pedir alteração agora (devido, sem revisão, sem pedido pendente, não quitado). */
+    canRequest: boolean;
   }[];
+  /** R2: conferência da semana pelo profissional (D13). */
+  confirmation: WeekConfirmationDto;
+}
+
+/** R2 — o que o profissional confere (ou a exceção cobre) e a situação ao vivo. */
+export interface WeekConfirmationDto {
+  state: 'SEM_ITENS' | 'SEM_CONFIRMACAO' | 'CONFIRMADA' | 'LIBERADA_POR_EXCECAO' | 'DESATUALIZADA';
+  weekStart: string;
+  /** Hash do conjunto atual (enviado de volta ao confirmar). */
+  currentHash: string | null;
+  totalCents: number;
+  lines: { code: string; kind: 'MAO_DE_OBRA' | 'LOGISTICA'; dueCents: number }[];
+  latest: {
+    code: string;
+    kind: 'PROFISSIONAL' | 'EXCECAO_ADMINISTRATIVA';
+    createdAt: string;
+    /** Exceção: só a mensagem neutra (o motivo interno nunca vai ao profissional). */
+    publicNote: string | null;
+  } | null;
+  /** Códigos cujo valor mudou desde a última confirmação/exceção. */
+  changed: string[];
+  /** Pedidos de alteração pendentes que impedem confirmar. */
+  pendingRequests: string[];
+}
+
+/** R2 — pedido de alteração visto pelo próprio profissional. */
+export interface OwnValueChangeDto {
+  id: string;
+  code: string;
+  status: 'PENDENTE' | 'APROVADA' | 'RECUSADA' | 'OBSOLETA';
+  currentCents: number;
+  requestedCents: number;
+  reason: string;
+  decisionNote: string | null;
+  decidedAt: string | null;
+  createdAt: string;
+}
+
+/** R2 — pedido de alteração na fila do gestor. */
+export interface ValueChangeRequestDto extends OwnValueChangeDto {
+  targetKind: 'PRODUCAO' | 'LOGISTICA';
+  target: {
+    id: string;
+    code: string;
+    description: string;
+    serviceOrders: string[];
+    piece: string | null;
+  };
+  beneficiary: { userId: string; displayName: string };
+  /** Semana de competência do item (liberação/realização), se já devido. */
+  weekStart: string | null;
+  /** Valor devido agora (≠ currentCents → o alvo mudou: a solicitação ficou obsoleta). */
+  currentNowCents: number;
+  diffCents: number;
+  /** Motivo de a solicitação não poder mais ser aplicada (derivado), se houver. */
+  staleReason: string | null;
+  appliedAs: 'VALOR_COMBINADO' | 'AJUSTE' | null;
+  decidedBy: string | null;
+  version: number;
 }
 
 // ─────────────────────────── Evolução Fase 5 ───────────────────────────
@@ -708,6 +777,8 @@ export interface ClosingRowDto {
   adjustmentsCents: number;
   /** Lote permitido (recebedor vinculado e ativo). */
   canPay: boolean;
+  /** R2 (D13): situação da confirmação do profissional nesta semana. */
+  confirmation: WeekConfirmationDto | null;
 }
 
 export interface ClosingPendencyDto {
@@ -738,7 +809,7 @@ export interface WeeklyClosingDto {
   divergent: boolean;
   divergences: string[];
   rows: ClosingRowDto[];
-  totals: Omit<ClosingRowDto, 'beneficiary' | 'category' | 'canPay'>;
+  totals: Omit<ClosingRowDto, 'beneficiary' | 'category' | 'canPay' | 'confirmation'>;
   items: ClosingItemDto[];
   pendencies: ClosingPendencyDto[];
   payments: {

@@ -159,3 +159,95 @@ export function allocateClosingPayment<T extends { id: string; openCents: number
   }
   return { parts, leftoverCents: rest };
 }
+
+// ─────────────────────────── R2 — confirmação semanal e D13 ───────────────────────────
+
+/**
+ * Linha que o profissional confere (ou que a exceção administrativa cobre). Só o que define o
+ * valor devido na semana — nunca os pagamentos da própria semana: pagar em parte não invalida a
+ * confirmação; mudar o devido (ajuste, negociação, revisão, cancelamento) invalida.
+ */
+export interface ConfirmationLine {
+  kind: 'MAO_DE_OBRA' | 'LOGISTICA';
+  id: string;
+  code: string;
+  bucket: 'WEEK' | 'PREVIOUS' | 'FORECAST';
+  dueCents: number;
+  totalDueCents: number;
+}
+
+export function confirmationLine(i: {
+  kind: 'MAO_DE_OBRA' | 'LOGISTICA';
+  id: string;
+  code: string;
+  bucket: 'WEEK' | 'PREVIOUS' | 'FORECAST' | null;
+  dueCents: number;
+  totalDueCents: number;
+  currentOpenCents: number;
+}): ConfirmationLine {
+  const settled = i.bucket === 'WEEK' || i.bucket === 'PREVIOUS';
+  return {
+    kind: i.kind,
+    id: i.id,
+    code: i.code,
+    bucket: settled ? (i.bucket as 'WEEK' | 'PREVIOUS') : 'FORECAST',
+    // Ainda não liberado (antecipação por exceção): o valor devido atual identifica a linha.
+    dueCents: settled ? i.dueCents : i.currentOpenCents,
+    totalDueCents: i.totalDueCents,
+  };
+}
+
+/** Ordem canônica (independente da ordem do banco) para o hash. */
+export const canonicalLines = (lines: readonly ConfirmationLine[]) =>
+  [...lines]
+    .map((l) => ({
+      kind: l.kind,
+      id: l.id,
+      code: l.code,
+      bucket: l.bucket,
+      dueCents: l.dueCents,
+      totalDueCents: l.totalDueCents,
+    }))
+    .sort((a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id));
+
+export const sameLine = (a: ConfirmationLine, b: ConfirmationLine) =>
+  a.kind === b.kind &&
+  a.id === b.id &&
+  a.bucket === b.bucket &&
+  a.dueCents === b.dueCents &&
+  a.totalDueCents === b.totalDueCents;
+
+/** Texto canônico que é assinado (SHA-256 no servidor). */
+export const confirmationPayload = (
+  userId: string,
+  weekStart: string,
+  lines: readonly ConfirmationLine[],
+) => JSON.stringify({ userId, weekStart, lines: canonicalLines(lines) });
+
+export const CONFIRMATION_KINDS = ['PROFISSIONAL', 'EXCECAO_ADMINISTRATIVA'] as const;
+export type ConfirmationKind = (typeof CONFIRMATION_KINDS)[number];
+/** Situação da semana para o profissional e para o fechamento (derivada ao vivo). */
+export type WeekConfirmationState =
+  | 'SEM_ITENS'
+  | 'SEM_CONFIRMACAO'
+  | 'CONFIRMADA'
+  | 'LIBERADA_POR_EXCECAO'
+  | 'DESATUALIZADA';
+export const WEEK_CONFIRMATION_LABEL: Record<WeekConfirmationState, string> = {
+  SEM_ITENS: 'Nada a conferir',
+  SEM_CONFIRMACAO: 'Aguardando confirmação do profissional',
+  CONFIRMADA: 'Confirmada pelo profissional',
+  LIBERADA_POR_EXCECAO: 'Liberada administrativamente',
+  DESATUALIZADA: 'Valores mudaram depois da confirmação',
+};
+
+export const VALUE_CHANGE_STATUSES = ['PENDENTE', 'APROVADA', 'RECUSADA', 'OBSOLETA'] as const;
+export type ValueChangeStatus = (typeof VALUE_CHANGE_STATUSES)[number];
+export const VALUE_CHANGE_STATUS_LABEL: Record<ValueChangeStatus, string> = {
+  PENDENTE: 'Pendente',
+  APROVADA: 'Aprovada',
+  RECUSADA: 'Recusada',
+  OBSOLETA: 'Obsoleta',
+};
+export const valueChangeCode = (n: number) => `SV-${String(n).padStart(5, '0')}`;
+export const confirmationCode = (n: number) => `CS-${String(n).padStart(5, '0')}`;

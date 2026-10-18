@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  ValueChangeRequestDto,
   ExpenseDto,
   FinanceDashboardDto,
   LaborPayableDto,
@@ -110,6 +111,9 @@ export const weeklyClosingCsvUrl = (
   weekStart: string,
   f: { beneficiaryUserId?: string; category?: string; state?: string },
 ) => `/api/v1/finance/weekly-closings/${weekStart}${qs({ ...f, format: 'csv' })}`;
+/** R2: pedidos de alteração de valor (fila do gestor). */
+export const useValueRequests = (status = 'PENDENTE') =>
+  useFin<ValueChangeRequestDto[]>(`/value-requests${qs({ status })}`);
 export const useTeamCosts = () => useFin<TeamCostDto[]>('/team-costs');
 export const useFinPeople = () => useFin<WorkerDto[]>('/people');
 export const useLogisticsCosts = () => useFin<LogisticsCostDto[]>('/logistics-costs');
