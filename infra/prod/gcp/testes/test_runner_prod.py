@@ -205,7 +205,11 @@ class TestPacoteDeScriptsProd(unittest.TestCase):
         self.publicar(subprocess.run(["gzip", "-n"], input=tar, check=True, capture_output=True).stdout)
         res, out = self.rodar("vm_scripts_diff", version=self.v)
         self.assertEqual(res["status"], "concluido", res)
-        self.assertIn("+ novo      infra/prod/gcp/vm.sh", out)
+        self.assertIn("~ alterado  infra/prod/gcp/vm.sh", out)
+        self.assertIn("+ novo      infra/prod/docker-compose.prod.yml", out)
+        pacote = [l for l in out.splitlines() if l.lstrip().startswith(("+ novo", "~ alterado"))]
+        self.assertTrue(pacote)
+        self.assertFalse([l for l in pacote if "infra/homolog" in l])
 
     def test_pacote_com_infra_homolog_e_recusado(self):
         membros = {"infra/homolog/gcp/vm.sh": "#!/bin/bash\n", "infra/prod/gcp/vm.sh": "#!/bin/bash\n",
