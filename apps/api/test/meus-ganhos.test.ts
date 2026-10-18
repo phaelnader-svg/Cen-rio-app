@@ -1,4 +1,4 @@
-import { closingWeekStart, zonedDateTime } from '@cenario/shared';
+import { closingWeekStart, isMonday, zonedDateTime } from '@cenario/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
@@ -373,7 +373,8 @@ describe('PIN e desbloqueio de 5 minutos (29–33)', () => {
     expect(prev.status).toBe(200);
     expect(prev.body).toMatchObject({ weekStart: LAST_WEEK, items: [] });
     expect(
-      (await earnings(r, u.body.unlockToken, day(-6) === LAST_WEEK ? day(-5) : day(-6))).status,
+      // Uma data que não é segunda-feira (aos domingos, day(-6) é segunda).
+      (await earnings(r, u.body.unlockToken, isMonday(day(-6)) ? day(-5) : day(-6))).status,
     ).toBe(400);
     // 4 minutos depois ainda vale; 6 minutos depois, expirou.
     const t0 = zonedDateTime(today(), '09:00', TZ).getTime();
