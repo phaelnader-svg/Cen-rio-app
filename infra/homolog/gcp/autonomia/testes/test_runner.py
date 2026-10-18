@@ -956,7 +956,7 @@ class TestSemExecucaoArbitraria(unittest.TestCase):
             self.assertTrue(hasattr(mod.Runner, "op_" + op.executar), nome)
             self.assertTrue(op.timeout_min <= op.timeout_padrao <= op.timeout_max, nome)
             for pn, p in op.params.items():
-                self.assertIn(p.tipo, ("sha", "pasta", "versao_runner", "inteiro", "escolha"), f"{nome}.{pn}")
+                self.assertIn(p.tipo, ("sha", "pasta", "versao_runner", "inteiro", "escolha", "unidade"), f"{nome}.{pn}")
                 if p.tipo == "inteiro":
                     self.assertLess(p.maximo, 10**6)
                 if p.tipo == "escolha":

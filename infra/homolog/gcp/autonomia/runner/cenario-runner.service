@@ -1,10 +1,11 @@
-# Executor de OPERAÇÕES NOMEADAS da homologação (fila Pub/Sub cenario-homolog-comandos).
+# Executor de OPERAÇÕES NOMEADAS (fila Pub/Sub cenario-homolog-comandos ou cenario-prod-comandos,
+# conforme /etc/cenario/runner.json).
 # Instalado por infra/homolog/gcp/autonomia/runner/instalar.sh. Não executa scripts nem comandos
 # livres: só as operações da tabela OPERACOES do cenario_runner.py, com parâmetros validados.
 # Independe do portão de publicação (precisa funcionar com a pilha parada: diagnóstico e recuperação).
 # Desligamento de emergência: touch /etc/cenario/runner-desativado, ou systemctl disable --now cenario-runner.
 [Unit]
-Description=Cenario Gestao - operacoes nomeadas da homologacao (fila Pub/Sub)
+Description=Cenario Gestao - operacoes nomeadas (fila Pub/Sub)
 After=network-online.target docker.service
 Wants=network-online.target
 

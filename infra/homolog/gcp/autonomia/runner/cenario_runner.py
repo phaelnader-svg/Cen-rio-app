@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Executor de OPERAÇÕES NOMEADAS da homologação (VM cenario-homolog), alimentado por Pub/Sub.
+"""Executor de OPERAÇÕES NOMEADAS da homologação (VM cenario-homolog) e, com o perfil "prod" no arquivo de
+configuração, da PRODUÇÃO (VM cenario-prod), alimentado por Pub/Sub. Um único código, duas instalações
+independentes: cada VM tem o próprio arquivo de configuração (root), a própria conta assinante, a própria
+audiência, a própria assinatura Pub/Sub e os próprios buckets. O perfil só troca caminhos e nomes fixos
+(diretório da pilha, Compose, Caddyfile, unidades, banco, repositório de imagens); a identidade é conferida
+na partida (perfil × VM × audiência × assinante) e em cada job (claims assinadas).
 
 Não existe execução de script, shell, SQL ou executável enviado pelo cliente. O cliente pede uma
 operação da tabela OPERACOES (abaixo) com parâmetros validados por schema estrito; cada operação é
@@ -52,7 +57,7 @@ import urllib.parse
 import urllib.request
 from typing import Callable
 
-VERSAO = "2.1.1"
+VERSAO = "2.2.0"
 CONFIG_PADRAO = "/etc/cenario/runner.json"
 LIMITE_MENSAGEM = 16 * 1024
 LIMITE_SAIDA = 10 * 1024 * 1024
@@ -68,23 +73,66 @@ RE_KID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 RE_SHA = re.compile(r"^[0-9a-f]{7,40}$")
 RE_PASTA = re.compile(r"^cenario-[A-Za-z0-9._-]{1,100}$")
 RE_VERSAO_RUNNER = re.compile(r"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$")
-# Pacote de scripts da VM: só estes caminhos (git archive de infra/homolog + scripts de backup).
-RE_MEMBRO_SCRIPTS = re.compile(r"^(infra|infra/homolog(/[A-Za-z0-9_.-]+)*|scripts(/(backup|restore)\.sh)?)/?$")
-DIRETORIOS_SCRIPTS = ("infra", "infra/homolog", "scripts")  # só podem ser diretórios
-SCRIPTS_OBRIGATORIOS = ("infra/homolog/gcp/vm.sh", "infra/homolog/docker-compose.homolog.yml",
-                        "infra/homolog/Caddyfile.homolog", "scripts/backup.sh", "scripts/restore.sh")
-LIMITE_PACOTE_SCRIPTS = 30 * 1024 * 1024
 IMAGEM_CADDY = "caddy:2.10-alpine"
-VARS_CADDY = ("HOMOLOG_DOMAIN", "HOMOLOG_BASIC_USER", "HOMOLOG_BASIC_HASH", "HOMOLOG_GATE_TOKEN")
 SERVICOS = ("postgres", "api", "web", "caddy", "backup")
-UNIDADES = ("cenario-homolog", "cenario-backup-upload", "cenario-runner", "docker")
 SUITES = ("saude", "acesso", "websocket", "completo")
-BANCO = "cenario_homolog"
+LIMITE_PACOTE_SCRIPTS = 30 * 1024 * 1024
+
+
+@dataclasses.dataclass(frozen=True)
+class Perfil:
+    """Nomes e caminhos fixos de UM ambiente. Nada disto vem do cliente."""
+    nome: str
+    dir_infra: str            # infra/homolog | infra/prod
+    compose: str              # arquivo do Compose dentro de dir_infra
+    caddyfile: str            # Caddyfile dentro de dir_infra
+    vars_caddy: tuple         # variáveis (do /run/cenario/env) que o Caddyfile usa
+    unidade_pilha: str        # serviço systemd da pilha
+    banco: str
+    repo: str                 # repositório do Artifact Registry
+    regiao: str
+    cookie_acesso: str | None  # cookie da camada de acesso do proxy (só homologação)
+    vmsh_acesso: tuple        # vm.sh <args> da suíte "acesso"
+    # Identidade exigida na partida (defesa em profundidade além das claims assinadas).
+    vm_exigida: str | None
+    aud_exigida: str | None
+    assinante_prefixo: str | None
+
+    @property
+    def unidades(self) -> tuple:
+        return (self.unidade_pilha, "cenario-backup-upload", "cenario-runner", "docker")
+
+    @property
+    def scripts_obrigatorios(self) -> tuple:
+        return (f"{self.dir_infra}/gcp/vm.sh", f"{self.dir_infra}/{self.compose}", f"{self.dir_infra}/{self.caddyfile}",
+                "scripts/backup.sh", "scripts/restore.sh")
+
+    @property
+    def diretorios_scripts(self) -> tuple:
+        return ("infra", self.dir_infra, "scripts")
+
+    @property
+    def re_membro_scripts(self) -> re.Pattern:
+        # Pacote de scripts da VM: só estes caminhos (git archive do diretório do ambiente + scripts de backup).
+        return re.compile(r"^(infra|" + re.escape(self.dir_infra) + r"(/[A-Za-z0-9_.-]+)*|scripts(/(backup|restore)\.sh)?)/?$")
+
+
+PERFIS = {
+    "homolog": Perfil("homolog", "infra/homolog", "docker-compose.homolog.yml", "Caddyfile.homolog",
+                      ("HOMOLOG_DOMAIN", "HOMOLOG_BASIC_USER", "HOMOLOG_BASIC_HASH", "HOMOLOG_GATE_TOKEN"),
+                      "cenario-homolog", "cenario_homolog", "cenario-homolog", "us-east1", "cenario_homolog",
+                      ("diagnosticar-acesso", "24"), None, None, None),
+    "prod": Perfil("prod", "infra/prod", "docker-compose.prod.yml", "Caddyfile.prod", ("PROD_DOMAIN", "PROD_DOMAIN_WWW"),
+                   "cenario-prod", "cenario_prod", "cenario-prod", "southamerica-east1", None, ("acesso",),
+                   "cenario-prod", "cenario-prod-runner", "claude-operador-prod@"),
+}
+# Perfil desta instalação (definido UMA vez, ao ler o arquivo de configuração; padrão: homologação).
+PERFIL: Perfil = PERFIS["homolog"]
 
 PADROES_SEGREDO = [
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S), "«chave-privada-mascarada»"),
     (re.compile(r"(?i)(authorization:\s*(?:bearer|basic)\s+)[^\s\"']+"), r"\1«mascarado»"),
-    (re.compile(r"(?i)(cookie:\s*[^\n]*cenario_homolog=)[^;\s]+"), r"\1«mascarado»"),
+    (re.compile(r"(?i)(cookie:\s*[^\n]*cenario_(?:homolog|prod)=)[^;\s]+"), r"\1«mascarado»"),
     (re.compile(r"\bya29\.[0-9A-Za-z_\-.]+"), "«token-google-mascarado»"),
     (re.compile(r"(?i)\b(postgres(?:ql)?://[^:/\s]+:)[^@\s]+@"), r"\1«mascarado»@"),
     (re.compile(r"(?i)\b([A-Z0-9_]*(?:PASSWORD|SENHA|SECRET|TOKEN|HASH|PRIVATE_KEY)[A-Z0-9_]*\s*[=:]\s*)['\"]?[^\s'\"]{4,}"), r"\1«mascarado»"),
@@ -122,26 +170,32 @@ class Config:
     def __init__(self, caminho: str):
         with open(caminho, encoding="utf-8") as f:
             c = json.load(f)
+        global PERFIL
+        ambiente = c.get("ambiente", "homolog")
+        if ambiente not in PERFIS:
+            raise ValueError(f"ambiente desconhecido: {ambiente!r}")
+        PERFIL = PERFIS[ambiente]
+        self.perfil: Perfil = PERFIL
         self.projeto: str = c["projeto"]
         self.vm: str = c["vm"]
         self.assinante: str = c["assinante"]
         self.assinatura: str = c["assinatura"]
         self.bucket: str = c["bucket"]
         self.bucket_versoes: str = c["bucket_versoes"]
-        self.dominio: str = c.get("dominio", "teste.cenariogestao.com.br")
-        self.aud: str = c.get("aud", "cenario-homolog-runner")
+        self.dominio: str = c.get("dominio", "teste.cenariogestao.com.br" if ambiente == "homolog" else "")
+        self.aud: str = c.get("aud", "cenario-homolog-runner" if ambiente == "homolog" else "")
         self.estado: str = c.get("estado", "/var/lib/cenario-runner")
         self.log_auditoria: str = c.get("log_auditoria", "/var/log/cenario-runner/auditoria.jsonl")
         self.desativado: str = c.get("arquivo_desativado", "/etc/cenario/runner-desativado")
         self.paralelo_leitura: int = int(c.get("paralelo_leitura", 2))
         # Caminhos fixos da homologação (substituíveis SÓ pelo arquivo de configuração, de root).
         self.dir_cenario: str = c.get("dir_cenario", "/opt/cenario")
-        self.vm_sh: str = c.get("vm_sh", "/opt/cenario/infra/homolog/gcp/vm.sh")
-        self.compose_arquivo: str = c.get("compose_arquivo", "/opt/cenario/infra/homolog/docker-compose.homolog.yml")
+        self.vm_sh: str = c.get("vm_sh", f"/opt/cenario/{PERFIL.dir_infra}/gcp/vm.sh")
+        self.compose_arquivo: str = c.get("compose_arquivo", f"/opt/cenario/{PERFIL.dir_infra}/{PERFIL.compose}")
         self.env_arquivo: str = c.get("env_arquivo", "/run/cenario/env")
         self.estado_cenario: str = c.get("estado_cenario", "/var/lib/cenario")
         self.portao: str = c.get("portao", "/etc/cenario/publicacao-autorizada")
-        self.dropin_etiqueta: str = c.get("dropin_etiqueta", "/etc/systemd/system/cenario-homolog.service.d/10-etiqueta.conf")
+        self.dropin_etiqueta: str = c.get("dropin_etiqueta", f"/etc/systemd/system/{PERFIL.unidade_pilha}.service.d/10-etiqueta.conf")
         self.dir_runner: str = c.get("dir_runner", "/opt/cenario-runner")
         self.arquivos_segredos: list[str] = c.get("arquivos_segredos", ["/run/cenario/env"])
         self.systemctl: str = c.get("systemctl", "/usr/bin/systemctl")
@@ -315,6 +369,10 @@ class Param:
             if not regra.match(valor):
                 raise Rejeicao(f"parâmetro {nome}: formato inválido")
             return valor
+        if self.tipo == "unidade":  # allowlist do perfil desta instalação
+            if valor not in PERFIL.unidades:
+                raise Rejeicao(f"parâmetro {nome}: valores aceitos {list(PERFIL.unidades)}")
+            return valor
         if self.tipo == "escolha":
             if valor not in self.opcoes:
                 raise Rejeicao(f"parâmetro {nome}: valores aceitos {list(self.opcoes)}")
@@ -345,7 +403,7 @@ OPERACOES: dict[str, Operacao] = {
                                                      "lines": Param("inteiro", padrao=200, minimo=1, maximo=5000),
                                                      "since_minutes": Param("inteiro", padrao=1440, minimo=1, maximo=10080)},
                                "container_logs", "logs de UM contêiner da allowlist (linhas e janela limitadas)"),
-    "application_logs": Operacao(READ_ONLY, 60, 300, {"unit": Param("escolha", True, opcoes=UNIDADES),
+    "application_logs": Operacao(READ_ONLY, 60, 300, {"unit": Param("unidade", True),
                                                        "lines": Param("inteiro", padrao=200, minimo=1, maximo=5000),
                                                        "since_minutes": Param("inteiro", padrao=1440, minimo=1, maximo=10080)},
                                  "application_logs", "journal de UMA unidade systemd da allowlist"),
@@ -407,6 +465,13 @@ OPERACOES: dict[str, Operacao] = {
     "apply_stack_config": Operacao(MUTATING, 900, 1800, {}, "apply_stack_config",
                                    "aplica a configuração de /opt/cenario na versão ATIVA: vm.sh aplicar-config (proxy) + "
                                    "vm.sh ativar <ativa> (recria só o que mudou; mesmas imagens; exige o portão)"),
+    # -- primeira publicação num ambiente NOVO (só perfil prod; homologação: não disponível)
+    "stack_bootstrap": Operacao(MUTATING, 600, 1200, {"version": VERSAO_P}, "stack_bootstrap",
+                                "fixa a etiqueta local, vm.sh gerar-env e vm.sh iniciar-banco (só PostgreSQL e backup; API/web "
+                                "paradas; exige o portão)"),
+    "seed_bootstrap": Operacao(MUTATING, 300, 900, {}, "seed_bootstrap",
+                               "vm.sh semear: bootstrap mínimo (funções, configurações, modelos, checklists e o primeiro gestor; "
+                               "sem equipe de exemplo; recusa banco com funcionários)"),
     # -- testes de homologação (na VM)
     "run_homologation_tests": Operacao(READ_ONLY, 600, 1800, {"suite": Param("escolha", True, opcoes=SUITES)},
                                        "run_homologation_tests", "suítes da VM: saude | acesso | websocket | completo"),
@@ -422,6 +487,21 @@ SQL_BANCO = ("select 'versao', version() union all "
              "select 'consulta_mais_longa_s', coalesce(max(extract(epoch from now() - query_start))::int, 0)::text "
              "from pg_stat_activity where state = 'active' and pid <> pg_backend_pid()")
 SQL_CONTAGENS = "select relname, n_live_tup from pg_stat_user_tables order by relname"
+
+
+def coerencia_perfil(cfg: Config) -> str:
+    """Vazio se a identidade configurada combina com o perfil; senão, o motivo da recusa. Impede, por
+    erro de configuração, que o runner de um ambiente aceite a identidade do outro."""
+    p = cfg.perfil
+    if p.nome == "prod":
+        if cfg.vm != p.vm_exigida or cfg.aud != p.aud_exigida or not cfg.assinante.startswith(p.assinante_prefixo or ""):
+            return f"perfil prod exige VM {p.vm_exigida}, audiência {p.aud_exigida} e assinante {p.assinante_prefixo}…"
+        if "homolog" in (cfg.assinatura + cfg.bucket + cfg.bucket_versoes + cfg.dominio):
+            return "perfil prod com recurso de homologação na configuração"
+    else:
+        if cfg.vm == PERFIS["prod"].vm_exigida or cfg.aud == PERFIS["prod"].aud_exigida or "-prod@" in cfg.assinante:
+            return "perfil homolog com identidade de produção na configuração"
+    return ""
 
 
 def validar_parametros(op: Operacao, recebidos) -> dict:
@@ -617,7 +697,7 @@ class Job:
         # SQL SEMPRE constante deste arquivo (SQL_*); nada do cliente entra aqui.
         if sql not in (SQL_MIGRACOES, SQL_BANCO, SQL_CONTAGENS):  # verificação explícita (não some com python -O)
             raise FalhaPasso("consulta SQL fora das constantes do runner")
-        return self.compose("exec", "-T", "postgres", "psql", "-U", "cenario", "-d", BANCO, "-At", "-F", "|",
+        return self.compose("exec", "-T", "postgres", "psql", "-U", "cenario", "-d", PERFIL.banco, "-At", "-F", "|",
                             "-v", "ON_ERROR_STOP=1", "-c", sql, capturar=capturar)
 
 
@@ -664,6 +744,10 @@ class Runner:
         projeto, vm = self.g.meta("project/project-id").strip(), self.g.meta("instance/name").strip()
         if projeto != self.cfg.projeto or vm != self.cfg.vm:
             self.auditar("recusado_na_partida", motivo=f"máquina {projeto}/{vm} ≠ configuração {self.cfg.projeto}/{self.cfg.vm}")
+            sys.exit(SAIDA_CONFIG)
+        incoerente = coerencia_perfil(self.cfg)
+        if incoerente:
+            self.auditar("recusado_na_partida", motivo=incoerente)
             sys.exit(SAIDA_CONFIG)
         self.recuperar()
 
@@ -1062,11 +1146,28 @@ class Runner:
     def op_restart_containers(self, j: Job):
         j.compose("restart")
 
+    def so_producao(self) -> None:
+        if PERFIL.nome != "prod":
+            raise FalhaPasso("operação só existe no perfil de produção (ambiente novo)")
+
+    def op_stack_bootstrap(self, j: Job):
+        self.so_producao()
+        v = j.p["version"]
+        if not os.path.exists(self.cfg.portao):
+            raise FalhaPasso("portão de publicação fechado: rode gate_open antes")
+        self.fixar_etiqueta(j, v)
+        j.vmsh("gerar-env", env={"CENARIO_TAG": v})
+        j.vmsh("iniciar-banco", env={"CENARIO_TAG": v})
+
+    def op_seed_bootstrap(self, j: Job):
+        self.so_producao()
+        j.vmsh("semear")
+
     def op_run_homologation_tests(self, j: Job):
         s = j.p["suite"]
         falhas = []
         etapas = {"saude": [("saude", lambda: j.vmsh("saude"))],
-                  "acesso": [("acesso", lambda: j.vmsh("diagnosticar-acesso", "24"))],
+                  "acesso": [("acesso", lambda: j.vmsh(*PERFIL.vmsh_acesso))],
                   "websocket": [("websocket", lambda: self.op_websocket_test(j))]}
         etapas["completo"] = etapas["saude"] + etapas["acesso"] + etapas["websocket"]
         for nome, f in etapas[s]:
@@ -1219,7 +1320,7 @@ class Runner:
     # ======================================================================== P2: scripts da VM
     def pacote_scripts(self, v: str) -> tuple[str, dict[str, tuple[bytes, int]]]:
         """Baixa e confere o pacote scripts-<v>.tar.gz PUBLICADO (bucket de versões, gravação humana):
-        SHA-256, commit do git archive (começa por <v>), só caminhos de infra/homolog e scripts de backup,
+        SHA-256, commit do git archive (começa por <v>), só caminhos do diretório do ambiente e scripts de backup,
         só arquivos regulares e diretórios, tamanho limitado e arquivos obrigatórios presentes."""
         pacote = self.g.baixar_versao(f"scripts-{v}.tar.gz")
         esperado = self.g.baixar_versao(f"scripts-{v}.sha256").decode(errors="replace").split()[0]
@@ -1236,11 +1337,11 @@ class Runner:
                     raise FalhaPasso("o pacote não é o git archive do commit pedido")
                 for m in membros:
                     nome = m.name.rstrip("/")
-                    if not RE_MEMBRO_SCRIPTS.match(m.name) or any(p in (".", "..") for p in nome.split("/")):
+                    if not PERFIL.re_membro_scripts.match(m.name) or any(p in (".", "..") for p in nome.split("/")):
                         raise FalhaPasso(f"pacote com caminho não permitido: {m.name!r}")
                     if m.isdir():
                         continue
-                    if nome in DIRETORIOS_SCRIPTS:
+                    if nome in PERFIL.diretorios_scripts:
                         raise FalhaPasso(f"pacote com arquivo no lugar de diretório: {m.name!r}")
                     if not m.isfile():
                         raise FalhaPasso(f"pacote com link ou arquivo especial: {m.name!r}")
@@ -1251,20 +1352,21 @@ class Runner:
                         arquivos[nome] = (f.read(), 0o755 if m.mode & 0o111 else 0o644)
         except (tarfile.TarError, OSError, EOFError) as e:
             raise FalhaPasso(f"pacote ilegível: {e}") from e
-        faltam = [o for o in SCRIPTS_OBRIGATORIOS if o not in arquivos]
+        faltam = [o for o in PERFIL.scripts_obrigatorios if o not in arquivos]
         if faltam:
             raise FalhaPasso(f"pacote sem arquivos obrigatórios: {faltam}")
         return commit, arquivos
 
     @staticmethod
     def categoria(nome: str) -> str:
-        if nome == "infra/homolog/gcp/vm.sh":
+        d = PERFIL.dir_infra
+        if nome == f"{d}/gcp/vm.sh":
             return "vm.sh"
-        if nome.startswith("infra/homolog/docker-compose"):
+        if nome.startswith(f"{d}/docker-compose"):
             return "Compose"
-        if nome.startswith("infra/homolog/Caddyfile"):
+        if nome.startswith(f"{d}/Caddyfile"):
             return "Caddy"
-        if nome.startswith("infra/homolog/gcp/autonomia/"):
+        if nome.startswith(f"{d}/gcp/autonomia/"):
             return "autonomia (não executado a partir de /opt/cenario)"
         if "/testes/" in nome or nome.endswith((".md", ".test.ts")):
             return "testes/documentação"
@@ -1338,14 +1440,14 @@ class Runner:
             os.chmod(tmp, 0o755)
             # Antes de trocar qualquer arquivo: o vm.sh novo é bash válido, o Compose novo é válido com o
             # ambiente atual e o Caddyfile novo é aceito pelo Caddy da pilha (sem rede, nada iniciado).
-            j.cmd(["bash", "-n", os.path.join(tmp, "infra/homolog/gcp/vm.sh")])
-            j.cmd(["docker", "compose", "-f", os.path.join(tmp, "infra/homolog/docker-compose.homolog.yml"),
+            j.cmd(["bash", "-n", os.path.join(tmp, PERFIL.dir_infra, "gcp/vm.sh")])
+            j.cmd(["docker", "compose", "-f", os.path.join(tmp, PERFIL.dir_infra, PERFIL.compose),
                    "--env-file", self.cfg.env_arquivo, "config", "-q"])
             j.cmd(["docker", "run", "--rm", "--network", "none", "-v",
-                   f"{os.path.join(tmp, 'infra/homolog/Caddyfile.homolog')}:/etc/caddy/Caddyfile:ro",
-                   *[x for n in VARS_CADDY for x in ("-e", n)], IMAGEM_CADDY,
+                   f"{os.path.join(tmp, PERFIL.dir_infra, PERFIL.caddyfile)}:/etc/caddy/Caddyfile:ro",
+                   *[x for n in PERFIL.vars_caddy for x in ("-e", n)], IMAGEM_CADDY,
                    "caddy", "validate", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"],
-                  env={n: env.get(n, "") for n in VARS_CADDY})
+                  env={n: env.get(n, "") for n in PERFIL.vars_caddy})
         copia = f"{base}.anterior-{dt.datetime.now(dt.timezone.utc):%Y%m%dT%H%M%S}Z-{j.jti[:8]}"
         shutil.copytree(base, copia, symlinks=True)
         j.saida.linha(f"✔ cópia anterior guardada: {copia}")
@@ -1397,7 +1499,7 @@ class Runner:
     def imagem(self, servico: str, versao: str) -> str:
         env = ler_env(self.cfg.env_arquivo)
         atual = env.get("CENARIO_API_IMAGE" if servico == "api" else "CENARIO_WEB_IMAGE", "")
-        base = atual.rsplit(":", 1)[0] if ":" in atual else f"us-east1-docker.pkg.dev/{self.cfg.projeto}/cenario-homolog/{servico}"
+        base = atual.rsplit(":", 1)[0] if ":" in atual else f"{PERFIL.regiao}-docker.pkg.dev/{self.cfg.projeto}/{PERFIL.repo}/{servico}"
         if not re.fullmatch(r"[a-z0-9.-]+-docker\.pkg\.dev/[a-z0-9-]+/[a-z0-9-]+/(api|web)", base):
             raise FalhaPasso("repositório de imagens inesperado no ambiente")
         return f"{base}:{versao}"
@@ -1461,10 +1563,10 @@ class Runner:
 
     def https_local(self, j: Job, caminho: str, com_cookie: bool) -> tuple[int, bytes]:
         cab = [f"GET {caminho} HTTP/1.1", f"Host: {self.cfg.dominio}", "Connection: close", "User-Agent: cenario-runner"]
-        if com_cookie:
+        if com_cookie and PERFIL.cookie_acesso:
             token = ler_env(self.cfg.env_arquivo).get("HOMOLOG_GATE_TOKEN", "")
             if token:
-                cab.append(f"Cookie: cenario_homolog={token}")
+                cab.append(f"Cookie: {PERFIL.cookie_acesso}={token}")
         try:
             with self._conectar() as s:
                 s.sendall(("\r\n".join(cab) + "\r\n\r\n").encode())
@@ -1484,9 +1586,9 @@ class Runner:
         chave = base64.b64encode(os.urandom(16)).decode()
         cab = [f"GET /api/realtime HTTP/1.1", f"Host: {self.cfg.dominio}", "Upgrade: websocket", "Connection: Upgrade",
                f"Sec-WebSocket-Key: {chave}", "Sec-WebSocket-Version: 13", f"Origin: https://{self.cfg.dominio}"]
-        token = ler_env(self.cfg.env_arquivo).get("HOMOLOG_GATE_TOKEN", "")
+        token = ler_env(self.cfg.env_arquivo).get("HOMOLOG_GATE_TOKEN", "") if PERFIL.cookie_acesso else ""
         if token:
-            cab.append(f"Cookie: cenario_homolog={token}")
+            cab.append(f"Cookie: {PERFIL.cookie_acesso}={token}")
         try:
             with self._conectar() as s:
                 s.sendall(("\r\n".join(cab) + "\r\n\r\n").encode())

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Instala/atualiza o executor de operações nomeadas (cenario-runner) na VM da homologação, como root.
+# Instala/atualiza o executor de operações nomeadas (cenario-runner) na VM da homologação ou da produção
+# (perfil "prod" no arquivo de configuração), como root.
 # Origem dos arquivos: o bootstrap (pela SUA sessão SSH) ou o update_runner (só de uma versão
 # publicada no bucket de versões, que só aceita gravação humana, conferida por SHA-256).
 #   instalar.sh <pasta-com-os-arquivos>
@@ -38,6 +39,13 @@ v = {k: os.environ[f"CENARIO_RUNNER_{k.upper()}"] for k in ("projeto", "vm", "as
 regras = {"projeto": r"[a-z][a-z0-9-]{4,28}[a-z0-9]", "vm": r"[a-z][a-z0-9-]{0,61}",
           "assinante": r"[a-z0-9-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com", "assinatura": r"projects/[a-z0-9-]+/subscriptions/[A-Za-z0-9._-]+",
           "bucket": r"[a-z0-9._-]{3,63}", "bucket_versoes": r"[a-z0-9._-]{3,63}", "dominio": r"[a-z0-9.-]+"}
+# Opcionais (produção): perfil e audiência. Sem eles, perfil homologação e audiência padrão.
+for k, r in (("ambiente", r"homolog|prod"), ("aud", r"cenario-(homolog|prod)-runner")):
+    x = os.environ.get(f"CENARIO_RUNNER_{k.upper()}", "")
+    if x:
+        if not re.fullmatch(r, x):
+            sys.exit(f"✘ configuração inválida: {k}")
+        v[k] = x
 for k, r in regras.items():
     if not re.fullmatch(r, v[k]):
         sys.exit(f"✘ configuração inválida: {k}")

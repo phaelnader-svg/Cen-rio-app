@@ -1,0 +1,159 @@
+# PRODUÇÃO — pilha da VM cenario-prod (southamerica-east1). Separada da homologação em tudo:
+# projeto Compose "cenario-prod", banco "cenario_prod", volumes próprios, segredos próprios
+# (Secret Manager, prefixo "prod-") e domínio próprio. Mesma arquitetura homologada:
+# Caddy (HTTPS) → web/API → PostgreSQL, sem nenhuma porta além de 80/443 (só o Caddy).
+#
+# Na VM: imagens do Artifact Registry "cenario-prod" (CENARIO_API_IMAGE / CENARIO_WEB_IMAGE, sempre
+# por etiqueta SHA, nunca "latest") e variáveis em /run/cenario/env, geradas a partir do Secret
+# Manager por infra/prod/gcp/vm.sh. Veja docs/PRODUCAO.md.
+#
+# Diferenças deliberadas em relação à homologação (e só estas):
+#   - sem a camada de usuário/senha do proxy (a produção é acessada pelos usuários reais; a
+#     autenticação é a do próprio sistema);
+#   - APP_ENV=production;
+#   - limites de memória para uma e2-medium (4 GB + 2 GB de swap);
+#   - backups retidos por 30 dias no volume (o bucket guarda 90).
+name: cenario-prod
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 20m
+    max-file: '5'
+
+networks:
+  interna:
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cenario
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      POSTGRES_DB: cenario_prod
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=60
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U cenario -d cenario_prod']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 1024m
+    shm_size: 256m
+    networks: [interna]
+    logging: *logging
+    # Sem porta publicada: só a API e o contêiner de backup acessam o banco.
+
+  api:
+    image: ${CENARIO_API_IMAGE:?defina CENARIO_API_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=768
+      # Nenhum dado de uso sai para serviços externos (prisma).
+      CHECKPOINT_DISABLE: '1'
+      # Migrations NUNCA implícitas na partida: a API só confere e recusa iniciar com pendência.
+      # Aplicação explícita: "vm.sh migrar <etiqueta>" (após "vm.sh ponto-recuperacao").
+      MIGRATE_ON_START: '0'
+      DATABASE_URL: postgresql://cenario:${POSTGRES_PASSWORD}@postgres:5432/cenario_prod
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      ALLOWED_ORIGINS: https://${PROD_DOMAIN:?defina PROD_DOMAIN}
+      # Só o proxy (Caddy, IP fixo abaixo) informa o IP real do cliente.
+      TRUST_PROXY: 172.29.0.250
+      COOKIE_SECURE: 'true'
+      TOKEN_HASH_SECRET: ${TOKEN_HASH_SECRET:?defina TOKEN_HASH_SECRET}
+      LOG_LEVEL: info
+      STORAGE_DIR: /data/storage
+      MAX_UPLOAD_MB: 5
+      # Bootstrap mínimo (docs/PRODUCAO.md §Seed): só o primeiro gestor, NUNCA a equipe de exemplo.
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+      SEED_ADMIN_NAME: ${SEED_ADMIN_NAME:-}
+      SEED_TEAM: 'false'
+    volumes:
+      - storage:/data/storage
+    mem_limit: 1024m
+    networks: [interna]
+    logging: *logging
+
+  web:
+    image: ${CENARIO_WEB_IMAGE:?defina CENARIO_WEB_IMAGE}
+    restart: unless-stopped
+    depends_on: [api]
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=448
+    mem_limit: 640m
+    networks: [interna]
+    logging: *logging
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on: [api, web]
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      PROD_DOMAIN: ${PROD_DOMAIN}
+      PROD_DOMAIN_WWW: ${PROD_DOMAIN_WWW:?defina PROD_DOMAIN_WWW}
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    mem_limit: 192m
+    # IP fixo: é o único endereço em TRUST_PROXY da API.
+    networks:
+      interna:
+        ipv4_address: 172.29.0.250
+    logging: *logging
+
+  # Backup diário (banco + arquivos), retenção de 30 dias no volume "backups"; o envio ao bucket
+  # de produção é feito pelo timer da VM (vm.sh enviar-backups). Só depois da API saudável.
+  backup:
+    image: postgres:16
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql://cenario:${POSTGRES_PASSWORD}@postgres:5432/cenario_prod
+      STORAGE_DIR: /data/storage
+      BACKUP_RETENTION_DAYS: 30
+    volumes:
+      - ../../scripts:/scripts:ro
+      - storage:/data/storage:ro
+      - backups:/data/backups
+    working_dir: /tmp
+    entrypoint:
+      ['bash', '-c', 'while true; do bash /scripts/backup.sh /data/backups; sleep 86400; done']
+    mem_limit: 384m
+    networks: [interna]
+    logging: *logging
+
+volumes:
+  pgdata:
+  storage:
+  backups:
+  caddy_data:

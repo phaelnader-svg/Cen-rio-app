@@ -1,0 +1,102 @@
+
+■ 0. Pilha de produção limpa (volumes locais do projeto cenario-prod recriados)
+  ✔ portas publicadas: só 80 e 443 (Caddy); PostgreSQL, API e web sem porta
+
+■ 1. Recusas antes de começar
+  ✔ saída 3: 
+  ✔ saída 1: ✘ sem ponto de recuperação: rode 'vm.sh ponto-recuperacao'.
+
+■ 2. iniciar-banco: SÓ PostgreSQL e backup (banco NOVO)
+  ✔ iniciar-banco
+  ✔ banco novo: nenhuma tabela (nada copiado da homologação)
+  ✔ API e web não iniciadas
+
+■ 3. preparar-versao 9fb1786beddae28c34b20a0922b42989ecb0fbf2
+  ✔ preparar-versao
+    ✔ api: local/cenario/api:9fb1786beddae28c34b20a0922b42989ecb0fbf2
+    ✔ web: local/cenario/web:9fb1786beddae28c34b20a0922b42989ecb0fbf2
+    ✔ a imagem nova NÃO migra na partida (infra/homolog/api-iniciar.sh presente)
+    • migrations na imagem: 31 · aplicadas no banco: 0
+    ✔ disco livre: 8 GB
+
+■ 4. Ponto de recuperação no banco VAZIO (o mecanismo é validado já no primeiro deploy)
+  ✔ ponto de recuperação
+    [2026-10-18T22:55:35Z] • pasta deste backup: cenario-production-20261018T225535Z
+    [2026-10-18T22:55:37Z] ✔ Restauração de teste de cenario-production-20261018T225535Z IDÊNTICA ao banco atual (conteúdo, vínculos, catálogo e valores).
+    [2026-10-18T22:55:37Z] ✔ PONTO DE RECUPERAÇÃO: cenario-production-20261018T225535Z (versão 9fb1786beddae28c34b20a0922b42989ecb0fbf2, impressão 35f222cc3914b0f20c78b5976d13286f). Tudo o que for gravado depois dele se perde numa recuperação.
+  ✔ backup cenario-production-20261018T225535Z: SHA256SUMS conferido
+
+■ 5. Pré-verificação e migrations
+  ✔ preflight: OK
+    • pendentes (31): 20261008000000_fundacao, 20261008100000_comercial_oficina, 20261008200000_medicoes_materiais, 20261009000000_compras_estoque, 20261010000000_producao, 20261011000000_tablets_notificacoes, 20261012000000_presenca_operacional, 20261013000000_ajuda_reprogramacao, 20261014000000_central_atencao, 20261015000000_qualidade_logistica, 20261016000000_financeiro_operacional, 20261017000000_auditoria_final, 20261018000000_fila_semanal, 20261025000000_distribuicao_automatica, 20261101000000_mao_de_obra_revisao, 20261108000000_custos_logistica, 20261115000000_fechamento_semanal, 20261122000000_roteiro_logistica, 20261129000000_novo_servico, 20261206000000_recebimentos_compartilhados, 20261213000000_pre_planejamento, 20261220000000_recebimentos_permissao_funcoes, 20261227000000_servico_sem_retirada, 20261228000000_titular_mao_de_obra_prevista, 20261230000000_modelos_simplificados, 20270105000000_necessidade_substituicao, 20270112000000_compra_antes_da_chegada, 20270119000000_cobranca_cliente, 20270126000000_meus_ganhos_permissao, 20270202000000_negociacao_confirmacao_semanal, 20270209000000_presenca_apoio_simplificados
+    PREFLIGHT: OK (nenhuma migration incompleta, desconhecida, divergente ou fora de ordem; esquema e dados compatíveis com as pendentes)
+  ✔ migrar
+  ✔ 31/31 migrations aplicadas
+
+■ 6. ativar 9fb1786beddae28c34b20a0922b42989ecb0fbf2 (+ saúde completa)
+  ✔ saída 1: ✘ CENARIO_TAG='0000000' ≠ 9fb1786beddae28c34b20a0922b42989ecb0fbf2: num reinício da VM a versão errada subiria (o runner fixa a etique
+  ✔ ativar 9fb1786beddae28c34b20a0922b42989ecb0fbf2 + saúde (dentro do ativar)
+  ✔ vm.sh saude: OK (25 verificações)
+
+■ 7. Bootstrap mínimo (semear): só o gestor e a configuração estrutural
+  ✔ semear
+    • Responsável da etapa "Corte e preparação" não configurado: nenhum funcionário ativo chamado Thiago — defina em Produção → Modelos.
+    ✔ Checklists de qualidade iniciais criados.
+    • funcionários|usuários|clientes|pedidos|OS|dispositivos|funções|modelos|checklists: 1|1|0|0|0|0|5|5|4
+    ✔ bootstrap mínimo: só o gestor; nenhum cliente, pedido, OS, dispositivo ou funcionário de exemplo
+  ✔ nenhum funcionário de exemplo (Ricardo, Márcio, Thiago, João, André, Izaías)
+  ✔ saída 0: ✔ Funções padrão sincronizadas.
+  ✔ continua um único usuário
+  ✔ 2 funcionários inseridos (simulando um banco em uso)
+  ✔ saída 1: ✘ o banco já tem 3 funcionários: o bootstrap é só para o banco novo. Nada foi feito.
+
+■ 8. Acesso e segurança (SÓ LEITURA, sem sessão)
+  ✔ vm.sh acesso: OK
+    ✔ HTTP redireciona para HTTPS (308 https://cenario-prod.localhost/entrar)
+    ✔ www redireciona para o domínio canônico (301 https://cenario-prod.localhost/entrar)
+    ✔ tela de entrada: 200
+    ✔ sem anúncio de HTTP/3 (só TCP)
+    ✔ HSTS presente
+    ✔ JavaScript da tela carrega (200)
+    ✔ /api/v1/management/overview sem sessão: 401
+    ✔ /api/v1/attention sem sessão: 401
+    ✔ /api/v1/finance/receivables sem sessão: 401
+    ✔ /api/v1/finance/labor sem sessão: 401
+    ✔ /api/audit sem sessão: 401
+    ✔ /api/employees sem sessão: 401
+    ✔ WebSocket /api/realtime pelo proxy: 401 (401 sem sessão)
+    Acesso: OK
+  ✔ login do primeiro gestor (credencial do bootstrap)
+  ✔ /api/health: APP_ENV=production
+
+■ 9. Impressão digital e restauração de teste em banco SEPARADO
+  ✔ impressão digital (4127 itens)
+  ✔ restauração de teste IDÊNTICA
+  ✔ bancos de teste removidos; produção só lida
+
+■ 10. Rollback: manutenção → novo ponto → escrita → recuperar ao ponto
+  ✔ manutenção (API e web paradas)
+  ✔ API pelo proxy: 503 MANUTENCAO
+  ✔ ponto de recuperação (com o gestor)
+  ✔ saída 1: ✘ o banco mudou depois do ponto de recuperação cenario-production-20261018T225614Z: faça outro antes de migrar.
+  ✔ recuperar --sim
+    [2026-10-18T22:56:26Z] ✔ banco IDÊNTICO ao ponto de recuperação (impressão 7dac778d3d3ead61446c3aca8976dc5f; restauração conferida no ponto)
+  ✔ escrita posterior ao ponto desfeita
+  ✔ vm.sh saude: OK (25 verificações)
+
+■ 11. Isolamento local: só o projeto cenario-prod, nenhum recurso de homologação
+  ✔ nenhum contêiner de homologação
+    cenario-prod_backups
+    cenario-prod_caddy_data
+    cenario-prod_pgdata
+    cenario-prod_storage
+    memória dos contêineres:
+cenario-prod-web-1 123.6MiB / 640MiB
+cenario-prod-api-1 102.4MiB / 1GiB
+cenario-prod-caddy-1 14.89MiB / 192MiB
+cenario-prod-backup-1 3.207MiB / 384MiB
+cenario-prod-postgres-1 90.73MiB / 1GiB
+
+■ Resultado
+Evidências em /tmp/claude-0/-home-user-Cen-rio-app/03e3cfd2-92d0-5a57-9014-b26a00ed0a61/scratchpad/ensaio-prod
+ENSAIO DO PRIMEIRO DEPLOY: OK

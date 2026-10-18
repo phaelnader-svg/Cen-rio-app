@@ -1,0 +1,84 @@
+# Proxy de PRODUÇÃO: HTTPS automático (Let's Encrypt) no domínio canônico e redirecionamento
+# permanente do "www" para ele. Mesma arquitetura homologada (infra/homolog/Caddyfile.homolog),
+# SEM a camada de usuário/senha do proxy: na produção a única autenticação é a do sistema.
+#
+# - /api/* (inclusive o WebSocket /api/realtime) vai direto à API; o resto ao Next.js.
+# - HTTP → HTTPS: automático do Caddy (porta 80 só redireciona e atende o desafio ACME).
+# - Variáveis (não secretas, da VM): PROD_DOMAIN (canônico) e PROD_DOMAIN_WWW (redireciona).
+
+# Só HTTP/1.1 e HTTP/2 (TCP): UDP 443 não é publicado nem liberado no firewall (ver homologação).
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
+# IP real do cliente: o cabeçalho enviado à API é só o IP da conexão; os alternativos enviados
+# pelo cliente são removidos. A API confia só no IP fixo deste contêiner (TRUST_PROXY no Compose).
+(cabecalhos_cliente) {
+	header_up X-Forwarded-For {remote_host}
+	header_up -X-Real-IP
+	header_up -Forwarded
+}
+
+{$PROD_DOMAIN_WWW} {
+	redir https://{$PROD_DOMAIN}{uri} permanent
+}
+
+{$PROD_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Sistema interno da oficina: não deve aparecer em buscadores.
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+
+	request_body {
+		max_size 10MB
+	}
+
+	encode zstd gzip
+
+	@api path /api/*
+	handle @api {
+		reverse_proxy api:4000 {
+			import cabecalhos_cliente
+		}
+	}
+
+	handle {
+		reverse_proxy web:3000 {
+			import cabecalhos_cliente
+		}
+	}
+
+	# Manutenção (atualização controlada: API e web paradas): 503 com explicação — JSON para a
+	# API (os tablets mostram "sem conexão" e tentam depois) — em vez de 502 vazio.
+	handle_errors 502 503 504 {
+		header Cache-Control "no-store"
+		header Retry-After "120"
+		@api_erro path /api/*
+		handle @api_erro {
+			header Content-Type "application/json; charset=utf-8"
+			respond `{"error":{"code":"MANUTENCAO","message":"Sistema em manutenção. Tente novamente em alguns minutos."}}` 503
+		}
+		handle {
+			header Content-Type "text/html; charset=utf-8"
+			respond <<HTML
+				<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Em manutenção · Cenário Gestão</title></head>
+				<body style="font-family:-apple-system,system-ui,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1rem;line-height:1.5;color:#1d2b2a">
+				<h1 style="font-size:1.3rem">Cenário Gestão — em manutenção</h1>
+				<p>O sistema está sendo atualizado. Nenhum dado é perdido: tente novamente em alguns minutos.</p>
+				<p><a href="/">Tentar de novo</a></p>
+				</body></html>
+				HTML 503
+		}
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Cliente das OPERAÇÕES NOMEADAS da homologação (lado do operador, claude-operador).
+"""Cliente das OPERAÇÕES NOMEADAS da homologação (claude-operador) e, com CENARIO_AMBIENTE=prod, da
+PRODUÇÃO (claude-operador-prod, VM cenario-prod). Cada ambiente do Claude Code tem a credencial de UM
+operador (Network Secret): numa sessão de homologação o Google só assina como claude-operador; numa de
+produção, só como claude-operador-prod. Em produção o cliente recusa qualquer configuração que aponte
+para recurso da homologação e NÃO constrói imagens (as imagens homologadas são promovidas por digest).
 
 Não envia scripts nem comandos: só o nome de uma operação do catálogo do runner e parâmetros
 validados aqui (e de novo, estritamente, na VM). O JWT com operação + parâmetros é assinado pelo
@@ -42,21 +46,32 @@ import urllib.parse
 import urllib.request
 import uuid
 
+AMBIENTE = os.environ.get("CENARIO_AMBIENTE", "homolog")
+if AMBIENTE not in ("homolog", "prod"):
+    print(f"✘ CENARIO_AMBIENTE inválido: {AMBIENTE!r} (homolog | prod)", file=sys.stderr)
+    sys.exit(2)
+PRD = AMBIENTE == "prod"
 PROJETO = os.environ.get("CENARIO_PROJECT", "cenariogestao")
-ZONA = os.environ.get("CENARIO_ZONE", "us-east1-b")
-REGIAO = os.environ.get("CENARIO_REGION", "us-east1")
-VM = os.environ.get("CENARIO_VM", "cenario-homolog")
-OPERADOR = os.environ.get("CENARIO_OPERADOR", f"claude-operador@{PROJETO}.iam.gserviceaccount.com")
+ZONA = os.environ.get("CENARIO_ZONE", "southamerica-east1-b" if PRD else "us-east1-b")
+REGIAO = os.environ.get("CENARIO_REGION", "southamerica-east1" if PRD else "us-east1")
+VM = os.environ.get("CENARIO_VM", "cenario-prod" if PRD else "cenario-homolog")
+OPERADOR = os.environ.get("CENARIO_OPERADOR", f"claude-operador{'-prod' if PRD else ''}@{PROJETO}.iam.gserviceaccount.com")
 # Sempre esta conta nas builds (nunca a padrão do projeto; não é configurável por variável).
 BUILD_SA = f"cenario-build@{PROJETO}.iam.gserviceaccount.com"
-TOPICO = os.environ.get("CENARIO_TOPICO", f"projects/{PROJETO}/topics/cenario-homolog-comandos")
-BUCKET = os.environ.get("CENARIO_BUCKET_OPERACOES", f"{PROJETO}-homolog-operacoes")
+TOPICO = os.environ.get("CENARIO_TOPICO", f"projects/{PROJETO}/topics/cenario-{AMBIENTE}-comandos")
+BUCKET = os.environ.get("CENARIO_BUCKET_OPERACOES", f"{PROJETO}-{AMBIENTE}-operacoes")
 BUCKET_BUILD = os.environ.get("CENARIO_BUCKET_BUILD", f"{PROJETO}-homolog-build")
 # Builds autônomas: SÓ pelo gatilho (conta e passos fixos nele); não configuráveis por variável.
 TOPICO_BUILD = f"projects/{PROJETO}/topics/cenario-homolog-build"
 GATILHO = "cenario-homolog-build-autonomo"
-REPO_AR = os.environ.get("CENARIO_REPO", "cenario-homolog")
-AUD = "cenario-homolog-runner"
+REPO_AR = os.environ.get("CENARIO_REPO", "cenario-prod" if PRD else "cenario-homolog")
+AUD = f"cenario-{AMBIENTE}-runner"
+if PRD and any("homolog" in x for x in (VM, OPERADOR, TOPICO, BUCKET, REPO_AR, AUD)):
+    print("✘ CENARIO_AMBIENTE=prod com recurso de homologação na configuração: nada foi feito", file=sys.stderr)
+    sys.exit(2)
+if not PRD and any("-prod" in x for x in (VM, OPERADOR, TOPICO, BUCKET, REPO_AR, AUD)):
+    print("✘ homologação com recurso de produção na configuração: nada foi feito", file=sys.stderr)
+    sys.exit(2)
 URL = {
     "iam": os.environ.get("CENARIO_URL_IAMCREDENTIALS", "https://iamcredentials.googleapis.com/v1"),
     "pubsub": os.environ.get("CENARIO_URL_PUBSUB", "https://pubsub.googleapis.com/v1"),
@@ -89,6 +104,8 @@ def _carregar_runner():
 
 
 RUNNER = _carregar_runner()
+# Validação local dos parâmetros com a MESMA allowlist do runner do ambiente (ex.: unidades systemd).
+RUNNER.PERFIL = RUNNER.PERFIS[AMBIENTE]
 
 
 def erro(msg: str, codigo: int = 2):
@@ -292,6 +309,8 @@ def build_iniciar(sha: str) -> int:
     """Pede o build das imagens do commit EXATO ao gatilho do Cloud Build (conta cenario-build, passos fixos
     definidos por você). claude-operador não cria builds: só envia a fonte (git archive do commit) e publica
     o pedido; quem cria a build é o gatilho, com a conta e os passos dele."""
+    if PRD:
+        erro("a produção não constrói imagens: elas são promovidas da homologação por digest (docs/PRODUCAO.md §Promoção)")
     if not RE_SHA.match(sha):
         erro("SHA inválido")
     subprocess.run(["git", "-C", RAIZ, "fetch", "--quiet", "origin"], check=False)
@@ -420,7 +439,7 @@ def cmd_teste_seguranca() -> int:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(description="Operações nomeadas da homologação (claude-operador)")
+    p = argparse.ArgumentParser(description=f"Operações nomeadas — ambiente {AMBIENTE} ({OPERADOR.split('@')[0]})")
     s = p.add_subparsers(dest="cmd", required=True)
     s.add_parser("catalogo")
     o = s.add_parser("op")

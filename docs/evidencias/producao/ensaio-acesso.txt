@@ -1,0 +1,14 @@
+✔ HTTP redireciona para HTTPS (308 https://cenario-prod.localhost/entrar)
+✔ www redireciona para o domínio canônico (301 https://cenario-prod.localhost/entrar)
+✔ tela de entrada: 200
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ HSTS presente
+✔ JavaScript da tela carrega (200)
+✔ /api/v1/management/overview sem sessão: 401
+✔ /api/v1/attention sem sessão: 401
+✔ /api/v1/finance/receivables sem sessão: 401
+✔ /api/v1/finance/labor sem sessão: 401
+✔ /api/audit sem sessão: 401
+✔ /api/employees sem sessão: 401
+✔ WebSocket /api/realtime pelo proxy: 401 (401 sem sessão)
+Acesso: OK
