@@ -100,7 +100,12 @@ test.describe.serial('R2 — negociação, confirmação semanal e portão de pa
       });
     }
     const cost = (await call(page, 'GET', `/api/v1/finance/trip-costs?pickupId=${pickup.id}`))
-      .cost as { id: string; code: string; dueCents: number };
+      .cost as {
+      id: string;
+      code: string;
+      dueCents: number;
+      payable: { id: string; code: string };
+    };
     expect(cost.dueCents).toBe(10000);
 
     // ── André (celular): Meus Ganhos com PIN → "Solicitar alteração" ──
@@ -146,18 +151,18 @@ test.describe.serial('R2 — negociação, confirmação semanal e portão de pa
     await req.getByTestId('value-request-approve').click();
     await page.getByRole('dialog').getByRole('button', { name: 'Aprovar' }).click();
     await expect(page.getByTestId('value-requests')).toHaveCount(0);
-    const refused = await page.request.post(`/api/v1/finance/weekly-closings/${WEEK}/payments`, {
-      data: {
-        beneficiaryUserId: ANDRE.userId,
-        category: 'LOGISTICA',
-        amountCents: 12000,
-        paidAt: today(),
-        method: 'PIX',
-      },
-      headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
-    });
+    // Pagamento do item sem confirmação: recusado (o André tem outras viagens já liberadas na
+    // semana; o Pix em lote só alcança essas — nunca este item).
+    const payItem = async () => {
+      const payable = await call(page, 'GET', `/api/v1/finance/payables/${cost.payable.id}`);
+      return page.request.post(`/api/v1/finance/payables/${payable.id}/payments`, {
+        data: { amountCents: 12000, paidAt: today(), method: 'PIX', version: payable.version },
+        headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
+      });
+    };
+    const refused = await payItem();
     expect(refused.status()).toBe(422);
-    expect(await refused.text()).toMatch(/não foi confirmada/);
+    expect(await refused.text()).toMatch(/confirmada/);
     const andreRow = page.getByTestId(`closing-row-${ANDRE.displayName}-LOGISTICA`);
     await expect(
       andreRow.getByTestId(`closing-confirmation-${ANDRE.displayName}-LOGISTICA`),
@@ -180,21 +185,25 @@ test.describe.serial('R2 — negociação, confirmação semanal e portão de pa
     expect((await at.request.get(`/api/v1/finance/weekly-closings/${WEEK}`)).status()).toBe(403);
     await a.context.close();
 
-    // ── Gestor: semana confirmada → Pix de R$ 120,00 registrado ──
+    // ── Gestor: semana confirmada → pagamento de R$ 120,00 registrado ──
     await page.reload();
     await page.getByRole('tab', { name: 'Fechamento semanal' }).click();
     await expect(
       andreRow.getByTestId(`closing-confirmation-${ANDRE.displayName}-LOGISTICA`),
     ).toContainText('Confirmada pelo profissional');
-    await andreRow.getByTestId('closing-pay').click();
-    const dlg = page.getByRole('dialog');
-    await dlg.getByTestId('closing-pay-amount').fill('120,00');
-    await dlg.getByTestId('closing-pay-review').click();
-    await expect(dlg.getByTestId('closing-pay-summary')).toContainText('R$ 120,00');
-    await dlg.getByTestId('closing-pay-confirm').click();
-    await expect(page.getByTestId('closing-payments')).toContainText('R$ 120,00');
-    await evidence(page, '04-painel-pix-apos-confirmacao');
+    // Contas a pagar: o pagamento do item agora passa (R$ 120,00, valor aprovado).
+    await page.getByRole('tab', { name: 'Contas a pagar' }).click();
+    const prow = page.getByTestId(`payable-${cost.payable.code}`);
+    await expect(prow).toContainText('R$ 120,00');
+    await prow.getByRole('button', { name: 'Abrir' }).click();
+    await page.getByRole('button', { name: 'Registrar pagamento' }).click();
+    const payDlg = page.getByRole('dialog').last();
+    await payDlg.getByLabel('Valor pago (R$)').fill('120,00');
+    await payDlg.getByRole('button', { name: 'Salvar' }).click();
+    await expect(page.getByTestId('payable-paid')).toHaveText('R$ 120,00');
+    await evidence(page, '04-painel-pagamento-apos-confirmacao');
     const after = await call(page, 'GET', `/api/v1/finance/trip-costs?pickupId=${pickup.id}`);
     expect(after.cost).toMatchObject({ dueCents: 12000 });
+    expect(after.cost.payable).toMatchObject({ status: 'PAGO' });
   });
 });
