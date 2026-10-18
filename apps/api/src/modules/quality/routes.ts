@@ -143,6 +143,15 @@ const DELIVERY_EXECUTE = {
   session: 'any',
   anyPermissions: ['entregas.gerenciar', 'logistica.executar'],
 } as const;
+/**
+ * Fase 8: executar a PRÓPRIA entrega (saída, chegada, peças, instalação, conclusão, frustrada).
+ * A equipe própria escalada como responsável (produção) executa só a entrega dela — a checagem de
+ * responsável continua no serviço; nenhuma permissão nova é concedida.
+ */
+const DELIVERY_RUN = {
+  session: 'any',
+  anyPermissions: ['entregas.gerenciar', 'logistica.executar', 'producao.executar'],
+} as const;
 const LOGISTICS_SELF = { session: 'any', permissions: ['logistica.executar'] } as const;
 const RETURNS_MANAGE = { session: 'WEB', permissions: ['devolucoes.gerenciar'] } as const;
 const RETURNS_VIEW = {
@@ -811,7 +820,7 @@ export async function qualityRoutes(app: FastifyInstance) {
 
   app.post(
     '/api/v1/deliveries/:id/depart',
-    { config: { access: DELIVERY_EXECUTE, idempotent: true } },
+    { config: { access: DELIVERY_RUN, idempotent: true } },
     (r) =>
       execute(r, (tx, id, v) =>
         departDelivery(tx, actorFrom(r), v, id, deliveryVersionSchema.parse(r.body), device(r)),
@@ -819,7 +828,7 @@ export async function qualityRoutes(app: FastifyInstance) {
   );
   app.post(
     '/api/v1/deliveries/:id/arrive',
-    { config: { access: DELIVERY_EXECUTE, idempotent: true } },
+    { config: { access: DELIVERY_RUN, idempotent: true } },
     (r) =>
       execute(r, (tx, id, v) =>
         arriveDelivery(tx, actorFrom(r), v, id, deliveryVersionSchema.parse(r.body), device(r)),
@@ -827,7 +836,7 @@ export async function qualityRoutes(app: FastifyInstance) {
   );
   app.post(
     '/api/v1/deliveries/:id/items',
-    { config: { access: DELIVERY_EXECUTE, idempotent: true } },
+    { config: { access: DELIVERY_RUN, idempotent: true } },
     (r) =>
       execute(r, (tx, id, v) =>
         deliverItems(tx, actorFrom(r), v, id, deliverItemsSchema.parse(r.body), device(r)),
@@ -835,7 +844,7 @@ export async function qualityRoutes(app: FastifyInstance) {
   );
   app.post(
     '/api/v1/deliveries/:id/install',
-    { config: { access: DELIVERY_EXECUTE, idempotent: true } },
+    { config: { access: DELIVERY_RUN, idempotent: true } },
     (r) =>
       execute(r, (tx, id, v) =>
         installDelivery(tx, actorFrom(r), v, id, installDeliverySchema.parse(r.body), device(r)),
@@ -843,7 +852,7 @@ export async function qualityRoutes(app: FastifyInstance) {
   );
   app.post(
     '/api/v1/deliveries/:id/complete',
-    { config: { access: DELIVERY_EXECUTE, idempotent: true } },
+    { config: { access: DELIVERY_RUN, idempotent: true } },
     (r) =>
       execute(r, (tx, id, v) =>
         completeDelivery(tx, actorFrom(r), v, id, deliveryVersionSchema.parse(r.body), device(r)),
@@ -851,7 +860,7 @@ export async function qualityRoutes(app: FastifyInstance) {
   );
   app.post(
     '/api/v1/deliveries/:id/frustrate',
-    { config: { access: DELIVERY_EXECUTE, idempotent: true } },
+    { config: { access: DELIVERY_RUN, idempotent: true } },
     (r) =>
       execute(r, (tx, id, v) =>
         frustrateDelivery(

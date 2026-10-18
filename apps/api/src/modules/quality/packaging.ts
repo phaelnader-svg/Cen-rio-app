@@ -368,6 +368,8 @@ export async function completePackaging(
         where: { id: t.id },
         data: {
           status: 'CONCLUIDA',
+          // Tarefa aguardando o gestor (sem responsável): quem concluiu passa a ser o responsável.
+          ...(t.assigneeUserId ? {} : { assigneeUserId: actor.userId, blockers: [] }),
           startedAt: t.startedAt ?? now,
           completedAt: now,
           completedById: actor.userId,

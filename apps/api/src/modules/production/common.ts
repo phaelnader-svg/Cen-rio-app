@@ -503,6 +503,9 @@ export async function reevaluateTasks(
     );
   }
   for (const b of blocked) await emitTaskBlocked(tx, actor, b);
+  // Fase 8: etapa obrigatória nova numa peça já além da produção atualiza a etapa gravada.
+  const { refreshStagesAfterNewWork } = await import('../quality/common');
+  await refreshStagesAfterNewWork(tx, actor, taskIds);
   return changed;
 }
 

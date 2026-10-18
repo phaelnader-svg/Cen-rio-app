@@ -186,6 +186,55 @@ export function requiredTaskWhere(item: { id: string; serviceOrderId: string }) 
   } satisfies Prisma.ProductionTaskWhereInput;
 }
 
+/** Etapas em que uma etapa obrigatória nova em aberto muda a etapa gravada da peça. */
+const AFTER_PRODUCTION = [
+  'AGUARDANDO_INSPECAO',
+  'EM_INSPECAO',
+  'EM_CORRECAO',
+  'AGUARDANDO_EMBALAGEM',
+  'EM_EMBALAGEM',
+  'BLOQUEIO_EXPEDICAO',
+  'PRONTA_ENTREGA',
+  'ENTREGA_AGENDADA',
+] as const;
+
+/**
+ * Tarefa obrigatória nova (ou reaberta) depois da produção: a etapa gravada da peça volta a
+ * "Em produção" — prazos, Central e liberação de mão de obra leem a etapa gravada. Chamado ao
+ * reavaliar tarefas (publicação, criação, reprogramação); só toca peças já além da produção.
+ */
+export async function refreshStagesAfterNewWork(tx: Tx, actor: ActorContext, taskIds: string[]) {
+  if (!taskIds.length) return;
+  const tasks = await tx.productionTask.findMany({
+    where: {
+      id: { in: taskIds },
+      supportForTaskId: null,
+      issueId: null,
+      inspectionId: null,
+      activity: { notIn: ['CORRECAO', 'EMBALAGEM'] },
+      status: { notIn: ['CANCELADA', 'RASCUNHO', 'CONCLUIDA'] },
+    },
+    select: { serviceOrderId: true, serviceOrderItemId: true },
+  });
+  if (!tasks.length) return;
+  const items = await tx.serviceOrderItem.findMany({
+    where: {
+      fulfillmentStage: { in: [...AFTER_PRODUCTION] },
+      OR: [
+        { id: { in: tasks.flatMap((t) => (t.serviceOrderItemId ? [t.serviceOrderItemId] : [])) } },
+        {
+          serviceOrderId: {
+            in: tasks.filter((t) => !t.serviceOrderItemId).map((t) => t.serviceOrderId),
+          },
+        },
+      ],
+    },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+  });
+  for (const i of items) await refreshItemStage(tx, actor, i.id);
+}
+
 /** Quem executou o serviço: responsáveis e quem concluiu as tarefas obrigatórias, apoios e correções. */
 export async function executorsOf(
   db: Tx | PrismaClient,
@@ -321,8 +370,14 @@ export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
     where: { serviceOrderItemId: itemId, active: true },
     include: { delivery: true },
   });
+  // Entregue = registrada como entregue numa entrega CONCLUÍDA. Marcada no destino, antes da
+  // conclusão, a peça continua em transporte (ainda pode ser corrigida para "não entregue").
   const delivered = await db.deliveryItem.count({
-    where: { serviceOrderItemId: itemId, status: { in: ['ENTREGUE', 'DIVERGENTE'] } },
+    where: {
+      serviceOrderItemId: itemId,
+      status: { in: ['ENTREGUE', 'DIVERGENTE'] },
+      delivery: { status: 'CONCLUIDA' },
+    },
   });
   return {
     item,
@@ -341,9 +396,7 @@ export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
       returned: item.fulfillmentStage === 'DEVOLVIDA',
       delivered: delivered > 0,
       inTransit: Boolean(
-        deliveryItem &&
-          deliveryItem.status === 'PENDENTE' &&
-          ['EM_TRANSPORTE', 'NO_DESTINO'].includes(deliveryItem.delivery.status),
+        deliveryItem && ['EM_TRANSPORTE', 'NO_DESTINO'].includes(deliveryItem.delivery.status),
       ),
       scheduled: deliveryItem?.delivery.status === 'AGENDADA',
     },

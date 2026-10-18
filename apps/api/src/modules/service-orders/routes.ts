@@ -160,11 +160,15 @@ export async function loadServiceOrderDto(
   };
 }
 
-/** Bloqueia a OS e devolve o próximo número de revisão do histórico técnico. */
+/**
+ * Bloqueia a OS e devolve o próximo número de revisão do histórico técnico. FOR NO KEY UPDATE:
+ * serializa as revisões sem barrar quem só referencia a OS (tarefa de embalagem, inspeção) —
+ * evita o deadlock "alteração técnica × aprovação da qualidade" (Fase 8).
+ */
 async function lockForRevision(tx: Tx, id: string): Promise<number> {
   const rows = await tx.$queryRaw<
     { id: string }[]
-  >`SELECT id FROM service_orders WHERE id = ${id}::uuid FOR UPDATE`;
+  >`SELECT id FROM service_orders WHERE id = ${id}::uuid FOR NO KEY UPDATE`;
   if (!rows.length) throw Errors.notFound('Ordem de serviço');
   const last = await tx.serviceOrderRevision.aggregate({
     where: { serviceOrderId: id },

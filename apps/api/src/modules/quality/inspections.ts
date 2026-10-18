@@ -71,6 +71,20 @@ export type InspectionRow = Prisma.QualityInspectionGetPayload<{
   include: typeof inspectionInclude;
 }>;
 
+/**
+ * Ordem única de bloqueio da qualidade: peça → inspeção (a mesma da alteração técnica e da
+ * criação de inspeção). Decidir uma inspeção bloqueia primeiro a peça: sem deadlock.
+ */
+async function lockItemThenInspection(tx: Tx, id: string) {
+  const ref = await tx.qualityInspection.findUnique({
+    where: { id },
+    select: { serviceOrderItemId: true },
+  });
+  if (!ref) throw Errors.notFound('Inspeção');
+  const item = await lockItem(tx, ref.serviceOrderItemId);
+  return { item, i: await lockInspection(tx, id) };
+}
+
 export async function lockInspection(tx: Tx, id: string) {
   const rows = await tx.$queryRaw<
     { id: string }[]
@@ -322,6 +336,9 @@ export async function createInspection(
  * aprovação (a peça mudou) e exige nova inspeção.
  */
 export async function inspectIfProductionDone(tx: Tx, actor: ActorContext, itemId: string) {
+  // Peça bloqueada antes de ler a produção: duas últimas etapas concluídas ao mesmo tempo se
+  // enxergam (a segunda espera a primeira) e a inspeção nasce exatamente uma vez.
+  await lockItem(tx, itemId);
   const s = await readinessOfItem(tx, itemId);
   if (s.input.cancelled || s.input.returned || s.input.delivered) return;
   const { requiredTasks, requiredTasksDone } = s.input;
@@ -332,6 +349,22 @@ export async function inspectIfProductionDone(tx: Tx, actor: ActorContext, itemI
   const latest = s.inspection;
   if (!latest) {
     await createInspection(tx, actor, itemId, { reason: 'PRODUCAO_CONCLUIDA' });
+    return;
+  }
+  // Última rodada válida invalidada (alteração técnica com etapa em aberto) ou reprovada sem
+  // correção em aberto (rodada seguinte cancelada): a produção terminou e não há inspeção aberta
+  // — nasce a próxima rodada. Nunca aprova nada sozinho.
+  if (
+    (latest.status === 'INVALIDADA' ||
+      (latest.status === 'REPROVADA' && s.input.openCorrections === 0)) &&
+    !(await tx.qualityInspection.count({
+      where: { serviceOrderItemId: itemId, status: { in: OPEN } },
+    }))
+  ) {
+    await createInspection(tx, actor, itemId, {
+      reason: latest.status === 'INVALIDADA' ? 'ALTERACAO_TECNICA' : 'CORRECAO_CONCLUIDA',
+      previousId: latest.id,
+    });
     return;
   }
   if (latest.status === 'APROVADA' && latest.decidedAt) {
@@ -466,7 +499,7 @@ export async function approveInspection(
   input: { note?: string | null; version: number },
   deviceId: string | null = null,
 ) {
-  const i = await lockInspection(tx, id);
+  const { item, i } = await lockItemThenInspection(tx, id);
   if (i.status === 'APROVADA' && i.decidedById === viewer.userId) return i; // repetição
   checkVersion(i, input.version);
   assertOpen(i);
@@ -476,7 +509,6 @@ export async function approveInspection(
     i.items.map((x) => ({ required: x.required, result: x.result as CheckResult | null })),
   );
   if (problems.length) throw Errors.business(problems.join(' '), { problems });
-  const item = await lockItem(tx, i.serviceOrderItemId);
   const s = await readinessOfItem(tx, item.id);
   if (s.input.requiredTasksDone < s.input.requiredTasks)
     throw Errors.business('Há etapas de produção pendentes nesta peça: conclua antes de aprovar.');
@@ -550,7 +582,7 @@ export async function rejectInspection(
   },
   deviceId: string | null = null,
 ) {
-  const i = await lockInspection(tx, id);
+  const { item: locked, i } = await lockItemThenInspection(tx, id);
   if (i.status === 'REPROVADA' && i.decidedById === viewer.userId) return i; // repetição
   checkVersion(i, input.version);
   assertOpen(i);
@@ -561,7 +593,7 @@ export async function rejectInspection(
   }));
   const problems = decisionProblems('REPROVAR', items, input.reason);
   if (problems.length) throw Errors.business(problems.join(' '), { problems });
-  const item = await lockItem(tx, i.serviceOrderItemId);
+  const item = locked;
   const assigneeUserId =
     input.correction.assigneeUserId ?? (await defaultCorrectionAssignee(tx, item));
   if (!assigneeUserId)
@@ -906,6 +938,7 @@ export async function qualityTaskClosed(
         await tx.serviceOrderItem.findMany({
           where: { serviceOrderId: t.serviceOrderId },
           select: { id: true },
+          orderBy: { id: 'asc' }, // ordem estável de bloqueio entre peças
         })
       ).map((x) => x.id);
   for (const itemId of items) await inspectIfProductionDone(tx, actor, itemId);

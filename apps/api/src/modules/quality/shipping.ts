@@ -45,6 +45,7 @@ import {
   usersWith,
 } from './common';
 import { syncTripCost } from '../finance/trip-costs';
+import { tripCostTeamProblem } from '../pickups/service';
 
 type AddressInput = {
   street: string;
@@ -99,7 +100,11 @@ export async function toDeliveryDto(db: Tx | PrismaClient, r: DeliveryRow): Prom
     }),
     db.attachment.count({ where: { entityType: 'DELIVERY', entityId: r.id, deletedAt: null } }),
   ]);
-  const items = r.items.filter((i) => i.active || r.status === 'CONCLUIDA');
+  // Concluída: mostra também as não entregues (ficam inativas na conclusão), nunca as peças
+  // retiradas da entrega antes da saída (inativas e ainda pendentes).
+  const items = r.items.filter(
+    (i) => i.active || (r.status === 'CONCLUIDA' && i.status !== 'PENDENTE'),
+  );
   return {
     id: r.id,
     number: r.number,
@@ -522,7 +527,18 @@ export async function updateDelivery(
       items.map((i) => i.id),
     );
   const responsible = await assertResponsible(tx, input.responsibleUserId, input.team);
-  const { addressId, snapshot } = await deliveryAddress(tx, d.customerId, input);
+  // Fase 8: a mesma regra da criação — custo de terceirização vivo não passa para a equipe
+  // própria (cancele o custo antes, pelo financeiro, se a viagem mudou de equipe).
+  const liveCost = await tx.logisticsCost.count({
+    where: { deliveryId: d.id, cancelledAt: null, status: { not: 'CANCELADO' } },
+  });
+  const teamProblem = tripCostTeamProblem(input.team, liveCost > 0);
+  if (teamProblem) throw Errors.business(teamProblem);
+  // Sem endereço novo: mantém o endereço desta entrega (o principal do cliente só na criação).
+  const { addressId, snapshot } =
+    input.addressId || input.address
+      ? await deliveryAddress(tx, d.customerId, input)
+      : { addressId: d.addressId, snapshot: asSnapshot(d.addressSnapshot)! };
   const status: DeliveryStatus = provisional ? 'PROVISORIA' : 'AGENDADA';
   const keep = new Set(items.map((i) => i.id));
   for (const di of d.items) {
@@ -564,6 +580,8 @@ export async function updateDelivery(
       status,
       departedAt: null,
       arrivedAt: null,
+      // Nova tentativa: instalação registrada na tentativa frustrada não vale para esta.
+      ...(d.status === 'FRUSTRADA' ? { installedAt: null, installationNote: null } : {}),
       version: { increment: 1 },
     },
   });
@@ -853,6 +871,16 @@ export async function deliverItems(
   for (const it of input.items) {
     const di = d.items.find((x) => x.serviceOrderItemId === it.serviceOrderItemId && x.active);
     if (!di) throw Errors.business('Peça fora desta entrega.');
+    if (it.status !== 'NAO_ENTREGUE') {
+      // A peça saiu liberada, mas a aprovação pode ter sido invalidada no caminho (alteração
+      // técnica): sem qualidade válida ela não é entregue — volta como "não entregue".
+      const r = await readinessOfItem(tx, di.serviceOrderItemId);
+      const quality = r.readiness.missing.filter((m) => m !== 'SEM_BLOQUEIO');
+      if (quality.length)
+        throw Errors.business(
+          `${pieceCode(di.serviceOrderItem)} não pode ser entregue: ${quality.map((m) => READINESS_CHECK_LABEL[m].toLowerCase()).join(', ')}. Registre como não entregue.`,
+        );
+    }
     await tx.deliveryItem.update({
       where: {
         deliveryId_serviceOrderItemId: {
@@ -967,7 +995,12 @@ export async function completeDelivery(
     throw Errors.business('Nenhuma peça foi entregue: registre a tentativa frustrada.');
   if (d.requiresInstallation && !d.installedAt) {
     const incomplete = await tx.logisticsOccurrence.count({
-      where: { deliveryId: id, kind: 'INSTALACAO_INCOMPLETA' },
+      where: {
+        deliveryId: id,
+        kind: 'INSTALACAO_INCOMPLETA',
+        // Só a desta tentativa (a partir da saída atual).
+        ...(d.departedAt ? { createdAt: { gte: d.departedAt } } : {}),
+      },
     });
     if (!incomplete) throw Errors.business('Registre a instalação antes de concluir.');
   }

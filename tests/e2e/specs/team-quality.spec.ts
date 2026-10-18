@@ -305,6 +305,17 @@ test.describe.serial('Fase 10 — qualidade, embalagem e entrega', () => {
       await expect(page.getByTestId('inspections-all')).toContainText('Aprovada');
       await evidence(page, '11-painel-qualidade-historico');
 
+      // Fase 8 (plano principal): entrega PARCIAL do pedido — só o sofá saiu e foi entregue;
+      // as poltronas continuam na oficina e o pedido não fica "Serviço concluído".
+      const sofaNow = await call(page, 'GET', `/api/v1/pieces/${sofa.id}`);
+      expect(sofaNow.stage).toBe('ENTREGUE');
+      const poltronas = await call(page, 'GET', `/api/v1/pieces/${so.items[1]!.id}`);
+      expect(poltronas.stage).not.toBe('ENTREGUE');
+      expect(poltronas.readiness.ready).toBe(false);
+      const osNow = await call(page, 'GET', `/api/v1/service-orders/${so.id}`);
+      const order = await call(page, 'GET', `/api/v1/orders/${osNow.order.id}`);
+      expect(order.serviceState).not.toBe('SERVICO_CONCLUIDO');
+
       // Encerramento: as poltronas ficam fora do teste (sem tarefas abertas).
       for (const c of [ricardo, thiago, joao, andre]) await c.context.close();
     } finally {
