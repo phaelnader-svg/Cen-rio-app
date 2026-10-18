@@ -136,6 +136,10 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
       ['attendance-team'],
       ['attendance-impacts'],
       ['attendance-history'],
+      // Simplificação Fase 7: expedientes abertos, folgas/férias e calendário.
+      ['attendance-open-shifts'],
+      ['attendance-leaves'],
+      ['attendance-holidays'],
     );
   }
   if (t === 'notification.created') keys.push(['production-task'], ['my-tasks']);

@@ -12,11 +12,14 @@ import {
   taskCode,
   teamQuerySchema,
   zonedDateTime,
+  VERSIONED_ACTIONS,
   type AttendanceHistoryDto,
   type AttendanceImpactDto,
   type ImpactKind,
   type MyAttendanceDto,
+  type OpenShiftDto,
 } from '@cenario/shared';
+import type { z } from 'zod';
 import type { Prisma, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
@@ -35,18 +38,22 @@ import {
   SELF,
   VIEW,
   attendanceConfig,
-  audienceOf,
+  attendanceEvent,
   brDate,
   clock,
   dayDto,
   dbDate,
   history,
   lockEmployeeDay,
+  myDayDto,
   notifyManagers,
+  openShifts,
   openTasksOf,
   refreshAvailability,
   team,
+  type AttendanceConfig,
 } from './common';
+import { calendarRoutes } from './calendar';
 
 const deviceOf = (request: FastifyRequest) => request.auth?.deviceId ?? null;
 
@@ -103,9 +110,19 @@ export async function attendanceRoutes(app: FastifyInstance) {
     const open = (await openTasksOf(prisma, userId, cfg)).filter((t) => t.status === 'EM_EXECUCAO');
     const windowOpen = arrivalWindowOpen(cfg.now, cfg);
     const arrived = Boolean(row?.arrivedAt);
+    // CA7-01: o funcionário nunca recebe avaliação de pontualidade (nem limite de alerta).
     return {
-      day,
-      config: cfg,
+      day: myDayDto(day),
+      config: {
+        timezone: cfg.timezone,
+        arrivalWindowStart: cfg.arrivalWindowStart,
+        workdayStart: cfg.workdayStart,
+        workdayEnd: cfg.workdayEnd,
+        workingDay: cfg.workingDay,
+        holiday: cfg.holiday,
+        now: cfg.now,
+        today: cfg.today,
+      },
       canArrive: !arrived && windowOpen,
       arriveBlockedReason: arrived
         ? null
@@ -176,29 +193,30 @@ export async function attendanceRoutes(app: FastifyInstance) {
           entityId: row.id,
           summary: `${e.displayName} confirmou chegada às ${cfg.now} (${ARRIVAL_KIND_LABEL[kind].toLowerCase()}${lateMinutes ? `, ${lateMinutes} min` : ''}).`,
         });
-        await appendEvent(tx, actor, {
+        await attendanceEvent(tx, actor, {
           type: EVENT_TYPES.ATTENDANCE_ARRIVED,
-          aggregateType: 'attendance',
           aggregateId: row.id,
+          userId,
           payload: { employeeId: e.id, date: cfg.today, kind, lateMinutes },
-          audience: audienceOf(userId),
         });
         if (lateMinutes > 0) {
-          await appendEvent(tx, actor, {
+          // Atraso operacional: só para quem gerencia a presença (CA7-01).
+          await attendanceEvent(tx, actor, {
             type: EVENT_TYPES.ATTENDANCE_LATE,
-            aggregateType: 'attendance',
             aggregateId: row.id,
+            userId,
             payload: { employeeId: e.id, date: cfg.today, lateMinutes },
-            audience: audienceOf(userId),
+            self: null,
           });
         }
-        // Recibo para o próprio funcionário (persistente); o gestor só recebe o que exige ação.
+        // Recibo para o próprio funcionário (persistente), sem avaliação de pontualidade;
+        // o gestor só recebe o que exige ação.
         await notify(tx, actor, [
           {
             userId,
             kind: 'CHEGADA_CONFIRMADA',
             dedupeKey: `CHEGADA:${row.id}`,
-            body: `Chegada confirmada às ${cfg.now}${lateMinutes ? ` (${lateMinutes} min após o horário previsto)` : ''}.`,
+            body: `Chegada confirmada às ${cfg.now}.`,
             includeActor: true,
           },
         ]);
@@ -371,10 +389,10 @@ export async function attendanceRoutes(app: FastifyInstance) {
           entityId: row.id,
           summary: `${e.displayName} encerrou o expediente às ${cfg.now}${early ? ' (saída antecipada)' : ''}; ${running.length} tarefa(s) pausada(s), ${pending.length} sem andamento.`,
         });
-        await appendEvent(tx, actor, {
+        await attendanceEvent(tx, actor, {
           type: EVENT_TYPES.ATTENDANCE_DEPARTED,
-          aggregateType: 'attendance',
           aggregateId: row.id,
+          userId,
           payload: {
             employeeId: e.id,
             date: cfg.today,
@@ -382,7 +400,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
             pending: pending.length,
             early,
           },
-          audience: audienceOf(userId),
+          self: { date: cfg.today, paused: running.length },
         });
         await notify(tx, actor, [
           {
@@ -476,163 +494,29 @@ export async function attendanceRoutes(app: FastifyInstance) {
     if (!(await team(prisma)).some((m) => m.id === e.id)) {
       throw Errors.business('Este funcionário não registra presença operacional.');
     }
-    const at = (time: string) => zonedDateTime(input.date, time, cfg.timezone);
-    await prisma.$transaction(async (tx) => {
-      await lockEmployeeDay(tx, e.id, input.date);
-      const before = await tx.operationalAttendance.findUnique({
-        where: { employeeId_date: { employeeId: e.id, date: dbDate(input.date) } },
-      });
-      if (input.version !== undefined && before && before.version !== input.version) {
-        throw Errors.versionConflict(before.version);
-      }
-      const data: Prisma.OperationalAttendanceUncheckedUpdateInput = {};
-      const arrival = (time: string) => {
-        const c = classifyArrival(time, cfg, false);
-        return {
-          arrivedAt: at(time),
-          arrivalKind: c.kind,
-          lateMinutes: c.lateMinutes,
-          arrivalById: actor.userId,
-          arrivalDeviceId: null,
-        };
-      };
-      switch (input.action) {
-        case 'CONFIRMAR_AUSENCIA':
-        case 'AUSENCIA_JUSTIFICADA':
-        case 'ATESTADO':
-        case 'FOLGA':
-        case 'FERIAS': {
-          if (before?.arrivedAt) {
-            throw Errors.business(
-              'Há chegada registrada neste dia; use “Correção administrativa”.',
-            );
-          }
-          data.situation =
-            input.action === 'CONFIRMAR_AUSENCIA' ? 'AUSENCIA_CONFIRMADA' : input.action;
-          data.note = input.reason;
-          break;
-        }
-        case 'TRABALHO_EXTERNO':
-          data.situation = 'TRABALHO_EXTERNO';
-          data.note = input.externalNote;
-          break;
-        case 'CHEGADA_TARDIA':
-        case 'ESQUECIMENTO':
-          Object.assign(data, arrival(input.arrivalTime!));
-          if (before?.situation !== 'ENCERRADO') data.situation = 'PRESENTE';
-          break;
-        case 'SAIDA_ANTECIPADA':
-          if (!before?.arrivedAt) throw Errors.business('Não há chegada registrada neste dia.');
-          data.departedAt = at(input.departureTime!);
-          data.earlyDeparture = true;
-          data.situation = 'ENCERRADO';
-          break;
-        case 'CORRECAO':
-          if (input.arrivalTime) Object.assign(data, arrival(input.arrivalTime));
-          if (input.departureTime) {
-            data.departedAt = at(input.departureTime);
-            data.earlyDeparture = input.departureTime < cfg.workdayEnd;
-            data.situation = 'ENCERRADO';
-          } else if (input.arrivalTime) {
-            data.situation = before?.departedAt ? 'ENCERRADO' : 'PRESENTE';
-          }
-          if (input.arrivalTime === null) {
-            // Remover chegada registrada por engano (o histórico guarda a original).
-            Object.assign(data, {
-              arrivedAt: null,
-              arrivalKind: null,
-              lateMinutes: 0,
-              departedAt: null,
-              earlyDeparture: false,
-              situation: 'AUSENCIA_CONFIRMADA',
-            });
-          }
-          break;
-      }
-      const row = before
-        ? await tx.operationalAttendance.update({
-            where: { id: before.id },
-            data: { ...data, version: { increment: 1 } },
-          })
-        : await tx.operationalAttendance.create({
-            data: {
-              employeeId: e.id,
-              date: dbDate(input.date),
-              situation: (data.situation as never) ?? 'PRESENTE',
-              ...(data as object),
-            } as Prisma.OperationalAttendanceUncheckedCreateInput,
-          });
-      await history(tx, actor, row.id, input.action, before, row, input.reason);
-      if (
-        [
-          'AUSENCIA_JUSTIFICADA',
-          'ATESTADO',
-          'FOLGA',
-          'FERIAS',
-          'CHEGADA_TARDIA',
-          'ESQUECIMENTO',
-          'TRABALHO_EXTERNO',
-        ].includes(input.action)
-      ) {
-        await resolveOpenImpacts(
-          tx,
-          actor,
-          row.id,
-          `${ATTENDANCE_ACTION_LABEL[input.action]}: ${input.reason}`,
-        );
-      }
-      await audit(tx, actor, {
-        action: `attendance.${input.action.toLowerCase()}`,
-        entityType: 'attendance',
-        entityId: row.id,
-        summary: `${e.displayName} em ${brDate(input.date)}: ${ATTENDANCE_ACTION_LABEL[input.action]} — ${input.reason}`,
-      });
-      await appendEvent(tx, actor, {
-        type:
-          input.action === 'CONFIRMAR_AUSENCIA'
-            ? EVENT_TYPES.ATTENDANCE_ABSENCE_CONFIRMED
-            : EVENT_TYPES.ATTENDANCE_CORRECTED,
-        aggregateType: 'attendance',
-        aggregateId: row.id,
-        payload: { employeeId: e.id, date: input.date, action: input.action },
-        audience: audienceOf(e.userId),
-      });
-      await notify(tx, actor, [
-        {
-          userId: e.userId,
-          kind: input.action === 'CONFIRMAR_AUSENCIA' ? 'AUSENCIA_CONFIRMADA' : 'PRESENCA_ALTERADA',
-          dedupeKey: `PRESENCA:${row.id}:${row.version}`,
-          body: `${brDate(input.date)}: ${ATTENDANCE_ACTION_LABEL[input.action]} — ${input.reason}`,
-        },
-      ]);
-      if (input.date === cfg.today) {
-        await refreshAvailability(tx, actor, e.id);
-        // Fase 8: ausência (confirmada, justificada, folga, férias, externo) → análise de
-        // reprogramação; chegada registrada → propostas da ausência perdem o efeito.
-        if (ABSENT_ACTIONS.includes(input.action)) {
-          await obsoleteProposals(
-            tx,
-            actor,
-            { attendanceId: row.id, dedupeKey: { endsWith: ':PRESUMIDA' } },
-            `${ATTENDANCE_ACTION_LABEL[input.action]} registrada pelo gestor.`,
-          );
-          await analyzeAbsence(tx, actor, row.id, 'CONFIRMADA');
-        } else if (row.arrivedAt && row.situation === 'PRESENTE') {
-          await obsoleteProposals(
-            tx,
-            actor,
-            { attendanceId: row.id },
-            `${ATTENDANCE_ACTION_LABEL[input.action]}: ${e.displayName} está presente.`,
-          );
-        }
-      }
-    });
+    await prisma.$transaction((tx) => applyAttendanceAction(tx, actor, cfg, e, input));
     await requeue();
     const row = await prisma.operationalAttendance.findUniqueOrThrow({
       where: { employeeId_date: { employeeId: e.id, date: dbDate(input.date) } },
     });
     return dayDto(prisma, e, row, cfg, input.date);
   });
+
+  // Simplificação Fase 7: expedientes de dias anteriores sem saída (o gestor resolve).
+  app.get('/api/v1/attendance/open-shifts', { config: { access: VIEW } }, async () => {
+    const cfg = await attendanceConfig(prisma);
+    return (await openShifts(prisma, cfg)).map(
+      (r): OpenShiftDto => ({
+        attendanceId: r.id,
+        date: dateOnly(r.date)!,
+        employee: { id: r.employee.id, displayName: r.employee.displayName },
+        arrivedAt: r.arrivedAt!.toISOString(),
+        version: r.version,
+      }),
+    );
+  });
+
+  await calendarRoutes(app, requeue);
 
   app.get('/api/v1/attendance/impacts', { config: { access: VIEW } }, async (request) => {
     const q = teamQuerySchema.parse(request.query);
@@ -716,4 +600,234 @@ export async function attendanceRoutes(app: FastifyInstance) {
       return { ok: true };
     },
   );
+}
+
+/** Ações que, no próprio dia, tiram a pessoa da oficina (Fase 8: análise de reprogramação). */
+type ActionInput = z.output<typeof attendanceActionSchema>;
+type EmployeeRow = { id: string; userId: string; displayName: string };
+
+/** Ações que o funcionário vê com texto neutro (nunca "tardia", "antecipada" etc.). */
+const NEUTRAL_FOR_SELF: readonly string[] = [
+  'CHEGADA_TARDIA',
+  'ESQUECIMENTO',
+  'SAIDA_ANTECIPADA',
+  'CORRECAO',
+  'REGISTRAR_SAIDA',
+  'SAIDA_NAO_INFORMADA',
+  'ANULAR_SAIDA',
+];
+
+/**
+ * Registro/correção do gestor num dia (transação do chamador). Reaproveitado pela folga/férias
+ * por intervalo quando o intervalo cobre hoje e o dia ainda não tem chegada.
+ */
+export async function applyAttendanceAction(
+  tx: Tx,
+  actor: ActorContext,
+  cfg: AttendanceConfig,
+  e: EmployeeRow,
+  input: ActionInput,
+) {
+  const at = (time: string) => zonedDateTime(input.date, time, cfg.timezone);
+  await lockEmployeeDay(tx, e.id, input.date);
+  const before = await tx.operationalAttendance.findUnique({
+    where: { employeeId_date: { employeeId: e.id, date: dbDate(input.date) } },
+  });
+  if (input.version !== undefined && before && before.version !== input.version) {
+    throw Errors.versionConflict(before.version);
+  }
+  if (VERSIONED_ACTIONS.includes(input.action) && !before)
+    throw Errors.business('Não há registro de presença neste dia.');
+  const data: Prisma.OperationalAttendanceUncheckedUpdateInput = {};
+  // O horário de outro dia é classificado com a jornada daquele dia (feriado = sem atraso).
+  const dayCfg = input.date === cfg.today ? cfg : await attendanceConfig(tx, at('12:00'));
+  const arrival = (time: string) => {
+    const c = classifyArrival(time, dayCfg, false);
+    return {
+      arrivedAt: at(time),
+      arrivalKind: c.kind,
+      lateMinutes: c.lateMinutes,
+      arrivalById: actor.userId,
+      arrivalDeviceId: null,
+    };
+  };
+  const openDeparture = () => {
+    if (!before?.arrivedAt) throw Errors.business('Não há chegada registrada neste dia.');
+    if (before.departedAt || before.situation === 'ENCERRADO')
+      throw Errors.business(
+        'O expediente já foi encerrado; para mudar o horário use “Correção administrativa”.',
+      );
+  };
+  switch (input.action) {
+    case 'CONFIRMAR_AUSENCIA':
+    case 'AUSENCIA_JUSTIFICADA':
+    case 'ATESTADO':
+    case 'FOLGA':
+    case 'FERIAS': {
+      if (before?.arrivedAt) {
+        throw Errors.business('Há chegada registrada neste dia; use “Correção administrativa”.');
+      }
+      data.situation = input.action === 'CONFIRMAR_AUSENCIA' ? 'AUSENCIA_CONFIRMADA' : input.action;
+      data.note = input.reason;
+      break;
+    }
+    case 'TRABALHO_EXTERNO':
+      data.situation = 'TRABALHO_EXTERNO';
+      data.note = input.externalNote;
+      break;
+    case 'CHEGADA_TARDIA':
+    case 'ESQUECIMENTO':
+      Object.assign(data, arrival(input.arrivalTime!));
+      if (before?.situation !== 'ENCERRADO') data.situation = 'PRESENTE';
+      break;
+    case 'SAIDA_ANTECIPADA':
+      if (!before?.arrivedAt) throw Errors.business('Não há chegada registrada neste dia.');
+      data.departedAt = at(input.departureTime!);
+      data.earlyDeparture = true;
+      data.situation = 'ENCERRADO';
+      break;
+    case 'CORRECAO':
+      if (input.arrivalTime) Object.assign(data, arrival(input.arrivalTime));
+      if (input.departureTime) {
+        data.departedAt = at(input.departureTime);
+        data.earlyDeparture = input.departureTime < cfg.workdayEnd;
+        data.situation = 'ENCERRADO';
+      } else if (input.arrivalTime) {
+        data.situation = before?.departedAt ? 'ENCERRADO' : 'PRESENTE';
+      }
+      if (input.arrivalTime === null) {
+        // Remover chegada registrada por engano (o histórico guarda a original).
+        Object.assign(data, {
+          arrivedAt: null,
+          arrivalKind: null,
+          lateMinutes: 0,
+          departedAt: null,
+          earlyDeparture: false,
+          situation: 'AUSENCIA_CONFIRMADA',
+        });
+      }
+      break;
+    // Simplificação Fase 7: saída esquecida — o gestor informa o horário (nada é inventado).
+    case 'REGISTRAR_SAIDA': {
+      openDeparture();
+      const out = at(input.departureTime!);
+      if (out <= before!.arrivedAt!)
+        throw Errors.business('A saída precisa ser depois da chegada registrada.');
+      Object.assign(data, {
+        departedAt: out,
+        departureById: actor.userId,
+        departureDeviceId: null,
+        departureUnrecordedAt: null,
+        earlyDeparture: input.departureTime! < cfg.workdayEnd,
+        situation: 'ENCERRADO',
+      });
+      break;
+    }
+    // Ninguém sabe a hora da saída: o alerta é encerrado sem horário (nunca um horário
+    // inventado) — o dia continua com a chegada e sem saída registrada.
+    case 'SAIDA_NAO_INFORMADA':
+      openDeparture();
+      if (before!.departureUnrecordedAt)
+        throw Errors.business('A saída deste dia já foi marcada como não informada.');
+      Object.assign(data, {
+        departureUnrecordedAt: new Date(),
+        departureById: actor.userId,
+        departureNote: `Saída não informada: ${input.reason}`.slice(0, 500),
+      });
+      break;
+    // Encerramento feito por engano: o dia volta a "presente" (o histórico guarda a saída).
+    case 'ANULAR_SAIDA':
+      if (!before?.arrivedAt || (before.situation !== 'ENCERRADO' && !before.departureUnrecordedAt))
+        throw Errors.business('Não há encerramento de expediente para desfazer neste dia.');
+      Object.assign(data, {
+        situation: 'PRESENTE',
+        departedAt: null,
+        departureUnrecordedAt: null,
+        departureById: null,
+        departureDeviceId: null,
+        earlyDeparture: false,
+        departureNote: null,
+      });
+      break;
+  }
+  const row = before
+    ? await tx.operationalAttendance.update({
+        where: { id: before.id },
+        data: { ...data, version: { increment: 1 } },
+      })
+    : await tx.operationalAttendance.create({
+        data: {
+          employeeId: e.id,
+          date: dbDate(input.date),
+          situation: (data.situation as never) ?? 'PRESENTE',
+          ...(data as object),
+        } as Prisma.OperationalAttendanceUncheckedCreateInput,
+      });
+  await history(tx, actor, row.id, input.action, before, row, input.reason);
+  if (
+    [
+      'AUSENCIA_JUSTIFICADA',
+      'ATESTADO',
+      'FOLGA',
+      'FERIAS',
+      'CHEGADA_TARDIA',
+      'ESQUECIMENTO',
+      'TRABALHO_EXTERNO',
+    ].includes(input.action)
+  ) {
+    await resolveOpenImpacts(
+      tx,
+      actor,
+      row.id,
+      `${ATTENDANCE_ACTION_LABEL[input.action]}: ${input.reason}`,
+    );
+  }
+  await audit(tx, actor, {
+    action: `attendance.${input.action.toLowerCase()}`,
+    entityType: 'attendance',
+    entityId: row.id,
+    summary: `${e.displayName} em ${brDate(input.date)}: ${ATTENDANCE_ACTION_LABEL[input.action]} — ${input.reason}`,
+  });
+  await attendanceEvent(tx, actor, {
+    type:
+      input.action === 'CONFIRMAR_AUSENCIA'
+        ? EVENT_TYPES.ATTENDANCE_ABSENCE_CONFIRMED
+        : EVENT_TYPES.ATTENDANCE_CORRECTED,
+    aggregateId: row.id,
+    userId: e.userId,
+    payload: { employeeId: e.id, date: input.date, action: input.action },
+  });
+  const what = NEUTRAL_FOR_SELF.includes(input.action)
+    ? 'registro de presença ajustado pelo gestor'
+    : ATTENDANCE_ACTION_LABEL[input.action];
+  await notify(tx, actor, [
+    {
+      userId: e.userId,
+      kind: input.action === 'CONFIRMAR_AUSENCIA' ? 'AUSENCIA_CONFIRMADA' : 'PRESENCA_ALTERADA',
+      dedupeKey: `PRESENCA:${row.id}:${row.version}`,
+      body: `${brDate(input.date)}: ${what} — ${input.reason}`,
+    },
+  ]);
+  if (input.date === cfg.today) {
+    await refreshAvailability(tx, actor, e.id);
+    // Fase 8: ausência (confirmada, justificada, folga, férias, externo) → análise de
+    // reprogramação; chegada registrada → propostas da ausência perdem o efeito.
+    if (ABSENT_ACTIONS.includes(input.action)) {
+      await obsoleteProposals(
+        tx,
+        actor,
+        { attendanceId: row.id, dedupeKey: { endsWith: ':PRESUMIDA' } },
+        `${ATTENDANCE_ACTION_LABEL[input.action]} registrada pelo gestor.`,
+      );
+      await analyzeAbsence(tx, actor, row.id, 'CONFIRMADA');
+    } else if (row.arrivedAt && row.situation === 'PRESENTE') {
+      await obsoleteProposals(
+        tx,
+        actor,
+        { attendanceId: row.id },
+        `${ATTENDANCE_ACTION_LABEL[input.action]}: ${e.displayName} está presente.`,
+      );
+    }
+  }
+  return row;
 }

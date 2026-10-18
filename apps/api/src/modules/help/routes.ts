@@ -18,6 +18,8 @@ import {
   planningActionsQuerySchema,
   proposalCode,
   proposalListQuerySchema,
+  prolongedSupportSchema,
+  transferRequestSchema,
   rejectProposalSchema,
   taskCode,
   updateSkillsSchema,
@@ -38,15 +40,16 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { Errors } from '../../lib/errors';
-import { attendanceConfig, clock, notifyManagers, team } from '../attendance/common';
+import { attendanceConfig, clock, team } from '../attendance/common';
 import { serviceOrderCode } from '../commercial/common';
 import { notify } from '../notifications/notify';
 import { idParams } from '../presenters';
 import { EXECUTE, company, taskInclude, toTaskDto } from '../production/common';
 import { HELP_AUDIENCE, helpDomainEvent, helpEvent } from './engine';
 import { cancelHelp, lockHelpRequest, manualAssign, processHelpQueue, tryAssign } from './queue';
-import { evaluateCandidates } from './engine';
+import { evaluateCandidates, notifyPlanners } from './engine';
 import { decideProposal } from './reschedule';
+import { requestProlongedSupport, requestTransfer } from './approvals';
 import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 // ─────────────────────────── Acesso ───────────────────────────
@@ -249,7 +252,7 @@ export async function helpRoutes(app: FastifyInstance) {
               summary: `${helpRequestCode(open.number)} passou a urgente: ${input.justification}`,
             });
             await helpDomainEvent(tx, actor, EVENT_TYPES.HELP_REQUESTED, u);
-            await notifyManagers(
+            await notifyPlanners(
               tx,
               actor,
               'AJUDA_SOLICITADA',
@@ -309,7 +312,7 @@ export async function helpRoutes(app: FastifyInstance) {
           },
         ]);
         if (created.urgent) {
-          await notifyManagers(
+          await notifyPlanners(
             tx,
             actor,
             'AJUDA_SOLICITADA',
@@ -328,6 +331,35 @@ export async function helpRoutes(app: FastifyInstance) {
   );
 
   /** Meus pedidos (abertos e os encerrados de hoje). */
+  /** Simplificação Fase 7: apoio prolongado — vai ao gestor (aprovar/recusar), nunca à fila. */
+  app.post(
+    '/api/v1/help-requests/prolonged',
+    { config: { access: REQUEST, idempotent: true } },
+    async (request, reply) => {
+      const input = prolongedSupportSchema.parse(request.body);
+      const actor = actorFrom(request);
+      const id = await prisma.$transaction((tx) =>
+        requestProlongedSupport(tx, actor, request.auth!.userId, input),
+      );
+      return reply.status(201).send((await loadHelp(prisma, id, true)).dto);
+    },
+  );
+
+  /** Simplificação Fase 7: o responsável pede a transferência da própria tarefa (gestor aprova). */
+  app.post(
+    '/api/v1/production-tasks/:id/transfer-request',
+    { config: { access: EXECUTE, idempotent: true } },
+    async (request, reply) => {
+      const { id } = idParams.parse(request.params);
+      const input = transferRequestSchema.parse(request.body ?? {});
+      const actor = actorFrom(request);
+      const p = await prisma.$transaction((tx) =>
+        requestTransfer(tx, actor, request.auth!.userId, id, input),
+      );
+      return reply.status(201).send({ id: p.id, code: proposalCode(p.number), status: p.status });
+    },
+  );
+
   app.get('/api/v1/help-requests/mine', { config: { access: MINE } }, async (request) => {
     // `updatedAt` é gravado pelo relógio do servidor: compara com o início do dia real.
     const { timezone } = await company(prisma);

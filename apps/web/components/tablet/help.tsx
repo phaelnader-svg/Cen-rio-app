@@ -109,7 +109,7 @@ export function HelpRequestCard({ r, compact }: { r: HelpRequestDto; compact?: b
 export function HelpPanel({ t }: { t: ProductionTaskDto }) {
   const q = useMyHelp();
   const online = useOnline();
-  const [mode, setMode] = useState<'normal' | 'urgent' | null>(null);
+  const [mode, setMode] = useState<'normal' | 'urgent' | 'prolonged' | null>(null);
   const eligible = ['LIBERADA', 'EM_EXECUCAO', 'PAUSADA'].includes(t.status) && !t.supportFor;
   if (!eligible) return null;
   const mine = (q.data ?? []).filter((r) => r.task.id === t.id);
@@ -119,6 +119,8 @@ export function HelpPanel({ t }: { t: ProductionTaskDto }) {
       <h2 className="text-xl font-semibold">Ajuda</h2>
       {open ? (
         <HelpRequestCard r={open} />
+      ) : mode === 'prolonged' ? (
+        <ProlongedForm t={t} onClose={() => setMode(null)} />
       ) : mode ? (
         <HelpForm t={t} urgent={mode === 'urgent'} onClose={() => setMode(null)} />
       ) : (
@@ -140,6 +142,17 @@ export function HelpPanel({ t }: { t: ProductionTaskDto }) {
             onClick={() => setMode('urgent')}
           >
             Preciso de ajuda agora
+          </Button>
+          <Button
+            size="lg"
+            variant="secondary"
+            className="sm:col-span-2"
+            disabled={!online}
+            icon={<Users className="size-5" aria-hidden />}
+            onClick={() => setMode('prolonged')}
+            data-testid="help-prolonged-open"
+          >
+            Pedir apoio prolongado (o gestor aprova)
           </Button>
         </div>
       )}
@@ -378,6 +391,171 @@ export function MyOpenHelp() {
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+const PROLONGED_HOURS = [2, 4, 8, 16, 24];
+
+/**
+ * Simplificação Fase 7: apoio prolongado — um ajudante acompanha o trabalho por mais tempo.
+ * Vai ao gestor, que aprova ou recusa (nada é atribuído antes). Sem valor financeiro.
+ */
+function ProlongedForm({ t, onClose }: { t: ProductionTaskDto; onClose: () => void }) {
+  const online = useOnline();
+  const { m, error, setError } = useSend(onClose);
+  const [key] = useState(newIdempotencyKey);
+  const [hours, setHours] = useState(4);
+  const [why, setWhy] = useState('');
+  const send = () => {
+    if (why.trim().length < 5) return setError('Explique em poucas palavras por que precisa.');
+    m.mutate({
+      run: () =>
+        api('/api/v1/help-requests/prolonged', {
+          method: 'POST',
+          body: { taskId: t.id, estimatedMinutes: hours * 60, justification: why },
+          idempotencyKey: key,
+        }),
+      ok: 'Pedido de apoio prolongado enviado ao gestor.',
+    });
+  };
+  return (
+    <div
+      className="space-y-5 rounded-2xl border border-line bg-surface p-5"
+      data-testid="help-prolonged"
+    >
+      <p className="text-xl font-semibold">Apoio prolongado</p>
+      <p className="text-base text-ink-muted">
+        O gestor decide quem vai apoiar. Até a decisão, nada muda nas tarefas.
+      </p>
+      <div>
+        <p className="mb-2 text-base font-semibold text-ink-soft">Por quanto tempo?</p>
+        <div className="flex flex-wrap gap-2">
+          {PROLONGED_HOURS.map((h) => (
+            <button
+              key={h}
+              type="button"
+              aria-pressed={hours === h}
+              onClick={() => setHours(h)}
+              className={clsx(
+                'min-h-12 min-w-20 rounded-xl border px-4 text-lg font-semibold',
+                hours === h
+                  ? 'border-brand-700 bg-brand-50 text-brand-800'
+                  : 'border-line bg-surface',
+              )}
+            >
+              {h} h
+            </button>
+          ))}
+        </div>
+      </div>
+      <label className="block">
+        <span className="mb-2 block text-base font-semibold text-ink-soft">Por que precisa?</span>
+        <input
+          className="input input-lg"
+          value={why}
+          maxLength={300}
+          onChange={(e) => setWhy(e.target.value)}
+          placeholder="Ex.: sofá de canto, preciso de alguém o dia todo"
+          data-testid="help-prolonged-why"
+        />
+      </label>
+      {error && <Alert tone="danger">{error}</Alert>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Button
+          size="xl"
+          disabled={!online}
+          loading={m.isPending}
+          icon={<Users className="size-6" aria-hidden />}
+          onClick={send}
+          data-testid="help-prolonged-send"
+        >
+          Enviar ao gestor
+        </Button>
+        <Button size="xl" variant="secondary" onClick={onClose} icon={<Undo2 className="size-6" />}>
+          Voltar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Simplificação Fase 7: o responsável pede para transferir uma tarefa que ainda não começou.
+ * O gestor aprova (quem assume) ou recusa; até lá a tarefa continua com quem está.
+ */
+export function TransferPanel({ t, me }: { t: ProductionTaskDto; me: string | null | undefined }) {
+  const online = useOnline();
+  const [open, setOpen] = useState(false);
+  const [why, setWhy] = useState('');
+  const [key, setKey] = useState(newIdempotencyKey);
+  const { m, error, setError } = useSend(() => {
+    setOpen(false);
+    setWhy('');
+    setKey(newIdempotencyKey());
+  });
+  if (!me || t.assignee?.userId !== me) return null;
+  if (!['BLOQUEADA', 'PROGRAMADA', 'LIBERADA'].includes(t.status)) return null;
+  if (!open)
+    return (
+      <Button
+        size="lg"
+        variant="ghost"
+        disabled={!online}
+        onClick={() => setOpen(true)}
+        data-testid="transfer-open"
+      >
+        Pedir transferência desta tarefa
+      </Button>
+    );
+  return (
+    <section
+      className="space-y-3 rounded-2xl border border-line bg-surface p-5"
+      data-testid="transfer-panel"
+    >
+      <p className="text-xl font-semibold">Pedir transferência</p>
+      <p className="text-base text-ink-muted">
+        O gestor escolhe quem assume. Até a decisão, a tarefa continua com você.
+      </p>
+      <input
+        className="input input-lg"
+        value={why}
+        maxLength={300}
+        onChange={(e) => setWhy(e.target.value)}
+        placeholder="Por que precisa transferir?"
+        data-testid="transfer-why"
+      />
+      {error && <Alert tone="danger">{error}</Alert>}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Button
+          size="xl"
+          loading={m.isPending}
+          disabled={!online}
+          onClick={() => {
+            if (why.trim().length < 5) return setError('Explique o motivo em poucas palavras.');
+            m.mutate({
+              run: () =>
+                api(`/api/v1/production-tasks/${t.id}/transfer-request`, {
+                  method: 'POST',
+                  body: { reason: why, version: t.version },
+                  idempotencyKey: key,
+                }),
+              ok: 'Pedido de transferência enviado ao gestor.',
+            });
+          }}
+          data-testid="transfer-send"
+        >
+          Enviar ao gestor
+        </Button>
+        <Button
+          size="xl"
+          variant="secondary"
+          onClick={() => setOpen(false)}
+          icon={<Undo2 className="size-6" />}
+        >
+          Voltar
+        </Button>
+      </div>
     </section>
   );
 }

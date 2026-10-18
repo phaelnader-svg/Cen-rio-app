@@ -1,3 +1,5 @@
+import { formatNumber } from './domain';
+
 /**
  * Fase 7 — presença operacional (não é registro de ponto eletrônico).
  * Serve para organizar a produção: quem chegou, quem está disponível, atrasos operacionais,
@@ -81,6 +83,9 @@ export const ATTENDANCE_ACTIONS = [
   'CHEGADA_TARDIA',
   'ESQUECIMENTO',
   'CORRECAO',
+  'REGISTRAR_SAIDA',
+  'SAIDA_NAO_INFORMADA',
+  'ANULAR_SAIDA',
 ] as const;
 export type AttendanceAction = (typeof ATTENDANCE_ACTIONS)[number];
 export const ATTENDANCE_ACTION_LABEL: Record<AttendanceAction, string> = {
@@ -94,7 +99,25 @@ export const ATTENDANCE_ACTION_LABEL: Record<AttendanceAction, string> = {
   CHEGADA_TARDIA: 'Chegada tardia (informar horário)',
   ESQUECIMENTO: 'Esqueceu de confirmar a chegada',
   CORRECAO: 'Correção administrativa',
+  REGISTRAR_SAIDA: 'Registrar saída esquecida (informar horário)',
+  SAIDA_NAO_INFORMADA: 'Encerrar sem horário de saída (não informado)',
+  ANULAR_SAIDA: 'Desfazer encerramento feito por engano',
 };
+
+/** Simplificação Fase 7: ações que exigem a versão do dia (CAS) — nunca sobre um estado antigo. */
+export const VERSIONED_ACTIONS: readonly AttendanceAction[] = [
+  'REGISTRAR_SAIDA',
+  'SAIDA_NAO_INFORMADA',
+  'ANULAR_SAIDA',
+];
+
+/** Simplificação Fase 7: folga e férias por intervalo (situação planejada, nunca presença). */
+export const LEAVE_KINDS = ['FOLGA', 'FERIAS'] as const;
+export type LeaveKind = (typeof LEAVE_KINDS)[number];
+export const LEAVE_KIND_LABEL: Record<LeaveKind, string> = { FOLGA: 'Folga', FERIAS: 'Férias' };
+export const leaveCode = (n: number) => formatNumber('FL', n);
+/** Maior intervalo aceito numa folga/férias (dias corridos, inclusive). */
+export const LEAVE_MAX_DAYS = 60;
 
 /** Itens que o gestor acompanha (impactos de ausência e pendências de encerramento). */
 export const IMPACT_KINDS = [
@@ -117,9 +140,11 @@ const toMin = (hhmm: string) => {
 /** Classifica a chegada pela hora local (HH:MM) e pela configuração da empresa. */
 export function classifyArrival(
   localTime: string,
-  cfg: { workdayStart: string },
+  cfg: { workdayStart: string; workingDay?: boolean },
   presumedAbsent: boolean,
 ): { kind: ArrivalKind; lateMinutes: number } {
+  // Simplificação Fase 7: em feriado/dia sem expediente não há jornada normal → nunca atraso.
+  if (cfg.workingDay === false) return { kind: 'NO_HORARIO', lateMinutes: 0 };
   const late = Math.max(0, toMin(localTime) - toMin(cfg.workdayStart));
   if (presumedAbsent) return { kind: 'APOS_AUSENCIA_PRESUMIDA', lateMinutes: late };
   return late > 0 ? { kind: 'ATRASO', lateMinutes: late } : { kind: 'NO_HORARIO', lateMinutes: 0 };

@@ -11,7 +11,7 @@ import type { PrismaClient, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import { Errors } from '../../lib/errors';
 import type { ActorContext } from '../../core/types';
-import { clock, notifyManagers } from '../attendance/common';
+import { clock } from '../attendance/common';
 import { notify } from '../notifications/notify';
 import { domainTaskEvent, lockTasks, taskEvent } from '../production/common';
 import {
@@ -21,6 +21,7 @@ import {
   evaluateCandidates,
   helpDomainEvent,
   helpEvent,
+  notifyPlanners,
   planningAction,
   reasonText,
   type HelpRow,
@@ -311,7 +312,7 @@ async function runQueue(prisma: PrismaClient, now: Date) {
             'ATRASO',
           );
       }
-      await notifyManagers(
+      await notifyPlanners(
         tx,
         SYSTEM,
         'AJUDA_EM_ESPERA',

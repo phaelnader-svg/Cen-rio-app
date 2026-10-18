@@ -12,7 +12,12 @@ import {
   type AttendanceSituation,
   type AttendanceTaskRefDto,
   type Availability,
+  type EventAudience,
+  type EventType,
+  type LeaveKind,
+  type MyAttendanceDayDto,
   type NotificationKind,
+  leaveCode,
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { appendEvent } from '../../core/events/append';
@@ -51,6 +56,11 @@ export async function attendanceConfig(db: Tx | PrismaClient, now = clock()) {
   const timezone = c?.timezone ?? 'America/Sao_Paulo';
   const local = localParts(now, timezone);
   const weekday = new Date(`${local.date}T12:00:00Z`).getUTCDay();
+  // Simplificação Fase 7: o calendário da empresa (feriados/dias sem expediente) é a fonte única.
+  const holiday = await db.companyHoliday.findFirst({
+    where: { date: dbDate(local.date), active: true },
+    select: { name: true },
+  });
   const cfg = {
     timezone,
     arrivalWindowStart: c?.arrivalWindowStart ?? '07:00',
@@ -58,7 +68,8 @@ export async function attendanceConfig(db: Tx | PrismaClient, now = clock()) {
     arrivalAlertAt: c?.arrivalAlertAt ?? '09:30',
     workdayEnd: c?.workdayEnd ?? '18:00',
     lateAlertMinutes: c?.lateAlertMinutes ?? 15,
-    workingDay: (c?.workingDays ?? [1, 2, 3, 4, 5]).includes(weekday),
+    workingDay: (c?.workingDays ?? [1, 2, 3, 4, 5]).includes(weekday) && !holiday,
+    holiday: holiday?.name ?? null,
     now: local.time,
     today: local.date,
   } satisfies AttendanceConfigDto;
@@ -67,6 +78,28 @@ export async function attendanceConfig(db: Tx | PrismaClient, now = clock()) {
 export type AttendanceConfig = Awaited<ReturnType<typeof attendanceConfig>>;
 
 export const dbDate = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
+
+/** Feriados ativos a partir de `from` (ISO), para achar o próximo dia com expediente. */
+export async function holidayDates(db: Tx | PrismaClient, from: string) {
+  const rows = await db.companyHoliday.findMany({
+    where: { active: true, date: { gte: dbDate(from) } },
+    select: { date: true },
+  });
+  return new Set(rows.map((r) => r.date.toISOString().slice(0, 10)));
+}
+
+/** Simplificação Fase 7: folga/férias ativa que cobre o dia (interpretação, sem presença criada). */
+export async function leaveOn(db: Tx | PrismaClient, employeeId: string, date: string) {
+  return db.attendanceLeave.findFirst({
+    where: {
+      employeeId,
+      status: 'ATIVA',
+      startDate: { lte: dbDate(date) },
+      endDate: { gte: dbDate(date) },
+    },
+    select: { id: true, number: true, kind: true },
+  });
+}
 export const hhmm = (d: Date, tz: string) => localParts(d, tz).time;
 export const brDate = (iso: string) => iso.split('-').reverse().join('/');
 
@@ -210,12 +243,12 @@ export async function refreshAvailability(
     where: { id: row.id },
     data: { availability: value, availabilityAt: now },
   });
-  await appendEvent(tx, actor, {
+  await attendanceEvent(tx, actor, {
     type: EVENT_TYPES.ATTENDANCE_AVAILABILITY_CHANGED,
-    aggregateType: 'attendance',
     aggregateId: row.id,
+    userId: row.employee.userId,
     payload: { employeeId, date: cfg.today, from: row.availability, to: value },
-    audience: audienceOf(row.employee.userId),
+    self: { date: cfg.today, availability: value },
   });
 }
 
@@ -255,6 +288,11 @@ export async function dayDto(
   const openAlerts = row
     ? await db.attendanceImpact.count({ where: { attendanceId: row.id, resolvedAt: null } })
     : 0;
+  // Sem registro do dia: uma folga/férias planejada define a situação (nada é criado no banco).
+  const leave = row ? null : await leaveOn(db, employee.id, date);
+  const situation =
+    (row?.situation as AttendanceSituation | undefined) ??
+    (leave ? (leave.kind as AttendanceSituation) : null);
   return {
     id: row?.id ?? null,
     date,
@@ -265,10 +303,11 @@ export async function dayDto(
       color: employee.color,
       jobTitle: employee.jobTitle,
     },
-    situation: (row?.situation as AttendanceSituation | undefined) ?? null,
+    situation,
     // Hoje: calculada na hora; outros dias: a última registrada.
-    availability:
-      date === cfg.today
+    availability: leave
+      ? 'AUSENTE'
+      : date === cfg.today
         ? availabilityFrom(row, tasks)
         : ((row?.availability as Availability | undefined) ?? 'NAO_CONFIRMOU'),
     arrivedAt: row?.arrivedAt?.toISOString() ?? null,
@@ -282,8 +321,79 @@ export async function dayDto(
     runningTask: date === cfg.today && running ? toRef(running) : null,
     nextTask: date === cfg.today && next ? toRef(next) : null,
     openAlerts,
+    leave: leave
+      ? { id: leave.id, code: leaveCode(leave.number), kind: leave.kind as LeaveKind }
+      : null,
+    openShift: isOpenShift(row, cfg.today),
+    departureUnrecorded: Boolean(row?.departureUnrecordedAt),
     version: row?.version ?? null,
   };
+}
+
+/** Expediente de um dia anterior com chegada e sem saída (ninguém tocou em "Encerrar"). */
+export const isOpenShift = (
+  row: Pick<
+    AttendanceRow,
+    'arrivedAt' | 'departedAt' | 'departureUnrecordedAt' | 'situation' | 'date'
+  > | null,
+  today: string,
+) =>
+  Boolean(
+    row?.arrivedAt &&
+      !row.departedAt &&
+      !row.departureUnrecordedAt &&
+      row.situation !== 'ENCERRADO' &&
+      dateOnly(row.date)! < today,
+  );
+
+/**
+ * Simplificação Fase 7 (CA7-01): o dia como o próprio funcionário o vê — sem nenhuma avaliação
+ * de pontualidade (minutos, tipo de chegada, saída antecipada, ausência presumida às HH:MM).
+ */
+export const myDayDto = (d: Awaited<ReturnType<typeof dayDto>>): MyAttendanceDayDto => ({
+  id: d.id,
+  date: d.date,
+  situation: d.situation,
+  availability: d.availability,
+  arrivedAt: d.arrivedAt,
+  departedAt: d.departedAt,
+  note: d.note,
+  runningTask: d.runningTask,
+  nextTask: d.nextTask,
+});
+
+/**
+ * Simplificação Fase 7 (CA7-01): evento de presença em duas versões — a completa (com dados
+ * operacionais) só para quem gerencia a presença; o próprio funcionário recebe a versão sem
+ * números nem classificação, só para atualizar a tela.
+ */
+export async function attendanceEvent(
+  tx: Tx,
+  actor: ActorContext,
+  e: {
+    type: EventType;
+    aggregateId: string;
+    userId: string;
+    payload: Record<string, unknown>;
+    /** Campos que o funcionário pode receber (padrão: só o dia). */
+    self?: Record<string, unknown> | null;
+  },
+) {
+  await appendEvent(tx, actor, {
+    type: e.type,
+    aggregateType: 'attendance',
+    aggregateId: e.aggregateId,
+    payload: e.payload as Prisma.InputJsonValue,
+    audience: MANAGERS_AUDIENCE,
+  });
+  if (e.self === null) return;
+  await appendEvent(tx, actor, {
+    type: e.type,
+    aggregateType: 'attendance',
+    aggregateId: e.aggregateId,
+    payload: (e.self ?? { date: e.payload.date }) as Prisma.InputJsonValue,
+    audience: `user:${e.userId}` as EventAudience,
+  });
 }
 
 // ─────────────────────────── Histórico ───────────────────────────
@@ -297,6 +407,7 @@ export const snapshotOf = (row: AttendanceRow | null) =>
         arrivalKind: row.arrivalKind,
         lateMinutes: row.lateMinutes,
         departedAt: row.departedAt?.toISOString() ?? null,
+        departureUnrecorded: Boolean(row.departureUnrecordedAt),
         earlyDeparture: row.earlyDeparture,
         presumedAbsentAt: row.presumedAbsentAt?.toISOString() ?? null,
         note: row.note,
@@ -403,3 +514,19 @@ export async function detectImpacts(
 
 export const situationLabel = (s: string | null) =>
   s ? ATTENDANCE_SITUATION_LABEL[s as AttendanceSituation] : 'Sem registro';
+
+/** Expedientes de dias anteriores com chegada e sem saída (últimos 14 dias). */
+export async function openShifts(db: Tx | PrismaClient, cfg: AttendanceConfig) {
+  const since = new Date(dbDate(cfg.today).getTime() - 14 * 86_400_000);
+  return db.operationalAttendance.findMany({
+    where: {
+      date: { lt: dbDate(cfg.today), gte: since },
+      arrivedAt: { not: null },
+      departedAt: null,
+      departureUnrecordedAt: null,
+      situation: { not: 'ENCERRADO' },
+    },
+    include: { employee: { select: { id: true, displayName: true, userId: true } } },
+    orderBy: [{ date: 'asc' }],
+  });
+}

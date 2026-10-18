@@ -410,11 +410,14 @@ function ProposalCard({ p }: { p: RescheduleProposalDto }) {
           >
             <span className="min-w-0 truncate">Aprovar: {alt?.title ?? 'alternativa'}</span>
           </Button>
-          {alt && alt.actions.some((x) => x.type !== 'INTERRUPT_FOR_HELP') && (
-            <Button variant="secondary" onClick={() => setDialog('adjust')}>
-              Ajustar
-            </Button>
-          )}
+          {alt &&
+            alt.actions.some(
+              (x) => x.type !== 'INTERRUPT_FOR_HELP' && x.type !== 'ASSIGN_PROLONGED_SUPPORT',
+            ) && (
+              <Button variant="secondary" onClick={() => setDialog('adjust')}>
+                Ajustar
+              </Button>
+            )}
           <Button variant="outline-danger" onClick={() => setDialog('reject')}>
             Rejeitar
           </Button>

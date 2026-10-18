@@ -11,14 +11,16 @@ import {
   type CandidateReason,
   type EventType,
   type HelpKind,
+  type NotificationKind,
   type Skill,
 } from '@cenario/shared';
+import { loadUserPermissions } from '../../core/permissions';
 import { immediateAt } from '../../core/clock';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
-import { attendanceConfig, clock, dbDate, team } from '../attendance/common';
+import { attendanceConfig, clock, dbDate, leaveOn, team } from '../attendance/common';
 import { notify } from '../notifications/notify';
 import { domainTaskEvent, taskEvent } from '../production/common';
 import { reviseIfPublishedBy } from '../production/plans';
@@ -34,6 +36,42 @@ export const helpAudience = (...users: (string | null | undefined)[]) =>
   [HELP_AUDIENCE, ...[...new Set(users.filter(Boolean))].map((u) => `user:${u}`)].join(
     '|',
   ) as typeof HELP_AUDIENCE;
+
+/**
+ * Simplificação Fase 7: avisos acionáveis de ajuda e reprogramação vão só a quem pode decidir
+ * (`producao.planejar`: atribuir ajudante, aprovar/recusar propostas) — nunca a quem só gerencia
+ * a presença. Funções personalizadas seguem a mesma regra (permissão efetiva do usuário).
+ */
+export async function planners(db: Tx | PrismaClient) {
+  const users = await db.user.findMany({ where: { active: true }, select: { id: true } });
+  const out: string[] = [];
+  for (const u of users) {
+    if ((await loadUserPermissions(db, u.id)).has('producao.planejar')) out.push(u.id);
+  }
+  return out;
+}
+
+export async function notifyPlanners(
+  tx: Tx,
+  actor: ActorContext,
+  kind: NotificationKind,
+  dedupeKey: string,
+  body: string,
+  taskId: string | null = null,
+) {
+  await notify(
+    tx,
+    actor,
+    (await planners(tx)).map((userId) => ({
+      userId,
+      kind,
+      dedupeKey: `${dedupeKey}:${userId}`,
+      body,
+      taskId,
+      includeActor: true,
+    })),
+  );
+}
 
 /** Espera (min) a partir da qual o gestor é avisado de risco de atraso. */
 export const WAIT_ALERT_MINUTES = { urgent: 5, normal: 20 };
@@ -168,8 +206,14 @@ export async function evaluateCandidates(
     });
     if (!cfg.workingDay && !day?.arrivedAt) reasons.push('AUSENTE');
     else if (!day?.arrivedAt) {
+      // Simplificação Fase 7: folga/férias planejada (sem registro do dia) = ausente.
+      const leave = day ? null : await leaveOn(tx, e.id, cfg.today);
       reasons.push(
-        day?.situation === 'TRABALHO_EXTERNO' ? 'EXTERNO' : day ? 'AUSENTE' : 'NAO_CONFIRMOU',
+        day?.situation === 'TRABALHO_EXTERNO'
+          ? 'EXTERNO'
+          : day || leave
+            ? 'AUSENTE'
+            : 'NAO_CONFIRMOU',
       );
     } else if (day.situation === 'ENCERRADO') reasons.push('ENCERRADO');
     else if (day.situation === 'TRABALHO_EXTERNO') reasons.push('EXTERNO');

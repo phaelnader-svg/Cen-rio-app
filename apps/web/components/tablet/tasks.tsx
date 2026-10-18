@@ -41,6 +41,7 @@ import { PhotoGallery } from '@/components/commercial/photo-gallery';
 import { TaskStatusBadge } from '@/components/production/badges';
 import { TaskHistory, TaskRefs } from '@/components/production/task-history';
 import { useSend } from '@/components/production/use-send';
+import { useMe } from '@/lib/hooks';
 import { qtyText, specText } from '@/components/purchasing/format';
 import { Button } from '@/components/ui/button';
 import { Alert, Spinner } from '@/components/ui/misc';
@@ -49,7 +50,7 @@ import { formatDay } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useMyQueue, useMyTasks, useNotifications, useTask } from '@/lib/production';
 import { useRealtime } from '@/lib/realtime';
-import { AlternativeTasks, HelpPanel, MyOpenHelp, SupportInfo } from './help';
+import { AlternativeTasks, HelpPanel, MyOpenHelp, SupportInfo, TransferPanel } from './help';
 import { IssueInfo, MyOpenIssues, ProblemPanel } from './issues';
 import { PackagingPanel, QualityInfo } from './quality';
 
@@ -529,6 +530,7 @@ export function MyTaskDetail({
   reportUserId?: string | null;
 }) {
   const q = useTask(id);
+  const meQ = useMe();
   const online = useOnline();
   const { m, error } = useSend();
   const [panel, setPanel] = useState<'pause' | 'progress' | 'complete' | null>(null);
@@ -671,6 +673,7 @@ export function MyTaskDetail({
         <PackagingPanel packagingId={t.qualityFor.packagingId} />
       )}
       {canAskHelp && (t.can.start || t.can.progress) && <HelpPanel t={t} />}
+      <TransferPanel t={t} me={meQ.data?.user.id} />
       <AlternativeTasks t={t} onOpen={onOpen} />
       {reportUserId && t.assignee?.userId === reportUserId && !t.issueFor && <ProblemPanel t={t} />}
 

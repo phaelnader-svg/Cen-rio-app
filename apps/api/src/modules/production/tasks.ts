@@ -59,7 +59,12 @@ import {
 } from './common';
 import { announceAssignments, assertWorker, reviseIfPublished } from './plans';
 import { cancelHelpForClosedTask, processHelpQueue } from '../help/queue';
-import { supportCancelled, supportCompleted, supportStarted } from '../help/support';
+import {
+  supportCancelled,
+  supportCompleted,
+  supportReassigned,
+  supportStarted,
+} from '../help/support';
 import { suggestAlternative } from '../help/reschedule';
 import { assertUpholstererRule } from './distribution';
 import {
@@ -373,6 +378,15 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           input.assigneeUserId !== undefined ? input.assigneeUserId : t.assigneeUserId,
       });
       const updated = await tx.productionTask.update({ where: { id }, data });
+      // Simplificação Fase 7: trocar o executor do apoio troca o ajudante do pedido junto.
+      if (t.supportForTaskId && updated.assigneeUserId !== t.assigneeUserId)
+        await supportReassigned(
+          tx,
+          actor,
+          id,
+          updated.assigneeUserId,
+          input.reason ?? 'Responsável alterado no planejamento.',
+        );
       if (t.status !== 'RASCUNHO') {
         const changes: Record<string, { from: unknown; to: unknown }> = {};
         for (const k of [

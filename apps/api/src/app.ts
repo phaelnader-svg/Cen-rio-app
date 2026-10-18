@@ -31,7 +31,7 @@ import { productionQueueRoutes } from './modules/production/queue';
 import { productionDistributionRoutes } from './modules/production/distribution';
 import { preplanningRoutes } from './modules/production/pre-planning';
 import { notificationRoutes } from './modules/notifications/routes';
-import { detectAbsences } from './modules/attendance/absence';
+import { detectAbsences, detectOpenShifts } from './modules/attendance/absence';
 import { attendanceRoutes } from './modules/attendance/routes';
 import { helpRoutes } from './modules/help/routes';
 import { issueRoutes } from './modules/issues/routes';
@@ -281,9 +281,12 @@ export async function buildApp(options: BuildOptions): Promise<App> {
         // Fase 7: ausência presumida após o limite configurado (idempotente).
         absenceTimer = setInterval(
           () =>
-            void detectAbsences(prisma).catch((err: unknown) =>
-              app.log.warn({ err }, 'Falha ao verificar presença da equipe'),
-            ),
+            void detectAbsences(prisma)
+              // Simplificação Fase 7: expediente esquecido vira alerta (nunca saída inventada).
+              .then(() => detectOpenShifts(prisma))
+              .catch((err: unknown) =>
+                app.log.warn({ err }, 'Falha ao verificar presença da equipe'),
+              ),
           60_000,
         );
         absenceTimer.unref();

@@ -19,6 +19,14 @@ export const PRODUCTION_KEYS = [
   'my-tasks',
   'os-production',
   'service-order',
+  // Simplificação Fase 7 — presença (expedientes, folgas/férias, calendário)
+  'attendance-me',
+  'attendance-team',
+  'attendance-impacts',
+  'attendance-history',
+  'attendance-open-shifts',
+  'attendance-leaves',
+  'attendance-holidays',
   // Fase 8 — ajuda e reprogramação
   'my-help',
   'help-requests',

@@ -26,6 +26,13 @@ import { useAttendanceHistory, useAttendanceImpacts, useTeamAttendance } from '@
 import { formatDay, todayIso } from '@/lib/commercial';
 import { formatDateTime, formatHourMinute } from '@/lib/format';
 import { useCan, useMe } from '@/lib/hooks';
+import { HolidaysSection, LeavesSection, OpenShiftsSection } from './calendar-panel';
+
+/** O que o diálogo de registro precisa do dia (do quadro ou de um expediente aberto). */
+type ActingDay = Pick<AttendanceDayDto, 'situation' | 'version'> & {
+  employee: { id: string; displayName: string };
+  date?: string;
+};
 
 /**
  * Presença da equipe (Fase 7): situação, chegada, atraso operacional, tarefa atual e
@@ -41,7 +48,7 @@ export function TeamAttendancePage() {
   const q = useTeamAttendance(picked ?? undefined, employeeId || undefined);
   const date = picked ?? q.data?.date ?? today;
   const impacts = useAttendanceImpacts(date, employeeId || undefined);
-  const [acting, setActing] = useState<AttendanceDayDto | null>(null);
+  const [acting, setActing] = useState<ActingDay | null>(null);
   const [historyOf, setHistoryOf] = useState<AttendanceDayDto | null>(null);
   const manage = can('presenca.gerenciar');
   const allMembers = useTeamAttendance(picked ?? undefined);
@@ -83,6 +90,18 @@ export function TeamAttendancePage() {
           </p>
         )}
       </Card>
+
+      <OpenShiftsSection
+        manage={manage}
+        onResolve={(o) =>
+          setActing({
+            employee: o.employee,
+            situation: 'PRESENTE',
+            version: o.version,
+            date: o.date,
+          })
+        }
+      />
 
       {q.data && (
         <ul className="mb-6 flex flex-wrap gap-2" aria-label="Resumo da equipe">
@@ -148,7 +167,7 @@ export function TeamAttendancePage() {
                         !['PRESENTE', 'ENCERRADO', 'AUSENCIA_PRESUMIDA'].includes(d.situation) && (
                           <span className="mt-1 block text-xs text-ink-muted">
                             {ATTENDANCE_SITUATION_LABEL[d.situation]}
-                            {d.note ? ` — ${d.note}` : ''}
+                            {d.leave ? ` (${d.leave.code})` : d.note ? ` — ${d.note}` : ''}
                           </span>
                         )}
                     </td>
@@ -191,6 +210,10 @@ export function TeamAttendancePage() {
                             <span className="block text-xs text-warn-600">Saída antecipada</span>
                           )}
                         </>
+                      ) : d.departureUnrecorded ? (
+                        <span className="text-xs text-ink-muted">Saída não informada</span>
+                      ) : d.openShift ? (
+                        <span className="text-xs font-semibold text-warn-600">Sem saída</span>
                       ) : (
                         <span className="text-ink-muted">—</span>
                       )}
@@ -249,7 +272,15 @@ export function TeamAttendancePage() {
         </p>
       </Section>
 
-      {acting && <ActionDialog day={acting} date={date} onClose={() => setActing(null)} />}
+      <LeavesSection
+        manage={manage}
+        employees={(allMembers.data?.days ?? []).map((d) => d.employee)}
+      />
+      <HolidaysSection manage={manage} />
+
+      {acting && (
+        <ActionDialog day={acting} date={acting.date ?? date} onClose={() => setActing(null)} />
+      )}
       {historyOf && <HistoryDialog day={historyOf} onClose={() => setHistoryOf(null)} />}
     </>
   );
@@ -354,12 +385,16 @@ function ActionDialog({
   date,
   onClose,
 }: {
-  day: AttendanceDayDto;
+  day: ActingDay;
   date: string;
   onClose: () => void;
 }) {
   const [action, setAction] = useState<AttendanceAction>(
-    day.situation === 'AUSENCIA_PRESUMIDA' ? 'CONFIRMAR_AUSENCIA' : 'CORRECAO',
+    day.situation === 'AUSENCIA_PRESUMIDA'
+      ? 'CONFIRMAR_AUSENCIA'
+      : day.date
+        ? 'REGISTRAR_SAIDA'
+        : 'CORRECAO',
   );
   const [reason, setReason] = useState('');
   const [arrivalTime, setArrivalTime] = useState('');
@@ -367,7 +402,7 @@ function ActionDialog({
   const [externalNote, setExternalNote] = useState('');
   const { m, error } = useSend(onClose);
   const needsArrival = ['CHEGADA_TARDIA', 'ESQUECIMENTO', 'CORRECAO'].includes(action);
-  const needsDeparture = ['SAIDA_ANTECIPADA', 'CORRECAO'].includes(action);
+  const needsDeparture = ['SAIDA_ANTECIPADA', 'CORRECAO', 'REGISTRAR_SAIDA'].includes(action);
   return (
     <Dialog
       open

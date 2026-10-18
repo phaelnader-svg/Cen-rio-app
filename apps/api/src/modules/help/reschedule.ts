@@ -19,7 +19,7 @@ import { audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
-import { attendanceConfig, brDate, clock, dbDate, notifyManagers } from '../attendance/common';
+import { attendanceConfig, brDate, clock, dbDate, holidayDates } from '../attendance/common';
 import { dateOnly } from '../commercial/common';
 import { notify, taskNotice } from '../notifications/notify';
 import {
@@ -32,6 +32,7 @@ import {
 import { assertUpholstererRule, setUpholsterer } from '../production/distribution';
 import { assertWorker, reviseIfPublishedBy } from '../production/plans';
 import { openLaborReviews } from '../finance/labor-review';
+import { supportReassigned } from './support';
 import { loadQueue } from '../production/queue';
 import { immediateAt } from '../../core/clock';
 import {
@@ -42,6 +43,7 @@ import {
   helpDomainEvent,
   helpEvent,
   isImportant,
+  notifyPlanners,
   planningAction,
   type HelpRow,
 } from './engine';
@@ -66,12 +68,13 @@ export const ACTIVITY_SKILL: Record<ProductionActivity, Skill> = {
   EMBALAGEM: 'APOIO_GERAL',
 };
 
-/** Próximo dia útil (ISO) depois de `date`. */
-export function nextWorkingDay(date: string, workingDays: number[]) {
+/** Próximo dia útil (ISO) depois de `date` (Simplificação Fase 7: pula feriados do calendário). */
+export function nextWorkingDay(date: string, workingDays: number[], holidays = new Set<string>()) {
   const d = new Date(`${date}T12:00:00Z`);
-  for (let i = 0; i < 14; i += 1) {
+  for (let i = 0; i < 31; i += 1) {
     d.setUTCDate(d.getUTCDate() + 1);
-    if (workingDays.includes(d.getUTCDay())) return d.toISOString().slice(0, 10);
+    const iso = d.toISOString().slice(0, 10);
+    if (workingDays.includes(d.getUTCDay()) && !holidays.has(iso)) return iso;
   }
   return d.toISOString().slice(0, 10);
 }
@@ -95,6 +98,8 @@ export async function changeTask(
   change: TaskChange,
   reason: string,
   notice: 'REPROGRAMACAO_AUTOMATICA' | 'REPROGRAMACAO_APROVADA',
+  /** Simplificação Fase 7: responsável esperado (CAS) — mudou desde a proposta → reavaliar. */
+  expectedAssigneeUserId?: string | null,
 ) {
   await lockTasks(tx, [taskId]);
   const t = await tx.productionTask.findUniqueOrThrow({ where: { id: taskId } });
@@ -103,6 +108,10 @@ export async function changeTask(
       `${taskCode(t.number)} já começou ou foi encerrada: a proposta precisa ser reavaliada.`,
     );
   }
+  if (expectedAssigneeUserId !== undefined && t.assigneeUserId !== expectedAssigneeUserId)
+    throw Errors.business(
+      `${taskCode(t.number)} mudou de responsável depois da proposta: a proposta precisa ser reavaliada.`,
+    );
   if (change.assigneeUserId) {
     await assertWorker(tx, change.assigneeUserId);
     // R1: nenhum caminho lateral troca o executor da tapeçaria sem passar pela regra do titular.
@@ -112,6 +121,9 @@ export async function changeTask(
     where: { id: taskId },
     data: { ...change, version: { increment: 1 } },
   });
+  // Simplificação Fase 7: tarefa de apoio → o pedido de ajuda acompanha o novo ajudante.
+  if (change.assigneeUserId && change.assigneeUserId !== t.assigneeUserId && t.supportForTaskId)
+    await supportReassigned(tx, actor, taskId, change.assigneeUserId, reason);
   const changes: Record<string, { from: unknown; to: unknown }> = {};
   if (t.assigneeUserId !== updated.assigneeUserId)
     changes.assigneeUserId = { from: t.assigneeUserId, to: updated.assigneeUserId };
@@ -308,6 +320,8 @@ export async function createProposal(
     attendanceId?: string | null;
     helpRequestId?: string | null;
     issueId?: string | null;
+    /** Simplificação Fase 7: quem pediu (tablet); recebe a decisão. */
+    requestedById?: string | null;
   },
 ) {
   const created = await tx.rescheduleProposal.createMany({
@@ -324,6 +338,7 @@ export async function createProposal(
         attendanceId: p.attendanceId ?? null,
         helpRequestId: p.helpRequestId ?? null,
         issueId: p.issueId ?? null,
+        requestedById: p.requestedById ?? null,
         createdAt: clock(),
       },
     ],
@@ -354,7 +369,7 @@ export async function createProposal(
     payload: { id: proposal.id, code, kind: p.kind, critical: p.critical },
     audience: HELP_AUDIENCE,
   });
-  await notifyManagers(
+  await notifyPlanners(
     tx,
     actor,
     'REPROGRAMACAO_PENDENTE',
@@ -575,7 +590,11 @@ export async function analyzeAbsence(
     where: { attendanceId, kind: 'DEPENDENTE_AFETADA' },
     select: { taskId: true },
   });
-  const tomorrow = nextWorkingDay(cfg.today, settings?.workingDays ?? [1, 2, 3, 4, 5]);
+  const tomorrow = nextWorkingDay(
+    cfg.today,
+    settings?.workingDays ?? [1, 2, 3, 4, 5],
+    await holidayDates(tx, cfg.today),
+  );
   const support = remaining.filter((t) => !isPrincipal(t));
   const principal = remaining.filter(isPrincipal);
   const alternatives: ProposalAlternative[] = [];
@@ -740,8 +759,16 @@ async function applyAction(tx: Tx, actor: ActorContext, a: ProposalAction, reaso
         { assigneeUserId: a.toUserId },
         reason,
         'REPROGRAMACAO_APROVADA',
+        a.fromUserId ?? undefined,
       );
       return { action: a, result: r.changes };
+    }
+    // Simplificação Fase 7: apoio prolongado aprovado → vínculo registrado (tarefa de apoio).
+    case 'ASSIGN_PROLONGED_SUPPORT': {
+      if (!a.toUserId || !a.helpRequestId) throw Errors.business('Escolha o ajudante.');
+      const { approveProlongedSupport } = await import('./approvals');
+      await approveProlongedSupport(tx, actor, a.helpRequestId, a.toUserId, reason);
+      return { action: a, result: 'apoio prolongado atribuído' };
     }
     case 'RESCHEDULE': {
       const cfg = await attendanceConfig(tx);
@@ -925,7 +952,18 @@ export async function decideProposal(
       proposalId: id,
       helpRequestId: p.helpRequestId,
     });
-    if (p.helpRequestId) {
+    const prolonged =
+      p.helpRequestId && p.kind === 'APOIO_PROLONGADO'
+        ? await (
+            await import('./approvals')
+          ).refuseProlongedSupport(
+            tx,
+            actor,
+            p.helpRequestId,
+            input.note ?? 'Recusado pelo gestor.',
+          )
+        : null;
+    if (p.helpRequestId && !prolonged) {
       const back = await backToQueue(
         tx,
         actor,
@@ -999,6 +1037,19 @@ export async function decideProposal(
     summary: `${code} ${input.decision === 'APROVAR' ? 'aprovada' : 'rejeitada'}${input.note ? `: ${input.note}` : ''}.`,
   });
   const after = await tx.rescheduleProposal.findUniqueOrThrow({ where: { id } });
+  // Simplificação Fase 7: quem pediu no tablet (transferência, apoio prolongado) recebe a decisão.
+  if (p.requestedById) {
+    const approved = input.decision === 'APROVAR';
+    await notify(tx, actor, [
+      {
+        userId: p.requestedById,
+        kind: 'PEDIDO_DECIDIDO',
+        dedupeKey: `PEDIDO_DECIDIDO:${id}`,
+        body: `Seu pedido de ${p.kind === 'APOIO_PROLONGADO' ? 'apoio prolongado' : 'transferência'} (${code}) foi ${approved ? 'aprovado' : 'recusado'} pelo gestor${input.note ? `: ${input.note}` : '.'}`,
+        taskId: p.affectedTaskIds[0] ?? null,
+      },
+    ]);
+  }
   await appendEvent(tx, actor, {
     type: EVENT_TYPES.RESCHEDULE_DECIDED,
     aggregateType: 'reschedule_proposal',

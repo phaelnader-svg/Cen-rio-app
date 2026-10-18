@@ -938,7 +938,17 @@ describe('Relógio de teste', () => {
         {},
         { 'idempotency-key': idemKey() },
       );
-      expect(arrived.body.day).toMatchObject({ arrivalKind: 'NO_HORARIO', lateMinutes: 0 });
+      expect(arrived.body.day.situation).toBe('PRESENTE');
+      // CA7-01: a classificação da chegada só no painel do gestor.
+      const team = (await admin.get('/api/v1/attendance/team')).body.days as {
+        employee: { displayName: string };
+        arrivalKind: string | null;
+        lateMinutes: number;
+      }[];
+      expect(team.find((d) => d.employee.displayName === 'Ricardo')).toMatchObject({
+        arrivalKind: 'NO_HORARIO',
+        lateMinutes: 0,
+      });
       await set('09:31');
       const check = await admin.post('/api/test/attendance/check', {});
       expect(check.status).toBe(200);

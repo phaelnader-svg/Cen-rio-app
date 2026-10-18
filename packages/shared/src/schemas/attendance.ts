@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ATTENDANCE_ACTIONS } from '../attendance-domain';
+import { ATTENDANCE_ACTIONS, LEAVE_KINDS, VERSIONED_ACTIONS } from '../attendance-domain';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.');
@@ -61,7 +61,71 @@ export const attendanceActionSchema = z
   .refine((v) => v.action !== 'TRABALHO_EXTERNO' || Boolean(v.externalNote), {
     message: 'Descreva a atividade externa.',
     path: ['externalNote'],
+  })
+  .refine((v) => v.action !== 'REGISTRAR_SAIDA' || Boolean(v.departureTime), {
+    message: 'Informe o horário de saída.',
+    path: ['departureTime'],
+  })
+  .refine((v) => !VERSIONED_ACTIONS.includes(v.action) || v.version !== undefined, {
+    message: 'Atualize a tela e tente de novo (versão do dia).',
+    path: ['version'],
   });
 export type AttendanceActionInput = z.input<typeof attendanceActionSchema>;
 
 export const resolveImpactSchema = z.object({ resolution: trimmed(3, 300, 'Encaminhamento') });
+
+// ─────────────────────────── Simplificação Fase 7 ───────────────────────────
+
+/** Folga (um dia ou intervalo) ou férias (data inicial e final), sempre com motivo. */
+export const createLeaveSchema = z
+  .object({
+    employeeId: idSchema,
+    kind: z.enum(LEAVE_KINDS),
+    startDate: dateOnly,
+    endDate: dateOnly,
+    reason: trimmed(3, 300, 'Motivo'),
+  })
+  .refine((v) => v.endDate >= v.startDate, {
+    message: 'A data final não pode ser antes da inicial.',
+    path: ['endDate'],
+  });
+export type CreateLeaveInput = z.input<typeof createLeaveSchema>;
+
+/** Correção do intervalo (o histórico guarda o antes/depois). */
+export const updateLeaveSchema = z
+  .object({
+    startDate: dateOnly,
+    endDate: dateOnly,
+    reason: trimmed(3, 300, 'Motivo da correção'),
+    version: versionSchema,
+  })
+  .refine((v) => v.endDate >= v.startDate, {
+    message: 'A data final não pode ser antes da inicial.',
+    path: ['endDate'],
+  });
+
+export const cancelLeaveSchema = z.object({
+  reason: trimmed(3, 300, 'Motivo do cancelamento'),
+  version: versionSchema,
+});
+
+export const leaveQuerySchema = z.object({
+  employeeId: idSchema.optional(),
+  from: dateOnly.optional(),
+  to: dateOnly.optional(),
+});
+
+/** Feriado ou dia sem expediente da empresa (sem API externa). */
+export const createHolidaySchema = z.object({
+  date: dateOnly,
+  name: trimmed(2, 120, 'Nome'),
+});
+export const updateHolidaySchema = z.object({
+  name: trimmed(2, 120, 'Nome').optional(),
+  active: z.boolean().optional(),
+  version: versionSchema,
+});
+export const holidayQuerySchema = z.object({
+  from: dateOnly.optional(),
+  to: dateOnly.optional(),
+});

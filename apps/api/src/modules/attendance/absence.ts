@@ -1,18 +1,20 @@
 import { EVENT_TYPES, PLANNED_ABSENCES, pastAbsenceLimit } from '@cenario/shared';
 import type { PrismaClient } from '@cenario/db';
 import { audit } from '../../core/audit';
-import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import {
   attendanceConfig,
-  audienceOf,
+  attendanceEvent,
   brDate,
   clock,
   dbDate,
   detectImpacts,
   history,
+  hhmm,
+  leaveOn,
   lockEmployeeDay,
   notifyManagers,
+  openShifts,
   refreshAvailability,
   team,
 } from './common';
@@ -47,6 +49,8 @@ export async function detectAbsences(prisma: PrismaClient, now = clock()) {
       ) {
         return false;
       }
+      // Simplificação Fase 7: folga/férias planejada por intervalo também não gera ausência.
+      if (!before && (await leaveOn(tx, e.id, cfg.today))) return false;
       const row = before
         ? await tx.operationalAttendance.update({
             where: { id: before.id },
@@ -80,25 +84,24 @@ export async function detectAbsences(prisma: PrismaClient, now = clock()) {
         entityId: row.id,
         summary: `${e.displayName}: ausência presumida em ${brDate(cfg.today)} (sem confirmação até ${cfg.arrivalAlertAt}).`,
       });
-      await appendEvent(tx, SYSTEM, {
+      await attendanceEvent(tx, SYSTEM, {
         type: EVENT_TYPES.ATTENDANCE_ABSENCE_SUSPECTED,
-        aggregateType: 'attendance',
         aggregateId: row.id,
+        userId: e.userId,
         payload: { employeeId: e.id, date: cfg.today },
-        audience: audienceOf(e.userId),
       });
       if (impact.own + impact.dependents > 0) {
-        await appendEvent(tx, SYSTEM, {
+        await attendanceEvent(tx, SYSTEM, {
           type: EVENT_TYPES.ATTENDANCE_PRODUCTION_IMPACT_DETECTED,
-          aggregateType: 'attendance',
           aggregateId: row.id,
+          userId: e.userId,
           payload: {
             employeeId: e.id,
             date: cfg.today,
             tasks: impact.own,
             dependents: impact.dependents,
           },
-          audience: audienceOf(e.userId),
+          self: null,
         });
       }
       // Um alerta por pessoa ausente (não um por tarefa).
@@ -121,4 +124,40 @@ export async function detectAbsences(prisma: PrismaClient, now = clock()) {
     if (changed) flagged += 1;
   }
   return flagged;
+}
+
+/**
+ * Simplificação Fase 7: expediente esquecido. Um dia anterior com chegada e sem saída nunca é
+ * encerrado sozinho (nenhum horário é inventado): vira alerta único para quem gerencia a
+ * presença, que registra a saída, encerra sem horário ou corrige. Idempotente.
+ */
+export async function detectOpenShifts(prisma: PrismaClient, now = clock()) {
+  const cfg = await attendanceConfig(prisma, now);
+  let alerted = 0;
+  for (const r of await openShifts(prisma, cfg)) {
+    const fresh = await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`open-shift:${r.id}`}))`;
+      const done = await tx.auditLog.count({
+        where: { action: 'attendance.open_shift_detected', entityId: r.id },
+      });
+      if (done) return false;
+      const date = r.date.toISOString().slice(0, 10);
+      await audit(tx, SYSTEM, {
+        action: 'attendance.open_shift_detected',
+        entityType: 'attendance',
+        entityId: r.id,
+        summary: `${r.employee.displayName}: expediente de ${brDate(date)} sem saída registrada (chegada às ${hhmm(r.arrivedAt!, cfg.timezone)}).`,
+      });
+      await notifyManagers(
+        tx,
+        SYSTEM,
+        'EXPEDIENTE_ABERTO',
+        `EXPEDIENTE_ABERTO:${r.id}`,
+        `${r.employee.displayName}: expediente de ${brDate(date)} sem encerramento (chegada às ${hhmm(r.arrivedAt!, cfg.timezone)}). Registre a saída ou encerre sem horário em Presença.`,
+      );
+      return true;
+    });
+    if (fresh) alerted += 1;
+  }
+  return alerted;
 }

@@ -154,6 +154,14 @@ model User {
   closingConfirmations     WeeklyClosingConfirmation[] @relation("ConfirmationBeneficiary")
   closingConfirmationsByMe WeeklyClosingConfirmation[] @relation("ConfirmationCreatedBy")
 
+  // Simplificação Fase 7: calendário, folgas/férias e propostas pedidas pelo funcionário.
+  holidaysCreated    CompanyHoliday[]       @relation("HolidayCreatedBy")
+  holidaysUpdated    CompanyHoliday[]       @relation("HolidayUpdatedBy")
+  leavesCreated      AttendanceLeave[]      @relation("LeaveCreatedBy")
+  leavesCancelled    AttendanceLeave[]      @relation("LeaveCancelledBy")
+  leaveEvents        AttendanceLeaveEvent[] @relation("LeaveEventActor")
+  proposalsRequested RescheduleProposal[]   @relation("ProposalRequestedBy")
+
   @@map("users")
 }
 
@@ -181,6 +189,7 @@ model Employee {
   leadOf          ServiceOrder[]          @relation("ServiceOrderTechnicalLead")
   attendances     OperationalAttendance[]
   skills          EmployeeSkill[]
+  leaves          AttendanceLeave[]
 
   @@index([active])
   @@map("employees")
@@ -2125,30 +2134,33 @@ enum ArrivalKind {
 /// Presença operacional de um funcionário num dia (organização da produção; NÃO é ponto
 /// eletrônico nem prova de jornada). Um registro por funcionário e data operacional.
 model OperationalAttendance {
-  id                String              @id @default(uuid()) @db.Uuid
-  employeeId        String              @map("employee_id") @db.Uuid
+  id                    String              @id @default(uuid()) @db.Uuid
+  employeeId            String              @map("employee_id") @db.Uuid
   /// Data operacional no fuso da empresa.
-  date              DateTime            @db.Date
-  situation         AttendanceSituation
-  arrivedAt         DateTime?           @map("arrived_at") @db.Timestamptz(3)
-  arrivalKind       ArrivalKind?        @map("arrival_kind")
-  lateMinutes       Int                 @default(0) @map("late_minutes")
+  date                  DateTime            @db.Date
+  situation             AttendanceSituation
+  arrivedAt             DateTime?           @map("arrived_at") @db.Timestamptz(3)
+  arrivalKind           ArrivalKind?        @map("arrival_kind")
+  lateMinutes           Int                 @default(0) @map("late_minutes")
   /// Quem registrou a chegada (o próprio funcionário ou o gestor em correção) e de qual dispositivo.
-  arrivalById       String?             @map("arrival_by_id") @db.Uuid
-  arrivalDeviceId   String?             @map("arrival_device_id") @db.Uuid
-  departedAt        DateTime?           @map("departed_at") @db.Timestamptz(3)
-  departureById     String?             @map("departure_by_id") @db.Uuid
-  departureDeviceId String?             @map("departure_device_id") @db.Uuid
-  earlyDeparture    Boolean             @default(false) @map("early_departure")
-  departureNote     String?             @map("departure_note") @db.VarChar(500)
-  presumedAbsentAt  DateTime?           @map("presumed_absent_at") @db.Timestamptz(3)
+  arrivalById           String?             @map("arrival_by_id") @db.Uuid
+  arrivalDeviceId       String?             @map("arrival_device_id") @db.Uuid
+  departedAt            DateTime?           @map("departed_at") @db.Timestamptz(3)
+  departureById         String?             @map("departure_by_id") @db.Uuid
+  departureDeviceId     String?             @map("departure_device_id") @db.Uuid
+  earlyDeparture        Boolean             @default(false) @map("early_departure")
+  departureNote         String?             @map("departure_note") @db.VarChar(500)
+  presumedAbsentAt      DateTime?           @map("presumed_absent_at") @db.Timestamptz(3)
+  /// Simplificação Fase 7: o gestor encerrou o dia sem horário de saída (ninguém sabe a hora;
+  /// nenhum horário é inventado). O dia continua "presente", sem saída registrada.
+  departureUnrecordedAt DateTime?           @map("departure_unrecorded_at") @db.Timestamptz(3)
   /// Atividade externa ou justificativa (texto livre curto; sem dados médicos).
-  note              String?             @db.VarChar(300)
-  availability      String              @default("NAO_CONFIRMOU") @db.VarChar(30)
-  availabilityAt    DateTime            @default(now()) @map("availability_at") @db.Timestamptz(3)
-  version           Int                 @default(1)
-  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  note                  String?             @db.VarChar(300)
+  availability          String              @default("NAO_CONFIRMOU") @db.VarChar(30)
+  availabilityAt        DateTime            @default(now()) @map("availability_at") @db.Timestamptz(3)
+  version               Int                 @default(1)
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   employee    Employee               @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   arrivalBy   User?                  @relation("AttendanceArrivalBy", fields: [arrivalById], references: [id], onDelete: SetNull)
@@ -2329,10 +2341,13 @@ model RescheduleProposal {
   decidedById           String?        @map("decided_by_id") @db.Uuid
   decidedAt             DateTime?      @map("decided_at") @db.Timestamptz(3)
   decisionNote          String?        @map("decision_note") @db.VarChar(500)
+  /// Simplificação Fase 7: quem pediu (transferência pedida no tablet); vazio = sistema.
+  requestedById         String?        @map("requested_by_id") @db.Uuid
   version               Int            @default(1)
   createdAt             DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  requestedBy User?                  @relation("ProposalRequestedBy", fields: [requestedById], references: [id], onDelete: SetNull)
   attendance  OperationalAttendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
   helpRequest HelpRequest?           @relation(fields: [helpRequestId], references: [id], onDelete: SetNull)
   issue       ProductionIssue?       @relation(fields: [issueId], references: [id], onDelete: SetNull)
@@ -3641,4 +3656,70 @@ model WeeklyClosingConfirmation {
   @@index([beneficiaryUserId, weekStart, createdAt])
   @@index([weekStart])
   @@map("weekly_closing_confirmations")
+}
+
+// ─────────────────────────── Simplificação Fase 7: calendário e folgas/férias ───────────────────────────
+
+/// Feriados e dias sem expediente da empresa (fonte única da presença). Sem API externa.
+model CompanyHoliday {
+  id          String   @id @default(uuid()) @db.Uuid
+  date        DateTime @unique @db.Date
+  name        String   @db.VarChar(120)
+  active      Boolean  @default(true)
+  version     Int      @default(1)
+  createdById String?  @map("created_by_id") @db.Uuid
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy User? @relation("HolidayCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy User? @relation("HolidayUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("company_holidays")
+}
+
+/// Folga ou férias planejada por intervalo. Interpretada dia a dia (não cria presença futura).
+model AttendanceLeave {
+  id            String    @id @default(uuid()) @db.Uuid
+  number        Int       @unique @default(autoincrement())
+  employeeId    String    @map("employee_id") @db.Uuid
+  kind          String    @db.VarChar(10)
+  startDate     DateTime  @map("start_date") @db.Date
+  endDate       DateTime  @map("end_date") @db.Date
+  reason        String    @db.VarChar(300)
+  status        String    @default("ATIVA") @db.VarChar(12)
+  version       Int       @default(1)
+  createdById   String?   @map("created_by_id") @db.Uuid
+  cancelledById String?   @map("cancelled_by_id") @db.Uuid
+  cancelledAt   DateTime? @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason  String?   @map("cancel_reason") @db.VarChar(300)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  employee    Employee               @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  createdBy   User?                  @relation("LeaveCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  cancelledBy User?                  @relation("LeaveCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  events      AttendanceLeaveEvent[]
+
+  @@index([employeeId, startDate])
+  @@index([status, startDate, endDate])
+  @@map("attendance_leaves")
+}
+
+/// Histórico imutável de cada folga/férias (criação, correção, cancelamento).
+model AttendanceLeaveEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  leaveId   String   @map("leave_id") @db.Uuid
+  action    String   @db.VarChar(20)
+  reason    String   @db.VarChar(300)
+  before    Json?
+  after     Json
+  actorId   String?  @map("actor_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  leave AttendanceLeave @relation(fields: [leaveId], references: [id], onDelete: Restrict)
+  actor User?           @relation("LeaveEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([leaveId, createdAt])
+  @@map("attendance_leave_events")
 }

@@ -5,7 +5,10 @@ import type {
   AttendanceDayDto,
   AttendanceHistoryDto,
   AttendanceImpactDto,
+  HolidayDto,
+  LeaveDto,
   MyAttendanceDto,
+  OpenShiftDto,
 } from '@cenario/shared';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api } from './api';
@@ -56,4 +59,24 @@ export const useAttendanceHistory = (employeeId: string | null) =>
         days: (AttendanceDayDto & { history: AttendanceHistoryDto[] })[];
       }>(`/api/v1/attendance/history${qs({ employeeId: employeeId ?? undefined })}`),
     enabled: Boolean(employeeId),
+  });
+
+/** Simplificação Fase 7: expedientes de dias anteriores sem saída (o gestor resolve). */
+export const useOpenShifts = () =>
+  useQuery({
+    queryKey: ['attendance-open-shifts'],
+    queryFn: () => api<OpenShiftDto[]>('/api/v1/attendance/open-shifts'),
+    refetchInterval: 60_000,
+  });
+
+export const useLeaves = (from?: string) =>
+  useQuery({
+    queryKey: ['attendance-leaves', from],
+    queryFn: () => api<LeaveDto[]>(`/api/v1/attendance/leaves${qs({ from })}`),
+  });
+
+export const useHolidays = (from?: string) =>
+  useQuery({
+    queryKey: ['attendance-holidays', from],
+    queryFn: () => api<HolidayDto[]>(`/api/v1/attendance/holidays${qs({ from })}`),
   });

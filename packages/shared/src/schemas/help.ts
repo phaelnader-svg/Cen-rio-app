@@ -29,6 +29,27 @@ export const createHelpRequestSchema = z
   });
 export type CreateHelpRequestInput = z.input<typeof createHelpRequestSchema>;
 
+/**
+ * Simplificação Fase 7: apoio prolongado pedido pelo principal. Vai ao gestor (aprovar/recusar);
+ * o ajudante sugerido é opcional. Sem valor financeiro: apoio nunca gera mão de obra.
+ */
+export const prolongedSupportSchema = z.object({
+  taskId: idSchema,
+  helperUserId: idSchema.optional().nullable(),
+  /** Duração prevista do apoio (min): de 1 h a 5 dias de 8 h. */
+  estimatedMinutes: z.number().int().min(60).max(2400),
+  justification: trimmed(5, 300, 'Motivo'),
+});
+export type ProlongedSupportInput = z.input<typeof prolongedSupportSchema>;
+
+/** Simplificação Fase 7: o responsável pede para transferir a própria tarefa (gestor aprova). */
+export const transferRequestSchema = z.object({
+  toUserId: idSchema.optional().nullable(),
+  reason: trimmed(5, 300, 'Motivo'),
+  version: versionSchema.optional(),
+});
+export type TransferRequestInput = z.input<typeof transferRequestSchema>;
+
 export const cancelHelpRequestSchema = z.object({
   reason: optionalText(300),
   version: versionSchema.optional(),

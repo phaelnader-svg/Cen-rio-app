@@ -81,6 +81,8 @@ const gestorNotices = async (admin: Client) =>
     where: { userId: (await admin.get('/api/auth/me')).body.user.id },
     orderBy: { createdAt: 'asc' },
   });
+/** CA7-01: cada evento de presença tem uma versão do gestor e outra (sem números) do próprio. */
+const MANAGER_VERSION = { NOT: { audience: { startsWith: 'user:' } } };
 const action = (admin: Client, body: Record<string, unknown>) =>
   admin.post('/api/v1/attendance/actions', { date: today(), ...body });
 
@@ -108,11 +110,12 @@ describe('Cheguei', () => {
     setClock('08:30');
     const r = await arrive(ricardo);
     expect(r.status).toBe(200);
-    expect(r.body.day).toMatchObject({
-      situation: 'PRESENTE',
+    expect(r.body.day).toMatchObject({ situation: 'PRESENTE', availability: 'DISPONIVEL' });
+    // CA7-01: a classificação da chegada fica só com o gestor.
+    expect(JSON.stringify(r.body)).not.toMatch(/lateMinutes|arrivalKind/);
+    expect(await teamDay(admin, 'Ricardo')).toMatchObject({
       arrivalKind: 'NO_HORARIO',
       lateMinutes: 0,
-      availability: 'DISPONIVEL',
     });
     expect(r.body.canArrive).toBe(false);
     const row = await db().operationalAttendance.findFirstOrThrow({});
@@ -134,19 +137,23 @@ describe('Cheguei', () => {
     expect(early.status).toBe(422);
     expect(early.body.error.message).toMatch(/07:00/);
     setClock('08:40');
-    expect((await arrive(thiago)).body.day).toMatchObject({
+    await arrive(thiago);
+    expect(await teamDay(admin, 'Thiago')).toMatchObject({
       arrivalKind: 'ATRASO',
       lateMinutes: 10,
     });
     expect(await gestorNotices(admin)).toHaveLength(0); // 10 min < 15 min
     setClock('08:52');
-    expect((await arrive(ricardo)).body.day).toMatchObject({
+    await arrive(ricardo);
+    expect(await teamDay(admin, 'Ricardo')).toMatchObject({
       arrivalKind: 'ATRASO',
       lateMinutes: 22,
     });
     const n = await gestorNotices(admin);
     expect(n.map((x) => x.kind)).toEqual(['ATRASO_OPERACIONAL']);
-    expect(await db().domainEvent.count({ where: { type: 'attendance.late' } })).toBe(2);
+    expect(
+      await db().domainEvent.count({ where: { type: 'attendance.late', ...MANAGER_VERSION } }),
+    ).toBe(2);
   });
 
   it('confirmação duplicada (repetição e toques simultâneos) não cria novo registro', async () => {
@@ -160,7 +167,9 @@ describe('Cheguei', () => {
     expect(again.body.day.arrivedAt).toBe(at('08:20').toISOString());
     expect(await db().operationalAttendance.count()).toBe(1);
     expect(await db().attendanceCorrection.count({ where: { action: 'CHEGADA' } })).toBe(1);
-    expect(await db().domainEvent.count({ where: { type: 'attendance.arrived' } })).toBe(1);
+    expect(
+      await db().domainEvent.count({ where: { type: 'attendance.arrived', ...MANAGER_VERSION } }),
+    ).toBe(1);
   });
 
   it('sessão permanente sem PIN diário; revogação bloqueia o Cheguei', async () => {
@@ -221,11 +230,15 @@ describe('Ausência presumida e impacto na produção', () => {
     const n = await gestorNotices(admin);
     expect(n.filter((x) => x.kind === 'AUSENCIA_PRESUMIDA')).toHaveLength(1);
     expect(n[0]!.body).toMatch(/João não confirmou chegada até 09:30/);
-    expect(await db().domainEvent.count({ where: { type: 'attendance.absence_suspected' } })).toBe(
-      1,
-    );
     expect(
-      await db().domainEvent.count({ where: { type: 'attendance.production_impact_detected' } }),
+      await db().domainEvent.count({
+        where: { type: 'attendance.absence_suspected', ...MANAGER_VERSION },
+      }),
+    ).toBe(1);
+    expect(
+      await db().domainEvent.count({
+        where: { type: 'attendance.production_impact_detected', ...MANAGER_VERSION },
+      }),
     ).toBe(1);
     // Nada foi cancelado ou transferido automaticamente.
     const statusAfter = await db().productionTask.findMany({
@@ -237,8 +250,8 @@ describe('Ausência presumida e impacto na produção', () => {
     const joaoT = await tabletOf(app, admin, 'João', '121212');
     setClock('09:50');
     const late = await arrive(joaoT);
-    expect(late.body.day).toMatchObject({
-      situation: 'PRESENTE',
+    expect(late.body.day).toMatchObject({ situation: 'PRESENTE' });
+    expect(await teamDay(admin, 'João')).toMatchObject({
       arrivalKind: 'APOS_AUSENCIA_PRESUMIDA',
       lateMinutes: 80,
     });
@@ -372,9 +385,11 @@ describe('Ausência presumida e impacto na produção', () => {
         where: { userId: joao.userId, kind: 'AUSENCIA_CONFIRMADA' },
       }),
     ).toBe(1);
-    expect(await db().domainEvent.count({ where: { type: 'attendance.absence_confirmed' } })).toBe(
-      1,
-    );
+    expect(
+      await db().domainEvent.count({
+        where: { type: 'attendance.absence_confirmed', ...MANAGER_VERSION },
+      }),
+    ).toBe(1);
   });
 });
 
@@ -402,11 +417,8 @@ describe('Encerrar expediente', () => {
     // Encerramento normal (sem tarefas) às 18h05.
     setClock('18:05');
     const normal = await depart(thiago, { note: 'Dia tranquilo' });
-    expect(normal.body.day).toMatchObject({
-      situation: 'ENCERRADO',
-      earlyDeparture: false,
-      availability: 'ENCERRADO',
-    });
+    expect(normal.body.day).toMatchObject({ situation: 'ENCERRADO', availability: 'ENCERRADO' });
+    expect((await teamDay(admin, 'Thiago')) as unknown).toMatchObject({ earlyDeparture: false });
     expect((await depart(thiago)).status).toBe(200); // repetição não duplica
     expect(await db().attendanceCorrection.count({ where: { action: 'SAIDA' } })).toBe(1);
 
@@ -451,7 +463,8 @@ describe('Encerrar expediente', () => {
     setClock('16:00');
     const r = await depart(joao);
     expect(r.status).toBe(200);
-    expect(r.body.day).toMatchObject({ situation: 'ENCERRADO', earlyDeparture: true });
+    expect(r.body.day).toMatchObject({ situation: 'ENCERRADO' });
+    expect((await teamDay(admin, 'João')) as unknown).toMatchObject({ earlyDeparture: true });
     const task = await db().productionTask.findUniqueOrThrow({
       where: { id: t('DESMONTAGEM').id },
     });
@@ -585,10 +598,15 @@ describe('Permissões, configuração, tempo real e reconexão', () => {
       (m) => m.kind === 'event' && m.event.type === 'attendance.absence_suspected',
     );
     expect(wMarcio.events('attendance.arrived')).toHaveLength(0);
+    // CA7-01: a versão do próprio funcionário não traz dados de outros nem números.
     expect(
       wMarcio
         .events('attendance.absence_suspected')
-        .every((e: { payload: { employeeId: string } }) => e.payload.employeeId === marcioId),
+        .every(
+          (e: { payload: { employeeId?: string } }) =>
+            !e.payload.employeeId || e.payload.employeeId === marcioId,
+        ),
     ).toBe(true);
+    expect(JSON.stringify(wMarcio.messages)).not.toMatch(/lateMinutes/);
   });
 });

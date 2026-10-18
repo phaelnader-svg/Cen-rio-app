@@ -22,7 +22,7 @@ import { audit } from '../../core/audit';
 import { loadUserPermissions } from '../../core/permissions';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
-import { attendanceConfig, clock, dbDate, team } from '../attendance/common';
+import { attendanceConfig, clock, dbDate, holidayDates, team } from '../attendance/common';
 import { SYSTEM, planningAction, skillsByEmployee } from '../help/engine';
 import { createProposal, nextWorkingDay, obsoleteProposals } from '../help/reschedule';
 import { notify, taskNotice } from '../notifications/notify';
@@ -164,7 +164,11 @@ export async function proposeBlock(tx: Tx, actor: ActorContext, issue: IssueRow)
   if (!relevant) return null;
   const cfg = await attendanceConfig(tx);
   const settings = await tx.companySettings.findUnique({ where: { id: 1 } });
-  const nextDay = nextWorkingDay(cfg.today, settings?.workingDays ?? [1, 2, 3, 4, 5]);
+  const nextDay = nextWorkingDay(
+    cfg.today,
+    settings?.workingDays ?? [1, 2, 3, 4, 5],
+    await holidayDates(tx, cfg.today),
+  );
   const code = issueCode(issue.number);
   const waitingDeps = impact.dependents.filter((d) => WAITING.includes(d.status));
   const alternatives: ProposalAlternative[] = [
@@ -240,7 +244,11 @@ onTaskBlocked(async (tx, actor, blocked) => {
   if (pending) return;
   const cfg = await attendanceConfig(tx);
   const settings = await tx.companySettings.findUnique({ where: { id: 1 } });
-  const nextDay = nextWorkingDay(cfg.today, settings?.workingDays ?? [1, 2, 3, 4, 5]);
+  const nextDay = nextWorkingDay(
+    cfg.today,
+    settings?.workingDays ?? [1, 2, 3, 4, 5],
+    await holidayDates(tx, cfg.today),
+  );
   const waitingDeps = impact.dependents.filter((d) => WAITING.includes(d.status));
   await createProposal(tx, actor, {
     kind: 'BLOQUEIO',

@@ -1,12 +1,7 @@
 'use client';
 
 import type { AttendanceDayDto, MyAttendanceDto } from '@cenario/shared';
-import {
-  ARRIVAL_KIND_LABEL,
-  ATTENDANCE_SITUATION_LABEL,
-  AVAILABILITY_LABEL,
-  PRIORITY_LABEL,
-} from '@cenario/shared';
+import { ATTENDANCE_SITUATION_LABEL, AVAILABILITY_LABEL, PRIORITY_LABEL } from '@cenario/shared';
 import clsx from 'clsx';
 import { CheckCircle2, Hand, Moon, TimerReset } from 'lucide-react';
 import { useState } from 'react';
@@ -68,10 +63,14 @@ export function PresenceCard({ onDepart }: { onDepart: () => void }) {
         <p className="text-sm font-semibold tracking-wide text-brand-700 uppercase">
           Início previsto às {config.workdayStart}
         </p>
+        {config.holiday && (
+          <p className="mt-1 text-base text-ink-soft" data-testid="presence-holiday">
+            Hoje não há expediente normal: {config.holiday}.
+          </p>
+        )}
         {day.situation === 'AUSENCIA_PRESUMIDA' && (
-          <p className="mt-1 text-base text-danger-600">
-            Sua chegada não foi confirmada até {config.arrivalAlertAt}. Se você já está na oficina,
-            toque em Cheguei.
+          <p className="mt-1 text-base text-ink-soft">
+            Se você já está na oficina, toque em Cheguei.
           </p>
         )}
         {day.situation === 'TRABALHO_EXTERNO' && (
@@ -138,12 +137,6 @@ export function PresenceCard({ onDepart }: { onDepart: () => void }) {
           >
             {AVAILABILITY_LABEL[day.availability]}
           </span>
-          {day.arrivalKind && day.arrivalKind !== 'NO_HORARIO' && (
-            <span>
-              {ARRIVAL_KIND_LABEL[day.arrivalKind]}
-              {day.lateMinutes ? ` (${day.lateMinutes} min)` : ''}
-            </span>
-          )}
         </p>
       </div>
       {q.data.canDepart && (

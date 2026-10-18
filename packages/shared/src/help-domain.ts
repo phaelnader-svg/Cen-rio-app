@@ -16,13 +16,19 @@ export const HELP_KINDS = [
   'POSICIONAR',
   'OUTRO',
 ] as const;
-export type HelpKind = (typeof HELP_KINDS)[number];
+/**
+ * Simplificação Fase 7: apoio prolongado — o ajudante passa a apoiar um trabalho por mais tempo.
+ * Nunca é atribuído pela fila automática: nasce encaminhado ao gestor, que aprova ou recusa.
+ */
+export const PROLONGED_SUPPORT = 'APOIO_PROLONGADO' as const;
+export type HelpKind = (typeof HELP_KINDS)[number] | typeof PROLONGED_SUPPORT;
 export const HELP_KIND_LABEL: Record<HelpKind, string> = {
   PARAFUSAR: 'Parafusar estrutura',
   MOVIMENTAR: 'Movimentar sofá',
   AUXILIAR_MONTAGEM: 'Auxiliar montagem',
   POSICIONAR: 'Virar ou posicionar peça',
   OUTRO: 'Outro apoio',
+  APOIO_PROLONGADO: 'Apoio prolongado',
 };
 /** Duração sugerida (min) — ajustável na solicitação. */
 export const HELP_KIND_MINUTES: Record<HelpKind, number> = {
@@ -31,6 +37,7 @@ export const HELP_KIND_MINUTES: Record<HelpKind, number> = {
   AUXILIAR_MONTAGEM: 30,
   POSICIONAR: 10,
   OUTRO: 15,
+  APOIO_PROLONGADO: 240,
 };
 
 /** Competências cadastradas pelo gestor. */
@@ -70,6 +77,7 @@ export const HELP_KIND_SKILL: Record<HelpKind, Skill> = {
   AUXILIAR_MONTAGEM: 'AUXILIAR_MONTAGEM',
   POSICIONAR: 'POSICIONAR',
   OUTRO: 'APOIO_GERAL',
+  APOIO_PROLONGADO: 'APOIO_GERAL',
 };
 /** Competências iniciais por função (seed e migration; depois o gestor ajusta). */
 const HELPER_SKILLS: readonly Skill[] = [
@@ -167,13 +175,22 @@ export function pickCandidate(list: CandidateEvaluation[]): CandidateEvaluation 
 
 // ─────────────────────────── Reprogramação ───────────────────────────
 
-export const PROPOSAL_KINDS = ['AUSENCIA', 'BLOQUEIO', 'AJUDA_URGENTE', 'CONFLITO'] as const;
+export const PROPOSAL_KINDS = [
+  'AUSENCIA',
+  'BLOQUEIO',
+  'AJUDA_URGENTE',
+  'CONFLITO',
+  'TRANSFERENCIA',
+  'APOIO_PROLONGADO',
+] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 export const PROPOSAL_KIND_LABEL: Record<ProposalKind, string> = {
   AUSENCIA: 'Ausência',
   BLOQUEIO: 'Tarefa bloqueada',
   AJUDA_URGENTE: 'Ajuda urgente',
   CONFLITO: 'Conflito de programação',
+  TRANSFERENCIA: 'Transferência de tarefa',
+  APOIO_PROLONGADO: 'Apoio prolongado',
 };
 export const PROPOSAL_STATUSES = [
   'PENDENTE',
@@ -196,6 +213,7 @@ export const PROPOSAL_ACTIONS = [
   'RESCHEDULE',
   'CHANGE_PRINCIPAL',
   'INTERRUPT_FOR_HELP',
+  'ASSIGN_PROLONGED_SUPPORT',
   'KEEP',
 ] as const;
 export type ProposalActionType = (typeof PROPOSAL_ACTIONS)[number];
@@ -203,7 +221,7 @@ export interface ProposalAction {
   type: ProposalActionType;
   taskId: string;
   toUserId?: string | null;
-  /** CHANGE_PRINCIPAL: quem era o principal quando a proposta foi feita (proposta obsoleta se mudou). */
+  /** CHANGE_PRINCIPAL/REASSIGN: quem era o responsável quando a proposta foi feita (proposta obsoleta se mudou). */
   fromUserId?: string | null;
   toDate?: string | null;
   toTime?: string | null;
@@ -232,6 +250,8 @@ export const PLANNING_ACTION_KINDS = [
   'PROPOSTA_OBSOLETA',
   // Fase 9
   'RESOLUCAO_ATRIBUIDA',
+  // Simplificação Fase 7
+  'AJUDANTE_REATRIBUIDO',
 ] as const;
 export type PlanningActionKind = (typeof PLANNING_ACTION_KINDS)[number];
 export const PLANNING_ACTION_LABEL: Record<PlanningActionKind, string> = {
@@ -246,4 +266,5 @@ export const PLANNING_ACTION_LABEL: Record<PlanningActionKind, string> = {
   PROPOSTA_REJEITADA: 'Reprogramação rejeitada',
   PROPOSTA_OBSOLETA: 'Proposta sem efeito',
   RESOLUCAO_ATRIBUIDA: 'Solução de ocorrência delegada',
+  AJUDANTE_REATRIBUIDO: 'Apoio passado para outro ajudante',
 };

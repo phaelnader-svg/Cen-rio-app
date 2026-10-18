@@ -1,7 +1,7 @@
 import { testClockSchema } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
-import { detectAbsences } from '../attendance/absence';
+import { detectAbsences, detectOpenShifts } from '../attendance/absence';
 import { clock, setAttendanceClock } from '../attendance/common';
 import { processHelpQueue } from '../help/queue';
 import { processIssueRisks } from '../issues/service';
@@ -39,6 +39,7 @@ export async function testClockRoutes(app: FastifyInstance) {
   /** Executa já a verificação de ausência e a fila (sem esperar os timers). */
   app.post('/api/test/attendance/check', { config: { access: ACCESS } }, async () => ({
     flagged: await detectAbsences(prisma),
+    openShifts: await detectOpenShifts(prisma),
     assigned: await processHelpQueue(prisma),
     issueRisks: await processIssueRisks(prisma),
     // O relógio de teste também vale para a liberação por horário (planos LEGADO).

@@ -1,10 +1,11 @@
 import { EVENT_TYPES, HELP_KIND_LABEL, helpRequestCode, type HelpKind } from '@cenario/shared';
 import type { Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
+import { Errors } from '../../lib/errors';
 import type { ActorContext } from '../../core/types';
 import { clock } from '../attendance/common';
 import { notify } from '../notifications/notify';
-import { helpDomainEvent, helpEvent } from './engine';
+import { helpDomainEvent, helpEvent, planningAction } from './engine';
 import { lockHelpRequest } from './queue';
 
 /**
@@ -106,4 +107,63 @@ export async function supportCancelled(
       taskId: req.taskId,
     },
   ]);
+}
+
+/**
+ * Simplificação Fase 7: a tarefa de apoio mudou de executor (reprogramação aprovada, ausência,
+ * transferência ou troca manual no planejamento). O pedido de ajuda acompanha na MESMA transação:
+ * nunca fica Task.assignee = B com HelpRequest.helperUserId = A. Chamar depois de travar a tarefa.
+ */
+export async function supportReassigned(
+  tx: Tx,
+  actor: ActorContext,
+  supportTaskId: string,
+  toUserId: string | null,
+  reason: string,
+) {
+  const req = await requestOf(tx, supportTaskId);
+  if (!req || !['ATRIBUIDA', 'EM_EXECUCAO'].includes(req.status)) return null;
+  if (req.helperUserId === toUserId) return req;
+  if (!toUserId)
+    throw Errors.business(
+      `${helpRequestCode(req.number)} está ativo: o apoio precisa de um ajudante (cancele o pedido para retirá-lo).`,
+    );
+  if (toUserId === req.requesterUserId)
+    throw Errors.business('Quem pediu a ajuda não pode ser o próprio ajudante.');
+  const [from, to] = await Promise.all([
+    req.helperUserId ? tx.user.findUnique({ where: { id: req.helperUserId } }) : null,
+    tx.user.findUniqueOrThrow({ where: { id: toUserId } }),
+  ]);
+  const u = await tx.helpRequest.update({
+    where: { id: req.id },
+    data: { helperUserId: toUserId, version: { increment: 1 } },
+  });
+  const note = `Apoio passou de ${from?.displayName ?? 'sem ajudante'} para ${to.displayName}: ${reason}`;
+  await helpEvent(tx, actor, req, { kind: 'AJUDANTE_ALTERADO', note });
+  await planningAction(tx, actor, {
+    kind: 'AJUDANTE_REATRIBUIDO',
+    automatic: actor.userId === null,
+    reason: `${helpRequestCode(req.number)}: ${note}`,
+    taskId: supportTaskId,
+    helpRequestId: req.id,
+    before: { helperUserId: req.helperUserId },
+    after: { helperUserId: toUserId },
+  });
+  await audit(tx, actor, {
+    action: 'help.helper_changed',
+    entityType: 'help_request',
+    entityId: req.id,
+    summary: `${helpRequestCode(req.number)}: ${note}`.slice(0, 300),
+  });
+  await helpDomainEvent(tx, actor, EVENT_TYPES.HELP_ASSIGNED, u);
+  await notify(tx, actor, [
+    {
+      userId: req.requesterUserId,
+      kind: 'AJUDA_ATRIBUIDA',
+      dedupeKey: `AJUDA_ATRIBUIDA:${req.id}:${toUserId}`,
+      body: `${to.displayName} vai ajudar agora (${HELP_KIND_LABEL[req.kind as HelpKind]}, ${helpRequestCode(req.number)}).`,
+      taskId: req.taskId,
+    },
+  ]);
+  return u;
 }

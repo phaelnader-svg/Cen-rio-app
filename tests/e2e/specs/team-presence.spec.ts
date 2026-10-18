@@ -200,11 +200,11 @@ test.describe.serial('Fase 7 — presença operacional', () => {
 
       // 5. 9h50 — João chega depois da ausência presumida: situação atualizada, impactos encaminhados.
       await setClock('09:50');
-      await expect(jt.getByTestId('presence-card')).toContainText('não foi confirmada');
+      // CA7-01 (Simplificação Fase 7): o tablet não avalia pontualidade — texto neutro.
+      await expect(jt.getByTestId('presence-card')).toContainText('toque em Cheguei');
       await jt.getByTestId('arrive-button').click();
-      await expect(jt.getByTestId('presence-card')).toContainText(
-        'Chegada após ausência presumida',
-      );
+      await expect(jt.getByTestId('presence-status')).toContainText('Presente desde');
+      await expect(jt.getByTestId('presence-card')).not.toContainText(/Chegada após|Atraso|min\b/);
       await expect(row('João')).toContainText('Chegada após ausência presumida');
       await expect(row('João')).toContainText('09:50');
       await expect(impacts.getByTestId('impact-DEPENDENTE_AFETADA').first()).toContainText(
