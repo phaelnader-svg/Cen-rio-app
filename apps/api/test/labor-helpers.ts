@@ -259,3 +259,42 @@ export const moneyKeys = (v: unknown): string[] => {
   walk(v);
   return out;
 };
+
+/**
+ * D13 (R2): antes de pagar, o gestor libera por exceção administrativa o que está devido na
+ * semana para cada beneficiário (ou só `userIds`). Já coberto/sem itens → nada a fazer.
+ */
+export async function allowAll(admin: Client, weekStart: string, userIds?: string[]) {
+  const body = (await admin.get(F(`/weekly-closings/${weekStart}`))).body as {
+    rows: { beneficiary: { userId: string | null }; confirmation: { state: string } | null }[];
+  };
+  const todo = new Set<string>();
+  for (const r of body.rows ?? []) {
+    const id = r.beneficiary.userId;
+    if (!id || (userIds && !userIds.includes(id))) continue;
+    const st = r.confirmation?.state;
+    if (st === 'SEM_CONFIRMACAO' || st === 'DESATUALIZADA') todo.add(id);
+  }
+  for (const id of todo) await allowWeek(admin, id, weekStart);
+}
+
+/**
+ * D13 (R2): exceção administrativa só para o item que será pago diretamente (mão de obra ou
+ * conta a pagar de logística), na semana do pagamento. Sem permissão ou nada a liberar (ex.:
+ * item em revisão) → nada é criado e o pagamento segue sujeito às mesmas regras.
+ */
+export async function coverItem(c: Client, userId: string, itemId: string, paidAt = today()) {
+  await post(c, F(`/weekly-closings/${closingWeekStart(paidAt)}/exceptions`), {
+    beneficiaryUserId: userId,
+    reason: 'Teste: liberação administrativa',
+    itemIds: [itemId],
+  });
+}
+export async function coverLabor(c: Client, payableId: string, paidAt = today()) {
+  const p = await db().productionPayable.findUniqueOrThrow({ where: { id: payableId } });
+  await coverItem(c, p.professionalUserId, p.id, paidAt);
+}
+export async function coverPayable(c: Client, accountPayableId: string, paidAt = today()) {
+  const cost = await db().logisticsCost.findFirst({ where: { payableId: accountPayableId } });
+  if (cost?.payeeUserId) await coverItem(c, cost.payeeUserId, cost.id, paidAt);
+}

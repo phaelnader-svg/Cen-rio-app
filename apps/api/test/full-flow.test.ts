@@ -39,6 +39,7 @@ import {
   staples,
 } from './purchasing-helpers';
 import { PINS, decideInspection, finish, post, prepareCompany, setClock } from './audit-helpers';
+import { coverLabor } from './labor-helpers';
 
 /**
  * Fase 12 — fluxo completo de produção, ponta a ponta pela API real (sessões reais de painel,
@@ -517,6 +518,7 @@ describe('Fluxo completo de produção (32 passos)', () => {
 
     const mo = (await admin.get(`/api/v1/finance/labor/${moRicardo.id}`)).body;
     expect(mo.status).toBe('LIBERADO');
+    await coverLabor(admin, mo.id);
     ok2(
       await post(admin, `/api/v1/finance/labor/${mo.id}/payments`, {
         amountCents: 80000,

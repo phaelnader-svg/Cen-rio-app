@@ -16,6 +16,7 @@ import {
   today,
   userIdOf,
 } from './production-helpers';
+import { coverLabor } from './labor-helpers';
 
 /**
  * Evolução, Fase 5 — mão de obra dos tapeceiros: valor por peça ligado ao titular, revisão
@@ -200,13 +201,21 @@ async function approveInspection(thiago: Client, itemId: string) {
   if (r.status !== 200) throw new Error(`approve: ${JSON.stringify(r.body)}`);
 }
 
-const pay = (c: Client, id: string, amountCents: number, version: number, key = idemKey()) =>
-  post(
+const pay = async (
+  c: Client,
+  id: string,
+  amountCents: number,
+  version: number,
+  key = idemKey(),
+) => {
+  await coverLabor(c, id);
+  return post(
     c,
     F(`/labor/${id}/payments`),
     { amountCents, paidAt: today(), method: 'PIX', version },
     key,
   );
+};
 const row = (id: string) => db().productionPayable.findUniqueOrThrow({ where: { id } });
 
 // ───────────────────────────────────────────────────────────────────────────

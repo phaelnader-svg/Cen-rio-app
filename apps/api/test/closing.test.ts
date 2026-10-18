@@ -21,6 +21,7 @@ import {
 } from './commercial-helpers';
 import { grant, openServiceOrder } from './measurement-helpers';
 import { day, tabletOf, today, userIdOf } from './production-helpers';
+import { allowAll } from './labor-helpers';
 
 /**
  * Evolução, Fase 7 — fechamento semanal geral (tapeceiros + logística). Dados fictícios.
@@ -279,6 +280,7 @@ describe('Fechamento semanal (CA7-01..03, 06, 09)', () => {
         },
         key,
       );
+    await allowAll(admin, WEEK, [ids.andre]);
     const key = idemKey();
     const a = await pay(60000, key);
     expect(a.status).toBe(201);
@@ -534,6 +536,7 @@ describe('Competência, conferência e correções (CA7-12, 13)', () => {
     // Semana atual: saldo anterior identificável; pagamento parcial nesta semana.
     let cur = rowOf((await admin.get(C())).body, 'Ricardo');
     expect(cur).toMatchObject({ weekDueCents: 0, previousOpenCents: 50000, dueCents: 50000 });
+    await allowAll(admin, WEEK, [ric]);
     await post(admin, F(`/weekly-closings/${WEEK}/payments`), {
       beneficiaryUserId: ric,
       category: 'TAPECARIA',
@@ -610,6 +613,7 @@ describe('Competência, conferência e correções (CA7-12, 13)', () => {
     expect(d).toMatchObject({ status: 'CONFERIDO', version: 3, divergent: false });
     expect(d.totals.dueCents).toBe(815000);
     // Pagamento em lote e estorno do lote (cada baixa estornada na obrigação original).
+    await allowAll(admin, WEEK, [ids.ricardo]);
     const pay = await post(admin, F(`/weekly-closings/${WEEK}/payments`), {
       beneficiaryUserId: ids.ricardo,
       category: 'TAPECARIA',
@@ -692,6 +696,7 @@ describe('Segurança (CA7-14)', () => {
     expect(String(csv.headers['content-type'])).toContain('text/csv');
     expect(csv.headers['cache-control']).toBe('no-store');
     // Pagamento do gestor: tablets não recebem nada pelo tempo real.
+    await allowAll(admin, WEEK, [ids.andre]);
     expect((await post(admin, F(`/weekly-closings/${WEEK}/payments`), payBody)).status).toBe(201);
     await new Promise((r) => setTimeout(r, 400));
     for (const ws of [wsR, wsA])

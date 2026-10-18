@@ -7,6 +7,7 @@ import { WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from 
 import { createCustomer, createOrder, receiptBody } from './commercial-helpers';
 import { openServiceOrder } from './measurement-helpers';
 import { act, addOs, createPlan, publish, tabletOf, today, userIdOf } from './production-helpers';
+import { allowAll } from './labor-helpers';
 
 /**
  * Evolução, Fase 8 — cenários integrados obrigatórios (1–10) e financeiro ponta a ponta, num
@@ -472,6 +473,7 @@ describe.sequential('Cenários integrados da Evolução (Fase 8)', () => {
       method: 'PIX',
       reference: 'INTEGRADO-1',
     };
+    await allowAll(admin, week, [ids['Ricardo']!]);
     const p1 = await post(admin, `${C}/payments`, pixBody, key);
     expect(p1.status, JSON.stringify(p1.body)).toBe(201);
     const p2 = await post(admin, `${C}/payments`, pixBody, key);

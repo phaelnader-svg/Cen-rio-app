@@ -27,6 +27,7 @@ import {
   receive,
   staples,
 } from './purchasing-helpers';
+import { coverLabor, coverPayable } from './labor-helpers';
 
 /**
  * Fase 11 — financeiro operacional, custos por OS, pagamentos por produção e indicadores.
@@ -575,6 +576,7 @@ describe('Mão de obra por produção', () => {
     mo = (await s.admin.get(F(`/labor/${created.body.id}`))).body;
     expect(mo).toMatchObject({ status: 'LIBERADO', eligible: true });
     expect(mo.eligibleAt).not.toBeNull();
+    await coverLabor(s.admin, mo.id);
     const paid = await post(s.admin, F(`/labor/${mo.id}/payments`), {
       amountCents: 80000,
       paidAt: today(),
@@ -628,6 +630,7 @@ describe('Mão de obra por produção', () => {
     await finish(s.tablets.Ricardo!, s.sofaTask.id);
     let cur = (await s.admin.get(F(`/labor/${mo.id}`))).body;
     expect(cur.status).toBe('LIBERADO');
+    await coverLabor(s.admin, mo.id);
     const part = await post(manager, F(`/labor/${mo.id}/payments`), {
       amountCents: 60000,
       paidAt: today(),
@@ -660,6 +663,7 @@ describe('Mão de obra por produção', () => {
     const cur = (await s.admin.get(F(`/labor/${mo.id}`))).body;
     const key = idemKey();
     const body = { amountCents: 80000, paidAt: today(), method: 'PIX', version: cur.version };
+    await coverLabor(s.admin, mo.id);
     const a = await post(s.admin, F(`/labor/${mo.id}/payments`), body, key);
     const b = await post(s.admin, F(`/labor/${mo.id}/payments`), body, key);
     expect(a.status).toBe(200);
@@ -743,6 +747,7 @@ describe('Logística, equipe fixa e despesas', () => {
     });
     expect((await result(admin, so.id)).actual.logisticsCents).toBe(12000);
     // Pagamento registrado (sem transferência) e comprovante opcional.
+    await coverPayable(admin, payable.id);
     const paid = await post(admin, F(`/payables/${payable.id}/payments`), {
       amountCents: 12000,
       paidAt: today(),

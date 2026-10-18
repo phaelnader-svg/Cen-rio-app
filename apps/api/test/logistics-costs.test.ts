@@ -30,6 +30,7 @@ import {
   today,
   userIdOf,
 } from './production-helpers';
+import { coverPayable } from './labor-helpers';
 
 /**
  * Evolução, Fase 6 — custos de retirada e entrega. Dados fictícios; valores em centavos.
@@ -582,6 +583,7 @@ describe('Rateio e OS (CA6-09, 10)', () => {
     const c = await costOf(pickup.id);
     expect(c.allocationRevision).toBe(0); // pedido ainda sem OS: rateio pendente
     const p = (await admin.get(F(`/payables/${c.payableId}`))).body;
+    await coverPayable(admin, p.id);
     await post(admin, F(`/payables/${p.id}/payments`), {
       amountCents: 9000,
       paidAt: today(),
@@ -628,6 +630,7 @@ describe('Pagamento, ajuste e estorno (CA6-11, 12)', () => {
     let p = (await admin.get(F(`/payables/${c.payableId}`))).body;
     const key = idemKey();
     const body = { amountCents: 4000, paidAt: today(), method: 'PIX', version: p.version };
+    await coverPayable(admin, p.id);
     const a = await post(admin, F(`/payables/${p.id}/payments`), body, key);
     const b = await post(admin, F(`/payables/${p.id}/payments`), body, key);
     expect(a.body).toMatchObject({ status: 'PARCIAL', paidCents: 4000, openCents: 6000 });
@@ -662,6 +665,7 @@ describe('Pagamento, ajuste e estorno (CA6-11, 12)', () => {
     await realize(admin, pickup.id);
     let c = await costOf(pickup.id);
     let p = (await admin.get(F(`/payables/${c.payableId}`))).body;
+    await coverPayable(admin, p.id);
     p = (
       await post(admin, F(`/payables/${p.id}/payments`), {
         amountCents: 10000,
@@ -884,6 +888,7 @@ describe('Recebedor ausente, segurança e semana (C2, CA6-13, CA6-15)', () => {
       data: { dueAt: zonedDateTime('2026-10-20', '10:00', TZ) },
     });
     const pb = (await admin.get(F(`/payables/${b.payableId}`))).body;
+    await coverPayable(admin, pb.id);
     await post(admin, F(`/payables/${pb.id}/payments`), {
       amountCents: 2500,
       paidAt: today(),

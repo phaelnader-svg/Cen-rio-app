@@ -5,6 +5,7 @@ import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, resetDatabase } from './helpers';
 import {
+  allowAll,
   F,
   TZ,
   absenceProposal,
@@ -380,6 +381,7 @@ describe('Ajuste, pagamento e estorno (16–21)', () => {
   it('21. estorno × revisão aberta: recusado (direto e pelo lote) até a revisão ser resolvida', async () => {
     s0 = await scenario(app);
     const mo = await released(s0);
+    await allowAll(s0.admin, WEEK, [s0.ids.ricardo]);
     const lot = await post(s0.admin, C(WEEK, '/payments'), {
       beneficiaryUserId: s0.ids.ricardo,
       category: 'TAPECARIA',
@@ -513,7 +515,7 @@ describe('Semana conferida e escopo da revisão (22–24, 39, 40)', () => {
     );
   });
 
-  it('40. pagamento em lote continua funcionando sem confirmação do profissional (D13 fora)', async () => {
+  it('40. pagamento em lote (D13, R2): sem confirmação recusado; com a semana liberada, paga', async () => {
     const s = await scenario(app);
     const mo = await labor(s.admin, {
       professionalUserId: s.ids.ricardo,
@@ -523,13 +525,19 @@ describe('Semana conferida e escopo da revisão (22–24, 39, 40)', () => {
     });
     await finish(s.tablets.Ricardo!, s.sofaTask.id);
     expect((await s.admin.get(C(WEEK))).body.status).toBe('ABERTO');
-    const lot = await post(s.admin, C(WEEK, '/payments'), {
+    const body = {
       beneficiaryUserId: s.ids.ricardo,
       category: 'TAPECARIA',
       amountCents: 80000,
       paidAt: today(),
       method: 'PIX',
-    });
+    };
+    const refused = await post(s.admin, C(WEEK, '/payments'), body);
+    expect(refused.status).toBe(422);
+    expect(refused.body.error.message).toMatch(/não foi confirmada/);
+    expect(await row(mo.id)).toMatchObject({ paidCents: 0 });
+    await allowAll(s.admin, WEEK, [s.ids.ricardo]);
+    const lot = await post(s.admin, C(WEEK, '/payments'), body);
     expect(lot.status, JSON.stringify(lot.body)).toBe(201);
     expect(await row(mo.id)).toMatchObject({ status: 'PAGO', paidCents: 80000 });
   });
