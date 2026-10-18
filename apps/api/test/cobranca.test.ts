@@ -490,6 +490,12 @@ describe('Saldo na entrega (AM-4/AM-5)', () => {
       amountCents: 200000,
     });
     // 26. Concluída sem pagamento: vence; Central "entregue com saldo" (crítico); não bloqueia nada.
+    // Conclusão como no fluxo real: cada peça registrada como entregue (Fase 8: o gatilho ENTREGA
+    // exige peça efetivamente entregue numa entrega concluída).
+    await db().deliveryItem.updateMany({
+      where: { deliveryId: scheduled.id },
+      data: { status: 'ENTREGUE', deliveredAt: new Date() },
+    });
     await db().delivery.update({
       where: { id: scheduled.id },
       data: { status: 'CONCLUIDA', completedAt: new Date() },
@@ -1232,5 +1238,184 @@ describe('Receita × caixa, quitação antecipada e fechamento semanal', () => {
     const closing = await admin.get(F(`/weekly-closings/${monday}`));
     expect(closing.status).toBe(200);
     expect(JSON.stringify(closing.body)).not.toMatch(/RC-\d|customer_receivable/);
+  });
+});
+
+/**
+ * Fase 8 (decisão do proprietário): o gatilho ENTREGA só considera peça EFETIVAMENTE entregue
+ * (registrada como entregue/entregue com divergência) numa entrega CONCLUÍDA. Associação
+ * histórica, "não entregue", peça retirada antes da saída e tentativa frustrada não contam.
+ * A entrega parcial REAL continua vencendo o saldo (regra comercial atual, inalterada).
+ */
+describe('Gatilho ENTREGA — só entrega física efetiva (Fase 8)', () => {
+  type Line = { status: 'ENTREGUE' | 'DIVERGENTE' | 'NAO_ENTREGUE' | 'PENDENTE'; active: boolean };
+  /** Entrega com o estado final de cada peça (como a conclusão/edição real deixa). */
+  async function deliveryWith(
+    so: { customerId: string; items: { id: string }[] },
+    status: 'CONCLUIDA' | 'FRUSTRADA' | 'AGENDADA',
+    lines: Line[],
+    responsibleUserId: string,
+  ) {
+    return db().delivery.create({
+      data: {
+        customerId: so.customerId,
+        addressSnapshot: address,
+        scheduledDate: new Date(`${today()}T00:00:00Z`),
+        windowStart: '10:00',
+        team: 'LOGISTICA_TERCEIRIZADA',
+        responsibleUserId,
+        status,
+        completedAt: status === 'CONCLUIDA' ? new Date() : null,
+        items: {
+          create: lines.map((l, n) => ({
+            serviceOrderItemId: so.items[n]!.id,
+            status: l.status,
+            active: l.active,
+            deliveredAt: ['ENTREGUE', 'DIVERGENTE'].includes(l.status) ? new Date() : null,
+          })),
+        },
+      },
+    });
+  }
+  async function setup() {
+    const admin = await loginAdmin(app);
+    const andreId = await logistics(admin);
+    const { orderId, order } = await service(admin);
+    const so = await arriveAndOpen(
+      admin,
+      orderId,
+      order.items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
+    );
+    const [entry, balance] = await recs(admin, orderId);
+    ok(await pay(admin, entry!, 200000));
+    return { admin, andreId, orderId, so, balance: balance! };
+  }
+  const critical = async (admin: Client, receivableId: string) =>
+    ok<{ items: { key: string; category: string; title: string }[] }>(
+      await admin.get('/api/v1/attention'),
+    ).items.find((i) => i.key === `COBRANCA:VENCIDA:${receivableId}`);
+
+  it('A, E. concluída com as peças do pedido "não entregue": não vence e a Central não acusa', async () => {
+    const t = await setup();
+    await deliveryWith(
+      t.so,
+      'CONCLUIDA',
+      [
+        { status: 'NAO_ENTREGUE', active: false },
+        { status: 'NAO_ENTREGUE', active: false },
+      ],
+      t.andreId,
+    );
+    expect(await rec(t.admin, t.balance.id)).toMatchObject({
+      overdue: false,
+      effectiveDueDate: null,
+    });
+    expect(await critical(t.admin, t.balance.id)).toBeUndefined();
+  });
+
+  it('B. peças retiradas da entrega antes da saída: a conclusão da entrega não vence o saldo', async () => {
+    const t = await setup();
+    await deliveryWith(
+      t.so,
+      'CONCLUIDA',
+      [
+        { status: 'PENDENTE', active: false },
+        { status: 'PENDENTE', active: false },
+      ],
+      t.andreId,
+    );
+    expect(await rec(t.admin, t.balance.id)).toMatchObject({
+      overdue: false,
+      effectiveDueDate: null,
+    });
+  });
+
+  it('C, G. tentativa frustrada e tentativa anterior não entregue não fazem a peça parecer entregue', async () => {
+    const t = await setup();
+    // Tentativa 1: concluída sem as peças deste pedido; tentativa 2: frustrada; atual: agendada.
+    await deliveryWith(
+      t.so,
+      'CONCLUIDA',
+      [
+        { status: 'NAO_ENTREGUE', active: false },
+        { status: 'NAO_ENTREGUE', active: false },
+      ],
+      t.andreId,
+    );
+    await deliveryWith(
+      t.so,
+      'FRUSTRADA',
+      [
+        { status: 'PENDENTE', active: false },
+        { status: 'PENDENTE', active: false },
+      ],
+      t.andreId,
+    );
+    await deliveryWith(
+      t.so,
+      'AGENDADA',
+      [
+        { status: 'PENDENTE', active: true },
+        { status: 'PENDENTE', active: true },
+      ],
+      t.andreId,
+    );
+    expect(await rec(t.admin, t.balance.id)).toMatchObject({
+      overdue: false,
+      effectiveDueDate: null,
+    });
+    expect(await critical(t.admin, t.balance.id)).toBeUndefined();
+  });
+
+  it('D, F. entrega parcial REAL (uma peça entregue, outra não): vence pela regra atual e a Central acusa', async () => {
+    const t = await setup();
+    await deliveryWith(
+      t.so,
+      'CONCLUIDA',
+      [
+        { status: 'ENTREGUE', active: true },
+        { status: 'NAO_ENTREGUE', active: false },
+      ],
+      t.andreId,
+    );
+    expect(await rec(t.admin, t.balance.id)).toMatchObject({
+      overdue: true,
+      effectiveDueDate: today(),
+    });
+    expect(await critical(t.admin, t.balance.id)).toMatchObject({
+      category: 'CRITICO',
+      title: expect.stringContaining('ENTREGUE COM SALDO'),
+    });
+    // Entregue com divergência também é entrega física efetiva.
+    const t2 = await setup();
+    await deliveryWith(
+      t2.so,
+      'CONCLUIDA',
+      [
+        { status: 'DIVERGENTE', active: true },
+        { status: 'PENDENTE', active: false },
+      ],
+      t2.andreId,
+    );
+    expect(await rec(t2.admin, t2.balance.id)).toMatchObject({ overdue: true });
+  });
+
+  it('idempotência: consultar de novo não cria cobrança nem muda o vencimento', async () => {
+    const t = await setup();
+    await deliveryWith(
+      t.so,
+      'CONCLUIDA',
+      [
+        { status: 'ENTREGUE', active: true },
+        { status: 'ENTREGUE', active: true },
+      ],
+      t.andreId,
+    );
+    const before = await db().customerReceivable.count({ where: { orderId: t.orderId } });
+    const a = await rec(t.admin, t.balance.id);
+    const b = await rec(t.admin, t.balance.id);
+    expect(a.effectiveDueDate).toBe(b.effectiveDueDate);
+    await critical(t.admin, t.balance.id);
+    expect(await db().customerReceivable.count({ where: { orderId: t.orderId } })).toBe(before);
   });
 });

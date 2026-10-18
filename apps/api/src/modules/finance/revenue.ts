@@ -191,15 +191,20 @@ export async function dueContext(db: Tx | PrismaClient, orderIds: string[]): Pro
       const cur = events.get(p.pickup.orderId)!;
       if (!cur.pickup || d < cur.pickup) cur.pickup = d;
     }
+    // Gatilho ENTREGA (decisão do proprietário, Fase 8): só entrega física EFETIVA — peça do
+    // pedido registrada como entregue (ou entregue com divergência) numa entrega CONCLUÍDA.
+    // "Não entregue", peça retirada antes da saída, tentativa frustrada ou a simples associação
+    // histórica à entrega não contam. A entrega parcial real continua valendo (regra comercial).
+    const effective = {
+      status: { in: ['ENTREGUE', 'DIVERGENTE'] },
+      serviceOrderItem: { serviceOrder: { orderId: { in: ids } } },
+    } satisfies Prisma.DeliveryItemWhereInput;
     const delivered = await db.delivery.findMany({
-      where: {
-        status: 'CONCLUIDA',
-        completedAt: { not: null },
-        items: { some: { serviceOrderItem: { serviceOrder: { orderId: { in: ids } } } } },
-      },
+      where: { status: 'CONCLUIDA', completedAt: { not: null }, items: { some: effective } },
       select: {
         completedAt: true,
         items: {
+          where: effective,
           select: { serviceOrderItem: { select: { serviceOrder: { select: { orderId: true } } } } },
         },
       },

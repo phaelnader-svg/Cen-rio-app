@@ -698,3 +698,39 @@ describe('Aceites — integrações (35–48)', () => {
     expect(notes.map((n) => n.body).join(' ')).not.toMatch(/R\$/);
   });
 });
+
+describe('Concorrência — conclusão × "não entregue" (gatilho ENTREGA)', () => {
+  it('concluir e remarcar como não entregue ao mesmo tempo: uma só vence, estado coerente', async () => {
+    const s = await k.scenario();
+    await k.ready(s, 'sofa');
+    const d = (await k.schedule(s)).body;
+    const andre = await k.andreTablet(s);
+    let v = await k.toDestination(andre, d);
+    v = (
+      await post(andre, `/api/v1/deliveries/${d.id}/items`, {
+        items: [{ serviceOrderItemId: s.sofa.id, status: 'ENTREGUE' }],
+        version: v,
+      })
+    ).body.version;
+    const [done, undo] = await Promise.all([
+      post(andre, `/api/v1/deliveries/${d.id}/complete`, { version: v }),
+      post(andre, `/api/v1/deliveries/${d.id}/items`, {
+        items: [{ serviceOrderItemId: s.sofa.id, status: 'NAO_ENTREGUE', note: 'Cliente recusou' }],
+        version: v,
+      }),
+    ]);
+    expect([done.status, undo.status].every((x) => x < 500)).toBe(true);
+    expect([done.status, undo.status].filter((x) => x === 200)).toHaveLength(1);
+    const row = await db().deliveryItem.findFirstOrThrow({ where: { deliveryId: d.id } });
+    const delivery = await db().delivery.findUniqueOrThrow({ where: { id: d.id } });
+    if (done.status === 200) {
+      expect(delivery.status).toBe('CONCLUIDA');
+      expect(row.status).toBe('ENTREGUE');
+      expect(await k.stage(s.sofa.id)).toBe('ENTREGUE');
+    } else {
+      expect(delivery.status).toBe('NO_DESTINO');
+      expect(row.status).toBe('NAO_ENTREGUE');
+      expect(await k.stage(s.sofa.id)).not.toBe('ENTREGUE');
+    }
+  });
+});
