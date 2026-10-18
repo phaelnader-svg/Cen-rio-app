@@ -130,12 +130,14 @@ export interface ServiceDeadline {
   context: string[];
 }
 
-const MATERIALS_PENDING = new Set([
+/** Prontidão de materiais que ainda segura a OS (mesma regra do motivo MATERIAIS e do Início). */
+export const MATERIALS_PENDING_STATES = [
   'AGUARDANDO_COMPRA',
   'AGUARDANDO_RECEBIMENTO',
   'PARCIALMENTE_DISPONIVEL',
   'COM_DIVERGENCIA',
-]);
+] as const;
+const MATERIALS_PENDING = new Set<string>(MATERIALS_PENDING_STATES);
 const FRUSTRATION_CONTEXT: Record<string, string> = {
   CLIENTE_INDISPONIVEL: 'Cliente indisponível para entrega.',
   ENDERECO_INCORRETO: 'Endereço de entrega incorreto.',

@@ -14,7 +14,7 @@ import { Alert, Avatar, Spinner } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
 import { useMe } from '@/lib/hooks';
 import { RealtimeProvider } from '@/lib/realtime';
-import { NAV, UPCOMING } from './nav';
+import { NAV, NAV_GROUPS, UPCOMING, navGroupOf } from './nav';
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -65,7 +65,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const items = NAV.filter((i) => !i.anyOf || i.anyOf.some((p) => perms.has(p)));
+  const items = NAV.filter((i) => !i.anyOf || i.anyOf.some((p) => perms.has(p)))
+    .map((i, n) => ({ ...i, group: navGroupOf(i.href), n }))
+    .sort((a, b) => NAV_GROUPS.indexOf(a.group) - NAV_GROUPS.indexOf(b.group) || a.n - b.n);
 
   async function logout() {
     try {
@@ -82,15 +84,21 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         <BrandMark />
       </div>
       <ul className="space-y-0.5 px-3">
-        {items.map((item) => {
+        {items.map((item, idx) => {
           // Item ativo: o de prefixo mais longo (ex.: /painel/producao/planejamento).
           const matches = (href: string) =>
             href === '/painel' ? pathname === '/painel' : pathname.startsWith(href);
           const active =
             matches(item.href) &&
             !items.some((o) => o.href.length > item.href.length && matches(o.href));
+          const header = idx === 0 || items[idx - 1]!.group !== item.group;
           return (
             <li key={item.href}>
+              {header && item.group !== 'Início' && (
+                <p className="px-3 pt-4 pb-1 text-xs font-semibold tracking-wide text-ink-muted uppercase">
+                  {item.group}
+                </p>
+              )}
               <Link
                 href={item.href}
                 aria-current={active ? 'page' : undefined}

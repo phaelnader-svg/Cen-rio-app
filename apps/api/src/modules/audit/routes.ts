@@ -10,6 +10,8 @@ const querySchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z\|[0-9a-f-]{36}$/)
     .optional(),
   entityType: z.string().max(60).optional(),
+  /** Fase 10: histórico de UMA entidade (ex.: a OS, o pedido, a entrega). */
+  entityId: z.string().uuid().optional(),
 });
 
 export async function auditRoutes(app: FastifyInstance) {
@@ -24,6 +26,12 @@ export async function auditRoutes(app: FastifyInstance) {
       const rows = await prisma.auditLog.findMany({
         where: {
           ...(q.entityType ? { entityType: q.entityType } : {}),
+          ...(q.entityId ? { entityId: q.entityId } : {}),
+          // Fase 10: valores e motivos financeiros só para quem vê o financeiro (uma função com
+          // auditoria e sem financeiro não lê o que o Financeiro esconde dela).
+          ...(request.auth!.permissions.has('financeiro.ver')
+            ? {}
+            : { NOT: { action: { startsWith: 'finance.' } } }),
           ...(cursorDate && cursorId
             ? {
                 OR: [

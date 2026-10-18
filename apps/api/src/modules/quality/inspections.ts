@@ -762,7 +762,8 @@ export async function assignInspector(
       substituteReason:
         user.id === i.inspectorUserId
           ? i.substituteReason
-          : (input.reason ?? i.substituteReason ?? 'Designado pelo gestor'),
+          : // Fase 10: troca nova = motivo novo (nunca herda o motivo de outra troca).
+            (input.reason ?? 'Designado pelo gestor'),
       version: { increment: 1 },
     },
   });
@@ -778,6 +779,7 @@ export async function assignInspector(
     entityType: 'quality_inspection',
     entityId: id,
     summary: `Inspeção ${code}: inspetor ${user.displayName}.${input.reason ? ` Motivo: ${input.reason}` : ''}`,
+    changes: { from: i.inspectorUserId, to: user.id, reason: input.reason ?? null },
   });
   await inspectionEvent(tx, actor, EVENT_TYPES.INSPECTION_UPDATED, u);
   await notify(tx, actor, [

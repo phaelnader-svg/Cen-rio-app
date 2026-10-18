@@ -42,7 +42,7 @@ import { ApiError, api, errorMessage } from '@/lib/api';
 import { formatDay, useServiceOrder, useServiceOrderRevisions } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
-import { useEmployees } from '@/lib/queries';
+import { useEmployees, useServiceTimeline } from '@/lib/queries';
 import { usePieces } from '@/lib/quality';
 import { CreateMeasurementDialog } from '@/components/measurements/create-dialog';
 import { OsMaterialsOverview } from '@/components/purchasing/os-materials';
@@ -213,12 +213,14 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           },
           { key: 'fotos', label: 'Fotografias' },
           { key: 'historico', label: 'Histórico', count: revisions.data?.length },
+          { key: 'linha-do-tempo', label: 'Linha do tempo' },
           ...(canProduction ? [{ key: 'producao', label: 'Produção' }] : []),
           ...(canQuality ? [{ key: 'qualidade', label: 'Qualidade e entrega' }] : []),
           ...(canLabor ? [{ key: 'mao-de-obra', label: 'Mão de obra' }] : []),
         ]}
       >
         {tab === 'mao-de-obra' && canLabor && <OsLabor serviceOrderId={s.id} />}
+        {tab === 'linha-do-tempo' && <ServiceTimeline serviceOrderId={s.id} />}
         {tab === 'qualidade' && canQuality && <OsQualityDelivery serviceOrderId={s.id} />}
         {tab === 'producao' && canProduction && <OsProduction serviceOrderId={s.id} />}
         {tab === 'resumo' && (
@@ -1178,5 +1180,56 @@ function OsQualityDelivery({ serviceOrderId }: { serviceOrderId: string }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+const TIMELINE_DOMAIN: Record<string, string> = {
+  PEDIDO: 'Pedido',
+  RETIRADA: 'Retirada',
+  RECEBIMENTO: 'Recebimento',
+  OS: 'OS',
+  MEDICAO: 'Medição',
+  PRODUCAO: 'Produção',
+  QUALIDADE: 'Qualidade',
+  ENTREGA: 'Entrega',
+  FINANCEIRO: 'Cobrança',
+  AUDITORIA: 'Registro',
+};
+
+/**
+ * Fase 10 (plano principal): a história do serviço do pedido à cobrança, numa visão só,
+ * montada a partir dos históricos que já existem (nada novo é gravado).
+ */
+function ServiceTimeline({ serviceOrderId }: { serviceOrderId: string }) {
+  const q = useServiceTimeline(serviceOrderId);
+  return (
+    <Section title="Linha do tempo do serviço" bodyClassName="p-0">
+      {q.isPending ? (
+        <Spinner className="p-5" />
+      ) : q.isError ? (
+        <Alert tone="danger" title="Não foi possível carregar a linha do tempo" />
+      ) : !q.data?.entries.length ? (
+        <EmptyState title="Nada registrado ainda" />
+      ) : (
+        <ol className="divide-y divide-line" data-testid="service-timeline">
+          {q.data.truncated && (
+            <li className="px-5 py-2 text-xs text-ink-muted">
+              Mostrando os registros mais recentes.
+            </li>
+          )}
+          {q.data.entries.map((e, n) => (
+            <li key={`${e.at}-${n}`} className="px-5 py-3">
+              <p className="text-sm font-medium">
+                <Badge tone="neutral">{TIMELINE_DOMAIN[e.domain] ?? e.domain}</Badge> {e.title}
+              </p>
+              {e.note && <p className="text-sm text-ink-soft">{e.note}</p>}
+              <p className="text-xs text-ink-muted">
+                {formatDateTime(e.at)} · {e.actor ?? 'Sistema'}
+              </p>
+            </li>
+          ))}
+        </ol>
+      )}
+    </Section>
   );
 }

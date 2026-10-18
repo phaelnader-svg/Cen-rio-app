@@ -754,7 +754,10 @@ describe('C. Prioridade única do serviço; prazo não reordena; D9 preservada',
     await publishWeek(admin, planId);
     const before = await orderOf(p.ricardo, planId);
     const rev = (await planDto(admin, planId)).revision;
-    const r = await editOs(admin, c.id, { promisedDate: day(1) });
+    const r = await editOs(admin, c.id, {
+      promisedDate: day(1),
+      reason: 'Cliente pediu antecipação',
+    });
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     const after = await orderOf(p.ricardo, planId);
     expect(after).toEqual(before);

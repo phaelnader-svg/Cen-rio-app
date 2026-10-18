@@ -1,8 +1,13 @@
 import type { Metadata } from 'next';
+import { Suspense } from 'react';
 import { DeliveriesPage } from '@/components/quality/delivery-pages';
 
 export const metadata: Metadata = { title: 'Expedição e entregas' };
 
 export default function Page() {
-  return <DeliveriesPage />;
+  return (
+    <Suspense>
+      <DeliveriesPage />
+    </Suspense>
+  );
 }

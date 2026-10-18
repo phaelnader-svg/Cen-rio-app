@@ -390,7 +390,7 @@ export async function billingAttention(db: PrismaClient): Promise<AttentionItemD
       solver: null,
       impacts: [],
       nextActions: ['Combinar o pagamento com o cliente antes da entrega'],
-      link: `/painel/entregas?entrega=${dl.id}`,
+      link: `/painel/entregas/${dl.id}`,
     });
   }
   const reports = await db.customerPaymentReport.findMany({
@@ -416,7 +416,8 @@ export async function billingAttention(db: PrismaClient): Promise<AttentionItemD
       solver: null,
       impacts: [],
       nextActions: ['Conferir o pagamento e confirmar a baixa'],
-      link: `/painel/pedidos/${dto.order.id}`,
+      // Fase 10: a confirmação/descarte fica em Financeiro → Receitas e recebimentos.
+      link: '/painel/financeiro?tab=receitas',
     });
   }
   return items;

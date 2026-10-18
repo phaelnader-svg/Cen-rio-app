@@ -44,6 +44,50 @@ export interface NavItem {
   anyOf?: Permission[];
 }
 
+/**
+ * Fase 10 (plano principal): seis áreas do menu (proposta da Simplificação 1, §13.2). Só
+ * agrupa e ordena — os itens, nomes, endereços e permissões continuam os mesmos.
+ */
+export const NAV_GROUPS = [
+  'Início',
+  'Serviços',
+  'Produção',
+  'Compras',
+  'Financeiro',
+  'Administração',
+] as const;
+export type NavGroup = (typeof NAV_GROUPS)[number];
+const GROUP_PREFIXES: [string, NavGroup][] = [
+  ['/painel/atencao', 'Início'],
+  ['/painel/servicos', 'Serviços'],
+  ['/painel/clientes', 'Serviços'],
+  ['/painel/pedidos', 'Serviços'],
+  ['/painel/retiradas', 'Serviços'],
+  ['/painel/roteiro', 'Serviços'],
+  ['/painel/recebimentos', 'Serviços'],
+  ['/painel/os', 'Serviços'],
+  ['/painel/qualidade', 'Serviços'],
+  ['/painel/entregas', 'Serviços'],
+  ['/painel/devolucoes', 'Serviços'],
+  ['/painel/producao', 'Produção'],
+  ['/painel/ajuda', 'Produção'],
+  ['/painel/reprogramacao', 'Produção'],
+  ['/painel/competencias', 'Produção'],
+  ['/painel/medicoes', 'Produção'],
+  ['/painel/planejamento', 'Produção'],
+  ['/painel/presenca', 'Produção'],
+  ['/painel/compras', 'Compras'],
+  ['/painel/fornecedores', 'Compras'],
+  ['/painel/recebimento-materiais', 'Compras'],
+  ['/painel/estoque', 'Compras'],
+  ['/painel/prontidao', 'Compras'],
+  ['/painel/financeiro', 'Financeiro'],
+];
+export function navGroupOf(href: string): NavGroup {
+  if (href === '/painel') return 'Início';
+  return GROUP_PREFIXES.find(([p]) => href.startsWith(p))?.[1] ?? 'Administração';
+}
+
 export const NAV: NavItem[] = [
   { href: '/painel', label: 'Início', icon: LayoutDashboard },
   // Simplificação Fase 2: entrada principal do gestor (cliente + serviço + retirada).

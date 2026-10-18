@@ -549,6 +549,15 @@ export async function cancelLogisticsCost(
     note: input.reason,
     type: EVENT_TYPES.FINANCE_COST_UPDATED,
   });
+  // Fase 10: cancelamento de custo também na auditoria (antes, sem conta a pagar, só no
+  // histórico financeiro).
+  await audit(tx, actor, {
+    action: 'finance.logistics_cost_cancelled',
+    entityType: 'logistics_cost',
+    entityId: id,
+    summary: `Custo de logística cancelado.`,
+    changes: { from: c.status, reason: input.reason },
+  });
   return u;
 }
 

@@ -7,12 +7,14 @@ import {
   inspectionCode,
   logisticsCode,
   packagingCode,
+  taskCode,
   type AttentionItemDto,
   type LogisticsKind,
   type LogisticsStatus,
 } from '@cenario/shared';
 import type { PrismaClient } from '@cenario/db';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
+import { serviceDeadlines } from '../deadlines/service';
 import { pieceCode, pieceInclude } from './common';
 
 const base = {
@@ -22,10 +24,7 @@ const base = {
 } as const;
 
 /** Itens da central de atenção da Fase 10 (só exceções; chave estável por fato). */
-export async function qualityAttention(
-  prisma: PrismaClient,
-  today: string,
-): Promise<AttentionItemDto[]> {
+export async function qualityAttention(prisma: PrismaClient): Promise<AttentionItemDto[]> {
   const items: AttentionItemDto[] = [];
 
   // Inspeções sem inspetor (ausente, executor ou não definido): o gestor decide.
@@ -71,15 +70,20 @@ export async function qualityAttention(
     },
     take: 100,
   });
+  // Fase 10: atraso pela regra ÚNICA de prazos (dias úteis, ATRASADO) — nunca uma comparação
+  // própria com a data prometida.
+  const late = await lateServiceOrders(prisma, [
+    ...rejected.map((i) => i.serviceOrderItem.serviceOrderId),
+  ]);
   for (const i of rejected) {
     const p = i.serviceOrderItem;
-    const c = i.tasks[0];
-    const promised = dateOnly(p.serviceOrder.promisedDate);
+    const c = i.tasks.find((t) => !['CONCLUIDA', 'CANCELADA'].includes(t.status)) ?? i.tasks[0];
     items.push({
       ...base,
       key: `QUALIDADE:correcao:${i.id}`,
       type: 'QUALIDADE',
-      category: promised && promised <= today ? 'CRITICO' : 'ATENCAO',
+      category: late.has(p.serviceOrderId) ? 'CRITICO' : 'ATENCAO',
+      task: c ? { id: c.id, code: taskCode(c.number), title: c.title } : null,
       title: `Correção · ${pieceCode(p)} · ${p.description}`,
       description: `Reprovada em ${inspectionCode(i.number)}: ${i.decisionNote ?? ''}`,
       serviceOrder: { id: p.serviceOrder.id, code: serviceOrderCode(p.serviceOrder.number) },
@@ -121,19 +125,27 @@ export async function qualityAttention(
     });
   }
 
-  // Peças prontas para entrega ainda sem agendamento (informativo; nunca agenda sozinho).
+  // Peças prontas para entrega ainda sem agendamento (informativo; nunca agenda sozinho). A peça
+  // que voltou de uma entrega frustrada já está no item da frustrada (reagendar): não repete.
   const ready = await prisma.serviceOrderItem.findMany({
-    where: { fulfillmentStage: 'PRONTA_ENTREGA' },
+    where: {
+      fulfillmentStage: 'PRONTA_ENTREGA',
+      deliveryItems: { none: { active: true, delivery: { status: 'FRUSTRADA' } } },
+    },
     include: pieceInclude,
     take: 100,
   });
+  const readyLate = await lateServiceOrders(
+    prisma,
+    ready.map((p) => p.serviceOrderId),
+  );
   for (const p of ready) {
     const promised = dateOnly(p.serviceOrder.promisedDate);
     items.push({
       ...base,
       key: `LOGISTICA:pronta:${p.id}`,
       type: 'LOGISTICA',
-      category: promised && promised <= today ? 'ATENCAO' : 'INFO',
+      category: readyLate.has(p.serviceOrderId) ? 'ATENCAO' : 'INFO',
       title: `${pieceCode(p)} · ${p.description} pronta para entrega`,
       description: `${p.serviceOrder.customer.name}${promised ? ` — prometida para ${promised.split('-').reverse().join('/')}` : ''}.`,
       serviceOrder: { id: p.serviceOrder.id, code: serviceOrderCode(p.serviceOrder.number) },
@@ -144,13 +156,17 @@ export async function qualityAttention(
       at: p.updatedAt.toISOString(),
       deadline: promised,
       nextActions: ['Agendar a entrega com o cliente'],
-      link: '/painel/entregas',
+      link: '/painel/entregas?tab=ready',
     });
   }
 
-  // Ocorrências logísticas abertas.
+  // Ocorrências logísticas abertas. A ocorrência que só registra a tentativa frustrada (sem
+  // bloquear a expedição) fica dentro do item da frustrada — um fato, um item.
   const occurrences = await prisma.logisticsOccurrence.findMany({
-    where: { status: { in: ['ABERTA', 'EM_TRATAMENTO'] } },
+    where: {
+      status: { in: ['ABERTA', 'EM_TRATAMENTO'] },
+      NOT: { blocksShipping: false, delivery: { status: 'FRUSTRADA' } },
+    },
     include: {
       delivery: { select: { id: true, number: true } },
       responsible: { select: { id: true, displayName: true } },
@@ -188,7 +204,15 @@ export async function qualityAttention(
   // Entregas frustradas aguardando reagendamento.
   const frustrated = await prisma.delivery.findMany({
     where: { status: 'FRUSTRADA' },
-    include: { customer: { select: { name: true } } },
+    include: {
+      customer: { select: { name: true } },
+      occurrences: {
+        where: { status: { in: ['ABERTA', 'EM_TRATAMENTO'] }, blocksShipping: false },
+        select: { kind: true, description: true },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+      },
+    },
     take: 100,
   });
   for (const d of frustrated) {
@@ -198,7 +222,7 @@ export async function qualityAttention(
       type: 'LOGISTICA',
       category: 'ACAO',
       title: `${deliveryCode(d.number)} · ${d.customer.name}`,
-      description: `Tentativa frustrada (${d.attempts} tentativa(s)).`,
+      description: `Tentativa frustrada (${d.attempts} tentativa(s))${d.occurrences[0] ? `: ${LOGISTICS_KIND_LABEL[d.occurrences[0].kind as LogisticsKind]} — ${d.occurrences[0].description}` : ''}.`,
       serviceOrder: null,
       employee: null,
       priority: 'ALTA',
@@ -211,4 +235,12 @@ export async function qualityAttention(
     });
   }
   return items;
+}
+
+/** OS ATRASADAS pela regra única de prazos (mesma fonte da lista, do detalhe e do Início). */
+async function lateServiceOrders(prisma: PrismaClient, ids: string[]) {
+  const unique = [...new Set(ids)];
+  if (!unique.length) return new Set<string>();
+  const states = await serviceDeadlines(prisma, { id: { in: unique } });
+  return new Set([...states].filter(([, d]) => d.state === 'ATRASADO').map(([id]) => id));
 }

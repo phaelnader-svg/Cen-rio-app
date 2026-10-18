@@ -205,6 +205,11 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   if (t === 'quality.template_changed') keys.push(['quality-templates']);
   // Fase 11: eventos financeiros (sem valores) só chegam a quem vê o financeiro.
   if (t.startsWith('finance.')) keys.push(['fin']);
+  // Fase 10 (plano principal): cobrança, negociação/revisão, materiais e compras também mudam a
+  // Central e o Início (só invalidação; o conteúdo vem da API com as permissões de quem vê).
+  if (['finance.', 'material.', 'purchase_order.', 'stock.'].some((p) => t.startsWith(p)))
+    keys.push(['attention'], ['overview']);
+  if (keys.some((k) => k[0] === 'attention')) keys.push(['overview']);
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }
 

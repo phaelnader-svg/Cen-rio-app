@@ -20,6 +20,7 @@ import { useMemo, useState } from 'react';
 import { BackLink, Detail, Section } from '@/components/commercial/section';
 import { PhotoGallery } from '@/components/commercial/photo-gallery';
 import { useSend } from '@/components/production/use-send';
+import { useTabParam } from '@/lib/tab-param';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Checkbox, Field, Input, Select, Textarea } from '@/components/ui/field';
@@ -87,7 +88,7 @@ export function DeliveryBadge({ status }: { status: DeliveryStatus }) {
 // ─────────────────────────── Página Expedição e entregas ───────────────────────────
 
 export function DeliveriesPage() {
-  const [tab, setTab] = useState('agenda');
+  const [tab, setTab] = useTabParam('agenda', ['agenda', 'ready', 'shipping', 'occurrences']);
   const ready = usePieces({ stage: 'PRONTA_ENTREGA' });
   const occurrences = useLogisticsOccurrences({ status: 'ABERTA' });
   return (

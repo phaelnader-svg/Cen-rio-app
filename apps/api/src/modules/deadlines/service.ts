@@ -121,6 +121,9 @@ export async function serviceDeadlineOf(db: Db, id: string) {
 export const deadlineCandidatesWhere = (cal: DeadlineCalendar): Prisma.ServiceOrderWhereInput => ({
   status: 'ABERTA',
   promisedDate: { not: null, lte: dbDate(deadlineWindowEnd(cal.today, cal.workingDays)) },
+  // Fase 10: OS com todas as peças entregues/devolvidas/canceladas já está ENCERRADA para o
+  // prazo — fora da consulta (antes o histórico inteiro de OS entregues era carregado).
+  items: { some: { fulfillmentStage: { notIn: ['ENTREGUE', 'DEVOLVIDA', 'CANCELADA'] } } },
 });
 
 /** Pedidos com prazo vencido/próximo e peças que ainda deveriam chegar à oficina. */

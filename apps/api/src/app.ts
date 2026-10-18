@@ -19,6 +19,7 @@ import type { AppContext } from './core/types';
 import { createTokenHasher } from './lib/crypto';
 import { LOG_REDACT_PATHS } from './lib/log-redaction';
 import { auditRoutes } from './modules/audit/routes';
+import { managementRoutes } from './modules/management/routes';
 import { attachmentRoutes } from './modules/attachments/routes';
 import { authRoutes } from './modules/auth/routes';
 import { customerRoutes } from './modules/customers/routes';
@@ -178,6 +179,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(sessionRoutes);
   await app.register(companyRoutes);
   await app.register(auditRoutes);
+  await app.register(managementRoutes);
   await app.register(syncRoutes);
   await app.register(fileRoutes);
   await app.register(realtimeRoutes);

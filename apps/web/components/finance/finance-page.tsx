@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { Field, Select } from '@/components/ui/field';
 import { Tabs } from '@/components/ui/tabs';
+import { useTabParam } from '@/lib/tab-param';
 import {
   localToday,
   money,
@@ -40,7 +41,10 @@ const TABS = [
  * integração bancária, sem pagamentos automáticos e sem emissão de notas fiscais.
  */
 export function FinancePage() {
-  const [tab, setTab] = useState('painel');
+  const [tab, setTab] = useTabParam(
+    'painel',
+    TABS.map((t) => t.key),
+  );
   const [period, setPeriod] = useState<Period>(() => ({ from: monthStart(), to: localToday() }));
   const withPeriod = ['painel', 'custos', 'despesas', 'produtividade', 'relatorios'].includes(tab);
   return (

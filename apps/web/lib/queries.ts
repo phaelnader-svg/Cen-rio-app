@@ -1,6 +1,8 @@
 'use client';
 
 import type {
+  OverviewDto,
+  ServiceTimelineDto,
   AuditLogDto,
   CompanySettingsDto,
   DeviceDto,
@@ -58,5 +60,22 @@ export const useRecentAudit = (limit: number, enabled = true) =>
     queryKey: ['audit', 'recent', limit],
     queryFn: () =>
       api<{ items: AuditLogDto[]; nextCursor: string | null }>(`/api/audit?limit=${limit}`),
+    enabled,
+  });
+
+/** Fase 10: Início do gestor (seções por permissão; null = sem acesso, nunca zero). */
+export const useOverview = (enabled = true) =>
+  useQuery({
+    queryKey: ['overview'],
+    queryFn: () => api<OverviewDto>('/api/v1/management/overview'),
+    enabled,
+    refetchInterval: 60_000,
+  });
+
+/** Fase 10: linha do tempo do serviço (históricos canônicos, só leitura). */
+export const useServiceTimeline = (serviceOrderId: string, enabled = true) =>
+  useQuery({
+    queryKey: ['service-order', serviceOrderId, 'timeline'],
+    queryFn: () => api<ServiceTimelineDto>(`/api/v1/service-orders/${serviceOrderId}/timeline`),
     enabled,
   });

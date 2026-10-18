@@ -41,3 +41,4 @@ export * from './finance-domain';
 export * from './schemas/finance';
 export * from './types-finance';
 export * from './closing-domain';
+export * from './types-management';

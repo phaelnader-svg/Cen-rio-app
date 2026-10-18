@@ -29,6 +29,7 @@ import {
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { Errors } from '../../lib/errors';
 import { now as clockNow } from '../../core/clock';
@@ -591,9 +592,15 @@ export async function productionTaskRoutes(app: FastifyInstance) {
 
   async function adminTransition(request: FastifyRequest, kind: 'cancel' | 'block' | 'unblock') {
     const { id } = idParams.parse(request.params);
+    // Fase 10: o motivo do desbloqueio (opcional) também é validado — antes um texto longo ou
+    // não textual estourava a coluna e virava erro interno.
     const input =
       kind === 'unblock'
-        ? { reason: (request.body as { reason?: string })?.reason ?? 'Desbloqueada' }
+        ? {
+            reason:
+              z.object({ reason: z.string().trim().max(500).nullish() }).parse(request.body ?? {})
+                .reason || 'Desbloqueada',
+          }
         : taskReasonSchema.parse(request.body);
     const actor = actorFrom(request);
     await prisma.$transaction(async (tx) => {
@@ -608,6 +615,14 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       if (kind === 'cancel') {
         if (t.status === 'RASCUNHO') {
           await tx.productionTask.delete({ where: { id } });
+          // Rascunho nunca publicado é apagado; o motivo fica na auditoria.
+          await audit(tx, actor, {
+            action: 'production.task_draft_deleted',
+            entityType: 'production_task',
+            entityId: id,
+            summary: `Rascunho ${taskCode(t.number)} removido.`,
+            changes: { reason: input.reason, title: t.title },
+          });
           return;
         }
         const u = await tx.productionTask.update({
@@ -634,6 +649,13 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           `cancelamento de ${taskCode(t.number)}`,
         );
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_CANCELLED, u);
+        await audit(tx, actor, {
+          action: 'production.task_cancelled',
+          entityType: 'production_task',
+          entityId: id,
+          summary: `Tarefa ${taskCode(t.number)} cancelada.`,
+          changes: { from: t.status, reason: input.reason },
+        });
         // Fase 8: apoio cancelado encerra o pedido; tarefa principal cancelada cancela os pedidos.
         if (t.supportForTaskId) await supportCancelled(tx, actor, t.id, input.reason);
         else await cancelHelpForClosedTask(tx, actor, t.id);
@@ -661,6 +683,13 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       await taskEvent(tx, actor, null, t, {
         kind: kind === 'block' ? 'BLOQUEIO' : 'DESBLOQUEIO',
         note: input.reason,
+      });
+      await audit(tx, actor, {
+        action: kind === 'block' ? 'production.task_blocked' : 'production.task_unblocked',
+        entityType: 'production_task',
+        entityId: id,
+        summary: `Tarefa ${taskCode(t.number)} ${kind === 'block' ? 'bloqueada' : 'desbloqueada'}.`,
+        changes: { reason: input.reason },
       });
       if (kind === 'block') {
         const b = await tx.productionTask.findUniqueOrThrow({ where: { id } });

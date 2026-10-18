@@ -9,8 +9,7 @@ import {
   PackageCheck,
   Truck,
   ArrowRight,
-  CheckCircle2,
-  Lock,
+  CheckCircle,
   MonitorSmartphone,
   RadioTower,
   Users,
@@ -19,15 +18,15 @@ import Link from 'next/link';
 import { Avatar, Badge, Card, Spinner } from '@/components/ui/misc';
 import { relativeTime } from '@/lib/format';
 import { useCan, useMe } from '@/lib/hooks';
-import { todayIso, useOrders, usePickups, useServiceOrders } from '@/lib/commercial';
+import { todayIso, useOrders, usePickups } from '@/lib/commercial';
 import { useAttention } from '@/lib/issues';
-import { useDevices, useEmployees, useRecentAudit, useSessions } from '@/lib/queries';
+import { money } from '@/lib/finance';
+import { useDevices, useEmployees, useOverview, useRecentAudit, useSessions } from '@/lib/queries';
 import { useRealtime } from '@/lib/realtime';
-import { UPCOMING } from './nav';
 
-function greeting() {
+function greeting(timeZone: string) {
   const h = Number(
-    new Intl.DateTimeFormat('pt-BR', { hour: 'numeric', timeZone: 'America/Sao_Paulo' }).format(
+    new Intl.DateTimeFormat('pt-BR', { hour: 'numeric', hourCycle: 'h23', timeZone }).format(
       new Date(),
     ),
   );
@@ -78,7 +77,14 @@ export function Dashboard() {
   const pickupsToday = usePickups({ from: today, to: today }, can('retiradas.ver'));
   const awaiting = useOrders({ status: 'AGUARDANDO_RETIRADA' }, can('pedidos.ver'));
   const partial = useOrders({ status: 'RECEBIDO_PARCIAL' }, can('pedidos.ver'));
-  const openOs = useServiceOrders({ status: 'ABERTA' }, can('os.ver'));
+  // Fase 10: visão do gestor pelas fontes canônicas (seção sem permissão = null, nunca zero).
+  const overview = useOverview(
+    can('os.ver') || can('entregas.ver') || can('entregas.gerenciar') || can('financeiro.ver'),
+  );
+  const ops = overview.data?.operations ?? null;
+  const fin = overview.data?.finance ?? null;
+  const dl = overview.data?.deliveries ?? null;
+  const tz = me.data?.company.timezone ?? 'America/Sao_Paulo';
   // Prazos: as MESMAS contagens da Central de atenção (mesma rota, mesma regra; nada é
   // recalculado aqui). Só para quem gerencia a Central.
   const deadlinesVisible = can('ocorrencias.gerenciar');
@@ -96,7 +102,7 @@ export function Dashboard() {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
-    timeZone: 'America/Sao_Paulo',
+    timeZone: tz,
   }).format(new Date());
 
   return (
@@ -105,7 +111,7 @@ export function Dashboard() {
         <div>
           <p className="text-sm font-medium text-ink-muted first-letter:uppercase">{todayLabel}</p>
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            {greeting()}, {me.data?.user.displayName}.
+            {greeting(tz)}, {me.data?.user.displayName}.
           </h1>
         </div>
         {can('pedidos.gerenciar') && can('retiradas.gerenciar') && (
@@ -193,12 +199,94 @@ export function Dashboard() {
             <Stat
               href="/painel/os"
               icon={<ClipboardList className="size-4" aria-hidden />}
-              label="OS abertas"
-              value={openOs.data?.total ?? '—'}
-              detail="aguardando as próximas fases"
+              label="Serviços ativos"
+              value={ops ? ops.activeServiceOrders : '—'}
+              detail="OS com peça ainda não entregue"
             />
           )}
         </div>
+      )}
+
+      {ops && (
+        <section data-testid="dashboard-operations">
+          <h2 className="mb-3 font-semibold">Operação agora</h2>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat
+              href="/painel/prontidao"
+              icon={<PackageCheck className="size-4" aria-hidden />}
+              label="Aguardando material"
+              value={<span data-testid="ops-materials">{ops.awaitingMaterials}</span>}
+              detail="OS com material que ainda segura a produção"
+            />
+            <Stat
+              href="/painel/producao"
+              icon={<Activity className="size-4" aria-hidden />}
+              label="Em produção"
+              value={<span data-testid="ops-production">{ops.pieces.production}</span>}
+              detail="peças com etapas em andamento"
+            />
+            <Stat
+              href="/painel/qualidade"
+              icon={<CheckCircle className="size-4" aria-hidden />}
+              label="Na qualidade"
+              value={<span data-testid="ops-quality">{ops.pieces.quality}</span>}
+              detail={`${ops.pieces.rework} em retrabalho · ${ops.pieces.packaging} na embalagem`}
+            />
+            <Stat
+              href="/painel/entregas?tab=ready"
+              icon={<Truck className="size-4" aria-hidden />}
+              label="Prontas para entrega"
+              value={<span data-testid="ops-ready">{ops.pieces.ready}</span>}
+              detail={
+                dl
+                  ? `${dl.upcoming} entrega(s) nos próximos 2 dias${dl.frustrated ? ` · ${dl.frustrated} frustrada(s)` : ''}`
+                  : `${ops.pieces.scheduled} agendada(s)`
+              }
+            />
+          </div>
+        </section>
+      )}
+
+      {fin && (
+        <section data-testid="dashboard-finance">
+          <h2 className="mb-3 font-semibold">Financeiro</h2>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat
+              href="/painel/financeiro?tab=receitas"
+              icon={<FileSignature className="size-4" aria-hidden />}
+              label="A receber"
+              value={<span data-testid="fin-open">{money(fin.receivables.openCents)}</span>}
+              detail={`${money(fin.receivables.overdueCents)} vencido (${fin.receivables.overdueCount} cobrança(s))`}
+            />
+            <Stat
+              href="/painel/financeiro?tab=pagar"
+              icon={<ClipboardList className="size-4" aria-hidden />}
+              label="Contas a pagar"
+              value={money(fin.payables.openCents)}
+              detail={`${money(fin.payables.overdueCents)} vencido`}
+            />
+            <Stat
+              href="/painel/financeiro?tab=producao"
+              icon={<Users className="size-4" aria-hidden />}
+              label="Mão de obra liberada"
+              value={money(fin.laborDueCents)}
+              detail="liberada e ainda não paga"
+            />
+            <Stat
+              href="/painel/atencao?type=FINANCEIRO"
+              icon={<AlarmClock className="size-4" aria-hidden />}
+              label="Decisões financeiras"
+              value={
+                <span data-testid="fin-decisions">
+                  {fin.decisions.valueRequests +
+                    fin.decisions.laborReviews +
+                    fin.decisions.paymentReports}
+                </span>
+              }
+              detail={`${fin.decisions.valueRequests} negociação(ões) · ${fin.decisions.laborReviews} revisão(ões) · ${fin.decisions.paymentReports} pagamento(s) informado(s)`}
+            />
+          </div>
+        </section>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -321,28 +409,6 @@ export function Dashboard() {
               )}
             </Card>
           )}
-
-          <Card className="p-5">
-            <h2 className="font-semibold">Implantação</h2>
-            <p className="mt-1 text-sm text-ink-muted">
-              Fases 1 e 2 em uso. Os módulos abaixo serão liberados nas próximas fases.
-            </p>
-            <p className="mt-4 flex items-center gap-2 text-sm font-medium text-ok-600">
-              <CheckCircle2 className="size-4" aria-hidden /> Pessoas, acessos, dispositivos e
-              sincronização
-            </p>
-            <p className="mt-1 flex items-center gap-2 text-sm font-medium text-ok-600">
-              <CheckCircle2 className="size-4" aria-hidden /> Clientes, pedidos, retiradas,
-              recebimentos e OS
-            </p>
-            <ul className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-              {UPCOMING.map((m) => (
-                <li key={m.label} className="flex items-center gap-2 text-sm text-ink-muted">
-                  <Lock className="size-3.5 shrink-0" aria-hidden /> {m.label}
-                </li>
-              ))}
-            </ul>
-          </Card>
         </div>
       </div>
     </div>

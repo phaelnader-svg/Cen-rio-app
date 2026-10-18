@@ -253,7 +253,8 @@ export async function recordChange(
     entityType: 'service_order',
     entityId: so.id,
     summary: entry.summary,
-    changes: entry.changes,
+    // Fase 10: o motivo também na auditoria (antes só ficava no histórico técnico da OS).
+    changes: entry.reason ? { ...entry.changes, reason: entry.reason } : entry.changes,
   });
   const current = await tx.serviceOrder.findUniqueOrThrow({ where: { id: so.id } });
   await appendEvent(tx, actor, {
@@ -314,7 +315,8 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/service-orders', { config: { access: VIEW } }, async (request) => {
     const q = serviceOrderQuerySchema.parse(request.query);
-    const numberMatch = q.q?.match(/^(?:os-?)?0*(\d{1,9})$/i);
+    // Fase 10: o código da peça (OS-00012/1) também acha a OS.
+    const numberMatch = q.q?.trim().match(/^(?:os-?)?0*(\d{1,9})(?:\/\d{1,4})?$/i);
     const where: Prisma.ServiceOrderWhereInput = {
       ...(q.status ? { status: q.status } : {}),
       ...(q.orderId ? { orderId: q.orderId } : {}),
@@ -494,7 +496,11 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         data: {
           technicalInstructions: input.technicalInstructions ?? null,
           notes: input.notes ?? null,
-          promisedDate: parseDateOnly(input.promisedDate),
+          // Fase 10: campo ausente mantém o prazo (antes, omitir apagava o prazo da OS).
+          promisedDate:
+            input.promisedDate === undefined
+              ? before.promisedDate
+              : parseDateOnly(input.promisedDate),
           priority: input.priority,
           technicalLeadId: input.technicalLeadId ?? null,
           version: { increment: 1 },
@@ -506,6 +512,12 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         ['technicalInstructions', 'notes', 'promisedDate', 'priority', 'technicalLeadId'],
       );
       if (Object.keys(changes).length === 0) return;
+      // Alterar o prazo prometido exige motivo (como no prazo do pedido).
+      if ('promisedDate' in changes && !input.reason)
+        throw Errors.validation(
+          [{ path: 'reason', message: 'Informe o motivo da alteração do prazo.' }],
+          'Informe o motivo da alteração do prazo.',
+        );
       await recordChange(tx, request, after, revision, {
         scope: 'OS',
         changes,

@@ -592,11 +592,32 @@ export async function updateDelivery(
     to: status,
     note: `${input.reason} — ${input.scheduledDate.split('-').reverse().join('/')}${input.windowStart ? ` ${input.windowStart}` : ''}${responsible ? ` · ${responsible.displayName}` : ''}`,
   });
+  // Fase 10: estado anterior preservado na auditoria (a linha da entrega é sobrescrita).
+  const was = {
+    status: d.status,
+    scheduledDate: dateOnly(d.scheduledDate),
+    windowStart: d.windowStart,
+    team: d.team,
+    responsibleUserId: d.responsibleUserId,
+    itemIds: d.items.filter((i) => i.active).map((i) => i.serviceOrderItemId),
+  };
   await audit(tx, actor, {
     action: 'delivery.updated',
     entityType: 'delivery',
     entityId: d.id,
     summary: `${code} ${d.status === 'FRUSTRADA' ? 'reagendada' : 'alterada'}: ${input.reason}`,
+    changes: {
+      from: was,
+      to: {
+        status,
+        scheduledDate: input.scheduledDate,
+        windowStart: input.windowStart ?? null,
+        team: input.team,
+        responsibleUserId: responsible?.id ?? null,
+        itemIds: items.map((i) => i.id),
+      },
+      reason: input.reason,
+    },
   });
   await deliveryDomainEvent(tx, actor, u);
   const touched = new Set([...d.items.map((i) => i.serviceOrderItemId), ...keep]);

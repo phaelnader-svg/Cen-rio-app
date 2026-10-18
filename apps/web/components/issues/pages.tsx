@@ -88,7 +88,7 @@ export function AttentionPage() {
             data-testid={`attention-count-${c}`}
           >
             <span className="block text-sm text-ink-muted">{ATTENTION_CATEGORY_LABEL[c]}</span>
-            <span className="text-2xl font-semibold">{q.data?.counts[c] ?? 0}</span>
+            <span className="text-2xl font-semibold">{q.data ? q.data.counts[c] : '—'}</span>
           </button>
         ))}
       </div>
@@ -164,6 +164,12 @@ export function AttentionPage() {
       </Card>
       {q.isPending ? (
         <Spinner />
+      ) : q.isError ? (
+        <div data-testid="attention-error">
+          <Alert tone="danger" title="Não foi possível carregar a Central">
+            Tente de novo em instantes. Nenhuma pendência foi descartada.
+          </Alert>
+        </div>
       ) : !q.data?.items.length ? (
         <EmptyState
           icon={<Siren className="size-6" aria-hidden />}
