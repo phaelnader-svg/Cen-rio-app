@@ -16,6 +16,11 @@ const evidence = (page: Page, name: string) =>
     : Promise.resolve();
 const TZ = 'America/Sao_Paulo';
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
+const mondayOf = (d: string) => {
+  const x = new Date(`${d}T12:00:00Z`);
+  x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7));
+  return x.toISOString().slice(0, 10);
+};
 const plus = (n: number) => {
   const d = new Date(`${today()}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
@@ -135,6 +140,14 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
     const row = page.getByTestId(`payable-${payableCode}`);
     await expect(row).toContainText(ANDRE.displayName);
     await expect(row).toContainText('R$ 100,00');
+    // D13 (R2): o André não conferiu a semana → liberação por exceção administrativa do item.
+    const allow = () =>
+      call(page, 'POST', `/api/v1/finance/weekly-closings/${mondayOf(today())}/exceptions`, {
+        beneficiaryUserId: ANDRE.userId,
+        reason: 'André sem acesso ao celular (E2E)',
+        itemIds: [view.cost.id],
+      });
+    await allow();
     await row.getByRole('button', { name: 'Abrir' }).click();
     await page.getByRole('button', { name: 'Registrar pagamento' }).click();
     const payDlg = page.getByRole('dialog').last();
@@ -159,6 +172,13 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
     expect(adj).toMatchObject({ dueCents: 9000, adjustmentsCents: -1000 });
     const payable = await call(page, 'GET', `/api/v1/finance/payables/${cost.payable.id}`);
     expect(payable).toMatchObject({ amountCents: 9000, paidCents: 0, status: 'ABERTO' });
+    // O valor mudou depois da liberação: sem nova liberação o pagamento é recusado.
+    const stale = await page.request.post(`/api/v1/finance/payables/${payable.id}/payments`, {
+      data: { amountCents: 9000, paidAt: today(), method: 'PIX', version: payable.version },
+      headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
+    });
+    expect(stale.status()).toBe(422);
+    await allow();
     const paid = await call(page, 'POST', `/api/v1/finance/payables/${payable.id}/payments`, {
       amountCents: 9000,
       paidAt: today(),

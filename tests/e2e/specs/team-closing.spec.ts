@@ -252,11 +252,20 @@ test.describe.serial('Evolução Fase 7 — fechamento semanal geral', () => {
     await page.reload();
     await page.getByRole('tab', { name: 'Fechamento semanal' }).click();
 
+    // ── D13 (R2): sem a conferência do André, o gestor libera por exceção administrativa ──
+    const andreRow = page.getByTestId(`closing-row-${ANDRE.displayName}-LOGISTICA`);
+    await andreRow.getByTestId('closing-exception').click();
+    const exDlg = page.getByRole('dialog');
+    await exDlg
+      .getByLabel('Motivo (interno)')
+      .fill('André sem acesso ao celular nesta semana (E2E)');
+    await exDlg.getByRole('button', { name: 'Liberar por exceção' }).click();
+    await expect(
+      andreRow.getByTestId(`closing-confirmation-${ANDRE.displayName}-LOGISTICA`),
+    ).toContainText('Liberada administrativamente');
+
     // ── Registrar Pix do André (revisar → confirmar) ──
-    await page
-      .getByTestId(`closing-row-${ANDRE.displayName}-LOGISTICA`)
-      .getByTestId('closing-pay')
-      .click();
+    await andreRow.getByTestId('closing-pay').click();
     const dlg = page.getByRole('dialog');
     await dlg.getByTestId('closing-pay-amount').fill('100,00');
     await dlg.getByTestId('closing-pay-review').click();
