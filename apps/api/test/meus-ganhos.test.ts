@@ -225,6 +225,9 @@ describe('Privacidade e permissões (25–28, 34, 35)', () => {
       [
         'adjustments',
         'adjustmentsCents',
+        // R2: pedido de alteração próprio e se pode pedir.
+        'canRequest',
+        'request',
         'agreedCents',
         'bucket',
         'category',
