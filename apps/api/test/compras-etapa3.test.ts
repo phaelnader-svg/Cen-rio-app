@@ -356,7 +356,10 @@ describe('Custo exatamente uma vez, com a data ORIGINAL do recebimento (critéri
     expect(await costsOf(so.id)).toHaveLength(2);
     expect(await db().purchaseAllocation.count()).toBe(1);
     // Relatório por período: o custo entra no mês original (janeiro), uma única vez.
-    const day = costs[0]!.occurredAt.toISOString().slice(0, 10);
+    // Dia no fuso da oficina (o relatório é por dia local; entre 21h e 24h o dia UTC já é outro).
+    const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(
+      costs[0]!.occurredAt,
+    );
     const report = await admin.get(`/api/v1/finance/reports/custos?from=${day}&to=${day}`);
     expect(report.status, JSON.stringify(report.body)).toBe(200);
     const exclusive = (report.body.rows as unknown[][]).filter(
