@@ -6,6 +6,7 @@
 #   - swap: cria /swapfile de 2 GB SÓ se não houver NENHUMA swap ativa nem declarada no /etc/fstab
 #     (a VM atual já tem 2 GB: nada é alterado);
 #   - atualizações automáticas de segurança (unattended-upgrades): instala/ativa se ausentes;
+#   - systemd-resolved sem LLMNR/mDNS (nenhuma escuta em 5355/5353 fora do loopback);
 #   - serviços systemd da pilha e do envio diário dos backups, COM PORTÃO DE PUBLICAÇÃO: só rodam
 #     se existir /etc/cenario/publicacao-autorizada. Este script NUNCA cria esse arquivo e NUNCA
 #     inicia a pilha sem ele (nem PostgreSQL, nem migrations, nem portas 80/443).
@@ -55,6 +56,31 @@ if ! dpkg -s unattended-upgrades >/dev/null 2>&1; then
 fi
 if [[ ! -f "$R/etc/apt/apt.conf.d/20auto-upgrades" ]] || ! grep -q 'Unattended-Upgrade "1"' "$R/etc/apt/apt.conf.d/20auto-upgrades"; then
   printf 'APT::Periodic::Update-Package-Lists "1";\nAPT::Periodic::Unattended-Upgrade "1";\n' > "$R/etc/apt/apt.conf.d/20auto-upgrades"
+fi
+
+# LLMNR/mDNS desativados (persistente). A imagem debian-12 atual traz o systemd-resolved ativo com o
+# padrão LLMNR=yes, que escuta em 0.0.0.0:5355 (TCP e UDP). Na VPC isso não tem uso (resolução pelo
+# servidor de metadados; sem multicast) e LLMNR é vetor conhecido de envenenamento de nomes. Em vez de
+# liberar a porta no portão de preparo (que continua exigindo só 22), o serviço deixa de escutar.
+# Idempotente: o systemd-resolved só é reiniciado se o arquivo mudou ou se 5355/5353 ainda escutam.
+install -d -m 755 "$R/etc/systemd/resolved.conf.d"
+RESOLVED_CONF="$R/etc/systemd/resolved.conf.d/90-cenario-sem-llmnr.conf"
+RESOLVED_ESPERADO=$'# Cenário Gestão (infra/prod/gcp/startup.sh): sem LLMNR (5355) nem mDNS (5353)\n[Resolve]\nLLMNR=no\nMulticastDNS=no'
+resolved_mudou=0
+if [[ "$(cat "$RESOLVED_CONF" 2>/dev/null)" != "$RESOLVED_ESPERADO" ]]; then
+  printf '%s\n' "$RESOLVED_ESPERADO" > "$RESOLVED_CONF"; chmod 644 "$RESOLVED_CONF"; resolved_mudou=1
+fi
+if systemctl is-active --quiet systemd-resolved 2>/dev/null; then
+  escutando=""
+  command -v ss >/dev/null 2>&1 && escutando="$(ss -tulnH 2>/dev/null | awk '{print $5}' | grep -E ':(5355|5353)$' || true)"
+  if (( resolved_mudou )) || [[ -n "$escutando" ]]; then
+    echo "systemd-resolved: LLMNR e mDNS desativados ($RESOLVED_CONF); reiniciando o serviço"
+    systemctl restart systemd-resolved
+  else
+    echo "systemd-resolved: LLMNR e mDNS já desativados: mantido"
+  fi
+else
+  echo "systemd-resolved inativo: configuração gravada para quando for ativado ($RESOLVED_CONF)"
 fi
 
 install -d -m 755 "$R/opt/cenario" "$R/etc/cenario"

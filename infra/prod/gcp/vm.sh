@@ -345,8 +345,15 @@ verificar_preparo() {
   local uso; uso="$(df --output=pcent / | tail -1 | tr -dc 0-9)"
   (( uso < 70 )) && ok "disco em ${uso}%" || ruim "disco em ${uso}% (imagens + volumes precisam de folga)"
   local portas; portas="$(ss -tlnH 2>/dev/null | awk '{print $4}' | grep -vE '^(127\.|\[::1\]|::1)' | sed 's/.*://' | sort -un | xargs || true)"
-  [[ -z "$portas" || "$portas" == 22 ]] && ok "portas escutando fora do loopback: ${portas:-nenhuma}" \
-    || ruim "portas escutando fora do loopback: $portas (esperado só 22)"
+  if [[ -z "$portas" || "$portas" == 22 ]]; then ok "portas escutando fora do loopback: ${portas:-nenhuma}"
+  else
+    ruim "portas escutando fora do loopback: $portas (esperado só 22)"
+    ss -tlnpH 2>/dev/null | awk '$4 !~ /^(127\.|\[::1\]|::1)/ && $4 !~ /:22$/ {print "    · " $4 " " $6}' || true
+  fi
+  # LLMNR (5355) e mDNS (5353), TCP e UDP: desativados pelo startup.sh; qualquer escuta reprova.
+  local multi; multi="$(ss -tulnH 2>/dev/null | awk '{print $5}' | grep -vE '^(127\.|\[::1\]|::1)' | grep -E ':(5355|5353)$' | sort -u | xargs || true)"
+  [[ -z "$multi" ]] && ok "LLMNR/mDNS desativados (nada escuta em 5355/5353, TCP ou UDP)" \
+    || ruim "LLMNR/mDNS escutando: $multi (esperado desativado pelo startup.sh)"
   local tmp; tmp="$(mktemp -d)"; trap "rm -rf '$tmp'; trap - RETURN" RETURN
   cat > "$tmp/env" <<'FICTICIO'
 PROD_DOMAIN='prod.exemplo.invalid'

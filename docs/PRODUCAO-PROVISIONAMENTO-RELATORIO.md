@@ -100,3 +100,51 @@ existem.
    `cenario-prod`, o runner 2.2.0 com o perfil `prod`, o portão fechado e nada iniciado.
 
 A partir daí, o primeiro deploy de `9fb1786` segue o runbook de `docs/PRODUCAO.md` §9, gate a gate.
+
+## Adendo — portão de preparo da VM: porta 5355 (LLMNR)
+
+Estado relatado pelo proprietário:
+
+- `provisionar.sh tudo` criou a infraestrutura, promoveu as imagens e preparou a VM `cenario-prod`;
+- o `vm.sh verificar-preparo` reprovou com `portas escutando fora do loopback: 22 5355 (esperado só 22)`;
+- o processo para ali: operador, DNS, verificação e credencial ainda não rodaram.
+
+1. **Causa.**
+   - A imagem `debian-12` atual traz o `systemd-resolved` ativo.
+   - O padrão dele é `LLMNR=yes`, então escuta LLMNR em `0.0.0.0:5355` (TCP e UDP).
+   - Não é serviço da aplicação nem foi configurado pelo provisionador.
+2. **Correção.**
+   - O `infra/prod/gcp/startup.sh` passou a desativar LLMNR e mDNS de forma persistente, com o drop-in
+     `/etc/systemd/resolved.conf.d/90-cenario-sem-llmnr.conf` (`LLMNR=no`, `MulticastDNS=no`).
+   - É idempotente: o `systemd-resolved` só reinicia se o arquivo mudou ou se 5355/5353 ainda escutam.
+   - A resolução DNS da VM (stub `127.0.0.53` → servidor de metadados) não muda.
+   - Por que desativar e não liberar 5355 no portão:
+     - LLMNR não tem uso na VPC (sem multicast; nomes resolvidos pelo servidor de metadados);
+     - LLMNR é vetor conhecido de envenenamento de nomes;
+     - liberar a porta deixaria passar qualquer outro processo que a usasse.
+3. **Sem exposição pela VPC.** Pelo diagnóstico, o firewall efetivo de `cenario-prod-vpc` só tem
+   `cenario-prod-web` (TCP 80/443) e `cenario-prod-iap-ssh` (TCP 22 do IAP). Não há regra para 5355; a
+   escuta era só local à VM.
+4. **O portão continua estrito.**
+   - `verificar-preparo` ainda exige só TCP 22 fora do loopback e, ao reprovar, lista porta e processo.
+   - Novo item: nada pode escutar em 5355/5353, nem TCP nem UDP.
+   - Testes (`test_vm_sh_prod.sh`, D2) mostram reprovação com:
+     - LLMNR do `systemd-resolved` (5355 TCP/UDP);
+     - mDNS só em UDP (5353);
+     - serviço inesperado em 8080.
+   - Escutas no loopback continuam aceitas, como o stub `127.0.0.53:53`.
+5. **Portão de publicação fechado.** `/etc/cenario/publicacao-autorizada` ausente. O `preparar-vm`
+   recusa um portão aberto e nunca cria esse arquivo.
+6. **Nenhum contêiner nem migration.** Nada foi iniciado, como mostra o diagnóstico do proprietário. A
+   correção só altera a configuração do `systemd-resolved`.
+7. **Homologação intacta.** Nenhum arquivo `infra/homolog` mudou e nenhum recurso da homologação foi
+   tocado. As suítes da homologação passaram sem regressão.
+8. **O que falta**, pelas etapas restantes do `provisionar.sh`:
+   - `preparar-vm` de novo, com este commit, até o portão de preparo aprovar;
+   - `operador`: `claude-operador-prod`, papéis próprios, fila e assinatura, buckets de operações e de
+     versões do runner, publicação e instalação do runner 2.2.0 (perfil prod), teste do canal;
+   - `dns`: provar os registros atuais, `A @` e `CNAME www` na Hostinger, propagação;
+   - `verificar`: isolamento homologação × produção;
+   - `credencial`: Network Secret de um ambiente novo do Claude Code;
+   - depois, numa sessão de produção, o primeiro deploy de `9fb1786` (§9 de `docs/PRODUCAO.md`).
+     O certificado HTTPS só é emitido nesse deploy, depois do DNS.

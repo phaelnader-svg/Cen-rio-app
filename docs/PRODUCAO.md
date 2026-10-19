@@ -80,6 +80,15 @@ Caddy ~16 MB, contra limites de 1 GB, 1 GB, 640 MB e 192 MB.
   bucket de versões, conferidos por SHA-256 e pelo commit. O operador não grava nesse bucket.
 - **Sem acesso amplo.** Os papéis Owner/Editor/IAM Admin, metadados da VM, SSH, segredos e backups
   nunca são concedidos ao operador.
+- **Escutas da VM.**
+  - O portão de preparo (`vm.sh verificar-preparo`) só aceita a porta 22 fora do loopback (TCP). Ao
+    reprovar, ele lista porta e processo.
+  - A imagem debian-12 atual traz o `systemd-resolved` com LLMNR ativo, escutando em `0.0.0.0:5355`
+    (TCP/UDP).
+  - O `startup.sh` desativa LLMNR e mDNS de forma persistente, com o drop-in
+    `/etc/systemd/resolved.conf.d/90-cenario-sem-llmnr.conf` (`LLMNR=no`, `MulticastDNS=no`).
+  - O portão confere que nada escuta em 5355/5353, nem TCP nem UDP.
+  - A porta não foi liberada no portão: liberar deixaria passar qualquer outro processo nela.
 - **Visibilidade cruzada residual (ressalva).**
   - O `claude-operador` da homologação tem `compute.viewer` e `logging.viewer` no projeto, papéis
     anteriores a esta etapa. Com eles, ele **vê** os metadados não secretos da VM de produção e os logs

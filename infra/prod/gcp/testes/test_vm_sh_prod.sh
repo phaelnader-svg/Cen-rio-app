@@ -5,7 +5,9 @@
 #   C. gerar-env: lê SÓ os segredos prod-* (nunca homolog-*), grava o ambiente 600 sem camada de senha do
 #      proxy, com domínio canônico + www, gestor e imagens de produção pela etiqueta; recusa etiqueta inválida;
 #   D. verificar-preparo: Compose de produção válido, só 80/443, segredos prod-* (sem exibir valor), bucket;
-#   E. startup.sh: serviço cenario-prod (portão), caminho infra/prod, nada iniciado sem autorização.
+#   D2. verificar-preparo REPROVA LLMNR (5355), mDNS (5353, UDP) e serviço inesperado (8080), com o processo;
+#   E. startup.sh: serviço cenario-prod (portão), caminho infra/prod, nada iniciado sem autorização;
+#      LLMNR/mDNS desativados de forma persistente e idempotente (reinício do resolved só quando muda).
 # Executar: bash infra/prod/gcp/testes/test_vm_sh_prod.sh
 set -euo pipefail
 AQUI="$(cd "$(dirname "$0")" && pwd)"
@@ -41,7 +43,13 @@ echo "gcloud $*" >> "$CHAMADAS"
 exit 0
 EOF
 printf '#!/usr/bin/env bash\necho 2147479552\n' > "$TMP/bin/swapon"
-printf '#!/usr/bin/env bash\necho "LISTEN 0 128 0.0.0.0:22 0.0.0.0:*"\n' > "$TMP/bin/ss"
+# ss falso: sem FALSO_SS, só o sshd em 22; com FALSO_SS=<arquivo>, as linhas "tcp|udp <colunas do ss>"
+# do arquivo (-tulnH mantém a coluna Netid; -tlnH/-tlnpH só TCP, sem ela).
+cat > "$TMP/bin/ss" <<'EOF2'
+#!/usr/bin/env bash
+if [[ -z "${FALSO_SS:-}" ]]; then echo "LISTEN 0 128 0.0.0.0:22 0.0.0.0:*"; exit 0; fi
+case "$1" in -tulnH) cat "$FALSO_SS" ;; *) grep '^tcp ' "$FALSO_SS" | cut -d' ' -f2- ;; esac
+EOF2
 chmod +x "$TMP/bin/"*
 export DOCKER_REAL; DOCKER_REAL="$(command -v docker)"
 export PATH="$TMP/bin:$PATH" CHAMADAS="$TMP/chamadas.log"
@@ -98,6 +106,32 @@ afirma "$TMP/d.out" "✔ segredo prod-admin-password: acessível pela conta da V
 afirma "$TMP/d.out" "✔ bucket: leitura negada (HTTP 403)"
 nega "$TMP/d.out" "homolog-"
 nega "$TMP/d.out" "VALOR-SECRETO"
+afirma "$TMP/d.out" "✔ portas escutando fora do loopback: 22"
+afirma "$TMP/d.out" "✔ LLMNR/mDNS desativados"
+
+echo "D2. verificar-preparo reprova escutas inesperadas"
+SSHD='LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))'
+printf 'tcp %s\ntcp LISTEN 0 4096 0.0.0.0:5355 0.0.0.0:* users:(("systemd-resolve",pid=2,fd=12))\nudp UNCONN 0 0 0.0.0.0:5355 0.0.0.0:* users:(("systemd-resolve",pid=2,fd=11))\n' "$SSHD" > "$TMP/ss-llmnr"
+printf 'tcp %s\ntcp LISTEN 0 5 0.0.0.0:8080 0.0.0.0:* users:(("python3",pid=3,fd=4))\ntcp LISTEN 0 4096 127.0.0.53:53 0.0.0.0:* users:(("systemd-resolve",pid=2,fd=20))\n' "$SSHD" > "$TMP/ss-8080"
+printf 'tcp %s\nudp UNCONN 0 0 0.0.0.0:5353 0.0.0.0:* users:(("avahi-daemon",pid=4,fd=12))\n' "$SSHD" > "$TMP/ss-mdns"
+printf 'tcp %s\nudp UNCONN 0 0 127.0.0.1:323 0.0.0.0:* users:(("chronyd",pid=5,fd=5))\n' "$SSHD" > "$TMP/ss-limpo"
+FALSO_SS="$TMP/ss-llmnr" roda "$TMP/d2.out" verificar-preparo
+igual "$(cat "$TMP/d2.out.rc")" 1 "LLMNR do systemd-resolved (código de saída)"
+afirma "$TMP/d2.out" "✘ portas escutando fora do loopback: 22 5355 (esperado só 22)"
+afirma "$TMP/d2.out" '· 0.0.0.0:5355 users:(("systemd-resolve"'
+afirma "$TMP/d2.out" "✘ LLMNR/mDNS escutando: 0.0.0.0:5355"
+FALSO_SS="$TMP/ss-8080" roda "$TMP/d3.out" verificar-preparo
+igual "$(cat "$TMP/d3.out.rc")" 1 "serviço inesperado em 8080 (código de saída)"
+afirma "$TMP/d3.out" "✘ portas escutando fora do loopback: 22 8080 (esperado só 22)"
+afirma "$TMP/d3.out" '· 0.0.0.0:8080 users:(("python3"'
+nega "$TMP/d3.out" "· 127.0.0.53:53"
+FALSO_SS="$TMP/ss-mdns" roda "$TMP/d4.out" verificar-preparo
+igual "$(cat "$TMP/d4.out.rc")" 1 "mDNS só em UDP (código de saída)"
+afirma "$TMP/d4.out" "✔ portas escutando fora do loopback: 22"
+afirma "$TMP/d4.out" "✘ LLMNR/mDNS escutando: 0.0.0.0:5353"
+FALSO_SS="$TMP/ss-limpo" roda "$TMP/d5.out" verificar-preparo
+afirma "$TMP/d5.out" "✔ LLMNR/mDNS desativados"
+nega "$TMP/d5.out" "✘ portas"
 
 echo "E. startup.sh com raiz falsa"
 R="$TMP/raiz"; mkdir -p "$R/etc/systemd/system" "$R/etc/apt/apt.conf.d" "$R/etc/sysctl.d" "$R/opt"
@@ -115,6 +149,18 @@ afirma "$R/etc/systemd/system/cenario-backup-upload.service" "/opt/cenario/infra
 [[ ! -e "$R/etc/systemd/system/cenario-homolog.service" ]] && echo "  ✔ nenhum serviço de homologação" || { echo "  ✘ serviço de homologação criado"; FALHAS=$((FALHAS + 1)); }
 afirma "$TMP/e.out" "publicação NÃO autorizada"
 nega "$CHAMADAS" "restart cenario-prod"
+CONF="$R/etc/systemd/resolved.conf.d/90-cenario-sem-llmnr.conf"
+afirma "$CONF" "LLMNR=no"
+afirma "$CONF" "MulticastDNS=no"
+igual "$(stat -c %a "$CONF")" 644 "permissão do drop-in do systemd-resolved"
+afirma "$CHAMADAS" "systemctl restart systemd-resolved"
+afirma "$TMP/e.out" "LLMNR e mDNS desativados"
+echo "E2. startup.sh de novo (idempotente)"
+: > "$CHAMADAS"; env PATH="$SB:$PATH" CENARIO_RAIZ="$R" bash "$RAIZ/infra/prod/gcp/startup.sh" > "$TMP/e2.out" 2>&1
+afirma "$TMP/e2.out" "LLMNR e mDNS já desativados: mantido"
+nega "$CHAMADAS" "restart systemd-resolved"
+nega "$CHAMADAS" "restart cenario-prod"
+igual "$(grep -c . "$CONF")" 4 "drop-in sem duplicação"
 
 echo
 if (( FALHAS == 0 )); then echo "RESULTADO: todos os cenários OK"; else echo "RESULTADO: $FALHAS falha(s)"; exit 1; fi
