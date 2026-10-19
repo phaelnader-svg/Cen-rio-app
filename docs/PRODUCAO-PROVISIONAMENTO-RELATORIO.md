@@ -148,3 +148,68 @@ Estado relatado pelo proprietário:
    - `credencial`: Network Secret de um ambiente novo do Claude Code;
    - depois, numa sessão de produção, o primeiro deploy de `9fb1786` (§9 de `docs/PRODUCAO.md`).
      O certificado HTTPS só é emitido nesse deploy, depois do DNS.
+
+## Adendo — etapa `operador`: `CANAL: FALHOU` e `ISOLAMENTO com 1 problema(s)`
+
+Estado relatado pelo proprietário:
+
+- `claude-operador-prod`, papéis, fila, buckets e permissões foram criados;
+- o runner 2.2.0 está ativo e a operação `version` confirmou os scripts `c32df97ebf64`;
+- a pilha não foi publicada: candidata, migrada e etiquetas = nenhuma;
+- a permissão temporária do proprietário foi removida.
+
+Causas, pelo código (`provisionar.sh` e `operar.py`):
+
+1. **Por que o `signJwt` do proprietário recebeu 403.**
+   - O papel Owner não inclui `iam.serviceAccounts.signJwt`. Por isso o teste concede
+     `cenarioProdAssinaJwt` ao proprietário só durante o teste.
+   - Essa concessão leva minutos para propagar (o Google documenta até ~7 min). Até lá, o `signJwt`
+     responde 403.
+   - O laço antigo esperava ~3 min (12 × 15 s) e tratava qualquer erro como "aguardando propagação".
+2. **Como jobs chegaram apesar dos 403.**
+   - Quando a permissão propagou, a assinatura passou a funcionar nas tentativas seguintes. Nenhum job
+     sai sem um JWT assinado pelo Google como `claude-operador-prod`.
+   - Desta sessão, a identidade da homologação recebe `PERMISSION_DENIED` ao tentar assinar como
+     `claude-operador-prod`, o que confirma o isolamento.
+   - Os 403 vieram das primeiras tentativas. Os jobs vieram das seguintes, porque o laço repetia o
+     `verificar` inteiro a cada falha, inclusive depois que o canal já respondia. Isso reenviava jobs a
+     cada repetição.
+3. **`status` exigindo `/run/cenario/env`: sim, indevidamente para este teste.**
+   - O `vm.sh status` é `compose ps` com o env da pilha. Esse env só é gerado no deploy
+     (`stack_bootstrap` → `gerar-env`, com o portão aberto).
+   - Antes do primeiro deploy, `status` falha por desenho. O canal da homologação usava `status`
+     porque lá a pilha sempre existe.
+   - **Não** foi feito `gerar-env`: ele pertence ao deploy, lê segredos e exige o portão aberto.
+4. **O único problema do `ISOLAMENTO`.**
+   - Era a própria falha do canal. O contador `FALHAS` é global, e o `verificar` reportava o total
+     acumulado, incluindo o `✘ canal não respondeu` do `teste_canal`.
+   - Nenhuma verificação de isolamento falhou: com uma falha real de isolamento, o total seria 2.
+
+Correção mínima:
+
+- **`operar.py verificar`.** Em produção usa `gate_status` + `version`. Nenhuma das duas depende da
+  pilha, e ambas provam assinatura → fila → runner → resultado. A homologação continua com
+  `status` + `version`.
+- **`teste_canal`.**
+  - Repete só o código 126 (API do Google recusou, sem nada publicado), até 32 tentativas a cada 15 s.
+  - Outro resultado encerra as tentativas, sem reenviar jobs.
+  - A permissão temporária continua sempre removida.
+- **`verificar`.** Conta só os problemas da própria verificação.
+- **`operador`.** Termina com `ETAPA OPERADOR: OK` só se canal **e** isolamento passarem. Falha com
+  código ≠ 0 caso contrário, e o `tudo` para.
+- **Novo subcomando `provisionar.sh canal`.** Repete só o teste do canal e o isolamento. Não cria,
+  publica nem instala nada.
+- **Testes.**
+  - `test_provisionar.sh` F: só o 126 é repetido, sem reenvio após falha do runner, permissão sempre
+    removida, isolamento sem herdar a falha do canal.
+  - `test_runner_prod.py` `TestCanalProducaoVazia`: produção vazia, sem env, `verificar` OK sem
+    `status`; `status` falha por falta do env; assinatura negada → 126 sem publicar nada.
+
+Preservado:
+
+- portão de publicação fechado;
+- nenhum contêiner nem migration;
+- DNS não alterado;
+- operador sem papéis amplos;
+- nenhum arquivo do runner nem dos scripts da VM alterado; o runner instalado continua o 2.2.0;
+- homologação intacta: só o cliente `operar.py` mudou, e no ramo de produção.

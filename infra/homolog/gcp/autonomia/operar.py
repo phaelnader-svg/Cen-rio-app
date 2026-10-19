@@ -19,7 +19,7 @@ Uso:
   operar.py catalogo
   operar.py op <operacao> [chave=valor ...] [--timeout S] [--descricao TXT]
   operar.py resultado <jti>
-  operar.py verificar                      # status + version (canal de ponta a ponta)
+  operar.py verificar                      # status + version (canal de ponta a ponta; prod: gate_status + version)
   operar.py teste-seguranca                # replay, adulteração, kid forjado, envelope com script, operação inexistente
   operar.py vm-status | vm-reiniciar | vm-ligar | vm-desligar
   operar.py imagens <sha>                  # existência das imagens api/web no Artifact Registry
@@ -388,7 +388,10 @@ def testes_locais(suite: str, versao: str | None) -> int:
 # ============================================================================ verificação e segurança
 def cmd_verificar() -> int:
     falhas = 0
-    for op in ("status", "version"):
+    # Produção antes do primeiro deploy não tem pilha nem /run/cenario/env (só o deploy os gera, com o portão
+    # aberto); lá "status" (compose ps) falharia por desenho. O canal se prova com operações que não dependem
+    # da pilha. Homologação: inalterado.
+    for op in ("gate_status", "version") if PRD else ("status", "version"):
         res = executar(op, descricao="verificação do canal", esperar_s=240)
         mostrar(res)
         falhas += res["status"] != "concluido"

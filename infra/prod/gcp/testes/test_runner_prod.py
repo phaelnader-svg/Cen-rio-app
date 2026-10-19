@@ -221,6 +221,65 @@ class TestPacoteDeScriptsProd(unittest.TestCase):
         self.assertIn("caminho não permitido", res["motivo"])
 
 
+class TestCanalProducaoVazia(unittest.TestCase):
+    """Teste do canal ANTES do primeiro deploy: sem pilha e sem /run/cenario/env (só o deploy os gera, com o
+    portão aberto). "status" depende legitimamente do env; o "verificar" de produção não o usa."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.a = a = ambiente_prod()
+        os.remove(os.path.join(a.d, "run/env"))
+        env_vm = os.path.join(a.d, "run/env")
+        base.escrever(a.cfg["vm_sh"], f"""#!/bin/bash
+echo "$(date +%s.%N) INICIO $1" >> {a.ctrl}/vmsh.log
+case "$1" in
+  status) [ -f {env_vm} ] || {{ echo "Variáveis ausentes: rode 'vm.sh gerar-env'." >&2; exit 2; }}; echo ok ;;
+  *) echo "vm.sh $* ok" ;;
+esac
+""", 0o755)
+        a.iniciar()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.a.parar()
+
+    def operar_prod(self, *args):
+        u = f"http://127.0.0.1:{self.a.porta}"
+        env = {**os.environ, "CENARIO_AMBIENTE": "prod", "CLOUDSDK_AUTH_ACCESS_TOKEN": "marcador-do-proxy",
+               "CENARIO_URL_IAMCREDENTIALS": f"{u}/iam", "CENARIO_URL_PUBSUB": f"{u}/pubsub", "CENARIO_URL_STORAGE": f"{u}/storage"}
+        return subprocess.run([sys.executable, "-I", base.OPERAR, *args], env=env, capture_output=True, text=True, timeout=300)
+
+    def test_verificar_em_producao_vazia(self):
+        antes = len(self.a.log("vmsh.log"))
+        r = self.operar_prod("verificar")
+        self.assertEqual(r.returncode, 0, r.stderr[-2000:])
+        self.assertIn("CANAL: OK", r.stderr)
+        self.assertIn("• gate_status", r.stderr)
+        self.assertIn("• version", r.stderr)
+        self.assertNotIn("• status", r.stderr)
+        self.assertIn("portão de publicação: fechado", r.stdout)
+        self.assertIn("etiqueta do ambiente da pilha: nenhuma", r.stdout)
+        self.assertNotIn("INICIO status", self.a.log("vmsh.log")[antes:])
+        self.assertFalse(os.path.exists(os.path.join(self.a.d, "run/env")))  # nada do deploy foi criado
+        self.assertFalse(os.path.exists(self.a.cfg["portao"]))
+
+    def test_status_depende_do_env_do_deploy(self):
+        r = self.operar_prod("op", "status")
+        self.assertEqual(r.returncode, 1, r.stderr[-2000:])
+        self.assertIn("Variáveis ausentes", r.stdout + r.stderr)
+
+    def test_assinatura_negada_sai_com_126_sem_publicar(self):
+        publicados = len(self.a.est.publicados)
+        assinante, self.a.est.assinante = self.a.est.assinante, "outra-conta@exemplo.iam.gserviceaccount.com"
+        try:
+            r = self.operar_prod("verificar")
+        finally:
+            self.a.est.assinante = assinante
+        self.assertEqual(r.returncode, 126, r.stderr[-2000:])
+        self.assertIn("signJwt: HTTP 403", r.stderr)
+        self.assertEqual(len(self.a.est.publicados), publicados)
+
+
 class TestFerramentasCompartilhadas(unittest.TestCase):
     """As ferramentas independentes de ambiente (impressão digital, conferência da restauração e
     pré-verificação das migrations) são CÓPIAS idênticas das homologadas: nunca divergem em silêncio."""

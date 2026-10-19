@@ -176,6 +176,19 @@ bash infra/prod/gcp/provisionar.sh tudo         # infraestrutura → promover �
 Cada etapa pede uma frase de confirmação e só cria o que falta (idempotente). Registros sem segredos
 ficam em `~/cenario-prod-relatorios/`.
 
+Teste do canal do operador (`operador` o executa ao final; `canal` o repete sozinho, sem criar, publicar ou
+instalar nada):
+
+- O dono não tem `iam.serviceAccounts.signJwt` (o papel Owner não inclui essa permissão). Por isso o teste
+  concede a ele `cenarioProdAssinaJwt` sobre `claude-operador-prod` só durante o teste e remove no final.
+- Enquanto essa permissão propaga, o `signJwt` responde 403 e o `operar.py` sai com 126, sem publicar
+  nada. Só esse caso é repetido: até 32 tentativas a cada 15 s.
+- Qualquer outra falha já passou pela fila e pelo runner. Ela não é repetida, para não reenviar jobs.
+- Em produção, o `operar.py verificar` usa `gate_status` + `version`. Antes do primeiro deploy não existe
+  `/run/cenario/env`: ele é gerado só pelo `stack_bootstrap`, com o portão aberto. Por isso `status`
+  falharia por desenho.
+- Canal e isolamento são contados separadamente. A etapa só termina com `ETAPA OPERADOR: OK`.
+
 ## 8. DNS e HTTPS
 
 - `provisionar.sh dns` mostra os registros atuais em 8.8.8.8 e 1.1.1.1.
