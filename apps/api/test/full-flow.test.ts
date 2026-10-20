@@ -37,6 +37,7 @@ import {
   readiness,
   receive,
   staples,
+  grantConference,
 } from './purchasing-helpers';
 import { PINS, decideInspection, finish, post, prepareCompany, setClock } from './audit-helpers';
 import { coverLabor } from './labor-helpers';
@@ -209,7 +210,9 @@ describe('Fluxo completo de produção (32 passos)', () => {
       'compra',
     );
     const confirmed = ok2(await confirmPurchase(admin, po as never), 'confirmar compra');
-    // 10. Funcionário (Thiago, no tablet) confirma a chegada do material.
+    // 10. Funcionário (Thiago, no tablet) confirma a chegada do material. O pedido inclui material
+    // exclusivo da OS: quem confere precisa da capacidade de conferência técnica (Rodada 1, F3-17).
+    await grantConference('Thiago');
     const thiago = await tabletOf(app, admin, 'Thiago', PINS.Thiago!);
     ok2(
       await receive(
