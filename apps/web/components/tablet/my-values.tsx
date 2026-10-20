@@ -226,11 +226,13 @@ export function MyValues() {
                     </Badge>
                   </span>
                 </div>
-                <p className="text-base text-ink-muted">
+                <p className="text-base text-ink-muted" data-testid={`my-value-terms-${i.code}`}>
                   Combinado {money(i.agreedCents)}
-                  {i.adjustmentsCents ? ` · ajustes ${money(i.adjustmentsCents)}` : ''} · devido{' '}
-                  {money(i.totalDueCents)}
-                  {i.bucket !== 'FORECAST' ? ` · a receber ${money(i.currentOpenCents)}` : ''}
+                  {i.adjustmentsCents ? ` · ajustes ${money(i.adjustmentsCents)}` : ''}
+                  {/* F8-11: só o que já entrou no fechamento é devido; o resto ainda é previsão. */}
+                  {i.bucket === 'FORECAST'
+                    ? ` · previsto ${money(i.totalDueCents)} (ainda não é devido)`
+                    : ` · devido ${money(i.totalDueCents)} · a receber ${money(i.currentOpenCents)}`}
                 </p>
                 {i.adjustments.length > 0 && (
                   <ul className="text-base text-ink-muted" data-testid={`my-value-adj-${i.code}`}>

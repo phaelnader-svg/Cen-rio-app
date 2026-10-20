@@ -7,6 +7,7 @@ import {
   confirmPieceArrivalSchema,
   materialReceiptCode,
   purchaseOrderCode,
+  requiresTechnicalConference,
   type ArrivalConfirmationDto,
   type ArrivalsDto,
   type MaterialArrivalDto,
@@ -14,6 +15,7 @@ import {
   type MaterialUnit,
   type PieceArrivalDto,
   type PieceArrivalStage,
+  type PhysicalUnit,
   type ReceiptIssue,
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
@@ -57,6 +59,17 @@ const CONFERENCE_VIEW = {
 const PIECE_STATUSES = ['AGENDADA', 'EM_EXECUCAO', 'RETIRADA_REALIZADA', 'COM_OCORRENCIA'] as const;
 const DECIMAL_UNITS: MaterialUnit[] = ['METRO', 'METRO_QUADRADO'];
 const DEFAULT_LOCATION = 'Área de recebimento';
+/** F3-17: unidade física registrada na chegada de um contável que aguarda conferência. */
+const COUNTED_PHYSICAL_UNIT: Record<MaterialUnit, PhysicalUnit> = {
+  METRO: 'ROLO',
+  METRO_QUADRADO: 'ROLO',
+  PLACA: 'PLACA',
+  PECA: 'PECA',
+  UNIDADE: 'UNIDADE',
+  EMBALAGEM: 'PACOTE',
+};
+const physicalUnitOf = (unit: MaterialUnit, informed?: PhysicalUnit) =>
+  DECIMAL_UNITS.includes(unit) ? (informed ?? 'ROLO') : COUNTED_PHYSICAL_UNIT[unit];
 const arrivalCode = (n: number) => `CH-${String(n).padStart(5, '0')}`;
 const num = (v: unknown) => Number(v ?? 0);
 
@@ -185,6 +198,7 @@ async function materialArrivals(db: PrismaClient | Tx): Promise<MaterialArrivalD
               1000,
           ) / 1000,
         mode: DECIMAL_UNITS.includes(i.unit) ? ('FISICA' as const) : ('CONTAGEM' as const),
+        conference: requiresTechnicalConference(i),
       }))
       .filter((i) => i.pending > 0 && !waiting.items.has(i.purchaseOrderItemId));
     if (!items.length) continue;
@@ -355,7 +369,7 @@ export async function arrivalRoutes(app: FastifyInstance) {
         for (const l of input.lines) {
           const item = items.get(l.purchaseOrderItemId);
           if (!item) throw Errors.validation(undefined, 'Item não pertence ao pedido.');
-          if (DECIMAL_UNITS.includes(item.unit)) {
+          if (requiresTechnicalConference(item)) {
             if (waiting.items.has(item.id))
               throw Errors.conflict(`"${item.description}" já chegou e aguarda conferência.`);
             if (!Number.isInteger(l.quantity))
@@ -363,6 +377,19 @@ export async function arrivalRoutes(app: FastifyInstance) {
                 undefined,
                 `"${item.description}": informe quantos volumes/rolos chegaram (número inteiro).`,
               );
+            // F3-17: contável exclusivo de OS conta-se na própria unidade do item, nunca além do
+            // que falta chegar (a conferência ainda recusa o que passar do pedido).
+            if (!DECIMAL_UNITS.includes(item.unit)) {
+              const pending =
+                num(item.quantity) +
+                num(item.extraAuthorized) -
+                num(item.receivedQuantity) -
+                num(item.closedQuantity);
+              if (l.quantity > pending + 1e-6)
+                throw Errors.conflict(
+                  `"${item.description}": chegaram mais do que o pedido (faltam ${pending}).`,
+                );
+            }
             physical.push(l);
           } else counted.push(l);
         }
@@ -409,7 +436,7 @@ export async function arrivalRoutes(app: FastifyInstance) {
                   description: item.description,
                   unit: item.unit,
                   physicalCount: l.quantity,
-                  physicalUnit: l.physicalUnit ?? 'ROLO',
+                  physicalUnit: physicalUnitOf(item.unit, l.physicalUnit),
                 };
               }) as unknown as Prisma.InputJsonValue,
               problemKind: problem?.kind ?? null,
@@ -430,7 +457,7 @@ export async function arrivalRoutes(app: FastifyInstance) {
             summary: `${arrivalCode(a.number)}: chegada física do pedido ${purchaseOrderCode(po.number)} (${physical
               .map(
                 (l) =>
-                  `${l.quantity} ${PHYSICAL_UNIT_LABEL[l.physicalUnit ?? 'ROLO']} de ${items.get(l.purchaseOrderItemId)!.description}`,
+                  `${l.quantity} ${PHYSICAL_UNIT_LABEL[physicalUnitOf(items.get(l.purchaseOrderItemId)!.unit, l.physicalUnit)]} de ${items.get(l.purchaseOrderItemId)!.description}`,
               )
               .join('; ')}) — aguardando conferência.`,
             changes: { lines: physical, problem },

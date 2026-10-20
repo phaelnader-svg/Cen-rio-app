@@ -177,90 +177,98 @@ export function AttentionPage() {
           description="Quando houver ocorrências, atrasos ou decisões pendentes, eles aparecem aqui."
         />
       ) : (
-        <ul className="space-y-3" data-testid="attention-list">
-          {q.data.items.map((i) => (
-            <li key={i.key}>
-              <Card
-                className={clsx('p-4', CATEGORY_CARD[i.category])}
-                data-testid={`attention-${i.key}`}
-                data-category={i.category}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={CATEGORY_TONE[i.category]}>
-                    {ATTENTION_CATEGORY_LABEL[i.category]}
-                  </Badge>
-                  <Badge tone="neutral">{ATTENTION_TYPE_LABEL[i.type as AttentionType]}</Badge>
-                  <span className="font-semibold">{i.title}</span>
-                  <span className="text-sm text-ink-muted">{i.statusLabel}</span>
-                  <span className="ml-auto text-sm text-ink-muted">{formatDateTime(i.at)}</span>
-                </div>
-                <p className="mt-2 text-[15px]">{i.description}</p>
-                <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm text-ink-soft sm:grid-cols-2 lg:grid-cols-4">
-                  {i.serviceOrder && (
-                    <div>
-                      <dt className="inline text-ink-muted">OS: </dt>
-                      <dd className="inline font-mono">{i.serviceOrder.code}</dd>
-                    </div>
-                  )}
-                  {i.task && (
-                    <div>
-                      <dt className="inline text-ink-muted">Tarefa: </dt>
-                      <dd className="inline">
-                        {i.task.code} · {i.task.title}
-                      </dd>
-                    </div>
-                  )}
-                  {i.employee && (
-                    <div>
-                      <dt className="inline text-ink-muted">Funcionário: </dt>
-                      <dd className="inline">{i.employee.displayName}</dd>
-                    </div>
-                  )}
-                  <div>
-                    <dt className="inline text-ink-muted">Prioridade: </dt>
-                    <dd className="inline">{PRIORITY_LABEL[i.priority as Priority]}</dd>
+        <>
+          {q.data.total > q.data.items.length && (
+            <p className="mb-3 text-sm text-ink-muted" data-testid="attention-limited">
+              Mostrando os {q.data.items.length} mais urgentes de {q.data.total}. Use os filtros
+              para ver os demais.
+            </p>
+          )}
+          <ul className="space-y-3" data-testid="attention-list">
+            {q.data.items.map((i) => (
+              <li key={i.key}>
+                <Card
+                  className={clsx('p-4', CATEGORY_CARD[i.category])}
+                  data-testid={`attention-${i.key}`}
+                  data-category={i.category}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={CATEGORY_TONE[i.category]}>
+                      {ATTENTION_CATEGORY_LABEL[i.category]}
+                    </Badge>
+                    <Badge tone="neutral">{ATTENTION_TYPE_LABEL[i.type as AttentionType]}</Badge>
+                    <span className="font-semibold">{i.title}</span>
+                    <span className="text-sm text-ink-muted">{i.statusLabel}</span>
+                    <span className="ml-auto text-sm text-ink-muted">{formatDateTime(i.at)}</span>
                   </div>
-                  {i.deadline && (
+                  <p className="mt-2 text-[15px]">{i.description}</p>
+                  <dl className="mt-2 grid gap-x-6 gap-y-1 text-sm text-ink-soft sm:grid-cols-2 lg:grid-cols-4">
+                    {i.serviceOrder && (
+                      <div>
+                        <dt className="inline text-ink-muted">OS: </dt>
+                        <dd className="inline font-mono">{i.serviceOrder.code}</dd>
+                      </div>
+                    )}
+                    {i.task && (
+                      <div>
+                        <dt className="inline text-ink-muted">Tarefa: </dt>
+                        <dd className="inline">
+                          {i.task.code} · {i.task.title}
+                        </dd>
+                      </div>
+                    )}
+                    {i.employee && (
+                      <div>
+                        <dt className="inline text-ink-muted">Funcionário: </dt>
+                        <dd className="inline">{i.employee.displayName}</dd>
+                      </div>
+                    )}
                     <div>
-                      <dt className="inline text-ink-muted">Prazo: </dt>
-                      <dd className="inline">
-                        {i.deadline.length > 10
-                          ? formatDateTime(i.deadline)
-                          : i.deadline.split('-').reverse().join('/')}
-                      </dd>
+                      <dt className="inline text-ink-muted">Prioridade: </dt>
+                      <dd className="inline">{PRIORITY_LABEL[i.priority as Priority]}</dd>
                     </div>
+                    {i.deadline && (
+                      <div>
+                        <dt className="inline text-ink-muted">Prazo: </dt>
+                        <dd className="inline">
+                          {i.deadline.length > 10
+                            ? formatDateTime(i.deadline)
+                            : i.deadline.split('-').reverse().join('/')}
+                        </dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt className="inline text-ink-muted">Responsável pela solução: </dt>
+                      <dd className="inline">{i.solver?.displayName ?? '—'}</dd>
+                    </div>
+                  </dl>
+                  {i.impacts.length > 0 && (
+                    <p className="mt-2 text-sm">
+                      <span className="text-ink-muted">Impactos: </span>
+                      {i.impacts.join(' · ')}
+                    </p>
                   )}
-                  <div>
-                    <dt className="inline text-ink-muted">Responsável pela solução: </dt>
-                    <dd className="inline">{i.solver?.displayName ?? '—'}</dd>
-                  </div>
-                </dl>
-                {i.impacts.length > 0 && (
-                  <p className="mt-2 text-sm">
-                    <span className="text-ink-muted">Impactos: </span>
-                    {i.impacts.join(' · ')}
-                  </p>
-                )}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {i.nextActions.map((a) => (
-                    <span
-                      key={a}
-                      className="rounded-lg bg-surface px-2 py-1 text-sm ring-1 ring-line"
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {i.nextActions.map((a) => (
+                      <span
+                        key={a}
+                        className="rounded-lg bg-surface px-2 py-1 text-sm ring-1 ring-line"
+                      >
+                        {a}
+                      </span>
+                    ))}
+                    <Link
+                      href={i.link}
+                      className="ml-auto inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:underline"
                     >
-                      {a}
-                    </span>
-                  ))}
-                  <Link
-                    href={i.link}
-                    className="ml-auto inline-flex items-center gap-1 text-sm font-semibold text-brand-700 hover:underline"
-                  >
-                    Abrir <ArrowRight className="size-4" aria-hidden />
-                  </Link>
-                </div>
-              </Card>
-            </li>
-          ))}
-        </ul>
+                      Abrir <ArrowRight className="size-4" aria-hidden />
+                    </Link>
+                  </div>
+                </Card>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </>
   );

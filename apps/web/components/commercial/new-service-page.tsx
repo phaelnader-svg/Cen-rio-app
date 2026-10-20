@@ -161,7 +161,12 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<NewServiceResultDto | null>(null);
+  // Uma chave por intenção de registrar ESTE serviço. Só muda depois do sucesso (tela nova) ou
+  // quando a pessoa decide registrar outro serviço: um erro de rede deixa o resultado desconhecido
+  // e a nova tentativa precisa reaproveitar a chave (o servidor devolve o serviço já criado). Erros
+  // respondidos pelo servidor liberam a chave lá (plugins/idempotency.ts), então mantê-la é seguro.
   const idem = useRef(newIdempotencyKey());
+  const [keyConflict, setKeyConflict] = useState(false);
 
   const people = d.people[team];
   // Ao trocar de equipe, aplica o responsável padrão daquela equipe (nunca um qualquer).
@@ -329,7 +334,15 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
       window.scrollTo({ top: 0 });
     },
     onError: (e) => {
-      idem.current = newIdempotencyKey();
+      if (e instanceof ApiError && e.code === 'NETWORK_ERROR') {
+        setError(LOST_SERVICE_MESSAGE);
+        return;
+      }
+      if (e instanceof ApiError && e.code === 'IDEMPOTENCY_CONFLICT') {
+        setKeyConflict(true);
+        setError(KEY_CONFLICT_MESSAGE);
+        return;
+      }
       if (e instanceof ApiError && e.code === 'POSSIBLE_DUPLICATE') {
         setCandidates(
           ((e.details as { candidates?: DuplicateCandidateDto[] })?.candidates ?? []).slice(0, 5),
@@ -1155,9 +1168,27 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
           )}
         </dl>
         {error && (
-          <Alert tone="danger" className="mt-4">
-            {error}
-          </Alert>
+          <div className="mt-4" data-testid="ns-error">
+            <Alert tone="danger">
+              {error}
+              {keyConflict && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="mt-3"
+                  onClick={() => {
+                    idem.current = newIdempotencyKey();
+                    setKeyConflict(false);
+                    setError(null);
+                  }}
+                  data-testid="ns-new-attempt"
+                >
+                  Registrar como outro serviço
+                </Button>
+              )}
+            </Alert>
+          </div>
         )}
         <FormActions className="mt-5">
           <Button
@@ -1173,6 +1204,13 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
     </form>
   );
 }
+
+/** Resposta perdida: o serviço pode ter sido salvo. Repetir sem mudar nada é seguro (mesma chave). */
+export const LOST_SERVICE_MESSAGE =
+  'Não foi possível confirmar se o serviço foi salvo. Toque em salvar de novo sem alterar nada: se ele já foi registrado, o sistema mostra o mesmo serviço e não cria outro.';
+/** Mesma intenção com dados alterados depois de uma resposta perdida: nada é criado sem decisão. */
+export const KEY_CONFLICT_MESSAGE =
+  'O envio anterior pode já ter sido registrado com os dados de antes. Confira em Pedidos antes de continuar. Se for mesmo outro serviço, use "Registrar como outro serviço".';
 
 function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: () => void }) {
   const router = useRouter();

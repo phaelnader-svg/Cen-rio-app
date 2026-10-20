@@ -523,7 +523,12 @@ describe('C. Materiais comprados', () => {
       (m: { purchaseOrderId: string }) => m.purchaseOrderId === poId,
     );
 
-  it('contagem física, metros sem metragem inventada, parcial e conferência posterior (CA3-14..16, CA3-18, CA3-19)', async () => {
+  const received = async (id: string) =>
+    Number((await db().purchaseOrderItem.findUniqueOrThrow({ where: { id } })).receivedQuantity);
+  const confer = (admin: Client, poId: string, arrivalId: string, lines: unknown[]) =>
+    post(admin, '/api/v1/material-receipts', { purchaseOrderId: poId, arrivalId, lines });
+
+  it('contagem física, metros sem metragem inventada, parcial e conferência posterior (CA3-14..16, CA3-18, CA3-19; F3-17)', async () => {
     const admin = await loginAdmin(app);
     const { po, fabricItem, foamItem, stapleItem } = await purchase(admin);
     const { joao, marcio } = await tablets(admin);
@@ -531,14 +536,16 @@ describe('C. Materiais comprados', () => {
     const c0 = await card(joao, po.id);
     expect(c0).toMatchObject({ code: po.code, dueLabel: 'Previsto para hoje' });
     expect(
-      c0.items.map((i: { description: string; mode: string; pending: number }) => [
+      c0.items.map((i: { mode: string; pending: number; conference: boolean }) => [
         i.mode,
         i.pending,
+        i.conference,
       ]),
     ).toEqual([
-      ['FISICA', 15],
-      ['CONTAGEM', 20],
-      ['CONTAGEM', 4],
+      ['FISICA', 15, true],
+      // F3-17: espuma comprada para a OS conta-se na porta, mas só libera após a conferência.
+      ['CONTAGEM', 20, true],
+      ['CONTAGEM', 4, false],
     ]);
     expect(JSON.stringify(c0)).not.toMatch(/Cents|price|preço|valor/i);
     // Chegaram 3 rolos de tecido, 15 de 20 placas de espuma e as 4 embalagens de grampo.
@@ -553,17 +560,10 @@ describe('C. Materiais comprados', () => {
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     expect(r.body.receipt.code).toMatch(/^RM-/);
     expect(r.body.arrival.code).toMatch(/^CH-/);
-    expect(r.body.remaining).toBe(5);
-    const items = new Map(
-      (await db().purchaseOrderItem.findMany({ where: { purchaseOrderId: po.id } })).map((i) => [
-        i.id,
-        Number(i.receivedQuantity),
-      ]),
-    );
-    // 3 rolos NÃO viraram 3 metros.
-    expect(items.get(fabricItem.id)).toBe(0);
-    expect(items.get(foamItem.id)).toBe(15);
-    expect(items.get(stapleItem.id)).toBe(4);
+    // 3 rolos NÃO viraram 3 metros; as 15 placas da OS também não ficam disponíveis sem conferência.
+    expect(await received(fabricItem.id)).toBe(0);
+    expect(await received(foamItem.id)).toBe(0);
+    expect(await received(stapleItem.id)).toBe(4);
     const arrival = await db().materialArrival.findUniqueOrThrow({
       where: { id: r.body.arrival.id },
     });
@@ -574,72 +574,75 @@ describe('C. Materiais comprados', () => {
         physicalUnit: 'ROLO',
         unit: 'METRO',
       }),
+      expect.objectContaining({
+        purchaseOrderItemId: foamItem.id,
+        physicalCount: 15,
+        physicalUnit: 'PLACA',
+        unit: 'PLACA',
+      }),
     ]);
     // Estoque: UMA entrada das 4 embalagens (item de estoque).
     const mv = await db().stockMovement.findMany({ where: { type: 'ENTRADA_COMPRA' } });
     expect(mv.map((m) => Number(m.quantity))).toEqual([4]);
-    // Central: só as 5 placas faltando; o tecido aguarda conferência (não volta como pendente).
+    // Tudo o que falta chegar aguarda conferência: o aviso sai da central dos tablets.
+    expect(await card(marcio, po.id)).toBeUndefined();
+    // Recebimento comum da mesma espuma (sem a conferência) é recusado: contaria a remessa 2×.
+    const bypass = await post(admin, '/api/v1/material-receipts', {
+      purchaseOrderId: po.id,
+      lines: [{ purchaseOrderItemId: foamItem.id, acceptedQuantity: 15, specConfirmed: true }],
+    });
+    expect(bypass.status).toBe(409);
+    expect(bypass.body.error.message).toMatch(/aguarda conferência/);
+    // Gestor confere a chegada física; ela fica CONFERIDA.
+    const pending = (await admin.get('/api/v1/material-arrivals?status=PENDENTE_CONFERENCIA')).body;
+    expect(pending.map((a: { id: string }) => a.id)).toEqual([arrival.id]);
+    expect(pending[0]).toMatchObject({ receivedBy: 'João', device: 'Tablet João' });
+    // A conferência só inclui os itens da própria chegada.
+    const outside = await confer(admin, po.id, arrival.id, [
+      { purchaseOrderItemId: stapleItem.id, acceptedQuantity: 1, specConfirmed: true },
+    ]);
+    expect(outside.status).toBe(400);
+    const conf = await confer(admin, po.id, arrival.id, [
+      { purchaseOrderItemId: fabricItem.id, acceptedQuantity: 14.5, specConfirmed: true },
+      { purchaseOrderItemId: foamItem.id, acceptedQuantity: 15, specConfirmed: true },
+    ]);
+    expect(conf.status, JSON.stringify(conf.body)).toBe(201);
+    expect(
+      (await db().materialArrival.findUniqueOrThrow({ where: { id: arrival.id } })).status,
+    ).toBe('CONFERIDA');
+    expect(await received(fabricItem.id)).toBe(14.5);
+    expect(await received(foamItem.id)).toBe(15);
+    // Depois da conferência: só as 5 placas faltando voltam ao aviso.
     const c1 = await card(marcio, po.id);
     expect(
       c1.items.map((i: { purchaseOrderItemId: string; pending: number }) => [
         i.purchaseOrderItemId,
         i.pending,
       ]),
-    ).toEqual([[foamItem.id, 5]]);
-    expect(c1.awaitingConference).toBe(1);
+    ).toEqual([
+      [fabricItem.id, 0.5],
+      [foamItem.id, 5],
+    ]);
     // Márcio com a tela antiga: recusado, nada duplicado.
     const stale = await post(marcio, `/api/v1/arrivals/purchase-orders/${po.id}/confirm`, {
       version: c0.version,
       lines: [{ purchaseOrderItemId: foamItem.id, quantity: 5 }],
     });
     expect(stale.status).toBe(409);
-    expect(await db().stockMovement.count({ where: { type: 'ENTRADA_COMPRA' } })).toBe(1);
-    // Márcio com a tela atual: as 5 restantes.
+    expect(await db().materialArrival.count()).toBe(1);
+    // Márcio com a tela atual: as 5 restantes chegam e aguardam a própria conferência.
     const fin = await post(marcio, `/api/v1/arrivals/purchase-orders/${po.id}/confirm`, {
       version: c1.version,
       lines: [{ purchaseOrderItemId: foamItem.id, quantity: 5 }],
     });
     expect(fin.status, JSON.stringify(fin.body)).toBe(201);
-    expect(fin.body.remaining).toBe(0);
-    expect(await card(marcio, po.id)).toBeUndefined();
-    // Gestor confere o tecido (medida real) e libera; a chegada física fica CONFERIDA.
-    const pending = (await admin.get('/api/v1/material-arrivals?status=PENDENTE_CONFERENCIA')).body;
-    expect(pending.map((a: { id: string }) => a.id)).toEqual([arrival.id]);
-    expect(pending[0]).toMatchObject({ receivedBy: 'João', device: 'Tablet João' });
-    // Recebimento comum do mesmo tecido (sem a conferência) é recusado: contaria a remessa 2×.
-    const bypass = await post(admin, '/api/v1/material-receipts', {
-      purchaseOrderId: po.id,
-      lines: [{ purchaseOrderItemId: fabricItem.id, acceptedQuantity: 14.5, specConfirmed: true }],
-    });
-    expect(bypass.status).toBe(409);
-    expect(bypass.body.error.message).toMatch(/aguarda conferência/);
-    // A conferência só inclui os itens da própria chegada.
-    const outside = await post(admin, '/api/v1/material-receipts', {
-      purchaseOrderId: po.id,
-      arrivalId: arrival.id,
-      lines: [{ purchaseOrderItemId: stapleItem.id, acceptedQuantity: 1, specConfirmed: true }],
-    });
-    expect(outside.status).toBe(400);
-    const conf = await post(admin, '/api/v1/material-receipts', {
-      purchaseOrderId: po.id,
-      arrivalId: arrival.id,
-      lines: [{ purchaseOrderItemId: fabricItem.id, acceptedQuantity: 14.5, specConfirmed: true }],
-    });
-    expect(conf.status, JSON.stringify(conf.body)).toBe(201);
-    expect(
-      (await db().materialArrival.findUniqueOrThrow({ where: { id: arrival.id } })).status,
-    ).toBe('CONFERIDA');
-    expect(
-      Number(
-        (await db().purchaseOrderItem.findUniqueOrThrow({ where: { id: fabricItem.id } }))
-          .receivedQuantity,
-      ),
-    ).toBe(14.5);
+    expect(fin.body.arrival.code).toMatch(/^CH-/);
+    expect(await received(foamItem.id)).toBe(15);
     // Nenhuma conta a pagar criada pelos recebimentos.
     expect(await db().accountPayable.count()).toBe(payablesBefore);
   });
 
-  it('simultâneas e divergência opcional: material danificado registrado, mas não disponível (CA3-17, CA3-10)', async () => {
+  it('simultâneas e divergência opcional: material danificado registrado, mas não disponível (CA3-17, CA3-10; F3-17)', async () => {
     const admin = await loginAdmin(app);
     const { po, foamItem } = await purchase(admin);
     const { joao, marcio } = await tablets(admin);
@@ -655,12 +658,14 @@ describe('C. Materiais comprados', () => {
       }),
     ]);
     expect([a.status, b.status].sort()).toEqual([201, 409]);
-    expect(
-      Number(
-        (await db().purchaseOrderItem.findUniqueOrThrow({ where: { id: foamItem.id } }))
-          .receivedQuantity,
-      ),
-    ).toBe(10);
+    const arrivalsNow = await db().materialArrival.findMany();
+    expect(arrivalsNow).toHaveLength(1);
+    expect(await received(foamItem.id)).toBe(0);
+    const ok = await confer(admin, po.id, arrivalsNow[0]!.id, [
+      { purchaseOrderItemId: foamItem.id, acceptedQuantity: 10, specConfirmed: true },
+    ]);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+    expect(await received(foamItem.id)).toBe(10);
     const v2 = (await card(joao, po.id)).version;
     const damaged = await post(joao, `/api/v1/arrivals/purchase-orders/${po.id}/confirm`, {
       version: v2,
@@ -672,16 +677,228 @@ describe('C. Materiais comprados', () => {
       },
     });
     expect(damaged.status, JSON.stringify(damaged.body)).toBe(201);
+    const second = await db().materialArrival.findUniqueOrThrow({
+      where: { id: damaged.body.arrival.id },
+    });
+    expect(second).toMatchObject({ problemKind: 'DANIFICADO', status: 'PENDENTE_CONFERENCIA' });
+    expect(await received(foamItem.id)).toBe(10);
+    // Na conferência o danificado é recusado: registrado, nunca disponível.
+    const rej = await confer(admin, po.id, second.id, [
+      {
+        purchaseOrderItemId: foamItem.id,
+        acceptedQuantity: 0,
+        rejectedQuantity: 2,
+        specConfirmed: false,
+        issue: 'DANIFICADO',
+        issueNote: 'Duas placas rasgadas',
+      },
+    ]);
+    expect(rej.status, JSON.stringify(rej.body)).toBe(201);
     const line = await db().materialReceiptLine.findFirstOrThrow({
       where: { purchaseOrderItemId: foamItem.id, issue: 'DANIFICADO' },
     });
     expect([Number(line.acceptedQuantity), Number(line.rejectedQuantity)]).toEqual([0, 2]);
-    expect(
-      Number(
-        (await db().purchaseOrderItem.findUniqueOrThrow({ where: { id: foamItem.id } }))
-          .receivedQuantity,
-      ),
-    ).toBe(10);
+    expect(await received(foamItem.id)).toBe(10);
+  });
+  describe('F3-17: chegada física × conferência técnica × liberação para consumo', () => {
+    const readiness = async (soId: string) =>
+      (await db().serviceOrder.findUniqueOrThrow({ where: { id: soId } })).materialsReadiness;
+    const quick = (c: Client, poId: string, version: number, lines: unknown[], problem?: unknown) =>
+      post(c, `/api/v1/arrivals/purchase-orders/${poId}/confirm`, {
+        version,
+        lines,
+        ...(problem ? { problem } : {}),
+      });
+
+    it('tecido e espuma da OS sem conferência: nada disponível, OS não libera; estoque comum por contagem entra na hora', async () => {
+      const admin = await loginAdmin(app);
+      const { so, po, fabricItem, foamItem, stapleItem } = await purchase(admin);
+      const { joao } = await tablets(admin);
+      const before = await readiness(so.id);
+      const r = await quick(joao, po.id, (await card(joao, po.id)).version, [
+        { purchaseOrderItemId: fabricItem.id, quantity: 2, physicalUnit: 'ROLO' },
+        { purchaseOrderItemId: foamItem.id, quantity: 20 },
+        { purchaseOrderItemId: stapleItem.id, quantity: 4 },
+      ]);
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
+      // Tecido e espuma exclusivos: chegada física, sem recebimento conforme, sem cobertura.
+      expect(await received(fabricItem.id)).toBe(0);
+      expect(await received(foamItem.id)).toBe(0);
+      const lines = await db().materialReceiptLine.findMany({
+        where: { purchaseOrderItemId: { in: [fabricItem.id, foamItem.id] } },
+      });
+      expect(lines).toHaveLength(0);
+      // Material comum de estoque, contável: aceito pela contagem, entra no estoque.
+      expect(await received(stapleItem.id)).toBe(4);
+      const stapleLine = await db().materialReceiptLine.findFirstOrThrow({
+        where: { purchaseOrderItemId: stapleItem.id },
+      });
+      expect(Number(stapleLine.acceptedQuantity)).toBe(4);
+      // A OS não fica pronta por material que ninguém conferiu.
+      expect(await readiness(so.id)).not.toBe('COMPLETO');
+      expect(['AGUARDANDO_RECEBIMENTO', 'PARCIALMENTE_DISPONIVEL']).toContain(
+        await readiness(so.id),
+      );
+      expect(before).not.toBe('COMPLETO');
+      // Conferência com a especificação correta: só agora o material da OS fica disponível.
+      const arrival = await db().materialArrival.findUniqueOrThrow({
+        where: { id: r.body.arrival.id },
+      });
+      const ok = await confer(admin, po.id, arrival.id, [
+        { purchaseOrderItemId: fabricItem.id, acceptedQuantity: 15, specConfirmed: true },
+        { purchaseOrderItemId: foamItem.id, acceptedQuantity: 20, specConfirmed: true },
+      ]);
+      expect(ok.status, JSON.stringify(ok.body)).toBe(201);
+      expect(await received(fabricItem.id)).toBe(15);
+      expect(await received(foamItem.id)).toBe(20);
+      expect(await readiness(so.id)).toBe('COMPLETO');
+    });
+
+    it('espuma da OS diferente do pedido: recusada na conferência, nunca libera a OS', async () => {
+      const admin = await loginAdmin(app);
+      const { so, po, fabricItem, foamItem } = await purchase(admin);
+      const { joao } = await tablets(admin);
+      // Tecido certo, conferido.
+      const r1 = await quick(joao, po.id, (await card(joao, po.id)).version, [
+        { purchaseOrderItemId: fabricItem.id, quantity: 2, physicalUnit: 'ROLO' },
+      ]);
+      expect(r1.status).toBe(201);
+      expect(
+        (
+          await confer(admin, po.id, r1.body.arrival.id, [
+            { purchaseOrderItemId: fabricItem.id, acceptedQuantity: 15, specConfirmed: true },
+          ])
+        ).status,
+      ).toBe(201);
+      // Espuma: chegou outra densidade (o tablet avisa "diferente").
+      const r2 = await quick(
+        joao,
+        po.id,
+        (await card(joao, po.id)).version,
+        [{ purchaseOrderItemId: foamItem.id, quantity: 20 }],
+        { kind: 'DIFERENTE', purchaseOrderItemId: foamItem.id, note: 'Veio D23 em vez de D28' },
+      );
+      expect(r2.status, JSON.stringify(r2.body)).toBe(201);
+      expect(r2.body.receipt).toBeNull();
+      expect(await received(foamItem.id)).toBe(0);
+      expect(await readiness(so.id)).not.toBe('COMPLETO');
+      // Conferência sem marcar a especificação não pode aceitar.
+      const unchecked = await confer(admin, po.id, r2.body.arrival.id, [
+        { purchaseOrderItemId: foamItem.id, acceptedQuantity: 20, specConfirmed: false },
+      ]);
+      expect(unchecked.status).toBe(400);
+      // Recusada como incorreta: registrada, não disponível, OS continua sem material.
+      const rej = await confer(admin, po.id, r2.body.arrival.id, [
+        {
+          purchaseOrderItemId: foamItem.id,
+          acceptedQuantity: 0,
+          rejectedQuantity: 20,
+          specConfirmed: false,
+          issue: 'INCORRETO',
+          issueNote: 'Densidade errada',
+        },
+      ]);
+      expect(rej.status, JSON.stringify(rej.body)).toBe(201);
+      expect(await received(foamItem.id)).toBe(0);
+      expect(await readiness(so.id)).not.toBe('COMPLETO');
+      expect(['AGUARDANDO_RECEBIMENTO', 'PARCIALMENTE_DISPONIVEL', 'COM_DIVERGENCIA']).toContain(
+        await readiness(so.id),
+      );
+    });
+
+    it('estoque comum contável danificado na porta: registrado, não disponível', async () => {
+      const admin = await loginAdmin(app);
+      const { po, stapleItem } = await purchase(admin);
+      const { joao } = await tablets(admin);
+      const r = await quick(
+        joao,
+        po.id,
+        (await card(joao, po.id)).version,
+        [{ purchaseOrderItemId: stapleItem.id, quantity: 4 }],
+        { kind: 'DANIFICADO', purchaseOrderItemId: stapleItem.id, note: 'Caixas molhadas' },
+      );
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
+      expect(r.body.arrival).toBeNull();
+      expect(await received(stapleItem.id)).toBe(0);
+      expect(await db().stockMovement.count({ where: { type: 'ENTRADA_COMPRA' } })).toBe(0);
+    });
+
+    it('contagem acima do que falta é recusada; parcial mantém o saldo', async () => {
+      const admin = await loginAdmin(app);
+      const { po, foamItem } = await purchase(admin);
+      const { joao } = await tablets(admin);
+      const v = (await card(joao, po.id)).version;
+      const over = await quick(joao, po.id, v, [
+        { purchaseOrderItemId: foamItem.id, quantity: 21 },
+      ]);
+      expect(over.status).toBe(409);
+      expect(await db().materialArrival.count()).toBe(0);
+      const part = await quick(joao, po.id, v, [
+        { purchaseOrderItemId: foamItem.id, quantity: 12 },
+      ]);
+      expect(part.status).toBe(201);
+      expect(
+        (
+          await confer(admin, po.id, part.body.arrival.id, [
+            { purchaseOrderItemId: foamItem.id, acceptedQuantity: 12, specConfirmed: true },
+          ])
+        ).status,
+      ).toBe(201);
+      const c = await card(joao, po.id);
+      expect(
+        c.items.find((i: { purchaseOrderItemId: string }) => i.purchaseOrderItemId === foamItem.id)
+          .pending,
+      ).toBe(8);
+      expect(await received(foamItem.id)).toBe(12);
+    });
+
+    it('conferência: transição única (simultâneas e repetição com a mesma chave não duplicam)', async () => {
+      const admin = await loginAdmin(app);
+      const { po, foamItem } = await purchase(admin);
+      const { joao } = await tablets(admin);
+      const key = idemKey();
+      const body = {
+        version: (await card(joao, po.id)).version,
+        lines: [{ purchaseOrderItemId: foamItem.id, quantity: 20 }],
+      };
+      const first = await post(
+        joao,
+        `/api/v1/arrivals/purchase-orders/${po.id}/confirm`,
+        body,
+        key,
+      );
+      expect(first.status).toBe(201);
+      // Resposta perdida no tablet: a repetição devolve a mesma chegada, sem outra.
+      const replay = await post(
+        joao,
+        `/api/v1/arrivals/purchase-orders/${po.id}/confirm`,
+        body,
+        key,
+      );
+      expect(replay.status).toBe(201);
+      expect(replay.body).toEqual(first.body);
+      expect(await db().materialArrival.count()).toBe(1);
+      const lines = [
+        { purchaseOrderItemId: foamItem.id, acceptedQuantity: 20, specConfirmed: true },
+      ];
+      const [a, b] = await Promise.all([
+        confer(admin, po.id, first.body.arrival.id, lines),
+        confer(admin, po.id, first.body.arrival.id, lines),
+      ]);
+      expect([a.status, b.status].sort()).toEqual([201, 409]);
+      expect(await received(foamItem.id)).toBe(20);
+      expect(
+        await db().materialReceiptLine.count({ where: { purchaseOrderItemId: foamItem.id } }),
+      ).toBe(1);
+      // Outra conferência da mesma chegada (nova chave): recusada, nada novo.
+      const again = await confer(admin, po.id, first.body.arrival.id, lines);
+      expect(again.status).toBe(409);
+      expect(await received(foamItem.id)).toBe(20);
+      expect(
+        (await db().materialArrival.findUniqueOrThrow({ where: { id: first.body.arrival.id } }))
+          .status,
+      ).toBe('CONFERIDA');
+    });
   });
 });
 

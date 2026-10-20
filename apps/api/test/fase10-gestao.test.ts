@@ -1,4 +1,9 @@
-import { CATEGORY_ORDER, zonedDateTime, type AttentionDto } from '@cenario/shared';
+import {
+  ATTENTION_LIST_LIMIT,
+  CATEGORY_ORDER,
+  zonedDateTime,
+  type AttentionDto,
+} from '@cenario/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
@@ -239,6 +244,90 @@ describe('Central — prioridade, prazos, permissões e estado vazio', () => {
       [],
     );
     expect((await s.tablets.Ricardo!.get('/api/v1/attention')).status).toBe(403);
+  });
+});
+
+describe('F10-15: contagens da Central pela fonte completa (sem truncar por take)', () => {
+  const sum = (a: AttentionDto) => Object.values(a.counts).reduce((x, y) => x + y, 0);
+
+  it('0, 1, abaixo, no limite e acima de 100/300: contagem exata; lista limitada; resolvidos não contam', async () => {
+    const s = await k.scenario();
+    const task = await db().productionTask.findFirstOrThrow({ where: { serviceOrderId: s.so.id } });
+    const reporter = await gestorId();
+    let made = 0;
+    const issuesUpTo = async (n: number) => {
+      if (n > made)
+        await db().productionIssue.createMany({
+          data: Array.from({ length: n - made }, (_, i) => ({
+            kind: 'OUTRO',
+            impact: 'DIFICULDADE',
+            blocksTask: false,
+            description: `Ocorrência em massa ${made + i + 1}`,
+            taskId: task.id,
+            serviceOrderId: s.so.id,
+            reporterUserId: reporter,
+          })),
+        });
+      made = n;
+    };
+    expect((await attention(s.admin, '?type=OCORRENCIA')).total).toBe(0);
+    // 300 era o `take` da fonte de ocorrências (e 100 o das demais).
+    for (const n of [1, 99, 100, 101, 299, 300, 301, 350]) {
+      await issuesUpTo(n);
+      const a = await attention(s.admin, '?type=OCORRENCIA');
+      expect(a.counts.ACAO, `n=${n}`).toBe(n);
+      expect(a.total).toBe(n);
+      expect(sum(a)).toBe(n);
+      // A lista continua limitada (os mais urgentes primeiro); a contagem não.
+      expect(a.items.length).toBe(Math.min(n, ATTENTION_LIST_LIMIT));
+      expect(new Set(keys(a)).size).toBe(a.items.length);
+    }
+    // Sem filtro: o card soma as 350 ocorrências e o que mais houver.
+    const all = await attention(s.admin);
+    expect(all.counts.ACAO).toBeGreaterThanOrEqual(350);
+    expect(all.total).toBe(sum(all));
+    expect(all.items.length).toBe(Math.min(all.total, ATTENTION_LIST_LIMIT));
+    // Resolvidas há mais de 24 h não contam.
+    const some = await db().productionIssue.findMany({ take: 120, select: { id: true } });
+    await db().$executeRawUnsafe(
+      `UPDATE production_issues SET status = 'RESOLVIDA', resolved_at = now() - interval '2 days',
+         resolved_by_id = $2::uuid, updated_at = now() - interval '2 days' WHERE id = ANY($1::uuid[])`,
+      some.map((o) => o.id),
+      reporter,
+    );
+    const after = await attention(s.admin, '?type=OCORRENCIA');
+    expect([after.counts.ACAO, after.total, after.items.length]).toEqual([230, 230, 230]);
+  });
+
+  it('permissão continua filtrando a contagem; chegadas acima de 100 no título pela contagem da fonte', async () => {
+    const s = await k.scenario();
+    await db().laborReview.create({ data: { serviceOrderId: s.so.id, reason: 'Revisão' } });
+    const admin = await attention(s.admin, '?type=FINANCEIRO');
+    expect([admin.total, admin.counts.ACAO]).toEqual([1, 1]);
+    const viewer = await panelUserWith(app, s.admin, 'central', ['ocorrencias.ver']);
+    const v = await attention(viewer, '?type=FINANCEIRO');
+    expect([v.total, v.counts.ACAO, v.items.length]).toEqual([0, 0, 0]);
+    expect((await attention(viewer)).total).toBe((await attention(s.admin)).total - 1);
+
+    const { reqs } = await approvedNeeds(s.admin, 'Cliente Chegadas', (so) => [
+      linen(so.items[0]!.id),
+    ]);
+    const sup = await createSupplier(s.admin);
+    const po = await confirmedFabricPurchase(s.admin, sup.id, reqs[0]!);
+    const by = await gestorId();
+    await db().materialArrival.createMany({
+      data: Array.from({ length: 101 }, () => ({
+        purchaseOrderId: po.id,
+        lines: [{ purchaseOrderItemId: po.items[0]!.id, quantity: '1' }],
+        receivedById: by,
+      })),
+    });
+    const m = await attention(s.admin, '?type=MATERIAL');
+    expect(m.items.find((i) => i.key === 'MATERIAL:conferencia')!.title).toBe(
+      '101 chegada(s) de material aguardando conferência',
+    );
+    // Quem não vê estoque/compras não conta o aviso de material.
+    expect((await attention(viewer, '?type=MATERIAL')).total).toBe(0);
   });
 });
 

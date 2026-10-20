@@ -614,6 +614,28 @@ export interface WeekConfirmationDto {
   changed: string[];
   /** Pedidos de alteração pendentes que impedem confirmar. */
   pendingRequests: string[];
+  /**
+   * Remediação F9-03/F9-06: todas as confirmações/exceções desta pessoa e semana (mais recente
+   * primeiro), cada uma com o retrato que identifica o estado conferido e a validade AO VIVO:
+   * VIGENTE = o retrato é o estado atual; EM_PARTE = parte das linhas mudou (pelo D13 só as linhas
+   * iguais ao estado atual continuam cobertas); INVALIDA = nenhuma linha confere mais.
+   */
+  history: {
+    code: string;
+    kind: 'PROFISSIONAL' | 'EXCECAO_ADMINISTRATIVA';
+    createdAt: string;
+    totalCents: number;
+    /** SHA-256 do retrato conferido (pessoa, semana, linhas ordenadas). */
+    hash: string;
+    /** Versão do fechamento semanal do gestor quando conferida (null: semana ainda não conferida, ou registro anterior a esta remediação). */
+    closingVersion: number | null;
+    status: 'VIGENTE' | 'EM_PARTE' | 'INVALIDA';
+    /** Códigos das linhas do retrato que não conferem mais com o estado atual. */
+    changed: string[];
+    /** Quando uma conferência posterior registrou que este retrato deixou de valer (null se ainda não houve). */
+    invalidatedAt: string | null;
+    invalidatedBy: string | null;
+  }[];
 }
 
 /** R2 — pedido de alteração visto pelo próprio profissional. */

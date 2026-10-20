@@ -99,6 +99,12 @@ export async function weekConfirmation(
     for (const x of before)
       if (!lines.some((l) => l.id === x.id) && !changed.includes(x.code)) changed.push(x.code);
   }
+  const history = await historyOf(
+    db,
+    rows,
+    personItems(b, userId).map(confirmationLine),
+    currentHash,
+  );
   return {
     state,
     weekStart,
@@ -115,7 +121,130 @@ export async function weekConfirmation(
       : null,
     changed: changed.sort(),
     pendingRequests: await pendingRequestCodes(db, userId, lines),
+    history,
   };
+}
+
+type ConfirmationRow = {
+  id: string;
+  number: number;
+  kind: string;
+  items: Prisma.JsonValue;
+  totalCents: number;
+  hash: string;
+  createdAt: Date;
+};
+
+/** Linhas de um retrato que não conferem mais com as linhas atuais da pessoa na semana. */
+const staleCodes = (row: ConfirmationRow, current: readonly ConfirmationLine[]) =>
+  linesOf(row)
+    .filter((x) => !current.some((l) => sameLine(x, l)))
+    .map((x) => x.code)
+    .sort();
+
+/**
+ * F9-03/F9-06: histórico das conferências da semana. A validade é a mesma do portão D13 (linha a
+ * linha, ao vivo); a versão do fechamento e a invalidação vêm dos eventos financeiros já
+ * existentes (`financial_events`) — nada é recalculado para o passado nem inventado.
+ */
+async function historyOf(
+  db: Db,
+  rows: ConfirmationRow[],
+  current: readonly ConfirmationLine[],
+  currentHash: string | null,
+): Promise<WeekConfirmationDto['history']> {
+  if (!rows.length) return [];
+  const events = await db.financialEvent.findMany({
+    where: {
+      entityType: 'weekly_closing_confirmation',
+      entityId: { in: rows.map((r) => r.id) },
+      kind: { in: ['CONFIRMADA', 'EXCECAO_ADMINISTRATIVA', 'INVALIDADA'] },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+  return rows.map((r) => {
+    const mine = events.filter((e) => e.entityId === r.id);
+    const created = mine.find((e) => e.kind !== 'INVALIDADA');
+    const invalid = mine.find((e) => e.kind === 'INVALIDADA');
+    const changed = staleCodes(r, current);
+    const total = linesOf(r).length;
+    const closingVersion = (created?.data as { closingVersion?: number | null } | null)
+      ?.closingVersion;
+    return {
+      code: confirmationCode(r.number),
+      kind: r.kind as 'PROFISSIONAL' | 'EXCECAO_ADMINISTRATIVA',
+      createdAt: r.createdAt.toISOString(),
+      totalCents: r.totalCents,
+      hash: r.hash,
+      closingVersion: typeof closingVersion === 'number' ? closingVersion : null,
+      status:
+        r.hash === currentHash || !changed.length
+          ? 'VIGENTE'
+          : changed.length < total
+            ? 'EM_PARTE'
+            : 'INVALIDA',
+      changed,
+      invalidatedAt: invalid?.createdAt.toISOString() ?? null,
+      invalidatedBy: (invalid?.data as { by?: string } | null)?.by ?? null,
+    };
+  });
+}
+
+/**
+ * Versão do fechamento semanal do gestor no momento da conferência (null = semana ainda não
+ * conferida pelo gestor). Gravada no evento financeiro da própria conferência.
+ */
+async function closingStamp(tx: Tx, weekStart: string) {
+  const c = await tx.weeklyClosing.findUnique({
+    where: { weekStart: weekDate(weekStart) },
+    select: { version: true, status: true },
+  });
+  return { closingVersion: c?.version ?? null, closingStatus: c?.status ?? null };
+}
+
+/**
+ * F9-06: ao registrar uma nova conferência, as anteriores desta pessoa e semana cujo retrato não
+ * confere mais com o estado atual ganham o registro de invalidação (quando e por qual conferência
+ * isso foi constatado). Uma vez só por conferência; as linhas antigas continuam intactas.
+ */
+async function recordInvalidations(
+  tx: Tx,
+  actor: ActorContext,
+  input: { userId: string; weekStart: string; byId: string; byCode: string },
+  current: readonly ConfirmationLine[],
+) {
+  const older = await tx.weeklyClosingConfirmation.findMany({
+    where: {
+      beneficiaryUserId: input.userId,
+      weekStart: weekDate(input.weekStart),
+      id: { not: input.byId },
+    },
+  });
+  if (!older.length) return;
+  const already = new Set(
+    (
+      await tx.financialEvent.findMany({
+        where: {
+          entityType: 'weekly_closing_confirmation',
+          entityId: { in: older.map((o) => o.id) },
+          kind: 'INVALIDADA',
+        },
+        select: { entityId: true },
+      })
+    ).map((e) => e.entityId),
+  );
+  for (const o of older) {
+    if (already.has(o.id)) continue;
+    const changed = staleCodes(o, current);
+    if (!changed.length) continue;
+    await financeEvent(tx, actor, {
+      entityType: 'weekly_closing_confirmation',
+      entityId: o.id,
+      kind: 'INVALIDADA',
+      note: `${confirmationCode(o.number)}: valores mudaram (${changed.join(', ')}); constatado na conferência ${input.byCode}.`,
+      data: { by: input.byCode, byId: input.byId, changed },
+    });
+  }
 }
 
 /**
@@ -189,6 +318,7 @@ export async function confirmWeek(
     },
   });
   if (same) return same;
+  const stamp = await closingStamp(tx, input.weekStart);
   const row = await tx.weeklyClosingConfirmation.create({
     data: {
       beneficiaryUserId: input.userId,
@@ -214,8 +344,14 @@ export async function confirmWeek(
     entityId: row.id,
     kind: 'CONFIRMADA',
     note: `Semana ${input.weekStart}`,
-    data: { hash, items: lines.length },
+    data: { hash, items: lines.length, ...stamp },
   });
+  await recordInvalidations(
+    tx,
+    actor,
+    { userId: input.userId, weekStart: input.weekStart, byId: row.id, byCode: code },
+    personItems(b, input.userId).map(confirmationLine),
+  );
   return row;
 }
 
@@ -241,6 +377,7 @@ export async function createException(
   } else lines = payableLines(mine);
   if (!lines.length) throw Errors.business('Nada a liberar para esta pessoa nesta semana.');
   const hash = hashOf(input.beneficiaryUserId, weekStart, lines);
+  const stamp = await closingStamp(tx, weekStart);
   const row = await tx.weeklyClosingConfirmation.create({
     data: {
       beneficiaryUserId: input.beneficiaryUserId,
@@ -267,8 +404,14 @@ export async function createException(
     entityId: row.id,
     kind: 'EXCECAO_ADMINISTRATIVA',
     note: input.reason,
-    data: { hash, items: lines.map((l) => l.code) },
+    data: { hash, items: lines.map((l) => l.code), ...stamp },
   });
+  await recordInvalidations(
+    tx,
+    actor,
+    { userId: input.beneficiaryUserId, weekStart, byId: row.id, byCode: code },
+    mine.map(confirmationLine),
+  );
   return row;
 }
 

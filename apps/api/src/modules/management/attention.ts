@@ -36,7 +36,6 @@ export async function managementAttention(
       where: { status: 'PENDENTE' },
       include: { beneficiary: { select: { id: true, displayName: true } } },
       orderBy: { createdAt: 'asc' },
-      take: 100,
     });
     for (const r of requests)
       items.push({
@@ -59,7 +58,6 @@ export async function managementAttention(
       where: { status: 'ABERTA' },
       include: { serviceOrder: { select: { id: true, number: true } } },
       orderBy: { createdAt: 'asc' },
-      take: 100,
     });
     for (const r of reviews)
       items.push({
@@ -106,19 +104,24 @@ export async function managementAttention(
   }
 
   if (anyOf(perms, 'estoque.ver', 'compras.ver', 'estoque.gerenciar')) {
-    const arrivals = await prisma.materialArrival.findMany({
-      where: { status: 'PENDENTE_CONFERENCIA' },
-      include: { purchaseOrder: { select: { number: true } } },
-      orderBy: { receivedAt: 'asc' },
-      take: 100,
-    });
-    if (arrivals.length)
+    // F10-15: o título traz a contagem da fonte (count), não o tamanho de uma lista limitada.
+    const pendingArrival = { status: 'PENDENTE_CONFERENCIA' };
+    const [arrivalsTotal, arrivals] = await Promise.all([
+      prisma.materialArrival.count({ where: pendingArrival }),
+      prisma.materialArrival.findMany({
+        where: pendingArrival,
+        include: { purchaseOrder: { select: { number: true } } },
+        orderBy: { receivedAt: 'asc' },
+        take: 100,
+      }),
+    ]);
+    if (arrivalsTotal)
       items.push({
         ...base,
         key: 'MATERIAL:conferencia',
         type: 'MATERIAL',
         category: 'ACAO',
-        title: `${arrivals.length} chegada(s) de material aguardando conferência`,
+        title: `${arrivalsTotal} chegada(s) de material aguardando conferência`,
         description: [...new Set(arrivals.map((a) => purchaseOrderCode(a.purchaseOrder.number)))]
           .slice(0, 5)
           .join(', '),

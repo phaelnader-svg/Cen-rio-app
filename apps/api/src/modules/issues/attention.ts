@@ -1,6 +1,7 @@
 import {
   ATTENDANCE_SITUATION_LABEL,
   ATTENTION_CATEGORIES,
+  ATTENTION_LIST_LIMIT,
   CATEGORY_ORDER,
   HELP_KIND_LABEL,
   HELP_STATUS_LABEL,
@@ -68,7 +69,6 @@ export async function attentionRoutes(app: FastifyInstance) {
         },
         include: issueInclude,
         orderBy: { createdAt: 'desc' },
-        take: 300,
       });
       for (const r of issues) {
         const d = issueDto(r, cfg.today);
@@ -231,7 +231,6 @@ export async function attentionRoutes(app: FastifyInstance) {
           serviceOrder: { select: { id: true, number: true } },
           assignee: { select: { id: true, displayName: true } },
         },
-        take: 300,
       });
       for (const t of tasks) {
         if (coveredTasks.has(t.id)) continue;
@@ -323,7 +322,14 @@ export async function attentionRoutes(app: FastifyInstance) {
         number
       >;
       for (const i of filtered) counts[i.category] += 1;
-      return { generatedAt: now.toISOString(), counts, items: filtered };
+      // F10-15: as fontes são lidas por inteiro (sem `take`), então a contagem é a do conjunto
+      // completo; só a LISTA devolvida é limitada (os mais urgentes primeiro).
+      return {
+        generatedAt: now.toISOString(),
+        counts,
+        total: filtered.length,
+        items: filtered.slice(0, ATTENTION_LIST_LIMIT),
+      };
     },
   );
 }

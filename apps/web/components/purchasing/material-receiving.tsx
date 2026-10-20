@@ -302,7 +302,7 @@ function ReceiveForm({
                 `${l.physicalCount} ${PHYSICAL_UNIT_LABEL[l.physicalUnit as keyof typeof PHYSICAL_UNIT_LABEL] ?? l.physicalUnit} de ${l.description}`,
             )
             .join('; ')}
-          . Informe a medida real conferida — só ela entra no estoque.
+          . Informe a quantidade ou medida real conferida — só ela fica disponível.
         </Alert>
       )}
       {error && (

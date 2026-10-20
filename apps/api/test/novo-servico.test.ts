@@ -345,6 +345,51 @@ describe('A. Novo serviço: uma operação, atômica e idempotente', () => {
     expect(now.orders).toBe(before.orders + 3);
     expect(now.pickups).toBe(before.pickups + 3);
   });
+
+  it('servidor gravou e a resposta se perdeu: a nova tentativa com a mesma chave devolve o mesmo serviço (F2-08)', async () => {
+    const admin = await loginAdmin(app);
+    await logisticsSetup(admin);
+    const existing = await createCustomer(admin, { name: 'Cliente Rede Instável' });
+    const before = await counts();
+    const payload = await body({
+      customer: { mode: 'EXISTENTE', customerId: existing.id },
+      service: { payment: { model: 'ENTRADA_ENTREGA' } },
+      pickup: { amountCents: 10000 },
+    });
+    const key = idemKey();
+    // 1ª tentativa: o servidor grava tudo; a tela nunca recebe esta resposta.
+    const lost = await post(admin, '/api/v1/services', payload, key);
+    expect(lost.status, JSON.stringify(lost.body)).toBe(201);
+    // A tela repete com a MESMA chave e o MESMO corpo.
+    const retry = await post(admin, '/api/v1/services', payload, key);
+    expect(retry.status).toBe(201);
+    expect(retry.headers['idempotent-replayed']).toBe('true');
+    expect(retry.body).toEqual(lost.body);
+    const orderId = (retry.body as { order: { id: string } }).order.id;
+    const now = await counts();
+    expect(now).toEqual({
+      ...before,
+      orders: before.orders + 1,
+      pickups: before.pickups + 1,
+      costs: before.costs + 1,
+      payables: now.payables,
+      receivables: before.receivables + 2,
+    });
+    expect(now.customers).toBe(before.customers);
+    expect(await db().commercialOrder.count({ where: { customerId: existing.id } })).toBe(1);
+    expect(await db().pickupRequest.count({ where: { orderId } })).toBe(1);
+    expect(await db().customerReceivable.count({ where: { orderId } })).toBe(2);
+    // Mesma chave com corpo editado: recusado, nada novo é criado.
+    const edited = await post(
+      admin,
+      '/api/v1/services',
+      { ...payload, service: { ...(payload.service as object), agreedValueCents: 310000 } },
+      key,
+    );
+    expect(edited.status).toBe(422);
+    expect(edited.body.error.code).toBe('IDEMPOTENCY_CONFLICT');
+    expect(await counts()).toEqual(now);
+  });
 });
 
 describe('B. Equipes: própria (Thiago, configurável) e terceirizada (André + Izaías)', () => {

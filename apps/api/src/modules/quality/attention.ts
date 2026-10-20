@@ -32,7 +32,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
     where: { status: { in: ['PENDENTE', 'EM_ANDAMENTO'] }, inspectorUserId: null },
     include: { serviceOrderItem: { include: pieceInclude } },
     orderBy: { createdAt: 'asc' },
-    take: 100,
   });
   for (const i of waiting) {
     const p = i.serviceOrderItem;
@@ -68,7 +67,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
         include: { assignee: { select: { id: true, displayName: true } } },
       },
     },
-    take: 100,
   });
   // Fase 10: atraso pela regra ÚNICA de prazos (dias úteis, ATRASADO) — nunca uma comparação
   // própria com a data prometida.
@@ -102,7 +100,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
   const unassigned = await prisma.packagingRecord.findMany({
     where: { status: 'PENDENTE', assigneeUserId: null },
     include: { serviceOrderItem: { include: pieceInclude } },
-    take: 100,
   });
   for (const r of unassigned) {
     const p = r.serviceOrderItem;
@@ -133,7 +130,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       deliveryItems: { none: { active: true, delivery: { status: 'FRUSTRADA' } } },
     },
     include: pieceInclude,
-    take: 100,
   });
   const readyLate = await lateServiceOrders(
     prisma,
@@ -172,7 +168,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       responsible: { select: { id: true, displayName: true } },
       reportedBy: { select: { id: true, displayName: true } },
     },
-    take: 100,
   });
   for (const o of occurrences) {
     items.push({
@@ -213,7 +208,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
         take: 1,
       },
     },
-    take: 100,
   });
   for (const d of frustrated) {
     items.push({

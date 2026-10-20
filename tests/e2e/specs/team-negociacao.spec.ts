@@ -126,6 +126,10 @@ test.describe.serial('R2 — negociação, confirmação semanal e portão de pa
     await unlock();
     const item = at.getByTestId(`my-value-${cost.code}`);
     await expect(item).toContainText('R$ 100,00');
+    // F8-11: viagem realizada já entrou no fechamento → "devido", nunca "previsto".
+    const terms = at.getByTestId(`my-value-terms-${cost.code}`);
+    await expect(terms).toContainText('devido R$ 100,00');
+    await expect(terms).not.toContainText('previsto');
     await item.getByTestId(`my-value-ask-${cost.code}`).click();
     const form = at.getByTestId(`my-value-ask-form-${cost.code}`);
     await form.getByTestId('ask-value').fill('120,00');

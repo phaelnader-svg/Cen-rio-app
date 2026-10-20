@@ -435,6 +435,11 @@ export interface MaterialArrivalDueDto {
     pending: number;
     /** CONTAGEM = conta-se na porta (peças, placas); FISICA = controle em metros (rolos etc.). */
     mode: 'CONTAGEM' | 'FISICA';
+    /**
+     * Remediação F3-17: só fica disponível depois da conferência técnica no painel (metros/m² ou
+     * compra exclusiva de OS). Na porta registra-se apenas a chegada física.
+     */
+    conference: boolean;
   }[];
   /** Chegadas físicas aguardando conferência técnica neste pedido. */
   awaitingConference: number;
