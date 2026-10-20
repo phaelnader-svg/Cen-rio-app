@@ -88,8 +88,15 @@ describe('Central — decisões que não chegavam (contraprovas)', () => {
     const a = await attention(s.admin, '?type=FINANCEIRO');
     const neg = a.items.find((i) => i.key === `FINANCEIRO:negociacao:${vr.id}`);
     const rev = a.items.find((i) => i.key === `FINANCEIRO:revisao:${rv.id}`);
-    expect(neg).toMatchObject({ category: 'ACAO', link: '/painel/financeiro?tab=fechamento' });
-    expect(rev).toMatchObject({ category: 'ACAO', link: '/painel/financeiro?tab=producao' });
+    // Rodada 3 (F10-14): o link abre o item exato (profissional + foco), não só a aba.
+    expect(neg).toMatchObject({
+      category: 'ACAO',
+      link: `/painel/financeiro?tab=fechamento&profissional=${ricardo.id}&foco=${vr.id}`,
+    });
+    expect(rev).toMatchObject({
+      category: 'ACAO',
+      link: `/painel/financeiro?tab=producao&foco=${rv.id}`,
+    });
     // Sem valores no item (a decisão abre o contexto financeiro).
     expect(JSON.stringify(neg)).not.toMatch(/60000|50000/);
     // 2. Resolvidas (pelos fluxos existentes) → somem.
@@ -139,7 +146,7 @@ describe('Central — decisões que não chegavam (contraprovas)', () => {
     });
     const a = await attention(s.admin, '?type=PRESENCA');
     expect(a.items.find((i) => i.key === `PRESENCA:expediente:${at.id}`)).toMatchObject({
-      link: '/painel/presenca',
+      link: `/painel/presenca?foco=${at.id}`,
     });
   });
 });

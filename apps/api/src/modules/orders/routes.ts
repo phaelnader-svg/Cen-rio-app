@@ -52,6 +52,7 @@ import { orderDeadlines, serviceDeadlines } from '../deadlines/service';
 import { changeServiceOrderPromisedDate } from '../service-orders/routes';
 import { cancelForecastsOfOrder, removeForecastsOfItems } from '../purchasing/forecasts';
 import { cancelOrderFinance, lockOrderReceivables, recordAgreedValue } from '../finance/revenue';
+import { resolvePickupAssignment } from '../notifications/notify';
 
 const PROMISED_ACTION = 'order.promised_date_changed';
 const br = (d: string | null) => (d ? d.split('-').reverse().join('/') : 'sem prazo');
@@ -678,6 +679,7 @@ export async function orderRoutes(app: FastifyInstance) {
             },
           });
           await syncTripCost(tx, actor, { pickupId: p.id }, `pedido cancelado: ${input.reason}`);
+          await resolvePickupAssignment(tx, actor, p.id);
         }
         await audit(tx, actor, {
           action: 'order.cancelled',

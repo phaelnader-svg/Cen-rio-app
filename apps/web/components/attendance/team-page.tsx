@@ -1,6 +1,7 @@
 'use client';
 
 import type { AttendanceAction, AttendanceDayDto } from '@cenario/shared';
+import { useFocusParam } from '@/lib/focus-param';
 import {
   ARRIVAL_KIND_LABEL,
   ATTENDANCE_ACTIONS,
@@ -39,6 +40,7 @@ type ActingDay = Pick<AttendanceDayDto, 'situation' | 'version'> & {
  * próxima, saída, alertas e histórico. Não é ponto eletrônico nem prova de jornada.
  */
 export function TeamAttendancePage() {
+  useFocusParam();
   const me = useMe();
   const can = useCan();
   const today = todayIso(me.data?.company.timezone);
@@ -309,6 +311,7 @@ function ImpactRow({
     <li
       className={clsx('px-5 py-3 text-sm', i.resolvedAt && 'opacity-60')}
       data-testid={`impact-${i.kind}`}
+      data-focus-id={i.attendanceId}
     >
       <p className="flex flex-wrap items-center gap-2">
         <span

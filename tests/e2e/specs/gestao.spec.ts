@@ -110,4 +110,39 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
       String(after.counts.CRITICO ?? 0),
     );
   });
+  /**
+   * Rodada 3 (F10-04/21i/21l, F10-02, F6-03): o Início mostra o total da Central, "A planejar" e
+   * bloqueios pela mesma fonte da API; o menu leva a "Materiais aprovados"; a aba Recebimentos
+   * de Compras lista por situação; "Bloqueios" abre o quadro já filtrado.
+   */
+  test('Início: total da Central, a planejar e bloqueios; menu e Recebimentos', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await loginAdmin(page);
+    const overview = await call(page, 'GET', '/api/v1/management/overview');
+    const central = await call(page, 'GET', '/api/v1/attention');
+    await page.goto('/painel');
+    await expect(page.getByTestId('dashboard-attention-total')).toHaveText(String(central.total));
+    expect(overview.attention.total).toBe(central.total);
+    await expect(page.getByTestId('ops-to-plan')).toHaveText(
+      String(overview.operations.preProduction.toPlan),
+    );
+    await expect(page.getByTestId('ops-blocked-tasks')).toHaveText(
+      String(overview.operations.blockedTasks),
+    );
+    await page.getByTestId('ops-blocked-tasks').click();
+    await expect(page).toHaveURL(/\/painel\/producao\?status=BLOQUEADA$/);
+    // Menu: "Materiais aprovados" no grupo Compras.
+    await page.goto('/painel');
+    await page.getByRole('navigation').getByRole('link', { name: 'Materiais aprovados' }).click();
+    await expect(page).toHaveURL(/\/painel\/materiais$/);
+    // Compras → Recebimentos: filtro por situação.
+    await page.goto('/painel/compras');
+    await page.getByRole('tab', { name: 'Recebimentos' }).click();
+    await expect(page.getByTestId('receiving-situation')).toBeVisible();
+    await page.getByTestId('receiving-situation').selectOption('CANCELADO');
+    await expect(page.getByTestId('receiving-situation')).toHaveValue('CANCELADO');
+  });
 });

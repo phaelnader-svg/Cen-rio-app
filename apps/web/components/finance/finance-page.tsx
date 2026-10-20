@@ -1,6 +1,7 @@
 'use client';
 
 import { EXPENSE_CATEGORY_LABEL, SERVICE_TYPE_LABEL, type ServiceType } from '@cenario/shared';
+import { useFocusParam } from '@/lib/focus-param';
 import { Download } from 'lucide-react';
 import { useState } from 'react';
 import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
@@ -41,6 +42,7 @@ const TABS = [
  * integração bancária, sem pagamentos automáticos e sem emissão de notas fiscais.
  */
 export function FinancePage() {
+  useFocusParam();
   const [tab, setTab] = useTabParam(
     'painel',
     TABS.map((t) => t.key),

@@ -33,7 +33,7 @@ import { actorFrom, audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { FIN_MANAGE, dateOnly, financeEvent } from './common';
-import { OWN_EARNINGS, UNLOCK_HEADER, unlockValid } from './my-earnings';
+import { OWN_EARNINGS, UNLOCK_HEADER, unlockEvidence } from './my-earnings';
 import { markStaleRequests, pendingRequestCodes } from './value-requests';
 
 type Db = Tx | PrismaClient;
@@ -395,10 +395,26 @@ export const paymentWeek = (paidAt: string, weekStart?: string) =>
   weekStart ?? closingWeekStart(paidAt);
 
 /** O profissional confere a semana que viu (hash) — nunca valor sabidamente contestado. */
+/** F10-20b: a última conferência (ou exceção) da pessoa na semana — o "antes" da auditoria. */
+async function previousConfirmation(tx: Tx, userId: string, weekStart: string) {
+  const r = await tx.weeklyClosingConfirmation.findFirst({
+    where: { beneficiaryUserId: userId, weekStart: weekDate(weekStart) },
+    orderBy: { createdAt: 'desc' },
+  });
+  return r ? { kind: r.kind, code: confirmationCode(r.number), hash: r.hash } : null;
+}
+
 export async function confirmWeek(
   tx: Tx,
   actor: ActorContext,
-  input: { userId: string; weekStart: string; hash: string; deviceId: string | null },
+  input: {
+    userId: string;
+    weekStart: string;
+    hash: string;
+    deviceId: string | null;
+    /** F9-02: prova do desbloqueio D12 (método e validade; nunca o PIN nem o token). */
+    verification?: { method: 'PIN_D12'; unlockExpiresAt: string } | null;
+  },
 ) {
   await lockWeek(tx, input.userId, input.weekStart);
   await markStaleRequests(tx, actor, { beneficiaryUserId: input.userId });
@@ -423,6 +439,7 @@ export async function confirmWeek(
   });
   if (same) return same;
   const stamp = await closingStamp(tx, input.weekStart);
+  const prior = await previousConfirmation(tx, input.userId, input.weekStart);
   const row = await tx.weeklyClosingConfirmation.create({
     data: {
       beneficiaryUserId: input.userId,
@@ -442,13 +459,20 @@ export async function confirmWeek(
     entityType: 'weekly_closing_confirmation',
     entityId: row.id,
     summary: `${code}: semana ${input.weekStart} conferida pelo profissional (${lines.length} item(ns)).`,
+    changes: {
+      before: prior,
+      after: { kind: 'PROFISSIONAL', code, items: lines.map((l) => l.code), hash },
+      verification: input.verification ?? null,
+      sessionId: actor.sessionId,
+      deviceId: input.deviceId,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'weekly_closing_confirmation',
     entityId: row.id,
     kind: 'CONFIRMADA',
     note: `Semana ${input.weekStart}`,
-    data: { hash, items: lines.length, ...stamp },
+    data: { hash, items: lines.length, ...stamp, verification: input.verification ?? null },
   });
   await recordInvalidations(
     tx,
@@ -483,6 +507,7 @@ export async function createException(
   if (!lines.length) throw Errors.business('Nada a liberar para esta pessoa nesta semana.');
   const hash = hashOf(input.beneficiaryUserId, weekStart, lines);
   const stamp = await closingStamp(tx, weekStart);
+  const prior = await previousConfirmation(tx, input.beneficiaryUserId, weekStart);
   const row = await tx.weeklyClosingConfirmation.create({
     data: {
       beneficiaryUserId: input.beneficiaryUserId,
@@ -503,6 +528,12 @@ export async function createException(
     entityType: 'weekly_closing_confirmation',
     entityId: row.id,
     summary: `${code}: exceção administrativa da semana ${weekStart} (${lines.map((l) => l.code).join(', ')}) — ${input.reason}`,
+    // F10-20b: o que valia antes (última conferência/exceção) e o que passa a valer.
+    changes: {
+      before: prior,
+      after: { kind: 'EXCECAO_ADMINISTRATIVA', code, items: lines.map((l) => l.code), hash },
+      reason: input.reason,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'weekly_closing_confirmation',
@@ -546,8 +577,8 @@ export async function confirmationRoutes(app: FastifyInstance) {
     { config: { access: OWN_EARNINGS, idempotent: true } },
     async (request, reply) => {
       const auth = request.auth!;
-      if (!unlockValid(hashToken, auth, request.headers[UNLOCK_HEADER]))
-        throw Errors.forbidden('Confirme seu PIN para ver seus ganhos.');
+      const verification = unlockEvidence(hashToken, auth, request.headers[UNLOCK_HEADER]);
+      if (!verification) throw Errors.forbidden('Confirme seu PIN para ver seus ganhos.');
       const input = confirmSchema.parse(request.body);
       const { week } = myEarningsQuerySchema.parse({ week: input.week });
       const row = await tx((t) =>
@@ -556,6 +587,7 @@ export async function confirmationRoutes(app: FastifyInstance) {
           weekStart: week!,
           hash: input.hash,
           deviceId: auth.deviceId,
+          verification,
         }),
       );
       void reply.header('cache-control', 'no-store');

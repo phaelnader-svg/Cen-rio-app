@@ -545,6 +545,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
     return rows.map(
       (r): AttendanceImpactDto => ({
         id: r.id,
+        attendanceId: r.attendanceId,
         kind: r.kind as ImpactKind,
         employee: r.attendance.employee,
         date,
@@ -575,6 +576,16 @@ export async function attendanceRoutes(app: FastifyInstance) {
       const input = resolveImpactSchema.parse(request.body);
       const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {
+        // Rodada 3 (F10-19): o expediente é travado ANTES do alerta — dois alertas do mesmo dia
+        // encaminhados ao mesmo tempo são serializados, e o último vê o outro já encaminhado
+        // (senão cada um veria o outro pendente e o aviso do dia nunca seria resolvido).
+        const owner = await tx.attendanceImpact.findUnique({
+          where: { id },
+          select: { attendanceId: true },
+        });
+        if (!owner) throw Errors.notFound('Alerta');
+        await tx.$queryRaw`
+          SELECT id FROM operational_attendances WHERE id = ${owner.attendanceId}::uuid FOR UPDATE`;
         const rows = await tx.$queryRaw<{ id: string }[]>`
           SELECT id FROM attendance_impacts WHERE id = ${id}::uuid FOR UPDATE`;
         if (!rows.length) throw Errors.notFound('Alerta');
@@ -588,6 +599,21 @@ export async function attendanceRoutes(app: FastifyInstance) {
             resolution: input.resolution,
           },
         });
+        // F10-19: o aviso "encerrou sem informar o andamento" vale para o expediente inteiro; ele
+        // deixa de pedir ação quando o último alerta de andamento pendente desse dia é encaminhado.
+        if (
+          impact.kind === 'ANDAMENTO_PENDENTE' &&
+          !(await tx.attendanceImpact.count({
+            where: {
+              attendanceId: impact.attendanceId,
+              kind: 'ANDAMENTO_PENDENTE',
+              resolvedAt: null,
+            },
+          }))
+        )
+          await resolveNotifications(tx, actor, 'TAREFA_PENDENTE_ENCERRAMENTO', [
+            `PENDENTE:${impact.attendanceId}`,
+          ]);
         await audit(tx, actor, {
           action: 'attendance.impact_resolved',
           entityType: 'attendance_impact',

@@ -164,14 +164,41 @@ export function anyPermissionAudience(...permissions: string[]): EventAudience {
   return permissions.map((p) => `permission:${p}`).join('|') as EventAudience;
 }
 
+/**
+ * Rodada 3 (F1-09): permissões cuja audiência um TABLET (sessão DEVICE) pode receber — só as de
+ * execução na oficina. Eventos gerenciais/financeiros (`permission:financeiro.ver`, `…gerenciar`,
+ * `ocorrencias.ver`…) nunca chegam ao tablet, mesmo que o usuário dele tenha a permissão: o que é
+ * do próprio funcionário vai por `user:<id>` (ex.: `finance.own_changed`, sem valores).
+ */
+export const DEVICE_AUDIENCE_PERMISSIONS: ReadonlySet<string> = new Set([
+  'producao.acessar',
+  'producao.executar',
+  'producao.ver',
+  'ajuda.solicitar',
+  'ocorrencias.registrar',
+  'presenca.registrar',
+  'recebimentos.registrar',
+  'retiradas.ver',
+  'entregas.ver',
+  'logistica.executar',
+  'qualidade.inspecionar',
+  'estoque.conferir',
+  'materiais.ver',
+  'os.ver',
+]);
+
 /** Verifica se um destinatário atende à audiência do evento. */
 export function audienceAllows(
   audience: string,
-  who: { userId: string; permissions: ReadonlySet<string> },
+  who: { userId: string; permissions: ReadonlySet<string>; kind?: string },
 ): boolean {
   return audience.split('|').some((a) => {
     if (a === 'all') return true;
-    if (a.startsWith('permission:')) return who.permissions.has(a.slice('permission:'.length));
+    if (a.startsWith('permission:')) {
+      const p = a.slice('permission:'.length);
+      if (who.kind === 'DEVICE' && !DEVICE_AUDIENCE_PERMISSIONS.has(p)) return false;
+      return who.permissions.has(p);
+    }
     if (a.startsWith('user:')) return who.userId === a.slice('user:'.length);
     return false;
   });

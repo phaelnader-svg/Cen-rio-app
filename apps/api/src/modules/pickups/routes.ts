@@ -30,6 +30,7 @@ import {
   toCustomerSummary,
 } from '../commercial/common';
 import { refreshOrderStatus } from '../commercial/status';
+import { PICKUP_ASSIGNMENT_DONE, resolvePickupAssignment } from '../notifications/notify';
 import { emitOrderEvent } from '../orders/routes';
 import { syncTripCost } from '../finance/trip-costs';
 import { createPickup, setTripParticipants, validatePickupItems } from './service';
@@ -344,6 +345,8 @@ export async function pickupRoutes(app: FastifyInstance) {
         },
       });
       await refreshOrderStatus(tx, before.orderId);
+      if (PICKUP_ASSIGNMENT_DONE.includes(input.toStatus))
+        await resolvePickupAssignment(tx, actor, id);
       await audit(tx, actor, {
         action: 'pickup.status_changed',
         entityType: 'pickup_request',

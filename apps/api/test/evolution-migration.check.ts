@@ -177,6 +177,15 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     }
     // Fase 7: Pix externo registrado no fechamento.
     const week = closingWeekStart(today());
+    // R2 (D13): pagar exige a conferência da semana pelo profissional ou a exceção do gestor.
+    expect(
+      (
+        await post(F(`/weekly-closings/${week}/exceptions`), {
+          beneficiaryUserId: ids.andre,
+          reason: 'Migração: liberação administrativa para o teste',
+        })
+      ).status,
+    ).toBe(201);
     const pay = await post(F(`/weekly-closings/${week}/payments`), {
       beneficiaryUserId: ids.andre,
       category: 'LOGISTICA',

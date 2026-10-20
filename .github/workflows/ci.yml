@@ -69,3 +69,39 @@ jobs:
         with:
           name: playwright-report
           path: tests/e2e/playwright-report
+
+  # Rodada 3 (F1-12a/F10-22): migração ENCADEADA a partir do banco legado (código anterior à
+  # Evolução), reversões condicionadas e backup — job próprio, em paralelo ao `verify`.
+  evolution-migrations:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cenario
+          POSTGRES_PASSWORD: cenario_ci
+          POSTGRES_DB: cenario_dev
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cenario" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://cenario:cenario_ci@localhost:5432/cenario_dev
+      TOKEN_HASH_SECRET: ci-only-secret-ci-only-secret-ci-only-secret
+      ALLOWED_ORIGINS: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - run: pnpm install --frozen-lockfile
+      - name: Migração encadeada do legado, reversões e backup
+        env:
+          PG_BASE: postgresql://cenario:cenario_ci@127.0.0.1:5432
+          LEGACY_INSTALL_FLAGS: --prefer-offline
+        run: bash scripts/test-evolution-migrations.sh

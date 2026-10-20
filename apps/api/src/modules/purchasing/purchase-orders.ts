@@ -23,7 +23,9 @@ import {
   type PurchaseOrderItemInput,
   type PurchaseOrderSummaryDto,
   type RejectionDecision,
+  draftAgeDays,
 } from '@cenario/shared';
+import { shopTimezone, todayIso } from '../finance/common';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -207,7 +209,11 @@ function withoutDestination(po: SummaryRow) {
   return [...out].map(([id, code]) => ({ id, code })).sort((a, b) => a.code.localeCompare(b.code));
 }
 
-function toSummary(po: SummaryRow, prices: boolean): PurchaseOrderSummaryDto {
+function toSummary(
+  po: SummaryRow,
+  prices: boolean,
+  clockCtx: { today: string; tz: string },
+): PurchaseOrderSummaryDto {
   const decided = decidedRejectionLines(po.history);
   const priced = po.items.filter((i) => i.unitPriceCents !== null);
   const sos = new Map<string, string>();
@@ -238,6 +244,8 @@ function toSummary(po: SummaryRow, prices: boolean): PurchaseOrderSummaryDto {
         i.receiptLines.some((l) => num(l.rejectedQuantity) > 0 && !decided.has(l.id)),
     ),
     withoutDestination: po.status === 'CANCELADO' ? [] : withoutDestination(po),
+    draftDays:
+      po.status === 'RASCUNHO' ? draftAgeDays(po.createdAt, clockCtx.today, clockCtx.tz) : null,
     version: po.version,
   };
 }
@@ -251,8 +259,9 @@ export async function loadPurchaseOrder(
   if (!po) throw Errors.notFound('Pedido de compra');
   const prices = canSeePrices(request);
   const received = po.items.some((i) => num(i.receivedQuantity) > 0);
+  const tz = await shopTimezone(db);
   return {
-    ...toSummary(po, prices),
+    ...toSummary(po, prices, { today: todayIso(tz), tz }),
     notes: po.notes,
     items: po.items.map((i) => {
       const rejected = i.receiptLines.reduce((s, l) => s + num(l.rejectedQuantity), 0);
@@ -699,7 +708,9 @@ export async function purchaseOrderRoutes(app: FastifyInstance) {
       take: q.limit,
     });
     const prices = canSeePrices(request);
-    return rows.map((r) => toSummary(r, prices));
+    const tz = await shopTimezone(prisma);
+    const ctx = { today: todayIso(tz), tz };
+    return rows.map((r) => toSummary(r, prices, ctx));
   });
 
   app.get('/api/v1/purchase-orders/:id', { config: { access: PURCHASE_VIEW } }, async (request) => {

@@ -1,6 +1,7 @@
 'use client';
 
 import type { HelpStatus, ProposalAlternative, RescheduleProposalDto } from '@cenario/shared';
+import { useFocusParam } from '@/lib/focus-param';
 import {
   CANDIDATE_REASONS,
   HELP_KIND_LABEL,
@@ -58,6 +59,7 @@ const TAB_LABEL: Record<HelpStatus, string> = {
 
 /** Pedidos de ajuda por status, com a avaliação dos candidatos de cada atribuição. */
 export function HelpRequestsPage() {
+  useFocusParam();
   const can = useCan();
   const q = useHelpRequests();
   const [tab, setTab] = useState<HelpStatus>('PENDENTE');
@@ -127,6 +129,7 @@ export function HelpRequestsPage() {
                     key={r.id}
                     className="border-t border-line"
                     data-testid={`help-row-${r.code}`}
+                    data-focus-id={r.id}
                   >
                     <td>
                       <span className="font-mono font-semibold">{r.code}</span>
@@ -287,6 +290,7 @@ function HelpDetailDialog({ id, onClose }: { id: string; onClose: () => void }) 
 
 /** Propostas que exigem decisão do gestor e histórico de alterações (automáticas e aprovadas). */
 export function ReschedulePage() {
+  useFocusParam();
   const [tab, setTab] = useState<'pending' | 'decided' | 'history'>('pending');
   const pending = useProposals('PENDENTE');
   const all = useProposals();
@@ -335,7 +339,7 @@ function ProposalCard({ p }: { p: RescheduleProposalDto }) {
   const { m, error } = useSend();
   const alt = p.alternatives.find((a) => a.id === choice);
   return (
-    <Card className="p-5" data-testid={`proposal-${p.code}`}>
+    <Card className="p-5" data-testid={`proposal-${p.code}`} data-focus-id={p.id}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono font-semibold">{p.code}</span>
         <Badge tone="info">{PROPOSAL_KIND_LABEL[p.kind]}</Badge>

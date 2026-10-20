@@ -1,6 +1,7 @@
 'use client';
 
 import type { DeliveryDto, PickupTeam, PieceStatusDto } from '@cenario/shared';
+import { useFocusParam } from '@/lib/focus-param';
 import {
   DELIVERY_ITEM_STATUS_LABEL,
   DELIVERY_STATUS_LABEL,
@@ -88,6 +89,7 @@ export function DeliveryBadge({ status }: { status: DeliveryStatus }) {
 // ─────────────────────────── Página Expedição e entregas ───────────────────────────
 
 export function DeliveriesPage() {
+  useFocusParam();
   const [tab, setTab] = useTabParam('agenda', ['agenda', 'ready', 'shipping', 'occurrences']);
   const ready = usePieces({ stage: 'PRONTA_ENTREGA' });
   const occurrences = useLogisticsOccurrences({ status: 'ABERTA' });
@@ -257,7 +259,7 @@ function ReadyPieces() {
         >
           <ul className="space-y-1 text-sm">
             {list.map((p) => (
-              <li key={p.id} data-testid={`ready-${p.code}`}>
+              <li key={p.id} data-testid={`ready-${p.code}`} data-focus-id={p.id}>
                 <span className="font-mono font-semibold">{p.code}</span> · {p.description} ·{' '}
                 {p.location?.label ?? 'sem local'}
                 {p.serviceOrder.promisedDate

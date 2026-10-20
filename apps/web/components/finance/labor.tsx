@@ -51,7 +51,7 @@ export function LaborTab() {
           <h2 className="mb-3 text-lg font-semibold">Revisões financeiras pendentes</h2>
           <ul className="space-y-2">
             {reviews.data.map((r) => (
-              <li key={r.id}>
+              <li key={r.id} data-focus-id={r.id}>
                 <Alert
                   tone="warn"
                   title={`${r.code} — ${r.serviceOrder.code}${r.piece ? ` · ${r.piece.code}` : ' · OS inteira'}`}

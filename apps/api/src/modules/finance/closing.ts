@@ -975,6 +975,11 @@ export async function registerClosingPayment(
     entityType: 'closing_payment',
     entityId: header.id,
     summary: `${code}: pagamento externo de ${(input.amountCents / 100).toFixed(2)} a ${user.displayName} (${input.method}) baixado em ${parts.length} obrigação(ões).`,
+    // F10-20b: o lote e o antes/depois de cada obrigação baixada (detalhe em cada baixa).
+    changes: {
+      weekStart,
+      parts: parts.map((p) => ({ code: p.item.code, amountCents: p.amountCents })),
+    },
   });
   return header.id;
 }
@@ -1016,6 +1021,7 @@ export async function reverseClosingPayment(
     entityType: 'closing_payment',
     entityId: id,
     summary: `${closingPaymentCode(h.number)} estornado: ${input.reason}`,
+    changes: { status: { from: 'PAGO', to: 'ESTORNADO' }, reason: input.reason },
   });
 }
 

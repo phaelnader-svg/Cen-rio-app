@@ -10,6 +10,9 @@ import {
   reverseReceiptSchema,
   unitError,
   type PendingMaterialReceiptDto,
+  RECEIVING_SITUATIONS,
+  receivingSituation,
+  type ReceivingRowDto,
 } from '@cenario/shared';
 import type { PurchaseOrderStatus, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
@@ -36,6 +39,7 @@ import {
   refreshReadiness,
   requirementsWithProgress,
   specOf,
+  pendingQuantity,
 } from './common';
 import {
   lockPurchaseOrder,
@@ -424,6 +428,88 @@ export async function materialReceiptRoutes(app: FastifyInstance) {
       }),
     );
   });
+
+  /**
+   * Rodada 3 (F6-03): fila "Recebimentos" — pedidos confirmados (aguardando, parciais, recebidos,
+   * aguardando conferência, conferidos) e cancelados, derivados do pedido e das chegadas. Sem
+   * preços; rascunhos não entram (não são compra).
+   */
+  app.get(
+    '/api/v1/purchasing/receiving',
+    { config: { access: RECEIPT_VIEW } },
+    async (request): Promise<ReceivingRowDto[]> => {
+      const q = z
+        .object({
+          situation: z.enum(RECEIVING_SITUATIONS).optional(),
+          limit: z.coerce.number().int().min(1).max(500).default(200),
+        })
+        .parse(request.query);
+      const orders = await prisma.purchaseOrder.findMany({
+        where: { status: { not: 'RASCUNHO' } },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          expectedDate: true,
+          updatedAt: true,
+          supplier: { select: { name: true } },
+          items: {
+            select: {
+              quantity: true,
+              receivedQuantity: true,
+              closedQuantity: true,
+              serviceOrder: { select: { id: true, number: true } },
+            },
+          },
+          receipts: {
+            select: { number: true, receivedAt: true },
+            orderBy: { receivedAt: 'desc' },
+            take: 5,
+          },
+          arrivals: { select: { status: true, receivedAt: true } },
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+      const rows: ReceivingRowDto[] = [];
+      for (const po of orders) {
+        const pendingConference = po.arrivals.filter(
+          (a) => a.status === 'PENDENTE_CONFERENCIA',
+        ).length;
+        const conferred = po.arrivals.filter((a) => a.status !== 'PENDENTE_CONFERENCIA').length;
+        const situation = receivingSituation({ status: po.status, pendingConference, conferred });
+        if (!situation || (q.situation && situation !== q.situation)) continue;
+        const sos = new Map(
+          po.items.flatMap((i) => (i.serviceOrder ? [[i.serviceOrder.id, i.serviceOrder]] : [])),
+        );
+        const last = [po.updatedAt, ...po.receipts.map((r) => r.receivedAt)].reduce((a, b) =>
+          a > b ? a : b,
+        );
+        rows.push({
+          id: po.id,
+          code: purchaseOrderCode(po.number),
+          supplier: po.supplier?.name ?? null,
+          status: po.status,
+          situation,
+          expectedDate: dateOnly(po.expectedDate),
+          itemCount: po.items.length,
+          pendingItems: po.items.filter((i) => pendingQuantity(i) > EPS).length,
+          pendingConference,
+          conferred,
+          receipts: po.receipts.map((r) => ({
+            code: materialReceiptCode(r.number),
+            receivedAt: r.receivedAt.toISOString(),
+          })),
+          lastActivityAt: last.toISOString(),
+          serviceOrders: [...sos.values()].map((s) => ({
+            id: s.id,
+            code: serviceOrderCode(s.number),
+          })),
+        });
+        if (rows.length >= q.limit) break;
+      }
+      return rows;
+    },
+  );
 
   app.get('/api/v1/material-receipts', { config: { access: RECEIPT_VIEW } }, async (request) => {
     const q = z

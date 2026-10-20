@@ -224,6 +224,29 @@ export function MyValues() {
         token={unlock.token}
         onDone={() => load(unlock, data.weekStart)}
       />
+      {/* F8-06: trabalho próprio já feito, ainda sem valor lançado — só o estado, nunca R$. */}
+      {(data.pendingWork ?? []).length > 0 && (
+        <Card className="space-y-2 p-5" data-testid="my-values-pending-work">
+          <p className="text-lg font-semibold">Trabalho concluído, valor ainda não disponível</p>
+          <ul className="space-y-1">
+            {data.pendingWork.map((w) => (
+              <li
+                key={w.piece}
+                className="flex flex-wrap items-center gap-3 text-base"
+                data-testid={`my-pending-${w.piece}`}
+              >
+                <span className="font-medium">
+                  {w.piece} — {w.description}
+                </span>
+                <Badge tone={w.state === 'EM_REVISAO' ? 'warn' : 'neutral'}>{w.label}</Badge>
+              </li>
+            ))}
+          </ul>
+          <p className="text-base text-ink-muted">
+            O valor aparece aqui quando o gestor lançar. Nada disso entra nos totais.
+          </p>
+        </Card>
+      )}
       {!data.items.length ? (
         <p className="text-lg text-ink-muted">Nenhum ganho nesta semana.</p>
       ) : (

@@ -126,6 +126,30 @@ export function Dashboard() {
         )}
       </div>
 
+      {overview.data?.attention && (
+        <Link
+          href="/painel/atencao"
+          className="block rounded-2xl"
+          data-testid="dashboard-attention"
+        >
+          <Card className="flex flex-wrap items-center gap-x-6 gap-y-1 p-5 transition-shadow hover:shadow-[var(--shadow-pop)]">
+            <span className="flex items-center gap-2 text-sm font-medium text-ink-muted">
+              <AlarmClock className="size-4" aria-hidden />
+              Central de atenção
+            </span>
+            {/* F10-21i: o mesmo total da Central (mesma fonte, mesmo recorte de permissões). */}
+            <span className="text-lg font-semibold tabular-nums">
+              <span data-testid="dashboard-attention-total">{overview.data.attention.total}</span>{' '}
+              pendência(s) ·{' '}
+              <span data-testid="dashboard-attention-critical">
+                {overview.data.attention.critical}
+              </span>{' '}
+              crítica(s) · {overview.data.attention.action} pedem ação
+            </span>
+          </Card>
+        </Link>
+      )}
+
       {deadlinesVisible && (
         <Link
           href="/painel/atencao?type=PRAZO_OS"
@@ -233,6 +257,20 @@ export function Dashboard() {
               detail={`${ops.pieces.rework} em retrabalho · ${ops.pieces.packaging} na embalagem`}
             />
             <Stat
+              href="/painel/producao/a-planejar"
+              icon={<ClipboardList className="size-4" aria-hidden />}
+              label="A planejar"
+              value={<span data-testid="ops-to-plan">{ops.preProduction.toPlan}</span>}
+              detail={`${ops.preProduction.plannedDraft} em rascunho · ${ops.preProduction.plannedPublished} publicada(s) · ${ops.preProduction.awaitingCondition} aguardando condição`}
+            />
+            <Stat
+              href="/painel/producao?status=BLOQUEADA"
+              icon={<AlarmClock className="size-4" aria-hidden />}
+              label="Bloqueios"
+              value={<span data-testid="ops-blocked-tasks">{ops.blockedTasks}</span>}
+              detail={`tarefa(s) de produção bloqueada(s) · ${ops.pieces.blocked} peça(s) com expedição bloqueada · ${ops.pieces.inTransit} em trânsito`}
+            />
+            <Stat
               href="/painel/entregas?tab=ready"
               icon={<Truck className="size-4" aria-hidden />}
               label="Prontas para entrega"
@@ -251,6 +289,24 @@ export function Dashboard() {
         <section data-testid="dashboard-deliveries">
           <h2 className="mb-3 font-semibold">Entregas</h2>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat
+              href={`/painel/roteiro?data=${overview.data?.today ?? today}`}
+              icon={<Truck className="size-4" aria-hidden />}
+              label="Próximos 2 dias"
+              value={
+                <span data-testid="dl-upcoming">{dl.upcoming + (dl.pickups?.upcoming ?? 0)}</span>
+              }
+              detail={`${dl.upcoming} entrega(s)${dl.pickups ? ` · ${dl.pickups.upcoming} retirada(s)` : ''}`}
+            />
+            {dl.pickups && (
+              <Stat
+                href="/painel/retiradas"
+                icon={<PackageCheck className="size-4" aria-hidden />}
+                label="Aguardando chegada"
+                value={<span data-testid="dl-awaiting-arrival">{dl.pickups.awaitingArrival}</span>}
+                detail="retiradas feitas, peças ainda não recebidas na oficina"
+              />
+            )}
             <Stat
               href="/painel/entregas"
               icon={<Truck className="size-4" aria-hidden />}
@@ -294,18 +350,33 @@ export function Dashboard() {
               value={<span data-testid="fin-paid">{money(fin.paid.paidInWeekCents)}</span>}
               detail="aos profissionais (tapeçaria e logística), estornos descontados"
             />
+            {/* F10-14: cada contagem leva à tela onde ESSES itens aparecem. */}
             <Stat
               href="/painel/atencao?type=FINANCEIRO"
               icon={<AlarmClock className="size-4" aria-hidden />}
               label="Decisões financeiras"
               value={
                 <span data-testid="fin-decisions">
-                  {fin.decisions.valueRequests +
-                    fin.decisions.laborReviews +
-                    fin.decisions.paymentReports}
+                  {fin.decisions.valueRequests + fin.decisions.laborReviews}
                 </span>
               }
-              detail={`${fin.decisions.valueRequests} negociação(ões) · ${fin.decisions.laborReviews} revisão(ões) · ${fin.decisions.paymentReports} pagamento(s) informado(s)`}
+              detail={`${fin.decisions.valueRequests} negociação(ões) · ${fin.decisions.laborReviews} revisão(ões)`}
+            />
+            <Stat
+              href="/painel/financeiro?tab=receitas"
+              icon={<FileSignature className="size-4" aria-hidden />}
+              label="Pagamentos informados"
+              value={<span data-testid="fin-payment-reports">{fin.decisions.paymentReports}</span>}
+              detail="informados pela equipe, aguardando conferência"
+            />
+            <Stat
+              href="/painel/financeiro?tab=pagar"
+              icon={<Truck className="size-4" aria-hidden />}
+              label="Obrigações logísticas"
+              value={
+                <span data-testid="fin-logistics">{money(fin.payables.logisticsOpenCents)}</span>
+              }
+              detail={`${money(fin.payables.logisticsOverdueCents)} vencido · parte das contas a pagar`}
             />
           </div>
         </section>

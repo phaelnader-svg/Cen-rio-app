@@ -795,7 +795,7 @@ function ValueRequestsPanel() {
         ]}
       >
         {list.map((r) => (
-          <tr key={r.id} data-testid={`value-request-${r.code}`}>
+          <tr key={r.id} data-testid={`value-request-${r.code}`} data-focus-id={r.id}>
             <td className="px-4 py-2.5 font-medium">{r.code}</td>
             <td className="px-4 py-2.5">{r.beneficiary.displayName}</td>
             <td className="px-4 py-2.5">{r.weekStart ? brDate(r.weekStart) : '—'}</td>

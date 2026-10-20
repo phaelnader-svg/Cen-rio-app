@@ -571,6 +571,7 @@ function ReportList({
           key={p.id}
           className="flex flex-wrap items-center gap-3 px-3 py-2"
           data-testid={`payment-report-${p.id}`}
+          data-focus-id={p.id}
         >
           <span className="font-mono font-semibold">{p.order.code}</span>
           <span>{p.customerName}</span>

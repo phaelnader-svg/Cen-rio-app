@@ -81,6 +81,7 @@ const GROUP_PREFIXES: [string, NavGroup][] = [
   ['/painel/recebimento-materiais', 'Compras'],
   ['/painel/estoque', 'Compras'],
   ['/painel/prontidao', 'Compras'],
+  ['/painel/materiais', 'Compras'],
   ['/painel/financeiro', 'Financeiro'],
 ];
 export function navGroupOf(href: string): NavGroup {
@@ -216,6 +217,14 @@ export const NAV: NavItem[] = [
     label: 'Prontidão de materiais',
     icon: ListChecks,
     anyOf: ['os.ver', 'estoque.ver', 'compras.ver', 'materiais.ver'],
+  },
+  // Rodada 3 (F10-02): a lista consolidada (bruta) dos materiais aprovados não ficava acessível pelo
+  // menu (só por um link no planejamento).
+  {
+    href: '/painel/materiais',
+    label: 'Materiais aprovados',
+    icon: ClipboardList,
+    anyOf: ['materiais.ver', 'materiais.aprovar', 'compras.ver'],
   },
   {
     href: '/painel/qualidade',

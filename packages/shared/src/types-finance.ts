@@ -593,6 +593,23 @@ export interface MyEarningsDto {
   }[];
   /** R2: conferência da semana pelo profissional (D13). */
   confirmation: WeekConfirmationDto;
+  /**
+   * Rodada 3 (F8-06): trabalho próprio de tapeçaria já CONCLUÍDO numa peça da qual a pessoa é a
+   * titular, sem nenhuma obrigação lançada para ela nessa peça. ESTADO INFORMATIVO apenas: não
+   * tem valor (nem R$ 0,00), não entra em total nenhum e não cria obrigação. Só na semana atual
+   * (é a situação de agora, não de uma semana).
+   */
+  pendingWork: OwnPendingWorkDto[];
+}
+
+export interface OwnPendingWorkDto {
+  serviceOrder: string;
+  piece: string;
+  description: string;
+  /** SEM_VALOR: "valor ainda não disponível"; EM_REVISAO: revisão financeira aberta na peça. */
+  state: 'SEM_VALOR' | 'EM_REVISAO';
+  label: string;
+  completedAt: string;
 }
 
 /** R2 — o que o profissional confere (ou a exceção cobre) e a situação ao vivo. */

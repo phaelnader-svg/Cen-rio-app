@@ -279,4 +279,61 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await expect(labor).toContainText(/R\$\s280,00/);
     await expect(labor).toContainText('Combinado (previsto)');
   });
+  /**
+   * Rodada 3 (F2-24): o formulário inteiro preenchido e salvo num celular (390 × 844) — sem
+   * rolagem horizontal em nenhuma etapa e com todos os campos dentro da largura da tela.
+   */
+  test('390 px: preencher e salvar o Novo serviço no celular, sem rolagem horizontal', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await loginAdmin(page);
+    const fits = async (step: string) => {
+      const over = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(over, `rolagem horizontal (${step})`).toBeLessThanOrEqual(0);
+      const outside = await page.evaluate(
+        () =>
+          Array.from(
+            document.querySelectorAll(
+              '[data-testid="new-service-form"] input, [data-testid="new-service-form"] select, [data-testid="new-service-form"] button',
+            ),
+          )
+            .filter((el) => (el as HTMLElement).offsetParent !== null)
+            .map((el) => el.getBoundingClientRect())
+            .filter((r) => r.left < -1 || r.right > window.innerWidth + 1).length,
+      );
+      expect(outside, `campos fora da tela (${step})`).toBe(0);
+    };
+    await page.goto('/painel/servicos/novo');
+    const form = page.getByTestId('new-service-form');
+    await expect(form.getByRole('heading', { name: 'Cliente' })).toBeVisible();
+    await fits('início');
+    await page.getByTestId('ns-mode-new').click();
+    await page.getByTestId('ns-name').fill('Cliente Celular 390');
+    await page.getByTestId('ns-phone').fill('(11) 95555-3901');
+    await form.getByLabel('Logradouro').fill('Rua do Celular');
+    await form.getByLabel('Número').fill('390');
+    await form.getByLabel('Cidade').fill('Cidade Teste');
+    await fits('cliente');
+    await page.getByTestId('ns-piece-desc-0').fill('Cadeira de jantar');
+    await page.getByTestId('ns-add-piece').click();
+    await page.getByTestId('ns-piece-desc-1').fill('Banqueta');
+    await page.getByTestId('ns-promised').fill(promised());
+    await page.getByTestId('ns-value').fill('900,00');
+    await fits('peças e valor');
+    await page.getByTestId('ns-date').fill(today());
+    await page.getByTestId('ns-arrival').fill('10:00');
+    await page.getByTestId('ns-team-own').click();
+    await fits('retirada');
+    await expect(page.getByTestId('ns-sum-pieces')).toContainText('1× Cadeira de jantar');
+    await expect(page.getByTestId('ns-sum-pieces')).toContainText('1× Banqueta');
+    await page.getByTestId('ns-submit').scrollIntoViewIfNeeded();
+    await page.getByTestId('ns-submit').click();
+    await expect(page.getByTestId('ns-confirmation')).toContainText('Aguardando retirada');
+    await expect(page.getByTestId('ns-done-order')).toHaveText(/PC-\d{5}/);
+    await fits('confirmação');
+  });
 });

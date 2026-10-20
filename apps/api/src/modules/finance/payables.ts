@@ -197,6 +197,12 @@ export async function payPayable(
     entityType: 'account_payable',
     entityId: id,
     summary: `${payableCode(p.number)}: pagamento registrado de ${(input.amountCents / 100).toFixed(2)} (${input.method})${coverage ? ` — ${coverage.kind === 'PROFISSIONAL' ? 'confirmação' : 'exceção administrativa'} ${coverage.code}` : ''}.`,
+    // F10-20b: estado anterior e posterior da conta.
+    changes: {
+      paidCents: { from: p.paidCents, to: paid },
+      status: { from: p.status, to: status },
+      coverage: coverage?.code ?? null,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'account_payable',
@@ -246,6 +252,7 @@ export async function cancelPayable(
     entityType: 'account_payable',
     entityId: id,
     summary: `${payableCode(p.number)} cancelada: ${input.reason}`,
+    changes: { status: { from: p.status, to: 'CANCELADO' }, reason: input.reason },
   });
   await financeEvent(tx, actor, {
     entityType: 'account_payable',

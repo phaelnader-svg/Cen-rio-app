@@ -1,6 +1,8 @@
 'use client';
 
 import type { InspectionDto, PackagingDto, QualityTemplateDto } from '@cenario/shared';
+import { useFocusParam } from '@/lib/focus-param';
+import { useTabParam } from '@/lib/tab-param';
 import {
   FULFILLMENT_STAGE_LABEL,
   INSPECTION_REASON_LABEL,
@@ -56,7 +58,14 @@ export function InspectionBadge({ status }: { status: InspectionStatus }) {
 // ─────────────────────────── Página Qualidade ───────────────────────────
 
 export function QualityPage() {
-  const [tab, setTab] = useState('inspections');
+  useFocusParam();
+  const [tab, setTab] = useTabParam('inspections', [
+    'inspections',
+    'history',
+    'packaging',
+    'templates',
+    'settings',
+  ]);
   const open = useInspections({ scope: 'open' });
   const packaging = usePackaging('open');
   return (
@@ -167,6 +176,7 @@ function PackagingList() {
             key={p.id}
             className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5 text-sm"
             data-testid={`packaging-${p.code}`}
+            data-focus-id={p.id}
           >
             <span className="w-24 font-mono font-semibold">{p.code}</span>
             <div className="min-w-0 flex-1">

@@ -106,6 +106,16 @@ export async function resolveNotifications(
   return rows.length;
 }
 
+/**
+ * Rodada 3 (F10-19) — atribuição de retirada (`ENTREGA_ATRIBUIDA`, assunto `RETIRADA_ATRIBUIDA:<id>`):
+ * deixa de pedir ação quando a retirada é feita (retirada realizada / recebida na oficina), é
+ * cancelada ou passa a outra pessoa (o aviso do responsável anterior).
+ */
+export const PICKUP_ASSIGNMENT_DONE = ['RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA', 'CANCELADA'];
+export function resolvePickupAssignment(tx: Tx, actor: ActorContext, pickupId: string) {
+  return resolveNotifications(tx, actor, 'ENTREGA_ATRIBUIDA', [`RETIRADA_ATRIBUIDA:${pickupId}`]);
+}
+
 type TaskLike = {
   id: string;
   number: number;

@@ -49,7 +49,7 @@ import { asSnapshot, dateOnly, lockOrder, pickupCode } from '../commercial/commo
 import { refreshOrderStatus } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { PICKUP_AUDIENCE } from '../pickups/routes';
-import { notify } from '../notifications/notify';
+import { notify, resolvePickupAssignment } from '../notifications/notify';
 import { idParams } from '../presenters';
 import { workers } from '../production/plans';
 import {
@@ -1011,6 +1011,9 @@ export async function qualityRoutes(app: FastifyInstance) {
           where: { id },
           data: { logisticsUserId: input.logisticsUserId, version: { increment: 1 } },
         });
+        // F10-19: a retirada mudou de mãos — o aviso de quem a tinha deixa de pedir ação.
+        if (cur.logisticsUserId && cur.logisticsUserId !== input.logisticsUserId)
+          await resolvePickupAssignment(tx, actor, id);
         await tx.pickupEvent.create({
           data: {
             pickupId: id,
@@ -1107,6 +1110,7 @@ export async function qualityRoutes(app: FastifyInstance) {
           },
         });
         await refreshOrderStatus(tx, p.orderId);
+        if (to === 'RETIRADA_REALIZADA') await resolvePickupAssignment(tx, actor, id);
         await audit(tx, actor, {
           action: 'pickup.status_changed',
           entityType: 'pickup_request',

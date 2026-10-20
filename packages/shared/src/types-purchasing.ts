@@ -8,6 +8,7 @@ import type {
   MaterialReadiness,
   PurchaseOrderStatus,
   ReceiptIssue,
+  ReceivingSituation,
   RejectionDecision,
   RequirementStatus,
   ReservationStatus,
@@ -101,6 +102,8 @@ export interface PurchaseOrderSummaryDto {
   hasIssues: boolean;
   /** V8: compra (ou parte dela) para OS cancelada — sem destino operacional. */
   withoutDestination: Ref[];
+  /** D10: dias (da oficina) em rascunho; nulo fora de rascunho. */
+  draftDays: number | null;
   version: number;
 }
 
@@ -127,6 +130,23 @@ export interface MaterialReceiptLineDto extends SpecDto {
   rejectionDecision: RejectionDecision | null;
   /** Recusa com saldo ainda em aberto aguardando a decisão repor/não repor. */
   rejectionPending: boolean;
+}
+
+/** Rodada 3 (F6-03): linha da fila "Recebimentos" (sem preços). */
+export interface ReceivingRowDto {
+  id: string;
+  code: string;
+  supplier: string | null;
+  status: string;
+  situation: ReceivingSituation;
+  expectedDate: string | null;
+  itemCount: number;
+  pendingItems: number;
+  pendingConference: number;
+  conferred: number;
+  receipts: { code: string; receivedAt: string }[];
+  lastActivityAt: string;
+  serviceOrders: { id: string; code: string }[];
 }
 
 export interface MaterialReceiptDto {

@@ -112,6 +112,8 @@ export interface AttendanceHistoryDto {
 
 export interface AttendanceImpactDto {
   id: string;
+  /** Rodada 3 (F10-14): expediente do impacto (destino do link da Central). */
+  attendanceId: string;
   kind: ImpactKind;
   employee: { id: string; displayName: string };
   date: string;

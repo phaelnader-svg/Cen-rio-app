@@ -5,6 +5,7 @@ import {
   measurementCode,
   zonedDateTime,
   type OverviewDto,
+  type Permission,
   type ServiceTimelineDto,
   type TimelineDomain,
   type TimelineEntryDto,
@@ -17,7 +18,9 @@ import { deadlineCalendar, deadlineCandidatesWhere, serviceDeadlines } from '../
 import { buildClosingItems, summarize } from '../finance/closing';
 import { shopTimezone } from '../finance/common';
 import { dueContext, dueOf } from '../finance/revenue';
+import { loadAttention } from '../issues/attention';
 import { idParams } from '../presenters';
+import { loadPipeline } from '../production/pre-planning';
 import { DELIVERED_ITEM } from '../quality/common';
 
 const FINAL_STAGES = ['ENTREGUE', 'DEVOLVIDA', 'CANCELADA'];
@@ -64,18 +67,26 @@ export async function managementRoutes(app: FastifyInstance) {
     };
     let operations: OverviewDto['operations'] = null;
     if (perms.has('os.ver')) {
-      const [activeServiceOrders, awaitingMaterials, stages, states] = await Promise.all([
-        prisma.serviceOrder.count({ where: active }),
-        prisma.serviceOrder.count({
-          where: { ...active, materialsReadiness: { in: [...MATERIALS_PENDING_STATES] } },
-        }),
-        prisma.serviceOrderItem.groupBy({
-          by: ['fulfillmentStage'],
-          where: { serviceOrder: { status: 'ABERTA' }, fulfillmentStage: { notIn: FINAL_STAGES } },
-          _count: true,
-        }),
-        serviceDeadlines(prisma, deadlineCandidatesWhere(cal), cal),
-      ]);
+      const [activeServiceOrders, awaitingMaterials, stages, states, pipeline, blockedTasks] =
+        await Promise.all([
+          prisma.serviceOrder.count({ where: active }),
+          prisma.serviceOrder.count({
+            where: { ...active, materialsReadiness: { in: [...MATERIALS_PENDING_STATES] } },
+          }),
+          prisma.serviceOrderItem.groupBy({
+            by: ['fulfillmentStage'],
+            where: {
+              serviceOrder: { status: 'ABERTA' },
+              fulfillmentStage: { notIn: FINAL_STAGES },
+            },
+            _count: true,
+          }),
+          serviceDeadlines(prisma, deadlineCandidatesWhere(cal), cal),
+          loadPipeline(prisma),
+          prisma.productionTask.count({
+            where: { status: 'BLOQUEADA', serviceOrder: { status: 'ABERTA' } },
+          }),
+        ]);
       const pieces = {
         production: 0,
         quality: 0,
@@ -96,7 +107,20 @@ export async function managementRoutes(app: FastifyInstance) {
         else if (d.state === 'EM_RISCO') deadlines.atRisk += 1;
         else if (d.state === 'PROXIMO') deadlines.soon += 1;
       }
-      operations = { activeServiceOrders, deadlines, awaitingMaterials, pieces };
+      const preProduction = {
+        toPlan: pipeline.counts.A_PLANEJAR,
+        plannedDraft: pipeline.counts.PLANEJADO_RASCUNHO,
+        plannedPublished: pipeline.counts.PLANEJADO_PUBLICADO,
+        awaitingCondition: pipeline.counts.AGUARDANDO_CONDICAO,
+      };
+      operations = {
+        activeServiceOrders,
+        deadlines,
+        awaitingMaterials,
+        pieces,
+        preProduction,
+        blockedTasks,
+      };
     }
 
     let deliveries: OverviewDto['deliveries'] = null;
@@ -125,7 +149,20 @@ export async function managementRoutes(app: FastifyInstance) {
           },
         }),
       ]);
-      deliveries = { upcoming, frustrated, deliveredToday };
+      let pickups: NonNullable<OverviewDto['deliveries']>['pickups'] = null;
+      if (perms.has('retiradas.ver') || perms.has('retiradas.gerenciar')) {
+        const [pickupsUpcoming, awaitingArrival] = await Promise.all([
+          prisma.pickupRequest.count({
+            where: {
+              status: { in: ['AGENDADA', 'EM_EXECUCAO'] },
+              scheduledDate: { gte: dbDate(cal.today), lte: dbDate(addDays(cal.today, 2)) },
+            },
+          }),
+          prisma.pickupRequest.count({ where: { status: 'RETIRADA_REALIZADA' } }),
+        ]);
+        pickups = { upcoming: pickupsUpcoming, awaitingArrival };
+      }
+      deliveries = { upcoming, frustrated, deliveredToday, pickups };
     }
 
     let finance: OverviewDto['finance'] = null;
@@ -150,21 +187,40 @@ export async function managementRoutes(app: FastifyInstance) {
         await Promise.all([
           prisma.accountPayable.findMany({
             where: { status: { in: OPEN_RECEIVABLE } },
-            select: { amountCents: true, paidCents: true, dueDate: true },
+            select: {
+              amountCents: true,
+              paidCents: true,
+              dueDate: true,
+              logisticsCost: { select: { id: true } },
+            },
           }),
           prisma.productionPayable.findMany({
             where: { status: { in: ['LIBERADO', 'PAGO_PARCIAL'] } },
             select: { agreedCents: true, adjustmentsCents: true, paidCents: true },
           }),
-          prisma.valueChangeRequest.count({ where: { status: 'PENDENTE' } }),
+          // F10-14: a negociação só conta para quem a vê na Central (`financeiro.ajustes`).
+          perms.has('financeiro.ajustes')
+            ? prisma.valueChangeRequest.count({ where: { status: 'PENDENTE' } })
+            : 0,
           prisma.laborReview.count({ where: { status: 'ABERTA' } }),
           prisma.customerPaymentReport.count({ where: { status: 'PENDENTE' } }),
         ]);
-      const payables = { openCents: 0, overdueCents: 0 };
+      const payables = {
+        openCents: 0,
+        overdueCents: 0,
+        logisticsOpenCents: 0,
+        logisticsOverdueCents: 0,
+      };
       for (const p of payableRows) {
         const left = Math.max(0, p.amountCents - p.paidCents);
+        const overdue = p.dueDate.toISOString().slice(0, 10) < ctx.today;
         payables.openCents += left;
-        if (p.dueDate.toISOString().slice(0, 10) < ctx.today) payables.overdueCents += left;
+        if (overdue) payables.overdueCents += left;
+        // F10-21r: a conta nascida de custo logístico é separada (subconjunto do total).
+        if (p.logisticsCost) {
+          payables.logisticsOpenCents += left;
+          if (overdue) payables.logisticsOverdueCents += left;
+        }
       }
       const laborDueCents = laborRows.reduce(
         (a, p) => a + Math.max(0, p.agreedCents + p.adjustmentsCents - p.paidCents),
@@ -185,12 +241,25 @@ export async function managementRoutes(app: FastifyInstance) {
       };
     }
 
+    // F10-21i: o total de pendências é o da própria Central (mesmo cálculo e mesmo recorte de
+    // permissões), nunca uma soma paralela.
+    let attention: OverviewDto['attention'] = null;
+    if (perms.has('ocorrencias.ver') || perms.has('ocorrencias.gerenciar')) {
+      const central = await loadAttention(prisma, perms as ReadonlySet<Permission>, {});
+      attention = {
+        total: central.total,
+        critical: central.counts.CRITICO,
+        action: central.counts.ACAO,
+      };
+    }
+
     return {
       generatedAt: new Date().toISOString(),
       today: cal.today,
       operations,
       deliveries,
       finance,
+      attention,
     } satisfies OverviewDto;
   });
 

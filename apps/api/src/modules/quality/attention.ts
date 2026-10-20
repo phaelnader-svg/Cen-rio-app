@@ -118,7 +118,7 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       at: r.createdAt.toISOString(),
       deadline: dateOnly(p.serviceOrder.promisedDate),
       nextActions: ['Designar quem embala (tapeceiro só com autorização)'],
-      link: '/painel/qualidade',
+      link: `/painel/qualidade?tab=packaging&foco=${r.id}`,
     });
   }
 
@@ -152,7 +152,7 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       at: p.updatedAt.toISOString(),
       deadline: promised,
       nextActions: ['Agendar a entrega com o cliente'],
-      link: '/painel/entregas?tab=ready',
+      link: `/painel/entregas?tab=ready&foco=${p.id}`,
     });
   }
 

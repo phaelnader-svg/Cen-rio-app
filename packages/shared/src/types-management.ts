@@ -25,6 +25,21 @@ export interface OverviewDto {
       scheduled: number;
       inTransit: number;
     };
+    /**
+     * Rodada 3 (F10-04/F10-21k): OS ativas antes da produção, pela etapa do pipeline da
+     * Produção (a mesma fonte da tela "A planejar"; contagem por OS, não por peça).
+     */
+    preProduction: {
+      toPlan: number;
+      plannedDraft: number;
+      plannedPublished: number;
+      awaitingCondition: number;
+    };
+    /**
+     * Rodada 3 (F10-21l): tarefas de produção BLOQUEADAS em OS abertas — bloqueio de PRODUÇÃO.
+     * (`pieces.blocked` continua sendo o bloqueio de EXPEDIÇÃO da peça.)
+     */
+    blockedTasks: number;
   } | null;
   deliveries: {
     /** Entregas agendadas de hoje até daqui a 2 dias. */
@@ -38,10 +53,24 @@ export interface OverviewDto {
      * agendada ou só em trânsito não contam; parcial conta só as peças entregues.
      */
     deliveredToday: number;
+    /**
+     * Rodada 3 (F10-05/F10-06): retiradas agendadas/em execução de hoje até daqui a 2 dias e
+     * retiradas já feitas aguardando a chegada na oficina. `null` sem permissão de retiradas.
+     */
+    pickups: { upcoming: number; awaitingArrival: number } | null;
   } | null;
   finance: {
     receivables: { openCents: number; overdueCents: number; overdueCount: number };
-    payables: { openCents: number; overdueCents: number };
+    /**
+     * Contas a pagar abertas (todas). Rodada 3 (F10-21r): `logistics*` é a PARTE dessas contas
+     * que nasceu de custo logístico (viagem/frete) — subconjunto, não soma à parte.
+     */
+    payables: {
+      openCents: number;
+      overdueCents: number;
+      logisticsOpenCents: number;
+      logisticsOverdueCents: number;
+    };
     /** Mão de obra liberada e ainda não paga (ProductionPayable). */
     laborDueCents: number;
     /**
@@ -52,6 +81,11 @@ export interface OverviewDto {
     paid: { weekStart: string; paidInWeekCents: number };
     decisions: { valueRequests: number; laborReviews: number; paymentReports: number };
   } | null;
+  /**
+   * Rodada 3 (F10-21i): pendências da Central de Atenção — o mesmo cálculo e o mesmo recorte
+   * de permissões da Central (fonte única). `null` sem acesso à Central.
+   */
+  attention: { total: number; critical: number; action: number } | null;
 }
 
 export type TimelineDomain =

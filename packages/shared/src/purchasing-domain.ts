@@ -31,6 +31,56 @@ export const PURCHASE_ORDER_RECEIVABLE: readonly PurchaseOrderStatus[] = [
   'CONFIRMADO',
   'PARCIALMENTE_RECEBIDO',
 ];
+/**
+ * Rodada 3 (F6-03): situação de recebimento de um pedido de compra (fila "Recebimentos"), derivada
+ * só das fontes canônicas: a situação do pedido e as chegadas físicas que aguardam (ou já tiveram)
+ * conferência técnica. Nada é gravado.
+ */
+export const RECEIVING_SITUATIONS = [
+  'AGUARDANDO_ENTREGA',
+  'PARCIALMENTE_RECEBIDO',
+  'AGUARDANDO_CONFERENCIA',
+  'RECEBIDO',
+  'CONFERIDO',
+  'CANCELADO',
+] as const;
+export type ReceivingSituation = (typeof RECEIVING_SITUATIONS)[number];
+export const RECEIVING_SITUATION_LABEL: Record<ReceivingSituation, string> = {
+  AGUARDANDO_ENTREGA: 'Aguardando entrega',
+  PARCIALMENTE_RECEBIDO: 'Parcialmente recebido',
+  AGUARDANDO_CONFERENCIA: 'Aguardando conferência',
+  RECEBIDO: 'Recebido',
+  CONFERIDO: 'Recebido e conferido',
+  CANCELADO: 'Cancelado',
+};
+/**
+ * Prioridade: cancelado → chegada aguardando conferência (o material está na oficina, mas ainda
+ * não liberado) → situação do pedido. "Conferido": recebido por completo e com chegada(s) que
+ * passaram pela conferência técnica.
+ */
+export function receivingSituation(input: {
+  status: PurchaseOrderStatus;
+  pendingConference: number;
+  conferred: number;
+}): ReceivingSituation | null {
+  if (input.status === 'RASCUNHO') return null;
+  if (input.status === 'CANCELADO') return 'CANCELADO';
+  if (input.pendingConference > 0) return 'AGUARDANDO_CONFERENCIA';
+  if (input.status === 'CONFIRMADO') return 'AGUARDANDO_ENTREGA';
+  if (input.status === 'PARCIALMENTE_RECEBIDO') return 'PARCIALMENTE_RECEBIDO';
+  return input.conferred > 0 ? 'CONFERIDO' : 'RECEBIDO';
+}
+/**
+ * Rodada 3 (F6-14, D10): o rascunho de compra desconta "A comprar", então precisa ficar visível
+ * quando envelhece. A data canônica é a criação do rascunho; a idade conta DIAS da oficina (fuso
+ * da empresa): criado ontem às 23h e consultado hoje às 01h = 1 dia.
+ */
+export const DRAFT_STALE_DAYS = 3;
+export function draftAgeDays(createdAt: Date, todayIso: string, timeZone: string): number {
+  const created = new Intl.DateTimeFormat('en-CA', { timeZone }).format(createdAt);
+  const ms = Date.parse(`${todayIso}T12:00:00Z`) - Date.parse(`${created}T12:00:00Z`);
+  return Math.max(0, Math.round(ms / 86_400_000));
+}
 /** Pedidos que contam como "comprado". */
 export const PURCHASE_ORDER_COMMITTED: readonly PurchaseOrderStatus[] = [
   'CONFIRMADO',

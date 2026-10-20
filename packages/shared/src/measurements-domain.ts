@@ -256,9 +256,18 @@ export function describeMaterial(l: {
 }
 
 /** CSV com separador ";" e vírgula decimal (abre corretamente no Excel em pt-BR). */
+/**
+ * Rodada 3 (F6-10): a lista consolidada é BRUTA (soma o aprovado; não desconta compras, estoque nem
+ * reservas). Cada linha do CSV diz isso, para que o arquivo, fora da tela, não induza compra em
+ * dobro: o que comprar é Compras → A comprar (líquido).
+ */
+export const CONSOLIDATED_CSV_NOTE =
+  'BRUTA: não desconta compras, estoque nem reservas. Para comprar use Compras > A comprar';
 export function consolidatedToCsv(lines: ConsolidatedLine[]): string {
-  const esc = (v: string) => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const rows = [['Tipo', 'Material', 'Quantidade', 'Unidade', 'Destino', 'Origens'].join(';')];
+  const esc = (v: string) => (/[;"\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const rows = [
+    ['Tipo', 'Material', 'Quantidade', 'Unidade', 'Destino', 'Origens', 'Lista'].join(';'),
+  ];
   for (const l of lines) {
     rows.push(
       [
@@ -273,6 +282,7 @@ export function consolidatedToCsv(lines: ConsolidatedLine[]): string {
               `${o.itemCode ?? o.serviceOrderCode}: ${formatQuantity(o.quantity).replace(/\./g, '')}`,
           )
           .join(' | '),
+        CONSOLIDATED_CSV_NOTE,
       ]
         .map((c) => esc(String(c)))
         .join(';'),

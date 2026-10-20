@@ -417,7 +417,7 @@ export async function billingAttention(db: PrismaClient): Promise<AttentionItemD
       impacts: [],
       nextActions: ['Conferir o pagamento e confirmar a baixa'],
       // Fase 10: a confirmação/descarte fica em Financeiro → Receitas e recebimentos.
-      link: '/painel/financeiro?tab=receitas',
+      link: `/painel/financeiro?tab=receitas&foco=${p.id}`,
     });
   }
   return items;
