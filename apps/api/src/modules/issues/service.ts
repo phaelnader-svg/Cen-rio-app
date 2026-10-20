@@ -25,7 +25,7 @@ import { Errors } from '../../lib/errors';
 import { attendanceConfig, clock, dbDate, holidayDates, team } from '../attendance/common';
 import { SYSTEM, planningAction, skillsByEmployee } from '../help/engine';
 import { createProposal, nextWorkingDay, obsoleteProposals } from '../help/reschedule';
-import { notify, taskNotice } from '../notifications/notify';
+import { notify, resolveNotifications, taskNotice } from '../notifications/notify';
 import {
   domainTaskEvent,
   emitTaskBlocked,
@@ -520,8 +520,20 @@ export async function checkSolver(
   return { name: w.displayName, conflicts };
 }
 
+/**
+ * F10-19: a tarefa de resolução atribuída deixou de pedir ação de quem a recebeu (concluída,
+ * cancelada ou trocada) — o aviso "ocorrência atribuída a você" daquela tarefa fica resolvido.
+ */
+const resolveAssignedNotice = (tx: Tx, actor: ActorContext, issue: IssueRow) =>
+  issue.actionTaskId
+    ? resolveNotifications(tx, actor, 'OCORRENCIA_ATRIBUIDA', [
+        `OCORRENCIA_ATRIBUIDA:${issue.id}:${issue.actionTaskId}`,
+      ])
+    : Promise.resolve(0);
+
 async function cancelActionTask(tx: Tx, actor: ActorContext, issue: IssueRow, reason: string) {
   if (!issue.actionTaskId) return;
+  await resolveAssignedNotice(tx, actor, issue);
   await lockTasks(tx, [issue.actionTaskId]);
   const t = await tx.productionTask.findUniqueOrThrow({ where: { id: issue.actionTaskId } });
   if (DONE.includes(t.status)) return;
@@ -723,6 +735,7 @@ async function toVerification(
   kind: 'SOLUCAO_CONCLUIDA' | 'VERIFICACAO_SOLICITADA' | 'MATERIAL_DISPONIVEL',
 ) {
   const code = issueCode(issue.number);
+  await resolveAssignedNotice(tx, actor, issue);
   const u = await tx.productionIssue.update({
     where: { id: issue.id },
     data: {
@@ -1040,6 +1053,7 @@ export async function actionCancelled(
 ) {
   const issue = await issueOfAction(tx, actionTaskId);
   if (!issue || !['ATRIBUIDA', 'EM_RESOLUCAO'].includes(issue.status)) return;
+  await resolveAssignedNotice(tx, actor, issue);
   const u = await tx.productionIssue.update({
     where: { id: issue.id },
     data: { status: 'ABERTA', actionTaskId: null, version: { increment: 1 } },

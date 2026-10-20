@@ -28,6 +28,7 @@ import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { skillsByEmployee } from '../help/engine';
 import { notify } from '../notifications/notify';
 import { refreshLaborOf } from '../finance/labor';
+import { laborOwners, notifyOwnChanged } from '../finance/own-changed';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -329,6 +330,17 @@ const OPEN_TASK: Prisma.EnumTaskStatusFilter<'ProductionTask'> = {
   notIn: ['CONCLUIDA', 'CANCELADA'],
 };
 
+/**
+ * Regra canônica de entrega física real (Fase 8): a peça registrada como entregue (ou entregue
+ * com divergência) numa entrega CONCLUÍDA. Marcada no destino, antes da conclusão, a peça
+ * continua em transporte (ainda pode ser corrigida para "não entregue"); frustrada volta a
+ * PENDENTE. Usada pela etapa da peça e pelo indicador "entregues" do Início (Rodada 2).
+ */
+export const DELIVERED_ITEM = {
+  status: { in: ['ENTREGUE', 'DIVERGENTE'] },
+  delivery: { status: 'CONCLUIDA' },
+} satisfies Prisma.DeliveryItemWhereInput;
+
 /** Situação completa da peça no fluxo (base da etapa e do "pronto para entrega"). */
 export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
   const item = await db.serviceOrderItem.findUniqueOrThrow({
@@ -370,14 +382,8 @@ export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
     where: { serviceOrderItemId: itemId, active: true },
     include: { delivery: true },
   });
-  // Entregue = registrada como entregue numa entrega CONCLUÍDA. Marcada no destino, antes da
-  // conclusão, a peça continua em transporte (ainda pode ser corrigida para "não entregue").
   const delivered = await db.deliveryItem.count({
-    where: {
-      serviceOrderItemId: itemId,
-      status: { in: ['ENTREGUE', 'DIVERGENTE'] },
-      delivery: { status: 'CONCLUIDA' },
-    },
+    where: { serviceOrderItemId: itemId, ...DELIVERED_ITEM },
   });
   return {
     item,
@@ -442,6 +448,14 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
   // Evolução Fase 5: a liberação da mão de obra acompanha o evento (aprovação, entrega…),
   // na mesma transação — não depende de alguém abrir a tela do financeiro.
   await refreshLaborOf(tx, actor, { serviceOrderId: updated.serviceOrderId });
+  // F8-15b: a etapa muda a situação mostrada no Meus Ganhos (ex.: "aguardando qualidade") mesmo
+  // quando a obrigação não muda de status — os profissionais da peça recarregam (sem valores).
+  await notifyOwnChanged(
+    tx,
+    actor,
+    await laborOwners(tx, updated.serviceOrderId),
+    'service_order_item',
+  );
   if (s.stage === 'PRONTA_ENTREGA' && s.inspection?.packaging) {
     const siblings = await tx.serviceOrderItem.findMany({
       where: { serviceOrderId: updated.serviceOrderId },

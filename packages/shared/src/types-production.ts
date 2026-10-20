@@ -302,6 +302,11 @@ export interface NotificationDto {
   serviceOrderId: string | null;
   createdAt: string;
   readAt: string | null;
+  /**
+   * Rodada 2 (F10-19): quando a condição que o aviso pedia foi resolvida (pela própria ação que a
+   * resolve). Nulo = ativa — inclusive notificações anteriores à coluna (nada é inventado).
+   */
+  resolvedAt: string | null;
 }
 
 // ─────────────────────────── Evolução Fase 3: distribuição ───────────────────────────

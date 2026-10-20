@@ -26,7 +26,7 @@ import {
   reasonText,
   type HelpRow,
 } from './engine';
-import { obsoleteProposals, proposeUrgentInterruption } from './reschedule';
+import { obsoleteProposals, proposeUrgentInterruption, resolveProposalNotices } from './reschedule';
 
 /** Serializa as atribuições (duas solicitações simultâneas nunca pegam o mesmo ajudante). */
 export async function lockAssignments(tx: Tx) {
@@ -99,6 +99,7 @@ export async function cancelHelp(
         version: { increment: 1 },
       },
     });
+    await resolveProposalNotices(tx, actor, p.id);
     await planningAction(tx, actor, {
       kind: 'PROPOSTA_OBSOLETA',
       automatic: true,

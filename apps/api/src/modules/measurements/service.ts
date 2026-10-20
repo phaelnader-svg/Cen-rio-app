@@ -130,17 +130,23 @@ export async function substitutionScope(
   m: { serviceOrderId: string; serviceOrderItemId: string | null },
 ) {
   return db.materialRequirement.findMany({
-    where: {
-      serviceOrderId: m.serviceOrderId,
-      // Etapa 3: a previsão de compra vinculada à OS é substituída pela medição real.
-      origin: { in: ['SOLICITACAO_APROVADA', 'PREVISAO_COMPRA'] },
-      status: 'ATIVA',
-      ...(m.serviceOrderItemId ? { serviceOrderItemId: m.serviceOrderItemId } : {}),
-    },
+    where: substitutionWhere(m),
     include: { serviceOrderItem: { select: { position: true } } },
     orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   });
 }
+
+/** Filtro do escopo de substituição (o mesmo da revisão e da Central — Rodada 2, F10-13r). */
+export const substitutionWhere = (m: {
+  serviceOrderId: string;
+  serviceOrderItemId: string | null;
+}): Prisma.MaterialRequirementWhereInput => ({
+  serviceOrderId: m.serviceOrderId,
+  // Etapa 3: a previsão de compra vinculada à OS é substituída pela medição real.
+  origin: { in: ['SOLICITACAO_APROVADA', 'PREVISAO_COMPRA'] },
+  status: 'ATIVA',
+  ...(m.serviceOrderItemId ? { serviceOrderItemId: m.serviceOrderItemId } : {}),
+});
 
 /** Pré-seleção segura: exatamente UM candidato da mesma peça (não nula) e do mesmo tipo. */
 export function suggestedReplacement(

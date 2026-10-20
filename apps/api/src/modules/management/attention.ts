@@ -1,9 +1,26 @@
-import { purchaseOrderCode, valueChangeCode, type AttentionItemDto } from '@cenario/shared';
+import {
+  PURCHASE_ORDER_RECEIVABLE,
+  REQUEST_AWAITING_REVIEW,
+  closingWeekStart,
+  measurementCode,
+  purchaseOrderCode,
+  valueChangeCode,
+  type AttentionItemDto,
+} from '@cenario/shared';
 import type { PrismaClient } from '@cenario/db';
 import { brDate, type AttendanceConfig, openShifts } from '../attendance/common';
-import { serviceOrderCode } from '../commercial/common';
+import { dateOnly, serviceOrderCode } from '../commercial/common';
+import { weekCoverage } from '../finance/confirmations';
 import { laborReviewCode } from '../finance/labor';
+import { substitutionWhere } from '../measurements/service';
+import { pendingQuantity } from '../purchasing/common';
 import { purchaseShortages } from '../purchasing/shortages';
+
+const shiftDays = (iso: string, n: number) => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
 
 const base = {
   serviceOrder: null,
@@ -75,6 +92,76 @@ export async function managementAttention(
         nextActions: ['Resolver a revisão em Financeiro → Produção e equipe'],
         link: '/painel/financeiro?tab=producao',
       });
+
+    // F10-11/F10-13o e F10-12: a mesma leitura do Fechamento semanal (`buildClosingItems`) e as
+    // mesmas regras de conferência e do portão D13 (`weekCoverage`). Sem valores nos itens.
+    const week = closingWeekStart(cfg.today);
+    const previous = shiftDays(week, -7);
+    const [current, before] = await Promise.all([
+      weekCoverage(prisma, week),
+      weekCoverage(prisma, previous),
+    ]);
+    const closingLink = (weekStart: string, userId: string) =>
+      `/painel/financeiro?tab=fechamento&semana=${weekStart}&profissional=${userId}`;
+    for (const p of current) {
+      // Semana corrente com valor devido e sem conferência VÁLIDA do profissional (nunca vista ou
+      // que deixou de valer porque algo mudou). Exceção administrativa vigente não pede ação.
+      if (p.state !== 'SEM_CONFIRMACAO' && p.state !== 'DESATUALIZADA') continue;
+      const stale = p.state === 'DESATUALIZADA';
+      items.push({
+        ...base,
+        key: `FINANCEIRO:confirmacao:${p.userId}`,
+        type: 'FINANCEIRO',
+        category: 'ATENCAO',
+        title: `${p.displayName} · semana de ${brDate(week)} aguardando confirmação`,
+        description: stale
+          ? 'A semana mudou depois da conferência do profissional: a confirmação anterior não vale mais.'
+          : 'O profissional ainda não conferiu os valores devidos da semana no tablet.',
+        employee: { userId: p.userId, displayName: p.displayName },
+        priority: 'NORMAL',
+        status: p.state,
+        statusLabel: stale ? 'Confirmação desatualizada' : 'Sem confirmação',
+        at: new Date(`${week}T12:00:00Z`).toISOString(),
+        nextActions: [
+          'Pedir a conferência no tablet ou registrar exceção administrativa (com motivo)',
+        ],
+        link: closingLink(week, p.userId),
+      });
+    }
+    // Pagável agora: coberto na semana corrente ou na anterior (o lote da semana anterior continua
+    // aceito pelo portão D13). O mesmo item conta uma vez; o link abre a semana que o cobre.
+    const people = new Map<string, { name: string; ids: Set<string>; week: string }>();
+    for (const [weekStart, list] of [
+      [week, current],
+      [previous, before],
+    ] as const)
+      for (const p of list) {
+        if (!p.available.length) continue;
+        const entry = people.get(p.userId) ?? {
+          name: p.displayName,
+          ids: new Set(),
+          week: weekStart,
+        };
+        for (const i of p.available) entry.ids.add(`${i.kind}:${i.id}`);
+        people.set(p.userId, entry);
+      }
+    for (const [userId, p] of people)
+      items.push({
+        ...base,
+        key: `FINANCEIRO:pagamento:${userId}`,
+        type: 'FINANCEIRO',
+        category: 'ACAO',
+        title: `${p.name} · ${p.ids.size} pagamento(s) liberado(s) para pagar`,
+        description:
+          'Valores devidos, confirmados pelo profissional (ou liberados por exceção administrativa) e ainda com saldo.',
+        employee: { userId, displayName: p.name },
+        priority: 'NORMAL',
+        status: 'DISPONIVEL',
+        statusLabel: 'Pagamento disponível',
+        at: new Date(`${p.week}T12:00:00Z`).toISOString(),
+        nextActions: ['Registrar o pagamento no Fechamento semanal'],
+        link: closingLink(p.week, userId),
+      });
   }
 
   if (anyOf(perms, 'compras.ver', 'compras.gerenciar', 'compras.aprovar')) {
@@ -101,6 +188,124 @@ export async function managementAttention(
         link: '/painel/compras',
       });
     }
+  }
+
+  if (anyOf(perms, 'compras.ver', 'compras.gerenciar', 'compras.aprovar')) {
+    // F10-08/F10-13d: compra confirmada com material ainda por chegar (saldo = quantidade −
+    // recebido − encerrado, a mesma conta do pedido). Itens cuja chegada já foi registrada e
+    // aguarda conferência ficam no item "chegada a conferir" (não aparecem duas vezes).
+    const [orders, waiting] = await Promise.all([
+      prisma.purchaseOrder.findMany({
+        where: { status: { in: [...PURCHASE_ORDER_RECEIVABLE] } },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          expectedDate: true,
+          confirmedAt: true,
+          createdAt: true,
+          supplier: { select: { name: true } },
+          items: {
+            select: {
+              id: true,
+              quantity: true,
+              receivedQuantity: true,
+              closedQuantity: true,
+              serviceOrder: { select: { id: true, number: true } },
+            },
+          },
+        },
+        orderBy: { number: 'asc' },
+      }),
+      prisma.materialArrival.findMany({
+        where: { status: 'PENDENTE_CONFERENCIA' },
+        select: { lines: true },
+      }),
+    ]);
+    const arrived = new Set(
+      waiting.flatMap((a) =>
+        ((a.lines as { purchaseOrderItemId?: string }[] | null) ?? []).map(
+          (l) => l.purchaseOrderItemId,
+        ),
+      ),
+    );
+    for (const po of orders) {
+      const open = po.items.filter((i) => pendingQuantity(i) > 0 && !arrived.has(i.id));
+      if (!open.length) continue;
+      const late = po.expectedDate !== null && dateOnly(po.expectedDate)! < cfg.today;
+      const sos = [
+        ...new Map(
+          open.flatMap((i) => (i.serviceOrder ? [i.serviceOrder] : [])).map((s) => [s.id, s]),
+        ).values(),
+      ];
+      const code = purchaseOrderCode(po.number);
+      items.push({
+        ...base,
+        key: `MATERIAL:aguardando-entrega:${po.id}`,
+        type: 'MATERIAL',
+        category: late ? 'ATENCAO' : 'INFO',
+        title: `${code}${po.supplier ? ` · ${po.supplier.name}` : ''} — aguardando entrega`,
+        description: `${open.length} item(ns) com saldo a receber${po.status === 'PARCIALMENTE_RECEBIDO' ? ' (recebimento parcial)' : ''}${po.expectedDate ? ` · previsão ${brDate(dateOnly(po.expectedDate)!)}${late ? ' (atrasada)' : ''}` : ' · sem previsão de entrega'}.`,
+        serviceOrder:
+          sos.length === 1 ? { id: sos[0]!.id, code: serviceOrderCode(sos[0]!.number) } : null,
+        deadline: po.expectedDate ? dateOnly(po.expectedDate) : null,
+        priority: late ? 'ALTA' : 'NORMAL',
+        status: po.status,
+        statusLabel: late ? 'Entrega atrasada' : 'Aguardando entrega',
+        at: (po.confirmedAt ?? po.createdAt).toISOString(),
+        nextActions: ['Acompanhar com o fornecedor; registrar o recebimento quando chegar'],
+        link: `/painel/compras/${po.id}`,
+      });
+    }
+  }
+
+  if (perms.has('materiais.aprovar')) {
+    // F10-13r: medição enviada para revisão que pode substituir necessidades ATIVAS da OS (Compras
+    // Etapa 2). A decisão (substitui / nova / manter / cancelar) é feita na aprovação da medição;
+    // aprovada, devolvida ou cancelada — ou sem necessidade ativa a substituir — o item some.
+    const inReview = await prisma.materialRequest.findMany({
+      where: { status: { in: [...REQUEST_AWAITING_REVIEW] } },
+      select: {
+        status: true,
+        submittedAt: true,
+        updatedAt: true,
+        measurement: {
+          select: {
+            id: true,
+            number: true,
+            serviceOrderId: true,
+            serviceOrderItemId: true,
+            serviceOrder: { select: { number: true } },
+          },
+        },
+      },
+      orderBy: { updatedAt: 'asc' },
+    });
+    const scopes = await Promise.all(
+      inReview.map((r) =>
+        prisma.materialRequirement.count({ where: substitutionWhere(r.measurement) }),
+      ),
+    );
+    inReview.forEach((r, i) => {
+      const candidates = scopes[i]!;
+      if (!candidates) return;
+      const m = r.measurement;
+      items.push({
+        ...base,
+        key: `MATERIAL:substituicao:${m.id}`,
+        type: 'MATERIAL',
+        category: 'ACAO',
+        title: `${measurementCode(m.number)} · decidir substituição de material da ${serviceOrderCode(m.serviceOrder.number)}`,
+        description: `A nova medição pode substituir ${candidates} necessidade(s) já aprovada(s): escolha, item a item, se substitui, é nova, mantém ou cancela.`,
+        serviceOrder: { id: m.serviceOrderId, code: serviceOrderCode(m.serviceOrder.number) },
+        priority: 'NORMAL',
+        status: r.status,
+        statusLabel: 'Aguardando decisão',
+        at: (r.submittedAt ?? r.updatedAt).toISOString(),
+        nextActions: ['Revisar a medição e decidir a substituição na aprovação'],
+        link: `/painel/medicoes/${m.id}`,
+      });
+    });
   }
 
   if (anyOf(perms, 'estoque.ver', 'compras.ver', 'estoque.gerenciar')) {

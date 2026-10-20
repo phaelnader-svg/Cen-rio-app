@@ -85,6 +85,8 @@ export const EVENT_TYPES = {
   PRODUCTION_TASK_IMPEDIMENT: 'production.task_impediment',
   NOTIFICATION_CREATED: 'notification.created',
   NOTIFICATION_READ: 'notification.read',
+  /** Rodada 2 (F10-19): avisos do usuário resolvidos pela ação que encerrou a condição. */
+  NOTIFICATION_RESOLVED: 'notification.resolved',
   // Fase 7 — presença operacional
   ATTENDANCE_ARRIVED: 'attendance.arrived',
   ATTENDANCE_LATE: 'attendance.late',
@@ -138,6 +140,11 @@ export const EVENT_TYPES = {
   FINANCE_PAYABLE_PAID: 'finance.payable_paid',
   FINANCE_EXPENSE_CREATED: 'finance.expense_created',
   FINANCE_COST_UPDATED: 'finance.cost_updated',
+  /**
+   * Rodada 2 (F8-15b): "seus ganhos mudaram" — só para o próprio profissional (`user:<id>`) e
+   * SEM valores: o Meus Ganhos aberto recarrega pela API (PIN/D12 continuam valendo).
+   */
+  FINANCE_OWN_CHANGED: 'finance.own_changed',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

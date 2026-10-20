@@ -133,6 +133,16 @@ export const useNotifications = (enabled = true) =>
       api<{ items: NotificationDto[]; unread: number }>('/api/v1/notifications?limit=50'),
     enabled,
   });
+/** Rodada 2 (F10-19): histórico dos avisos já resolvidos pela ação que encerrou a condição. */
+export const useResolvedNotifications = (enabled: boolean) =>
+  useQuery({
+    queryKey: ['notifications', 'resolvidas'],
+    queryFn: () =>
+      api<{ items: NotificationDto[]; unread: number }>(
+        '/api/v1/notifications?limit=50&status=resolvidas',
+      ),
+    enabled,
+  });
 
 // Simplificação Fase 4 — pré-planejamento.
 export const usePipeline = () =>

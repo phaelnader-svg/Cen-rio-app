@@ -28,9 +28,10 @@ import { actorFrom, audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { serviceOrderCode } from '../commercial/common';
-import { notify } from '../notifications/notify';
+import { notify, resolveNotifications } from '../notifications/notify';
 import { idParams } from '../presenters';
 import { notifyUsersWith } from '../quality/common';
+import { notifyOwnChanged } from './own-changed';
 import {
   FIN_ADJUST,
   FIN_VIEW,
@@ -124,6 +125,9 @@ async function obsolete(tx: Tx, actor: ActorContext, r: ValueChangeRequest, why:
     },
   });
   if (!u.count) return;
+  await resolveNotifications(tx, actor, 'VALOR_SOLICITADO', [`VALOR:${r.id}`]);
+  // F8-15b: o pedido some dos pendentes do profissional (não passa pelo histórico financeiro).
+  await notifyOwnChanged(tx, actor, [r.beneficiaryUserId], 'value_change_request');
   await audit(tx, actor, {
     action: 'finance.value_request_obsolete',
     entityType: 'value_change_request',
@@ -421,6 +425,8 @@ export async function approveRequest(
     note: input.note ?? null,
     data: { appliedAs, deltaCents: delta },
   });
+  // F10-19: o aviso "pedido de alteração de valor" do gestor deixa de pedir ação.
+  await resolveNotifications(tx, actor, 'VALOR_SOLICITADO', [`VALOR:${id}`]);
   await notify(tx, actor, [
     {
       userId: r.beneficiaryUserId,
@@ -465,6 +471,7 @@ export async function rejectRequest(
     kind: 'RECUSADA',
     note: input.note,
   });
+  await resolveNotifications(tx, actor, 'VALOR_SOLICITADO', [`VALOR:${id}`]);
   await notify(tx, actor, [
     {
       userId: r.beneficiaryUserId,

@@ -54,6 +54,43 @@ export async function notify(tx: Tx, actor: ActorContext, items: NotificationInp
   }
 }
 
+/**
+ * Rodada 2 (F10-19) — marca como RESOLVIDAS as notificações persistidas que pediam uma ação
+ * sobre um assunto, chamada pela própria ação que resolve a condição (decisão, encerramento…),
+ * na mesma transação. `subjects` são os prefixos da chave de deduplicação do assunto (ex.:
+ * `VALOR:<id>` cobre `VALOR:<id>:<usuário>`), sempre junto com o tipo — avisos informativos do
+ * mesmo assunto não são tocados. Idempotente e seguro sob concorrência: o UPDATE só alcança
+ * linhas ainda ativas (a segunda chamada não muda nada nem publica evento). Nada é apagado; o
+ * aviso continua no histórico ("resolvidas"). Cada destinatário recebe `notification.resolved`
+ * (só para ele) para a caixa sair da lista ativa em tempo real.
+ */
+export async function resolveNotifications(
+  tx: Tx,
+  actor: ActorContext,
+  kinds: NotificationKind | readonly NotificationKind[],
+  subjects: readonly string[],
+) {
+  const list = (Array.isArray(kinds) ? kinds : [kinds]) as string[];
+  if (!subjects.length || !list.length) return 0;
+  const patterns = subjects.map((s) => `${s.replace(/[\\%_]/g, '\\$&')}:%`);
+  const rows = await tx.$queryRaw<{ user_id: string }[]>`
+    UPDATE notifications SET resolved_at = ${new Date()}
+     WHERE resolved_at IS NULL
+       AND kind = ANY(${list}::text[])
+       AND (dedupe_key = ANY(${[...subjects]}::text[]) OR dedupe_key LIKE ANY(${patterns}::text[]))
+    RETURNING user_id`;
+  const users = [...new Set(rows.map((r) => r.user_id))];
+  for (const userId of users)
+    await appendEvent(tx, actor, {
+      type: EVENT_TYPES.NOTIFICATION_RESOLVED,
+      aggregateType: 'notification',
+      aggregateId: userId,
+      payload: { count: rows.filter((r) => r.user_id === userId).length },
+      audience: `user:${userId}`,
+    });
+  return rows.length;
+}
+
 type TaskLike = {
   id: string;
   number: number;

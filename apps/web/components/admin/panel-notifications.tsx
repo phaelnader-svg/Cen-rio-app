@@ -11,7 +11,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Alert, Spinner } from '@/components/ui/misc';
 import { api } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
-import { useNotifications } from '@/lib/production';
+import { useNotifications, useResolvedNotifications } from '@/lib/production';
 
 const PRESENCE_KINDS = new Set([
   'AUSENCIA_PRESUMIDA',
@@ -24,9 +24,13 @@ const PRESENCE_KINDS = new Set([
 export function PanelNotifications() {
   const q = useNotifications();
   const [open, setOpen] = useState(false);
+  // Rodada 2 (F10-19): avisos ativos por padrão; os resolvidos ficam no histórico.
+  const [resolved, setResolved] = useState(false);
+  const r = useResolvedNotifications(open && resolved);
   const router = useRouter();
   const { m, error } = useSend();
   const unread = q.data?.unread ?? 0;
+  const list = resolved ? r : q;
   const go = (n: NotificationDto) => {
     if (!n.readAt)
       m.mutate({ run: () => api(`/api/v1/notifications/${n.id}/read`, { method: 'POST' }) });
@@ -59,17 +63,26 @@ export function PanelNotifications() {
         title="Avisos"
         description="Alertas que pedem atenção: ausências presumidas, atrasos relevantes e pendências de encerramento."
         footer={
-          <Button
-            variant="secondary"
-            disabled={unread === 0}
-            loading={m.isPending}
-            icon={<CheckCheck className="size-4" aria-hidden />}
-            onClick={() =>
-              m.mutate({ run: () => api('/api/v1/notifications/read-all', { method: 'POST' }) })
-            }
-          >
-            Marcar todos como lidos
-          </Button>
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => setResolved(!resolved)}
+              data-testid="panel-notifications-toggle"
+            >
+              {resolved ? 'Ver avisos ativos' : 'Ver resolvidos'}
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={unread === 0}
+              loading={m.isPending}
+              icon={<CheckCheck className="size-4" aria-hidden />}
+              onClick={() =>
+                m.mutate({ run: () => api('/api/v1/notifications/read-all', { method: 'POST' }) })
+              }
+            >
+              Marcar todos como lidos
+            </Button>
+          </>
         }
       >
         {error && (
@@ -77,13 +90,18 @@ export function PanelNotifications() {
             {error}
           </Alert>
         )}
-        {q.isPending ? (
+        {list.isPending ? (
           <Spinner />
-        ) : !q.data?.items.length ? (
-          <p className="text-sm text-ink-muted">Nenhum aviso.</p>
+        ) : !list.data?.items.length ? (
+          <p className="text-sm text-ink-muted">
+            {resolved ? 'Nenhum aviso resolvido.' : 'Nenhum aviso.'}
+          </p>
         ) : (
-          <ul className="space-y-2" data-testid="panel-notification-list">
-            {q.data.items.map((n) => (
+          <ul
+            className="space-y-2"
+            data-testid={resolved ? 'panel-notification-resolved-list' : 'panel-notification-list'}
+          >
+            {list.data.items.map((n) => (
               <li key={n.id}>
                 <button
                   type="button"
@@ -91,13 +109,16 @@ export function PanelNotifications() {
                   data-testid={`panel-notification-${n.kind}`}
                   className={clsx(
                     'w-full rounded-xl border px-4 py-3 text-left text-sm',
-                    n.readAt ? 'border-line text-ink-soft' : 'border-brand-600/40 bg-brand-50',
+                    n.readAt || n.resolvedAt
+                      ? 'border-line text-ink-soft'
+                      : 'border-brand-600/40 bg-brand-50',
                   )}
                 >
                   <span className="font-semibold">{n.title}</span>
                   <span className="mt-0.5 block">{n.body}</span>
                   <span className="mt-0.5 block text-xs text-ink-muted">
                     {formatDateTime(n.createdAt)}
+                    {n.resolvedAt && ` · resolvido em ${formatDateTime(n.resolvedAt)}`}
                   </span>
                 </button>
               </li>

@@ -68,6 +68,46 @@ export const hashOf = (userId: string, weekStart: string, lines: readonly Confir
 
 const linesOf = (row: { items: Prisma.JsonValue }) => row.items as unknown as ConfirmationLine[];
 
+type CoverageRow = { kind: string; hash: string; items: Prisma.JsonValue };
+
+/**
+ * Situação da semana do profissional a partir das linhas atuais e das conferências gravadas
+ * (mais recentes primeiro): a MESMA regra do tablet, do fechamento e da Central.
+ */
+export function confirmationState<R extends CoverageRow>(
+  userId: string,
+  weekStart: string,
+  lines: readonly ConfirmationLine[],
+  rows: readonly R[],
+) {
+  const currentHash = lines.length ? hashOf(userId, weekStart, lines) : null;
+  const match = currentHash ? rows.find((r) => r.hash === currentHash) : undefined;
+  const state: WeekConfirmationDto['state'] = !lines.length
+    ? 'SEM_ITENS'
+    : match
+      ? match.kind === 'PROFISSIONAL'
+        ? 'CONFIRMADA'
+        : 'LIBERADA_POR_EXCECAO'
+      : rows.length
+        ? 'DESATUALIZADA'
+        : 'SEM_CONFIRMACAO';
+  return { state, currentHash, match };
+}
+
+/**
+ * Portão D13 (regra única): a conferência que cobre a linha atual do item — a do profissional
+ * só se o retrato for exatamente o estado atual da semana inteira (`payHash`); a exceção
+ * administrativa, linha a linha.
+ */
+export const coveringRow = <R extends CoverageRow>(
+  rows: readonly R[],
+  payHash: string,
+  line: ConfirmationLine,
+) =>
+  rows.find((r) =>
+    r.kind === 'PROFISSIONAL' ? r.hash === payHash : linesOf(r).some((l) => sameLine(l, line)),
+  );
+
 /** Situação ao vivo da semana do profissional (mesmo cálculo para tablet e fechamento). */
 export async function weekConfirmation(
   db: Db,
@@ -81,18 +121,8 @@ export async function weekConfirmation(
     where: { beneficiaryUserId: userId, weekStart: weekDate(weekStart) },
     orderBy: { createdAt: 'desc' },
   });
-  const currentHash = lines.length ? hashOf(userId, weekStart, lines) : null;
-  const match = currentHash ? rows.find((r) => r.hash === currentHash) : undefined;
+  const { state, currentHash, match } = confirmationState(userId, weekStart, lines, rows);
   const latest = match ?? rows[0] ?? null;
-  const state: WeekConfirmationDto['state'] = !lines.length
-    ? 'SEM_ITENS'
-    : match
-      ? match.kind === 'PROFISSIONAL'
-        ? 'CONFIRMADA'
-        : 'LIBERADA_POR_EXCECAO'
-      : rows.length
-        ? 'DESATUALIZADA'
-        : 'SEM_CONFIRMACAO';
   const changed: string[] = [];
   if (latest && !match) {
     const before = linesOf(latest);
@@ -306,9 +336,7 @@ export async function assertPaymentCovered(
   // qualquer item/valor do retrato que mudar (ou item novo no fechamento da semana) invalida tudo,
   // inclusive as linhas que não mudaram. A exceção administrativa segue linha a linha, como antes.
   const payHash = hashOf(input.userId, input.weekStart, payableLines(personItems(b, input.userId)));
-  const hit = rows.find((r) =>
-    r.kind === 'PROFISSIONAL' ? r.hash === payHash : linesOf(r).some((l) => sameLine(l, line)),
-  );
+  const hit = coveringRow(rows, payHash, line);
   if (!hit)
     throw Errors.business(
       `Esta semana ainda não foi confirmada pelo profissional (${item.code}). Peça a conferência no tablet ou use a exceção administrativa (com motivo).`,
@@ -318,6 +346,48 @@ export async function assertPaymentCovered(
     code: confirmationCode(hit.number),
     kind: hit.kind as 'PROFISSIONAL' | 'EXCECAO_ADMINISTRATIVA',
   };
+}
+
+/**
+ * Rodada 2 (F10-11/F10-12) — a semana de TODOS os profissionais numa leitura só, com as mesmas
+ * regras do tablet/fechamento (`confirmationState`) e do portão D13 (`coveringRow`):
+ * - `state`: situação da conferência (SEM_CONFIRMACAO/DESATUALIZADA pedem a confirmação);
+ * - `available`: o que já pode ser pago — item DEVIDO da semana (ou saldo anterior), pagável
+ *   (obrigação vinculada, sem revisão), com saldo atual e coberto por confirmação VIGENTE do
+ *   profissional ou por exceção administrativa (linha a linha). Recebedor inativo não recebe.
+ * Nada é gravado; nenhum valor novo é calculado — as linhas são as de `buildClosingItems`.
+ */
+export async function weekCoverage(db: Db, weekStart: string, built?: Built) {
+  const b = built ?? (await build(db, weekStart));
+  const people = new Map<string, string>();
+  for (const i of b.items)
+    if (i.beneficiary.userId) people.set(i.beneficiary.userId, i.beneficiary.displayName);
+  const ids = [...people.keys()];
+  const [rows, active] = await Promise.all([
+    db.weeklyClosingConfirmation.findMany({
+      where: { weekStart: weekDate(weekStart), beneficiaryUserId: { in: ids } },
+      orderBy: { createdAt: 'desc' },
+    }),
+    db.user.findMany({ where: { id: { in: ids }, active: true }, select: { id: true } }),
+  ]);
+  const activeIds = new Set(active.map((u) => u.id));
+  return ids.map((userId) => {
+    const mine = personItems(b, userId);
+    const lines = payableLines(mine);
+    const own = rows.filter((r) => r.beneficiaryUserId === userId);
+    const { state } = confirmationState(userId, weekStart, lines, own);
+    const payHash = hashOf(userId, weekStart, lines);
+    const available = activeIds.has(userId)
+      ? mine.filter(
+          (i) =>
+            i.payable &&
+            i.currentOpenCents > 0 &&
+            (i.bucket === 'WEEK' || i.bucket === 'PREVIOUS') &&
+            coveringRow(own, payHash, confirmationLine(i)),
+        )
+      : [];
+    return { userId, displayName: people.get(userId)!, state, available };
+  });
 }
 
 /** Semana do pagamento: a do lote, ou a da data efetiva do pagamento. */

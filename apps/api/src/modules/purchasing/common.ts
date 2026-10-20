@@ -68,6 +68,12 @@ export const canSeePrices = (request: FastifyRequest) => has(request, 'compras.v
 
 export const num = (d: Prisma.Decimal | number | null | undefined): number =>
   d === null || d === undefined ? 0 : q3(Number(d));
+/** Saldo a receber de um item de compra: quantidade − recebido − encerrado (nunca negativo). */
+export const pendingQuantity = (i: {
+  quantity: Prisma.Decimal | number | null;
+  receivedQuantity: Prisma.Decimal | number | null;
+  closedQuantity: Prisma.Decimal | number | null;
+}) => Math.max(0, q3(num(i.quantity) - num(i.receivedQuantity) - num(i.closedQuantity)));
 export const numOrNull = (d: Prisma.Decimal | null | undefined): number | null =>
   d === null || d === undefined ? null : Number(d);
 

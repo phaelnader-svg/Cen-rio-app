@@ -50,6 +50,7 @@ import { Errors } from '../../lib/errors';
 import { pickupCode, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
 import { notifyUsersWith } from '../quality/common';
+import { notifyOwnChanged } from './own-changed';
 import {
   FIN_ADJUST,
   FIN_MANAGE,
@@ -227,6 +228,15 @@ export async function setLogisticsDefaults(
       version: { increment: 1 },
     },
   });
+  // F8-15b: o previsto da logística aparece para o recebedor configurado — o antigo e o novo
+  // recebedor veem o Meus Ganhos mudar.
+  if (before.logisticsPayeeUserId !== (input.logisticsPayeeUserId ?? null))
+    await notifyOwnChanged(
+      tx,
+      actor,
+      [before.logisticsPayeeUserId, input.logisticsPayeeUserId],
+      'logistics_payee',
+    );
   await audit(tx, actor, {
     action: 'finance.logistics_defaults',
     entityType: 'company_settings',

@@ -1,7 +1,9 @@
 import {
   MATERIALS_PENDING_STATES,
+  closingWeekStart,
   deliveryCode,
   measurementCode,
+  zonedDateTime,
   type OverviewDto,
   type ServiceTimelineDto,
   type TimelineDomain,
@@ -12,8 +14,11 @@ import { Errors } from '../../lib/errors';
 import { dbDate } from '../attendance/common';
 import { orderCode, pickupCode, receiptCode, serviceOrderCode } from '../commercial/common';
 import { deadlineCalendar, deadlineCandidatesWhere, serviceDeadlines } from '../deadlines/service';
+import { buildClosingItems, summarize } from '../finance/closing';
+import { shopTimezone } from '../finance/common';
 import { dueContext, dueOf } from '../finance/revenue';
 import { idParams } from '../presenters';
+import { DELIVERED_ITEM } from '../quality/common';
 
 const FINAL_STAGES = ['ENTREGUE', 'DEVOLVIDA', 'CANCELADA'];
 const OPEN_RECEIVABLE = ['ABERTO', 'PARCIAL'];
@@ -96,7 +101,8 @@ export async function managementRoutes(app: FastifyInstance) {
 
     let deliveries: OverviewDto['deliveries'] = null;
     if (perms.has('entregas.ver') || perms.has('entregas.gerenciar')) {
-      const [upcoming, frustrated] = await Promise.all([
+      const tz = await shopTimezone(prisma);
+      const [upcoming, frustrated, deliveredToday] = await Promise.all([
         prisma.delivery.count({
           where: {
             status: 'AGENDADA',
@@ -104,8 +110,22 @@ export async function managementRoutes(app: FastifyInstance) {
           },
         }),
         prisma.delivery.count({ where: { status: 'FRUSTRADA' } }),
+        // F10-21m: peças entregues (regra canônica) em entregas concluídas hoje — o mesmo "hoje"
+        // da oficina das entregas próximas, com os limites na meia-noite local.
+        prisma.deliveryItem.count({
+          where: {
+            ...DELIVERED_ITEM,
+            delivery: {
+              ...DELIVERED_ITEM.delivery,
+              completedAt: {
+                gte: zonedDateTime(cal.today, '00:00', tz),
+                lt: zonedDateTime(addDays(cal.today, 1), '00:00', tz),
+              },
+            },
+          },
+        }),
       ]);
-      deliveries = { upcoming, frustrated };
+      deliveries = { upcoming, frustrated, deliveredToday };
     }
 
     let finance: OverviewDto['finance'] = null;
@@ -150,10 +170,17 @@ export async function managementRoutes(app: FastifyInstance) {
         (a, p) => a + Math.max(0, p.agreedCents + p.adjustmentsCents - p.paidCents),
         0,
       );
+      // F10-21s: "Pago na semana" do Fechamento semanal corrente (mesma fonte e mesma soma).
+      const weekStart = closingWeekStart(cal.today);
+      const { totals } = await summarize(
+        prisma,
+        (await buildClosingItems(prisma, weekStart)).items,
+      );
       finance = {
         receivables,
         payables,
         laborDueCents,
+        paid: { weekStart, paidInWeekCents: totals.paidInWeekCents },
         decisions: { valueRequests, laborReviews, paymentReports },
       };
     }

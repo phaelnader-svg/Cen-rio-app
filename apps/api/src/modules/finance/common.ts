@@ -4,6 +4,7 @@ import { now } from '../../core/clock';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
+import { notifyOwnersOf } from './own-changed';
 
 /**
  * Fase 11 — financeiro operacional. Tudo do gestor (sessão do painel); o profissional por
@@ -87,6 +88,8 @@ export async function financeEvent(
       audience: FINANCE_AUDIENCE,
     });
   }
+  // Rodada 2 (F8-15b): o profissional dono do registro recebe "seus ganhos mudaram" (sem valores).
+  await notifyOwnersOf(tx, actor, entry.entityType, entry.entityId);
 }
 
 export async function historyOf(db: Tx | PrismaClient, entityType: string, entityId: string) {

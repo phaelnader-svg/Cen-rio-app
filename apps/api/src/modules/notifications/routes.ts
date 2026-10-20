@@ -12,7 +12,14 @@ const listQuery = z.object({
     .optional()
     .transform((v) => v === '1' || v === 'true'),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  /** Rodada 2 (F10-19): ativas (padrão), resolvidas (histórico) ou todas. */
+  status: z.enum(['ativas', 'resolvidas', 'todas']).default('ativas'),
 });
+const STATUS_WHERE = {
+  ativas: { resolvedAt: null },
+  resolvidas: { resolvedAt: { not: null } },
+  todas: {},
+} as const;
 
 const ACCESS = { session: 'any' } as const;
 
@@ -32,6 +39,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     serviceOrderId: string | null;
     createdAt: Date;
     readAt: Date | null;
+    resolvedAt: Date | null;
   }): NotificationDto => ({
     id: n.id,
     kind: n.kind as NotificationDto['kind'],
@@ -41,6 +49,7 @@ export async function notificationRoutes(app: FastifyInstance) {
     serviceOrderId: n.serviceOrderId,
     createdAt: n.createdAt.toISOString(),
     readAt: n.readAt?.toISOString() ?? null,
+    resolvedAt: n.resolvedAt?.toISOString() ?? null,
   });
 
   app.get('/api/v1/notifications', { config: { access: ACCESS } }, async (request) => {
@@ -48,11 +57,12 @@ export async function notificationRoutes(app: FastifyInstance) {
     const userId = request.auth!.userId;
     const [items, unread] = await Promise.all([
       prisma.notification.findMany({
-        where: { userId, ...(q.unread ? { readAt: null } : {}) },
+        where: { userId, ...STATUS_WHERE[q.status], ...(q.unread ? { readAt: null } : {}) },
         orderBy: { createdAt: 'desc' },
         take: q.limit,
       }),
-      prisma.notification.count({ where: { userId, readAt: null } }),
+      // O contador é de avisos ATIVOS não lidos: o que já foi resolvido não pede mais atenção.
+      prisma.notification.count({ where: { userId, readAt: null, resolvedAt: null } }),
     ]);
     return { items: items.map(toDto), unread };
   });
@@ -79,7 +89,9 @@ export async function notificationRoutes(app: FastifyInstance) {
       }
       return r.count;
     });
-    const unread = await prisma.notification.count({ where: { userId, readAt: null } });
+    const unread = await prisma.notification.count({
+      where: { userId, readAt: null, resolvedAt: null },
+    });
     return { changed, unread };
   }
 

@@ -31,12 +31,25 @@ export interface OverviewDto {
     upcoming: number;
     /** Tentativas frustradas aguardando reagendamento. */
     frustrated: number;
+    /**
+     * Rodada 2 (F10-21m): PEÇAS entregues hoje (dia da oficina, o mesmo "hoje" das entregas
+     * próximas) pela regra canônica da Fase 8 — registrada como entregue (ou com divergência)
+     * numa entrega CONCLUÍDA, contada no dia da conclusão. Frustrada, não entregue, removida,
+     * agendada ou só em trânsito não contam; parcial conta só as peças entregues.
+     */
+    deliveredToday: number;
   } | null;
   finance: {
     receivables: { openCents: number; overdueCents: number; overdueCount: number };
     payables: { openCents: number; overdueCents: number };
     /** Mão de obra liberada e ainda não paga (ProductionPayable). */
     laborDueCents: number;
+    /**
+     * Rodada 2 (F10-21s): pago aos profissionais (tapeçaria + logística) na semana corrente do
+     * fechamento — o mesmo "Pago na semana" do Fechamento semanal (`buildClosingItems`), já
+     * líquido de estornos. Não inclui previsto, devido não pago nem valores do cliente.
+     */
+    paid: { weekStart: string; paidInWeekCents: number };
     decisions: { valueRequests: number; laborReviews: number; paymentReports: number };
   } | null;
 }

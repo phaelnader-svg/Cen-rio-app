@@ -2095,6 +2095,8 @@ model Notification {
   serviceOrderId String?   @map("service_order_id") @db.Uuid
   dedupeKey      String    @map("dedupe_key") @db.VarChar(160)
   readAt         DateTime? @map("read_at") @db.Timestamptz(3)
+  /// Rodada 2 (F10-19): preenchida pela ação que resolve o aviso (nulo = ativa; legado = ativa).
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(3)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   user         User            @relation("UserNotifications", fields: [userId], references: [id], onDelete: Restrict)

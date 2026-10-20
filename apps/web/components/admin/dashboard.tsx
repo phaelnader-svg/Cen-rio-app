@@ -247,6 +247,21 @@ export function Dashboard() {
         </section>
       )}
 
+      {dl && (
+        <section data-testid="dashboard-deliveries">
+          <h2 className="mb-3 font-semibold">Entregas</h2>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Stat
+              href="/painel/entregas"
+              icon={<Truck className="size-4" aria-hidden />}
+              label="Entregues hoje"
+              value={<span data-testid="dl-delivered">{dl.deliveredToday}</span>}
+              detail="peças entregues em entregas concluídas hoje"
+            />
+          </div>
+        </section>
+      )}
+
       {fin && (
         <section data-testid="dashboard-finance">
           <h2 className="mb-3 font-semibold">Financeiro</h2>
@@ -271,6 +286,13 @@ export function Dashboard() {
               label="Mão de obra liberada"
               value={money(fin.laborDueCents)}
               detail="liberada e ainda não paga"
+            />
+            <Stat
+              href={`/painel/financeiro?tab=fechamento&semana=${fin.paid.weekStart}`}
+              icon={<CheckCircle className="size-4" aria-hidden />}
+              label="Pago na semana"
+              value={<span data-testid="fin-paid">{money(fin.paid.paidInWeekCents)}</span>}
+              detail="aos profissionais (tapeçaria e logística), estornos descontados"
             />
             <Stat
               href="/painel/atencao?type=FINANCEIRO"

@@ -6,10 +6,12 @@ import {
   PAYMENT_METHOD_LABEL,
   WEEK_CONFIRMATION_LABEL,
   closingWeekStart,
+  isMonday,
   type ClosingRowDto,
   type WeeklyClosingDto,
 } from '@cenario/shared';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -47,12 +49,21 @@ const STATUS_LABEL: Record<WeeklyClosingDto['status'], string> = {
  */
 export function WeeklyClosingTab() {
   const can = useCan();
-  const [week, setWeek] = useState(() => closingWeekStart(localToday()));
+  // Rodada 2: links da Central/Início abrem a semana (`?semana=`) e o profissional
+  // (`?profissional=`) certos; sem eles, a semana corrente e todos (como antes).
+  const params = useSearchParams();
+  const [week, setWeek] = useState(() => {
+    const s = params.get('semana');
+    return s && isMonday(s) ? s : closingWeekStart(localToday());
+  });
   const [filters, setFilters] = useState<{
     beneficiaryUserId?: string;
     category?: string;
     state?: string;
-  }>({});
+  }>(() => {
+    const p = params.get('profissional');
+    return p && /^[0-9a-f-]{36}$/i.test(p) ? { beneficiaryUserId: p } : {};
+  });
   const [open, setOpen] = useState<string | null>(null);
   const [pay, setPay] = useState<ClosingRowDto | null>(null);
   const [confirm, setConfirm] = useState(false);

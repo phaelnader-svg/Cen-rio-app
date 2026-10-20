@@ -27,7 +27,7 @@ import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
-import { notify } from '../notifications/notify';
+import { notify, resolveNotifications } from '../notifications/notify';
 import { idParams } from '../presenters';
 import { domainTaskEvent, lockTasks, taskEvent } from '../production/common';
 import { processHelpQueue } from '../help/queue';
@@ -44,6 +44,7 @@ import {
   dayDto,
   dbDate,
   history,
+  isOpenShift,
   lockEmployeeDay,
   myDayDto,
   notifyManagers,
@@ -764,6 +765,10 @@ export async function applyAttendanceAction(
         } as Prisma.OperationalAttendanceUncheckedCreateInput,
       });
   await history(tx, actor, row.id, input.action, before, row, input.reason);
+  // F10-19: expediente sem saída tratado (saída informada, "não informada" ou dia corrigido) — o
+  // aviso dos gestores deixa de pedir ação.
+  if (!isOpenShift(row, cfg.today))
+    await resolveNotifications(tx, actor, 'EXPEDIENTE_ABERTO', [`EXPEDIENTE_ABERTO:${row.id}`]);
   if (
     [
       'AUSENCIA_JUSTIFICADA',
