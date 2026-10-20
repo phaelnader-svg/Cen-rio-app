@@ -77,7 +77,11 @@ export const tripCostInclude = {
   delivery: { select: { id: true, number: true } },
   pickup: { select: { id: true, number: true } },
   payable: { select: { id: true, number: true, status: true, paidCents: true, amountCents: true } },
-  allocations: { include: { serviceOrder: { select: { number: true } } } },
+  // Ordem estável (número da OS): sem ela a leitura devolvia o rateio na ordem física das linhas.
+  allocations: {
+    include: { serviceOrder: { select: { number: true } } },
+    orderBy: { serviceOrder: { number: 'asc' } },
+  },
   payee: { select: { id: true, displayName: true } },
   participants: { include: { user: { select: { id: true, displayName: true } } } },
   adjustments: {
