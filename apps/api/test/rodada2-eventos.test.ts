@@ -146,6 +146,46 @@ describe('F8-15b — Meus Ganhos ao vivo (finance.own_changed)', () => {
     expect(own(await seen(s.tablets['Márcio']!, sinceM))).toEqual([]);
   });
 
+  it('logística: ajuste do custo devido avisa o recebedor da viagem (e só ele)', async () => {
+    const s = await scenario(app);
+    const andre = await userIdOf('André');
+    const tab = await tabletOf(app, s.admin, 'André', PINS['André']!);
+    const ap = await db().accountPayable.create({
+      data: {
+        beneficiary: 'André',
+        category: 'LOGISTICA',
+        description: 'Entrega do André',
+        amountCents: 10000,
+        dueDate: new Date(`${today()}T00:00:00Z`),
+      },
+    });
+    const cost = await db().logisticsCost.create({
+      data: {
+        kind: 'ENTREGA',
+        description: 'Entrega feita pelo André',
+        amountCents: 10000,
+        date: new Date(`${today()}T00:00:00Z`),
+        splitMethod: 'IGUAL',
+        status: 'DEVIDO',
+        payeeUserId: andre,
+        dueAt: new Date(),
+        payableId: ap.id,
+      },
+    });
+    const since = { A: await headOf(tab), R: await headOf(s.tablets.Ricardo!) };
+    const r = await post(s.admin, F(`/logistics-costs/${cost.id}/adjustments`), {
+      amountCents: 2000,
+      reason: 'Pedágio combinado',
+      version: cost.version,
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const mine = own(await seen(tab, since.A));
+    expect(mine.length).toBe(1);
+    expect(mine[0]!.aggregateId).toBe(andre);
+    noValues(mine);
+    expect(own(await seen(s.tablets.Ricardo!, since.R))).toEqual([]);
+  });
+
   it('logística: troca do recebedor avisa o antigo e o novo; reconexão recupera o aviso', async () => {
     const s = await scenario(app);
     const andre = await userIdOf('André');
