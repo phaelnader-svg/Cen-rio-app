@@ -20,7 +20,7 @@ import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { attendanceConfig, clock } from '../attendance/common';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
-import { notify } from '../notifications/notify';
+import { notify, resolveNotifications } from '../notifications/notify';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -120,6 +120,19 @@ export async function issueEvent(
       createdAt: clock(),
     },
   });
+  // F10-19: a mudança de situação (histórico canônico da ocorrência) resolve os avisos que
+  // pediam a ação que acabou de acontecer: triagem da ocorrência aberta, verificação da solução
+  // e, ao resolver/cancelar, a tarefa de resolução atribuída.
+  if (entry.to && entry.to !== entry.from) {
+    if (entry.to !== 'ABERTA')
+      await resolveNotifications(tx, actor, 'OCORRENCIA_ABERTA', [`OCORRENCIA_ABERTA:${issue.id}`]);
+    if (entry.from === 'AGUARDANDO_VERIFICACAO')
+      await resolveNotifications(tx, actor, 'VERIFICACAO_NECESSARIA', [`VERIFICACAO:${issue.id}`]);
+    if (entry.to === 'RESOLVIDA' || entry.to === 'CANCELADA')
+      await resolveNotifications(tx, actor, 'OCORRENCIA_ATRIBUIDA', [
+        `OCORRENCIA_ATRIBUIDA:${issue.id}`,
+      ]);
+  }
 }
 
 export async function issueDomainEvent(

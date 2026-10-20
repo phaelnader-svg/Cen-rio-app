@@ -25,7 +25,7 @@ import { Errors } from '../../lib/errors';
 import { attendanceConfig, dbDate } from '../attendance/common';
 import { dateOnly } from '../commercial/common';
 import { planningAction } from '../help/engine';
-import { notify } from '../notifications/notify';
+import { notify, resolveNotifications } from '../notifications/notify';
 import { domainTaskEvent, taskEvent } from '../production/common';
 import { assertWorker, reviseIfPublishedBy } from '../production/plans';
 import {
@@ -782,6 +782,16 @@ export async function assignInspector(
     changes: { from: i.inspectorUserId, to: user.id, reason: input.reason ?? null },
   });
   await inspectionEvent(tx, actor, EVENT_TYPES.INSPECTION_UPDATED, u);
+  // F10-19: inspetor designado — o pedido de designação dos gestores e o aviso do inspetor
+  // anterior (se trocou) deixam de pedir ação.
+  await resolveNotifications(tx, actor, 'INSPECAO_PENDENTE', [`INSPECAO_PENDENTE:${id}`]);
+  if (i.inspectorUserId && i.inspectorUserId !== user.id)
+    await resolveNotifications(
+      tx,
+      actor,
+      ['INSPECAO_ATRIBUIDA', 'NOVA_INSPECAO'],
+      [`INSPECAO:${id}:${i.inspectorUserId}`],
+    );
   await notify(tx, actor, [
     {
       userId: user.id,

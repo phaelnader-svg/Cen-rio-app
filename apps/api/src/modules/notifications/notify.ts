@@ -24,7 +24,8 @@ export interface NotificationInput {
  * Grava notificações persistentes na mesma transação da mudança que as originou
  * e publica `notification.created` só para o destinatário (o tablet atualiza a
  * caixa em tempo real; após reconexão, o evento é reenviado ou a lista recarregada).
- * Quem fez a ação não é notificado sobre a própria ação.
+ * Quem fez a ação não é notificado sobre a própria ação. Repetir um fato já resolvido reativa o
+ * aviso (a condição voltou).
  */
 export async function notify(tx: Tx, actor: ActorContext, items: NotificationInput[]) {
   for (const n of items) {
@@ -43,7 +44,21 @@ export async function notify(tx: Tx, actor: ActorContext, items: NotificationInp
       ],
       skipDuplicates: true,
     });
-    if (created.count === 0) continue;
+    // F10-19: o mesmo fato voltou a acontecer depois de resolvido (ex.: peça "não entregue" volta a
+    // ficar pronta) — o aviso volta a ficar ativo e não lido; um aviso ainda ativo não é tocado.
+    const reopened = created.count
+      ? 0
+      : (
+          await tx.notification.updateMany({
+            where: {
+              userId: n.userId,
+              dedupeKey: n.dedupeKey.slice(0, 160),
+              resolvedAt: { not: null },
+            },
+            data: { resolvedAt: null, readAt: null, body: n.body.slice(0, 300) },
+          })
+        ).count;
+    if (created.count === 0 && reopened === 0) continue;
     await appendEvent(tx, actor, {
       type: EVENT_TYPES.NOTIFICATION_CREATED,
       aggregateType: 'notification',

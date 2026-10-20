@@ -34,7 +34,7 @@ import {
   parseDateOnly,
   snapshotAddress,
 } from '../commercial/common';
-import { notify } from '../notifications/notify';
+import { notify, resolveNotifications } from '../notifications/notify';
 import {
   moveItemToKey,
   notifyUsersWith,
@@ -689,6 +689,7 @@ export async function cancelDelivery(
     summary: `${deliveryCode(d.number)} cancelada: ${input.reason}`,
   });
   await deliveryDomainEvent(tx, actor, u);
+  await resolveNotifications(tx, actor, 'ENTREGA_ATRIBUIDA', [`ENTREGA_ATRIBUIDA:${id}`]);
   for (const i of d.items) await refreshItemStage(tx, actor, i.serviceOrderItemId);
   await syncTripCost(tx, actor, { deliveryId: id }, input.reason);
   return u;
@@ -724,6 +725,10 @@ async function transition(
   });
   await deliveryEvent(tx, actor, d.id, { ...entry, from: d.status, to });
   await deliveryDomainEvent(tx, actor, u);
+  // F10-19: entrega encerrada (concluída, frustrada ou cancelada) — o aviso "entrega atribuída"
+  // de quem a executaria deixa de pedir ação.
+  if (to === 'CONCLUIDA' || to === 'FRUSTRADA' || to === 'CANCELADA')
+    await resolveNotifications(tx, actor, 'ENTREGA_ATRIBUIDA', [`ENTREGA_ATRIBUIDA:${d.id}`]);
   return u;
 }
 

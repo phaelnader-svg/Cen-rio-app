@@ -26,7 +26,7 @@ import { Errors } from '../../lib/errors';
 import { attendanceConfig, clock, dbDate } from '../attendance/common';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { skillsByEmployee } from '../help/engine';
-import { notify } from '../notifications/notify';
+import { notify, resolveNotifications } from '../notifications/notify';
 import { refreshLaborOf } from '../finance/labor';
 import { laborOwners, notifyOwnChanged } from '../finance/own-changed';
 
@@ -456,6 +456,7 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
     await laborOwners(tx, updated.serviceOrderId),
     'service_order_item',
   );
+  await resolveStageNotices(tx, actor, itemId, before, s.stage);
   if (s.stage === 'PRONTA_ENTREGA' && s.inspection?.packaging) {
     const siblings = await tx.serviceOrderItem.findMany({
       where: { serviceOrderId: updated.serviceOrderId },
@@ -475,6 +476,70 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
     );
   }
   return s.stage;
+}
+
+const INSPECTION_STAGES: readonly string[] = ['AGUARDANDO_INSPECAO', 'EM_INSPECAO'];
+const PACKAGING_STAGES: readonly string[] = ['AGUARDANDO_EMBALAGEM', 'EM_EMBALAGEM'];
+
+/**
+ * F10-19: a peça saiu da etapa que o aviso pedia — inspeção (pendente/atribuída), correção,
+ * embalagem ou "pronta para entrega" — então esses avisos ficam resolvidos (a mesma etapa
+ * canônica que move a peça; nada de rotina periódica).
+ */
+async function resolveStageNotices(
+  tx: Tx,
+  actor: ActorContext,
+  itemId: string,
+  before: string,
+  after: string,
+) {
+  const left = (stages: readonly string[]) => stages.includes(before) && !stages.includes(after);
+  if (left(INSPECTION_STAGES)) {
+    const ids = (
+      await tx.qualityInspection.findMany({
+        where: { serviceOrderItemId: itemId },
+        select: { id: true },
+      })
+    ).map((i) => i.id);
+    await resolveNotifications(
+      tx,
+      actor,
+      ['INSPECAO_ATRIBUIDA', 'NOVA_INSPECAO'],
+      ids.map((id) => `INSPECAO:${id}`),
+    );
+    await resolveNotifications(
+      tx,
+      actor,
+      'INSPECAO_PENDENTE',
+      ids.map((id) => `INSPECAO_PENDENTE:${id}`),
+    );
+  }
+  if (before === 'EM_CORRECAO' && after !== 'EM_CORRECAO') {
+    const tasks = await tx.productionTask.findMany({
+      where: { serviceOrderItemId: itemId },
+      select: { id: true },
+    });
+    await resolveNotifications(
+      tx,
+      actor,
+      'CORRECAO_ATRIBUIDA',
+      tasks.map((t) => `CORRECAO_ATRIBUIDA:${t.id}`),
+    );
+  }
+  if (left(PACKAGING_STAGES)) {
+    const records = await tx.packagingRecord.findMany({
+      where: { serviceOrderItemId: itemId },
+      select: { id: true },
+    });
+    await resolveNotifications(
+      tx,
+      actor,
+      'EMBALAGEM_LIBERADA',
+      records.map((r) => `EMBALAGEM_LIBERADA:${r.id}`),
+    );
+  }
+  if (before === 'PRONTA_ENTREGA' && after !== 'PRONTA_ENTREGA')
+    await resolveNotifications(tx, actor, 'PRONTO_ENTREGA', [`PRONTO_ENTREGA:${itemId}`]);
 }
 
 export async function refreshStagesOfOrder(tx: Tx, actor: ActorContext, serviceOrderId: string) {

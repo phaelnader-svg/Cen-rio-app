@@ -223,6 +223,10 @@ export async function attendanceRoutes(app: FastifyInstance) {
         ]);
         if (presumed) {
           await resolveOpenImpacts(tx, actor, row.id, `${e.displayName} chegou às ${cfg.now}.`);
+          // F10-19: a chegada encerra o aviso de ausência presumida dos gestores.
+          await resolveNotifications(tx, actor, 'AUSENCIA_PRESUMIDA', [
+            `AUSENCIA_PRESUMIDA:${row.id}`,
+          ]);
           // Fase 8: a chegada torna sem efeito as propostas da ausência presumida.
           await obsoleteProposals(
             tx,
@@ -769,6 +773,9 @@ export async function applyAttendanceAction(
   // aviso dos gestores deixa de pedir ação.
   if (!isOpenShift(row, cfg.today))
     await resolveNotifications(tx, actor, 'EXPEDIENTE_ABERTO', [`EXPEDIENTE_ABERTO:${row.id}`]);
+  // F10-19: a ausência presumida foi tratada pelo gestor (confirmada, justificada ou corrigida).
+  if (before?.situation === 'AUSENCIA_PRESUMIDA' && row.situation !== 'AUSENCIA_PRESUMIDA')
+    await resolveNotifications(tx, actor, 'AUSENCIA_PRESUMIDA', [`AUSENCIA_PRESUMIDA:${row.id}`]);
   if (
     [
       'AUSENCIA_JUSTIFICADA',
