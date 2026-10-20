@@ -303,6 +303,80 @@ nem houve decisão a pedir.
 
 A instalação limpa e o diff de schema são feitos pela suíte (`migrate reset` / `migrate diff`).
 
+## Ajustes de testes e correção colateral
+
+**Testes de privacidade.** Quatro testes antigos afirmavam que o tablet nunca recebe evento
+`finance.*`:
+
+- `labor.test` 5;
+- `closing.test` 7;
+- `logistics-costs.test` 13;
+- `meus-ganhos.test` 34/35.
+
+Eles passaram a aceitar **somente** `finance.own_changed`, e só nestas condições:
+
+- o evento vai ao próprio dono;
+- não carrega valores.
+
+A verificação é feita pelo helper `withoutOwnChanged`, que falha se o evento chegar a outra pessoa
+ou trouxer números. Qualquer outro evento financeiro no tablet continua reprovando, então a regra
+F1-09 não foi enfraquecida.
+
+**Rateio do custo de viagem.** A leitura do rateio (`tripCostInclude`) não tinha ordenação. Por isso
+`logistics-costs.test` 8 falhava de forma intermitente: a ordem dependia da posição física das
+linhas. A leitura passou a ordenar pelo número da OS, a mesma ordem que `tripAllocation` já usa.
+Valores e regra não mudaram.
+
+## Validação final (SHA `34412d5`)
+
+**Local**, com banco de desenvolvimento recriado e migrations do zero:
+
+| Etapa                                  | Resultado                         |
+| -------------------------------------- | --------------------------------- |
+| format / lint / typecheck              | OK                                |
+| migrations do zero + diff de schema    | OK (32/32, sem divergência)       |
+| build                                  | OK                                |
+| shared / web / API                     | 127/127 · 6/6 · 801 (+10 skipped) |
+| backup e restauração                   | OK (119 tabelas comparadas)       |
+| E2E completo                           | 48/48                             |
+| Rodada 2 (central, eventos, resolução) | 22 + 11 + 4                       |
+| prova da migration (evolução/reversão) | OK                                |
+
+**CI:** run 175, `success`. O timeout do CI não foi alterado.
+
+**Homologação** (fluxo seguro via `operar.py`; produção não tocada). Passos executados:
+
+1. build das imagens `34412d5`: `SUCCESS`;
+2. impressão digital inicial e `migration_status`;
+3. `gate_open`;
+4. `prepare_version`;
+5. `migration_precheck`: 1 pendente, esquema compatível;
+6. `maintenance_on`;
+7. ponto de recuperação `cenario-staging-20261020T182827Z`;
+8. `backup_validate` (SHA256SUMS);
+9. `backup_restore_test`: restauração **idêntica** ao banco;
+10. `migrate`: 19 s;
+11. `migration_verify`: 32/32, nada pendente ou divergente;
+12. `activate_version`.
+
+**Verificação após a ativação:**
+
+- `health`;
+- `smoke_test`;
+- `websocket_test`;
+- `run_homologation_tests suite=completo`: saúde, acesso e websocket, 27 verificações, 0 falhas;
+- `version`: candidata = migrada = `34412d5`;
+- logs de api, web, postgres e caddy sem erros;
+- `gate_close` e `gate_status`: portão **fechado**.
+
+**Impressão digital antes × depois.** As 4 127 linhas são iguais, exceto:
+
+- `_prisma_migrations`: de 31 para 32;
+- a nova coluna `notifications.resolved_at`;
+- o hash da tabela `notifications`: as 91 linhas continuam, mas agora com a coluna nova nula.
+
+Todas as somas financeiras são idênticas.
+
 ## Matriz da auditoria (somente os IDs desta rodada)
 
 | ID      | Antes            | Depois                    | Prova                                                         |
