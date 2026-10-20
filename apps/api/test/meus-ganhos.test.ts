@@ -4,7 +4,14 @@ import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import { setClock as setAppClock } from '../src/core/clock';
 import type { Client } from './helpers';
-import { WsClient, createTestApp, db, resetDatabase, setupTablet } from './helpers';
+import {
+  WsClient,
+  createTestApp,
+  db,
+  resetDatabase,
+  setupTablet,
+  withoutOwnChanged,
+} from './helpers';
 import {
   F,
   PINS,
@@ -335,7 +342,10 @@ describe('Privacidade e permissões (25–28, 34, 35)', () => {
     await setOwner(s.admin, s.sofa.id, s.ids.marcio, s.ids.ricardo, 'Troca');
     await ws.waitFor((m) => m.event?.type === 'production.piece_owner_changed');
     expect(moneyKeys(ws.messages)).toEqual([]);
-    expect(JSON.stringify(ws.messages)).not.toMatch(/98765|99999|50000|finance\./);
+    // Só o aviso próprio sem valores (F8-15b); nenhum outro evento financeiro.
+    expect(JSON.stringify(withoutOwnChanged(ws.messages, s.ids.ricardo))).not.toMatch(
+      /98765|99999|50000|finance\./,
+    );
     const n = (await s.tablets.Ricardo!.get('/api/v1/notifications')).body;
     expect(moneyKeys(n)).toEqual([]);
     expect(JSON.stringify(n)).not.toMatch(/98765|50000|R\$/);
