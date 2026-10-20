@@ -1159,10 +1159,16 @@ describe('Segurança, concorrência e sincronização', () => {
     expect(JSON.stringify(paid.event.payload)).not.toMatch(/Cents|100000/);
     for (const e of wAdmin.events().filter((x) => x.type.startsWith('finance.')))
       expect(JSON.stringify(e.payload)).not.toMatch(/Cents|00000/);
-    // O tablet segue recebendo eventos dele, mas nenhum financeiro.
+    // O tablet segue recebendo eventos dele, mas nenhum financeiro — exceto o aviso próprio
+    // "seus ganhos mudaram" (Rodada 2, F8-15b): só dele e sem nenhum valor.
     await finish(s.tablets.Ricardo!, s.sofaTask.id);
     await wRicardo.waitFor((m) => m.event?.type === 'production.task_completed');
-    expect(wRicardo.events().filter((e) => e.type.startsWith('finance.'))).toHaveLength(0);
+    const fin = wRicardo.events().filter((e) => e.type.startsWith('finance.'));
+    expect(fin.filter((e) => e.type !== 'finance.own_changed')).toHaveLength(0);
+    for (const e of fin) {
+      expect(e.aggregateId).toBe(s.ids.ricardo);
+      expect(JSON.stringify(e.payload)).not.toMatch(/Cents|\d{4,}/);
+    }
     // Telas de produção do tablet (Meu dia, OS da tarefa) sem valores do cliente.
     const mine = await s.tablets.Ricardo!.get('/api/v1/production-tasks/mine');
     expect(mine.status).toBe(200);
