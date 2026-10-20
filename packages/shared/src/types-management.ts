@@ -36,7 +36,8 @@ export interface OverviewDto {
       awaitingCondition: number;
     };
     /**
-     * Rodada 3 (F10-21l): tarefas de produção BLOQUEADAS em OS abertas — bloqueio de PRODUÇÃO.
+     * Rodada 3 (F10-21l): tarefas de produção BLOQUEADAS por impedimento real (não a espera da
+     * etapa anterior) em OS abertas — bloqueio de PRODUÇÃO.
      * (`pieces.blocked` continua sendo o bloqueio de EXPEDIÇÃO da peça.)
      */
     blockedTasks: number;

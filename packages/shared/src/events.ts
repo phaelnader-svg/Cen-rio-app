@@ -185,6 +185,7 @@ export const DEVICE_AUDIENCE_PERMISSIONS: ReadonlySet<string> = new Set([
   'estoque.conferir',
   'materiais.ver',
   'os.ver',
+  'sincronizacao.diagnosticar',
 ]);
 
 /** Verifica se um destinatário atende à audiência do evento. */

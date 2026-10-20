@@ -447,6 +447,7 @@ async function insertAdjustment(
     entityType: 'commercial_order',
     entityId: order.id,
     summary: `${orderCode(order.number)}: ${kind.toLowerCase()} de ${(amount / 100).toFixed(2)} — ${reason}`,
+    changes: { kind, amountCents: amount, reason },
   });
   await financeEvent(tx, actor, {
     entityType: 'commercial_order',
@@ -886,6 +887,10 @@ export async function receivePayment(
     entityType: 'customer_receivable',
     entityId: id,
     summary: `${receivableCode(r.number)}: recebimento de ${(input.amountCents / 100).toFixed(2)} (${input.method}${input.installments ? ` ${input.installments}×` : ''}).`,
+    changes: {
+      receivedCents: { from: r.receivedCents, to: received },
+      status: { from: r.status, to: u.status },
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'customer_receivable',
@@ -950,6 +955,11 @@ export async function reversePayment(
     entityType: 'customer_receivable',
     entityId: r.id,
     summary: `${receivableCode(r.number)}: estorno de ${(p.amountCents / 100).toFixed(2)} — ${input.reason}`,
+    changes: {
+      receivedCents: { from: r.receivedCents, to: received },
+      status: { from: r.status, to: u.status },
+      reason: input.reason,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'customer_receivable',
@@ -1010,6 +1020,7 @@ async function cancelReceivableRow(
     entityType: 'customer_receivable',
     entityId: r.id,
     summary: `${receivableCode(r.number)} cancelada: ${reason}`,
+    changes: { status: { to: 'CANCELADO' }, reason },
   });
   await financeEvent(tx, actor, {
     entityType: 'customer_receivable',
@@ -1102,6 +1113,13 @@ export async function refundOrder(
       entityType: 'customer_receivable',
       entityId: r.id,
       summary: `${receivableCode(r.number)}: reembolso de ${formatCents(t)} (${input.method}) — ${input.reason}`,
+      changes: {
+        refundedCents: t,
+        receivedCents: { from: r.receivedCents, to: received },
+        status: { from: r.status },
+        method: input.method,
+        reason: input.reason,
+      },
     });
     await financeEvent(tx, actor, {
       entityType: 'customer_receivable',

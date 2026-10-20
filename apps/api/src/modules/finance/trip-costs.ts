@@ -647,6 +647,7 @@ export async function constituteTripCost(tx: Tx, actor: ActorContext, costId: st
     entityType: 'logistics_cost',
     entityId: costId,
     summary: `${logisticsCostCode(c.number)}: ${trip.code} realizada — valor devido constituído.`,
+    changes: { status: { from: c.status, to: u.status } },
   });
   await createObligation(tx, actor, u);
 }
@@ -761,6 +762,7 @@ export async function addTripFee(
     entityType: 'logistics_cost',
     entityId: c.id,
     summary: `${logisticsCostCode(c.number)}: taxa de tentativa frustrada de ${trip.code} autorizada (${(input.amountCents / 100).toFixed(2)}). Justificativa: ${input.reason}`,
+    changes: { feeCents: input.amountCents, reason: input.reason },
   });
   await financeEvent(tx, actor, {
     entityType: 'logistics_cost',
@@ -882,6 +884,11 @@ export async function reversePayablePayment(
     entityType: 'account_payable',
     entityId: p.id,
     summary: `${payableCode(p.number)}: estorno de ${(pay.amountCents / 100).toFixed(2)} — ${input.reason}`,
+    changes: {
+      paidCents: { from: p.paidCents, to: paid },
+      status: { from: p.status, to: status },
+      reason: input.reason,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'account_payable',

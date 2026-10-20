@@ -426,6 +426,10 @@ export async function adjustLabor(
     entityType: 'production_payable',
     entityId: id,
     summary: `${productionPayableCode(p.number)}: ajuste de ${(input.amountCents / 100).toFixed(2)} — ${input.reason}`,
+    changes: {
+      adjustmentsCents: { from: p.adjustmentsCents, to: next },
+      reason: input.reason,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'production_payable',

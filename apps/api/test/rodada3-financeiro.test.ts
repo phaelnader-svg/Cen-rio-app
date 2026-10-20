@@ -9,6 +9,7 @@ import {
   F,
   PINS,
   TZ,
+  adjust,
   allowWeek,
   finish,
   labor,
@@ -193,6 +194,34 @@ describe('F10-20b — antes/depois consultável nas ações financeiras', () => 
       });
       expect(conf.changes).toMatchObject({ before: { kind: 'EXCECAO_ADMINISTRATIVA' } });
     }
+    // Ajuste e decisão de pedido de alteração também guardam de/para.
+    await adjust(s.admin, ric.id, 2500, 'Braço extra');
+    const adj = await db().auditLog.findFirstOrThrow({
+      where: { action: 'finance.labor_adjusted' },
+    });
+    expect(adj.changes).toMatchObject({ adjustmentsCents: { from: 0, to: 2500 } });
+    const vr = await db().valueChangeRequest.create({
+      data: {
+        targetKind: 'PRODUCAO',
+        productionPayableId: ric.id,
+        beneficiaryUserId: s.ids.ricardo,
+        currentCents: 102500,
+        requestedCents: 110000,
+        reason: 'Pedido de teste',
+      },
+    });
+    const rej = await post(s.admin, F(`/value-requests/${vr.id}/reject`), {
+      version: vr.version,
+      note: 'Valor combinado mantido',
+    });
+    expect(rej.status, JSON.stringify(rej.body)).toBe(200);
+    expect(
+      (
+        await db().auditLog.findFirstOrThrow({
+          where: { action: 'finance.value_request_rejected' },
+        })
+      ).changes,
+    ).toMatchObject({ status: { from: 'PENDENTE', to: 'RECUSADA' } });
     // Nenhum dado sensível nos registros genéricos de auditoria.
     const all = await db().auditLog.findMany({ where: { action: { startsWith: 'finance.' } } });
     expect(JSON.stringify(all)).not.toMatch(new RegExp(PINS.Ricardo!));

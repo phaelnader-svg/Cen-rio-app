@@ -271,6 +271,18 @@ export type ReleaseBlocker = (typeof RELEASE_BLOCKERS)[number];
 export const REASSIGNABLE_WAITING_BLOCKERS: readonly ReleaseBlocker[] = ['DEPENDENCIAS'];
 export const onlyReassignableBlockers = (blockers: readonly string[]) =>
   blockers.every((b) => (REASSIGNABLE_WAITING_BLOCKERS as readonly string[]).includes(b));
+/**
+ * Rodada 3 (F10-09/F10-21l): o que é BLOQUEIO DE PRODUÇÃO (exceção para o gestor): bloqueada pelo
+ * gestor, sem material ou por ocorrência. Esperar a etapa anterior, a publicação, o responsável
+ * ou a chegada da peça é a sequência normal do plano (cada uma tem a sua tela).
+ */
+export const PRODUCTION_STOP_BLOCKERS: readonly ReleaseBlocker[] = [
+  'BLOQUEIO',
+  'MATERIAIS',
+  'OCORRENCIA',
+];
+export const isProductionStopped = (blockers: readonly string[]) =>
+  blockers.some((b) => (PRODUCTION_STOP_BLOCKERS as readonly string[]).includes(b));
 
 // ─────────────────────────── Modo do planejamento (Evolução, Fase 2) ───────────────────────────
 

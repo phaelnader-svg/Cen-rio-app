@@ -808,6 +808,14 @@ export async function confirmClosing(
     entityType: 'weekly_closing',
     entityId: row?.id ?? '00000000-0000-0000-0000-000000000000',
     summary: `Fechamento da semana ${weekStart} conferido (devido ${(totals.dueCents / 100).toFixed(2)}).`,
+    changes: {
+      status: { from: row?.status ?? null, to: 'CONFERIDO' },
+      totals: {
+        dueCents: totals.dueCents,
+        paidInWeekCents: totals.paidInWeekCents,
+        openAtEndCents: totals.openAtEndCents,
+      },
+    },
   });
 }
 
@@ -834,6 +842,7 @@ export async function reopenClosing(
     entityType: 'weekly_closing',
     entityId: row.id,
     summary: `Fechamento da semana ${weekStart} reaberto: ${input.reason}`,
+    changes: { status: { from: 'CONFERIDO', to: 'REABERTO' }, reason: input.reason },
   });
 }
 

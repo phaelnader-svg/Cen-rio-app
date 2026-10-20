@@ -133,6 +133,7 @@ async function obsolete(tx: Tx, actor: ActorContext, r: ValueChangeRequest, why:
     entityType: 'value_change_request',
     entityId: r.id,
     summary: `${valueChangeCode(r.number)} obsoleta: ${why}`,
+    changes: { status: { from: 'PENDENTE', to: 'OBSOLETA' }, reason: why },
   });
   await notify(tx, actor, [
     {
@@ -417,6 +418,7 @@ export async function approveRequest(
     entityType: 'value_change_request',
     entityId: id,
     summary: `${code} aprovado (${appliedAs === 'AJUSTE' ? 'ajuste' : 'valor combinado'} de ${(delta / 100).toFixed(2)}).`,
+    changes: { status: { from: 'PENDENTE', to: 'APROVADA' }, appliedAs, deltaCents: delta },
   });
   await financeEvent(tx, actor, {
     entityType: 'value_change_request',
@@ -464,6 +466,7 @@ export async function rejectRequest(
     entityType: 'value_change_request',
     entityId: id,
     summary: `${code} recusado: ${input.note}`,
+    changes: { status: { from: 'PENDENTE', to: 'RECUSADA' }, reason: input.note },
   });
   await financeEvent(tx, actor, {
     entityType: 'value_change_request',

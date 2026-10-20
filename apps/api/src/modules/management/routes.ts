@@ -1,5 +1,6 @@
 import {
   MATERIALS_PENDING_STATES,
+  PRODUCTION_STOP_BLOCKERS,
   closingWeekStart,
   deliveryCode,
   measurementCode,
@@ -84,7 +85,11 @@ export async function managementRoutes(app: FastifyInstance) {
           serviceDeadlines(prisma, deadlineCandidatesWhere(cal), cal),
           loadPipeline(prisma),
           prisma.productionTask.count({
-            where: { status: 'BLOQUEADA', serviceOrder: { status: 'ABERTA' } },
+            where: {
+              status: 'BLOQUEADA',
+              blockers: { hasSome: [...PRODUCTION_STOP_BLOCKERS] },
+              serviceOrder: { status: 'ABERTA' },
+            },
           }),
         ]);
       const pieces = {

@@ -133,13 +133,21 @@ describe('Central — o que faltava (F10-04/05/06/09/13f/13g, F1-15a)', () => {
 
   it('F10-09/13f/21l: tarefa BLOQUEADA com prazo distante aparece (informativo) e conta no Início', async () => {
     const s = await k.scenario();
+    // Esperar a etapa anterior é a sequência normal: longe do prazo, não aparece nem conta.
     await db().productionTask.update({
       where: { id: s.sofaTask.id },
       data: {
         status: 'BLOQUEADA',
-        blockers: ['Aguardando material'],
+        blockers: ['DEPENDENCIAS'],
         dueDate: new Date(`${day(20)}T00:00:00Z`),
       },
+    });
+    expect(item(await attention(s.admin), `PRAZO:${s.sofaTask.id}`)).toBeUndefined();
+    expect((await overview(s.admin)).operations!.blockedTasks).toBe(0);
+    // Bloqueio de verdade (gestor bloqueou): aparece mesmo longe do prazo.
+    await db().productionTask.update({
+      where: { id: s.sofaTask.id },
+      data: { blockers: ['BLOQUEIO'], blockedReason: 'Aguardando decisão do cliente' },
     });
     const a = await attention(s.admin);
     expect(item(a, `PRAZO:${s.sofaTask.id}`)).toMatchObject({

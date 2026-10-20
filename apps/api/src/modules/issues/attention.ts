@@ -10,8 +10,10 @@ import {
   ISSUE_KIND_LABEL,
   ISSUE_STATUS_LABEL,
   PROPOSAL_KIND_LABEL,
+  PRODUCTION_STOP_BLOCKERS,
   attentionQuerySchema,
   helpRequestCode,
+  isProductionStopped,
   localParts,
   mondayOf,
   proposalCode,
@@ -241,8 +243,9 @@ export async function loadAttention(
     where: {
       OR: [
         { status: 'PAUSADA', pauseImpediment: true },
-        // Rodada 3 (F10-09/F10-13f): tarefa BLOQUEADA aparece sempre (não só perto do prazo).
-        { status: 'BLOQUEADA' },
+        // Rodada 3 (F10-09/F10-13f): tarefa BLOQUEADA por impedimento real aparece sempre (não só
+        // perto do prazo). Esperar a etapa anterior ou a publicação é a sequência normal.
+        { status: 'BLOQUEADA', blockers: { hasSome: [...PRODUCTION_STOP_BLOCKERS] } },
         {
           status: { in: ['BLOQUEADA', 'PROGRAMADA', 'LIBERADA', 'EM_EXECUCAO', 'PAUSADA'] },
           dueDate: { lte: dbDate(addDays(realToday, 1)) },
@@ -259,7 +262,9 @@ export async function loadAttention(
     const due = dateOnly(t.dueDate);
     const impediment = t.status === 'PAUSADA' && t.pauseImpediment;
     const overdue = Boolean(due && due < realToday);
-    if (!impediment && !(overdue || t.status === 'BLOQUEADA')) continue;
+    const nearDue = Boolean(due && due <= addDays(realToday, 1));
+    const blocked = t.status === 'BLOQUEADA' && (nearDue || isProductionStopped(t.blockers));
+    if (!impediment && !(overdue || blocked)) continue;
     items.push({
       key: `${impediment ? 'IMPEDIMENTO' : 'PRAZO'}:${t.id}`,
       type: impediment ? 'IMPEDIMENTO' : 'PRAZO',
