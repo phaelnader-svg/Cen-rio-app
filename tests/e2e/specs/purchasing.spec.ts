@@ -1,6 +1,33 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
 import { openServiceOrder } from './os-helpers';
+import { E2E } from '../env';
+
+const origin = `http://localhost:${E2E.webPort}`;
+async function call(page: Page, method: 'GET' | 'PUT', path: string, data?: unknown) {
+  const r = await page.request.fetch(path, {
+    method,
+    data,
+    headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
+  });
+  expect(r.ok(), `${method} ${path}: ${await r.text()}`).toBe(true);
+  return r.json();
+}
+/** Concede uma permissão individual pelo cadastro do funcionário (fluxo existente). */
+async function grant(page: Page, displayName: string, permission: string) {
+  const list = await call(page, 'GET', '/api/employees');
+  const summary = list.find((e: { displayName: string }) => e.displayName === displayName);
+  const e = await call(page, 'GET', `/api/employees/${summary.id}`);
+  await call(page, 'PUT', `/api/employees/${e.id}`, {
+    fullName: e.fullName,
+    displayName: e.displayName,
+    jobTitle: e.jobTitle,
+    color: e.color,
+    roleIds: e.roles.map((r: { id: string }) => r.id),
+    extraPermissions: [...new Set([...e.extraPermissions, permission])],
+    version: e.version,
+  });
+}
 
 /**
  * Fase 4 — fluxo completo com dados fictícios:
@@ -71,8 +98,23 @@ test.describe.serial('Fase 4 — compras, recebimento e estoque', () => {
     await page.getByRole('tab', { name: /Materiais/ }).click();
     await expect(page.getByTestId('os-readiness-state')).toHaveText('Aguardando recebimento');
 
-    // 4. Recebimento pelo tablet do Thiago (qualquer funcionário; sem preços).
+    // 4. Recebimento pelo tablet do Thiago (sem preços).
+    // F3-17: sem a capacidade de conferência técnica, o tecido da OS fica travado (só a chegada
+    // física); o grampo de estoque comum continua recebível por qualquer funcionário.
     await setPin(page, 'Thiago', '505050');
+    const first = await openTablet(
+      browser,
+      await registerDevice(page, 'Tablet Thiago (sem conferência)', 'Thiago'),
+      '505050',
+    );
+    await first.page.getByTestId('tile-materials').click();
+    await first.page.getByTestId('pending-receipts').getByRole('button').first().click();
+    await expect(first.page.getByTestId('receive-locked')).toContainText('Linho');
+    await expect(first.page.getByTestId('receive-item-Linho')).toHaveCount(0);
+    await expect(first.page.getByTestId('receive-item-Grampos 80/10')).toBeVisible();
+    await first.context.close();
+    // Concessão explícita pelo modelo de permissões existente (nenhum nome fixo no código).
+    await grant(page, 'Thiago', 'estoque.conferir');
     const code = await registerDevice(page, 'Tablet Thiago (materiais)', 'Thiago');
     const tablet = await openTablet(browser, code, '505050');
     const t = tablet.page;

@@ -316,10 +316,13 @@ function ReceiveForm({
         </Alert>
       )}
       {locked.length > 0 && (
-        <Alert tone="info" className="mb-4" data-testid="receive-locked">
-          Exige conferência técnica: {locked.map((i) => i.description).join(', ')}. Registre só a
-          chegada em &quot;Aguardando chegada&quot;; a conferência é feita por quem tem autorização.
-        </Alert>
+        <div className="mb-4" data-testid="receive-locked">
+          <Alert tone="info">
+            Exige conferência técnica: {locked.map((i) => i.description).join(', ')}. Registre só a
+            chegada em &quot;Aguardando chegada&quot;; a conferência é feita por quem tem
+            autorização.
+          </Alert>
+        </div>
       )}
       {error && (
         <Alert tone="danger" className="mb-4">
