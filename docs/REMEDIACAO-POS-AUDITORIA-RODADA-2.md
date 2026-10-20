@@ -388,7 +388,7 @@ Todas as somas financeiras são idênticas.
 | F10-13o | NÃO IMPLEMENTADO | IMPLEMENTADO E COMPROVADO | mesma implementação de F10-11; central › F10-11 (3); E2E      |
 | F10-12  | NÃO IMPLEMENTADO | IMPLEMENTADO E COMPROVADO | central › F10-12 (3); E2E cartão "pagamento"                  |
 | F10-13r | NÃO IMPLEMENTADO | IMPLEMENTADO E COMPROVADO | central › F10-13r (4)                                         |
-| F10-19  | NÃO IMPLEMENTADO | IMPLEMENTADO E COMPROVADO | eventos › F10-19 (7); resolucao (4); script de migration; E2E |
+| F10-19  | NÃO IMPLEMENTADO | IMPLEMENTADO PARCIALMENTE | eventos › F10-19 (7); resolucao (4); script de migration; E2E |
 | F10-21m | NÃO IMPLEMENTADO | IMPLEMENTADO E COMPROVADO | central › F10-21m (6); E2E `dl-delivered`                     |
 | F10-21s | NÃO IMPLEMENTADO | IMPLEMENTADO E COMPROVADO | central › F10-21s (2); E2E `fin-paid` = Fechamento            |
 
@@ -396,13 +396,30 @@ Todas as somas financeiras são idênticas.
 
 | Classificação                     | Rodada 1 | Rodada 2 |
 | --------------------------------- | -------- | -------- |
-| IMPLEMENTADO E COMPROVADO         | 197      | **207**  |
-| IMPLEMENTADO PARCIALMENTE         | 35       | 35       |
+| IMPLEMENTADO E COMPROVADO         | 197      | **206**  |
+| IMPLEMENTADO PARCIALMENTE         | 35       | **36**   |
 | IMPLEMENTADO SEM TESTE SUFICIENTE | 34       | 34       |
 | NÃO IMPLEMENTADO                  | 10       | **0**    |
 | DIVERGENTE                        | 0        | 0        |
 | SUBSTITUÍDO POR DECISÃO           | 6        | 6        |
 | NÃO COMPROVADO                    | 2        | 2        |
+| **Total**                         | 284      | 284      |
+
+**F10-19 — IMPLEMENTADO PARCIALMENTE (correção de classificação).** A infraestrutura está
+implementada e comprovada para os tipos cobertos (tabela em F):
+
+- `resolved_at`;
+- resolução automática pela ação que encerra a condição;
+- reativação;
+- idempotência e concorrência.
+
+Três tipos ainda não têm resolução automática e seguem ativos até serem lidos:
+
+- REVISAO_DEVOLUCAO;
+- TAREFA_PENDENTE_ENCERRAMENTO;
+- a atribuição de retirada.
+
+A alteração é só documental; o código homologado continua `34412d5`.
 
 ## Pendências que continuam abertas
 
