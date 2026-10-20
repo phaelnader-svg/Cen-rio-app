@@ -11,6 +11,7 @@ import {
   loginAdmin,
   resetDatabase,
   setupTablet,
+  withoutOwnChanged,
 } from './helpers';
 import {
   createCustomer,
@@ -855,7 +856,10 @@ describe('Recebedor ausente, segurança e semana (C2, CA6-13, CA6-15)', () => {
     for (const path of [`/api/v1/pickups/${pickup.id}`, '/api/v1/logistics/jobs'])
       expect(moneyKeys((await plain.get(path)).body), path).toEqual([]);
     expect(moneyKeys(wsA.messages)).toEqual([]);
-    expect(JSON.stringify(wsA.messages)).not.toMatch(/finance\.|10000/);
+    // Só o aviso próprio sem valores (F8-15b): André é o recebedor; nenhum outro evento financeiro.
+    expect(JSON.stringify(withoutOwnChanged(wsA.messages, ids.andre))).not.toMatch(
+      /finance\.|10000/,
+    );
   });
 
   it('14. semana do fato gerador (realização) no fuso da oficina; agendamento em outra semana não conta', async () => {

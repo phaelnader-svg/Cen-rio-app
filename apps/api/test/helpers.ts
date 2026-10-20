@@ -156,6 +156,24 @@ export async function setupTablet(
 }
 
 /** Conexão WebSocket de teste que acumula mensagens recebidas. */
+/**
+ * Rodada 2 (F8-15b): tira das mensagens do tempo real o aviso próprio "seus ganhos mudaram"
+ * (`finance.own_changed`), que só pode chegar ao próprio dono e sem nenhum valor — falha se
+ * chegar a outra pessoa ou carregar números. O restante segue para as asserções de privacidade.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function withoutOwnChanged(messages: any[], userId: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const own = (m: any) => m?.event?.type === 'finance.own_changed';
+  for (const m of messages.filter(own)) {
+    if (m.event.aggregateId !== userId)
+      throw new Error(`finance.own_changed de outra pessoa: ${JSON.stringify(m.event)}`);
+    if (/Cents|\d{3,}/.test(JSON.stringify(m.event.payload)))
+      throw new Error(`finance.own_changed com valores: ${JSON.stringify(m.event.payload)}`);
+  }
+  return messages.filter((m) => !own(m));
+}
+
 export class WsClient {
   messages: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
   ws!: WebSocket;
