@@ -146,10 +146,15 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await expect(values).toContainText('R$ 320,00');
     await expect(values).toContainText(so.code);
     await expect(values).toContainText(/previsto/i);
-    // F8-11: mão de obra ainda prevista aparece como previsão, nunca como valor devido.
-    const terms = values.getByTestId(/^my-value-terms-/);
-    await expect(terms.first()).toContainText('previsto R$ 320,00 (ainda não é devido)');
-    await expect(values).not.toContainText(/devido R\$/);
+    // F8-11: a mão de obra desta OS, ainda prevista, aparece como previsão — nunca como devido.
+    // (O banco E2E é compartilhado entre as specs: o Ricardo pode ter outros itens já devidos.)
+    const terms = values
+      .locator('[data-testid^="my-value-"]')
+      .filter({ hasText: so.code })
+      .getByTestId(/^my-value-terms-/);
+    await expect(terms).toHaveCount(1);
+    await expect(terms).toContainText('previsto R$ 320,00 (ainda não é devido)');
+    await expect(terms).not.toContainText(/devido R\$/);
     // Nunca o valor cobrado do cliente, recebimentos ou o financeiro geral.
     await expect(values).not.toContainText('1.000,00');
     await expect(values).not.toContainText('200,00');
