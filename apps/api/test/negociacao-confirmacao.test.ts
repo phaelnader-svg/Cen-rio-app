@@ -719,17 +719,30 @@ describe('Portão de pagamento D13 (35–55)', () => {
   });
 });
 
-describe('F9-03/F9-06: versão, retrato e histórico da confirmação', () => {
+describe('F9-03/F9-06 + D13 (decisão do proprietário): confirmação vale inteira ou não vale', () => {
   const closingOf = async (admin: Client) =>
     (await admin.get(F(`/weekly-closings/${WEEK}`))).body as { version: number };
+  const apVersion = async (id: string) =>
+    (await db().accountPayable.findUniqueOrThrow({ where: { id } })).version;
+  const payAp = async (admin: Client, id: string, amountCents: number, extra = {}) =>
+    post(admin, F(`/payables/${id}/payments`), {
+      amountCents,
+      paidAt: today(),
+      method: 'PIX',
+      version: await apVersion(id),
+      ...extra,
+    });
 
-  it('versão N vale enquanto nada muda; mudou → não libera; nova versão referencia o novo estado; antiga fica no histórico', async () => {
-    const { s, ric } = await base();
-    const R = s.tablets.Ricardo!;
-    const t = await tok(R, PINS.Ricardo!);
-    const v1 = await confirmOwn(R, t);
+  it('confirma; nada muda → vale; um item muda → a confirmação INTEIRA cai (direto, parcial e lote bloqueados, inclusive o item que não mudou); nova confirmação volta a liberar; a antiga fica no histórico como inválida', async () => {
+    const { s } = await base();
+    const a = await andreTrip(12000);
+    const b = await andreTrip(8000);
+    const tab = await tabletOf(app, s.admin, 'André', PINS['André']!);
+    const t = await tok(tab, PINS['André']!);
+    const v1 = await confirmOwn(tab, t);
     const first = await db().weeklyClosingConfirmation.findFirstOrThrow();
-    let e = await earnings(R, t);
+    let e = await earnings(tab, t);
+    expect(e.confirmation.state).toBe('CONFIRMADA');
     expect(e.confirmation.history).toEqual([
       expect.objectContaining({
         code: v1.code,
@@ -737,49 +750,51 @@ describe('F9-03/F9-06: versão, retrato e histórico da confirmação', () => {
         hash: e.confirmation.currentHash,
         status: 'VIGENTE',
         changed: [],
-        // Semana ainda não conferida pelo gestor: sem versão de fechamento.
         closingVersion: null,
         invalidatedAt: null,
       }),
     ]);
-    // Nada mudou: continua valendo (pagamento parcial passa e não invalida).
-    expect((await payDirect(s.admin, ric.id, 10000)).status).toBe(200);
-    expect((await earnings(R, t)).confirmation.state).toBe('CONFIRMADA');
-    // Valor mudou: a confirmação antiga não libera — direto, parcial e lote.
-    expect((await adjust(s.admin, ric.id, 5000, 'Mudou depois da versão 1')).status).toBe(200);
-    expect((await payDirect(s.admin, ric.id, 1000)).status).toBe(422);
-    expect((await payLot(s.admin, s.ids.ricardo, 1000)).status).toBe(422);
-    e = await earnings(R, t);
-    expect(e.confirmation.state).toBe('DESATUALIZADA');
-    expect(e.confirmation.history[0]).toMatchObject({
-      code: v1.code,
-      status: 'INVALIDA',
-      changed: [ric.code],
-      invalidatedAt: null,
+    // Nada mudou: pagamento parcial passa e não invalida.
+    expect((await payAp(s.admin, a.payable.id, 2000)).status).toBe(200);
+    expect((await earnings(tab, t)).confirmation.state).toBe('CONFIRMADA');
+    // A viagem B muda de valor (negociação aprovada pelo fluxo existente).
+    const r = await ask(tab, t, {
+      targetKind: 'LOGISTICA',
+      targetId: b.cost.id,
+      requestedCents: 9000,
+      reason: 'Pedágio',
     });
-    // A tela antiga (hash da versão 1) não confirma o estado novo.
-    expect((await confirm(R, t, first.hash)).status).toBe(409);
-    // Nova versão: nova confirmação, sobre o estado atual.
-    const v2 = await confirmOwn(R, t);
-    e = await earnings(R, t);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect((await decide(s.admin, r.body.id, 'approve')).status).toBe(200);
+    // A viagem A NÃO mudou — e mesmo assim não é paga: direto, parcial e lote bloqueados.
+    expect((await payAp(s.admin, a.payable.id, 10000)).status).toBe(422);
+    expect((await payAp(s.admin, a.payable.id, 1000)).status).toBe(422);
+    expect((await payLot(s.admin, a.andre, 1000, 'LOGISTICA')).status).toBe(422);
+    expect((await payAp(s.admin, b.payable.id, 1000)).status).toBe(422);
+    e = await earnings(tab, t);
+    expect(e.confirmation.state).toBe('DESATUALIZADA');
+    expect(e.confirmation.history).toHaveLength(1);
+    expect(e.confirmation.history[0]).toMatchObject({ code: v1.code, status: 'INVALIDA' });
+    expect(e.confirmation.history[0].changed).toHaveLength(1);
+    // A tela antiga não confirma o estado novo; nada é simulado.
+    expect((await confirm(tab, t, first.hash)).status).toBe(409);
+    expect(await db().weeklyClosingConfirmation.count()).toBe(1);
+    // Nova confirmação do estado atualizado: volta a liberar pelo D13.
+    const v2 = await confirmOwn(tab, t);
+    e = await earnings(tab, t);
     expect(e.confirmation.state).toBe('CONFIRMADA');
     expect(e.confirmation.history.map((h: { code: string }) => h.code)).toEqual([v2.code, v1.code]);
     expect(e.confirmation.history[0]).toMatchObject({
       status: 'VIGENTE',
       hash: e.confirmation.currentHash,
     });
-    expect(e.confirmation.history[0].hash).not.toBe(first.hash);
-    const line = (
-      await db().weeklyClosingConfirmation.findFirstOrThrow({ where: { NOT: { id: first.id } } })
-    ).items as { id: string; totalDueCents: number }[];
-    expect(line.find((l) => l.id === ric.id)!.totalDueCents).toBe(105000);
-    // A antiga: retrato intacto, marcada como invalidada pela nova (quando e por qual).
     expect(e.confirmation.history[1]).toMatchObject({
       code: v1.code,
       status: 'INVALIDA',
       invalidatedBy: v2.code,
     });
     expect(e.confirmation.history[1].invalidatedAt).toBeTruthy();
+    // A antiga continua intacta no histórico.
     const again = await db().weeklyClosingConfirmation.findUniqueOrThrow({
       where: { id: first.id },
     });
@@ -791,14 +806,44 @@ describe('F9-03/F9-06: versão, retrato e histórico da confirmação', () => {
     expect(
       await db().financialEvent.count({ where: { entityId: first.id, kind: 'INVALIDADA' } }),
     ).toBe(1);
-    // Agora o pagamento (parcial e lote) passa pela versão nova.
-    expect((await payDirect(s.admin, ric.id, 1000)).status).toBe(200);
-    expect((await payLot(s.admin, s.ids.ricardo, 1000)).status).toBe(201);
+    expect((await payAp(s.admin, a.payable.id, 1000)).status).toBe(200);
+    expect((await payLot(s.admin, a.andre, 1000, 'LOGISTICA')).status).toBe(201);
     const pay = await db().financialEvent.findFirstOrThrow({
-      where: { entityId: ric.id, kind: { in: ['PAGAMENTO', 'PAGAMENTO_PARCIAL'] } },
+      where: { entityId: a.payable.id, kind: { in: ['PAGAMENTO', 'PAGAMENTO_PARCIAL'] } },
       orderBy: { createdAt: 'desc' },
     });
     expect((pay.data as { coverage?: { code?: string } }).coverage?.code).toBe(v2.code);
+  });
+
+  it('item novo no fechamento da semana também invalida a confirmação inteira', async () => {
+    const { s } = await base();
+    const a = await andreTrip(12000);
+    const tab = await tabletOf(app, s.admin, 'André', PINS['André']!);
+    const t = await tok(tab, PINS['André']!);
+    await confirmOwn(tab, t);
+    await andreTrip(5000);
+    expect((await payAp(s.admin, a.payable.id, 1000)).status).toBe(422);
+    const e = await earnings(tab, t);
+    expect(e.confirmation.state).toBe('DESATUALIZADA');
+    expect(e.confirmation.history[0]).toMatchObject({ status: 'INVALIDA' });
+    expect(e.confirmation.history[0].changed).toHaveLength(1);
+  });
+
+  it('Ricardo: ajuste invalida; a confirmação antiga não libera nem o mesmo item depois de outro ajuste voltar ao valor', async () => {
+    const { s, ric } = await base();
+    const R = s.tablets.Ricardo!;
+    const t = await tok(R, PINS.Ricardo!);
+    const v1 = await confirmOwn(R, t);
+    expect((await adjust(s.admin, ric.id, 5000, 'Mudou depois')).status).toBe(200);
+    expect((await payDirect(s.admin, ric.id, 1000)).status).toBe(422);
+    expect((await payLot(s.admin, s.ids.ricardo, 1000)).status).toBe(422);
+    const v2 = await confirmOwn(R, t);
+    expect((await payDirect(s.admin, ric.id, 1000)).status).toBe(200);
+    const h = (await earnings(R, t)).confirmation.history;
+    expect(h.map((x: { code: string; status: string }) => [x.code, x.status])).toEqual([
+      [v2.code, 'VIGENTE'],
+      [v1.code, 'INVALIDA'],
+    ]);
   });
 
   it('versão do fechamento do gestor fica gravada; exceção administrativa continua funcionando', async () => {

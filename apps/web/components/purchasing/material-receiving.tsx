@@ -12,6 +12,7 @@ import {
   PHYSICAL_UNIT_LABEL,
   RECEIPT_ISSUES,
   RECEIPT_ISSUE_LABEL,
+  requiresTechnicalConference,
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -25,6 +26,7 @@ import { useMaterialArrivals } from '@/lib/arrivals';
 import { formatDay } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { parseDecimal } from '@/lib/measurements';
+import { useCan } from '@/lib/hooks';
 import { usePendingReceipts } from '@/lib/purchasing';
 import { qtyText, specText } from './format';
 
@@ -52,6 +54,8 @@ export function MaterialReceiving({
 }) {
   const pending = usePendingReceipts();
   const arrivals = useMaterialArrivals('PENDENTE_CONFERENCIA', Boolean(conference));
+  // F3-17: conferência técnica exige a capacidade própria (receber não basta).
+  const canConfer = useCan()('estoque.conferir');
   const [selected, setSelected] = useState<string | null>(initialId ?? null);
   const [arrival, setArrival] = useState<MaterialArrivalDto | null>(null);
   const [done, setDone] = useState<MaterialReceiptDto | null>(null);
@@ -142,7 +146,8 @@ export function MaterialReceiving({
               </div>
               <Button
                 size="sm"
-                disabled={!pending.data.some((p) => p.id === a.purchaseOrder.id)}
+                disabled={!canConfer || !pending.data.some((p) => p.id === a.purchaseOrder.id)}
+                title={canConfer ? undefined : 'Exige autorização de conferência técnica'}
                 onClick={() => {
                   setArrival(a);
                   setSelected(a.purchaseOrder.id);
@@ -218,7 +223,12 @@ function ReceiveForm({
 }) {
   const qc = useQueryClient();
   const onlyIds = arrival ? new Set(arrival.lines.map((l) => l.purchaseOrderItemId)) : null;
-  const open = po.items.filter((i) => i.remaining > 0 && (!onlyIds || onlyIds.has(i.id)));
+  const canConfer = useCan()('estoque.conferir');
+  const pendingItems = po.items.filter((i) => i.remaining > 0 && (!onlyIds || onlyIds.has(i.id)));
+  // F3-17: sem a capacidade de conferência, o que exige conferência técnica não é aceito por aqui
+  // (a chegada física é registrada em "Aguardando chegada").
+  const locked = canConfer ? [] : pendingItems.filter((i) => requiresTechnicalConference(i));
+  const open = pendingItems.filter((i) => !locked.includes(i));
   const [state, setState] = useState<Record<string, LineState>>(() =>
     Object.fromEntries(
       open.map((i) => [
@@ -303,6 +313,12 @@ function ReceiveForm({
             )
             .join('; ')}
           . Informe a quantidade ou medida real conferida — só ela fica disponível.
+        </Alert>
+      )}
+      {locked.length > 0 && (
+        <Alert tone="info" className="mb-4" data-testid="receive-locked">
+          Exige conferência técnica: {locked.map((i) => i.description).join(', ')}. Registre só a
+          chegada em &quot;Aguardando chegada&quot;; a conferência é feita por quem tem autorização.
         </Alert>
       )}
       {error && (

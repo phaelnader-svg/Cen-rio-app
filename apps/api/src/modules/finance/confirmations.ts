@@ -7,10 +7,11 @@
  * comparando cada linha confirmada com a linha atual.
  *
  * D13: todo pagamento de profissional (direto, parcial, em lote, conta a pagar da viagem,
- * antecipado) só passa se a linha do item na semana estiver coberta por uma confirmação do
- * profissional ou por uma exceção administrativa (motivo + gestor + linhas exatas). Mudou o
- * devido → a linha antiga não cobre mais. Pagamentos da própria semana não fazem parte da linha:
- * pagar em parte não invalida a confirmação.
+ * antecipado) só passa se a semana estiver coberta por uma confirmação do profissional VIGENTE
+ * (retrato idêntico ao estado atual da semana: mudou qualquer item/valor, ou entrou item novo →
+ * a confirmação inteira deixa de valer) ou se a linha estiver numa exceção administrativa
+ * (motivo + gestor + linhas exatas; cobertura linha a linha, inalterada). Pagamentos da própria
+ * semana não fazem parte da linha: pagar em parte não invalida a confirmação.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -103,6 +104,7 @@ export async function weekConfirmation(
     db,
     rows,
     personItems(b, userId).map(confirmationLine),
+    lines,
     currentHash,
   );
   return {
@@ -143,6 +145,23 @@ const staleCodes = (row: ConfirmationRow, current: readonly ConfirmationLine[]) 
     .sort();
 
 /**
+ * O que difere do retrato: linhas que mudaram/sumiram e, na confirmação do profissional (que
+ * cobre a semana inteira), também os itens que entraram no fechamento depois dela.
+ */
+const changedCodes = (
+  row: ConfirmationRow,
+  current: readonly ConfirmationLine[],
+  payable: readonly ConfirmationLine[],
+) => {
+  const out = new Set(staleCodes(row, current));
+  if (row.kind === 'PROFISSIONAL') {
+    const mine = linesOf(row);
+    for (const l of payable) if (!mine.some((x) => x.id === l.id)) out.add(l.code);
+  }
+  return [...out].sort();
+};
+
+/**
  * F9-03/F9-06: histórico das conferências da semana. A validade é a mesma do portão D13 (linha a
  * linha, ao vivo); a versão do fechamento e a invalidação vêm dos eventos financeiros já
  * existentes (`financial_events`) — nada é recalculado para o passado nem inventado.
@@ -151,6 +170,7 @@ async function historyOf(
   db: Db,
   rows: ConfirmationRow[],
   current: readonly ConfirmationLine[],
+  payable: readonly ConfirmationLine[],
   currentHash: string | null,
 ): Promise<WeekConfirmationDto['history']> {
   if (!rows.length) return [];
@@ -166,7 +186,7 @@ async function historyOf(
     const mine = events.filter((e) => e.entityId === r.id);
     const created = mine.find((e) => e.kind !== 'INVALIDADA');
     const invalid = mine.find((e) => e.kind === 'INVALIDADA');
-    const changed = staleCodes(r, current);
+    const changed = changedCodes(r, current, payable);
     const total = linesOf(r).length;
     const closingVersion = (created?.data as { closingVersion?: number | null } | null)
       ?.closingVersion;
@@ -178,11 +198,15 @@ async function historyOf(
       hash: r.hash,
       closingVersion: typeof closingVersion === 'number' ? closingVersion : null,
       status:
-        r.hash === currentHash || !changed.length
-          ? 'VIGENTE'
-          : changed.length < total
-            ? 'EM_PARTE'
-            : 'INVALIDA',
+        r.kind === 'PROFISSIONAL'
+          ? r.hash === currentHash
+            ? 'VIGENTE'
+            : 'INVALIDA'
+          : r.hash === currentHash || !changed.length
+            ? 'VIGENTE'
+            : changed.length < total
+              ? 'EM_PARTE'
+              : 'INVALIDA',
       changed,
       invalidatedAt: invalid?.createdAt.toISOString() ?? null,
       invalidatedBy: (invalid?.data as { by?: string } | null)?.by ?? null,
@@ -212,7 +236,9 @@ async function recordInvalidations(
   actor: ActorContext,
   input: { userId: string; weekStart: string; byId: string; byCode: string },
   current: readonly ConfirmationLine[],
+  payable: readonly ConfirmationLine[],
 ) {
+  const payHash = hashOf(input.userId, input.weekStart, payable);
   const older = await tx.weeklyClosingConfirmation.findMany({
     where: {
       beneficiaryUserId: input.userId,
@@ -235,8 +261,10 @@ async function recordInvalidations(
   );
   for (const o of older) {
     if (already.has(o.id)) continue;
-    const changed = staleCodes(o, current);
-    if (!changed.length) continue;
+    const changed = changedCodes(o, current, payable);
+    // Profissional: vale inteira só se o retrato é exatamente o estado atual da semana.
+    const invalid = o.kind === 'PROFISSIONAL' ? o.hash !== payHash : changed.length > 0;
+    if (!invalid) continue;
     await financeEvent(tx, actor, {
       entityType: 'weekly_closing_confirmation',
       entityId: o.id,
@@ -274,7 +302,13 @@ export async function assertPaymentCovered(
     where: { beneficiaryUserId: input.userId, weekStart: weekDate(input.weekStart) },
     orderBy: { createdAt: 'desc' },
   });
-  const hit = rows.find((r) => linesOf(r).some((l) => sameLine(l, line)));
+  // Decisão do proprietário (Rodada 1): a confirmação do profissional vale INTEIRA ou não vale —
+  // qualquer item/valor do retrato que mudar (ou item novo no fechamento da semana) invalida tudo,
+  // inclusive as linhas que não mudaram. A exceção administrativa segue linha a linha, como antes.
+  const payHash = hashOf(input.userId, input.weekStart, payableLines(personItems(b, input.userId)));
+  const hit = rows.find((r) =>
+    r.kind === 'PROFISSIONAL' ? r.hash === payHash : linesOf(r).some((l) => sameLine(l, line)),
+  );
   if (!hit)
     throw Errors.business(
       `Esta semana ainda não foi confirmada pelo profissional (${item.code}). Peça a conferência no tablet ou use a exceção administrativa (com motivo).`,
@@ -351,6 +385,7 @@ export async function confirmWeek(
     actor,
     { userId: input.userId, weekStart: input.weekStart, byId: row.id, byCode: code },
     personItems(b, input.userId).map(confirmationLine),
+    lines,
   );
   return row;
 }
@@ -411,6 +446,7 @@ export async function createException(
     actor,
     { userId: input.beneficiaryUserId, weekStart, byId: row.id, byCode: code },
     mine.map(confirmationLine),
+    payableLines(mine),
   );
   return row;
 }

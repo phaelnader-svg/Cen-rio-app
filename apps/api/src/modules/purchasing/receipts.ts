@@ -6,6 +6,7 @@ import {
   purchaseOrderCode,
   q3,
   rejectionDecisionSchema,
+  requiresTechnicalConference,
   reverseReceiptSchema,
   unitError,
   type PendingMaterialReceiptDto,
@@ -44,6 +45,8 @@ import {
 } from './purchase-orders';
 
 const EPS = 1e-6;
+const CONFERENCE_DENIED =
+  'Este material exige conferência técnica: registre só a chegada física. A conferência é feita por quem tem autorização de conferência.';
 
 const RECEIPT_VIEW = {
   session: 'WEB',
@@ -134,7 +137,13 @@ export async function registerMaterialReceipt(
   tx: Tx,
   actor: ActorContext,
   input: z.output<typeof materialReceiptSchema>,
-  opts: { deviceId?: string | null; expectedVersion?: number; arrivalId?: string } = {},
+  opts: {
+    deviceId?: string | null;
+    expectedVersion?: number;
+    arrivalId?: string;
+    /** Remediação F3-17: quem registra tem a capacidade de conferência técnica (`estoque.conferir`). */
+    canConfer?: boolean;
+  } = {},
 ): Promise<string> {
   const po = await lockPurchaseOrder(tx, input.purchaseOrderId);
   // Simplificação Fase 3: confirmação sobre tela desatualizada (já houve outro registro)
@@ -185,6 +194,9 @@ export async function registerMaterialReceipt(
     ).map((i) => [i.id, i]),
   );
   const seen = new Set<string>();
+  // F3-17: conferir uma chegada física, ou aceitar/recusar material que exige conferência técnica,
+  // pede a capacidade explícita de conferência — receber fisicamente não basta.
+  if (opts.arrivalId && !opts.canConfer) throw Errors.forbidden(CONFERENCE_DENIED);
   for (const [idx, l] of input.lines.entries()) {
     const item = items.get(l.purchaseOrderItemId);
     if (!item)
@@ -192,6 +204,8 @@ export async function registerMaterialReceipt(
         [{ path: `lines.${idx}`, message: 'Item não pertence ao pedido.' }],
         'Item não pertence ao pedido.',
       );
+    if (requiresTechnicalConference(item) && !opts.canConfer)
+      throw Errors.forbidden(CONFERENCE_DENIED);
     if (seen.has(item.id)) throw Errors.validation(undefined, 'Item repetido no recebimento.');
     seen.add(item.id);
     for (const v of [l.acceptedQuantity, l.rejectedQuantity ?? 0]) {
@@ -453,6 +467,7 @@ export async function materialReceiptRoutes(app: FastifyInstance) {
           deviceId: request.auth?.deviceId ?? null,
           expectedVersion: input.expectedVersion,
           arrivalId: input.arrivalId,
+          canConfer: request.auth?.permissions.has('estoque.conferir') ?? false,
         }),
       );
       const r = await prisma.materialReceipt.findUniqueOrThrow({

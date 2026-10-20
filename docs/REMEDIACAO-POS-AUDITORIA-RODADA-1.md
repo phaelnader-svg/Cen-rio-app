@@ -77,9 +77,20 @@ só libera a OS depois da conferência. Enquanto a chegada aguarda conferência,
 suspenso na central dos tablets, como já acontecia com os rolos de tecido. Depois da conferência, o
 saldo volta como pedido − aceito.
 
-**Ponto em aberto (não alterado).** A conferência técnica continua aberta a qualquer funcionário que
-receba material, que é a regra de permissão existente. Restringi-la a um papel exige decisão do
-proprietário.
+**Quem faz o quê (decisão do proprietário).**
+
+- **Recebimento físico** ("Chegou" na central compartilhada): qualquer funcionário autorizado pela
+  regra existente — sem mudança.
+- **Conferência técnica**: exige a permissão nova `estoque.conferir` ("Conferência técnica de
+  material", grupo Compras e estoque, crítica), do modelo de permissões existente. O Gestor a tem
+  por definição (catálogo completo); qualquer outra pessoa só com concessão explícita (função ou
+  permissão individual) — nenhum nome fixo no código. Não houve migration: permissões são texto e
+  o Gestor resolve o catálogo inteiro em código.
+- A API recusa (403) a conferência de uma chegada (`arrivalId`) e qualquer linha de material de (a)
+  — aceita ou recusada — de quem não tem a permissão. Material comum de estoque contável continua
+  pelo formulário de recebimento para quem recebe, sem a permissão.
+- Telas: "Conferir" fica desabilitado sem a permissão; no formulário de recebimento os itens de (a)
+  aparecem travados com o aviso para registrar só a chegada.
 
 ## C. F8 — PREVISTO × DEVIDO em "Meus Ganhos"
 
@@ -134,7 +145,8 @@ exigiria afrouxar o gatilho. O mecanismo existente, `financial_events`, é sufic
 - **Histórico.** `WeekConfirmationDto.history` (tablet e fechamento) traz todas as conferências da
   semana com:
   - versão do fechamento e hash;
-  - status ao vivo: `VIGENTE`, `EM_PARTE` ou `INVALIDA`, com a mesma regra linha a linha do D13;
+  - status ao vivo: confirmação do profissional `VIGENTE` ou `INVALIDA` (regra integral abaixo);
+    exceção administrativa `VIGENTE`, `EM_PARTE` ou `INVALIDA` (linha a linha, inalterada);
   - linhas alteradas;
   - `invalidatedAt` e `invalidatedBy`.
 
@@ -147,9 +159,14 @@ exigiria afrouxar o gatilho. O mecanismo existente, `financial_events`, é sufic
 
 Nada foi recalculado ou inventado para o passado.
 
-**D13 intacto.** A cobertura continua por linha (decisão R2): a confirmação antiga não libera a
-linha que mudou, mas continua cobrindo as linhas que não mudaram. A divergência com o doc §12
-("hash diferente ⇒ inválida inteira", F9-05) continua registrada como pendente de decisão.
+**Regra final D13 (decisão do proprietário, nesta rodada).** A confirmação do profissional vale
+INTEIRA ou não vale: ela cobre pagamentos somente enquanto o seu retrato (hash) é exatamente o estado
+atual das linhas devidas daquela pessoa naquela semana. Se qualquer item ou valor do retrato mudar —
+ou um item novo entrar no fechamento da semana — a confirmação inteira fica inválida, inclusive para
+as linhas que não mudaram. Pagamento direto, parcial, em lote e antecipação ficam bloqueados até uma
+nova confirmação do estado atualizado. Pagamento já feito não faz parte da linha (pagar em parte
+não invalida). A confirmação antiga permanece no histórico, marcada `INVALIDA`. A exceção
+administrativa não foi alterada (continua cobrindo exatamente as linhas que o gestor liberou).
 
 ## E. F10-15 — contagens da Central
 
@@ -178,6 +195,35 @@ Reescrever essas regras em SQL criaria uma segunda cópia delas, com risco de di
 A contagem sobre o conjunto completo é exata pela mesma regra da lista. O Início já usava
 `count()`/`groupBy` e não mudou.
 
+### Volume e desempenho (medido)
+
+`apps/api/test/central-volume.test.ts` (na regressão: 100, 1 000 e 3 000 ocorrências abertas;
+`CENTRAL_PERF=1` acrescenta 10 000), com cliente Prisma instrumentado, na mesma máquina dos testes:
+
+| Ocorrências abertas | Total contado | Consultas SQL | Registros de topo carregados | Tempo da chamada |
+| ------------------- | ------------- | ------------- | ---------------------------- | ---------------- |
+| 100                 | 100           | 42            | 107                          | 144 ms           |
+| 1 000               | 1 000         | 42            | 1 007                        | 339 ms           |
+| 3 000               | 3 000         | 42            | 3 007                        | 805 ms           |
+| 10 000              | 10 000        | 42            | 10 007                       | 5 027 ms         |
+
+- Consultas: **constantes** (42), sem N+1 — o teste falha se mudar com o volume.
+- Registros: **lineares** no número de exceções abertas (+7 fixos). Os `include` de cada linha
+  (tarefa, OS, pessoas) aumentam o volume transferido por linha; o teste conta só o topo.
+- Tempo: cresce mais que linearmente acima de alguns milhares (montagem e ordenação de todos os
+  itens em memória a cada chamada; sem cache).
+
+**Complexidade e risco.** O custo por chamada é O(E) leituras + O(E log E) ordenação, E = exceções
+abertas de todas as fontes (não o histórico). Na operação esperada (dezenas a poucas centenas de
+exceções abertas) fica bem abaixo de 1 s. O risco é uma fonte acumular milhares de exceções nunca
+resolvidas (ex.: ocorrências abertas esquecidas): a Central fica lenta (≈5 s com 10 000).
+
+**Dívida técnica concreta (não feita nesta rodada — refatoração maior).** Expor cada fonte como um
+"provedor" único com duas operações sobre a MESMA regra de domínio — `count` agregado por categoria
+(predicados SQL gerados da própria regra) e `list` limitado — ou materializar as exceções abertas
+(tabela de projeção atualizada por evento). Gatilho para fazer: Central acima de ~1 s em homologação
+ou mais de ~2 000 exceções abertas.
+
 ---
 
 ## Pendências da auditoria que continuam abertas
@@ -185,11 +231,10 @@ A contagem sobre o conjunto completo é exata pela mesma regra da lista. O Iníc
 Todas as demais linhas não comprovadas da auditoria continuam como estavam (ver o relatório da
 rodada). Desta rodada ficam explicitamente pendentes:
 
-| Item  | Situação                                                                               |
-| ----- | -------------------------------------------------------------------------------------- |
-| F8-03 | Recorte semanal do previsto: sem fonte canônica, precisa de decisão                    |
-| F8-06 | Serviços executados sem valor: precisa de regra nova                                   |
-| F9-02 | Não existe `pin_verified` explícito (a rota exige o token D12)                         |
-| F9-05 | Cobertura por linha × "hash inteiro" do doc §12: precisa de decisão                    |
-| F3-17 | Quem pode conferir: hoje é qualquer funcionário que recebe material                    |
-| F2-08 | Janela de queda do processo entre o commit e a gravação da resposta da chave (backend) |
+| Item   | Situação                                                                               |
+| ------ | -------------------------------------------------------------------------------------- |
+| F8-03  | Recorte semanal do previsto: sem fonte canônica, precisa de decisão                    |
+| F8-06  | Serviços executados sem valor: precisa de regra nova                                   |
+| F9-02  | Não existe `pin_verified` explícito (a rota exige o token D12)                         |
+| F10-15 | Dívida de escala: contagem exata por leitura completa (ver "Volume e desempenho")      |
+| F2-08  | Janela de queda do processo entre o commit e a gravação da resposta da chave (backend) |

@@ -219,6 +219,13 @@ export const PERMISSIONS = {
       'Cadastrar materiais, reservar para OS, liberar, dar saída, ajustar e registrar sobras.',
     critical: true,
   },
+  'estoque.conferir': {
+    group: 'compras',
+    label: 'Conferência técnica de material',
+    description:
+      'Conferir e liberar material que exige validação de especificação (tecido, espuma, densidade, espessura, medida, quantidade, avaria e material exclusivo da OS). Receber a chegada física não exige esta permissão.',
+    critical: true,
+  },
   'estoque.autorizar': {
     group: 'compras',
     label: 'Autorizar estornos e transferências',

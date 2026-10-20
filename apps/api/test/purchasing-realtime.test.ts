@@ -16,6 +16,7 @@ import {
   linen,
   ok,
   receive,
+  grantConference,
 } from './purchasing-helpers';
 
 let app: App;
@@ -76,6 +77,8 @@ describe('Compras e recebimento em tempo real', () => {
         x.event.payload.to === 'AGUARDANDO_RECEBIMENTO',
     );
 
+    // F3-17: tecido exclusivo de OS → o tablet do João tem a capacidade de conferência.
+    await grantConference('João');
     await receive(tablet, confirmed.id, [ok(confirmed.items[0].id, 12)]);
     const received = await wGestor.waitFor((x) => x.event?.type === 'material.received');
     expect(received.event.payload.status).toBe('RECEBIDO');

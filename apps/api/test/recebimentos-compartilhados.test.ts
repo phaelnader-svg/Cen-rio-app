@@ -24,6 +24,7 @@ import {
   confirmPurchase,
   createPurchase,
   createSupplier,
+  grantConference,
   linen,
   staples,
 } from './purchasing-helpers';
@@ -750,6 +751,64 @@ describe('C. Materiais comprados', () => {
       ]);
       expect(ok.status, JSON.stringify(ok.body)).toBe(201);
       expect(await received(fabricItem.id)).toBe(15);
+      expect(await received(foamItem.id)).toBe(20);
+      expect(await readiness(so.id)).toBe('COMPLETO');
+    });
+
+    it('recebimento físico × conferência técnica: receber não autoriza conferir; só quem tem estoque.conferir confere', async () => {
+      const admin = await loginAdmin(app);
+      const { so, po, fabricItem, foamItem, stapleItem } = await purchase(admin);
+      const { joao } = await tablets(admin);
+      // João (pode receber) registra a chegada física do tecido e da espuma da OS.
+      const r = await quick(joao, po.id, (await card(joao, po.id)).version, [
+        { purchaseOrderItemId: fabricItem.id, quantity: 2, physicalUnit: 'ROLO' },
+        { purchaseOrderItemId: foamItem.id, quantity: 20 },
+      ]);
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
+      const lines = [
+        { purchaseOrderItemId: fabricItem.id, acceptedQuantity: 15, specConfirmed: true },
+        { purchaseOrderItemId: foamItem.id, acceptedQuantity: 20, specConfirmed: true },
+      ];
+      // ...mas não confere: nem pela chegada, nem pelo formulário completo.
+      const denied = await confer(joao, po.id, r.body.arrival.id, lines);
+      expect(denied.status).toBe(403);
+      expect(denied.body.error.message).toMatch(/conferência técnica/);
+      const direct = await post(joao, '/api/v1/material-receipts', {
+        purchaseOrderId: po.id,
+        lines: [
+          {
+            purchaseOrderItemId: foamItem.id,
+            acceptedQuantity: 0,
+            rejectedQuantity: 1,
+            specConfirmed: false,
+            issue: 'DANIFICADO',
+            issueNote: 'Rasgada',
+          },
+        ],
+      });
+      // Enquanto a chegada aguarda conferência, o formulário completo também recusa (409); sem
+      // chegada pendente, a recusa é 403 (purchasing.test.ts › permissões e recebimento).
+      expect(direct.status).toBe(409);
+      // Nada ficou disponível; a OS não foi liberada.
+      expect(await received(fabricItem.id)).toBe(0);
+      expect(await received(foamItem.id)).toBe(0);
+      expect(await readiness(so.id)).not.toBe('COMPLETO');
+      expect(
+        (await db().materialArrival.findUniqueOrThrow({ where: { id: r.body.arrival.id } })).status,
+      ).toBe('PENDENTE_CONFERENCIA');
+      // Material comum de estoque contável continua sem burocracia para quem recebe.
+      const simple = await post(joao, '/api/v1/material-receipts', {
+        purchaseOrderId: po.id,
+        lines: [{ purchaseOrderItemId: stapleItem.id, acceptedQuantity: 4, specConfirmed: true }],
+      });
+      expect(simple.status, JSON.stringify(simple.body)).toBe(201);
+      // Painel só com "ver estoque": também não confere.
+      const viewer = await panelUserWith(app, admin, 'estoque-ver', ['estoque.ver']);
+      expect((await confer(viewer, po.id, r.body.arrival.id, lines)).status).toBe(403);
+      // Com a capacidade concedida (modelo de permissões existente, sem nome fixo): confere.
+      await grantConference('João');
+      const ok = await confer(joao, po.id, r.body.arrival.id, lines);
+      expect(ok.status, JSON.stringify(ok.body)).toBe(201);
       expect(await received(foamItem.id)).toBe(20);
       expect(await readiness(so.id)).toBe('COMPLETO');
     });
