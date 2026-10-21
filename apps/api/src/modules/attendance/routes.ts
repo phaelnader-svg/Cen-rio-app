@@ -843,7 +843,9 @@ export async function applyAttendanceAction(
       userId: e.userId,
       kind: input.action === 'CONFIRMAR_AUSENCIA' ? 'AUSENCIA_CONFIRMADA' : 'PRESENCA_ALTERADA',
       dedupeKey: `PRESENCA:${row.id}:${row.version}`,
-      body: `${brDate(input.date)}: ${what} — ${input.reason}`,
+      // F7-06: a justificativa livre do gestor fica no painel e no histórico; o aviso do próprio
+      // funcionário leva só o fato (como as folgas e férias do calendário).
+      body: `${brDate(input.date)}: ${what}.`,
     },
   ]);
   if (input.date === cfg.today) {

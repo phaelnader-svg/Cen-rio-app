@@ -439,6 +439,10 @@ export async function adjustLabor(
     data: { amountCents: input.amountCents },
     type: EVENT_TYPES.FINANCE_COST_UPDATED,
   });
+  // F10-19 (Rodada 3): o ajuste justificado é a conclusão canônica da revisão que mudou o valor
+  // da peça devolvida — o aviso "revisar o valor" deixa de pedir ação (fica no histórico; uma
+  // nova devolução o reativa pela mesma chave).
+  await resolveNotifications(tx, actor, 'REVISAO_DEVOLUCAO', [`labor-review:${id}`]);
   return refreshLabor(tx, actor, id);
 }
 

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import type { Client } from './helpers';
@@ -12,6 +14,7 @@ import {
 } from './helpers';
 import { address, createCustomer, createOrder, panelUserWith } from './commercial-helpers';
 import { day, userIdOf } from './production-helpers';
+import { splitSql } from './sql-helpers';
 
 /**
  * Simplificação Fase 2 — "Novo serviço" (dados fictícios; valores em centavos; nenhum pagamento).
@@ -393,6 +396,102 @@ describe('A. Novo serviço: uma operação, atômica e idempotente', () => {
 });
 
 describe('B. Equipes: própria (Thiago, configurável) e terceirizada (André + Izaías)', () => {
+  it('Rodada 3 (F2-18/F2-11): custo operacional da equipe própria não vira dívida, obrigação nem Meus Ganhos', async () => {
+    const admin = await loginAdmin(app);
+    await logisticsSetup(admin);
+    const thiago = await userIdOf('Thiago');
+    // Terceirizada: regra existente (custo PREVISTO com o recebedor).
+    const out = await post(
+      admin,
+      '/api/v1/services',
+      await body({ pickup: { amountCents: 10000 } }),
+    );
+    expect(out.status, JSON.stringify(out.body)).toBe(201);
+    const outCost = await db().logisticsCost.findFirstOrThrow({
+      where: { pickupId: out.body.pickup.id },
+    });
+    expect(outCost).toMatchObject({ status: 'PREVISTO', amountCents: 10000 });
+    const before = {
+      payables: await db().accountPayable.count(),
+      labor: await db().productionPayable.count(),
+    };
+    // Equipe própria sem custo: nenhum registro de custo.
+    const none = await post(
+      admin,
+      '/api/v1/services',
+      await body({
+        customer: newCustomer('Própria sem custo', { allowSimilar: true }),
+        pickup: { team: 'EQUIPE_PROPRIA' },
+      }),
+    );
+    expect(none.status, JSON.stringify(none.body)).toBe(201);
+    expect(await db().logisticsCost.count({ where: { pickupId: none.body.pickup.id } })).toBe(0);
+    // Equipe própria com custo operacional real.
+    const own = await post(
+      admin,
+      '/api/v1/services',
+      await body({
+        customer: newCustomer('Própria com custo', { allowSimilar: true }),
+        pickup: { team: 'EQUIPE_PROPRIA', amountCents: 4321 },
+      }),
+    );
+    expect(own.status, JSON.stringify(own.body)).toBe(201);
+    const cost = await db().logisticsCost.findFirstOrThrow({
+      where: { pickupId: own.body.pickup.id },
+    });
+    expect(cost).toMatchObject({
+      status: 'OPERACIONAL',
+      amountCents: 4321,
+      payeeUserId: null,
+      payableId: null,
+    });
+    // Histórico: auditoria e evento financeiro do custo operacional.
+    expect(
+      await db().auditLog.count({
+        where: { action: 'finance.trip_cost_operational', entityId: cost.id },
+      }),
+    ).toBe(1);
+    expect(
+      await db().financialEvent.count({ where: { entityId: cost.id, kind: 'CUSTO_OPERACIONAL' } }),
+    ).toBe(1);
+    // Nenhuma conta a pagar, obrigação de produção ou dívida com o funcionário.
+    expect({
+      payables: await db().accountPayable.count(),
+      labor: await db().productionPayable.count(),
+    }).toEqual(before);
+    const { myEarnings } = await import('../src/modules/finance/my-earnings');
+    const mine = await myEarnings(db(), thiago);
+    expect(mine.items.some((i) => i.id === cost.id)).toBe(false);
+    expect(JSON.stringify(mine)).not.toContain('4321');
+    // Troca para terceirizada não transforma o custo operacional em obrigação do recebedor.
+    const pickup = (await admin.get(`/api/v1/pickups/${own.body.pickup.id}`)).body;
+    const sw = await put(admin, `/api/v1/pickups/${pickup.id}`, {
+      scheduledDate: pickup.scheduledDate,
+      windowStart: pickup.windowStart,
+      team: 'LOGISTICA_TERCEIRIZADA',
+      items: pickup.items.map((i: { orderItemId: string; quantity: number }) => ({
+        orderItemId: i.orderItemId,
+        quantity: i.quantity,
+      })),
+      version: pickup.version,
+    });
+    expect(sw.status).toBe(422);
+    expect(JSON.stringify(sw.body)).toMatch(/custo operacional da equipe própria/);
+    // Cancelar a viagem cancela o custo e preserva o histórico.
+    const cancel = await post(admin, `/api/v1/pickups/${pickup.id}/transition`, {
+      toStatus: 'CANCELADA',
+      note: 'Cliente desistiu',
+      version: pickup.version,
+    });
+    expect(cancel.status, JSON.stringify(cancel.body)).toBe(200);
+    const gone = await db().logisticsCost.findUniqueOrThrow({ where: { id: cost.id } });
+    expect(gone.status).toBe('CANCELADO');
+    expect(
+      await db().financialEvent.count({ where: { entityId: cost.id, kind: 'CUSTO_OPERACIONAL' } }),
+    ).toBe(1);
+    expect(await db().accountPayable.count()).toBe(before.payables);
+  });
+
   it('equipe própria usa Thiago por padrão, sem custo de terceirização (CA2-08)', async () => {
     const admin = await loginAdmin(app);
     await logisticsSetup(admin);
@@ -421,13 +520,17 @@ describe('B. Equipes: própria (Thiago, configurável) e terceirizada (André + 
     expect(r.body.tripCost).toBeNull();
     expect(await db().logisticsCost.count({ where: { pickupId: r.body.pickup.id } })).toBe(0);
 
-    // Equipe própria com valor de terceirização: recusado (aqui e na rota antiga de retirada).
+    // Rodada 3 (F2-18, decisão do proprietário): equipe própria pode ter custo OPERACIONAL
+    // da retirada (aqui e na rota antiga) — só custeio: nenhuma conta a pagar nem obrigação.
     const withCost = await post(
       admin,
       '/api/v1/services',
-      await body({ pickup: { team: 'EQUIPE_PROPRIA', amountCents: 5000 } }),
+      await body({
+        customer: newCustomer('Própria com valor', { allowSimilar: true }),
+        pickup: { team: 'EQUIPE_PROPRIA', amountCents: 5000 },
+      }),
     );
-    expect(withCost.status).toBe(400);
+    expect(withCost.status, JSON.stringify(withCost.body)).toBe(201);
     const order = await createOrder(
       admin,
       await createCustomer(admin, { name: 'Legado X', phone: null }),
@@ -441,8 +544,12 @@ describe('B. Equipes: própria (Thiago, configurável) e terceirizada (André + 
       })),
       tripCost: { amountCents: 5000, participantUserIds: [] },
     });
-    expect(legacyPickup.status).toBe(400);
-    expect(JSON.stringify(legacyPickup.body)).toMatch(/Equipe própria não gera custo/);
+    expect(legacyPickup.status, JSON.stringify(legacyPickup.body)).toBe(201);
+    const own = await db().logisticsCost.findMany({
+      where: { pickupId: { in: [withCost.body.pickup.id, legacyPickup.body.id] } },
+    });
+    expect(own.map((c) => c.status)).toEqual(['OPERACIONAL', 'OPERACIONAL']);
+    expect(own.every((c) => c.payableId === null && c.payeeUserId === null)).toBe(true);
 
     // Outro profissional elegível pode ser escolhido no lugar do padrão.
     const joao = await userIdOf('João');
@@ -1006,5 +1113,68 @@ describe('E. Estabilização: serviço sem retirada (cliente entrega as peças)'
     expect(pk.status, JSON.stringify(pk.body)).toBe(201);
     const after = await db().commercialOrder.findUniqueOrThrow({ where: { id: order.id } });
     expect(after).toMatchObject({ customerDropOff: false, status: 'RETIRADA_AGENDADA' });
+  });
+});
+
+describe('Rodada 3 — migration 20270223000000_custo_operacional_equipe_propria', () => {
+  it('só amplia a regra; reversão sem custo operacional é limpa; com custo operacional é bloqueada', async () => {
+    const DB = resolve(__dirname, '../../../packages/db');
+    const NAME = '20270223000000_custo_operacional_equipe_propria';
+    const up = splitSql(
+      readFileSync(resolve(DB, `prisma/migrations/${NAME}/migration.sql`), 'utf8'),
+    );
+    const down = splitSql(readFileSync(resolve(DB, `rollback/${NAME}.down.sql`), 'utf8'));
+    const rule = (tx: Pick<ReturnType<typeof db>, '$queryRawUnsafe'>) =>
+      tx.$queryRawUnsafe<{ def: string }[]>(
+        `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'logistics_costs_phase6'`,
+      );
+    expect((await rule(db()))[0]!.def).toContain('OPERACIONAL');
+    const admin = await loginAdmin(app);
+    await logisticsSetup(admin);
+    const out = await post(
+      admin,
+      '/api/v1/services',
+      await body({ pickup: { amountCents: 10000 } }),
+    );
+    expect(out.status, JSON.stringify(out.body)).toBe(201);
+    const snapshot = async (tx: Pick<ReturnType<typeof db>, '$queryRawUnsafe'>) =>
+      tx.$queryRawUnsafe<{ s: string }[]>(
+        `SELECT md5(string_agg(id::text || status || amount_cents::text, '/' ORDER BY id)) AS s FROM logistics_costs`,
+      );
+    const before = await snapshot(db());
+    // Sem custo operacional: a reversão volta à regra anterior e apaga o registro; reaplicar volta.
+    await expect(
+      db().$transaction(async (tx) => {
+        for (const st of down) await tx.$executeRawUnsafe(st);
+        expect((await rule(tx))[0]!.def).not.toContain('OPERACIONAL');
+        expect(
+          await tx.$queryRawUnsafe(
+            `SELECT count(*)::int AS n FROM "_prisma_migrations" WHERE migration_name = '${NAME}'`,
+          ),
+        ).toEqual([{ n: 0 }]);
+        expect(await snapshot(tx)).toEqual(before);
+        for (const st of up) await tx.$executeRawUnsafe(st);
+        expect((await rule(tx))[0]!.def).toContain('OPERACIONAL');
+        throw new Error('desfazer');
+      }),
+    ).rejects.toThrow('desfazer');
+    // Com custo operacional da equipe própria, a reversão é recusada e nada muda.
+    const own = await post(
+      admin,
+      '/api/v1/services',
+      await body({
+        customer: newCustomer('Própria migração', { allowSimilar: true }),
+        pickup: { team: 'EQUIPE_PROPRIA', amountCents: 3000 },
+      }),
+    );
+    expect(own.status, JSON.stringify(own.body)).toBe(201);
+    const after = await snapshot(db());
+    await expect(
+      db().$transaction(async (tx) => {
+        for (const st of down) await tx.$executeRawUnsafe(st);
+      }),
+    ).rejects.toThrow(/Reversão bloqueada: 1 custo/);
+    expect((await rule(db()))[0]!.def).toContain('OPERACIONAL');
+    expect(await snapshot(db())).toEqual(after);
   });
 });

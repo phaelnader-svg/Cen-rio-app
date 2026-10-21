@@ -344,6 +344,50 @@ describe('Ausência presumida e impacto na produção', () => {
     expect(Object.keys(atestado)).not.toContain('cid');
   });
 
+  it('F7-06 (Rodada 3): tablet mostra o início previsto e só a observação do trabalho externo', async () => {
+    const admin = await loginAdmin(app);
+    const joao = await tabletOf(app, admin, 'João', '121212');
+    const thiago = await tabletOf(app, admin, 'Thiago', '271828');
+    const PRIVATE = 'Avisou que está doente; segunda falta no mês';
+    await action(admin, {
+      employeeId: (await employeeByName('João')).id,
+      action: 'AUSENCIA_JUSTIFICADA',
+      reason: PRIVATE,
+    });
+    await action(admin, {
+      employeeId: (await employeeByName('Thiago')).id,
+      action: 'TRABALHO_EXTERNO',
+      reason: 'Instalação combinada',
+      externalNote: 'Instalação de cabeceira no cliente',
+    });
+    // A justificativa do gestor fica no painel, não no tablet.
+    expect((await teamDay(admin, 'João')) as unknown).toMatchObject({
+      situation: 'AUSENCIA_JUSTIFICADA',
+      note: PRIVATE,
+    });
+    const own = (await joao.get('/api/v1/attendance/me')).body;
+    expect(own.day).toMatchObject({ situation: 'AUSENCIA_JUSTIFICADA', note: null });
+    expect(own.config.workdayStart).toBe('08:30');
+    expect(JSON.stringify(own)).not.toContain('doente');
+    // Trabalho externo: a descrição operacional chega ao tablet; a justificativa, não.
+    const ext = (await thiago.get('/api/v1/attendance/me')).body;
+    expect(ext.day).toMatchObject({
+      situation: 'TRABALHO_EXTERNO',
+      note: 'Instalação de cabeceira no cliente',
+    });
+    expect(ext.config.workdayStart).toBe('08:30');
+    // A versão do evento para o próprio funcionário também não leva a justificativa.
+    const selfEvents = await db().domainEvent.findMany({
+      where: { aggregateType: 'attendance', audience: { startsWith: 'user:' } },
+    });
+    expect(selfEvents.length).toBeGreaterThan(0);
+    expect(JSON.stringify(selfEvents.map((e) => e.payload))).not.toContain('doente');
+    const joaoUser = (await employeeByName('João')).userId!;
+    const ownNotices = await db().notification.findMany({ where: { userId: joaoUser } });
+    expect(ownNotices.length).toBeGreaterThan(0);
+    expect(JSON.stringify(ownNotices)).not.toContain('doente');
+  });
+
   it('correção administrativa e confirmação de ausência preservam o histórico original', async () => {
     const admin = await loginAdmin(app);
     const ricardo = await tabletOf(app, admin, 'Ricardo', '482915');

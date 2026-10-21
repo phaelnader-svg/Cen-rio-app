@@ -155,6 +155,9 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const [participants, setParticipants] = useState<string[]>([]);
   const [amount, setAmount] = useState<number | null>(d.suggestedPickupCostCents);
   const [amountOk, setAmountOk] = useState(true);
+  // Rodada 3 (F2-18): custo OPERACIONAL da retirada pela equipe própria (custeio; sem pagamento).
+  const [ownCost, setOwnCost] = useState<number | null>(null);
+  const [ownCostOk, setOwnCostOk] = useState(true);
   const [instructions, setInstructions] = useState('');
   const [pickupNotes, setPickupNotes] = useState('');
 
@@ -258,7 +261,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
             team,
             logisticsUserId: responsible || null,
             participantUserIds: participants,
-            amountCents: outsourced && d?.canSetTripCost && amount ? amount : null,
+            amountCents: !d?.canSetTripCost ? null : outsourced ? amount || null : ownCost || null,
             instructions: blank(instructions),
             notes: blank(pickupNotes),
           }
@@ -297,6 +300,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
     responsible,
     participants,
     amount,
+    ownCost,
     instructions,
     pickupNotes,
   ]);
@@ -311,7 +315,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
       if (piecesWithValue && pieces.reduce((a, p) => a + (p.valueCents ?? 0), 0) !== value)
         throw new Error('A soma dos valores das peças precisa ser igual ao valor fechado.');
       if (pieces.some((p) => !p.laborOk)) throw new Error('Mão de obra prevista inválida.');
-      if (!amountOk) throw new Error('Valor da logística inválido.');
+      if (!amountOk || !ownCostOk) throw new Error('Valor da logística inválido.');
       if (mode === 'EXISTENTE' && !customer) throw new Error('Selecione o cliente.');
       const parsed = newServiceSchema.safeParse(payload);
       if (!parsed.success) {
@@ -1060,6 +1064,20 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
                   data-testid="ns-amount"
                 />
               )}
+              {team === 'EQUIPE_PROPRIA' && d.canSetTripCost && (
+                <MoneyField
+                  label="Custo operacional da retirada (opcional)"
+                  cols={6}
+                  cents={ownCost}
+                  hint="Só para o custeio da viagem. Não gera pagamento nem conta a pagar ao funcionário."
+                  onCents={(v, ok) => {
+                    setOwnCost(v);
+                    setOwnCostOk(ok);
+                  }}
+                  error={!ownCostOk ? 'Valor inválido.' : err('pickup.amountCents')}
+                  data-testid="ns-own-cost"
+                />
+              )}
             </FormGrid>
             {people.filter((p) => p.userId !== responsible).length > 0 && (
               <fieldset className="mt-4">
@@ -1169,6 +1187,14 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
               testId="ns-sum-amount"
             />
           )}
+          {withPickup && team === 'EQUIPE_PROPRIA' && d.canSetTripCost && ownCost ? (
+            <SummaryRow
+              label="Custo operacional da retirada"
+              value={brl(ownCost)}
+              hint="Custeio da viagem — não é pagamento ao funcionário."
+              testId="ns-sum-own-cost"
+            />
+          ) : null}
         </dl>
         {error && (
           <div className="mt-4" data-testid="ns-error">

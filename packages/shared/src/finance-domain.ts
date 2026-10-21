@@ -691,8 +691,16 @@ export const LOGISTICS_MAX_CENTS = 10_000_000;
  * LANCADO: custo avulso/legado (Fase 11). PREVISTO: combinado no agendamento (nada devido).
  * DEVIDO: viagem realizada ou taxa de tentativa frustrada autorizada (obrigação constituída).
  * CANCELADO: viagem cancelada antes da realização.
+ * OPERACIONAL (Rodada 3, F2-18): custo da viagem feita pela EQUIPE PRÓPRIA — só custeio; nunca
+ * vira devido, não tem recebedor, não gera conta a pagar nem entra em fechamento/Meus Ganhos.
  */
-export const LOGISTICS_COST_STATUSES = ['LANCADO', 'PREVISTO', 'DEVIDO', 'CANCELADO'] as const;
+export const LOGISTICS_COST_STATUSES = [
+  'LANCADO',
+  'PREVISTO',
+  'DEVIDO',
+  'CANCELADO',
+  'OPERACIONAL',
+] as const;
 export type LogisticsCostStatus = (typeof LOGISTICS_COST_STATUSES)[number];
 
 export const TRIP_COST_SITUATIONS = [
@@ -703,6 +711,7 @@ export const TRIP_COST_SITUATIONS = [
   'PAGO',
   'CANCELADO',
   'LANCADO',
+  'OPERACIONAL',
 ] as const;
 export type TripCostSituation = (typeof TRIP_COST_SITUATIONS)[number];
 export const TRIP_COST_SITUATION_LABEL: Record<TripCostSituation, string> = {
@@ -713,6 +722,7 @@ export const TRIP_COST_SITUATION_LABEL: Record<TripCostSituation, string> = {
   PAGO: 'Pago',
   CANCELADO: 'Cancelado',
   LANCADO: 'Lançado (avulso)',
+  OPERACIONAL: 'Custo operacional da equipe própria (sem pagamento)',
 };
 
 /** Situação exibida, derivada do custo e da conta a pagar (fonte única: as linhas do banco). */
@@ -723,6 +733,7 @@ export function tripCostSituation(c: {
   if (c.status === 'CANCELADO') return 'CANCELADO';
   if (c.status === 'PREVISTO') return 'COMBINADO';
   if (c.status === 'LANCADO') return 'LANCADO';
+  if (c.status === 'OPERACIONAL') return 'OPERACIONAL';
   if (!c.payable) return 'PENDENTE_RECEBEDOR';
   if (c.payable.status === 'PAGO') return 'PAGO';
   if (c.payable.paidCents > 0) return 'PAGO_PARCIAL';

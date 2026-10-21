@@ -588,6 +588,12 @@ export interface MyEarningsDto {
     }[];
     /** R2: última solicitação de alteração deste item (só do próprio profissional). */
     request: OwnValueChangeDto | null;
+    /**
+     * Rodada 3 (F8-03, decisão C): só para o PREVISTO. Informação OPERACIONAL do planejamento
+     * (semana/data planejada da etapa ou da viagem) — NÃO é semana financeira: o previsto
+     * continua "sem semana definida" até ficar devido pelas regras normais.
+     */
+    plannedFor: { weekStart: string; date: string | null } | null;
     /** R2: pode pedir alteração agora (devido, sem revisão, sem pedido pendente, não quitado). */
     canRequest: boolean;
   }[];

@@ -281,6 +281,16 @@ export function MyValues() {
                     ? ` · previsto ${money(i.totalDueCents)} (ainda não é devido)`
                     : ` · devido ${money(i.totalDueCents)} · a receber ${money(i.currentOpenCents)}`}
                 </p>
+                {/* F8-03 (decisão C): o previsto não tem semana financeira; o planejamento é só
+                    informação operacional e pode mudar com a reprogramação. */}
+                {i.bucket === 'FORECAST' && (
+                  <p className="text-base text-ink-muted" data-testid={`my-value-week-${i.code}`}>
+                    Sem semana definida
+                    {i.plannedFor
+                      ? ` · Planejado para: ${i.plannedFor.date ? br(i.plannedFor.date) : `semana de ${br(i.plannedFor.weekStart)}`} (informação do planejamento)`
+                      : ''}
+                  </p>
+                )}
                 {i.adjustments.length > 0 && (
                   <ul className="text-base text-ink-muted" data-testid={`my-value-adj-${i.code}`}>
                     {i.adjustments.map((a, n) => (

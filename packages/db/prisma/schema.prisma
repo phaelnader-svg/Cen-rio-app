@@ -3169,7 +3169,8 @@ model LogisticsCost {
   allocations LogisticsCostAllocation[]
 
   // Evolução Fase 6: custo da viagem ligado ao agendamento.
-  /// LANCADO (avulso/legado), PREVISTO (agendado), DEVIDO (realizado/taxa autorizada), CANCELADO.
+  /// LANCADO (avulso/legado), PREVISTO (agendado), DEVIDO (realizado/taxa autorizada), CANCELADO,
+  /// OPERACIONAL (Rodada 3: custo da equipe própria — custeio, sem recebedor nem obrigação).
   status              String                     @default("LANCADO") @db.VarChar(20)
   /// Recebedor vinculado (novos lançamentos). O texto `beneficiary` legado é preservado.
   payeeUserId         String?                    @map("payee_user_id") @db.Uuid

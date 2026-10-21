@@ -30,6 +30,7 @@ const TONE: Record<TripCostSituation, 'neutral' | 'brand' | 'ok' | 'warn' | 'inf
   PAGO: 'ok',
   CANCELADO: 'neutral',
   LANCADO: 'neutral',
+  OPERACIONAL: 'neutral',
 };
 export function TripSituation({ c }: { c: Pick<LogisticsCostDto, 'situation'> }) {
   return (

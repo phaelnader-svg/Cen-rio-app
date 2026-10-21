@@ -187,14 +187,22 @@ export async function pickupRoutes(app: FastifyInstance) {
       await validatePickupItems(tx, before.orderId, input.items, id);
       // Simplificação Fase 2: viagem com custo de terceirização não vira "equipe própria" sem
       // antes tratar o custo (senão o recebedor terceirizado seria credor de viagem própria).
-      if (
-        input.team === 'EQUIPE_PROPRIA' &&
-        before.team !== 'EQUIPE_PROPRIA' &&
-        (await tx.logisticsCost.count({ where: { pickupId: id, status: { not: 'CANCELADO' } } }))
-      )
-        throw Errors.business(
-          'Esta retirada tem custo de logística terceirizada. Ajuste o custo no financeiro antes de mudar para equipe própria.',
-        );
+      // Rodada 3 (F2-18): nem o inverso — o custo operacional da equipe própria não vira
+      // obrigação do recebedor terceirizado por troca de equipe.
+      if (input.team !== before.team) {
+        const live = await tx.logisticsCost.findFirst({
+          where: { pickupId: id, kind: 'RETIRADA', cancelledAt: null },
+          select: { status: true },
+        });
+        if (live && input.team === 'EQUIPE_PROPRIA' && live.status !== 'OPERACIONAL')
+          throw Errors.business(
+            'Esta retirada tem custo de logística terceirizada. Ajuste o custo no financeiro antes de mudar para equipe própria.',
+          );
+        if (live && input.team !== 'EQUIPE_PROPRIA' && live.status === 'OPERACIONAL')
+          throw Errors.business(
+            'Esta retirada tem custo operacional da equipe própria. Cancele-o no financeiro antes de mudar para logística terceirizada.',
+          );
+      }
       const order = await tx.commercialOrder.findUniqueOrThrow({ where: { id: before.orderId } });
       const address =
         input.addressId && input.addressId !== before.addressId

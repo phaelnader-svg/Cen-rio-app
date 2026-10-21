@@ -11,6 +11,7 @@ import {
   classifyStep,
   closingWeekEnd,
   closingWeekStart,
+  mondayOf,
   myEarningsQuerySchema,
   myProductionUnlockSchema,
   type ClosingItemDto,
@@ -171,12 +172,20 @@ export async function myEarnings(db: Db, userId: string, week?: string): Promise
       administrative: administrative.has(p.id),
     })),
     request: requests.get(i.id) ?? null,
+    plannedFor: null,
     canRequest:
       situationOf(i) !== 'PAGO' &&
       i.state !== 'EM_REVISAO' &&
       requests.get(i.id)?.status !== 'PENDENTE' &&
       (i.category === 'TAPECARIA' || i.state === 'DEVIDO'),
   }));
+  const planned = await plannedForForecast(
+    db,
+    userId,
+    mine.filter((i) => i.state === 'PREVISTO'),
+    tz,
+  );
+  for (const it of items) it.plannedFor = planned.get(it.id) ?? null;
   const sum = (f: (i: ClosingItemDto) => boolean, k: keyof ClosingItemDto) =>
     mine.filter(f).reduce((a, i) => a + (i[k] as number), 0);
   const settled = (i: ClosingItemDto) => i.bucket === 'WEEK' || i.bucket === 'PREVIOUS';
@@ -365,4 +374,74 @@ export async function myEarningsRoutes(app: FastifyInstance) {
       return myEarnings(prisma, auth.userId, q.week);
     },
   );
+}
+
+/**
+ * Rodada 3 (F8-03, decisão C): para cada item PREVISTO, a semana/data PLANEJADA — informação
+ * operacional, nunca semana financeira. Mão de obra: a etapa pendente mais próxima da própria
+ * pessoa na peça (ou na OS, se o valor é da OS inteira), pela semana do plano e o horário
+ * programado. Logística: a data agendada da viagem. Sem planejamento: null ("sem semana").
+ * Só leitura: nada é gravado e o fechamento não muda.
+ */
+async function plannedForForecast(
+  db: Db,
+  userId: string,
+  forecast: ClosingItemDto[],
+  tz: string,
+): Promise<Map<string, { weekStart: string; date: string | null }>> {
+  const out = new Map<string, { weekStart: string; date: string | null }>();
+  if (!forecast.length) return out;
+  const labor = forecast.filter((i) => i.kind === 'MAO_DE_OBRA');
+  if (labor.length) {
+    const tasks = await db.productionTask.findMany({
+      where: {
+        assigneeUserId: userId,
+        status: { notIn: ['CONCLUIDA', 'CANCELADA', 'RASCUNHO'] },
+        planId: { not: null },
+        serviceOrderId: { in: labor.flatMap((i) => i.serviceOrders.map((o) => o.id)) },
+      },
+      select: {
+        serviceOrderId: true,
+        serviceOrderItemId: true,
+        scheduledAt: true,
+        plan: { select: { weekStart: true } },
+      },
+    });
+    const key = (t: (typeof tasks)[number]) =>
+      `${t.plan!.weekStart.toISOString().slice(0, 10)}|${t.scheduledAt?.toISOString() ?? '~'}`;
+    for (const i of labor) {
+      const mineTasks = tasks
+        .filter((t) =>
+          i.piece
+            ? t.serviceOrderItemId === i.piece.id
+            : i.serviceOrders.some((o) => o.id === t.serviceOrderId),
+        )
+        .filter((t) => t.plan)
+        .sort((a, b) => key(a).localeCompare(key(b)));
+      const t = mineTasks[0];
+      if (t)
+        out.set(i.id, {
+          weekStart: t.plan!.weekStart.toISOString().slice(0, 10),
+          date: t.scheduledAt ? localDateOf(t.scheduledAt, tz) : null,
+        });
+    }
+  }
+  const trips = forecast.filter((i) => i.kind === 'LOGISTICA');
+  if (trips.length) {
+    const costs = await db.logisticsCost.findMany({
+      where: { id: { in: trips.map((i) => i.id) } },
+      select: {
+        id: true,
+        pickup: { select: { scheduledDate: true } },
+        delivery: { select: { scheduledDate: true } },
+      },
+    });
+    for (const c of costs) {
+      const d = c.pickup?.scheduledDate ?? c.delivery?.scheduledDate ?? null;
+      if (!d) continue;
+      const date = d.toISOString().slice(0, 10);
+      out.set(c.id, { weekStart: mondayOf(date), date });
+    }
+  }
+  return out;
 }

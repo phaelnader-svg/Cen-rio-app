@@ -8,6 +8,7 @@ import { detectOpenShifts } from '../src/modules/attendance/absence';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import { resolveNotifications } from '../src/modules/notifications/notify';
 import type { Client } from './helpers';
+import { splitSql } from './sql-helpers';
 import { WsClient, createTestApp, db, employeeByName, loginAdmin, resetDatabase } from './helpers';
 import {
   F,
@@ -447,23 +448,6 @@ describe('F10-19 — notificação ATIVA × RESOLVIDA', () => {
 });
 
 // ─────────────────────────── F10-19 — migration e reversão ───────────────────────────
-
-/** Separa os comandos de um script de reversão respeitando blocos $$ … $$ (sem BEGIN/COMMIT). */
-function splitSql(sql: string): string[] {
-  const statements: string[] = [];
-  let cur = '';
-  let quoted = false;
-  for (const line of sql.replace(/--.*$/gm, '').split('\n')) {
-    cur += line + '\n';
-    quoted = quoted !== ((line.match(/\$\$/g) ?? []).length % 2 === 1);
-    if (!quoted && line.trim().endsWith(';')) {
-      const st = cur.trim().replace(/;$/, '');
-      if (!/^(BEGIN|COMMIT)$/i.test(st)) statements.push(st);
-      cur = '';
-    }
-  }
-  return statements;
-}
 
 describe('F10-19 — migration 20270216000000_notificacoes_resolvidas', () => {
   it('aditiva, sem backfill; reversão sem dados novos é limpa; com aviso resolvido é bloqueada', async () => {

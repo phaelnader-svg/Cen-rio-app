@@ -43,7 +43,7 @@ DOWNS=(20261230000000_modelos_simplificados 20261228000000_titular_mao_de_obra_p
 # Última migration da Evolução (recorte das etapas 3–4).
 EVOLUTION_LAST=20261230000000_modelos_simplificados
 # Posteriores à Evolução com reversão própria (a mais recente primeiro). Sem dados novos.
-LATE_DOWNS=(20270216000000_notificacoes_resolvidas)
+LATE_DOWNS=(20270223000000_custo_operacional_equipe_propria 20270216000000_notificacoes_resolvidas)
 # Acréscimos documentados de permissão a funções existentes (função:permissão, regex):
 #  - 20261220000000_recebimentos_permissao_funcoes: recebimentos.registrar (três funções);
 #  - 20270126000000_meus_ganhos_permissao: financeiro.producao_propria (tapeceiro e logística).
