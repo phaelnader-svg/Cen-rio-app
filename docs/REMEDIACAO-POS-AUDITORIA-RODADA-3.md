@@ -167,11 +167,56 @@ Conta: 36 parciais = 31 → C, 3 → S (F1-03, F5-01b, F7-06) e 2 → P (F1-05, 
 
 ## 4. Validação final
 
-_(preenchido no fim da rodada)_
+SHA final de código e de validação: **`c240387`**. Banco PG16 local recriado do zero.
+
+| Etapa                                                     | Resultado                                                       |
+| --------------------------------------------------------- | --------------------------------------------------------------- |
+| format / lint / typecheck                                 | OK                                                              |
+| migrations do zero + `migrate diff` (schema)              | OK (33 migrations, sem divergência)                             |
+| build                                                     | OK                                                              |
+| shared                                                    | 134/134                                                         |
+| web                                                       | 6/6                                                             |
+| API                                                       | 836 passaram, 10 ignorados (846), 0 falhas                      |
+| backup / restauração                                      | OK (119 tabelas comparadas por valor)                           |
+| E2E completo                                              | 50/50                                                           |
+| `scripts/test-evolution-migrations.sh`                    | OK (legado → 33; reversão e reaplicação da 20270223 e 20270216) |
+| CI execução 182 (`verify`, `e2e`, `evolution-migrations`) | verde                                                           |
+
+Durante a rodada:
+
+- **Correção de teste.** Duas falhas de teste foram corrigidas: a tipagem no teste de ajustes
+  simultâneos, e `meus-ganhos` › 25/26, cuja lista de campos permitidos passou a aceitar o
+  `plannedFor` da decisão F8-03.
+- **CI dividido.** O `verify` já usava 44 dos 45 minutos de limite, e na execução 181 o E2E foi
+  cortado por tempo. O limite **não** foi aumentado: o E2E passou a um job próprio (`e2e`, em
+  paralelo), e o `verify` mantém os 45 minutos.
 
 ## 5. Homologação
 
-_(preenchido no fim da rodada)_
+Fluxo seguro `operar.py`, versão `c240387`. A evidência está na pasta `hml3` do scratchpad.
+
+| Passo                                       | Resultado                                                                                 |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| build pelo gatilho + imagens                | api `sha256:c962763c…`, web `sha256:138dfbcf…`                                            |
+| impressão digital (antes)                   | registrada                                                                                |
+| portão aberto → `prepare_version`           | **recusado**: disco livre 2 GB (mínimo 3 GB); nada alterado                               |
+| manutenção → ponto de recuperação           | `cenario-staging-20261021T172659Z` (versão 34412d5); restauração de teste IDÊNTICA        |
+| `backup_validate` / `backup_restore_test`   | OK / IDÊNTICA                                                                             |
+| `images_cleanup_plan` → `images_cleanup`    | só as imagens de `e4d6010` (deixaram de ser protegidas com o novo ponto); 1,05 → 3,19 GiB |
+| `prepare_version`                           | OK (4 GB livres; banco intocado)                                                          |
+| `migration_precheck`                        | OK: 1 pendente (20270223), esquema compatível                                             |
+| `migrate` / `migration_verify`              | aplicada em 11 s / 33 de 33, nenhuma pendente                                             |
+| `activate_version`                          | OK                                                                                        |
+| health / smoke / websocket / suíte completa | OK                                                                                        |
+| versão                                      | etiqueta e pilha em `c240387`                                                             |
+| logs (api, web, caddy, postgres)            | sem erro                                                                                  |
+| impressão digital (depois)                  | igual à de antes, salvo a regra ampliada e o registro da migration 33                     |
+| portão                                      | **fechado**                                                                               |
+
+Nenhuma infraestrutura, IAM, DNS, firewall, VM ou Caddy foi alterado. A limpeza de imagens usou a
+operação existente e respeitou as versões protegidas.
+
+**Produção não foi tocada.**
 
 ## 6. Pendências que continuam abertas
 
