@@ -393,7 +393,7 @@ describe('F10-19 — revisão por devolução', () => {
         }),
       ),
     );
-    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect([a!.status, b!.status].sort()).toEqual([200, 409]);
     expect(await db().financialAdjustment.count({ where: { productionPayableId: ric.id } })).toBe(
       1,
     );
