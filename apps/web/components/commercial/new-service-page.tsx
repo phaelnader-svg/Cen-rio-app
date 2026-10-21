@@ -1110,8 +1110,9 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
           <SummaryRow
             label="Cliente"
             value={mode === 'NOVO' ? name || '—' : (customer?.name ?? '—')}
+            text
           />
-          <SummaryRow label="Serviço" value={`${contractedText} · ${totalPieces} peça(s)`} />
+          <SummaryRow label="Serviço" value={`${contractedText} · ${totalPieces} peça(s)`} text />
           <SummaryRow
             label="Peças"
             value={pieces
@@ -1121,6 +1122,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
               )
               .join(' · ')}
             testId="ns-sum-pieces"
+            text
           />
           {d.canSetValues && (
             <SummaryRow label="Valor fechado" value={brl(value)} testId="ns-sum-value" />
@@ -1151,6 +1153,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
                   : 'Aguardando agendamento'
             }
             testId="ns-sum-pickup"
+            text
           />
           {withPickup && (
             <SummaryRow
@@ -1234,11 +1237,12 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
           <SummaryRow
             label="Cliente"
             value={`${result.customer.name}${result.customer.created ? ' (novo)' : ''}`}
+            text
           />
           <SummaryRow label="Pedido" value={result.order.code} testId="ns-done-order" />
           {p ? (
             <>
-              <SummaryRow label="Retirada" value={p.code} />
+              <SummaryRow label="Retirada" value={p.code} text />
               <SummaryRow
                 label="Data e horário de chegada"
                 value={
@@ -1247,11 +1251,13 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
                     : 'Aguardando agendamento'
                 }
                 testId="ns-done-when"
+                text
               />
               <SummaryRow
                 label="Equipe responsável"
                 value={`${PICKUP_TEAM_LABEL[p.team]} · ${p.responsible ?? 'sem responsável'}${p.participants.length ? ` + ${p.participants.join(', ')}` : ''}`}
                 testId="ns-done-team"
+                text
               />
             </>
           ) : (
@@ -1259,6 +1265,7 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
               label="Retirada"
               value="Sem retirada — o cliente entrega as peças na tapeçaria"
               testId="ns-done-dropoff"
+              text
             />
           )}
           {result.tripCost && (

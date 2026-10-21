@@ -244,12 +244,15 @@ export function SummaryRow({
   strong,
   hint,
   testId,
+  text,
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
   strong?: boolean;
   hint?: React.ReactNode;
   testId?: string;
+  /** Valor textual (nomes, peças): quebra linha em vez de empurrar a tela no celular. */
+  text?: boolean;
 }) {
   return (
     <div
@@ -259,7 +262,10 @@ export function SummaryRow({
         {label}
         {hint && <span className="block text-xs font-normal text-ink-muted">{hint}</span>}
       </dt>
-      <dd className="money text-right text-[15px]" data-testid={testId}>
+      <dd
+        className={clsx('text-right text-[15px]', text ? 'min-w-0 break-words' : 'money')}
+        data-testid={testId}
+      >
         {value}
       </dd>
     </div>
