@@ -361,7 +361,6 @@ describe('F10-19 — revisão por devolução', () => {
       where: { action: 'finance.labor_cancelled' },
     });
     expect(audit.changes).toMatchObject({ status: { to: 'CANCELADO' } });
-    void pay;
   });
 
   it('revisão que muda o valor: o ajuste justificado resolve o aviso; ver não resolve; nova devolução reativa; ajustes simultâneos', async () => {
@@ -410,6 +409,44 @@ describe('F10-19 — revisão por devolução', () => {
     expect(again).toHaveLength(born.length);
     expect(again.every((n) => n.resolvedAt === null && n.readAt === null)).toBe(true);
     expect(resolvedAt).toHaveLength(born.length);
+  });
+});
+
+describe('F10-19 — revisão por devolução com o valor mantido', () => {
+  it('quitação pelo valor mantido resolve o aviso; pagamento parcial não; ver não resolve', async () => {
+    const { s, ric } = await released();
+    const { settleLaborOfWithdrawal } = await import('../src/modules/finance/withdrawal');
+    await db().$transaction((tx) =>
+      settleLaborOfWithdrawal(
+        tx,
+        { userId: null, sessionId: null, ip: null, requestId: null },
+        s.so.id,
+        { itemIds: [s.sofa.id] },
+        'Cliente retirou a peça',
+      ),
+    );
+    const notices = () =>
+      db().notification.findMany({
+        where: { kind: 'REVISAO_DEVOLUCAO', dedupeKey: { startsWith: `labor-review:${ric.id}` } },
+      });
+    const born = await notices();
+    expect(born.length).toBeGreaterThan(0);
+    await s.admin.get(F(`/labor/${ric.id}`));
+    expect((await notices()).every((n) => n.resolvedAt === null)).toBe(true);
+    // Parte paga: ainda há saldo e o valor ainda pode ser revisto → o aviso segue ativo.
+    await pay(s.admin, ric.id, 40000);
+    expect((await row(ric.id)).status).toBe('PAGO_PARCIAL');
+    expect((await notices()).every((n) => n.resolvedAt === null)).toBe(true);
+    // Quitada pelo valor mantido (sem ajuste): a revisão terminou → resolvido, no histórico.
+    await pay(s.admin, ric.id, 60000);
+    const p = await row(ric.id);
+    expect(p).toMatchObject({ status: 'PAGO', paidCents: 100000, adjustmentsCents: 0 });
+    const done = await notices();
+    expect(done).toHaveLength(born.length);
+    expect(done.every((n) => n.resolvedAt !== null)).toBe(true);
+    expect(await db().financialAdjustment.count({ where: { productionPayableId: ric.id } })).toBe(
+      0,
+    );
   });
 });
 

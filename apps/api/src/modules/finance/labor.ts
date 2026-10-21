@@ -538,10 +538,12 @@ export async function payLabor(
     },
     type: EVENT_TYPES.FINANCE_PAYABLE_PAID,
   });
-  return {
-    ...(await tx.productionPayable.findUniqueOrThrow({ where: { id } })),
-    paymentId: pay.id,
-  };
+  const after = await tx.productionPayable.findUniqueOrThrow({ where: { id } });
+  // F10-19 (Rodada 3): quitada pelo valor mantido, a obrigação não admite mais ajuste — a revisão
+  // da peça devolvida terminou sem ajuste pendente e o aviso deixa de pedir ação.
+  if (after.status === 'PAGO')
+    await resolveNotifications(tx, actor, 'REVISAO_DEVOLUCAO', [`labor-review:${id}`]);
+  return { ...after, paymentId: pay.id };
 }
 
 /**
