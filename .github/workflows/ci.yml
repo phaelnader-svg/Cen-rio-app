@@ -8,7 +8,7 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-24.04
-    # A suíte completa (API + backup + E2E) já leva ~25–30 min; 45 dá folga sem esconder travamentos.
+    # API + backup levam ~30 min; 45 dá folga sem esconder travamentos. O E2E roda no job `e2e`.
     timeout-minutes: 45
     services:
       postgres:
@@ -62,6 +62,39 @@ jobs:
           echo "CADDY_BIN=$RUNNER_TEMP/caddy" >> "$GITHUB_ENV"
       - run: pnpm test
       - run: pnpm test:backup
+
+  # Rodada 3: o E2E saiu do `verify` (que já encostava no limite de 45 min) para um job próprio, em
+  # paralelo — o limite do `verify` não mudou e cada job continua com folga própria.
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cenario
+          POSTGRES_PASSWORD: cenario_ci
+          POSTGRES_DB: cenario_dev
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cenario" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://cenario:cenario_ci@localhost:5432/cenario_dev
+      E2E_DATABASE_URL: postgresql://cenario:cenario_ci@localhost:5432/cenario_e2e_test
+      TOKEN_HASH_SECRET: ci-only-secret-ci-only-secret-ci-only-secret
+      ALLOWED_ORIGINS: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Banco do E2E
+        run: psql "postgresql://cenario:cenario_ci@localhost:5432/postgres" -c "CREATE DATABASE cenario_e2e_test"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
       - run: pnpm --filter @cenario/e2e exec playwright install --with-deps chromium
       - run: pnpm test:e2e
       - uses: actions/upload-artifact@v4
