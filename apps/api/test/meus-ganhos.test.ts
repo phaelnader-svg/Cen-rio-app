@@ -246,6 +246,8 @@ describe('Privacidade e permissões (25–28, 34, 35)', () => {
         'paidInWeekCents',
         'payments',
         'piece',
+        // Rodada 3 (F8-03): semana/data planejada do previsto — só informação do planejamento.
+        'plannedFor',
         'releasedAt',
         'serviceOrders',
         'situation',
