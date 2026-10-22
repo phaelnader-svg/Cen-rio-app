@@ -17,8 +17,13 @@
 #  6. cria dados novos (check `write`); cada rollback da Evolução é RECUSADO sem mutação;
 #  7. backup + restauração (scripts/test-backup-restore.sh) do banco com dados de todas as fases.
 # Rodada 3 (F1-12a/F10-22): as migrations de 2027 (posteriores à Evolução) quebravam a etapa 3
-# (acrescentam `financeiro.producao_propria` a funções existentes) e a 5 (seis delas não têm
-# reversão, por desenho — F1-05). A Evolução é provada no seu recorte e a cadeia completa à parte.
+# (acrescentam `financeiro.producao_propria` a funções existentes). A Evolução é provada no seu
+# recorte e a cadeia completa à parte.
+# Rodada 4 (F1-05/F1-04): as seis migrations de 2027 que não tinham reversão ganharam .down.sql
+# condicionado. Etapa 5: TODAS as posteriores à Evolução revertem (schema idêntico ao da Evolução,
+# dados legados idênticos) e reaplicam (schema e dados idênticos à cadeia completa). Etapa 6: cada
+# uma é RECUSADA, sem mutação, quando existe dado que ela perderia (salvo a 20270126, só de
+# permissão, como a 20261220).
 set -euo pipefail
 : "${PG_BASE:?PG_BASE não definido (ex.: postgresql://cenario:senha@127.0.0.1:55432)}"
 LEGACY_REF="${LEGACY_REF:-839770a}"
@@ -43,7 +48,16 @@ DOWNS=(20261230000000_modelos_simplificados 20261228000000_titular_mao_de_obra_p
 # Última migration da Evolução (recorte das etapas 3–4).
 EVOLUTION_LAST=20261230000000_modelos_simplificados
 # Posteriores à Evolução com reversão própria (a mais recente primeiro). Sem dados novos.
-LATE_DOWNS=(20270223000000_custo_operacional_equipe_propria 20270216000000_notificacoes_resolvidas)
+LATE_DOWNS=(20270223000000_custo_operacional_equipe_propria 20270216000000_notificacoes_resolvidas
+  20270209000000_presenca_apoio_simplificados 20270202000000_negociacao_confirmacao_semanal
+  20270126000000_meus_ganhos_permissao 20270119000000_cobranca_cliente
+  20270112000000_compra_antes_da_chegada 20270105000000_necessidade_substituicao)
+# Recusadas com dados novos na etapa 6. A 20270126 (só concede uma permissão às duas funções da
+# migration, sem dado de negócio) fica fora, como a 20261220 fica fora de DOWNS.
+LATE_REFUSE=(20270223000000_custo_operacional_equipe_propria 20270216000000_notificacoes_resolvidas
+  20270209000000_presenca_apoio_simplificados 20270202000000_negociacao_confirmacao_semanal
+  20270119000000_cobranca_cliente 20270112000000_compra_antes_da_chegada
+  20270105000000_necessidade_substituicao)
 # Acréscimos documentados de permissão a funções existentes (função:permissão, regex):
 #  - 20261220000000_recebimentos_permissao_funcoes: recebimentos.registrar (três funções);
 #  - 20270126000000_meus_ganhos_permissao: financeiro.producao_propria (tapeceiro e logística).
@@ -144,6 +158,7 @@ check_legacy_preserved() {
 step "3. Migrations da Evolução (Fases 2–7, até $EVOLUTION_LAST)"
 ( cd "$ROOT/packages/db" && DATABASE_URL="$URL" pnpm exec prisma migrate deploy --schema "$SUB/schema.prisma" 2>&1 | grep -E 'Applying|applied|Error' )
 check_legacy_preserved "Evolução"
+SCHEMA_EVO="$(schema_dump)"
 AFTER="$(snapshot "$COLS_RP")"
 # Substituições DOCUMENTADAS (regra nova mais específica no lugar da antiga):
 #  - Fase 5: production_payables_item_active/order_active → uma obrigação viva por
@@ -185,12 +200,27 @@ echo "migrations aplicadas: $(q 'SELECT count(*) FROM _prisma_migrations WHERE f
     CHECKPOINT_DISABLE=1 npx vitest run --config vitest.migration.config.ts 2>&1 | grep -E 'MIGRACAO|✓|×|Tests|Error' )
 # Reversão e reaplicação das posteriores que têm .down.sql (sem dados novos).
 FULL_SCHEMA="$(schema_dump)"; FULL_DATA="$(snapshot "$(columns)")"
+# Rodada 4: fotografia das colunas legadas logo antes de reverter (o `read` acima já gravou sessão
+# e auditoria do login — dados legítimos que a reversão também não pode tocar).
+PRE_LATE="$(snapshot "$COLS_RP")"; PRE_LATE_TPL="$(tpl_rows)"
 for d in "${LATE_DOWNS[@]}"; do
   psql "$URL" -q -v ON_ERROR_STOP=1 -f "$ROOT/packages/db/rollback/$d.down.sql" > /dev/null
   [[ "$(q "SELECT count(*) FROM _prisma_migrations WHERE migration_name = '$d'")" == 0 ]] \
     || { echo "✖ $d: registro da migration não removido" >&2; exit 1; }
   echo "  revertida: $d"
 done
+# Rodada 4 (F1-05): de volta exatamente ao esquema da Evolução, com os dados legados intactos.
+diff <(echo "$SCHEMA_EVO") <(schema_dump) > "$WORK/late-evo.diff" \
+  || { cat "$WORK/late-evo.diff" >&2; echo "✖ Schema difere do da Evolução após reverter as posteriores" >&2; exit 1; }
+POST_LATE="$(snapshot "$COLS_RP")"
+if [[ "$PRE_LATE" != "$POST_LATE" ]]; then diff <(echo "$PRE_LATE") <(echo "$POST_LATE") >&2 || true; echo "✖ Dados alterados ao reverter as posteriores" >&2; exit 1; fi
+[[ "$(tpl_rows)" == "$PRE_LATE_TPL" ]] || { echo "✖ Modelos alterados ao reverter as posteriores" >&2; exit 1; }
+# Permissões: só sai o que a 20270126 acrescentou (as da Evolução — 20261220 — continuam).
+rp_late="$(comm -13 <(echo "$RP_BEFORE") <(rp_rows) | grep -v -E ':recebimentos\.registrar$' || true)"
+[[ -z "$rp_late" ]] || { echo "✖ Permissões fora da Evolução após reverter as posteriores: $rp_late" >&2; exit 1; }
+[[ -z "$(comm -23 <(echo "$RP_BEFORE") <(rp_rows))" ]] || { echo "✖ Permissões legadas removidas ao reverter as posteriores" >&2; exit 1; }
+echo "✔ posteriores revertidas: dados idênticos aos de antes da reversão ($(echo "$POST_LATE" | wc -l) tabelas); permissões de volta às da Evolução"
+echo "✔ posteriores revertidas: schema idêntico ao da Evolução ($(q 'SELECT count(*) FROM _prisma_migrations') migrations)"
 ( cd "$ROOT/packages/db" && DATABASE_URL="$URL" pnpm exec prisma migrate deploy > /dev/null 2>&1 )
 diff <(echo "$FULL_SCHEMA") <(schema_dump) > "$WORK/late.diff" \
   || { cat "$WORK/late.diff" >&2; echo "✖ Schema difere após reverter e reaplicar as posteriores" >&2; exit 1; }
@@ -198,12 +228,12 @@ diff <(echo "$FULL_SCHEMA") <(schema_dump) > "$WORK/late.diff" \
   || { echo "✖ Dados diferem após reverter e reaplicar as posteriores" >&2; exit 1; }
 echo "✔ posteriores revertidas e reaplicadas: schema e dados idênticos"
 
-step "6. Cria dados novos e prova a RECUSA de cada rollback da Evolução"
+step "6. Cria dados novos e prova a RECUSA de cada rollback (Evolução e posteriores)"
 ( cd "$ROOT/apps/api" && MIGRATION_CHECK_STEP=write TEST_DATABASE_URL="$URL" DATABASE_URL="$URL" \
     CHECKPOINT_DISABLE=1 npx vitest run --config vitest.migration.config.ts 2>&1 | grep -E 'MIGRACAO|✓|×|Tests|Error' )
 S1="$(schema_dump | md5sum)"; M1="$(q 'SELECT count(*) FROM _prisma_migrations')"
 D1="$(snapshot "$(columns)")"
-for d in "${DOWNS[@]}"; do
+for d in "${DOWNS[@]}" "${LATE_REFUSE[@]}"; do
   if out="$(psql "$URL" -q -v ON_ERROR_STOP=1 -f "$ROOT/packages/db/rollback/$d.down.sql" 2>&1)"; then
     echo "✖ $d: rollback ACEITO com dados novos" >&2; exit 1
   fi

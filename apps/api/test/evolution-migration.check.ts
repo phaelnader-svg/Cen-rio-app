@@ -312,4 +312,124 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     expect(dropOff.body.order.customerDropOff).toBe(true);
     expect(dropOff.body.pickup).toBeNull();
   });
+
+  it('Rodada 4 (F1-05): dados das migrations de 2027 — cada reversão posterior tem o que recusar', async () => {
+    // 20270119 (cobrança) + 20270223 (custo operacional): Novo serviço com valor, cartão em 3x e
+    // retirada da equipe própria com custo operacional.
+    const svc = await post('/api/v1/services', {
+      customer: {
+        mode: 'NOVO',
+        kind: 'PF',
+        name: 'Cliente Migração 2027',
+        phone: null,
+        allowSimilar: true,
+        address: {
+          label: 'Casa',
+          street: 'Rua 2027',
+          number: '7',
+          city: 'Cidade Teste',
+          state: 'SP',
+        },
+      },
+      service: {
+        promisedDate: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+        contractedService: 'Reforma',
+        agreedValueCents: 300000,
+        payment: { model: 'CARTAO_100', installments: 3 },
+        items: [
+          {
+            pieceType: 'SOFA',
+            description: 'Sofá 2027',
+            quantity: 1,
+            serviceType: 'REFORMA_COMPLETA',
+          },
+          {
+            pieceType: 'POLTRONA',
+            description: 'Poltrona 2027',
+            quantity: 1,
+            serviceType: 'REPARO',
+          },
+        ],
+      },
+      pickup: {
+        team: 'EQUIPE_PROPRIA',
+        logisticsUserId: await userIdOf('Ricardo'),
+        amountCents: 4000,
+      },
+    });
+    expect(svc.status, JSON.stringify(svc.body)).toBe(201);
+    expect(await db().customerReceivable.count({ where: { installments: 3 } })).toBeGreaterThan(0);
+    expect(await db().logisticsCost.count({ where: { status: 'OPERACIONAL' } })).toBe(1);
+    const order = await db().commercialOrder.findUniqueOrThrow({
+      where: { id: svc.body.order.id },
+      include: { items: true },
+    });
+    // 20270112 (compra antes da chegada): previsão de compra na peça do pedido, sem OS.
+    const linen = {
+      kind: 'TECIDO',
+      sourcing: 'EXCLUSIVO_OS',
+      description: 'Linho',
+      color: 'Cru',
+      quantity: 6,
+      unit: 'METRO',
+    };
+    const f1 = await post(
+      `/api/v1/orders/${order.id}/items/${order.items[0]!.id}/material-forecasts`,
+      linen,
+    );
+    expect(f1.status, JSON.stringify(f1.body)).toBe(201);
+    // 20270105 (substituição/cancelamento): uma previsão cancelada pelo fluxo de necessidade.
+    const f2 = await post(
+      `/api/v1/orders/${order.id}/items/${order.items[1]!.id}/material-forecasts`,
+      linen,
+    );
+    expect(f2.status, JSON.stringify(f2.body)).toBe(201);
+    const target = await db().materialRequirement.findFirstOrThrow({
+      where: { orderItemId: order.items[1]!.id, status: 'ATIVA' },
+    });
+    const cancel = await post(`/api/v1/material-requirements/${target.id}/cancel`, {
+      reason: 'Cliente trouxe o tecido',
+    });
+    expect(cancel.status, JSON.stringify(cancel.body)).toBe(200);
+    expect(
+      await db().materialRequirement.count({ where: { status: 'CANCELADA' } }),
+    ).toBeGreaterThan(0);
+    // 20270209 (presença/apoio): feriado no calendário da empresa.
+    const h = await post('/api/v1/attendance/holidays', {
+      date: day(40),
+      name: 'Feriado da migração',
+    });
+    expect(h.status, JSON.stringify(h.body)).toBe(201);
+    // 20270216 (aviso resolvido): retirada atribuída ao Ricardo e depois cancelada — a ação
+    // canônica resolve o aviso de atribuição.
+    const notice = await post('/api/v1/services', {
+      customer: { mode: 'EXISTENTE', customerId: order.customerId },
+      service: {
+        promisedDate: new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10),
+        contractedService: 'Reparo',
+        items: [
+          {
+            pieceType: 'POLTRONA',
+            description: 'Poltrona aviso',
+            quantity: 1,
+            serviceType: 'REPARO',
+          },
+        ],
+      },
+      pickup: { team: 'EQUIPE_PROPRIA', logisticsUserId: await userIdOf('Ricardo') },
+    });
+    expect(notice.status, JSON.stringify(notice.body)).toBe(201);
+    const pk = await db().pickupRequest.findUniqueOrThrow({ where: { id: notice.body.pickup.id } });
+    const gone = await post(`/api/v1/pickups/${pk.id}/transition`, {
+      toStatus: 'CANCELADA',
+      note: 'Cliente desistiu',
+      version: pk.version,
+    });
+    expect(gone.status, JSON.stringify(gone.body)).toBe(200);
+    expect(await db().notification.count({ where: { resolvedAt: { not: null } } })).toBeGreaterThan(
+      0,
+    );
+    // 20270202 (confirmação semanal): a exceção administrativa do caso anterior já gravou uma.
+    expect(await db().weeklyClosingConfirmation.count()).toBeGreaterThan(0);
+  });
 });
