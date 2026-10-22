@@ -163,9 +163,9 @@ export function LaborTab() {
           )}
         </div>
         <p className="mb-3 text-sm text-ink-muted">
-          Custo mensal da equipe fixa (valores informados pelo gestor). Não é pagamento
-          por produção e não sofre descontos automáticos por atraso, ausência ou produtividade. A
-          alocação por OS é uma estimativa proporcional ao tempo de execução registrado.
+          Custo mensal da equipe fixa (valores informados pelo gestor). Não é pagamento por produção
+          e não sofre descontos automáticos por atraso, ausência ou produtividade. A alocação por OS
+          é uma estimativa proporcional ao tempo de execução registrado.
         </p>
         {team.data && (
           <Table testId="fin-team" head={['Mês', 'Funcionário', 'Custo mensal', 'Observação']}>

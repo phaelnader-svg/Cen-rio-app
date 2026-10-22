@@ -47,6 +47,12 @@ import {
 } from './presence-helpers';
 
 /**
+ * O valor como número isolado — nunca como pedaço de um id (UUID ou código), que pode conter os
+ * mesmos dígitos por acaso (ex.: "…768852164321").
+ */
+const valueOf = (...values: number[]) => new RegExp(`(?<![\\w-])(?:${values.join('|')})(?![\\w-])`);
+
+/**
  * Remediação pós-auditoria, Rodada 4 — MATRIZ DE PERMISSÕES e TEMPO REAL (transversal).
  *
  * Já provado em outros arquivos (não repetido aqui):
@@ -226,7 +232,7 @@ describe('Matriz — Central e Início por perfil, com dados reais de todos os d
     expect(compKeys).toContain('MATERIAL:comprar');
     expect(comp.items.filter((i) => isFin(i.type))).toEqual([]);
     expect(JSON.stringify(comp)).not.toMatch(MONEY);
-    expect(JSON.stringify(comp)).not.toMatch(/123457|45678|77777|4567\b/);
+    expect(JSON.stringify(comp)).not.toMatch(valueOf(123457, 45678, 77777, 4567));
     expect(moneyKeys(comp)).toEqual([]);
 
     // Início: finance null sem financeiro.ver (com cobranças e mão de obra reais existentes).
@@ -314,7 +320,8 @@ describe('Matriz — Central e Início por perfil, com dados reais de todos os d
       );
     // Os 403 não carregam dado do registro.
     const denied = await op.get(F(`/labor-reviews/${w.review.id}`));
-    expect(JSON.stringify(denied.body)).not.toMatch(/45678|Márcio/);
+    expect(JSON.stringify(denied.body)).not.toMatch(valueOf(45678));
+    expect(JSON.stringify(denied.body)).not.toMatch(/Márcio/);
   });
 
   it('deep link do pedido de ajuda: painel sem produção e tablet de outra pessoa → 403; o próprio e o gestor abrem', async () => {
@@ -564,7 +571,7 @@ function checkAudience(got: Record<Who, Ev[]>, ids: { ricardo: string; paula: st
   expect(diag('ops')).toEqual([]);
   // Nenhum payload leva valores (nem para o gestor).
   for (const w of Object.keys(got) as Who[]) {
-    expect(JSON.stringify(got[w]), w).not.toMatch(/98765|4321|51852/);
+    expect(JSON.stringify(got[w]), w).not.toMatch(valueOf(98765, 4321, 51852));
     expect(moneyKeys(got[w].map((e) => e.payload)), w).toEqual([]);
   }
 }
