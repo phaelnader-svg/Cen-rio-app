@@ -1,7 +1,9 @@
 # Remediação pós-auditoria — Rodada 4 (prova final, robustez e rastreabilidade)
 
-Base funcional da Rodada 3: `c240387`. Base funcional desta rodada: **`ce4b89d`**.
-Produção não foi tocada em nenhum momento.
+Base funcional da Rodada 3: `c240387`. SHA funcional final desta rodada: **`7b4177b`** (= `ce4b89d`
+
+- o teste do F10-13q + a atualização de segurança do Next; ver §12).
+  Produção não foi tocada em nenhum momento.
 
 A rodada não criou funcionalidade nova. O foco foi **provar** o que existe:
 
@@ -329,3 +331,133 @@ Ficam F10-19 (P) e F4-21 (NC).
 
 SHA: o teste do F10-13q entrou em `61c3293`, que difere de `ce4b89d` só nesse arquivo de teste.
 O código de aplicação homologado continua sendo o de `ce4b89d`.
+
+## 12. Fechamento da rodada
+
+### 12.1 CI 194 (`61c3293`) e a correção
+
+| Job                    | Resultado                                               |
+| ---------------------- | ------------------------------------------------------- |
+| `e2e`                  | sucesso                                                 |
+| `e2e-transversal`      | sucesso                                                 |
+| `evolution-migrations` | sucesso                                                 |
+| `verify`               | **falhou** no passo `pnpm audit --audit-level critical` |
+
+A falha era real: o alerta GHSA-2464-fhr4-w9xw (crítico, execução remota de código no Image
+Optimization) atinge `next <= 15.5.27`. Ele foi publicado depois do CI 192 verde de `ce4b89d`.
+Nenhum teste falhou; os passos seguintes nem rodaram.
+
+Correção mínima em `7b4177b`: `next` e `@next/eslint-plugin-next` para **15.5.28** (patch),
+com o lockfile atualizado. Não há outra mudança de código de aplicação. Depois disso, o
+`pnpm audit` local não acusa nenhum crítico. Restam 1 baixo, 2 moderados e 1 alto, que o CI
+tolera e que já existiam antes.
+
+### 12.2 SHAs
+
+| Papel                                        | SHA                                    |
+| -------------------------------------------- | -------------------------------------- |
+| Inicial (base da rodada)                     | `a78fb28` (código funcional `c240387`) |
+| Funcional final **homologado**               | **`7b4177b`**                          |
+| Prova do F10-13q (teste)                     | `61c3293` (contido em `7b4177b`)       |
+| Documentação                                 | o commit deste parágrafo (só `docs/`)  |
+| Homologado antes do fechamento (substituído) | `ce4b89d`                              |
+
+`git diff ce4b89d 7b4177b` mexe em cinco arquivos:
+
+- `apps/web/package.json` e o `package.json` raiz (versão do Next);
+- `pnpm-lock.yaml`;
+- um arquivo de teste (`negociacao-confirmacao.test.ts`);
+- este documento.
+
+Nenhuma linha de `src/` mudou. As evidências de `ce4b89d` (§10) e as de `7b4177b` (§12.3 e
+§12.4) ficam separadas. Como o pacote do Next entra na imagem `web`, a versão foi
+**re-homologada** pelo fluxo seguro.
+
+### 12.3 Regressão local e CI de `7b4177b`
+
+Em execução no momento deste commit; o resultado entra no próximo commit de documentação.
+
+### 12.4 Homologação de `7b4177b` (fluxo seguro, evidência em `hml4b` do scratchpad)
+
+| Passo                                                 | Resultado                                                                                             |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| build pelo gatilho + imagens                          | api `sha256:99323024…`, web `sha256:0ca94f88…`, etiqueta `7b4177b`                                    |
+| impressão digital (antes)                             | registrada                                                                                            |
+| `migration_status`                                    | 33 aplicadas, 33 na imagem, **nenhuma pendente**                                                      |
+| disco                                                 | 1,1 GB livre (abaixo do mínimo)                                                                       |
+| portão aberto → manutenção                            | API e web paradas                                                                                     |
+| ponto de recuperação                                  | `cenario-staging-20261022T200157Z` (versão `ce4b89d`); restauração de teste IDÊNTICA; cópia no bucket |
+| `backup_validate` / `backup_restore_test`             | SHA256SUMS conferido / IDÊNTICA                                                                       |
+| `images_cleanup_plan` → `images_cleanup`              | só as imagens de `34412d5` (não protegidas); de 1,04 para 4,70 GiB livres                             |
+| `prepare_version`                                     | OK (5 GB livres; a imagem nova não migra na partida)                                                  |
+| `migration_precheck` / `migrate` / `migration_verify` | OK / nenhuma migration nova (banco idêntico ao ponto de recuperação) / 33 de 33                       |
+| `activate_version`                                    | OK                                                                                                    |
+| health / smoke / websocket                            | OK (`/api/ready` 200 pelo proxy; WS 401 sem sessão, como esperado)                                    |
+| `run_homologation_tests suite=completo`               | 27 verificações OK, 0 falhas                                                                          |
+| versão                                                | etiqueta local, pilha, candidata e migrada = `7b4177b15a930b85d985a59a9182b579760c5a7b`               |
+| logs (api, web, caddy, postgres, 30 min)              | nenhum error/exception/fatal                                                                          |
+| impressão digital (depois)                            | **idêntica** à de antes                                                                               |
+| portão                                                | **fechado**                                                                                           |
+
+### 12.5 F4-21 (continua NÃO COMPROVADO)
+
+- **Texto original da auditoria:** "Validação em Safari/WebKit e tablets físicos". Status de
+  origem: NÃO FOI POSSÍVEL COMPROVAR. O E2E roda só em Chromium emulado, com geometria
+  390/768/1280/1440.
+- **Por que segue NC.** O requisito pede navegador e aparelho reais. Este ambiente só tem
+  Chromium (`/opt/pw-browsers`) e baixar o WebKit está fora da política. Emular um iPad no
+  Chromium não é Safari, e chamar isso de prova seria inventar evidência.
+- **O que está automatizado (em Chromium):**
+  - geometria sem rolagem horizontal em 390/768/1280/1440;
+  - toque e viewport de tablet;
+  - queda e volta da rede (`setOffline`) em `tablets`, `team-week` e `team-workshop`;
+  - resposta perdida com repetição idempotente em `novo-servico-rede` e `recebimentos-rede`;
+  - reconexão e sincronização do tempo real em `tablet-sync`.
+- **O que falta:** motor WebKit/Safari real (macOS e iPadOS), tablet físico (toque, teclado
+  virtual, rotação, suspensão) e rede real (Wi-Fi da oficina, troca Wi-Fi ↔ 4G).
+- **Forma segura de provar agora:** nenhuma de dentro deste ambiente. Só pessoa com aparelho,
+  contra a **homologação** (versão `7b4177b`), seguindo `docs/ROTEIROS-MANUAIS-RODADA-4.md`:
+  - §1 Safari no MacBook;
+  - §2 tablet;
+  - §3 iPhone;
+  - §4 rede real;
+  - registrar em §5.
+
+### 12.6 Tablet físico com erro em PRODUÇÃO (relato do proprietário)
+
+Sintomas relatados:
+
+- `/entrar` abre com CSS quebrado;
+- `/tablet` mostra "Application error: a client-side exception has occurred".
+
+Isso acontece em produção, que roda uma versão antiga. Produção não foi lida nem tocada.
+
+**O que a Rodada 4 permite afirmar: nada conclusivo.** Nenhum teste desta rodada rodou em
+aparelho físico nem em Safari. Não há prova de que a homologação tem ou não tem o problema, nem
+de que `7b4177b` o corrige. **Não está declarado como corrigido.**
+
+Hipóteses a verificar, que **não** são diagnóstico:
+
+1. **Navegador do tablet abaixo da base exigida.** O CSS é gerado com Tailwind 4, que pede
+   Safari 16.4+ / Chrome 111+. Um navegador mais velho carrega a página sem estilo. O código
+   também usa APIs recentes (por exemplo `crypto.randomUUID`, que exige contexto seguro e
+   navegador moderno; está em `apps/web/lib/api.ts`); sem elas, a página do tablet quebra no
+   cliente. A versão homologada tem essa mesma base de navegador. Se a causa for essa, a
+   homologação teria o **mesmo** sintoma no mesmo aparelho.
+2. **Cache antigo de pacotes JavaScript** depois de uma publicação (ChunkLoadError), que gera
+   o mesmo "Application error".
+
+Diagnóstico específico necessário, no tablet físico:
+
+- anotar modelo, sistema e versão do navegador (abrir `chrome://version` ou Ajustes → Safari);
+- abrir a **homologação** no mesmo tablet (`/entrar` e `/tablet`) e comparar;
+- ligar a depuração remota (Chrome `chrome://inspect` com cabo USB ou Safari → Desenvolvedor)
+  e copiar a primeira mensagem de erro do console;
+- limpar os dados do site e recarregar, para separar a hipótese 2.
+
+### 12.7 F10-19 (continua PARCIAL)
+
+Nada mudou desde §9: falta uma ação canônica de encerramento para "peça quitada antes da
+devolução, com valor mantido". Não se criou botão, ajuste, cancelamento nem LaborReview.
+
+**Produção não foi alterada.**
