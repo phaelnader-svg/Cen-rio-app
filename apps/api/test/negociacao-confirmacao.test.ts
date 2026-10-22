@@ -934,3 +934,46 @@ describe('Privacidade e notificações (26–29 do roteiro)', () => {
     expect(JSON.stringify(ws.messages)).not.toMatch(/123456/);
   });
 });
+
+describe('F10-13q (decisão do proprietário: §2 Exceções = gestão por exceção na Central)', () => {
+  type Item = {
+    key: string;
+    type: string;
+    title: string;
+    statusLabel: string;
+    employee: { userId: string } | null;
+  };
+  const central = async (admin: Client) =>
+    ((await admin.get('/api/v1/attention')).body as { items: Item[] }).items;
+  const of = (items: Item[], userId: string) =>
+    items.filter((i) => i.employee?.userId === userId || i.key.includes(userId));
+
+  it('normal não aparece; pendência aparece; resolvida some; exceção D13 sem outra pendência não cria item próprio', async () => {
+    const { s, ric } = await base();
+    // 1. Operação normal: Márcio (tarefa em andamento, valor só previsto) não aparece.
+    let items = await central(s.admin);
+    expect(of(items, s.ids.marcio)).toEqual([]);
+    // 2. Pendência excepcional: Ricardo com valor devido e sem conferência → tipo canônico.
+    expect(of(items, s.ids.ricardo).map((i) => i.key)).toEqual([
+      `FINANCEIRO:confirmacao:${s.ids.ricardo}`,
+    ]);
+    // 4. Exceção administrativa D13 registrada: a pendência de confirmação sai; só resta o
+    //    pagamento liberado (tipo canônico). Nenhum item próprio de "exceção administrativa".
+    await allowWeek(s.admin, s.ids.ricardo, WEEK);
+    items = await central(s.admin);
+    expect(of(items, s.ids.ricardo).map((i) => i.key)).toEqual([
+      `FINANCEIRO:pagamento:${s.ids.ricardo}`,
+    ]);
+    expect(
+      items.filter((i) => /exce[cç][aã]o/i.test(`${i.key} ${i.title} ${i.statusLabel}`)),
+    ).toEqual([]);
+    // 3. Resolvida (pago integralmente): desaparece. A exceção e a auditoria continuam registradas.
+    expect((await payDirect(s.admin, ric.id, 100000)).status).toBe(200);
+    items = await central(s.admin);
+    expect(of(items, s.ids.ricardo)).toEqual([]);
+    expect(
+      await db().weeklyClosingConfirmation.count({ where: { kind: 'EXCECAO_ADMINISTRATIVA' } }),
+    ).toBe(1);
+    expect(await db().auditLog.count({ where: { action: 'finance.week_exception' } })).toBe(1);
+  });
+});
