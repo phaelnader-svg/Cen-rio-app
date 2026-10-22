@@ -1,6 +1,6 @@
 # Remediação pós-auditoria — Rodada 4 (prova final, robustez e rastreabilidade)
 
-Base funcional da Rodada 3: `c240387`. Base funcional desta rodada: **`27828a8`**.
+Base funcional da Rodada 3: `c240387`. Base funcional desta rodada: **`ce4b89d`**.
 Produção não foi tocada em nenhum momento.
 
 A rodada não criou funcionalidade nova. O foco foi **provar** o que existe:
@@ -251,7 +251,60 @@ Nenhum item COMPROVADO regrediu. A suíte completa no SHA final está verde (§1
 
 ## 10. Validação final, CI e homologação
 
-_(preenchido após a execução — §10.1 a §10.3)_
+**SHA final (funcional): `ce4b89d`.** Ele inclui `27828a8` mais dois ajustes:
+
+- a formatação de `labor.tsx`;
+- a checagem de valores do teste de tempo real. O teste procurava `4321` em qualquer lugar do
+  JSON e casou com o fim de um UUID aleatório. Era falso positivo, não vazamento; agora o valor
+  só conta como número isolado.
+
+### 10.1 Regressão local (mesmo SHA)
+
+| Etapa                                                           | Resultado                                                         |
+| --------------------------------------------------------------- | ----------------------------------------------------------------- |
+| format / lint / typecheck                                       | OK                                                                |
+| migrations do zero + `migrate status` + diff do schema          | OK (33 migrations, sem divergência)                               |
+| build                                                           | OK                                                                |
+| testes shared / web / API                                       | 134 / 12 / **933** aprovados (10 ignorados por desenho), 0 falhas |
+| backup → restauração → migrations → aplicação → saúde           | OK                                                                |
+| E2E completo (inclui transversal e geometria 390/768/1280/1440) | **51/51**                                                         |
+| `test-evolution-migrations.sh` (com F1-05)                      | OK                                                                |
+
+### 10.2 CI (`ce4b89d`, execução 192)
+
+| Job                    | Resultado | Duração                         |
+| ---------------------- | --------- | ------------------------------- |
+| `verify`               | sucesso   | ~25 min (limite 45, inalterado) |
+| `e2e`                  | sucesso   | ~28 min                         |
+| `e2e-transversal`      | sucesso   | ~3 min                          |
+| `evolution-migrations` | sucesso   | ~3 min                          |
+
+### 10.3 Homologação (fluxo seguro `operar.py`, evidência em `hml4` do scratchpad)
+
+| Passo                                                 | Resultado                                                                                             |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| build pelo gatilho + imagens                          | api e web `ce4b89d` publicadas                                                                        |
+| impressão digital (antes)                             | registrada                                                                                            |
+| `migration_status`                                    | 33 aplicadas, 33 na imagem, **nenhuma pendente**                                                      |
+| disco                                                 | 1,1 GB livre (mínimo 3 GB para `prepare_version`)                                                     |
+| portão aberto → manutenção                            | API e web paradas (503 "em manutenção")                                                               |
+| ponto de recuperação                                  | `cenario-staging-20261022T151441Z` (versão `c240387`); restauração de teste IDÊNTICA; cópia no bucket |
+| `backup_validate` / `backup_restore_test`             | íntegro / IDÊNTICA                                                                                    |
+| `images_cleanup_plan` → `images_cleanup`              | só as imagens de `9fb1786` (não protegidas); ativa, rollback e nova protegidas                        |
+| `prepare_version`                                     | OK (4 GB livres; a imagem nova não migra na partida)                                                  |
+| `migration_precheck` / `migrate` / `migration_verify` | OK, 0 pendentes / registrado / 33 de 33                                                               |
+| `activate_version`                                    | OK                                                                                                    |
+| health / smoke / websocket                            | OK (`/api/ready` 200 pelo proxy; WS 401 sem sessão, como esperado)                                    |
+| `run_homologation_tests suite=completo`               | 27 verificações OK, 0 falhas                                                                          |
+| versão (CA1-02 de F1-01)                              | etiqueta local, pilha, candidata e migrada = `ce4b89d`                                                |
+| logs (api, web, caddy, postgres)                      | sem erro                                                                                              |
+| impressão digital (depois)                            | **idêntica** à de antes (2 751 linhas)                                                                |
+| portão                                                | **fechado**                                                                                           |
+
+Nenhuma infraestrutura, IAM, DNS, firewall, VM ou Caddy foi alterada. A limpeza de imagens usou
+a operação existente e respeitou as versões protegidas.
+
+**Produção não foi tocada.**
 
 ## 11. Totais (284 requisitos)
 
