@@ -375,7 +375,26 @@ Nenhuma linha de `src/` mudou. As evidências de `ce4b89d` (§10) e as de `7b417
 
 ### 12.3 Regressão local e CI de `7b4177b`
 
-Em execução no momento deste commit; o resultado entra no próximo commit de documentação.
+Regressão local, no mesmo SHA `7b4177b`:
+
+| Etapa                                                           | Resultado                                                         |
+| --------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `pnpm audit --audit-level critical`                             | OK (0 crítico; 1 baixo, 2 moderados, 1 alto)                      |
+| format / lint / typecheck                                       | OK                                                                |
+| migrations do zero + `migrate status` + diff do schema          | OK (33 migrations, sem divergência)                               |
+| build                                                           | OK                                                                |
+| testes shared / web / API                                       | 134 / 12 / **934** aprovados (10 ignorados por desenho), 0 falhas |
+| backup → restauração → migrations → aplicação → saúde           | OK                                                                |
+| E2E completo (inclui transversal e geometria 390/768/1280/1440) | **51/51**                                                         |
+| `test-evolution-migrations.sh` (com F1-05)                      | OK                                                                |
+
+A API passou de 933 para 934 testes por causa do teste do F10-13q.
+
+CI **196** (`7b4177b`): `verify` (com o audit), `e2e`, `e2e-transversal` e
+`evolution-migrations`, todos com **sucesso**.
+
+O CI 195 (`919025f`, só docs) falhou no `verify` pelo mesmo motivo do 194: o Next ainda era o
+antigo. O CI 197 (`44b23df`, docs) passou.
 
 ### 12.4 Homologação de `7b4177b` (fluxo seguro, evidência em `hml4b` do scratchpad)
 
