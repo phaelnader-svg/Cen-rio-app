@@ -10,9 +10,11 @@ executar o roteiro e registrar o resultado na tabela do fim.
   substitui o aparelho real.
 - **Rede real:** a parte automatizável está automatizada, mas em navegador emulado. Ela fica
   separada do teste físico:
-  - queda e volta da conexão (`context.setOffline`), em `novo-servico-rede.spec.ts`,
-    `recebimentos-rede.spec.ts` e `tablet-sync.spec.ts`;
-  - resposta perdida e repetição idempotente.
+  - queda e volta da conexão (`context.setOffline`), em `tablets.spec.ts`, `team-week.spec.ts`
+    e `team-workshop.spec.ts`;
+  - resposta perdida e repetição idempotente, em `novo-servico-rede.spec.ts` e
+    `recebimentos-rede.spec.ts`;
+  - reconexão do tempo real e sincronização, em `tablet-sync.spec.ts`.
 
   Wi-Fi da oficina, troca de rede e 4G só se provam com aparelho.
 
