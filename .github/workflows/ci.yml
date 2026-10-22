@@ -96,11 +96,54 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm --filter @cenario/e2e exec playwright install --with-deps chromium
-      - run: pnpm test:e2e
+      # Rodada 4: o E2E transversal roda no job `e2e-transversal` (em paralelo, também obrigatório).
+      - run: pnpm --filter @cenario/e2e build:web
+      - run: pnpm --filter @cenario/e2e exec playwright test --grep-invert "fluxo transversal"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-report
+          path: tests/e2e/playwright-report
+
+  # Rodada 4: E2E transversal (Novo serviço → pagamento, D12/D13, privacidade) em job próprio,
+  # em paralelo e obrigatório — o `e2e` mantém a folga do seu limite.
+  e2e-transversal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cenario
+          POSTGRES_PASSWORD: cenario_ci
+          POSTGRES_DB: cenario_dev
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U cenario" --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://cenario:cenario_ci@localhost:5432/cenario_dev
+      E2E_DATABASE_URL: postgresql://cenario:cenario_ci@localhost:5432/cenario_e2e_test
+      TOKEN_HASH_SECRET: ci-only-secret-ci-only-secret-ci-only-secret
+      ALLOWED_ORIGINS: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Banco do E2E
+        run: psql "postgresql://cenario:cenario_ci@localhost:5432/postgres" -c "CREATE DATABASE cenario_e2e_test"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm --filter @cenario/e2e exec playwright install --with-deps chromium
+      - run: pnpm --filter @cenario/e2e build:web
+      - run: pnpm --filter @cenario/e2e exec playwright test specs/zz-fluxo-transversal.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-transversal
           path: tests/e2e/playwright-report
 
   # Rodada 3 (F1-12a/F10-22): migração ENCADEADA a partir do banco legado (código anterior à
