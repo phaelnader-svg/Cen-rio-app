@@ -184,45 +184,45 @@ próprio. O que existe hoje é "verificar × cancelar" (`issues.test.ts`).
 
 Legenda: **C** comprovado · **P** parcial · **ST** sem teste suficiente · **NC** não comprovado.
 
-| ID       | Antes | Prova nova                                                                   | Resultado                                                                          | Depois |
-| -------- | ----- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------ |
-| F1-01    | ST    | `rodada4-documento-arquitetura` › F1-01 (3); CA1-02 pela homologação (§10)   | 19 seções + §20 + CA1-01..16; versão publicada conferida no fluxo seguro           | C      |
-| F1-02b   | ST    | `rodada4-documento-arquitetura` › F1-02b (4)                                 | Um ponto de criação por registro; chegada e Central reutilizam                     | C      |
-| F1-04    | ST    | Script de evolução, etapas 5–6, no CI                                        | Seis migrations de 2027 preservam os dados legados                                 | C      |
-| F1-05    | P     | `.down.sql` × 6 + script (aplicar/reverter/reaplicar/recusar)                | Todas as reversões históricas condicionadas e provadas                             | C      |
-| F1-06    | ST    | `rodada4-transacao-auditoria` (falha na auditoria desfaz a ação)             | Todas as ações citadas auditadas na mesma transação                                | C      |
-| F1-07b   | ST    | `rodada4-travas-estruturais` › F1-07b                                        | 379 rotas com a mesma regra; permissões só ampliadas por `estoque.conferir`        | C      |
-| F1-12b   | ST    | `rodada4-travas-estruturais` › F1-12b                                        | 381 rotas da linha de base presentes; uma nova; nenhuma removida                   | C      |
-| F1-13    | ST    | `rodada4-travas-estruturais` › F1-13; `web/rodada4-menu`                     | 54 páginas; migrations antigas byte a byte; "Materiais aprovados" de volta ao menu | C      |
-| F2-07    | ST    | `rodada4-transacao-auditoria` › 22 falhas injetadas + 6 pontos nomeados      | Nada parcial em nenhuma tabela; mesma chave depois cria uma vez                    | C      |
-| F3-04    | ST    | `rodada4-tempo-compras-ajuda` › antes/depois do horário, virada de dia, fuso | Bug do fuso fixo corrigido (§3)                                                    | C      |
-| F3-20b   | ST    | `rodada4-transacao-auditoria` › auditoria da chegada lida pela rota          | Ator, sessão do tablet, resumo e detalhes sem preço nem PIN                        | C      |
-| F3-25    | ST    | `rodada4-tempo-compras-ajuda` › problema nas peças                           | Recebe, registra divergência, aparece na Central; sem problema não bloqueia        | C      |
-| F4-07d   | ST    | `rodada4-tempo-compras-ajuda` › 23:30/00:30 SP × UTC                         | Presença, fila, Meus Ganhos e planejamento viram de dia/semana no fuso certo       | C      |
-| F5-04    | ST    | `rodada4-modelos-negociacao` › F5-04; E2E transversal l. 365                 | Reforma: 3 tarefas → inspeção → embalagem → pronta                                 | C      |
-| F5-10    | ST    | `rodada4-modelos-negociacao` › F5-10 (2)                                     | Cabeceira: executor nunca inspeciona; substituto habilitado; embalagem             | C      |
-| F6-07c   | ST    | `rodada4-tempo-compras-ajuda` › F6-07c (3); `rodada4-concorrencia`           | Compras paralelas nunca passam da necessidade                                      | C      |
-| F6-08    | ST    | `rodada4-tempo-compras-ajuda` › F6-08 (2)                                    | Cancelar pedido confirmado devolve a quantidade à fila                             | C      |
-| F7-14    | ST    | `rodada4-tempo-compras-ajuda` › F7-14 (paginação)                            | Bug do limite de 200 corrigido (§3); histórico inteiro alcançável                  | C      |
-| F7-16    | ST    | `rodada4-travas-estruturais` › termos jurídicos (com controle positivo)      | Bug de texto corrigido (§3); trava contra termo novo                               | C      |
-| F8-10    | ST    | `rodada4-modelos-negociacao` › F8-10                                         | MO com OS e peça; viagens com EN-/RT-                                              | C      |
-| F8-20    | ST    | `rodada4-modelos-negociacao` › F8-20                                         | Pedido e recusa sem justificativa: 400 e nada gravado                              | C      |
-| F8-27b   | ST    | `rodada4-modelos-negociacao` › F8-27b                                        | Abaixo do pago: 422 e nada muda; igual ao pago: aprovado                           | C      |
-| F8-27c   | ST    | `rodada4-modelos-negociacao` › F8-27c                                        | Aprovar não troca titular nem recebedor                                            | C      |
-| F10-01   | ST    | `rodada4-travas-estruturais` › F10-01; `web/rodada4-menu`                    | Seis áreas na ordem, cabeçalhos ≠ links homônimos, itens por perfil                | C      |
-| F10-13k2 | ST    | `rodada4-central-indicadores` › presença (4)                                 | Ausência com impacto, link com foco, permissão `presenca.*`                        | C      |
-| F10-13l  | ST    | `rodada4-central-indicadores` › ajuda (3)                                    | Atrasada/urgente/escalada, link com foco, sai ao resolver                          | C      |
-| F10-21d  | ST    | `rodada4-central-indicadores` › aguardando material                          | Valor fixo = lista de prontidão (3 → 2)                                            | C      |
-| F10-21e  | ST    | `rodada4-central-indicadores` › etapas                                       | Em produção 2 → 1 → 0 pelas etapas reais                                           | C      |
-| F10-21g  | ST    | idem                                                                         | Prontas 1 → 0 ao agendar                                                           | C      |
-| F10-21j  | ST    | `rodada4-central-indicadores` › cobranças                                    | Vencidas no Início = Central = lista                                               | C      |
-| F10-21n  | ST    | `rodada4-central-indicadores` › etapas                                       | Retrabalho 1 → 0                                                                   | C      |
-| F10-21o  | ST    | `rodada4-central-indicadores` › cobranças                                    | A receber exato (210000 → 110000)                                                  | C      |
-| F10-21p  | ST    | idem                                                                         | Vencido exato (130000 → 30000)                                                     | C      |
-| F10-21t  | ST    | `rodada4-central-indicadores` › revisões; `cobranca` › registro da equipe    | Revisões, pedidos (Rodada 3) e registros da equipe com caso positivo               | C      |
-| F4-21    | NC    | Roteiro manual exato (`ROTEIROS-MANUAIS-RODADA-4.md` §1–§4)                  | WebKit indisponível no ambiente; aparelho físico exige pessoa                      | NC     |
-| F10-13q  | NC    | —                                                                            | Termo ambíguo (§9)                                                                 | NC     |
-| F10-19   | P     | Investigação (§9)                                                            | Não há ação canônica para "quitada antes da devolução e mantida"                   | P      |
+| ID       | Antes | Prova nova                                                                               | Resultado                                                                                                | Depois |
+| -------- | ----- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- | ------ |
+| F1-01    | ST    | `rodada4-documento-arquitetura` › F1-01 (3); CA1-02 pela homologação (§10)               | 19 seções + §20 + CA1-01..16; versão publicada conferida no fluxo seguro                                 | C      |
+| F1-02b   | ST    | `rodada4-documento-arquitetura` › F1-02b (4)                                             | Um ponto de criação por registro; chegada e Central reutilizam                                           | C      |
+| F1-04    | ST    | Script de evolução, etapas 5–6, no CI                                                    | Seis migrations de 2027 preservam os dados legados                                                       | C      |
+| F1-05    | P     | `.down.sql` × 6 + script (aplicar/reverter/reaplicar/recusar)                            | Todas as reversões históricas condicionadas e provadas                                                   | C      |
+| F1-06    | ST    | `rodada4-transacao-auditoria` (falha na auditoria desfaz a ação)                         | Todas as ações citadas auditadas na mesma transação                                                      | C      |
+| F1-07b   | ST    | `rodada4-travas-estruturais` › F1-07b                                                    | 379 rotas com a mesma regra; permissões só ampliadas por `estoque.conferir`                              | C      |
+| F1-12b   | ST    | `rodada4-travas-estruturais` › F1-12b                                                    | 381 rotas da linha de base presentes; uma nova; nenhuma removida                                         | C      |
+| F1-13    | ST    | `rodada4-travas-estruturais` › F1-13; `web/rodada4-menu`                                 | 54 páginas; migrations antigas byte a byte; "Materiais aprovados" de volta ao menu                       | C      |
+| F2-07    | ST    | `rodada4-transacao-auditoria` › 22 falhas injetadas + 6 pontos nomeados                  | Nada parcial em nenhuma tabela; mesma chave depois cria uma vez                                          | C      |
+| F3-04    | ST    | `rodada4-tempo-compras-ajuda` › antes/depois do horário, virada de dia, fuso             | Bug do fuso fixo corrigido (§3)                                                                          | C      |
+| F3-20b   | ST    | `rodada4-transacao-auditoria` › auditoria da chegada lida pela rota                      | Ator, sessão do tablet, resumo e detalhes sem preço nem PIN                                              | C      |
+| F3-25    | ST    | `rodada4-tempo-compras-ajuda` › problema nas peças                                       | Recebe, registra divergência, aparece na Central; sem problema não bloqueia                              | C      |
+| F4-07d   | ST    | `rodada4-tempo-compras-ajuda` › 23:30/00:30 SP × UTC                                     | Presença, fila, Meus Ganhos e planejamento viram de dia/semana no fuso certo                             | C      |
+| F5-04    | ST    | `rodada4-modelos-negociacao` › F5-04; E2E transversal l. 365                             | Reforma: 3 tarefas → inspeção → embalagem → pronta                                                       | C      |
+| F5-10    | ST    | `rodada4-modelos-negociacao` › F5-10 (2)                                                 | Cabeceira: executor nunca inspeciona; substituto habilitado; embalagem                                   | C      |
+| F6-07c   | ST    | `rodada4-tempo-compras-ajuda` › F6-07c (3); `rodada4-concorrencia`                       | Compras paralelas nunca passam da necessidade                                                            | C      |
+| F6-08    | ST    | `rodada4-tempo-compras-ajuda` › F6-08 (2)                                                | Cancelar pedido confirmado devolve a quantidade à fila                                                   | C      |
+| F7-14    | ST    | `rodada4-tempo-compras-ajuda` › F7-14 (paginação)                                        | Bug do limite de 200 corrigido (§3); histórico inteiro alcançável                                        | C      |
+| F7-16    | ST    | `rodada4-travas-estruturais` › termos jurídicos (com controle positivo)                  | Bug de texto corrigido (§3); trava contra termo novo                                                     | C      |
+| F8-10    | ST    | `rodada4-modelos-negociacao` › F8-10                                                     | MO com OS e peça; viagens com EN-/RT-                                                                    | C      |
+| F8-20    | ST    | `rodada4-modelos-negociacao` › F8-20                                                     | Pedido e recusa sem justificativa: 400 e nada gravado                                                    | C      |
+| F8-27b   | ST    | `rodada4-modelos-negociacao` › F8-27b                                                    | Abaixo do pago: 422 e nada muda; igual ao pago: aprovado                                                 | C      |
+| F8-27c   | ST    | `rodada4-modelos-negociacao` › F8-27c                                                    | Aprovar não troca titular nem recebedor                                                                  | C      |
+| F10-01   | ST    | `rodada4-travas-estruturais` › F10-01; `web/rodada4-menu`                                | Seis áreas na ordem, cabeçalhos ≠ links homônimos, itens por perfil                                      | C      |
+| F10-13k2 | ST    | `rodada4-central-indicadores` › presença (4)                                             | Ausência com impacto, link com foco, permissão `presenca.*`                                              | C      |
+| F10-13l  | ST    | `rodada4-central-indicadores` › ajuda (3)                                                | Atrasada/urgente/escalada, link com foco, sai ao resolver                                                | C      |
+| F10-21d  | ST    | `rodada4-central-indicadores` › aguardando material                                      | Valor fixo = lista de prontidão (3 → 2)                                                                  | C      |
+| F10-21e  | ST    | `rodada4-central-indicadores` › etapas                                                   | Em produção 2 → 1 → 0 pelas etapas reais                                                                 | C      |
+| F10-21g  | ST    | idem                                                                                     | Prontas 1 → 0 ao agendar                                                                                 | C      |
+| F10-21j  | ST    | `rodada4-central-indicadores` › cobranças                                                | Vencidas no Início = Central = lista                                                                     | C      |
+| F10-21n  | ST    | `rodada4-central-indicadores` › etapas                                                   | Retrabalho 1 → 0                                                                                         | C      |
+| F10-21o  | ST    | `rodada4-central-indicadores` › cobranças                                                | A receber exato (210000 → 110000)                                                                        | C      |
+| F10-21p  | ST    | idem                                                                                     | Vencido exato (130000 → 30000)                                                                           | C      |
+| F10-21t  | ST    | `rodada4-central-indicadores` › revisões; `cobranca` › registro da equipe                | Revisões, pedidos (Rodada 3) e registros da equipe com caso positivo                                     | C      |
+| F4-21    | NC    | Roteiro manual exato (`ROTEIROS-MANUAIS-RODADA-4.md` §1–§4)                              | WebKit indisponível no ambiente; aparelho físico exige pessoa                                            | NC     |
+| F10-13q  | NC    | `negociacao-confirmacao` › F10-13q; E2E transversal l. 697 (decisão do proprietário, §9) | Central por exceção: normal não aparece; pendência aparece; resolvida some; exceção D13 sem item próprio | C      |
+| F10-19   | P     | Investigação (§9)                                                                        | Não há ação canônica para "quitada antes da devolução e mantida"                                         | P      |
 
 Nenhum item COMPROVADO regrediu. A suíte completa no SHA final está verde (§10).
 
@@ -235,14 +235,19 @@ Nenhum item COMPROVADO regrediu. A suíte completa no SHA final está verde (§1
 - **F4-21 (NC).** Categoria **C**: só manual. O roteiro exato está em
   `docs/ROTEIROS-MANUAIS-RODADA-4.md`. A parte de rede automatizável (offline/online, resposta
   perdida, reconexão) já roda nos E2E em Chromium, separada do teste físico.
-- **F10-13q (NC).** Termo ambíguo: "(§2) Exceções". Há duas leituras possíveis:
-  - **(a)** a Central mostra **só** exceções. Isso já está provado: o E2E transversal termina
-    sem nenhum item da operação normal, e o código declara "a operação normal não aparece".
-    Nessa leitura vira **A** (automatizável, já provado);
-  - **(b)** um tipo de item próprio para "exceção administrativa" da confirmação semanal, que
-    não é projetado na Central.
+- **F10-13q — decisão do proprietário: leitura (a), gestão por exceção.** A Central mostra só o
+  que exige atenção, decisão, correção ou ação do gestor:
+  - operação normal não aparece;
+  - pendência excepcional aparece no seu tipo canônico;
+  - resolvida, desaparece;
+  - a exceção administrativa do D13, já registrada e auditada e sem outra pendência, **não**
+    cria item próprio.
 
-  Fica NC até a sua definição.
+  Não houve mudança de código: nada de fonte de estado nova, card de "exceção administrativa"
+  nem alteração do D13, do financeiro, do fechamento ou da auditoria. A prova é o teste
+  `negociacao-confirmacao.test.ts` › "F10-13q (decisão do proprietário…)", que cobre os 4
+  pontos, mais o E2E transversal (l. 697: ao fim do fluxo normal, nenhum item da OS nem do
+  profissional). Classificação: **C**.
 
 - **Defesa em profundidade (não é bug):** a justificativa da negociação (F8-20) é exigida pela
   API, mas o banco não tem `CHECK` em `reason`. Não se criou migration nesta rodada.
@@ -310,13 +315,17 @@ a operação existente e respeitou as versões protegidas.
 
 | Classificação                     | Rodada 3 | Rodada 4 |
 | --------------------------------- | -------- | -------- |
-| IMPLEMENTADO E COMPROVADO         | 238      | **272**  |
+| IMPLEMENTADO E COMPROVADO         | 238      | **273**  |
 | IMPLEMENTADO PARCIALMENTE         | 2        | **1**    |
 | IMPLEMENTADO SEM TESTE SUFICIENTE | 33       | **0**    |
 | NÃO IMPLEMENTADO                  | 0        | 0        |
 | DIVERGENTE                        | 0        | 0        |
 | SUBSTITUÍDO POR DECISÃO           | 9        | 9        |
-| NÃO COMPROVADO                    | 2        | 2        |
+| NÃO COMPROVADO                    | 2        | **1**    |
 | **Total**                         | 284      | 284      |
 
-Conta: os 33 ST e o F1-05 viraram C (238 + 34 = 272). Ficam F10-19 (P), F4-21 e F10-13q (NC).
+Conta: os 33 ST, o F1-05 e o F10-13q (decisão do proprietário) viraram C (238 + 35 = 273).
+Ficam F10-19 (P) e F4-21 (NC).
+
+SHA: o teste do F10-13q entrou em `61c3293`, que difere de `ce4b89d` só nesse arquivo de teste.
+O código de aplicação homologado continua sendo o de `ce4b89d`.
