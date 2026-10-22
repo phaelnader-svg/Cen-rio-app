@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { shortCustomerName } from '../../core/device-privacy';
 import { appendEvent } from '../../core/events/append';
+import { now } from '../../core/clock';
 import { Errors } from '../../lib/errors';
 import {
   dateOnly,
@@ -32,7 +33,7 @@ import {
   receiptCode,
   serviceOrderCode,
 } from '../commercial/common';
-import { todayIso } from '../finance/common';
+import { shopTimezone, todayIso } from '../finance/common';
 import { lockPurchaseOrder } from '../purchasing/purchase-orders';
 import { registerMaterialReceipt } from '../purchasing/receipts';
 import { pickupBalance, registerReceipt } from '../receipts/service';
@@ -73,14 +74,17 @@ const physicalUnitOf = (unit: MaterialUnit, informed?: PhysicalUnit) =>
 const arrivalCode = (n: number) => `CH-${String(n).padStart(5, '0')}`;
 const num = (v: unknown) => Number(v ?? 0);
 
-function nowHm(timeZone = 'America/Sao_Paulo') {
+/** Hora local (HH:MM) no fuso configurado da oficina, pelo relógio operacional. */
+function nowHm(timeZone: string) {
   return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone }).format(
-    new Date(),
+    now(),
   );
 }
 
 async function pieceArrivals(db: PrismaClient | Tx, device: boolean): Promise<PieceArrivalDto[]> {
-  const today = todayIso();
+  // Rodada 4 (F3-04): "hoje" e a hora atual no fuso configurado da oficina (antes, fixo em SP).
+  const tz = await shopTimezone(db);
+  const today = todayIso(tz);
   const pickups = await db.pickupRequest.findMany({
     where: {
       status: { in: [...PIECE_STATUSES] },
@@ -97,7 +101,7 @@ async function pieceArrivals(db: PrismaClient | Tx, device: boolean): Promise<Pi
     },
     orderBy: [{ scheduledDate: 'asc' }, { windowStart: 'asc' }],
   });
-  const now = nowHm();
+  const nowLocal = nowHm(tz);
   const out: PieceArrivalDto[] = [];
   for (const p of pickups) {
     const balance = await pickupBalance(db as Tx, p.id);
@@ -117,7 +121,7 @@ async function pieceArrivals(db: PrismaClient | Tx, device: boolean): Promise<Pi
     let stage: PieceArrivalStage;
     let stageLabel: string;
     if (p.status === 'AGENDADA') {
-      const reached = Boolean(p.windowStart && now >= p.windowStart);
+      const reached = Boolean(p.windowStart && nowLocal >= p.windowStart);
       stage = reached ? 'RETIRADA_PREVISTA' : 'RETIRADA_HOJE';
       stageLabel = reached
         ? `Retirada prevista — equipe no cliente a partir das ${p.windowStart}`
@@ -168,7 +172,7 @@ async function itemsAwaitingConference(db: PrismaClient | Tx, poIds: string[]) {
 }
 
 async function materialArrivals(db: PrismaClient | Tx): Promise<MaterialArrivalDueDto[]> {
-  const today = todayIso();
+  const today = todayIso(await shopTimezone(db));
   const pos = await db.purchaseOrder.findMany({
     where: { status: { in: ['CONFIRMADO', 'PARCIALMENTE_RECEBIDO'] } },
     include: {

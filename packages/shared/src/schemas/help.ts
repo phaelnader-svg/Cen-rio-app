@@ -57,7 +57,11 @@ export const cancelHelpRequestSchema = z.object({
 
 export const helpListQuerySchema = z.object({
   status: z.enum(HELP_STATUSES).optional(),
+  /** Rodada 4 (F7-14): página seguinte do histórico — só pedidos criados antes deste instante. */
+  before: z.string().datetime().optional(),
 });
+/** Tamanho de cada página da lista de pedidos de ajuda. */
+export const HELP_LIST_PAGE = 200;
 
 export const updateSkillsSchema = z.object({
   skills: z.array(z.enum(SKILLS)).max(SKILLS.length),

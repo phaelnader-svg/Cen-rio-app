@@ -9,7 +9,8 @@ import type {
   ProposalStatus,
   RescheduleProposalDto,
 } from '@cenario/shared';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { HELP_LIST_PAGE } from '@cenario/shared';
+import { keepPreviousData, useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { api } from './api';
 
 /** Fase 8 — pedidos de ajuda, propostas de reprogramação, histórico e competências. */
@@ -27,6 +28,24 @@ export const useHelpRequests = (status?: HelpStatus) =>
     queryFn: () =>
       api<HelpRequestDto[]>(`/api/v1/help-requests${status ? `?status=${status}` : ''}`),
     placeholderData: keepPreviousData,
+    refetchInterval: 60_000,
+  });
+
+/**
+ * Rodada 4 (F7-14): pedidos de um status em páginas por data de criação (mais novos primeiro);
+ * "Carregar mais antigos" busca a página seguinte — o histórico nunca fica inalcançável.
+ */
+export const useHelpRequestsByStatus = (status: HelpStatus) =>
+  useInfiniteQuery({
+    queryKey: ['help-requests', 'paged', status],
+    // Primeira página: tudo (instante-limite bem no futuro); as seguintes, antes do último visto.
+    initialPageParam: '9999-12-31T23:59:59.999Z',
+    queryFn: ({ pageParam }) =>
+      api<HelpRequestDto[]>(
+        `/api/v1/help-requests?status=${status}&before=${encodeURIComponent(pageParam)}`,
+      ),
+    getNextPageParam: (last) =>
+      last.length < HELP_LIST_PAGE ? undefined : last[last.length - 1]!.createdAt,
     refetchInterval: 60_000,
   });
 

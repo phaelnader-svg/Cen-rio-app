@@ -357,7 +357,7 @@ export const PERMISSIONS = {
     group: 'financeiro',
     label: 'Ver os próprios ganhos',
     description:
-      'No tablet, com PIN: o tapeceiro (valores por peça) e a logística (valores de viagem) veem só os próprios ganhos, pagamentos e ajustes. Nunca valores de outras pessoas, dos clientes, margens ou salário. Não dá acesso ao financeiro.',
+      'No tablet, com PIN: o tapeceiro (valores por peça) e a logística (valores de viagem) veem só os próprios ganhos, pagamentos e ajustes. Nunca valores de outras pessoas, dos clientes, margens ou custos da equipe fixa. Não dá acesso ao financeiro.',
   },
   'auditoria.ver': {
     group: 'sistema',

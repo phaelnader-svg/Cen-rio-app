@@ -31,6 +31,7 @@ import { useHelpCandidates } from '@/lib/issues';
 import {
   useHelpRequest,
   useHelpRequests,
+  useHelpRequestsByStatus,
   usePlanningActions,
   useProposals,
   useSkills,
@@ -59,15 +60,21 @@ const TAB_LABEL: Record<HelpStatus, string> = {
 
 /** Pedidos de ajuda por status, com a avaliação dos candidatos de cada atribuição. */
 export function HelpRequestsPage() {
-  useFocusParam();
+  const focus = useFocusParam();
   const can = useCan();
   const q = useHelpRequests();
-  const [tab, setTab] = useState<HelpStatus>('PENDENTE');
+  const [chosenTab, setTab] = useState<HelpStatus | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const { m, error } = useSend();
+  // Rodada 4 (F10-14): o link `?foco=<id>` abre a aba do status do pedido (não sempre Pendentes),
+  // até a pessoa escolher outra aba.
+  const focused = useHelpRequest(focus);
+  const tab: HelpStatus = chosenTab ?? focused.data?.status ?? 'PENDENTE';
+  // Rodada 4 (F7-14): a aba ativa vem paginada pelo próprio status (histórico sem limite fixo).
+  const paged = useHelpRequestsByStatus(tab);
   const list = q.data ?? [];
   const count = (s: HelpStatus) => list.filter((r) => r.status === s).length;
-  const rows = list.filter((r) => r.status === tab);
+  const rows = paged.data?.pages.flat() ?? [];
   return (
     <>
       <PageHeader
@@ -102,7 +109,7 @@ export function HelpRequestsPage() {
         active={tab}
         onChange={(k) => setTab(k as HelpStatus)}
       >
-        {q.isPending ? (
+        {paged.isPending ? (
           <Spinner />
         ) : rows.length === 0 ? (
           <EmptyState
@@ -172,6 +179,18 @@ export function HelpRequestsPage() {
               </tbody>
             </table>
           </Card>
+        )}
+        {paged.hasNextPage && (
+          <div className="mt-4 flex justify-center">
+            <Button
+              variant="secondary"
+              loading={paged.isFetchingNextPage}
+              onClick={() => void paged.fetchNextPage()}
+              data-testid="help-load-more"
+            >
+              Carregar mais antigos
+            </Button>
+          </div>
         )}
       </Tabs>
       {open && <HelpDetailDialog id={open} onClose={() => setOpen(null)} />}

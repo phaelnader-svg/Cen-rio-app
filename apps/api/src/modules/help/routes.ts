@@ -12,6 +12,7 @@ import {
   cancelHelpRequestSchema,
   compareTasks,
   createHelpRequestSchema,
+  HELP_LIST_PAGE,
   helpListQuerySchema,
   helpRequestCode,
   localParts,
@@ -378,11 +379,16 @@ export async function helpRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/help-requests', { config: { access: VIEW } }, async (request) => {
     const q = helpListQuerySchema.parse(request.query);
+    // Rodada 4 (F7-14): com `before`, a página seguinte (mais antigos, por data de criação) — o
+    // histórico deixa de sumir depois de 200 pedidos. Sem ele, a primeira página de sempre.
     const rows = await prisma.helpRequest.findMany({
-      where: q.status ? { status: q.status } : {},
+      where: {
+        ...(q.status ? { status: q.status } : {}),
+        ...(q.before ? { createdAt: { lt: new Date(q.before) } } : {}),
+      },
       include: helpInclude,
-      orderBy: [{ urgent: 'desc' }, { createdAt: 'desc' }],
-      take: 200,
+      orderBy: q.before ? [{ createdAt: 'desc' }] : [{ urgent: 'desc' }, { createdAt: 'desc' }],
+      take: HELP_LIST_PAGE,
     });
     return rows.map((r) => helpDto(r));
   });
