@@ -249,8 +249,7 @@ export function Landing({ preview }: { preview: boolean }) {
           )}
         >
           <div>
-            <p className="text-sm font-semibold text-brand-700">Cenário Gestão</p>
-            <h1 className="mt-3 text-4xl leading-[1.1] font-semibold tracking-tight text-balance sm:text-5xl">
+            <h1 className="text-4xl leading-[1.1] font-semibold tracking-tight text-balance sm:text-5xl">
               Feito dentro de uma tapeçaria, para tapeçarias.
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-7 text-pretty text-ink-soft">
