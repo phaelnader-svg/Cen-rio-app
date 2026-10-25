@@ -18,8 +18,16 @@ export interface ScreenSlot {
 }
 
 export const SITE = {
-  /** Mensalidade em reais (ex.: '490'). Um único plano. */
-  monthlyPrice: null as string | null,
+  /** Mensalidade em reais (ex.: '490,00'). Um único plano. */
+  monthlyPrice: '399,00' as string | null,
+  /**
+   * Condição do pagamento anual, definida pelo proprietário (2026-10-25). Sem o percentual
+   * decidido, a página só diz que existe; o valor é combinado na conversa.
+   */
+  annualNote:
+    'No pagamento anual a mensalidade sai com desconto. Fale com a gente para ver o valor.' as
+      | string
+      | null,
   /** WhatsApp só com dígitos, com DDI e DDD (ex.: '5511999999999'). */
   whatsappNumber: null as string | null,
   whatsappMessage: 'Olá! Quero conhecer o Cenário Gestão.',

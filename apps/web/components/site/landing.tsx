@@ -379,6 +379,11 @@ export function Landing({ preview }: { preview: boolean }) {
                 </span>
                 <span className="text-ink-muted">/ mês</span>
               </p>
+              {SITE.annualNote && (
+                <p className="mt-2 text-[15px] leading-7 text-ink-soft" data-testid="site-annual">
+                  {SITE.annualNote}
+                </p>
+              )}
               {SITE.onboarding ? (
                 <div className="mt-5">
                   <p className="text-sm font-semibold text-ink">Implantação</p>

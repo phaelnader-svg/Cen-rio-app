@@ -21,10 +21,8 @@ describe('ativação da landing', () => {
     Object.entries(SCREENS).map(([k, s]) => [k, { ...s, src: `/site/${k}.png` }]),
   );
 
-  it('enquanto preço, WhatsApp e prints estão pendentes, nada fica ativo em produção', () => {
-    expect(pendingItems()).toEqual(
-      expect.arrayContaining(['Valor da mensalidade', 'Número do WhatsApp']),
-    );
+  it('enquanto o WhatsApp está pendente, nada fica ativo em produção', () => {
+    expect(pendingItems()).toEqual(['Número do WhatsApp']);
     expect(siteMode({ NODE_ENV: 'production', SITE_COMERCIAL: '1' })).toBe('off');
   });
 
@@ -68,8 +66,12 @@ describe('isolamento e promessas', () => {
 
   it('não promete nada que ainda não foi decidido', () => {
     expect(code).not.toMatch(
-      /grátis|gratuit|desconto|ilimitad|fidelidade|promoç|plano (básico|profissional|premium)|anual/i,
+      /grátis|gratuit|ilimitad|fidelidade|promoç|plano (básico|profissional|premium)/i,
     );
+    // Desconto só o anual decidido pelo proprietário, e sem percentual inventado.
+    const landing = src('components/site/landing.tsx');
+    expect(landing).not.toMatch(/desconto|anual/i);
+    expect(code).not.toMatch(/\d+\s*%\s*de desconto|desconto de \d/i);
   });
 
   it('a raiz do sistema continua indo para o painel', () => {
