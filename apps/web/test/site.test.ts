@@ -28,9 +28,13 @@ describe('ativação da landing', () => {
     Object.entries(SCREENS).map(([k, s]) => [k, { ...s, src: `/site/${k}.png` }]),
   );
 
-  it('enquanto o WhatsApp está pendente, nada fica ativo em produção', () => {
-    expect(pendingItems()).toEqual(['Número do WhatsApp']);
-    expect(siteMode({ NODE_ENV: 'production', SITE_COMERCIAL: '1' })).toBe('off');
+  it('com tudo preenchido, em produção só abre com SITE_COMERCIAL=1', () => {
+    expect(pendingItems()).toEqual([]);
+    expect(siteMode({ NODE_ENV: 'production' })).toBe('off');
+    expect(siteMode({ NODE_ENV: 'production', SITE_COMERCIAL: '1' })).toBe('live');
+    expect(siteMode({ NODE_ENV: 'production', SITE_COMERCIAL: '1' }, ['Número do WhatsApp'])).toBe(
+      'off',
+    );
   });
 
   it('em produção exige SITE_COMERCIAL=1 e nenhuma pendência', () => {
@@ -49,7 +53,7 @@ describe('ativação da landing', () => {
   });
 
   it('sem número configurado não há link de WhatsApp inventado', () => {
-    expect(whatsappUrl()).toBeNull();
+    expect(whatsappUrl({ ...SITE, whatsappNumber: null })).toBeNull();
     expect(whatsappUrl(complete)).toBe(
       'https://wa.me/5500000000000?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Cen%C3%A1rio%20Gest%C3%A3o.',
     );

@@ -23,7 +23,7 @@ export const SITE = {
   /** Desconto do plano anual, em %, definido pelo proprietário (2026-10-25). */
   annualDiscountPct: 15 as number | null,
   /** WhatsApp só com dígitos, com DDI e DDD (ex.: '5511999999999'). */
-  whatsappNumber: null as string | null,
+  whatsappNumber: '5512996520615' as string | null,
   whatsappMessage: 'Olá! Quero conhecer o Cenário Gestão.',
   /** Como funciona a implantação. Sem texto definido, o bloco não aparece em produção. */
   onboarding: null as string | null,
