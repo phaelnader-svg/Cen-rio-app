@@ -11,7 +11,7 @@ export interface ScreenSlot {
   key: string;
   /** O que a tela mostra (vai para a legenda e para o texto alternativo). */
   title: string;
-  /** Print real, já desfocado, servido de /public/site. `null` = ainda não fornecido. */
+  /** Tela real do sistema com dados de exemplo, servida de /public/site. `null` = ainda não fornecida. */
   src: string | null;
   width: number;
   height: number;
@@ -30,33 +30,33 @@ export const SITE = {
   dataAnswer: null as string | null,
 };
 
-/** As quatro telas reais da operação da Cenário Estofados (prints a fornecer). */
+/** As quatro telas do sistema, capturadas com dados de exemplo (clientes, equipe e valores fictícios). */
 export const SCREENS = {
   inicio: {
     key: 'inicio',
     title: 'Início do painel do gestor',
-    src: null,
+    src: '/site/inicio.webp',
     width: 1440,
     height: 900,
   },
   producao: {
     key: 'producao',
-    title: 'Produção: serviços a planejar e quadro de produção',
-    src: null,
+    title: 'Quadro de produção por funcionário',
+    src: '/site/producao.webp',
     width: 1440,
     height: 900,
   },
   tablet: {
     key: 'tablet',
-    title: 'Meu dia do tapeceiro, no tablet da oficina',
-    src: null,
+    title: 'Minha semana do tapeceiro, no tablet da oficina',
+    src: '/site/tablet.webp',
     width: 1280,
     height: 800,
   },
   financeiro: {
     key: 'financeiro',
-    title: 'Fechamento semanal da mão de obra',
-    src: null,
+    title: 'Custos e resultado por OS',
+    src: '/site/financeiro.webp',
     width: 1440,
     height: 900,
   },

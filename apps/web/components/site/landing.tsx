@@ -94,7 +94,7 @@ function Screen({
       </Card>
       {slot.src && (
         <figcaption className="mt-3 text-sm text-ink-muted">
-          {slot.title}, na Cenário Estofados. Dados de clientes desfocados.
+          {slot.title}. Dados de exemplo.
         </figcaption>
       )}
     </figure>
@@ -229,7 +229,7 @@ export function Landing({ preview }: { preview: boolean }) {
       {preview && (
         <div className="border-b border-warn-600/20 bg-warn-50 px-4 py-2 text-center text-xs font-medium text-warn-600">
           Pré-visualização de desenvolvimento. Em produção esta página só abre com SITE_COMERCIAL=1
-          e sem pendências (preço, WhatsApp e prints).
+          e sem pendências (preço e WhatsApp).
         </div>
       )}
 
