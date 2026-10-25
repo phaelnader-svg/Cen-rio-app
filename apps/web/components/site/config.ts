@@ -20,14 +20,8 @@ export interface ScreenSlot {
 export const SITE = {
   /** Mensalidade em reais (ex.: '490,00'). Um único plano. */
   monthlyPrice: '399,00' as string | null,
-  /**
-   * Condição do pagamento anual, definida pelo proprietário (2026-10-25). Sem o percentual
-   * decidido, a página só diz que existe; o valor é combinado na conversa.
-   */
-  annualNote:
-    'No pagamento anual a mensalidade sai com desconto. Fale com a gente para ver o valor.' as
-      | string
-      | null,
+  /** Desconto do plano anual, em %, definido pelo proprietário (2026-10-25). */
+  annualDiscountPct: 15 as number | null,
   /** WhatsApp só com dígitos, com DDI e DDD (ex.: '5511999999999'). */
   whatsappNumber: null as string | null,
   whatsappMessage: 'Olá! Quero conhecer o Cenário Gestão.',
@@ -90,6 +84,20 @@ export function siteMode(
 ): SiteMode {
   if (env.NODE_ENV !== 'production') return 'preview';
   return env.SITE_COMERCIAL === '1' && pending.length === 0 ? 'live' : 'off';
+}
+
+const brl = (cents: number) =>
+  (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Frase do plano anual, calculada a partir da mensalidade e do desconto (nunca digitada à mão). */
+export function annualOffer(site: typeof SITE = SITE): string | null {
+  if (!site.monthlyPrice || !site.annualDiscountPct) return null;
+  const monthlyCents = Math.round(
+    Number(site.monthlyPrice.replace(/\./g, '').replace(',', '.')) * 100,
+  );
+  if (!Number.isFinite(monthlyCents) || monthlyCents <= 0) return null;
+  const discounted = Math.round((monthlyCents * (100 - site.annualDiscountPct)) / 100);
+  return `No plano anual, ${site.annualDiscountPct}% de desconto: R$ ${brl(discounted)} por mês, ou R$ ${brl(discounted * 12)} no ano.`;
 }
 
 export function whatsappUrl(site: typeof SITE = SITE): string | null {

@@ -9,7 +9,7 @@ import {
   type ButtonSize,
   type ButtonVariant,
 } from '@/components/ui/button-styles';
-import { SCREENS, SITE, whatsappUrl, type ScreenSlot } from './config';
+import { SCREENS, SITE, annualOffer, whatsappUrl, type ScreenSlot } from './config';
 
 /**
  * Landing comercial (/conheca). Renderizada no servidor, sem sessão e sem chamadas à API: usa só
@@ -224,6 +224,7 @@ function Lines({ items }: { items: string[] }) {
 
 export function Landing({ preview }: { preview: boolean }) {
   const price = SITE.monthlyPrice;
+  const annual = annualOffer();
   return (
     <div className="min-h-dvh bg-canvas text-ink">
       {preview && (
@@ -379,9 +380,9 @@ export function Landing({ preview }: { preview: boolean }) {
                 </span>
                 <span className="text-ink-muted">/ mês</span>
               </p>
-              {SITE.annualNote && (
+              {annual && (
                 <p className="mt-2 text-[15px] leading-7 text-ink-soft" data-testid="site-annual">
-                  {SITE.annualNote}
+                  {annual}
                 </p>
               )}
               {SITE.onboarding ? (

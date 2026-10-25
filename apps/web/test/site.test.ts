@@ -5,7 +5,14 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { SCREENS, SITE, pendingItems, siteMode, whatsappUrl } from '../components/site/config';
+import {
+  SCREENS,
+  SITE,
+  annualOffer,
+  pendingItems,
+  siteMode,
+  whatsappUrl,
+} from '../components/site/config';
 
 const src = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 const SITE_FILES = [
@@ -68,10 +75,16 @@ describe('isolamento e promessas', () => {
     expect(code).not.toMatch(
       /grátis|gratuit|ilimitad|fidelidade|promoç|plano (básico|profissional|premium)/i,
     );
-    // Desconto só o anual decidido pelo proprietário, e sem percentual inventado.
-    const landing = src('components/site/landing.tsx');
-    expect(landing).not.toMatch(/desconto|anual/i);
-    expect(code).not.toMatch(/\d+\s*%\s*de desconto|desconto de \d/i);
+    // Desconto só o anual decidido pelo proprietário, calculado da configuração.
+    expect(src('components/site/landing.tsx')).not.toMatch(/desconto|anual/i);
+  });
+
+  it('o plano anual é calculado a partir da mensalidade e do desconto', () => {
+    expect(annualOffer()).toBe(
+      'No plano anual, 15% de desconto: R$ 339,15 por mês, ou R$ 4.069,80 no ano.',
+    );
+    expect(annualOffer({ ...SITE, annualDiscountPct: null })).toBeNull();
+    expect(annualOffer({ ...SITE, monthlyPrice: null })).toBeNull();
   });
 
   it('a raiz do sistema continua indo para o painel', () => {
