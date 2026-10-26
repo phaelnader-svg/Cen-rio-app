@@ -280,3 +280,11 @@ São Paulo são ~1,5× os de us-east1.
 | `infra/prod/gcp/testes/test_runner_prod.py`                                                                                | runner no perfil prod: identidade, audiência, VM, unidades, banco, pacote só `infra/prod`, primeira publicação, partida incoerente recusada, ferramentas compartilhadas idênticas                          |
 | `infra/prod/gcp/testes/ensaio-primeiro-deploy.sh`                                                                          | pilha REAL de produção com as imagens de 9fb1786: banco novo → ponto (vazio) → preflight → 31 migrations → ativar → bootstrap mínimo → acesso → login do gestor → restauração idêntica → rollback ao ponto |
 | Suítes da homologação (`test_runner.py`, `test_bootstrap.sh`, `test_vm_sh.sh`, `test_homolog_sh.sh`, `test_ssh_agente.sh`) | sem regressão                                                                                                                                                                                              |
+
+## Anexo — página comercial (`/conheca`)
+
+- Ligada pelo Compose (`SITE_COMERCIAL: '1'` no serviço `web`). A página só abre se também não houver
+  pendência em `apps/web/components/site/config.ts` (preço, WhatsApp, telas); caso contrário, 404.
+- Para desligar sem nova imagem: `SITE_COMERCIAL: '0'` e recriar só o `web`.
+- Indexação: o Caddy mantém `X-Robots-Tag: noindex, nofollow` em tudo, exceto `/conheca` e `/site/*`
+  (teste `apps/api/test/proxy-caddy-prod.test.ts`). Painel, tablet e API continuam fora dos buscadores.

@@ -104,6 +104,9 @@ services:
     environment:
       NODE_ENV: production
       NODE_OPTIONS: --max-old-space-size=448
+      # Página comercial pública em /conheca (apps/web/components/site/config.ts). Só abre se
+      # também não houver pendência na configuração; "0" a desliga (404) sem nova imagem.
+      SITE_COMERCIAL: '1'
     mem_limit: 640m
     networks: [interna]
     logging: *logging
