@@ -109,6 +109,9 @@ services:
     environment:
       NODE_ENV: production
       NODE_OPTIONS: --max-old-space-size=256
+      # Página comercial /conheca, como em produção (infra/prod/docker-compose.prod.yml). O
+      # Caddyfile.homolog continua mandando noindex em tudo: a homologação nunca é indexada.
+      SITE_COMERCIAL: '1'
     mem_limit: 448m
     networks: [interna]
     logging: *logging
