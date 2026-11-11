@@ -530,6 +530,36 @@ export async function materialSummary(
     (a, l) => a + realizedOsMaterialCost({ ...l, removed: false }),
     0,
   );
+  // Vínculo com registro formal que depois teve ESTORNO de recebimento: nada muda sozinho (o estorno
+  // pode ser parcial e o vínculo continuar certo), mas o resultado pede revisão ao financeiro.
+  const linked = osLines.filter((l) => l.reconciliation === 'VINCULADO');
+  let linkedReversed = 0;
+  if (linked.length) {
+    // Linha de recebimento por trás de cada vínculo com lançamento (`receipt_line:<id>`).
+    const costLine = new Map(
+      ledger.map((c) => [c.id, /^receipt_line:(.+)$/.exec(c.sourceKey)?.[1] ?? null]),
+    );
+    const receiptLineIds = linked
+      .map((l) => (l.linkedCostId ? costLine.get(l.linkedCostId) : null))
+      .filter((x): x is string => !!x);
+    const itemIds = linked.map((l) => l.linkedPurchaseItemId).filter((x): x is string => !!x);
+    const reversed = await db.materialReceiptReversal.findMany({
+      where: {
+        OR: [
+          { receiptLineId: { in: receiptLineIds } },
+          { line: { purchaseOrderItemId: { in: itemIds } } },
+        ],
+      },
+      select: { receiptLineId: true, line: { select: { purchaseOrderItemId: true } } },
+    });
+    const hitLines = new Set(reversed.map((r) => r.receiptLineId));
+    const hitItems = new Set(reversed.map((r) => r.line.purchaseOrderItemId));
+    linkedReversed = linked.filter(
+      (l) =>
+        (l.linkedPurchaseItemId !== null && hitItems.has(l.linkedPurchaseItemId)) ||
+        (l.linkedCostId !== null && hitLines.has(costLine.get(l.linkedCostId) ?? '')),
+    ).length;
+  }
   const informedRealized = ledger
     .filter((l) => l.source === OS_MATERIAL_SOURCE)
     .reduce((a, l) => a + l.amountCents, 0);
@@ -545,6 +575,7 @@ export async function materialSummary(
     mixedSources: pending.length > 0,
     pendingReconciliationLines: pending.length,
     pendingReconciliationCents: pendingCents,
+    linkedReversedLines: linkedReversed,
     activeReservations: reservations.length,
     lines: ledger.map((l) => ({
       id: l.id,

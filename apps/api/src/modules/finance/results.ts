@@ -151,6 +151,10 @@ export async function orderResult(
     warnings.push(
       `Conciliação pendente: ${materials.pendingReconciliationLines} material(is) da lista da OS com custo informado (${formatCents(materials.pendingReconciliationCents)} no realizado) e a OS também tem custo formal (compra, estoque ou sobra). O valor continua contando até o financeiro vincular ao registro formal (se for o mesmo material) ou marcar como distinto, na aba Materiais da OS.`,
     );
+  if (materials.linkedReversedLines)
+    warnings.push(
+      `Conciliação a revisar: ${materials.linkedReversedLines} material(is) da lista da OS vinculado(s) a compra formal que teve estorno de recebimento. O custo informado continua fora do resultado; confira se o vínculo ainda vale ou desfaça-o na aba Materiais da OS.`,
+    );
   if (c.delivered && materials.activeReservations)
     warnings.push(
       `Material reservado ainda não teve consumo confirmado (${materials.activeReservations} reserva(s)): o custo realizado está subestimado até registrar o consumo ou liberar a reserva.`,

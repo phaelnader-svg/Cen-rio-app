@@ -274,6 +274,8 @@ export interface MaterialCostSummaryDto {
   /** Fase 1: linhas pendentes de conciliação e quanto do realizado está em risco de duplicidade. */
   pendingReconciliationLines: number;
   pendingReconciliationCents: number;
+  /** Fase 1: linhas vinculadas a registro formal que depois teve estorno de recebimento (revisar). */
+  linkedReversedLines: number;
   lines: MaterialCostLineDto[];
 }
 

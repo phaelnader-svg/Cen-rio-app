@@ -302,6 +302,48 @@ describe('A. Conciliação do custo de material (formal × informado na OS)', ()
     expect(list.materials[0].reconciliation.status).toBe('PENDENTE');
   });
 
+  it('vínculo com compra que depois teve ESTORNO de recebimento: nada muda sozinho, mas o resultado pede revisão', async () => {
+    const admin = await loginAdmin(app);
+    const f = await formalFabric(admin, 'Cliente Conciliação Estorno');
+    const line = ok(
+      await send(admin, 'POST', L(f.so.id), {
+        description: 'Linho',
+        purchased: true,
+        costCents: 54000,
+      }),
+      201,
+    ).materials[0];
+    ok(
+      await send(admin, 'POST', R(f.so.id, line.id), {
+        mode: 'VINCULADO',
+        costId: f.entry.id,
+        version: line.version,
+      }),
+    );
+    let r = await result(admin, f.so.id);
+    expect(r.materials.linkedReversedLines).toBe(0);
+    expect(r.warnings.join(' ')).not.toMatch(/Conciliação a revisar/);
+    const informedBefore = r.materials.informedCents;
+    // Estorno parcial do recebimento (2 de 12 m).
+    const receiptLine = await db().materialReceiptLine.findFirstOrThrow({
+      where: { purchaseOrderItemId: f.item.id },
+    });
+    ok(
+      await send(admin, 'POST', `/api/v1/material-receipts/lines/${receiptLine.id}/reverse`, {
+        quantity: 2,
+        reason: 'Defeito no tecido',
+      }),
+    );
+    r = await result(admin, f.so.id);
+    // O formal cai pelo estorno (fluxo existente); o vínculo e o informado NÃO mudam sozinhos.
+    expect(r.materials.consumedCents).toBe(54000 - 9000);
+    expect(r.materials.informedCents).toBe(informedBefore);
+    expect(r.materials.linkedReversedLines).toBe(1);
+    expect(r.warnings.join(' ')).toMatch(/Conciliação a revisar: 1 material/);
+    const list = ok(await admin.get(L(f.so.id)));
+    expect(list.materials[0].reconciliation.status).toBe('VINCULADO');
+  });
+
   it('validações e permissões: registro de outra OS, sem custo formal, formato, versão, quem pode', async () => {
     const admin = await loginAdmin(app);
     const f = await formalFabric(admin, 'Cliente Conciliação Regras');
