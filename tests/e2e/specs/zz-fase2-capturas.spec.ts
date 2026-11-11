@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
-import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice } from './helpers';
 import { openServiceOrder } from './os-helpers';
 
 /**
@@ -126,8 +126,21 @@ test('capturas da Fase 2 (painel e tablet) em 1440 e 390 px', async ({ page, bro
   }
 
   // Tablet: tarefa (essencial + "Mais detalhes") e "Aguardando chegada" unificada.
-  const workers = await call(page, 'GET', '/api/v1/production/workers');
-  const marcioId = workers.find((w: { displayName: string }) => w.displayName === 'Márcio').userId;
+  // Tapeceiro próprio do teste ([TESTE F2]): a tela "Meu dia" mostra só as tarefas desta OS,
+  // sem depender das tarefas que outros specs deixam no mesmo banco E2E.
+  const roles = (await call(page, 'GET', '/api/roles')) as { id: string; key: string }[];
+  const name = `Tapeceiro F2 ${tag}`;
+  const pin = String(100000 + (Date.now() % 900000));
+  const emp = await call(page, 'POST', '/api/employees', {
+    fullName: `[TESTE F2] ${name}`,
+    displayName: name,
+    jobTitle: 'Tapeceiro (teste)',
+    color: '#557799',
+    roleIds: [roles.find((r) => r.key === 'tapeceiro')!.id],
+    pin,
+  });
+  const workerId = emp.userId ?? emp.user?.id;
+  expect(workerId, JSON.stringify(emp)).toBeTruthy();
   const week = (() => {
     const d = new Date(`${DAY}T12:00:00Z`);
     d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
@@ -141,7 +154,7 @@ test('capturas da Fase 2 (painel e tablet) em 1440 e 390 px', async ({ page, bro
     });
   const added = await call(page, 'POST', `/api/v1/production-plans/${plan.id}/items`, {
     serviceOrderId: so.id,
-    principalUserId: marcioId,
+    principalUserId: workerId,
     date: DAY,
     reason: 'Capturas da Fase 2',
   });
@@ -151,13 +164,21 @@ test('capturas da Fase 2 (painel e tablet) em 1440 e 390 px', async ({ page, bro
       version: draft.version,
     });
   }
-  type T = { id: string; title: string; assignee: { userId: string } | null };
+  type T = {
+    id: string;
+    title: string;
+    serviceOrder: { id: string };
+    assignee: { userId: string } | null;
+  };
   const tasks = added.tasks as T[];
-  const task = tasks.find((x) => x.assignee?.userId === marcioId) ?? tasks[0]!;
-  await setPin(page, 'Márcio', '603917');
+  // Só tarefas desta OS e deste tapeceiro.
+  const mine = tasks.filter((x) => x.serviceOrder.id === so.id && x.assignee?.userId === workerId);
+  expect(mine.length, 'tarefas da OS para o tapeceiro do teste').toBeGreaterThan(0);
+  const task = mine[0]!;
   for (const v of VIEWPORTS) {
-    const code = await registerDevice(page, `Tablet Márcio capturas ${tag} ${v.name}`, 'Márcio');
-    const t = await openTablet(browser, code, '603917', {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const code = await registerDevice(page, `Tablet capturas ${tag} ${v.name}`, name);
+    const t = await openTablet(browser, code, pin, {
       width: v.width,
       height: v.height,
       isMobile: v.name === '390',
