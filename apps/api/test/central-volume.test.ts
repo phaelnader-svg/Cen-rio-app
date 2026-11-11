@@ -88,6 +88,10 @@ describe('F10-15: Central sob volume (contagem exata, consultas constantes)', ()
       }
       made = n;
       await admin.get('/api/v1/attention'); // aquece (planos e conexões)
+      // A autenticação renova a sessão (um UPDATE) quando passam 60 s desde o último uso; se esse
+      // limite caísse entre o aquecimento e a medição, a consulta extra não teria relação com a
+      // Central. Marca a sessão como recém-usada por outro cliente (fora da contagem).
+      await db().session.updateMany({ data: { lastSeenAt: new Date() } });
       sql = 0;
       rows = 0;
       counting = true;
