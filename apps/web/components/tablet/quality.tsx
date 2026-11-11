@@ -1,6 +1,11 @@
 'use client';
 
-import type { CheckResult, InspectionDto, ProductionTaskDto } from '@cenario/shared';
+import type {
+  AttachmentEntity,
+  CheckResult,
+  InspectionDto,
+  ProductionTaskDto,
+} from '@cenario/shared';
 import {
   CHECK_RESULT_LABEL,
   FULFILLMENT_STAGE_LABEL,
@@ -32,6 +37,7 @@ import { Alert, Spinner } from '@/components/ui/misc';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { useInspection, useInspections, useLocations, usePackagingRecord } from '@/lib/quality';
+import { uploadPhoto } from '@/lib/photos';
 import { useOnline } from './tasks';
 
 /**
@@ -240,7 +246,7 @@ function ChecklistItem({
   );
 }
 
-function PhotoButton({ entityType, entityId }: { entityType: string; entityId: string }) {
+function PhotoButton({ entityType, entityId }: { entityType: AttachmentEntity; entityId: string }) {
   const { m, error } = useSend();
   return (
     <div>
@@ -255,12 +261,8 @@ function PhotoButton({ entityType, entityId }: { entityType: string; entityId: s
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (!file) return;
-            const fd = new FormData();
-            fd.set('entityType', entityType);
-            fd.set('entityId', entityId);
-            fd.set('file', file);
             m.mutate({
-              run: () => api('/api/v1/attachments', { method: 'POST', body: fd }),
+              run: () => uploadPhoto({ entityType, entityId, file }),
               ok: 'Foto registrada.',
             });
             e.target.value = '';

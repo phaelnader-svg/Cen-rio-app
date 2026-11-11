@@ -514,17 +514,24 @@ enum FileVisibility {
 /// Metadados de arquivos privados (fotos e documentos). O conteúdo fica no
 /// armazenamento privado e só é servido por rota autenticada.
 model StoredFile {
-  id           String         @id @default(uuid()) @db.Uuid
-  storageKey   String         @unique @map("storage_key") @db.VarChar(200)
-  purpose      String         @db.VarChar(40)
-  originalName String         @map("original_name") @db.VarChar(200)
-  mimeType     String         @map("mime_type") @db.VarChar(100)
-  sizeBytes    Int            @map("size_bytes")
-  sha256       String         @db.Char(64)
-  visibility   FileVisibility @default(PRIVATE)
-  uploadedById String?        @map("uploaded_by_id") @db.Uuid
-  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz(3)
+  id                String         @id @default(uuid()) @db.Uuid
+  storageKey        String         @unique @map("storage_key") @db.VarChar(200)
+  purpose           String         @db.VarChar(40)
+  originalName      String         @map("original_name") @db.VarChar(200)
+  mimeType          String         @map("mime_type") @db.VarChar(100)
+  sizeBytes         Int            @map("size_bytes")
+  sha256            String         @db.Char(64)
+  visibility        FileVisibility @default(PRIVATE)
+  uploadedById      String?        @map("uploaded_by_id") @db.Uuid
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  deletedAt         DateTime?      @map("deleted_at") @db.Timestamptz(3)
+  /// Reformulação, Fase 2: foto tratada (orientada, sem metadados, reduzida). NULL = anterior.
+  processedAt       DateTime?      @map("processed_at") @db.Timestamptz(3)
+  width             Int?
+  height            Int?
+  thumbKey          String?        @unique @map("thumb_key") @db.VarChar(200)
+  thumbSizeBytes    Int?           @map("thumb_size_bytes")
+  originalSizeBytes Int?           @map("original_size_bytes")
 
   uploadedBy    User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   employeePhoto Employee?   @relation("EmployeePhoto")

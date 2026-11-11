@@ -323,6 +323,11 @@ export interface AttachmentDto {
   entityType: AttachmentEntity;
   entityId: string;
   url: string;
+  /** Reformulação, Fase 2: miniatura (gerada no envio; para fotos antigas, na leitura). */
+  thumbUrl: string;
+  /** Dimensões da foto tratada (null nas fotos anteriores à Fase 2). */
+  width: number | null;
+  height: number | null;
   caption: string | null;
   mimeType: string;
   createdBy: string | null;

@@ -1,5 +1,7 @@
 import type { AttachmentEntity } from '@cenario/shared';
 import type { PrismaClient, StoredFile } from '@cenario/db';
+import type { Readable } from 'node:stream';
+import { sanitizeLegacy, thumbnail, type ImageMime } from '../../core/storage/image';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Errors } from '../../lib/errors';
 import { VIEW_PERMISSIONS, allowed, viewableAsMeasurementAssignee } from '../attachments/policy';
@@ -27,26 +29,74 @@ const READ_POLICIES: Record<
   },
 };
 
+const IMAGE_MIMES = new Set<string>(['image/jpeg', 'image/png', 'image/webp']);
+
+async function toBuffer(stream: Readable) {
+  const parts: Buffer[] = [];
+  for await (const c of stream) parts.push(c as Buffer);
+  return Buffer.concat(parts);
+}
+
+const secureHeaders = {
+  'cache-control': 'private, max-age=86400, immutable',
+  'x-content-type-options': 'nosniff',
+  'content-security-policy': "default-src 'none'; sandbox",
+};
+
 export async function fileRoutes(app: FastifyInstance) {
   const { prisma, storage } = app.ctx;
 
-  app.get('/api/files/:id', { config: { access: { session: 'any' } } }, async (request, reply) => {
+  /** Carrega o registro e aplica a política de leitura da finalidade (negado por padrão). */
+  async function readable(request: FastifyRequest) {
     const { id } = idParams.parse(request.params);
     const file = await prisma.storedFile.findUnique({ where: { id } });
     if (!file || file.deletedAt) throw Errors.notFound('Arquivo');
     const policy = READ_POLICIES[file.purpose];
     if (!policy || !(await policy(request, file, prisma))) throw Errors.forbidden();
+    return file;
+  }
+
+  app.get('/api/files/:id', { config: { access: { session: 'any' } } }, async (request, reply) => {
+    const file = await readable(request);
+    const disposition = `inline; filename="${encodeURIComponent(file.originalName).replace(/"/g, '')}"`;
+    // Fase 2: foto anterior ao tratamento sai SEM metadados (EXIF/GPS), sem regravar o original.
+    if (!file.processedAt && IMAGE_MIMES.has(file.mimeType)) {
+      const { stream } = await storage.read(file.storageKey);
+      const clean = await sanitizeLegacy(await toBuffer(stream), file.mimeType as ImageMime);
+      return reply
+        .headers(secureHeaders)
+        .header('content-type', file.mimeType)
+        .header('content-length', clean.length)
+        .header('content-disposition', disposition)
+        .send(clean);
+    }
     const { stream, size } = await storage.read(file.storageKey);
     return reply
+      .headers(secureHeaders)
       .header('content-type', file.mimeType)
       .header('content-length', size)
-      .header('cache-control', 'private, max-age=86400, immutable')
-      .header('x-content-type-options', 'nosniff')
-      .header('content-security-policy', "default-src 'none'; sandbox")
-      .header(
-        'content-disposition',
-        `inline; filename="${encodeURIComponent(file.originalName).replace(/"/g, '')}"`,
-      )
+      .header('content-disposition', disposition)
       .send(stream);
   });
+
+  /**
+   * Fase 2: miniatura (WebP, sem metadados) para as galerias. Fotos novas: a gerada no envio.
+   * Fotos antigas: gerada na leitura, sem gravar nada.
+   */
+  app.get(
+    '/api/files/:id/miniatura',
+    { config: { access: { session: 'any' } } },
+    async (request, reply) => {
+      const file = await readable(request);
+      if (!IMAGE_MIMES.has(file.mimeType)) throw Errors.notFound('Miniatura');
+      let data: Buffer;
+      if (file.thumbKey) data = await toBuffer((await storage.read(file.thumbKey)).stream);
+      else data = await thumbnail(await toBuffer((await storage.read(file.storageKey)).stream));
+      return reply
+        .headers(secureHeaders)
+        .header('content-type', 'image/webp')
+        .header('content-length', data.length)
+        .send(data);
+    },
+  );
 }

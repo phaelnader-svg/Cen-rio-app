@@ -50,6 +50,7 @@ import { formatDay } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useMyQueue, useMyTasks, useNotifications, useTask } from '@/lib/production';
 import { useRealtime } from '@/lib/realtime';
+import { uploadPhoto } from '@/lib/photos';
 import { AlternativeTasks, HelpPanel, MyOpenHelp, SupportInfo, TransferPanel } from './help';
 import { IssueInfo, MyOpenIssues, ProblemPanel } from './issues';
 import { PackagingPanel, QualityInfo } from './quality';
@@ -982,12 +983,9 @@ function useTaskPhotoUpload(taskId: string) {
     mutationFn: async (files: File[]) => {
       const created: string[] = [];
       for (const file of files) {
-        const fd = new FormData();
-        fd.append('entityType', 'PRODUCTION_TASK');
-        fd.append('entityId', taskId);
-        fd.append('file', file);
+        // Fase 2: reduzida no tablet antes de subir; o servidor trata (orientação, sem GPS).
         created.push(
-          (await api<{ id: string }>('/api/v1/attachments', { method: 'POST', body: fd })).id,
+          (await uploadPhoto({ entityType: 'PRODUCTION_TASK', entityId: taskId, file })).id,
         );
       }
       return created;
