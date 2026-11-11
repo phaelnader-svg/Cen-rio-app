@@ -114,6 +114,23 @@ Nada do financeiro, de materiais, de entrega, de logística ou de qualidade mudo
   - recusa a reversão com a ajuda desligada.
 - **Trava estrutural** (`rodada4-travas-estruturais.test.ts`): uma exceção justificada. O `ON UPDATE CASCADE` da chave estrangeira não é comando destrutivo.
 
+## 6.1 Testes executados (ambiente isolado: PostgreSQL 16 local descartável, sem rede externa)
+
+| Suíte | Resultado |
+| --- | --- |
+| Linha de base da API no commit original `07c9b46` (antes de qualquer mudança) | 934 aprovados, 0 falhas, 13 ignorados (condicionais: binário do Caddy) |
+| API completa nesta branch | **941 aprovados, 0 falhas**, 13 ignorados (= linha de base + 7 novos) |
+| `packages/shared` | 149 aprovados (15 novos) |
+| `apps/web` | 21 aprovados |
+| `scripts/test-evolution-migrations.sh` (cadeia desde o legado, reversão, recusa, backup) | aprovado; a migration nova reverte, reaplica e é recusada com a ajuda desligada |
+| E2E (Playwright, Chromium): `fase0-funcionalidades`, `tablets`, `team-help`, `gestao` | 5 aprovados |
+| Formatação, lint e tipos | limpos |
+
+**Não executados:**
+- O restante dos E2E (cerca de 35 specs), a cargo do CI.
+- Os testes de proxy com Caddy real, por falta do binário local.
+- Tablet físico e Safari/WebKit.
+
 ## 7. Plano de homologação (não executado; depende de autorização)
 
 1. **Pré-verificações:**
