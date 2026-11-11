@@ -74,9 +74,11 @@ test.describe.serial('Evolução Fase 5 — mão de obra dos tapeceiros', () => 
     await owner(sofa!.id, RIC.userId, null);
     await owner(polt!.id, MAR.userId, null);
 
-    // ── Painel: aba "Mão de obra" da OS; sem valor ≠ R$ 0; combinar valor do sofá ──
+    // ── Painel: seção "Mão de obra" (Resumo) da OS; sem valor ≠ R$ 0; combinar valor do sofá ──
     await page.goto(`/painel/os/${so.id}`);
-    await page.getByRole('tab', { name: 'Mão de obra' }).click();
+    // Fase 2: a mão de obra virou uma seção do Resumo da OS (a aba própria saiu).
+    await page.getByRole('tab', { name: 'Resumo' }).click();
+    await expect(page.getByTestId('os-labor-section')).toBeVisible();
     await expect(page.getByTestId(`no-value-${sofa!.code}`)).toHaveText('Sem valor combinado.');
     await page.getByTestId(`agree-${sofa!.code}`).click();
     const dlg = page.getByRole('dialog');
@@ -97,14 +99,18 @@ test.describe.serial('Evolução Fase 5 — mão de obra dos tapeceiros', () => 
       eligibility: 'QUALIDADE_APROVADA',
     });
     await page.reload();
-    await page.getByRole('tab', { name: 'Mão de obra' }).click();
+    // Fase 2: a mão de obra virou uma seção do Resumo da OS (a aba própria saiu).
+    await page.getByRole('tab', { name: 'Resumo' }).click();
+    await expect(page.getByTestId('os-labor-section')).toBeVisible();
     await expect(page.getByTestId(`os-labor-piece-${polt!.code}`)).toContainText('R$ 450,00');
     await evidence(page, '01-os-mao-de-obra-por-peca');
 
     // ── Substituição do titular do sofá → revisão financeira, nada transferido ──
     await owner(sofa!.id, MAR.userId, RIC.userId, 'Ricardo afastado (teste)');
     await page.reload();
-    await page.getByRole('tab', { name: 'Mão de obra' }).click();
+    // Fase 2: a mão de obra virou uma seção do Resumo da OS (a aba própria saiu).
+    await page.getByRole('tab', { name: 'Resumo' }).click();
+    await expect(page.getByTestId('os-labor-section')).toBeVisible();
     await expect(page.getByText(/Revisão financeira pendente — RF-\d{5}/)).toBeVisible();
     await expect(pieceSofa).toContainText('Em revisão financeira');
     await expect(pieceSofa).toContainText(RIC.displayName); // obrigação continua do Ricardo
