@@ -40,6 +40,8 @@ import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { OsDirectDelivery } from '@/components/commercial/os-direct-delivery';
 import { OsMaterialList } from '@/components/commercial/os-material-list';
+import { OsStateHeader } from '@/components/commercial/os-state';
+import { useOsMaterialList } from '@/lib/simple-materials';
 import { useTabParam } from '@/lib/tab-param';
 import { ApiError, api, errorMessage } from '@/lib/api';
 import { formatDay, useServiceOrder, useServiceOrderRevisions } from '@/lib/commercial';
@@ -122,24 +124,25 @@ function ReadinessRow({
   );
 }
 
-const OS_TABS = [
-  'resumo',
-  'pecas',
-  'materiais',
-  'fotos',
-  'historico',
-  'linha-do-tempo',
-  'producao',
-  'qualidade',
-  'entrega',
-  'mao-de-obra',
-] as const;
+/**
+ * Reformulação, Fase 2 — OS unificada: de 10 para 6 abas. Abas antigas viram seções de outras
+ * (nada some) e os links antigos continuam funcionando pelos apelidos abaixo.
+ */
+const OS_TABS = ['resumo', 'pecas', 'materiais', 'producao', 'qualidade', 'historico'] as const;
+const OS_TAB_ALIASES = {
+  fotos: 'pecas',
+  'linha-do-tempo': 'historico',
+  entrega: 'qualidade',
+  'mao-de-obra': 'resumo',
+} as const;
 
 export function ServiceOrderDetail({ id }: { id: string }) {
   const can = useCan();
   const so = useServiceOrder(id);
   const revisions = useServiceOrderRevisions(id);
-  const [tab, setTab] = useTabParam('resumo', OS_TABS);
+  const [tab, setTab] = useTabParam('resumo', OS_TABS, OS_TAB_ALIASES);
+  // P3 (Fase 1): o contador da aba soma a lista simples e as necessidades formais.
+  const simpleMaterials = useOsMaterialList(id);
   const [editing, setEditing] = useState(false);
   const [editItem, setEditItem] = useState<ServiceOrderItemDto | null>(null);
   const [measureItem, setMeasureItem] = useState<ServiceOrderItemDto | null>(null);
@@ -212,6 +215,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         )}
         <DeadlineBadge deadline={s.deadline} withReasons />
       </div>
+      {can('os.ver') && <OsStateHeader serviceOrderId={s.id} onGo={setTab} />}
       {!open && (
         <Alert tone="warn" className="mb-6" title={`Cancelada em ${formatDateTime(s.cancelledAt)}`}>
           {s.cancelReason}
@@ -223,25 +227,31 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         onChange={setTab}
         tabs={[
           { key: 'resumo', label: 'Resumo' },
-          { key: 'pecas', label: 'Peças e especificações', count: s.items.length },
+          { key: 'pecas', label: 'Peças e fotos', count: s.items.length },
           {
             key: 'materiais',
             label: 'Materiais',
-            count: s.materials.filter((m) => m.status === 'ATIVA').length,
+            count:
+              (simpleMaterials.data?.summary.total ?? 0) +
+              s.materials.filter((m) => m.status === 'ATIVA').length,
           },
-          { key: 'fotos', label: 'Fotografias' },
-          { key: 'historico', label: 'Histórico', count: revisions.data?.length },
-          { key: 'linha-do-tempo', label: 'Linha do tempo' },
           ...(canProduction ? [{ key: 'producao', label: 'Produção' }] : []),
-          ...(canQuality ? [{ key: 'qualidade', label: 'Qualidade e entrega' }] : []),
-          ...(canDelivery ? [{ key: 'entrega', label: 'Entrega' }] : []),
-          ...(canLabor ? [{ key: 'mao-de-obra', label: 'Mão de obra' }] : []),
+          ...(canQuality || canDelivery
+            ? [{ key: 'qualidade', label: 'Qualidade e entrega' }]
+            : []),
+          { key: 'historico', label: 'Histórico', count: revisions.data?.length },
         ]}
       >
-        {tab === 'mao-de-obra' && canLabor && <OsLabor serviceOrderId={s.id} />}
-        {tab === 'linha-do-tempo' && <ServiceTimeline serviceOrderId={s.id} />}
-        {tab === 'qualidade' && canQuality && <OsQualityDelivery serviceOrderId={s.id} />}
-        {tab === 'entrega' && canDelivery && <OsDirectDelivery serviceOrderId={s.id} />}
+        {tab === 'qualidade' && (canQuality || canDelivery) && (
+          <div className="space-y-6">
+            {canDelivery && <OsDirectDelivery serviceOrderId={s.id} />}
+            {canQuality && (
+              <Section title="Peças na qualidade, embalagem e entrega" bodyClassName="p-0">
+                <OsQualityDelivery serviceOrderId={s.id} />
+              </Section>
+            )}
+          </div>
+        )}
         {tab === 'producao' && canProduction && <OsProduction serviceOrderId={s.id} />}
         {tab === 'resumo' && (
           <div className="grid gap-6 lg:grid-cols-5">
@@ -312,11 +322,22 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 permitirem.
               </p>
             </Section>
+            {canLabor && (
+              <div className="lg:col-span-5" data-testid="os-labor-section">
+                <h2 className="mb-3 text-base font-semibold">Mão de obra</h2>
+                <OsLabor serviceOrderId={s.id} />
+              </div>
+            )}
           </div>
         )}
 
         {tab === 'pecas' && (
           <ul className="space-y-4">
+            <li>
+              <Section title="Fotos gerais da OS">
+                <PhotoGallery entityType="SERVICE_ORDER" entityId={s.id} canManage={manage} />
+              </Section>
+            </li>
             {s.items.map((i) => (
               <li key={i.id}>
                 <Section
@@ -404,44 +425,41 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           </div>
         )}
 
-        {tab === 'fotos' && (
-          <Section title="Fotografias da OS">
-            <PhotoGallery entityType="SERVICE_ORDER" entityId={s.id} canManage={manage} />
-          </Section>
-        )}
-
         {tab === 'historico' && (
-          <Section title="Histórico técnico" bodyClassName="p-0">
-            {revisions.isPending ? (
-              <Spinner className="p-5" />
-            ) : (
-              <ol className="divide-y divide-line" data-testid="revisions">
-                {revisions.data?.map((r) => (
-                  <li key={r.id} className="px-5 py-3.5">
-                    <p className="text-sm font-medium">
-                      Revisão {r.revision} ·{' '}
-                      {
+          <div className="space-y-6">
+            <ServiceTimeline serviceOrderId={s.id} />
+            <Section title="Histórico técnico (revisões da OS)" bodyClassName="p-0">
+              {revisions.isPending ? (
+                <Spinner className="p-5" />
+              ) : (
+                <ol className="divide-y divide-line" data-testid="revisions">
+                  {revisions.data?.map((r) => (
+                    <li key={r.id} className="px-5 py-3.5">
+                      <p className="text-sm font-medium">
+                        Revisão {r.revision} ·{' '}
                         {
-                          CRIACAO: 'Criação',
-                          OS: 'Dados gerais',
-                          ITEM: 'Especificações',
-                          MEDICAO: 'Medição',
-                          MATERIAL: 'Materiais',
-                          CANCELAMENTO: 'Cancelamento',
-                        }[r.scope]
-                      }
-                      {r.itemCode ? ` · ${r.itemCode}` : ''}
-                    </p>
-                    {r.reason && <p className="text-sm text-ink-soft">Motivo: {r.reason}</p>}
-                    <ChangeList changes={r.changes} />
-                    <p className="text-xs text-ink-muted">
-                      {formatDateTime(r.createdAt)} · {r.changedBy ?? 'Sistema'}
-                    </p>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </Section>
+                          {
+                            CRIACAO: 'Criação',
+                            OS: 'Dados gerais',
+                            ITEM: 'Especificações',
+                            MEDICAO: 'Medição',
+                            MATERIAL: 'Materiais',
+                            CANCELAMENTO: 'Cancelamento',
+                          }[r.scope]
+                        }
+                        {r.itemCode ? ` · ${r.itemCode}` : ''}
+                      </p>
+                      {r.reason && <p className="text-sm text-ink-soft">Motivo: {r.reason}</p>}
+                      <ChangeList changes={r.changes} />
+                      <p className="text-xs text-ink-muted">
+                        {formatDateTime(r.createdAt)} · {r.changedBy ?? 'Sistema'}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </Section>
+          </div>
         )}
       </Tabs>
 

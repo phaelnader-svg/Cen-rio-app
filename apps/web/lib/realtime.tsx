@@ -91,6 +91,7 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     ['readiness'],
     ['os-readiness'],
     ['service-order'],
+    ['os-state'],
   ];
   if (
     ['supplier.', 'purchase_order.', 'material.', 'material_receipt.', 'stock.', 'leftover.'].some(
@@ -172,7 +173,7 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   // Prazos e serviços em risco: prazo/andamento da OS, prazo do pedido, chegada das peças e
   // planejamento mudam os itens PRAZO_OS / PRAZO_PEDIDO (Central e Início) e o estado na OS.
   if (['service_order.', 'order.', 'receipt.', 'production.plan_'].some((p) => t.startsWith(p)))
-    keys.push(['attention'], ['service-orders'], ['service-order']);
+    keys.push(['attention'], ['service-orders'], ['service-order'], ['os-state']);
   if (t === 'attachment.changed') keys.push(['issue']);
   // Fase 10 — qualidade, embalagem, expedição, entregas, logística e devoluções.
   const quality = [
@@ -190,6 +191,8 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     ['returns'],
     ['locations'],
     ['attention'],
+    // Reformulação, Fase 2: estado geral da OS no cabeçalho.
+    ['os-state'],
   ];
   if (
     ['quality.', 'packaging.', 'item.', 'delivery.', 'logistics.', 'return.'].some((p) =>

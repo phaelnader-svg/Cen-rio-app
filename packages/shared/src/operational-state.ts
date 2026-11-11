@@ -49,6 +49,49 @@ export const OPERATIONAL_STATE_LABEL: Record<OperationalState, string> = {
   CANCELADA: 'Cancelada',
 };
 
+/**
+ * Reformulação, Fase 2: o que fazer a seguir em cada estado (texto curto para o cabeçalho da OS)
+ * e qual parte da OS trata disso. Só orienta: nenhuma ação é disparada.
+ */
+export const OPERATIONAL_NEXT_STEP: Record<
+  OperationalState,
+  { text: string; area: 'resumo' | 'materiais' | 'producao' | 'qualidade' | null }
+> = {
+  NAO_PLANEJADA: { text: 'Planejar a produção da OS', area: 'producao' },
+  AGUARDANDO_MATERIAIS: { text: 'Providenciar os materiais que faltam', area: 'materiais' },
+  PRODUCAO_IMPEDIDA: { text: 'Resolver o que impede a produção', area: 'producao' },
+  PRONTA_PARA_PRODUCAO: { text: 'Iniciar a produção', area: 'producao' },
+  EM_PRODUCAO: { text: 'Acompanhar a produção', area: 'producao' },
+  CORRECAO_NECESSARIA: { text: 'Fazer a correção apontada na inspeção', area: 'qualidade' },
+  AGUARDANDO_QUALIDADE: { text: 'Inspecionar a qualidade', area: 'qualidade' },
+  EMBALAGEM: { text: 'Embalar as peças', area: 'qualidade' },
+  PRONTA_PARA_ENTREGA: { text: 'Entregar ao cliente', area: 'qualidade' },
+  EM_ENTREGA: { text: 'Concluir a entrega', area: 'qualidade' },
+  ENTREGUE: { text: 'Serviço entregue', area: null },
+  DEVOLVIDA: { text: 'Peças devolvidas ao cliente', area: null },
+  CANCELADA: { text: 'OS cancelada', area: null },
+};
+
+/** Tom visual de cada estado (selo). */
+export const OPERATIONAL_STATE_TONE: Record<
+  OperationalState,
+  'neutral' | 'info' | 'warn' | 'danger' | 'ok' | 'brand'
+> = {
+  NAO_PLANEJADA: 'neutral',
+  AGUARDANDO_MATERIAIS: 'warn',
+  PRODUCAO_IMPEDIDA: 'danger',
+  PRONTA_PARA_PRODUCAO: 'info',
+  EM_PRODUCAO: 'brand',
+  CORRECAO_NECESSARIA: 'danger',
+  AGUARDANDO_QUALIDADE: 'info',
+  EMBALAGEM: 'info',
+  PRONTA_PARA_ENTREGA: 'ok',
+  EM_ENTREGA: 'brand',
+  ENTREGUE: 'ok',
+  DEVOLVIDA: 'neutral',
+  CANCELADA: 'neutral',
+};
+
 /** Ordem de avanço: a OS mostra a peça ativa MENOS avançada. */
 const RANK: Record<OperationalState, number> = {
   NAO_PLANEJADA: 0,

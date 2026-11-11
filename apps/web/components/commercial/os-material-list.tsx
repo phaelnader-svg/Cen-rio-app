@@ -419,7 +419,8 @@ function AddMaterial({
   };
   return (
     <form
-      className="grid items-end gap-2 border-t border-line px-4 py-3 sm:grid-cols-12"
+      // P1 (Fase 1): linha que quebra em vez de espremer os rótulos numa grade de 12 colunas.
+      className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3"
       onSubmit={(e) => {
         e.preventDefault();
         submit();
@@ -429,7 +430,7 @@ function AddMaterial({
       <Input
         aria-label="Novo material"
         placeholder="Material (ex.: Tecido linho bege)"
-        className="sm:col-span-4"
+        className="min-w-56 flex-[3_1_14rem]"
         value={d.description}
         onChange={(e) => setD({ ...d, description: e.target.value })}
       />
@@ -437,18 +438,18 @@ function AddMaterial({
         aria-label="Quantidade"
         placeholder="Qtd."
         inputMode="decimal"
-        className="sm:col-span-1"
+        className="w-24 flex-none"
         value={d.quantity}
         onChange={(e) => setD({ ...d, quantity: e.target.value })}
       />
       <Input
         aria-label="Unidade"
         placeholder="Unid."
-        className="sm:col-span-1"
+        className="w-24 flex-none"
         value={d.unit}
         onChange={(e) => setD({ ...d, unit: e.target.value })}
       />
-      <label className="flex items-center gap-2 text-sm sm:col-span-1">
+      <label className="flex flex-none items-center gap-2 text-sm whitespace-nowrap">
         <input
           type="checkbox"
           className="size-5 accent-brand-700"
@@ -457,7 +458,7 @@ function AddMaterial({
         />
         Comprado
       </label>
-      <label className="flex items-center gap-2 text-sm sm:col-span-2">
+      <label className="flex flex-none items-center gap-2 text-sm whitespace-nowrap">
         <input
           type="checkbox"
           className="size-5 accent-brand-700"
@@ -467,7 +468,7 @@ function AddMaterial({
         Na oficina
       </label>
       {canSeeCosts && (
-        <div className="sm:col-span-2" key={key}>
+        <div className="w-44 flex-none" key={key}>
           <MoneyInput
             aria-label="Custo (opcional)"
             placeholder="custo (opcional)"
@@ -478,7 +479,7 @@ function AddMaterial({
       )}
       <Button
         type="submit"
-        className={canSeeCosts ? 'sm:col-span-1' : 'sm:col-span-3'}
+        className="flex-none"
         disabled={busy || d.description.trim().length < 2 || !cost.valid}
       >
         <Plus className="size-4" /> Adicionar

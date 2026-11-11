@@ -99,7 +99,8 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
     await expect(page.getByTestId('deadline-state')).toHaveCount(0);
 
     // 4. A linha do tempo registra o motivo; a pendência saiu da Central e o Início acompanha.
-    await page.getByRole('tab', { name: 'Linha do tempo' }).click();
+    // Fase 2 (OS unificada): a linha do tempo fica dentro da aba "Histórico".
+    await page.getByRole('tab', { name: /Histórico/ }).click();
     await expect(page.getByTestId('service-timeline')).toContainText('Cliente pediu mais prazo');
     const after = (await call(page, 'GET', '/api/v1/attention?type=PRAZO_OS')) as Attention;
     expect(after.items.some((i) => i.serviceOrder?.id === soId)).toBe(false);

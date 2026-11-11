@@ -273,7 +273,8 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await expect(page.getByTestId('receipt-generated-os')).toContainText(/OS-\d{5}/);
     await page.getByTestId('receipt-generated-os').click();
     await page.waitForURL(/\/painel\/os\/[0-9a-f-]{36}$/);
-    await page.getByRole('tab', { name: 'Mão de obra' }).click();
+    // Fase 2 (OS unificada): a mão de obra fica no "Resumo" (aba inicial da OS).
+    await page.getByRole('tab', { name: 'Resumo' }).click();
     const labor = page.getByTestId('os-labor');
     await expect(labor).toContainText('Titular: Márcio');
     await expect(labor).toContainText(/R\$\s280,00/);
