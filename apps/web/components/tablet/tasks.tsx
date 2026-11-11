@@ -819,7 +819,7 @@ export function MyTaskDetail({
 
       {/* Reformulação, Fase 2: o essencial fica acima; o restante, a um toque. */}
       <details className="group rounded-2xl border border-line" data-testid="task-more">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-lg font-semibold text-ink-soft [&::-webkit-details-marker]:hidden">
+        <summary className="flex cursor-pointer list-none flex-col gap-0.5 px-5 py-4 text-lg font-semibold text-ink-soft sm:flex-row sm:items-center sm:justify-between sm:gap-3 [&::-webkit-details-marker]:hidden">
           Mais detalhes
           <span className="text-base font-normal text-ink-muted">
             dependências, etapas da OS, fotos e históricos

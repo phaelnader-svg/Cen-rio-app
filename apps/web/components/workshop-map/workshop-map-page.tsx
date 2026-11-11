@@ -92,22 +92,11 @@ export function WorkshopMapPage() {
         </Alert>
       )}
       <ul
-        className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+        className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3"
         data-testid="workshop-map"
         aria-label="Áreas da oficina"
       >
-        {areas.map((a) => (
-          <Area
-            key={a.id}
-            area={a}
-            highlight={matches}
-            dim={Boolean(needle) && !a.pieces.some(matches)}
-            canMove={can.move}
-            targets={activeAreas}
-            busy={act.isPending}
-            onMove={move}
-          />
-        ))}
+        {/* Primeiro o que precisa de atenção: peças sem localização registrada. */}
         {unplaced.length > 0 && (
           <Area
             area={{
@@ -127,6 +116,18 @@ export function WorkshopMapPage() {
             onMove={move}
           />
         )}
+        {areas.map((a) => (
+          <Area
+            key={a.id}
+            area={a}
+            highlight={matches}
+            dim={Boolean(needle) && !a.pieces.some(matches)}
+            canMove={can.move}
+            targets={activeAreas}
+            busy={act.isPending}
+            onMove={move}
+          />
+        ))}
       </ul>
     </>
   );

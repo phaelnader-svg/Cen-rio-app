@@ -135,7 +135,44 @@ function ByService({
           setService(null);
         }}
       />
-      <div className="overflow-x-auto rounded-xl border border-line">
+      {/* Celular: um cartão por serviço (a tabela de 4 colunas não cabe em 390 px). */}
+      <ul className="space-y-2 md:hidden" aria-label="Serviços">
+        {rows.map((r) => (
+          <li key={r.serviceType}>
+            <button
+              type="button"
+              onClick={() => setService(r.serviceType)}
+              aria-pressed={service === r.serviceType}
+              data-testid={`service-model-card-${r.serviceType}`}
+              className={`w-full rounded-xl border px-4 py-3 text-left text-sm ${service === r.serviceType ? 'border-brand-700 bg-brand-50' : 'border-line bg-surface'}`}
+            >
+              <span className="block font-semibold text-brand-700">
+                {SERVICE_TYPE_LABEL[r.serviceType]}
+              </span>
+              {c.production && (
+                <span className="mt-1 block text-ink-soft">
+                  Etapas:{' '}
+                  {r.productionTemplate
+                    ? `${r.productionTemplate.name}${r.productionTemplate.general ? ' (geral)' : ''}`
+                    : 'sem modelo'}
+                </span>
+              )}
+              {c.quality && (
+                <span className="block text-ink-soft">
+                  Checklist:{' '}
+                  {r.qualityTemplate
+                    ? `${r.qualityTemplate.name} · ${r.qualityTemplate.items} item(ns)`
+                    : 'checklist mínimo'}
+                </span>
+              )}
+              <span className="block text-ink-soft">
+                Materiais padrão: {r.materials || 'nenhum'}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto rounded-xl border border-line md:block">
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-ink-muted">
             <tr className="border-b border-line">
@@ -222,9 +259,12 @@ function ServiceDetail({
             <Button
               size="sm"
               variant="secondary"
+              aria-label={
+                d.production.template ? 'Abrir modelo de etapas' : 'Criar modelo de etapas'
+              }
               onClick={() => onGo('etapas', d.production!.template?.id ?? null)}
             >
-              {d.production.template ? 'Abrir modelo' : 'Criar modelo'}
+              {d.production.template ? 'Abrir' : 'Criar'}
             </Button>
           }
         >
@@ -258,9 +298,10 @@ function ServiceDetail({
             <Button
               size="sm"
               variant="secondary"
+              aria-label={d.quality.template ? 'Abrir checklist' : 'Criar checklist'}
               onClick={() => onGo('checklists', d.quality!.template?.id ?? null)}
             >
-              {d.quality.template ? 'Abrir checklist' : 'Criar checklist'}
+              {d.quality.template ? 'Abrir' : 'Criar'}
             </Button>
           }
         >
@@ -282,8 +323,13 @@ function ServiceDetail({
       <Section
         title="Materiais padrão"
         actions={
-          <Button size="sm" variant="secondary" onClick={() => onGo('materiais')}>
-            Editar materiais
+          <Button
+            size="sm"
+            variant="secondary"
+            aria-label="Editar materiais"
+            onClick={() => onGo('materiais')}
+          >
+            Editar
           </Button>
         }
       >

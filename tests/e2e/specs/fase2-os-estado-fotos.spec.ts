@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
 import { loginAdmin } from './helpers';
@@ -14,7 +14,7 @@ import { openServiceOrder } from './os-helpers';
  * Dados fictícios.
  */
 const origin = `http://localhost:${E2E.webPort}`;
-const FIXTURE = join(__dirname, '..', 'fixtures', 'foto-gps.jpg');
+const FIXTURE = fileURLToPath(new URL('../fixtures/foto-gps.jpg', import.meta.url));
 
 async function getJson(page: Page, path: string) {
   const r = await page.request.get(path, { headers: { origin } });

@@ -196,7 +196,7 @@ export function PhotoViewer({
       aria-modal="true"
       aria-label={`Foto ${index + 1} de ${total}`}
       data-testid="photo-viewer"
-      className="fixed inset-0 z-50 flex flex-col bg-black/90 text-white"
+      className="fixed inset-0 z-50 flex flex-col bg-black text-white"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       onTouchStart={(e) => (touchX.current = e.touches[0]?.clientX ?? null)}
       onTouchEnd={(e) => {

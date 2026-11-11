@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
 import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
@@ -12,7 +12,7 @@ import { openServiceOrder } from './os-helpers';
  */
 const OUT = '../../docs/evidencias/reformulacao-fase-2';
 const origin = `http://localhost:${E2E.webPort}`;
-const FIXTURE = join(__dirname, '..', 'fixtures', 'foto-gps.jpg');
+const FIXTURE = fileURLToPath(new URL('../fixtures/foto-gps.jpg', import.meta.url));
 const TZ = 'America/Sao_Paulo';
 const DAY = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
 const VIEWPORTS = [
@@ -100,7 +100,14 @@ test('capturas da Fase 2 (painel e tablet) em 1440 e 390 px', async ({ page, bro
       .getByTestId('service-models-overview')
       .getByLabel('Tipo de peça')
       .selectOption('POLTRONA');
-    await page.getByTestId('service-model-row-TROCA_DE_TECIDO').click();
+    // Tabela no computador; cartões no celular.
+    await page
+      .getByTestId(
+        v.name === '390'
+          ? 'service-model-card-TROCA_DE_TECIDO'
+          : 'service-model-row-TROCA_DE_TECIDO',
+      )
+      .click();
     await expect(page.getByTestId('service-model-detail')).toBeVisible();
     await check(page, errors, v.name, 'modelos-por-servico');
     for (const [tab, name] of [
@@ -120,7 +127,7 @@ test('capturas da Fase 2 (painel e tablet) em 1440 e 390 px', async ({ page, bro
 
   // Tablet: tarefa (essencial + "Mais detalhes") e "Aguardando chegada" unificada.
   const workers = await call(page, 'GET', '/api/v1/production/workers');
-  const joaoId = workers.find((w: { displayName: string }) => w.displayName === 'João').userId;
+  const marcioId = workers.find((w: { displayName: string }) => w.displayName === 'Márcio').userId;
   const week = (() => {
     const d = new Date(`${DAY}T12:00:00Z`);
     d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
@@ -134,7 +141,7 @@ test('capturas da Fase 2 (painel e tablet) em 1440 e 390 px', async ({ page, bro
     });
   const added = await call(page, 'POST', `/api/v1/production-plans/${plan.id}/items`, {
     serviceOrderId: so.id,
-    principalUserId: joaoId,
+    principalUserId: marcioId,
     date: DAY,
     reason: 'Capturas da Fase 2',
   });
@@ -146,10 +153,10 @@ test('capturas da Fase 2 (painel e tablet) em 1440 e 390 px', async ({ page, bro
   }
   type T = { id: string; title: string; assignee: { userId: string } | null };
   const tasks = added.tasks as T[];
-  const task = tasks.find((x) => x.assignee?.userId === joaoId) ?? tasks[0]!;
-  await setPin(page, 'João', '603917');
+  const task = tasks.find((x) => x.assignee?.userId === marcioId) ?? tasks[0]!;
+  await setPin(page, 'Márcio', '603917');
   for (const v of VIEWPORTS) {
-    const code = await registerDevice(page, `Tablet João capturas ${tag} ${v.name}`, 'João');
+    const code = await registerDevice(page, `Tablet Márcio capturas ${tag} ${v.name}`, 'Márcio');
     const t = await openTablet(browser, code, '603917', {
       width: v.width,
       height: v.height,
