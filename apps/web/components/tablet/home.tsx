@@ -3,15 +3,7 @@
 import type { MeDto } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import {
-  ArrowLeft,
-  BadgeCheck,
-  Inbox,
-  LogOut,
-  RadioTower,
-  Ruler,
-  Wallet,
-} from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Inbox, LogOut, RadioTower, Ruler, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ConnectionIndicator } from '@/components/connection-indicator';
 import { SyncPanel } from '@/components/sync-panel';
