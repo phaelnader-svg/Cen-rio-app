@@ -480,12 +480,20 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       data: {
         serviceOrderItemId: piece.id,
         serviceOrderId: openSo.id,
-        round: 1,
+        // Próxima rodada da peça (a cadeia já pode ter inspeções dela).
+        round:
+          ((
+            await db().qualityInspection.aggregate({
+              where: { serviceOrderItemId: piece.id },
+              _max: { round: true },
+            })
+          )._max.round ?? 0) + 1,
         reason: 'PRODUCAO_CONCLUIDA',
         status: 'APROVADA',
         itemVersion: piece.version,
         decidedAt: new Date(),
         decidedById: gestorId,
+        osRevision: 0,
         selfApprovalReason: 'Autoaprovação de teste da migração encadeada',
         packagingRequired: false,
       },
