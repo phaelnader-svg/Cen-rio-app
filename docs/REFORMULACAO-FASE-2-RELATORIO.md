@@ -132,8 +132,26 @@ faz parte da preparação da homologação final e depende de autorização.
 
 | Verificação                                                                                | Resultado                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Suíte completa da API de `3e0d2d0` (+ pasta da migration) sobre o schema da Fase 2         | **971 passaram, 1 falhou, 13 pulados** (985). A falha é a trava **estática** antiga `rodada4-travas-estruturais`: a lista de exceções dela não conhece as 5 cláusulas `ON UPDATE CASCADE` da migration nova. É leitura de arquivo, não execução — o mesmo caso da Fase 1                                                                                                                                                                                     |
+| Suíte completa da API de `3e0d2d0` (+ pasta da migration) sobre o schema da Fase 2         | **971 passaram, 1 falhou, 13 pulados** (985). A única falha é de **verificação de arquivo**, não de execução — ver 5.1                                                                                                                                                                                                                                                                                                                                       |
 | Nova grava dados da Fase 2 → antiga lê e escreve → nova relê (mesmo banco e armazenamento) | **3 de 3.** A antiga abre a OS; vê a linha sugerida como linha comum e a edita (quantidade, comprado); cria outra linha; **nenhum lançamento** no livro de custos; serve a foto tratada sem EXIF; a rota do mapa responde 404 (sem erro). A nova relê tudo: a linha continua reconhecida como sugerida (não sugere de novo), o mapa e a localização na OS estão corretos, e **a foto gravada pela antiga sai sem EXIF/GPS** pela rota comum e pela miniatura |
+
+### 5.1 A falha do verificador antigo de migrations não é falha de execução
+
+- **Qual teste:** `rodada4-travas-estruturais` › "migrations posteriores a 9fb1786 não apagam
+  tabela, coluna nem dado (exceções justificadas)", **da versão antiga**.
+- **O que ele faz:** lê o **texto** de cada `migration.sql` e procura palavras de comandos
+  destrutivos (`DROP`, `UPDATE`, `DELETE`…); cada ocorrência precisa estar numa lista fixa de
+  exceções justificadas, escrita dentro do próprio teste.
+- **Por que falha:** a migration da Fase 2 contém 5 vezes `ON UPDATE CASCADE` — a ação
+  referencial das chaves estrangeiras novas, que **não altera nenhuma linha**. A lista da versão
+  antiga não conhece essas 5 ocorrências (foi escrita antes da Fase 2). A versão nova do mesmo
+  teste tem a exceção justificada e **passa** (`986` da seção 3).
+- **Por que não é falha de execução:** nenhum código da aplicação roda nesse teste; ele não abre
+  o banco. Todos os outros 971 testes da versão antiga rodaram contra o schema da Fase 2 e
+  passaram, e a verificação cruzada com dados reais da Fase 2 passou (tabela acima).
+- **Consequência prática:** nenhuma. A versão de retorno da Fase 2 (código `3e0d2d0` + pasta da
+  migration) teria esse mesmo teste vermelho na sua própria suíte; isso não afeta imagem,
+  execução nem o executor das VMs. Foi exatamente o mesmo caso na Fase 1 (943 + 1 estática).
 
 Ressalvas do período em que a versão antiga estiver ativa (só em caso de retorno):
 
@@ -164,9 +182,10 @@ Seções 4.2 e 4.3: a reversão do banco é recusada com qualquer material padr�
   operacional são **idênticos** antes e depois. A mesma `purchasing.spec` continua provando, logo
   em seguida, que a aba Produção mostra "Nenhuma tarefa programada".
 - Os demais E2E ajustados (`commercial-flow`, `gestao`, `novo-servico`, `modelos-simplificados`,
-  `zz-geometria`, `zz-visual-audit`, `zz-fluxo-transversal`, `tablets`) mudaram **só a navegação**
-  (nome da aba, endereço `?tab=`, tile do tablet). Nenhuma asserção foi removida ou afrouxada; em
-  `tablets` foram **acrescentadas** asserções de "Mais detalhes".
+  `team-labor`, `zz-geometria`, `zz-visual-audit`, `zz-fluxo-transversal`, `tablets`) mudaram
+  **só a navegação** (nome da aba, endereço `?tab=`, tile do tablet). Nenhuma asserção foi
+  removida ou afrouxada; em `tablets` foram **acrescentadas** asserções de "Mais detalhes", e em
+  `team-labor` foi acrescentada a confirmação de que a seção "Mão de obra" está no Resumo.
 
 ### 6.3 Mapa com peças sem localização registrada [TESTADO]
 
@@ -284,6 +303,16 @@ do gestor (Qualidade › Inspetor e localizações); nada foi alterado nele.
 - E2E da F2.6 usava `__dirname` (não existe em ESM): corrigido antes da rodada completa.
 - Rota existente de localizações responde 200 (o E2E do mapa esperava 201): o teste foi
   corrigido, a rota não mudou.
+- **Primeira rodada completa de E2E (62 testes): 60 passaram, 2 falharam, 0 pulados.** As duas
+  falhas eram dos testes, não da aplicação:
+  - `team-labor` procurava a aba "Mão de obra", que na F2.2 virou seção do Resumo (o teste esperou
+    a aba até o limite de 5 min). Corrigida só a navegação (`f0a08da`); todas as asserções
+    mantidas.
+  - `zz-fase2-capturas` (novo) escolhia, entre as tarefas devolvidas pelo plano da semana, uma de
+    outra OS (deixada por outro spec no mesmo banco E2E), que não aparecia em "Meu dia". Agora o
+    teste cria um tapeceiro próprio `[TESTE F2]` e usa só as tarefas da sua OS (`72d5157`).
+    Os dois foram reexecutados isoladamente (passaram) e a suíte completa foi executada de novo
+    (seção 11).
 
 ## 10. Riscos remanescentes
 
