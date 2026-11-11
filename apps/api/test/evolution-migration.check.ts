@@ -472,5 +472,23 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     expect(applied.status, JSON.stringify(applied.body)).toBe(201);
     // Sugestão não lança custo: o livro continua com o único lançamento acima.
     expect(await db().serviceOrderCost.count({ where: { source: 'MATERIAL_OS' } })).toBe(1);
+    // 20270323 (Reformulação, Fase 3): inspeção aprovada pelo gestor que executou (com
+    // justificativa) e com a embalagem dispensada — bloqueiam a reversão. Gravada direto no banco
+    // descartável (o fluxo completo de produção e inspeção é coberto em fase3-qualidade-embalagem).
+    const gestorId = (await admin.get('/api/auth/me')).body.user.id as string;
+    await db().qualityInspection.create({
+      data: {
+        serviceOrderItemId: piece.id,
+        serviceOrderId: openSo.id,
+        round: 1,
+        reason: 'PRODUCAO_CONCLUIDA',
+        status: 'APROVADA',
+        itemVersion: piece.version,
+        decidedAt: new Date(),
+        decidedById: gestorId,
+        selfApprovalReason: 'Autoaprovação de teste da migração encadeada',
+        packagingRequired: false,
+      },
+    });
   });
 });

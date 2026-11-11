@@ -19,7 +19,9 @@ test('funcionalidades: desligar e religar os pedidos de ajuda pelo painel', asyn
   // Fase 1: a logística passou a ser configurável — habilitada para o gestor e ligada por padrão.
   await expect(page.getByTestId('module-logistica-toggle')).toBeEnabled();
   await expect(page.getByTestId('module-logistica-toggle')).toBeChecked();
-  await expect(page.getByTestId('module-embalagem-toggle')).toBeDisabled();
+  // Fase 3: a embalagem passou a ser configurável (ligada por padrão).
+  await expect(page.getByTestId('module-embalagem-toggle')).toBeEnabled();
+  await expect(page.getByTestId('module-embalagem-toggle')).toBeChecked();
   const help = page.getByTestId('module-ajuda-toggle');
   await expect(help).toBeChecked();
 
