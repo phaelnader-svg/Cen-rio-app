@@ -30,6 +30,7 @@ import {
   type AddressState,
 } from './address-form';
 import { OrderStatusBadge } from './badges';
+import { OsStateBadge } from './os-state';
 import { CustomerForm } from './customer-form';
 import { BackLink, Detail, Section } from './section';
 
@@ -257,9 +258,12 @@ export function CustomerDetail({ id }: { id: string }) {
                         >
                           {s.code}
                         </Link>{' '}
+                        {s.operationalState && <OsStateBadge state={s.operationalState} />}{' '}
                         <span className="text-sm text-ink-muted">
-                          {SERVICE_ORDER_STATUS_LABEL[s.status as 'ABERTA']} · {s.pieceCount}{' '}
-                          peça(s) · {formatDateTime(s.createdAt)}
+                          {s.operationalState
+                            ? ''
+                            : `${SERVICE_ORDER_STATUS_LABEL[s.status as 'ABERTA']} · `}
+                          {s.pieceCount} peça(s) · {formatDateTime(s.createdAt)}
                         </span>
                       </li>
                     ))}

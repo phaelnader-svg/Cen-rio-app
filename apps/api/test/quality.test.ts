@@ -423,25 +423,19 @@ describe('Inspeção e responsabilidade', () => {
     expect(await db().auditLog.count({ where: { action: 'quality.executor_authorized' } })).toBe(0);
   });
 
-  it('4b. D8: o gestor que executou a peça não a aprova; o inspetor designado (não executor) decide', async () => {
+  it('4b. D8 + D4 (Reformulação Fase 3): o gestor que executou só aprova com justificativa; o inspetor designado decide', async () => {
     const s = await scenario({ gestorOnSofa: true });
     await finish(s.admin, s.sofaTask.id);
     const row = await openOf(s.sofa.id);
     expect(row.inspectorUserId).toBe(s.ids.thiago); // Thiago não executou: segue como inspetor
     const i = await checkAll(s.admin, await inspection(s.admin, row.id));
-    expect(i.can.decide).toBe(false);
-    expect(i.can.decideReason).toMatch(/própria peça/);
+    // D4: o gestor executor pode decidir, mas a aprovação exige justificativa (destacada na
+    // auditoria — coberto em fase3-qualidade-embalagem.test.ts). Sem ela, recusado.
+    expect(i.can.decide).toBe(true);
+    expect(i.can.decideReason).toMatch(/justificativa/);
     const denied = await approve(s.admin, i);
     expect(denied.status).toBe(422);
-    expect(denied.body.error.message).toMatch(/própria peça/);
-    expect(
-      (
-        await post(s.admin, `/api/v1/quality/inspections/${row.id}/reject`, {
-          reason: 'Tentativa do gestor executor',
-          version: i.version,
-        })
-      ).status,
-    ).toBe(422);
+    expect(denied.body.error.message).toMatch(/justificativa/);
     // Designar a si mesmo como inspetor também é recusado.
     const self = await post(s.admin, `/api/v1/quality/inspections/${row.id}/assign`, {
       inspectorUserId: s.ids.gestor,

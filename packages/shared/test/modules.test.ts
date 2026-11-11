@@ -19,10 +19,11 @@ describe('módulos configuráveis', () => {
     }
   });
 
-  it('Fase 1: logística, ajuda e travas de materiais são configuráveis; embalagem fica no padrão mesmo com registro gravado', () => {
+  it('Fase 3: as quatro funcionalidades são configuráveis (a embalagem passou a ser); registro gravado vale', () => {
     expect(MODULE_KEYS.filter((k) => MODULES[k].configurable)).toEqual([
       'logistica',
       'ajuda',
+      'embalagem',
       'materiais',
     ]);
     const state = resolveModules([
@@ -31,7 +32,14 @@ describe('módulos configuráveis', () => {
       { key: 'ajuda', enabled: false },
       { key: 'materiais', enabled: false },
     ]);
-    expect(state).toEqual({ logistica: false, embalagem: true, ajuda: false, materiais: false });
+    expect(state).toEqual({ logistica: false, embalagem: false, ajuda: false, materiais: false });
+    // Sem registro, tudo ligado (comportamento anterior preservado).
+    expect(resolveModules([])).toEqual({
+      logistica: true,
+      ajuda: true,
+      embalagem: true,
+      materiais: true,
+    });
   });
 
   it('chave desconhecida (gravada por versão futura) é ignorada sem erro', () => {

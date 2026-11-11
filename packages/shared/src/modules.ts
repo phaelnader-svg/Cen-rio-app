@@ -8,8 +8,8 @@ import { z } from 'zod';
  * Ausência de registro = valor padrão. Todos os padrões são "ligado": uma instalação nova ou
  * migrada mantém o comportamento anterior até alguém desligar algo de forma explícita.
  *
- * `configurable: false` = a chave já existe (para os próximos passos), mas ainda não pode ser
- * alterada: desligar a embalagem obrigatória depende da Fase 3.
+ * `configurable: false` = a chave existe mas ainda não pode ser alterada (nenhuma hoje: a
+ * embalagem passou a ser configurável na Reformulação, Fase 3).
  *
  * Fase 1: a logística passou a ser configurável (a entrega direta pela OS substitui a operação de
  * entregas) e "materiais" controla as travas de materiais na liberação da produção.
@@ -42,9 +42,9 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
   embalagem: {
     label: 'Embalagem obrigatória',
     description:
-      'Etapa de embalagem entre a qualidade aprovada e "pronta para entrega". Desligar depende da Fase 3.',
+      'Ligada, toda peça aprovada na qualidade passa pela embalagem antes de ficar "pronta para entrega". Desligada, a peça fica pronta para entrega logo após a aprovação. Vale para as aprovações feitas a partir da mudança: embalagens já abertas continuam e nada do histórico muda.',
     defaultEnabled: true,
-    configurable: false,
+    configurable: true,
   },
   materiais: {
     label: 'Travas de materiais na produção',

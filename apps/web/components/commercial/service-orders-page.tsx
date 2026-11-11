@@ -8,6 +8,7 @@ import { Input, Select } from '@/components/ui/field';
 import { Alert, Avatar, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { formatDay, useServiceOrders } from '@/lib/commercial';
 import { DeadlineBadge, PriorityBadge, ServiceOrderStatusBadge } from './badges';
+import { OsStateBadge } from './os-state';
 
 export function ServiceOrdersPage() {
   const [q, setQ] = useState('');
@@ -84,7 +85,12 @@ export function ServiceOrdersPage() {
                     </span>
                   )}
                   <PriorityBadge priority={s.priority} />
-                  <ServiceOrderStatusBadge status={s.status} />
+                  {/* Fase 3: o estado geral (mesmo do cabeçalho da OS) no lugar de "Aberta". */}
+                  {s.operationalState ? (
+                    <OsStateBadge state={s.operationalState} />
+                  ) : (
+                    <ServiceOrderStatusBadge status={s.status} />
+                  )}
                 </Link>
               </li>
             ))}

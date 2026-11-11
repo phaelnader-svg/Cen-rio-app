@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_QUALITY_TEMPLATES,
+  allConformChanges,
   canDecideInspection,
   canDeliveryTransition,
   checklistFor,
@@ -77,25 +78,49 @@ describe('Fase 10 — regras de qualidade e expedição', () => {
     ).toBe(true);
   });
 
-  it('Simplificação Fase 5 (D8): ninguém aprova a própria peça — nem o gestor', () => {
+  it('Reformulação Fase 3 (D4): só o gestor aprova a própria peça, e com justificativa', () => {
     const executor = { isAssignedInspector: false, executedService: true };
+    // Gestor que executou: pode decidir, marcado como autoaprovação (exige justificativa).
     const gestor = canDecideInspection({ ...executor, isManager: true });
-    expect(gestor.allowed).toBe(false);
-    expect(gestor.reason).toMatch(/substituto/);
+    expect(gestor).toMatchObject({ allowed: true, selfApproval: true });
+    expect(gestor.reason).toMatch(/justificativa/);
     // Inspetor designado que executou (antes liberado por "autorização do gestor"): recusado.
+    const inspetor = canDecideInspection({
+      isManager: false,
+      isAssignedInspector: true,
+      executedService: true,
+    });
+    expect(inspetor).toMatchObject({ allowed: false, selfApproval: false });
+    // Executor sem papel nenhum: recusado.
     expect(
-      canDecideInspection({ isManager: false, isAssignedInspector: true, executedService: true })
+      canDecideInspection({ isManager: false, isAssignedInspector: false, executedService: true })
         .allowed,
     ).toBe(false);
-    // Gestor e inspetor que NÃO executaram continuam decidindo; terceiros, não.
+    // Gestor e inspetor que NÃO executaram continuam decidindo, sem marca de autoaprovação.
     expect(
-      canDecideInspection({ isManager: true, isAssignedInspector: false, executedService: false })
-        .allowed,
-    ).toBe(true);
+      canDecideInspection({ isManager: true, isAssignedInspector: false, executedService: false }),
+    ).toMatchObject({ allowed: true, selfApproval: false });
     expect(
       canDecideInspection({ isManager: false, isAssignedInspector: false, executedService: false })
         .allowed,
     ).toBe(false);
+  });
+
+  it('"Tudo conforme": marca só os não conferidos; recusa com item não conforme', () => {
+    const r = allConformChanges([
+      { id: 'a', result: null },
+      { id: 'b', result: 'OK' as const },
+      { id: 'c', result: 'NAO_SE_APLICA' as const },
+      { id: 'd', result: null },
+    ]);
+    expect(r).toEqual({
+      ok: true,
+      toCheck: [
+        { id: 'a', result: null },
+        { id: 'd', result: null },
+      ],
+    });
+    expect(allConformChanges([{ id: 'a', result: 'NAO_CONFORME' as const }]).ok).toBe(false);
   });
 
   it('aprovação e reprovação: checklist, motivo e defeito', () => {

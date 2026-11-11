@@ -23,6 +23,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
+import { loadOperationalStates } from '../service-orders/operational';
 import { idParams } from '../presenters';
 import {
   CUSTOMER_AUDIENCE,
@@ -193,6 +194,11 @@ export async function customerRoutes(app: FastifyInstance) {
         take: 50,
       }),
     ]);
+    // Fase 3: o mesmo estado geral da lista e do cabeçalho da OS.
+    const states = await loadOperationalStates(
+      prisma,
+      serviceOrders.map((x) => x.id),
+    );
     return {
       orders: orders.map((o) => ({
         id: o.id,
@@ -210,6 +216,7 @@ export async function customerRoutes(app: FastifyInstance) {
         priority: s.priority,
         pieceCount: s.items.reduce((a, i) => a + i.quantity, 0),
         createdAt: s.createdAt.toISOString(),
+        operationalState: states.get(s.id)?.state ?? null,
       })),
       changes: changes.map((c) => ({
         id: c.id,

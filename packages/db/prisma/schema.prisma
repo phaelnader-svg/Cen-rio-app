@@ -2581,6 +2581,10 @@ model QualityInspection {
   decidedById            String?          @map("decided_by_id") @db.Uuid
   decidedDeviceId        String?          @map("decided_device_id") @db.Uuid
   decisionNote           String?          @map("decision_note") @db.VarChar(1000)
+  /// Reformulação Fase 3 (D4): justificativa do gestor ao aprovar a própria execução.
+  selfApprovalReason     String?          @map("self_approval_reason") @db.VarChar(500)
+  /// Reformulação Fase 3: embalagem exigida quando a inspeção foi aprovada (interruptor).
+  packagingRequired      Boolean          @default(true) @map("packaging_required")
   invalidatedAt          DateTime?        @map("invalidated_at") @db.Timestamptz(3)
   invalidReason          String?          @map("invalid_reason") @db.VarChar(500)
   version                Int              @default(1)

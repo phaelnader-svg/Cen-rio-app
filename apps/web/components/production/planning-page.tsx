@@ -21,7 +21,6 @@ import {
   mondayOf,
 } from '@cenario/shared';
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowUp,
   CalendarRange,
@@ -55,10 +54,11 @@ import {
   useWorkers,
 } from '@/lib/production';
 import { TaskStatusBadge, blockersText } from './badges';
+import { PublishWeekDialog } from './publish-week-dialog';
 import { useSend } from './use-send';
 
 /** Planejamento semanal de produção (sexta é o dia padrão; qualquer dia é permitido). */
-export function ProductionPlanningPage() {
+export function ProductionPlanningPage({ embedded = false }: { embedded?: boolean } = {}) {
   const me = useMe();
   const today = todayIso(me.data?.company.timezone);
   const [week, setWeek] = useState(() => mondayOf(addDays(today, 3)));
@@ -71,18 +71,20 @@ export function ProductionPlanningPage() {
 
   return (
     <>
-      <PageHeader
-        title="Planejamento de produção"
-        description="Selecione as OS da semana, defina responsáveis, dias e dependências e publique. Material disponível não inicia a produção: só a programação publicada libera as tarefas."
-        actions={
-          <Link
-            href="/painel/producao"
-            className="text-sm font-medium text-brand-700 hover:underline"
-          >
-            Quadro de produção →
-          </Link>
-        }
-      />
+      {!embedded && (
+        <PageHeader
+          title="Planejamento de produção"
+          description="Selecione as OS da semana, defina responsáveis, dias e dependências e publique. Material disponível não inicia a produção: só a programação publicada libera as tarefas."
+          actions={
+            <Link
+              href="/painel/producao"
+              className="text-sm font-medium text-brand-700 hover:underline"
+            >
+              Quadro de produção →
+            </Link>
+          }
+        />
+      )}
       <HelpAndRescheduleBanner />
       <Card className="mb-6 flex flex-wrap items-center gap-3 p-4">
         <Button
@@ -310,7 +312,7 @@ function PlanEditor({ planId }: { planId: string }) {
           onClose={() => setAdding(null)}
         />
       )}
-      {publishing && <PublishDialog plan={plan} onClose={() => setPublishing(false)} />}
+      {publishing && <PublishWeekDialog planId={plan.id} onClose={() => setPublishing(false)} />}
       {carrying && <CarryOverDialog plan={plan} onClose={() => setCarrying(false)} />}
     </div>
   );
@@ -1245,72 +1247,6 @@ export function DepsDialog({
             />
           ))}
       </div>
-    </Dialog>
-  );
-}
-
-function PublishDialog({ plan, onClose }: { plan: ProductionPlanDto; onClose: () => void }) {
-  const [notes, setNotes] = useState('');
-  const [key] = useState(newIdempotencyKey);
-  const { m, error } = useSend(onClose);
-  const byPerson = new Map<string, number>();
-  for (const t of plan.tasks)
-    byPerson.set(
-      t.assignee?.displayName ?? 'Sem responsável',
-      (byPerson.get(t.assignee?.displayName ?? 'Sem responsável') ?? 0) + 1,
-    );
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title="Publicar a programação da semana?"
-      description="As tarefas vão para os tablets. Alterações posteriores exigem motivo e geram nova revisão."
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Voltar
-          </Button>
-          <Button
-            loading={m.isPending}
-            onClick={() =>
-              m.mutate({
-                run: () =>
-                  api(`/api/v1/production-plans/${plan.id}/publish`, {
-                    method: 'POST',
-                    idempotencyKey: key,
-                    body: { version: plan.version, notes },
-                  }),
-                ok: 'Programação publicada.',
-              })
-            }
-          >
-            Publicar
-          </Button>
-        </>
-      }
-    >
-      {error && (
-        <Alert tone="danger" className="mb-3">
-          {error}
-        </Alert>
-      )}
-      <ul className="mb-4 text-sm">
-        {[...byPerson].map(([n, c]) => (
-          <li key={n}>
-            {n}: <strong>{c}</strong> tarefa(s)
-          </li>
-        ))}
-      </ul>
-      {plan.conflicts.length > 0 && (
-        <Alert tone="warn" className="mb-4">
-          <AlertTriangle className="mr-1 inline size-4" aria-hidden />
-          {plan.conflicts.length} aviso(s): tarefas sem responsável, sem horário ou sem materiais
-          ficarão bloqueadas.
-        </Alert>
-      )}
-      <Field label="Observações (histórico)">
-        {(p) => <Input {...p} value={notes} onChange={(e) => setNotes(e.target.value)} />}
-      </Field>
     </Dialog>
   );
 }

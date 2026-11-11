@@ -43,7 +43,7 @@ import { itemAllocations } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { orderRevenue } from '../finance/revenue';
 import { loadTeam, upholsterersOf } from '../production/distribution';
-import { loadOperationalState } from './operational';
+import { loadOperationalState, loadOperationalStates } from './operational';
 import { createServiceOrder } from './service';
 
 const VIEW = { session: 'any', permissions: ['os.ver'] } as const;
@@ -349,6 +349,10 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       }),
     ]);
     const deadlines = await serviceDeadlines(prisma, { id: { in: rows.map((r) => r.id) } });
+    const states = await loadOperationalStates(
+      prisma,
+      rows.map((r) => r.id),
+    );
     return {
       total,
       items: rows.map(
@@ -366,6 +370,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
           itemCount: so.items.length,
           pieceCount: so.items.reduce((a, i) => a + i.quantity, 0),
           createdAt: so.createdAt.toISOString(),
+          operationalState: states.get(so.id)?.state,
         }),
       ),
     } satisfies PageDto<ServiceOrderSummaryDto>;

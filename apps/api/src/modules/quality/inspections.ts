@@ -2,6 +2,8 @@ import {
   CHECK_RESULT_LABEL,
   EVENT_TYPES,
   INSPECTION_REASON_LABEL,
+  SELF_APPROVAL_REASON_MIN,
+  allConformChanges,
   checklistFor,
   canDecideInspection,
   decisionProblems,
@@ -19,6 +21,7 @@ import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { onItemTechnicalChange } from '../../core/item-changes';
+import { moduleEnabled } from '../../core/modules';
 import { loadUserPermissions } from '../../core/permissions';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
@@ -141,7 +144,7 @@ export async function toInspectionDto(
         isAssignedInspector: r.inspectorUserId === viewer.userId,
         executedService: executors.has(viewer.userId),
       })
-    : { allowed: false, reason: null };
+    : { allowed: false, reason: null, selfApproval: false };
   const mayWork = Boolean(viewer && (viewer.isManager || r.inspectorUserId === viewer.userId));
   return {
     id: r.id,
@@ -165,6 +168,8 @@ export async function toInspectionDto(
     decidedAt: r.decidedAt?.toISOString() ?? null,
     decidedBy: r.decidedBy?.displayName ?? null,
     decisionNote: r.decisionNote,
+    selfApprovalReason: r.selfApprovalReason,
+    packagingRequired: r.packagingRequired,
     invalidatedAt: r.invalidatedAt?.toISOString() ?? null,
     invalidReason: r.invalidReason,
     items: r.items.map((i) => ({
@@ -186,6 +191,7 @@ export async function toInspectionDto(
       check: open && mayWork,
       decide: open && decision.allowed,
       decideReason: open ? decision.reason : null,
+      selfApproval: open && decision.allowed && decision.selfApproval,
     },
     version: r.version,
     createdAt: r.createdAt.toISOString(),
@@ -481,6 +487,7 @@ async function assertDecider(tx: Tx, i: InspectionRow, viewer: Viewer) {
     executedService: executors.has(viewer.userId),
   });
   if (!d.allowed) throw Errors.business(d.reason ?? 'Você não pode decidir esta inspeção.');
+  return d;
 }
 
 async function osRevisionOf(tx: Tx, serviceOrderId: string) {
@@ -496,14 +503,46 @@ export async function approveInspection(
   actor: ActorContext,
   viewer: Viewer,
   id: string,
-  input: { note?: string | null; version: number },
+  input: {
+    note?: string | null;
+    version: number;
+    allConform?: boolean;
+    selfApprovalReason?: string;
+  },
   deviceId: string | null = null,
 ) {
-  const { item, i } = await lockItemThenInspection(tx, id);
+  let { item, i } = await lockItemThenInspection(tx, id);
   if (i.status === 'APROVADA' && i.decidedById === viewer.userId) return i; // repetição
   checkVersion(i, input.version);
   assertOpen(i);
-  await assertDecider(tx, i, viewer);
+  const decider = await assertDecider(tx, i, viewer);
+  // Fase 3 (D4): o gestor só aprova a própria execução com justificativa.
+  const selfReason = decider.selfApproval ? (input.selfApprovalReason?.trim() ?? '') : null;
+  if (selfReason !== null && selfReason.length < SELF_APPROVAL_REASON_MIN)
+    throw Errors.business(
+      'Você executou este serviço: para aprovar, escreva a justificativa (mínimo de 10 caracteres). Ela fica registrada e destacada na auditoria.',
+    );
+  // Fase 3: "Tudo conforme" — os itens não conferidos viram conformes, na mesma transação.
+  if (input.allConform) {
+    const c = allConformChanges(
+      i.items.map((x) => ({ ...x, result: x.result as CheckResult | null })),
+    );
+    if (!c.ok) throw Errors.business(c.problem);
+    if (c.toCheck.length) {
+      const now = new Date();
+      await tx.qualityInspectionItem.updateMany({
+        where: { id: { in: c.toCheck.map((x) => x.id) } },
+        data: { result: 'OK', checkedAt: now, checkedById: actor.userId },
+      });
+      await qualityEvent(tx, actor, item.id, {
+        kind: 'ITEM_CONFERIDO',
+        inspectionId: id,
+        note: `Tudo conforme: ${c.toCheck.map((x) => x.label).join(', ')}`.slice(0, 500),
+        deviceId,
+      });
+      ({ item, i } = await lockItemThenInspection(tx, id));
+    }
+  }
   const problems = decisionProblems(
     'APROVAR',
     i.items.map((x) => ({ required: x.required, result: x.result as CheckResult | null })),
@@ -518,6 +557,8 @@ export async function approveInspection(
     throw Errors.conflict(
       'A peça foi alterada tecnicamente depois que esta inspeção foi criada: é preciso uma nova inspeção.',
     );
+  // Fase 3: a exigência de embalagem é a do interruptor NO MOMENTO da aprovação (fica gravada).
+  const packagingRequired = await moduleEnabled(tx, 'embalagem');
   const now = new Date();
   const u = await tx.qualityInspection.update({
     where: { id },
@@ -528,6 +569,8 @@ export async function approveInspection(
       decidedById: actor.userId,
       decidedDeviceId: deviceId,
       decisionNote: input.note ?? null,
+      selfApprovalReason: selfReason,
+      packagingRequired,
       osRevision: await osRevisionOf(tx, i.serviceOrderId),
       version: { increment: 1 },
     },
@@ -536,18 +579,37 @@ export async function approveInspection(
   await qualityEvent(tx, actor, item.id, {
     kind: 'APROVADA',
     inspectionId: id,
-    note: input.note ?? null,
-    data: { itemVersion: u.itemVersion, osRevision: u.osRevision },
+    note: selfReason ? `Autoaprovação do gestor — ${selfReason}` : (input.note ?? null),
+    data: {
+      itemVersion: u.itemVersion,
+      osRevision: u.osRevision,
+      packagingRequired,
+      ...(selfReason ? { selfApproval: true } : {}),
+    },
     deviceId,
   });
   await audit(tx, actor, {
     action: 'quality.inspection_approved',
     entityType: 'quality_inspection',
     entityId: id,
-    summary: `Inspeção ${code} aprovada (${pieceCode(item)}, versão técnica ${u.itemVersion}, revisão da OS ${u.osRevision}).`,
+    summary: `Inspeção ${code} aprovada (${pieceCode(item)}, versão técnica ${u.itemVersion}, revisão da OS ${u.osRevision})${packagingRequired ? '' : ' — embalagem dispensada (interruptor desligado)'}.`,
+    changes: { allConform: Boolean(input.allConform), packagingRequired },
   });
+  const viewerName = selfReason
+    ? ((await tx.user.findUnique({ where: { id: actor.userId! }, select: { displayName: true } }))
+        ?.displayName ?? 'gestor')
+    : '';
+  if (selfReason)
+    // Registro próprio e destacado (HIGHLIGHTED_AUDIT_ACTIONS): quem, quando e por quê.
+    await audit(tx, actor, {
+      action: 'quality.inspection_self_approved',
+      entityType: 'quality_inspection',
+      entityId: id,
+      summary: `EXCEÇÃO: ${viewerName} aprovou a própria execução na inspeção ${code} (${pieceCode(item)}). Justificativa: ${selfReason}`,
+      changes: { selfApproval: true, reason: selfReason, decidedAt: now.toISOString() },
+    });
   await inspectionEvent(tx, actor, EVENT_TYPES.INSPECTION_APPROVED, u);
-  await createPackaging(tx, actor, u, item);
+  if (packagingRequired) await createPackaging(tx, actor, u, item);
   await refreshItemStage(tx, actor, item.id);
   return u;
 }

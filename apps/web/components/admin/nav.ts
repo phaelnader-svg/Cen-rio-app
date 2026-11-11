@@ -10,7 +10,6 @@ import {
   Contact,
   PackageCheck,
   PackageOpen,
-  CalendarCheck,
   CalendarRange,
   Ruler,
   ClipboardList,
@@ -29,12 +28,10 @@ import {
   Wallet,
   BadgeCheck,
   UserCheck,
-  UserCog,
   Users,
   Workflow,
   Route,
   type LucideIcon,
-  ListTodo,
   Warehouse,
   Map as MapIcon,
 } from 'lucide-react';
@@ -158,23 +155,13 @@ export const NAV: NavItem[] = [
     anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
   },
   {
-    href: '/painel/planejamento',
-    label: 'Planejamento de sexta',
-    icon: CalendarCheck,
-    anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
-  },
-  {
-    // Simplificação Fase 4: Produção → A planejar (fila de serviços recebidos e planejamento).
-    href: '/painel/producao/a-planejar',
-    label: 'Produção — A planejar',
-    icon: ListTodo,
-    anyOf: ['producao.ver', 'producao.planejar'],
-  },
-  {
-    href: '/painel/producao/planejamento',
-    label: 'Planejamento de produção',
+    // Reformulação, Fase 3: "A planejar" + "Planejamento de produção" numa tela só. Os endereços
+    // antigos continuam abrindo as abas correspondentes; "Planejamento de sexta" (medições) e
+    // "Competências da equipe" saíram do menu e seguem por link (Medições e Programação semanal).
+    href: '/painel/producao/programacao',
+    label: 'Programação semanal',
     icon: CalendarRange,
-    anyOf: ['producao.planejar'],
+    anyOf: ['producao.ver', 'producao.planejar'],
   },
   {
     href: '/painel/producao',
@@ -207,12 +194,6 @@ export const NAV: NavItem[] = [
     href: '/painel/reprogramacao',
     label: 'Reprogramação',
     icon: GitPullRequestArrow,
-    anyOf: ['producao.ver', 'producao.planejar'],
-  },
-  {
-    href: '/painel/competencias',
-    label: 'Competências da equipe',
-    icon: UserCog,
     anyOf: ['producao.ver', 'producao.planejar'],
   },
   {

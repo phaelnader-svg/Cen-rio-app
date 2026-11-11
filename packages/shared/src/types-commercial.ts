@@ -1,3 +1,4 @@
+import type { OperationalState } from './operational-state';
 import type { OrderDeadlineState, ServiceDeadline } from './deadline-domain';
 import type { MaterialReadiness } from './purchasing-domain';
 import type {
@@ -297,6 +298,11 @@ export interface ServiceOrderSummaryDto {
   itemCount: number;
   pieceCount: number;
   createdAt: string;
+  /**
+   * Reformulação Fase 3: estado geral (o mesmo do cabeçalho da OS, regra da Fase 0). Só na
+   * lista; o detalhe usa a rota própria.
+   */
+  operationalState?: OperationalState;
 }
 
 export interface ServiceOrderDto extends ServiceOrderSummaryDto {

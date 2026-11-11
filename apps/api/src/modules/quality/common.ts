@@ -20,6 +20,7 @@ import {
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { appendEvent } from '../../core/events/append';
+import { moduleEnabled } from '../../core/modules';
 import { loadUserPermissions } from '../../core/permissions';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
@@ -394,10 +395,18 @@ export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
       requiredTasksDone,
       inspection: (inspection?.status ?? null) as InspectionStatus | null,
       openCorrections,
+      // Fase 3: aprovada com a embalagem desligada = embalagem dispensada (vale como concluída).
       packaging: (inspection?.status === 'APROVADA'
-        ? (inspection.packaging?.status ?? null)
-        : null) as PackagingStatus | null,
+        ? inspection.packagingRequired
+          ? (inspection.packaging?.status ?? null)
+          : 'DISPENSADA'
+        : null) as PackagingStatus | 'DISPENSADA' | null,
       shippingBlock,
+      // Fase 3: aprovada = o que ficou gravado; antes disso, o interruptor atual.
+      packagingRequired:
+        inspection?.status === 'APROVADA'
+          ? inspection.packagingRequired
+          : await moduleEnabled(db, 'embalagem'),
       cancelled: item.serviceOrder.status === 'CANCELADA',
       returned: item.fulfillmentStage === 'DEVOLVIDA',
       delivered: delivered > 0,
@@ -457,7 +466,10 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
     'service_order_item',
   );
   await resolveStageNotices(tx, actor, itemId, before, s.stage);
-  if (s.stage === 'PRONTA_ENTREGA' && s.inspection?.packaging) {
+  // Uma vez por embalagem; sem embalagem (dispensada, Fase 3), uma vez por aprovação.
+  const readyKey =
+    s.inspection?.packaging?.id ?? (s.inspection?.packagingRequired ? null : s.inspection?.id);
+  if (s.stage === 'PRONTA_ENTREGA' && readyKey) {
     const siblings = await tx.serviceOrderItem.findMany({
       where: { serviceOrderId: updated.serviceOrderId },
       select: { fulfillmentStage: true },
@@ -470,7 +482,7 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
       actor,
       'entregas.gerenciar',
       'PRONTO_ENTREGA',
-      `PRONTO_ENTREGA:${itemId}:${s.inspection.packaging.id}`,
+      `PRONTO_ENTREGA:${itemId}:${readyKey}`,
       `${pieceCode(updated)} · ${updated.description} (${updated.serviceOrder.customer.name}) está pronta para entrega — ${ready} de ${siblings.length} peça(s) da OS. Agende quando quiser.`,
       updated.serviceOrderId,
     );

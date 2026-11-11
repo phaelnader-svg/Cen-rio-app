@@ -43,6 +43,15 @@ export const checkInspectionItemSchema = z
 export const approveInspectionSchema = z.object({
   note: optionalText(1000),
   version: versionSchema,
+  /** Reformulação Fase 3: "Tudo conforme" — marca os itens não conferidos como conformes. */
+  allConform: z.boolean().optional(),
+  /** Reformulação Fase 3 (D4): obrigatória quando o gestor aprova a própria execução. */
+  selfApprovalReason: z
+    .string()
+    .trim()
+    .min(10, 'Justifique a aprovação da própria execução (mínimo de 10 caracteres).')
+    .max(500)
+    .optional(),
 });
 
 export const rejectInspectionSchema = z.object({

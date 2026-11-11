@@ -17,8 +17,23 @@ export async function loadOperationalState(
   db: Tx | PrismaClient,
   serviceOrderId: string,
 ): Promise<OperationalStateDto | null> {
-  const so = await db.serviceOrder.findUnique({
-    where: { id: serviceOrderId },
+  return (await loadOperationalStates(db, [serviceOrderId])).get(serviceOrderId) ?? null;
+}
+
+/**
+ * Reformulação, Fase 3 — o mesmo cálculo para várias OS de uma vez (listas): duas consultas no
+ * total, com o MESMO recorte de tarefas por peça de `loadOperationalState` (tarefas da peça e da
+ * OS inteira, sem apoio/ocorrência/correção/embalagem, sem canceladas, com rascunhos). Uma regra
+ * só para todas as telas: a lista, o cabeçalho da OS e a API mostram o mesmo estado.
+ */
+export async function loadOperationalStates(
+  db: Tx | PrismaClient,
+  serviceOrderIds: readonly string[],
+): Promise<Map<string, OperationalStateDto>> {
+  const out = new Map<string, OperationalStateDto>();
+  if (!serviceOrderIds.length) return out;
+  const orders = await db.serviceOrder.findMany({
+    where: { id: { in: [...serviceOrderIds] } },
     select: {
       id: true,
       status: true,
@@ -28,27 +43,40 @@ export async function loadOperationalState(
       },
     },
   });
-  if (!so) return null;
-  const items = await Promise.all(
-    so.items.map(async (item) => {
-      const tasks = await db.productionTask.findMany({
-        where: { ...requiredTaskWhere(item), status: { not: 'CANCELADA' } },
-        select: { status: true, blockers: true },
-      });
+  const sample = requiredTaskWhere({ id: '', serviceOrderId: '' });
+  const tasks = await db.productionTask.findMany({
+    where: {
+      serviceOrderId: { in: orders.map((o) => o.id) },
+      supportForTaskId: sample.supportForTaskId,
+      issueId: sample.issueId,
+      inspectionId: sample.inspectionId,
+      activity: sample.activity,
+      status: { not: 'CANCELADA' },
+    },
+    select: { serviceOrderId: true, serviceOrderItemId: true, status: true, blockers: true },
+  });
+  for (const so of orders) {
+    const items = so.items.map((item) => {
+      const mine = tasks.filter(
+        (t) =>
+          t.serviceOrderId === so.id &&
+          (t.serviceOrderItemId === item.id || t.serviceOrderItemId === null),
+      );
       const stage = item.fulfillmentStage as FulfillmentStage;
       return {
         serviceOrderItemId: item.id,
         stage,
         ...operationalItemState({
           stage,
-          tasks: tasks.map((t) => ({ status: t.status as TaskStatus, blockers: t.blockers })),
+          tasks: mine.map((t) => ({ status: t.status as TaskStatus, blockers: t.blockers })),
         }),
       };
-    }),
-  );
-  return {
-    serviceOrderId: so.id,
-    ...operationalOrderState(items, so.status === 'CANCELADA'),
-    items,
-  };
+    });
+    out.set(so.id, {
+      serviceOrderId: so.id,
+      ...operationalOrderState(items, so.status === 'CANCELADA'),
+      items,
+    });
+  }
+  return out;
 }

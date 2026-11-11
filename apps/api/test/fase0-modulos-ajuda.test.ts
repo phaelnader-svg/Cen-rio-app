@@ -114,7 +114,7 @@ async function workshop(arrive: string[] = ['Ricardo', 'João']) {
 }
 
 describe('Interruptores de funcionalidade', () => {
-  it('sem configuração gravada: tudo ligado (comportamento anterior), versão 0, só "ajuda" configurável', async () => {
+  it('sem configuração gravada: tudo ligado (comportamento anterior), versão 0, todas configuráveis', async () => {
     const admin = await loginAdmin(app);
     expect((await admin.get('/api/v1/modules')).body).toEqual({
       logistica: true,
@@ -131,16 +131,17 @@ describe('Interruptores de funcionalidade', () => {
     }[];
     expect(list.map((m) => m.key)).toEqual(['logistica', 'ajuda', 'embalagem', 'materiais']);
     expect(list.every((m) => m.enabled && m.version === 0 && m.updatedBy === null)).toBe(true);
-    // Fase 1: logística e travas de materiais passaram a ser configuráveis; embalagem segue fixa.
+    // Fase 1: logística e travas de materiais passaram a ser configuráveis; Fase 3: a embalagem.
     expect(list.filter((m) => m.configurable).map((m) => m.key)).toEqual([
       'logistica',
       'ajuda',
+      'embalagem',
       'materiais',
     ]);
     expect(await db().moduleSetting.count()).toBe(0);
   });
 
-  it('registro desconhecido ou de chave ainda não configurável não muda nada nem quebra a leitura', async () => {
+  it('registro de chave desconhecida não muda nada nem quebra a leitura; o da embalagem vale (Fase 3)', async () => {
     await db().moduleSetting.createMany({
       data: [
         { key: 'modulo_futuro', enabled: false },
@@ -151,14 +152,14 @@ describe('Interruptores de funcionalidade', () => {
     expect((await admin.get('/api/v1/modules')).body).toEqual({
       logistica: true,
       ajuda: true,
-      embalagem: true,
+      embalagem: false,
       materiais: true,
     });
     // Fase 1: a logística passou a ser configurável — o registro gravado agora vale.
     await db().moduleSetting.create({ data: { key: 'logistica', enabled: false } });
     expect((await admin.get('/api/v1/modules')).body).toMatchObject({
       logistica: false,
-      embalagem: true,
+      embalagem: false,
     });
   });
 
@@ -183,9 +184,8 @@ describe('Interruptores de funcionalidade', () => {
     // Entrada inválida, chave inexistente, chave ainda não configurável.
     expect((await put(admin, 'ajuda', { enabled: 'nao', version: 0 })).status).toBe(400);
     expect((await put(admin, 'inexistente', { enabled: false, version: 0 })).status).toBe(404);
-    // Embalagem obrigatória ainda não é configurável (Fase 3). A logística passou a ser na Fase 1
-    // (coberta em fase1-materiais-estoque-entrega.test.ts).
-    expect((await put(admin, 'embalagem', { enabled: false, version: 0 })).status).toBe(422);
+    // A logística passou a ser configurável na Fase 1 (fase1-materiais-estoque-entrega.test.ts) e a
+    // embalagem na Fase 3 (fase3-qualidade-embalagem.test.ts). Nada foi gravado até aqui.
     expect(await db().moduleSetting.count()).toBe(0);
     // Versão desatualizada.
     expect((await put(admin, 'ajuda', { enabled: false, version: 3 })).body.error.code).toBe(

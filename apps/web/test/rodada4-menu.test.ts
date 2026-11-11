@@ -9,7 +9,7 @@
  * A parte da API do item "Recebimento de materiais" está em
  * apps/api/test/rodada4-travas-estruturais.test.ts.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ALL_PERMISSIONS, isPermission } from '@cenario/shared';
 import { describe, expect, it } from 'vitest';
@@ -52,15 +52,10 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[] }> = {
     group: 'Produção',
     anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
   },
-  '/painel/planejamento': {
-    group: 'Produção',
-    anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
-  },
-  '/painel/producao/a-planejar': {
+  '/painel/producao/programacao': {
     group: 'Produção',
     anyOf: ['producao.ver', 'producao.planejar'],
   },
-  '/painel/producao/planejamento': { group: 'Produção', anyOf: ['producao.planejar'] },
   '/painel/producao': { group: 'Produção', anyOf: ['producao.ver', 'producao.planejar'] },
   '/painel/producao/mapa': {
     group: 'Produção',
@@ -75,7 +70,6 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[] }> = {
   },
   '/painel/ajuda': { group: 'Produção', anyOf: ['producao.ver', 'producao.planejar'] },
   '/painel/reprogramacao': { group: 'Produção', anyOf: ['producao.ver', 'producao.planejar'] },
-  '/painel/competencias': { group: 'Produção', anyOf: ['producao.ver', 'producao.planejar'] },
   '/painel/producao/modelos': {
     group: 'Produção',
     anyOf: ['producao.ver', 'producao.planejar', 'qualidade.gerenciar', 'os.gerenciar'],
@@ -162,6 +156,30 @@ describe('F10-01 — menu em seis áreas', () => {
     }
     // F1-13: "Materiais aprovados" voltou ao menu, na área Compras.
     expect(NAV.find((i) => i.href === '/painel/materiais')?.label).toBe('Materiais aprovados');
+  });
+
+  it('Reformulação Fase 3: área Produção enxuta (8 links), sem perder rotas', () => {
+    const e = sidebar(ALL_PERMISSIONS);
+    const start = e.findIndex((x) => x.kind === 'header' && x.text === 'Produção');
+    const end = e.findIndex((x, i) => i > start && x.kind === 'header');
+    expect(links(e.slice(start, end))).toEqual([
+      'Medições',
+      'Programação semanal',
+      'Quadro de produção',
+      'Mapa da oficina',
+      'Pedidos de ajuda',
+      'Reprogramação',
+      'Modelos de serviço',
+      'Presença da equipe',
+    ]);
+    // Saíram do menu, mas as páginas continuam existindo (abrem pelo endereço e por link).
+    for (const page of [
+      'planejamento/page.tsx',
+      'producao/a-planejar/page.tsx',
+      'producao/planejamento/page.tsx',
+      'competencias/page.tsx',
+    ])
+      expect(existsSync(resolve(__dirname, '../app/painel', page)), page).toBe(true);
   });
 
   it('itens por permissão: cada perfil vê só as áreas e links que pode abrir', () => {

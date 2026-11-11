@@ -1,11 +1,6 @@
 'use client';
 
-import type {
-  PipelineServiceDto,
-  PipelineStage,
-  PublicationPreviewDto,
-  WorkerDto,
-} from '@cenario/shared';
+import type { PipelineServiceDto, PipelineStage, WorkerDto } from '@cenario/shared';
 import {
   PIECE_TYPE_LABEL,
   PRIORITIES,
@@ -27,7 +22,8 @@ import { Tabs } from '@/components/ui/tabs';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { formatDay, todayIso } from '@/lib/commercial';
 import { useCan, useMe } from '@/lib/hooks';
-import { usePipeline, usePublicationPreview, useWorkers } from '@/lib/production';
+import { usePipeline, useWorkers } from '@/lib/production';
+import { PublishWeekDialog } from './publish-week-dialog';
 import { useSend } from './use-send';
 
 /**
@@ -41,7 +37,7 @@ type Tab = 'A_PLANEJAR' | 'PLANEJADOS' | 'AGUARDANDO_CONDICAO' | 'EM_PRODUCAO' |
 
 const day = (iso: string | null) => (iso ? iso.split('-').reverse().join('/') : '—');
 
-export function PreplanningPage() {
+export function PreplanningPage({ embedded = false }: { embedded?: boolean } = {}) {
   const can = useCan();
   const plan = can('producao.planejar');
   const q = usePipeline();
@@ -60,18 +56,20 @@ export function PreplanningPage() {
 
   return (
     <>
-      <PageHeader
-        title="Produção — A planejar"
-        description="Serviços recebidos que ainda precisam entrar na programação. Escolha o tapeceiro e a data de início: o sistema prepara as tarefas e você publica a semana quando estiver pronta."
-        actions={
-          <Link
-            href="/painel/producao/planejamento"
-            className="inline-flex h-11 items-center gap-2 rounded-xl border border-line-strong bg-surface px-4 text-[15px] font-semibold hover:bg-subtle"
-          >
-            <CalendarRange className="size-4" aria-hidden /> Planejamento avançado
-          </Link>
-        }
-      />
+      {!embedded && (
+        <PageHeader
+          title="Produção — A planejar"
+          description="Serviços recebidos que ainda precisam entrar na programação. Escolha o tapeceiro e a data de início: o sistema prepara as tarefas e você publica a semana quando estiver pronta."
+          actions={
+            <Link
+              href="/painel/producao/planejamento"
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-line-strong bg-surface px-4 text-[15px] font-semibold hover:bg-subtle"
+            >
+              <CalendarRange className="size-4" aria-hidden /> Planejamento avançado
+            </Link>
+          }
+        />
+      )}
       {q.isPending ? (
         <Spinner />
       ) : q.isError ? (
@@ -150,7 +148,7 @@ export function PreplanningPage() {
       {rescheduling && (
         <RescheduleDialog item={rescheduling} onClose={() => setRescheduling(null)} />
       )}
-      {publishing && <PublishDialog planId={publishing} onClose={() => setPublishing(null)} />}
+      {publishing && <PublishWeekDialog planId={publishing} onClose={() => setPublishing(null)} />}
     </>
   );
 }
@@ -837,113 +835,3 @@ function RescheduleDialog({ item, onClose }: { item: PipelineServiceDto; onClose
 }
 
 // ─────────────────────────── Revisar e publicar ───────────────────────────
-
-function PublishDialog({ planId, onClose }: { planId: string; onClose: () => void }) {
-  const q = usePublicationPreview(planId);
-  const [key] = useState(newIdempotencyKey);
-  const { m, error } = useSend(onClose);
-  const p: PublicationPreviewDto | undefined = q.data;
-  return (
-    <Dialog
-      open
-      size="lg"
-      onClose={onClose}
-      title={p ? `Publicar semana de ${day(p.weekStart)}` : 'Publicar semana'}
-      description="Confira o que vai para os tablets. Tarefas com impedimento continuam bloqueadas até a condição ser resolvida."
-      footer={
-        <>
-          <Button variant="secondary" onClick={onClose}>
-            Voltar
-          </Button>
-          <Button
-            loading={m.isPending}
-            disabled={!p?.publishable}
-            data-testid="publish-confirm"
-            icon={<Send className="size-4" aria-hidden />}
-            onClick={() =>
-              m.mutate({
-                run: () =>
-                  api(`/api/v1/production-plans/${planId}/publish`, {
-                    method: 'POST',
-                    idempotencyKey: key,
-                    body: { version: p!.version },
-                  }),
-                ok: 'Semana publicada: os tablets já receberam as tarefas.',
-              })
-            }
-          >
-            Publicar semana
-          </Button>
-        </>
-      }
-    >
-      {error && (
-        <Alert tone="danger" className="mb-4">
-          {error}
-        </Alert>
-      )}
-      {q.isPending ? (
-        <Spinner />
-      ) : q.isError ? (
-        <Alert tone="danger">{q.error.message}</Alert>
-      ) : (
-        p && (
-          <div className="space-y-4 text-sm" data-testid="publish-preview">
-            <dl className="grid grid-cols-3 gap-3">
-              {[
-                ['OS', p.serviceOrders],
-                ['Peças', p.pieces],
-                ['Tarefas', p.tasks],
-              ].map(([k, v]) => (
-                <div key={k as string} className="rounded-xl bg-subtle p-3 text-center">
-                  <dt className="text-ink-muted">{k}</dt>
-                  <dd className="text-xl font-semibold tabular-nums">{v}</dd>
-                </div>
-              ))}
-            </dl>
-            <div>
-              <p className="font-semibold">Distribuição por profissional</p>
-              <ul className="mt-1 space-y-0.5">
-                {p.byAssignee.map((b) => (
-                  <li key={b.userId ?? '-'}>
-                    {b.displayName}: {b.tasks} tarefa(s)
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <p className="font-semibold">Datas de início</p>
-              <ul className="mt-1 space-y-0.5">
-                {p.startDates.map((s) => (
-                  <li key={s.code}>
-                    {s.code}: {day(s.startDate)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            {p.materialsBlocked.length > 0 && (
-              <Alert tone="warn" title="Materiais pendentes (as etapas ficam bloqueadas)">
-                {p.materialsBlocked.map((x) => `${x.code}: ${x.label}`).join(' · ')}
-              </Alert>
-            )}
-            {[...p.pendencies, ...p.conflicts].length > 0 && (
-              <Alert tone="warn" title="Pendências e conflitos">
-                <ul>
-                  {[...p.pendencies, ...p.conflicts].map((x) => (
-                    <li key={x}>{x}</li>
-                  ))}
-                </ul>
-              </Alert>
-            )}
-            {p.planStatus === 'PUBLICADO' && (
-              <p className="text-ink-muted">
-                Esta semana já tinha sido publicada: os serviços acima entram como nova revisão; o
-                que já estava publicado não muda.
-              </p>
-            )}
-          </div>
-        )
-      )}
-    </Dialog>
-  );
-}

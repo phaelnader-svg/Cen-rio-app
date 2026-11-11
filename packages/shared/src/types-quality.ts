@@ -87,6 +87,10 @@ export interface InspectionDto {
   decidedAt: string | null;
   decidedBy: string | null;
   decisionNote: string | null;
+  /** Reformulação Fase 3 (D4): justificativa do gestor que aprovou a própria execução. */
+  selfApprovalReason: string | null;
+  /** Reformulação Fase 3: a embalagem era exigida quando a inspeção foi aprovada. */
+  packagingRequired: boolean;
   invalidatedAt: string | null;
   invalidReason: string | null;
   items: InspectionItemDto[];
@@ -95,7 +99,14 @@ export interface InspectionDto {
   /** Etapas de produção da peça (histórico para o inspetor). */
   production: InspectionTaskDto[];
   photos: number;
-  can: { start: boolean; check: boolean; decide: boolean; decideReason: string | null };
+  can: {
+    start: boolean;
+    check: boolean;
+    decide: boolean;
+    decideReason: string | null;
+    /** Fase 3 (D4): quem decide executou o serviço — aprovar exige justificativa. */
+    selfApproval: boolean;
+  };
   version: number;
   createdAt: string;
 }

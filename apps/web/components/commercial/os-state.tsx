@@ -5,6 +5,7 @@ import {
   OPERATIONAL_STATE_LABEL,
   OPERATIONAL_STATE_TONE,
   OPERATIONAL_STATES,
+  type OperationalState,
   type OperationalStateDto,
 } from '@cenario/shared';
 import { useQuery } from '@tanstack/react-query';
@@ -19,6 +20,21 @@ export const useOperationalState = (serviceOrderId: string, enabled = true) =>
       api<OperationalStateDto>(`/api/v1/service-orders/${serviceOrderId}/operational-state`),
     enabled,
   });
+
+/**
+ * Reformulação, Fase 3 — apresentação ÚNICA do estado geral da OS (regra da Fase 0): mesmo
+ * rótulo e mesmo tom em todas as telas (cabeçalho da OS, lista de OS…), sem cada tela inventar
+ * o seu.
+ */
+export function OsStateBadge({ state }: { state: OperationalState }) {
+  return (
+    <Badge tone={OPERATIONAL_STATE_TONE[state]} dot>
+      <span data-testid="os-state-badge" data-state={state}>
+        {OPERATIONAL_STATE_LABEL[state]}
+      </span>
+    </Badge>
+  );
+}
 
 /**
  * Reformulação, Fase 2 — estado geral da OS no cabeçalho (o estado operacional da Fase 0, que
@@ -46,9 +62,7 @@ export function OsStateHeader({
       data-state={s.state}
     >
       <span className="text-sm text-ink-muted">Situação</span>
-      <Badge tone={OPERATIONAL_STATE_TONE[s.state]} dot>
-        {OPERATIONAL_STATE_LABEL[s.state]}
-      </Badge>
+      <OsStateBadge state={s.state} />
       {s.totalItems > 1 && parts.length > 1 && (
         <span className="text-xs text-ink-muted" data-testid="os-state-counts">
           {parts.join(' · ')}

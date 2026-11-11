@@ -206,7 +206,9 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         }
       />
       <div className="mb-6 flex flex-wrap items-center gap-2">
-        <ServiceOrderStatusBadge status={s.status} />
+        {/* Fase 3: "Aberta" ficava ao lado de "Entregue" (a OS continua aberta no banco depois da
+            entrega). A situação geral fica no quadro abaixo; aqui só o cancelamento. */}
+        {s.status === 'CANCELADA' && <ServiceOrderStatusBadge status={s.status} />}
         <PriorityBadge priority={s.priority} />
         {s.promisedDate && (
           <span className="text-sm text-ink-muted">

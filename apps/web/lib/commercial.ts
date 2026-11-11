@@ -1,5 +1,7 @@
 'use client';
 
+import type { OperationalState } from '@cenario/shared';
+
 import type {
   AttachmentDto,
   AttachmentEntity,
@@ -64,6 +66,8 @@ export interface CustomerHistory {
     priority: string;
     pieceCount: number;
     createdAt: string;
+    /** Fase 3: estado geral da OS (mesma regra da lista e do cabeçalho). */
+    operationalState: OperationalState | null;
   }[];
   changes: {
     id: string;

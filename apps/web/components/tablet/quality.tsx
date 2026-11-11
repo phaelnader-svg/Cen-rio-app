@@ -15,6 +15,7 @@ import {
   PRIORITY_LABEL,
   PROTECTIONS,
   PROTECTION_LABEL,
+  SELF_APPROVAL_REASON_MIN,
   SERVICE_TYPE_LABEL,
   TASK_STATUS_LABEL,
   type Protection,
@@ -281,6 +282,8 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
   const [note, setNote] = useState('');
+  // Fase 3 (D4): justificativa do gestor que aprova a própria execução.
+  const [selfReason, setSelfReason] = useState('');
   // Uma chave por intenção (iniciar, decidir): repetir a mesma ação não duplica nada.
   const [key, setKey] = useState(newIdempotencyKey);
   const [startKey, setStartKey] = useState(newIdempotencyKey);
@@ -290,6 +293,13 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
   const open = i.status === 'PENDENTE' || i.status === 'EM_ANDAMENTO';
   const unchecked = i.items.filter((x) => x.required && !x.result).length;
   const defects = i.items.filter((x) => x.result === 'NAO_CONFORME');
+  const needsReason = i.can.selfApproval;
+  const reasonOk = !needsReason || selfReason.trim().length >= SELF_APPROVAL_REASON_MIN;
+  const approveBody = (allConform: boolean) => ({
+    note: note.trim() || null,
+    ...(allConform ? { allConform: true } : {}),
+    ...(needsReason ? { selfApprovalReason: selfReason.trim() } : {}),
+  });
   const decide = (path: 'approve' | 'reject', body: Record<string, unknown>, ok: string) =>
     m.mutate(
       {
@@ -384,6 +394,28 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
           <h2 className="text-xl font-semibold">Decisão</h2>
           {!rejecting ? (
             <>
+              {needsReason && (
+                <div className="space-y-2" data-testid="self-approval">
+                  <Alert tone="warn" title="Você executou este serviço">
+                    Como gestor, você pode aprovar a própria execução só com justificativa. Ela fica
+                    registrada com seu nome e a data, e destacada na auditoria.
+                  </Alert>
+                  <label className="block text-base font-medium" htmlFor="self-reason">
+                    Justificativa (obrigatória)
+                  </label>
+                  <textarea
+                    id="self-reason"
+                    className="input input-lg min-h-16"
+                    value={selfReason}
+                    onChange={(e) => setSelfReason(e.target.value)}
+                  />
+                  {!reasonOk && (
+                    <p className="text-sm text-ink-muted">
+                      Mínimo de {SELF_APPROVAL_REASON_MIN} caracteres.
+                    </p>
+                  )}
+                </div>
+              )}
               <label className="block text-base font-medium" htmlFor="approve-note">
                 Observação (opcional)
               </label>
@@ -393,13 +425,30 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
+              {/* Fase 3: "Tudo conforme" marca os itens não conferidos como conformes e aprova. */}
+              {defects.length === 0 && unchecked > 0 && (
+                <Button
+                  size="xl"
+                  className="w-full"
+                  disabled={!online || !reasonOk}
+                  loading={m.isPending}
+                  icon={<BadgeCheck className="size-6" aria-hidden />}
+                  onClick={() =>
+                    decide('approve', approveBody(true), 'Peça aprovada (tudo conforme).')
+                  }
+                  data-testid="approve-all-conform"
+                >
+                  Tudo conforme — aprovar
+                </Button>
+              )}
               <div className="grid gap-3 sm:grid-cols-2">
                 <Button
                   size="xl"
-                  disabled={!online || unchecked > 0 || defects.length > 0}
+                  variant={unchecked > 0 ? 'secondary' : 'primary'}
+                  disabled={!online || unchecked > 0 || defects.length > 0 || !reasonOk}
                   loading={m.isPending}
                   icon={<BadgeCheck className="size-6" aria-hidden />}
-                  onClick={() => decide('approve', { note: note.trim() || null }, 'Peça aprovada.')}
+                  onClick={() => decide('approve', approveBody(false), 'Peça aprovada.')}
                 >
                   Aprovar
                 </Button>
@@ -415,7 +464,8 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
               </div>
               {unchecked > 0 && (
                 <p className="text-base text-ink-muted">
-                  Faltam {unchecked} item(ns) obrigatório(s).
+                  Faltam {unchecked} item(ns) obrigatório(s) — confira um a um ou use “Tudo
+                  conforme”.
                 </p>
               )}
               {defects.length === 0 && (
@@ -469,6 +519,14 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
         >
           {i.decidedBy ? `${i.decidedBy} · ${formatDateTime(i.decidedAt!)}` : ''}
           {i.decisionNote ? ` — ${i.decisionNote}` : ''}
+          {i.selfApprovalReason && (
+            <span className="mt-1 block font-semibold" data-testid="self-approval-note">
+              Autoaprovação do gestor — justificativa: {i.selfApprovalReason}
+            </span>
+          )}
+          {i.status === 'APROVADA' && !i.packagingRequired && (
+            <span className="mt-1 block">Embalagem dispensada (desligada na aprovação).</span>
+          )}
         </Alert>
       )}
 

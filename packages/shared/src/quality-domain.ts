@@ -63,10 +63,13 @@ export type SubstituteReason = keyof typeof SUBSTITUTE_REASONS;
 
 /**
  * Quem pode aprovar ou reprovar uma inspeção (regra única):
- * - ninguém decide sobre a peça que executou — nem o gestor, nem com autorização
- *   (Simplificação Fase 5, D8): a decisão fica com outro gestor ou com um inspetor substituto
- *   designado pelo gestor;
- * - o gestor (qualidade.gerenciar) que não executou pode;
+ * - quem executou o serviço NÃO decide sobre a própria peça (Simplificação Fase 5, D8) —
+ *   **exceto o gestor** (qualidade.gerenciar), que desde a Reformulação Fase 3 (D4) pode APROVAR a
+ *   própria execução com **justificativa obrigatória**, gravada com identidade e data e
+ *   destacada na auditoria (`selfApproval`). Reprovar a própria peça não é conflito: o gestor
+ *   reprova normalmente;
+ * - os demais executores continuam sem decidir, nem com autorização;
+ * - o gestor que não executou pode;
  * - o inspetor designado que não executou pode;
  * - qualquer outra pessoa, não.
  */
@@ -74,18 +77,47 @@ export function canDecideInspection(i: {
   isManager: boolean;
   isAssignedInspector: boolean;
   executedService: boolean;
-}): { allowed: boolean; reason: string | null } {
+}): { allowed: boolean; reason: string | null; selfApproval: boolean } {
   if (i.executedService)
+    return i.isManager
+      ? {
+          allowed: true,
+          selfApproval: true,
+          reason:
+            'Você executou este serviço: como gestor, só aprova com justificativa (fica destacada na auditoria).',
+        }
+      : {
+          allowed: false,
+          selfApproval: false,
+          reason:
+            'Você executou este serviço: ninguém aprova a própria peça. A decisão fica com o gestor ou com outro inspetor autorizado.',
+        };
+  if (i.isManager) return { allowed: true, reason: null, selfApproval: false };
+  if (!i.isAssignedInspector)
     return {
       allowed: false,
-      reason: i.isManager
-        ? 'Você executou este serviço: ninguém aprova a própria peça. Designe um inspetor substituto autorizado.'
-        : 'Você executou este serviço: ninguém aprova a própria peça. A decisão fica com o gestor ou com outro inspetor autorizado.',
+      reason: 'A inspeção está designada para outra pessoa.',
+      selfApproval: false,
     };
-  if (i.isManager) return { allowed: true, reason: null };
-  if (!i.isAssignedInspector)
-    return { allowed: false, reason: 'A inspeção está designada para outra pessoa.' };
-  return { allowed: true, reason: null };
+  return { allowed: true, reason: null, selfApproval: false };
+}
+
+/** Tamanho mínimo da justificativa da autoaprovação do gestor (D4). */
+export const SELF_APPROVAL_REASON_MIN = 10;
+
+/** Ação de auditoria destacada (exceções que o gestor fez por conta própria). */
+export const HIGHLIGHTED_AUDIT_ACTIONS = ['quality.inspection_self_approved'] as const;
+
+/**
+ * "Tudo conforme": os itens ainda não conferidos viram CONFORME. Recusa se algum já está "não
+ * conforme" (aí é reprovação). Devolve só os que mudam (os já conferidos ficam como estão).
+ */
+export function allConformChanges<T extends { id: string; result: CheckResult | null }>(
+  items: readonly T[],
+): { ok: true; toCheck: T[] } | { ok: false; problem: string } {
+  if (items.some((i) => i.result === 'NAO_CONFORME'))
+    return { ok: false, problem: 'Há itens não conformes: reprove e registre a correção.' };
+  return { ok: true, toCheck: items.filter((i) => i.result === null) };
 }
 
 /**
@@ -256,9 +288,25 @@ export interface ReadinessInput {
   inspection: InspectionStatus | null;
   /** Correções (tarefas) ainda não concluídas. */
   openCorrections: number;
-  packaging: 'PENDENTE' | 'EM_ANDAMENTO' | 'CONCLUIDA' | 'INVALIDADA' | 'CANCELADA' | null;
+  /**
+   * Situação da embalagem da inspeção aprovada. `DISPENSADA` (Reformulação Fase 3): a inspeção foi
+   * aprovada com o interruptor "embalagem" desligado — vale como concluída.
+   */
+  packaging:
+    | 'PENDENTE'
+    | 'EM_ANDAMENTO'
+    | 'CONCLUIDA'
+    | 'INVALIDADA'
+    | 'CANCELADA'
+    | 'DISPENSADA'
+    | null;
   /** Ocorrência logística aberta que bloqueia a expedição. */
   shippingBlock: boolean;
+  /**
+   * Reformulação Fase 3: a peça vai precisar de embalagem? Depois da aprovação, o que ficou gravado
+   * nela; antes, o interruptor atual. Ausente = sim (comportamento anterior).
+   */
+  packagingRequired?: boolean;
 }
 
 export const READINESS_CHECKS = [
@@ -286,7 +334,8 @@ export function deliveryReadiness(i: ReadinessInput): {
   if (i.requiredTasks === 0 || i.requiredTasksDone < i.requiredTasks) missing.push('TAREFAS');
   if (i.inspection !== 'APROVADA') missing.push('INSPECAO');
   if (i.openCorrections > 0) missing.push('CORRECOES');
-  if (i.packaging !== 'CONCLUIDA') missing.push('EMBALAGEM');
+  if (i.packagingRequired !== false && i.packaging !== 'CONCLUIDA' && i.packaging !== 'DISPENSADA')
+    missing.push('EMBALAGEM');
   if (i.shippingBlock) missing.push('SEM_BLOQUEIO');
   return { ready: missing.length === 0, missing };
 }
@@ -313,7 +362,7 @@ export function computeStage(
   if (i.inspection === 'EM_ANDAMENTO') return 'EM_INSPECAO';
   if (i.inspection !== 'APROVADA') return 'AGUARDANDO_INSPECAO';
   if (i.packaging === 'EM_ANDAMENTO') return 'EM_EMBALAGEM';
-  if (i.packaging !== 'CONCLUIDA') return 'AGUARDANDO_EMBALAGEM';
+  if (i.packaging !== 'CONCLUIDA' && i.packaging !== 'DISPENSADA') return 'AGUARDANDO_EMBALAGEM';
   if (i.shippingBlock) return 'BLOQUEIO_EXPEDICAO';
   return i.scheduled ? 'ENTREGA_AGENDADA' : 'PRONTA_ENTREGA';
 }
