@@ -1,6 +1,6 @@
 'use client';
 
-import { formatCents, type OsMaterialDto } from '@cenario/shared';
+import { formatCents, type FormalCostRecordDto, type OsMaterialDto } from '@cenario/shared';
 import clsx from 'clsx';
 import { Check, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
@@ -33,7 +33,15 @@ export function OsMaterialList({
 
   if (q.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
-  const { materials, summary, notice, canSeeCosts } = q.data;
+  const {
+    materials,
+    summary,
+    notice,
+    canSeeCosts,
+    canReconcile,
+    formalRecords,
+    pendingReconciliation,
+  } = q.data;
 
   const patch = (m: OsMaterialDto, body: Record<string, unknown>, settled?: () => void) =>
     act.mutate(
@@ -61,6 +69,16 @@ export function OsMaterialList({
           data-testid="os-material-notice"
         >
           {notice} A produção pode começar mesmo assim.
+        </p>
+      )}
+      {pendingReconciliation && pendingReconciliation.lines > 0 && (
+        <p
+          className="border-b border-line bg-warn-50 px-4 py-2 text-sm text-warn-600"
+          data-testid="os-material-reconcile-notice"
+        >
+          Conciliação pendente: {pendingReconciliation.lines} material(is) com custo informado e a
+          OS também tem compra formal ({formatCents(pendingReconciliation.realizedCents)} no
+          realizado). O valor continua contando até o financeiro indicar se é o mesmo material.
         </p>
       )}
       {act.error && (
@@ -92,6 +110,14 @@ export function OsMaterialList({
                   m={m}
                   manage={manage}
                   canSeeCosts={canSeeCosts}
+                  canReconcile={canReconcile && open}
+                  formalRecords={formalRecords ?? []}
+                  onReconcile={(body) =>
+                    act.mutate({
+                      path: `${base}/${m.id}/reconcile`,
+                      body: { ...body, version: m.version },
+                    })
+                  }
                   busy={act.isPending}
                   onPatch={(body, settled) => patch(m, body, settled)}
                   onRemove={() =>
@@ -123,6 +149,9 @@ function MaterialRow({
   m,
   manage,
   canSeeCosts,
+  canReconcile,
+  formalRecords,
+  onReconcile,
   busy,
   onPatch,
   onRemove,
@@ -130,6 +159,9 @@ function MaterialRow({
   m: OsMaterialDto;
   manage: boolean;
   canSeeCosts: boolean;
+  canReconcile: boolean;
+  formalRecords: FormalCostRecordDto[];
+  onReconcile: (body: Record<string, unknown>) => void;
   busy: boolean;
   onPatch: (body: Record<string, unknown>, settled?: () => void) => void;
   onRemove: () => void;
@@ -267,6 +299,15 @@ function MaterialRow({
                 formatCents(m.costCents)
               )}
             </span>
+          )}
+          {m.reconciliation && m.reconciliation.status !== 'NAO_SE_APLICA' && (
+            <Reconciliation
+              m={m}
+              records={formalRecords}
+              canReconcile={canReconcile}
+              busy={busy}
+              onReconcile={onReconcile}
+            />
           )}
         </td>
       )}
@@ -443,5 +484,98 @@ function AddMaterial({
         <Plus className="size-4" /> Adicionar
       </Button>
     </form>
+  );
+}
+
+const recordLabel = (r: FormalCostRecordDto) =>
+  `${r.kind === 'COMPRA' ? 'Compra' : 'Lançamento'} ${r.reference} · ${r.description}${
+    r.amountCents === null ? '' : ` · ${formatCents(r.amountCents)}`
+  }`;
+
+/**
+ * Conciliação com o custo formal (Fase 1): nada é deduzido por valores iguais. Quem gerencia o
+ * financeiro escolhe o registro formal (é o mesmo material → o informado deixa de contar) ou
+ * marca como outro material (continua contando). Pode desfazer.
+ */
+function Reconciliation({
+  m,
+  records,
+  canReconcile,
+  busy,
+  onReconcile,
+}: {
+  m: OsMaterialDto;
+  records: FormalCostRecordDto[];
+  canReconcile: boolean;
+  busy: boolean;
+  onReconcile: (body: Record<string, unknown>) => void;
+}) {
+  const r = m.reconciliation!;
+  const [choice, setChoice] = useState('');
+  return (
+    <div className="mt-1 space-y-1 text-xs" data-testid="os-material-reconciliation">
+      {r.status === 'PENDENTE' && <Badge tone="warn">Conciliar com a compra formal</Badge>}
+      {r.status === 'VINCULADO' && (
+        <p className="text-ink-muted">
+          <Badge tone="ok">Mesmo material da compra formal</Badge>{' '}
+          {r.linked ? recordLabel(r.linked) : ''} — não conta de novo.
+        </p>
+      )}
+      {r.status === 'DISTINTO' && <Badge tone="neutral">Outro material (conta à parte)</Badge>}
+      {canReconcile && r.status === 'PENDENTE' && (
+        <div className="flex flex-wrap items-center gap-1">
+          <select
+            aria-label={`Registro formal de ${m.description}`}
+            className="h-8 max-w-56 rounded-lg border border-line-strong bg-surface px-2"
+            value={choice}
+            onChange={(e) => setChoice(e.target.value)}
+          >
+            <option value="">É o mesmo de…</option>
+            {records.map((f) => (
+              <option key={f.id} value={`${f.kind}:${f.id}`}>
+                {recordLabel(f)}
+              </option>
+            ))}
+          </select>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={!choice || busy}
+            onClick={() => {
+              const [kind, id] = choice.split(':');
+              onReconcile({
+                mode: 'VINCULADO',
+                ...(kind === 'COMPRA' ? { purchaseItemId: id } : { costId: id }),
+              });
+            }}
+          >
+            Vincular
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            onClick={() => onReconcile({ mode: 'DISTINTO' })}
+          >
+            É outro material
+          </Button>
+        </div>
+      )}
+      {canReconcile && (r.status === 'VINCULADO' || r.status === 'DISTINTO') && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={busy}
+          onClick={() => onReconcile({ mode: null })}
+        >
+          Desfazer conciliação
+        </Button>
+      )}
+      {r.reconciledBy && r.reconciledAt && (
+        <p className="text-ink-muted">
+          por {r.reconciledBy.displayName} em {new Date(r.reconciledAt).toLocaleString('pt-BR')}
+        </p>
+      )}
+    </div>
   );
 }

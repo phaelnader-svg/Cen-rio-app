@@ -19,8 +19,15 @@ import { idSchema, optionalText, trimmed, versionSchema } from './schemas/common
  *  - O realizado vai para o livro de custos imutável por lançamentos compensatórios (origem
  *    MATERIAL_OS): editar o custo, desmarcar "comprado" ou remover a linha lança a diferença, sem
  *    reescrever nada. Relatórios e margens leem o livro, então nada some deles.
- *  - Se a mesma OS tiver custo formal e custo informado na lista simples, o resultado mostra um
- *    aviso para o gestor conferir se o mesmo material não foi lançado nos dois fluxos.
+ *  - CONCILIAÇÃO EXPLÍCITA (dupla contagem): quando a OS também tem custo formal (item de compra
+ *    exclusiva ativo ou lançamento formal no livro), cada linha com custo informado fica PENDENTE
+ *    até alguém do financeiro decidir:
+ *      · VINCULADO a um registro formal específico da mesma OS — "é o mesmo material": o custo
+ *        informado deixa de contar (lançamento compensatório de estorno; o formal é a fonte);
+ *      · DISTINTO — "é outro material": o custo informado continua contando.
+ *    Enquanto pendente, o custo informado CONTINUA contando (nada some do resultado) e o resultado
+ *    mostra o valor em risco de duplicidade. Nada é deduzido por valores ou nomes iguais. Desfazer a
+ *    decisão volta a linha para pendente e o livro recebe a diferença; nenhum lançamento é apagado.
  */
 
 /** Quantidade opcional (positiva, até 3 casas). */
@@ -89,6 +96,8 @@ export interface OsMaterialDto {
   available: boolean;
   /** Só para quem vê o financeiro; `undefined` quando oculto, `null` quando não informado. */
   costCents?: number | null;
+  /** Só para quem vê o financeiro. */
+  reconciliation?: OsMaterialReconciliationDto;
   version: number;
   updatedAt: string;
   updatedBy: { id: string; displayName: string } | null;
@@ -109,6 +118,12 @@ export interface OsMaterialsDto {
   notice: string | null;
   /** O usuário vê e edita custos (financeiro.ver). */
   canSeeCosts: boolean;
+  /** Pode decidir a conciliação (financeiro.gerenciar). */
+  canReconcile: boolean;
+  /** Só para quem vê o financeiro: registros formais da OS que podem ser vinculados. */
+  formalRecords?: FormalCostRecordDto[];
+  /** Só para quem vê o financeiro: linhas pendentes de conciliação e custo realizado em risco. */
+  pendingReconciliation?: { lines: number; realizedCents: number };
 }
 
 export const MATERIALS_PENDING_NOTICE = 'Existem materiais ainda não disponíveis na oficina.';
@@ -129,19 +144,81 @@ export function realizedOsMaterialCost(row: {
   purchased: boolean;
   costCents: number | null;
   removed: boolean;
+  /** Conciliação: VINCULADO = o custo é o do registro formal (o informado não conta). */
+  reconciliation?: string | null;
 }): number {
+  if (row.reconciliation === 'VINCULADO') return 0;
   return !row.removed && row.purchased && row.costCents !== null ? row.costCents : 0;
+}
+
+export const OS_MATERIAL_RECONCILIATIONS = ['VINCULADO', 'DISTINTO'] as const;
+export type OsMaterialReconciliation = (typeof OS_MATERIAL_RECONCILIATIONS)[number];
+export type OsMaterialReconciliationStatus =
+  | OsMaterialReconciliation
+  | 'PENDENTE'
+  | 'NAO_SE_APLICA';
+
+/**
+ * Situação de conciliação de uma linha. PENDENTE = tem custo informado, a OS tem custo formal e
+ * ninguém decidiu ainda (nunca é deduzida por valores iguais).
+ */
+export function osMaterialReconciliationStatus(
+  row: { costCents: number | null; removed: boolean; reconciliation: string | null },
+  osHasFormalCost: boolean,
+): OsMaterialReconciliationStatus {
+  if (row.reconciliation === 'VINCULADO' || row.reconciliation === 'DISTINTO')
+    return row.reconciliation;
+  if (row.removed || row.costCents === null || !osHasFormalCost) return 'NAO_SE_APLICA';
+  return 'PENDENTE';
+}
+
+/** Decisão de conciliação (financeiro). `mode: null` desfaz (volta a pendente). */
+export const osMaterialReconcileSchema = z
+  .object({
+    mode: z.enum(OS_MATERIAL_RECONCILIATIONS).nullable(),
+    purchaseItemId: idSchema.optional(),
+    costId: idSchema.optional(),
+    version: versionSchema,
+  })
+  .refine(
+    (v) =>
+      v.mode === 'VINCULADO'
+        ? (v.purchaseItemId === undefined) !== (v.costId === undefined)
+        : v.purchaseItemId === undefined && v.costId === undefined,
+    'Para vincular, informe exatamente um registro formal (compra ou lançamento); para "distinto" ou desfazer, nenhum.',
+  );
+export type OsMaterialReconcileInput = z.infer<typeof osMaterialReconcileSchema>;
+
+/** Registro formal da OS que pode ser vinculado a uma linha da lista simples. */
+export interface FormalCostRecordDto {
+  kind: 'COMPRA' | 'LANCAMENTO';
+  id: string;
+  description: string;
+  /** Compra: pedido × preço (null = sem preço). Lançamento: valor do livro. */
+  amountCents: number | null;
+  /** Compra: código do pedido; lançamento: origem (COMPRA_EXCLUSIVA, SAIDA_ESTOQUE…). */
+  reference: string;
+  occurredAt: string | null;
+}
+
+export interface OsMaterialReconciliationDto {
+  status: OsMaterialReconciliationStatus;
+  linked: FormalCostRecordDto | null;
+  reconciledBy: { id: string; displayName: string } | null;
+  reconciledAt: string | null;
 }
 
 /** Classificação de custo da lista simples para o resumo de materiais da OS. */
 export function osMaterialCostTotals(
-  rows: readonly { purchased: boolean; costCents: number | null }[],
+  rows: readonly { purchased: boolean; costCents: number | null; reconciliation?: string | null }[],
 ) {
   let forecastCents = 0;
   let forecastUnpriced = 0;
   let realizedCents = 0;
   let realizedUnpriced = 0;
   for (const r of rows) {
+    // Vinculada a um registro formal: o custo (previsto e realizado) é o do fluxo formal.
+    if (r.reconciliation === 'VINCULADO') continue;
     if (r.costCents === null) {
       if (r.purchased) realizedUnpriced += 1;
       else forecastUnpriced += 1;

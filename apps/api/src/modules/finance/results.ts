@@ -1,6 +1,7 @@
 import {
   EXPENSE_CATEGORIES,
   contributionMargin,
+  formatCents,
   laborDue,
   logisticsCostCode,
   managementResult,
@@ -148,7 +149,7 @@ export async function orderResult(
     );
   if (materials.mixedSources)
     warnings.push(
-      'Esta OS tem custo de material formal (compra, estoque ou sobra) e custo informado na lista de materiais: confira se o mesmo material não foi lançado nos dois.',
+      `Conciliação pendente: ${materials.pendingReconciliationLines} material(is) da lista da OS com custo informado (${formatCents(materials.pendingReconciliationCents)} no realizado) e a OS também tem custo formal (compra, estoque ou sobra). O valor continua contando até o financeiro vincular ao registro formal (se for o mesmo material) ou marcar como distinto, na aba Materiais da OS.`,
     );
   if (c.delivered && materials.activeReservations)
     warnings.push(

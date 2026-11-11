@@ -316,7 +316,12 @@ describe('Materiais necessários da OS (lista simples)', () => {
     });
     const mixed = ok(await admin.get(`/api/v1/finance/service-orders/${so.id}`));
     expect(mixed.materials.mixedSources).toBe(true);
-    expect(mixed.warnings.join(' ')).toMatch(/nos dois/);
+    // Conciliação pendente (nunca presumida): o valor em risco aparece no aviso.
+    expect(mixed.materials).toMatchObject({
+      pendingReconciliationLines: 1,
+      pendingReconciliationCents: 4500,
+    });
+    expect(mixed.warnings.join(' ')).toMatch(/Conciliação pendente: 1 material/);
     // Relatório de custos agrupa a origem nova (o custo não some dos relatórios).
     const report = ok(
       await admin.get(`/api/v1/finance/reports/custos?from=${today()}&to=${today()}`),
@@ -812,7 +817,8 @@ describe('Entrega direta pela OS ("Marcar como entregue")', () => {
     expect(recAfter.effectiveDueDate).toBe(today());
     // Resultado da OS: concluída.
     const result = ok(await s.admin.get(`/api/v1/finance/service-orders/${s.so.id}`));
-    expect(result.delivered ?? result.completion?.delivered ?? true).toBeTruthy();
+    expect(result.delivered).toBe(true);
+    expect(result.completedAt).not.toBeNull();
     // Sem viagem: nenhum custo de frete, nenhuma pendência de "custo não informado".
     expect(await db().logisticsCost.count()).toBe(0);
     const trip = await post(s.admin, '/api/v1/finance/trip-costs', {

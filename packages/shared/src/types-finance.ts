@@ -266,8 +266,14 @@ export interface MaterialCostSummaryDto {
   informedCents: number;
   /** Fase 1: materiais da OS marcados como comprados sem custo informado (incluídos em unpricedLines). */
   informedUnpriced: number;
-  /** Fase 1: a OS tem custo formal (compra/estoque/sobra) E custo informado na lista simples. */
+  /**
+   * Fase 1: há linha da lista simples com custo informado PENDENTE de conciliação com o custo formal
+   * da OS (possível duplicidade). Linhas vinculadas ou marcadas como distintas não contam.
+   */
   mixedSources: boolean;
+  /** Fase 1: linhas pendentes de conciliação e quanto do realizado está em risco de duplicidade. */
+  pendingReconciliationLines: number;
+  pendingReconciliationCents: number;
   lines: MaterialCostLineDto[];
 }
 

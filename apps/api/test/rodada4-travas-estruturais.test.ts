@@ -1517,7 +1517,7 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
 };
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
-  '20270309000000_materiais_estoque_entrega: UPDATE CASCADE': 13,
+  '20270309000000_materiais_estoque_entrega: UPDATE CASCADE': 16,
 };
 
 describe('F1-13 — nenhuma tela removida, menu de materiais restaurado, nenhum dado excluído', () => {

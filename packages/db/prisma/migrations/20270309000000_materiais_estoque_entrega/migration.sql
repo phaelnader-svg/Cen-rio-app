@@ -104,6 +104,11 @@ CREATE TABLE "service_order_materials" (
     "updated_by_id" UUID,
     "removed_at" TIMESTAMPTZ(3),
     "removed_by_id" UUID,
+    "reconciliation" VARCHAR(20),
+    "linked_purchase_item_id" UUID,
+    "linked_cost_id" UUID,
+    "reconciled_by_id" UUID,
+    "reconciled_at" TIMESTAMPTZ(3),
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
@@ -114,6 +119,16 @@ ALTER TABLE "service_order_materials" ADD CONSTRAINT "service_order_materials_va
   length(btrim("description")) >= 2
   AND ("quantity" IS NULL OR "quantity" > 0)
   AND ("cost_cents" IS NULL OR "cost_cents" >= 0));
+-- Conciliação explícita com o custo formal (nunca deduzida por valores iguais): VINCULADO aponta
+-- exatamente UM registro formal (item de compra exclusiva ou lançamento formal do livro de custos);
+-- DISTINTO e "pendente" (NULL) não apontam nenhum.
+CREATE INDEX "service_order_materials_linked_purchase_item_id_idx" ON "service_order_materials"("linked_purchase_item_id");
+CREATE INDEX "service_order_materials_linked_cost_id_idx" ON "service_order_materials"("linked_cost_id");
+ALTER TABLE "service_order_materials" ADD CONSTRAINT "service_order_materials_reconciliation" CHECK (
+  ("reconciliation" IS NULL AND "linked_purchase_item_id" IS NULL AND "linked_cost_id" IS NULL)
+  OR ("reconciliation" = 'DISTINTO' AND "linked_purchase_item_id" IS NULL AND "linked_cost_id" IS NULL)
+  OR ("reconciliation" = 'VINCULADO'
+      AND (("linked_purchase_item_id" IS NULL) <> ("linked_cost_id" IS NULL))));
 
 -- ============================================================ chaves estrangeiras
 ALTER TABLE "inventory_items" ADD CONSTRAINT "inventory_items_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "inventory_categories"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -129,6 +144,9 @@ ALTER TABLE "service_order_materials" ADD CONSTRAINT "service_order_materials_in
 ALTER TABLE "service_order_materials" ADD CONSTRAINT "service_order_materials_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "service_order_materials" ADD CONSTRAINT "service_order_materials_updated_by_id_fkey" FOREIGN KEY ("updated_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 ALTER TABLE "service_order_materials" ADD CONSTRAINT "service_order_materials_removed_by_id_fkey" FOREIGN KEY ("removed_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "service_order_materials" ADD CONSTRAINT "service_order_materials_linked_purchase_item_id_fkey" FOREIGN KEY ("linked_purchase_item_id") REFERENCES "purchase_order_items"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "service_order_materials" ADD CONSTRAINT "service_order_materials_linked_cost_id_fkey" FOREIGN KEY ("linked_cost_id") REFERENCES "service_order_costs"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "service_order_materials" ADD CONSTRAINT "service_order_materials_reconciled_by_id_fkey" FOREIGN KEY ("reconciled_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- Histórico de ajustes nunca muda nem some.
 CREATE TRIGGER "inventory_adjustments_immutable" BEFORE UPDATE OR DELETE ON "inventory_adjustments"

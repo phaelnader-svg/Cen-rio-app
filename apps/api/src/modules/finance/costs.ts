@@ -1,8 +1,11 @@
 import {
   EVENT_TYPES,
   osMaterialCostTotals,
+  osMaterialReconciliationStatus,
+  purchaseOrderCode,
   realizedOsMaterialCost,
   weightedAverageCents,
+  type FormalCostRecordDto,
   type MaterialCostSummaryDto,
 } from '@cenario/shared';
 import type { PrismaClient, Tx } from '@cenario/db';
@@ -90,6 +93,88 @@ export async function syncMaterialCosts(tx: Tx, actor: ActorContext, serviceOrde
 
 /** Origem, no livro de custos, do custo informado na lista simples de materiais da OS. */
 export const OS_MATERIAL_SOURCE = 'MATERIAL_OS';
+
+/**
+ * Reformulação, Fase 1 — conciliação explícita entre a lista simples e o custo formal da OS.
+ * Registros formais que podem ser vinculados (e que tornam "pendentes" as linhas com custo
+ * informado): itens de compra EXCLUSIVA da OS em pedido ativo e lançamentos formais POSITIVOS do
+ * livro (compra recebida, saída de estoque, sobra recebida). Lançamentos manuais (AJUSTE_MANUAL)
+ * ficam de fora: são correções livres do gestor, não registros de compra.
+ */
+export const FORMAL_LINKABLE_SOURCES = ['COMPRA_EXCLUSIVA', 'SAIDA_ESTOQUE', 'SOBRA_ENTRADA'];
+
+export async function osFormalCostRecords(
+  db: Tx | PrismaClient,
+  serviceOrderId: string,
+): Promise<FormalCostRecordDto[]> {
+  const [items, entries] = await Promise.all([
+    db.purchaseOrderItem.findMany({
+      where: {
+        serviceOrderId,
+        sourcing: 'EXCLUSIVO_OS',
+        purchaseOrder: { status: { in: [...ACTIVE_PO] } },
+      },
+      include: { purchaseOrder: { select: { number: true, createdAt: true } } },
+      orderBy: [{ purchaseOrder: { number: 'asc' } }, { position: 'asc' }],
+    }),
+    db.serviceOrderCost.findMany({
+      where: { serviceOrderId, category: 'MATERIAL', source: { in: FORMAL_LINKABLE_SOURCES } },
+      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+    }),
+  ]);
+  return [
+    ...items.map(
+      (i): FormalCostRecordDto => ({
+        kind: 'COMPRA',
+        id: i.id,
+        description: i.description,
+        amountCents:
+          i.unitPriceCents === null
+            ? null
+            : Math.round((num(i.quantity) - num(i.closedQuantity)) * i.unitPriceCents),
+        reference: purchaseOrderCode(i.purchaseOrder.number),
+        occurredAt: i.purchaseOrder.createdAt.toISOString(),
+      }),
+    ),
+    ...entries.map(
+      (e): FormalCostRecordDto => ({
+        kind: 'LANCAMENTO',
+        id: e.id,
+        description: e.description,
+        amountCents: e.amountCents,
+        reference: e.source,
+        occurredAt: e.occurredAt.toISOString(),
+      }),
+    ),
+  ];
+}
+
+/** Seleção das colunas de conciliação de uma linha (com a situação do pedido vinculado). */
+export const reconciliationSelect = {
+  reconciliation: true,
+  linkedCostId: true,
+  linkedPurchaseItemId: true,
+  linkedPurchaseItem: { select: { purchaseOrder: { select: { status: true } } } },
+} as const;
+
+/**
+ * Conciliação EFETIVA: um vínculo com item de compra cujo pedido deixou de estar ativo (ex.:
+ * cancelado) não vale mais — a linha volta a pendente e o custo informado volta a contar, para que
+ * nenhum custo desapareça do resultado.
+ */
+export function effectiveReconciliation(r: {
+  reconciliation: string | null;
+  linkedPurchaseItemId: string | null;
+  linkedPurchaseItem: { purchaseOrder: { status: string } } | null;
+}): string | null {
+  if (
+    r.reconciliation === 'VINCULADO' &&
+    r.linkedPurchaseItemId !== null &&
+    !(ACTIVE_PO as readonly string[]).includes(r.linkedPurchaseItem?.purchaseOrder.status ?? '')
+  )
+    return null;
+  return r.reconciliation;
+}
 const osMaterialKeyPrefix = (lineId: string) => `os_material:${lineId}:`;
 
 /**
@@ -112,6 +197,7 @@ export async function syncOsMaterialCosts(tx: Tx, actor: ActorContext, serviceOr
       costCents: true,
       removedAt: true,
       quantity: true,
+      ...reconciliationSelect,
     },
   });
   if (!lines.length) return 0;
@@ -125,10 +211,12 @@ export async function syncOsMaterialCosts(tx: Tx, actor: ActorContext, serviceOr
     const prefix = osMaterialKeyPrefix(l.id);
     const mine = posted.filter((p) => p.sourceKey.startsWith(prefix));
     const already = mine.reduce((a, p) => a + p.amountCents, 0);
+    const reconciliation = effectiveReconciliation(l);
     const target = realizedOsMaterialCost({
       purchased: l.purchased,
       costCents: l.costCents,
       removed: l.removedAt !== null,
+      reconciliation,
     });
     if (target === already) continue;
     data.push({
@@ -145,9 +233,13 @@ export async function syncOsMaterialCosts(tx: Tx, actor: ActorContext, serviceOr
       note:
         l.removedAt !== null
           ? 'Material removido da OS (estorno do custo informado).'
-          : already === 0
-            ? 'Custo informado no material da OS.'
-            : 'Correção do custo informado no material da OS.',
+          : reconciliation === 'VINCULADO'
+            ? 'Vinculado ao custo formal da OS (estorno do custo informado: o formal é a fonte).'
+            : already === 0 && mine.length > 0
+              ? 'Custo informado volta a contar (vínculo desfeito ou registro formal cancelado).'
+              : already === 0
+                ? 'Custo informado no material da OS.'
+                : 'Correção do custo informado no material da OS.',
       actorId: actor.userId,
     });
   }
@@ -415,16 +507,28 @@ export async function materialSummary(
   });
   // Fase 1: lista simples. A previsão soma todo custo informado (comprado ou não); o realizado já
   // está no livro (MATERIAL_OS). Linha comprada sem custo = sem preço (nunca zero silencioso).
-  const informed = osMaterialCostTotals(
+  // Linhas vinculadas a um registro formal ficam fora (o custo delas é o formal).
+  const osLines = (
     await db.serviceOrderMaterial.findMany({
       where: { serviceOrderId, removedAt: null },
-      select: { purchased: true, costCents: true },
-    }),
+      select: { purchased: true, costCents: true, ...reconciliationSelect },
+    })
+  ).map((l) => ({ ...l, reconciliation: effectiveReconciliation(l) }));
+  const informed = osMaterialCostTotals(osLines);
+  // Conciliação: com custo formal na OS, cada linha com custo informado e sem decisão fica
+  // pendente — continua contando, e o valor realizado dela é mostrado como risco de duplicidade.
+  const hasFormal =
+    exclusive.length > 0 || ledger.some((l) => FORMAL_LINKABLE_SOURCES.includes(l.source));
+  const pending = osLines.filter(
+    (l) =>
+      osMaterialReconciliationStatus(
+        { costCents: l.costCents, removed: false, reconciliation: l.reconciliation },
+        hasFormal,
+      ) === 'PENDENTE',
   );
-  const formalSources = new Set(
-    ledger
-      .filter((l) => l.source !== OS_MATERIAL_SOURCE && l.source !== 'AJUSTE_MANUAL')
-      .map((l) => l.source),
+  const pendingCents = pending.reduce(
+    (a, l) => a + realizedOsMaterialCost({ ...l, removed: false }),
+    0,
   );
   const informedRealized = ledger
     .filter((l) => l.source === OS_MATERIAL_SOURCE)
@@ -438,7 +542,9 @@ export async function materialSummary(
     unpricedLines: ledger.filter((l) => !l.priced).length + informed.realizedUnpriced,
     informedCents: informedRealized,
     informedUnpriced: informed.realizedUnpriced,
-    mixedSources: formalSources.size > 0 && informedRealized !== 0,
+    mixedSources: pending.length > 0,
+    pendingReconciliationLines: pending.length,
+    pendingReconciliationCents: pendingCents,
     activeReservations: reservations.length,
     lines: ledger.map((l) => ({
       id: l.id,
