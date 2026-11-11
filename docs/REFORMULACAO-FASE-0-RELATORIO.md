@@ -5,13 +5,13 @@ Base: `07c9b46` (branch padrão). Branch de trabalho: `claude/beautiful-curie-k2
 
 ## 1. Escopo
 
-| Item | Entregue |
-| --- | --- |
-| Interruptores de funcionalidade (logística, pedidos de ajuda, embalagem obrigatória) | sim; padrão = tudo ligado |
-| Desativação operacional dos pedidos de ajuda (servidor e telas) | sim; reversível |
-| Logística e embalagem desligáveis | **não** (fora da fase): as chaves existem, mas o servidor recusa alterá-las |
-| Estado operacional centralizado da OS | núcleo técnico (função pura + rota de leitura), sem tela |
-| Privacidade dos tablets | sim (filtro global, qualidade, avisos) |
+| Item                                                                                 | Entregue                                                                    |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Interruptores de funcionalidade (logística, pedidos de ajuda, embalagem obrigatória) | sim; padrão = tudo ligado                                                   |
+| Desativação operacional dos pedidos de ajuda (servidor e telas)                      | sim; reversível                                                             |
+| Logística e embalagem desligáveis                                                    | **não** (fora da fase): as chaves existem, mas o servidor recusa alterá-las |
+| Estado operacional centralizado da OS                                                | núcleo técnico (função pura + rota de leitura), sem tela                    |
+| Privacidade dos tablets                                                              | sim (filtro global, qualidade, avisos)                                      |
 
 Nada do financeiro, de materiais, de entrega, de logística ou de qualidade mudou de regra.
 
@@ -42,6 +42,7 @@ Nada do financeiro, de materiais, de entrega, de logística ou de qualidade mudo
 ## 3. Pedidos de ajuda desligados
 
 **Servidor (fonte da regra):**
+
 - Recusa com `409 MODULE_DISABLED`:
   - `POST /help-requests`
   - `POST /help-requests/prolonged`
@@ -52,16 +53,19 @@ Nada do financeiro, de materiais, de entrega, de logística ou de qualidade mudo
 - A caixa de avisos esconde os avisos `AJUDA_*`, na lista e no contador.
 
 **Continua igual:**
+
 - iniciar, pausar, retomar e concluir;
 - qualidade, ocorrências, transferência de tarefa e tarefas alternativas;
 - competências e candidatos, usados por qualidade e ocorrências.
 
 **Histórico e reversão:**
+
 - Nada é apagado: os pedidos antigos ficam como estão.
 - O gestor consulta e pode cancelar os pedidos antigos em `/painel/ajuda`, que mostra o aviso "desativados".
 - **Religar:** os avisos voltam, os pedidos pendentes voltam à fila e novos pedidos são aceitos.
 
 **Telas:**
+
 - O tablet esconde "pedir ajuda" e "meus pedidos".
 - O menu esconde "Pedidos de ajuda".
 - O aviso do Planejamento e do Quadro mostra só as reprogramações.
@@ -82,12 +86,14 @@ Nada do financeiro, de materiais, de entrega, de logística ou de qualidade mudo
 ## 5. Privacidade dos tablets
 
 **Achados por varredura de todas as rotas GET acessíveis a tablet** (catálogo de rotas da própria API):
+
 - Tablet do inspetor recebia o nome completo do cliente em `/quality/inspections` e `/quality/inspections/:id`. O DTO usa o campo `customer`, e o filtro antigo só tratava `customerName` em cinco módulos.
 - O aviso `INSPECAO_ATRIBUIDA` levava o nome completo no texto.
 - Nenhum endereço, telefone, e-mail, documento ou valor chegava a tablets de produção.
 - "Minhas viagens" já é filtrada no servidor às paradas da própria pessoa (necessidade operacional), ao contrário do que a auditoria supôs.
 
 **Correções:**
+
 - O filtro passou a ser **global e restritivo por padrão** (`apps/api/src/core/device-privacy.ts`, registrado na raiz).
   - Em toda resposta a sessão de tablet, `customerName` e `customer` (texto, ou objeto com `name`) viram "Nome I.".
   - **Única exceção:** quem tem `logistica.executar` numa rota de logística (o motorista precisa do contato de quem recebe).
@@ -95,11 +101,13 @@ Nada do financeiro, de materiais, de entrega, de logística ou de qualidade mudo
 - **Avisos:** na leitura por tablet, o nome do cliente da OS vinculada vira a forma reduzida. O texto gravado e o painel continuam completos.
 
 **Situações preservadas:**
+
 - O painel continua com os dados completos.
 - "Meus ganhos": só o próprio funcionário, com PIN e 5 minutos; já coberto por `meus-ganhos.test.ts` (casos 25 a 35), sem alteração.
 - Tempo real: os eventos dos tablets não carregam dados pessoais (comprovado na varredura).
 
 **Fotos (EXIF):** os uploads guardam os bytes originais (`core/storage/upload.ts` só detecta o tipo). Fotos de celular podem carregar a localização GPS.
+
 - **Não corrigido nesta fase.** Remover EXIF sem tratar a orientação deixaria fotos tortas no tablet. A solução correta exige reprocessar a imagem (girar pela orientação e regravar sem metadados) com uma biblioteca de imagem, junto das miniaturas.
 - Fica proposto para a Fase 2, já prevista no plano.
 - As fotos só são servidas por rota autenticada (`/api/files/:id`), sem URL pública.
@@ -116,17 +124,18 @@ Nada do financeiro, de materiais, de entrega, de logística ou de qualidade mudo
 
 ## 6.1 Testes executados (ambiente isolado: PostgreSQL 16 local descartável, sem rede externa)
 
-| Suíte | Resultado |
-| --- | --- |
-| Linha de base da API no commit original `07c9b46` (antes de qualquer mudança) | 934 aprovados, 0 falhas, 13 ignorados (condicionais: binário do Caddy) |
-| API completa nesta branch | **941 aprovados, 0 falhas**, 13 ignorados (= linha de base + 7 novos) |
-| `packages/shared` | 149 aprovados (15 novos) |
-| `apps/web` | 21 aprovados |
+| Suíte                                                                                    | Resultado                                                                       |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Linha de base da API no commit original `07c9b46` (antes de qualquer mudança)            | 934 aprovados, 0 falhas, 13 ignorados (condicionais: binário do Caddy)          |
+| API completa nesta branch                                                                | **941 aprovados, 0 falhas**, 13 ignorados (= linha de base + 7 novos)           |
+| `packages/shared`                                                                        | 149 aprovados (15 novos)                                                        |
+| `apps/web`                                                                               | 21 aprovados                                                                    |
 | `scripts/test-evolution-migrations.sh` (cadeia desde o legado, reversão, recusa, backup) | aprovado; a migration nova reverte, reaplica e é recusada com a ajuda desligada |
-| E2E (Playwright, Chromium): `fase0-funcionalidades`, `tablets`, `team-help`, `gestao` | 5 aprovados |
-| Formatação, lint e tipos | limpos |
+| E2E (Playwright, Chromium): `fase0-funcionalidades`, `tablets`, `team-help`, `gestao`    | 5 aprovados                                                                     |
+| Formatação, lint e tipos                                                                 | limpos                                                                          |
 
 **Não executados:**
+
 - O restante dos E2E (cerca de 35 specs), a cargo do CI.
 - Os testes de proxy com Caddy real, por falta do binário local.
 - Tablet físico e Safari/WebKit.
