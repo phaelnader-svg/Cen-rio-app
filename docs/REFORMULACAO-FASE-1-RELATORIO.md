@@ -1,5 +1,9 @@
 # Reformulação — Fase 1: simplificação de materiais, estoque e entrega
 
+Revisão final antes da homologação (conciliação de custos, entrega direta, E2E, compatibilidade e
+disco): ver `docs/REFORMULACAO-FASE-1-REVISAO-FINAL.md`, que **atualiza** as seções 5, 11, 15 e 17
+deste relatório.
+
 Estado: **implementada e testada em ambiente isolado (PostgreSQL 16 local e descartável). NÃO
 aplicada em homologação nem produção. Nenhum deploy, nenhuma migration fora do banco isolado,
 nenhum merge na main.** Aguarda autorização do gestor para qualquer implantação.

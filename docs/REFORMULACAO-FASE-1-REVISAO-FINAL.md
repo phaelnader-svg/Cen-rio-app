@@ -209,4 +209,106 @@ foi limpo nem alterado; as duas opções exigem sua autorização.
 
 ## 8. Commits desta revisão e resultados finais
 
-Preenchido ao final (seção "Resultado da revisão").
+### 8.1 Commits (sobre `8f89832`)
+
+| SHA                                   | Conteúdo                                                                                                                                 |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `799b47d`                             | Conciliação explícita do custo de material, testes de efeitos financeiros da entrega direta e correção de uma asserção sempre verdadeira |
+| `4696912`                             | E2E: `setPin` espera a gravação do PIN (causa do `team-issues`)                                                                          |
+| `f03c42b`                             | Testes do custo de viagem e do fechamento com a rota real (a anterior passava por 404)                                                   |
+| `f0c2866`                             | Aviso de revisão quando o registro formal vinculado teve estorno                                                                         |
+| `e2d8676` e o commit deste fechamento | Documentação desta revisão                                                                                                               |
+
+### 8.2 Resultados
+
+Execuções completas, sem concorrência, na ponta `f0c2866`. Os commits seguintes são só de
+documentação.
+
+| Verificação                                                             | Resultado                                                                                                                             |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| API, suíte completa                                                     | **972 passaram, 0 falharam, 13 pulados** (985; 82 arquivos passaram; 7 pulados são os opcionais pré-existentes de desempenho e proxy) |
+| API, testes da Fase 1                                                   | 18 em `fase1-materiais-estoque-entrega` + 9 em `fase1-revisao-financeira`, todos passando (incluídos acima)                           |
+| Pacote compartilhado                                                    | 150 de 150                                                                                                                            |
+| Web (vitest)                                                            | 21 de 21                                                                                                                              |
+| E2E completo (Playwright, sem novas tentativas)                         | **55 de 55** em 15,6 min, inclusive `team-issues` (lista abaixo)                                                                      |
+| Cadeia de migrations desde o legado                                     | passou (código 0)                                                                                                                     |
+| Suíte da versão antiga (`a7f4f93` + migration) sobre o schema da Fase 1 | 943 passaram, 1 falha estática esperada, 13 pulados (seção 4)                                                                         |
+| Versão antiga com dados da Fase 1 / volta para a nova                   | todas as leituras e escritas OK, valores idênticos (seção 4); nova: 39 de 39                                                          |
+| Lint, formatação, typecheck (5 pacotes), build                          | sem erros                                                                                                                             |
+
+Lista integral do E2E:
+
+| #   | Spec e cenário                                                                                                                                                                                | Tempo |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| 1   | aa-fase1-materiais-estoque-entrega.spec.ts:21:1: materiais necessários: lista inline, flags independentes, custo e aviso                                                                      | 3.0s  |
+| 2   | aa-fase1-materiais-estoque-entrega.spec.ts:67:1: estoque da oficina: categoria, material, ajuste com histórico e arquivamento                                                                 | 2.1s  |
+| 3   | aa-fase1-materiais-estoque-entrega.spec.ts:105:1: logística desligada: menu sem roteiro e entrega pela OS; religar volta ao normal                                                            | 2.9s  |
+| 4   | admin.spec.ts:6:3: Painel administrativo › rotas do painel exigem autenticação                                                                                                                | 545ms |
+| 5   | admin.spec.ts:11:3: Painel administrativo › credenciais inválidas exibem erro sem revelar se o e-mail existe                                                                                  | 602ms |
+| 6   | admin.spec.ts:19:3: Painel administrativo › gestor entra, navega e cadastra um funcionário                                                                                                    | 1.5s  |
+| 7   | admin.spec.ts:62:3: Painel administrativo › validação no formulário de empresa e salvamento com versão                                                                                        | 1.4s  |
+| 8   | cobranca.spec.ts:23:3: Cobrança do cliente › Novo serviço 50/50 → Financeiro do pedido → recebimento da entrada                                                                               | 2.5s  |
+| 9   | commercial-flow.spec.ts:19:3: Fase 2 — cliente → pedido → retirada → recebimento → OS › fluxo completo, com bloqueio da OS antes do recebimento e histórico técnico                           | 6.0s  |
+| 10  | commercial-flow.spec.ts:121:3: Fase 2 — cliente → pedido → retirada → recebimento → OS › outra sessão do painel vê o novo pedido em tempo real                                                | 2.5s  |
+| 11  | compras-etapa2.spec.ts:59:3: Compras e materiais sem duplicidade — Etapa 2 › remedição substitui a necessidade (decisão na aprovação) e não soma                                              | 3.6s  |
+| 12  | compras-etapa3.spec.ts:45:3: Compra antes da chegada — Etapa 3 › previsão no pedido → Pré-chegada → chegada → medição substitui                                                               | 3.4s  |
+| 13  | compras-sem-duplicidade.spec.ts:60:3: Compras e materiais sem duplicidade › A comprar consolidado com estoque livre, Reservar explícito e recusa "Não repor"                                  | 5.8s  |
+| 14  | fase0-funcionalidades.spec.ts:11:1: funcionalidades: desligar e religar os pedidos de ajuda pelo painel                                                                                       | 2.2s  |
+| 15  | gestao.spec.ts:33:3: Gestão: Início, Central e ação no contexto › gestor vê, identifica a pendência, abre o contexto, age e a pendência some                                                  | 4.5s  |
+| 16  | gestao.spec.ts:118:3: Gestão: Início, Central e ação no contexto › Início: total da Central, a planejar e bloqueios; menu e Recebimentos                                                      | 3.4s  |
+| 17  | measurements.spec.ts:99:3: Fase 3 — medições e solicitações de materiais › gestor delega a Ricardo, tablet mede e envia, gestor devolve, Ricardo corrige, gestor aprova                       | 9.0s  |
+| 18  | measurements.spec.ts:244:3: Fase 3 — medições e solicitações de materiais › rotina de sexta: o gestor mede pelo painel                                                                        | 2.9s  |
+| 19  | modelos-simplificados.spec.ts:38:3: Simplificação Fase 5 — modelos simplificados › modelo de reforma com responsável por etapa e geração de 3 tarefas pelo planejamento                       | 2.8s  |
+| 20  | novo-servico-rede.spec.ts:29:1: Novo serviço: resposta perdida depois da gravação não duplica (mesma chave)                                                                                   | 2.2s  |
+| 21  | novo-servico.spec.ts:38:3: Simplificação Fase 2 — Novo serviço › cliente novo + serviço + retirada em um formulário; roteiro do André; OS na chegada                                          | 6.5s  |
+| 22  | novo-servico.spec.ts:192:3: Simplificação Fase 2 — Novo serviço › cliente entrega na tapeçaria: sem retirada; o recebimento no painel gera a OS                                               | 2.2s  |
+| 23  | novo-servico.spec.ts:227:3: Simplificação Fase 2 — Novo serviço › titular e mão de obra previstos no fechamento; alteração antes da chegada; OS nasce com eles                                | 3.1s  |
+| 24  | novo-servico.spec.ts:286:3: Simplificação Fase 2 — Novo serviço › 390 px: preencher e salvar o Novo serviço no celular, sem rolagem horizontal                                                | 2.0s  |
+| 25  | prazos.spec.ts:33:3: Prazos e serviços em risco › Início → Central filtrada → alterar prazo do pedido (SIM às OS) → contagens atualizadas                                                     | 5.2s  |
+| 26  | pre-planejamento.spec.ts:99:3: Simplificação Fase 4 — pré-planejamento › recebido → A planejar → Ricardo/Márcio → publicar semana → tablets                                                   | 14.1s |
+| 27  | production.spec.ts:18:3: Fase 5 — motor de produção e planejamento semanal › gestor planeja e publica; João conclui a preparação e libera a tarefa do Márcio em tempo real                    | 15.9s |
+| 28  | purchasing.spec.ts:38:3: Fase 4 — compras, recebimento e estoque › medição até prontidão completa, com recebimento pelo tablet e sem iniciar produção                                         | 11.9s |
+| 29  | recebimentos-rede.spec.ts:27:1: queda de rede depois do envio: nova tentativa usa a mesma chave e nada duplica                                                                                | 4.0s  |
+| 30  | recebimentos-rede.spec.ts:133:1: resposta perdida com o tempo real ativo: aviso some, mensagem aprovada, nada reenviado sozinho                                                               | 5.5s  |
+| 31  | recebimentos-rede.spec.ts:207:1: aviso some sem resposta perdida neste tablet: texto neutro, sem atribuir a outro aparelho                                                                    | 3.8s  |
+| 32  | recebimentos.spec.ts:47:3: Simplificação Fase 3 — Aguardando chegada › dois tablets: chegada parcial, aviso de atualização, materiais e conferência                                           | 9.4s  |
+| 33  | rodada2-central.spec.ts:34:3: Rodada 2 — Central derivada, Meus Ganhos ao vivo e indicadores › valor muda → celular atualiza sozinho; Central: confirmação → pagamento; links; Início; avisos | 8.2s  |
+| 34  | tablet-sync.spec.ts:5:3: Tablets, sessões e sincronização › vinculação, login por PIN, sessão persistente e atualização em tempo real                                                         | 5.1s  |
+| 35  | tablet-sync.spec.ts:50:3: Tablets, sessões e sincronização › sinais de sincronização e reconciliação após queda de conexão                                                                    | 7.5s  |
+| 36  | tablet-sync.spec.ts:127:3: Tablets, sessões e sincronização › revogação remota de sessão e de dispositivo                                                                                     | 4.6s  |
+| 37  | tablets.spec.ts:44:3: Fase 6 — interface operacional dos tablets › Meu dia, execução simplificada, avisos, reprogramação e queda de conexão                                                   | 12.2s |
+| 38  | team-closing.spec.ts:46:3: Evolução Fase 7 — fechamento semanal geral › conferir, registrar Pix, reabrir, estornar; celular; sem acesso para tablets e logística                              | 18.0s |
+| 39  | team-distribution.spec.ts:40:3: Evolução Fase 3 — distribuição automática › titular por peça, geração sem distribuição manual, substituição auditada e fila do titular                        | 12.3s |
+| 40  | team-finance.spec.ts:32:3: Fase 11 — financeiro operacional › cobrança, recebimento parcial, valor de produção, despesa, painel e "Meus valores" no tablet                                    | 15.3s |
+| 41  | team-help.spec.ts:59:3: Fase 8 — ajuda e reprogramação › pedido normal, apoio no tablet, urgente escalado e aprovação do gestor                                                               | 25.8s |
+| 42  | team-issues.spec.ts:63:3: Fase 9 — central de atenção e ocorrências › Márcio registra o problema, gestor delega ao Thiago, verifica e Márcio retoma                                           | 18.3s |
+| 43  | team-labor.spec.ts:45:3: Evolução Fase 5 — mão de obra dos tapeceiros › valor por peça na OS, substituição com revisão, resolução e "Meus valores" com PIN                                    | 12.3s |
+| 44  | team-logistics.spec.ts:41:3: Evolução Fase 6 — custos de retirada e entrega › padrões → agendar com custo total → realizar → obrigação única → pagar, estornar, ajustar, conciliar            | 8.8s  |
+| 45  | team-negociacao.spec.ts:37:3: R2 — negociação, confirmação semanal e portão de pagamento › pedido no celular → aprovação → sem confirmação recusado → André confere → Pix                     | 9.2s  |
+| 46  | team-presenca-apoio.spec.ts:40:3: Simplificação Fase 7 — presença e apoio › expediente esquecido, feriado, férias por intervalo e tablet sem pontualidade                                     | 8.2s  |
+| 47  | team-presence.spec.ts:62:3: Fase 7 — presença operacional › Cheguei, ausência presumida com impacto, correção, chegada tardia e encerramento                                                  | 13.3s |
+| 48  | team-quality.spec.ts:75:3: Fase 10 — qualidade, embalagem e entrega › produção → reprovação → correção → aprovação → embalagem → agenda → entrega                                             | 33.4s |
+| 49  | team-queue.spec.ts:46:3: Evolução Fase 2 — fila semanal › publica sem horário, tablet segue a fila, início explícito e continuidade em dois dias                                              | 15.7s |
+| 50  | team-route-os.spec.ts:66:3: Correção global — OS completa e roteiro da logística › OS com titular e mão de obra; retirada com chegada; roteiro reordenado; celular do André                   | 6.6s  |
+| 51  | team-week.spec.ts:49:3: Evolução Fase 4 — Minha semana › gestor + 4 tablets: destaque, próximas, fila completa, titular, bloqueio, reordenação, reconexão e virada do dia                     | 14.3s |
+| 52  | team-workshop.spec.ts:56:3: Fase 12 — painel + quatro tablets simultâneos › chegada, início simultâneo, queda de conexão, prioridade e inspeção em tempo real                                 | 22.8s |
+| 53  | zz-fluxo-transversal.spec.ts:146:3: Rodada 4 — fluxo transversal completo › do Novo serviço ao pagamento, com D12/D13, privacidade e Central                                                  | 43.0s |
+| 54  | zz-geometria.spec.ts:136:3: Interface — geometria dos formulários › todas as telas e formulários em diálogo, em 390/768/1280/1440                                                             | 5.1m  |
+| 55  | zz-visual-audit.spec.ts:97:3: Fase 12 — auditoria visual › todas as telas do painel e do tablet, em desktop, tablet e celular                                                                 | 2.6m  |
+
+## 9. Veredito
+
+**GO COM RESSALVAS para implantar em homologação**, somente após sua autorização. Condições:
+
+1. **Disco** (seção 6). Antes de `prepare_version` da Fase 1, liberar ~2,1 GiB pela limpeza oficial
+   de uma versão não protegida, ou aumentar o disco. Sem isso, a Fase 1 entra só no limite do
+   arredondamento e o retorno não cabe. Exige autorização sua.
+2. **Versão de retorno** (seção 4). Construir no Cloud Build `a7f4f93` + a pasta da migration
+   (byte a byte idêntica) **antes** de implantar a Fase 1, e mantê-la no Artifact Registry.
+   Exige autorização.
+3. **Orientações para um eventual retorno:** confirmar entregas diretas da semana como gratuitas no
+   fechamento e não lançar custo de viagem nelas.
+4. **Riscos financeiros aceitos** (seção 7): conciliação depende de decisão humana; pendente conta a
+   maior, nunca a menor.
+
+Nada foi implantado, mesclado, migrado fora de banco isolado, limpo ou alterado em infraestrutura.
