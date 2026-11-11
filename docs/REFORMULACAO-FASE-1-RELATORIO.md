@@ -61,20 +61,20 @@ Ver a seção "Resultado final" no fim deste documento (preenchida no último co
 
 Uma migration, **somente aditiva**: `20270309000000_materiais_estoque_entrega`.
 
-| Objeto                         | O que faz                                                                                                                      |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| `inventory_categories`         | categorias próprias; nome único sem diferenciar maiúsculas; arquivamento                                                       |
-| `inventory_items`              | material do estoque simples: unidade, quantidade, custo de referência opcional, local, arquivamento                            |
-| `fabric_rolls`                 | rolos de tecido ligados a um material; identificação única; metragem                                                           |
-| `inventory_adjustments`        | histórico de ajustes (anterior, novo, quem, quando, motivo); **imutável** por gatilho                                          |
-| `service_order_materials`      | "Materiais necessários" da OS; remoção lógica (`removed_at`/`removed_by_id`)                                                   |
-| `deliveries.origin`            | coluna nova `NOT NULL DEFAULT 'LOGISTICA'`, CHECK `LOGISTICA`/`DIRETA`; todas as entregas existentes ficam `LOGISTICA`          |
-| `service_order_costs_kind`     | CHECK recriado com as mesmas origens **mais** `MATERIAL_OS` (só amplia; nenhuma linha muda)                                     |
+| Objeto                     | O que faz                                                                                                              |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `inventory_categories`     | categorias próprias; nome único sem diferenciar maiúsculas; arquivamento                                               |
+| `inventory_items`          | material do estoque simples: unidade, quantidade, custo de referência opcional, local, arquivamento                    |
+| `fabric_rolls`             | rolos de tecido ligados a um material; identificação única; metragem                                                   |
+| `inventory_adjustments`    | histórico de ajustes (anterior, novo, quem, quando, motivo); **imutável** por gatilho                                  |
+| `service_order_materials`  | "Materiais necessários" da OS; remoção lógica (`removed_at`/`removed_by_id`)                                           |
+| `deliveries.origin`        | coluna nova `NOT NULL DEFAULT 'LOGISTICA'`, CHECK `LOGISTICA`/`DIRETA`; todas as entregas existentes ficam `LOGISTICA` |
+| `service_order_costs_kind` | CHECK recriado com as mesmas origens **mais** `MATERIAL_OS` (só amplia; nenhuma linha muda)                            |
 
 - Chaves estrangeiras: `RESTRICT` para referências de negócio, `SET NULL` para usuários.
 - Nenhum `DELETE`, `UPDATE` de dados, `TRUNCATE` ou `DROP` de tabela ou coluna. A trava estrutural
   `rodada4-travas-estruturais` lista as três ocorrências textuais e o motivo de cada uma: `ON UPDATE
-  CASCADE` das chaves novas, `BEFORE UPDATE OR DELETE` do gatilho de imutabilidade e o CHECK
+CASCADE` das chaves novas, `BEFORE UPDATE OR DELETE` do gatilho de imutabilidade e o CHECK
   recriado.
 - `prisma migrate diff` entre o schema e o banco migrado: **sem diferença**.
 - Reversão condicionada (`.down.sql`): **recusa** se existir qualquer registro da Fase 1 (tabelas
@@ -136,36 +136,36 @@ Uma migration, **somente aditiva**: `20270309000000_materiais_estoque_entrega`.
 
 ## 6. Materiais — antes × depois
 
-| Antes                                                                                                        | Depois                                                                                                                    |
-| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| Necessidade formal (requisito → aprovação → compra/reserva/recebimento) era o único jeito de registrar material | Lista simples "Materiais necessários" na aba Materiais da OS, editada na própria linha, sem janelas [IMPL][TEST]           |
-| Produção travava (`MATERIAIS`) até o material formal ficar pronto                                           | Igual por padrão. Com "Travas de materiais" desligada, a produção segue e só aparece o aviso [IMPL][TEST]                  |
-| Custo só via compras e estoque formais                                                                      | Custo opcional por linha. Comprado + custo = custo realizado no livro (`MATERIAL_OS`); sem custo = "não informado" [IMPL][TEST] |
-| —                                                                                                            | Relatório de custos e CSV mostram a origem "Informado na OS" [IMPL][TEST na API]                                          |
+| Antes                                                                                                           | Depois                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Necessidade formal (requisito → aprovação → compra/reserva/recebimento) era o único jeito de registrar material | Lista simples "Materiais necessários" na aba Materiais da OS, editada na própria linha, sem janelas [IMPL][TEST]                |
+| Produção travava (`MATERIAIS`) até o material formal ficar pronto                                               | Igual por padrão. Com "Travas de materiais" desligada, a produção segue e só aparece o aviso [IMPL][TEST]                       |
+| Custo só via compras e estoque formais                                                                          | Custo opcional por linha. Comprado + custo = custo realizado no livro (`MATERIAL_OS`); sem custo = "não informado" [IMPL][TEST] |
+| —                                                                                                               | Relatório de custos e CSV mostram a origem "Informado na OS" [IMPL][TEST na API]                                                |
 
 O fluxo formal **continua existindo e funcionando** abaixo da lista simples, na mesma aba.
 
 ## 7. Estoque — antes × depois
 
-| Antes                                                                                  | Depois                                                                                                                   |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Estoque formal com tipos fixos, reservas por OS, sobras e movimentações              | Inalterado em `/painel/estoque`                                                                                          |
-| —                                                                                      | `/painel/estoque-oficina` ("Estoque da oficina"): categorias próprias, materiais, rolos, ajuste com motivo e histórico, arquivar e excluir com segurança [IMPL][TEST API + E2E escrito] |
-| —                                                                                      | Independente da OS: o teste prova que incluir material na OS não mexe na quantidade do estoque [TEST]                   |
+| Antes                                                                   | Depois                                                                                                                                                                                  |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Estoque formal com tipos fixos, reservas por OS, sobras e movimentações | Inalterado em `/painel/estoque`                                                                                                                                                         |
+| —                                                                       | `/painel/estoque-oficina` ("Estoque da oficina"): categorias próprias, materiais, rolos, ajuste com motivo e histórico, arquivar e excluir com segurança [IMPL][TEST API + E2E escrito] |
+| —                                                                       | Independente da OS: o teste prova que incluir material na OS não mexe na quantidade do estoque [TEST]                                                                                   |
 
 Permissões: ver = `estoque.ver`, `estoque.gerenciar` ou `os.gerenciar` (para escolher o item na OS);
 alterar = `estoque.gerenciar`; custo de referência só com `financeiro.ver`.
 
 ## 8. Entrega — antes × depois
 
-| Antes                                                                              | Depois                                                                                                                                                                                       |
-| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Peça só virava ENTREGUE por entrega da logística (agendar → saída → peça a peça → concluir) | Igual. **Mais:** aba **Entrega** na OS com "Marcar como entregue" [IMPL][TEST]                                                                                                              |
-| —                                                                                  | Elegibilidade = a mesma da logística (`readinessOfItem`): tarefas, **inspeção aprovada**, sem correção, embalagem, sem bloqueio. Também barra OS cancelada e peça já em entrega da logística [TEST] |
-| —                                                                                  | Permissão `entregas.gerenciar`; ver = `os.ver` ou `entregas.ver` [TEST]                                                                                                                       |
-| —                                                                                  | Registra data e hora, usuário (auditoria `delivery.direct_completed`, evento da entrega, `createdBy`) e origem "confirmação direta pela OS" [TEST]                                           |
-| —                                                                                  | Idempotência (chave na rota e `created:false` ao repetir) e concorrência (trava da OS e das peças em ordem fixa, mais o índice único de entrega ativa): duas chamadas simultâneas geram **1** entrega [TEST] |
-| —                                                                                  | Sem desfazer automático (proposta na seção 15)                                                                                                                                                |
+| Antes                                                                                       | Depois                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Peça só virava ENTREGUE por entrega da logística (agendar → saída → peça a peça → concluir) | Igual. **Mais:** aba **Entrega** na OS com "Marcar como entregue" [IMPL][TEST]                                                                                                                               |
+| —                                                                                           | Elegibilidade = a mesma da logística (`readinessOfItem`): tarefas, **inspeção aprovada**, sem correção, embalagem, sem bloqueio. Também barra OS cancelada e peça já em entrega da logística [TEST]          |
+| —                                                                                           | Permissão `entregas.gerenciar`; ver = `os.ver` ou `entregas.ver` [TEST]                                                                                                                                      |
+| —                                                                                           | Registra data e hora, usuário (auditoria `delivery.direct_completed`, evento da entrega, `createdBy`) e origem "confirmação direta pela OS" [TEST]                                                           |
+| —                                                                                           | Idempotência (chave na rota e `created:false` ao repetir) e concorrência (trava da OS e das peças em ordem fixa, mais o índice único de entrega ativa): duas chamadas simultâneas geram **1** entrega [TEST] |
+| —                                                                                           | Sem desfazer automático (proposta na seção 15)                                                                                                                                                               |
 
 ## 9. Dependências financeiras preservadas
 
@@ -186,12 +186,12 @@ Assim, não há duplicidade.
 
 ## 10. Interruptores
 
-| Chave       | Padrão  | Configurável | Efeito ao desligar                                                                                 |
-| ----------- | ------- | ------------ | -------------------------------------------------------------------------------------------------- |
-| `logistica` | ligado  | **sim (novo)** | esconde telas operacionais e recusa novas entregas e retiradas; entrega pela OS; recusado com logística em andamento |
-| `materiais` | ligado  | **sim (novo)** | produção deixa de travar por materiais formais; aviso discreto                                     |
-| `ajuda`     | ligado  | sim (Fase 0) | inalterado                                                                                         |
-| `embalagem` | ligado  | não          | inalterado (fase posterior)                                                                        |
+| Chave       | Padrão | Configurável   | Efeito ao desligar                                                                                                   |
+| ----------- | ------ | -------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `logistica` | ligado | **sim (novo)** | esconde telas operacionais e recusa novas entregas e retiradas; entrega pela OS; recusado com logística em andamento |
+| `materiais` | ligado | **sim (novo)** | produção deixa de travar por materiais formais; aviso discreto                                                       |
+| `ajuda`     | ligado | sim (Fase 0)   | inalterado                                                                                                           |
+| `embalagem` | ligado | não            | inalterado (fase posterior)                                                                                          |
 
 Em uma instalação existente **nada muda sozinho**: sem registro em `module_settings`, vale o padrão
 (ligado = comportamento atual). Só o gestor com `empresa.configurar` altera, com auditoria, versão e
