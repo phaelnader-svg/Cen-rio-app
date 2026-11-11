@@ -227,7 +227,7 @@ documentação.
 | Verificação                                                             | Resultado                                                                                                                             |
 | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | API, suíte completa                                                     | **972 passaram, 0 falharam, 13 pulados** (985; 82 arquivos passaram; 7 pulados são os opcionais pré-existentes de desempenho e proxy) |
-| API, testes da Fase 1                                                   | 18 em `fase1-materiais-estoque-entrega` + 9 em `fase1-revisao-financeira`, todos passando (incluídos acima)                           |
+| API, testes da Fase 1                                                   | 19 em `fase1-materiais-estoque-entrega` + 9 em `fase1-revisao-financeira`, todos passando (incluídos acima)                           |
 | Pacote compartilhado                                                    | 150 de 150                                                                                                                            |
 | Web (vitest)                                                            | 21 de 21                                                                                                                              |
 | E2E completo (Playwright, sem novas tentativas)                         | **55 de 55** em 15,6 min, inclusive `team-issues` (lista abaixo)                                                                      |
