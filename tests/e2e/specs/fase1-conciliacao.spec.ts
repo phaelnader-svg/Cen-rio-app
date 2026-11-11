@@ -64,7 +64,7 @@ test('conciliação pela tela: pendente, vincular sem dupla contagem, desfazer e
         color: 'Bege',
         quantity: 12,
         unit: 'METRO',
-        serviceOrderItemId: so.items[0].id,
+        serviceOrderItemId: so.items[0]!.id,
       },
     ],
     version: m.version,
