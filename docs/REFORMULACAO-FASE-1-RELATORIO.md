@@ -18,7 +18,7 @@ Legenda usada abaixo: **[IMPL]** implementado · **[TEST]** coberto por teste au
 
 ## 2. SHA final e commits
 
-Ver a seção "Resultado final" no fim deste documento (preenchida no último commit).
+Ver "Resultado final" no fim do documento.
 
 ## 3. Arquivos
 
@@ -291,3 +291,68 @@ Ver "Resultado final" no fim do documento (números reais da última execução)
 ## 18. Veredito
 
 Ver "Resultado final".
+
+## Resultado final
+
+### Commits (sobre `a7f4f93`)
+
+| SHA       | Commit                                                                            |
+| --------- | --------------------------------------------------------------------------------- |
+| `2b394a1` | Fase 1: materiais da OS, estoque simples e entrega direta pela OS                 |
+| `d88c422` | Fase 1: E2E, travas estruturais com exceções justificadas e rascunho do relatório |
+| `0f98ee7` | Fase 1: formatação do relatório                                                   |
+| `1e97cc6` | Fase 1: marcação otimista de comprado/na oficina e ação encerrada após recarregar |
+| `1ea3cfe` | Fase 1: spec E2E roda primeiro (desligar a logística exige nada em andamento)     |
+
+O SHA final é o do commit que contém este relatório (ponta de `claude/reformulacao-fase-1`). Total:
+cerca de 50 arquivos, cerca de 4,7 mil linhas acrescentadas, nenhum arquivo removido.
+
+### Testes (ambiente isolado: PostgreSQL 16 local descartável, bancos `cenario_test`, `cenario_test_iso2`, `cenario_e2e_test` e `cenario_evo_migration_test`)
+
+| Verificação                                                 | Resultado                                                                                                                                                                                           |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API: suíte completa (vitest, execução sem concorrência)     | **963 passaram, 0 falharam, 13 pulados** (976). 81 arquivos passaram; 7 pulados são os opcionais pré-existentes de desempenho e proxy Caddy                                                         |
+| API: testes novos da Fase 1                                 | 19 de 19 (incluídos acima)                                                                                                                                                                          |
+| Pacote compartilhado                                        | **150 de 150**                                                                                                                                                                                      |
+| Web (vitest)                                                | **21 de 21**                                                                                                                                                                                        |
+| E2E completo (Playwright, 55 testes)                        | **54 passaram, 1 falha intermitente** (`team-issues`: o login do tablet não concluiu em 10 s). O mesmo teste passou na execução completa anterior e de novo isolado. Não toca código da Fase 1      |
+| E2E da Fase 1 (3) + Fase 0 (1)                              | 4 de 4                                                                                                                                                                                              |
+| Migração encadeada (`scripts/test-evolution-migrations.sh`) | **passou** (código 0). A nova migration aplica sobre o legado com dados idênticos, reverte e reaplica sem perda, e é **recusada** sem mutação com dados da Fase 1; backup e restauração verificados |
+| `prisma migrate diff` (schema × banco)                      | sem diferença                                                                                                                                                                                       |
+| Lint, formatação e typecheck (5 pacotes)                    | sem erros                                                                                                                                                                                           |
+| Build (API e web)                                           | sucesso; rota `/painel/estoque-oficina` gerada                                                                                                                                                      |
+
+Histórico honesto das execuções:
+
+- A 1ª execução completa da API teve 30 falhas em `quality`, `cobranca`, `finance` e
+  `rodada4-travas-estruturais`:
+  - 29 foram causadas por eu ter rodado outro arquivo de teste **ao mesmo tempo no mesmo banco**
+    (erros de login 404/500 em cascata);
+  - 1 era real: a trava estrutural precisava das exceções da nova migration (corrigida, seção 12).
+  - A 2ª execução, sem concorrência, passou inteira.
+- A 1ª execução completa do E2E falhou no spec da Fase 1: outros specs deixavam entregas em
+  andamento e o desligamento da logística foi **recusado, como projetado**. O spec passou a rodar
+  primeiro (`aa-`).
+- No primeiro E2E, a caixa "Comprado" só mudava depois da resposta do servidor. A tela passou a
+  marcar na hora (otimista), voltando sozinha se o servidor recusar.
+
+### Veredito
+
+**GO COM RESSALVAS** — para implantação controlada em **homologação**, somente após sua
+autorização.
+
+Ressalvas:
+
+1. Decisões de negócio pendentes (seção 15):
+   - dupla contagem formal × lista simples (hoje só aviso);
+   - convivência dos dois estoques;
+   - desfazer entrega direta (só proposta);
+   - entrega parcial pela OS.
+2. Os padrões preservam o comportamento atual: para valer "produção não travada por materiais" e
+   "sem logística", o gestor precisa desligar os interruptores em Empresa → Funcionalidades.
+3. Uma falha intermitente pré-existente no E2E (`team-issues`), sem relação com a Fase 1.
+4. Nada foi validado em homologação ou produção, e nenhum teste autenticado em ambiente real foi
+   executado.
+
+Nenhum deploy, migration fora do banco isolado, merge na main, alteração de credenciais,
+permissões, scripts das VMs ou limpeza de imagens foi feito. As Fases 2 e 3 não foram iniciadas.
