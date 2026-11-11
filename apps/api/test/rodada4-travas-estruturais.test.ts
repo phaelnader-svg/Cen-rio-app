@@ -1505,6 +1505,19 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270302000000_modulos_configuraveis: UPDATE CASCADE':
     'Não é comando: é a ação referencial "ON UPDATE CASCADE" da chave estrangeira de uma tabela ' +
     'NOVA (padrão do Prisma; sem ela o schema diverge da migration). Nenhuma linha é alterada.',
+  '20270309000000_materiais_estoque_entrega: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS da Fase 1 ' +
+    '(estoque simples e materiais da OS; padrão do Prisma). Nenhuma linha é alterada.',
+  '20270309000000_materiais_estoque_entrega: UPDATE OR':
+    'Não é comando: "BEFORE UPDATE OR DELETE" do gatilho que torna IMUTÁVEL o histórico de ' +
+    'ajustes do estoque (tabela nova). Protege dados em vez de alterá-los.',
+  '20270309000000_materiais_estoque_entrega: DROP CONSTRAINT "service_order_costs_kind"':
+    'Regra CHECK recriada na mesma migration com as mesmas origens e uma a mais (MATERIAL_OS): ' +
+    'amplia o aceito, nenhuma linha é apagada nem alterada.',
+};
+/** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
+const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
+  '20270309000000_materiais_estoque_entrega: UPDATE CASCADE': 13,
 };
 
 describe('F1-13 — nenhuma tela removida, menu de materiais restaurado, nenhum dado excluído', () => {
@@ -1564,7 +1577,11 @@ describe('F1-13 — nenhuma tela removida, menu de materiais restaurado, nenhum 
         if (c) expect(sql, `${name} recria ${c[1]}`).toContain(`ADD CONSTRAINT ${c[1]}`);
       }
     }
-    expect(found.sort()).toEqual(Object.keys(ALLOWED_DESTRUCTIVE).sort());
+    expect(found.sort()).toEqual(
+      Object.keys(ALLOWED_DESTRUCTIVE)
+        .flatMap((k) => Array<string>(ALLOWED_DESTRUCTIVE_TIMES[k] ?? 1).fill(k))
+        .sort(),
+    );
   });
 });
 
