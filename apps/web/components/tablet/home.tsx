@@ -19,6 +19,7 @@ import { SyncPanel } from '@/components/sync-panel';
 import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/misc';
 import { api } from '@/lib/api';
+import { useModules } from '@/lib/hooks';
 import { MaterialReceiving } from '@/components/purchasing/material-receiving';
 import { usePendingReceipts } from '@/lib/purchasing';
 import { useMyAttendance } from '@/lib/attendance';
@@ -83,6 +84,7 @@ export function TabletHome({ me }: { me: MeDto }) {
   const qc = useQueryClient();
   const [screen, setScreen] = useState<Screen>('home');
   const [leaving, setLeaving] = useState(false);
+  const modules = useModules();
   const clock = useClock(me.company.timezone);
   const color = me.employee?.color ?? '#1d4a45';
   const canSync = me.permissions.includes('sincronizacao.diagnosticar');
@@ -92,8 +94,9 @@ export function TabletHome({ me }: { me: MeDto }) {
     me.permissions.includes('medicoes.extraordinarias') ||
     me.permissions.includes('medicoes.gerenciar');
   const canExecute = me.permissions.includes('producao.executar');
-  // Fase 8: quem pede ajuda nas próprias tarefas (tapeceiros e cabeceiras).
-  const canAskHelp = me.permissions.includes('ajuda.solicitar');
+  // Fase 8: quem pede ajuda nas próprias tarefas (tapeceiros e cabeceiras). Reformulação, Fase 0:
+  // com os pedidos de ajuda desligados, o botão e "Meus pedidos" somem (o servidor também recusa).
+  const canAskHelp = me.permissions.includes('ajuda.solicitar') && modules.ajuda;
   // Fase 9: "Tenho um problema" nas próprias tarefas.
   const reportUserId = me.permissions.includes('ocorrencias.registrar') ? me.user.id : null;
   // Presença operacional (Fase 7): quem registra a própria chegada e saída.

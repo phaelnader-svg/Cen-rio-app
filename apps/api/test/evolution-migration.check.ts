@@ -431,5 +431,9 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     );
     // 20270202 (confirmação semanal): a exceção administrativa do caso anterior já gravou uma.
     expect(await db().weeklyClosingConfirmation.count()).toBeGreaterThan(0);
+    // 20270302 (Reformulação, Fase 0): pedidos de ajuda desligados pela tela da empresa — bloqueia
+    // a reversão (a versão anterior trataria a funcionalidade como ligada sem aviso).
+    const helpOff = await put('/api/company/modules/ajuda', { enabled: false, version: 0 });
+    expect(helpOff.status, JSON.stringify(helpOff.body)).toBe(200);
   });
 });

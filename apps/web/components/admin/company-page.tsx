@@ -1,15 +1,15 @@
 'use client';
 
-import type { CompanySettingsDto, OwnTeamSettingsDto } from '@cenario/shared';
+import type { CompanySettingsDto, ModuleSettingDto, OwnTeamSettingsDto } from '@cenario/shared';
 import { WEEKDAYS, companySettingsSchema } from '@cenario/shared';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Field, Input, Select } from '@/components/ui/field';
+import { Checkbox, Field, Input, Select } from '@/components/ui/field';
 import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
-import { ApiError, api, errorMessage, fieldErrors } from '@/lib/api';
+import { ApiError, api, errorMessage, fieldErrors, newIdempotencyKey } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { useCompany } from '@/lib/queries';
@@ -257,6 +257,7 @@ export function CompanyPage() {
         </Card>
       </div>
       <OwnTeamCard />
+      <ModulesCard />
       <p className="mt-4 text-xs text-ink-muted">
         Última alteração: {formatDateTime(company.data.updatedAt)} · versão {company.data.version}
       </p>
@@ -349,6 +350,68 @@ function OwnTeamCard() {
             </Button>
           </div>
         )}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Reformulação, Fase 0: funcionalidades que podem ser desligadas sem apagar nada. Quem decide é o
+ * servidor (recusa o que estiver desligado); aqui só o gestor com `empresa.configurar` altera.
+ */
+function ModulesCard() {
+  const can = useCan();
+  const qc = useQueryClient();
+  const toast = useToast();
+  const editable = can('empresa.configurar');
+  const list = useQuery({
+    queryKey: ['company', 'modules', 'list'],
+    queryFn: () => api<ModuleSettingDto[]>('/api/company/modules'),
+  });
+  const save = useMutation({
+    mutationFn: (m: ModuleSettingDto) =>
+      api<ModuleSettingDto>(`/api/company/modules/${m.key}`, {
+        method: 'PUT',
+        body: { enabled: !m.enabled, version: m.version },
+        idempotencyKey: newIdempotencyKey(),
+      }),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ['company', 'modules'] });
+      toast('ok', `${r.label}: ${r.enabled ? 'ativada' : 'desativada'}.`);
+    },
+    onError: (e) => {
+      void qc.invalidateQueries({ queryKey: ['company', 'modules'] });
+      toast('danger', errorMessage(e));
+    },
+  });
+  if (list.isPending) return <Spinner />;
+  if (!list.data) return null;
+  return (
+    <Card className="mt-6 p-6" data-testid="modules-card">
+      <h2 className="font-semibold">Funcionalidades</h2>
+      <p className="mt-1 text-sm text-ink-muted">
+        Desligar não apaga nada: o histórico continua disponível para consulta e religar volta ao
+        funcionamento anterior.
+      </p>
+      <div className="mt-4 grid gap-4">
+        {list.data.map((m) => (
+          <div key={m.key} data-testid={`module-${m.key}`}>
+            <Checkbox
+              label={`${m.label}${m.configurable ? '' : ' (disponível em fase posterior)'}`}
+              description={m.description}
+              checked={m.enabled}
+              disabled={!editable || !m.configurable || save.isPending}
+              onChange={() => save.mutate(m)}
+              data-testid={`module-${m.key}-toggle`}
+            />
+            {m.updatedAt && (
+              <p className="mt-1 pl-8 text-xs text-ink-muted">
+                {m.enabled ? 'Ativada' : 'Desativada'} por {m.updatedBy?.displayName ?? '—'} em{' '}
+                {formatDateTime(m.updatedAt)}
+              </p>
+            )}
+          </div>
+        ))}
       </div>
     </Card>
   );

@@ -28,6 +28,7 @@ import {
   type ProposalKind,
 } from '@cenario/shared';
 import type { PrismaClient } from '@cenario/db';
+import { moduleEnabled } from '../../core/modules';
 import type { FastifyInstance } from 'fastify';
 import type { z } from 'zod';
 import { attendanceConfig, clock, dbDate } from '../attendance/common';
@@ -128,9 +129,11 @@ export async function loadAttention(
     });
   }
 
-  // 2. Ajuda: só escalada ou esperando além do limite.
+  // 2. Ajuda: só escalada ou esperando além do limite. Reformulação, Fase 0: com os pedidos de
+  // ajuda desligados, nenhum pedido (nem os antigos ainda abertos) vira pendência operacional.
+  const helpOn = await moduleEnabled(prisma, 'ajuda');
   const helps = await prisma.helpRequest.findMany({
-    where: { status: { in: ['PENDENTE', 'ESCALADA'] } },
+    where: { status: { in: helpOn ? ['PENDENTE', 'ESCALADA'] : [] } },
     include: {
       task: { select: { id: true, number: true, title: true } },
       serviceOrder: { select: { id: true, number: true } },
@@ -177,9 +180,9 @@ export async function loadAttention(
     });
   }
 
-  // 3. Propostas aguardando decisão.
+  // 3. Propostas aguardando decisão (sem as nascidas de pedido de ajuda, se a ajuda está desligada).
   const proposals = await prisma.rescheduleProposal.findMany({
-    where: { status: 'PENDENTE' },
+    where: { status: 'PENDENTE', ...(helpOn ? {} : { helpRequestId: null }) },
     orderBy: { createdAt: 'desc' },
   });
   for (const p of proposals) {

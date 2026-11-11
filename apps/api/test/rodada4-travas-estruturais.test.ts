@@ -1502,6 +1502,9 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270223000000_custo_operacional_equipe_propria: DROP CONSTRAINT "logistics_costs_phase6"':
     'Regra CHECK recriada na mesma migration com a mesma condição e um status a mais (OPERACIONAL): ' +
     'amplia o aceito, nenhuma linha é apagada nem alterada.',
+  '20270302000000_modulos_configuraveis: UPDATE CASCADE':
+    'Não é comando: é a ação referencial "ON UPDATE CASCADE" da chave estrangeira de uma tabela ' +
+    'NOVA (padrão do Prisma; sem ela o schema diverge da migration). Nenhuma linha é alterada.',
 };
 
 describe('F1-13 — nenhuma tela removida, menu de materiais restaurado, nenhum dado excluído', () => {

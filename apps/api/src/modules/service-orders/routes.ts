@@ -43,6 +43,7 @@ import { itemAllocations } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { orderRevenue } from '../finance/revenue';
 import { loadTeam, upholsterersOf } from '../production/distribution';
+import { loadOperationalState } from './operational';
 import { createServiceOrder } from './service';
 
 const VIEW = { session: 'any', permissions: ['os.ver'] } as const;
@@ -431,6 +432,21 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     const { id } = idParams.parse(request.params);
     return loadServiceOrderDto(prisma, id);
   });
+
+  /**
+   * Reformulação, Fase 0: estado operacional derivado (somente leitura; nenhum contrato existente
+   * muda). Só no painel: a base técnica dos estados que as próximas fases vão exibir.
+   */
+  app.get(
+    '/api/v1/service-orders/:id/operational-state',
+    { config: { access: { session: 'WEB', permissions: ['os.ver'] } } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const state = await loadOperationalState(prisma, id);
+      if (!state) throw Errors.notFound('Ordem de serviço');
+      return state;
+    },
+  );
 
   app.get('/api/v1/service-orders/:id/revisions', { config: { access: VIEW } }, async (request) => {
     const { id } = idParams.parse(request.params);

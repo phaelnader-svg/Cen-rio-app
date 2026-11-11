@@ -75,7 +75,6 @@ import {
   actionStarted,
   originalTaskClosed,
 } from '../issues/service';
-import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 const deviceOf = (request: FastifyRequest) => request.auth?.deviceId ?? null;
 
@@ -244,7 +243,6 @@ async function assertSingleActive(
 
 export async function productionTaskRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
-  minimizeCustomerForDevices(app);
 
   // ─────────────────────────── Gestão ───────────────────────────
 

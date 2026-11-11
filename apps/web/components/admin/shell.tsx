@@ -12,7 +12,7 @@ import { PanelNotifications } from './panel-notifications';
 import { Button } from '@/components/ui/button';
 import { Alert, Avatar, Spinner } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
-import { useMe } from '@/lib/hooks';
+import { useMe, useModules } from '@/lib/hooks';
 import { RealtimeProvider } from '@/lib/realtime';
 import { NAV, NAV_GROUPS, UPCOMING, navGroupOf } from './nav';
 
@@ -20,6 +20,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const qc = useQueryClient();
   const me = useMe();
+  const modules = useModules(me.isSuccess);
   const pathname = usePathname();
   const [drawer, setDrawer] = useState(false);
 
@@ -66,6 +67,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }
 
   const items = NAV.filter((i) => !i.anyOf || i.anyOf.some((p) => perms.has(p)))
+    .filter((i) => !i.module || modules[i.module])
     .map((i, n) => ({ ...i, group: navGroupOf(i.href), n }))
     .sort((a, b) => NAV_GROUPS.indexOf(a.group) - NAV_GROUPS.indexOf(b.group) || a.n - b.n);
 

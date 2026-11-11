@@ -47,6 +47,7 @@ import { confirmationRoutes } from './modules/finance/confirmations';
 import { valueRequestRoutes } from './modules/finance/value-requests';
 import { billingRoutes } from './modules/finance/billing';
 import { processIssueRisks } from './modules/issues/service';
+import { deviceCustomerPrivacy } from './core/device-privacy';
 import { processHelpQueue } from './modules/help/queue';
 import { testClockRoutes } from './modules/testing/routes';
 import { forecastRoutes } from './modules/purchasing/forecasts';
@@ -169,6 +170,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(errorHandlerPlugin);
   await app.register(authPlugin);
   await app.register(idempotencyPlugin);
+  // Reformulação, Fase 0: privacidade do cliente nos tablets vale para todas as rotas (raiz).
+  deviceCustomerPrivacy(app);
 
   await app.register(healthRoutes);
   await app.register(authRoutes);

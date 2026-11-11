@@ -36,7 +36,7 @@ import {
   useProposals,
   useSkills,
 } from '@/lib/help';
-import { useCan } from '@/lib/hooks';
+import { useCan, useModules } from '@/lib/hooks';
 import { useWorkers } from '@/lib/production';
 
 const STATUS_TONE: Record<HelpStatus, 'warn' | 'ok' | 'info' | 'neutral' | 'danger' | 'brand'> = {
@@ -62,6 +62,7 @@ const TAB_LABEL: Record<HelpStatus, string> = {
 export function HelpRequestsPage() {
   const focus = useFocusParam();
   const can = useCan();
+  const helpOn = useModules().ajuda;
   const q = useHelpRequests();
   const [chosenTab, setTab] = useState<HelpStatus | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -81,6 +82,7 @@ export function HelpRequestsPage() {
         title="Pedidos de ajuda"
         description="Atribuição automática de ajudantes por regras fixas (competência, presença, ocupação, agenda e menor impacto). Cada escolha registra os candidatos avaliados e os motivos."
         actions={
+          helpOn &&
           can('producao.planejar') && (
             <Button
               variant="secondary"
@@ -103,6 +105,14 @@ export function HelpRequestsPage() {
           )
         }
       />
+      {!helpOn && (
+        <div data-testid="help-disabled">
+          <Alert tone="info" title="Pedidos de ajuda desativados">
+            Os tablets não pedem mais ajuda e nada aqui gera pendência. O histórico abaixo continua
+            disponível para consulta; para voltar a usar, religue em Empresa → Funcionalidades.
+          </Alert>
+        </div>
+      )}
       {error && <Alert tone="danger">{error}</Alert>}
       <Tabs
         tabs={HELP_STATUSES.map((s) => ({ key: s, label: TAB_LABEL[s], count: count(s) }))}
@@ -804,14 +814,13 @@ function SkillsCard({
 export function HelpAndRescheduleBanner() {
   const can = useCan();
   const proposals = useProposals('PENDENTE');
-  const help = useHelpRequests();
+  // Reformulação, Fase 0: com os pedidos de ajuda desligados, o aviso mostra só as reprogramações.
+  const helpOn = useModules().ajuda;
+  const help = useHelpRequests(undefined, helpOn);
   if (!can('producao.ver') && !can('producao.planejar')) return null;
-  const waiting = (help.data ?? []).filter(
-    (r) => r.status === 'PENDENTE' || r.status === 'ESCALADA',
-  );
-  const active = (help.data ?? []).filter(
-    (r) => r.status === 'ATRIBUIDA' || r.status === 'EM_EXECUCAO',
-  );
+  const helps = helpOn ? (help.data ?? []) : [];
+  const waiting = helps.filter((r) => r.status === 'PENDENTE' || r.status === 'ESCALADA');
+  const active = helps.filter((r) => r.status === 'ATRIBUIDA' || r.status === 'EM_EXECUCAO');
   const pending = proposals.data?.length ?? 0;
   if (!pending && !waiting.length && !active.length) return null;
   return (

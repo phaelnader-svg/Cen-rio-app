@@ -140,6 +140,8 @@ model User {
 
   ownTeamDefaultFor CompanySettings[] @relation("OwnTeamDefault")
 
+  moduleSettingsUpdated ModuleSetting[] @relation("ModuleSettingUpdatedBy")
+
   tripParticipations        LogisticsTripParticipant[] @relation("TripParticipant")
   materialArrivals          MaterialArrival[]          @relation("MaterialArrivalBy")
   materialArrivalsConferred MaterialArrival[]          @relation("MaterialArrivalConferredBy")
@@ -400,6 +402,20 @@ model CompanySettings {
   ownTeamDefault       User?   @relation("OwnTeamDefault", fields: [ownTeamDefaultUserId], references: [id], onDelete: SetNull)
 
   @@map("company_settings")
+}
+
+/// Reformulação, Fase 0: funcionalidade operacional ligada/desligada (chave do catálogo
+/// `MODULES` em @cenario/shared). Só existem as linhas alteradas: sem linha = valor padrão, que
+/// preserva o comportamento anterior. Nada é apagado ao desligar — o histórico continua legível.
+model ModuleSetting {
+  key         String   @id @db.VarChar(40)
+  enabled     Boolean
+  version     Int      @default(1)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedBy   User?    @relation("ModuleSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("module_settings")
 }
 
 // ─────────────────────────── Auditoria e eventos ───────────────────────────

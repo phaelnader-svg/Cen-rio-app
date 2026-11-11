@@ -1,4 +1,4 @@
-import type { Permission } from '@cenario/shared';
+import type { ModuleKey, Permission } from '@cenario/shared';
 import {
   ClipboardPlus,
   Boxes,
@@ -42,6 +42,8 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   anyOf?: Permission[];
+  /** Reformulação, Fase 0: some do menu quando a funcionalidade está desligada. */
+  module?: ModuleKey;
 }
 
 /**
@@ -174,6 +176,7 @@ export const NAV: NavItem[] = [
     label: 'Pedidos de ajuda',
     icon: HandHelping,
     anyOf: ['producao.ver', 'producao.planejar'],
+    module: 'ajuda',
   },
   {
     href: '/painel/reprogramacao',

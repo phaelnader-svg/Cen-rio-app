@@ -8,6 +8,7 @@ import {
   type HelpKind,
 } from '@cenario/shared';
 import type { PrismaClient, Tx } from '@cenario/db';
+import { moduleEnabled } from '../../core/modules';
 import { audit } from '../../core/audit';
 import { Errors } from '../../lib/errors';
 import type { ActorContext } from '../../core/types';
@@ -257,6 +258,9 @@ export function processHelpQueue(prisma: PrismaClient, now?: Date): Promise<numb
 }
 
 async function runQueue(prisma: PrismaClient, now: Date) {
+  // Reformulação, Fase 0: com os pedidos de ajuda desligados, a fila não atribui, não escala e não
+  // avisa ninguém. Os pedidos antigos ficam como estão (histórico) e voltam à fila ao religar.
+  if (!(await moduleEnabled(prisma, 'ajuda'))) return 0;
   const pending = await prisma.helpRequest.findMany({
     where: { status: 'PENDENTE' },
     orderBy: [{ urgent: 'desc' }, { createdAt: 'asc' }],

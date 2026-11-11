@@ -50,7 +50,6 @@ import {
   toTaskDto,
 } from './common';
 import { placeServiceInQueue } from './queue-placement';
-import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 // ─────────────────────────── Pessoas ───────────────────────────
 
@@ -569,7 +568,6 @@ async function publishDrafts(
 
 export async function productionPlanRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
-  minimizeCustomerForDevices(app);
 
   // Modelos
   const templateInclude = {

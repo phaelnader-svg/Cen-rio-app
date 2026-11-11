@@ -19,6 +19,8 @@ export const EVENT_TYPES = {
   DEVICE_CONNECTION_CHANGED: 'device.connection_changed',
   SESSION_REVOKED: 'session.revoked',
   COMPANY_SETTINGS_UPDATED: 'company.settings_updated',
+  /** Reformulação, Fase 0: funcionalidade ligada ou desligada (payload só com chave e estado). */
+  COMPANY_MODULE_UPDATED: 'company.module_updated',
   SYNC_SIGNAL: 'sync.signal',
   CUSTOMER_CREATED: 'customer.created',
   CUSTOMER_UPDATED: 'customer.updated',

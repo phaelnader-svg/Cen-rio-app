@@ -22,13 +22,14 @@ export const useMyHelp = (enabled = true) =>
     refetchInterval: 60_000,
   });
 
-export const useHelpRequests = (status?: HelpStatus) =>
+export const useHelpRequests = (status?: HelpStatus, enabled = true) =>
   useQuery({
     queryKey: ['help-requests', status],
     queryFn: () =>
       api<HelpRequestDto[]>(`/api/v1/help-requests${status ? `?status=${status}` : ''}`),
     placeholderData: keepPreviousData,
     refetchInterval: 60_000,
+    enabled,
   });
 
 /**
