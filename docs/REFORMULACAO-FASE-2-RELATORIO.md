@@ -60,20 +60,20 @@ Código (65 arquivos em relação a `3e0d2d0`; principais):
 
 ## 3. Testes executados
 
-| Suíte                                                          | Resultado                                                                                                   |
-| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| shared                                                         | **150 passaram**, 0 falharam                                                                                |
-| web (unitários, inclui a trava do menu)                        | **21 passaram**, 0 falharam                                                                                 |
-| API, suíte completa                                            | **986 passaram, 0 falharam, 13 pulados** (999; os 13 são os opcionais pré-existentes de desempenho e proxy) |
-| E2E de navegador, suíte completa                               | ver seção 11                                                                                                |
-| Lint (`eslint . --max-warnings=0`)                             | **sem erros nem avisos**                                                                                    |
-| Typecheck (todos os pacotes, incluindo E2E)                    | **sem erros**                                                                                               |
-| Formatação (`prettier --check`)                                | **ok**                                                                                                      |
-| Build de produção do web (Next)                                | **ok**                                                                                                      |
-| Cadeia completa de migrations (`test-evolution-migrations.sh`) | **passou** (seção 4)                                                                                        |
-| Compatibilidade `3e0d2d0` no schema novo                       | **971 passaram, 1 falha estática esperada, 13 pulados** (seção 5)                                           |
-| Verificação cruzada de versões com dados da Fase 2             | **3 de 3 etapas** (seção 5)                                                                                 |
-| Reversão da Fase 2 por tipo de dado                            | **4 de 4 casos** (seção 4)                                                                                  |
+| Suíte                                                          | Resultado                                                                                                                                                      |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shared                                                         | **150 passaram**, 0 falharam                                                                                                                                   |
+| web (unitários, inclui a trava do menu)                        | **21 passaram**, 0 falharam                                                                                                                                    |
+| API, suíte completa                                            | **986 passaram, 0 falharam, 13 pulados** (999; os 13 são os opcionais pré-existentes de desempenho e proxy)                                                    |
+| E2E de navegador, suíte completa                               | **62 passaram, 0 falharam, 0 pulados** (rodada final, 15,9 min). 1ª rodada: 60 passaram e 2 falharam por causa dos testes (seção 9), corrigidos e reexecutados |
+| Lint (`eslint . --max-warnings=0`)                             | **sem erros nem avisos**                                                                                                                                       |
+| Typecheck (todos os pacotes, incluindo E2E)                    | **sem erros**                                                                                                                                                  |
+| Formatação (`prettier --check`)                                | **ok**                                                                                                                                                         |
+| Build de produção do web (Next)                                | **ok**                                                                                                                                                         |
+| Cadeia completa de migrations (`test-evolution-migrations.sh`) | **passou** (seção 4)                                                                                                                                           |
+| Compatibilidade `3e0d2d0` no schema novo                       | **971 passaram, 1 falha estática esperada, 13 pulados** (seção 5)                                                                                              |
+| Verificação cruzada de versões com dados da Fase 2             | **3 de 3 etapas** (seção 5)                                                                                                                                    |
+| Reversão da Fase 2 por tipo de dado                            | **4 de 4 casos** (seção 4)                                                                                                                                     |
 
 Testes novos da Fase 2: API `fase2-fotos` (6), `fase2-modelos-servico` (5), `fase2-mapa-oficina`
 (3); E2E `fase1-conciliacao`, `fase2-modelos-servico`, `fase2-mapa-oficina` (2),
@@ -329,4 +329,28 @@ do gestor (Qualidade › Inspetor e localizações); nada foi alterado nele.
 
 ## 11. Resultado final
 
-Ver o resumo no fim da F2.6 (preenchido após a rodada completa de E2E).
+- **Branch:** `claude/reformulacao-fase-2`. **Commit final:** o commit que contém esta versão do
+  relatório (informado na mensagem de encerramento da F2.6).
+- **Totais da F2.6 (rodada final):** shared 150/150 · web 21/21 · API 986 passaram, 0 falharam,
+  13 pulados · E2E 62/62 · lint, typecheck, formatação e build sem erros.
+- **Migrations:** cadeia completa aprovada (aplica, reverte, reaplica idêntico; recusa atômica com
+  dados de cada fase; backup e restauração). Reversão da Fase 2 recusada com qualquer dado da
+  fase (4 de 4 casos).
+- **Compatibilidade:** `3e0d2d0` sobre o schema da Fase 2: 971 passaram e 1 falha **estática**
+  esperada (5.1); verificação cruzada com dados da Fase 2: 3 de 3.
+- **Capturas:** 36 (18 telas × 1440/390), 6 problemas de layout corrigidos, nenhum pendente.
+- **Ambientes:** homologação (ativa `3e0d2d0`, candidata `de31aa7`), branch padrão do
+  repositório (`claude/cenario-gestao-fase-1-zf3bj2`, não existe `main` no remoto), branches
+  `claude/reformulacao-fase-1` e `claude/retorno-a7f4f93-fase1` e produção **não foram
+  alterados**. Nenhum deploy, migration em ambiente compartilhado, build em nuvem ou chamada ao
+  executor de homologação nesta fase.
+
+**Veredito: GO COM RESSALVAS** para aprovação técnica da Fase 2. Ressalvas (detalhes na seção 10):
+
+1. fotos antigas mantêm GPS no arquivo até a migração em lotes (o acesso comum já não expõe);
+2. custo de CPU do tratamento de imagem na VM não foi medido em homologação;
+3. a versão de retorno da Fase 2 ainda não foi construída e, se usada, volta a gravar fotos sem
+   tratamento;
+4. validação funcional integrada só na homologação final (após as Fases 3 e 4).
+
+A Fase 3 **não** foi iniciada; aguarda autorização.
