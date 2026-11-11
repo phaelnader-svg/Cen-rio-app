@@ -305,7 +305,7 @@ Ver "Resultado final".
 | `1ea3cfe` | Fase 1: spec E2E roda primeiro (desligar a logística exige nada em andamento)     |
 
 O SHA final é o do commit que contém este relatório (ponta de `claude/reformulacao-fase-1`). Total:
-cerca de 50 arquivos, cerca de 4,7 mil linhas acrescentadas, nenhum arquivo removido.
+53 arquivos, 5.116 linhas acrescentadas e 49 removidas (diff de `a7f4f93` até a ponta), nenhum arquivo apagado.
 
 ### Testes (ambiente isolado: PostgreSQL 16 local descartável, bancos `cenario_test`, `cenario_test_iso2`, `cenario_e2e_test` e `cenario_evo_migration_test`)
 
