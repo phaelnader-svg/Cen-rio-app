@@ -152,7 +152,11 @@ test.describe.serial('Fase 4 — compras, recebimento e estoque', () => {
     await page.getByRole('tab', { name: /Materiais/ }).click();
     await expect(page.getByTestId('os-readiness-state')).toHaveText('Completo');
     await expect(page.getByText('não autorizam o início da produção')).toBeVisible();
-    await expect(page.getByRole('button', { name: /produção/i })).toHaveCount(0);
+    // Fase 2: o cabeçalho da OS tem o atalho de navegação "Planejar a produção da OS" (só troca de
+    // aba, não inicia nada); a trava vale para a área de materiais, onde nada inicia produção.
+    await expect(page.getByRole('tabpanel').getByRole('button', { name: /produção/i })).toHaveCount(
+      0,
+    );
     // Fase 5: a aba Produção existe, mas material completo não cria tarefas.
     await page.getByRole('tab', { name: /Produção/ }).click();
     await expect(page.getByText('Nenhuma tarefa programada')).toBeVisible();

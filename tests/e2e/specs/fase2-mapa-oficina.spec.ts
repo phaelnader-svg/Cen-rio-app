@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
-import { openServiceOrder, post } from './os-helpers';
+import { openServiceOrder } from './os-helpers';
 
 /**
  * Reformulação, Fase 2 — mapa interno da oficina (painel) e "Aguardando chegada" unificada
@@ -14,7 +14,13 @@ test('mapa da oficina: peça sem localização, mover pela tela, busca e localiz
   await loginAdmin(page);
   const tag = `Mapa ${Date.now().toString(36)}`;
   const so = await openServiceOrder(page, `Cliente ${tag}`);
-  const area = await post(page, '/api/v1/locations', { label: `Bancada ${tag}`, position: 900 });
+  // A rota existente de localizações responde 200 (não 201).
+  const created = await page.request.post('/api/v1/locations', {
+    data: { label: `Bancada ${tag}`, position: 900 },
+    headers: { origin: new URL(page.url()).origin },
+  });
+  expect(created.ok(), await created.text()).toBe(true);
+  const area = (await created.json()) as { id: string; key: string };
   const piece = so.items[0]!;
 
   await page.goto('/painel/producao/mapa');
