@@ -54,7 +54,7 @@ Ver a seção "Resultado final" no fim deste documento (preenchida no último co
 **Testes**
 
 - Novos: `apps/api/test/fase1-materiais-estoque-entrega.test.ts` (19 testes),
-  `tests/e2e/specs/fase1-materiais-estoque-entrega.spec.ts` (3 cenários)
+  `tests/e2e/specs/aa-fase1-materiais-estoque-entrega.spec.ts` (3 cenários)
 - Ajustados: ver a seção 12, com o motivo de cada ajuste.
 
 ## 4. Migrations

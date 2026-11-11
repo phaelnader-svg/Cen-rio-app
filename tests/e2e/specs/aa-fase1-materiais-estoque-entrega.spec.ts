@@ -11,6 +11,10 @@ import { openServiceOrder } from './os-helpers';
  *    falta (qualidade não é pulada) e religar volta ao normal. Termina com a logística ligada.
  * A entrega direta completa (qualidade aprovada, cobrança, idempotência e concorrência) está
  * provada na API: apps/api/test/fase1-materiais-estoque-entrega.test.ts.
+ *
+ * Prefixo "aa-": roda PRIMEIRO, no banco E2E recém-criado. Desligar a logística é RECUSADO enquanto
+ * houver entrega ou retirada em andamento (regra da Fase 1, provada na API), e os specs seguintes
+ * deixam várias em andamento.
  */
 test.describe.configure({ mode: 'serial' });
 

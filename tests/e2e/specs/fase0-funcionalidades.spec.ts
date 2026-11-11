@@ -5,7 +5,7 @@ import { loginAdmin } from './helpers';
  * Reformulação, Fase 0 — o gestor desliga e religa os pedidos de ajuda em Empresa →
  * Funcionalidades. Desligados: somem do menu e a tela de histórico avisa que estão desativados.
  * Embalagem aparece, mas não pode ser alterada ainda; a logística passou a ser configurável na
- * Fase 1 (coberta em fase1-materiais-estoque-entrega.spec.ts) e continua ligada por padrão.
+ * Fase 1 (coberta em aa-fase1-materiais-estoque-entrega.spec.ts) e continua ligada por padrão.
  * Termina religado (os outros specs usam a ajuda).
  */
 test('funcionalidades: desligar e religar os pedidos de ajuda pelo painel', async ({ page }) => {
