@@ -9,9 +9,12 @@ import { z } from 'zod';
  * migrada mantém o comportamento anterior até alguém desligar algo de forma explícita.
  *
  * `configurable: false` = a chave já existe (para os próximos passos), mas ainda não pode ser
- * alterada: desligar a logística ou a embalagem obrigatória depende das Fases 1 e 3.
+ * alterada: desligar a embalagem obrigatória depende da Fase 3.
+ *
+ * Fase 1: a logística passou a ser configurável (a entrega direta pela OS substitui a operação de
+ * entregas) e "materiais" controla as travas de materiais na liberação da produção.
  */
-export const MODULE_KEYS = ['logistica', 'ajuda', 'embalagem'] as const;
+export const MODULE_KEYS = ['logistica', 'ajuda', 'embalagem', 'materiais'] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
 export interface ModuleDefinition {
@@ -25,9 +28,9 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
   logistica: {
     label: 'Logística',
     description:
-      'Retiradas, entregas agendadas, roteiro e custos de viagem. Desligar depende da entrega simplificada (Fase 1).',
+      'Retiradas, entregas agendadas, roteiro e custos de viagem. Desligada, a entrega é confirmada direto na OS ("Marcar como entregue"); o histórico de viagens fica só para consulta. Só pode ser desligada sem entregas e retiradas em andamento.',
     defaultEnabled: true,
-    configurable: false,
+    configurable: true,
   },
   ajuda: {
     label: 'Pedidos de ajuda',
@@ -42,6 +45,13 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
       'Etapa de embalagem entre a qualidade aprovada e "pronta para entrega". Desligar depende da Fase 3.',
     defaultEnabled: true,
     configurable: false,
+  },
+  materiais: {
+    label: 'Travas de materiais na produção',
+    description:
+      'Ligada, as etapas que exigem material só são liberadas com compra recebida ou reserva. Desligada, a produção começa mesmo com materiais pendentes: a disponibilidade vira só aviso, e compras, reservas e estoque formais continuam disponíveis para quem quiser usar.',
+    defaultEnabled: true,
+    configurable: true,
   },
 };
 
@@ -66,7 +76,7 @@ export function resolveModules(rows: readonly { key: string; enabled: boolean }[
 
 /** Avisos de tablet/painel que pertencem a um módulo (escondidos quando ele está desligado). */
 export const MODULE_NOTIFICATION_KINDS: Record<ModuleKey, readonly string[]> = {
-  logistica: [],
+  logistica: ['ENTREGA_ATRIBUIDA', 'ENTREGA_AGENDADA', 'ENTREGA_CONCLUIDA'],
   ajuda: [
     'AJUDA_SOLICITADA',
     'AJUDA_ATRIBUIDA',
@@ -75,6 +85,7 @@ export const MODULE_NOTIFICATION_KINDS: Record<ModuleKey, readonly string[]> = {
     'AJUDA_CONCLUIDA',
   ],
   embalagem: [],
+  materiais: [],
 };
 
 /** Tipos de notificação a esconder no estado atual (vazio = nenhum). */

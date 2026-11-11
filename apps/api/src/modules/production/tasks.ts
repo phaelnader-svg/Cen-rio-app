@@ -55,6 +55,7 @@ import {
   taskEvent,
   taskInclude,
   taskMaterialsReady,
+  materialsGateOn,
   toTaskDto,
   taskNotBefore,
 } from './common';
@@ -837,6 +838,11 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       // Simplificação Fase 4: rascunho (pré-planejamento) não existe para quem executa.
       if (!canViewAll(request) && t.status === 'RASCUNHO') throw Errors.notFound('Tarefa');
       const { timezone } = await company(prisma);
+      const osMaterials = await prisma.serviceOrderMaterial.findMany({
+        where: { serviceOrderId: t.serviceOrderId, removedAt: null },
+        select: { description: true, quantity: true, unit: true, available: true },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
       const [events, so, readiness, osTasks, links, revisions] = await Promise.all([
         prisma.productionTaskEvent.findMany({
           where: { taskId: id },
@@ -908,11 +914,22 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         materials: readiness.lines,
         materialsState: readiness.state,
         materialIds,
+        // Fase 1: com as travas desligadas, o indicador reflete a lista simples (só informativo).
         taskMaterials: !t.requiresMaterials
           ? 'NAO_EXIGE'
-          : (await taskMaterialsReady(prisma, t, new Map([[t.serviceOrderId, readiness]])))
-            ? 'DISPONIVEIS'
-            : 'FALTANDO',
+          : !(await materialsGateOn(prisma))
+            ? osMaterials.some((m) => !m.available)
+              ? 'FALTANDO'
+              : 'DISPONIVEIS'
+            : (await taskMaterialsReady(prisma, t, new Map([[t.serviceOrderId, readiness]])))
+              ? 'DISPONIVEIS'
+              : 'FALTANDO',
+        osMaterials: osMaterials.map((m) => ({
+          description: m.description,
+          quantity: m.quantity === null ? null : Number(m.quantity),
+          unit: m.unit,
+          available: m.available,
+        })),
         // Só os nomes dos campos alterados (sem valores): nada comercial chega ao tablet.
         technicalHistory: revisions.map((r) => ({
           revision: r.revision,

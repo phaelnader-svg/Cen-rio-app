@@ -77,6 +77,7 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[] }> = {
     group: 'Compras',
     anyOf: ['estoque.ver', 'estoque.gerenciar', 'compras.ver'],
   },
+  '/painel/estoque-oficina': { group: 'Compras', anyOf: ['estoque.ver', 'estoque.gerenciar'] },
   '/painel/prontidao': {
     group: 'Compras',
     anyOf: ['os.ver', 'estoque.ver', 'compras.ver', 'materiais.ver'],

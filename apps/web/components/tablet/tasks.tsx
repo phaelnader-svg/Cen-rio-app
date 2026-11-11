@@ -785,6 +785,33 @@ export function MyTaskDetail({
         )}
       </Block>
 
+      {/* Reformulação, Fase 1: a lista simples da OS (só situação; custo nunca aparece aqui). */}
+      {(t.osMaterials ?? []).length > 0 && (
+        <Block title="Materiais necessários (lista da OS)">
+          <ul className="space-y-2 text-base" data-testid="task-os-materials">
+            {(t.osMaterials ?? []).map((m, i) => (
+              <li key={i} className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{m.description}</span>
+                {m.quantity !== null && (
+                  <span className="text-ink-muted">
+                    · {m.quantity.toLocaleString('pt-BR')}
+                    {m.unit ? ` ${m.unit}` : ''}
+                  </span>
+                )}
+                <span
+                  className={clsx(
+                    'rounded-full px-2.5 py-0.5 text-sm font-semibold',
+                    m.available ? 'bg-ok-50 text-ok-600' : 'bg-warn-50 text-warn-600',
+                  )}
+                >
+                  {m.available ? 'Na oficina' : 'Ainda não chegou'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Block>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Block title="Depende de">
           <TaskRefs large refs={t.dependsOn} empty="Nenhuma dependência." />

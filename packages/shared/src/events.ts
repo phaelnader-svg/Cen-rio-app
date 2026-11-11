@@ -61,6 +61,9 @@ export const EVENT_TYPES = {
   MATERIAL_SHORTAGE_DETECTED: 'material.shortage_detected',
   MATERIAL_READINESS_CHANGED: 'material.readiness_changed',
   LEFTOVER_CHANGED: 'leftover.changed',
+  /** Reformulação, Fase 1: lista simples de materiais da OS e estoque simples (sem valores). */
+  OS_MATERIALS_CHANGED: 'os_materials.changed',
+  INVENTORY_CHANGED: 'inventory.changed',
   PRODUCTION_TEMPLATE_CHANGED: 'production.template_changed',
   PRODUCTION_PLAN_CREATED: 'production.plan_created',
   PRODUCTION_PLAN_UPDATED: 'production.plan_updated',

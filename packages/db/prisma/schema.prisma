@@ -157,12 +157,19 @@ model User {
   closingConfirmationsByMe WeeklyClosingConfirmation[] @relation("ConfirmationCreatedBy")
 
   // Simplificação Fase 7: calendário, folgas/férias e propostas pedidas pelo funcionário.
-  holidaysCreated    CompanyHoliday[]       @relation("HolidayCreatedBy")
-  holidaysUpdated    CompanyHoliday[]       @relation("HolidayUpdatedBy")
-  leavesCreated      AttendanceLeave[]      @relation("LeaveCreatedBy")
-  leavesCancelled    AttendanceLeave[]      @relation("LeaveCancelledBy")
-  leaveEvents        AttendanceLeaveEvent[] @relation("LeaveEventActor")
-  proposalsRequested RescheduleProposal[]   @relation("ProposalRequestedBy")
+  holidaysCreated       CompanyHoliday[]       @relation("HolidayCreatedBy")
+  holidaysUpdated       CompanyHoliday[]       @relation("HolidayUpdatedBy")
+  leavesCreated         AttendanceLeave[]      @relation("LeaveCreatedBy")
+  leavesCancelled       AttendanceLeave[]      @relation("LeaveCancelledBy")
+  leaveEvents           AttendanceLeaveEvent[] @relation("LeaveEventActor")
+  proposalsRequested    RescheduleProposal[]   @relation("ProposalRequestedBy")
+  // Reformulação, Fase 1: estoque simples e materiais da OS.
+  inventoryItemsCreated InventoryItem[]        @relation("InventoryItemCreatedBy")
+  fabricRollsCreated    FabricRoll[]           @relation("FabricRollCreatedBy")
+  inventoryAdjustments  InventoryAdjustment[]  @relation("InventoryAdjustmentActor")
+  osMaterialsCreated    ServiceOrderMaterial[] @relation("OsMaterialCreatedBy")
+  osMaterialsUpdated    ServiceOrderMaterial[] @relation("OsMaterialUpdatedBy")
+  osMaterialsRemoved    ServiceOrderMaterial[] @relation("OsMaterialRemovedBy")
 
   @@map("users")
 }
@@ -988,6 +995,8 @@ model ServiceOrder {
   productionPayables   ProductionPayable[]
   logisticsAllocations LogisticsCostAllocation[]
   laborReviews         LaborReview[]
+  /// Reformulação, Fase 1: lista simples de materiais necessários (comprado/na oficina).
+  simpleMaterials      ServiceOrderMaterial[]
 
   /// Simplificação Fase 2: recebimento que gerou esta OS automaticamente (único). Vazio = OS
   /// criada manualmente (fluxo anterior, preservado).
@@ -2739,6 +2748,8 @@ model Delivery {
   completedAt          DateTime?                  @map("completed_at") @db.Timestamptz(3)
   completionNote       String?                    @map("completion_note") @db.VarChar(1000)
   cancelReason         String?                    @map("cancel_reason") @db.VarChar(500)
+  /// Reformulação, Fase 1: LOGISTICA (roteiro/viagem) ou DIRETA (confirmada pela OS, sem viagem).
+  origin               String                     @default("LOGISTICA") @db.VarChar(20)
   version              Int                        @default(1)
   createdById          String?                    @map("created_by_id") @db.Uuid
   createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -3741,4 +3752,128 @@ model AttendanceLeaveEvent {
 
   @@index([leaveId, createdAt])
   @@map("attendance_leave_events")
+}
+
+// ======================================================================================
+// Reformulação, Fase 1 — estoque simples (independente da OS) e materiais necessários da OS.
+// ======================================================================================
+
+/// Categoria personalizada do estoque simples (Tecidos, Espumas, Colas...). Nome único sem
+/// diferenciar maiúsculas (índice funcional na migration).
+model InventoryCategory {
+  id         String    @id @default(uuid()) @db.Uuid
+  name       String    @db.VarChar(60)
+  position   Int       @default(0)
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
+  version    Int       @default(1)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  items       InventoryItem[]
+  osMaterials ServiceOrderMaterial[]
+
+  @@map("inventory_categories")
+}
+
+/// Material do estoque simples. Quantidade atualizada à mão (com ajuste auditado); nunca muda
+/// sozinha por causa de uma OS.
+model InventoryItem {
+  id                 String    @id @default(uuid()) @db.Uuid
+  name               String    @db.VarChar(160)
+  categoryId         String?   @map("category_id") @db.Uuid
+  unit               String    @db.VarChar(20)
+  quantity           Decimal   @default(0) @db.Decimal(12, 3)
+  referenceCostCents Int?      @map("reference_cost_cents")
+  location           String?   @db.VarChar(120)
+  notes              String?   @db.VarChar(500)
+  archivedAt         DateTime? @map("archived_at") @db.Timestamptz(3)
+  version            Int       @default(1)
+  createdById        String?   @map("created_by_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  category    InventoryCategory?     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  createdBy   User?                  @relation("InventoryItemCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  rolls       FabricRoll[]
+  adjustments InventoryAdjustment[]
+  osMaterials ServiceOrderMaterial[]
+
+  @@index([categoryId])
+  @@map("inventory_items")
+}
+
+/// Rolo de tecido com identificação própria e metragem atualizada à mão.
+model FabricRoll {
+  id          String    @id @default(uuid()) @db.Uuid
+  itemId      String    @map("item_id") @db.Uuid
+  code        String    @db.VarChar(40)
+  color       String?   @db.VarChar(60)
+  reference   String?   @db.VarChar(80)
+  meters      Decimal   @default(0) @db.Decimal(12, 3)
+  notes       String?   @db.VarChar(500)
+  archivedAt  DateTime? @map("archived_at") @db.Timestamptz(3)
+  version     Int       @default(1)
+  createdById String?   @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  item        InventoryItem         @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  createdBy   User?                 @relation("FabricRollCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  adjustments InventoryAdjustment[]
+
+  @@index([itemId])
+  @@map("fabric_rolls")
+}
+
+/// Ajuste manual de quantidade (de um material ou da metragem de um rolo). Imutável (gatilho).
+model InventoryAdjustment {
+  id               String   @id @default(uuid()) @db.Uuid
+  itemId           String?  @map("item_id") @db.Uuid
+  rollId           String?  @map("roll_id") @db.Uuid
+  previousQuantity Decimal  @map("previous_quantity") @db.Decimal(12, 3)
+  newQuantity      Decimal  @map("new_quantity") @db.Decimal(12, 3)
+  reason           String?  @db.VarChar(500)
+  actorId          String?  @map("actor_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  item  InventoryItem? @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  roll  FabricRoll?    @relation(fields: [rollId], references: [id], onDelete: Restrict)
+  actor User?          @relation("InventoryAdjustmentActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([itemId, createdAt])
+  @@index([rollId, createdAt])
+  @@map("inventory_adjustments")
+}
+
+/// Material necessário da OS (lista simples). "Comprado" e "na oficina" são independentes; custo
+/// opcional (null = não informado, nunca zero). Remoção lógica (removedAt) preserva o histórico.
+model ServiceOrderMaterial {
+  id              String    @id @default(uuid()) @db.Uuid
+  serviceOrderId  String    @map("service_order_id") @db.Uuid
+  description     String    @db.VarChar(200)
+  categoryId      String?   @map("category_id") @db.Uuid
+  inventoryItemId String?   @map("inventory_item_id") @db.Uuid
+  quantity        Decimal?  @db.Decimal(12, 3)
+  unit            String?   @db.VarChar(20)
+  notes           String?   @db.VarChar(500)
+  purchased       Boolean   @default(false)
+  available       Boolean   @default(false)
+  costCents       Int?      @map("cost_cents")
+  version         Int       @default(1)
+  createdById     String?   @map("created_by_id") @db.Uuid
+  updatedById     String?   @map("updated_by_id") @db.Uuid
+  removedAt       DateTime? @map("removed_at") @db.Timestamptz(3)
+  removedById     String?   @map("removed_by_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  serviceOrder  ServiceOrder       @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  category      InventoryCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  inventoryItem InventoryItem?     @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  createdBy     User?              @relation("OsMaterialCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy     User?              @relation("OsMaterialUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  removedBy     User?              @relation("OsMaterialRemovedBy", fields: [removedById], references: [id], onDelete: SetNull)
+
+  @@index([serviceOrderId])
+  @@map("service_order_materials")
 }

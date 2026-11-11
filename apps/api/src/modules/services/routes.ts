@@ -23,6 +23,7 @@ import { canPlanLabor, canPlanUpholsterer } from '../orders/planned-intent';
 import { loadTeam, upholsterersOf } from '../production/distribution';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
+import { assertModuleEnabled } from '../../core/modules';
 import { asSnapshot, dateOnly, orderCode, pickupCode } from '../commercial/common';
 import { createCustomer } from '../customers/service';
 import { createOrder } from '../orders/service';
@@ -186,6 +187,8 @@ export async function serviceRoutes(app: FastifyInstance) {
       if (c.mode === 'EXISTENTE' && c.addressId && c.newAddress)
         throw Errors.validation(undefined, 'Escolha um endereço existente OU informe um novo.');
       const p = input.pickup;
+      // Fase 1: com a logística desligada, o "Novo serviço" só aceita peças trazidas pelo cliente.
+      if (p) await assertModuleEnabled(prisma, 'logistica');
       const actor = actorFrom(request);
 
       const result = await prisma.$transaction(async (tx) => {

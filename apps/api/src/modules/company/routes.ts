@@ -8,8 +8,10 @@ import {
   updateModuleSchema,
   type CompanySettingsDto,
   type ModuleSettingDto,
+  DELIVERY_ACTIVE,
+  deliveryCode,
 } from '@cenario/shared';
-import type { CompanySettings, PrismaClient } from '@cenario/db';
+import type { CompanySettings, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
@@ -18,6 +20,8 @@ import { lockRow } from '../../core/locking';
 import { moduleState } from '../../core/modules';
 import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
+import { pickupCode } from '../commercial/common';
+import { reevaluateTasks, waitingTaskIds } from '../production/common';
 
 function toDto(c: CompanySettings): CompanySettingsDto {
   return {
@@ -65,6 +69,43 @@ async function moduleSettings(prisma: PrismaClient): Promise<ModuleSettingDto[]>
 
 const moduleParams = z.object({ key: z.string().max(40) });
 
+/** Situações de retirada ainda em andamento (as finais são RECEBIDA_NA_OFICINA e CANCELADA). */
+const PICKUP_IN_FLIGHT = [
+  'AGUARDANDO_AGENDAMENTO',
+  'AGENDADA',
+  'EM_EXECUCAO',
+  'RETIRADA_REALIZADA',
+  'COM_OCORRENCIA',
+] as const;
+
+/**
+ * Fase 1: recusa desligar a logística enquanto houver entrega ou retirada em andamento, citando
+ * quais (o gestor conclui ou cancela antes). Assim nenhuma peça fica presa num roteiro escondido.
+ */
+async function assertNoLogisticsInFlight(tx: Tx) {
+  const [deliveries, pickups] = await Promise.all([
+    tx.delivery.findMany({
+      where: { status: { in: [...DELIVERY_ACTIVE] } },
+      select: { number: true },
+      orderBy: { number: 'asc' },
+    }),
+    tx.pickupRequest.findMany({
+      where: { status: { in: [...PICKUP_IN_FLIGHT] } },
+      select: { number: true },
+      orderBy: { number: 'asc' },
+    }),
+  ]);
+  if (!deliveries.length && !pickups.length) return;
+  const list = [
+    ...deliveries.map((d) => deliveryCode(d.number)),
+    ...pickups.map((p) => pickupCode(p.number)),
+  ];
+  throw Errors.business(
+    `Conclua ou cancele as entregas e retiradas em andamento antes de desligar a logística: ${list.slice(0, 10).join(', ')}${list.length > 10 ? ` e mais ${list.length - 10}` : ''}.`,
+    { deliveries: deliveries.length, pickups: pickups.length },
+  );
+}
+
 export async function companyRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -111,6 +152,9 @@ export async function companyRoutes(app: FastifyInstance) {
         if (input.version !== currentVersion) throw Errors.versionConflict(currentVersion);
         const wasEnabled = before?.enabled ?? MODULES[key].defaultEnabled;
         if (wasEnabled === input.enabled) return;
+        // Fase 1: a logística só desliga sem operação em andamento (nada fica pela metade); a
+        // entrega passa a ser confirmada direto na OS. Religar não tem pré-condição.
+        if (key === 'logistica' && !input.enabled) await assertNoLogisticsInFlight(tx);
         if (before)
           await tx.moduleSetting.update({
             where: { key },
@@ -127,6 +171,9 @@ export async function companyRoutes(app: FastifyInstance) {
           summary: `${MODULES[key].label}: ${input.enabled ? 'ativada' : 'desativada'}.`,
           changes: { enabled: { from: wasEnabled, to: input.enabled } },
         });
+        // Fase 1: as travas de materiais valem na hora para as tarefas que aguardam início.
+        if (key === 'materiais')
+          await reevaluateTasks(tx, actor, await waitingTaskIds(tx, { requiresMaterials: true }));
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.COMPANY_MODULE_UPDATED,
           aggregateType: 'module_setting',

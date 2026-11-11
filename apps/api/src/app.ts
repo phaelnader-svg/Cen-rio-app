@@ -63,6 +63,9 @@ import { serviceRoutes } from './modules/services/routes';
 import { arrivalRoutes } from './modules/arrivals/routes';
 import { receiptRoutes } from './modules/receipts/routes';
 import { serviceOrderRoutes } from './modules/service-orders/routes';
+import { osMaterialRoutes } from './modules/os-materials/routes';
+import { directDeliveryRoutes } from './modules/quality/direct-delivery';
+import { inventoryRoutes } from './modules/inventory/routes';
 import { companyRoutes } from './modules/company/routes';
 import { deviceRoutes } from './modules/devices/routes';
 import { employeeRoutes } from './modules/employees/routes';
@@ -194,6 +197,9 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(arrivalRoutes);
   await app.register(receiptRoutes);
   await app.register(serviceOrderRoutes);
+  await app.register(osMaterialRoutes);
+  await app.register(directDeliveryRoutes);
+  await app.register(inventoryRoutes);
   await app.register(attachmentRoutes);
   // Fase 3 — medições e solicitações de materiais
   await app.register(measurementRoutes);

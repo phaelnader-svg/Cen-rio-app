@@ -19,14 +19,19 @@ describe('módulos configuráveis', () => {
     }
   });
 
-  it('na Fase 0 só "ajuda" é configurável; logística e embalagem ficam no padrão mesmo com registro gravado', () => {
-    expect(MODULE_KEYS.filter((k) => MODULES[k].configurable)).toEqual(['ajuda']);
+  it('Fase 1: logística, ajuda e travas de materiais são configuráveis; embalagem fica no padrão mesmo com registro gravado', () => {
+    expect(MODULE_KEYS.filter((k) => MODULES[k].configurable)).toEqual([
+      'logistica',
+      'ajuda',
+      'materiais',
+    ]);
     const state = resolveModules([
       { key: 'logistica', enabled: false },
       { key: 'embalagem', enabled: false },
       { key: 'ajuda', enabled: false },
+      { key: 'materiais', enabled: false },
     ]);
-    expect(state).toEqual({ logistica: true, embalagem: true, ajuda: false });
+    expect(state).toEqual({ logistica: false, embalagem: true, ajuda: false, materiais: false });
   });
 
   it('chave desconhecida (gravada por versão futura) é ignorada sem erro', () => {
@@ -42,6 +47,15 @@ describe('módulos configuráveis', () => {
     // Todo aviso AJUDA_* do catálogo está coberto (nenhum fica visível por esquecimento).
     expect(NOTIFICATION_KINDS.filter((k) => k.startsWith('AJUDA_')).sort()).toEqual(
       [...hidden].sort(),
+    );
+  });
+
+  it('Fase 1: logística desligada esconde só os avisos de entrega agendada; todos são tipos válidos', () => {
+    const hidden = hiddenNotificationKinds(resolveModules([{ key: 'logistica', enabled: false }]));
+    expect(hidden.sort()).toEqual(['ENTREGA_AGENDADA', 'ENTREGA_ATRIBUIDA', 'ENTREGA_CONCLUIDA']);
+    for (const k of hidden) expect(NOTIFICATION_KINDS as readonly string[]).toContain(k);
+    expect(hiddenNotificationKinds(resolveModules([{ key: 'materiais', enabled: false }]))).toEqual(
+      [],
     );
   });
 

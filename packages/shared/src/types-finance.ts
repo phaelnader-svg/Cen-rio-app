@@ -262,6 +262,12 @@ export interface MaterialCostSummaryDto {
   unpricedLines: number;
   /** Reservas de estoque ativas (consumo ainda não confirmado: fora do custo realizado). */
   activeReservations: number;
+  /** Fase 1: custo informado nos materiais da OS e já realizado (comprados), incluído no consumido. */
+  informedCents: number;
+  /** Fase 1: materiais da OS marcados como comprados sem custo informado (incluídos em unpricedLines). */
+  informedUnpriced: number;
+  /** Fase 1: a OS tem custo formal (compra/estoque/sobra) E custo informado na lista simples. */
+  mixedSources: boolean;
   lines: MaterialCostLineDto[];
 }
 

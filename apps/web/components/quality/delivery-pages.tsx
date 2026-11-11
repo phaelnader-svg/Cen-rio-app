@@ -30,7 +30,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { useCustomer, arrivalText } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
-import { useCan } from '@/lib/hooks';
+import { useCan, useModules } from '@/lib/hooks';
 import { useWorkers } from '@/lib/production';
 import {
   useDeliveries,
@@ -190,6 +190,7 @@ function Agenda() {
                         {d.openOccurrences > 0 && (
                           <Badge tone="danger">{d.openOccurrences} ocorrência(s)</Badge>
                         )}
+                        {d.origin === 'DIRETA' && <Badge tone="info">Confirmada na OS</Badge>}
                         <DeliveryBadge status={d.status} />
                         <Link
                           href={`/painel/entregas/${d.id}`}
@@ -213,6 +214,8 @@ function Agenda() {
 function ReadyPieces() {
   const q = usePieces({ stage: 'PRONTA_ENTREGA' });
   const can = useCan();
+  // Reformulação, Fase 1: sem logística, a entrega é confirmada na própria OS.
+  const logisticsOn = useModules().logistica;
   const [schedule, setSchedule] = useState<{
     customerId: string;
     customer: string;
@@ -241,7 +244,8 @@ function ReadyPieces() {
           key={list[0]!.customerId}
           title={list[0]!.customer}
           actions={
-            can('entregas.gerenciar') && (
+            can('entregas.gerenciar') &&
+            logisticsOn && (
               <Button
                 size="sm"
                 onClick={() =>
@@ -265,6 +269,17 @@ function ReadyPieces() {
                 {p.serviceOrder.promisedDate
                   ? ` · prometida ${p.serviceOrder.promisedDate.split('-').reverse().join('/')}`
                   : ''}
+                {!logisticsOn && (
+                  <>
+                    {' · '}
+                    <Link
+                      className="text-brand-700 hover:underline"
+                      href={`/painel/os/${p.serviceOrder.id}?tab=entrega`}
+                    >
+                      Marcar como entregue na {p.serviceOrder.code}
+                    </Link>
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -828,9 +843,15 @@ export function DeliveryDetailPage({ id }: { id: string }) {
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm" data-testid="delivery-header">
         <DeliveryBadge status={d.status} />
         {d.provisional && <Badge tone="warn">Não confirmada ao cliente</Badge>}
-        <span>
-          {PICKUP_TEAM_LABEL[d.team]} · {d.responsible?.displayName ?? 'sem responsável'}
-        </span>
+        {d.origin === 'DIRETA' ? (
+          <span data-testid="delivery-origin-direct">
+            <Badge tone="info">Confirmada diretamente pela OS (sem roteiro nem viagem)</Badge>
+          </span>
+        ) : (
+          <span>
+            {PICKUP_TEAM_LABEL[d.team]} · {d.responsible?.displayName ?? 'sem responsável'}
+          </span>
+        )}
         {d.attempts > 0 && <Badge tone="danger">{d.attempts} tentativa(s) frustrada(s)</Badge>}
       </div>
       <div className="mb-6 space-y-4">

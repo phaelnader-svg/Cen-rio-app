@@ -49,6 +49,7 @@ import {
 import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useCustomerAddresses, useCustomerLookup, useNewServiceDefaults } from '@/lib/commercial';
+import { useModules } from '@/lib/hooks';
 import { AddressFields, addressLines, emptyAddress, type AddressState } from './address-form';
 
 /**
@@ -146,7 +147,11 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const [technicalNotes, setTechnicalNotes] = useState('');
 
   // ── Retirada (opcional: o cliente pode entregar as peças na tapeçaria)
-  const [delivery, setDelivery] = useState<'RETIRADA' | 'CLIENTE_ENTREGA'>('RETIRADA');
+  const [deliveryChoice, setDelivery] = useState<'RETIRADA' | 'CLIENTE_ENTREGA'>('RETIRADA');
+  // Reformulação, Fase 1: com a logística desligada não há retirada agendada (o servidor também
+  // recusa); as peças chegam pelo cliente.
+  const logisticsOn = useModules().logistica;
+  const delivery = logisticsOn ? deliveryChoice : 'CLIENTE_ENTREGA';
   const withPickup = delivery === 'RETIRADA';
   const [date, setDate] = useState('');
   const [arrival, setArrival] = useState('');

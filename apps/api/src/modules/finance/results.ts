@@ -146,6 +146,10 @@ export async function orderResult(
     warnings.push(
       'Há materiais sem preço conhecido: o custo está subestimado até o gestor ajustar.',
     );
+  if (materials.mixedSources)
+    warnings.push(
+      'Esta OS tem custo de material formal (compra, estoque ou sobra) e custo informado na lista de materiais: confira se o mesmo material não foi lançado nos dois.',
+    );
   if (c.delivered && materials.activeReservations)
     warnings.push(
       `Material reservado ainda não teve consumo confirmado (${materials.activeReservations} reserva(s)): o custo realizado está subestimado até registrar o consumo ou liberar a reserva.`,

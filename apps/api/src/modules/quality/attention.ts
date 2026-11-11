@@ -15,6 +15,7 @@ import {
 import type { PrismaClient } from '@cenario/db';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { serviceDeadlines } from '../deadlines/service';
+import { moduleEnabled } from '../../core/modules';
 import { pieceCode, pieceInclude } from './common';
 
 const base = {
@@ -135,6 +136,8 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
     prisma,
     ready.map((p) => p.serviceOrderId),
   );
+  // Fase 1: com a logística desligada, a entrega é confirmada direto na OS (sem agendamento).
+  const logisticsOn = await moduleEnabled(prisma, 'logistica');
   for (const p of ready) {
     const promised = dateOnly(p.serviceOrder.promisedDate);
     items.push({
@@ -151,8 +154,14 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       statusLabel: 'Pronta para entrega',
       at: p.updatedAt.toISOString(),
       deadline: promised,
-      nextActions: ['Agendar a entrega com o cliente'],
-      link: `/painel/entregas?tab=ready&foco=${p.id}`,
+      nextActions: [
+        logisticsOn
+          ? 'Agendar a entrega com o cliente'
+          : 'Entregar ao cliente e marcar como entregue na OS',
+      ],
+      link: logisticsOn
+        ? `/painel/entregas?tab=ready&foco=${p.id}`
+        : `/painel/os/${p.serviceOrder.id}?tab=entrega`,
     });
   }
 

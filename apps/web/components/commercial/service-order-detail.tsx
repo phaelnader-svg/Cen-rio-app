@@ -38,6 +38,9 @@ import { Field, Input, Select, Textarea } from '@/components/ui/field';
 import { Alert, Avatar, Badge, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
+import { OsDirectDelivery } from '@/components/commercial/os-direct-delivery';
+import { OsMaterialList } from '@/components/commercial/os-material-list';
+import { useTabParam } from '@/lib/tab-param';
 import { ApiError, api, errorMessage } from '@/lib/api';
 import { formatDay, useServiceOrder, useServiceOrderRevisions } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
@@ -119,11 +122,24 @@ function ReadinessRow({
   );
 }
 
+const OS_TABS = [
+  'resumo',
+  'pecas',
+  'materiais',
+  'fotos',
+  'historico',
+  'linha-do-tempo',
+  'producao',
+  'qualidade',
+  'entrega',
+  'mao-de-obra',
+] as const;
+
 export function ServiceOrderDetail({ id }: { id: string }) {
   const can = useCan();
   const so = useServiceOrder(id);
   const revisions = useServiceOrderRevisions(id);
-  const [tab, setTab] = useState('resumo');
+  const [tab, setTab] = useTabParam('resumo', OS_TABS);
   const [editing, setEditing] = useState(false);
   const [editItem, setEditItem] = useState<ServiceOrderItemDto | null>(null);
   const [measureItem, setMeasureItem] = useState<ServiceOrderItemDto | null>(null);
@@ -141,6 +157,8 @@ export function ServiceOrderDetail({ id }: { id: string }) {
   const canQuality = ['qualidade.gerenciar', 'entregas.ver', 'entregas.gerenciar'].some((p) =>
     can(p as Permission),
   );
+  // Reformulação, Fase 1: entrega confirmada direto na OS (com ou sem a logística ligada).
+  const canDelivery = can('os.ver') || can('entregas.ver');
   const canRequestMeasurement = can('medicoes.gerenciar') && open;
   // Evolução Fase 5: valores de mão de obra só para quem vê o financeiro.
   const canLabor = can('financeiro.ver');
@@ -216,12 +234,14 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           { key: 'linha-do-tempo', label: 'Linha do tempo' },
           ...(canProduction ? [{ key: 'producao', label: 'Produção' }] : []),
           ...(canQuality ? [{ key: 'qualidade', label: 'Qualidade e entrega' }] : []),
+          ...(canDelivery ? [{ key: 'entrega', label: 'Entrega' }] : []),
           ...(canLabor ? [{ key: 'mao-de-obra', label: 'Mão de obra' }] : []),
         ]}
       >
         {tab === 'mao-de-obra' && canLabor && <OsLabor serviceOrderId={s.id} />}
         {tab === 'linha-do-tempo' && <ServiceTimeline serviceOrderId={s.id} />}
         {tab === 'qualidade' && canQuality && <OsQualityDelivery serviceOrderId={s.id} />}
+        {tab === 'entrega' && canDelivery && <OsDirectDelivery serviceOrderId={s.id} />}
         {tab === 'producao' && canProduction && <OsProduction serviceOrderId={s.id} />}
         {tab === 'resumo' && (
           <div className="grid gap-6 lg:grid-cols-5">
@@ -376,6 +396,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
 
         {tab === 'materiais' && (
           <div className="space-y-8">
+            <OsMaterialList serviceOrderId={s.id} open={open} />
             {(can('os.ver') || can('estoque.ver') || can('compras.ver')) && (
               <OsMaterialsOverview serviceOrderId={s.id} />
             )}

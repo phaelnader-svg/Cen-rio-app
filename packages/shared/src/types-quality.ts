@@ -194,6 +194,8 @@ export interface DeliveryDto {
   number: number;
   code: string;
   status: DeliveryStatus;
+  /** Reformulação, Fase 1: LOGISTICA (roteiro/viagem) ou DIRETA (confirmada pela OS, sem viagem). */
+  origin: 'LOGISTICA' | 'DIRETA';
   provisional: boolean;
   customer: { id: string; name: string };
   address: DeliveryAddressDto;

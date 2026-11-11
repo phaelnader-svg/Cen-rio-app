@@ -175,6 +175,16 @@ export interface ProductionTaskDetailDto extends ProductionTaskDto {
   materialIds: string[];
   /** Fase 6: situação dos materiais desta tarefa. */
   taskMaterials: 'NAO_EXIGE' | 'DISPONIVEIS' | 'FALTANDO';
+  /**
+   * Reformulação, Fase 1: lista simples de materiais da OS para a oficina (sem custos nem dados
+   * financeiros). Só informativo: nunca impede iniciar a tarefa.
+   */
+  osMaterials: {
+    description: string;
+    quantity: number | null;
+    unit: string | null;
+    available: boolean;
+  }[];
   /** Fase 6: histórico técnico da OS (campos alterados, sem valores comerciais). */
   technicalHistory: {
     revision: number;

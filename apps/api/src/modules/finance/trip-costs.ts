@@ -275,6 +275,8 @@ type Trip = {
   frustrated: boolean;
   /** Rodada 3 (F2-18): a viagem é da equipe própria (custo só operacional, nunca obrigação). */
   ownTeam: boolean;
+  /** Reformulação, Fase 1: entrega confirmada direto na OS (sem viagem, sem custo de frete). */
+  direct?: boolean;
 };
 
 async function loadTrip(db: Db, ref: TripRef, lock = false): Promise<Trip> {
@@ -310,6 +312,7 @@ async function loadTrip(db: Db, ref: TripRef, lock = false): Promise<Trip> {
     cancelled: d.status === 'CANCELADA',
     frustrated: DELIVERY_FRUSTRATED.includes(d.status),
     ownTeam: d.team === 'EQUIPE_PROPRIA',
+    direct: d.origin === 'DIRETA',
   };
 }
 
@@ -452,6 +455,11 @@ export async function upsertTripCost(
 ) {
   const trip = await loadTrip(tx, input, true);
   if (trip.cancelled) throw Errors.business(`${trip.code} cancelada: não recebe custo.`);
+  // Fase 1: entrega confirmada direto na OS não foi uma viagem — não recebe custo de frete.
+  if (trip.direct)
+    throw Errors.business(
+      `${trip.code} foi confirmada direto na OS (sem viagem): não recebe custo.`,
+    );
   const existing = await liveTripCost(tx, trip);
   if (!existing && (await tx.logisticsFreeTrip.count({ where: tripWhere(trip) })))
     throw Errors.business(`${trip.code} foi confirmada como gratuita: não recebe custo.`);

@@ -1,4 +1,10 @@
-import { EVENT_TYPES, weightedAverageCents, type MaterialCostSummaryDto } from '@cenario/shared';
+import {
+  EVENT_TYPES,
+  osMaterialCostTotals,
+  realizedOsMaterialCost,
+  weightedAverageCents,
+  type MaterialCostSummaryDto,
+} from '@cenario/shared';
 import type { PrismaClient, Tx } from '@cenario/db';
 import type { ActorContext } from '../../core/types';
 import { financeEvent } from './common';
@@ -78,6 +84,87 @@ type Entry = {
  * vira custo consumido sozinha: material comum só entra quando sai do estoque para a OS.
  */
 export async function syncMaterialCosts(tx: Tx, actor: ActorContext, serviceOrderId: string) {
+  const informed = await syncOsMaterialCosts(tx, actor, serviceOrderId);
+  return informed + (await syncFormalMaterialCosts(tx, actor, serviceOrderId));
+}
+
+/** Origem, no livro de custos, do custo informado na lista simples de materiais da OS. */
+export const OS_MATERIAL_SOURCE = 'MATERIAL_OS';
+const osMaterialKeyPrefix = (lineId: string) => `os_material:${lineId}:`;
+
+/**
+ * Reformulação, Fase 1 — custo informado nos materiais da OS → livro de custos imutável.
+ *
+ * Realizado de uma linha = custo informado, só com "comprado" marcado (removida = 0). O livro
+ * recebe a DIFERENÇA entre o realizado e o que já foi lançado para a linha (lançamento
+ * compensatório; nada é reescrito). A chave é determinística (`os_material:<linha>:<n>`): duas
+ * sincronizações concorrentes calculam a mesma chave e a segunda é descartada pelo índice único,
+ * então o mesmo valor nunca entra duas vezes. Custo não informado não gera linha (nunca vira zero):
+ * aparece como "sem preço" no resumo da OS.
+ */
+export async function syncOsMaterialCosts(tx: Tx, actor: ActorContext, serviceOrderId: string) {
+  const lines = await tx.serviceOrderMaterial.findMany({
+    where: { serviceOrderId },
+    select: {
+      id: true,
+      description: true,
+      purchased: true,
+      costCents: true,
+      removedAt: true,
+      quantity: true,
+    },
+  });
+  if (!lines.length) return 0;
+  const posted = await tx.serviceOrderCost.findMany({
+    where: { serviceOrderId, source: OS_MATERIAL_SOURCE },
+    select: { sourceKey: true, amountCents: true },
+  });
+  const now = new Date();
+  const data = [];
+  for (const l of lines) {
+    const prefix = osMaterialKeyPrefix(l.id);
+    const mine = posted.filter((p) => p.sourceKey.startsWith(prefix));
+    const already = mine.reduce((a, p) => a + p.amountCents, 0);
+    const target = realizedOsMaterialCost({
+      purchased: l.purchased,
+      costCents: l.costCents,
+      removed: l.removedAt !== null,
+    });
+    if (target === already) continue;
+    data.push({
+      serviceOrderId,
+      category: 'MATERIAL',
+      source: OS_MATERIAL_SOURCE,
+      sourceKey: `${prefix}${mine.length + 1}`,
+      description: l.description.slice(0, 200),
+      quantity: l.quantity === null ? null : Number(l.quantity),
+      unitCostCents: null,
+      amountCents: target - already,
+      priced: true,
+      occurredAt: now,
+      note:
+        l.removedAt !== null
+          ? 'Material removido da OS (estorno do custo informado).'
+          : already === 0
+            ? 'Custo informado no material da OS.'
+            : 'Correção do custo informado no material da OS.',
+      actorId: actor.userId,
+    });
+  }
+  if (!data.length) return 0;
+  const created = await tx.serviceOrderCost.createMany({ data, skipDuplicates: true });
+  if (created.count)
+    await financeEvent(tx, actor, {
+      entityType: 'service_order',
+      entityId: serviceOrderId,
+      kind: 'CUSTOS_ATUALIZADOS',
+      note: `${created.count} lançamento(s) de custo informado na OS`,
+      type: EVENT_TYPES.FINANCE_COST_UPDATED,
+    });
+  return created.count;
+}
+
+async function syncFormalMaterialCosts(tx: Tx, actor: ActorContext, serviceOrderId: string) {
   const entries: Entry[] = [];
   const lines = await tx.materialReceiptLine.findMany({
     where: {
@@ -220,8 +307,14 @@ export async function syncAllMaterialCosts(tx: Tx, actor: ActorContext) {
       select: { fromServiceOrderId: true, toServiceOrderId: true },
     }),
   ]);
+  // Fase 1: OS com materiais da lista simples (custo informado).
+  const informed = await tx.serviceOrderMaterial.findMany({
+    select: { serviceOrderId: true },
+    distinct: ['serviceOrderId'],
+  });
   const ids = new Set<string>();
-  for (const r of [...exclusive, ...movements]) if (r.serviceOrderId) ids.add(r.serviceOrderId);
+  for (const r of [...exclusive, ...movements, ...informed])
+    if (r.serviceOrderId) ids.add(r.serviceOrderId);
   for (const t of transfers) {
     if (t.fromServiceOrderId) ids.add(t.fromServiceOrderId);
     ids.add(t.toServiceOrderId);
@@ -320,13 +413,32 @@ export async function materialSummary(
     where: { serviceOrderId, category: 'MATERIAL' },
     orderBy: { occurredAt: 'asc' },
   });
+  // Fase 1: lista simples. A previsão soma todo custo informado (comprado ou não); o realizado já
+  // está no livro (MATERIAL_OS). Linha comprada sem custo = sem preço (nunca zero silencioso).
+  const informed = osMaterialCostTotals(
+    await db.serviceOrderMaterial.findMany({
+      where: { serviceOrderId, removedAt: null },
+      select: { purchased: true, costCents: true },
+    }),
+  );
+  const formalSources = new Set(
+    ledger
+      .filter((l) => l.source !== OS_MATERIAL_SOURCE && l.source !== 'AJUSTE_MANUAL')
+      .map((l) => l.source),
+  );
+  const informedRealized = ledger
+    .filter((l) => l.source === OS_MATERIAL_SOURCE)
+    .reduce((a, l) => a + l.amountCents, 0);
   return {
-    forecastCents,
-    forecastUnpriced,
+    forecastCents: forecastCents + informed.forecastCents,
+    forecastUnpriced: forecastUnpriced + informed.forecastUnpriced,
     purchasedCents,
     reservedCents,
     consumedCents: ledger.reduce((a, l) => a + l.amountCents, 0),
-    unpricedLines: ledger.filter((l) => !l.priced).length,
+    unpricedLines: ledger.filter((l) => !l.priced).length + informed.realizedUnpriced,
+    informedCents: informedRealized,
+    informedUnpriced: informed.realizedUnpriced,
+    mixedSources: formalSources.size > 0 && informedRealized !== 0,
     activeReservations: reservations.length,
     lines: ledger.map((l) => ({
       id: l.id,

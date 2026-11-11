@@ -207,7 +207,17 @@ export function TabletHome({ me }: { me: MeDto }) {
                 />
               </div>
             )}
-            <LogisticsJobs />
+            {/* Reformulação, Fase 1: com a logística desligada não há roteiro (dados preservados). */}
+            {modules.logistica ? (
+              <LogisticsJobs />
+            ) : (
+              <p
+                className="rounded-xl border border-line p-4 text-ink-soft"
+                data-testid="logistics-off"
+              >
+                A logística está desligada pelo gestor: não há entregas nem retiradas programadas.
+              </p>
+            )}
           </>
         ) : screen === 'home' ? (
           <>

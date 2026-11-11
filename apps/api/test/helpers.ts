@@ -69,7 +69,7 @@ export class Client {
   }
 
   async req(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     url: string,
     body?: unknown,
     headers: Record<string, string> = {},

@@ -209,6 +209,10 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   // Central e o Início (só invalidação; o conteúdo vem da API com as permissões de quem vê).
   if (['finance.', 'material.', 'purchase_order.', 'stock.'].some((p) => t.startsWith(p)))
     keys.push(['attention'], ['overview']);
+  // Reformulação, Fase 1: lista simples de materiais da OS e estoque simples (sem valores).
+  if (t === 'os_materials.changed') keys.push(['os-material-list'], ['production-task'], ['fin']);
+  if (t === 'inventory.changed') keys.push(['inventory'], ['os-material-list']);
+  if (t === 'delivery.updated' || t.startsWith('item.')) keys.push(['direct-delivery']);
   if (keys.some((k) => k[0] === 'attention')) keys.push(['overview']);
   for (const queryKey of keys) void qc.invalidateQueries({ queryKey });
 }

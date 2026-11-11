@@ -44,6 +44,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { loadUserPermissions } from '../../core/permissions';
 import { Errors } from '../../lib/errors';
+import { assertModuleEnabled } from '../../core/modules';
 import { refreshAvailabilityOfUser } from '../attendance/common';
 import { asSnapshot, dateOnly, lockOrder, pickupCode } from '../commercial/common';
 import { refreshOrderStatus } from '../commercial/status';
@@ -742,6 +743,8 @@ export async function qualityRoutes(app: FastifyInstance) {
     { config: { access: DELIVERY_MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createDeliverySchema.parse(request.body);
+      // Fase 1: com a logística desligada, a entrega é confirmada direto na OS.
+      await assertModuleEnabled(prisma, 'logistica');
       if (input.tripCost && !request.auth!.permissions.has('financeiro.gerenciar'))
         throw Errors.forbidden('Informar o custo da viagem exige permissão do financeiro.');
       const teamProblem = tripCostTeamProblem(input.team, Boolean(input.tripCost));
@@ -770,6 +773,7 @@ export async function qualityRoutes(app: FastifyInstance) {
   app.put('/api/v1/deliveries/:id', { config: { access: DELIVERY_MANAGE } }, async (request) => {
     const { id } = idParams.parse(request.params);
     const input = updateDeliverySchema.parse(request.body);
+    await assertModuleEnabled(prisma, 'logistica');
     await prisma.$transaction((tx) => updateDelivery(tx, actorFrom(request), id, input));
     return deliveryDto(id);
   });
@@ -780,6 +784,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     async (request) => {
       const { id } = idParams.parse(request.params);
       const { version } = deliveryVersionSchema.parse(request.body);
+      await assertModuleEnabled(prisma, 'logistica');
       await prisma.$transaction((tx) => confirmDelivery(tx, actorFrom(request), id, version));
       return deliveryDto(id);
     },

@@ -35,6 +35,7 @@ import {
   Route,
   type LucideIcon,
   ListTodo,
+  Warehouse,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -126,12 +127,21 @@ export const NAV: NavItem[] = [
     icon: FileSignature,
     anyOf: ['pedidos.ver'],
   },
-  { href: '/painel/retiradas', label: 'Retiradas', icon: Truck, anyOf: ['retiradas.ver'] },
+  // Reformulação, Fase 1: telas operacionais da logística somem com o módulo desligado (os dados
+  // e o histórico continuam lá; as entregas passam a ser confirmadas na própria OS).
+  {
+    href: '/painel/retiradas',
+    label: 'Retiradas',
+    icon: Truck,
+    anyOf: ['retiradas.ver'],
+    module: 'logistica',
+  },
   {
     href: '/painel/roteiro',
     label: 'Roteiro do dia',
     icon: Route,
     anyOf: ['entregas.ver', 'retiradas.ver'],
+    module: 'logistica',
   },
   {
     href: '/painel/recebimentos',
@@ -214,6 +224,13 @@ export const NAV: NavItem[] = [
     label: 'Estoque',
     icon: Boxes,
     anyOf: ['estoque.ver', 'estoque.gerenciar', 'compras.ver'],
+  },
+  // Reformulação, Fase 1: estoque simples da oficina (independente das OS).
+  {
+    href: '/painel/estoque-oficina',
+    label: 'Estoque da oficina',
+    icon: Warehouse,
+    anyOf: ['estoque.ver', 'estoque.gerenciar'],
   },
   {
     href: '/painel/prontidao',

@@ -446,6 +446,8 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
   const deliveries = await db.delivery.findMany({
     where: {
       status: 'CONCLUIDA',
+      // Fase 1: entrega direta pela OS não é viagem — não tem custo de frete a informar.
+      origin: 'LOGISTICA',
       completedAt: { gte: startAt, lt: endAt },
       logisticsCosts: { none: { kind: 'ENTREGA', cancelledAt: null } },
     },

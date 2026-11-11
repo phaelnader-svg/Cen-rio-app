@@ -435,5 +435,23 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     // a reversão (a versão anterior trataria a funcionalidade como ligada sem aviso).
     const helpOff = await put('/api/company/modules/ajuda', { enabled: false, version: 0 });
     expect(helpOff.status, JSON.stringify(helpOff.body)).toBe(200);
+    // 20270309 (Reformulação, Fase 1): material da lista simples da OS (comprado, com custo
+    // informado → livro de custos MATERIAL_OS) e estoque simples — bloqueiam a reversão.
+    const openSo = await db().serviceOrder.findFirstOrThrow({ where: { status: 'ABERTA' } });
+    const mat = await post(`/api/v1/service-orders/${openSo.id}/material-list`, {
+      description: 'Tecido da migração',
+      quantity: 6,
+      unit: 'm',
+      purchased: true,
+      costCents: 54000,
+    });
+    expect(mat.status, JSON.stringify(mat.body)).toBe(201);
+    const inv = await post('/api/v1/inventory/items', {
+      name: 'Espuma da migração',
+      unit: 'placa',
+      quantity: 3,
+    });
+    expect(inv.status, JSON.stringify(inv.body)).toBe(201);
+    expect(await db().serviceOrderCost.count({ where: { source: 'MATERIAL_OS' } })).toBe(1);
   });
 });

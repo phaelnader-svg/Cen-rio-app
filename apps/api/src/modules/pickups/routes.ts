@@ -16,6 +16,7 @@ import { actorFrom, actorOf, audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { appendEvent } from '../../core/events/append';
 import { Errors } from '../../lib/errors';
+import { assertModuleEnabled } from '../../core/modules';
 import { idParams } from '../presenters';
 import {
   activeAddress,
@@ -160,6 +161,8 @@ export async function pickupRoutes(app: FastifyInstance) {
     { config: { access: MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createPickupSchema.parse(request.body);
+      // Fase 1: com a logística desligada não há retirada agendada (o cliente traz as peças).
+      await assertModuleEnabled(prisma, 'logistica');
       const id = await prisma.$transaction(
         async (tx) =>
           (await createPickup(tx, actorFrom(request), request.auth!.permissions, input)).id,
