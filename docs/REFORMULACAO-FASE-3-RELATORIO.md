@@ -93,15 +93,15 @@ menu continuam existindo; E2E confirma que abrem pelo endereço.
 
 ## 4. Testes
 
-| Suíte                                    | Resultado    |
-| ---------------------------------------- | ------------ |
-| shared                                   | ver seção 10 |
-| web (unitários)                          | ver seção 10 |
-| API, suíte completa                      | ver seção 10 |
-| E2E de navegador, suíte completa         | ver seção 10 |
-| Lint, typecheck, formatação, build       | ver seção 10 |
-| Cadeia completa de migrations            | ver seção 10 |
-| Compatibilidade `3e0d2d0` no schema novo | ver seção 10 |
+| Suíte                                                | Resultado                                                                                                                                                                                                                              |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shared                                               | **151 passaram**, 0 falharam                                                                                                                                                                                                           |
+| web (unitários)                                      | **22 passaram**, 0 falharam                                                                                                                                                                                                            |
+| API, suíte completa                                  | **992 passaram, 0 falharam, 13 pulados** (os opcionais pré-existentes de desempenho e proxy)                                                                                                                                           |
+| E2E de navegador, suíte completa                     | ver seção 10                                                                                                                                                                                                                           |
+| Lint, typecheck, formatação, build                   | **sem erros nem avisos**; build do web ok                                                                                                                                                                                              |
+| Cadeia completa de migrations                        | **passou**: aplica sobre o legado com dados idênticos; reverte (a da Fase 3 primeiro) e reaplica idêntico; com dados novos recusa cada reversão de forma atômica — Fase 3: "2 registro(s) da Fase 3"; backup e restauração verificados |
+| Compatibilidade `3e0d2d0` no schema novo (Fases 2+3) | **971 passaram, 1 falha estática esperada, 13 pulados** — a mesma trava de leitura de arquivo das Fases 1 e 2 (não conhece as cláusulas `ON UPDATE CASCADE` da migration da Fase 2); nenhum teste de execução falhou                   |
 
 Testes novos: API `fase3-qualidade-embalagem` (6), shared (regra D4 e "Tudo conforme"); E2E
 `zz-fase3-qualidade-programacao` (2) e `zz-fase3-capturas`; etapa de escrita da Fase 3 no
