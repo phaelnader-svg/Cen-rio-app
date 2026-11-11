@@ -35,8 +35,11 @@ export function OsMaterialList({
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
   const { materials, summary, notice, canSeeCosts } = q.data;
 
-  const patch = (m: OsMaterialDto, body: Record<string, unknown>) =>
-    act.mutate({ path: `${base}/${m.id}`, method: 'PATCH', body: { ...body, version: m.version } });
+  const patch = (m: OsMaterialDto, body: Record<string, unknown>, settled?: () => void) =>
+    act.mutate(
+      { path: `${base}/${m.id}`, method: 'PATCH', body: { ...body, version: m.version } },
+      { onSettled: settled },
+    );
 
   return (
     <section className="rounded-xl border border-line" data-testid="os-material-list">
@@ -90,7 +93,7 @@ export function OsMaterialList({
                   manage={manage}
                   canSeeCosts={canSeeCosts}
                   busy={act.isPending}
-                  onPatch={(body) => patch(m, body)}
+                  onPatch={(body, settled) => patch(m, body, settled)}
                   onRemove={() =>
                     act.mutate({ path: `${base}/${m.id}/remove`, body: { version: m.version } })
                   }
@@ -128,7 +131,7 @@ function MaterialRow({
   manage: boolean;
   canSeeCosts: boolean;
   busy: boolean;
-  onPatch: (body: Record<string, unknown>) => void;
+  onPatch: (body: Record<string, unknown>, settled?: () => void) => void;
   onRemove: () => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -231,7 +234,7 @@ function MaterialRow({
           label={`Comprado: ${m.description}`}
           checked={m.purchased}
           disabled={!manage || busy}
-          onChange={(v) => onPatch({ purchased: v })}
+          onChange={(v, settled) => onPatch({ purchased: v }, settled)}
           testId="os-material-purchased"
         />
       </td>
@@ -240,7 +243,7 @@ function MaterialRow({
           label={`Na oficina: ${m.description}`}
           checked={m.available}
           disabled={!manage || busy}
-          onChange={(v) => onPatch({ available: v })}
+          onChange={(v, settled) => onPatch({ available: v }, settled)}
           testId="os-material-available"
         />
       </td>
@@ -314,9 +317,12 @@ function Toggle({
   label: string;
   checked: boolean;
   disabled: boolean;
-  onChange: (v: boolean) => void;
+  onChange: (v: boolean, settled: () => void) => void;
   testId: string;
 }) {
+  // Marca na hora (otimista); quando a ação termina (lista já recarregada), vale de novo o que o
+  // servidor devolveu — se ele recusar, a caixa volta sozinha ao estado anterior.
+  const [local, setLocal] = useState<boolean | null>(null);
   return (
     <input
       type="checkbox"
@@ -326,9 +332,12 @@ function Toggle({
         'size-5 cursor-pointer rounded border-line-strong accent-brand-700',
         disabled && 'cursor-not-allowed opacity-60',
       )}
-      checked={checked}
+      checked={local ?? checked}
       disabled={disabled}
-      onChange={(e) => onChange(e.target.checked)}
+      onChange={(e) => {
+        setLocal(e.target.checked);
+        onChange(e.target.checked, () => setLocal(null));
+      }}
     />
   );
 }

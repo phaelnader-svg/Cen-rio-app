@@ -70,10 +70,11 @@ export function useAction<T>(invalidate: readonly (readonly unknown[])[], succes
         body: req.body ?? {},
         idempotencyKey: newIdempotencyKey(),
       }),
-    onSuccess: () => {
+    // Aguarda as listas recarregarem antes de encerrar a ação (sem "piscar" o valor antigo).
+    onSuccess: async () => {
       setError(null);
-      for (const queryKey of invalidate) void qc.invalidateQueries({ queryKey });
       if (success) toast('ok', success);
+      await Promise.all(invalidate.map((queryKey) => qc.invalidateQueries({ queryKey })));
     },
     onError: (e) => setError(errorMessage(e)),
   });
