@@ -303,7 +303,7 @@ describe('Pedidos de ajuda desligados e religados', () => {
         id: string;
         status: string;
       }[]
-    ).find((t: { status: string }) => t.status === 'LIBERADA');
+    ).find((t: { status: string }) => t.status === 'LIBERADA')!;
     expect(joaoTask).toBeTruthy();
     expect((await act(s.tablets.João!, joaoTask.id, 'start')).status).toBe(200);
     expect(
