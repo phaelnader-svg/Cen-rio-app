@@ -1,4 +1,4 @@
-import { zonedDateTime } from '@cenario/shared';
+import { mondayOf, zonedDateTime } from '@cenario/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
@@ -484,6 +484,10 @@ describe('B. Entrega direta — efeitos financeiros equivalentes, sem duplicidad
     expect((await uploadPhoto(app, andre, 'DELIVERY', d.id)).status).toBe(201);
     ok(await post(andre, `/api/v1/deliveries/${d.id}/complete`, { version: items.version }));
     expect(await effects(s, rec.id, labor.id)).toMatchObject(EXPECTED);
+    // Controle positivo: a viagem da logística SEM custo vira pendência do fechamento (a entrega
+    // direta não — ver o teste seguinte e o da Fase 1).
+    const closing = ok(await s.admin.get(`/api/v1/finance/weekly-closings/${mondayOf(today())}`));
+    expect(JSON.stringify(closing)).toMatch(new RegExp(`Entrega ${d.code} realizada sem custo`));
   });
 
   it('pela OS (direta): os MESMOS efeitos; sem frete; repetir e concorrer não duplicam nada', async () => {
@@ -510,6 +514,9 @@ describe('B. Entrega direta — efeitos financeiros equivalentes, sem duplicidad
       (await db().productionPayable.findUniqueOrThrow({ where: { id: labor.id } })).eligibleAt,
     ).toEqual(releasedAt);
     expect(await db().delivery.count()).toBe(1);
+    const closing = ok(await s.admin.get(`/api/v1/finance/weekly-closings/${mondayOf(today())}`));
+    // A única entrega da semana é a direta: nenhuma pendência de custo de viagem.
+    expect(JSON.stringify(closing)).not.toMatch(/Entrega EN-\d+ realizada sem custo/);
   });
 
   it('peça já entregue pela logística não é tocada: a direta entrega só as pendentes', async () => {

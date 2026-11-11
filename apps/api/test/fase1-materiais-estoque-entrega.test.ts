@@ -1,4 +1,4 @@
-import { zonedDateTime } from '@cenario/shared';
+import { mondayOf, zonedDateTime } from '@cenario/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
@@ -821,13 +821,19 @@ describe('Entrega direta pela OS ("Marcar como entregue")', () => {
     expect(result.completedAt).not.toBeNull();
     // Sem viagem: nenhum custo de frete, nenhuma pendência de "custo não informado".
     expect(await db().logisticsCost.count()).toBe(0);
-    const trip = await post(s.admin, '/api/v1/finance/trip-costs', {
-      deliveryId: r.deliveryId,
-      amountCents: 5000,
-      payeeUserId: s.ids.andre,
-    });
-    expect(trip.status).not.toBe(200);
-    expect(trip.status).not.toBe(201);
+    // A rota real do custo de viagem (PUT) recusa por regra de negócio — não por rota inexistente.
+    const trip = await s.admin.req(
+      'PUT',
+      '/api/v1/finance/trip-costs',
+      { deliveryId: r.deliveryId, amountCents: 5000 },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(trip.status, JSON.stringify(trip.body)).toBe(422);
+    expect(trip.body.error.message).toMatch(/sem viagem/);
+    expect(await db().logisticsCost.count()).toBe(0);
+    // Fechamento semanal: nenhuma pendência de "custo não informado" para a entrega direta.
+    const closing = ok(await s.admin.get(`/api/v1/finance/weekly-closings/${mondayOf(today())}`));
+    expect(JSON.stringify(closing)).not.toMatch(new RegExp(`Entrega ${r.deliveryCode}`));
     // Fora do roteiro do dia.
     const route = ok(await s.admin.get(`/api/v1/logistics/route?date=${today()}`));
     expect(JSON.stringify(route)).not.toMatch(new RegExp(r.deliveryCode));
