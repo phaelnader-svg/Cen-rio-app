@@ -107,7 +107,9 @@ test.describe.serial('Fase 4 — compras, recebimento e estoque', () => {
       await registerDevice(page, 'Tablet Thiago (sem conferência)', 'Thiago'),
       '505050',
     );
-    await first.page.getByTestId('tile-materials').click();
+    // Fase 2: a conferência fica dentro de "Aguardando chegada".
+    await first.page.getByTestId('tile-arrivals').click();
+    await first.page.getByTestId('arrivals-section-conferencia').click();
     await first.page.getByTestId('pending-receipts').getByRole('button').first().click();
     await expect(first.page.getByTestId('receive-locked')).toContainText('Linho');
     await expect(first.page.getByTestId('receive-item-Linho')).toHaveCount(0);
@@ -118,8 +120,9 @@ test.describe.serial('Fase 4 — compras, recebimento e estoque', () => {
     const code = await registerDevice(page, 'Tablet Thiago (materiais)', 'Thiago');
     const tablet = await openTablet(browser, code, '505050');
     const t = tablet.page;
+    await t.getByTestId('tile-arrivals').click();
     await expect(t.getByTestId('materials-count')).toHaveText('1');
-    await t.getByTestId('tile-materials').click();
+    await t.getByTestId('arrivals-section-conferencia').click();
     await t.getByTestId('pending-receipts').getByRole('button').first().click();
     await expect(t.getByText(/R\$/)).toHaveCount(0);
     const linho = t.getByTestId('receive-item-Linho');

@@ -239,8 +239,13 @@ export interface ServiceOrderItemDto {
   measuredAt: string | null;
   measuredBy: string | null;
   measurementKind: MeasurementKind | null;
-  /** Onde a peça foi guardada no recebimento. */
+  /** Onde a peça foi guardada no recebimento (texto livre do recebimento). */
   locations: string[];
+  /**
+   * Reformulação, Fase 2: localização ATUAL registrada (mapa da oficina); null = ainda não
+   * movida desde o recebimento (vale o texto de `locations`).
+   */
+  currentLocation: { id: string; label: string } | null;
   version: number;
 }
 

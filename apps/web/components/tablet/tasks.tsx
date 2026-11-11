@@ -763,125 +763,144 @@ export function MyTaskDetail({
         </ul>
       </Block>
 
-      <Block title={t.materialIds.length ? 'Materiais desta tarefa' : 'Materiais da OS'}>
-        {myMaterials.length === 0 ? (
-          <p className="text-base text-ink-muted">Nenhum material aprovado.</p>
+      {/* Reformulação, Fase 2: um só bloco de materiais — os aprovados da tarefa (fluxo formal) e
+          a lista simples da OS (só situação; custo nunca aparece aqui). */}
+      <Block title={t.materialIds.length ? 'Materiais desta tarefa' : 'Materiais'}>
+        {myMaterials.length === 0 && (t.osMaterials ?? []).length === 0 ? (
+          <p className="text-base text-ink-muted">Nenhum material listado.</p>
         ) : (
-          <ul className="space-y-2 text-base" data-testid="task-materials">
-            {myMaterials.map((l) => (
-              <li key={l.requirementId} className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{specText(l)}</span>
-                <span className="text-ink-muted">· {qtyText(l.need, l.unit)}</span>
-                <span
-                  className={clsx(
-                    'rounded-full px-2.5 py-0.5 text-sm font-semibold',
-                    l.stage === 'DISPONIVEL' ? 'bg-ok-50 text-ok-600' : 'bg-warn-50 text-warn-600',
-                  )}
-                >
-                  {LINE_STAGE_LABEL[l.stage]}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-3">
+            {myMaterials.length > 0 && (
+              <ul className="space-y-2 text-base" data-testid="task-materials">
+                {myMaterials.map((l) => (
+                  <li key={l.requirementId} className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{specText(l)}</span>
+                    <span className="text-ink-muted">· {qtyText(l.need, l.unit)}</span>
+                    <span
+                      className={clsx(
+                        'rounded-full px-2.5 py-0.5 text-sm font-semibold',
+                        l.stage === 'DISPONIVEL'
+                          ? 'bg-ok-50 text-ok-600'
+                          : 'bg-warn-50 text-warn-600',
+                      )}
+                    >
+                      {LINE_STAGE_LABEL[l.stage]}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {(t.osMaterials ?? []).length > 0 && (
+              <ul className="space-y-2 text-base" data-testid="task-os-materials">
+                {(t.osMaterials ?? []).map((m, i) => (
+                  <li key={i} className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium">{m.description}</span>
+                    {m.quantity !== null && (
+                      <span className="text-ink-muted">
+                        · {m.quantity.toLocaleString('pt-BR')}
+                        {m.unit ? ` ${m.unit}` : ''}
+                      </span>
+                    )}
+                    <span
+                      className={clsx(
+                        'rounded-full px-2.5 py-0.5 text-sm font-semibold',
+                        m.available ? 'bg-ok-50 text-ok-600' : 'bg-warn-50 text-warn-600',
+                      )}
+                    >
+                      {m.available ? 'Na oficina' : 'Ainda não chegou'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </Block>
 
-      {/* Reformulação, Fase 1: a lista simples da OS (só situação; custo nunca aparece aqui). */}
-      {(t.osMaterials ?? []).length > 0 && (
-        <Block title="Materiais necessários (lista da OS)">
-          <ul className="space-y-2 text-base" data-testid="task-os-materials">
-            {(t.osMaterials ?? []).map((m, i) => (
-              <li key={i} className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{m.description}</span>
-                {m.quantity !== null && (
-                  <span className="text-ink-muted">
-                    · {m.quantity.toLocaleString('pt-BR')}
-                    {m.unit ? ` ${m.unit}` : ''}
+      {/* Reformulação, Fase 2: o essencial fica acima; o restante, a um toque. */}
+      <details className="group rounded-2xl border border-line" data-testid="task-more">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-lg font-semibold text-ink-soft [&::-webkit-details-marker]:hidden">
+          Mais detalhes
+          <span className="text-base font-normal text-ink-muted">
+            dependências, etapas da OS, fotos e históricos
+          </span>
+        </summary>
+        <div className="space-y-6 border-t border-line px-5 py-5">
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Block title="Depende de">
+              <TaskRefs large refs={t.dependsOn} empty="Nenhuma dependência." />
+            </Block>
+            <Block title="Ao concluir, libera">
+              <TaskRefs large refs={t.dependents} empty="Nenhuma tarefa depende desta." />
+            </Block>
+          </div>
+
+          <Block title="Etapas da OS">
+            <ul className="space-y-1.5" data-testid="os-steps">
+              {t.osTasks.map((x) => (
+                <li key={x.id} className="flex flex-wrap items-center gap-2 text-base">
+                  <span
+                    className={clsx(
+                      'rounded-full px-2 py-0.5 text-xs font-semibold',
+                      x.id === t.id ? 'bg-brand-700 text-white' : 'bg-subtle text-ink-soft',
+                    )}
+                  >
+                    {x.id === t.id ? 'Esta' : x.code}
                   </span>
-                )}
-                <span
-                  className={clsx(
-                    'rounded-full px-2.5 py-0.5 text-sm font-semibold',
-                    m.available ? 'bg-ok-50 text-ok-600' : 'bg-warn-50 text-warn-600',
+                  {onOpen && x.id !== t.id ? (
+                    <span>{x.title}</span>
+                  ) : (
+                    <span className="font-semibold">{x.title}</span>
                   )}
-                >
-                  {m.available ? 'Na oficina' : 'Ainda não chegou'}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Block>
-      )}
+                  <span className="text-ink-muted">· {x.assignee ?? 'sem responsável'}</span>
+                </li>
+              ))}
+            </ul>
+          </Block>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Block title="Depende de">
-          <TaskRefs large refs={t.dependsOn} empty="Nenhuma dependência." />
-        </Block>
-        <Block title="Ao concluir, libera">
-          <TaskRefs large refs={t.dependents} empty="Nenhuma tarefa depende desta." />
-        </Block>
-      </div>
+          <Block title="Fotos desta tarefa">
+            <PhotoGallery entityType="PRODUCTION_TASK" entityId={t.id} canManage={false} />
+          </Block>
 
-      <Block title="Etapas da OS">
-        <ul className="space-y-1.5" data-testid="os-steps">
-          {t.osTasks.map((x) => (
-            <li key={x.id} className="flex flex-wrap items-center gap-2 text-base">
-              <span
-                className={clsx(
-                  'rounded-full px-2 py-0.5 text-xs font-semibold',
-                  x.id === t.id ? 'bg-brand-700 text-white' : 'bg-subtle text-ink-soft',
-                )}
-              >
-                {x.id === t.id ? 'Esta' : x.code}
-              </span>
-              {onOpen && x.id !== t.id ? (
-                <span>{x.title}</span>
-              ) : (
-                <span className="font-semibold">{x.title}</span>
-              )}
-              <span className="text-ink-muted">· {x.assignee ?? 'sem responsável'}</span>
-            </li>
-          ))}
-        </ul>
-      </Block>
+          <Block title="Fotos da OS">
+            <PhotoGallery
+              entityType="SERVICE_ORDER"
+              entityId={t.serviceOrder.id}
+              canManage={false}
+            />
+          </Block>
 
-      <Block title="Fotos desta tarefa">
-        <PhotoGallery entityType="PRODUCTION_TASK" entityId={t.id} canManage={false} />
-      </Block>
+          <Block title="Histórico técnico da OS">
+            {t.technicalHistory.length === 0 ? (
+              <p className="text-base text-ink-muted">Sem alterações técnicas registradas.</p>
+            ) : (
+              <ol className="space-y-2 text-base" data-testid="technical-history">
+                {t.technicalHistory.map((r) => (
+                  <li key={r.revision} className="border-l-2 border-line pl-3">
+                    <p className="font-medium">
+                      Revisão {r.revision}
+                      {r.itemCode ? ` · ${r.itemCode}` : ''} · {SCOPE_LABEL[r.scope] ?? r.scope}
+                    </p>
+                    {r.fields.length > 0 && (
+                      <p className="text-ink-soft">
+                        Alterado: {r.fields.map((f) => FIELD_LABEL[f] ?? f).join(', ')}
+                      </p>
+                    )}
+                    {r.reason && <p className="text-ink-soft">Motivo: {r.reason}</p>}
+                    <p className="text-sm text-ink-muted">
+                      {formatDateTime(r.createdAt)} · {r.changedBy ?? 'Sistema'}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </Block>
 
-      <Block title="Fotos da OS">
-        <PhotoGallery entityType="SERVICE_ORDER" entityId={t.serviceOrder.id} canManage={false} />
-      </Block>
-
-      <Block title="Histórico técnico da OS">
-        {t.technicalHistory.length === 0 ? (
-          <p className="text-base text-ink-muted">Sem alterações técnicas registradas.</p>
-        ) : (
-          <ol className="space-y-2 text-base" data-testid="technical-history">
-            {t.technicalHistory.map((r) => (
-              <li key={r.revision} className="border-l-2 border-line pl-3">
-                <p className="font-medium">
-                  Revisão {r.revision}
-                  {r.itemCode ? ` · ${r.itemCode}` : ''} · {SCOPE_LABEL[r.scope] ?? r.scope}
-                </p>
-                {r.fields.length > 0 && (
-                  <p className="text-ink-soft">
-                    Alterado: {r.fields.map((f) => FIELD_LABEL[f] ?? f).join(', ')}
-                  </p>
-                )}
-                {r.reason && <p className="text-ink-soft">Motivo: {r.reason}</p>}
-                <p className="text-sm text-ink-muted">
-                  {formatDateTime(r.createdAt)} · {r.changedBy ?? 'Sistema'}
-                </p>
-              </li>
-            ))}
-          </ol>
-        )}
-      </Block>
-
-      <Block title="Histórico da tarefa">
-        <TaskHistory large events={t.events} />
-      </Block>
+          <Block title="Histórico da tarefa">
+            <TaskHistory large events={t.events} />
+          </Block>
+        </div>
+      </details>
     </div>
   );
 }

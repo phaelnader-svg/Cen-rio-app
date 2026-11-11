@@ -8,7 +8,6 @@ import {
   BadgeCheck,
   Inbox,
   LogOut,
-  PackageCheck,
   RadioTower,
   Ruler,
   Wallet,
@@ -261,8 +260,12 @@ export function TabletHome({ me }: { me: MeDto }) {
                   testId="tile-arrivals"
                   icon={<Inbox className="size-7" aria-hidden />}
                   title="Aguardando chegada"
-                  text="Peças de clientes e materiais comprados."
-                  count={arrivalsCount}
+                  text="Peças de clientes, materiais comprados e conferência do que chegou."
+                  count={
+                    arrivalsCount === undefined && pendingMaterials.data === undefined
+                      ? undefined
+                      : (arrivalsCount ?? 0) + (pendingMaterials.data?.length ?? 0)
+                  }
                   countTestId="arrivals-count"
                   countLabel="aviso(s) aguardando chegada"
                 />
@@ -295,19 +298,6 @@ export function TabletHome({ me }: { me: MeDto }) {
                   />
                 </li>
               )}
-              <li>
-                <Tile
-                  onClick={() => setScreen('materials')}
-                  testId="tile-materials"
-                  icon={<PackageCheck className="size-7" aria-hidden />}
-                  title="Recebimento de materiais"
-                  text="Conferir e registrar o que chegou."
-                  count={pendingMaterials.data?.length}
-                  countTestId="materials-count"
-                  countLabel="pedido(s) aguardando chegada"
-                  tone="bronze"
-                />
-              </li>
               {canSync && (
                 <li>
                   <Tile
@@ -332,11 +322,16 @@ export function TabletHome({ me }: { me: MeDto }) {
             </ul>
             {canExecute && <MyTripsToday />}
           </>
-        ) : screen === 'arrivals' ? (
+        ) : screen === 'arrivals' || screen === 'materials' ? (
           <>
             {back('Voltar ao início', 'home')}
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">Aguardando chegada</h1>
-            <ArrivalsCenter />
+            <ArrivalsAndReceiving
+              key={screen}
+              initial={screen === 'materials' ? 'conferencia' : 'avisos'}
+              arrivals={arrivalsCount}
+              receipts={pendingMaterials.data?.length}
+            />
           </>
         ) : screen === 'queue' ? (
           <>
@@ -412,12 +407,6 @@ export function TabletHome({ me }: { me: MeDto }) {
                 setScreen('measurement');
               }}
             />
-          </>
-        ) : screen === 'materials' ? (
-          <>
-            {back('Voltar ao início', 'home')}
-            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Recebimento de materiais</h1>
-            <MaterialReceiving large />
           </>
         ) : screen === 'measurement' && measurementId ? (
           <>
@@ -514,5 +503,60 @@ function BackButton({ label, onClick }: { label: string; onClick: () => void }) 
     >
       {label}
     </Button>
+  );
+}
+
+/**
+ * Reformulação, Fase 2: "Aguardando chegada" e "Recebimento de materiais" numa só entrada. A
+ * chegada física (avisos de peças e materiais) e a conferência dos pedidos de compra continuam as
+ * mesmas telas de antes, agora lado a lado; nada mudou nas regras nem nas permissões.
+ */
+function ArrivalsAndReceiving({
+  initial,
+  arrivals,
+  receipts,
+}: {
+  initial: 'avisos' | 'conferencia';
+  arrivals: number | undefined;
+  receipts: number | undefined;
+}) {
+  const [section, setSection] = useState(initial);
+  const option = (
+    key: 'avisos' | 'conferencia',
+    label: string,
+    count: number | undefined,
+    countTestId: string,
+  ) => (
+    <button
+      type="button"
+      onClick={() => setSection(key)}
+      aria-pressed={section === key}
+      data-testid={`arrivals-section-${key}`}
+      className={clsx(
+        'flex min-h-14 flex-1 items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-lg font-semibold',
+        section === key
+          ? 'border-brand-700 bg-brand-50 text-brand-800'
+          : 'border-line bg-surface text-ink-soft hover:bg-subtle',
+      )}
+    >
+      {label}
+      {count !== undefined && (
+        <span
+          className="grid min-w-9 place-items-center rounded-full bg-brand-700 px-2 py-0.5 text-base text-white"
+          data-testid={countTestId}
+        >
+          {count}
+        </span>
+      )}
+    </button>
+  );
+  return (
+    <>
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row">
+        {option('avisos', 'Avisos de chegada', arrivals, 'arrivals-section-count')}
+        {option('conferencia', 'Conferir materiais', receipts, 'materials-count')}
+      </div>
+      {section === 'avisos' ? <ArrivalsCenter /> : <MaterialReceiving large />}
+    </>
   );
 }

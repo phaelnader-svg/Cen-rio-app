@@ -370,7 +370,26 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                   <dl className="grid gap-4 sm:grid-cols-3" data-testid={`so-item-${i.code}`}>
                     <Detail label="Peça">{`${i.quantity}× ${PIECE_TYPE_LABEL[i.pieceType]}`}</Detail>
                     <Detail label="Tipo de serviço">{SERVICE_TYPE_LABEL[i.serviceType]}</Detail>
-                    <Detail label="Localização na oficina">{i.locations.join(', ')}</Detail>
+                    {/* Fase 2: a localização registrada (mapa) vale sobre o texto do recebimento. */}
+                    <Detail label="Localização na oficina">
+                      {i.currentLocation ? (
+                        <span data-testid={`so-item-location-${i.code}`}>
+                          <Link
+                            href="/painel/producao/mapa"
+                            className="text-brand-700 hover:underline"
+                          >
+                            {i.currentLocation.label}
+                          </Link>
+                          {i.locations.length > 0 && (
+                            <span className="block text-xs text-ink-muted">
+                              No recebimento: {i.locations.join(', ')}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        i.locations.join(', ')
+                      )}
+                    </Detail>
                     <Detail label="Tecido">{i.fabricName}</Detail>
                     <Detail label="Cor / referência">
                       {[i.fabricColor, i.fabricReference].filter(Boolean).join(' · ')}

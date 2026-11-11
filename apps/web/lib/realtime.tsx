@@ -57,7 +57,8 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   if (t.startsWith('customer.')) keys.push(['customers'], ['customer'], ['customer-lookup']);
   if (t.startsWith('order.') || t.startsWith('pickup.') || t.startsWith('receipt.'))
     keys.push(...flow, ['customer']);
-  if (t.startsWith('service_order.')) keys.push(['service-orders'], ['service-order'], ...flow);
+  if (t.startsWith('service_order.'))
+    keys.push(['service-orders'], ['service-order'], ['workshop-map'], ...flow);
   if (t === 'attachment.changed') keys.push(['attachments']);
   // Simplificação Fase 3 — central "Aguardando chegada" (peças e materiais) nos tablets.
   if (
@@ -92,6 +93,8 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     ['os-readiness'],
     ['service-order'],
     ['os-state'],
+    // Reformulação, Fase 2: mapa da oficina (peças movidas, etapas, entregas).
+    ['workshop-map'],
   ];
   if (
     ['supplier.', 'purchase_order.', 'material.', 'material_receipt.', 'stock.', 'leftover.'].some(

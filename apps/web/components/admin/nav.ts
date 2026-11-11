@@ -36,6 +36,7 @@ import {
   type LucideIcon,
   ListTodo,
   Warehouse,
+  Map as MapIcon,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -180,6 +181,20 @@ export const NAV: NavItem[] = [
     label: 'Quadro de produção',
     icon: Hammer,
     anyOf: ['producao.ver', 'producao.planejar'],
+  },
+  // Reformulação, Fase 2: onde cada peça está fisicamente (áreas da oficina).
+  {
+    href: '/painel/producao/mapa',
+    label: 'Mapa da oficina',
+    icon: MapIcon,
+    anyOf: [
+      'os.ver',
+      'producao.ver',
+      'producao.planejar',
+      'qualidade.gerenciar',
+      'entregas.ver',
+      'entregas.gerenciar',
+    ],
   },
   {
     href: '/painel/ajuda',

@@ -305,7 +305,8 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       // ───── TRANSIÇÃO 3 (material recebido/conferido → liberação): tablet do Thiago ─────
       await grant(page, 'Thiago', 'estoque.conferir');
       const thiago = await openDevice(page, browser, 'Thiago', '271828', `Tablet Thiago ${RUN}`);
-      await thiago.page.getByTestId('tile-materials').click();
+      await thiago.page.getByTestId('tile-arrivals').click();
+      await thiago.page.getByTestId('arrivals-section-conferencia').click();
       const receivable = thiago.page
         .getByTestId('pending-receipts')
         .getByRole('button')

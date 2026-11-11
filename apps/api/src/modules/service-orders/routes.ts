@@ -61,6 +61,7 @@ const fullInclude = {
     include: {
       measuredBy: { select: { displayName: true } },
       orderItem: { include: { receiptLines: { select: { location: true } } } },
+      currentLocation: { select: { id: true, label: true } },
     },
     orderBy: { position: 'asc' as const },
   },
@@ -123,6 +124,7 @@ export async function loadServiceOrderDto(
       measuredBy: i.measuredBy?.displayName ?? null,
       measurementKind: i.measurementKind,
       locations: [...new Set(i.orderItem.receiptLines.map((l) => l.location))],
+      currentLocation: i.currentLocation,
       version: i.version,
     })),
     materials: so.materials.map((m) => ({
