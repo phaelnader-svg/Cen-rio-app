@@ -21,6 +21,12 @@ export async function setPin(page: Page, employee: string, pin: string) {
   await page.getByTestId(`employee-${employee}`).getByRole('button', { name: 'PIN' }).click();
   await page.getByLabel('Novo PIN').fill(pin);
   await page.getByRole('button', { name: 'Salvar PIN' }).click();
+  // Espera a GRAVAÇÃO terminar: a janela fecha e o aviso de sucesso aparece. O texto "PIN do tablet
+  // definido" sozinho não basta — ele já aparece quando o funcionário tinha um PIN anterior (de
+  // outro spec), e navegar em seguida abortava o PUT ainda em andamento: o tablet tentava o PIN
+  // novo com o antigo ainda valendo (instabilidade do team-issues na suíte completa).
+  await expect(page.getByLabel('Novo PIN')).toHaveCount(0);
+  await expect(page.getByText('PIN atualizado.', { exact: false }).first()).toBeVisible();
   await expect(
     page.getByTestId(`employee-${employee}`).getByText('PIN do tablet definido'),
   ).toBeVisible();
