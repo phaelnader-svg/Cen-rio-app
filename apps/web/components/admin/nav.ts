@@ -202,9 +202,10 @@ export const NAV: NavItem[] = [
   },
   {
     href: '/painel/producao/modelos',
-    label: 'Modelos de produção',
+    // Reformulação, Fase 2: etapas + checklist + materiais padrão num só lugar.
+    label: 'Modelos de serviço',
     icon: Workflow,
-    anyOf: ['producao.ver', 'producao.planejar'],
+    anyOf: ['producao.ver', 'producao.planejar', 'qualidade.gerenciar', 'os.gerenciar'],
   },
   {
     href: '/painel/compras',

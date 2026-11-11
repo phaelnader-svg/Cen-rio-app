@@ -1514,10 +1514,15 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270309000000_materiais_estoque_entrega: DROP CONSTRAINT "service_order_costs_kind"':
     'Regra CHECK recriada na mesma migration com as mesmas origens e uma a mais (MATERIAL_OS): ' +
     'amplia o aceito, nenhuma linha é apagada nem alterada.',
+  '20270316000000_reformulacao_fase_2: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras da tabela NOVA de materiais ' +
+    'padrão dos modelos de serviço e da coluna nova de origem da linha sugerida (padrão do ' +
+    'Prisma). Nenhuma linha é alterada.',
 };
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
   '20270309000000_materiais_estoque_entrega: UPDATE CASCADE': 16,
+  '20270316000000_reformulacao_fase_2: UPDATE CASCADE': 5,
 };
 
 describe('F1-13 — nenhuma tela removida, menu de materiais restaurado, nenhum dado excluído', () => {

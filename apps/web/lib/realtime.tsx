@@ -213,7 +213,12 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   if (['finance.', 'material.', 'purchase_order.', 'stock.'].some((p) => t.startsWith(p)))
     keys.push(['attention'], ['overview']);
   // Reformulação, Fase 1: lista simples de materiais da OS e estoque simples (sem valores).
-  if (t === 'os_materials.changed') keys.push(['os-material-list'], ['production-task'], ['fin']);
+  if (t === 'os_materials.changed')
+    keys.push(['os-material-list'], ['os-material-suggestions'], ['production-task'], ['fin']);
+  // Reformulação, Fase 2: modelos de serviço (materiais padrão) e efeito nas sugestões das OS.
+  if (t === 'service_models.changed') keys.push(['service-models'], ['os-material-suggestions']);
+  if (t.startsWith('production.template') || t.startsWith('quality.template'))
+    keys.push(['service-models']);
   if (t === 'inventory.changed') keys.push(['inventory'], ['os-material-list']);
   if (t === 'delivery.updated' || t.startsWith('item.')) keys.push(['direct-delivery']);
   if (keys.some((k) => k[0] === 'attention')) keys.push(['overview']);

@@ -64,6 +64,8 @@ export const EVENT_TYPES = {
   /** Reformulação, Fase 1: lista simples de materiais da OS e estoque simples (sem valores). */
   OS_MATERIALS_CHANGED: 'os_materials.changed',
   INVENTORY_CHANGED: 'inventory.changed',
+  /** Reformulação, Fase 2: materiais padrão dos modelos de serviço (sem valores). */
+  SERVICE_MODELS_CHANGED: 'service_models.changed',
   PRODUCTION_TEMPLATE_CHANGED: 'production.template_changed',
   PRODUCTION_PLAN_CREATED: 'production.plan_created',
   PRODUCTION_PLAN_UPDATED: 'production.plan_updated',

@@ -19,7 +19,7 @@ import {
 } from '@cenario/shared';
 import { BadgeCheck, Plus } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BackLink, Section } from '@/components/commercial/section';
 import { PhotoGallery } from '@/components/commercial/photo-gallery';
 import { useSend } from '@/components/production/use-send';
@@ -282,8 +282,20 @@ function AssignPackagingDialog({ p, onClose }: { p: PackagingDto; onClose: () =>
 // ─────────────────────────── Checklists ───────────────────────────
 
 function Templates() {
+  return <QualityChecklistsPanel />;
+}
+
+/**
+ * Checklists de inspeção (o mesmo editor da tela de qualidade). Reformulação, Fase 2: também é
+ * uma aba de "Modelos de serviço"; `focusId` rola até o checklist escolhido na visão por serviço.
+ */
+export function QualityChecklistsPanel({ focusId }: { focusId?: string | null } = {}) {
   const q = useQualityTemplates();
   const [edit, setEdit] = useState<QualityTemplateDto | 'new' | null>(null);
+  useEffect(() => {
+    if (!focusId || !q.data) return;
+    document.querySelector(`.modelo-checklist-${focusId}`)?.scrollIntoView({ block: 'start' });
+  }, [focusId, q.data]);
   if (q.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
   return (
@@ -297,6 +309,7 @@ function Templates() {
         {q.data.map((t) => (
           <Section
             key={t.id}
+            className={`scroll-mt-4 modelo-checklist-${t.id}`}
             title={`${t.name}${t.active ? '' : ' (inativo)'}`}
             actions={
               <Button size="sm" variant="secondary" onClick={() => setEdit(t)}>

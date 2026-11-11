@@ -50,7 +50,8 @@ test.describe.serial('Simplificação Fase 5 — modelos simplificados', () => {
         };
 
       // Cadastro: modelos simplificados com tipo de serviço e responsável padrão por etapa.
-      await page.goto('/painel/producao/modelos');
+      // Fase 2: a tela virou "Modelos de serviço"; as etapas ficam na aba própria.
+      await page.goto('/painel/producao/modelos?tab=etapas');
       const card = (name: string) =>
         page.locator('div.card', { has: page.getByRole('heading', { name, exact: true }) });
       const reforma = card('Reforma de estofados (simplificado)');

@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { Check, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { MoneyInput } from '@/components/commercial/money-input';
+import { SuggestFromModel } from '@/components/service-models/suggest-from-model';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/field';
 import { Alert, Badge, EmptyState, Spinner } from '@/components/ui/misc';
@@ -53,14 +54,17 @@ export function OsMaterialList({
     <section className="rounded-xl border border-line" data-testid="os-material-list">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3">
         <h3 className="text-base font-semibold">Materiais necessários</h3>
-        <div className="flex flex-wrap gap-2 text-xs" data-testid="os-material-summary">
-          <Badge tone="neutral">{summary.total} material(is)</Badge>
-          <Badge tone={summary.purchased === summary.total ? 'ok' : 'neutral'}>
-            {summary.purchased} comprado(s)
-          </Badge>
-          <Badge tone={summary.available === summary.total ? 'ok' : 'neutral'}>
-            {summary.available} na oficina
-          </Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-2 text-xs" data-testid="os-material-summary">
+            <Badge tone="neutral">{summary.total} material(is)</Badge>
+            <Badge tone={summary.purchased === summary.total ? 'ok' : 'neutral'}>
+              {summary.purchased} comprado(s)
+            </Badge>
+            <Badge tone={summary.available === summary.total ? 'ok' : 'neutral'}>
+              {summary.available} na oficina
+            </Badge>
+          </div>
+          {manage && <SuggestFromModel serviceOrderId={serviceOrderId} />}
         </div>
       </header>
       {notice && (

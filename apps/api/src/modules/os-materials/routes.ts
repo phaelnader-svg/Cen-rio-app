@@ -155,7 +155,7 @@ export async function loadOsMaterials(
 }
 
 /** Trava a OS e confere que ela aceita alterações (OS cancelada fica só para consulta). */
-async function lockServiceOrder(tx: Tx, id: string) {
+export async function lockServiceOrder(tx: Tx, id: string) {
   await lockRow(tx, 'service_orders', id, 'Ordem de serviço');
   const so = await tx.serviceOrder.findUniqueOrThrow({ where: { id } });
   if (so.status === 'CANCELADA') throw Errors.business('OS cancelada não pode ser alterada.');
@@ -163,7 +163,7 @@ async function lockServiceOrder(tx: Tx, id: string) {
 }
 
 /** Categoria e material de estoque de referência: precisam existir e estar ativos. */
-async function checkReferences(
+export async function checkReferences(
   tx: Tx,
   input: { categoryId?: string | null; inventoryItemId?: string | null },
 ) {
@@ -182,7 +182,7 @@ async function checkReferences(
   }
 }
 
-async function announce(tx: Tx, actor: ActorContext, serviceOrderId: string) {
+export async function announce(tx: Tx, actor: ActorContext, serviceOrderId: string) {
   await appendEvent(tx, actor, {
     type: EVENT_TYPES.OS_MATERIALS_CHANGED,
     aggregateType: 'service_order',
@@ -193,7 +193,7 @@ async function announce(tx: Tx, actor: ActorContext, serviceOrderId: string) {
 }
 
 /** Valores auditáveis de uma linha (o custo só entra quando informado). */
-const snapshot = (r: {
+export const snapshot = (r: {
   description: string;
   quantity: unknown;
   unit: string | null;

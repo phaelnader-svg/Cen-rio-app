@@ -171,6 +171,9 @@ model User {
   osMaterialsUpdated    ServiceOrderMaterial[] @relation("OsMaterialUpdatedBy")
   osMaterialsRemoved    ServiceOrderMaterial[] @relation("OsMaterialRemovedBy")
   osMaterialsReconciled ServiceOrderMaterial[] @relation("OsMaterialReconciledBy")
+  // Reformulação, Fase 2: materiais padrão dos modelos de serviço.
+  modelMaterialsCreated ServiceModelMaterial[] @relation("ModelMaterialCreatedBy")
+  modelMaterialsUpdated ServiceModelMaterial[] @relation("ModelMaterialUpdatedBy")
 
   @@map("users")
 }
@@ -3781,8 +3784,9 @@ model InventoryCategory {
   createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  items       InventoryItem[]
-  osMaterials ServiceOrderMaterial[]
+  items          InventoryItem[]
+  osMaterials    ServiceOrderMaterial[]
+  modelMaterials ServiceModelMaterial[]
 
   @@map("inventory_categories")
 }
@@ -3804,11 +3808,12 @@ model InventoryItem {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  category    InventoryCategory?     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  createdBy   User?                  @relation("InventoryItemCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  rolls       FabricRoll[]
-  adjustments InventoryAdjustment[]
-  osMaterials ServiceOrderMaterial[]
+  category       InventoryCategory?     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  createdBy      User?                  @relation("InventoryItemCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  rolls          FabricRoll[]
+  adjustments    InventoryAdjustment[]
+  osMaterials    ServiceOrderMaterial[]
+  modelMaterials ServiceModelMaterial[]
 
   @@index([categoryId])
   @@map("inventory_items")
@@ -3860,42 +3865,78 @@ model InventoryAdjustment {
 /// Material necessário da OS (lista simples). "Comprado" e "na oficina" são independentes; custo
 /// opcional (null = não informado, nunca zero). Remoção lógica (removedAt) preserva o histórico.
 model ServiceOrderMaterial {
-  id                   String    @id @default(uuid()) @db.Uuid
-  serviceOrderId       String    @map("service_order_id") @db.Uuid
-  description          String    @db.VarChar(200)
-  categoryId           String?   @map("category_id") @db.Uuid
-  inventoryItemId      String?   @map("inventory_item_id") @db.Uuid
-  quantity             Decimal?  @db.Decimal(12, 3)
-  unit                 String?   @db.VarChar(20)
-  notes                String?   @db.VarChar(500)
-  purchased            Boolean   @default(false)
-  available            Boolean   @default(false)
-  costCents            Int?      @map("cost_cents")
-  version              Int       @default(1)
-  createdById          String?   @map("created_by_id") @db.Uuid
-  updatedById          String?   @map("updated_by_id") @db.Uuid
-  removedAt            DateTime? @map("removed_at") @db.Timestamptz(3)
-  removedById          String?   @map("removed_by_id") @db.Uuid
+  id                    String    @id @default(uuid()) @db.Uuid
+  serviceOrderId        String    @map("service_order_id") @db.Uuid
+  description           String    @db.VarChar(200)
+  categoryId            String?   @map("category_id") @db.Uuid
+  inventoryItemId       String?   @map("inventory_item_id") @db.Uuid
+  quantity              Decimal?  @db.Decimal(12, 3)
+  unit                  String?   @db.VarChar(20)
+  notes                 String?   @db.VarChar(500)
+  purchased             Boolean   @default(false)
+  available             Boolean   @default(false)
+  costCents             Int?      @map("cost_cents")
+  version               Int       @default(1)
+  createdById           String?   @map("created_by_id") @db.Uuid
+  updatedById           String?   @map("updated_by_id") @db.Uuid
+  removedAt             DateTime? @map("removed_at") @db.Timestamptz(3)
+  removedById           String?   @map("removed_by_id") @db.Uuid
   /// Conciliação com o custo formal: null (pendente quando há custo formal), VINCULADO (é o mesmo
   /// registro formal — o custo informado deixa de contar) ou DISTINTO (custo à parte, conta).
-  reconciliation       String?   @db.VarChar(20)
-  linkedPurchaseItemId String?   @map("linked_purchase_item_id") @db.Uuid
-  linkedCostId         String?   @map("linked_cost_id") @db.Uuid
-  reconciledById       String?   @map("reconciled_by_id") @db.Uuid
-  reconciledAt         DateTime? @map("reconciled_at") @db.Timestamptz(3)
-  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt            DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  reconciliation        String?   @db.VarChar(20)
+  linkedPurchaseItemId  String?   @map("linked_purchase_item_id") @db.Uuid
+  linkedCostId          String?   @map("linked_cost_id") @db.Uuid
+  reconciledById        String?   @map("reconciled_by_id") @db.Uuid
+  reconciledAt          DateTime? @map("reconciled_at") @db.Timestamptz(3)
+  /// Fase 2: material padrão do modelo de serviço que originou a linha (null = lançada à mão).
+  sourceModelMaterialId String?   @map("source_model_material_id") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  linkedPurchaseItem PurchaseOrderItem? @relation("OsMaterialLinkedPurchase", fields: [linkedPurchaseItemId], references: [id], onDelete: Restrict)
-  linkedCost         ServiceOrderCost?  @relation("OsMaterialLinkedCost", fields: [linkedCostId], references: [id], onDelete: Restrict)
-  reconciledBy       User?              @relation("OsMaterialReconciledBy", fields: [reconciledById], references: [id], onDelete: SetNull)
-  serviceOrder       ServiceOrder       @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
-  category           InventoryCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  inventoryItem      InventoryItem?     @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
-  createdBy          User?              @relation("OsMaterialCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy          User?              @relation("OsMaterialUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  removedBy          User?              @relation("OsMaterialRemovedBy", fields: [removedById], references: [id], onDelete: SetNull)
+  linkedPurchaseItem  PurchaseOrderItem?    @relation("OsMaterialLinkedPurchase", fields: [linkedPurchaseItemId], references: [id], onDelete: Restrict)
+  linkedCost          ServiceOrderCost?     @relation("OsMaterialLinkedCost", fields: [linkedCostId], references: [id], onDelete: Restrict)
+  reconciledBy        User?                 @relation("OsMaterialReconciledBy", fields: [reconciledById], references: [id], onDelete: SetNull)
+  serviceOrder        ServiceOrder          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  category            InventoryCategory?    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  inventoryItem       InventoryItem?        @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  createdBy           User?                 @relation("OsMaterialCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy           User?                 @relation("OsMaterialUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  removedBy           User?                 @relation("OsMaterialRemovedBy", fields: [removedById], references: [id], onDelete: SetNull)
+  sourceModelMaterial ServiceModelMaterial? @relation(fields: [sourceModelMaterialId], references: [id], onDelete: Restrict)
 
   @@index([serviceOrderId])
+  @@index([sourceModelMaterialId])
   @@map("service_order_materials")
+}
+
+/// Reformulação, Fase 2 — material padrão do modelo de serviço (por tipo de peça e, opcional,
+/// tipo de serviço; null = qualquer serviço). Só sugestão: aplicado numa OS vira linha da lista
+/// simples sem custo, não comprada e não disponível, revisável pelo gestor.
+model ServiceModelMaterial {
+  id              String       @id @default(uuid()) @db.Uuid
+  pieceType       PieceType    @map("piece_type")
+  serviceType     ServiceType? @map("service_type")
+  description     String       @db.VarChar(200)
+  categoryId      String?      @map("category_id") @db.Uuid
+  inventoryItemId String?      @map("inventory_item_id") @db.Uuid
+  /// Quantidade POR PEÇA (multiplicada pela quantidade da peça ao sugerir).
+  quantity        Decimal?     @db.Decimal(12, 3)
+  unit            String?      @db.VarChar(20)
+  notes           String?      @db.VarChar(500)
+  position        Int          @default(0)
+  archivedAt      DateTime?    @map("archived_at") @db.Timestamptz(3)
+  version         Int          @default(1)
+  createdById     String?      @map("created_by_id") @db.Uuid
+  updatedById     String?      @map("updated_by_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  category      InventoryCategory?     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  inventoryItem InventoryItem?         @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  createdBy     User?                  @relation("ModelMaterialCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy     User?                  @relation("ModelMaterialUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  osMaterials   ServiceOrderMaterial[]
+
+  @@index([pieceType, serviceType])
+  @@map("service_model_materials")
 }

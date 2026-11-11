@@ -453,5 +453,24 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     });
     expect(inv.status, JSON.stringify(inv.body)).toBe(201);
     expect(await db().serviceOrderCost.count({ where: { source: 'MATERIAL_OS' } })).toBe(1);
+    // 20270316 (Reformulação, Fase 2): material padrão de modelo de serviço aplicado na OS (linha
+    // sugerida, sem custo) — bloqueia a reversão.
+    const piece = await db().serviceOrderItem.findFirstOrThrow({
+      where: { serviceOrderId: openSo.id },
+    });
+    const def = await post('/api/v1/service-models/materials', {
+      pieceType: piece.pieceType,
+      serviceType: null,
+      description: 'Grampo da migração',
+      quantity: 1,
+      unit: 'cx',
+    });
+    expect(def.status, JSON.stringify(def.body)).toBe(201);
+    const applied = await post(`/api/v1/service-orders/${openSo.id}/material-suggestions/apply`, {
+      modelMaterialIds: [def.body.id],
+    });
+    expect(applied.status, JSON.stringify(applied.body)).toBe(201);
+    // Sugestão não lança custo: o livro continua com o único lançamento acima.
+    expect(await db().serviceOrderCost.count({ where: { source: 'MATERIAL_OS' } })).toBe(1);
   });
 });

@@ -45,3 +45,4 @@ export * from './types-management';
 export * from './modules';
 export * from './operational-state';
 export * from './simple-materials';
+export * from './service-models';

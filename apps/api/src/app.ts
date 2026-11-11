@@ -64,6 +64,7 @@ import { arrivalRoutes } from './modules/arrivals/routes';
 import { receiptRoutes } from './modules/receipts/routes';
 import { serviceOrderRoutes } from './modules/service-orders/routes';
 import { osMaterialRoutes } from './modules/os-materials/routes';
+import { serviceModelRoutes } from './modules/service-models/routes';
 import { directDeliveryRoutes } from './modules/quality/direct-delivery';
 import { inventoryRoutes } from './modules/inventory/routes';
 import { companyRoutes } from './modules/company/routes';
@@ -198,6 +199,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(receiptRoutes);
   await app.register(serviceOrderRoutes);
   await app.register(osMaterialRoutes);
+  await app.register(serviceModelRoutes);
   await app.register(directDeliveryRoutes);
   await app.register(inventoryRoutes);
   await app.register(attachmentRoutes);

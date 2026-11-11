@@ -65,7 +65,10 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[] }> = {
   '/painel/ajuda': { group: 'Produção', anyOf: ['producao.ver', 'producao.planejar'] },
   '/painel/reprogramacao': { group: 'Produção', anyOf: ['producao.ver', 'producao.planejar'] },
   '/painel/competencias': { group: 'Produção', anyOf: ['producao.ver', 'producao.planejar'] },
-  '/painel/producao/modelos': { group: 'Produção', anyOf: ['producao.ver', 'producao.planejar'] },
+  '/painel/producao/modelos': {
+    group: 'Produção',
+    anyOf: ['producao.ver', 'producao.planejar', 'qualidade.gerenciar', 'os.gerenciar'],
+  },
   '/painel/compras': {
     group: 'Compras',
     anyOf: ['compras.ver', 'compras.gerenciar', 'compras.aprovar'],
