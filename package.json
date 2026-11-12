@@ -17,7 +17,7 @@
     "test": "pnpm -r --workspace-concurrency=1 --filter=!@cenario/e2e test",
     "test:e2e": "pnpm --filter @cenario/e2e test",
     "db:generate": "pnpm --filter @cenario/db generate",
-    "db:migrate": "pnpm --filter @cenario/db migrate:deploy",
+    "db:migrate": "node infra/homolog/retorno-guarda.mjs preparar && pnpm --filter @cenario/db migrate:deploy",
     "db:migrate:dev": "pnpm --filter @cenario/db migrate:dev",
     "db:seed": "pnpm --filter @cenario/db seed",
     "db:status": "pnpm --filter @cenario/db migrate:status",

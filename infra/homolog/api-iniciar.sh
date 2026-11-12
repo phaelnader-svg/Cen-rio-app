@@ -14,4 +14,7 @@ elif ! pnpm --silent db:status > /tmp/migracoes.txt 2>&1; then
   cat /tmp/migracoes.txt >&2
   exit 78
 fi
+# Versão de retorno integrada: não inicia com peça aprovada sem embalagem e ainda não entregue
+# (ficaria presa nesta versão). Só lê; ver infra/homolog/retorno-guarda.mjs.
+node infra/homolog/retorno-guarda.mjs verificar || exit 78
 exec node apps/api/dist/server.js
