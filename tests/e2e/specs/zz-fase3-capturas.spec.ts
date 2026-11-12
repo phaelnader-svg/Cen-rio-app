@@ -60,9 +60,13 @@ test('capturas da Fase 3 em 1440 e 390 px', async ({ page }) => {
       weekStart: week,
       mode: 'LEGADO',
     });
-  const ricardo = (await call(page, 'GET', '/api/v1/production/workers')).find(
-    (w: { displayName: string }) => w.displayName === 'Ricardo',
-  );
+  const workers = await call(page, 'GET', '/api/v1/production/workers');
+  const ricardo =
+    workers.find(
+      (w: { displayName: string; isTapeceiro: boolean }) => w.displayName === 'Ricardo',
+    ) ??
+    // Na suíte completa outros specs alteram o Ricardo: serve qualquer tapeceiro ativo.
+    workers.find((w: { isTapeceiro: boolean }) => w.isTapeceiro);
   const reason = `Capturas F3 ${tag}`;
   const added = await call(page, 'POST', `/api/v1/production-plans/${plan.id}/items`, {
     serviceOrderId: so.id,
