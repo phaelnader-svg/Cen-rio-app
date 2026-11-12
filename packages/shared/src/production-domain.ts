@@ -180,6 +180,10 @@ export const NOTIFICATION_KINDS = [
   // Simplificação Fase 7: expediente sem saída e pedidos com aprovação do gestor.
   'EXPEDIENTE_ABERTO',
   'PEDIDO_DECIDIDO',
+  // Reformulação, Fase 4: alertas internos (nunca saem do sistema).
+  'PRAZO_EM_RISCO',
+  'PECA_PRONTA_SEM_ENTREGA',
+  'MATERIAL_FALTANTE',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -238,6 +242,9 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   VALOR_DECIDIDO: 'Pedido de alteração de valor decidido',
   EXPEDIENTE_ABERTO: 'Expediente sem saída registrada',
   PEDIDO_DECIDIDO: 'Seu pedido foi decidido pelo gestor',
+  PRAZO_EM_RISCO: 'Prazo em risco',
+  PECA_PRONTA_SEM_ENTREGA: 'Peça pronta sem entrega',
+  MATERIAL_FALTANTE: 'Material faltando para a produção',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

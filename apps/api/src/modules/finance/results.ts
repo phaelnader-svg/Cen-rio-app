@@ -377,10 +377,14 @@ export async function productivity(
 ): Promise<ProductivityDto> {
   const p = period(q, await shopTimezone(db));
   const rows: ProductivityRowDto[] = [];
-  for (const w of await workers(db)) {
-    const tasks = await db.productionTask.findMany({
+  // Reformulação, Fase 4: a mesma regra, em consultas agrupadas (antes: várias consultas por
+  // funcionário e uma por tarefa concluída — lento com o histórico crescendo).
+  const people = await workers(db);
+  const ids = people.map((w) => w.userId);
+  const [allTasks, issuesBy] = await Promise.all([
+    db.productionTask.findMany({
       where: {
-        assigneeUserId: w.userId,
+        assigneeUserId: { in: ids },
         status: 'CONCLUIDA',
         completedAt: { gte: p.fromTs, lt: p.toExclusive },
       },
@@ -388,7 +392,50 @@ export async function productivity(
         events: { select: { kind: true, createdAt: true } },
         issues: { select: { id: true } },
       },
-    });
+    }),
+    db.productionIssue.groupBy({
+      by: ['reporterUserId'],
+      where: { reporterUserId: { in: ids }, createdAt: { gte: p.fromTs, lt: p.toExclusive } },
+      _count: true,
+    }),
+  ]);
+  const impByTask = new Map(
+    (allTasks.length
+      ? await db.productionTaskEvent.groupBy({
+          by: ['taskId'],
+          where: {
+            taskId: { in: allTasks.map((t) => t.id) },
+            kind: 'PAUSADA',
+            changes: { path: ['impediment'], equals: true },
+          },
+          _count: true,
+        })
+      : []
+    ).map((g) => [g.taskId, g._count]),
+  );
+  // Peças reprovadas no período em que o funcionário é o principal (mesma regra de antes).
+  const rejected = await db.qualityInspection.findMany({
+    where: { status: 'REPROVADA', decidedAt: { gte: p.fromTs, lt: p.toExclusive } },
+    select: { serviceOrderItemId: true },
+  });
+  const principals = rejected.length
+    ? await db.productionTask.findMany({
+        where: {
+          serviceOrderItemId: { in: [...new Set(rejected.map((r) => r.serviceOrderItemId))] },
+          assigneeUserId: { in: ids },
+          role: 'PRINCIPAL',
+        },
+        select: { serviceOrderItemId: true, assigneeUserId: true },
+      })
+    : [];
+  const principalOf = new Map<string, Set<string>>();
+  for (const t of principals) {
+    const set = principalOf.get(t.serviceOrderItemId!) ?? new Set<string>();
+    set.add(t.assigneeUserId!);
+    principalOf.set(t.serviceOrderItemId!, set);
+  }
+  for (const w of people) {
+    const tasks = allTasks.filter((t) => t.assigneeUserId === w.userId);
     let exec = 0;
     let waiting = 0;
     let waitingCount = 0;
@@ -404,9 +451,7 @@ export async function productivity(
         waiting += tm.waitingMinutes;
         waitingCount += 1;
       }
-      const impPauses = await db.productionTaskEvent.count({
-        where: { taskId: t.id, kind: 'PAUSADA', changes: { path: ['impediment'], equals: true } },
-      });
+      const impPauses = impByTask.get(t.id) ?? 0;
       if (impPauses || t.issues.length) impediments += 1;
       // Prazo: data-limite da tarefa ou, sem ela, o dia em que foi programada.
       const deadline = t.dueDate
@@ -424,19 +469,11 @@ export async function productivity(
         }
       }
     }
-    const issuesReported = await db.productionIssue.count({
-      where: { reporterUserId: w.userId, createdAt: { gte: p.fromTs, lt: p.toExclusive } },
-    });
+    const issuesReported = issuesBy.find((g) => g.reporterUserId === w.userId)?._count ?? 0;
     const main = tasks.filter((t) => !t.supportForTaskId && t.activity !== 'CORRECAO');
-    const rejectedPieces = await db.qualityInspection.count({
-      where: {
-        status: 'REPROVADA',
-        decidedAt: { gte: p.fromTs, lt: p.toExclusive },
-        serviceOrderItem: {
-          productionTasks: { some: { assigneeUserId: w.userId, role: 'PRINCIPAL' } },
-        },
-      },
-    });
+    const rejectedPieces = rejected.filter((r) =>
+      principalOf.get(r.serviceOrderItemId)?.has(w.userId),
+    ).length;
     rows.push({
       userId: w.userId,
       displayName: w.displayName,

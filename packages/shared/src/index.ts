@@ -47,3 +47,4 @@ export * from './operational-state';
 export * from './simple-materials';
 export * from './service-models';
 export * from './workshop-map';
+export * from './today';
