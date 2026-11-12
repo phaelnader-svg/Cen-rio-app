@@ -12,6 +12,15 @@
 #   bash infra/homolog/gcp/ampliar-disco.sh executar --sem-snapshot   # idem, sem o snapshot prévio
 #   bash infra/homolog/gcp/ampliar-disco.sh verificar    # SÓ LEITURA: tamanho do disco, partição,
 #                                                         # sistema de arquivos e inventário
+#   bash infra/homolog/gcp/ampliar-disco.sh diagnosticar # SÓ LEITURA: distribuição, gerenciador de
+#                                                         # pacotes, growpart/resize2fs (PATH de root),
+#                                                         # pacotes, simulação de instalação, apt em uso
+#   bash infra/homolog/gcp/ampliar-disco.sh instalar-dependencias
+#                                                         # SÓ COM AUTORIZAÇÃO: confirmação digitada →
+#                                                         # apt-get update → instala SÓ cloud-guest-utils
+#                                                         # (e2fsprogs já é essencial no Debian) se o plano
+#                                                         # do apt for só pacote NOVO; nada é atualizado,
+#                                                         # removido ou reiniciado; inventário igual
 #
 # Garantias: nunca reinicia a VM nem os contêineres; nunca remove imagem, volume, backup ou
 # snapshot; nunca toca a VM ou o disco de produção (outra zona, outro nome — conferidos); para no
@@ -52,7 +61,7 @@ echo "## volumes"; sudo docker volume ls --format "{{.Name}}" | sort
 echo "## conteineres"; sudo docker ps -a --no-trunc --format "{{.Names}} {{.Image}} {{.ID}}" | sort
 echo "## backups"; sudo docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env exec -T backup ls -1 /data/backups | sort'
 
-conferir() {
+identificar() {
   local conta; conta="$(gcloud config get-value account 2>/dev/null || true)"
   [[ -n "$conta" ]] || pare "nenhuma conta no gcloud (gcloud auth login)"
   echo "Conta: $conta · Projeto: $PROJECT · Zona: $ZONE"
@@ -77,16 +86,23 @@ conferir() {
   # Produção: outra zona, outro disco; nunca referenciada pelos comandos deste script.
   [[ "$ZONE" != "$PROD_ZONE" && "$VM" != *prod* && "$DISK" != *prod* ]] || pare "alvo parece ser de produção"
   ok "produção (cenario-prod, $PROD_ZONE) não é alvo de nenhum comando"
+}
 
+# Utilitários procurados com o PATH de root (sudo usa secure_path com /usr/sbin): resize2fs fica em
+# /usr/sbin e não aparece no PATH de um usuário comum — a 1ª versão deste script dava falso "ausente".
+FERRAMENTAS='for t in growpart resize2fs; do
+  p=$(sudo sh -c "command -v $t" 2>/dev/null || true); echo "$t:${p:-ausente}"; done'
+
+conferir() {
+  identificar
   echo; echo "== Dentro da VM (somente leitura)"
-  ssh_vm 'set -e; findmnt -no SOURCE,FSTYPE /; lsblk -bno NAME,SIZE,TYPE /dev/sda; df -B1 --output=size,avail / | tail -1;
-          command -v growpart >/dev/null && echo growpart:ok || echo growpart:ausente;
-          command -v resize2fs >/dev/null && echo resize2fs:ok || echo resize2fs:ausente' > "$T/vm-fs.txt" \
+  ssh_vm "set -e; findmnt -no SOURCE,FSTYPE /; lsblk -bno NAME,SIZE,TYPE /dev/sda; df -B1 --output=size,avail / | tail -1; $FERRAMENTAS" > "$T/vm-fs.txt" \
     || pare "não consegui ler a VM por SSH"
   cat "$T/vm-fs.txt"
   grep -qx '/dev/sda1 ext4' "$T/vm-fs.txt" || pare "raiz não é /dev/sda1 ext4 (procedimento não se aplica)"
-  grep -q '^growpart:ok' "$T/vm-fs.txt" || pare "growpart ausente na VM (pacote cloud-guest-utils)"
-  grep -q '^resize2fs:ok' "$T/vm-fs.txt" || pare "resize2fs ausente na VM"
+  grep -q '^resize2fs:/' "$T/vm-fs.txt" || pare "resize2fs ausente mesmo no PATH de root (pacote e2fsprogs) — rode 'diagnosticar'"
+  grep -q '^growpart:/' "$T/vm-fs.txt" \
+    || pare "growpart ausente (pacote cloud-guest-utils) — rode 'diagnosticar' e, com autorização, 'instalar-dependencias'"
   # sda1 precisa ser a ÚLTIMA partição do disco (layout das imagens Debian do GCE).
   ssh_vm "sudo sfdisk -d /dev/sda | awk '/^\\/dev\\/sda[0-9]+ :/ {split(\$4,a,\"=\"); gsub(/[ ,]/,\"\",a[2]); print a[2], \$1}' | sort -n | tail -1" > "$T/ultima.txt" \
     || pare "não consegui ler a tabela de partições"
@@ -158,9 +174,98 @@ executar() {
   echo; echo "CONCLUÍDO. Relatórios em $RELDIR."
 }
 
+# SÓ LEITURA. Nada é instalado, atualizado ou reiniciado (apt-get -s = simulação; apt-cache só lê).
+DIAGNOSTICO='set -u
+echo "## sistema"; . /etc/os-release; echo "$PRETTY_NAME (ID=$ID VERSION_ID=${VERSION_ID:-?} CODENAME=${VERSION_CODENAME:-?})"; uname -r
+echo "## gerenciador de pacotes"; for c in apt-get dpkg dnf yum zypper apk; do command -v $c >/dev/null 2>&1 && echo "$c: $(command -v $c)"; done
+echo "## utilitarios (usuario x root)"; for t in growpart resize2fs sfdisk partx; do
+  echo "$t: usuario=$(command -v $t 2>/dev/null || echo -) root=$(sudo sh -c "command -v $t" 2>/dev/null || echo -)"; done
+echo "PATH do usuario: $PATH"
+echo "## pacotes"; for p in cloud-guest-utils e2fsprogs fdisk util-linux needrestart unattended-upgrades; do
+  dpkg-query -W -f="\${Package} \${Version} [\${Status}]\n" $p 2>/dev/null || echo "$p: nao instalado"; done
+echo "## candidatos (listas atuais, sem atualizar)"; apt-cache policy cloud-guest-utils e2fsprogs 2>/dev/null | grep -E "^[a-z0-9]|Installed|Candidate"
+echo "## fontes do apt"; grep -rhsE "^[[:space:]]*(deb |URIs:|Suites:)" /etc/apt/sources.list /etc/apt/sources.list.d/ | sort -u
+echo "## listas do apt"; echo "arquivos Packages: $(ls /var/lib/apt/lists/ 2>/dev/null | grep -c _Packages)"; echo "mais recente: $(ls -l --time-style=+%F_%T /var/lib/apt/lists/*_Packages* 2>/dev/null | awk "{print \$6}" | sort | tail -1)"
+echo "## simulacao (nao altera nada)"; apt-get -s -o Debug::NoLocking=1 install --no-install-recommends --no-upgrade cloud-guest-utils e2fsprogs 2>&1 | grep -E "^(Inst|Remv|Purg)|newly installed|upgraded,|^E:|already the newest" || true
+echo "## dependencias declaradas"; apt-cache depends cloud-guest-utils 2>/dev/null | grep -E "Depends|PreDepends" || echo "(sem dados nas listas atuais)"
+echo "## apt/dpkg em uso"; pgrep -a "apt|dpkg|unattended-upgr" || echo "nenhum"
+echo "## reinicio pendente"; if [ -f /var/run/reboot-required ]; then cat /var/run/reboot-required; else echo "nao"; fi
+echo "## acesso aos repositorios"; timeout 8 bash -c "exec 3<>/dev/tcp/deb.debian.org/443" 2>/dev/null && echo "deb.debian.org:443 alcancavel" || echo "deb.debian.org:443 INACESSIVEL"
+echo "## espaco"; df -h / | tail -1'
+
+diagnosticar() {
+  identificar
+  echo; echo "== Diagnóstico dentro da VM (somente leitura)"
+  ssh_vm "$DIAGNOSTICO" | tee "$T/diag.txt" || pare "não consegui ler a VM por SSH"
+  mkdir -p "$RELDIR"; cp "$T/diag.txt" "$RELDIR/disco-diagnostico-$CARIMBO.txt"
+  echo; ok "diagnóstico gravado em $RELDIR/disco-diagnostico-$CARIMBO.txt (nada foi alterado)"
+}
+
+# Estado de cada contêiner (id e início): se mudar, algo foi reiniciado.
+CONTEINERES='sudo docker ps -a --no-trunc --format "{{.ID}}" | sort | xargs -r sudo docker inspect -f "{{.Name}} {{.Id}} {{.State.Status}} {{.State.StartedAt}}"'
+
+INSTALACAO='set -eu
+APT="sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l NEEDRESTART_SUSPEND=1 apt-get -o DPkg::Lock::Timeout=180 -q"
+. /etc/os-release; [ "$ID" = debian ] || { echo "DISTRIBUICAO_INESPERADA $ID"; exit 10; }
+dpkg-query -W -f="\${Status}" e2fsprogs 2>/dev/null | grep -q "install ok installed" || { echo "E2FSPROGS_AUSENTE"; exit 12; }
+if dpkg-query -W -f="\${Status}" cloud-guest-utils 2>/dev/null | grep -q "install ok installed"; then echo "JA_INSTALADO"; sudo sh -c "command -v growpart"; exit 0; fi
+echo "→ apt-get update (só atualiza as listas de pacotes)"; $APT update
+plano=$(apt-get -s install --no-install-recommends --no-upgrade cloud-guest-utils e2fsprogs)
+echo "$plano" | grep -E "^(Inst|Remv|Purg)" || true
+echo "$plano" | grep -qE "^(Remv|Purg)" && { echo "PLANO_REMOVE_PACOTES"; exit 13; }
+echo "$plano" | grep -qE "^Inst [^ ]+ \[" && { echo "PLANO_ATUALIZA_PACOTES"; exit 13; }
+echo "$plano" | grep -qE "^Inst cloud-guest-utils " || { echo "PLANO_SEM_CLOUD_GUEST_UTILS"; exit 13; }
+n=$(echo "$plano" | grep -c "^Inst "); [ "$n" -le 3 ] || { echo "PLANO_GRANDE $n pacotes"; exit 14; }
+echo "→ instalando $n pacote(s) novo(s), sem recomendados e sem atualizar nenhum"
+$APT install -y --no-install-recommends --no-upgrade cloud-guest-utils e2fsprogs
+echo "growpart: $(sudo sh -c "command -v growpart")"; echo "resize2fs: $(sudo sh -c "command -v resize2fs")"
+dpkg-query -W -f="\${Package} \${Version} [\${Status}]\n" cloud-guest-utils e2fsprogs
+echo "arquivos de servico/cron do pacote: $(dpkg -L cloud-guest-utils | grep -cE "/(systemd|init\.d|cron)" || true)"
+if [ -f /var/run/reboot-required ]; then echo "REINICIO_PENDENTE: $(cat /var/run/reboot-required)"; else echo "sem reinicio pendente"; fi'
+
+instalar_dependencias() {
+  identificar
+  echo; echo "== Situação atual (somente leitura)"
+  ssh_vm "$FERRAMENTAS" | tee "$T/ferr.txt" || pare "não consegui ler a VM por SSH"
+  if grep -q '^growpart:/' "$T/ferr.txt" && grep -q '^resize2fs:/' "$T/ferr.txt"; then
+    ok "growpart e resize2fs já disponíveis (PATH de root): nada a instalar"; return 0
+  fi
+  ssh_vm "apt-get -s -o Debug::NoLocking=1 install --no-install-recommends --no-upgrade cloud-guest-utils e2fsprogs 2>&1 | grep -E '^(Inst|Remv|Purg)|upgraded,|^E:' || true" | tee "$T/plano-antes.txt"
+  ssh_vm "$INVENTARIO" > "$T/inv-antes.txt" || pare "não consegui fazer o inventário"
+  ssh_vm "$CONTEINERES" > "$T/cont-antes.txt" || pare "não consegui ler os contêineres"
+  mkdir -p "$RELDIR"; cp "$T/inv-antes.txt" "$RELDIR/pacotes-inventario-antes-$CARIMBO.txt"
+  ok "inventário e contêineres registrados ($(grep -c . "$T/cont-antes.txt") contêineres)"
+  echo
+  echo "Vai: apt-get update e instalar SOMENTE pacotes novos (cloud-guest-utils; e2fsprogs só se já"
+  echo "instalado — nunca atualizado). Para sem instalar se o apt planejar atualizar ou remover algo."
+  local frase="INSTALAR cloud-guest-utils NA $VM"
+  printf '\nPara prosseguir, digite exatamente: %s\n> ' "$frase"
+  local r; read -r r || true
+  [[ "$r" == "$frase" ]] || { echo "Cancelado. Nada foi alterado."; exit 1; }
+
+  local rc=0
+  ssh_vm "$INSTALACAO" | tee "$T/instalacao.txt" || rc=$?
+  cp "$T/instalacao.txt" "$RELDIR/pacotes-instalacao-$CARIMBO.txt"
+  ((rc == 0)) || pare "instalação interrompida (código $rc; ver acima). Se o plano era inesperado, nada foi instalado"
+  grep -q '^REINICIO_PENDENTE' "$T/instalacao.txt" && echo "⚠ o sistema marcou reinício pendente — NÃO reinicie sem nova autorização"
+
+  ssh_vm "$INVENTARIO" > "$T/inv-depois.txt" || pare "não consegui refazer o inventário"
+  ssh_vm "$CONTEINERES" > "$T/cont-depois.txt" || pare "não consegui reler os contêineres"
+  diff <(grep -v '^cenario-' "$T/inv-antes.txt") <(grep -v '^cenario-' "$T/inv-depois.txt") \
+    || pare "imagens, volumes ou contêineres mudaram (ver acima)"
+  comm -23 <(grep '^cenario-' "$T/inv-antes.txt" | sort) <(grep '^cenario-' "$T/inv-depois.txt" | sort) | grep . \
+    && pare "pasta de backup sumiu (ver acima)" || true
+  diff "$T/cont-antes.txt" "$T/cont-depois.txt" || pare "algum contêiner foi reiniciado ou mudou (ver acima)"
+  ok "inventário preservado e nenhum contêiner reiniciado"
+  ssh_vm "$FERRAMENTAS"
+  echo; echo "CONCLUÍDO. Próximo (só com autorização): bash infra/homolog/gcp/ampliar-disco.sh conferir"
+}
+
 case "${1:-}" in
   conferir) conferir ;;
   verificar) verificar ;;
   executar) executar "${2:-}" ;;
-  *) sed -n '2,20p' "$0"; exit 2 ;;
+  diagnosticar) diagnosticar ;;
+  instalar-dependencias) instalar_dependencias ;;
+  *) sed -n '2,30p' "$0"; exit 2 ;;
 esac

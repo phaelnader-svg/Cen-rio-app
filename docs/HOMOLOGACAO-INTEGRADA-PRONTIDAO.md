@@ -65,6 +65,15 @@ O script (`infra/homolog/gcp/ampliar-disco.sh`):
 Depois, eu confiro pelo runner (somente leitura): `disk_status`, `health`, `version`,
 `images_cleanup_plan`, `backup_list`, `database_counts`.
 
+**Atualização (dependências na VM):** a 1ª execução de `conferir` parou com `growpart` e `resize2fs`
+"ausentes". `resize2fs` era falso negativo (fica em `/usr/sbin`, fora do PATH do usuário comum por SSH;
+o script agora procura com o PATH de root). `growpart` (pacote `cloud-guest-utils`) pode de fato não
+estar instalado. Novos modos: `diagnosticar` (somente leitura: distribuição, gerenciador de pacotes,
+utilitários, pacotes, simulação do apt, apt em uso, reinício pendente, acesso ao repositório) e
+`instalar-dependencias` (só com a frase `INSTALAR cloud-guest-utils NA cenario-homolog`: `apt-get
+update` + instala só pacotes **novos**; para sem instalar se o apt planejar atualizar ou remover
+qualquer pacote; confere que nenhum contêiner reiniciou e que o inventário não mudou).
+
 ### 1.5 Teste do script [MEDIDO com `gcloud` simulado]
 
 Sem permissão para rodar contra a VM real, o script foi testado com um `gcloud` simulado: conferência
