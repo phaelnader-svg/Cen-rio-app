@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { appendFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
@@ -16,20 +17,16 @@ import { openServiceOrder } from './os-helpers';
 const origin = `http://localhost:${E2E.webPort}`;
 const FIXTURE = fileURLToPath(new URL('../fixtures/foto-gps.jpg', import.meta.url));
 const STORAGE = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../storage-e2e');
-const OUT = 'test-results/auditoria';
-mkdirSync(OUT, { recursive: true });
-const registro: {
-  fluxo: string;
-  passo: string;
-  esperado: string;
-  observado: string;
-  ok: boolean;
-}[] = [];
+// Fora de test-results (o Playwright limpa essa pasta): uma linha JSON por passo, gravada na hora.
+const OUT = process.env.AUDITORIA_SAIDA ?? `${tmpdir()}/cenario-auditoria`;
 const anota = (fluxo: string, passo: string, esperado: string, observado: string, ok: boolean) => {
-  registro.push({ fluxo, passo, esperado, observado, ok });
+  mkdirSync(OUT, { recursive: true });
+  appendFileSync(
+    `${OUT}/fluxos.jsonl`,
+    JSON.stringify({ fluxo, passo, esperado, observado, ok }) + '\n',
+  );
   expect.soft(ok, `${fluxo} — ${passo}: esperado ${esperado}; observado ${observado}`).toBe(true);
 };
-test.afterAll(() => writeFileSync(`${OUT}/fluxos.json`, JSON.stringify(registro, null, 2)));
 
 const tag = () => Date.now().toString(36);
 async function call(page: Page, method: string, path: string, data?: unknown) {
@@ -57,7 +54,10 @@ test('entrada, validação, saída e sessão', async ({ page }) => {
   await page.getByLabel('Senha').fill('senha-errada-hml');
   await page.getByRole('button', { name: 'Entrar' }).click();
   const erro = page.getByText('E-mail ou senha incorretos.');
-  const viu = await erro.isVisible({ timeout: 8000 }).catch(() => false);
+  const viu = await erro
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
+    .catch(() => false);
   anota(
     F,
     'senha errada',
@@ -97,6 +97,46 @@ test('entrada, validação, saída e sessão', async ({ page }) => {
   anota(F, 'API depois de sair', '401', String(api.status()), api.status() === 401);
 });
 
+test('perfil sem painel: mensagem clara na tela de entrada', async ({ page, browser }) => {
+  const F = 'Acesso';
+  await loginAdmin(page);
+  const roles = (await (await page.request.get('/api/roles', { headers: { origin } })).json()) as {
+    id: string;
+    key: string | null;
+  }[];
+  const tap = roles.find((r) => r.key === 'tapeceiro')!;
+  const t = tag();
+  const email = `hml-tablet-${t}@hml.teste.local`;
+  await call(page, 'POST', '/api/employees', {
+    fullName: `HML-Tablet ${t}`,
+    displayName: 'HML-Tablet',
+    jobTitle: 'Teste',
+    color: '#445566',
+    roleIds: [tap.id],
+    email,
+    password: 'SenhaHml12345',
+  });
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  await p.goto('/entrar');
+  await p.getByLabel('E-mail').fill(email);
+  await p.getByLabel('Senha').fill('SenhaHml12345');
+  await p.getByRole('button', { name: 'Entrar' }).click();
+  const msg = await p
+    .getByText('Seu usuário não tem acesso ao painel administrativo.')
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
+    .catch(() => false);
+  anota(
+    F,
+    'tapeceiro tenta o painel',
+    'mensagem "não tem acesso ao painel" e continua em /entrar',
+    `${msg ? 'mensagem exibida' : 'sem mensagem'} · ${p.url().replace(origin, '')}`,
+    msg && /\/entrar/.test(p.url()),
+  );
+  await ctx.close();
+});
+
 test('clientes: cadastrar, validar, buscar, abrir e editar pela tela', async ({ page }) => {
   const F = 'Clientes';
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -116,6 +156,15 @@ test('clientes: cadastrar, validar, buscar, abrir e editar pela tela', async ({ 
   const nome = `HML-Cliente Auditoria ${tag()}`;
   await dlg.getByLabel('Nome completo').fill(nome);
   await dlg.getByLabel('Telefone').fill('11 90000-0000');
+  const end = await dlg.innerText();
+  anota(
+    F,
+    'endereço obrigatório ou "Cadastrar depois"',
+    'opção de cadastrar o endereço depois',
+    /Cadastrar depois/.test(end) ? 'opção presente' : 'ausente',
+    /Cadastrar depois/.test(end),
+  );
+  await dlg.getByRole('button', { name: 'Cadastrar depois' }).click();
   await dlg.getByRole('button', { name: /Cadastrar cliente|salvar mesmo assim/ }).click();
   if (
     await dlg
@@ -135,9 +184,13 @@ test('clientes: cadastrar, validar, buscar, abrir e editar pela tela', async ({ 
     fechou ? 'salvo' : 'diálogo continua aberto',
     fechou,
   );
+  await page.goto('/painel/clientes');
   await page.getByPlaceholder('Nome, CPF/CNPJ, telefone ou e-mail').fill(nome);
   const linha = page.getByText(nome).first();
-  const achou = await linha.isVisible({ timeout: 8000 }).catch(() => false);
+  const achou = await linha
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
+    .catch(() => false);
   anota(F, 'buscar', 'cliente na lista', achou ? 'encontrado' : 'não encontrado', achou);
   if (!achou) return;
   await linha.click();
@@ -161,7 +214,8 @@ test('clientes: cadastrar, validar, buscar, abrir e editar pela tela', async ({ 
   await page.reload();
   const obs = await page
     .getByText('HML- editado pela auditoria')
-    .isVisible({ timeout: 8000 })
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
     .catch(() => false);
   anota(
     F,
@@ -204,7 +258,8 @@ test('minha conta: troca de senha de usuário HML- e nova entrada', async ({ pag
   await p.getByRole('button', { name: 'Alterar senha' }).click();
   const errada = await p
     .getByText('Senha atual incorreta.')
-    .isVisible({ timeout: 8000 })
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
     .catch(() => false);
   anota(
     F,
@@ -228,7 +283,8 @@ test('minha conta: troca de senha de usuário HML- e nova entrada', async ({ pag
   await p.getByRole('button', { name: 'Alterar senha' }).click();
   const okMsg = await p
     .getByText(/Senha alterada/)
-    .isVisible({ timeout: 8000 })
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
     .catch(() => false);
   anota(F, 'trocar senha', '"Senha alterada…"', okMsg ? 'exibida' : 'não exibida', okMsg);
   await ctx.close();
@@ -252,7 +308,10 @@ test('funções: criar perfil HML- pela tela', async ({ page }) => {
   await page.goto('/painel/funcoes');
   const corpo = await page.locator('body').innerText();
   const botao = page.getByRole('button', { name: /Nova função|Criar função|Nova/ }).first();
-  const temBotao = await botao.isVisible().catch(() => false);
+  const temBotao = await botao
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
+    .catch(() => false);
   anota(
     F,
     'abrir funções',
@@ -280,7 +339,8 @@ test('funções: criar perfil HML- pela tela', async ({ page }) => {
     .catch(() => undefined);
   const apareceu = await page
     .getByText(nome)
-    .isVisible({ timeout: 8000 })
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
     .catch(() => false);
   anota(F, 'criar função', 'função na lista', apareceu ? 'na lista' : 'não apareceu', apareceu);
 });
@@ -301,22 +361,33 @@ test('fotos: enviar, ampliar, remover e arquivo inexistente', async ({ page }) =
   const ampliar = lista.getByRole('button', { name: /Ampliar/ });
   const enviou = await ampliar
     .first()
-    .isVisible({ timeout: 15_000 })
+    .waitFor({ state: 'visible', timeout: 15_000 })
+    .then(() => true)
     .catch(() => false);
   anota(F, 'enviar foto', 'miniatura na galeria', enviou ? 'exibida' : 'não exibida', enviou);
   await ampliar.first().click();
   const viewer = await page
     .getByTestId('photo-viewer')
-    .isVisible({ timeout: 8000 })
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
     .catch(() => false);
   anota(F, 'ampliar', 'visualizador abre', viewer ? 'abriu' : 'não abriu', viewer);
   await page.keyboard.press('Escape');
-  const lst = await call(
-    page,
-    'GET',
-    `/api/v1/attachments?entityType=SERVICE_ORDER_ITEM&entityId=${so.items[0]!.id}`,
-  );
-  const foto = (lst.body as { id: string; url: string }[] | null)?.[0];
+  let foto: { id: string; url: string } | undefined;
+  let onde = '';
+  for (const [tipo, id] of [
+    ['SERVICE_ORDER', so.id],
+    ...so.items.map((i: { id: string }) => ['SERVICE_ORDER_ITEM', i.id]),
+  ] as [string, string][]) {
+    const l = await call(page, 'GET', `/api/v1/attachments?entityType=${tipo}&entityId=${id}`);
+    const f = (l.body as { id: string; url: string }[] | null)?.[0];
+    if (f) {
+      foto = f;
+      onde = tipo;
+      break;
+    }
+  }
+  const lst = { status: 200, body: foto ? [foto] : [] };
   anota(
     F,
     'foto listada pela API',

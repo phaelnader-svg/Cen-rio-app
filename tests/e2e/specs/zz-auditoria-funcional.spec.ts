@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
 import { loginAdmin } from './helpers';
@@ -11,8 +12,8 @@ import { loginAdmin } from './helpers';
  * test-results/auditoria/*.json (com capturas em E2E_EVIDENCE=1). Só dados `HML-`.
  */
 const origin = `http://localhost:${E2E.webPort}`;
-const OUT = 'test-results/auditoria';
-mkdirSync(OUT, { recursive: true });
+// Fora de test-results (o Playwright limpa essa pasta a cada execução).
+const OUT = process.env.AUDITORIA_SAIDA ?? `${tmpdir()}/cenario-auditoria`;
 const shotDir = '../../docs/evidencias/homologacao-funcional';
 if (process.env.AUDITORIA_EVIDENCIAS) mkdirSync(shotDir, { recursive: true });
 
@@ -226,8 +227,10 @@ async function dinamicas(page: Page): Promise<{ rota: string; motivo?: string }[
   return out;
 }
 
-const salvar = (nome: string, dados: unknown) =>
+const salvar = (nome: string, dados: unknown) => {
+  mkdirSync(OUT, { recursive: true });
   writeFileSync(`${OUT}/${nome}.json`, JSON.stringify(dados, null, 2));
+};
 
 function problemas(v: Visita) {
   return [

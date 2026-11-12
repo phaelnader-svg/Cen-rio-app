@@ -1,0 +1,73 @@
+arquivo	teste	status	segundos
+aa-fase1-materiais-estoque-entrega.spec.ts	materiais necessários: lista inline, flags independentes, custo e aviso	passed	3.2
+aa-fase1-materiais-estoque-entrega.spec.ts	estoque da oficina: categoria, material, ajuste com histórico e arquivamento	passed	2.1
+aa-fase1-materiais-estoque-entrega.spec.ts	logística desligada: menu sem roteiro e entrega pela OS; religar volta ao normal	passed	2.8
+admin.spec.ts	rotas do painel exigem autenticação	passed	0.5
+admin.spec.ts	credenciais inválidas exibem erro sem revelar se o e-mail existe	passed	0.7
+admin.spec.ts	gestor entra, navega e cadastra um funcionário	passed	1.7
+admin.spec.ts	validação no formulário de empresa e salvamento com versão	passed	1.4
+cobranca.spec.ts	Novo serviço 50/50 → Financeiro do pedido → recebimento da entrada	passed	2.3
+commercial-flow.spec.ts	fluxo completo, com bloqueio da OS antes do recebimento e histórico técnico	passed	6.1
+commercial-flow.spec.ts	outra sessão do painel vê o novo pedido em tempo real	passed	2.8
+compras-etapa2.spec.ts	remedição substitui a necessidade (decisão na aprovação) e não soma	passed	3.8
+compras-etapa3.spec.ts	previsão no pedido → Pré-chegada → chegada → medição substitui	passed	3.8
+compras-sem-duplicidade.spec.ts	A comprar consolidado com estoque livre, Reservar explícito e recusa "Não repor"	passed	6.1
+fase0-funcionalidades.spec.ts	funcionalidades: desligar e religar os pedidos de ajuda pelo painel	passed	2.1
+fase1-conciliacao.spec.ts	conciliação pela tela: pendente, vincular sem dupla contagem, desfazer e "é outro material"	passed	9.2
+fase2-mapa-oficina.spec.ts	mapa da oficina: peça sem localização, mover pela tela, busca e localização na OS	passed	2.4
+fase2-mapa-oficina.spec.ts	tablet: "Aguardando chegada" reúne avisos e conferência de materiais	passed	3.2
+fase2-modelos-servico.spec.ts	modelos de serviço: visão unificada, material padrão e sugestão na OS	passed	2.5
+fase2-os-estado-fotos.spec.ts	"Planejar a produção da OS" só navega para a aba Produção	passed	2.1
+fase2-os-estado-fotos.spec.ts	foto nova pela galeria: sem EXIF/GPS na foto e na miniatura; abre no visualizador	passed	2.4
+gestao.spec.ts	gestor vê, identifica a pendência, abre o contexto, age e a pendência some	passed	5.3
+gestao.spec.ts	Início: total da Central, a planejar e bloqueios; menu e Recebimentos	passed	3.7
+measurements.spec.ts	gestor delega a Ricardo, tablet mede e envia, gestor devolve, Ricardo corrige, gestor aprova	passed	9.8
+measurements.spec.ts	rotina de sexta: o gestor mede pelo painel	passed	3.5
+modelos-simplificados.spec.ts	modelo de reforma com responsável por etapa e geração de 3 tarefas pelo planejamento	passed	3.8
+novo-servico-rede.spec.ts	Novo serviço: resposta perdida depois da gravação não duplica (mesma chave)	passed	2.5
+novo-servico.spec.ts	cliente novo + serviço + retirada em um formulário; roteiro do André; OS na chegada	passed	7.4
+novo-servico.spec.ts	cliente entrega na tapeçaria: sem retirada; o recebimento no painel gera a OS	passed	2.6
+novo-servico.spec.ts	titular e mão de obra previstos no fechamento; alteração antes da chegada; OS nasce com eles	passed	3.2
+novo-servico.spec.ts	390 px: preencher e salvar o Novo serviço no celular, sem rolagem horizontal	passed	2.3
+prazos.spec.ts	Início → Central filtrada → alterar prazo do pedido (SIM às OS) → contagens atualizadas	passed	6.0
+pre-planejamento.spec.ts	recebido → A planejar → Ricardo/Márcio → publicar semana → tablets	passed	14.8
+production.spec.ts	gestor planeja e publica; João conclui a preparação e libera a tarefa do Márcio em tempo real	passed	17.1
+purchasing.spec.ts	medição até prontidão completa, com recebimento pelo tablet e sem iniciar produção	passed	12.7
+recebimentos-rede.spec.ts	queda de rede depois do envio: nova tentativa usa a mesma chave e nada duplica	passed	4.5
+recebimentos-rede.spec.ts	resposta perdida com o tempo real ativo: aviso some, mensagem aprovada, nada reenviado sozinho	passed	5.6
+recebimentos-rede.spec.ts	aviso some sem resposta perdida neste tablet: texto neutro, sem atribuir a outro aparelho	passed	4.2
+recebimentos.spec.ts	dois tablets: chegada parcial, aviso de atualização, materiais e conferência	passed	9.0
+rodada2-central.spec.ts	valor muda → celular atualiza sozinho; Central: confirmação → pagamento; links; Início; avisos	passed	9.6
+tablet-sync.spec.ts	vinculação, login por PIN, sessão persistente e atualização em tempo real	passed	5.6
+tablet-sync.spec.ts	sinais de sincronização e reconciliação após queda de conexão	passed	6.7
+tablet-sync.spec.ts	revogação remota de sessão e de dispositivo	passed	4.7
+tablets.spec.ts	Meu dia, execução simplificada, avisos, reprogramação e queda de conexão	passed	12.0
+team-closing.spec.ts	conferir, registrar Pix, reabrir, estornar; celular; sem acesso para tablets e logística	passed	18.0
+team-distribution.spec.ts	titular por peça, geração sem distribuição manual, substituição auditada e fila do titular	passed	12.5
+team-finance.spec.ts	cobrança, recebimento parcial, valor de produção, despesa, painel e "Meus valores" no tablet	passed	15.4
+team-help.spec.ts	pedido normal, apoio no tablet, urgente escalado e aprovação do gestor	passed	27.1
+team-issues.spec.ts	Márcio registra o problema, gestor delega ao Thiago, verifica e Márcio retoma	passed	18.4
+team-labor.spec.ts	valor por peça na OS, substituição com revisão, resolução e "Meus valores" com PIN	passed	13.3
+team-logistics.spec.ts	padrões → agendar com custo total → realizar → obrigação única → pagar, estornar, ajustar, conciliar	passed	9.8
+team-negociacao.spec.ts	pedido no celular → aprovação → sem confirmação recusado → André confere → Pix	passed	8.9
+team-presenca-apoio.spec.ts	expediente esquecido, feriado, férias por intervalo e tablet sem pontualidade	passed	7.8
+team-presence.spec.ts	Cheguei, ausência presumida com impacto, correção, chegada tardia e encerramento	passed	13.6
+team-quality.spec.ts	produção → reprovação → correção → aprovação → embalagem → agenda → entrega	passed	30.6
+team-queue.spec.ts	publica sem horário, tablet segue a fila, início explícito e continuidade em dois dias	passed	17.0
+team-route-os.spec.ts	OS com titular e mão de obra; retirada com chegada; roteiro reordenado; celular do André	passed	7.7
+team-week.spec.ts	gestor + 4 tablets: destaque, próximas, fila completa, titular, bloqueio, reordenação, reconexão e virada do dia	passed	17.3
+team-workshop.spec.ts	chegada, início simultâneo, queda de conexão, prioridade e inspeção em tempo real	passed	25.2
+zz-auditoria-funcional.spec.ts	gestor percorre todas as páginas (desktop)	passed	78.1
+zz-auditoria-funcional.spec.ts	gestor percorre todas as páginas (celular)	passed	73.3
+zz-auditoria-funcional.spec.ts	perfis HML-: menu × acesso direto a cada página	failed	250.0
+zz-auditoria-funcional.spec.ts	perfis de tablet (sem painel.acessar) não entram no painel	passed	13.5
+zz-fase2-capturas.spec.ts	capturas da Fase 2 (painel e tablet) em 1440 e 390 px	passed	38.6
+zz-fase3-capturas.spec.ts	capturas da Fase 3 em 1440 e 390 px	passed	27.2
+zz-fase3-qualidade-programacao.spec.ts	qualidade: autoaprovação justificada do gestor, "Tudo conforme" e embalagem desligada	passed	12.1
+zz-fase3-qualidade-programacao.spec.ts	programação semanal numa tela só; endereços antigos e menu enxuto	passed	3.2
+zz-fase3-qualidade-programacao.spec.ts	desfazer a entrega direta: prévia, justificativa e histórico preservado	passed	15.3
+zz-fase4-hoje.spec.ts	Fase 4 — "Hoje" e produtividade (desktop)	passed	3.8
+zz-fase4-hoje.spec.ts	Fase 4 — "Hoje" e produtividade (mobile)	passed	3.6
+zz-fluxo-transversal.spec.ts	do Novo serviço ao pagamento, com D12/D13, privacidade e Central	passed	43.0
+zz-geometria.spec.ts	todas as telas e formulários em diálogo, em 390/768/1280/1440	passed	326.7
+zz-visual-audit.spec.ts	todas as telas do painel e do tablet, em desktop, tablet e celular	passed	163.4
