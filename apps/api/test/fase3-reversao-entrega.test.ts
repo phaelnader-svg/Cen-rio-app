@@ -259,7 +259,10 @@ describe('Desfazer a entrega direta', () => {
       },
     });
     await expectBlocked(/já foi conferido/);
-    await db().weeklyClosing.update({ where: { id: closing.id }, data: { status: 'REABERTO', reopenReason: 'Reaberta para o teste' } });
+    await db().weeklyClosing.update({
+      where: { id: closing.id },
+      data: { status: 'REABERTO', reopenReason: 'Reaberta para o teste' },
+    });
 
     // Mão de obra paga em parte.
     await pay(s.admin, x.laborE.id, 10000);
