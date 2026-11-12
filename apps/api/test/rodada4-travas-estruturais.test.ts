@@ -1518,6 +1518,9 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
     'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras da tabela NOVA de materiais ' +
     'padrão dos modelos de serviço e da coluna nova de origem da linha sugerida (padrão do ' +
     'Prisma). Nenhuma linha é alterada.',
+  '20270323000000_reformulacao_fase_3: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" da chave estrangeira nova de quem desfez a entrega direta ' +
+    '(deliveries.reverted_by_id; padrão do Prisma). Nenhuma linha é alterada.',
 };
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
