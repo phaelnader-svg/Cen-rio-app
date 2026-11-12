@@ -19,7 +19,7 @@ A Fase 4 **não** foi iniciada.
 | 3   | Programação semanal unificada         | "Produção — A planejar" e "Planejamento de produção" viraram **uma tela** ("Programação semanal": abas Serviços e Semana detalhada) com **um único diálogo de publicação** (prévia + observação). Regras de prioridade, responsáveis e datas são as do servidor (sem mudança). Endereços antigos abrem a aba correspondente; notificações antigas continuam válidas.                                                                                                                           |
 | 4   | Estados visíveis                      | Selo único do estado geral (regra da Fase 0) na lista de OS, no pedido, no histórico do cliente e no cabeçalho da OS, calculado em lote pela **mesma** regra. "Aberta" deixou de aparecer ao lado de "Entregue" (o status gravado no banco não muda).                                                                                                                                                                                                                                          |
 | 5   | Menu simplificado                     | Área Produção de **11 para 8** itens. Saíram do menu (páginas, rotas e permissões preservadas): "Planejamento de sexta" (link em Medições), "Competências da equipe" (link na Programação semanal) e as duas telas de planejamento (substituídas pela Programação semanal).                                                                                                                                                                                                                    |
-| 6   | Reversão controlada da entrega direta | **Regra proposta, não implementada**: `docs/REFORMULACAO-FASE-3-REGRA-REVERSAO-ENTREGA.md` — aguarda aprovação específica.                                                                                                                                                                                                                                                                                                                                                                     |
+| 6   | Reversão controlada da entrega direta | **Implementada** após aprovação específica (seção 3.6): só a última entrega direta, em até 7 dias, `entregas.gerenciar` + `financeiro.gerenciar`, justificativa, prévia, histórico preservado, auditoria destacada; bloqueios financeiros e operacionais; transação atômica com revalidação.                                                                                                                                                                                                   |
 
 ## 2. Arquivos e migration
 
@@ -85,6 +85,44 @@ mudou: publica as tarefas em rascunho do plano (a condição do botão é a mesm
 O mesmo cálculo (`loadOperationalStates`) serve a lista de OS, o pedido, o cliente e o cabeçalho;
 a E2E confere que o selo da lista é igual ao estado do cabeçalho. Nenhum estado gravado no banco
 foi alterado (o cálculo é só leitura).
+
+### 3.6 Desfazer a entrega direta (D5) [TESTADO]
+
+Regra aprovada: `docs/REFORMULACAO-FASE-3-REGRA-REVERSAO-ENTREGA.md`, com as condições da
+aprovação. Implementação: `apps/api/src/modules/quality/direct-delivery-revert.ts` (prévia e
+confirmação usam a **mesma** análise), tela "Desfazer entrega" na aba Qualidade e entrega da OS.
+
+- **Quem e o quê:** só a última entrega direta não desfeita da OS; até 7 dias da confirmação;
+  `entregas.gerenciar` **e** `financeiro.gerenciar` (painel); justificativa de 10 a 500
+  caracteres; prévia com peças, mão de obra que volta a prevista, cobranças que voltam a
+  "aguardando entrega" e prazo que reabre (ou a lista de bloqueios).
+- **Bloqueios (recusa sem gravar nada):** mão de obra "entregue ao cliente" das peças com qualquer
+  pagamento; semana do fechamento **conferida** (a da liberação ou de mudança de valor posterior);
+  cobrança com vencimento na entrega com recebimento registrado a partir do dia da entrega
+  (recebimento **estornado** não conta — o dinheiro não ficou); entrega posterior, devolução,
+  cancelamento da OS ou alteração técnica depois da entrega; prazo de 7 dias vencido.
+- **O que grava (aditivo):** a entrega continua `CONCLUIDA` e é marcada como desfeita (quem,
+  quando, justificativa); itens `NAO_ENTREGUE` e inativos; evento `ENTREGA_DIRETA_DESFEITA` no
+  histórico da entrega; peças voltam à localização anterior (ou expedição) e a "pronta para
+  entrega" pelo recálculo de sempre; mão de obra "na entrega" volta a prevista **sem competência**
+  (a data de liberação é limpa — senão o fechamento ainda a contaria); auditoria destacada
+  `delivery.direct_reverted` com os efeitos. Outras obrigações, pagamentos, recebimentos e custos
+  não são tocados.
+- **Proteções:** uma transação; travas OS → entrega → peças (mesma ordem da entrega direta);
+  revalidação completa depois das travas; recusa se a entrega da prévia não for mais a última;
+  rota idempotente; repetição devolve "já desfeita".
+- **Ajuste encontrado:** a data de conclusão da OS (resultado financeiro) passou a contar só itens
+  efetivamente entregues.
+- **Testes (8 de API + E2E):** fluxo completo com nova entrega e nova reversão (múltiplas
+  entregas); permissões (só uma das duas permissões = 403); bloqueios por recebimento após a
+  entrega (e liberação após o estorno), semana conferida e pagamento parcial, cada um sem alterar
+  nada; prazo, alteração técnica e devolução; entrega parcial (a entrega anterior da logística
+  fica intacta); concorrência (duas confirmações simultâneas = uma reversão) e idempotência; falha
+  simulada no meio = nada alterado; E2E pela tela (prévia, justificativa, histórico na entrega).
+
+Qualidade (decisão da aprovação): o gestor que executou **reprova** a própria peça sem
+justificativa, com a reprovação registrada na auditoria (testado); aprovar a própria execução
+continua exigindo justificativa de no mínimo 10 caracteres.
 
 ### 3.5 Menu [TESTADO]
 
