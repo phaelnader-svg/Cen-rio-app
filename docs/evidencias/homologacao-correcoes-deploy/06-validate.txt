@@ -1,0 +1,4 @@
+• backup_validate {"folder": "cenario-staging-20261112T224601Z"} → job f23f37f7-f76c-48d5-9797-238cbd53bbd6 (mensagem 22603778103203897)
+{"jti": "f23f37f7-f76c-48d5-9797-238cbd53bbd6", "operacao": "backup_validate", "classe": "READ_ONLY", "parametros": {"folder": "cenario-staging-20261112T224601Z"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:46:55.647938Z", "fim": "2026-11-12T22:46:56.101210Z", "duracao_s": 0.453, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env exec -T -w /data/backups/cenario-staging-20261112T224601Z backup sha256sum --check --quiet SHA256SUMS
+✔ cenario-staging-20261112T224601Z: SHA256SUMS conferido

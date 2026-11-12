@@ -1,0 +1,13 @@
+• prepare_version {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"} → job cf486f28-3372-4e71-9b52-9b224df5a5d8 (mensagem 22600663863324596)
+{"jti": "cf486f28-3372-4e71-9b52-9b224df5a5d8", "operacao": "prepare_version", "classe": "MUTATING", "parametros": {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:43:41.538320Z", "fim": "2026-11-12T22:45:32.330679Z", "duracao_s": 110.792, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh preparar-versao 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+✔ api: us-east1-docker.pkg.dev/cenariogestao/cenario-homolog/api:696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+    digest: us-east1-docker.pkg.dev/cenariogestao/cenario-homolog/api@sha256:264884b38b02de22357a07486e2d665008507444a0d84590a24d4aaf8455cb4f
+    id: sha256:264884b38b02de22357a07486e2d665008507444a0d84590a24d4aaf8455cb4f · tamanho: 3815 MB
+✔ web: us-east1-docker.pkg.dev/cenariogestao/cenario-homolog/web:696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+    digest: us-east1-docker.pkg.dev/cenariogestao/cenario-homolog/web@sha256:cb76d474f14e79234893497a05c9220152f4f4e1f8bf1c58818519d30e54ae72
+    id: sha256:cb76d474f14e79234893497a05c9220152f4f4e1f8bf1c58818519d30e54ae72 · tamanho: 3814 MB
+✔ a imagem nova NÃO migra na partida (infra/homolog/api-iniciar.sh presente)
+• migrations na imagem: 37 · aplicadas no banco: 37
+✔ disco livre: 8 GB
+PREPARAR-VERSÃO: OK (imagens presentes; nada reiniciado; banco intocado)

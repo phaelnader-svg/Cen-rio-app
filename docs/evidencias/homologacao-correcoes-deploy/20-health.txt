@@ -1,0 +1,14 @@
+• health {} → job a4c0c909-8b69-4554-b890-ce784891d046 (mensagem 22602484170104046)
+{"jti": "a4c0c909-8b69-4554-b890-ce784891d046", "operacao": "health", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:50:51.192324Z", "fim": "2026-11-12T22:50:51.706633Z", "duracao_s": 0.514, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env ps --all --format {{.Service}} {{.State}} {{.Health}}
+api running healthy
+backup running 
+caddy running 
+postgres running healthy
+web running healthy
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ /api/ready pelo proxy: HTTP 200

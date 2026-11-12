@@ -1,0 +1,3 @@
+• gate_status {} → job d3e3826b-e83d-4d89-be84-d6fb8aff97f0 (mensagem 22602484170096855)
+{"jti": "d3e3826b-e83d-4d89-be84-d6fb8aff97f0", "operacao": "gate_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:50:49.011281Z", "fim": "2026-11-12T22:50:49.184301Z", "duracao_s": 0.173, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

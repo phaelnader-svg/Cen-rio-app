@@ -1,0 +1,9 @@
+• container_logs {"service": "web", "lines": 200, "since_minutes": 1440} → job 4e3db4ff-893b-4262-adfd-203374123f68 (mensagem 22604249347046100)
+{"jti": "4e3db4ff-893b-4262-adfd-203374123f68", "operacao": "container_logs", "classe": "READ_ONLY", "parametros": {"service": "web", "lines": 200, "since_minutes": 1440}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:50:20.450586Z", "fim": "2026-11-12T22:50:20.836012Z", "duracao_s": 0.385, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env logs --no-color --timestamps --tail 200 --since 1440m web
+web-1  | 2026-11-12T22:48:06.167174025Z    ▲ Next.js 15.5.28
+web-1  | 2026-11-12T22:48:06.168120912Z    - Local:        http://localhost:3000
+web-1  | 2026-11-12T22:48:06.168289980Z    - Network:      http://0.0.0.0:3000
+web-1  | 2026-11-12T22:48:06.168676220Z 
+web-1  | 2026-11-12T22:48:06.168941976Z  ✓ Starting...
+web-1  | 2026-11-12T22:48:08.517362411Z  ✓ Ready in 3.1s

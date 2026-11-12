@@ -1,0 +1,42 @@
+• status {} → job bc9a1ee2-5f3a-4099-b028-f8ab64c20c71 (mensagem 22604045060583759)
+{"jti": "bc9a1ee2-5f3a-4099-b028-f8ab64c20c71", "operacao": "status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:42:42.241950Z", "fim": "2026-11-12T22:42:45.441744Z", "duracao_s": 3.2, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh status
+SERVICE    STATUS
+api        Up 5 hours (healthy)
+backup     Up 4 weeks
+caddy      Up 2 weeks
+postgres   Up 4 weeks (healthy)
+web        Up 5 hours (healthy)
+
+NAME                         MEM USAGE / LIMIT   CPU %
+web-1        152.6MiB / 448MiB   0.00%
+api-1        161.6MiB / 512MiB   0.19%
+caddy-1      39.03MiB / 192MiB   0.00%
+backup-1     1.492MiB / 256MiB   0.00%
+postgres-1   91.17MiB / 448MiB   6.41%
+
+               total        used        free      shared  buff/cache   available
+Mem:            1976         946         783          55         472        1030
+Swap:           2047         165        1882
+/dev/sda1        30G   19G  9.8G  66% /
+• version {} → job 3bb1fb46-558f-4fc0-b3ca-c1fb69194a86 (mensagem 22604045060621091)
+{"jti": "3bb1fb46-558f-4fc0-b3ca-c1fb69194a86", "operacao": "version", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:42:48.584894Z", "fim": "2026-11-12T22:42:49.206476Z", "duracao_s": 0.622, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+runner: 2.2.0
+/opt/cenario (scripts da VM): 5ff1597c0d1c
+etiqueta local (drop-in): 63674f1d116ed86a92dbcc421f2fd702e41b169d
+etiqueta do ambiente da pilha: 63674f1d116ed86a92dbcc421f2fd702e41b169d
+candidata: 341badb59624996cd95c1213808c51631bf34b92
+migrada: 63674f1d116ed86a92dbcc421f2fd702e41b169d
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env ps --all --format {{.Service}}	{{.Image}}
+api	«CENARIO_API_IMAGE-mascarado»
+backup	postgres:16
+caddy	caddy:2.10-alpine
+postgres	postgres:16-alpine
+web	«CENARIO_WEB_IMAGE-mascarado»
+$ docker ps --format {{.Names}}	{{.Image}}	{{.ID}}
+cenario-homolog-web-1	«CENARIO_WEB_IMAGE-mascarado»	2a700ca96357
+cenario-homolog-api-1	«CENARIO_API_IMAGE-mascarado»	5a52e521b753
+cenario-homolog-caddy-1	caddy:2.10-alpine	9b8f3d2ede06
+cenario-homolog-backup-1	postgres:16	6017dc4ab6f2
+cenario-homolog-postgres-1	postgres:16-alpine	d977155c6ab0
+CANAL: OK

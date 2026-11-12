@@ -1,0 +1,8 @@
+• database_status {} → job d91427dc-37dd-4625-9d8b-0be23905870d (mensagem 22604249346996986)
+{"jti": "d91427dc-37dd-4625-9d8b-0be23905870d", "operacao": "database_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:50:08.649008Z", "fim": "2026-11-12T22:50:09.098409Z", "duracao_s": 0.449, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env exec -T postgres psql -U cenario -d cenario_homolog -At -F | -v ON_ERROR_STOP=1 -c select 'versao', version() union all select 'tamanho', pg_size_pretty(pg_database_size(current_database())) union all select 'conexoes', count(*)::text from pg_stat_activity union all select 'aguardando_bloqueio', count(*)::text from pg_stat_activity where wait_event_type = 'Lock' union all select 'consulta_mais_longa_s', coalesce(max(extract(epoch from now() - query_start))::int, 0)::text from pg_stat_activity where state = 'active' and pid <> pg_backend_pid()
+versao|PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+tamanho|18 MB
+conexoes|10
+aguardando_bloqueio|0
+consulta_mais_longa_s|0

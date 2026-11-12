@@ -1,0 +1,3 @@
+• gate_open {} → job 5a4de7ca-c479-46fa-a43f-50907c39a7e3 (mensagem 22600663863320344)
+{"jti": "5a4de7ca-c479-46fa-a43f-50907c39a7e3", "operacao": "gate_open", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:43:39.307667Z", "fim": "2026-11-12T22:43:39.487266Z", "duracao_s": 0.18, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: ABERTO (/etc/cenario/publicacao-autorizada)

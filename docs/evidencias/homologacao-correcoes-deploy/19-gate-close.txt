@@ -1,0 +1,3 @@
+• gate_close {} → job 10ffe16e-d261-45f5-97fa-2cfa50d4844d (mensagem 22602484170091843)
+{"jti": "10ffe16e-d261-45f5-97fa-2cfa50d4844d", "operacao": "gate_close", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:50:46.923599Z", "fim": "2026-11-12T22:50:47.121787Z", "duracao_s": 0.198, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

@@ -1,0 +1,68 @@
+• run_homologation_tests {"suite": "completo"} → job ed5e5d91-4011-4b3d-a993-a9f86bd6e252 (mensagem 22604231434623838)
+{"jti": "ed5e5d91-4011-4b3d-a993-a9f86bd6e252", "operacao": "run_homologation_tests", "classe": "READ_ONLY", "parametros": {"suite": "completo"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:49:46.507488Z", "fim": "2026-11-12T22:49:57.788947Z", "duracao_s": 11.281, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh saude
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ proxy exige autenticação (sem credencial: 401)
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ web (tela de entrada): 200
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+✔ certificado válido por mais 55 dias (até Jan  7 16:14:09 2027 GMT)
+✔ último backup há 0 h (cenario-staging-20261112T224601Z)
+✔ migrations: 37 aplicadas, nenhuma pendente/com falha
+✔ disco em 74%
+✔ memória disponível 1052 MB
+Saúde: OK
+✔ suíte saude
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh diagnosticar-acesso 24
+== Configuração
+• domínio: «HOMOLOG_DOMAIN-mascarado» · usuário do proxy: «HOMOLOG_BASIC_USER-mascarado» (minúsculo, sem acento)
+• segredo homolog-proxy-password: 23 caracteres; só caracteres imprimíveis comuns
+• /run/cenario/env gerado em: 2026-11-12T22:48:02Z (o hash da senha do proxy é calculado nesse momento)
+== Fluxo do navegador (de dentro da VM)
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+== Tentativas registradas pelo Caddy nas últimas 24 h
+• 673 requisições de navegadores (+ 51 de testes internos)
+• Safari: 5 aceitas · 0 recusadas COM senha enviada · 0 pedidos de senha (sem credencial)
+• últimas (hora UTC · status · método · caminho · senha enviada? · cookie? · usuário aceito · navegador):
+    11-12T22:21:47 308 GET /default.asp · - · - ·  · outro
+    11-12T22:21:47 308 GET /default.jhtml · - · - ·  · outro
+    11-12T22:21:47 308 GET / · - · - ·  · outro
+    11-12T22:21:47 308 GET / · - · - ·  · outro
+    11-12T22:26:56 200 GET /api/v1/pickups?from=2026-11-12&to=2026-11-12&limit=200 · - · cookie ·  · outro
+    11-12T22:26:56 200 GET /api/v1/modules · - · cookie ·  · outro
+    11-12T22:26:56 200 GET /api/auth/me · - · cookie ·  · outro
+    11-12T22:26:56 200 GET /api/audit?limit=6 · - · cookie ·  · outro
+    11-12T22:26:56 200 GET /api/sessions · - · cookie ·  · outro
+    11-12T22:26:56 200 GET /api/devices · - · cookie ·  · outro
+    11-12T22:26:56 200 GET /api/employees · - · cookie ·  · outro
+    11-12T22:26:56 200 GET /api/v1/notifications?limit=50 · - · cookie ·  · outro
+    11-12T22:26:56 200 GET /api/v1/orders?status=AGUARDANDO_RETIRADA&limit=100 · - · cookie ·  · outro
+    11-12T22:26:56 200 GET /api/v1/orders?status=RECEBIDO_PARCIAL&limit=100 · - · cookie ·  · outro
+    11-12T22:26:57 200 GET /api/v1/attention?type=PRAZO_OS · - · cookie ·  · outro
+    11-12T22:26:57 200 GET /api/v1/attention?type=PRAZO_PEDIDO · - · cookie ·  · outro
+    11-12T22:26:57 200 GET /api/v1/management/today · - · cookie ·  · outro
+    11-12T22:26:58 200 GET /api/v1/management/overview · - · cookie ·  · outro
+    11-12T22:27:01 101 GET /api/realtime · - · cookie ·  · outro
+    11-12T22:31:19 308 GET / · - · - ·  · outro
+    11-12T22:42:57 200 GET /api/ready · - · cookie ·  · outro
+    11-12T22:43:18 308 GET /developmentserver/metadatauploader · - · - ·  · outro
+    11-12T22:44:26 308 GET / · - · - ·  · outro
+    11-12T22:49:34 200 GET /api/ready · - · cookie ·  · outro
+    11-12T22:49:44 401 GET /api/realtime · - · cookie ·  · outro
+== Leitura
+• o Safari passou pelo proxy; se a tela não abriu, veja os status != 2xx/3xx acima
+✔ suíte acesso
+✔ WebSocket /api/realtime pelo proxy: HTTP 401 (esperado 401 sem sessão, ou 101)
+✔ suíte websocket

@@ -1,0 +1,3 @@
+• gate_status {} → job 13ed337a-784c-456e-86c5-e4a1ebdddcfb (mensagem 22604057389513996)
+{"jti": "13ed337a-784c-456e-86c5-e4a1ebdddcfb", "operacao": "gate_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:43:11.124907Z", "fim": "2026-11-12T22:43:11.358677Z", "duracao_s": 0.234, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

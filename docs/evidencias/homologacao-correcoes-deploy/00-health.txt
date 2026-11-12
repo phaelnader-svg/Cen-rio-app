@@ -1,0 +1,14 @@
+• health {} → job cdb9778c-b289-46fb-abeb-51a2dd62d5c6 (mensagem 22604057389435512)
+{"jti": "cdb9778c-b289-46fb-abeb-51a2dd62d5c6", "operacao": "health", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-12T22:42:56.840029Z", "fim": "2026-11-12T22:42:57.377127Z", "duracao_s": 0.537, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env ps --all --format {{.Service}} {{.State}} {{.Health}}
+api running healthy
+backup running 
+caddy running 
+postgres running healthy
+web running healthy
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ /api/ready pelo proxy: HTTP 200
