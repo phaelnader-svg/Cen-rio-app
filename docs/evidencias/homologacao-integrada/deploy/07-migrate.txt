@@ -1,0 +1,16 @@
+• migrate {"version": "63674f1d116ed86a92dbcc421f2fd702e41b169d"} → job f5ac87ae-c254-425e-98c3-8412f91741c5 (mensagem 22599028325807733)
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh migrar 63674f1d116ed86a92dbcc421f2fd702e41b169d
+✔ banco idêntico ao ponto de recuperação cenario-staging-20261112T173748Z (0 min)
+• imagem 63674f1d116ed86a92dbcc421f2fd702e41b169d: 37 migrations · banco: 35 aplicadas (35 registros)
+• pendentes (2): 20270316000000_reformulacao_fase_2, 20270323000000_reformulacao_fase_3
+✔ esquema compatível: 20270316000000_reformulacao_fase_2 (17 comandos)
+✔ esquema compatível: 20270323000000_reformulacao_fase_3 (8 comandos)
+ℹ * tamanho-do-banco: 18 MB
+PREFLIGHT: OK (nenhuma migration incompleta, desconhecida, divergente ou fora de ordem; esquema e dados compatíveis com as pendentes)
+[2026-11-12T17:38:56Z] Aplicando as migrations com us-east1-docker.pkg.dev/cenariogestao/cenario-homolog/api:63674f1d116ed86a92dbcc421f2fd702e41b169d (log: /var/lib/cenario/migracao-63674f1d116ed86a92dbcc421f2fd702e41b169d-20261112T173856Z.log)…
+Applying migration `20270316000000_reformulacao_fase_2`
+Applying migration `20270323000000_reformulacao_fase_3`
+The following migration(s) have been applied:
+All migrations have been successfully applied.
+Database schema is up to date!
+[2026-11-12T17:39:07Z] ✔ migrations aplicadas em 11 s. Próximo: (operador) cenario-tag=63674f1d116ed86a92dbcc421f2fd702e41b169d nos metadados → vm.sh ativar 63674f1d116ed86a92dbcc421f2fd702e41b169d

@@ -1,0 +1,3 @@
+• backup_validate {"folder": "cenario-staging-20261112T173748Z"} → job f7e15e00-f9ca-416c-9912-d6e8fe0b139b (mensagem 22597685039036032)
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env exec -T -w /data/backups/cenario-staging-20261112T173748Z backup sha256sum --check --quiet SHA256SUMS
+✔ cenario-staging-20261112T173748Z: SHA256SUMS conferido

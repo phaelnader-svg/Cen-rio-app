@@ -1,0 +1,2 @@
+• gate_close {} → job 37e88bd6-c285-4c27-87c4-55ba3ba8e2ef (mensagem 22599167708774598)
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)
