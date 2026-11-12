@@ -68,7 +68,9 @@ const db = new Client({ connectionString: url });
 try {
   await db.connect();
 } catch (e) {
-  console.error(`✘ guarda do retorno: banco inacessível (${e.code ?? e.message}). Nada foi alterado.`);
+  console.error(
+    `✘ guarda do retorno: banco inacessível (${e.code ?? e.message}). Nada foi alterado.`,
+  );
   process.exit(4);
 }
 let exitCode = 0;
@@ -78,7 +80,8 @@ try {
     console.error(
       `✘ RETORNO BLOQUEADO: ${pieces.length} peça(s) aprovada(s) sem embalagem e ainda não entregue(s).`,
     );
-    for (const p of pieces) console.error(`   • ${p.code} · ${p.description} · ${p.stage} · id ${p.id}`);
+    for (const p of pieces)
+      console.error(`   • ${p.code} · ${p.description} · ${p.stage} · id ${p.id}`);
     console.error(
       '  Entregue essas peças na versão integrada antes de voltar para esta versão. Nada foi alterado.',
     );
