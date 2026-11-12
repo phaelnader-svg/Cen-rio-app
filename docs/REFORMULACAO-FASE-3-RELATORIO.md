@@ -3,7 +3,7 @@
 Tudo foi feito **somente no ambiente de desenvolvimento isolado** (PostgreSQL 16 local e
 descartável, navegador local). Nenhum deploy, merge, migration em ambiente compartilhado ou
 alteração da homologação (ativa `3e0d2d0`, candidata `de31aa7`), do branch padrão ou da produção.
-A Fase 4 **não** foi iniciada.
+A Fase 4 foi iniciada depois da validação desta fase, a partir do commit final (ver seção 10).
 
 - Branch: `claude/reformulacao-fase-3` (derivada de `dcae84f`, Fase 2 aprovada).
 - Commit final: ver a seção 10.
