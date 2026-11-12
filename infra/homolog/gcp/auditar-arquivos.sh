@@ -35,8 +35,15 @@ echo "@@ BANCO"
 $C exec -T postgres psql -U cenario -d cenario_homolog -At -F"|" -c "
   SELECT f.storage_key, f.purpose, f.size_bytes, f.sha256,
          to_char(f.created_at AT TIME ZONE '"'"'UTC'"'"', '"'"'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'"'"'),
-         (SELECT count(*) FROM attachments a WHERE a.file_id = f.id)
+         (SELECT count(*) FROM attachments a WHERE a.file_id = f.id),
+         coalesce(to_char(f.deleted_at AT TIME ZONE '"'"'UTC'"'"', '"'"'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'"'"'), '"'"'-'"'"'),
+         coalesce((SELECT to_char(max(a.deleted_at) AT TIME ZONE '"'"'UTC'"'"', '"'"'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'"'"')
+                     FROM attachments a WHERE a.file_id = f.id), '"'"'-'"'"')
     FROM stored_files f ORDER BY f.created_at"
+echo "@@ AUDITORIA"
+$C exec -T postgres psql -U cenario -d cenario_homolog -At -F"|" -c "
+  SELECT action, to_char(created_at AT TIME ZONE '"'"'UTC'"'"', '"'"'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'"'"'), entity_type
+    FROM audit_logs WHERE action LIKE '"'"'attachment.%'"'"' ORDER BY created_at"
 echo "@@ ORIGEM"
 $C exec -T api sh -c "cd /data/storage 2>/dev/null && find . -type f | sed s#^./## | sort | while read f; do echo \"\$f|\$(stat -c %s \"\$f\")|\$(sha256sum \"\$f\" | cut -c1-64)|\$(date -u -r \"\$f\" +%Y-%m-%dT%H:%M:%SZ)\"; done; true"
 echo "@@ VOLUME"
@@ -51,7 +58,8 @@ mkdir -p "$RELDIR"; cp "$T/saida.txt" "$RELDIR/arquivos-auditoria-$CARIMBO.txt"
 
 awk -F'|' '
   /^@@ / { secao = $0; sub(/^@@ /, "", secao); split(secao, s, " "); secao = s[1]; if (secao == "BACKUP") pasta = s[2]; next }
-  secao == "BANCO" && NF >= 6 { n++; chave[n] = $1; fin[n] = $2; tam[n] = $3; sha[n] = $4; data[n] = $5; anexos[n] = $6 }
+  secao == "BANCO" && NF >= 8 { n++; chave[n] = $1; fin[n] = $2; tam[n] = $3; sha[n] = $4; data[n] = $5; anexos[n] = $6; excl[n] = $7; exclA[n] = $8 }
+  secao == "AUDITORIA" && NF >= 3 { aud[++na] = $1 " em " $2 " (" $3 ")" }
   secao == "ORIGEM" && NF >= 3 { otam[$1] = $2; osha[$1] = $3; odata[$1] = $4; norig++ }
   secao == "BACKUP" && NF >= 2 && $1 != "" { btam[$1] = $2; nback++ }
   END {
@@ -61,20 +69,26 @@ awk -F'|' '
       k = chave[i]
       o = (k in otam) ? ((otam[k] == tam[i] && osha[k] == sha[i]) ? "OK" : "DIFERENTE") : "AUSENTE"
       b = (k in btam) ? ((btam[k] == tam[i]) ? "OK" : "DIFERENTE") : "AUSENTE"
-      if (o == "AUSENTE") v = "ausente NA ORIGEM (o backup não tem como conter)"
+      removido = (excl[i] != "-" || exclA[i] != "-")
+      if (o == "AUSENTE" && removido) v = "EXCLUÍDO pelo usuário (registro mantido para histórico; arquivo apagado por desenho) — consistente"
+      else if (o == "AUSENTE") v = "ausente NA ORIGEM sem exclusão registrada (o backup não tem como conter)"
       else if (o == "DIFERENTE") v = "arquivo da origem difere do registro (tamanho/hash)"
       else if (b != "OK") v = "presente na origem, ausente/diferente NO BACKUP"
       else v = "íntegro na origem e no backup"
-      if (v != "íntegro na origem e no backup") ruim++
+      if (o == "AUSENTE" && removido) excluidos++
+      else if (v == "íntegro na origem e no backup") integros++
+      else ruim++
       mini = k; sub(/^attachment\//, "attachment-thumb/", mini)
       m = (mini != k) ? (((mini in otam) ? "origem OK" : "origem AUSENTE") " / " ((mini in btam) ? "backup OK" : "backup AUSENTE")) : "não se aplica"
-      printf "• %s · %s · %s bytes · criado %s · anexos %s\n    origem: %s · backup: %s → %s\n    miniatura (derivada, sem registro próprio; fotos antigas podem não ter): %s\n", k, fin[i], tam[i], data[i], anexos[i], o, b, v, m
+      printf "• %s · %s · %s bytes · criado %s · anexos %s · excluído: arquivo %s, anexo %s\n    origem: %s · backup: %s → %s\n    miniatura (derivada, sem registro próprio; fotos antigas podem não ter): %s\n", k, fin[i], tam[i], data[i], anexos[i], excl[i], exclA[i], o, b, v, m
     }
     for (k in otam) {
       achou = 0; base = k; sub(/^attachment-thumb\//, "attachment/", base)
       for (i = 1; i <= n; i++) if (chave[i] == k || (base != k && chave[i] == base)) achou = 1
       if (!achou) { printf "• arquivo na origem SEM registro no banco: %s\n", k; ruim++ }
     }
-    printf "\n%s\n", ruim ? "✘ divergências encontradas (ver acima)" : "✔ todos os arquivos registrados estão na origem e no backup"
+    printf "\nTrilha de auditoria dos anexos (%d registro(s)):\n", na + 0
+    for (j = 1; j <= na; j++) printf "    %s\n", aud[j]
+    printf "\n%s\n", ruim ? "✘ divergências encontradas (ver acima)" : sprintf("✔ nenhuma divergência: %d arquivo(s) íntegro(s) na origem e no backup; %d excluído(s) pelo usuário (sem arquivo, por desenho)", integros, excluidos)
   }' "$T/saida.txt"
 echo "Saída completa: $RELDIR/arquivos-auditoria-$CARIMBO.txt (nada foi alterado)"

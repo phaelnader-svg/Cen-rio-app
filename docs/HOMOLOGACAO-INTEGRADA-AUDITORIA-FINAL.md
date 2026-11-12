@@ -6,21 +6,21 @@ migration, reinício, restauração na VM, dado sintético ou alteração de pro
 
 ## 1. Checklist
 
-| #   | Item                                                | Situação                                                                      |
-| --- | --------------------------------------------------- | ----------------------------------------------------------------------------- |
-| 1.1 | Branches e commits                                  | **APROVADO**                                                                  |
-| 1.2 | Imagens e digests no Artifact Registry              | **APROVADO**                                                                  |
-| 1.3 | Compatibilidade entre as fases (migrations F′ × R2) | **APROVADO**                                                                  |
-| 2.1 | Migrations pendentes / estado do banco              | **APROVADO**                                                                  |
-| 2.2 | Backup consistente                                  | **APROVADO**                                                                  |
-| 2.3 | Teste de restauração                                | **APROVADO** (identidade exata é critério automático no ponto de recuperação) |
-| 2.4 | Integridade dos dados                               | **APROVADO**                                                                  |
-| 3   | Arquivos e fotos (divergência do anexo)             | **PENDENTE — bloqueia o GO** até a leitura da seção 3.3                       |
-| 4   | Retorno sem perda de dados                          | **APROVADO** (com pré-condição automática)                                    |
-| 5   | Infraestrutura (disco, saúde, memória, capacidade)  | **APROVADO**                                                                  |
-| 6   | Segurança e isolamento                              | **APROVADO**                                                                  |
-| 7.1 | Testes automatizados                                | **APROVADO**                                                                  |
-| 7.2 | Testes manuais                                      | **PENDENTE** (após o deploy, por definição)                                   |
+| #   | Item                                                | Situação                                                                                                                                      |
+| --- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.1 | Branches e commits                                  | **APROVADO**                                                                                                                                  |
+| 1.2 | Imagens e digests no Artifact Registry              | **APROVADO**                                                                                                                                  |
+| 1.3 | Compatibilidade entre as fases (migrations F′ × R2) | **APROVADO**                                                                                                                                  |
+| 2.1 | Migrations pendentes / estado do banco              | **APROVADO**                                                                                                                                  |
+| 2.2 | Backup consistente                                  | **APROVADO**                                                                                                                                  |
+| 2.3 | Teste de restauração                                | **APROVADO** (identidade exata é critério automático no ponto de recuperação)                                                                 |
+| 2.4 | Integridade dos dados                               | **APROVADO**                                                                                                                                  |
+| 3   | Arquivos e fotos (divergência do anexo)             | **APROVADO COM RESSALVA** (ver 2.8): mecanismo provado; registro órfão preexistente documentado; prova na VM real **PENDENTE de autorização** |
+| 4   | Retorno sem perda de dados                          | **APROVADO** (com pré-condição automática)                                                                                                    |
+| 5   | Infraestrutura (disco, saúde, memória, capacidade)  | **APROVADO**                                                                                                                                  |
+| 6   | Segurança e isolamento                              | **APROVADO**                                                                                                                                  |
+| 7.1 | Testes automatizados                                | **APROVADO**                                                                                                                                  |
+| 7.2 | Testes manuais                                      | **PENDENTE** (após o deploy, por definição)                                                                                                   |
 
 ## 2. Evidências
 
@@ -153,16 +153,88 @@ qualidade com embalagem ligada/desligada, entrega direta e desfazer (incl. bloqu
 e financeiro, painel "Hoje"/alertas/produtividade sem valores, permissões e auditoria, e a prova de
 foto real no backup (passo 17).
 
+### 2.8 Validação de segurança dos arquivos (12/11, 17:20–17:30 UTC)
+
+**Resultado da leitura na homologação** (`auditar-arquivos.sh`, executado por você): 1 registro em
+`stored_files` — `attachment/2d0e835e-3895-4120-af0d-d91674a17cfc`, 24.118 bytes —
+**ausente na origem** (volume) **e ausente no backup**; 0 arquivos no volume e no backup.
+
+**Registro preexistente, documentado sem alteração.** Nada foi excluído ou modificado (nem o
+registro, nem o anexo, nem o volume). Ele existe desde antes deste trabalho (estava no backup de
+11/11) e permanece como está.
+
+**Causas possíveis, pelo código e pela configuração:**
+
+1. **Exclusão pelo usuário (mais provável).** Na versão ativa (`3e0d2d0`) e na F′, "remover foto"
+   (`DELETE /api/v1/attachments/:id`) é **exclusão lógica** do registro (`attachments.deleted_at` e
+   `stored_files.deleted_at` preenchidos, mantidos para histórico e auditoria
+   `attachment.removed`) **e remoção física do arquivo**. É exatamente o quadro "registro sem
+   arquivo". Todas as leituras ignoram registros excluídos (listagem filtra `deletedAt: null`; a rota
+   `/api/files/:id` responde 404), então não há efeito visível.
+2. **Arquivo perdido sem exclusão (improvável).** Gravação é atômica (arquivo temporário +
+   `rename`) e acontece **antes** da transação do banco; se o banco falha, o arquivo é apagado — não
+   sobra registro sem arquivo por esse caminho. O volume `storage` existe desde a criação da pilha
+   (09/10) e nenhum script da VM remove volumes ou arquivos (`vm.sh`/runner sem `down -v`, `volume
+rm` ou `prune`). Restaurações (`recuperar`) só acrescentam arquivos.
+
+**Para fechar a causa** (somente leitura): o `auditar-arquivos.sh` foi atualizado e agora mostra
+`deleted_at` do arquivo e do anexo e a trilha `attachment.added/removed` (só ação, data e tipo).
+Repita `bash infra/homolog/gcp/auditar-arquivos.sh`: "EXCLUÍDO pelo usuário … — consistente"
+confirma a causa 1; "ausente NA ORIGEM sem exclusão registrada" indica a causa 2 (registro órfão
+real, que o deploy não altera — ver adiante).
+
+**Teste isolado de backup e restauração com arquivo temporário — APROVADO**
+(`scripts/test-backup-arquivos-isolado.sh`, evidência abaixo): mesma imagem do serviço de backup
+(`postgres:16`), mesmos `scripts/backup.sh`/`restore.sh` (idênticos aos da VM, `git diff` vazio
+desde `5ff1597`), mesmas montagens (`/data/storage` somente leitura, `/data/backups`), arquivo de
+**24.118 bytes** e miniatura gravados como a API grava (dono 1000, modo 0600):
+
+| Etapa                                                          | Resultado                                                                                 |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Backup (`bash /scripts/backup.sh /data/backups`)               | `storage.tar.gz` com os 2 arquivos (24.118 e 2.048 bytes, 1000/1000, 0600); SHA256SUMS ✔ |
+| Restauração como `vm.sh restaurar-teste` (`--storage /tmp/rs`) | 2 arquivos; SHA-256 **idênticos**                                                         |
+| Restauração como `vm.sh recuperar` (volume gravável)           | arquivo, miniatura e registro **idênticos**; dono 1000, modo 600 (legível pela API)       |
+| Origem                                                         | inalterada (montada somente leitura)                                                      |
+
+Também o teste do repositório `scripts/test-backup-restore.sh` (banco + arquivo + aplicação subindo
+sobre o restaurado): ✔.
+
+**Prova na infraestrutura real — preparada, PENDENTE da sua autorização:**
+`infra/homolog/gcp/testar-backup-arquivos-vm.sh` (frase `TESTAR BACKUP DE ARQUIVOS NA
+cenario-homolog`). Cria **um contêiner temporário** do próprio serviço `backup` da pilha
+(`docker compose run --rm --no-deps`, removido no fim), gera o arquivo de teste em `/tmp` desse
+contêiner, roda o `backup.sh` real com destino `/tmp` (o `pg_dump` do banco real só lê), extrai e
+compara SHA-256, e confere que o volume de arquivos, a pasta de backups e os contêineres da pilha
+(mesmos ids) não mudaram. Testado contra uma réplica do serviço (imagem `postgres:16`, mesmas
+montagens) com `sudo docker compose` simulado: ✔ em todas as etapas.
+Alternativa já prevista: passo 17 do deploy (foto sintética + `backup_create` + `backup_restore_test`).
+
+**O deploy não agrava a inconsistência:**
+
+- Migrations: a da Fase 2 só **acrescenta colunas anuláveis** em `stored_files` (tratamento de
+  imagem) com uma regra satisfeita pelos registros atuais (todas nulas); a da Fase 3 não toca
+  arquivos. Nenhuma migration apaga, move ou altera registros de arquivo.
+- F′ não percorre nem regrava arquivos existentes na partida ou em rotinas. A ferramenta de fotos
+  antigas (`tools/fotos-legadas.ts`) **não** faz parte do deploy, ignora registros excluídos e só
+  conta arquivos ausentes.
+- Backup/restauração só acrescentam arquivos; nenhum script remove arquivos.
+- Ponto de atenção (preexistente, igual em `3e0d2d0`): se o registro **não** estiver excluído e
+  alguém abrir a OS dele, a leitura do arquivo ausente responde **500** (na F′ também pela
+  miniatura da galeria). Isso pode disparar o critério "5xx repetido" do passo 10 sem ser regressão.
+  Mitigação: identificar a OS pela leitura acima e não usá-la no roteiro; correção opcional futura:
+  responder 404 quando o arquivo não existe (exige nova imagem — não feito sem autorização).
+
 ## 3. Riscos e mitigação
 
-| Risco                                                                | Mitigação                                                              |
-| -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Anexo sem arquivo (item 3)                                           | Leitura 2.3.1 antes do GO; passo 17 prova foto real no backup          |
-| Peças aprovadas sem embalagem impedem o retorno                      | Guarda automática em R2 + prontidão em F′                              |
-| Migration falhar no meio                                             | Ponto de recuperação obrigatório; `rollback_to_recovery_point`         |
-| Memória da API com muitas fotos simultâneas (430/512 MB local)       | Medir no passo 15 e no roteiro de fotos; critério de interrupção > 90% |
-| Imagem validada localmente ≠ registro                                | `prepare_version` confere digests do registro na VM (passo 2)          |
-| Ressalvas abertas (fotos antigas com GPS, CPU na VM, Safari, tablet) | Roteiro manual; migração de fotos antigas fora deste deploy            |
+| Risco                                                                | Mitigação                                                                                                                                                                            |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Registro de arquivo sem arquivo físico (preexistente)                | Documentado e preservado (2.8); confirmar causa com a nova leitura; não usar a OS dele no roteiro; prova real do backup por `testar-backup-arquivos-vm.sh` (autorização) ou passo 17 |
+| Leitura de arquivo ausente responde 500 (preexistente)               | Não confundir com regressão no passo 10; correção opcional (404) em versão futura                                                                                                    |
+| Peças aprovadas sem embalagem impedem o retorno                      | Guarda automática em R2 + prontidão em F′                                                                                                                                            |
+| Migration falhar no meio                                             | Ponto de recuperação obrigatório; `rollback_to_recovery_point`                                                                                                                       |
+| Memória da API com muitas fotos simultâneas (430/512 MB local)       | Medir no passo 15 e no roteiro de fotos; critério de interrupção > 90%                                                                                                               |
+| Imagem validada localmente ≠ registro                                | `prepare_version` confere digests do registro na VM (passo 2)                                                                                                                        |
+| Ressalvas abertas (fotos antigas com GPS, CPU na VM, Safari, tablet) | Roteiro manual; migração de fotos antigas fora deste deploy                                                                                                                          |
 
 ## 4. Sequência exata do deploy (NÃO executar sem autorização)
 
@@ -203,11 +275,17 @@ Indisponibilidade estimada (3–9): 5–10 min.
 
 ## 6. Veredito
 
-**GO COM RESSALVAS — condicionado à evidência do item 3.** Tudo o mais está aprovado com evidência:
-versões e digests conferidos, banco sem pendências, backup íntegro, retorno testado sem perda e sem
-efeito financeiro, 15 GB livres, homologação isolada e sem integrações externas. Antes de autorizar
-o deploy, execute a leitura da seção 2.3.1:
+**GO COM RESSALVAS** para o deploy integrado.
 
-- "ausente na origem" → o veredito fica **GO COM RESSALVAS** (ressalvas: anexo órfão pré-existente,
-  prova de foto real no passo 17, memória com fotos, testes manuais);
-- "presente na origem e ausente no backup" → **NO-GO** até corrigir o backup de arquivos.
+- O registro sem arquivo é **preexistente**, está documentado e preservado, e o deploy não o
+  altera nem o agrava (2.8).
+- O backup e a restauração de arquivos estão **comprovados em ambiente isolado** com a mesma
+  imagem, os mesmos scripts e as mesmas montagens da homologação, com SHA-256 idênticos.
+- O backup de arquivos **ainda não está plenamente aprovado na infraestrutura real**: falta a prova
+  na VM. Recomendação: autorizar `testar-backup-arquivos-vm.sh` (não altera volumes, banco,
+  backups nem contêineres) **antes** do deploy; se preferir não executar nada na VM agora, a prova
+  fica no passo 17, e o deploy segue apoiado no ponto de recuperação do passo 4.
+
+Ressalvas: causa do registro a confirmar pela nova leitura; 500 preexistente ao abrir arquivo
+ausente; memória da API com fotos; testes manuais pendentes. Nada foi implantado; aguardo sua
+autorização explícita.

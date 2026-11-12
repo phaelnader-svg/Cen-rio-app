@@ -1,0 +1,21 @@
+→ banco de origem descartável com 1 arquivo registrado (24118 bytes)
+  arquivo  attachment/ec1a18c9-9c5c-451c-bc54-efe160bc9735  sha256 f35644cb85fdbee76d63cec56e932dd308a0bd4ac873dc7a96bfdeb5829ded5d
+  miniatura attachment-thumb/ec1a18c9-9c5c-451c-bc54-efe160bc9735  sha256 c10803393be3cf33b9040932f2d93b50358b3dbe359737ce3d72746e907c6830
+→ backup como o serviço da homologação: bash /scripts/backup.sh /data/backups
+    → Banco de dados…
+    → Arquivos privados (/data/storage)…
+    ✔ Backup concluído: /data/backups/cenario-staging-20261112T172755Z
+  conteúdo do storage.tar.gz:
+    -rw------- 1000/1000     24118 2026-11-12 17:27 ./attachment/ec1a18c9-9c5c-451c-bc54-efe160bc9735
+    -rw------- 1000/1000      2048 2026-11-12 17:27 ./attachment-thumb/ec1a18c9-9c5c-451c-bc54-efe160bc9735
+  ✔ SHA256SUMS do backup conferido
+→ restauração como vm.sh restaurar-teste (arquivos em /tmp/rs, contados e com hash)
+    arquivos restaurados: 2
+    f35644cb85fdbee76d63cec56e932dd308a0bd4ac873dc7a96bfdeb5829ded5d  /tmp/rs/attachment/ec1a18c9-9c5c-451c-bc54-efe160bc9735
+    c10803393be3cf33b9040932f2d93b50358b3dbe359737ce3d72746e907c6830  /tmp/rs/attachment-thumb/ec1a18c9-9c5c-451c-bc54-efe160bc9735
+  ✔ restauração de teste: 2 arquivos, SHA-256 idênticos
+→ restauração como vm.sh recuperar (arquivos num volume gravável)
+  ✔ restauração para volume: arquivo, miniatura e registro idênticos (SHA-256); dono 1000, modo 600 (legível pela API)
+→ origem intacta depois de tudo
+  ✔ origem inalterada (montada somente leitura)
+✔ Backup e restauração de arquivos verificados com a imagem mirror.gcr.io/library/postgres:16.
