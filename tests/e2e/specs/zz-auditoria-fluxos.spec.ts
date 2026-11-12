@@ -437,9 +437,32 @@ test('fotos: enviar, ampliar, remover e arquivo inexistente', async ({ page }) =
     !/Application error|Algo deu errado/i.test(tela),
   );
 
-  // Remover pela tela.
-  page.on('dialog', (d) => void d.accept());
+  // Remover pela tela (U1): pede confirmação; "Manter foto" não remove.
   await lista.getByRole('button', { name: 'Remover foto' }).first().click();
+  const conf = page.getByRole('dialog', { name: 'Remover foto?' });
+  const pediu = await conf
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
+    .catch(() => false);
+  anota(
+    F,
+    'remover pede confirmação',
+    'diálogo "Remover foto?"',
+    pediu ? 'exibido' : 'removeu direto',
+    pediu,
+  );
+  await conf.getByRole('button', { name: 'Manter foto' }).click();
+  await page.waitForTimeout(800);
+  const mantida = await ampliar.count();
+  anota(
+    F,
+    'cancelar a remoção',
+    'foto continua na galeria',
+    `${mantida} na galeria`,
+    mantida === 1,
+  );
+  await lista.getByRole('button', { name: 'Remover foto' }).first().click();
+  await page.getByTestId('confirmar-remover-foto').click();
   await expect(ampliar)
     .toHaveCount(0, { timeout: 10_000 })
     .catch(() => undefined);
@@ -454,4 +477,161 @@ test('fotos: enviar, ampliar, remover e arquivo inexistente', async ({ page }) =
     erros5xx.join('; ') || 'nenhuma',
     erros5xx.every((e) => e.includes(fileId)),
   );
+});
+
+test('permissões corrigidas: menu e telas por perfil (B1, B2, B5, B6)', async ({
+  page,
+  browser,
+}) => {
+  const F = 'Permissões';
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loginAdmin(page);
+  const t = tag();
+  const perfil = async (nome: string, perms: string[]) => {
+    const role = await call(page, 'POST', '/api/roles', {
+      name: `${nome} ${t}`,
+      permissions: ['painel.acessar', ...perms],
+    });
+    const email = `${nome.toLowerCase()}-${t}@hml.teste.local`;
+    await call(page, 'POST', '/api/employees', {
+      fullName: `${nome} ${t}`,
+      displayName: nome.slice(0, 40),
+      jobTitle: 'Teste',
+      color: '#445566',
+      roleIds: [role.body.id],
+      email,
+      password: 'SenhaHml12345',
+    });
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const p = await ctx.newPage();
+    const r403: string[] = [];
+    p.on('response', (r) => {
+      if (r.url().includes('/api/') && r.status() === 403) r403.push(r.url().replace(origin, ''));
+    });
+    await p.goto('/entrar');
+    await p.getByLabel('E-mail').fill(email);
+    await p.getByLabel('Senha').fill('SenhaHml12345');
+    await p.getByRole('button', { name: 'Entrar' }).click();
+    await p.waitForURL(/\/painel$/);
+    const menu = await p
+      .getByRole('navigation', { name: 'Navegação principal' })
+      .first()
+      .locator('a[href^="/painel"]')
+      .evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+    const abrir = async (rota: string) => {
+      r403.length = 0;
+      await p.goto(rota);
+      await p.waitForLoadState('networkidle').catch(() => undefined);
+      await p.waitForTimeout(500);
+      return { texto: await p.locator('body').innerText(), r403: [...r403] };
+    };
+    return { menu, abrir, fechar: () => ctx.close() };
+  };
+
+  // B1
+  const soPedidos = await perfil('HML-SoPedidos', ['pedidos.ver', 'pedidos.gerenciar']);
+  anota(
+    F,
+    'B1 sem retiradas.gerenciar',
+    'sem "Novo serviço" no menu',
+    soPedidos.menu.includes('/painel/servicos/novo') ? 'no menu' : 'fora do menu',
+    !soPedidos.menu.includes('/painel/servicos/novo'),
+  );
+  await soPedidos.fechar();
+  const novoServico = await perfil('HML-NovoServico', [
+    'pedidos.ver',
+    'pedidos.gerenciar',
+    'retiradas.gerenciar',
+    'retiradas.ver',
+    'clientes.ver',
+  ]);
+  const ns = await novoServico.abrir('/painel/servicos/novo');
+  anota(
+    F,
+    'B1 com as duas permissões',
+    '"Novo serviço" no menu e tela sem 403',
+    `${novoServico.menu.includes('/painel/servicos/novo') ? 'no menu' : 'fora do menu'} · 403: ${ns.r403.join(', ') || 'nenhum'}`,
+    novoServico.menu.includes('/painel/servicos/novo') && ns.r403.length === 0,
+  );
+  await novoServico.fechar();
+
+  // B2
+  const leitura = await perfil('HML-SoOs', ['os.ver']);
+  const rm = await leitura.abrir('/painel/recebimento-materiais');
+  anota(
+    F,
+    'B2 sem estoque/compras',
+    'item no menu (qualquer funcionário recebe), tela sem 403 e sem a lista de conferência',
+    `${leitura.menu.includes('/painel/recebimento-materiais') ? 'no menu' : 'fora'} · 403: ${rm.r403.join(', ') || 'nenhum'}`,
+    leitura.menu.includes('/painel/recebimento-materiais') && rm.r403.length === 0,
+  );
+  // B5
+  for (const rota of ['/painel/dispositivos', '/painel/sincronizacao']) {
+    const v = await leitura.abrir(rota);
+    const negado = /Acesso negado/.test(v.texto) && /não tem permissão/.test(v.texto);
+    anota(
+      F,
+      `B5 ${rota} sem permissão`,
+      'aviso "Acesso negado", sem 403 e sem dados',
+      `${negado ? 'aviso exibido' : 'sem aviso'} · 403: ${v.r403.join(', ') || 'nenhum'}`,
+      negado && v.r403.length === 0,
+    );
+  }
+  // B6 — proibido
+  anota(
+    F,
+    'B6 sem pedidos.ver nem devolucoes.gerenciar',
+    'sem "Devoluções" no menu',
+    leitura.menu.includes('/painel/devolucoes') ? 'no menu' : 'fora do menu',
+    !leitura.menu.includes('/painel/devolucoes'),
+  );
+  await leitura.fechar();
+  const estoque = await perfil('HML-Estoque', ['estoque.ver']);
+  const rmE = await estoque.abrir('/painel/recebimento-materiais');
+  anota(
+    F,
+    'B2 com estoque.ver',
+    'tela sem 403 (lista de conferência permitida)',
+    `403: ${rmE.r403.join(', ') || 'nenhum'}`,
+    rmE.r403.length === 0,
+  );
+  await estoque.fechar();
+  // B6 — permitido só para consultar
+  const consulta = await perfil('HML-PedidosVer', ['pedidos.ver']);
+  const dv = await consulta.abrir('/painel/devolucoes');
+  anota(
+    F,
+    'B6 com pedidos.ver',
+    '"Devoluções" no menu, consulta sem 403 e sem botão de registrar',
+    `${consulta.menu.includes('/painel/devolucoes') ? 'no menu' : 'fora'} · 403: ${dv.r403.join(', ') || 'nenhum'} · botão: ${/Registrar devolução/.test(dv.texto) ? 'sim' : 'não'}`,
+    consulta.menu.includes('/painel/devolucoes') &&
+      dv.r403.length === 0 &&
+      !/Registrar devolução/.test(dv.texto),
+  );
+  await consulta.fechar();
+  // B5 / B6 — permitido para quem gerencia
+  const gestorDev = await perfil('HML-Devolucoes', [
+    'devolucoes.gerenciar',
+    'dispositivos.ver',
+    'sincronizacao.diagnosticar',
+  ]);
+  const dv2 = await gestorDev.abrir('/painel/devolucoes');
+  anota(
+    F,
+    'B6 com devolucoes.gerenciar',
+    'botão "Registrar devolução"',
+    /Registrar devolução/.test(dv2.texto) ? 'exibido' : 'ausente',
+    /Registrar devolução/.test(dv2.texto),
+  );
+  for (const rota of ['/painel/dispositivos', '/painel/sincronizacao']) {
+    const v = await gestorDev.abrir(rota);
+    anota(
+      F,
+      `B5 ${rota} com permissão`,
+      'conteúdo normal, sem aviso de acesso negado',
+      /Acesso negado/.test(v.texto) ? 'aviso indevido' : 'conteúdo normal',
+      !/Acesso negado/.test(v.texto) && v.r403.length === 0,
+    );
+  }
+  await gestorDev.fechar();
 });

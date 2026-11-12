@@ -53,9 +53,14 @@ export function MaterialReceiving({
   conference?: boolean;
 }) {
   const pending = usePendingReceipts();
-  const arrivals = useMaterialArrivals('PENDENTE_CONFERENCIA', Boolean(conference));
+  const can = useCan();
+  // B2: registrar a chegada é de qualquer funcionário; a lista "aguardando conferência" exige o
+  // que a API exige (estoque.ver, compras.ver ou estoque.gerenciar) — sem isso não é pedida nem
+  // mostrada (antes: 403 para todo perfil sem estoque/compras).
+  const seeArrivals = can('estoque.ver') || can('compras.ver') || can('estoque.gerenciar');
+  const arrivals = useMaterialArrivals('PENDENTE_CONFERENCIA', Boolean(conference) && seeArrivals);
   // F3-17: conferência técnica exige a capacidade própria (receber não basta).
-  const canConfer = useCan()('estoque.conferir');
+  const canConfer = can('estoque.conferir');
   const [selected, setSelected] = useState<string | null>(initialId ?? null);
   const [arrival, setArrival] = useState<MaterialArrivalDto | null>(null);
   const [done, setDone] = useState<MaterialReceiptDto | null>(null);
@@ -109,7 +114,7 @@ export function MaterialReceiving({
     );
   }
   const physical =
-    conference && arrivals.data?.length ? (
+    conference && seeArrivals && arrivals.data?.length ? (
       <Card className="mb-6 overflow-hidden" data-testid="material-arrivals">
         <h2 className="border-b border-line px-5 py-3.5 font-semibold">
           Chegadas físicas aguardando conferência

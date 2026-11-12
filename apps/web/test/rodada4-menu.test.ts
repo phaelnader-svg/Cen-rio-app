@@ -11,18 +11,18 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ALL_PERMISSIONS, isPermission } from '@cenario/shared';
+import { ALL_PERMISSIONS, MODULE_KEYS, isPermission, type Permission } from '@cenario/shared';
 import { describe, expect, it } from 'vitest';
-import { NAV, NAV_GROUPS, navGroupOf } from '../components/admin/nav';
+import { NAV, NAV_GROUPS, navGroupOf, visibleNav } from '../components/admin/nav';
+
+const ALL_MODULES_ON = Object.fromEntries(MODULE_KEYS.map((k) => [k, true]));
 
 type Entry = { kind: 'header' | 'link'; text: string; href?: string };
 
 /** Mesma montagem de shell.tsx: filtra por permissão, ordena por área e põe os cabeçalhos. */
 function sidebar(perms: readonly string[]): Entry[] {
-  const set = new Set(perms);
-  const items = NAV.filter((i) => !i.anyOf || i.anyOf.some((p) => set.has(p)))
-    .map((i, n) => ({ ...i, group: navGroupOf(i.href), n }))
-    .sort((a, b) => NAV_GROUPS.indexOf(a.group) - NAV_GROUPS.indexOf(b.group) || a.n - b.n);
+  // A mesma função usada pela barra lateral (shell.tsx), com todas as funcionalidades ligadas.
+  const items = visibleNav(new Set(perms) as ReadonlySet<Permission>, ALL_MODULES_ON);
   const out: Entry[] = [];
   items.forEach((item, idx) => {
     const header = idx === 0 || items[idx - 1]!.group !== item.group;
@@ -35,9 +35,13 @@ const headers = (e: Entry[]) => e.filter((x) => x.kind === 'header').map((x) => 
 const links = (e: Entry[]) => e.filter((x) => x.kind === 'link').map((x) => x.text);
 
 /** Área e permissões esperadas de cada item (trava: mudar exige atualizar aqui). */
-const EXPECTED: Record<string, { group: string; anyOf?: string[] }> = {
+const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string[] }> = {
   '/painel': { group: 'Início' },
-  '/painel/servicos/novo': { group: 'Serviços', anyOf: ['pedidos.gerenciar'] },
+  // B1 (homologação funcional): a tela exige as DUAS permissões na API.
+  '/painel/servicos/novo': {
+    group: 'Serviços',
+    allOf: ['pedidos.gerenciar', 'retiradas.gerenciar'],
+  },
   '/painel/atencao': { group: 'Início', anyOf: ['ocorrencias.ver', 'ocorrencias.gerenciar'] },
   '/painel/funcionarios': { group: 'Administração', anyOf: ['funcionarios.ver'] },
   '/painel/funcoes': { group: 'Administração', anyOf: ['funcoes.ver'] },
@@ -96,7 +100,8 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[] }> = {
   },
   '/painel/qualidade': { group: 'Serviços', anyOf: ['qualidade.gerenciar'] },
   '/painel/entregas': { group: 'Serviços', anyOf: ['entregas.ver', 'entregas.gerenciar'] },
-  '/painel/devolucoes': { group: 'Serviços', anyOf: ['devolucoes.gerenciar'] },
+  // B6: as mesmas permissões que a API aceita para consultar (RETURNS_VIEW).
+  '/painel/devolucoes': { group: 'Serviços', anyOf: ['devolucoes.gerenciar', 'pedidos.ver'] },
   '/painel/financeiro': { group: 'Financeiro', anyOf: ['financeiro.ver'] },
   '/painel/presenca': { group: 'Produção', anyOf: ['presenca.ver', 'presenca.gerenciar'] },
   '/painel/empresa': { group: 'Administração', anyOf: ['empresa.ver'] },
@@ -118,11 +123,8 @@ describe('F10-01 — menu em seis áreas', () => {
 
   it('a barra lateral usa exatamente esta montagem (filtro, ordenação e cabeçalhos)', () => {
     const shell = readFileSync(resolve(__dirname, '../components/admin/shell.tsx'), 'utf8');
-    expect(shell).toContain('NAV.filter((i) => !i.anyOf || i.anyOf.some((p) => perms.has(p)))');
-    expect(shell).toContain('.map((i, n) => ({ ...i, group: navGroupOf(i.href), n }))');
-    expect(shell).toContain(
-      '.sort((a, b) => NAV_GROUPS.indexOf(a.group) - NAV_GROUPS.indexOf(b.group) || a.n - b.n)',
-    );
+    // Homologação funcional (B1): filtro, ordenação e allOf ficam em visibleNav (nav.ts).
+    expect(shell).toContain('const items = visibleNav(perms, modules);');
     expect(shell).toContain('const header = idx === 0 || items[idx - 1]!.group !== item.group;');
     expect(shell).toContain("{header && item.group !== 'Início' && (");
   });
@@ -152,7 +154,9 @@ describe('F10-01 — menu em seis áreas', () => {
     for (const item of NAV) {
       expect(navGroupOf(item.href), item.href).toBe(EXPECTED[item.href]!.group);
       expect(item.anyOf, item.href).toEqual(EXPECTED[item.href]!.anyOf);
-      for (const p of item.anyOf ?? []) expect(isPermission(p), `${item.href}: ${p}`).toBe(true);
+      expect(item.allOf, item.href).toEqual(EXPECTED[item.href]!.allOf);
+      for (const p of [...(item.anyOf ?? []), ...(item.allOf ?? [])])
+        expect(isPermission(p), `${item.href}: ${p}`).toBe(true);
     }
     // F1-13: "Materiais aprovados" voltou ao menu, na área Compras.
     expect(NAV.find((i) => i.href === '/painel/materiais')?.label).toBe('Materiais aprovados');
@@ -221,5 +225,29 @@ describe('F10-01 — menu em seis áreas', () => {
     expect(item.label).toBe('Recebimento de materiais');
     expect(item.anyOf).toBeUndefined();
     expect(links(sidebar(['painel.acessar']))).toEqual(['Início', 'Recebimento de materiais']);
+  });
+});
+
+/** Homologação funcional F′ — B1, B2 e B6: menu × permissões efetivas da API. */
+describe('Menu alinhado às permissões da API (B1, B2, B6)', () => {
+  const tem = (perms: string[], href: string) =>
+    links(sidebar(['painel.acessar', ...perms])).includes(NAV.find((i) => i.href === href)!.label);
+  it('B1: "Novo serviço" só com pedidos.gerenciar E retiradas.gerenciar', () => {
+    expect(tem(['pedidos.gerenciar'], '/painel/servicos/novo')).toBe(false);
+    expect(tem(['retiradas.gerenciar'], '/painel/servicos/novo')).toBe(false);
+    expect(tem(['pedidos.gerenciar', 'retiradas.gerenciar'], '/painel/servicos/novo')).toBe(true);
+  });
+  it('B2: "Recebimento de materiais" para todo funcionário (API: ANY_EMPLOYEE)', () => {
+    expect(tem([], '/painel/recebimento-materiais')).toBe(true);
+    expect(tem(['os.ver'], '/painel/recebimento-materiais')).toBe(true);
+  });
+  it('B6: "Devoluções" com devolucoes.gerenciar OU pedidos.ver (API: RETURNS_VIEW)', () => {
+    expect(tem(['pedidos.ver'], '/painel/devolucoes')).toBe(true);
+    expect(tem(['devolucoes.gerenciar'], '/painel/devolucoes')).toBe(true);
+    expect(tem(['os.ver', 'clientes.ver'], '/painel/devolucoes')).toBe(false);
+  });
+  it('nenhuma permissão nova foi criada para o menu', () => {
+    for (const i of NAV)
+      for (const p of [...(i.anyOf ?? []), ...(i.allOf ?? [])]) expect(isPermission(p)).toBe(true);
   });
 });

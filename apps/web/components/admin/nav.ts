@@ -41,6 +41,11 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   anyOf?: Permission[];
+  /**
+   * Todas obrigatórias (além de `anyOf`, se houver). Para itens cuja tela exige mais de uma
+   * permissão na API — o menu nunca mostra o que a tela não deixaria usar.
+   */
+  allOf?: Permission[];
   /** Reformulação, Fase 0: some do menu quando a funcionalidade está desligada. */
   module?: ModuleKey;
 }
@@ -97,7 +102,8 @@ export const NAV: NavItem[] = [
     href: '/painel/servicos/novo',
     label: 'Novo serviço',
     icon: ClipboardPlus,
-    anyOf: ['pedidos.gerenciar'],
+    // B1: a tela usa /api/v1/services/new-defaults e /api/v1/services, que exigem as duas.
+    allOf: ['pedidos.gerenciar', 'retiradas.gerenciar'],
   },
   {
     href: '/painel/atencao',
@@ -215,6 +221,9 @@ export const NAV: NavItem[] = [
     icon: Store,
     anyOf: ['compras.ver', 'compras.gerenciar'],
   },
+  // Sem filtro de propósito: registrar a chegada de material é permitido a QUALQUER funcionário
+  // (API: ANY_EMPLOYEE). Só a lista "aguardando conferência" exige estoque/compras — a tela a
+  // esconde de quem não tem essas permissões (B2).
   { href: '/painel/recebimento-materiais', label: 'Recebimento de materiais', icon: PackagePlus },
   {
     href: '/painel/estoque',
@@ -259,7 +268,9 @@ export const NAV: NavItem[] = [
     href: '/painel/devolucoes',
     label: 'Devoluções',
     icon: Undo2,
-    anyOf: ['devolucoes.gerenciar'],
+    // B6: as mesmas permissões que a API aceita para consultar (RETURNS_VIEW); registrar,
+    // confirmar e cancelar continuam exigindo devolucoes.gerenciar (a tela esconde as ações).
+    anyOf: ['devolucoes.gerenciar', 'pedidos.ver'],
   },
   {
     href: '/painel/financeiro',
@@ -285,3 +296,16 @@ export const NAV: NavItem[] = [
 
 /** Módulos das próximas fases: exibidos como indisponíveis (sem link). */
 export const UPCOMING: { label: string; icon: LucideIcon }[] = [];
+
+/** Itens do menu visíveis para um conjunto de permissões e funcionalidades ligadas, na ordem do menu. */
+export function visibleNav(
+  perms: ReadonlySet<Permission>,
+  modules: Partial<Record<ModuleKey, boolean>>,
+): (NavItem & { group: NavGroup })[] {
+  return NAV.filter((i) => !i.anyOf || i.anyOf.some((p) => perms.has(p)))
+    .filter((i) => !i.allOf || i.allOf.every((p) => perms.has(p)))
+    .filter((i) => !i.module || modules[i.module])
+    .map((i, n) => ({ ...i, group: navGroupOf(i.href), n }))
+    .sort((a, b) => NAV_GROUPS.indexOf(a.group) - NAV_GROUPS.indexOf(b.group) || a.n - b.n)
+    .map(({ n: _n, ...i }) => i);
+}

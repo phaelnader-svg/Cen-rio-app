@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Camera, ChevronLeft, ChevronRight, ExternalLink, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Dialog } from '@/components/ui/dialog';
 import { Alert, EmptyState, Spinner } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
 import { useAttachments } from '@/lib/commercial';
@@ -27,6 +28,8 @@ export function PhotoGallery({
   const [caption, setCaption] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<number | null>(null);
+  // U1: remover pede confirmação (antes: removia no primeiro clique).
+  const [removing, setRemoving] = useState<AttachmentDto | null>(null);
   const refresh = () =>
     void qc.invalidateQueries({ queryKey: ['attachments', entityType, entityId] });
 
@@ -47,7 +50,10 @@ export function PhotoGallery({
   });
   const remove = useMutation({
     mutationFn: (id: string) => api(`/api/v1/attachments/${id}`, { method: 'DELETE' }),
-    onSuccess: refresh,
+    onSuccess: () => {
+      setRemoving(null);
+      refresh();
+    },
     onError: (e) => setError(errorMessage(e)),
   });
 
@@ -97,7 +103,7 @@ export function PhotoGallery({
                     type="button"
                     aria-label="Remover foto"
                     className="rounded p-1 hover:bg-line hover:text-danger-600"
-                    onClick={() => remove.mutate(p.id)}
+                    onClick={() => setRemoving(p)}
                   >
                     <Trash2 className="size-3.5" aria-hidden />
                   </button>
@@ -107,6 +113,37 @@ export function PhotoGallery({
           ))}
         </ul>
       )}
+      <Dialog
+        open={removing !== null}
+        onClose={() => setRemoving(null)}
+        size="sm"
+        title="Remover foto?"
+        description="A foto sai da galeria e deixa de abrir. O registro fica no histórico."
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setRemoving(null)}>
+              Manter foto
+            </Button>
+            <Button
+              variant="danger"
+              loading={remove.isPending}
+              onClick={() => removing && remove.mutate(removing.id)}
+              data-testid="confirmar-remover-foto"
+            >
+              Remover foto
+            </Button>
+          </>
+        }
+      >
+        {removing && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={removing.thumbUrl}
+            alt={removing.caption ?? 'Foto a remover'}
+            className="mx-auto max-h-48 rounded-lg object-contain"
+          />
+        )}
+      </Dialog>
       {viewing !== null && photos.data && photos.data[viewing] && (
         <PhotoViewer
           photos={photos.data}

@@ -58,6 +58,19 @@ export function DevicesPage() {
   >(null);
   const close = () => setDialog(null);
 
+  // B5: aberta direto pelo endereço por quem não pode ver dispositivos nem sessões.
+  if (!can('dispositivos.ver') && !can('sessoes.ver'))
+    return (
+      <>
+        <PageHeader title="Dispositivos e sessões" />
+        <div data-testid="acesso-negado">
+          <Alert tone="warn" title="Acesso negado">
+            Você não tem permissão para ver dispositivos nem sessões. Peça acesso ao gestor.
+          </Alert>
+        </div>
+      </>
+    );
+
   return (
     <>
       <PageHeader

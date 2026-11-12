@@ -45,6 +45,16 @@ const secureHeaders = {
 
 export async function fileRoutes(app: FastifyInstance) {
   const { prisma, storage } = app.ctx;
+  // B3: registro existente cujo arquivo físico sumiu → 404 (antes: 500 "Erro não tratado").
+  // Só é chamado DEPOIS de readable(): autenticação e autorização continuam valendo primeiro.
+  const ler = async (key: string) => {
+    try {
+      return await storage.read(key);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') throw Errors.notFound('Arquivo');
+      throw e;
+    }
+  };
 
   /** Carrega o registro e aplica a política de leitura da finalidade (negado por padrão). */
   async function readable(request: FastifyRequest) {
@@ -61,7 +71,7 @@ export async function fileRoutes(app: FastifyInstance) {
     const disposition = `inline; filename="${encodeURIComponent(file.originalName).replace(/"/g, '')}"`;
     // Fase 2: foto anterior ao tratamento sai SEM metadados (EXIF/GPS), sem regravar o original.
     if (!file.processedAt && IMAGE_MIMES.has(file.mimeType)) {
-      const { stream } = await storage.read(file.storageKey);
+      const { stream } = await ler(file.storageKey);
       const clean = await sanitizeLegacy(await toBuffer(stream), file.mimeType as ImageMime);
       return reply
         .headers(secureHeaders)
@@ -70,7 +80,7 @@ export async function fileRoutes(app: FastifyInstance) {
         .header('content-disposition', disposition)
         .send(clean);
     }
-    const { stream, size } = await storage.read(file.storageKey);
+    const { stream, size } = await ler(file.storageKey);
     return reply
       .headers(secureHeaders)
       .header('content-type', file.mimeType)
@@ -90,8 +100,16 @@ export async function fileRoutes(app: FastifyInstance) {
       const file = await readable(request);
       if (!IMAGE_MIMES.has(file.mimeType)) throw Errors.notFound('Miniatura');
       let data: Buffer;
-      if (file.thumbKey) data = await toBuffer((await storage.read(file.thumbKey)).stream);
-      else data = await thumbnail(await toBuffer((await storage.read(file.storageKey)).stream));
+      // Miniatura salva ausente mas original presente: gera da original (como nas fotos antigas).
+      let salva: Buffer | null = null;
+      if (file.thumbKey) {
+        try {
+          salva = await toBuffer((await ler(file.thumbKey)).stream);
+        } catch (e) {
+          if ((e as { statusCode?: number }).statusCode !== 404) throw e;
+        }
+      }
+      data = salva ?? (await thumbnail(await toBuffer((await ler(file.storageKey)).stream)));
       return reply
         .headers(secureHeaders)
         .header('content-type', 'image/webp')
