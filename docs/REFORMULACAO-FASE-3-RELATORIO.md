@@ -135,8 +135,8 @@ menu continuam existindo; E2E confirma que abrem pelo endereço.
 | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | shared                                               | **151 passaram**, 0 falharam                                                                                                                                                                                                           |
 | web (unitários)                                      | **22 passaram**, 0 falharam                                                                                                                                                                                                            |
-| API, suíte completa                                  | **992 passaram, 0 falharam, 13 pulados** (os opcionais pré-existentes de desempenho e proxy)                                                                                                                                           |
-| E2E de navegador, suíte completa                     | **65 passaram, 0 falharam, 0 pulados** (rodada final, 18,9 min) — ver 10.1 sobre as rodadas anteriores                                                                                                                                 |
+| API, suíte completa                                  | **1000 passaram, 0 falharam, 13 pulados** (após a reversão: 999 + a trava estrutural ajustada para a chave nova; os 13 são os opcionais pré-existentes)                                                                                |
+| E2E de navegador, suíte completa                     | **66 passaram, 0 falharam, 0 pulados** (rodada final, com a E2E da reversão; 18,9 min) — ver 10.1 sobre as rodadas anteriores                                                                                                          |
 | Lint, typecheck, formatação, build                   | **sem erros nem avisos**; build do web ok                                                                                                                                                                                              |
 | Cadeia completa de migrations                        | **passou**: aplica sobre o legado com dados idênticos; reverte (a da Fase 3 primeiro) e reaplica idêntico; com dados novos recusa cada reversão de forma atômica — Fase 3: "2 registro(s) da Fase 3"; backup e restauração verificados |
 | Compatibilidade `3e0d2d0` no schema novo (Fases 2+3) | **971 passaram, 1 falha estática esperada, 13 pulados** — a mesma trava de leitura de arquivo das Fases 1 e 2 (não conhece as cláusulas `ON UPDATE CASCADE` da migration da Fase 2); nenhum teste de execução falhou                   |
@@ -190,8 +190,8 @@ cortado — o mesmo da tela antiga de planejamento; não alterado.
 
 - **Branch:** `claude/reformulacao-fase-3`. **Commit final:** o commit que contém esta versão do
   relatório (informado no encerramento).
-- **Totais (rodada final):** shared 151/151 · web 22/22 · API 992 passaram, 0 falharam, 13 pulados
-  · E2E 65/65 · lint, typecheck, formatação e build sem erros.
+- **Totais (rodada final, com a reversão):** shared 151/151 · web 22/22 · API 1000 passaram, 0
+  falharam, 13 pulados · E2E 66/66 · lint, typecheck, formatação e build sem erros.
 - **Migrations:** cadeia completa aprovada (aplica, reverte, reaplica idêntico; recusa atômica com
   dados de cada fase, inclusive da Fase 3; backup e restauração).
 - **Compatibilidade:** `3e0d2d0` + pastas das migrations das Fases 2 e 3: 971 passaram, 1 falha
@@ -211,11 +211,12 @@ cortado — o mesmo da tela antiga de planejamento; não alterado.
 3. `measurements.spec` falhou uma vez (tela de login no meio do teste) e **não se repetiu** nas duas
    rodadas completas seguintes nem isoladamente — registrado como instabilidade pontual do E2E.
 
-**Veredito: GO COM RESSALVAS** para aprovação técnica da Fase 3. Ressalvas:
+**Veredito: GO COM RESSALVAS** para aprovação técnica da Fase 3 (itens 1 a 6). Ressalvas:
 
-1. Item 6 (desfazer a entrega direta) **não implementado** — aguarda aprovação da regra proposta.
+1. A reversão da entrega direta é uma exceção financeira controlada: depende das permissões e
+   da auditoria destacada; foi validada só em ambiente isolado.
 2. Retorno de versão exige tratar antes as peças aprovadas sem embalagem e não entregues (seção 5).
 3. As ressalvas da Fase 2 continuam abertas (seção 7).
 4. Validação funcional integrada só na homologação final.
 
-A Fase 4 **não** foi iniciada; aguarda autorização.
+Fase 3 validada (itens 1 a 6). Conforme a autorização, a Fase 4 começa a partir deste commit.
