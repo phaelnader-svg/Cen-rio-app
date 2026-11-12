@@ -23,8 +23,8 @@ A Fase 4 foi iniciada depois da validação desta fase, a partir do commit final
 
 ## 2. Arquivos e migration
 
-**Migration aditiva** `20270323000000_reformulacao_fase_3` (sha256 `1bbfc4f6…`), reversão
-`packages/db/rollback/20270323000000_reformulacao_fase_3.down.sql` (sha256 `f78fec5a…`):
+**Migration aditiva** `20270323000000_reformulacao_fase_3` (sha256 `bfc06786…`, versão final com a reversão), reversão
+`packages/db/rollback/20270323000000_reformulacao_fase_3.down.sql` (sha256 `acc275a9…`):
 
 - `quality_inspections.self_approval_reason` (anulável) + CHECK (só em inspeção aprovada, ≥ 10
   caracteres úteis);

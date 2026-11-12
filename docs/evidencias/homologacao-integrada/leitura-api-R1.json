@@ -1,0 +1,128 @@
+{
+  "login": 200,
+  "me": {
+    "status": 200
+  },
+  "serviceOrder": {
+    "status": 200
+  },
+  "serviceOrders": {
+    "status": 200
+  },
+  "directDelivery": {
+    "status": 200,
+    "resumo": {
+      "eligible": false,
+      "delivered": false,
+      "blocks": [
+        {
+          "itemId": "06c07219-6412-431b-9d47-8f671a8f7ff8",
+          "code": "OS-00001/1",
+          "reasons": ["embalagem concluída"]
+        },
+        {
+          "itemId": "e07f37d6-42b8-4e53-91c4-140ed540a53e",
+          "code": "OS-00001/2",
+          "reasons": ["embalagem concluída"]
+        }
+      ]
+    }
+  },
+  "operationalState": {
+    "status": 200
+  },
+  "deliveries": {
+    "status": 200
+  },
+  "delivery": {
+    "status": 200,
+    "resumo": {
+      "status": "CONCLUIDA",
+      "origin": "DIRETA",
+      "items": [
+        {
+          "serviceOrderItemId": "06c07219-6412-431b-9d47-8f671a8f7ff8",
+          "code": "OS-00001/1",
+          "description": "Sofá 3 lugares",
+          "pieceType": "SOFA",
+          "quantity": 1,
+          "stage": "PRONTA_ENTREGA",
+          "ready": true,
+          "status": "NAO_ENTREGUE",
+          "note": "Entrega direta desfeita: Entrega marcada por engano no teste de retorno",
+          "deliveredAt": "2026-11-12T14:57:59.799Z"
+        },
+        {
+          "serviceOrderItemId": "e07f37d6-42b8-4e53-91c4-140ed540a53e",
+          "code": "OS-00001/2",
+          "description": "Poltronas",
+          "pieceType": "POLTRONA",
+          "quantity": 2,
+          "stage": "PRONTA_ENTREGA",
+          "ready": true,
+          "status": "NAO_ENTREGUE",
+          "note": "Entrega direta desfeita: Entrega marcada por engano no teste de retorno",
+          "deliveredAt": "2026-11-12T14:57:59.799Z"
+        }
+      ]
+    }
+  },
+  "pieceSofa": {
+    "status": 200,
+    "resumo": {
+      "stage": "PRONTA_ENTREGA"
+    }
+  },
+  "piecePoltronas": {
+    "status": 200,
+    "resumo": {
+      "stage": "PRONTA_ENTREGA"
+    }
+  },
+  "pieces": {
+    "status": 200
+  },
+  "laborE": {
+    "status": 200,
+    "resumo": {
+      "eligible": false,
+      "status": "PREVISTO",
+      "paidCents": 0,
+      "eligibleAt": null
+    }
+  },
+  "laborQ": {
+    "status": 200,
+    "resumo": {
+      "eligible": true,
+      "status": "PAGO_PARCIAL",
+      "paidCents": 10000,
+      "eligibleAt": "2026-11-12T14:57:59.546Z"
+    }
+  },
+  "receivable": {
+    "status": 200,
+    "resumo": {
+      "status": "ABERTO",
+      "effectiveDueDate": null
+    }
+  },
+  "financeDashboard": {
+    "status": 200
+  },
+  "financeLabor": {
+    "status": 200
+  },
+  "overview": {
+    "status": 200
+  },
+  "notifications": {
+    "status": 200
+  },
+  "attachments": {
+    "status": 200
+  },
+  "today": {
+    "status": 404
+  }
+}
