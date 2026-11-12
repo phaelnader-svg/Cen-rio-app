@@ -1,0 +1,2539 @@
+{
+  "HML-Financeiro": {
+    "permissoes": ["painel.acessar", "financeiro.ver", "financeiro.gerenciar"],
+    "menu": ["/painel", "/painel/recebimento-materiais", "/painel/financeiro", "/painel/conta"],
+    "visitas": [
+      {
+        "rota": "/painel",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/ajuda",
+        "noMenu": false,
+        "api403": ["GET /api/v1/help-requests"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/atencao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/workers", "GET /api/v1/attention"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/auditoria",
+        "noMenu": false,
+        "api403": ["GET /api/audit"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/clientes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/customers"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/competencias",
+        "noMenu": false,
+        "api403": ["GET /api/v1/skills"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/compras",
+        "noMenu": false,
+        "api403": ["GET /api/v1/purchasing/shortages", "GET /api/v1/purchase-orders"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/compras/novo",
+        "noMenu": false,
+        "api403": ["GET /api/v1/purchasing/needs", "GET /api/v1/purchasing/shortages"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/conta",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/devolucoes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/returns"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/dispositivos",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/empresa",
+        "noMenu": false,
+        "api403": ["GET /api/company/settings"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/entregas",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/deliveries",
+          "GET /api/v1/pieces",
+          "GET /api/v1/logistics-occurrences"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/estoque",
+        "noMenu": false,
+        "api403": ["GET /api/v1/stock-items"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/estoque-oficina",
+        "noMenu": false,
+        "api403": ["GET /api/v1/inventory/categories", "GET /api/v1/inventory/items"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/financeiro",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/fornecedores",
+        "noMenu": false,
+        "api403": ["GET /api/v1/suppliers"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/funcionarios",
+        "noMenu": false,
+        "api403": ["GET /api/employees"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/funcoes",
+        "noMenu": false,
+        "api403": ["GET /api/roles", "GET /api/permissions"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/materiais",
+        "noMenu": false,
+        "api403": ["GET /api/v1/materials/consolidated"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/medicoes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/measurements/awaiting", "GET /api/v1/measurements"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/os",
+        "noMenu": false,
+        "api403": ["GET /api/v1/service-orders"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/os/nova",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/pedidos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/orders"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/pedidos/novo",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/planejamento",
+        "noMenu": false,
+        "api403": ["GET /api/v1/materials/planning"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/presenca",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/attendance/open-shifts",
+          "GET /api/v1/attendance/leaves",
+          "GET /api/v1/attendance/holidays",
+          "GET /api/v1/attendance/team",
+          "GET /api/v1/attendance/impacts"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/reschedule-proposals",
+          "GET /api/v1/production-board",
+          "GET /api/v1/help-requests",
+          "GET /api/v1/production/workers"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/a-planejar",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/mapa",
+        "noMenu": false,
+        "api403": ["GET /api/v1/workshop-map"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/modelos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/service-models"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/planejamento",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/programacao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/prontidao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/material-readiness"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/qualidade",
+        "noMenu": false,
+        "api403": ["GET /api/v1/quality/inspections", "GET /api/v1/packaging"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimento-materiais",
+        "noMenu": true,
+        "api403": ["GET /api/v1/material-arrivals"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimentos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/receipts"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimentos/novo",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/reprogramacao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/reschedule-proposals"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/retiradas",
+        "noMenu": false,
+        "api403": ["GET /api/v1/pickups"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/roteiro",
+        "noMenu": false,
+        "api403": ["GET /api/v1/logistics/route/history", "GET /api/v1/logistics/route"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/servicos/novo",
+        "noMenu": false,
+        "api403": ["GET /api/v1/services/new-defaults"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/sincronizacao",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      }
+    ]
+  },
+  "HML-Financeiro:foraDoMenu": [
+    {
+      "rota": "/painel/ajuda",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/atencao",
+      "api403": 2,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/auditoria",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/clientes",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/competencias",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/compras",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/compras/novo",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/devolucoes",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/dispositivos",
+      "api403": 0,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/empresa",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/entregas",
+      "api403": 3,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/estoque",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/estoque-oficina",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/fornecedores",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/funcionarios",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/funcoes",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/materiais",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/medicoes",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/os",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/os/nova",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/pedidos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/pedidos/novo",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/planejamento",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/presenca",
+      "api403": 5,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao",
+      "api403": 4,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/a-planejar",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/mapa",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/modelos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/planejamento",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/programacao",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/prontidao",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/qualidade",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/recebimentos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/recebimentos/novo",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/reprogramacao",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/retiradas",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/roteiro",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/servicos/novo",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/sincronizacao",
+      "api403": 0,
+      "semPermissao": false
+    }
+  ],
+  "HML-Planejamento": {
+    "permissoes": ["painel.acessar", "producao.ver", "producao.planejar", "os.ver"],
+    "menu": [
+      "/painel",
+      "/painel/os",
+      "/painel/producao/programacao",
+      "/painel/producao",
+      "/painel/producao/mapa",
+      "/painel/ajuda",
+      "/painel/reprogramacao",
+      "/painel/producao/modelos",
+      "/painel/recebimento-materiais",
+      "/painel/prontidao",
+      "/painel/conta"
+    ],
+    "visitas": [
+      {
+        "rota": "/painel",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/ajuda",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/atencao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/attention"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/auditoria",
+        "noMenu": false,
+        "api403": ["GET /api/audit"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/clientes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/customers"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/competencias",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/compras",
+        "noMenu": false,
+        "api403": ["GET /api/v1/purchasing/shortages", "GET /api/v1/purchase-orders"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/compras/novo",
+        "noMenu": false,
+        "api403": ["GET /api/v1/purchasing/needs", "GET /api/v1/purchasing/shortages"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/conta",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/devolucoes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/returns"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/dispositivos",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/empresa",
+        "noMenu": false,
+        "api403": ["GET /api/company/settings"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/entregas",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/deliveries",
+          "GET /api/v1/pieces",
+          "GET /api/v1/logistics-occurrences"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/estoque",
+        "noMenu": false,
+        "api403": ["GET /api/v1/stock-items"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/estoque-oficina",
+        "noMenu": false,
+        "api403": ["GET /api/v1/inventory/categories", "GET /api/v1/inventory/items"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/financeiro",
+        "noMenu": false,
+        "api403": ["GET /api/v1/finance/dashboard"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/fornecedores",
+        "noMenu": false,
+        "api403": ["GET /api/v1/suppliers"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/funcionarios",
+        "noMenu": false,
+        "api403": ["GET /api/employees"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/funcoes",
+        "noMenu": false,
+        "api403": ["GET /api/roles", "GET /api/permissions"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/materiais",
+        "noMenu": false,
+        "api403": ["GET /api/v1/materials/consolidated"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/medicoes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/measurements", "GET /api/v1/measurements/awaiting"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/os",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/os/nova",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/pedidos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/orders"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/pedidos/novo",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/planejamento",
+        "noMenu": false,
+        "api403": ["GET /api/v1/materials/planning"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/presenca",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/attendance/open-shifts",
+          "GET /api/v1/attendance/holidays",
+          "GET /api/v1/attendance/impacts",
+          "GET /api/v1/attendance/team",
+          "GET /api/v1/attendance/leaves"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/a-planejar",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/mapa",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/modelos",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/planejamento",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/programacao",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/prontidao",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/qualidade",
+        "noMenu": false,
+        "api403": ["GET /api/v1/quality/inspections", "GET /api/v1/packaging"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimento-materiais",
+        "noMenu": true,
+        "api403": ["GET /api/v1/material-arrivals"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimentos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/receipts"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimentos/novo",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/reprogramacao",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/retiradas",
+        "noMenu": false,
+        "api403": ["GET /api/v1/pickups"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/roteiro",
+        "noMenu": false,
+        "api403": ["GET /api/v1/logistics/route", "GET /api/v1/logistics/route/history"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/servicos/novo",
+        "noMenu": false,
+        "api403": ["GET /api/v1/services/new-defaults"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/sincronizacao",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      }
+    ]
+  },
+  "HML-Planejamento:foraDoMenu": [
+    {
+      "rota": "/painel/atencao",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/auditoria",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/clientes",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/competencias",
+      "api403": 0,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/compras",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/compras/novo",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/devolucoes",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/dispositivos",
+      "api403": 0,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/empresa",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/entregas",
+      "api403": 3,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/estoque",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/estoque-oficina",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/financeiro",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/fornecedores",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/funcionarios",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/funcoes",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/materiais",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/medicoes",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/os/nova",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/pedidos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/pedidos/novo",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/planejamento",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/presenca",
+      "api403": 5,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/a-planejar",
+      "api403": 0,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/producao/planejamento",
+      "api403": 0,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/qualidade",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/recebimentos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/recebimentos/novo",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/retiradas",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/roteiro",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/servicos/novo",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/sincronizacao",
+      "api403": 0,
+      "semPermissao": false
+    }
+  ],
+  "HML-Entregas": {
+    "permissoes": ["painel.acessar", "os.ver", "entregas.ver", "entregas.gerenciar"],
+    "menu": [
+      "/painel",
+      "/painel/roteiro",
+      "/painel/os",
+      "/painel/entregas",
+      "/painel/producao/mapa",
+      "/painel/recebimento-materiais",
+      "/painel/prontidao",
+      "/painel/conta"
+    ],
+    "visitas": [
+      {
+        "rota": "/painel",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/ajuda",
+        "noMenu": false,
+        "api403": ["GET /api/v1/help-requests"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/atencao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/attention", "GET /api/v1/production/workers"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/auditoria",
+        "noMenu": false,
+        "api403": ["GET /api/audit"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/clientes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/customers"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/competencias",
+        "noMenu": false,
+        "api403": ["GET /api/v1/skills"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/compras",
+        "noMenu": false,
+        "api403": ["GET /api/v1/purchasing/shortages", "GET /api/v1/purchase-orders"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/compras/novo",
+        "noMenu": false,
+        "api403": ["GET /api/v1/purchasing/needs", "GET /api/v1/purchasing/shortages"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/conta",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/devolucoes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/returns"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/dispositivos",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/empresa",
+        "noMenu": false,
+        "api403": ["GET /api/company/settings"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/entregas",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/estoque",
+        "noMenu": false,
+        "api403": ["GET /api/v1/stock-items"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/estoque-oficina",
+        "noMenu": false,
+        "api403": ["GET /api/v1/inventory/items", "GET /api/v1/inventory/categories"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/financeiro",
+        "noMenu": false,
+        "api403": ["GET /api/v1/finance/dashboard"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/fornecedores",
+        "noMenu": false,
+        "api403": ["GET /api/v1/suppliers"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/funcionarios",
+        "noMenu": false,
+        "api403": ["GET /api/employees"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/funcoes",
+        "noMenu": false,
+        "api403": ["GET /api/roles", "GET /api/permissions"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/materiais",
+        "noMenu": false,
+        "api403": ["GET /api/v1/materials/consolidated"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/medicoes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/measurements/awaiting", "GET /api/v1/measurements"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/os",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/os/nova",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/pedidos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/orders"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/pedidos/novo",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/planejamento",
+        "noMenu": false,
+        "api403": ["GET /api/v1/materials/planning"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/presenca",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/attendance/open-shifts",
+          "GET /api/v1/attendance/leaves",
+          "GET /api/v1/attendance/team",
+          "GET /api/v1/attendance/impacts",
+          "GET /api/v1/attendance/holidays"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/reschedule-proposals",
+          "GET /api/v1/help-requests",
+          "GET /api/v1/production-board",
+          "GET /api/v1/production/workers"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/a-planejar",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/mapa",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/modelos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/service-models"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/planejamento",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/programacao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/prontidao",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/qualidade",
+        "noMenu": false,
+        "api403": ["GET /api/v1/quality/inspections", "GET /api/v1/packaging"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimento-materiais",
+        "noMenu": true,
+        "api403": ["GET /api/v1/material-arrivals"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimentos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/receipts"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimentos/novo",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/reprogramacao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/reschedule-proposals"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/retiradas",
+        "noMenu": false,
+        "api403": ["GET /api/v1/pickups"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/roteiro",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/servicos/novo",
+        "noMenu": false,
+        "api403": ["GET /api/v1/services/new-defaults"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/sincronizacao",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      }
+    ]
+  },
+  "HML-Entregas:foraDoMenu": [
+    {
+      "rota": "/painel/ajuda",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/atencao",
+      "api403": 2,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/auditoria",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/clientes",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/competencias",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/compras",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/compras/novo",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/devolucoes",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/dispositivos",
+      "api403": 0,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/empresa",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/estoque",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/estoque-oficina",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/financeiro",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/fornecedores",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/funcionarios",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/funcoes",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/materiais",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/medicoes",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/os/nova",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/pedidos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/pedidos/novo",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/planejamento",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/presenca",
+      "api403": 5,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao",
+      "api403": 4,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/a-planejar",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/modelos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/planejamento",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/programacao",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/qualidade",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/recebimentos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/recebimentos/novo",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/reprogramacao",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/retiradas",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/servicos/novo",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/sincronizacao",
+      "api403": 0,
+      "semPermissao": false
+    }
+  ],
+  "HML-Comercial": {
+    "permissoes": [
+      "painel.acessar",
+      "clientes.ver",
+      "clientes.gerenciar",
+      "pedidos.ver",
+      "pedidos.gerenciar",
+      "os.ver"
+    ],
+    "menu": [
+      "/painel",
+      "/painel/servicos/novo",
+      "/painel/clientes",
+      "/painel/pedidos",
+      "/painel/recebimentos",
+      "/painel/os",
+      "/painel/producao/mapa",
+      "/painel/recebimento-materiais",
+      "/painel/prontidao",
+      "/painel/conta"
+    ],
+    "visitas": [
+      {
+        "rota": "/painel",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/ajuda",
+        "noMenu": false,
+        "api403": ["GET /api/v1/help-requests"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/atencao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/workers", "GET /api/v1/attention"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/auditoria",
+        "noMenu": false,
+        "api403": ["GET /api/audit"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/clientes",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/competencias",
+        "noMenu": false,
+        "api403": ["GET /api/v1/skills"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/compras",
+        "noMenu": false,
+        "api403": ["GET /api/v1/purchasing/shortages", "GET /api/v1/purchase-orders"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/compras/novo",
+        "noMenu": false,
+        "api403": ["GET /api/v1/purchasing/needs", "GET /api/v1/purchasing/shortages"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/conta",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/devolucoes",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/dispositivos",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/empresa",
+        "noMenu": false,
+        "api403": ["GET /api/company/settings"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/entregas",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/deliveries",
+          "GET /api/v1/logistics-occurrences",
+          "GET /api/v1/pieces"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/estoque",
+        "noMenu": false,
+        "api403": ["GET /api/v1/stock-items"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/estoque-oficina",
+        "noMenu": false,
+        "api403": ["GET /api/v1/inventory/items", "GET /api/v1/inventory/categories"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/financeiro",
+        "noMenu": false,
+        "api403": ["GET /api/v1/finance/dashboard"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/fornecedores",
+        "noMenu": false,
+        "api403": ["GET /api/v1/suppliers"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/funcionarios",
+        "noMenu": false,
+        "api403": ["GET /api/employees"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/funcoes",
+        "noMenu": false,
+        "api403": ["GET /api/roles", "GET /api/permissions"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/materiais",
+        "noMenu": false,
+        "api403": ["GET /api/v1/materials/consolidated"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/medicoes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/measurements/awaiting", "GET /api/v1/measurements"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/os",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/os/nova",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/pedidos",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/pedidos/novo",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/planejamento",
+        "noMenu": false,
+        "api403": ["GET /api/v1/materials/planning"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/presenca",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/attendance/open-shifts",
+          "GET /api/v1/attendance/leaves",
+          "GET /api/v1/attendance/holidays",
+          "GET /api/v1/attendance/team",
+          "GET /api/v1/attendance/impacts"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/reschedule-proposals",
+          "GET /api/v1/help-requests",
+          "GET /api/v1/production-board",
+          "GET /api/v1/production/workers"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/a-planejar",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/mapa",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/modelos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/service-models"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/planejamento",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/programacao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/prontidao",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/qualidade",
+        "noMenu": false,
+        "api403": ["GET /api/v1/quality/inspections", "GET /api/v1/packaging"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimento-materiais",
+        "noMenu": true,
+        "api403": ["GET /api/v1/material-arrivals"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimentos",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimentos/novo",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/reprogramacao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/reschedule-proposals"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/retiradas",
+        "noMenu": false,
+        "api403": ["GET /api/v1/pickups"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/roteiro",
+        "noMenu": false,
+        "api403": ["GET /api/v1/logistics/route", "GET /api/v1/logistics/route/history"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/servicos/novo",
+        "noMenu": true,
+        "api403": ["GET /api/v1/services/new-defaults"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/sincronizacao",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      }
+    ]
+  },
+  "HML-Comercial:foraDoMenu": [
+    {
+      "rota": "/painel/ajuda",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/atencao",
+      "api403": 2,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/auditoria",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/competencias",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/compras",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/compras/novo",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/devolucoes",
+      "api403": 0,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/dispositivos",
+      "api403": 0,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/empresa",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/entregas",
+      "api403": 3,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/estoque",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/estoque-oficina",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/financeiro",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/fornecedores",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/funcionarios",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/funcoes",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/materiais",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/medicoes",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/os/nova",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/pedidos/novo",
+      "api403": 0,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/planejamento",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/presenca",
+      "api403": 5,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao",
+      "api403": 4,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/a-planejar",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/modelos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/planejamento",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/programacao",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/qualidade",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/recebimentos/novo",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/reprogramacao",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/retiradas",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/roteiro",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/sincronizacao",
+      "api403": 0,
+      "semPermissao": false
+    }
+  ],
+  "HML-Leitura": {
+    "permissoes": ["painel.acessar", "os.ver"],
+    "menu": [
+      "/painel",
+      "/painel/os",
+      "/painel/producao/mapa",
+      "/painel/recebimento-materiais",
+      "/painel/prontidao",
+      "/painel/conta"
+    ],
+    "visitas": [
+      {
+        "rota": "/painel",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/ajuda",
+        "noMenu": false,
+        "api403": ["GET /api/v1/help-requests"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/atencao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/workers", "GET /api/v1/attention"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/auditoria",
+        "noMenu": false,
+        "api403": ["GET /api/audit"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/clientes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/customers"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/competencias",
+        "noMenu": false,
+        "api403": ["GET /api/v1/skills"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/compras",
+        "noMenu": false,
+        "api403": ["GET /api/v1/purchase-orders", "GET /api/v1/purchasing/shortages"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/compras/novo",
+        "noMenu": false,
+        "api403": ["GET /api/v1/purchasing/needs", "GET /api/v1/purchasing/shortages"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/conta",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/devolucoes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/returns"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/dispositivos",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/empresa",
+        "noMenu": false,
+        "api403": ["GET /api/company/settings"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/entregas",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/deliveries",
+          "GET /api/v1/pieces",
+          "GET /api/v1/logistics-occurrences"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/estoque",
+        "noMenu": false,
+        "api403": ["GET /api/v1/stock-items"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/estoque-oficina",
+        "noMenu": false,
+        "api403": ["GET /api/v1/inventory/categories", "GET /api/v1/inventory/items"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/financeiro",
+        "noMenu": false,
+        "api403": ["GET /api/v1/finance/dashboard"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/fornecedores",
+        "noMenu": false,
+        "api403": ["GET /api/v1/suppliers"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/funcionarios",
+        "noMenu": false,
+        "api403": ["GET /api/employees"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/funcoes",
+        "noMenu": false,
+        "api403": ["GET /api/roles", "GET /api/permissions"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/materiais",
+        "noMenu": false,
+        "api403": ["GET /api/v1/materials/consolidated"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/medicoes",
+        "noMenu": false,
+        "api403": ["GET /api/v1/measurements", "GET /api/v1/measurements/awaiting"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/os",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/os/nova",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/pedidos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/orders"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/pedidos/novo",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/planejamento",
+        "noMenu": false,
+        "api403": ["GET /api/v1/materials/planning"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/presenca",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/attendance/open-shifts",
+          "GET /api/v1/attendance/leaves",
+          "GET /api/v1/attendance/holidays",
+          "GET /api/v1/attendance/impacts",
+          "GET /api/v1/attendance/team"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao",
+        "noMenu": false,
+        "api403": [
+          "GET /api/v1/reschedule-proposals",
+          "GET /api/v1/production-board",
+          "GET /api/v1/help-requests",
+          "GET /api/v1/production/workers"
+        ],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/a-planejar",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/mapa",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/modelos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/service-models"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/planejamento",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/producao/programacao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/production/pipeline"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/prontidao",
+        "noMenu": true,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/qualidade",
+        "noMenu": false,
+        "api403": ["GET /api/v1/quality/inspections", "GET /api/v1/packaging"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimento-materiais",
+        "noMenu": true,
+        "api403": ["GET /api/v1/material-arrivals"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimentos",
+        "noMenu": false,
+        "api403": ["GET /api/v1/receipts"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/recebimentos/novo",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/reprogramacao",
+        "noMenu": false,
+        "api403": ["GET /api/v1/reschedule-proposals"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/retiradas",
+        "noMenu": false,
+        "api403": ["GET /api/v1/pickups"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/roteiro",
+        "noMenu": false,
+        "api403": ["GET /api/v1/logistics/route", "GET /api/v1/logistics/route/history"],
+        "semPermissao": true,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/servicos/novo",
+        "noMenu": false,
+        "api403": ["GET /api/v1/services/new-defaults"],
+        "semPermissao": false,
+        "problemas": []
+      },
+      {
+        "rota": "/painel/sincronizacao",
+        "noMenu": false,
+        "api403": [],
+        "semPermissao": false,
+        "problemas": []
+      }
+    ]
+  },
+  "HML-Leitura:foraDoMenu": [
+    {
+      "rota": "/painel/ajuda",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/atencao",
+      "api403": 2,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/auditoria",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/clientes",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/competencias",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/compras",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/compras/novo",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/devolucoes",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/dispositivos",
+      "api403": 0,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/empresa",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/entregas",
+      "api403": 3,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/estoque",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/estoque-oficina",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/financeiro",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/fornecedores",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/funcionarios",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/funcoes",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/materiais",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/medicoes",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/os/nova",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/pedidos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/pedidos/novo",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/planejamento",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/presenca",
+      "api403": 5,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao",
+      "api403": 4,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/a-planejar",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/modelos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/planejamento",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/producao/programacao",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/qualidade",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/recebimentos",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/recebimentos/novo",
+      "api403": 0,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/reprogramacao",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/retiradas",
+      "api403": 1,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/roteiro",
+      "api403": 2,
+      "semPermissao": true
+    },
+    {
+      "rota": "/painel/servicos/novo",
+      "api403": 1,
+      "semPermissao": false
+    },
+    {
+      "rota": "/painel/sincronizacao",
+      "api403": 0,
+      "semPermissao": false
+    }
+  ]
+}

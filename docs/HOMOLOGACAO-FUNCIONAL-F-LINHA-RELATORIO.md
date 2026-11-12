@@ -49,7 +49,20 @@ por código/contrato, sem acionar) e NÃO EXECUTADO (com motivo).
 
 ## 3. Quantitativos (execução consolidada final)
 
-⟨QUANTITATIVOS⟩
+Execução consolidada única (19:00–19:27 UTC), réplica F′, `e2e-resultados.tsv`:
+
+| Nível                                                     | Total  | Aprovados                                                       | Reprovados                      | Bloqueados                     | Não executados                                        |
+| --------------------------------------------------------- | ------ | --------------------------------------------------------------- | ------------------------------- | ------------------------------ | ----------------------------------------------------- |
+| Testes de interface (arquivos de teste)                   | **78** | **75**                                                          | **3** (registram B1/B2, B3, B4) | 0                              | 0                                                     |
+| Acessos do gestor (57 páginas × 1440 e 390 px)            | 114    | **114** (0 erro de página, 0 console, 0 5xx, 0 rolagem lateral) | 0                               | 0                              | 2 (`/painel/entregas/ocorrencias/[id]`: sem registro) |
+| Acessos diretos por perfil `HML-` (5 perfis × 43 páginas) | 215    | 209                                                             | 6 (5 × B2, 1 × B1)              | 0                              | 0                                                     |
+| Perfis de tablet tentando o painel                        | 4      | 4 (recusados, mensagem clara)                                   | 0                               | 0                              | 0                                                     |
+| Passos de fluxo interativo (`fluxos.jsonl`)               | 30     | 27                                                              | 3 (B4, B3 × 2)                  | 0                              | 0                                                     |
+| Interface da instância de homologação                     | —      | —                                                               | —                               | **todos** (rede + credenciais) | —                                                     |
+| Safari / tablet físico                                    | —      | —                                                               | —                               | —                              | **todos** (sem acesso)                                |
+
+Os 3 testes reprovados são exatamente os que registram os defeitos da seção 4; nenhum teste
+pré-existente (68) falhou.
 
 ## 4. Defeitos encontrados
 
@@ -82,7 +95,14 @@ resposta 5xx e 0 rolagem lateral nas 57 páginas do gestor em 1440 e 390 px.
 
 ## 6. Desempenho e recursos
 
-⟨DESEMPENHO⟩
+- **Tempo de carga na interface (réplica, build de produção):** mediana 1,15 s (1440 px) e 1,10 s
+  (390 px); p90 1,44 s / 1,33 s; máximo 2,7 s (`/painel` e `/painel/financeiro`, com mais dados).
+- **Recursos na réplica (amostras a cada 10 s, 26 min):** web média 118 MB, máx. 278 MB; API média
+  269 MB, máx. 772 MB. A API da réplica roda do código-fonte (`tsx`) e **sem** o limite do contêiner;
+  o pico ocorre nos testes de foto (`sharp`). Referência válida para a VM continua sendo a medição
+  com a imagem real: até 430 MB de 512 MB com 4 fotos grandes simultâneas → **monitorar na VM**.
+- **Homologação (instância real, ociosa):** API 143 MB/512, web 149 MB/448, postgres 87 MB/448,
+  CPU ~0%; 0 erro e 0 5xx em 3 h.
 
 ## 7. Correções recomendadas antes da produção
 
@@ -109,4 +129,11 @@ versão, testes e autorização.
 
 ## 9. Veredito
 
-⟨VEREDITO⟩
+**GO COM RESSALVAS** — para continuar a homologação rumo à produção, **não** para implantar em
+produção agora.
+
+- Nenhum defeito crítico ou alto; nenhum risco a dados financeiros ou de arquivos; todos os 7
+  achados são **preexistentes** às Fases 2–4 (a F′ não introduziu regressão detectada).
+- Antes da produção: corrigir **B1, B2 e B3** (nova versão, testes e autorização) e executar os
+  testes manuais da seção 8 — em especial a **interface da própria instância de homologação**,
+  **Safari** e **tablet físico**, que não foram testados aqui e não estão aprovados.
