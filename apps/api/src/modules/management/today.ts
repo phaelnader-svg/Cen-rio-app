@@ -16,6 +16,7 @@ import {
 import type { PrismaClient, TaskStatus, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import type { ActorContext } from '../../core/types';
+import { now as clockNow } from '../../core/clock';
 import { dbDate } from '../attendance/common';
 import { serviceOrderCode } from '../commercial/common';
 import { deadlineCalendar, deadlineCandidatesWhere, serviceDeadlines } from '../deadlines/service';
@@ -39,7 +40,14 @@ import { loadOperationalStates } from '../service-orders/operational';
 const SYSTEM: ActorContext = { userId: null, sessionId: null, ip: null, requestId: null };
 const DAY = 24 * 60 * 60 * 1000;
 const ALERT_LOCK = 4_242_017;
-const OPEN_TASK: TaskStatus[] = ['RASCUNHO', 'PROGRAMADA', 'LIBERADA', 'BLOQUEADA', 'EM_EXECUCAO', 'PAUSADA'];
+const OPEN_TASK: TaskStatus[] = [
+  'RASCUNHO',
+  'PROGRAMADA',
+  'LIBERADA',
+  'BLOQUEADA',
+  'EM_EXECUCAO',
+  'PAUSADA',
+];
 
 /** Quando a peça ficou pronta para entrega (último evento de etapa), por peça. */
 async function readySince(db: Tx | PrismaClient, itemIds: string[]) {
@@ -62,7 +70,7 @@ async function readySince(db: Tx | PrismaClient, itemIds: string[]) {
 /** Fatos que geram alerta agora (função pura sobre o banco; usada pelo alerta e pelo painel). */
 async function currentFacts(db: Tx | PrismaClient) {
   const cal = await deadlineCalendar(db);
-  const now = new Date();
+  const now = clockNow();
   // 1. Prazo em risco ou atrasado (motor de prazos canônico).
   const deadlines = await serviceDeadlines(db, deadlineCandidatesWhere(cal), cal);
   const risky = [...deadlines.entries()].filter(([, d]) =>
@@ -146,7 +154,14 @@ export async function refreshOperationalAlerts(prisma: PrismaClient) {
           'os.gerenciar',
           'PRAZO_EM_RISCO',
           `${subject}:${d.state}`,
-          `${serviceOrderCode(so.number)} (${so.customer.name}) está ${d.state === 'ATRASADO' ? 'atrasada' : 'em risco'}${d.promisedDate ? ` — prazo ${d.promisedDate.split('-').reverse().join('/')}` : ''}${d.reasons.length ? `: ${d.reasons.map((r) => DEADLINE_REASON_LABEL[r]).join(', ').toLowerCase()}` : ''}.`,
+          `${serviceOrderCode(so.number)} (${so.customer.name}) está ${d.state === 'ATRASADO' ? 'atrasada' : 'em risco'}${d.promisedDate ? ` — prazo ${d.promisedDate.split('-').reverse().join('/')}` : ''}${
+            d.reasons.length
+              ? `: ${d.reasons
+                  .map((r) => DEADLINE_REASON_LABEL[r])
+                  .join(', ')
+                  .toLowerCase()}`
+              : ''
+          }.`,
           so.id,
         );
       }
@@ -167,7 +182,10 @@ export async function refreshOperationalAlerts(prisma: PrismaClient) {
         const subject = `MATERIAL_FALTANTE:${so.id}`;
         active.add(subject);
         const what = so.simpleMaterials.length
-          ? so.simpleMaterials.map((m) => m.description).slice(0, 3).join(', ')
+          ? so.simpleMaterials
+              .map((m) => m.description)
+              .slice(0, 3)
+              .join(', ')
           : 'materiais da compra formal';
         for (const perm of ['os.gerenciar', 'compras.gerenciar'] as Permission[])
           await notifyUsersWith(
@@ -194,7 +212,9 @@ export async function refreshOperationalAlerts(prisma: PrismaClient) {
       for (const so of f.riskyOs) {
         const d = f.deadlines.get(so.id)!;
         const other = d.state === 'ATRASADO' ? 'EM_RISCO' : 'ATRASADO';
-        await resolveNotifications(tx, SYSTEM, 'PRAZO_EM_RISCO', [`PRAZO_EM_RISCO:${so.id}:${other}`]);
+        await resolveNotifications(tx, SYSTEM, 'PRAZO_EM_RISCO', [
+          `PRAZO_EM_RISCO:${so.id}:${other}`,
+        ]);
       }
       const resolved = stale.size
         ? await resolveNotifications(tx, SYSTEM, [...OPERATIONAL_ALERT_KINDS], [...stale])
@@ -205,8 +225,7 @@ export async function refreshOperationalAlerts(prisma: PrismaClient) {
   );
 }
 
-const can = (perms: ReadonlySet<Permission>, ...any: Permission[]) =>
-  any.some((p) => perms.has(p));
+const can = (perms: ReadonlySet<Permission>, ...any: Permission[]) => any.some((p) => perms.has(p));
 
 /** Painel "Hoje" (somente leitura). */
 export async function loadToday(

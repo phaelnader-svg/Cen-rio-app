@@ -44,28 +44,32 @@ export interface TodayDto {
   date: string;
   generatedAt: string;
   /** `null` = sem permissão para a seção. */
-  inExecution: {
-    taskId: string;
-    code: string;
-    title: string;
-    serviceOrder: { id: string; code: string };
-    assignee: string | null;
-    status: 'EM_EXECUCAO' | 'PAUSADA';
-    since: string | null;
-  }[] | null;
+  inExecution:
+    | {
+        taskId: string;
+        code: string;
+        title: string;
+        serviceOrder: { id: string; code: string };
+        assignee: string | null;
+        status: 'EM_EXECUCAO' | 'PAUSADA';
+        since: string | null;
+      }[]
+    | null;
   present: {
     total: number;
     people: { displayName: string; arrivedAt: string | null }[];
   } | null;
-  readyPieces: {
-    itemId: string;
-    code: string;
-    description: string;
-    customer: string;
-    serviceOrderId: string;
-    /** Dias completos desde que ficou pronta. */
-    days: number;
-  }[] | null;
+  readyPieces:
+    | {
+        itemId: string;
+        code: string;
+        description: string;
+        customer: string;
+        serviceOrderId: string;
+        /** Dias completos desde que ficou pronta. */
+        days: number;
+      }[]
+    | null;
   pendencies: {
     total: number;
     critical: number;

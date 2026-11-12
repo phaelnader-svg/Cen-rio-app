@@ -343,6 +343,19 @@ const BASELINE_ROUTES: Record<string, AccessRule | null> = {
     session: 'WEB',
     anyPermissions: ['os.ver', 'entregas.ver', 'entregas.gerenciar', 'financeiro.ver'],
   },
+  'GET /api/v1/management/today': {
+    session: 'WEB',
+    anyPermissions: [
+      'os.ver',
+      'producao.ver',
+      'producao.planejar',
+      'presenca.ver',
+      'presenca.gerenciar',
+      'entregas.ver',
+      'entregas.gerenciar',
+      'ocorrencias.ver',
+    ],
+  },
   'GET /api/v1/material-arrivals': {
     session: 'WEB',
     anyPermissions: ['estoque.ver', 'compras.ver', 'estoque.gerenciar'],
@@ -987,6 +1000,7 @@ const BASELINE_ROUTES: Record<string, AccessRule | null> = {
     permissions: ['producao.planejar'],
   },
   'POST /api/v1/production-templates': { session: 'WEB', permissions: ['producao.planejar'] },
+  'GET /api/v1/production/productivity': { session: 'WEB', permissions: ['producao.planejar'] },
   'POST /api/v1/production/plan-services': { session: 'WEB', permissions: ['producao.planejar'] },
   'POST /api/v1/purchase-orders': { session: 'WEB', permissions: ['compras.gerenciar'] },
   'POST /api/v1/purchase-orders/:id/cancel': { session: 'WEB', permissions: ['compras.aprovar'] },

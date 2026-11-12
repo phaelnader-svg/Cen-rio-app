@@ -23,6 +23,7 @@ import { useAttention } from '@/lib/issues';
 import { money } from '@/lib/finance';
 import { useDevices, useEmployees, useOverview, useRecentAudit, useSessions } from '@/lib/queries';
 import { useRealtime } from '@/lib/realtime';
+import { TodayPanel } from './today-panel';
 
 function greeting(timeZone: string) {
   const h = Number(
@@ -125,6 +126,8 @@ export function Dashboard() {
           </Link>
         )}
       </div>
+
+      <TodayPanel />
 
       {overview.data?.attention && (
         <Link

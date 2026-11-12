@@ -19,6 +19,7 @@ import {
   type Period,
 } from '@/lib/finance';
 import { PeriodPicker, Stat, Table } from './common';
+import { ProductivityTable } from './productivity-table';
 import { CostsTab } from './costs';
 import { ExpensesTab, PayablesTab } from './payables';
 import { LaborTab } from './labor';
@@ -207,48 +208,7 @@ function Productivity({ period }: { period: Period }) {
   const q = useProductivity(period);
   if (q.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
-  const min = (v: number | null) => (v === null ? '—' : `${v} min`);
-  return (
-    <div className="space-y-4">
-      <Alert tone="info">{q.data.notes.join(' ')}</Alert>
-      <Table
-        testId="productivity-table"
-        head={[
-          'Funcionário',
-          'Concluídas',
-          'Apoios',
-          'Retrabalhos',
-          'Execução média',
-          'Espera média',
-          'No prazo',
-          'Atrasos',
-          'Atrasos c/ impedimento',
-          'Impedimentos',
-          'Ocorrências',
-          'Peças reprovadas',
-        ]}
-      >
-        {q.data.rows.map((r) => (
-          <tr key={r.userId}>
-            <td className="px-4 py-2.5 font-medium">{r.displayName}</td>
-            <td className="px-4 py-2.5 tabular-nums">{r.tasksCompleted}</td>
-            <td className="px-4 py-2.5 tabular-nums">{r.supportTasks}</td>
-            <td className="px-4 py-2.5 tabular-nums">{r.reworkTasks}</td>
-            <td className="px-4 py-2.5 tabular-nums">{min(r.avgExecutionMinutes)}</td>
-            <td className="px-4 py-2.5 tabular-nums">{min(r.avgWaitingMinutes)}</td>
-            <td className="px-4 py-2.5 tabular-nums">
-              {r.withDueDate ? `${r.onTime}/${r.withDueDate}` : '—'}
-            </td>
-            <td className="px-4 py-2.5 tabular-nums">{r.late - r.lateWithImpediment}</td>
-            <td className="px-4 py-2.5 tabular-nums">{r.lateWithImpediment}</td>
-            <td className="px-4 py-2.5 tabular-nums">{r.impediments}</td>
-            <td className="px-4 py-2.5 tabular-nums">{r.issuesReported}</td>
-            <td className="px-4 py-2.5 tabular-nums">{r.rejectedPieces}</td>
-          </tr>
-        ))}
-      </Table>
-    </div>
-  );
+  return <ProductivityTable data={q.data} />;
 }
 
 const REPORTS: { key: string; label: string }[] = [

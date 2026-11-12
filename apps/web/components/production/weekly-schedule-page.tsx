@@ -7,6 +7,7 @@ import { useCan, useMe } from '@/lib/hooks';
 import { useTabParam } from '@/lib/tab-param';
 import { ProductionPlanningPage } from './planning-page';
 import { PreplanningPage } from './preplanning-page';
+import { ProductivityTab } from './productivity-tab';
 
 /**
  * Reformulação, Fase 3 — programação semanal numa tela só.
@@ -16,9 +17,10 @@ import { PreplanningPage } from './preplanning-page';
  * dependências, filas). As duas abas trabalham sobre o MESMO plano semanal e publicam pelo MESMO
  * diálogo (`PublishWeekDialog`) — não há mais dois caminhos de publicação. Regras de prioridade,
  * responsáveis e datas são as do servidor, que não mudaram; os tablets recebem o mesmo plano.
- * Os endereços antigos continuam abrindo a aba correspondente.
+ * Os endereços antigos continuam abrindo a aba correspondente. Fase 4: aba "Produtividade"
+ * (mesmos indicadores do Financeiro, sem valores) para quem tem producao.planejar.
  */
-const TABS = ['servicos', 'semana'] as const;
+const TABS = ['servicos', 'semana', 'produtividade'] as const;
 type Tab = (typeof TABS)[number];
 
 export function WeeklySchedulePage({ initial = 'servicos' }: { initial?: Tab }) {
@@ -55,7 +57,13 @@ function Schedule({ initial }: { initial: Tab }) {
       <Tabs
         tabs={[
           { key: 'servicos', label: 'Serviços' },
-          ...(allowed.length > 1 ? [{ key: 'semana', label: 'Semana detalhada' }] : []),
+          ...(allowed.length > 1
+            ? [
+                { key: 'semana', label: 'Semana detalhada' },
+                // Fase 4: produtividade operacional (sem valores) para quem planeja.
+                { key: 'produtividade', label: 'Produtividade' },
+              ]
+            : []),
         ]}
         active={tab}
         onChange={setTab}
@@ -63,6 +71,7 @@ function Schedule({ initial }: { initial: Tab }) {
         <div className="pt-4" data-testid={`schedule-${tab}`}>
           {tab === 'servicos' && <PreplanningPage embedded />}
           {tab === 'semana' && <ProductionPlanningPage embedded />}
+          {tab === 'produtividade' && <ProductivityTab />}
         </div>
       </Tabs>
     </>
