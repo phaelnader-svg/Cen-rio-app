@@ -1,0 +1,43 @@
+{"fluxo":"Acesso","passo":"enviar vazio","esperado":"mensagens de campo obrigatório","observado":"mensagens exibidas","ok":true}
+{"fluxo":"Acesso","passo":"senha errada","esperado":"\"E-mail ou senha incorretos.\"","observado":"mensagem exibida","ok":true}
+{"fluxo":"Acesso","passo":"senha errada não entra","esperado":"continua em /entrar","observado":"/entrar","ok":true}
+{"fluxo":"Acesso","passo":"entrar","esperado":"/painel","observado":"/painel","ok":true}
+{"fluxo":"Acesso","passo":"sair","esperado":"/entrar?motivo=saiu","observado":"/entrar?motivo=saiu","ok":true}
+{"fluxo":"Acesso","passo":"painel depois de sair","esperado":"volta para /entrar","observado":"/entrar","ok":true}
+{"fluxo":"Acesso","passo":"API depois de sair","esperado":"401","observado":"401","ok":true}
+{"fluxo":"Acesso","passo":"tapeceiro tenta o painel","esperado":"mensagem \"não tem acesso ao painel\" e continua em /entrar","observado":"mensagem exibida · /entrar","ok":true}
+{"fluxo":"Clientes","passo":"cadastrar sem nome","esperado":"erro de validação no nome","observado":"erro exibido","ok":true}
+{"fluxo":"Clientes","passo":"endereço obrigatório ou \"Cadastrar depois\"","esperado":"opção de cadastrar o endereço depois","observado":"opção presente","ok":true}
+{"fluxo":"Clientes","passo":"cadastrar","esperado":"diálogo fecha e cliente salvo","observado":"salvo","ok":true}
+{"fluxo":"Clientes","passo":"buscar","esperado":"cliente na lista","observado":"encontrado","ok":true}
+{"fluxo":"Clientes","passo":"abrir","esperado":"/painel/clientes/<id>","observado":"/painel/clientes/a690649f-1338-4751-9cb0-3c66264de785","ok":true}
+{"fluxo":"Clientes","passo":"editar","esperado":"observação salva e exibida após recarregar","observado":"exibida","ok":true}
+{"fluxo":"Conta","passo":"senha atual errada","esperado":"\"Senha atual incorreta.\"","observado":"exibida","ok":true}
+{"fluxo":"Conta","passo":"confirmação diferente","esperado":"erro de confirmação","observado":"erro exibido","ok":true}
+{"fluxo":"Conta","passo":"trocar senha","esperado":"\"Senha alterada…\"","observado":"exibida","ok":true}
+{"fluxo":"Conta","passo":"entrar com a nova senha","esperado":"/painel","observado":"/painel","ok":true}
+{"fluxo":"Funções","passo":"abrir funções","esperado":"lista e botão de nova função","observado":"ok","ok":true}
+{"fluxo":"Funções","passo":"criar função","esperado":"função na lista","observado":"na lista","ok":true}
+{"fluxo":"Fotos","passo":"enviar foto","esperado":"miniatura na galeria","observado":"exibida","ok":true}
+{"fluxo":"Fotos","passo":"ampliar","esperado":"visualizador abre","observado":"abriu","ok":true}
+{"fluxo":"Fotos","passo":"foto listada pela API","esperado":"1 foto","observado":"1","ok":true}
+{"fluxo":"Fotos","passo":"arquivo físico existe","esperado":"presente em storage-e2e","observado":"presente","ok":true}
+{"fluxo":"Fotos","passo":"abrir foto cujo arquivo sumiu","esperado":"404 (ou erro tratado)","observado":"HTTP 404","ok":true}
+{"fluxo":"Fotos","passo":"miniatura cujo arquivo sumiu","esperado":"404 (ou erro tratado)","observado":"HTTP 404","ok":true}
+{"fluxo":"Fotos","passo":"OS com foto sem arquivo","esperado":"página continua utilizável","observado":"página utilizável","ok":true}
+{"fluxo":"Fotos","passo":"remover pede confirmação","esperado":"diálogo \"Remover foto?\"","observado":"exibido","ok":true}
+{"fluxo":"Fotos","passo":"cancelar a remoção","esperado":"foto continua na galeria","observado":"1 na galeria","ok":true}
+{"fluxo":"Fotos","passo":"remover foto","esperado":"some da galeria","observado":"0 na galeria","ok":true}
+{"fluxo":"Fotos","passo":"foto removida pela URL","esperado":"404","observado":"HTTP 404","ok":true}
+{"fluxo":"Fotos","passo":"respostas 5xx durante o fluxo","esperado":"nenhuma fora do caso do arquivo inexistente","observado":"nenhuma","ok":true}
+{"fluxo":"Permissões","passo":"B1 sem retiradas.gerenciar","esperado":"sem \"Novo serviço\" no menu","observado":"fora do menu","ok":true}
+{"fluxo":"Permissões","passo":"B1 com as duas permissões","esperado":"\"Novo serviço\" no menu e tela sem 403","observado":"no menu · 403: nenhum","ok":true}
+{"fluxo":"Permissões","passo":"B2 sem estoque/compras","esperado":"item no menu (qualquer funcionário recebe), tela sem 403 e sem a lista de conferência","observado":"no menu · 403: nenhum","ok":true}
+{"fluxo":"Permissões","passo":"B5 /painel/dispositivos sem permissão","esperado":"aviso \"Acesso negado\", sem 403 e sem dados","observado":"aviso exibido · 403: nenhum","ok":true}
+{"fluxo":"Permissões","passo":"B5 /painel/sincronizacao sem permissão","esperado":"aviso \"Acesso negado\", sem 403 e sem dados","observado":"aviso exibido · 403: nenhum","ok":true}
+{"fluxo":"Permissões","passo":"B6 sem pedidos.ver nem devolucoes.gerenciar","esperado":"sem \"Devoluções\" no menu","observado":"fora do menu","ok":true}
+{"fluxo":"Permissões","passo":"B2 com estoque.ver","esperado":"tela sem 403 (lista de conferência permitida)","observado":"403: nenhum","ok":true}
+{"fluxo":"Permissões","passo":"B6 com pedidos.ver","esperado":"\"Devoluções\" no menu, consulta sem 403 e sem botão de registrar","observado":"no menu · 403: nenhum · botão: não","ok":true}
+{"fluxo":"Permissões","passo":"B6 com devolucoes.gerenciar","esperado":"botão \"Registrar devolução\"","observado":"exibido","ok":true}
+{"fluxo":"Permissões","passo":"B5 /painel/dispositivos com permissão","esperado":"conteúdo normal, sem aviso de acesso negado","observado":"conteúdo normal","ok":true}
+{"fluxo":"Permissões","passo":"B5 /painel/sincronizacao com permissão","esperado":"conteúdo normal, sem aviso de acesso negado","observado":"conteúdo normal","ok":true}

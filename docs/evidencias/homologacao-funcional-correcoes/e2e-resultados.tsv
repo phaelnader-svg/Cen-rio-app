@@ -1,0 +1,80 @@
+arquivo	teste	status
+aa-fase1-materiais-estoque-entrega.spec.ts	materiais necessários: lista inline, flags independentes, custo e aviso	passed
+aa-fase1-materiais-estoque-entrega.spec.ts	estoque da oficina: categoria, material, ajuste com histórico e arquivamento	passed
+aa-fase1-materiais-estoque-entrega.spec.ts	logística desligada: menu sem roteiro e entrega pela OS; religar volta ao normal	passed
+admin.spec.ts	rotas do painel exigem autenticação	passed
+admin.spec.ts	credenciais inválidas exibem erro sem revelar se o e-mail existe	passed
+admin.spec.ts	gestor entra, navega e cadastra um funcionário	passed
+admin.spec.ts	validação no formulário de empresa e salvamento com versão	passed
+cobranca.spec.ts	Novo serviço 50/50 → Financeiro do pedido → recebimento da entrada	passed
+commercial-flow.spec.ts	fluxo completo, com bloqueio da OS antes do recebimento e histórico técnico	passed
+commercial-flow.spec.ts	outra sessão do painel vê o novo pedido em tempo real	passed
+compras-etapa2.spec.ts	remedição substitui a necessidade (decisão na aprovação) e não soma	passed
+compras-etapa3.spec.ts	previsão no pedido → Pré-chegada → chegada → medição substitui	passed
+compras-sem-duplicidade.spec.ts	A comprar consolidado com estoque livre, Reservar explícito e recusa "Não repor"	passed
+fase0-funcionalidades.spec.ts	funcionalidades: desligar e religar os pedidos de ajuda pelo painel	passed
+fase1-conciliacao.spec.ts	conciliação pela tela: pendente, vincular sem dupla contagem, desfazer e "é outro material"	passed
+fase2-mapa-oficina.spec.ts	mapa da oficina: peça sem localização, mover pela tela, busca e localização na OS	passed
+fase2-mapa-oficina.spec.ts	tablet: "Aguardando chegada" reúne avisos e conferência de materiais	passed
+fase2-modelos-servico.spec.ts	modelos de serviço: visão unificada, material padrão e sugestão na OS	passed
+fase2-os-estado-fotos.spec.ts	"Planejar a produção da OS" só navega para a aba Produção	passed
+fase2-os-estado-fotos.spec.ts	foto nova pela galeria: sem EXIF/GPS na foto e na miniatura; abre no visualizador	passed
+gestao.spec.ts	gestor vê, identifica a pendência, abre o contexto, age e a pendência some	passed
+gestao.spec.ts	Início: total da Central, a planejar e bloqueios; menu e Recebimentos	passed
+measurements.spec.ts	gestor delega a Ricardo, tablet mede e envia, gestor devolve, Ricardo corrige, gestor aprova	passed
+measurements.spec.ts	rotina de sexta: o gestor mede pelo painel	passed
+modelos-simplificados.spec.ts	modelo de reforma com responsável por etapa e geração de 3 tarefas pelo planejamento	passed
+novo-servico-rede.spec.ts	Novo serviço: resposta perdida depois da gravação não duplica (mesma chave)	passed
+novo-servico.spec.ts	cliente novo + serviço + retirada em um formulário; roteiro do André; OS na chegada	passed
+novo-servico.spec.ts	cliente entrega na tapeçaria: sem retirada; o recebimento no painel gera a OS	passed
+novo-servico.spec.ts	titular e mão de obra previstos no fechamento; alteração antes da chegada; OS nasce com eles	passed
+novo-servico.spec.ts	390 px: preencher e salvar o Novo serviço no celular, sem rolagem horizontal	passed
+prazos.spec.ts	Início → Central filtrada → alterar prazo do pedido (SIM às OS) → contagens atualizadas	passed
+pre-planejamento.spec.ts	recebido → A planejar → Ricardo/Márcio → publicar semana → tablets	passed
+production.spec.ts	gestor planeja e publica; João conclui a preparação e libera a tarefa do Márcio em tempo real	passed
+purchasing.spec.ts	medição até prontidão completa, com recebimento pelo tablet e sem iniciar produção	passed
+recebimentos-rede.spec.ts	queda de rede depois do envio: nova tentativa usa a mesma chave e nada duplica	passed
+recebimentos-rede.spec.ts	resposta perdida com o tempo real ativo: aviso some, mensagem aprovada, nada reenviado sozinho	passed
+recebimentos-rede.spec.ts	aviso some sem resposta perdida neste tablet: texto neutro, sem atribuir a outro aparelho	passed
+recebimentos.spec.ts	dois tablets: chegada parcial, aviso de atualização, materiais e conferência	passed
+rodada2-central.spec.ts	valor muda → celular atualiza sozinho; Central: confirmação → pagamento; links; Início; avisos	passed
+tablet-sync.spec.ts	vinculação, login por PIN, sessão persistente e atualização em tempo real	passed
+tablet-sync.spec.ts	sinais de sincronização e reconciliação após queda de conexão	passed
+tablet-sync.spec.ts	revogação remota de sessão e de dispositivo	passed
+tablets.spec.ts	Meu dia, execução simplificada, avisos, reprogramação e queda de conexão	passed
+team-closing.spec.ts	conferir, registrar Pix, reabrir, estornar; celular; sem acesso para tablets e logística	passed
+team-distribution.spec.ts	titular por peça, geração sem distribuição manual, substituição auditada e fila do titular	passed
+team-finance.spec.ts	cobrança, recebimento parcial, valor de produção, despesa, painel e "Meus valores" no tablet	passed
+team-help.spec.ts	pedido normal, apoio no tablet, urgente escalado e aprovação do gestor	passed
+team-issues.spec.ts	Márcio registra o problema, gestor delega ao Thiago, verifica e Márcio retoma	passed
+team-labor.spec.ts	valor por peça na OS, substituição com revisão, resolução e "Meus valores" com PIN	passed
+team-logistics.spec.ts	padrões → agendar com custo total → realizar → obrigação única → pagar, estornar, ajustar, conciliar	passed
+team-negociacao.spec.ts	pedido no celular → aprovação → sem confirmação recusado → André confere → Pix	passed
+team-presenca-apoio.spec.ts	expediente esquecido, feriado, férias por intervalo e tablet sem pontualidade	passed
+team-presence.spec.ts	Cheguei, ausência presumida com impacto, correção, chegada tardia e encerramento	passed
+team-quality.spec.ts	produção → reprovação → correção → aprovação → embalagem → agenda → entrega	passed
+team-queue.spec.ts	publica sem horário, tablet segue a fila, início explícito e continuidade em dois dias	passed
+team-route-os.spec.ts	OS com titular e mão de obra; retirada com chegada; roteiro reordenado; celular do André	passed
+team-week.spec.ts	gestor + 4 tablets: destaque, próximas, fila completa, titular, bloqueio, reordenação, reconexão e virada do dia	passed
+team-workshop.spec.ts	chegada, início simultâneo, queda de conexão, prioridade e inspeção em tempo real	passed
+zz-auditoria-fluxos.spec.ts	entrada, validação, saída e sessão	passed
+zz-auditoria-fluxos.spec.ts	perfil sem painel: mensagem clara na tela de entrada	passed
+zz-auditoria-fluxos.spec.ts	clientes: cadastrar, validar, buscar, abrir e editar pela tela	passed
+zz-auditoria-fluxos.spec.ts	minha conta: troca de senha de usuário HML- e nova entrada	passed
+zz-auditoria-fluxos.spec.ts	funções: criar perfil HML- pela tela	passed
+zz-auditoria-fluxos.spec.ts	fotos: enviar, ampliar, remover e arquivo inexistente	passed
+zz-auditoria-fluxos.spec.ts	permissões corrigidas: menu e telas por perfil (B1, B2, B5, B6)	passed
+zz-auditoria-funcional.spec.ts	gestor percorre todas as páginas (desktop)	passed
+zz-auditoria-funcional.spec.ts	gestor percorre todas as páginas (celular)	passed
+zz-auditoria-funcional.spec.ts	perfis HML-: menu × acesso direto a cada página	passed
+zz-auditoria-funcional.spec.ts	perfis de tablet (sem painel.acessar) não entram no painel	passed
+zz-fase2-capturas.spec.ts	capturas da Fase 2 (painel e tablet) em 1440 e 390 px	passed
+zz-fase3-capturas.spec.ts	capturas da Fase 3 em 1440 e 390 px	passed
+zz-fase3-qualidade-programacao.spec.ts	qualidade: autoaprovação justificada do gestor, "Tudo conforme" e embalagem desligada	passed
+zz-fase3-qualidade-programacao.spec.ts	programação semanal numa tela só; endereços antigos e menu enxuto	passed
+zz-fase3-qualidade-programacao.spec.ts	desfazer a entrega direta: prévia, justificativa e histórico preservado	passed
+zz-fase4-hoje.spec.ts	Fase 4 — "Hoje" e produtividade (desktop)	passed
+zz-fase4-hoje.spec.ts	Fase 4 — "Hoje" e produtividade (mobile)	passed
+zz-fluxo-transversal.spec.ts	do Novo serviço ao pagamento, com D12/D13, privacidade e Central	passed
+zz-geometria.spec.ts	todas as telas e formulários em diálogo, em 390/768/1280/1440	passed
+zz-visual-audit.spec.ts	todas as telas do painel e do tablet, em desktop, tablet e celular	passed
