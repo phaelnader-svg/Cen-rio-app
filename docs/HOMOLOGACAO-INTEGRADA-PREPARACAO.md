@@ -139,6 +139,9 @@ precisa de outra autorização).
 
 ## 6. Plano de implantação (NÃO executar sem autorização específica)
 
+> **Substituído** pelo plano definitivo em `HOMOLOGACAO-INTEGRADA-PRONTIDAO.md` (disco ampliado para
+> 30 GB em vez de limpeza; imagens F′ `63674f1` e R2 `341badb` com a guarda do retorno).
+
 Todas as etapas pelo runner (`operar.py op …`), cada uma com descrição; parar no primeiro critério de
 interrupção (6.2). Identificadores imutáveis: commits e digests da seção 2.
 
