@@ -93,6 +93,44 @@ identificar() {
 FERRAMENTAS='for t in growpart resize2fs; do
   p=$(sudo sh -c "command -v $t" 2>/dev/null || true); echo "$t:${p:-ausente}"; done'
 
+# Leitura das partições pelo kernel (somente leitura): /sys/block/sda/<parte>/start e /size, em
+# setores de 512 bytes; fim = início + tamanho − 1. Mais a tabela (sfdisk -l) para o registro.
+PARTICOES='set -e; d=/sys/block/sda
+echo "disco $(cat $d/size)"
+echo "tabela $(sudo blkid -o value -s PTTYPE /dev/sda 2>/dev/null || echo desconhecida)"
+for p in $d/sda[0-9]*; do n=$(basename $p); s=$(cat $p/start); z=$(cat $p/size); echo "part $n $s $((s + z - 1)) $z"; done
+sudo sfdisk -l /dev/sda 2>/dev/null | sed "s/^/sfdisk| /"'
+
+# particoes_ok "<saída de PARTICOES>": imprime a tabela em ordem FÍSICA e exige que /dev/sda1 exista,
+# comece depois do fim de TODAS as outras, sem sobreposição entre elas, e termine dentro do disco
+# (em GPT, antes da cópia de segurança do cabeçalho: 33 setores finais). Nada é alterado.
+particoes_ok() {
+  local dados="$1"
+  printf '%s\n' "$dados" | grep '^sfdisk| ' | sed 's/^sfdisk| /    /' > "$T/sfdisk-l.txt" || true
+  printf '%s\n' "$dados" | awk '
+    $1 == "disco" { disco = $2 }
+    $1 == "tabela" { tabela = $2 }
+    $1 == "part" { n++; nome[n] = $2; ini[n] = $3; fim[n] = $4; tam[n] = $5; if ($2 == "sda1") alvo = n }
+    END {
+      erro = 0
+      if (!disco) { print "✘ tamanho do disco não lido"; exit 1 }
+      if (!alvo) { print "✘ /dev/sda1 não encontrada"; exit 1 }
+      if (tabela != "gpt" && tabela != "dos") { printf "✘ tipo de tabela de partições não reconhecido (%s)\n", tabela; exit 1 }
+      # ordem física (início crescente)
+      for (i = 1; i <= n; i++) ord[i] = i
+      for (i = 1; i <= n; i++) for (j = i + 1; j <= n; j++) if (ini[ord[j]] < ini[ord[i]]) { t = ord[i]; ord[i] = ord[j]; ord[j] = t }
+      printf "  tabela %s · disco %d setores (%.1f GiB)\n", tabela, disco, disco * 512 / 1073741824
+      printf "  %-6s %12s %12s %12s\n", "parte", "início", "fim", "MiB"
+      for (k = 1; k <= n; k++) { i = ord[k]; printf "  %-6s %12d %12d %12.1f\n", nome[i], ini[i], fim[i], tam[i] * 512 / 1048576 }
+      for (k = 2; k <= n; k++) if (ini[ord[k]] <= fim[ord[k - 1]]) { printf "✘ %s sobrepõe %s\n", nome[ord[k]], nome[ord[k - 1]]; erro = 1 }
+      for (i = 1; i <= n; i++) if (i != alvo && fim[i] >= ini[alvo]) { printf "✘ %s (setores %d–%d) fica DEPOIS do início de sda1 (%d): ampliar sda1 não é seguro\n", nome[i], ini[i], fim[i], ini[alvo]; erro = 1 }
+      reserva = (tabela == "gpt") ? 33 : 0
+      if (fim[alvo] > disco - 1 - reserva) { printf "✘ sda1 termina em %d, além do limite utilizável (%d)\n", fim[alvo], disco - 1 - reserva; erro = 1 }
+      if (erro) exit 1
+      printf "✔ sda1 é fisicamente a última partição (outras terminam antes do setor %d); espaço livre depois dela: %d setores\n", ini[alvo], disco - 1 - reserva - fim[alvo]
+    }'
+}
+
 conferir() {
   identificar
   echo; echo "== Dentro da VM (somente leitura)"
@@ -103,11 +141,12 @@ conferir() {
   grep -q '^resize2fs:/' "$T/vm-fs.txt" || pare "resize2fs ausente mesmo no PATH de root (pacote e2fsprogs) — rode 'diagnosticar'"
   grep -q '^growpart:/' "$T/vm-fs.txt" \
     || pare "growpart ausente (pacote cloud-guest-utils) — rode 'diagnosticar' e, com autorização, 'instalar-dependencias'"
-  # sda1 precisa ser a ÚLTIMA partição do disco (layout das imagens Debian do GCE).
-  ssh_vm "sudo sfdisk -d /dev/sda | awk '/^\\/dev\\/sda[0-9]+ :/ {split(\$4,a,\"=\"); gsub(/[ ,]/,\"\",a[2]); print a[2], \$1}' | sort -n | tail -1" > "$T/ultima.txt" \
-    || pare "não consegui ler a tabela de partições"
-  grep -q '/dev/sda1$' "$T/ultima.txt" || pare "/dev/sda1 não é a última partição: $(cat "$T/ultima.txt")"
-  ok "raiz /dev/sda1 ext4, última partição; growpart e resize2fs disponíveis"
+  # sda1 precisa ser FISICAMENTE a última partição (pelos setores, não pelo número): nas imagens
+  # Debian do GCE, sda14 (BIOS boot) e sda15 (EFI) ficam ANTES de sda1 no disco.
+  particoes_ok "$(ssh_vm "$PARTICOES")" || pare "posicionamento das partições não permite ampliar /dev/sda1 com segurança"
+  mkdir -p "$RELDIR"; cp "$T/sfdisk-l.txt" "$RELDIR/disco-particoes-$CARIMBO.txt"
+  echo "  (tabela completa, sfdisk -l: $RELDIR/disco-particoes-$CARIMBO.txt)"
+  ok "raiz /dev/sda1 ext4, fisicamente a última partição; growpart e resize2fs disponíveis"
 
   ssh_vm "$INVENTARIO" > "$T/inventario-antes.txt" || pare "não consegui fazer o inventário"
   mkdir -p "$RELDIR"; cp "$T/inventario-antes.txt" "$RELDIR/disco-inventario-antes-$CARIMBO.txt"
@@ -161,6 +200,8 @@ executar() {
   local tam_fs; tam_fs="$(tail -1 "$T/amplia.txt" | awk '{print $1}')"
   (( tam_fs >= (SIZE_NOVO - 1) * 1000000000 )) || pare "sistema de arquivos com $tam_fs bytes (esperado ~$SIZE_NOVO GB)"
   ok "sistema de arquivos ampliado"
+  particoes_ok "$(ssh_vm "$PARTICOES")" > "$T/part-depois.txt" || { cat "$T/part-depois.txt"; pare "tabela de partições inesperada após a ampliação"; }
+  cat "$T/part-depois.txt"
 
   ssh_vm "$INVENTARIO" > "$T/inventario-depois.txt" || pare "não consegui refazer o inventário"
   cp "$T/inventario-depois.txt" "$RELDIR/disco-inventario-depois-$CARIMBO.txt"

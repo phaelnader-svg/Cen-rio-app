@@ -74,6 +74,15 @@ utilitários, pacotes, simulação do apt, apt em uso, reinício pendente, acess
 update` + instala só pacotes **novos**; para sem instalar se o apt planejar atualizar ou remover
 qualquer pacote; confere que nenhum contêiner reiniciou e que o inventário não mudou).
 
+**Atualização (posição das partições):** a validação "sda1 é a última partição" lia o início pelo
+`sfdisk -d` com o campo errado (`start=      262144,` tem espaços) e acabava comparando nomes, acusando
+`/dev/sda15`. Agora usa a posição FÍSICA lida do kernel (`/sys/block/sda/<parte>/start` e `size`, em
+setores): exige que todas as outras partições terminem antes do início de `sda1`, sem sobreposição,
+tabela `gpt`/`dos` reconhecida e `sda1` dentro da área utilizável (em GPT, fora dos 33 setores
+finais da cópia do cabeçalho); repete a validação depois do `growpart`. No layout do Debian do
+Google Cloud, `sda14` (BIOS boot, setores 2048–8191) e `sda15` (EFI, 8192–262143) ficam antes de
+`sda1` (a partir de 262144), e o crescimento de `sda1` é seguro.
+
 ### 1.5 Teste do script [MEDIDO com `gcloud` simulado]
 
 Sem permissão para rodar contra a VM real, o script foi testado com um `gcloud` simulado: conferência
