@@ -99,5 +99,19 @@ seções aparecem vazias, com uma OS sem programação para mostrar a sugestão 
 
 ## 8. Resultado final
 
-Preenchido na seção "Resultado final" do documento consolidado
-(`docs/REFORMULACAO-CONSOLIDADO-F0-F4.md`), com os números da rodada final.
+- **Totais (rodada final, ponta da Fase 4):** shared 151/151 · web 22/22 · API **1009 passaram,
+  0 falharam, 13 pulados** (opcionais de desempenho e proxy, como antes) · E2E completo **68/68**
+  (66 anteriores + 2 da Fase 4, sem nenhuma falha na rodada) · typecheck, lint, formatação e build
+  (API e web) sem erros.
+- **Migrations:** cadeia completa (`scripts/test-evolution-migrations.sh`) aprovada: aplica,
+  reverte, reaplica idêntico; recusa atômica com dados de cada fase; backup e restauração.
+- **Compatibilidade:** a Fase 4 não tem migration; o schema é o mesmo validado na Fase 3
+  (`3e0d2d0` + pastas das Fases 2 e 3: 971 passaram, 1 falha estática esperada, 13 pulados). Não
+  foi reexecutada, porque nada no banco mudou.
+- **Rodada anterior:** a 1ª rodada da API teve 2 falhas no teste de travas estruturais, causadas
+  por eu ter acrescentado as 2 rotas novas à **linha de base congelada** de `9fb1786`. Desfeito
+  (a linha de base não deve mudar); nenhuma mudança na aplicação.
+
+**Veredito: GO COM RESSALVAS** para aprovação técnica da Fase 4. Ressalvas: alertas com até 5 min
+de atraso e sem limite de volume; "pronta desde" conta a menos para peças antigas; nada validado em
+homologação, tablet físico ou Safari.

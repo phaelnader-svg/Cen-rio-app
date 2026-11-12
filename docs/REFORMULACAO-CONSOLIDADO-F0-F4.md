@@ -21,7 +21,18 @@ mudança.
 
 ## 2. Resultados de testes (rodada final, ambiente isolado)
 
-Ver a seção 8 — preenchida com os números da rodada final da ponta da Fase 4.
+- **Totais (rodada final, ponta da Fase 4):** shared 151/151 · web 22/22 · API **1009 passaram,
+  0 falharam, 13 pulados** (opcionais de desempenho e proxy, como antes) · E2E completo **68/68**
+  (66 anteriores + 2 da Fase 4, sem nenhuma falha na rodada) · typecheck, lint, formatação e build
+  (API e web) sem erros.
+- **Migrations:** cadeia completa (`scripts/test-evolution-migrations.sh`) aprovada: aplica,
+  reverte, reaplica idêntico; recusa atômica com dados de cada fase; backup e restauração.
+- **Compatibilidade:** a Fase 4 não tem migration; o schema é o mesmo validado na Fase 3
+  (`3e0d2d0` + pastas das Fases 2 e 3: 971 passaram, 1 falha estática esperada, 13 pulados). Não
+  foi reexecutada, porque nada no banco mudou.
+- **Rodada anterior:** a 1ª rodada da API teve 2 falhas no teste de travas estruturais, causadas
+  por eu ter acrescentado as 2 rotas novas à **linha de base congelada** de `9fb1786`. Desfeito
+  (a linha de base não deve mudar); nenhuma mudança na aplicação.
 
 ## 3. Pendências e riscos consolidados
 
@@ -137,6 +148,14 @@ candidata, candidatas de retorno, branch padrão e produção inalterados; nenhu
 produção usada; nenhuma alteração de IAM; nenhum segredo no repositório, logs ou relatórios;
 homologação manual integrada **não iniciada**.
 
-## 8. Resultado final
+## 8. Veredito técnico final
 
-(preenchido abaixo após a rodada final)
+**GO COM RESSALVAS para a homologação integrada** (Fases 2, 3 e 4 sobre `3e0d2d0`), condicionada a:
+
+1. autorização específica para a implantação (plano da seção 4), com backup antes;
+2. versão de retorno integrada construída **antes** de publicar (seção 5);
+3. as ressalvas da seção 3.1 continuarem abertas até haver evidência: fotos antigas, CPU na VM,
+   validação funcional em homologação, tablet físico e Safari.
+
+Nenhuma falha crítica conhecida; nenhuma regra financeira alterada nesta etapa além das aprovadas
+(reversão da entrega direta). Aguardando a decisão do gestor.
