@@ -55,7 +55,25 @@ para 404). Nenhuma permissão criada; nenhuma migration; nenhuma rotina que grav
 
 ## 4. Resultados
 
-⟨RESULTADOS⟩
+| Verificação                                                      | Resultado                                                                 |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Typecheck, lint (zero avisos), formatação                        | ✔                                                                        |
+| Pacote compartilhado                                             | 151/151                                                                   |
+| Web (inclui a trava do menu e os casos B1/B2/B6)                 | **26/26**                                                                 |
+| API (inclui `arquivos-inexistentes` e a trava F10-01 atualizada) | **1017 passaram, 0 falharam**, 13 pulados (opcionais de desempenho/proxy) |
+| E2E completo em Chromium (build de produção, réplica isolada)    | **79/79**                                                                 |
+| Auditoria de navegação do gestor (57 páginas × 1440 e 390 px)    | 114 acessos, **0 problemas**                                              |
+| Auditoria por perfil `HML-` (5 perfis × 43 páginas)              | 215 acessos, **0 problemas** (nenhum item de menu com 403)                |
+| Fluxos interativos (permitidos e proibidos)                      | **43/43 passos** ✔                                                       |
+
+Antes das correções, os mesmos testes registravam: 3 testes E2E reprovados, 6 acessos por perfil
+com 403 em item do menu e 3 passos de fluxo reprovados.
+
+Observação de execução: duas rodadas intermediárias da API acusaram falhas em massa
+(`loginAdmin`/`createOrder`, deadlocks) por terem rodado **ao mesmo tempo** sobre o mesmo banco de
+teste; a rodada isolada, sozinha, deu 1017/1017. A primeira rodada também acusou a trava F10-01,
+que fixava o texto antigo da tela de recebimento; ela foi atualizada para exigir a nova proteção
+por permissão (commit `29dc333`). Evidências: `docs/evidencias/homologacao-funcional-correcoes/`.
 
 ## 5. Integridade dos dados
 
@@ -68,7 +86,18 @@ foi tocada.
 
 ## 6. Nova versão candidata
 
-⟨CANDIDATA⟩
+| Item                          | Valor                                                                                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Commit (código implantável)   | **`696e3e9ddc5f1c803a4b9244a075ed498ad81be3`** (`claude/reformulacao-fase-4`)                                                                    |
+| Imagem `api`                  | `us-east1-docker.pkg.dev/cenariogestao/cenario-homolog/api:696e3e9…` · `sha256:264884b38b02de22357a07486e2d665008507444a0d84590a24d4aaf8455cb4f` |
+| Imagem `web`                  | `…/web:696e3e9…` · `sha256:cb76d474f14e79234893497a05c9220152f4f4e1f8bf1c58818519d30e54ae72`                                                     |
+| Build                         | Cloud Build `1bcb4c3d-…`, `SUCCESS`, conta `cenario-build`                                                                                       |
+| Diferença para F′ `63674f1`   | 9 arquivos de aplicação (+161/−34); **nenhuma** mudança em `packages/db` (sem migration)                                                         |
+| Commits posteriores na branch | só testes e documentos (`29dc333`, `4c10bbb` e este relatório) — não mudam a imagem                                                              |
+| Retorno                       | F′ `63674f1` (ativa hoje) ou R2 `341badb` continuam compatíveis (mesmo esquema)                                                                  |
+
+Também foi construído `f007753` (versão anterior à correção de lint): **não usar** — difere de
+`696e3e9` só por uma linha (`let`→`const`), mas não passou no lint.
 
 ## 7. Pendências
 
