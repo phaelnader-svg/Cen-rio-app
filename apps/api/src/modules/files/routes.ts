@@ -99,7 +99,6 @@ export async function fileRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const file = await readable(request);
       if (!IMAGE_MIMES.has(file.mimeType)) throw Errors.notFound('Miniatura');
-      let data: Buffer;
       // Miniatura salva ausente mas original presente: gera da original (como nas fotos antigas).
       let salva: Buffer | null = null;
       if (file.thumbKey) {
@@ -109,7 +108,7 @@ export async function fileRoutes(app: FastifyInstance) {
           if ((e as { statusCode?: number }).statusCode !== 404) throw e;
         }
       }
-      data = salva ?? (await thumbnail(await toBuffer((await ler(file.storageKey)).stream)));
+      const data = salva ?? (await thumbnail(await toBuffer((await ler(file.storageKey)).stream)));
       return reply
         .headers(secureHeaders)
         .header('content-type', 'image/webp')

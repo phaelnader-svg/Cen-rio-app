@@ -374,7 +374,6 @@ test('fotos: enviar, ampliar, remover e arquivo inexistente', async ({ page }) =
   anota(F, 'ampliar', 'visualizador abre', viewer ? 'abriu' : 'não abriu', viewer);
   await page.keyboard.press('Escape');
   let foto: { id: string; url: string } | undefined;
-  let onde = '';
   for (const [tipo, id] of [
     ['SERVICE_ORDER', so.id],
     ...so.items.map((i: { id: string }) => ['SERVICE_ORDER_ITEM', i.id]),
@@ -383,7 +382,6 @@ test('fotos: enviar, ampliar, remover e arquivo inexistente', async ({ page }) =
     const f = (l.body as { id: string; url: string }[] | null)?.[0];
     if (f) {
       foto = f;
-      onde = tipo;
       break;
     }
   }
