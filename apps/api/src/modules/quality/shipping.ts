@@ -111,6 +111,9 @@ export async function toDeliveryDto(db: Tx | PrismaClient, r: DeliveryRow): Prom
     code: deliveryCode(r.number),
     status: r.status,
     origin: r.origin === 'DIRETA' ? 'DIRETA' : 'LOGISTICA',
+    reverted: r.revertedAt
+      ? { at: r.revertedAt.toISOString(), reason: r.revertReason ?? '' }
+      : null,
     provisional: r.status === 'PROVISORIA',
     customer: r.customer,
     address: addressDto(address)!,

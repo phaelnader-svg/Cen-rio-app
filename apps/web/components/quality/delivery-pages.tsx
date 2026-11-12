@@ -841,7 +841,15 @@ export function DeliveryDetailPage({ id }: { id: string }) {
         </Alert>
       )}
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm" data-testid="delivery-header">
-        <DeliveryBadge status={d.status} />
+        {d.reverted ? (
+          <span data-testid="delivery-reverted">
+            <Badge tone="warn" dot>
+              Desfeita em {formatDateTime(d.reverted.at)} — {d.reverted.reason}
+            </Badge>
+          </span>
+        ) : (
+          <DeliveryBadge status={d.status} />
+        )}
         {d.provisional && <Badge tone="warn">Não confirmada ao cliente</Badge>}
         {d.origin === 'DIRETA' ? (
           <span data-testid="delivery-origin-direct">

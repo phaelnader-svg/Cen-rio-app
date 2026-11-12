@@ -361,6 +361,67 @@ export interface DirectDeliveryEligibilityDto {
     completedAt: string | null;
     confirmedBy: { id: string; displayName: string } | null;
   } | null;
+  /** Fase 3 (D5): última entrega direta desfeita, quando houver (histórico). */
+  lastReverted?: {
+    id: string;
+    code: string;
+    revertedAt: string;
+    revertedBy: string | null;
+    reason: string;
+  } | null;
+}
+
+// ------------------------------------------------------------------ desfazer a entrega direta
+
+/**
+ * Reformulação, Fase 3 (D5) — desfazer a ÚLTIMA entrega direta da OS, em até 7 dias, com
+ * justificativa, por quem tem `entregas.gerenciar` E `financeiro.gerenciar`. Recusada (sem gravar
+ * nada) se algum efeito financeiro não puder voltar com segurança. Regra completa:
+ * docs/REFORMULACAO-FASE-3-REGRA-REVERSAO-ENTREGA.md.
+ */
+export const DIRECT_DELIVERY_REVERT_DAYS = 7;
+export const DIRECT_DELIVERY_REVERT_PERMISSIONS = [
+  'entregas.gerenciar',
+  'financeiro.gerenciar',
+] as const;
+
+export const directDeliveryRevertSchema = z.object({
+  /** A entrega que a tela mostrou (a confirmação recusa se outra passou a ser a última). */
+  deliveryId: idSchema,
+  reason: trimmed(10, 500, 'Justificativa'),
+});
+export type DirectDeliveryRevertInput = z.infer<typeof directDeliveryRevertSchema>;
+
+export interface DirectDeliveryRevertPreviewDto {
+  /** A última entrega direta não desfeita da OS (null = não há o que desfazer). */
+  delivery: {
+    id: string;
+    code: string;
+    completedAt: string;
+    confirmedBy: string | null;
+    /** Último dia em que ainda pode ser desfeita (data local). */
+    deadline: string;
+  } | null;
+  allowed: boolean;
+  /** Por que não pode ser desfeita (vazio quando pode). */
+  blocks: string[];
+  /** O que muda se for desfeita. */
+  effects: {
+    pieces: { code: string; description: string }[];
+    /** Mão de obra "entregue ao cliente" que volta a prevista. */
+    labor: { code: string; professional: string; agreedCents: number }[];
+    /** Cobranças com vencimento na entrega que voltam a "aguardando entrega". */
+    receivables: { code: string; description: string; openCents: number }[];
+    /** O prazo prometido volta a contar (e se ficará atrasado hoje). */
+    deadline: { promisedDate: string | null; overdue: boolean };
+  };
+}
+
+export interface DirectDeliveryRevertResultDto {
+  /** false = já estava desfeita (repetição idempotente, nada foi gravado). */
+  reverted: boolean;
+  deliveryCode: string;
+  eligibility: DirectDeliveryEligibilityDto;
 }
 
 export interface DirectDeliveryResultDto {

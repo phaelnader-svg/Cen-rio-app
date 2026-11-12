@@ -1,8 +1,10 @@
 import {
   READINESS_CHECK_LABEL,
   deliveryCode,
+  directDeliveryRevertSchema,
   directDeliverySchema,
   type DirectDeliveryBlock,
+  type DirectDeliveryRevertResultDto,
   type DirectDeliveryEligibilityDto,
   type DirectDeliveryResultDto,
 } from '@cenario/shared';
@@ -25,6 +27,11 @@ import {
   readinessOfItem,
   refreshItemStage,
 } from './common';
+import {
+  DIRECT_REVERT_ACCESS,
+  directDeliveryRevertPreview,
+  revertDirectDelivery,
+} from './direct-delivery-revert';
 import { deliveryDomainEvent, deliveryEvent } from './shipping';
 
 /**
@@ -100,6 +107,16 @@ export async function directDeliveryEligibility(
     if (reasons.length) blocks.push({ itemId: p.id, code: pieceCode(p), reasons });
   }
   const last = await lastDeliveryOf(db, serviceOrderId);
+  // Fase 3 (D5): a última entrega direta desfeita (histórico visível na OS).
+  const reverted = await db.delivery.findFirst({
+    where: {
+      origin: 'DIRETA',
+      revertedAt: { not: null },
+      items: { some: { serviceOrderItem: { serviceOrderId } } },
+    },
+    orderBy: { revertedAt: 'desc' },
+    include: { revertedBy: { select: { displayName: true } } },
+  });
   return {
     eligible: pending.length > 0 && blocks.length === 0,
     delivered: pieces.length > 0 && pending.length === 0,
@@ -112,6 +129,15 @@ export async function directDeliveryEligibility(
           origin: last.origin === 'DIRETA' ? 'DIRETA' : 'LOGISTICA',
           completedAt: last.completedAt?.toISOString() ?? null,
           confirmedBy: last.origin === 'DIRETA' ? (last.createdBy ?? null) : null,
+        }
+      : null,
+    lastReverted: reverted
+      ? {
+          id: reverted.id,
+          code: deliveryCode(reverted.number),
+          revertedAt: reverted.revertedAt!.toISOString(),
+          revertedBy: reverted.revertedBy?.displayName ?? null,
+          reason: reverted.revertReason ?? '',
         }
       : null,
   };
@@ -215,6 +241,25 @@ export async function directDeliveryRoutes(app: FastifyInstance) {
     async (request) => {
       const { id } = idParams.parse(request.params);
       return directDeliveryEligibility(prisma, id);
+    },
+  );
+
+  // Fase 3 (D5): prévia e confirmação de "desfazer a entrega direta".
+  app.get(
+    '/api/v1/service-orders/:id/direct-delivery/revert-preview',
+    { config: { access: DIRECT_REVERT_ACCESS } },
+    async (request) => directDeliveryRevertPreview(prisma, idParams.parse(request.params).id),
+  );
+
+  app.post(
+    '/api/v1/service-orders/:id/direct-delivery/revert',
+    { config: { access: DIRECT_REVERT_ACCESS, idempotent: true } },
+    async (request): Promise<DirectDeliveryRevertResultDto> => {
+      const { id } = idParams.parse(request.params);
+      const input = directDeliveryRevertSchema.parse(request.body);
+      const actor = actorFrom(request);
+      const r = await prisma.$transaction((tx) => revertDirectDelivery(tx, actor, id, input));
+      return { ...r, eligibility: await directDeliveryEligibility(prisma, id) };
     },
   );
 

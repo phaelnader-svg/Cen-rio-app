@@ -186,3 +186,100 @@ test('programação semanal numa tela só; endereços antigos e menu enxuto', as
     page.getByRole('heading', { name: 'Planejamento de sexta', level: 1 }),
   ).toBeVisible();
 });
+
+test('desfazer a entrega direta: prévia, justificativa e histórico preservado', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loginAdmin(page);
+  const tag = Date.now().toString(36);
+  const so = await openServiceOrder(page, `Cliente Desfazer ${tag}`);
+  const me = await call(page, 'GET', '/api/auth/me');
+  const gestorId = me.user.id as string;
+  try {
+    await setPackaging(page, false);
+    const week = mondayOf(DAY);
+    let plan = (await call(page, 'GET', `/api/v1/production-plans?week=${week}`))[0];
+    if (!plan)
+      plan = await call(page, 'POST', '/api/v1/production-plans', {
+        weekStart: week,
+        mode: 'LEGADO',
+      });
+    const workers = await call(page, 'GET', '/api/v1/production/workers');
+    const upholsterer = workers.find((w: { isTapeceiro: boolean }) => w.isTapeceiro);
+    const reason = `Desfazer ${tag}`;
+    const added = await call(page, 'POST', `/api/v1/production-plans/${plan.id}/items`, {
+      serviceOrderId: so.id,
+      principalUserId: upholsterer.userId,
+      date: DAY,
+      reason,
+    });
+    for (const t of added.tasks as { id: string; serviceOrder: { id: string } }[])
+      if (t.serviceOrder.id === so.id)
+        await call(page, 'POST', `/api/v1/production-tasks/${t.id}/cancel`, { reason: 'Fora' });
+    // As duas peças executadas pelo gestor, aprovadas com justificativa (embalagem desligada).
+    for (const item of so.items) {
+      const task = await call(page, 'POST', `/api/v1/production-plans/${plan.id}/tasks`, {
+        serviceOrderId: so.id,
+        serviceOrderItemId: item.id,
+        activity: 'REVESTIMENTO',
+        title: `Revestimento ${item.code}`,
+        role: 'PRINCIPAL',
+        assigneeUserId: gestorId,
+        date: DAY,
+        time: '00:00',
+        reason,
+      });
+      const fresh = await call(page, 'GET', `/api/v1/production-plans/${plan.id}`);
+      if (fresh.status !== 'PUBLICADO')
+        await call(page, 'POST', `/api/v1/production-plans/${plan.id}/publish`, {
+          version: fresh.version,
+        });
+      await call(page, 'POST', `/api/v1/production-tasks/${task.id}/start`, {});
+      await call(page, 'POST', `/api/v1/production-tasks/${task.id}/complete`, { note: 'Feito' });
+    }
+    const insps = (await call(
+      page,
+      'GET',
+      `/api/v1/quality/inspections?serviceOrderId=${so.id}`,
+    )) as { id: string; version: number }[];
+    expect(insps).toHaveLength(2);
+    for (const i of insps)
+      await call(page, 'POST', `/api/v1/quality/inspections/${i.id}/approve`, {
+        version: i.version,
+        allConform: true,
+        selfApprovalReason: 'Teste E2E: inspetor ausente hoje',
+      });
+
+    // Entrega direta pela tela.
+    await page.goto(`/painel/os/${so.id}?tab=qualidade`);
+    const box = page.getByTestId('os-direct-delivery');
+    await box.getByTestId('os-direct-delivery-start').click();
+    await box.getByTestId('os-direct-delivery-confirm').click();
+    await expect(box).toContainText('Entregue');
+
+    // Desfazer: prévia com efeitos, justificativa obrigatória.
+    await box.getByTestId('os-direct-delivery-revert').click();
+    const dialog = page.getByRole('dialog', { name: 'Desfazer a entrega direta?' });
+    await expect(dialog.getByTestId('revert-effects')).toContainText('pronta para entrega');
+    const confirm = dialog.getByTestId('revert-confirm');
+    await expect(confirm).toBeDisabled();
+    await dialog
+      .getByLabel('Justificativa (obrigatória)')
+      .fill('Cliente não levou: marcado por engano');
+    await expect(confirm).toBeEnabled();
+    await confirm.click();
+    await expect(dialog).toBeHidden();
+    await expect(box.getByTestId('os-direct-delivery-reverted')).toContainText(
+      'Cliente não levou: marcado por engano',
+    );
+    await expect(box.getByTestId('os-direct-delivery-start')).toBeVisible();
+    // A entrega original continua no histórico, marcada como desfeita.
+    const reverted = await call(page, 'GET', `/api/v1/service-orders/${so.id}/direct-delivery`);
+    await page.goto(`/painel/entregas/${reverted.lastReverted.id}`);
+    await expect(page.getByTestId('delivery-reverted')).toContainText('Desfeita');
+  } finally {
+    await setPackaging(page, true);
+  }
+});

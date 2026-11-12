@@ -207,6 +207,8 @@ export interface DeliveryDto {
   status: DeliveryStatus;
   /** Reformulação, Fase 1: LOGISTICA (roteiro/viagem) ou DIRETA (confirmada pela OS, sem viagem). */
   origin: 'LOGISTICA' | 'DIRETA';
+  /** Reformulação Fase 3 (D5): entrega direta desfeita (continua registrada). */
+  reverted?: { at: string; reason: string } | null;
   provisional: boolean;
   customer: { id: string; name: string };
   address: DeliveryAddressDto;

@@ -106,7 +106,10 @@ export function canDecideInspection(i: {
 export const SELF_APPROVAL_REASON_MIN = 10;
 
 /** Ação de auditoria destacada (exceções que o gestor fez por conta própria). */
-export const HIGHLIGHTED_AUDIT_ACTIONS = ['quality.inspection_self_approved'] as const;
+export const HIGHLIGHTED_AUDIT_ACTIONS = [
+  'quality.inspection_self_approved',
+  'delivery.direct_reverted',
+] as const;
 
 /**
  * "Tudo conforme": os itens ainda não conferidos viram CONFORME. Recusa se algum já está "não

@@ -10,11 +10,13 @@ import { Alert, Badge, Spinner } from '@/components/ui/misc';
 import { formatDateTime } from '@/lib/format';
 import { useCan, useModules } from '@/lib/hooks';
 import { useAction, useDirectDelivery } from '@/lib/simple-materials';
+import { RevertDirectDelivery } from './revert-direct-delivery';
 
 /**
  * Reformulação, Fase 1 — "Marcar como entregue" direto na OS.
  * Mesmas exigências da logística (qualidade aprovada, embalagem, sem correção aberta); grava a
- * entrega como "confirmação direta pela OS", sem viagem. Não há desfazer automático.
+ * entrega como "confirmação direta pela OS", sem viagem. Fase 3 (D5): a última entrega direta pode
+ * ser desfeita, com prévia e justificativa, por quem tem entregas.gerenciar E financeiro.gerenciar.
  */
 export function OsDirectDelivery({ serviceOrderId }: { serviceOrderId: string }) {
   const can = useCan();
@@ -27,6 +29,7 @@ export function OsDirectDelivery({ serviceOrderId }: { serviceOrderId: string })
     'OS marcada como entregue.',
   );
   const canDeliver = can('entregas.gerenciar');
+  const canRevert = can('entregas.gerenciar') && can('financeiro.gerenciar');
   const logisticsOn = modules.logistica;
 
   if (q.isPending) return <Spinner />;
@@ -62,6 +65,16 @@ export function OsDirectDelivery({ serviceOrderId }: { serviceOrderId: string })
           <Link className="text-brand-700 hover:underline" href={`/painel/entregas/${last.id}`}>
             {last.code}
           </Link>
+        </p>
+      )}
+      {e.delivered && last?.origin === 'DIRETA' && canRevert && (
+        <RevertDirectDelivery serviceOrderId={serviceOrderId} />
+      )}
+      {e.lastReverted && (
+        <p className="text-sm text-ink-muted" data-testid="os-direct-delivery-reverted">
+          Entrega {e.lastReverted.code} desfeita em {formatDateTime(e.lastReverted.revertedAt)}
+          {e.lastReverted.revertedBy ? ` por ${e.lastReverted.revertedBy}` : ''} —{' '}
+          {e.lastReverted.reason}
         </p>
       )}
 
@@ -100,7 +113,8 @@ export function OsDirectDelivery({ serviceOrderId }: { serviceOrderId: string })
           <p className="text-sm">
             Confirma a entrega de <strong>{e.pendingItems.map((p) => p.code).join(', ')}</strong> ao
             cliente? A cobrança com vencimento na entrega passa a vencer conforme a regra combinada.
-            Não há como desfazer pelo sistema.
+            Desfazer depois só é possível em até 7 dias, com justificativa e sem pagamentos ligados
+            a ela.
           </p>
           <Textarea
             aria-label="Observação (opcional)"

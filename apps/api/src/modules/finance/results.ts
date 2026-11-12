@@ -38,7 +38,12 @@ export async function completion(db: Tx | PrismaClient, serviceOrderId: string) 
   const delivered = items.length > 0 && items.every((i) => i.fulfillmentStage === 'ENTREGUE');
   if (!delivered) return { delivered: false, completedAt: null as Date | null };
   const last = await db.deliveryItem.aggregate({
-    where: { serviceOrderItemId: { in: items.map((i) => i.id) }, deliveredAt: { not: null } },
+    // Fase 3 (D5): só itens efetivamente entregues (entrega direta desfeita não conta).
+    where: {
+      serviceOrderItemId: { in: items.map((i) => i.id) },
+      deliveredAt: { not: null },
+      status: { in: ['ENTREGUE', 'DIVERGENTE'] },
+    },
     _max: { deliveredAt: true },
   });
   const fallback = new Date(Math.max(...items.map((i) => i.updatedAt.getTime())));

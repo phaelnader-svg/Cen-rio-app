@@ -498,5 +498,22 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
         packagingRequired: false,
       },
     });
+    // Fase 3 (D5): entrega direta desfeita (registrada e marcada) — também bloqueia a reversão.
+    await db().delivery.create({
+      data: {
+        origin: 'DIRETA',
+        customerId: openSo.customerId,
+        addressSnapshot: {},
+        contactName: 'Cliente da migração',
+        scheduledDate: new Date(),
+        team: 'EQUIPE_PROPRIA',
+        requiresInstallation: false,
+        status: 'CONCLUIDA',
+        completedAt: new Date(),
+        revertedAt: new Date(),
+        revertedById: gestorId,
+        revertReason: 'Entrega desfeita de teste da migração',
+      },
+    });
   });
 });
