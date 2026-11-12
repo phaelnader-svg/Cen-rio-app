@@ -1728,7 +1728,12 @@ describe('F10-01 — "Recebimento de materiais" sem filtro de permissão no menu
       join(ROOT, 'apps/web/components/purchasing/material-receiving.tsx'),
       'utf8',
     );
-    expect(page).toMatch(/conference && arrivals\.data\?\.length \?/);
+    // Homologação funcional (B2): além de esconder em silêncio, a lista só é PEDIDA com a
+    // permissão que a API exige — o 403 deixou de acontecer.
+    expect(page).toMatch(/conference && seeArrivals && arrivals\.data\?\.length \?/);
+    expect(page).toMatch(
+      /const seeArrivals = can\('estoque\.ver'\) \|\| can\('compras\.ver'\) \|\| can\('estoque\.gerenciar'\);/,
+    );
     expect(page).not.toMatch(/arrivals\.(isError|error)/);
     // E a fila de pedidos é a principal: só ela trava a página com erro.
     expect(page).toMatch(/if \(pending\.isError\) return <Alert/);
