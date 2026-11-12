@@ -131,7 +131,8 @@ Teste anterior (R sem guarda, 16 min com a manutenção de 15 min): também sem 
 | R — retorno sem guarda    | `145825d…`                                 | `sha256:bbc944c0…80ec`                                                    | `sha256:03b6efb7…e513`                                                    |
 
 Os 8 digests do registro coincidem com os relatados pelo Cloud Build. F′ = F + somente a rota de
-prontidão e seu teste. Imagens antigas (`5ff1597`, `0b75a47`, `a7f4f93`, `de31aa7`, `3e0d2d0`)
+prontidão e seu teste; regressão de F′: API **1013 passaram, 0 falharam, 13 pulados**, typecheck, lint e
+formatação sem erros (sem mudança de tela: E2E de `7e047d5`, 68/68, continua valendo). Imagens antigas (`5ff1597`, `0b75a47`, `a7f4f93`, `de31aa7`, `3e0d2d0`)
 intocadas no registro e na VM.
 
 ## 4. Estado da homologação [MEDIDO, somente leitura]
