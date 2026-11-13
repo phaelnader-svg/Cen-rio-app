@@ -1,0 +1,10 @@
+# comando: operar.py op application_logs unit=cenario-backup-upload lines=50 since_minutes=1440
+# inicio_utc: 2026-11-13T22:46:10Z
+# fim_utc: 2026-11-13T22:46:13Z
+# exit: 0
+## stderr
+• application_logs {"unit": "cenario-backup-upload", "lines": 50, "since_minutes": 1440} → job 31da5299-bebe-4199-87fb-2599f951fb9d (mensagem 22612558631124878)
+{"jti": "31da5299-bebe-4199-87fb-2599f951fb9d", "operacao": "application_logs", "classe": "READ_ONLY", "parametros": {"unit": "cenario-backup-upload", "lines": 50, "since_minutes": 1440}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T22:46:11.149666Z", "fim": "2026-11-13T22:46:11.384212Z", "duracao_s": 0.235, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ journalctl --no-pager -o short-iso -u cenario-backup-upload.service -n 50 --since -1440min
+2026-11-13T07:30:18+0000 cenario-prod systemd[1]: cenario-backup-upload.service - Cenário Gestão — envio dos backups ao Cloud Storage was skipped because of an unmet condition check (ConditionPathExists=/etc/cenario/publicacao-autorizada).
