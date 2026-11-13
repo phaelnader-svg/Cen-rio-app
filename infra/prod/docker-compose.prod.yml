@@ -48,7 +48,9 @@ services:
       - -c
       - max_connections=60
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Banco limpo da versão 696e3e9 (nov/2026): volume NOVO. O volume anterior "pgdata" (dados
+      # até 13/11/2026) fica declarado abaixo, intacto e sem uso; o retorno é voltar esta linha.
+      - pgdata_2026_11:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U cenario -d cenario_prod']
       interval: 5s
@@ -153,7 +155,8 @@ services:
     logging: *logging
 
 volumes:
-  pgdata:
+  pgdata: # banco anterior (até 13/11/2026): preservado, sem uso. Nunca remover sem decisão explícita.
+  pgdata_2026_11:
   storage:
   backups:
   caddy_data:
