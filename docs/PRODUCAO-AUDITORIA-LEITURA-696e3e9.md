@@ -154,9 +154,9 @@ Espaço para a candidata: ~4 GB por imagem (≈ 8 GB para o par api+web, pela ho
 | `backup_list`                            | **28** pastas, de `20261019T164122Z` a `20261113T164142Z`: 1 por dia às ~16:41Z + 2 extras (`20261019T164342Z`, `20261023T011727Z`, este 1 min antes das 2 migrations de 23/10) | 17:22:03 (`1ae46458…`) | ✔ |
 | Mais recente                             | `cenario-production-20261113T164142Z`: **~40 min** de idade na hora da consulta                       | —                        | ✔             |
 | `backup_validate` (SHA-256) do mais recente | `SHA256SUMS conferido`                                                                              | 17:22:28 (`83a437cc…`)   | ✔             |
-| Envio ao bucket `cenariogestao-prod-backups` | Não verificado: nenhuma operação da lista autorizada lê o bucket (`application_logs unit=cenario-backup-upload` não estava autorizada) | — | limitação |
+| Envio ao bucket `cenariogestao-prod-backups` | Não verificado aqui (investigado depois em `PRODUCAO-INVESTIGACAO-BACKUP-EXTERNO.md`): nenhuma operação da lista autorizada lê o bucket (`application_logs unit=cenario-backup-upload` não estava autorizada) | — | limitação |
 | Snapshots do disco (`gcloud compute snapshots list`) | **403**: `Required 'compute.snapshots.list' permission for 'projects/cenariogestao'`. Não contornado. | 17:23:22 | limitação |
-| Ponto de recuperação vigente             | A VM protege `9fb1786` como "versão do ponto de recuperação" (primeiro deploy, banco vazio). Não há ponto registrado posterior aos dados reais. Um ponto novo exige `recovery_point_create` (MUTATING), fora desta auditoria. | 17:22:07 | registro |
+| Ponto de recuperação vigente             | A VM protege `9fb1786` como "versão do ponto de recuperação". A pasta do ponto não foi lida. *Corrigido em `PRODUCAO-INVESTIGACAO-BACKUP-EXTERNO.md` §6:* `9fb1786` ainda era a versão ativa em 23/10 01:17Z, então o ponto pode ser o backup `20261023T011727Z`, e não o do banco vazio. Um ponto novo exige `recovery_point_create` (MUTATING), fora desta auditoria. | 17:22:07 | registro |
 
 ## 9. Imagens da candidata no Artifact Registry `cenario-prod`
 
@@ -192,8 +192,7 @@ são os digests da imagem `696e3e9` ativa na homologação. **Nada foi promovido
 3. Snapshots: 403 (`compute.snapshots.list`). Não contornado.
 4. Envio de backups ao bucket não verificado (nenhuma operação autorizada o lê).
 5. Logs da API: só ~20 h cobertas (teto de 5000 linhas do catálogo). Para 5xx nos 7 dias, vale o caddy.
-6. O ponto de recuperação protegido na VM é o do banco vazio (`9fb1786`). Nenhum foi criado nesta
-   auditoria (MUTATING).
+6. O ponto de recuperação protegido na VM tem a versão `9fb1786`; a pasta dele não foi lida (pode ser a de 23/10 01:17Z; veja `PRODUCAO-INVESTIGACAO-BACKUP-EXTERNO.md` §6). Nenhum ponto foi criado nesta auditoria (MUTATING).
 
 ## 12. Operações executadas (todas READ_ONLY)
 

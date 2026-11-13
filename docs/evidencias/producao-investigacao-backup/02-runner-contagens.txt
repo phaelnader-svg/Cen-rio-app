@@ -1,0 +1,32 @@
+# comando: operar.py op application_logs unit=cenario-runner lines=500 since_minutes=10080
+# inicio_utc: 2026-11-13T18:24:47Z  fim_utc: 2026-11-13T18:24:53Z  exit: 0
+{"jti": "2e47ad01-1e4d-42e8-b17f-1a22da61deee", "operacao": "application_logs", "classe": "READ_ONLY", "parametros": {"unit": "cenario-runner", "lines": 500, "since_minutes": 10080}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T18:24:50.345300Z", "fim": "2026-11-13T18:24:50.550081Z", "duracao_s": 0.205, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+# SÓ CONTAGENS (linhas brutas não gravadas)
+linhas=80
+por dia:
+      6   2026-11-11
+     74   2026-11-13
+operações citadas:
+      5 application_logs
+      3 backup_list
+      3 backup_validate
+     15 container_logs
+      3 containers_status
+      6 database_counts
+      3 database_fingerprint
+      3 database_status
+      3 disk_status
+      6 gate_status
+      3 health
+      3 images_cleanup_plan
+      3 migration_status
+      3 network_status
+      3 resources
+      3 smoke_test
+      3 status
+      6 version
+      3 websocket_test
+classes citadas:
+     54 READ_ONLY
+linhas com backup|portão|gate|enviar|recovery: 14
+linhas com gate_open|gate_close|recovery_point_create|backup_create|enviar-backups: 0

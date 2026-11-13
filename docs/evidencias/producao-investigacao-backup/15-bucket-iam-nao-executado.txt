@@ -1,0 +1,1 @@
+# gcloud storage buckets get-iam-policy gs://cenariogestao-prod-backups — NÃO EXECUTADO: a tarefa original proíbe 'IAM e segredos'; registrado como limitação.

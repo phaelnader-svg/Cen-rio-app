@@ -1,0 +1,16 @@
+# comando: operar.py op application_logs unit=cenario-backup-upload lines=5000 since_minutes=10080
+# inicio_utc: 2026-11-13T18:24:41Z
+# fim_utc: 2026-11-13T18:24:47Z
+# exit: 0
+## stderr
+• application_logs {"unit": "cenario-backup-upload", "lines": 5000, "since_minutes": 10080} → job 2eebe863-e01c-46dd-9c46-5e741bbebf24 (mensagem 22612384019526892)
+{"jti": "2eebe863-e01c-46dd-9c46-5e741bbebf24", "operacao": "application_logs", "classe": "READ_ONLY", "parametros": {"unit": "cenario-backup-upload", "lines": 5000, "since_minutes": 10080}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T18:24:44.644681Z", "fim": "2026-11-13T18:24:44.940746Z", "duracao_s": 0.296, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ journalctl --no-pager -o short-iso -u cenario-backup-upload.service -n 5000 --since -10080min
+2026-11-07T07:30:18+0000 cenario-prod systemd[1]: cenario-backup-upload.service - Cenário Gestão — envio dos backups ao Cloud Storage was skipped because of an unmet condition check (ConditionPathExists=/etc/cenario/publicacao-autorizada).
+2026-11-08T07:30:18+0000 cenario-prod systemd[1]: cenario-backup-upload.service - Cenário Gestão — envio dos backups ao Cloud Storage was skipped because of an unmet condition check (ConditionPathExists=/etc/cenario/publicacao-autorizada).
+2026-11-09T07:30:18+0000 cenario-prod systemd[1]: cenario-backup-upload.service - Cenário Gestão — envio dos backups ao Cloud Storage was skipped because of an unmet condition check (ConditionPathExists=/etc/cenario/publicacao-autorizada).
+2026-11-10T07:30:18+0000 cenario-prod systemd[1]: cenario-backup-upload.service - Cenário Gestão — envio dos backups ao Cloud Storage was skipped because of an unmet condition check (ConditionPathExists=/etc/cenario/publicacao-autorizada).
+2026-11-11T07:30:18+0000 cenario-prod systemd[1]: cenario-backup-upload.service - Cenário Gestão — envio dos backups ao Cloud Storage was skipped because of an unmet condition check (ConditionPathExists=/etc/cenario/publicacao-autorizada).
+2026-11-12T07:30:18+0000 cenario-prod systemd[1]: cenario-backup-upload.service - Cenário Gestão — envio dos backups ao Cloud Storage was skipped because of an unmet condition check (ConditionPathExists=/etc/cenario/publicacao-autorizada).
+2026-11-13T07:30:18+0000 cenario-prod systemd[1]: cenario-backup-upload.service - Cenário Gestão — envio dos backups ao Cloud Storage was skipped because of an unmet condition check (ConditionPathExists=/etc/cenario/publicacao-autorizada).

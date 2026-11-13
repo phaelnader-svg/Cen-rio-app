@@ -1,0 +1,3 @@
+# gcloud storage ls -l gs://cenariogestao-prod-backups/backups/ (completo)
+# inicio_utc: 2026-11-13T18:25:56Z  exit: 1
+ERROR: (gcloud.storage.ls) HTTPError 403: claude-operador-prod@cenariogestao.iam.gserviceaccount.com does not have storage.objects.get access to the Google Cloud Storage object. Permission 'storage.objects.get' denied on resource '//storage.googleapis.com/projects/_/buckets/cenariogestao-prod-backups/objects/backups/' (or it may not exist). This command is authenticated with an access token from the CLOUDSDK_AUTH_ACCESS_TOKEN environment variable.
