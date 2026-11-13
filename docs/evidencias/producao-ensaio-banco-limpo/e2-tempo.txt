@@ -1,0 +1,1 @@
+    indisponibilidade: manutenção → ativar = 39 s; com o semear = 42 s

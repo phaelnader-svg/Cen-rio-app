@@ -1,0 +1,68 @@
+
+■ 0. Pilha local limpa (projeto cenario-prod)
+
+■ E1. Produção atual simulada: 7b4177b15a930b85d985a59a9182b579760c5a7b no volume pgdata, com dados
+  ✔ e1-iniciar-banco
+  ✔ e1-preparar-antiga
+  ✔ e1-ponto
+  ✔ e1-migrar
+    migrations da versão antiga: 33
+  ✔ e1-ativar-antiga
+  ✔ e1-semear
+  ✔ 3 clientes marcadores no banco antigo
+  ✔ login do gestor na versão antiga
+  ✔ impressão digital do banco antigo: 4128 itens
+
+■ E2. Deploy com banco limpo (696e3e9ddc5f1c803a4b9244a075ed498ad81be3)
+  ✔ e2-preparar-nova
+  ✔ e2-manutencao
+  ✔ scripts do deploy instalados (CENARIO_DIR → pacote novo)
+  ✔ e2-iniciar-banco
+  ✔ PostgreSQL no volume NOVO: nenhuma tabela
+  ✔ volume antigo fora de uso; hash do conteúdo: 4965012299e97d9d
+  ✔ e2-ponto
+  ✔ e2-preflight
+    • pendentes (37): 20261008000000_fundacao, 20261008100000_comercial_oficina, 20261008200000_medicoes_materiais, 20261009000000_compras_estoque, 20261010000000_producao, 20261011000000_tablets_notificacoes, 20261012000000_presenca_operacional, 20261013000000_ajuda_reprogramacao, 20261014000000_central_atencao, 20261015000000_qualidade_logistica, 20261016000000_financeiro_operacional, 20261017000000_auditoria_final, 20261018000000_fila_semanal, 20261025000000_distribuicao_automatica, 20261101000000_mao_de_obra_revisao, 20261108000000_custos_logistica, 20261115000000_fechamento_semanal, 20261122000000_roteiro_logistica, 20261129000000_novo_servico, 20261206000000_recebimentos_compartilhados, 20261213000000_pre_planejamento, 20261220000000_recebimentos_permissao_funcoes, 20261227000000_servico_sem_retirada, 20261228000000_titular_mao_de_obra_prevista, 20261230000000_modelos_simplificados, 20270105000000_necessidade_substituicao, 20270112000000_compra_antes_da_chegada, 20270119000000_cobranca_cliente, 20270126000000_meus_ganhos_permissao, 20270202000000_negociacao_confirmacao_semanal, 20270209000000_presenca_apoio_simplificados, 20270216000000_notificacoes_resolvidas, 20270223000000_custo_operacional_equipe_propria, 20270302000000_modulos_configuraveis, 20270309000000_materiais_estoque_entrega, 20270316000000_reformulacao_fase_2, 20270323000000_reformulacao_fase_3
+    PREFLIGHT: OK (nenhuma migration incompleta, desconhecida, divergente ou fora de ordem; esquema e dados compatíveis com as pendentes)
+  ✔ e2-migrar
+  ✔ 37/37 migrations no banco novo
+  ✔ e2-ativar
+  ✔ e2-semear
+  ✔ banco novo: 1 usuário (gestor), 0 clientes, 0 OS
+  ✔ login do gestor na versão nova (senha do bootstrap)
+  ✔ e2-saude
+  ✔ e2-acesso
+    indisponibilidade: manutenção → ativar = 39 s; com o semear = 42 s
+
+■ E3. Falha simulada depois da ativação
+  ✔ saúde reprova: ✘ contêiner api: ausente
+
+■ E4. Retorno ao banco antigo e à versão antiga
+  ✔ e4-manutencao
+  ✔ scripts anteriores restaurados (vm_scripts_restore)
+  ✔ volume antigo intocado durante o deploy (hash 4965012299e97d9d)
+  ✔ e4-iniciar-banco
+  ✔ PostgreSQL de volta ao volume antigo (já tem 119 tabela)
+  ✔ e4-preflight-antiga
+  ✔ e4-ativar-antiga
+  ✔ dados antigos IDÊNTICOS aos de antes do deploy (112 tabelas de negócio)
+  ✔ os 3 marcadores estão no banco antigo
+  ✔ login do gestor na versão antiga (retorno)
+  ✔ volume novo preservado (nada apagado no retorno)
+    retorno: manutenção → versão antiga ativa = 29 s
+
+■ E5. Novo deploy depois da correção: banco novo intacto
+  ✔ e5-manutencao
+  ✔ e5-iniciar-banco
+  ✔ e5-ativar
+  ✔ banco novo idêntico ao de antes do retorno
+  ✔ login do gestor (banco novo)
+    volume: cenario-prod_backups
+    volume: cenario-prod_caddy_data
+    volume: cenario-prod_pgdata
+    volume: cenario-prod_pgdata_2026_11
+    volume: cenario-prod_storage
+
+■ Resultado
+Evidências em /tmp/claude-0/-home-user-Cen-rio-app/825bbdd0-c506-55f0-b21c-23b8fb4f6674/scratchpad/ensaio-prod/run3
+ENSAIO DO DEPLOY COM BANCO LIMPO: OK
