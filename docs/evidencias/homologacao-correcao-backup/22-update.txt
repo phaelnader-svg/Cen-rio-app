@@ -1,0 +1,23 @@
+• vm_scripts_update {"version": "89fbe1ba4ea5"} → job e0534300-9cc9-4ab5-b27c-472b3f6c209e (mensagem 22611581454455607)
+{"jti": "e0534300-9cc9-4ab5-b27c-472b3f6c209e", "operacao": "vm_scripts_update", "classe": "DESTRUCTIVE", "parametros": {"version": "89fbe1ba4ea5"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T21:46:24.139969Z", "fim": "2026-11-13T21:46:26.565460Z", "duracao_s": 2.425, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+✔ pacote scripts-89fbe1ba4ea5 íntegro (commit 89fbe1ba4ea56b5a02989b245eb915f5a9a516c7, 49 arquivos)
+$ bash -n /var/lib/cenario-runner/validacao-scripts-af3t1nin/infra/homolog/gcp/vm.sh
+$ docker compose -f /var/lib/cenario-runner/validacao-scripts-af3t1nin/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env config -q
+$ docker run --rm --network none -v /var/lib/cenario-runner/validacao-scripts-af3t1nin/infra/homolog/Caddyfile.homolog:/etc/caddy/Caddyfile:ro -e HOMOLOG_DOMAIN -e HOMOLOG_BASIC_USER -e HOMOLOG_BASIC_HASH -e HOMOLOG_GATE_TOKEN caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+Valid configuration
+✔ cópia anterior guardada: /opt/cenario.anterior-20261113T214626Z-e0534300
+  ✔ infra/homolog/gcp/startup.sh
+  ✔ infra/homolog/gcp/testes/test_vm_sh.sh
+  ✔ infra/homolog/gcp/vm.sh
+✔ /opt/cenario na versão 89fbe1ba4ea5: 3 arquivo(s) atualizado(s); arquivos locais fora do pacote mantidos. Nada foi reiniciado: aplique com apply_stack_config.
+{"level":"info","ts":1794606386.0098007,"msg":"using config from file","file":"/etc/caddy/Caddyfile"}
+{"level":"warn","ts":1794606386.0125344,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+{"level":"warn","ts":1794606386.0171783,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+{"level":"warn","ts":1794606386.0179598,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+{"level":"warn","ts":1794606386.0182142,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+{"level":"info","ts":1794606386.0213926,"msg":"adapted config to JSON","adapter":"caddyfile"}
+{"level":"info","ts":1794606386.0233521,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0xc000614880"}
+{"level":"info","ts":1794606386.023351,"logger":"http.auto_https","msg":"server is listening only on the HTTPS port but has no TLS connection policies; adding one to enable TLS","server_name":"srv0","https_port":443}
+{"level":"info","ts":1794606386.023815,"logger":"http.auto_https","msg":"enabling automatic HTTP->HTTPS redirects","server_name":"srv0"}
+{"level":"info","ts":1794606386.0583541,"logger":"tls.cache.maintenance","msg":"stopped background certificate maintenance","cache":"0xc000614880"}
+{"level":"info","ts":1794606386.0584517,"logger":"http","msg":"servers shutting down with eternal grace period"}

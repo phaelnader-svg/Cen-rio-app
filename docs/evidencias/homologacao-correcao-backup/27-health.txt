@@ -1,0 +1,14 @@
+• health {} → job fd87340f-8113-4876-b949-92879a5eb972 (mensagem 22611593946865721)
+{"jti": "fd87340f-8113-4876-b949-92879a5eb972", "operacao": "health", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T21:46:46.441542Z", "fim": "2026-11-13T21:46:47.335521Z", "duracao_s": 0.894, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env ps --all --format {{.Service}} {{.State}} {{.Health}}
+api running healthy
+backup running 
+caddy running 
+postgres running healthy
+web running healthy
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ /api/ready pelo proxy: HTTP 200

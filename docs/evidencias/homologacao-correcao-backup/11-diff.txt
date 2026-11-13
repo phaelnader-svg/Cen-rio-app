@@ -1,0 +1,232 @@
+• vm_scripts_diff {"version": "89fbe1ba4ea5"} → job 7f940471-9dcb-4bf6-805b-f00dd45b4e5a (mensagem 22612161528642580)
+{"jti": "7f940471-9dcb-4bf6-805b-f00dd45b4e5a", "operacao": "vm_scripts_diff", "classe": "READ_ONLY", "parametros": {"version": "89fbe1ba4ea5"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T21:45:45.305311Z", "fim": "2026-11-13T21:45:45.955743Z", "duracao_s": 0.65, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+✔ pacote scripts-89fbe1ba4ea5 íntegro (commit 89fbe1ba4ea56b5a02989b245eb915f5a9a516c7, 49 arquivos)
+• /opt/cenario atual: 5ff1597c0d1c → pacote: 89fbe1ba4ea5
+== vm.sh: 1 mudança(s)
+   ~ alterado  infra/homolog/gcp/vm.sh
+== Compose: 0 mudança(s)
+== Caddy: 0 mudança(s)
+== scripts auxiliares: 1 mudança(s)
+   ~ alterado  infra/homolog/gcp/startup.sh
+== autonomia (não executado a partir de /opt/cenario): 0 mudança(s)
+== testes/documentação: 1 mudança(s)
+   ~ alterado  infra/homolog/gcp/testes/test_vm_sh.sh
+== só na VM (mantidos, nunca apagados): 0
+---------------------------------------------------------------- diff infra/homolog/gcp/startup.sh
+--- /opt/cenario/infra/homolog/gcp/startup.sh
++++ scripts-89fbe1ba4ea5/infra/homolog/gcp/startup.sh
+@@ -5,9 +5,12 @@
+ #   - swap: cria /swapfile de 2 GB SÓ se não houver NENHUMA swap ativa nem declarada no /etc/fstab
+ #     (a VM atual já tem 2 GB: nada é alterado);
+ #   - atualizações automáticas de segurança (unattended-upgrades): instala/ativa se ausentes;
+-#   - serviços systemd da pilha e do envio diário dos backups, COM PORTÃO DE PUBLICAÇÃO: só rodam
+-#     se existir /etc/cenario/publicacao-autorizada. Este script NUNCA cria esse arquivo e NUNCA
+-#     inicia a pilha sem ele (nem PostgreSQL, nem migrations, nem portas 80/443).
++#   - serviço systemd da pilha COM PORTÃO DE PUBLICAÇÃO: só roda se existir
++#     /etc/cenario/publicacao-autorizada. Este script NUNCA cria esse arquivo e NUNCA
++#     inicia a pilha sem ele (nem PostgreSQL, nem migrations, nem portas 80/443). Rodar este
++#     script COM o portão aberto (re)inicia a pilha: para só atualizar as unidades, rode com ele fechado;
++#   - envio diário dos backups ao bucket (timer 07:30 UTC), SEM o portão: só lê os backups e cria
++#     objetos no bucket com a conta da VM (nenhum segredo, nada iniciado).
+ # Nenhum segredo é lido nem gravado aqui.
+ # CENARIO_RAIZ (só nos testes) prefixa os caminhos do sistema, para executar sem tocar na máquina.
+ set -euo pipefail
+@@ -77,11 +80,16 @@
+ [Install]
+ WantedBy=multi-user.target
+ EOF
++# Envio dos backups ao bucket: SEM o portão de publicação. O portão protege a pilha (segredos,
++# PostgreSQL, portas) e fica fechado na operação normal; o envio só LÊ as pastas de backup e CRIA
++# objetos no bucket com a conta da VM (nenhum segredo, nada iniciado). Com o portão como condição,
++# o envio diário era pulado sempre que o portão estava fechado (produção: sem cópia externa de
++# 23/10 a 13/11/2026). Sem volume de backups (antes do 1º deploy), o envio não faz nada.
+ cat > "$R/etc/systemd/system/cenario-backup-upload.service" <<EOF
+ [Unit]
+ Description=Cenário Gestão — envio dos backups ao Cloud Storage
+ After=cenario-homolog.service
+-ConditionPathExists=$PORTAO
++ConditionPathExists=/opt/cenario/infra/homolog/gcp/vm.sh
+ 
+ [Service]
+ Type=oneshot
+@@ -100,7 +108,7 @@
+ EOF
+ systemctl daemon-reload
+ systemctl enable cenario-homolog.service cenario-backup-upload.timer
+-systemctl start cenario-backup-upload.timer # o serviço que ele aciona respeita o portão
++systemctl start cenario-backup-upload.timer # envio diário (independe do portão)
+ 
+ if [[ -f "$R$PORTAO" && -x "$R/opt/cenario/infra/homolog/gcp/vm.sh" ]]; then
+   echo "publicação autorizada ($PORTAO): (re)iniciando a pilha"
+---------------------------------------------------------------- diff infra/homolog/gcp/testes/test_vm_sh.sh
+--- /opt/cenario/infra/homolog/gcp/testes/test_vm_sh.sh
++++ scripts-89fbe1ba4ea5/infra/homolog/gcp/testes/test_vm_sh.sh
+@@ -104,6 +104,34 @@
+ roda "$TMP/a5.out" enviar-backups
+ afirma "$TMP/a5.out" "✔ cenario-homolog-20261004T030000Z enviado"
+ igual "$(n_objetos)" 3 "objetos no bucket"
++[[ ! -e "$TMP/portao" ]] && echo "  ✔ envios feitos com o portão FECHADO" || { echo "  ✘ portão aberto nos cenários A"; FALHAS=$((FALHAS + 1)); }
++
++echo "A6. alerta da cópia externa (envio-externo, limite 36 h)"
++roda "$TMP/a6a.out" envio-externo
++igual "$(cat "$TMP/a6a.out.rc")" 0 "em dia logo após o envio"
++afirma "$TMP/a6a.out" "✔ último envio ao bucket há 0 h"
++afirma "$TMP/a6a.out" "✔ nenhum backup local sem cópia externa há mais de 36 h"
++igual "$(wc -c < "$CHAMADAS" | xargs)" 0 "chamadas a docker/gcloud (só leitura local)"
++echo $(( $(date -u +%s) - 37 * 3600 )) > "$TMP/estado/ultimo-envio"
++roda "$TMP/a6b.out" envio-externo
++igual "$(cat "$TMP/a6b.out.rc")" 1 "último envio há 37 h reprova"
++afirma "$TMP/a6b.out" "✘ último envio ao bucket há 37 h (limite 36 h)"
++date -u +%s > "$TMP/estado/ultimo-envio"
++VELHO="cenario-homolog-$(date -u -d '-2 days' +%Y%m%dT%H%M%SZ)"; NOVO="cenario-homolog-$(date -u -d '-30 hours' +%Y%m%dT%H%M%SZ)"
++novo_backup "$VELHO"; novo_backup "$NOVO"
++roda "$TMP/a6c.out" envio-externo
++igual "$(cat "$TMP/a6c.out.rc")" 1 "backup de 2 dias sem cópia externa reprova"
++afirma "$TMP/a6c.out" "✘ 1 backup(s) local(is) sem cópia externa há mais de 36 h (mais antigo: $VELHO)"
++nega "$TMP/a6c.out" "$NOVO"
++CENARIO_ENVIO_MAX_H=24 roda "$TMP/a6d.out" envio-externo
++afirma "$TMP/a6d.out" "✘ 2 backup(s) local(is) sem cópia externa há mais de 24 h"
++roda "$TMP/a6e.out" enviar-backups
++igual "$(cat "$TMP/a6e.out.rc")" 0 "pendentes enviados com o portão fechado"
++roda "$TMP/a6f.out" envio-externo
++igual "$(cat "$TMP/a6f.out.rc")" 0 "em dia depois do envio"
++echo "A7. saúde: o alerta conta no smoke e só avisa nas operações internas"
++igual "$(grep -c '^  CENARIO_ENVIO_SO_AVISO=1 saude$' "$VMSH")" 3 "ativar, aplicar-config e recuperar chamam a saúde em modo aviso"
++igual "$(grep -c '^  saude$' "$VMSH")" 0 "nenhuma chamada interna à saúde estrita"
+ 
+ echo "B. portão fechado: gerar-env e iniciar recusam sem chamar docker nem Secret Manager"
+ for c in gerar-env iniciar; do
+@@ -166,7 +194,9 @@
+ nega "$CHAMADAS" "fallocate"
+ nega "$CHAMADAS" "apt-get"
+ afirma "$R/etc/systemd/system/cenario-homolog.service" "ConditionPathExists=/etc/cenario/publicacao-autorizada"
+-afirma "$R/etc/systemd/system/cenario-backup-upload.service" "ConditionPathExists=/etc/cenario/publicacao-autorizada"
++nega "$R/etc/systemd/system/cenario-backup-upload.service" "ConditionPathExists=/etc/cenario/publicacao-autorizada"
++afirma "$R/etc/systemd/system/cenario-backup-upload.service" "ConditionPathExists=/opt/cenario/infra/homolog/gcp/vm.sh"
++afirma "$R/etc/systemd/system/cenario-backup-upload.service" "/opt/cenario/infra/homolog/gcp/vm.sh enviar-backups"
+ afirma "$TMP/d1.out" "publicação NÃO autorizada"
+ nega "$CHAMADAS" "restart cenario-homolog"
+ nega "$CHAMADAS" "start cenario-homolog"
+---------------------------------------------------------------- diff infra/homolog/gcp/vm.sh
+--- /opt/cenario/infra/homolog/gcp/vm.sh
++++ scripts-89fbe1ba4ea5/infra/homolog/gcp/vm.sh
+@@ -14,6 +14,7 @@
+ #   vm.sh semear               # seed inicial (gestor de teste, equipe fictícia, checklists) — uma vez
+ #   vm.sh backup               # backup imediato + envio ao bucket
+ #   vm.sh enviar-backups       # envia ao bucket os backups ainda não enviados (usado pelo timer diário)
++#   vm.sh envio-externo        # SÓ LEITURA: cópia externa em dia? (último envio e backups não enviados há > 36 h)
+ #   vm.sh restaurar-teste [pasta]   # restaura num banco SEPARADO e compara (não toca na homologação)
+ #   vm.sh restaurar <pasta> --sim   # restaura SOBRE a homologação (faz backup de segurança antes)
+ #   vm.sh atualizar <etiqueta>      # DESATIVADO: migrava implicitamente na partida; use a sequência abaixo
+@@ -306,6 +307,16 @@
+     local idade; idade="$(compose exec -T backup sh -c "echo \$(( (\$(date +%s) - \$(stat -c %Y '$ultimo')) / 3600 ))")"
+     (( idade <= 26 )) && ok "último backup há ${idade} h ($(basename "$ultimo"))" || ruim "último backup há ${idade} h"
+   else ruim "nenhum backup encontrado"; fi
++  # Cópia externa (bucket). Nas operações internas (ativar, aplicar-config, recuperar) vira só aviso:
++  # um envio atrasado não pode reprovar uma troca de versão já feita. No `vm.sh saude` direto
++  # (smoke_test) conta como problema.
++  local linha_e; while IFS= read -r linha_e; do
++    case "$linha_e" in
++      "✔ "*) ok "${linha_e#✔ }" ;;
++      "✘ "*) if [[ "${CENARIO_ENVIO_SO_AVISO:-0}" == 1 ]]; then echo "⚠ ${linha_e#✘ } (aviso; não reprova esta operação)"; else ruim "${linha_e#✘ }"; fi ;;
++      *) echo "$linha_e" ;;
++    esac
++  done < <(verificar_envio_externo || true)
+   local mig; mig="$(compose exec -T postgres psql -tAU cenario -d cenario_homolog -c \
+     "select count(*) filter (where finished_at is not null and rolled_back_at is null) || ' ' || count(*) filter (where finished_at is null and rolled_back_at is null) from _prisma_migrations" 2>/dev/null || true)"
+   if [[ "$mig" =~ ^([0-9]+)\ 0$ ]]; then ok "migrations: ${BASH_REMATCH[1]} aplicadas, nenhuma pendente/com falha"
+@@ -337,7 +348,7 @@
+   log "Caddyfile válido. Recriando só o proxy (caddy)…"
+   compose up -d --no-deps --force-recreate caddy
+   sleep 5
+-  saude
++  CENARIO_ENVIO_SO_AVISO=1 saude
+ }
+ 
+ backup() {
+@@ -354,8 +365,7 @@
+   if [[ -z "$BUCKET" ]]; then log "Sem bucket configurado (cenario-bucket): envio ignorado."; return 0; fi
+   install -d -m 700 "$STATE_DIR"; touch "$STATE_DIR/enviados"
+   local tmp; tmp="$(mktemp -d)"; trap "rm -rf '$tmp'; trap - RETURN" RETURN
+-  local vol="${CENARIO_BACKUPS_DIR:-}"
+-  [[ -n "$vol" ]] || vol="$(docker volume inspect -f '{{.Mountpoint}}' cenario-homolog_backups 2>/dev/null || true)"
++  local vol; vol="$(dir_backups)"
+   [[ -n "$vol" && -d "$vol" ]] || { log "Sem volume de backups: nada a enviar."; return 0; }
+   cabecalho_token "$tmp/auth" || return 1
+   local erros=0 d nome codigo rc
+@@ -373,6 +383,49 @@
+     esac
+   done
+   (( erros == 0 )) || { log "Envio com $erros erro(s)."; return 1; }
++  # Carimbo do último envio SEM erro (lido pela saúde: alerta se passar de 36 h).
++  date -u +%s > "$STATE_DIR/ultimo-envio"
++}
++
++# Pasta dos backups no host (volume do contêiner backup). Vazio se não existir.
++dir_backups() {
++  local vol="${CENARIO_BACKUPS_DIR:-}"
++  [[ -n "$vol" ]] || vol="$(docker volume inspect -f '{{.Mountpoint}}' cenario-homolog_backups 2>/dev/null || true)"
++  echo "$vol"
++}
++
++# Cópia externa em dia? SÓ LÊ (carimbo, lista de enviados e nomes das pastas). Imprime linhas
++# "✔ …"/"✘ …" e sai com 1 se houver problema:
++#   - último envio sem erro há mais de CENARIO_ENVIO_MAX_H horas (padrão 36), ou nenhum registrado;
++#   - backup local com mais de CENARIO_ENVIO_MAX_H horas (pela data no nome) que nunca foi enviado.
++# O envio roda às 07:30 UTC; o backup diário fica pronto ~16:41 UTC: um envio por dia mantém os dois
++# critérios abaixo de 36 h com folga para um atraso pontual.
++verificar_envio_externo() {
++  local max="${CENARIO_ENVIO_MAX_H:-36}" agora falhas=0
++  agora="$(date -u +%s)"
++  if [[ -z "$BUCKET" ]]; then echo "• envio externo desativado (sem cenario-bucket)"; return 0; fi
++  if [[ -s "$STATE_DIR/ultimo-envio" ]]; then
++    local h=$(( (agora - $(cat "$STATE_DIR/ultimo-envio")) / 3600 ))
++    if (( h <= max )); then echo "✔ último envio ao bucket há ${h} h"
++    else echo "✘ último envio ao bucket há ${h} h (limite ${max} h)"; falhas=1; fi
++  else
++    echo "✘ nenhum envio ao bucket registrado (limite ${max} h)"; falhas=1
++  fi
++  local vol pend=0 antigo="" d nome ts
++  vol="$(dir_backups)"
++  if [[ -n "$vol" && -d "$vol" ]]; then
++    for d in "$vol"/cenario-*; do
++      [[ -d "$d" ]] || continue
++      nome="$(basename "$d")"
++      grep -qx "$nome" "$STATE_DIR/enviados" 2>/dev/null && continue
++      [[ "$nome" =~ -([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z$ ]] || continue
++      ts="$(date -u -d "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s)"
++      if (( (agora - ts) / 3600 > max )); then pend=$((pend + 1)); [[ -n "$antigo" ]] || antigo="$nome"; fi
++    done
++  fi
++  if (( pend == 0 )); then echo "✔ nenhum backup local sem cópia externa há mais de ${max} h"
++  else echo "✘ ${pend} backup(s) local(is) sem cópia externa há mais de ${max} h (mais antigo: ${antigo})"; falhas=1; fi
++  return "$falhas"
+ }
+ 
+ # Verificação da preparação, SEM iniciar contêineres, sem PostgreSQL, sem migrations e sem gravar
+@@ -696,7 +749,7 @@
+     [[ "$st" == healthy ]] && break; sleep 5
+   done
+   [[ "$st" == healthy ]] || { compose logs --tail 30 api; log "✘ API não ficou saudável. Recuperação: vm.sh recuperar --sim"; return 1; }
+-  saude
++  CENARIO_ENVIO_SO_AVISO=1 saude
+ }
+ 
+ recuperar() {
+@@ -736,7 +789,7 @@
+     [[ "$st" == healthy ]] && break; sleep 5
+   done
+   log "Versão $ETIQUETA em execução (API: ${st:-?})."
+-  saude
++  CENARIO_ENVIO_SO_AVISO=1 saude
+ }
+ 
+ parar() { need_env; compose stop; log "Contêineres parados (volumes e dados preservados)."; }
+@@ -753,6 +806,7 @@
+   semear) semear ;;
+   backup) backup ;;
+   enviar-backups) enviar_backups ;;
++  envio-externo) verificar_envio_externo ;;
+   restaurar-teste) restaurar_teste "${2:-}" ;;
+   restaurar) restaurar "${2:-}" "${3:-}" ;;
+   atualizar) atualizar "${2:-}" ;;

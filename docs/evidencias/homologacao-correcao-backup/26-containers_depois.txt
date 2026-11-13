@@ -1,0 +1,9 @@
+• containers_status {} → job 55d0fa67-8832-4736-a452-42526fc29565 (mensagem 22611593946859816)
+{"jti": "55d0fa67-8832-4736-a452-42526fc29565", "operacao": "containers_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T21:46:44.269917Z", "fim": "2026-11-13T21:46:44.675129Z", "duracao_s": 0.405, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env ps --all --format table {{.Service}}	{{.State}}	{{.Status}}	{{.Image}}
+SERVICE    STATE     STATUS                 IMAGE
+api        running   Up 4 hours (healthy)   «CENARIO_API_IMAGE-mascarado»
+backup     running   Up 5 weeks             postgres:16
+caddy      running   Up 2 weeks             caddy:2.10-alpine
+postgres   running   Up 5 weeks (healthy)   postgres:16-alpine
+web        running   Up 4 hours (healthy)   «CENARIO_WEB_IMAGE-mascarado»

@@ -1,0 +1,3 @@
+• gate_close {} → job 65a4a927-17e1-48fd-aad0-63f294f119ea (mensagem 22611581454469878)
+{"jti": "65a4a927-17e1-48fd-aad0-63f294f119ea", "operacao": "gate_close", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T21:46:31.525326Z", "fim": "2026-11-13T21:46:32.206630Z", "duracao_s": 0.681, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

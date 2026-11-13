@@ -1,0 +1,3 @@
+• gate_open {} → job bc85d0d4-d42c-4dfb-b01c-35fe71e18281 (mensagem 22611581454448256)
+{"jti": "bc85d0d4-d42c-4dfb-b01c-35fe71e18281", "operacao": "gate_open", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T21:46:20.215395Z", "fim": "2026-11-13T21:46:20.429650Z", "duracao_s": 0.214, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: ABERTO (/etc/cenario/publicacao-autorizada)
