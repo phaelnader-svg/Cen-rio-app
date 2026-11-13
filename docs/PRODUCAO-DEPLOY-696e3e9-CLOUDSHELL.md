@@ -127,3 +127,59 @@ echo "✔ publicado: $(cat "$V/scripts-9ff142e274b1.sha256")"
 echo "BLOCO 2: OK"
 )
 ```
+
+## Bloco 1 com novas tentativas (após SSLError: UNEXPECTED_EOF_WHILE_READING)
+
+Testado com um `gcloud` simulado: falha de SSL na 1ª tentativa → sucesso na 2ª; digest de origem divergente → recusa sem nova tentativa.
+
+```bash
+(
+set -euo pipefail
+export CLOUDSDK_CORE_PROJECT=cenariogestao
+COMMIT=9ff142e274b1cc04953bbfb5161a7940962530d5
+ARVORE="$HOME/cenario-deploy-9ff142e274b1"
+CLONE=""
+while IFS= read -r g; do
+  d="$(dirname "$g")"
+  if git -C "$d" remote get-url origin 2>/dev/null | grep -qi 'phaelnader-svg/cen-rio-app'; then CLONE="$d"; break; fi
+done < <(find "$HOME" -maxdepth 4 -type d -name .git 2>/dev/null)
+if [ -z "$CLONE" ]; then
+  echo "• nenhum clone encontrado em $HOME: clonando em $HOME/cen-rio-app"
+  git clone --no-checkout https://github.com/phaelnader-svg/cen-rio-app.git "$HOME/cen-rio-app"
+  CLONE="$HOME/cen-rio-app"
+fi
+echo "• clone: $CLONE"
+git -C "$CLONE" fetch origin claude/deploy-banco-limpo
+git -C "$CLONE" merge-base --is-ancestor "$COMMIT" FETCH_HEAD || { echo "✘ $COMMIT não está em origin/claude/deploy-banco-limpo"; exit 1; }
+if [ -e "$ARVORE" ]; then
+  [ "$(git -C "$ARVORE" rev-parse HEAD)" = "$COMMIT" ] || { echo "✘ $ARVORE existe e não está em $COMMIT: nada feito"; exit 1; }
+  [ -z "$(git -C "$ARVORE" status --porcelain)" ] || { echo "✘ $ARVORE tem alterações locais: nada feito"; exit 1; }
+else
+  git -C "$CLONE" worktree add --detach "$ARVORE" "$COMMIT"
+fi
+cd "$ARVORE"
+[ "$(git rev-parse HEAD)" = "$COMMIT" ] || { echo "✘ diretório de trabalho fora de $COMMIT"; exit 1; }
+echo "• versão: $(git rev-parse HEAD) em $ARVORE"
+echo "• conta gcloud: $(gcloud config get-value account 2>/dev/null)"
+VER=696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+D_API=sha256:264884b38b02de22357a07486e2d665008507444a0d84590a24d4aaf8455cb4f
+D_WEB=sha256:cb76d474f14e79234893497a05c9220152f4f4e1f8bf1c58818519d30e54ae72
+LOG="$HOME/cenario-promocao-696e3e9.log"
+OK=0
+for t in 1 2 3 4 5; do
+  echo "— tentativa $t/5 ($(date -u +%H:%M:%SZ))"
+  if bash infra/prod/gcp/promover-imagens.sh "$VER" "$D_API" "$D_WEB" 2>&1 | tee "$LOG"; then OK=1; break; fi
+  if grep -q "✘" "$LOG"; then echo "✘ promoção RECUSADA pelo script (veja acima): sem nova tentativa"; exit 1; fi
+  echo "• falha de rede/transferência; nova tentativa em $((t * 30)) s"
+  sleep $((t * 30))
+done
+[ "$OK" = 1 ] || { echo "✘ promoção não concluída em 5 tentativas"; exit 1; }
+echo "— conferência no destino (cenario-prod):"
+for par in "api $D_API" "web $D_WEB"; do
+  set -- $par
+  atual="$(gcloud artifacts docker images describe "southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/$1:$VER" --format='value(image_summary.digest)')"
+  if [ "$atual" = "$2" ]; then echo "✔ $1:$VER = $atual"; else echo "✘ $1:$VER = '${atual:-ausente}' (esperado $2)"; exit 1; fi
+done
+echo "PROMOÇÃO: OK"
+)
+```
