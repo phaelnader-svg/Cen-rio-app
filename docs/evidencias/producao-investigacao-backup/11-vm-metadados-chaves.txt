@@ -1,0 +1,3 @@
+# gcloud compute instances describe cenario-prod --project=cenariogestao --zone=southamerica-east1-b --format=value(metadata.items[].key)
+# inicio_utc: 2026-11-13T18:25:51Z  exit: 0
+block-project-ssh-keys;cenario-admin-email;cenario-admin-name;cenario-bucket;cenario-domain;cenario-domain-www;cenario-project;cenario-region;cenario-repo;enable-oslogin

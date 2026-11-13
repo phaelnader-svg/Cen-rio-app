@@ -1,0 +1,3 @@
+# gcloud compute instances describe cenario-prod --project=cenariogestao --zone=southamerica-east1-b --format=value(serviceAccounts[].email,serviceAccounts[].scopes)
+# inicio_utc: 2026-11-13T18:25:48Z  exit: 0
+cenario-prod-vm@cenariogestao.iam.gserviceaccount.com	['https://www.googleapis.com/auth/cloud-platform']

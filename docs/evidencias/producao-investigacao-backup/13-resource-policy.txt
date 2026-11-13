@@ -1,0 +1,5 @@
+# gcloud compute resource-policies describe cenario-prod-diario --project=cenariogestao --region=southamerica-east1 --format=yaml
+# inicio_utc: 2026-11-13T18:25:55Z  exit: 1
+ERROR: (gcloud.compute.resource-policies.describe) Could not fetch resource:
+ - Required 'compute.resourcePolicies.get' permission for 'projects/cenariogestao/regions/southamerica-east1/resourcePolicies/cenario-prod-diario'
+
