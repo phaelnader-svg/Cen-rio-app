@@ -1,0 +1,3 @@
+• websocket_test {} → job fc0ea150-b704-49f9-8d37-895098342622 (mensagem 22611401967426222)
+{"jti": "fc0ea150-b704-49f9-8d37-895098342622", "operacao": "websocket_test", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:48:38.173639Z", "fim": "2026-11-13T17:48:38.489656Z", "duracao_s": 0.316, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+✔ WebSocket /api/realtime pelo proxy: HTTP 401 (esperado 401 sem sessão, ou 101)

@@ -1,0 +1,14 @@
+• health {} → job 090bac4a-5251-4683-815a-32ba4647e05d (mensagem 22611380311346371)
+{"jti": "090bac4a-5251-4683-815a-32ba4647e05d", "operacao": "health", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:44:55.036650Z", "fim": "2026-11-13T17:44:55.617749Z", "duracao_s": 0.581, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env ps --all --format {{.Service}} {{.State}} {{.Health}}
+api running healthy
+backup running 
+caddy running 
+postgres running healthy
+web running healthy
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ /api/ready pelo proxy: HTTP 200

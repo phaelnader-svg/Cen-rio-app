@@ -1,0 +1,3 @@
+• gate_close {} → job 36a14616-7c16-4bfc-bb55-61922223712c (mensagem 22611220387447890)
+{"jti": "36a14616-7c16-4bfc-bb55-61922223712c", "operacao": "gate_close", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:56:31.560074Z", "fim": "2026-11-13T17:56:31.824664Z", "duracao_s": 0.265, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

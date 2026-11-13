@@ -1,0 +1,20 @@
+• version {} → job eed34ecd-34c4-450c-b605-028d53076788 (mensagem 22611380311331149)
+{"jti": "eed34ecd-34c4-450c-b605-028d53076788", "operacao": "version", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:44:51.086639Z", "fim": "2026-11-13T17:44:52.279558Z", "duracao_s": 1.193, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+runner: 2.2.0
+/opt/cenario (scripts da VM): 5ff1597c0d1c
+etiqueta local (drop-in): 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+etiqueta do ambiente da pilha: 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+candidata: 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+migrada: 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env ps --all --format {{.Service}}	{{.Image}}
+api	«CENARIO_API_IMAGE-mascarado»
+backup	postgres:16
+caddy	caddy:2.10-alpine
+postgres	postgres:16-alpine
+web	«CENARIO_WEB_IMAGE-mascarado»
+$ docker ps --format {{.Names}}	{{.Image}}	{{.ID}}
+cenario-homolog-web-1	«CENARIO_WEB_IMAGE-mascarado»	e46f73de4cbb
+cenario-homolog-api-1	«CENARIO_API_IMAGE-mascarado»	86ee9fac3999
+cenario-homolog-caddy-1	caddy:2.10-alpine	9b8f3d2ede06
+cenario-homolog-backup-1	postgres:16	6017dc4ab6f2
+cenario-homolog-postgres-1	postgres:16-alpine	d977155c6ab0

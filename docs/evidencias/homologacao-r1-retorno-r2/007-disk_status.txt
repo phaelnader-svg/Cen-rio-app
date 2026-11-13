@@ -1,0 +1,24 @@
+• disk_status {} → job f1b22b7a-a838-43f2-9082-0e40d4af9c4b (mensagem 22611387906805383)
+{"jti": "f1b22b7a-a838-43f2-9082-0e40d4af9c4b", "operacao": "disk_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:45:24.434877Z", "fim": "2026-11-13T17:45:26.468711Z", "duracao_s": 2.034, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ df -h
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        30G   21G  7.6G  74% /
+udev            958M     0  958M   0% /dev
+tmpfs           989M     0  989M   0% /dev/shm
+tmpfs           198M  980K  197M   1% /run
+tmpfs           5.0M     0  5.0M   0% /run/lock
+efivarfs        256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda15      124M   12M  112M  10% /boot/efi
+overlay          30G   21G  7.6G  74% /var/lib/docker/rootfs/overlayfs/d977155c6ab0fc255d705bc80d0b94d79b4671dcc8ebe70ee0468ecee82a8be4
+overlay          30G   21G  7.6G  74% /var/lib/docker/rootfs/overlayfs/6017dc4ab6f2d286a039a718d963be9f7840b3793c22db5c4a7ae52549d986ec
+overlay          30G   21G  7.6G  74% /var/lib/docker/rootfs/overlayfs/9b8f3d2ede06c82ab7e7dcf8624f6b40ddbefc59f181a6e46ae29bb10cb9a402
+overlay          30G   21G  7.6G  74% /var/lib/docker/rootfs/overlayfs/86ee9fac399958fb50718a2b8b7404878710fd252f4462f1592547d85dee4f8e
+overlay          30G   21G  7.6G  74% /var/lib/docker/rootfs/overlayfs/e46f73de4cbb443697a3c1fc0086ffc4a69e82523fceb4c4be87acefdafd63cb
+$ docker system df
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          15        5         16.74GB   5.244MB (0%)
+Containers      5         5         114.7kB   0B (0%)
+Local Volumes   5         5         105.8MB   0B (0%)
+Build Cache     0         0         0B        0B
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env exec -T backup du -sh /data/backups
+13M	/data/backups

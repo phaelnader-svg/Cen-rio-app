@@ -1,0 +1,68 @@
+• run_homologation_tests {"suite": "completo"} → job fceabd44-a37f-40e5-8453-1811015eb5f5 (mensagem 22611401967433910)
+{"jti": "fceabd44-a37f-40e5-8453-1811015eb5f5", "operacao": "run_homologation_tests", "classe": "READ_ONLY", "parametros": {"suite": "completo"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:48:40.327862Z", "fim": "2026-11-13T17:48:52.752535Z", "duracao_s": 12.425, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh saude
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ proxy exige autenticação (sem credencial: 401)
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ web (tela de entrada): 200
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+✔ certificado válido por mais 54 dias (até Jan  7 16:14:09 2027 GMT)
+✔ último backup há 0 h (cenario-staging-20261113T174651Z)
+✔ migrations: 37 aplicadas, nenhuma pendente/com falha
+✔ disco em 74%
+✔ memória disponível 1103 MB
+Saúde: OK
+✔ suíte saude
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh diagnosticar-acesso 24
+== Configuração
+• domínio: «HOMOLOG_DOMAIN-mascarado» · usuário do proxy: «HOMOLOG_BASIC_USER-mascarado» (minúsculo, sem acento)
+• segredo homolog-proxy-password: 23 caracteres; só caracteres imprimíveis comuns
+• /run/cenario/env gerado em: 2026-11-13T17:48:00Z (o hash da senha do proxy é calculado nesse momento)
+== Fluxo do navegador (de dentro da VM)
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+== Tentativas registradas pelo Caddy nas últimas 24 h
+• 736 requisições de navegadores (+ 50 de testes internos)
+• Safari: 2 aceitas · 0 recusadas COM senha enviada · 0 pedidos de senha (sem credencial)
+• últimas (hora UTC · status · método · caminho · senha enviada? · cookie? · usuário aceito · navegador):
+    11-13T13:27:12 308 GET / · - · - ·  · outro
+    11-13T13:52:31 308 GET / · - · - ·  · outro
+    11-13T14:19:26 308 POST / · - · - ·  · outro
+    11-13T14:48:01 308 GET / · - · - ·  · outro
+    11-13T14:54:16 308 GET / · - · - ·  · outro
+    11-13T14:54:16 308 GET /favicon.ico · - · - ·  · outro
+    11-13T14:54:37 308 GET /manage.py · - · - ·  · outro
+    11-13T14:54:38 308 GET /static../manage.py · - · - ·  · outro
+    11-13T15:00:46 308 GET / · - · - ·  · outro
+    11-13T15:36:32 308 GET / · - · - ·  · outro
+    11-13T15:36:39 308 GET / · - · - ·  · outro
+    11-13T15:52:14 308 GET / · - · - ·  · outro
+    11-13T15:53:04 308 GET /.env · - · - ·  · outro
+    11-13T16:16:07 308 GET / · - · - ·  · outro
+    11-13T16:20:23 308 GET / · - · - ·  · outro
+    11-13T16:25:33 308 GET / · - · - ·  · outro
+    11-13T16:34:54 308 POST / · - · - ·  · outro
+    11-13T17:09:33 308 GET / · - · - ·  · outro
+    11-13T17:11:51 308 GET / · - · - ·  · outro
+    11-13T17:11:51 308 GET /favicon.ico · - · - ·  · outro
+    11-13T17:17:19 308 GET / · - · - ·  · outro
+    11-13T17:26:44 308 GET /.git/config · - · - ·  · outro
+    11-13T17:44:55 200 GET /api/ready · - · cookie ·  · outro
+    11-13T17:48:28 200 GET /api/ready · - · cookie ·  · outro
+    11-13T17:48:38 401 GET /api/realtime · - · cookie ·  · outro
+== Leitura
+• o Safari passou pelo proxy; se a tela não abriu, veja os status != 2xx/3xx acima
+✔ suíte acesso
+✔ WebSocket /api/realtime pelo proxy: HTTP 401 (esperado 401 sem sessão, ou 101)
+✔ suíte websocket

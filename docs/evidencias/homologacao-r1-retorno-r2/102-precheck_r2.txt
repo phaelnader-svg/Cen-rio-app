@@ -1,0 +1,6 @@
+• migration_precheck {"version": "341badb59624996cd95c1213808c51631bf34b92"} → job 5dc8a1f9-ef59-4175-b5c4-1d642c7f9356 (mensagem 22611383684773435)
+{"jti": "5dc8a1f9-ef59-4175-b5c4-1d642c7f9356", "operacao": "migration_precheck", "classe": "READ_ONLY", "parametros": {"version": "341badb59624996cd95c1213808c51631bf34b92"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:46:23.674554Z", "fim": "2026-11-13T17:46:27.381687Z", "duracao_s": 3.707, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh preflight 341badb59624996cd95c1213808c51631bf34b92
+• imagem 341badb59624996cd95c1213808c51631bf34b92: 37 migrations · banco: 37 aplicadas (37 registros)
+• pendentes (0): nenhuma
+PREFLIGHT: OK (nenhuma migration incompleta, desconhecida, divergente ou fora de ordem; esquema e dados compatíveis com as pendentes)

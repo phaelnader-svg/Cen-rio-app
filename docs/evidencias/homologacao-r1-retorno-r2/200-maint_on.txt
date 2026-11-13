@@ -1,0 +1,8 @@
+• maintenance_on {} → job 867534a4-6b8c-4e04-bc9d-8ce645d21fe2 (mensagem 22611383684865791)
+{"jti": "867534a4-6b8c-4e04-bc9d-8ce645d21fe2", "operacao": "maintenance_on", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:46:46.223452Z", "fim": "2026-11-13T17:46:48.138972Z", "duracao_s": 1.916, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh manutencao
+[2026-11-13T17:46:48Z] ✔ API e web paradas: o proxy responde 503 'em manutenção'; nenhuma operação chega ao banco.
+ Container cenario-homolog-web-1 Stopping 
+ Container cenario-homolog-web-1 Stopped 
+ Container cenario-homolog-api-1 Stopping 
+ Container cenario-homolog-api-1 Stopped 

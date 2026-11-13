@@ -1,0 +1,21 @@
+• resources {} → job 6ebab9e7-01a4-4289-a8d4-5cd8dae0453a (mensagem 22611401967500749)
+{"jti": "6ebab9e7-01a4-4289-a8d4-5cd8dae0453a", "operacao": "resources", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:48:56.097072Z", "fim": "2026-11-13T17:48:58.484385Z", "duracao_s": 2.387, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ free -m
+               total        used        free      shared  buff/cache   available
+Mem:            1976         882         578          59         739        1093
+Swap:           2047         160        1887
+$ swapon --show
+NAME      TYPE SIZE   USED PRIO
+/swapfile file   2G 160.3M   -2
+$ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        30G   21G  7.6G  74% /
+$ uptime
+ 17:48:56 up 35 days,  9:16,  0 user,  load average: 0.93, 0.50, 0.20
+$ docker stats --no-stream --format table {{.Name}}	{{.MemUsage}}	{{.CPUPerc}}
+NAME                         MEM USAGE / LIMIT   CPU %
+cenario-homolog-web-1        138.2MiB / 448MiB   0.00%
+cenario-homolog-api-1        96.23MiB / 512MiB   0.03%
+cenario-homolog-caddy-1      34.63MiB / 192MiB   0.06%
+cenario-homolog-backup-1     19.4MiB / 256MiB    0.00%
+cenario-homolog-postgres-1   93.55MiB / 448MiB   0.05%

@@ -1,0 +1,3 @@
+• gate_status {} → job f18923c6-b0a4-4e0c-938e-c3ae986a2999 (mensagem 22611380311363093)
+{"jti": "f18923c6-b0a4-4e0c-938e-c3ae986a2999", "operacao": "gate_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:44:59.151926Z", "fim": "2026-11-13T17:44:59.369795Z", "duracao_s": 0.218, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

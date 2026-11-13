@@ -1,0 +1,3 @@
+• gate_status {} → job 0f80bd2d-9067-45e1-8d5d-d6538f88476a (mensagem 22611220387458343)
+{"jti": "0f80bd2d-9067-45e1-8d5d-d6538f88476a", "operacao": "gate_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:56:34.944021Z", "fim": "2026-11-13T17:56:35.133791Z", "duracao_s": 0.19, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

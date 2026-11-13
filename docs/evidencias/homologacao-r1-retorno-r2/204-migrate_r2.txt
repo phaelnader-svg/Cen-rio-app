@@ -1,0 +1,10 @@
+• migrate {"version": "341badb59624996cd95c1213808c51631bf34b92"} → job faec4a04-5f94-4783-8190-67c36a033706 (mensagem 22611394822757097)
+{"jti": "faec4a04-5f94-4783-8190-67c36a033706", "operacao": "migrate", "classe": "DESTRUCTIVE", "parametros": {"version": "341badb59624996cd95c1213808c51631bf34b92"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:47:22.625170Z", "fim": "2026-11-13T17:47:37.048620Z", "duracao_s": 14.423, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh migrar 341badb59624996cd95c1213808c51631bf34b92
+✔ banco idêntico ao ponto de recuperação cenario-staging-20261113T174651Z (0 min)
+• imagem 341badb59624996cd95c1213808c51631bf34b92: 37 migrations · banco: 37 aplicadas (37 registros)
+• pendentes (0): nenhuma
+PREFLIGHT: OK (nenhuma migration incompleta, desconhecida, divergente ou fora de ordem; esquema e dados compatíveis com as pendentes)
+[2026-11-13T17:47:26Z] Aplicando as migrations com us-east1-docker.pkg.dev/cenariogestao/cenario-homolog/api:341badb59624996cd95c1213808c51631bf34b92 (log: /var/lib/cenario/migracao-341badb59624996cd95c1213808c51631bf34b92-20261113T174726Z.log)…
+Database schema is up to date!
+[2026-11-13T17:47:37Z] ✔ migrations aplicadas em 11 s. Próximo: (operador) cenario-tag=341badb59624996cd95c1213808c51631bf34b92 nos metadados → vm.sh ativar 341badb59624996cd95c1213808c51631bf34b92

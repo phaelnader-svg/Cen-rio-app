@@ -1,0 +1,39 @@
+• activate_version {"version": "341badb59624996cd95c1213808c51631bf34b92"} → job 95fd77fe-bd34-4e1d-a2f3-c8612656a29e (mensagem 22611394822909198)
+{"jti": "95fd77fe-bd34-4e1d-a2f3-c8612656a29e", "operacao": "activate_version", "classe": "DESTRUCTIVE", "parametros": {"version": "341badb59624996cd95c1213808c51631bf34b92"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:47:59.790143Z", "fim": "2026-11-13T17:48:18.041885Z", "duracao_s": 18.252, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /usr/bin/systemctl daemon-reload
+✔ etiqueta local fixada em 341badb59624996cd95c1213808c51631bf34b92
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh ativar 341badb59624996cd95c1213808c51631bf34b92
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ proxy exige autenticação (sem credencial: 401)
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ web (tela de entrada): 200
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+✔ certificado válido por mais 54 dias (até Jan  7 16:14:09 2027 GMT)
+✔ último backup há 0 h (cenario-staging-20261113T174651Z)
+✔ migrations: 37 aplicadas, nenhuma pendente/com falha
+✔ disco em 74%
+✔ memória disponível 1076 MB
+Saúde: OK
+ Container cenario-homolog-caddy-1 Running 
+ Container cenario-homolog-backup-1 Running 
+ Container cenario-homolog-postgres-1 Running 
+ Container cenario-homolog-api-1 Recreate 
+ Container cenario-homolog-api-1 Recreated 
+ Container cenario-homolog-web-1 Recreate 
+ Container cenario-homolog-web-1 Recreated 
+ Container cenario-homolog-postgres-1 Waiting 
+ Container cenario-homolog-postgres-1 Healthy 
+ Container cenario-homolog-api-1 Starting 
+ Container cenario-homolog-api-1 Started 
+ Container cenario-homolog-web-1 Starting 
+ Container cenario-homolog-api-1 Waiting 
+ Container cenario-homolog-web-1 Started 
+ Container cenario-homolog-api-1 Healthy 

@@ -1,0 +1,3 @@
+• gate_open {} → job c6987662-55b9-483f-847a-e7b08f782a3c (mensagem 22611383684688667)
+{"jti": "c6987662-55b9-483f-847a-e7b08f782a3c", "operacao": "gate_open", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:46:05.770100Z", "fim": "2026-11-13T17:46:05.963171Z", "duracao_s": 0.193, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: ABERTO (/etc/cenario/publicacao-autorizada)
