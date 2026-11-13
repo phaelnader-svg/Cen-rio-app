@@ -21,6 +21,7 @@
 #                              # primeiro gestor); SEM equipe de exemplo; confere o resultado
 #   vm.sh backup               # backup imediato + envio ao bucket
 #   vm.sh enviar-backups       # envia ao bucket os backups ainda não enviados (usado pelo timer diário)
+#   vm.sh envio-externo        # SÓ LEITURA: cópia externa em dia? (último envio e backups não enviados há > 36 h)
 #   vm.sh restaurar-teste [pasta]   # restaura num banco SEPARADO e compara (não toca na produção)
 #   vm.sh restaurar <pasta> --sim   # restaura SOBRE a produção (faz backup de segurança antes)
 #   vm.sh parar                # encerra os contêineres (dados preservados)
@@ -236,6 +237,16 @@ saude() {
     local idade; idade="$(compose exec -T backup sh -c "echo \$(( (\$(date +%s) - \$(stat -c %Y '$ultimo')) / 3600 ))")"
     (( idade <= 26 )) && ok "último backup há ${idade} h ($(basename "$ultimo"))" || ruim "último backup há ${idade} h"
   else ruim "nenhum backup encontrado"; fi
+  # Cópia externa (bucket). Nas operações internas (ativar, aplicar-config, recuperar) vira só aviso:
+  # um envio atrasado não pode reprovar uma troca de versão já feita. No `vm.sh saude` direto
+  # (smoke_test) conta como problema.
+  local linha_e; while IFS= read -r linha_e; do
+    case "$linha_e" in
+      "✔ "*) ok "${linha_e#✔ }" ;;
+      "✘ "*) if [[ "${CENARIO_ENVIO_SO_AVISO:-0}" == 1 ]]; then echo "⚠ ${linha_e#✘ } (aviso; não reprova esta operação)"; else ruim "${linha_e#✘ }"; fi ;;
+      *) echo "$linha_e" ;;
+    esac
+  done < <(verificar_envio_externo || true)
   local mig; mig="$(compose exec -T postgres psql -tAU cenario -d cenario_prod -c \
     "select count(*) filter (where finished_at is not null and rolled_back_at is null) || ' ' || count(*) filter (where finished_at is null and rolled_back_at is null) from _prisma_migrations" 2>/dev/null || true)"
   if [[ "$mig" =~ ^([0-9]+)\ 0$ ]]; then ok "migrations: ${BASH_REMATCH[1]} aplicadas, nenhuma pendente/com falha"
@@ -289,7 +300,7 @@ aplicar_config() {
   log "Caddyfile válido. Recriando só o proxy (caddy)…"
   compose up -d --no-deps --force-recreate caddy
   sleep 5
-  saude
+  CENARIO_ENVIO_SO_AVISO=1 saude
 }
 
 backup() {
@@ -306,8 +317,7 @@ enviar_backups() {
   if [[ -z "$BUCKET" ]]; then log "Sem bucket configurado (cenario-bucket): envio ignorado."; return 0; fi
   install -d -m 700 "$STATE_DIR"; touch "$STATE_DIR/enviados"
   local tmp; tmp="$(mktemp -d)"; trap "rm -rf '$tmp'; trap - RETURN" RETURN
-  local vol="${CENARIO_BACKUPS_DIR:-}"
-  [[ -n "$vol" ]] || vol="$(docker volume inspect -f '{{.Mountpoint}}' cenario-prod_backups 2>/dev/null || true)"
+  local vol; vol="$(dir_backups)"
   [[ -n "$vol" && -d "$vol" ]] || { log "Sem volume de backups: nada a enviar."; return 0; }
   cabecalho_token "$tmp/auth" || return 1
   local erros=0 d nome codigo rc
@@ -325,6 +335,49 @@ enviar_backups() {
     esac
   done
   (( erros == 0 )) || { log "Envio com $erros erro(s)."; return 1; }
+  # Carimbo do último envio SEM erro (lido pela saúde: alerta se passar de 36 h).
+  date -u +%s > "$STATE_DIR/ultimo-envio"
+}
+
+# Pasta dos backups no host (volume do contêiner backup). Vazio se não existir.
+dir_backups() {
+  local vol="${CENARIO_BACKUPS_DIR:-}"
+  [[ -n "$vol" ]] || vol="$(docker volume inspect -f '{{.Mountpoint}}' cenario-prod_backups 2>/dev/null || true)"
+  echo "$vol"
+}
+
+# Cópia externa em dia? SÓ LÊ (carimbo, lista de enviados e nomes das pastas). Imprime linhas
+# "✔ …"/"✘ …" e sai com 1 se houver problema:
+#   - último envio sem erro há mais de CENARIO_ENVIO_MAX_H horas (padrão 36), ou nenhum registrado;
+#   - backup local com mais de CENARIO_ENVIO_MAX_H horas (pela data no nome) que nunca foi enviado.
+# O envio roda às 07:30 UTC; o backup diário fica pronto ~16:41 UTC: um envio por dia mantém os dois
+# critérios abaixo de 36 h com folga para um atraso pontual.
+verificar_envio_externo() {
+  local max="${CENARIO_ENVIO_MAX_H:-36}" agora falhas=0
+  agora="$(date -u +%s)"
+  if [[ -z "$BUCKET" ]]; then echo "• envio externo desativado (sem cenario-bucket)"; return 0; fi
+  if [[ -s "$STATE_DIR/ultimo-envio" ]]; then
+    local h=$(( (agora - $(cat "$STATE_DIR/ultimo-envio")) / 3600 ))
+    if (( h <= max )); then echo "✔ último envio ao bucket há ${h} h"
+    else echo "✘ último envio ao bucket há ${h} h (limite ${max} h)"; falhas=1; fi
+  else
+    echo "✘ nenhum envio ao bucket registrado (limite ${max} h)"; falhas=1
+  fi
+  local vol pend=0 antigo="" d nome ts
+  vol="$(dir_backups)"
+  if [[ -n "$vol" && -d "$vol" ]]; then
+    for d in "$vol"/cenario-*; do
+      [[ -d "$d" ]] || continue
+      nome="$(basename "$d")"
+      grep -qx "$nome" "$STATE_DIR/enviados" 2>/dev/null && continue
+      [[ "$nome" =~ -([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z$ ]] || continue
+      ts="$(date -u -d "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s)"
+      if (( (agora - ts) / 3600 > max )); then pend=$((pend + 1)); [[ -n "$antigo" ]] || antigo="$nome"; fi
+    done
+  fi
+  if (( pend == 0 )); then echo "✔ nenhum backup local sem cópia externa há mais de ${max} h"
+  else echo "✘ ${pend} backup(s) local(is) sem cópia externa há mais de ${max} h (mais antigo: ${antigo})"; falhas=1; fi
+  return "$falhas"
 }
 
 # Verificação da preparação, SEM iniciar contêineres, sem PostgreSQL, sem migrations e sem gravar
@@ -653,7 +706,7 @@ ativar() {
     [[ "$st" == healthy ]] && break; sleep 5
   done
   [[ "$st" == healthy ]] || { compose logs --tail 30 api; log "✘ API não ficou saudável. Recuperação: vm.sh recuperar --sim"; return 1; }
-  saude
+  CENARIO_ENVIO_SO_AVISO=1 saude
 }
 
 recuperar() {
@@ -693,7 +746,7 @@ recuperar() {
     [[ "$st" == healthy ]] && break; sleep 5
   done
   log "Versão $ETIQUETA em execução (API: ${st:-?})."
-  saude
+  CENARIO_ENVIO_SO_AVISO=1 saude
 }
 
 # PRIMEIRA publicação (banco novo): sem a API (que recusa iniciar com migrations pendentes) o contêiner
@@ -730,6 +783,7 @@ case "${1:-}" in
   iniciar-banco) iniciar_banco ;;
   backup) backup ;;
   enviar-backups) enviar_backups ;;
+  envio-externo) verificar_envio_externo ;;
   restaurar-teste) restaurar_teste "${2:-}" ;;
   restaurar) restaurar "${2:-}" "${3:-}" ;;
   atualizar) atualizar "${2:-}" ;;

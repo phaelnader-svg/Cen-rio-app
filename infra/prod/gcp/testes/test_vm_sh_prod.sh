@@ -6,7 +6,8 @@
 #      proxy, com domínio canônico + www, gestor e imagens de produção pela etiqueta; recusa etiqueta inválida;
 #   D. verificar-preparo: Compose de produção válido, só 80/443, segredos prod-* (sem exibir valor), bucket;
 #   D2. verificar-preparo REPROVA LLMNR (5355), mDNS (5353, UDP) e serviço inesperado (8080), com o processo;
-#   E. startup.sh: serviço cenario-prod (portão), caminho infra/prod, nada iniciado sem autorização;
+#   A2/A3. alerta da cópia externa (> 36 h): último envio e backups não enviados; modo aviso nas operações;
+#   E. startup.sh: serviço cenario-prod (portão), envio de backups SEM portão, caminho infra/prod, nada iniciado;
 #      LLMNR/mDNS desativados de forma persistente e idempotente (reinício do resolved só quando muda).
 # Executar: bash infra/prod/gcp/testes/test_vm_sh_prod.sh
 set -euo pipefail
@@ -67,6 +68,51 @@ roda "$TMP/a.out" enviar-backups
 afirma "$TMP/a.out" "✔ cenario-production-20261020T030000Z enviado a gs://cenariogestao-prod-backups/backups/"
 afirma "$TMP/objetos/_requisicoes.log" "ifGenerationMatch=0"
 nega "$TMP/a.out" "tok-vm-falso"
+[[ ! -e "$TMP/portao" ]] && echo "  ✔ envio feito com o portão FECHADO" || { echo "  ✘ portão aberto no cenário A"; FALHAS=$((FALHAS + 1)); }
+[[ -s "$TMP/estado/ultimo-envio" ]] && echo "  ✔ carimbo do último envio gravado" || { echo "  ✘ sem carimbo do último envio"; FALHAS=$((FALHAS + 1)); }
+
+echo "A2. alerta da cópia externa (envio-externo, limite 36 h)"
+roda "$TMP/a2a.out" envio-externo
+igual "$(cat "$TMP/a2a.out.rc")" 0 "em dia logo após o envio"
+afirma "$TMP/a2a.out" "✔ último envio ao bucket há 0 h"
+afirma "$TMP/a2a.out" "✔ nenhum backup local sem cópia externa há mais de 36 h"
+igual "$(wc -c < "$CHAMADAS" | xargs)" 0 "chamadas a docker/gcloud (só leitura local)"
+echo $(( $(date -u +%s) - 40 * 3600 )) > "$TMP/estado/ultimo-envio"
+roda "$TMP/a2b.out" envio-externo
+igual "$(cat "$TMP/a2b.out.rc")" 1 "último envio há 40 h reprova"
+afirma "$TMP/a2b.out" "✘ último envio ao bucket há 40 h (limite 36 h)"
+VELHO="cenario-production-$(date -u -d '-3 days' +%Y%m%dT%H%M%SZ)"; NOVO="cenario-production-$(date -u -d '-1 hour' +%Y%m%dT%H%M%SZ)"
+for n in "$VELHO" "$NOVO"; do mkdir -p "$TMP/backups/$n"; echo d > "$TMP/backups/$n/database.dump"; ( cd "$TMP/backups/$n" && sha256sum ./* > SHA256SUMS ); done
+date -u +%s > "$TMP/estado/ultimo-envio"
+roda "$TMP/a2c.out" envio-externo
+igual "$(cat "$TMP/a2c.out.rc")" 1 "backup de 3 dias sem cópia externa reprova"
+afirma "$TMP/a2c.out" "✘ 1 backup(s) local(is) sem cópia externa há mais de 36 h (mais antigo: $VELHO)"
+nega "$TMP/a2c.out" "$NOVO"
+rm -f "$TMP/estado/ultimo-envio"
+roda "$TMP/a2d.out" envio-externo
+afirma "$TMP/a2d.out" "✘ nenhum envio ao bucket registrado"
+roda "$TMP/a2e.out" enviar-backups
+afirma "$TMP/a2e.out" "✔ $VELHO enviado"
+afirma "$TMP/a2e.out" "✔ $NOVO enviado"
+roda "$TMP/a2f.out" envio-externo
+igual "$(cat "$TMP/a2f.out.rc")" 0 "em dia depois de enviar os pendentes"
+CENARIO_BUCKET= roda "$TMP/a2g.out" envio-externo
+afirma "$TMP/a2g.out" "• envio externo desativado (sem cenario-bucket)"
+echo $(( $(date -u +%s) - 40 * 3600 )) > "$TMP/estado/ultimo-envio"
+echo ok > "$TMP/modo.salvo"; echo proibido > "$TMP/modo"
+mkdir -p "$TMP/backups/cenario-production-20261021T030000Z"; echo e > "$TMP/backups/cenario-production-20261021T030000Z/database.dump"
+( cd "$TMP/backups/cenario-production-20261021T030000Z" && sha256sum ./* > SHA256SUMS )
+roda "$TMP/a2h.out" enviar-backups
+igual "$(cat "$TMP/a2h.out.rc")" 1 "envio com erro sai com 1"
+igual "$(( ( $(date -u +%s) - $(cat "$TMP/estado/ultimo-envio") ) / 3600 ))" 40 "carimbo NÃO atualizado quando o envio falha"
+cp "$TMP/modo.salvo" "$TMP/modo"
+roda "$TMP/a2i.out" enviar-backups
+igual "$(cat "$TMP/a2i.out.rc")" 0 "reenvio depois da falha"
+echo "A3. saúde: o alerta conta no smoke e só avisa nas operações internas"
+igual "$(grep -c '^  CENARIO_ENVIO_SO_AVISO=1 saude$' "$VMSH")" 3 "ativar, aplicar-config e recuperar chamam a saúde em modo aviso"
+igual "$(grep -c '^  saude$' "$VMSH")" 0 "nenhuma chamada interna à saúde estrita"
+afirma "$VMSH" '"✘ "*) if [[ "${CENARIO_ENVIO_SO_AVISO:-0}" == 1 ]]'
+afirma "$VMSH" "done < <(verificar_envio_externo || true)"
 
 echo "B. portão fechado"
 for c in gerar-env iniciar iniciar-banco; do
@@ -146,6 +192,10 @@ echo "UUID=x / ext4 defaults 0 1" > "$R/etc/fstab"
 afirma "$R/etc/systemd/system/cenario-prod.service" "ConditionPathExists=/etc/cenario/publicacao-autorizada"
 afirma "$R/etc/systemd/system/cenario-prod.service" "/opt/cenario/infra/prod/gcp/vm.sh gerar-env"
 afirma "$R/etc/systemd/system/cenario-backup-upload.service" "/opt/cenario/infra/prod/gcp/vm.sh enviar-backups"
+nega "$R/etc/systemd/system/cenario-backup-upload.service" "ConditionPathExists=/etc/cenario/publicacao-autorizada"
+afirma "$R/etc/systemd/system/cenario-backup-upload.service" "ConditionPathExists=/opt/cenario/infra/prod/gcp/vm.sh"
+afirma "$R/etc/systemd/system/cenario-backup-upload.timer" "OnCalendar=*-*-* 07:30:00 UTC"
+afirma "$CHAMADAS" "systemctl start cenario-backup-upload.timer"
 [[ ! -e "$R/etc/systemd/system/cenario-homolog.service" ]] && echo "  ✔ nenhum serviço de homologação" || { echo "  ✘ serviço de homologação criado"; FALHAS=$((FALHAS + 1)); }
 afirma "$TMP/e.out" "publicação NÃO autorizada"
 nega "$CHAMADAS" "restart cenario-prod"
