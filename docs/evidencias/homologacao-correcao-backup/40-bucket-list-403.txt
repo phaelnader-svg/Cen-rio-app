@@ -1,0 +1,1 @@
+HTTP 403: claude-operador@cenariogestao.iam.gserviceaccount.com does not have storage.objects.list access to the Google Cloud Stor

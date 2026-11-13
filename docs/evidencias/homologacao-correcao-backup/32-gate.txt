@@ -1,0 +1,3 @@
+• gate_status {} → job 2655b647-7b9a-43aa-a218-c98ca00119f8 (mensagem 20356802497322665)
+{"jti": "2655b647-7b9a-43aa-a218-c98ca00119f8", "operacao": "gate_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T21:50:00.335180Z", "fim": "2026-11-13T21:50:00.512117Z", "duracao_s": 0.177, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

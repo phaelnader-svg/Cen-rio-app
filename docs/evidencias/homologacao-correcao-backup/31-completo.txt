@@ -1,0 +1,70 @@
+• run_homologation_tests {"suite": "completo"} → job a915a02f-59b1-4758-a1a7-bb0888f979c6 (mensagem 20356802497278221)
+{"jti": "a915a02f-59b1-4758-a1a7-bb0888f979c6", "operacao": "run_homologation_tests", "classe": "READ_ONLY", "parametros": {"suite": "completo"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T21:49:43.780012Z", "fim": "2026-11-13T21:49:54.815636Z", "duracao_s": 11.036, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh saude
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ proxy exige autenticação (sem credencial: 401)
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ web (tela de entrada): 200
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+✔ certificado válido por mais 54 dias (até Jan  7 16:14:09 2027 GMT)
+✔ último backup há 4 h (cenario-staging-20261113T174651Z)
+✔ último envio ao bucket há 0 h
+✔ nenhum backup local sem cópia externa há mais de 36 h
+✔ migrations: 37 aplicadas, nenhuma pendente/com falha
+✔ disco em 74%
+✔ memória disponível 1053 MB
+Saúde: OK
+✔ suíte saude
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh diagnosticar-acesso 24
+== Configuração
+• domínio: «HOMOLOG_DOMAIN-mascarado» · usuário do proxy: «HOMOLOG_BASIC_USER-mascarado» (minúsculo, sem acento)
+• segredo homolog-proxy-password: 23 caracteres; só caracteres imprimíveis comuns
+• /run/cenario/env gerado em: 2026-11-13T17:50:11Z (o hash da senha do proxy é calculado nesse momento)
+== Fluxo do navegador (de dentro da VM)
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+== Tentativas registradas pelo Caddy nas últimas 24 h
+• 566 requisições de navegadores (+ 101 de testes internos)
+• Safari: 2 aceitas · 0 recusadas COM senha enviada · 0 pedidos de senha (sem credencial)
+• últimas (hora UTC · status · método · caminho · senha enviada? · cookie? · usuário aceito · navegador):
+    11-13T19:20:54 308 GET / · - · - ·  · outro
+    11-13T19:50:14 308 GET / · - · - ·  · outro
+    11-13T19:56:21 308 GET / · - · - ·  · outro
+    11-13T19:56:21 308 GET /version · - · - ·  · outro
+    11-13T19:56:22 308 GET / · - · - ·  · outro
+    11-13T19:56:22 308 GET / · - · - ·  · outro
+    11-13T19:56:23 308 GET /v1 · - · - ·  · outro
+    11-13T19:56:23 308 GET / · - · - ·  · outro
+    11-13T19:56:24 308 GET / · - · - ·  · outro
+    11-13T20:20:48 308 GET /api/session/properties · - · - ·  · outro
+    11-13T20:50:01 308 POST / · - · - ·  · outro
+    11-13T21:01:46 308 GET / · - · - ·  · outro
+    11-13T21:02:01 308 GET / · - · - ·  · outro
+    11-13T21:02:07 308 GET / · - · - ·  · outro
+    11-13T21:02:08 308 GET /favicon.ico · - · - ·  · outro
+    11-13T21:02:08 308 GET /mcp/ · - · - ·  · outro
+    11-13T21:02:08 308 GET /mcp · - · - ·  · outro
+    11-13T21:02:08 308 GET /api/mcp · - · - ·  · outro
+    11-13T21:02:08 308 GET / · - · - ·  · outro
+    11-13T21:02:08 308 GET /sse · - · - ·  · outro
+    11-13T21:19:58 308 GET / · - · - ·  · outro
+    11-13T21:20:02 308 GET /info.php · - · - ·  · outro
+    11-13T21:32:36 308 GET /.env · - · - ·  · outro
+    11-13T21:41:55 200 GET /api/ready · - · cookie ·  · outro
+    11-13T21:46:47 200 GET /api/ready · - · cookie ·  · outro
+== Leitura
+• o Safari passou pelo proxy; se a tela não abriu, veja os status != 2xx/3xx acima
+✔ suíte acesso
+✔ WebSocket /api/realtime pelo proxy: HTTP 401 (esperado 401 sem sessão, ou 101)
+✔ suíte websocket

@@ -1,0 +1,24 @@
+• backup_list {} → job dd7f53bf-c3be-4383-a842-19db3b130f9d (mensagem 20356802497365601)
+{"jti": "dd7f53bf-c3be-4383-a842-19db3b130f9d", "operacao": "backup_list", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T21:50:14.614710Z", "fim": "2026-11-13T21:50:15.090383Z", "duracao_s": 0.476, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ docker compose -f /opt/cenario/infra/homolog/docker-compose.homolog.yml --env-file /run/cenario/env exec -T backup ls -lt --time-style=+%Y-%m-%dT%H:%M:%S /data/backups
+total 80
+drwx------ 2 root root 4096 2026-11-13T17:46:52 cenario-staging-20261113T174651Z
+drwx------ 2 root root 4096 2026-11-13T17:14:07 cenario-staging-20261113T171406Z
+drwx------ 2 root root 4096 2026-11-12T22:46:02 cenario-staging-20261112T224601Z
+drwx------ 2 root root 4096 2026-11-12T17:37:48 cenario-staging-20261112T173748Z
+drwx------ 2 root root 4096 2026-11-12T17:14:05 cenario-staging-20261112T171404Z
+drwx------ 2 root root 4096 2026-11-11T17:14:04 cenario-staging-20261111T171403Z
+drwx------ 2 root root 4096 2026-11-11T15:15:29 cenario-staging-20261111T151528Z
+drwx------ 2 root root 4096 2026-11-11T05:58:39 cenario-staging-20261111T055839Z
+drwx------ 2 root root 4096 2026-11-10T17:14:03 cenario-staging-20261110T171403Z
+drwx------ 2 root root 4096 2026-11-09T17:14:02 cenario-staging-20261109T171402Z
+drwx------ 2 root root 4096 2026-11-08T17:14:01 cenario-staging-20261108T171401Z
+drwx------ 2 root root 4096 2026-11-07T17:14:00 cenario-staging-20261107T171359Z
+drwx------ 2 root root 4096 2026-11-06T17:13:59 cenario-staging-20261106T171358Z
+drwx------ 2 root root 4096 2026-11-05T17:13:58 cenario-staging-20261105T171357Z
+drwx------ 2 root root 4096 2026-11-04T17:13:57 cenario-staging-20261104T171356Z
+drwx------ 2 root root 4096 2026-11-03T17:13:56 cenario-staging-20261103T171355Z
+drwx------ 2 root root 4096 2026-11-02T17:13:55 cenario-staging-20261102T171354Z
+drwx------ 2 root root 4096 2026-11-01T17:13:54 cenario-staging-20261101T171353Z
+drwx------ 2 root root 4096 2026-10-31T17:13:53 cenario-staging-20261031T171352Z
+drwx------ 2 root root 4096 2026-10-30T17:13:52 cenario-staging-20261030T171352Z
