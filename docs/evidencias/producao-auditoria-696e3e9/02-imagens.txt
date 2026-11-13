@@ -1,0 +1,8 @@
+# comando: operar.py imagens 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+# inicio_utc: 2026-11-13T17:20:37Z
+# fim_utc: 2026-11-13T17:20:38Z
+# exit: 1
+## stderr
+## stdout
+{"imagem": "api:696e3e9ddc5f1c803a4b9244a075ed498ad81be3", "existe": false}
+{"imagem": "web:696e3e9ddc5f1c803a4b9244a075ed498ad81be3", "existe": false}

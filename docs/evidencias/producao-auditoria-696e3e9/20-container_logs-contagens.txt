@@ -1,0 +1,36 @@
+# container_logs (lines=5000, since_minutes=10080) — SÓ CONTAGENS; linhas brutas não gravadas (podem conter IP/dados pessoais)
+# hora UTC das consultas: 2026-11-13T17:22:58Z → 2026-11-13T17:23:22Z
+
+[api] job=545d988c-014b-4a17-9e01-aaa4140c7c4f status=concluido inicio=2026-11-13T17:22:59.836034Z
+  linhas=5000 janela_coberta=2026-11-12T21:00:00 → 2026-11-13T17:22:56  (limite de 5000 linhas ATINGIDO)
+  niveis={'30': 5000}  status_http={'2xx': 2485, '4xx': 18}
+  nivel>=50 (pino): 0  5xx: 0
+  linhas com ERROR/FATAL/PANIC (texto): 0
+
+[web] job=3fabbbc7-edcc-4f5d-9ac5-c0dbfb7ba7b4 status=concluido inicio=2026-11-13T17:23:06.433031Z
+  linhas=14 janela_coberta=2026-11-07T22:41:38 → 2026-11-13T17:04:21  (limite de 5000 linhas não atingido)
+  niveis={}  status_http={}
+  nivel>=50 (pino): 0  5xx: 0
+  linhas com ERROR/FATAL/PANIC (texto): 7
+
+[caddy] job=ddd1aa5a-e49d-4db8-9e91-94c0d804fb38 status=concluido inicio=2026-11-13T17:23:09.875302Z
+  linhas=5000 janela_coberta=2026-11-06T17:35:05 → 2026-11-13T17:22:49  (limite de 5000 linhas ATINGIDO)
+  niveis={'info': 5000}  status_http={'1xx': 22, '2xx': 1542, '3xx': 2824, '4xx': 483}
+  nivel>=50 (pino): 0  5xx: 0
+  linhas com ERROR/FATAL/PANIC (texto): 0
+
+[postgres] job=e677e360-33ff-418e-bf4b-4bfa4925aeb1 status=concluido inicio=2026-11-13T17:23:16.669161Z
+  linhas=85 janela_coberta=2026-11-09T12:33:53 → 2026-11-13T14:35:25  (limite de 5000 linhas não atingido)
+  niveis={}  status_http={}
+  nivel>=50 (pino): 0  5xx: 0
+  linhas com ERROR/FATAL/PANIC (texto): 1
+
+[backup] job=0be3b572-8a6f-414d-b789-180a53b5171d status=concluido inicio=2026-11-13T17:23:20.263443Z
+  linhas=21 janela_coberta=2026-11-07T16:41:36 → 2026-11-13T16:41:42  (limite de 5000 linhas não atingido)
+  niveis={}  status_http={}
+  nivel>=50 (pino): 0  5xx: 0
+  linhas com ERROR/FATAL/PANIC (texto): 0
+
+[detalhe sem dados pessoais]
+  postgres: 1x 'duplicate key value violates unique constraint devices_name_key' (2026-11-11T16:50Z) — rejeição de nome de dispositivo repetido (nível ERROR do PostgreSQL; nenhuma 5xx no caddy, cuja janela cobre essa data)
+  web: 7x 'The Server Reference ID did not match the expected format' (2026-11-07 → 2026-11-13) — requisições de Server Action malformadas (hipótese: varredura externa; não confirmada); nenhuma 5xx correspondente no caddy

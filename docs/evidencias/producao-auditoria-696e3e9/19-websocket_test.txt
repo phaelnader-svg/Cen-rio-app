@@ -1,0 +1,9 @@
+# comando: operar.py op websocket_test
+# inicio_utc: 2026-11-13T17:22:47Z
+# fim_utc: 2026-11-13T17:22:51Z
+# exit: 0
+## stderr
+• websocket_test {} → job bc705a3b-966e-433d-80f2-af03a40da31b (mensagem 22611184096838920)
+{"jti": "bc705a3b-966e-433d-80f2-af03a40da31b", "operacao": "websocket_test", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:22:48.756685Z", "fim": "2026-11-13T17:22:49.347969Z", "duracao_s": 0.591, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+✔ WebSocket /api/realtime pelo proxy: HTTP 401 (esperado 401 sem sessão, ou 101)
