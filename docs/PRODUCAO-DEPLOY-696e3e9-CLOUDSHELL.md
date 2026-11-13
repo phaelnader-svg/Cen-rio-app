@@ -13,11 +13,11 @@ ARVORE="$HOME/cenario-deploy-9ff142e274b1"
 CLONE=""
 while IFS= read -r g; do
   d="$(dirname "$g")"
-  if git -C "$d" remote get-url origin 2>/dev/null | grep -q 'phaelnader-svg/cen-rio-app'; then CLONE="$d"; break; fi
+  if git -C "$d" remote get-url origin 2>/dev/null | grep -qi 'phaelnader-svg/cen-rio-app'; then CLONE="$d"; break; fi
 done < <(find "$HOME" -maxdepth 4 -type d -name .git 2>/dev/null)
 if [ -z "$CLONE" ]; then
   echo "• nenhum clone encontrado em $HOME: clonando em $HOME/cen-rio-app"
-  git clone --no-checkout https://github.com/phaelnader-svg/cen-rio-app.git "$HOME/cen-rio-app"
+  git clone --no-checkout https://github.com/phaelnader-svg/Cen-rio-app.git "$HOME/cen-rio-app"
   CLONE="$HOME/cen-rio-app"
 fi
 echo "• clone: $CLONE"
@@ -58,11 +58,11 @@ ARVORE="$HOME/cenario-deploy-9ff142e274b1"
 CLONE=""
 while IFS= read -r g; do
   d="$(dirname "$g")"
-  if git -C "$d" remote get-url origin 2>/dev/null | grep -q 'phaelnader-svg/cen-rio-app'; then CLONE="$d"; break; fi
+  if git -C "$d" remote get-url origin 2>/dev/null | grep -qi 'phaelnader-svg/cen-rio-app'; then CLONE="$d"; break; fi
 done < <(find "$HOME" -maxdepth 4 -type d -name .git 2>/dev/null)
 if [ -z "$CLONE" ]; then
   echo "• nenhum clone encontrado em $HOME: clonando em $HOME/cen-rio-app"
-  git clone --no-checkout https://github.com/phaelnader-svg/cen-rio-app.git "$HOME/cen-rio-app"
+  git clone --no-checkout https://github.com/phaelnader-svg/Cen-rio-app.git "$HOME/cen-rio-app"
   CLONE="$HOME/cen-rio-app"
 fi
 echo "• clone: $CLONE"
