@@ -1,0 +1,8 @@
+# comando: operar.py op vm_scripts_diff version=9ff142e274b1
+# inicio_utc: 2026-11-13T22:49:30Z
+# fim_utc: 2026-11-13T22:49:33Z
+# exit: 1
+## stderr
+• vm_scripts_diff {"version": "9ff142e274b1"} → job 1755cced-6b5d-4fbe-ac6f-b3b77bd75563 (mensagem 22611864488162717)
+{"jti": "1755cced-6b5d-4fbe-ac6f-b3b77bd75563", "operacao": "vm_scripts_diff", "classe": "READ_ONLY", "parametros": {"version": "9ff142e274b1"}, "status": "falhou", "exit_code": 1, "inicio": "2026-11-13T22:49:31.045331Z", "fim": "2026-11-13T22:49:31.354280Z", "duracao_s": 0.309, "motivo": "gs://cenariogestao-prod-runner-versoes/scripts-9ff142e274b1.tar.gz: HTTP 404", "truncado": {"stdout": false, "stderr": false}}
+## stdout
