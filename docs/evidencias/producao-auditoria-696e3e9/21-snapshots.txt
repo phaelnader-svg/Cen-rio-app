@@ -1,0 +1,6 @@
+# gcloud compute snapshots list --project=cenariogestao --filter=sourceDisk~cenario-prod
+# inicio_utc: 2026-11-13T17:23:22Z
+# exit: 1
+ERROR: (gcloud.compute.snapshots.list) Some requests did not succeed:
+ - Required 'compute.snapshots.list' permission for 'projects/cenariogestao'
+

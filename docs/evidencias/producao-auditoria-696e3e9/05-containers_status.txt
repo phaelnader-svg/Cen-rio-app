@@ -1,0 +1,15 @@
+# comando: operar.py op containers_status
+# inicio_utc: 2026-11-13T17:21:07Z
+# fim_utc: 2026-11-13T17:21:13Z
+# exit: 0
+## stderr
+• containers_status {} → job 2829809b-e822-48a0-896e-37a39f078fdc (mensagem 22611289193709272)
+{"jti": "2829809b-e822-48a0-896e-37a39f078fdc", "operacao": "containers_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:21:10.001320Z", "fim": "2026-11-13T17:21:10.492865Z", "duracao_s": 0.492, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ docker compose -f /opt/cenario/infra/prod/docker-compose.prod.yml --env-file /run/cenario/env ps --all --format table {{.Service}}	{{.State}}	{{.Status}}	{{.Image}}
+SERVICE    STATE     STATUS                 IMAGE
+api        running   Up 3 weeks (healthy)   «CENARIO_API_IMAGE-mascarado»
+backup     running   Up 3 weeks             postgres:16
+caddy      running   Up 3 weeks             caddy:2.10-alpine
+postgres   running   Up 3 weeks (healthy)   postgres:16-alpine
+web        running   Up 3 weeks (healthy)   «CENARIO_WEB_IMAGE-mascarado»

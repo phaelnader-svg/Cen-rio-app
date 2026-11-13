@@ -1,0 +1,607 @@
+{
+ "activate_version": {
+  "classe": "DESTRUCTIVE",
+  "resumo": "fixa a etiqueta local e vm.sh ativar <versão> (exige migrate da mesma versão)",
+  "timeout": [
+   5,
+   900,
+   1800
+  ],
+  "parametros": {
+   "version": {
+    "tipo": "sha",
+    "obrigatorio": true,
+    "padrao": null
+   }
+  }
+ },
+ "application_logs": {
+  "classe": "READ_ONLY",
+  "resumo": "journal de UMA unidade systemd da allowlist",
+  "timeout": [
+   5,
+   60,
+   300
+  ],
+  "parametros": {
+   "unit": {
+    "tipo": "unidade",
+    "obrigatorio": true,
+    "padrao": null
+   },
+   "lines": {
+    "tipo": "inteiro",
+    "obrigatorio": false,
+    "padrao": 200,
+    "intervalo": [
+     1,
+     5000
+    ]
+   },
+   "since_minutes": {
+    "tipo": "inteiro",
+    "obrigatorio": false,
+    "padrao": 1440,
+    "intervalo": [
+     1,
+     10080
+    ]
+   }
+  }
+ },
+ "apply_stack_config": {
+  "classe": "MUTATING",
+  "resumo": "aplica a configuração de /opt/cenario na versão ATIVA: vm.sh aplicar-config (proxy) + vm.sh ativar <ativa> (recria só o que mudou; mesmas imagens; exige o portão)",
+  "timeout": [
+   5,
+   900,
+   1800
+  ],
+  "parametros": {}
+ },
+ "backup_create": {
+  "classe": "MUTATING",
+  "resumo": "vm.sh backup (backup imediato + envio ao bucket)",
+  "timeout": [
+   5,
+   1800,
+   3600
+  ],
+  "parametros": {}
+ },
+ "backup_list": {
+  "classe": "READ_ONLY",
+  "resumo": "pastas de backup na VM",
+  "timeout": [
+   5,
+   60,
+   300
+  ],
+  "parametros": {}
+ },
+ "backup_restore_test": {
+  "classe": "MUTATING",
+  "resumo": "vm.sh restaurar-teste [pasta] (bancos SEPARADOS; original só lido)",
+  "timeout": [
+   5,
+   1800,
+   3600
+  ],
+  "parametros": {
+   "folder": {
+    "tipo": "pasta",
+    "obrigatorio": false,
+    "padrao": null
+   }
+  }
+ },
+ "backup_validate": {
+  "classe": "READ_ONLY",
+  "resumo": "SHA256SUMS de uma pasta de backup",
+  "timeout": [
+   5,
+   600,
+   1800
+  ],
+  "parametros": {
+   "folder": {
+    "tipo": "pasta",
+    "obrigatorio": true,
+    "padrao": null
+   }
+  }
+ },
+ "container_logs": {
+  "classe": "READ_ONLY",
+  "resumo": "logs de UM contêiner da allowlist (linhas e janela limitadas)",
+  "timeout": [
+   5,
+   60,
+   300
+  ],
+  "parametros": {
+   "service": {
+    "tipo": "escolha",
+    "obrigatorio": true,
+    "padrao": null,
+    "opcoes": [
+     "postgres",
+     "api",
+     "web",
+     "caddy",
+     "backup"
+    ]
+   },
+   "lines": {
+    "tipo": "inteiro",
+    "obrigatorio": false,
+    "padrao": 200,
+    "intervalo": [
+     1,
+     5000
+    ]
+   },
+   "since_minutes": {
+    "tipo": "inteiro",
+    "obrigatorio": false,
+    "padrao": 1440,
+    "intervalo": [
+     1,
+     10080
+    ]
+   }
+  }
+ },
+ "containers_status": {
+  "classe": "READ_ONLY",
+  "resumo": "estado e saúde de cada contêiner",
+  "timeout": [
+   5,
+   60,
+   300
+  ],
+  "parametros": {}
+ },
+ "database_counts": {
+  "classe": "READ_ONLY",
+  "resumo": "linhas por tabela (estatísticas do PostgreSQL)",
+  "timeout": [
+   5,
+   120,
+   600
+  ],
+  "parametros": {}
+ },
+ "database_fingerprint": {
+  "classe": "READ_ONLY",
+  "resumo": "vm.sh impressao-digital",
+  "timeout": [
+   5,
+   300,
+   1200
+  ],
+  "parametros": {}
+ },
+ "database_status": {
+  "classe": "READ_ONLY",
+  "resumo": "tamanho, conexões, bloqueios e consultas longas",
+  "timeout": [
+   5,
+   60,
+   300
+  ],
+  "parametros": {}
+ },
+ "disk_status": {
+  "classe": "READ_ONLY",
+  "resumo": "disco, volumes Docker e pasta de backups",
+  "timeout": [
+   5,
+   120,
+   600
+  ],
+  "parametros": {}
+ },
+ "gate_close": {
+  "classe": "MUTATING",
+  "resumo": "fecha o portão de publicação",
+  "timeout": [
+   5,
+   30,
+   60
+  ],
+  "parametros": {}
+ },
+ "gate_open": {
+  "classe": "MUTATING",
+  "resumo": "abre o portão de publicação",
+  "timeout": [
+   5,
+   30,
+   60
+  ],
+  "parametros": {}
+ },
+ "gate_status": {
+  "classe": "READ_ONLY",
+  "resumo": "portão de publicação aberto/fechado",
+  "timeout": [
+   5,
+   30,
+   60
+  ],
+  "parametros": {}
+ },
+ "health": {
+  "classe": "READ_ONLY",
+  "resumo": "saúde rápida: contêineres + /api/ready pelo proxy local",
+  "timeout": [
+   5,
+   60,
+   300
+  ],
+  "parametros": {}
+ },
+ "images_cleanup": {
+  "classe": "MUTATING",
+  "resumo": "remove SÓ imagens da aplicação sem contêiner e fora das versões protegidas (sem --force)",
+  "timeout": [
+   5,
+   300,
+   900
+  ],
+  "parametros": {}
+ },
+ "images_cleanup_plan": {
+  "classe": "READ_ONLY",
+  "resumo": "lista as imagens da aplicação e o que seria removido (nada é removido)",
+  "timeout": [
+   5,
+   60,
+   300
+  ],
+  "parametros": {}
+ },
+ "maintenance_off": {
+  "classe": "MUTATING",
+  "resumo": "volta API e web na versão ativa (vm.sh ativar)",
+  "timeout": [
+   5,
+   900,
+   1800
+  ],
+  "parametros": {}
+ },
+ "maintenance_on": {
+  "classe": "MUTATING",
+  "resumo": "vm.sh manutencao (para API e web)",
+  "timeout": [
+   5,
+   300,
+   900
+  ],
+  "parametros": {}
+ },
+ "migrate": {
+  "classe": "DESTRUCTIVE",
+  "resumo": "vm.sh migrar <versão> (exige ponto de recuperação)",
+  "timeout": [
+   5,
+   1800,
+   3600
+  ],
+  "parametros": {
+   "version": {
+    "tipo": "sha",
+    "obrigatorio": true,
+    "padrao": null
+   }
+  }
+ },
+ "migration_precheck": {
+  "classe": "READ_ONLY",
+  "resumo": "vm.sh preflight <versão> (cadeia banco × imagem: incompleta, desconhecida, divergente, fora de ordem, esquema e dados); sem versão: a candidata",
+  "timeout": [
+   5,
+   300,
+   1200
+  ],
+  "parametros": {
+   "version": {
+    "tipo": "sha",
+    "obrigatorio": false,
+    "padrao": null
+   }
+  }
+ },
+ "migration_status": {
+  "classe": "READ_ONLY",
+  "resumo": "_prisma_migrations; com version, compara com as migrations da imagem",
+  "timeout": [
+   5,
+   120,
+   600
+  ],
+  "parametros": {
+   "version": {
+    "tipo": "sha",
+    "obrigatorio": false,
+    "padrao": null
+   }
+  }
+ },
+ "migration_verify": {
+  "classe": "READ_ONLY",
+  "resumo": "banco × migrations da imagem: nenhuma pendente, com falha ou desconhecida",
+  "timeout": [
+   5,
+   120,
+   600
+  ],
+  "parametros": {
+   "version": {
+    "tipo": "sha",
+    "obrigatorio": true,
+    "padrao": null
+   }
+  }
+ },
+ "network_status": {
+  "classe": "READ_ONLY",
+  "resumo": "portas em escuta e respostas HTTPS locais",
+  "timeout": [
+   5,
+   60,
+   300
+  ],
+  "parametros": {}
+ },
+ "prepare_version": {
+  "classe": "MUTATING",
+  "resumo": "vm.sh preparar-versao <versão>",
+  "timeout": [
+   5,
+   900,
+   1800
+  ],
+  "parametros": {
+   "version": {
+    "tipo": "sha",
+    "obrigatorio": true,
+    "padrao": null
+   }
+  }
+ },
+ "recovery_point_create": {
+  "classe": "MUTATING",
+  "resumo": "vm.sh ponto-recuperacao (exige manutenção)",
+  "timeout": [
+   5,
+   3600,
+   7200
+  ],
+  "parametros": {}
+ },
+ "resources": {
+  "classe": "READ_ONLY",
+  "resumo": "memória, swap, disco, carga, uso do Docker",
+  "timeout": [
+   5,
+   60,
+   300
+  ],
+  "parametros": {}
+ },
+ "restart_api": {
+  "classe": "MUTATING",
+  "resumo": "reinicia o contêiner da API",
+  "timeout": [
+   5,
+   300,
+   900
+  ],
+  "parametros": {}
+ },
+ "restart_application": {
+  "classe": "MUTATING",
+  "resumo": "reinicia API e web",
+  "timeout": [
+   5,
+   300,
+   900
+  ],
+  "parametros": {}
+ },
+ "restart_containers": {
+  "classe": "DESTRUCTIVE",
+  "resumo": "reinicia todos os contêineres da pilha",
+  "timeout": [
+   5,
+   600,
+   1200
+  ],
+  "parametros": {}
+ },
+ "restart_web": {
+  "classe": "MUTATING",
+  "resumo": "reinicia o contêiner web",
+  "timeout": [
+   5,
+   300,
+   900
+  ],
+  "parametros": {}
+ },
+ "rollback_to_recovery_point": {
+  "classe": "DESTRUCTIVE",
+  "resumo": "vm.sh recuperar --sim (volta banco e versão ao ponto de recuperação)",
+  "timeout": [
+   5,
+   3600,
+   7200
+  ],
+  "parametros": {}
+ },
+ "rollback_version": {
+  "classe": "DESTRUCTIVE",
+  "resumo": "volta só a aplicação a uma versão já ativada, se o banco for compatível",
+  "timeout": [
+   5,
+   900,
+   1800
+  ],
+  "parametros": {
+   "version": {
+    "tipo": "sha",
+    "obrigatorio": true,
+    "padrao": null
+   }
+  }
+ },
+ "run_homologation_tests": {
+  "classe": "READ_ONLY",
+  "resumo": "suítes da VM: saude | acesso | websocket | completo",
+  "timeout": [
+   5,
+   600,
+   1800
+  ],
+  "parametros": {
+   "suite": {
+    "tipo": "escolha",
+    "obrigatorio": true,
+    "padrao": null,
+    "opcoes": [
+     "saude",
+     "acesso",
+     "websocket",
+     "completo"
+    ]
+   }
+  }
+ },
+ "seed_bootstrap": {
+  "classe": "MUTATING",
+  "resumo": "vm.sh semear: bootstrap mínimo (funções, configurações, modelos, checklists e o primeiro gestor; sem equipe de exemplo; recusa banco com funcionários)",
+  "timeout": [
+   5,
+   300,
+   900
+  ],
+  "parametros": {}
+ },
+ "smoke_test": {
+  "classe": "READ_ONLY",
+  "resumo": "vm.sh saude (verificação completa)",
+  "timeout": [
+   5,
+   180,
+   600
+  ],
+  "parametros": {}
+ },
+ "stack_bootstrap": {
+  "classe": "MUTATING",
+  "resumo": "fixa a etiqueta local, vm.sh gerar-env e vm.sh iniciar-banco (só PostgreSQL e backup; API/web paradas; exige o portão)",
+  "timeout": [
+   5,
+   600,
+   1200
+  ],
+  "parametros": {
+   "version": {
+    "tipo": "sha",
+    "obrigatorio": true,
+    "padrao": null
+   }
+  }
+ },
+ "status": {
+  "classe": "READ_ONLY",
+  "resumo": "vm.sh status (contêineres, memória, disco)",
+  "timeout": [
+   5,
+   120,
+   600
+  ],
+  "parametros": {}
+ },
+ "update_runner": {
+  "classe": "DESTRUCTIVE",
+  "resumo": "instala uma versão PUBLICADA (bucket de versões, gravação humana) com SHA-256",
+  "timeout": [
+   5,
+   300,
+   600
+  ],
+  "parametros": {
+   "version": {
+    "tipo": "versao_runner",
+    "obrigatorio": true,
+    "padrao": null
+   }
+  }
+ },
+ "version": {
+  "classe": "READ_ONLY",
+  "resumo": "versões: runner, /opt/cenario, etiqueta ativa, imagens em execução",
+  "timeout": [
+   5,
+   60,
+   300
+  ],
+  "parametros": {}
+ },
+ "vm_scripts_diff": {
+  "classe": "READ_ONLY",
+  "resumo": "diferença exata entre /opt/cenario e o pacote publicado scripts-<versão> (nada muda)",
+  "timeout": [
+   5,
+   120,
+   600
+  ],
+  "parametros": {
+   "version": {
+    "tipo": "sha",
+    "obrigatorio": true,
+    "padrao": null
+   }
+  }
+ },
+ "vm_scripts_restore": {
+  "classe": "DESTRUCTIVE",
+  "resumo": "volta /opt/cenario à cópia guardada pelo último vm_scripts_update (nada reiniciado)",
+  "timeout": [
+   5,
+   120,
+   600
+  ],
+  "parametros": {}
+ },
+ "vm_scripts_update": {
+  "classe": "DESTRUCTIVE",
+  "resumo": "instala o pacote publicado scripts-<versão> em /opt/cenario (cópia anterior guardada; nada reiniciado)",
+  "timeout": [
+   5,
+   300,
+   900
+  ],
+  "parametros": {
+   "version": {
+    "tipo": "sha",
+    "obrigatorio": true,
+    "padrao": null
+   }
+  }
+ },
+ "websocket_test": {
+  "classe": "READ_ONLY",
+  "resumo": "handshake WebSocket em /api/realtime pelo proxy",
+  "timeout": [
+   5,
+   60,
+   120
+  ],
+  "parametros": {}
+ }
+}

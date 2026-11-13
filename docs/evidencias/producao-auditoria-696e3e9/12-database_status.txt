@@ -1,0 +1,14 @@
+# comando: operar.py op database_status
+# inicio_utc: 2026-11-13T17:21:47Z
+# fim_utc: 2026-11-13T17:21:51Z
+# exit: 0
+## stderr
+• database_status {} → job 4b7ab322-ecf2-4aaf-9625-3fa1bca728f2 (mensagem 22611296561554440)
+{"jti": "4b7ab322-ecf2-4aaf-9625-3fa1bca728f2", "operacao": "database_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:21:48.560548Z", "fim": "2026-11-13T17:21:49.077123Z", "duracao_s": 0.517, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ docker compose -f /opt/cenario/infra/prod/docker-compose.prod.yml --env-file /run/cenario/env exec -T postgres psql -U cenario -d cenario_prod -At -F | -v ON_ERROR_STOP=1 -c select 'versao', version() union all select 'tamanho', pg_size_pretty(pg_database_size(current_database())) union all select 'conexoes', count(*)::text from pg_stat_activity union all select 'aguardando_bloqueio', count(*)::text from pg_stat_activity where wait_event_type = 'Lock' union all select 'consulta_mais_longa_s', coalesce(max(extract(epoch from now() - query_start))::int, 0)::text from pg_stat_activity where state = 'active' and pid <> pg_backend_pid()
+versao|PostgreSQL 16.15 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+tamanho|17 MB
+conexoes|10
+aguardando_bloqueio|0
+consulta_mais_longa_s|0

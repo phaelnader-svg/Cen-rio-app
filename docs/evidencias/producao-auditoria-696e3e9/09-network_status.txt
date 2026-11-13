@@ -1,0 +1,22 @@
+# comando: operar.py op network_status
+# inicio_utc: 2026-11-13T17:21:37Z
+# fim_utc: 2026-11-13T17:21:40Z
+# exit: 0
+## stderr
+• network_status {} → job d9f784a0-76d4-4960-96c0-2906be6f0d2b (mensagem 22611296561513689)
+{"jti": "d9f784a0-76d4-4960-96c0-2906be6f0d2b", "operacao": "network_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:21:38.151993Z", "fim": "2026-11-13T17:21:38.688156Z", "duracao_s": 0.536, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ ss -tlnH
+LISTEN 0      4096         0.0.0.0:443 0.0.0.0:*
+LISTEN 0      128          0.0.0.0:22  0.0.0.0:*
+LISTEN 0      4096   127.0.0.53%lo:53  0.0.0.0:*
+LISTEN 0      4096         0.0.0.0:80  0.0.0.0:*
+LISTEN 0      20         127.0.0.1:25  0.0.0.0:*
+LISTEN 0      4096      127.0.0.54:53  0.0.0.0:*
+LISTEN 0      4096            [::]:443    [::]:*
+LISTEN 0      128             [::]:22     [::]:*
+LISTEN 0      4096            [::]:80     [::]:*
+LISTEN 0      20             [::1]:25     [::]:*
+• https://«PROD_DOMAIN-mascarado»/painel (sem cookie de acesso): HTTP 200
+• https://«PROD_DOMAIN-mascarado»/api/ready (com cookie de acesso): HTTP 200
+• https://«PROD_DOMAIN-mascarado»/entrar (com cookie de acesso): HTTP 200

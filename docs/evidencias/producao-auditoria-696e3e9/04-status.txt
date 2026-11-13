@@ -1,0 +1,27 @@
+# comando: operar.py op status
+# inicio_utc: 2026-11-13T17:20:58Z
+# fim_utc: 2026-11-13T17:21:07Z
+# exit: 0
+## stderr
+• status {} → job 2c5ad5a1-2f41-40de-a1a9-0cf5f275deb2 (mensagem 22611289193671184)
+{"jti": "2c5ad5a1-2f41-40de-a1a9-0cf5f275deb2", "operacao": "status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-13T17:21:01.001241Z", "fim": "2026-11-13T17:21:03.944939Z", "duracao_s": 2.944, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh status
+SERVICE    STATUS
+api        Up 3 weeks (healthy)
+backup     Up 3 weeks
+caddy      Up 3 weeks
+postgres   Up 3 weeks (healthy)
+web        Up 3 weeks (healthy)
+
+NAME                      MEM USAGE / LIMIT   CPU %
+web-1        177.4MiB / 640MiB   0.00%
+api-1        160.1MiB / 1GiB     0.00%
+caddy-1      59.02MiB / 192MiB   0.00%
+backup-1     24.45MiB / 384MiB   0.00%
+postgres-1   85.83MiB / 1GiB     0.05%
+
+               total        used        free      shared  buff/cache   available
+Mem:            3924        1218        2044          62        1003        2706
+Swap:           2047          32        2015
+/dev/sda1        49G   14G   34G  29% /

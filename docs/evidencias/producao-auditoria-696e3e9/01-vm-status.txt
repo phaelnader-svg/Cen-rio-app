@@ -1,0 +1,7 @@
+# comando: operar.py vm-status
+# inicio_utc: 2026-11-13T17:20:36Z
+# fim_utc: 2026-11-13T17:20:37Z
+# exit: 0
+## stderr
+## stdout
+{"nome": "cenario-prod", "status": "RUNNING", "maquina": "e2-medium", "ultimo_inicio": "2026-10-18T16:28:19.872-07:00", "ultima_parada": null}
