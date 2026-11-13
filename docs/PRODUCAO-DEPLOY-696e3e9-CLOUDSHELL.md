@@ -1,8 +1,8 @@
-# Deploy 696e3e9 — blocos do Cloud Shell (seção 6.1 do checklist)
+# Deploy 696e3e9 — blocos do Cloud Shell (seção 6.1 do checklist), revisão 2
 
-Testados de ponta a ponta nesta sessão, com um `gcloud` simulado. O pacote gerado tem o sha256 da referência (`c8c293b1…028cdc`) e foi aceito pela validação do próprio runner (`pacote_scripts`, 23 arquivos).
+Revisão: URL Git original (`https://github.com/phaelnader-svg/cen-rio-app.git`); SHA-256 diferente da referência = erro fatal antes do upload; nada é enviado se qualquer verificação falhar (inclusive conflito em qualquer um dos dois objetos). Testado nesta sessão com um `gcloud` simulado: divergência de SHA (0 objetos publicados), caminho normal, reexecução, e `.sha256` conflitante no bucket (`.tar.gz` não publicado).
 
-## Bloco 1 — promoção das imagens
+## Bloco 1
 
 ```bash
 (
@@ -17,7 +17,7 @@ while IFS= read -r g; do
 done < <(find "$HOME" -maxdepth 4 -type d -name .git 2>/dev/null)
 if [ -z "$CLONE" ]; then
   echo "• nenhum clone encontrado em $HOME: clonando em $HOME/cen-rio-app"
-  git clone --no-checkout https://github.com/phaelnader-svg/Cen-rio-app.git "$HOME/cen-rio-app"
+  git clone --no-checkout https://github.com/phaelnader-svg/cen-rio-app.git "$HOME/cen-rio-app"
   CLONE="$HOME/cen-rio-app"
 fi
 echo "• clone: $CLONE"
@@ -47,7 +47,7 @@ echo "BLOCO 1: OK"
 )
 ```
 
-## Bloco 2 — pacote de scripts
+## Bloco 2
 
 ```bash
 (
@@ -62,7 +62,7 @@ while IFS= read -r g; do
 done < <(find "$HOME" -maxdepth 4 -type d -name .git 2>/dev/null)
 if [ -z "$CLONE" ]; then
   echo "• nenhum clone encontrado em $HOME: clonando em $HOME/cen-rio-app"
-  git clone --no-checkout https://github.com/phaelnader-svg/Cen-rio-app.git "$HOME/cen-rio-app"
+  git clone --no-checkout https://github.com/phaelnader-svg/cen-rio-app.git "$HOME/cen-rio-app"
   CLONE="$HOME/cen-rio-app"
 fi
 echo "• clone: $CLONE"
@@ -103,14 +103,19 @@ for nome in esperados:
     assert arquivos[nome] == blob, f"conteúdo diferente do commit: {nome}"
 print(f"✔ pacote conferido: commit {commit}, {len(arquivos)} arquivos idênticos ao repositório")
 PY
-if [ "$(cat "$SHA")" = "$REF" ]; then echo "✔ sha256 igual à referência do checklist"; else echo "⚠ sha256 diferente da referência do checklist ($REF); conteúdo já conferido arquivo a arquivo acima"; fi
+if [ "$(cat "$SHA")" != "$REF" ]; then echo "✘ sha256 $(cat "$SHA") diferente da referência $REF: NADA publicado"; exit 1; fi
+echo "✔ sha256 igual à referência do checklist"
+ENVIAR=""
 for f in "$PAC" "$SHA"; do
   n="$(basename "$f")"
   if gcloud storage objects describe "$DEST/$n" >/dev/null 2>&1; then
-    if gcloud storage cat "$DEST/$n" | cmp -s - "$f"; then echo "• $n já publicado e idêntico"; else echo "✘ $n já existe no bucket com outro conteúdo: NÃO sobrescrito"; exit 1; fi
+    if gcloud storage cat "$DEST/$n" | cmp -s - "$f"; then echo "• $n já publicado e idêntico"; else echo "✘ $n já existe no bucket com outro conteúdo: NADA publicado"; exit 1; fi
   else
-    gcloud storage cp "$f" "$DEST/$n" --if-generation-match=0
+    ENVIAR="$ENVIAR $f"
   fi
+done
+for f in $ENVIAR; do
+  gcloud storage cp "$f" "$DEST/$(basename "$f")" --if-generation-match=0
 done
 echo "— conferência no bucket:"
 V="$(mktemp -d)"
