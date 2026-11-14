@@ -1,0 +1,10 @@
+# comando: operar.py op backup_validate folder=cenario-production-20261114T171135Z
+# inicio_utc: 2026-11-14T17:12:04Z
+# fim_utc: 2026-11-14T17:12:08Z
+# exit: 0
+## stderr
+• backup_validate {"folder": "cenario-production-20261114T171135Z"} → job 27dcdb00-77a4-4f9b-81ec-d7cfcb9aed86 (mensagem 22616428898097590)
+{"jti": "27dcdb00-77a4-4f9b-81ec-d7cfcb9aed86", "operacao": "backup_validate", "classe": "READ_ONLY", "parametros": {"folder": "cenario-production-20261114T171135Z"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:12:05.306077Z", "fim": "2026-11-14T17:12:05.739507Z", "duracao_s": 0.433, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ docker compose -f /opt/cenario/infra/prod/docker-compose.prod.yml --env-file /run/cenario/env exec -T -w /data/backups/cenario-production-20261114T171135Z backup sha256sum --check --quiet SHA256SUMS
+✔ cenario-production-20261114T171135Z: SHA256SUMS conferido

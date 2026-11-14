@@ -1,0 +1,14 @@
+# comando: operar.py op backup_create
+# inicio_utc: 2026-11-14T17:11:31Z
+# fim_utc: 2026-11-14T17:11:40Z
+# exit: 0
+## stderr
+• backup_create {} → job dfd747ec-c230-4cba-83d2-d6622abb96fc (mensagem 22615834345355512)
+{"jti": "dfd747ec-c230-4cba-83d2-d6622abb96fc", "operacao": "backup_create", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:11:34.308505Z", "fim": "2026-11-14T17:11:36.448097Z", "duracao_s": 2.14, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh backup
+→ Banco de dados…
+→ Arquivos privados (/data/storage)…
+✔ Backup concluído: /data/backups/cenario-production-20261114T171135Z
+[2026-11-14T17:11:36Z] ✔ cenario-production-20261114T164142Z enviado a gs://cenariogestao-prod-backups/backups/
+[2026-11-14T17:11:36Z] ✔ cenario-production-20261114T171135Z enviado a gs://cenariogestao-prod-backups/backups/

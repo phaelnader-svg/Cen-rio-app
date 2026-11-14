@@ -1,0 +1,9 @@
+# comando: operar.py op gate_close
+# inicio_utc: 2026-11-14T17:11:40Z
+# fim_utc: 2026-11-14T17:11:46Z
+# exit: 0
+## stderr
+• gate_close {} → job a066c60d-0182-4382-ae23-32be3d86a06d (mensagem 22615834345374441)
+{"jti": "a066c60d-0182-4382-ae23-32be3d86a06d", "operacao": "gate_close", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:11:43.423380Z", "fim": "2026-11-14T17:11:43.595491Z", "duracao_s": 0.172, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

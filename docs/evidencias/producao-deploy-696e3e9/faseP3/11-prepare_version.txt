@@ -1,0 +1,19 @@
+# comando: operar.py op prepare_version version=696e3e9ddc5f1c803a4b9244a075ed498ad81be3 --timeout 1800
+# inicio_utc: 2026-11-14T17:10:05Z
+# fim_utc: 2026-11-14T17:11:31Z
+# exit: 0
+## stderr
+• prepare_version {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"} → job 7d9fe7b0-8422-4e22-9bd3-59c995264eb7 (mensagem 22616504827025822)
+{"jti": "7d9fe7b0-8422-4e22-9bd3-59c995264eb7", "operacao": "prepare_version", "classe": "MUTATING", "parametros": {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:10:06.621856Z", "fim": "2026-11-14T17:11:22.681477Z", "duracao_s": 76.06, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh preparar-versao 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+✔ api: southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/api:696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+    digest: southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/api@sha256:264884b38b02de22357a07486e2d665008507444a0d84590a24d4aaf8455cb4f
+    id: sha256:264884b38b02de22357a07486e2d665008507444a0d84590a24d4aaf8455cb4f · tamanho: 3815 MB
+✔ web: southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/web:696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+    digest: southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/web@sha256:cb76d474f14e79234893497a05c9220152f4f4e1f8bf1c58818519d30e54ae72
+    id: sha256:cb76d474f14e79234893497a05c9220152f4f4e1f8bf1c58818519d30e54ae72 · tamanho: 3814 MB
+✔ a imagem nova NÃO migra na partida (infra/homolog/api-iniciar.sh presente)
+• migrations na imagem: 37 · aplicadas no banco: 33
+✔ disco livre: 32 GB
+PREPARAR-VERSÃO: OK (imagens presentes; nada reiniciado; banco intocado)
