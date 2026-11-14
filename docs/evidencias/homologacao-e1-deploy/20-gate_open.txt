@@ -1,0 +1,3 @@
+• gate_open {} → job d4f64cfc-9e9c-42a6-919a-81291baf9151 (mensagem 22617717644559651)
+{"jti": "d4f64cfc-9e9c-42a6-919a-81291baf9151", "operacao": "gate_open", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T23:49:41.729436Z", "fim": "2026-11-14T23:49:41.934563Z", "duracao_s": 0.205, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: ABERTO (/etc/cenario/publicacao-autorizada)

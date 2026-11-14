@@ -1,0 +1,4 @@
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+ Test Files  1 failed | 90 passed | 7 skipped (98)
+      Tests  1 failed | 1026 passed | 13 skipped (1040)
+ FAIL  test/rodada4-travas-estruturais.test.ts > F10-01 — "Recebimento de materiais" sem filtro de permissão no menu (nav.ts) > usuário de painel sem permissão de compras/estoque: a fila do recebimento responde 200 (link não leva a recusa)

@@ -1,0 +1,21 @@
+• resources {} → job 4fa13450-db47-41e3-afee-15e09997bd4d (mensagem 22617699191194028)
+{"jti": "4fa13450-db47-41e3-afee-15e09997bd4d", "operacao": "resources", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T23:52:13.077757Z", "fim": "2026-11-14T23:52:15.460111Z", "duracao_s": 2.382, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ free -m
+               total        used        free      shared  buff/cache   available
+Mem:            1976         885         522          59         797        1091
+Swap:           2047         165        1882
+$ swapon --show
+NAME      TYPE SIZE   USED PRIO
+/swapfile file   2G 165.5M   -2
+$ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        30G   23G  5.3G  82% /
+$ uptime
+ 23:52:13 up 36 days, 15:20,  0 user,  load average: 0.79, 0.45, 0.23
+$ docker stats --no-stream --format table {{.Name}}	{{.MemUsage}}	{{.CPUPerc}}
+NAME                         MEM USAGE / LIMIT   CPU %
+cenario-homolog-web-1        141.2MiB / 448MiB   0.00%
+cenario-homolog-api-1        115.2MiB / 512MiB   0.22%
+cenario-homolog-caddy-1      31.93MiB / 192MiB   0.00%
+cenario-homolog-backup-1     17.66MiB / 256MiB   0.00%
+cenario-homolog-postgres-1   92.29MiB / 448MiB   0.00%

@@ -1,0 +1,3 @@
+• gate_close {} → job 6e85ec1e-333b-4721-84d2-704442da15d8 (mensagem 22617661731244693)
+{"jti": "6e85ec1e-333b-4721-84d2-704442da15d8", "operacao": "gate_close", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T23:18:36.841314Z", "fim": "2026-11-14T23:18:37.107527Z", "duracao_s": 0.266, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

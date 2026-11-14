@@ -1,0 +1,2 @@
+{"imagem": "api:0348dcfd8e5fdf9eccfb73e244cfa37af2520653", "existe": false}
+{"imagem": "web:0348dcfd8e5fdf9eccfb73e244cfa37af2520653", "existe": false}

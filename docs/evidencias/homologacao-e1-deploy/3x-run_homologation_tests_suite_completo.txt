@@ -1,0 +1,70 @@
+• run_homologation_tests {"suite": "completo"} → job 55e88c3e-eb42-4c72-bdc0-d248de9bad95 (mensagem 22617699191143964)
+{"jti": "55e88c3e-eb42-4c72-bdc0-d248de9bad95", "operacao": "run_homologation_tests", "classe": "READ_ONLY", "parametros": {"suite": "completo"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T23:51:53.615466Z", "fim": "2026-11-14T23:52:02.296224Z", "duracao_s": 8.681, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh saude
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ proxy exige autenticação (sem credencial: 401)
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ web (tela de entrada): 200
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+✔ certificado válido por mais 53 dias (até Jan  7 16:14:09 2027 GMT)
+✔ último backup há 0 h (cenario-staging-20261114T234953Z)
+✔ último envio ao bucket há 0 h
+✔ nenhum backup local sem cópia externa há mais de 36 h
+✔ migrations: 37 aplicadas, nenhuma pendente/com falha
+✔ disco em 82%
+✔ memória disponível 1095 MB
+Saúde: OK
+✔ suíte saude
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh diagnosticar-acesso 24
+== Configuração
+• domínio: «HOMOLOG_DOMAIN-mascarado» · usuário do proxy: «HOMOLOG_BASIC_USER-mascarado» (minúsculo, sem acento)
+• segredo homolog-proxy-password: 23 caracteres; só caracteres imprimíveis comuns
+• /run/cenario/env gerado em: 2026-11-14T23:50:53Z (o hash da senha do proxy é calculado nesse momento)
+== Fluxo do navegador (de dentro da VM)
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+== Tentativas registradas pelo Caddy nas últimas 24 h
+• 315 requisições de navegadores (+ 32 de testes internos)
+• Safari: 6 aceitas · 0 recusadas COM senha enviada · 1 pedidos de senha (sem credencial)
+• últimas (hora UTC · status · método · caminho · senha enviada? · cookie? · usuário aceito · navegador):
+    11-14T21:22:39 308 GET /robots.txt · - · - ·  · outro
+    11-14T21:22:39 308 GET /sitemap.xml · - · - ·  · outro
+    11-14T21:22:40 308 GET /.well-known/security.txt · - · - ·  · outro
+    11-14T21:22:40 308 GET /favicon.ico · - · - ·  · outro
+    11-14T21:24:35 308 GET / · - · - ·  · outro
+    11-14T21:25:12 308 GET / · - · - ·  · outro
+    11-14T21:25:19 308 GET / · - · - ·  · Safari
+    11-14T21:25:32 308 POST / · - · - ·  · outro
+    11-14T21:47:45 308 GET / · - · - ·  · outro
+    11-14T22:36:57 308 GET / · - · - ·  · outro
+    11-14T22:40:09 308 GET /admin/config.php · - · - ·  · outro
+    11-14T22:46:22 308 GET / · - · - ·  · outro
+    11-14T22:51:43 308 GET / · - · - ·  · outro
+    11-14T22:52:00 308 GET /phpinfo.php · - · - ·  · outro
+    11-14T23:04:58 308 GET /developmentserver/metadatauploader · - · - ·  · outro
+    11-14T23:09:42 200 GET /api/ready · - · cookie ·  · outro
+    11-14T23:28:38 308 GET / · - · - ·  · Safari
+    11-14T23:28:41 308 GET / · - · - ·  · Safari
+    11-14T23:36:19 308 GET / · - · - ·  · outro
+    11-14T23:36:27 308 GET / · - · - ·  · outro
+    11-14T23:38:09 308 GET / · - · - ·  · outro
+    11-14T23:46:40 308 GET / · - · - ·  · outro
+    11-14T23:51:37 200 GET /api/ready · - · cookie ·  · outro
+    11-14T23:51:50 401 GET /api/realtime · - · cookie ·  · outro
+    11-14T23:51:58 308 POST / · - · - ·  · outro
+== Leitura
+• o Safari passou pelo proxy; se a tela não abriu, veja os status != 2xx/3xx acima
+✔ suíte acesso
+✔ WebSocket /api/realtime pelo proxy: HTTP 401 (esperado 401 sem sessão, ou 101)
+✔ suíte websocket
