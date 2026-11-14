@@ -41,9 +41,7 @@
 
 Observações (fatos do repositório, sem efeito na VM):
 
-- `7b4177b` **não é ancestral** de `696e3e9` (`git merge-base --is-ancestor` → 1; 279 commits de
-  `7b4177b` não estão em `696e3e9`, 45 no sentido inverso). As 33 migrations de `7b4177b` são
-  **byte a byte idênticas** em `696e3e9` (`git diff --quiet` nas 33 pastas).
+- *Corrigido em 14/11 (`PRODUCAO-AUDITORIA-VERSAO-IMPLANTADA-696e3e9.md`):* `7b4177b` **é** ancestral de `696e3e9` (80 commits à frente). A afirmação anterior ("não é ancestral") vinha de um clone raso (`--depth`) nesta sessão. As 33 migrations de `7b4177b` são idênticas em `696e3e9`.
 - A correção de segurança de `7b4177b` (`next` 15.5.28) **está** em `696e3e9` (`apps/web/package.json`
   e `pnpm-lock.yaml`: `next@15.5.28`).
 - Os IDs de imagem mostrados pelo Docker são o mesmo tipo de identificador que os digests autorizados
