@@ -1,0 +1,9 @@
+# comando: operar.py op gate_status
+# inicio_utc: 2026-11-14T17:17:07Z
+# fim_utc: 2026-11-14T17:17:11Z
+# exit: 0
+## stderr
+• gate_status {} → job e3853d2c-61b0-4589-ab10-0ee7d6017b96 (mensagem 22616275710260277)
+{"jti": "e3853d2c-61b0-4589-ab10-0ee7d6017b96", "operacao": "gate_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:17:09.785939Z", "fim": "2026-11-14T17:17:09.984886Z", "duracao_s": 0.199, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)
