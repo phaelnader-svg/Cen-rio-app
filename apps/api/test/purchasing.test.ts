@@ -1,7 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { panelUserWith } from './commercial-helpers';
-import { createTestApp, db, idemKey, loginAdmin, resetDatabase, setupTablet } from './helpers';
+import {
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  resetDatabaseWithMaterialsGate,
+  setupTablet,
+} from './helpers';
 import {
   createMeasurement,
   fabric,
@@ -31,7 +38,7 @@ beforeAll(async () => {
   await app.app.ready();
 });
 afterAll(() => app.close());
-beforeEach(resetDatabase);
+beforeEach(resetDatabaseWithMaterialsGate);
 
 describe('Compras a partir de solicitações aprovadas', () => {
   it('tecido exclusivo da OS: central de compras → pedido → confirmação pelo gestor', async () => {

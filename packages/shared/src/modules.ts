@@ -5,8 +5,10 @@ import { z } from 'zod';
  * nova imagem e sem apagar nada (o histórico continua legível). Fonte única: o servidor decide
  * pela tabela `module_settings`; a interface só esconde o que o servidor já recusa.
  *
- * Ausência de registro = valor padrão. Todos os padrões são "ligado": uma instalação nova ou
- * migrada mantém o comportamento anterior até alguém desligar algo de forma explícita.
+ * Ausência de registro = valor padrão. Logística, ajuda e embalagem vêm "ligadas" (comportamento
+ * anterior até alguém desligar). Etapa E1 da correção da reformulação: as travas de materiais
+ * ("materiais") vêm DESLIGADAS — a produção não depende do processo formal de compras, medições,
+ * aprovações, recebimentos ou reservas; quem quiser esse controle liga em Empresa → Funcionalidades.
  *
  * `configurable: false` = a chave existe mas ainda não pode ser alterada (nenhuma hoje: a
  * embalagem passou a ser configurável na Reformulação, Fase 3).
@@ -49,8 +51,8 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
   materiais: {
     label: 'Travas de materiais na produção',
     description:
-      'Ligada, as etapas que exigem material só são liberadas com compra recebida ou reserva. Desligada, a produção começa mesmo com materiais pendentes: a disponibilidade vira só aviso, e compras, reservas e estoque formais continuam disponíveis para quem quiser usar.',
-    defaultEnabled: true,
+      'Ligada, as etapas que exigem material só são liberadas com compra recebida ou reserva. Desligada (padrão), a produção começa mesmo com materiais pendentes: a disponibilidade vira só aviso, e compras, reservas e estoque formais continuam disponíveis para quem quiser usar.',
+    defaultEnabled: false,
     configurable: true,
   },
 };

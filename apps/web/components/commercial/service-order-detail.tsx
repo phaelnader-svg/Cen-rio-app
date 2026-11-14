@@ -29,7 +29,7 @@ import {
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Ban, CheckCircle2, Circle, Clock3, Pencil, Plus, Ruler, Trash2 } from 'lucide-react';
+import { Ban, CheckCircle2, Circle, Clock3, Info, Pencil, Plus, Ruler, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -89,6 +89,7 @@ const READY_LABEL: Record<ReadinessState, string> = {
   OK: 'Concluído',
   PENDENTE: 'Pendente',
   FASE_FUTURA: 'Fase futura',
+  INFORMATIVO: 'Não impede o início',
 };
 
 function ReadinessRow({
@@ -100,7 +101,14 @@ function ReadinessRow({
   state: ReadinessState;
   hint: string;
 }) {
-  const Icon = state === 'OK' ? CheckCircle2 : state === 'PENDENTE' ? Circle : Clock3;
+  const Icon =
+    state === 'OK'
+      ? CheckCircle2
+      : state === 'PENDENTE'
+        ? Circle
+        : state === 'INFORMATIVO'
+          ? Info
+          : Clock3;
   return (
     <li className="flex items-start gap-3 py-2">
       <Icon
@@ -301,7 +309,11 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 <ReadinessRow
                   label="Medições"
                   state={s.readiness.measurements}
-                  hint="Gestor às sextas; extraordinárias por tapeceiro autorizado."
+                  hint={
+                    s.readiness.materialsGate
+                      ? 'Gestor às sextas; extraordinárias por tapeceiro autorizado.'
+                      : 'Opcional: alimenta as compras formais, mas não impede o início da produção.'
+                  }
                 />
                 <ReadinessRow
                   label="Responsável técnico"
@@ -311,7 +323,13 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 <ReadinessRow
                   label="Materiais"
                   state={s.readiness.materials}
-                  hint={`${MATERIAL_READINESS_LABEL[s.readiness.materialsState]} — compras, recebimentos e reservas. Material completo não antecipa a produção.`}
+                  hint={
+                    s.readiness.materialsGate
+                      ? `${MATERIAL_READINESS_LABEL[s.readiness.materialsState]} — compras, recebimentos e reservas. Material completo não antecipa a produção.`
+                      : s.readiness.simpleMaterialsPending > 0
+                        ? `Aviso: ${s.readiness.simpleMaterialsPending} material(is) da lista ainda não está(ão) na oficina. Não impede o início.`
+                        : 'Materiais informados na aba Materiais. Não impedem o início da produção.'
+                  }
                 />
                 <ReadinessRow
                   label="Programação"
@@ -320,8 +338,9 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 />
               </ul>
               <p className="mt-3 rounded-lg bg-subtle px-3 py-2 text-xs text-ink-soft">
-                A produção só começa quando programação, materiais, responsável e dependências
-                permitirem.
+                {s.readiness.materialsGate
+                  ? 'A produção só começa quando programação, materiais, responsável e dependências permitirem.'
+                  : 'A produção começa quando programação, responsável e dependências permitirem. Materiais pendentes aparecem só como aviso.'}
               </p>
             </Section>
             {canLabor && (

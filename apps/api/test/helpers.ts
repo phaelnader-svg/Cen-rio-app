@@ -14,6 +14,16 @@ export function db(): PrismaClient {
 }
 
 /** Limpa todas as tabelas (exceto o controle de migrations) e recria os dados base. */
+/**
+ * Etapa E1: as travas de materiais vêm DESLIGADAS por padrão. As suítes que provam o controle
+ * formal de materiais (a produção esperando compra recebida ou reserva) usam este reset, que grava
+ * a trava LIGADA — o estado de uma instalação que escolheu esse controle em Empresa → Funcionalidades.
+ */
+export async function resetDatabaseWithMaterialsGate() {
+  await resetDatabase();
+  await db().moduleSetting.create({ data: { key: 'materiais', enabled: true } });
+}
+
 export async function resetDatabase() {
   const prisma = db();
   const tables = await prisma.$queryRaw<{ tablename: string }[]>`

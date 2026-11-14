@@ -1,6 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
-import { WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  WsClient,
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  resetDatabaseWithMaterialsGate,
+} from './helpers';
 import {
   act,
   addOs,
@@ -36,7 +43,7 @@ beforeAll(async () => {
 });
 afterAll(() => app.close());
 beforeEach(async () => {
-  await resetDatabase();
+  await resetDatabaseWithMaterialsGate();
   (app.ctx.hub as unknown as { feed: { lastSeq: bigint } }).feed.lastSeq = 0n;
 });
 afterEach(async () => {

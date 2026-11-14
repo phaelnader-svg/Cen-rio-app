@@ -10,12 +10,13 @@ import {
 
 /** Reformulação, Fase 0 — interruptores de funcionalidades. */
 describe('módulos configuráveis', () => {
-  it('sem nenhum registro, tudo fica no padrão — e todo padrão preserva o comportamento anterior (ligado)', () => {
+  it('sem nenhum registro, tudo fica no padrão: logística, ajuda e embalagem ligadas; travas de materiais desligadas (etapa E1)', () => {
     const state = resolveModules([]);
     expect(Object.keys(state).sort()).toEqual([...MODULE_KEYS].sort());
+    const expected = { logistica: true, ajuda: true, embalagem: true, materiais: false };
     for (const k of MODULE_KEYS) {
-      expect(MODULES[k].defaultEnabled).toBe(true);
-      expect(state[k]).toBe(true);
+      expect(MODULES[k].defaultEnabled).toBe(expected[k]);
+      expect(state[k]).toBe(expected[k]);
     }
   });
 
@@ -33,12 +34,13 @@ describe('módulos configuráveis', () => {
       { key: 'materiais', enabled: false },
     ]);
     expect(state).toEqual({ logistica: false, embalagem: false, ajuda: false, materiais: false });
-    // Sem registro, tudo ligado (comportamento anterior preservado).
+    // Sem registro: logística, ajuda e embalagem ligadas (comportamento anterior); etapa E1: as
+    // travas de materiais vêm desligadas (a produção não depende do processo formal de compras).
     expect(resolveModules([])).toEqual({
       logistica: true,
       ajuda: true,
       embalagem: true,
-      materiais: true,
+      materiais: false,
     });
   });
 

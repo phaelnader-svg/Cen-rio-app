@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import type { Client } from './helpers';
-import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import { createTestApp, db, idemKey, loginAdmin, resetDatabaseWithMaterialsGate } from './helpers';
 import {
   createMeasurement,
   fabric,
@@ -35,7 +35,7 @@ beforeAll(async () => {
   await app.app.ready();
 });
 afterAll(() => app.close());
-beforeEach(resetDatabase);
+beforeEach(resetDatabaseWithMaterialsGate);
 
 const post = (c: Client, url: string, body: unknown, key = idemKey()) =>
   c.post(url, body, { 'idempotency-key': key });

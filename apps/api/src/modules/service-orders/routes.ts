@@ -29,6 +29,7 @@ import { Errors } from '../../lib/errors';
 import { notify } from '../notifications/notify';
 import { protectCancelledServiceOrder } from '../production/cancellation';
 import { readinessOf } from '../purchasing/common';
+import { moduleEnabled } from '../../core/modules';
 import { idParams, toEmployeeSummary } from '../presenters';
 import {
   can,
@@ -80,6 +81,12 @@ export async function loadServiceOrderDto(
   if (!so) throw Errors.notFound('Ordem de serviço');
   const measuredCount = so.items.filter((i) => measurementsOf(i.measurements).length > 0).length;
   const materialsState = (await readinessOf(db, id)).state;
+  // Etapa E1: com as travas de materiais desligadas (padrão), materiais e medições não impedem o
+  // início da produção; a prontidão só informa (a lista simples da OS dá o aviso).
+  const materialsGate = await moduleEnabled(db, 'materiais');
+  const simpleMaterialsPending = await db.serviceOrderMaterial.count({
+    where: { serviceOrderId: id, removedAt: null, available: false },
+  });
   // Fase 5: programada quando há tarefa ativa em planejamento publicado.
   const scheduled = await db.productionTask.count({
     where: {
@@ -147,11 +154,19 @@ export async function loadServiceOrderDto(
     // Prontidão para produção: apenas informativa. O início é decidido tarefa a
     // tarefa pelo motor de liberação (Fase 5), nunca pela OS como um todo.
     readiness: {
-      measurements: so.items.length > 0 && measuredCount === so.items.length ? 'OK' : 'PENDENTE',
+      measurements:
+        so.items.length > 0 && measuredCount === so.items.length
+          ? 'OK'
+          : materialsGate
+            ? 'PENDENTE'
+            : 'INFORMATIVO',
       technicalLead: so.technicalLeadId ? 'OK' : 'PENDENTE',
-      // Fase 4: calculada a partir de solicitações, compras, recebimentos e reservas.
-      materials: materialsState === 'COMPLETO' ? 'OK' : 'PENDENTE',
+      // Fase 4: calculada a partir de solicitações, compras, recebimentos e reservas. Etapa E1: com
+      // as travas desligadas, só informa (nunca "pendente" como impedimento).
+      materials: !materialsGate ? 'INFORMATIVO' : materialsState === 'COMPLETO' ? 'OK' : 'PENDENTE',
       materialsState,
+      materialsGate,
+      simpleMaterialsPending,
       scheduling: scheduled > 0 ? 'OK' : 'PENDENTE',
       canStartProduction: false,
     },

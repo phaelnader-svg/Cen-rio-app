@@ -398,8 +398,10 @@ describe('Materiais necessários da OS (lista simples)', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════ 11.2 produção
-async function publishedSofa(materials: 'none' | 'missing' | 'complete') {
+async function publishedSofa(materials: 'none' | 'missing' | 'complete', gate?: boolean) {
   const admin = await loginAdmin(app);
+  // Etapa E1: o padrão é DESLIGADO; os casos que provam a trava a ligam explicitamente.
+  if (gate !== undefined) ok(await setModule(admin, 'materiais', gate));
   const { so } = await serviceOrderWith(admin, materials);
   const ricardo = await userIdOf('Ricardo');
   const joao = await userIdOf('João');
@@ -423,13 +425,13 @@ const taskOf = async (admin: Client, id: string) =>
   ok(await admin.get(`/api/v1/production-tasks/${id}`));
 
 describe('Produção sem trava de materiais (interruptor "materiais")', () => {
-  it('padrão LIGADO = comportamento anterior: sem levantamento, corte bloqueado por MATERIAIS', async () => {
-    const { t } = await publishedSofa('none');
+  it('LIGADO (explicitamente; o padrão é desligado desde a E1) = comportamento anterior: sem levantamento, corte bloqueado por MATERIAIS', async () => {
+    const { t } = await publishedSofa('none', true);
     expect(t('CORTE_TECIDO')).toMatchObject({ status: 'BLOQUEADA', blockers: ['MATERIAIS'] });
   });
 
   it('DESLIGADO: OS sem materiais e com materiais pendentes iniciam; pausa, retomada e conclusão; religar volta a travar o que aguarda', async () => {
-    const { admin, so, t } = await publishedSofa('missing');
+    const { admin, so, t } = await publishedSofa('missing', true);
     const corte = t('CORTE_TECIDO');
     expect(corte.blockers).toContain('MATERIAIS');
     // Lista simples com material pendente (não disponível): só aviso.
@@ -727,7 +729,8 @@ describe('Logística desligável e reversível', () => {
     const admin = await loginAdmin(app);
     expect(ok(await admin.get('/api/v1/modules'))).toMatchObject({
       logistica: true,
-      materiais: true,
+      // Etapa E1 (decisão do proprietário): as travas de materiais vêm desligadas por padrão.
+      materiais: false,
       ajuda: true,
       embalagem: true,
     });

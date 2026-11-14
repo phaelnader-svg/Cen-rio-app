@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp, type App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import { loadEnv } from '../src/config/env';
-import { createTestApp, db, loginAdmin, resetDatabase } from './helpers';
+import { createTestApp, db, loginAdmin, resetDatabaseWithMaterialsGate } from './helpers';
 import { today } from './production-helpers';
 import { qualityKit } from './quality-helpers';
 
@@ -29,7 +29,7 @@ const SIZES = process.env.CENTRAL_PERF ? [100, 1000, 3000, 10_000] : [100, 1000,
 
 beforeAll(async () => {
   app = await createTestApp();
-  await resetDatabase();
+  await resetDatabaseWithMaterialsGate();
   await db().companySettings.update({
     where: { id: 1 },
     data: { workingDays: [0, 1, 2, 3, 4, 5, 6] },

@@ -321,8 +321,8 @@ export async function domainTaskEvent(
 type Readiness = Awaited<ReturnType<typeof readinessOf>>;
 
 /**
- * Reformulação, Fase 1: travas de materiais ligadas? (interruptor "materiais", padrão ligado =
- * comportamento anterior). Memorizado por cache de prontidão: uma reavaliação lê a configuração
+ * Reformulação, Fase 1: travas de materiais ligadas? (interruptor "materiais"; padrão DESLIGADO
+ * desde a etapa E1: só travam se o gestor ligar). Memorizado por cache de prontidão: uma reavaliação lê a configuração
  * uma vez só, e todas as tarefas daquela passada usam a mesma decisão.
  */
 const gateMemo = new WeakMap<Map<string, Readiness>, Promise<boolean>>();
@@ -597,7 +597,18 @@ export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
         take: 500,
       })
     : [];
-  const ids = [...new Set([...byTime, ...byStart].map((t) => t.id))].sort();
+  // Etapa E1: com as travas de materiais desligadas (padrão), tarefas que continuam gravadas como
+  // bloqueadas por MATERIAIS (de antes da mudança do padrão, ou de quando a trava estava ligada)
+  // são reavaliadas aqui e liberadas, sem depender de alguém mexer nelas. Idempotente.
+  const byMaterials = (await materialsGateOn(prisma))
+    ? []
+    : await prisma.productionTask.findMany({
+        where: { status: { in: [...TASK_WAITING] }, blockers: { has: 'MATERIAIS' } },
+        select: { id: true },
+        orderBy: { id: 'asc' },
+        take: 500,
+      });
+  const ids = [...new Set([...byTime, ...byStart, ...byMaterials].map((t) => t.id))].sort();
   if (!ids.length) return 0;
   const system: ActorContext = { userId: null, sessionId: null, ip: null, requestId: null };
   return prisma.$transaction(async (tx) => {
@@ -606,7 +617,7 @@ export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
       await audit(tx, system, {
         action: 'production.release_tick',
         entityType: 'production_task',
-        summary: `${changed} tarefa(s) reavaliada(s) pelo horário programado ou data de início.`,
+        summary: `${changed} tarefa(s) reavaliada(s) pelo horário programado, data de início ou travas de materiais desligadas.`,
       });
     return changed;
   });

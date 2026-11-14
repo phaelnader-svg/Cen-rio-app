@@ -270,7 +270,8 @@ export interface MaterialRequirementDto {
   thicknessCm: number | null;
 }
 
-export type ReadinessState = 'OK' | 'PENDENTE' | 'FASE_FUTURA';
+/** INFORMATIVO (etapa E1): mostrado só como aviso; não impede o início da produção. */
+export type ReadinessState = 'OK' | 'PENDENTE' | 'FASE_FUTURA' | 'INFORMATIVO';
 
 export interface ServiceOrderReadinessDto {
   measurements: ReadinessState;
@@ -278,6 +279,10 @@ export interface ServiceOrderReadinessDto {
   materials: ReadinessState;
   /** Prontidão detalhada de materiais (Fase 4). */
   materialsState: MaterialReadiness;
+  /** Etapa E1: travas de materiais ligadas? Desligadas (padrão), materiais e medições só informam. */
+  materialsGate: boolean;
+  /** Etapa E1: linhas da lista simples da OS ainda não disponíveis na oficina (só aviso). */
+  simpleMaterialsPending: number;
   scheduling: ReadinessState;
   /** Sempre false nesta fase: a produção só começa pela programação (fases futuras). */
   canStartProduction: false;

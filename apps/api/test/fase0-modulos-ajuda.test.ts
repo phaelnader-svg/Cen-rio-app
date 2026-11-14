@@ -114,13 +114,14 @@ async function workshop(arrive: string[] = ['Ricardo', 'João']) {
 }
 
 describe('Interruptores de funcionalidade', () => {
-  it('sem configuração gravada: tudo ligado (comportamento anterior), versão 0, todas configuráveis', async () => {
+  it('sem configuração gravada: padrões (materiais desligado desde a E1; o resto ligado), versão 0, todas configuráveis', async () => {
     const admin = await loginAdmin(app);
     expect((await admin.get('/api/v1/modules')).body).toEqual({
       logistica: true,
       ajuda: true,
       embalagem: true,
-      materiais: true,
+      // Etapa E1 (decisão do proprietário): travas de materiais desligadas por padrão.
+      materiais: false,
     });
     const list = (await admin.get('/api/company/modules')).body as {
       key: string;
@@ -130,7 +131,12 @@ describe('Interruptores de funcionalidade', () => {
       updatedBy: unknown;
     }[];
     expect(list.map((m) => m.key)).toEqual(['logistica', 'ajuda', 'embalagem', 'materiais']);
-    expect(list.every((m) => m.enabled && m.version === 0 && m.updatedBy === null)).toBe(true);
+    expect(list.every((m) => m.version === 0 && m.updatedBy === null)).toBe(true);
+    expect(list.filter((m) => m.enabled).map((m) => m.key)).toEqual([
+      'logistica',
+      'ajuda',
+      'embalagem',
+    ]);
     // Fase 1: logística e travas de materiais passaram a ser configuráveis; Fase 3: a embalagem.
     expect(list.filter((m) => m.configurable).map((m) => m.key)).toEqual([
       'logistica',
@@ -153,7 +159,7 @@ describe('Interruptores de funcionalidade', () => {
       logistica: true,
       ajuda: true,
       embalagem: false,
-      materiais: true,
+      materiais: false,
     });
     // Fase 1: a logística passou a ser configurável — o registro gravado agora vale.
     await db().moduleSetting.create({ data: { key: 'logistica', enabled: false } });

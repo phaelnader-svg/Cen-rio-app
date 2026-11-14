@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { releaseDueTasks } from '../src/modules/production/common';
 import { panelUserWith } from './commercial-helpers';
-import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import { createTestApp, db, idemKey, loginAdmin, resetDatabaseWithMaterialsGate } from './helpers';
 import {
   act,
   addOs,
@@ -25,7 +25,7 @@ beforeAll(async () => {
   await app.app.ready();
 });
 afterAll(() => app.close());
-beforeEach(resetDatabase);
+beforeEach(resetDatabaseWithMaterialsGate);
 
 /** Sofá com Ricardo como principal e João no apoio; publica a semana. */
 async function publishedSofa(materials: 'none' | 'missing' | 'complete', date = day(-1)) {
