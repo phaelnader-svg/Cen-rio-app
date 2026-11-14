@@ -1,6 +1,6 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
 import { E2E } from '../env';
-import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice, setMaterialsGate, setPin } from './helpers';
 import { openServiceOrder } from './os-helpers';
 
 /**
@@ -48,6 +48,8 @@ test.describe.serial('Fase 6 — interface operacional dos tablets', () => {
     test.setTimeout(180_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAdmin(page);
+    // Etapa E1: este spec prova o controle formal de materiais — liga a trava (o padrão é desligada).
+    await setMaterialsGate(page, true);
     await call(page, 'POST', '/api/test/clock', { now: FIXED_NOW });
     try {
       const so = await openServiceOrder(page, 'Cliente Tablets E2E');
@@ -257,6 +259,7 @@ test.describe.serial('Fase 6 — interface operacional dos tablets', () => {
       await joao.context.close();
       await marcio.context.close();
     } finally {
+      await setMaterialsGate(page, false).catch(() => undefined);
       await call(page, 'POST', '/api/test/clock', { now: null });
     }
   });

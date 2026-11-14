@@ -300,7 +300,8 @@ const ACCENT: Partial<Record<ProductionTaskDto['status'], string>> = {
 /** Situação dos materiais a partir do que a tarefa já informa (sem consulta extra). */
 function materialsOf(t: ProductionTaskDto): 'NAO_EXIGE' | 'DISPONIVEIS' | 'FALTANDO' {
   if (!t.requiresMaterials) return 'NAO_EXIGE';
-  return t.blockers.includes('MATERIAIS') ? 'FALTANDO' : 'DISPONIVEIS';
+  // Etapa E1: com as travas desligadas, o servidor informa a lista simples da OS (só aviso).
+  return t.blockers.includes('MATERIAIS') || t.osMaterialsMissing ? 'FALTANDO' : 'DISPONIVEIS';
 }
 
 function MaterialsIndicator({ state }: { state: 'NAO_EXIGE' | 'DISPONIVEIS' | 'FALTANDO' }) {

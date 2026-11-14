@@ -59,6 +59,11 @@ export interface TaskRefDto {
 
 export interface ProductionTaskDto {
   id: string;
+  /**
+   * Etapa E1: só em "Minhas tarefas" (tablet) e só com as travas de materiais desligadas — a OS
+   * tem material da lista simples ainda não disponível na oficina. Aviso; nunca impede iniciar.
+   */
+  osMaterialsMissing?: boolean;
   number: number;
   code: string;
   plan: { id: string; weekStart: string; status: PlanStatus; mode: PlanMode } | null;

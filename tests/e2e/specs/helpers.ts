@@ -75,3 +75,25 @@ export async function openTablet(
 export async function typePin(page: Page, pin: string) {
   for (const d of pin) await page.getByRole('button', { name: d, exact: true }).click();
 }
+
+/**
+ * Etapa E1: as travas de materiais vêm DESLIGADAS por padrão. Os specs que provam o controle formal
+ * (tarefa esperando material) ligam a trava no começo e restauram o padrão (desligada) no fim, para
+ * não alterar o estado dos specs seguintes (o banco E2E é compartilhado).
+ */
+export async function setMaterialsGate(page: Page, enabled: boolean) {
+  const origin = `http://localhost:${E2E.webPort}`;
+  const headers = () => ({ origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') });
+  const r = await page.request.fetch('/api/company/modules', { headers: headers() });
+  expect(r.ok(), `GET /api/company/modules: ${await r.text()}`).toBe(true);
+  const m = ((await r.json()) as { key: string; version: number; enabled: boolean }[]).find(
+    (x) => x.key === 'materiais',
+  )!;
+  if (m.enabled === enabled) return;
+  const w = await page.request.fetch('/api/company/modules/materiais', {
+    method: 'PUT',
+    data: { enabled, version: m.version },
+    headers: headers(),
+  });
+  expect(w.ok(), `PUT /api/company/modules/materiais: ${await w.text()}`).toBe(true);
+}

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
-import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice } from './helpers';
 import { openServiceOrder } from './os-helpers';
 
 /**
@@ -32,6 +32,11 @@ async function call(page: Page, method: 'POST' | 'GET' | 'PUT', path: string, da
   return r.json();
 }
 
+const evidence = (p: Page, name: string) =>
+  process.env.E2E_EVIDENCE
+    ? p.screenshot({ path: `../../docs/evidencias/e1-materiais/${name}.png`, fullPage: true })
+    : Promise.resolve();
+
 type Task = {
   id: string;
   title: string;
@@ -60,6 +65,7 @@ test('E1 — sem compra, sem medição e com material pendente, o tablet inicia 
   });
   await page.goto('/painel/empresa');
   await expect(page.getByTestId('module-materiais-toggle')).not.toBeChecked();
+  await evidence(page, '00-empresa-funcionalidades-padrao');
 
   // OS aberta, sem medição e sem nenhum pedido de compra.
   const tag = Date.now().toString(36).slice(-5);
@@ -80,15 +86,24 @@ test('E1 — sem compra, sem medição e com material pendente, o tablet inicia 
   await expect(readiness).toContainText('Medições · Não impede o início');
   await expect(readiness).toContainText('ainda não está(ão) na oficina');
   await expect(page.getByText('Materiais pendentes aparecem só como aviso.')).toBeVisible();
+  await evidence(page, '01-os-resumo-prontidao');
 
   // Planejamento da semana com a OS; a etapa principal "Corte de tecido" vai para o tapeceiro.
-  const workers = (await call(page, 'GET', '/api/v1/production/workers')) as {
-    userId: string;
-    displayName: string;
-    isTapeceiro: boolean;
-  }[];
-  const worker =
-    workers.find((w) => w.displayName === 'Thiago') ?? workers.find((w) => w.isTapeceiro)!;
+  // Tapeceiro próprio do teste (sem tarefas de outros specs): o responsável principal de sofá
+  // precisa ser tapeceiro, e um tapeceiro só executa uma etapa principal por vez.
+  const roles = (await call(page, 'GET', '/api/roles')) as { id: string; key: string }[];
+  const pin = String(100000 + (Date.now() % 900000));
+  const workerName = `Tapeceiro E1 ${tag}`;
+  const emp = await call(page, 'POST', '/api/employees', {
+    fullName: `[TESTE E1] ${workerName}`,
+    displayName: workerName,
+    jobTitle: 'Tapeceiro (teste)',
+    color: '#557799',
+    roleIds: [roles.find((r) => r.key === 'tapeceiro')!.id],
+    pin,
+  });
+  const worker = { userId: (emp.userId ?? emp.user?.id) as string, displayName: workerName };
+  expect(worker.userId, JSON.stringify(emp)).toBeTruthy();
   const week = mondayOf(DAY);
   let plan = (await call(page, 'GET', `/api/v1/production-plans?week=${week}`))[0];
   if (!plan)
@@ -132,20 +147,23 @@ test('E1 — sem compra, sem medição e com material pendente, o tablet inicia 
   expect(cut.blockers).not.toContain('MATERIAIS');
 
   // Tablet do tapeceiro: a etapa aparece e inicia com um toque.
-  await setPin(page, worker.displayName, '864209');
   const tablet = await openTablet(
     browser,
     await registerDevice(page, `Tablet E1 ${tag}`, worker.displayName),
-    '864209',
+    pin,
   );
   const jt = tablet.page;
-  const card = jt.getByTestId('my-day').getByText(cut.title).first();
-  await expect(card).toBeVisible();
+  // O cartão aparece liberado, com o aviso de material (só informativo) e o botão Iniciar.
   const next = jt.getByTestId('next-task');
   await expect(next).toContainText(so.code);
+  await expect(next).toContainText('Corte de tecido');
+  await expect(next).toContainText('Liberada');
+  await expect(next).toContainText('Falta material');
+  await evidence(jt, '02-tablet-cartao-liberado-com-aviso');
   await next.getByRole('button', { name: 'Iniciar' }).click();
   const current = jt.getByTestId('current-task');
   await expect(current.locator('[data-status="EM_EXECUCAO"]')).toBeVisible();
+  await evidence(jt, '03-tablet-em-execucao');
   // Pausar, retomar e concluir pela sessão do tablet (mesmas rotas que a tela usa).
   const tcall = async (action: string, body: unknown = {}) => {
     const r = await jt.request.fetch(`/api/v1/production-tasks/${cut0.id}/${action}`, {

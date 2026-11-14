@@ -808,6 +808,26 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       include: taskInclude,
     });
     const dtos = rows.map((t) => toTaskDto(t, timezone)).sort(compareTasks);
+    // Etapa E1: com as travas de materiais desligadas (padrão), o aviso do cartão vem da lista simples
+    // da OS (mesma regra do detalhe da tarefa), numa consulta só. Nunca muda a situação da tarefa.
+    if (!(await materialsGateOn(prisma))) {
+      const soIds = [
+        ...new Set(rows.filter((r) => r.requiresMaterials).map((r) => r.serviceOrderId)),
+      ];
+      const missing = soIds.length
+        ? new Set(
+            (
+              await prisma.serviceOrderMaterial.findMany({
+                where: { serviceOrderId: { in: soIds }, removedAt: null, available: false },
+                select: { serviceOrderId: true },
+                distinct: ['serviceOrderId'],
+              })
+            ).map((m) => m.serviceOrderId),
+          )
+        : new Set<string>();
+      for (const d of dtos)
+        if (d.requiresMaterials) d.osMaterialsMissing = missing.has(d.serviceOrder.id);
+    }
     return {
       today: dtos.filter(
         (t) =>

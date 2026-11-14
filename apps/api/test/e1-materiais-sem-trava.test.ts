@@ -186,6 +186,10 @@ describe('E1 — a produção não depende do processo formal de materiais', () 
     expect(detail.status).toBe('LIBERADA');
     expect(detail.taskMaterials).toBe('FALTANDO');
     expect(detail.blockers).not.toContain('MATERIAIS');
+    // "Minhas tarefas" (cartão do tablet): o mesmo aviso, sem impedir — e só onde há falta.
+    const mine = ok<J>(await ricardo.get('/api/v1/production-tasks/mine'));
+    const card = mine.today.find((x: J) => x.id === corteId);
+    expect(card).toMatchObject({ status: 'LIBERADA', osMaterialsMissing: true });
     expect((await act(ricardo, corteId, 'start')).status).toBe(200);
   });
 
