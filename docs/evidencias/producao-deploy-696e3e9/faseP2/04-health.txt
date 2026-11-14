@@ -1,0 +1,20 @@
+# comando: operar.py op health
+# inicio_utc: 2026-11-14T11:48:28Z
+# fim_utc: 2026-11-14T11:48:34Z
+# exit: 0
+## stderr
+• health {} → job 446711b2-32cc-4b05-a558-55e845531200 (mensagem 22615184687435737)
+{"jti": "446711b2-32cc-4b05-a558-55e845531200", "operacao": "health", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T11:48:30.670586Z", "fim": "2026-11-14T11:48:31.261569Z", "duracao_s": 0.591, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ docker compose -f /opt/cenario/infra/prod/docker-compose.prod.yml --env-file /run/cenario/env ps --all --format {{.Service}} {{.State}} {{.Health}}
+api running healthy
+backup running 
+caddy running 
+postgres running healthy
+web running healthy
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ /api/ready pelo proxy: HTTP 200

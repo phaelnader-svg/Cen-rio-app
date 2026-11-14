@@ -1,0 +1,294 @@
+# comando: operar.py op vm_scripts_diff version=9ff142e274b1
+# inicio_utc: 2026-11-14T11:48:35Z
+# fim_utc: 2026-11-14T11:48:39Z
+# exit: 0
+## stderr
+• vm_scripts_diff {"version": "9ff142e274b1"} → job 9d5813fd-1cba-457c-a4b6-9394d302deb5 (mensagem 22615034369407023)
+{"jti": "9d5813fd-1cba-457c-a4b6-9394d302deb5", "operacao": "vm_scripts_diff", "classe": "READ_ONLY", "parametros": {"version": "9ff142e274b1"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T11:48:36.651571Z", "fim": "2026-11-14T11:48:37.064249Z", "duracao_s": 0.413, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+✔ pacote scripts-9ff142e274b1 íntegro (commit 9ff142e274b1cc04953bbfb5161a7940962530d5, 23 arquivos)
+• /opt/cenario atual: c32df97ebf64 → pacote: 9ff142e274b1
+== vm.sh: 1 mudança(s)
+   ~ alterado  infra/prod/gcp/vm.sh
+== Compose: 1 mudança(s)
+   ~ alterado  infra/prod/docker-compose.prod.yml
+== Caddy: 0 mudança(s)
+== scripts auxiliares: 3 mudança(s)
+   ~ permissão infra/prod/gcp/provisionar.sh: 0o755 → 0o644
+   ~ permissão infra/prod/gcp/ssh-agente.sh: 0o755 → 0o644
+   ~ alterado  infra/prod/gcp/startup.sh
+== autonomia (não executado a partir de /opt/cenario): 0 mudança(s)
+== testes/documentação: 3 mudança(s)
+   + novo      infra/prod/gcp/testes/ensaio-deploy-banco-limpo.sh (10400 bytes, sha256 9abd01ad21f6ec5b…)
+   + novo      infra/prod/gcp/testes/test_deploy_banco_limpo.sh (5147 bytes, sha256 e7f9a3b7beaa353a…)
+   ~ alterado  infra/prod/gcp/testes/test_vm_sh_prod.sh
+== só na VM (mantidos, nunca apagados): 0
+---------------------------------------------------------------- diff infra/prod/docker-compose.prod.yml
+--- /opt/cenario/infra/prod/docker-compose.prod.yml
++++ scripts-9ff142e274b1/infra/prod/docker-compose.prod.yml
+@@ -48,7 +48,9 @@
+       - -c
+       - max_connections=60
+     volumes:
+-      - pgdata:/var/lib/postgresql/data
++      # Banco limpo da versão 696e3e9 (nov/2026): volume NOVO. O volume anterior "pgdata" (dados
++      # até 13/11/2026) fica declarado abaixo, intacto e sem uso; o retorno é voltar esta linha.
++      - pgdata_2026_11:/var/lib/postgresql/data
+     healthcheck:
+       test: ['CMD-SHELL', 'pg_isready -U cenario -d cenario_prod']
+       interval: 5s
+@@ -153,7 +155,8 @@
+     logging: *logging
+ 
+ volumes:
+-  pgdata:
++  pgdata: # banco anterior (até 13/11/2026): preservado, sem uso. Nunca remover sem decisão explícita.
++  pgdata_2026_11:
+   storage:
+   backups:
+   caddy_data:
+---------------------------------------------------------------- diff infra/prod/gcp/startup.sh
+--- /opt/cenario/infra/prod/gcp/startup.sh
++++ scripts-9ff142e274b1/infra/prod/gcp/startup.sh
+@@ -7,9 +7,12 @@
+ #     (a VM atual já tem 2 GB: nada é alterado);
+ #   - atualizações automáticas de segurança (unattended-upgrades): instala/ativa se ausentes;
+ #   - systemd-resolved sem LLMNR/mDNS (nenhuma escuta em 5355/5353 fora do loopback);
+-#   - serviços systemd da pilha e do envio diário dos backups, COM PORTÃO DE PUBLICAÇÃO: só rodam
+-#     se existir /etc/cenario/publicacao-autorizada. Este script NUNCA cria esse arquivo e NUNCA
+-#     inicia a pilha sem ele (nem PostgreSQL, nem migrations, nem portas 80/443).
++#   - serviço systemd da pilha COM PORTÃO DE PUBLICAÇÃO: só roda se existir
++#     /etc/cenario/publicacao-autorizada. Este script NUNCA cria esse arquivo e NUNCA
++#     inicia a pilha sem ele (nem PostgreSQL, nem migrations, nem portas 80/443). Rodar este
++#     script COM o portão aberto (re)inicia a pilha: para só atualizar as unidades, rode com ele fechado;
++#   - envio diário dos backups ao bucket (timer 07:30 UTC), SEM o portão: só lê os backups e cria
++#     objetos no bucket com a conta da VM (nenhum segredo, nada iniciado).
+ # Nenhum segredo é lido nem gravado aqui.
+ # CENARIO_RAIZ (só nos testes) prefixa os caminhos do sistema, para executar sem tocar na máquina.
+ set -euo pipefail
+@@ -104,11 +107,16 @@
+ [Install]
+ WantedBy=multi-user.target
+ EOF
++# Envio dos backups ao bucket: SEM o portão de publicação. O portão protege a pilha (segredos,
++# PostgreSQL, portas) e fica fechado na operação normal; o envio só LÊ as pastas de backup e CRIA
++# objetos no bucket com a conta da VM (nenhum segredo, nada iniciado). Com o portão como condição,
++# o envio diário era pulado sempre que o portão estava fechado (produção: sem cópia externa de
++# 23/10 a 13/11/2026). Sem volume de backups (antes do 1º deploy), o envio não faz nada.
+ cat > "$R/etc/systemd/system/cenario-backup-upload.service" <<EOF
+ [Unit]
+ Description=Cenário Gestão — envio dos backups ao Cloud Storage
+ After=cenario-prod.service
+-ConditionPathExists=$PORTAO
++ConditionPathExists=/opt/cenario/infra/prod/gcp/vm.sh
+ 
+ [Service]
+ Type=oneshot
+@@ -127,7 +135,7 @@
+ EOF
+ systemctl daemon-reload
+ systemctl enable cenario-prod.service cenario-backup-upload.timer
+-systemctl start cenario-backup-upload.timer # o serviço que ele aciona respeita o portão
++systemctl start cenario-backup-upload.timer # envio diário (independe do portão)
+ 
+ if [[ -f "$R$PORTAO" && -x "$R/opt/cenario/infra/prod/gcp/vm.sh" ]]; then
+   echo "publicação autorizada ($PORTAO): (re)iniciando a pilha"
+---------------------------------------------------------------- diff infra/prod/gcp/testes/test_vm_sh_prod.sh
+--- /opt/cenario/infra/prod/gcp/testes/test_vm_sh_prod.sh
++++ scripts-9ff142e274b1/infra/prod/gcp/testes/test_vm_sh_prod.sh
+@@ -6,7 +6,8 @@
+ #      proxy, com domínio canônico + www, gestor e imagens de produção pela etiqueta; recusa etiqueta inválida;
+ #   D. verificar-preparo: Compose de produção válido, só 80/443, segredos prod-* (sem exibir valor), bucket;
+ #   D2. verificar-preparo REPROVA LLMNR (5355), mDNS (5353, UDP) e serviço inesperado (8080), com o processo;
+-#   E. startup.sh: serviço cenario-prod (portão), caminho infra/prod, nada iniciado sem autorização;
++#   A2/A3. alerta da cópia externa (> 36 h): último envio e backups não enviados; modo aviso nas operações;
++#   E. startup.sh: serviço cenario-prod (portão), envio de backups SEM portão, caminho infra/prod, nada iniciado;
+ #      LLMNR/mDNS desativados de forma persistente e idempotente (reinício do resolved só quando muda).
+ # Executar: bash infra/prod/gcp/testes/test_vm_sh_prod.sh
+ set -euo pipefail
+@@ -67,6 +68,51 @@
+ afirma "$TMP/a.out" "✔ cenario-production-20261020T030000Z enviado a gs://cenariogestao-prod-backups/backups/"
+ afirma "$TMP/objetos/_requisicoes.log" "ifGenerationMatch=0"
+ nega "$TMP/a.out" "tok-vm-falso"
++[[ ! -e "$TMP/portao" ]] && echo "  ✔ envio feito com o portão FECHADO" || { echo "  ✘ portão aberto no cenário A"; FALHAS=$((FALHAS + 1)); }
++[[ -s "$TMP/estado/ultimo-envio" ]] && echo "  ✔ carimbo do último envio gravado" || { echo "  ✘ sem carimbo do último envio"; FALHAS=$((FALHAS + 1)); }
++
++echo "A2. alerta da cópia externa (envio-externo, limite 36 h)"
++roda "$TMP/a2a.out" envio-externo
++igual "$(cat "$TMP/a2a.out.rc")" 0 "em dia logo após o envio"
++afirma "$TMP/a2a.out" "✔ último envio ao bucket há 0 h"
++afirma "$TMP/a2a.out" "✔ nenhum backup local sem cópia externa há mais de 36 h"
++igual "$(wc -c < "$CHAMADAS" | xargs)" 0 "chamadas a docker/gcloud (só leitura local)"
++echo $(( $(date -u +%s) - 40 * 3600 )) > "$TMP/estado/ultimo-envio"
++roda "$TMP/a2b.out" envio-externo
++igual "$(cat "$TMP/a2b.out.rc")" 1 "último envio há 40 h reprova"
++afirma "$TMP/a2b.out" "✘ último envio ao bucket há 40 h (limite 36 h)"
++VELHO="cenario-production-$(date -u -d '-3 days' +%Y%m%dT%H%M%SZ)"; NOVO="cenario-production-$(date -u -d '-1 hour' +%Y%m%dT%H%M%SZ)"
++for n in "$VELHO" "$NOVO"; do mkdir -p "$TMP/backups/$n"; echo d > "$TMP/backups/$n/database.dump"; ( cd "$TMP/backups/$n" && sha256sum ./* > SHA256SUMS ); done
++date -u +%s > "$TMP/estado/ultimo-envio"
++roda "$TMP/a2c.out" envio-externo
++igual "$(cat "$TMP/a2c.out.rc")" 1 "backup de 3 dias sem cópia externa reprova"
++afirma "$TMP/a2c.out" "✘ 1 backup(s) local(is) sem cópia externa há mais de 36 h (mais antigo: $VELHO)"
++nega "$TMP/a2c.out" "$NOVO"
++rm -f "$TMP/estado/ultimo-envio"
++roda "$TMP/a2d.out" envio-externo
++afirma "$TMP/a2d.out" "✘ nenhum envio ao bucket registrado"
++roda "$TMP/a2e.out" enviar-backups
++afirma "$TMP/a2e.out" "✔ $VELHO enviado"
++afirma "$TMP/a2e.out" "✔ $NOVO enviado"
++roda "$TMP/a2f.out" envio-externo
++igual "$(cat "$TMP/a2f.out.rc")" 0 "em dia depois de enviar os pendentes"
++CENARIO_BUCKET= roda "$TMP/a2g.out" envio-externo
++afirma "$TMP/a2g.out" "• envio externo desativado (sem cenario-bucket)"
++echo $(( $(date -u +%s) - 40 * 3600 )) > "$TMP/estado/ultimo-envio"
++echo ok > "$TMP/modo.salvo"; echo proibido > "$TMP/modo"
++mkdir -p "$TMP/backups/cenario-production-20261021T030000Z"; echo e > "$TMP/backups/cenario-production-20261021T030000Z/database.dump"
++( cd "$TMP/backups/cenario-production-20261021T030000Z" && sha256sum ./* > SHA256SUMS )
++roda "$TMP/a2h.out" enviar-backups
++igual "$(cat "$TMP/a2h.out.rc")" 1 "envio com erro sai com 1"
++igual "$(( ( $(date -u +%s) - $(cat "$TMP/estado/ultimo-envio") ) / 3600 ))" 40 "carimbo NÃO atualizado quando o envio falha"
++cp "$TMP/modo.salvo" "$TMP/modo"
++roda "$TMP/a2i.out" enviar-backups
++igual "$(cat "$TMP/a2i.out.rc")" 0 "reenvio depois da falha"
++echo "A3. saúde: o alerta conta no smoke e só avisa nas operações internas"
++igual "$(grep -c '^  CENARIO_ENVIO_SO_AVISO=1 saude$' "$VMSH")" 3 "ativar, aplicar-config e recuperar chamam a saúde em modo aviso"
++igual "$(grep -c '^  saude$' "$VMSH")" 0 "nenhuma chamada interna à saúde estrita"
++afirma "$VMSH" '"✘ "*) if [[ "${CENARIO_ENVIO_SO_AVISO:-0}" == 1 ]]'
++afirma "$VMSH" "done < <(verificar_envio_externo || true)"
+ 
+ echo "B. portão fechado"
+ for c in gerar-env iniciar iniciar-banco; do
+@@ -146,6 +192,10 @@
+ afirma "$R/etc/systemd/system/cenario-prod.service" "ConditionPathExists=/etc/cenario/publicacao-autorizada"
+ afirma "$R/etc/systemd/system/cenario-prod.service" "/opt/cenario/infra/prod/gcp/vm.sh gerar-env"
+ afirma "$R/etc/systemd/system/cenario-backup-upload.service" "/opt/cenario/infra/prod/gcp/vm.sh enviar-backups"
++nega "$R/etc/systemd/system/cenario-backup-upload.service" "ConditionPathExists=/etc/cenario/publicacao-autorizada"
++afirma "$R/etc/systemd/system/cenario-backup-upload.service" "ConditionPathExists=/opt/cenario/infra/prod/gcp/vm.sh"
++afirma "$R/etc/systemd/system/cenario-backup-upload.timer" "OnCalendar=*-*-* 07:30:00 UTC"
++afirma "$CHAMADAS" "systemctl start cenario-backup-upload.timer"
+ [[ ! -e "$R/etc/systemd/system/cenario-homolog.service" ]] && echo "  ✔ nenhum serviço de homologação" || { echo "  ✘ serviço de homologação criado"; FALHAS=$((FALHAS + 1)); }
+ afirma "$TMP/e.out" "publicação NÃO autorizada"
+ nega "$CHAMADAS" "restart cenario-prod"
+---------------------------------------------------------------- diff infra/prod/gcp/vm.sh
+--- /opt/cenario/infra/prod/gcp/vm.sh
++++ scripts-9ff142e274b1/infra/prod/gcp/vm.sh
+@@ -21,6 +21,7 @@
+ #                              # primeiro gestor); SEM equipe de exemplo; confere o resultado
+ #   vm.sh backup               # backup imediato + envio ao bucket
+ #   vm.sh enviar-backups       # envia ao bucket os backups ainda não enviados (usado pelo timer diário)
++#   vm.sh envio-externo        # SÓ LEITURA: cópia externa em dia? (último envio e backups não enviados há > 36 h)
+ #   vm.sh restaurar-teste [pasta]   # restaura num banco SEPARADO e compara (não toca na produção)
+ #   vm.sh restaurar <pasta> --sim   # restaura SOBRE a produção (faz backup de segurança antes)
+ #   vm.sh parar                # encerra os contêineres (dados preservados)
+@@ -236,6 +237,16 @@
+     local idade; idade="$(compose exec -T backup sh -c "echo \$(( (\$(date +%s) - \$(stat -c %Y '$ultimo')) / 3600 ))")"
+     (( idade <= 26 )) && ok "último backup há ${idade} h ($(basename "$ultimo"))" || ruim "último backup há ${idade} h"
+   else ruim "nenhum backup encontrado"; fi
++  # Cópia externa (bucket). Nas operações internas (ativar, aplicar-config, recuperar) vira só aviso:
++  # um envio atrasado não pode reprovar uma troca de versão já feita. No `vm.sh saude` direto
++  # (smoke_test) conta como problema.
++  local linha_e; while IFS= read -r linha_e; do
++    case "$linha_e" in
++      "✔ "*) ok "${linha_e#✔ }" ;;
++      "✘ "*) if [[ "${CENARIO_ENVIO_SO_AVISO:-0}" == 1 ]]; then echo "⚠ ${linha_e#✘ } (aviso; não reprova esta operação)"; else ruim "${linha_e#✘ }"; fi ;;
++      *) echo "$linha_e" ;;
++    esac
++  done < <(verificar_envio_externo || true)
+   local mig; mig="$(compose exec -T postgres psql -tAU cenario -d cenario_prod -c \
+     "select count(*) filter (where finished_at is not null and rolled_back_at is null) || ' ' || count(*) filter (where finished_at is null and rolled_back_at is null) from _prisma_migrations" 2>/dev/null || true)"
+   if [[ "$mig" =~ ^([0-9]+)\ 0$ ]]; then ok "migrations: ${BASH_REMATCH[1]} aplicadas, nenhuma pendente/com falha"
+@@ -289,7 +300,7 @@
+   log "Caddyfile válido. Recriando só o proxy (caddy)…"
+   compose up -d --no-deps --force-recreate caddy
+   sleep 5
+-  saude
++  CENARIO_ENVIO_SO_AVISO=1 saude
+ }
+ 
+ backup() {
+@@ -306,8 +317,7 @@
+   if [[ -z "$BUCKET" ]]; then log "Sem bucket configurado (cenario-bucket): envio ignorado."; return 0; fi
+   install -d -m 700 "$STATE_DIR"; touch "$STATE_DIR/enviados"
+   local tmp; tmp="$(mktemp -d)"; trap "rm -rf '$tmp'; trap - RETURN" RETURN
+-  local vol="${CENARIO_BACKUPS_DIR:-}"
+-  [[ -n "$vol" ]] || vol="$(docker volume inspect -f '{{.Mountpoint}}' cenario-prod_backups 2>/dev/null || true)"
++  local vol; vol="$(dir_backups)"
+   [[ -n "$vol" && -d "$vol" ]] || { log "Sem volume de backups: nada a enviar."; return 0; }
+   cabecalho_token "$tmp/auth" || return 1
+   local erros=0 d nome codigo rc
+@@ -325,6 +335,49 @@
+     esac
+   done
+   (( erros == 0 )) || { log "Envio com $erros erro(s)."; return 1; }
++  # Carimbo do último envio SEM erro (lido pela saúde: alerta se passar de 36 h).
++  date -u +%s > "$STATE_DIR/ultimo-envio"
++}
++
++# Pasta dos backups no host (volume do contêiner backup). Vazio se não existir.
++dir_backups() {
++  local vol="${CENARIO_BACKUPS_DIR:-}"
++  [[ -n "$vol" ]] || vol="$(docker volume inspect -f '{{.Mountpoint}}' cenario-prod_backups 2>/dev/null || true)"
++  echo "$vol"
++}
++
++# Cópia externa em dia? SÓ LÊ (carimbo, lista de enviados e nomes das pastas). Imprime linhas
++# "✔ …"/"✘ …" e sai com 1 se houver problema:
++#   - último envio sem erro há mais de CENARIO_ENVIO_MAX_H horas (padrão 36), ou nenhum registrado;
++#   - backup local com mais de CENARIO_ENVIO_MAX_H horas (pela data no nome) que nunca foi enviado.
++# O envio roda às 07:30 UTC; o backup diário fica pronto ~16:41 UTC: um envio por dia mantém os dois
++# critérios abaixo de 36 h com folga para um atraso pontual.
++verificar_envio_externo() {
++  local max="${CENARIO_ENVIO_MAX_H:-36}" agora falhas=0
++  agora="$(date -u +%s)"
++  if [[ -z "$BUCKET" ]]; then echo "• envio externo desativado (sem cenario-bucket)"; return 0; fi
++  if [[ -s "$STATE_DIR/ultimo-envio" ]]; then
++    local h=$(( (agora - $(cat "$STATE_DIR/ultimo-envio")) / 3600 ))
++    if (( h <= max )); then echo "✔ último envio ao bucket há ${h} h"
++    else echo "✘ último envio ao bucket há ${h} h (limite ${max} h)"; falhas=1; fi
++  else
++    echo "✘ nenhum envio ao bucket registrado (limite ${max} h)"; falhas=1
++  fi
++  local vol pend=0 antigo="" d nome ts
++  vol="$(dir_backups)"
++  if [[ -n "$vol" && -d "$vol" ]]; then
++    for d in "$vol"/cenario-*; do
++      [[ -d "$d" ]] || continue
++      nome="$(basename "$d")"
++      grep -qx "$nome" "$STATE_DIR/enviados" 2>/dev/null && continue
++      [[ "$nome" =~ -([0-9]{4})([0-9]{2})([0-9]{2})T([0-9]{2})([0-9]{2})([0-9]{2})Z$ ]] || continue
++      ts="$(date -u -d "${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s)"
++      if (( (agora - ts) / 3600 > max )); then pend=$((pend + 1)); [[ -n "$antigo" ]] || antigo="$nome"; fi
++    done
++  fi
++  if (( pend == 0 )); then echo "✔ nenhum backup local sem cópia externa há mais de ${max} h"
++  else echo "✘ ${pend} backup(s) local(is) sem cópia externa há mais de ${max} h (mais antigo: ${antigo})"; falhas=1; fi
++  return "$falhas"
+ }
+ 
+ # Verificação da preparação, SEM iniciar contêineres, sem PostgreSQL, sem migrations e sem gravar
+@@ -653,7 +706,7 @@
+     [[ "$st" == healthy ]] && break; sleep 5
+   done
+   [[ "$st" == healthy ]] || { compose logs --tail 30 api; log "✘ API não ficou saudável. Recuperação: vm.sh recuperar --sim"; return 1; }
+-  saude
++  CENARIO_ENVIO_SO_AVISO=1 saude
+ }
+ 
+ recuperar() {
+@@ -693,7 +746,7 @@
+     [[ "$st" == healthy ]] && break; sleep 5
+   done
+   log "Versão $ETIQUETA em execução (API: ${st:-?})."
+-  saude
++  CENARIO_ENVIO_SO_AVISO=1 saude
+ }
+ 
+ # PRIMEIRA publicação (banco novo): sem a API (que recusa iniciar com migrations pendentes) o contêiner
+@@ -730,6 +783,7 @@
+   iniciar-banco) iniciar_banco ;;
+   backup) backup ;;
+   enviar-backups) enviar_backups ;;
++  envio-externo) verificar_envio_externo ;;
+   restaurar-teste) restaurar_teste "${2:-}" ;;
+   restaurar) restaurar "${2:-}" "${3:-}" ;;
+   atualizar) atualizar "${2:-}" ;;
