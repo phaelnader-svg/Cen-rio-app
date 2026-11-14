@@ -1,0 +1,27 @@
+# comando: operar.py op resources
+# inicio_utc: 2026-11-14T17:28:50Z
+# fim_utc: 2026-11-14T17:28:56Z
+# exit: 0
+## stderr
+• resources {} → job 9f8b2798-86b2-44b2-a71c-86c3fa6c5321 (mensagem 22615697889529985)
+{"jti": "9f8b2798-86b2-44b2-a71c-86c3fa6c5321", "operacao": "resources", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:28:51.353592Z", "fim": "2026-11-14T17:28:53.774986Z", "duracao_s": 2.421, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ free -m
+               total        used        free      shared  buff/cache   available
+Mem:            3924        1126        1007          44        2117        2798
+Swap:           2047          34        2013
+$ swapon --show
+NAME      TYPE SIZE USED PRIO
+/swapfile file   2G  34M   -2
+$ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        49G   16G   32G  34% /
+$ uptime
+ 17:28:51 up 26 days, 18:00,  0 user,  load average: 0.16, 0.23, 0.19
+$ docker stats --no-stream --format table {{.Name}}	{{.MemUsage}}	{{.CPUPerc}}
+NAME                      MEM USAGE / LIMIT   CPU %
+cenario-prod-web-1        180.1MiB / 640MiB   0.00%
+cenario-prod-api-1        130.8MiB / 1GiB     0.22%
+cenario-prod-postgres-1   81.71MiB / 1GiB     0.04%
+cenario-prod-caddy-1      55.15MiB / 192MiB   0.00%
+cenario-prod-backup-1     30.71MiB / 384MiB   0.00%

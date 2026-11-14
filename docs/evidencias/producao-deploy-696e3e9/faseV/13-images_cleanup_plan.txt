@@ -1,0 +1,48 @@
+# comando: operar.py op images_cleanup_plan
+# inicio_utc: 2026-11-14T17:28:59Z
+# fim_utc: 2026-11-14T17:29:05Z
+# exit: 0
+## stderr
+• images_cleanup_plan {} → job 69c22a89-9c99-4d77-af58-cc11d0fb65ca (mensagem 22615697889552621)
+{"jti": "69c22a89-9c99-4d77-af58-cc11d0fb65ca", "operacao": "images_cleanup_plan", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:29:00.645539Z", "fim": "2026-11-14T17:29:02.426991Z", "duracao_s": 1.781, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ docker image ls --no-trunc --format {{json .}}
+{"Containers":"1","CreatedAt":"2026-11-12 20:05:14 +0000 UTC","CreatedSince":"45 hours ago","Digest":"\u003cnone\u003e","ID":"sha256:cb76d474f14e79234893497a05c9220152f4f4e1f8bf1c58818519d30e54ae72","Repository":"southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/web","SharedSize":"N/A","Size":"4GB","Tag":"696e3e9ddc5f1c803a4b9244a075ed498ad81be3","UniqueSize":"N/A"}
+{"Containers":"1","CreatedAt":"2026-11-12 20:05:10 +0000 UTC","CreatedSince":"45 hours ago","Digest":"\u003cnone\u003e","ID":"sha256:264884b38b02de22357a07486e2d665008507444a0d84590a24d4aaf8455cb4f","Repository":"southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/api","SharedSize":"N/A","Size":"4GB","Tag":"696e3e9ddc5f1c803a4b9244a075ed498ad81be3","UniqueSize":"N/A"}
+{"Containers":"0","CreatedAt":"2026-10-22 19:58:29 +0000 UTC","CreatedSince":"3 weeks ago","Digest":"\u003cnone\u003e","ID":"sha256:0ca94f888ad973a0f728e697656dd2b7f987e892daa986c83fddcb62823ceca8","Repository":"southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/web","SharedSize":"N/A","Size":"3.92GB","Tag":"7b4177b15a930b85d985a59a9182b579760c5a7b","UniqueSize":"N/A"}
+{"Containers":"0","CreatedAt":"2026-10-22 19:58:25 +0000 UTC","CreatedSince":"3 weeks ago","Digest":"\u003cnone\u003e","ID":"sha256:993230244c5a43a9b0bce3c6abf1bc874202da6396c222351252012d38083bd9","Repository":"southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/api","SharedSize":"N/A","Size":"3.92GB","Tag":"7b4177b15a930b85d985a59a9182b579760c5a7b","UniqueSize":"N/A"}
+{"Containers":"0","CreatedAt":"2026-10-18 21:09:58 +0000 UTC","CreatedSince":"3 weeks ago","Digest":"\u003cnone\u003e","ID":"sha256:7b99ebc11fbf700f4eee81acb0100d4ae1cdbdca24198b0bd166ad40fa0cf822","Repository":"southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/web","SharedSize":"N/A","Size":"3.93GB","Tag":"9fb1786beddae28c34b20a0922b42989ecb0fbf2","UniqueSize":"N/A"}
+{"Containers":"0","CreatedAt":"2026-10-18 21:09:54 +0000 UTC","CreatedSince":"3 weeks ago","Digest":"\u003cnone\u003e","ID":"sha256:6e4a225dc8fb8619d0165627f65828b0950f481f93b440cc95f1fbf5cac5f848","Repository":"southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/api","SharedSize":"N/A","Size":"3.93GB","Tag":"9fb1786beddae28c34b20a0922b42989ecb0fbf2","UniqueSize":"N/A"}
+{"Containers":"1","CreatedAt":"2026-10-06 01:33:18 +0000 UTC","CreatedSince":"5 weeks ago","Digest":"\u003cnone\u003e","ID":"sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d","Repository":"postgres","SharedSize":"N/A","Size":"642MB","Tag":"16","UniqueSize":"N/A"}
+{"Containers":"1","CreatedAt":"2026-09-17 21:31:24 +0000 UTC","CreatedSince":"8 weeks ago","Digest":"\u003cnone\u003e","ID":"sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea","Repository":"postgres","SharedSize":"N/A","Size":"420MB","Tag":"16-alpine","UniqueSize":"N/A"}
+{"Containers":"1","CreatedAt":"2026-02-11 18:28:06 +0000 UTC","CreatedSince":"9 months ago","Digest":"\u003cnone\u003e","ID":"sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d","Repository":"caddy","SharedSize":"N/A","Size":"83.2MB","Tag":"2.10-alpine","UniqueSize":"N/A"}
+$ docker ps -a --no-trunc --format {{.ID}}
+90a0588c5a3c09a793ad2bbb53adae4c44a586f6458cf4c0be80056826f725f3
+62c71a260ec02b9f82a36e76114dd2f81faf911efa23ee92a07f169ebd7b2eac
+26bb5bf33bf642c11fb603b60390630a0b23dea886538b81026974d47a6e3cae
+d7c561caac03bfb0bd8d7210e5f8e98a98df6f1546e6ea2d9fb6336cecff7169
+2d1ecde3a3597b30df426153618a8d584f73d1784e5035541e541c5b762d314b
+$ docker inspect --format {{.Image}} 90a0588c5a3c09a793ad2bbb53adae4c44a586f6458cf4c0be80056826f725f3 62c71a260ec02b9f82a36e76114dd2f81faf911efa23ee92a07f169ebd7b2eac 26bb5bf33bf642c11fb603b60390630a0b23dea886538b81026974d47a6e3cae d7c561caac03bfb0bd8d7210e5f8e98a98df6f1546e6ea2d9fb6336cecff7169 2d1ecde3a3597b30df426153618a8d584f73d1784e5035541e541c5b762d314b
+sha256:cb76d474f14e79234893497a05c9220152f4f4e1f8bf1c58818519d30e54ae72
+sha256:264884b38b02de22357a07486e2d665008507444a0d84590a24d4aaf8455cb4f
+sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
+versões protegidas: 696e3e9ddc5f1c803a4b9244a075ed498ad81be3 (versão ativa), 7b4177b15a930b85d985a59a9182b579760c5a7b (ativada antes da atual (rollback))
+  ✘ remover  southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/api:9fb1786beddae28c34b20a0922b42989ecb0fbf2  sha256:6e4a225dc8fb  3.93GB  2026-10-18 21:09:54  — REMOVER
+  ✘ remover  southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/web:9fb1786beddae28c34b20a0922b42989ecb0fbf2  sha256:7b99ebc11fbf  3.93GB  2026-10-18 21:09:58  — REMOVER
+  ✔ manter   caddy:2.10-alpine  sha256:4c6e91c6ed0e  83.2MB  2026-02-11 18:28:06  — fora do repositório da aplicação: nunca removida
+  ✔ manter   postgres:16  sha256:ca0bd484cb98  642MB  2026-10-06 01:33:18  — fora do repositório da aplicação: nunca removida
+  ✔ manter   postgres:16-alpine  sha256:721873c34ceb  420MB  2026-09-17 21:31:24  — fora do repositório da aplicação: nunca removida
+  ✔ manter   «CENARIO_API_IMAGE-mascarado»  sha256:264884b38b02  4GB  2026-11-12 20:05:10  — PROTEGIDA (versão ativa)
+  ✔ manter   southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/api:7b4177b15a930b85d985a59a9182b579760c5a7b  sha256:993230244c5a  3.92GB  2026-10-22 19:58:25  — PROTEGIDA (ativada antes da atual (rollback))
+  ✔ manter   «CENARIO_WEB_IMAGE-mascarado»  sha256:cb76d474f14e  4GB  2026-11-12 20:05:14  — PROTEGIDA (versão ativa)
+  ✔ manter   southamerica-east1-docker.pkg.dev/cenariogestao/cenario-prod/web:7b4177b15a930b85d985a59a9182b579760c5a7b  sha256:0ca94f888ad9  3.92GB  2026-10-22 19:58:29  — PROTEGIDA (ativada antes da atual (rollback))
+• candidatas à remoção: 2
+$ docker system df
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          9         5         11.37GB   1.94MB (0%)
+Containers      5         5         634.9kB   0B (0%)
+Local Volumes   6         5         174.9MB   75.64MB (43%)
+Build Cache     0         0         0B        0B
+• disco livre em /: 31.33 GiB (nada foi removido)

@@ -1,0 +1,89 @@
+# comando: operar.py op migration_status version=696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+# inicio_utc: 2026-11-14T17:28:28Z
+# fim_utc: 2026-11-14T17:28:34Z
+# exit: 0
+## stderr
+• migration_status {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"} → job 825e322c-8875-4e66-aaaa-1f2d43e8a81e (mensagem 22615695413976722)
+{"jti": "825e322c-8875-4e66-aaaa-1f2d43e8a81e", "operacao": "migration_status", "classe": "READ_ONLY", "parametros": {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:28:29.235687Z", "fim": "2026-11-14T17:28:30.526126Z", "duracao_s": 1.29, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ docker compose -f /opt/cenario/infra/prod/docker-compose.prod.yml --env-file /run/cenario/env exec -T postgres psql -U cenario -d cenario_prod -At -F | -v ON_ERROR_STOP=1 -c select migration_name, coalesce(to_char(finished_at,'YYYY-MM-DD"T"HH24:MI:SS'),'NAO_CONCLUIDA'), coalesce(to_char(rolled_back_at,'YYYY-MM-DD"T"HH24:MI:SS'),''), applied_steps_count from _prisma_migrations order by migration_name
+20261008000000_fundacao|2026-11-14T17:22:53||1
+20261008100000_comercial_oficina|2026-11-14T17:22:54||1
+20261008200000_medicoes_materiais|2026-11-14T17:22:54||1
+20261009000000_compras_estoque|2026-11-14T17:22:54||1
+20261010000000_producao|2026-11-14T17:22:54||1
+20261011000000_tablets_notificacoes|2026-11-14T17:22:54||1
+20261012000000_presenca_operacional|2026-11-14T17:22:54||1
+20261013000000_ajuda_reprogramacao|2026-11-14T17:22:55||1
+20261014000000_central_atencao|2026-11-14T17:22:55||1
+20261015000000_qualidade_logistica|2026-11-14T17:22:55||1
+20261016000000_financeiro_operacional|2026-11-14T17:22:55||1
+20261017000000_auditoria_final|2026-11-14T17:22:56||1
+20261018000000_fila_semanal|2026-11-14T17:22:56||1
+20261025000000_distribuicao_automatica|2026-11-14T17:22:56||1
+20261101000000_mao_de_obra_revisao|2026-11-14T17:22:56||1
+20261108000000_custos_logistica|2026-11-14T17:22:56||1
+20261115000000_fechamento_semanal|2026-11-14T17:22:56||1
+20261122000000_roteiro_logistica|2026-11-14T17:22:56||1
+20261129000000_novo_servico|2026-11-14T17:22:56||1
+20261206000000_recebimentos_compartilhados|2026-11-14T17:22:56||1
+20261213000000_pre_planejamento|2026-11-14T17:22:56||1
+20261220000000_recebimentos_permissao_funcoes|2026-11-14T17:22:56||1
+20261227000000_servico_sem_retirada|2026-11-14T17:22:56||1
+20261228000000_titular_mao_de_obra_prevista|2026-11-14T17:22:56||1
+20261230000000_modelos_simplificados|2026-11-14T17:22:56||1
+20270105000000_necessidade_substituicao|2026-11-14T17:22:56||1
+20270112000000_compra_antes_da_chegada|2026-11-14T17:22:56||1
+20270119000000_cobranca_cliente|2026-11-14T17:22:56||1
+20270126000000_meus_ganhos_permissao|2026-11-14T17:22:56||1
+20270202000000_negociacao_confirmacao_semanal|2026-11-14T17:22:56||1
+20270209000000_presenca_apoio_simplificados|2026-11-14T17:22:56||1
+20270216000000_notificacoes_resolvidas|2026-11-14T17:22:56||1
+20270223000000_custo_operacional_equipe_propria|2026-11-14T17:22:56||1
+20270302000000_modulos_configuraveis|2026-11-14T17:22:56||1
+20270309000000_materiais_estoque_entrega|2026-11-14T17:22:57||1
+20270316000000_reformulacao_fase_2|2026-11-14T17:22:57||1
+20270323000000_reformulacao_fase_3|2026-11-14T17:22:57||1
+$ docker run --rm --entrypoint ls «CENARIO_API_IMAGE-mascarado» packages/db/prisma/migrations
+20261008000000_fundacao
+20261008100000_comercial_oficina
+20261008200000_medicoes_materiais
+20261009000000_compras_estoque
+20261010000000_producao
+20261011000000_tablets_notificacoes
+20261012000000_presenca_operacional
+20261013000000_ajuda_reprogramacao
+20261014000000_central_atencao
+20261015000000_qualidade_logistica
+20261016000000_financeiro_operacional
+20261017000000_auditoria_final
+20261018000000_fila_semanal
+20261025000000_distribuicao_automatica
+20261101000000_mao_de_obra_revisao
+20261108000000_custos_logistica
+20261115000000_fechamento_semanal
+20261122000000_roteiro_logistica
+20261129000000_novo_servico
+20261206000000_recebimentos_compartilhados
+20261213000000_pre_planejamento
+20261220000000_recebimentos_permissao_funcoes
+20261227000000_servico_sem_retirada
+20261228000000_titular_mao_de_obra_prevista
+20261230000000_modelos_simplificados
+20270105000000_necessidade_substituicao
+20270112000000_compra_antes_da_chegada
+20270119000000_cobranca_cliente
+20270126000000_meus_ganhos_permissao
+20270202000000_negociacao_confirmacao_semanal
+20270209000000_presenca_apoio_simplificados
+20270216000000_notificacoes_resolvidas
+20270223000000_custo_operacional_equipe_propria
+20270302000000_modulos_configuraveis
+20270309000000_materiais_estoque_entrega
+20270316000000_reformulacao_fase_2
+20270323000000_reformulacao_fase_3
+migration_lock.toml
+• aplicadas: 37 · na imagem 696e3e9ddc5f1c803a4b9244a075ed498ad81be3: 37
+• pendentes: nenhuma
+• no banco e ausentes da imagem: nenhuma
+• iniciadas e não concluídas: nenhuma

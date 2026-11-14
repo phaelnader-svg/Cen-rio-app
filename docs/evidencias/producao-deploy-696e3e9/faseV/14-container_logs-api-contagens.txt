@@ -1,0 +1,5 @@
+# container_logs service=api lines=5000 since_minutes=60 — SÓ CONTAGENS (linhas brutas não gravadas)
+job=0232c85d-48f8-43d7-b78b-fcf16cd65465 status=concluido inicio=2026-11-14T17:29:06.692887Z
+linhas=139 janela=2026-11-14T17:23:37 → 2026-11-14T17:28:44
+niveis={30: 139} status_http={'2xx': 19, '4xx': 64}
+5xx=0 nivel>=50=0 mensagens>=50={}

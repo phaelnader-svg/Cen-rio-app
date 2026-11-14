@@ -1,0 +1,37 @@
+# comando: operar.py op smoke_test
+# inicio_utc: 2026-11-14T17:28:09Z
+# fim_utc: 2026-11-14T17:28:16Z
+# exit: 0
+## stderr
+• smoke_test {} → job a2ae117f-8ca6-41ad-870f-e4b4c0430337 (mensagem 22615695413944015)
+{"jti": "a2ae117f-8ca6-41ad-870f-e4b4c0430337", "operacao": "smoke_test", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:28:10.447263Z", "fim": "2026-11-14T17:28:13.931946Z", "duracao_s": 3.485, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh saude
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ API em APP_ENV=production
+✔ HTTP redireciona para HTTPS (308 https://«PROD_DOMAIN-mascarado»/entrar)
+✔ www redireciona para o domínio canônico (301 https://«PROD_DOMAIN-mascarado»/entrar)
+✔ tela de entrada: 200
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ HSTS presente
+✔ JavaScript da tela carrega (200)
+✔ /api/v1/management/overview sem sessão: 401
+✔ /api/v1/attention sem sessão: 401
+✔ /api/v1/finance/receivables sem sessão: 401
+✔ /api/v1/finance/labor sem sessão: 401
+✔ /api/audit sem sessão: 401
+✔ /api/employees sem sessão: 401
+✔ WebSocket /api/realtime pelo proxy: 401 (401 sem sessão)
+✔ certificado válido por mais 63 dias (até Jan 17 15:47:23 2027 GMT)
+✔ último backup há 0 h (cenario-production-20261114T172215Z)
+✔ último envio ao bucket há 0 h
+✔ nenhum backup local sem cópia externa há mais de 36 h
+✔ migrations: 37 aplicadas, nenhuma pendente/com falha
+✔ disco em 34%
+✔ memória disponível 2812 MB
+Saúde: OK
