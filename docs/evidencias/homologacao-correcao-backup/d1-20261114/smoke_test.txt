@@ -1,0 +1,24 @@
+• smoke_test {} → job dbe26c93-b01b-40af-98a6-318531aaa770 (mensagem 22614540739961632)
+{"jti": "dbe26c93-b01b-40af-98a6-318531aaa770", "operacao": "smoke_test", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T07:46:32.556070Z", "fim": "2026-11-14T07:46:38.809207Z", "duracao_s": 6.253, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh saude
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ proxy exige autenticação (sem credencial: 401)
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ web (tela de entrada): 200
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+✔ certificado válido por mais 54 dias (até Jan  7 16:14:09 2027 GMT)
+✔ último backup há 13 h (cenario-staging-20261113T174651Z)
+✔ último envio ao bucket há 0 h
+✔ nenhum backup local sem cópia externa há mais de 36 h
+✔ migrations: 37 aplicadas, nenhuma pendente/com falha
+✔ disco em 74%
+✔ memória disponível 1070 MB
+Saúde: OK

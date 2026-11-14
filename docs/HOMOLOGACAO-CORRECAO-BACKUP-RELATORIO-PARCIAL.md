@@ -100,3 +100,16 @@ fechado. Nada é reiniciado.
    hoje. O próximo backup sem cópia externa é o de 14/11, e o prazo da retenção local, de 30 dias,
    deixa folga ampla. Se a autorização demorar mais de alguns dias, repita o envio emergencial
    (opção A).
+
+## 6. Verificação D+1 — 14/11/2026, 07:45 UTC (só leitura)
+
+| Verificação                       | Resultado                                                                                                                                                      |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Execução automática das 07:30 UTC | ✔ `Starting… / Deactivated successfully / Finished` às **07:30:04**, com o portão fechado. **Sem "skipped"**, pela primeira vez desde a instalação da unidade |
+| `smoke_test`                      | ✔ 20/20, "Saúde: OK", incluindo ✔ "último envio ao bucket há 0 h"                                                                                            |
+| Portão                            | fechado                                                                                                                                                        |
+| Contêineres                       | 5 saudáveis, sem reinício (api e web "Up 14 hours"; postgres e backup "Up 5 weeks")                                                                            |
+
+O timer dispara o serviço sozinho, sem depender do portão. Não havia backup novo para enviar: o
+diário da homologação sai às ~17:14 UTC. O envio automático de um backup novo é conferido em
+**15/11, 07:45 UTC**. Evidências: `docs/evidencias/homologacao-correcao-backup/d1-20261114/`.
