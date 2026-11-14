@@ -1,0 +1,9 @@
+# comando: operar.py op gate_open
+# inicio_utc: 2026-11-14T17:09:59Z
+# fim_utc: 2026-11-14T17:10:05Z
+# exit: 0
+## stderr
+• gate_open {} → job b49b30e2-9399-4a9f-ab61-4f77a7db0cab (mensagem 22616504826993707)
+{"jti": "b49b30e2-9399-4a9f-ab61-4f77a7db0cab", "operacao": "gate_open", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:10:02.264266Z", "fim": "2026-11-14T17:10:02.450776Z", "duracao_s": 0.187, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+portão de publicação: ABERTO (/etc/cenario/publicacao-autorizada)

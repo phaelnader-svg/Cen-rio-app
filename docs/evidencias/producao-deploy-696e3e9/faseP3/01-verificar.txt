@@ -1,0 +1,30 @@
+# comando: operar.py verificar
+# inicio_utc: 2026-11-14T17:08:40Z
+# fim_utc: 2026-11-14T17:08:53Z
+# exit: 0
+## stderr
+• gate_status {} → job 4e8e6341-ec2c-4254-ba7b-851f2444748e (mensagem 22616441629037052)
+{"jti": "4e8e6341-ec2c-4254-ba7b-851f2444748e", "operacao": "gate_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:08:43.497918Z", "fim": "2026-11-14T17:08:43.683824Z", "duracao_s": 0.186, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+• version {} → job c0bfa3b8-c538-4833-9b71-cf2b6818fe6a (mensagem 22616441629061933)
+{"jti": "c0bfa3b8-c538-4833-9b71-cf2b6818fe6a", "operacao": "version", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:08:49.279625Z", "fim": "2026-11-14T17:08:49.963329Z", "duracao_s": 0.684, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+CANAL: OK
+## stdout
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)
+runner: 2.2.0
+/opt/cenario (scripts da VM): c32df97ebf64
+etiqueta local (drop-in): 7b4177b15a930b85d985a59a9182b579760c5a7b
+etiqueta do ambiente da pilha: 7b4177b15a930b85d985a59a9182b579760c5a7b
+candidata: 7b4177b15a930b85d985a59a9182b579760c5a7b
+migrada: 7b4177b15a930b85d985a59a9182b579760c5a7b
+$ docker compose -f /opt/cenario/infra/prod/docker-compose.prod.yml --env-file /run/cenario/env ps --all --format {{.Service}}	{{.Image}}
+api	«CENARIO_API_IMAGE-mascarado»
+backup	postgres:16
+caddy	caddy:2.10-alpine
+postgres	postgres:16-alpine
+web	«CENARIO_WEB_IMAGE-mascarado»
+$ docker ps --format {{.Names}}	{{.Image}}	{{.ID}}
+cenario-prod-web-1	«CENARIO_WEB_IMAGE-mascarado»	2f807b9363da
+cenario-prod-api-1	«CENARIO_API_IMAGE-mascarado»	9bfc86fc4a0d
+cenario-prod-caddy-1	caddy:2.10-alpine	d7c561caac03
+cenario-prod-backup-1	postgres:16	2d1ecde3a359
+cenario-prod-postgres-1	postgres:16-alpine	b1aebb5560c7

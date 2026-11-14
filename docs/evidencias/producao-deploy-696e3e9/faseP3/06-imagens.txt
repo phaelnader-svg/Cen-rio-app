@@ -1,0 +1,8 @@
+# comando: operar.py imagens 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+# inicio_utc: 2026-11-14T17:09:11Z
+# fim_utc: 2026-11-14T17:09:13Z
+# exit: 0
+## stderr
+## stdout
+{"imagem": "api:696e3e9ddc5f1c803a4b9244a075ed498ad81be3", "existe": true, "name": "projects/cenariogestao/locations/southamerica-east1/repositories/cenario-prod/packages/api/tags/696e3e9ddc5f1c803a4b9244a075ed498ad81be3", "version": "projects/cenariogestao/locations/southamerica-east1/repositories/cenario-prod/packages/api/versions/sha256:264884b38b02de22357a07486e2d665008507444a0d84590a24d4aaf8455cb4f"}
+{"imagem": "web:696e3e9ddc5f1c803a4b9244a075ed498ad81be3", "existe": true, "name": "projects/cenariogestao/locations/southamerica-east1/repositories/cenario-prod/packages/web/tags/696e3e9ddc5f1c803a4b9244a075ed498ad81be3", "version": "projects/cenariogestao/locations/southamerica-east1/repositories/cenario-prod/packages/web/versions/sha256:cb76d474f14e79234893497a05c9220152f4f4e1f8bf1c58818519d30e54ae72"}
