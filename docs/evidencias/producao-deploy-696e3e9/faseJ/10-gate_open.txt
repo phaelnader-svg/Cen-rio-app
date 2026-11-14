@@ -1,0 +1,9 @@
+# comando: operar.py op gate_open
+# inicio_utc: 2026-11-14T17:21:26Z
+# fim_utc: 2026-11-14T17:21:30Z
+# exit: 0
+## stderr
+• gate_open {} → job d3fde714-e723-419f-90c0-0f100ae2fa14 (mensagem 22615721358821344)
+{"jti": "d3fde714-e723-419f-90c0-0f100ae2fa14", "operacao": "gate_open", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:21:28.068853Z", "fim": "2026-11-14T17:21:28.251536Z", "duracao_s": 0.183, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+portão de publicação: ABERTO (/etc/cenario/publicacao-autorizada)

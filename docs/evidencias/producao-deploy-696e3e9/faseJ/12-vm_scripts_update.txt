@@ -1,0 +1,45 @@
+# comando: operar.py op vm_scripts_update version=9ff142e274b1
+# inicio_utc: 2026-11-14T17:21:36Z
+# fim_utc: 2026-11-14T17:21:42Z
+# exit: 0
+## stderr
+• vm_scripts_update {"version": "9ff142e274b1"} → job 9885b50a-cb4e-4c58-bb8c-c877e761b75f (mensagem 22615721358846421)
+{"jti": "9885b50a-cb4e-4c58-bb8c-c877e761b75f", "operacao": "vm_scripts_update", "classe": "DESTRUCTIVE", "parametros": {"version": "9ff142e274b1"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:21:37.255812Z", "fim": "2026-11-14T17:21:38.958865Z", "duracao_s": 1.703, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+{"level":"info","ts":1794676898.7651365,"msg":"using config from file","file":"/etc/caddy/Caddyfile"}
+{"level":"warn","ts":1794676898.7681303,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+{"level":"warn","ts":1794676898.770873,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+{"level":"info","ts":1794676898.772788,"msg":"adapted config to JSON","adapter":"caddyfile"}
+{"level":"info","ts":1794676898.7751677,"logger":"tls.cache.maintenance","msg":"started background certificate maintenance","cache":"0xc0005cae00"}
+{"level":"info","ts":1794676898.7767665,"logger":"http.auto_https","msg":"server is listening only on the HTTPS port but has no TLS connection policies; adding one to enable TLS","server_name":"srv0","https_port":443}
+{"level":"info","ts":1794676898.7768376,"logger":"http.auto_https","msg":"enabling automatic HTTP->HTTPS redirects","server_name":"srv0"}
+{"level":"info","ts":1794676898.7974124,"logger":"http","msg":"servers shutting down with eternal grace period"}
+{"level":"info","ts":1794676898.7985356,"logger":"tls.cache.maintenance","msg":"stopped background certificate maintenance","cache":"0xc0005cae00"}
+## stdout
+✔ pacote scripts-9ff142e274b1 íntegro (commit 9ff142e274b1cc04953bbfb5161a7940962530d5, 23 arquivos)
+$ bash -n /var/lib/cenario-runner/validacao-scripts-ygol7d10/infra/prod/gcp/vm.sh
+$ docker compose -f /var/lib/cenario-runner/validacao-scripts-ygol7d10/infra/prod/docker-compose.prod.yml --env-file /run/cenario/env config -q
+$ docker run --rm --network none -v /var/lib/cenario-runner/validacao-scripts-ygol7d10/infra/prod/Caddyfile.prod:/etc/caddy/Caddyfile:ro -e PROD_DOMAIN -e PROD_DOMAIN_WWW caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+Valid configuration
+✔ cópia anterior guardada: /opt/cenario.anterior-20261114T172138Z-9885b50a
+  ✔ infra/prod/Caddyfile.prod
+  ✔ infra/prod/docker-compose.prod.yml
+  ✔ infra/prod/gcp/preflight_migracoes.py
+  ✔ infra/prod/gcp/provisionar.sh
+  ✔ infra/prod/gcp/sql/diagnostico-tabela.sql
+  ✔ infra/prod/gcp/sql/impressao-digital.sql
+  ✔ infra/prod/gcp/sql/preflight-catalogo.sql
+  ✔ infra/prod/gcp/sql/preflight-estado.sql
+  ✔ infra/prod/gcp/sql/preflight-migracoes.sql
+  ✔ infra/prod/gcp/ssh-agente.sh
+  ✔ infra/prod/gcp/startup.sh
+  ✔ infra/prod/gcp/testes/ensaio-deploy-banco-limpo.sh
+  ✔ infra/prod/gcp/testes/ensaio-primeiro-deploy.sh
+  ✔ infra/prod/gcp/testes/gcloud_prod_falso.py
+  ✔ infra/prod/gcp/testes/test_deploy_banco_limpo.sh
+  ✔ infra/prod/gcp/testes/test_provisionar.sh
+  ✔ infra/prod/gcp/testes/test_runner_prod.py
+  ✔ infra/prod/gcp/testes/test_vm_sh_prod.sh
+  ✔ infra/prod/gcp/vm.sh
+  ✔ scripts/backup.sh
+  ✔ scripts/restore.sh
+✔ /opt/cenario na versão 9ff142e274b1: 21 arquivo(s) atualizado(s); arquivos locais fora do pacote mantidos. Nada foi reiniciado: aplique com apply_stack_config.

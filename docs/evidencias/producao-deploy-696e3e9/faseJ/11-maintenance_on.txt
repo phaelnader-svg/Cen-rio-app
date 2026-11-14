@@ -1,0 +1,14 @@
+# comando: operar.py op maintenance_on
+# inicio_utc: 2026-11-14T17:21:30Z
+# fim_utc: 2026-11-14T17:21:36Z
+# exit: 0
+## stderr
+• maintenance_on {} → job 40454c91-0822-4d50-868c-8e6000c8daa7 (mensagem 22615721358829467)
+{"jti": "40454c91-0822-4d50-868c-8e6000c8daa7", "operacao": "maintenance_on", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:21:31.500342Z", "fim": "2026-11-14T17:21:33.508987Z", "duracao_s": 2.009, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+ Container cenario-prod-web-1 Stopping 
+ Container cenario-prod-web-1 Stopped 
+ Container cenario-prod-api-1 Stopping 
+ Container cenario-prod-api-1 Stopped 
+## stdout
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh manutencao
+[2026-11-14T17:21:33Z] ✔ API e web paradas: o proxy responde 503 'em manutenção'; nenhuma operação chega ao banco.

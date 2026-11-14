@@ -1,0 +1,26 @@
+# comando: operar.py op version
+# inicio_utc: 2026-11-14T17:24:17Z
+# fim_utc: 2026-11-14T17:24:21Z
+# exit: 0
+## stderr
+• version {} → job 610bc1e6-b002-4049-83fb-a05d3d382460 (mensagem 22616591618642616)
+{"jti": "610bc1e6-b002-4049-83fb-a05d3d382460", "operacao": "version", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:24:18.420501Z", "fim": "2026-11-14T17:24:18.941367Z", "duracao_s": 0.521, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+runner: 2.2.0
+/opt/cenario (scripts da VM): 9ff142e274b1
+etiqueta local (drop-in): 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+etiqueta do ambiente da pilha: 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+candidata: 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+migrada: 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+$ docker compose -f /opt/cenario/infra/prod/docker-compose.prod.yml --env-file /run/cenario/env ps --all --format {{.Service}}	{{.Image}}
+api	«CENARIO_API_IMAGE-mascarado»
+backup	postgres:16
+caddy	caddy:2.10-alpine
+postgres	postgres:16-alpine
+web	«CENARIO_WEB_IMAGE-mascarado»
+$ docker ps --format {{.Names}}	{{.Image}}	{{.ID}}
+cenario-prod-web-1	«CENARIO_WEB_IMAGE-mascarado»	90a0588c5a3c
+cenario-prod-api-1	«CENARIO_API_IMAGE-mascarado»	62c71a260ec0
+cenario-prod-postgres-1	postgres:16-alpine	26bb5bf33bf6
+cenario-prod-caddy-1	caddy:2.10-alpine	d7c561caac03
+cenario-prod-backup-1	postgres:16	2d1ecde3a359

@@ -1,0 +1,61 @@
+# comando: operar.py op migration_precheck version=696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+# inicio_utc: 2026-11-14T17:22:28Z
+# fim_utc: 2026-11-14T17:22:34Z
+# exit: 0
+## stderr
+• migration_precheck {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"} → job 0e6a384c-4226-429f-9089-d2cde7f9734d (mensagem 22615724102110585)
+{"jti": "0e6a384c-4226-429f-9089-d2cde7f9734d", "operacao": "migration_precheck", "classe": "READ_ONLY", "parametros": {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:22:29.328080Z", "fim": "2026-11-14T17:22:31.556590Z", "duracao_s": 2.229, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh preflight 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+• imagem 696e3e9ddc5f1c803a4b9244a075ed498ad81be3: 37 migrations · banco: 0 aplicadas (0 registros)
+• pendentes (37): 20261008000000_fundacao, 20261008100000_comercial_oficina, 20261008200000_medicoes_materiais, 20261009000000_compras_estoque, 20261010000000_producao, 20261011000000_tablets_notificacoes, 20261012000000_presenca_operacional, 20261013000000_ajuda_reprogramacao, 20261014000000_central_atencao, 20261015000000_qualidade_logistica, 20261016000000_financeiro_operacional, 20261017000000_auditoria_final, 20261018000000_fila_semanal, 20261025000000_distribuicao_automatica, 20261101000000_mao_de_obra_revisao, 20261108000000_custos_logistica, 20261115000000_fechamento_semanal, 20261122000000_roteiro_logistica, 20261129000000_novo_servico, 20261206000000_recebimentos_compartilhados, 20261213000000_pre_planejamento, 20261220000000_recebimentos_permissao_funcoes, 20261227000000_servico_sem_retirada, 20261228000000_titular_mao_de_obra_prevista, 20261230000000_modelos_simplificados, 20270105000000_necessidade_substituicao, 20270112000000_compra_antes_da_chegada, 20270119000000_cobranca_cliente, 20270126000000_meus_ganhos_permissao, 20270202000000_negociacao_confirmacao_semanal, 20270209000000_presenca_apoio_simplificados, 20270216000000_notificacoes_resolvidas, 20270223000000_custo_operacional_equipe_propria, 20270302000000_modulos_configuraveis, 20270309000000_materiais_estoque_entrega, 20270316000000_reformulacao_fase_2, 20270323000000_reformulacao_fase_3
+✔ esquema compatível: 20261008000000_fundacao (75 comandos)
+✔ esquema compatível: 20261008100000_comercial_oficina (119 comandos)
+✔ esquema compatível: 20261008200000_medicoes_materiais (48 comandos)
+✔ esquema compatível: 20261009000000_compras_estoque (112 comandos)
+✔ esquema compatível: 20261010000000_producao (56 comandos)
+✔ esquema compatível: 20261011000000_tablets_notificacoes (17 comandos)
+✔ esquema compatível: 20261012000000_presenca_operacional (35 comandos)
+✔ esquema compatível: 20261013000000_ajuda_reprogramacao (55 comandos)
+✔ esquema compatível: 20261014000000_central_atencao (42 comandos)
+✔ esquema compatível: 20261015000000_qualidade_logistica (143 comandos)
+✔ esquema compatível: 20261016000000_financeiro_operacional (110 comandos)
+✔ esquema compatível: 20261017000000_auditoria_final (26 comandos)
+✔ esquema compatível: 20261018000000_fila_semanal (11 comandos)
+✔ esquema compatível: 20261025000000_distribuicao_automatica (18 comandos)
+✔ esquema compatível: 20261101000000_mao_de_obra_revisao (22 comandos)
+✔ esquema compatível: 20261108000000_custos_logistica (28 comandos)
+✔ esquema compatível: 20261115000000_fechamento_semanal (39 comandos)
+✔ esquema compatível: 20261122000000_roteiro_logistica (4 comandos)
+✔ esquema compatível: 20261129000000_novo_servico (9 comandos)
+✔ esquema compatível: 20261206000000_recebimentos_compartilhados (20 comandos)
+✔ esquema compatível: 20261213000000_pre_planejamento (3 comandos)
+✔ esquema compatível: 20261220000000_recebimentos_permissao_funcoes (1 comandos)
+✔ esquema compatível: 20261227000000_servico_sem_retirada (1 comandos)
+✔ esquema compatível: 20261228000000_titular_mao_de_obra_prevista (4 comandos)
+✔ esquema compatível: 20261230000000_modelos_simplificados (6 comandos)
+✔ esquema compatível: 20270105000000_necessidade_substituicao (8 comandos)
+✔ esquema compatível: 20270112000000_compra_antes_da_chegada (20 comandos)
+✔ esquema compatível: 20270119000000_cobranca_cliente (28 comandos)
+✔ esquema compatível: 20270126000000_meus_ganhos_permissao (1 comandos)
+✔ esquema compatível: 20270202000000_negociacao_confirmacao_semanal (22 comandos)
+✔ esquema compatível: 20270209000000_presenca_apoio_simplificados (30 comandos)
+✔ esquema compatível: 20270216000000_notificacoes_resolvidas (1 comandos)
+✔ esquema compatível: 20270223000000_custo_operacional_equipe_propria (2 comandos)
+✔ esquema compatível: 20270302000000_modulos_configuraveis (4 comandos)
+✔ esquema compatível: 20270309000000_materiais_estoque_entrega (41 comandos)
+✔ esquema compatível: 20270316000000_reformulacao_fase_2 (17 comandos)
+✔ esquema compatível: 20270323000000_reformulacao_fase_3 (8 comandos)
+✔ 20261025000000_distribuicao_automatica tarefas-geradas-duplicadas-por-peca-e-etapa: 0
+✔ 20261101000000_mao_de_obra_revisao mao-de-obra-duplicada-por-peca-e-profissional: 0
+✔ 20261101000000_mao_de_obra_revisao mao-de-obra-duplicada-por-os-e-profissional: 0
+✔ 20261108000000_custos_logistica custos-logistica-valor-nao-positivo: 0
+✔ 20261108000000_custos_logistica custos-logistica-tipo-desconhecido: 0
+✔ 20261108000000_custos_logistica custos-logistica-rateio-tipo-desconhecido: 0
+✔ 20261108000000_custos_logistica rateio-duplicado-por-custo-e-os: 0
+✔ 20261220000000_recebimentos_permissao_funcoes role-permissions-sem-chave-funcao-permissao: 0
+ℹ 20261220000000_recebimentos_permissao_funcoes funcoes-que-recebem-a-permissao: 0
+✔ 20261230000000_modelos_simplificados rotulos-de-enum-ausentes: 0
+ℹ 20261230000000_modelos_simplificados modelos-simplificados-ja-presentes: 0
+ℹ * tamanho-do-banco: 7519 kB
+PREFLIGHT: OK (nenhuma migration incompleta, desconhecida, divergente ou fora de ordem; esquema e dados compatíveis com as pendentes)

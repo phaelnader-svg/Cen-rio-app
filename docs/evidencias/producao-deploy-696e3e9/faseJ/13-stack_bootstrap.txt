@@ -1,0 +1,23 @@
+# comando: operar.py op stack_bootstrap version=696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+# inicio_utc: 2026-11-14T17:21:48Z
+# fim_utc: 2026-11-14T17:22:08Z
+# exit: 0
+## stderr
+• stack_bootstrap {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"} → job 408c92dd-48ca-4327-a5f3-5126b354272b (mensagem 22615721358873243)
+{"jti": "408c92dd-48ca-4327-a5f3-5126b354272b", "operacao": "stack_bootstrap", "classe": "MUTATING", "parametros": {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:21:49.365606Z", "fim": "2026-11-14T17:22:04.468753Z", "duracao_s": 15.103, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+ Volume cenario-prod_pgdata_2026_11 Creating 
+ Volume cenario-prod_pgdata_2026_11 Creating 
+ Volume cenario-prod_pgdata_2026_11 Created 
+ Volume cenario-prod_pgdata_2026_11 Created 
+ Container cenario-prod-postgres-1 Recreate 
+ Container cenario-prod-postgres-1 Recreated 
+ Container cenario-prod-postgres-1 Starting 
+ Container cenario-prod-postgres-1 Started 
+ Container cenario-prod-backup-1 Running 
+## stdout
+$ /usr/bin/systemctl daemon-reload
+✔ etiqueta local fixada em 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh gerar-env
+[2026-11-14T17:21:54Z] Variáveis geradas em /run/cenario/env (memória, permissão 600).
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh iniciar-banco
+[2026-11-14T17:22:04Z] ✔ banco NOVO (nenhuma tabela): PostgreSQL e backup em execução; API e web paradas

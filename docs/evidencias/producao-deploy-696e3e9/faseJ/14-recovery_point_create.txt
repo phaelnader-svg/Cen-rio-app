@@ -1,0 +1,31 @@
+# comando: operar.py op recovery_point_create
+# inicio_utc: 2026-11-14T17:22:13Z
+# fim_utc: 2026-11-14T17:22:22Z
+# exit: 0
+## stderr
+• recovery_point_create {} → job c5651bb3-802d-435e-9e66-4c5922de3665 (mensagem 22615724102070369)
+{"jti": "c5651bb3-802d-435e-9e66-4c5922de3665", "operacao": "recovery_point_create", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:22:14.452504Z", "fim": "2026-11-14T17:22:20.765595Z", "duracao_s": 6.313, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+NOTICE:  database "cenario_restore_check" does not exist, skipping
+ Container cenario-prod-backup-run-c23f8cfdaf02 Creating 
+ Container cenario-prod-backup-run-c23f8cfdaf02 Created 
+NOTICE:  database "cenario_restore_ref" does not exist, skipping
+## stdout
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh ponto-recuperacao
+[2026-11-14T17:22:15Z] Impressão do banco antes do backup: 35f222cc3914b0f20c78b5976d13286f (2 itens)
+[2026-11-14T17:22:15Z] Backup completo (banco + arquivos + SHA-256)…
+→ Banco de dados…
+→ Arquivos privados (/data/storage)…
+✔ Backup concluído: /data/backups/cenario-production-20261114T172215Z
+[2026-11-14T17:22:16Z] • pasta deste backup: cenario-production-20261114T172215Z
+[2026-11-14T17:22:16Z] ✔ cenario-production-20261114T172215Z íntegro (SHA256SUMS). Restauração de teste em banco separado…
+• backup conferido: cenario-production-20261114T172215Z
+→ Verificando integridade…
+→ Restaurando banco…
+→ Restaurando arquivos em /tmp/rs…
+✔ Restauração concluída. Rode 'pnpm db:status' para conferir as migrations.
+arquivos restaurados: 2
+  itens: 2 · tabelas: 0 · colunas financeiras: 0 · migrations: 0 · restrições: 0 · índices: 0 · gatilhos: 0 · sequências: 0
+  ✔ dados, estrutura, sequências, migrations e valores financeiros IGUAIS ao original; definições iguais à referência
+[2026-11-14T17:22:20Z] ✔ Restauração de teste de cenario-production-20261114T172215Z IDÊNTICA ao banco atual (conteúdo, vínculos, catálogo e valores).
+[2026-11-14T17:22:20Z] ✔ cenario-production-20261114T172215Z enviado a gs://cenariogestao-prod-backups/backups/
+[2026-11-14T17:22:20Z] ✔ PONTO DE RECUPERAÇÃO: cenario-production-20261114T172215Z (versão 696e3e9ddc5f1c803a4b9244a075ed498ad81be3, impressão 35f222cc3914b0f20c78b5976d13286f). Tudo o que for gravado depois dele se perde numa recuperação.

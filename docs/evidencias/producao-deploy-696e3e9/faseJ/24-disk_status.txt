@@ -1,0 +1,30 @@
+# comando: operar.py op disk_status
+# inicio_utc: 2026-11-14T17:24:24Z
+# fim_utc: 2026-11-14T17:24:30Z
+# exit: 0
+## stderr
+• disk_status {} → job 9fc5cda0-0236-45f5-80b1-1d4fbdb47f34 (mensagem 22616596516833766)
+{"jti": "9fc5cda0-0236-45f5-80b1-1d4fbdb47f34", "operacao": "disk_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:24:25.174160Z", "fim": "2026-11-14T17:24:26.518410Z", "duracao_s": 1.344, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ df -h
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        49G   16G   32G  34% /
+udev            1.9G     0  1.9G   0% /dev
+tmpfs           2.0G     0  2.0G   0% /dev/shm
+tmpfs           393M  980K  392M   1% /run
+tmpfs           5.0M     0  5.0M   0% /run/lock
+efivarfs        256K   26K  226K  11% /sys/firmware/efi/efivars
+/dev/sda15      124M   12M  112M  10% /boot/efi
+overlay          49G   16G   32G  34% /var/lib/docker/rootfs/overlayfs/2d1ecde3a3597b30df426153618a8d584f73d1784e5035541e541c5b762d314b
+overlay          49G   16G   32G  34% /var/lib/docker/rootfs/overlayfs/d7c561caac03bfb0bd8d7210e5f8e98a98df6f1546e6ea2d9fb6336cecff7169
+overlay          49G   16G   32G  34% /var/lib/docker/rootfs/overlayfs/26bb5bf33bf642c11fb603b60390630a0b23dea886538b81026974d47a6e3cae
+overlay          49G   16G   32G  34% /var/lib/docker/rootfs/overlayfs/62c71a260ec02b9f82a36e76114dd2f81faf911efa23ee92a07f169ebd7b2eac
+overlay          49G   16G   32G  34% /var/lib/docker/rootfs/overlayfs/90a0588c5a3c09a793ad2bbb53adae4c44a586f6458cf4c0be80056826f725f3
+$ docker system df
+TYPE            TOTAL     ACTIVE    SIZE      RECLAIMABLE
+Images          9         5         11.37GB   1.94MB (0%)
+Containers      5         5         634.9kB   0B (0%)
+Local Volumes   6         5         174.7MB   75.64MB (43%)
+Build Cache     0         0         0B        0B
+$ docker compose -f /opt/cenario/infra/prod/docker-compose.prod.yml --env-file /run/cenario/env exec -T backup du -sh /data/backups
+25M	/data/backups

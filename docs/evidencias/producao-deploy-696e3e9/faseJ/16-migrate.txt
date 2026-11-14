@@ -1,0 +1,104 @@
+# comando: operar.py op migrate version=696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+# inicio_utc: 2026-11-14T17:22:42Z
+# fim_utc: 2026-11-14T17:23:10Z
+# exit: 0
+## stderr
+• migrate {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"} → job 0fa8d6c6-4daf-4084-abfa-7e44d48320f3 (mensagem 22617134027838770)
+{"jti": "0fa8d6c6-4daf-4084-abfa-7e44d48320f3", "operacao": "migrate", "classe": "DESTRUCTIVE", "parametros": {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:22:44.594654Z", "fim": "2026-11-14T17:23:01.411840Z", "duracao_s": 16.817, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh migrar 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+✔ banco idêntico ao ponto de recuperação cenario-production-20261114T172215Z (0 min)
+• imagem 696e3e9ddc5f1c803a4b9244a075ed498ad81be3: 37 migrations · banco: 0 aplicadas (0 registros)
+• pendentes (37): 20261008000000_fundacao, 20261008100000_comercial_oficina, 20261008200000_medicoes_materiais, 20261009000000_compras_estoque, 20261010000000_producao, 20261011000000_tablets_notificacoes, 20261012000000_presenca_operacional, 20261013000000_ajuda_reprogramacao, 20261014000000_central_atencao, 20261015000000_qualidade_logistica, 20261016000000_financeiro_operacional, 20261017000000_auditoria_final, 20261018000000_fila_semanal, 20261025000000_distribuicao_automatica, 20261101000000_mao_de_obra_revisao, 20261108000000_custos_logistica, 20261115000000_fechamento_semanal, 20261122000000_roteiro_logistica, 20261129000000_novo_servico, 20261206000000_recebimentos_compartilhados, 20261213000000_pre_planejamento, 20261220000000_recebimentos_permissao_funcoes, 20261227000000_servico_sem_retirada, 20261228000000_titular_mao_de_obra_prevista, 20261230000000_modelos_simplificados, 20270105000000_necessidade_substituicao, 20270112000000_compra_antes_da_chegada, 20270119000000_cobranca_cliente, 20270126000000_meus_ganhos_permissao, 20270202000000_negociacao_confirmacao_semanal, 20270209000000_presenca_apoio_simplificados, 20270216000000_notificacoes_resolvidas, 20270223000000_custo_operacional_equipe_propria, 20270302000000_modulos_configuraveis, 20270309000000_materiais_estoque_entrega, 20270316000000_reformulacao_fase_2, 20270323000000_reformulacao_fase_3
+✔ esquema compatível: 20261008000000_fundacao (75 comandos)
+✔ esquema compatível: 20261008100000_comercial_oficina (119 comandos)
+✔ esquema compatível: 20261008200000_medicoes_materiais (48 comandos)
+✔ esquema compatível: 20261009000000_compras_estoque (112 comandos)
+✔ esquema compatível: 20261010000000_producao (56 comandos)
+✔ esquema compatível: 20261011000000_tablets_notificacoes (17 comandos)
+✔ esquema compatível: 20261012000000_presenca_operacional (35 comandos)
+✔ esquema compatível: 20261013000000_ajuda_reprogramacao (55 comandos)
+✔ esquema compatível: 20261014000000_central_atencao (42 comandos)
+✔ esquema compatível: 20261015000000_qualidade_logistica (143 comandos)
+✔ esquema compatível: 20261016000000_financeiro_operacional (110 comandos)
+✔ esquema compatível: 20261017000000_auditoria_final (26 comandos)
+✔ esquema compatível: 20261018000000_fila_semanal (11 comandos)
+✔ esquema compatível: 20261025000000_distribuicao_automatica (18 comandos)
+✔ esquema compatível: 20261101000000_mao_de_obra_revisao (22 comandos)
+✔ esquema compatível: 20261108000000_custos_logistica (28 comandos)
+✔ esquema compatível: 20261115000000_fechamento_semanal (39 comandos)
+✔ esquema compatível: 20261122000000_roteiro_logistica (4 comandos)
+✔ esquema compatível: 20261129000000_novo_servico (9 comandos)
+✔ esquema compatível: 20261206000000_recebimentos_compartilhados (20 comandos)
+✔ esquema compatível: 20261213000000_pre_planejamento (3 comandos)
+✔ esquema compatível: 20261220000000_recebimentos_permissao_funcoes (1 comandos)
+✔ esquema compatível: 20261227000000_servico_sem_retirada (1 comandos)
+✔ esquema compatível: 20261228000000_titular_mao_de_obra_prevista (4 comandos)
+✔ esquema compatível: 20261230000000_modelos_simplificados (6 comandos)
+✔ esquema compatível: 20270105000000_necessidade_substituicao (8 comandos)
+✔ esquema compatível: 20270112000000_compra_antes_da_chegada (20 comandos)
+✔ esquema compatível: 20270119000000_cobranca_cliente (28 comandos)
+✔ esquema compatível: 20270126000000_meus_ganhos_permissao (1 comandos)
+✔ esquema compatível: 20270202000000_negociacao_confirmacao_semanal (22 comandos)
+✔ esquema compatível: 20270209000000_presenca_apoio_simplificados (30 comandos)
+✔ esquema compatível: 20270216000000_notificacoes_resolvidas (1 comandos)
+✔ esquema compatível: 20270223000000_custo_operacional_equipe_propria (2 comandos)
+✔ esquema compatível: 20270302000000_modulos_configuraveis (4 comandos)
+✔ esquema compatível: 20270309000000_materiais_estoque_entrega (41 comandos)
+✔ esquema compatível: 20270316000000_reformulacao_fase_2 (17 comandos)
+✔ esquema compatível: 20270323000000_reformulacao_fase_3 (8 comandos)
+✔ 20261025000000_distribuicao_automatica tarefas-geradas-duplicadas-por-peca-e-etapa: 0
+✔ 20261101000000_mao_de_obra_revisao mao-de-obra-duplicada-por-peca-e-profissional: 0
+✔ 20261101000000_mao_de_obra_revisao mao-de-obra-duplicada-por-os-e-profissional: 0
+✔ 20261108000000_custos_logistica custos-logistica-valor-nao-positivo: 0
+✔ 20261108000000_custos_logistica custos-logistica-tipo-desconhecido: 0
+✔ 20261108000000_custos_logistica custos-logistica-rateio-tipo-desconhecido: 0
+✔ 20261108000000_custos_logistica rateio-duplicado-por-custo-e-os: 0
+✔ 20261220000000_recebimentos_permissao_funcoes role-permissions-sem-chave-funcao-permissao: 0
+ℹ 20261220000000_recebimentos_permissao_funcoes funcoes-que-recebem-a-permissao: 0
+✔ 20261230000000_modelos_simplificados rotulos-de-enum-ausentes: 0
+ℹ 20261230000000_modelos_simplificados modelos-simplificados-ja-presentes: 0
+ℹ * tamanho-do-banco: 7519 kB
+PREFLIGHT: OK (nenhuma migration incompleta, desconhecida, divergente ou fora de ordem; esquema e dados compatíveis com as pendentes)
+[2026-11-14T17:22:47Z] Aplicando as migrations com «CENARIO_API_IMAGE-mascarado» (log: /var/lib/cenario/migracao-696e3e9ddc5f1c803a4b9244a075ed498ad81be3-20261114T172247Z.log)…
+Applying migration `20261008000000_fundacao`
+Applying migration `20261008100000_comercial_oficina`
+Applying migration `20261008200000_medicoes_materiais`
+Applying migration `20261009000000_compras_estoque`
+Applying migration `20261010000000_producao`
+Applying migration `20261011000000_tablets_notificacoes`
+Applying migration `20261012000000_presenca_operacional`
+Applying migration `20261013000000_ajuda_reprogramacao`
+Applying migration `20261014000000_central_atencao`
+Applying migration `20261015000000_qualidade_logistica`
+Applying migration `20261016000000_financeiro_operacional`
+Applying migration `20261017000000_auditoria_final`
+Applying migration `20261018000000_fila_semanal`
+Applying migration `20261025000000_distribuicao_automatica`
+Applying migration `20261101000000_mao_de_obra_revisao`
+Applying migration `20261108000000_custos_logistica`
+Applying migration `20261115000000_fechamento_semanal`
+Applying migration `20261122000000_roteiro_logistica`
+Applying migration `20261129000000_novo_servico`
+Applying migration `20261206000000_recebimentos_compartilhados`
+Applying migration `20261213000000_pre_planejamento`
+Applying migration `20261220000000_recebimentos_permissao_funcoes`
+Applying migration `20261227000000_servico_sem_retirada`
+Applying migration `20261228000000_titular_mao_de_obra_prevista`
+Applying migration `20261230000000_modelos_simplificados`
+Applying migration `20270105000000_necessidade_substituicao`
+Applying migration `20270112000000_compra_antes_da_chegada`
+Applying migration `20270119000000_cobranca_cliente`
+Applying migration `20270126000000_meus_ganhos_permissao`
+Applying migration `20270202000000_negociacao_confirmacao_semanal`
+Applying migration `20270209000000_presenca_apoio_simplificados`
+Applying migration `20270216000000_notificacoes_resolvidas`
+Applying migration `20270223000000_custo_operacional_equipe_propria`
+Applying migration `20270302000000_modulos_configuraveis`
+Applying migration `20270309000000_materiais_estoque_entrega`
+Applying migration `20270316000000_reformulacao_fase_2`
+Applying migration `20270323000000_reformulacao_fase_3`
+The following migration(s) have been applied:
+All migrations have been successfully applied.
+Database schema is up to date!
+[2026-11-14T17:23:01Z] ✔ migrations aplicadas em 14 s. Próximo: activate_version 696e3e9ddc5f1c803a4b9244a075ed498ad81be3

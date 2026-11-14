@@ -1,0 +1,46 @@
+# comando: operar.py op migration_status
+# inicio_utc: 2026-11-14T17:23:17Z
+# fim_utc: 2026-11-14T17:23:20Z
+# exit: 0
+## stderr
+• migration_status {} → job fc12c13c-8588-4d9d-bded-dfde205f012d (mensagem 22617134027996070)
+{"jti": "fc12c13c-8588-4d9d-bded-dfde205f012d", "operacao": "migration_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:23:17.768749Z", "fim": "2026-11-14T17:23:18.321268Z", "duracao_s": 0.553, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ docker compose -f /opt/cenario/infra/prod/docker-compose.prod.yml --env-file /run/cenario/env exec -T postgres psql -U cenario -d cenario_prod -At -F | -v ON_ERROR_STOP=1 -c select migration_name, coalesce(to_char(finished_at,'YYYY-MM-DD"T"HH24:MI:SS'),'NAO_CONCLUIDA'), coalesce(to_char(rolled_back_at,'YYYY-MM-DD"T"HH24:MI:SS'),''), applied_steps_count from _prisma_migrations order by migration_name
+20261008000000_fundacao|2026-11-14T17:22:53||1
+20261008100000_comercial_oficina|2026-11-14T17:22:54||1
+20261008200000_medicoes_materiais|2026-11-14T17:22:54||1
+20261009000000_compras_estoque|2026-11-14T17:22:54||1
+20261010000000_producao|2026-11-14T17:22:54||1
+20261011000000_tablets_notificacoes|2026-11-14T17:22:54||1
+20261012000000_presenca_operacional|2026-11-14T17:22:54||1
+20261013000000_ajuda_reprogramacao|2026-11-14T17:22:55||1
+20261014000000_central_atencao|2026-11-14T17:22:55||1
+20261015000000_qualidade_logistica|2026-11-14T17:22:55||1
+20261016000000_financeiro_operacional|2026-11-14T17:22:55||1
+20261017000000_auditoria_final|2026-11-14T17:22:56||1
+20261018000000_fila_semanal|2026-11-14T17:22:56||1
+20261025000000_distribuicao_automatica|2026-11-14T17:22:56||1
+20261101000000_mao_de_obra_revisao|2026-11-14T17:22:56||1
+20261108000000_custos_logistica|2026-11-14T17:22:56||1
+20261115000000_fechamento_semanal|2026-11-14T17:22:56||1
+20261122000000_roteiro_logistica|2026-11-14T17:22:56||1
+20261129000000_novo_servico|2026-11-14T17:22:56||1
+20261206000000_recebimentos_compartilhados|2026-11-14T17:22:56||1
+20261213000000_pre_planejamento|2026-11-14T17:22:56||1
+20261220000000_recebimentos_permissao_funcoes|2026-11-14T17:22:56||1
+20261227000000_servico_sem_retirada|2026-11-14T17:22:56||1
+20261228000000_titular_mao_de_obra_prevista|2026-11-14T17:22:56||1
+20261230000000_modelos_simplificados|2026-11-14T17:22:56||1
+20270105000000_necessidade_substituicao|2026-11-14T17:22:56||1
+20270112000000_compra_antes_da_chegada|2026-11-14T17:22:56||1
+20270119000000_cobranca_cliente|2026-11-14T17:22:56||1
+20270126000000_meus_ganhos_permissao|2026-11-14T17:22:56||1
+20270202000000_negociacao_confirmacao_semanal|2026-11-14T17:22:56||1
+20270209000000_presenca_apoio_simplificados|2026-11-14T17:22:56||1
+20270216000000_notificacoes_resolvidas|2026-11-14T17:22:56||1
+20270223000000_custo_operacional_equipe_propria|2026-11-14T17:22:56||1
+20270302000000_modulos_configuraveis|2026-11-14T17:22:56||1
+20270309000000_materiais_estoque_entrega|2026-11-14T17:22:57||1
+20270316000000_reformulacao_fase_2|2026-11-14T17:22:57||1
+20270323000000_reformulacao_fase_3|2026-11-14T17:22:57||1

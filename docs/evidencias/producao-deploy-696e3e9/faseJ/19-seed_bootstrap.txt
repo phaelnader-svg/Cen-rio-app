@@ -1,0 +1,25 @@
+# comando: operar.py op seed_bootstrap
+# inicio_utc: 2026-11-14T17:23:52Z
+# fim_utc: 2026-11-14T17:24:01Z
+# exit: 0
+## stderr
+• seed_bootstrap {} → job a8ec601f-36bc-40c2-9856-88a4545061e8 (mensagem 22616591618505157)
+{"jti": "a8ec601f-36bc-40c2-9856-88a4545061e8", "operacao": "seed_bootstrap", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:23:53.681169Z", "fim": "2026-11-14T17:23:58.749120Z", "duracao_s": 5.068, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh semear
+
+> cenario-gestao@0.1.0 db:seed /app
+> pnpm --filter @cenario/db seed
+
+
+> @cenario/db@0.1.0 seed /app/packages/db
+> dotenv -e ../../.env -- tsx src/seed.ts
+
+✔ Funções padrão sincronizadas.
+✔ Configurações da empresa presentes.
+✔ Gestor «SEED_ADMIN_EMAIL-mascarado» criado.
+• Responsável da etapa "Desmontagem e preparação" não configurado: nenhum funcionário ativo chamado João — defina em Produção → Modelos.
+• Responsável da etapa "Corte e preparação" não configurado: nenhum funcionário ativo chamado Thiago — defina em Produção → Modelos.
+✔ Checklists de qualidade iniciais criados.
+• funcionários|usuários|clientes|pedidos|OS|dispositivos|funções|modelos|checklists: 1|1|0|0|0|0|5|5|4
+✔ bootstrap mínimo: só o gestor; nenhum cliente, pedido, OS, dispositivo ou funcionário de exemplo

@@ -1,0 +1,9 @@
+# comando: operar.py op gate_close
+# inicio_utc: 2026-11-14T17:24:10Z
+# fim_utc: 2026-11-14T17:24:14Z
+# exit: 0
+## stderr
+• gate_close {} → job 4c78e5c0-afc7-4781-8a11-82d1061d9c11 (mensagem 22616547687647096)
+{"jti": "4c78e5c0-afc7-4781-8a11-82d1061d9c11", "operacao": "gate_close", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:24:11.388976Z", "fim": "2026-11-14T17:24:11.567651Z", "duracao_s": 0.179, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+## stdout
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

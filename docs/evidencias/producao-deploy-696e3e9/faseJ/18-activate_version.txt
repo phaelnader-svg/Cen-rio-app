@@ -1,0 +1,54 @@
+# comando: operar.py op activate_version version=696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+# inicio_utc: 2026-11-14T17:23:26Z
+# fim_utc: 2026-11-14T17:23:45Z
+# exit: 0
+## stderr
+• activate_version {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"} → job fa419e76-dead-4436-98a4-056ff71c7100 (mensagem 22617134028034387)
+{"jti": "fa419e76-dead-4436-98a4-056ff71c7100", "operacao": "activate_version", "classe": "DESTRUCTIVE", "parametros": {"version": "696e3e9ddc5f1c803a4b9244a075ed498ad81be3"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-14T17:23:26.787024Z", "fim": "2026-11-14T17:23:43.686532Z", "duracao_s": 16.9, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+ Container cenario-prod-caddy-1 Running 
+ Container cenario-prod-backup-1 Running 
+ Container cenario-prod-postgres-1 Running 
+ Container cenario-prod-api-1 Recreate 
+ Container cenario-prod-api-1 Recreated 
+ Container cenario-prod-web-1 Recreate 
+ Container cenario-prod-web-1 Recreated 
+ Container cenario-prod-postgres-1 Waiting 
+ Container cenario-prod-postgres-1 Healthy 
+ Container cenario-prod-api-1 Starting 
+ Container cenario-prod-api-1 Started 
+ Container cenario-prod-web-1 Starting 
+ Container cenario-prod-api-1 Waiting 
+ Container cenario-prod-web-1 Started 
+ Container cenario-prod-api-1 Healthy 
+## stdout
+$ /usr/bin/systemctl daemon-reload
+✔ etiqueta local fixada em 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+$ /bin/bash /opt/cenario/infra/prod/gcp/vm.sh ativar 696e3e9ddc5f1c803a4b9244a075ed498ad81be3
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ API em APP_ENV=production
+✔ HTTP redireciona para HTTPS (308 https://«PROD_DOMAIN-mascarado»/entrar)
+✔ www redireciona para o domínio canônico (301 https://«PROD_DOMAIN-mascarado»/entrar)
+✔ tela de entrada: 200
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ HSTS presente
+✔ JavaScript da tela carrega (200)
+✔ /api/v1/management/overview sem sessão: 401
+✔ /api/v1/attention sem sessão: 401
+✔ /api/v1/finance/receivables sem sessão: 401
+✔ /api/v1/finance/labor sem sessão: 401
+✔ /api/audit sem sessão: 401
+✔ /api/employees sem sessão: 401
+✔ WebSocket /api/realtime pelo proxy: 401 (401 sem sessão)
+✔ certificado válido por mais 63 dias (até Jan 17 15:47:23 2027 GMT)
+✔ último backup há 0 h (cenario-production-20261114T172215Z)
+✔ último envio ao bucket há 0 h
+✔ nenhum backup local sem cópia externa há mais de 36 h
+✔ migrations: 37 aplicadas, nenhuma pendente/com falha
+✔ disco em 34%
+✔ memória disponível 2770 MB
+Saúde: OK
