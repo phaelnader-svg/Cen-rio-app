@@ -1,0 +1,4 @@
+{
+  "_leia": "Reformulação por remoção real. Liste aqui SÓ as etapas (S1–S8) já implementadas e aprovadas. Uma etapa listada torna obrigatórios os testes do Grupo B dela (API: apps/api/test/remocao-grupo-b.test.ts; web: apps/web/test/remocao-grupo-b.test.ts). S0 não entra aqui.",
+  "concluidas": []
+}
