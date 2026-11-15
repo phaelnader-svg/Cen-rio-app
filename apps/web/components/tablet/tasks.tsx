@@ -53,7 +53,7 @@ import { useRealtime } from '@/lib/realtime';
 import { uploadPhoto } from '@/lib/photos';
 import { AlternativeTasks, HelpPanel, MyOpenHelp, SupportInfo, TransferPanel } from './help';
 import { IssueInfo, MyOpenIssues, ProblemPanel } from './issues';
-import { PackagingPanel, QualityInfo } from './quality';
+import { QualityInfo } from './quality';
 
 const DONE = ['CONCLUIDA', 'CANCELADA'];
 const isOpen = (t: ProductionTaskDto) => !DONE.includes(t.status);
@@ -467,10 +467,7 @@ function QuickAction({ t }: { t: ProductionTaskDto }) {
     const timer = window.setTimeout(() => setConfirm(false), 5000);
     return () => window.clearTimeout(timer);
   }, [confirm]);
-  const simpleComplete =
-    t.status === 'EM_EXECUCAO' &&
-    t.completionRequirement === 'NENHUM' &&
-    t.activity !== 'EMBALAGEM';
+  const simpleComplete = t.status === 'EM_EXECUCAO' && t.completionRequirement === 'NENHUM';
   if (t.status !== 'LIBERADA' && !simpleComplete) return null;
   const run = (path: 'start' | 'complete', ok: string) =>
     m.mutate(
@@ -671,9 +668,6 @@ export function MyTaskDetail({
           )}
       </div>
 
-      {t.qualityFor?.kind === 'EMBALAGEM' && t.qualityFor.packagingId && (
-        <PackagingPanel packagingId={t.qualityFor.packagingId} />
-      )}
       {canAskHelp && (t.can.start || t.can.progress) && <HelpPanel t={t} />}
       <TransferPanel t={t} me={meQ.data?.user.id} />
       <AlternativeTasks t={t} onOpen={onOpen} />

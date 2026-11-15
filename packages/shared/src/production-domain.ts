@@ -19,7 +19,8 @@ export const PRODUCTION_ACTIVITIES = [
   'ACABAMENTO',
   'APOIO',
   'OUTRA',
-  // Fase 10 — correção após reprovação e embalagem após aprovação (ligadas à inspeção).
+  // Fase 10 — correção após reprovação (ligada à inspeção). EMBALAGEM: só histórico (Reformulação
+  // S1) — nenhuma tarefa de embalagem nasce mais; as antigas continuam legíveis.
   'CORRECAO',
   'EMBALAGEM',
 ] as const;
@@ -41,8 +42,8 @@ export const PRODUCTION_ACTIVITY_LABEL: Record<ProductionActivity, string> = {
   EMBALAGEM: 'Embalagem',
 };
 /**
- * Atividades que o gestor programa em modelos e tarefas manuais. Correção e embalagem só nascem
- * do fluxo de qualidade (ligadas à inspeção), nunca avulsas.
+ * Atividades que o gestor programa em modelos e tarefas manuais. Correção só nasce do fluxo de
+ * qualidade (ligada à inspeção), nunca avulsa; embalagem não existe mais (S1).
  */
 export const PLANNABLE_ACTIVITIES = [
   'DESMONTAGEM',

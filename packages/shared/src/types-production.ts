@@ -125,17 +125,13 @@ export interface ProductionTaskDto {
     description: string;
     reporter: string;
   } | null;
-  /**
-   * Fase 10: correção (defeitos da inspeção reprovada) ou embalagem (após a aprovação).
-   * Embalagem conclui pela tela própria (proteção e localização), não pelo "Concluir".
-   */
+  /** Fase 10: correção (defeitos da inspeção reprovada). S1: não há mais tarefa de embalagem. */
   qualityFor?: {
     inspectionId: string;
     code: string;
-    kind: 'CORRECAO' | 'EMBALAGEM';
+    kind: 'CORRECAO';
     note: string | null;
     defects: { label: string; note: string | null }[];
-    packagingId: string | null;
   } | null;
   version: number;
 }

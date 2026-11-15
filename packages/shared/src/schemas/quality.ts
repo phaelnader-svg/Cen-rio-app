@@ -7,7 +7,6 @@ import {
   INSPECTION_STATUSES,
   LOGISTICS_KINDS,
   LOGISTICS_STATUSES,
-  PROTECTIONS,
 } from '../quality-domain';
 import { customerAddressSchema } from './commercial';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
@@ -107,21 +106,7 @@ export const qualityTemplateSchema = z.object({
 });
 export type QualityTemplateInput = z.input<typeof qualityTemplateSchema>;
 
-// ─────────────────────────── Embalagem e localização ───────────────────────────
-
-export const assignPackagingSchema = z.object({
-  assigneeUserId: idSchema,
-  /** O tapeceiro responsável só embala com autorização do gestor. */
-  authorizeTapeceiro: z.boolean().default(false),
-  version: versionSchema,
-});
-
-export const completePackagingSchema = z.object({
-  protection: z.enum(PROTECTIONS, { message: 'Escolha o tipo de proteção.' }),
-  locationId: idSchema,
-  notes: optionalText(500),
-  version: versionSchema,
-});
+// ─────────────────────────── Localização (S1: sem embalagem) ───────────────────────────
 
 export const locationSchema = z.object({
   label: trimmed(2, 80, 'Nome da localização'),

@@ -257,7 +257,7 @@ export function Dashboard() {
               icon={<CheckCircle className="size-4" aria-hidden />}
               label="Na qualidade"
               value={<span data-testid="ops-quality">{ops.pieces.quality}</span>}
-              detail={`${ops.pieces.rework} em retrabalho · ${ops.pieces.packaging} na embalagem`}
+              detail={`${ops.pieces.rework} em retrabalho`}
             />
             <Stat
               href="/painel/producao/a-planejar"

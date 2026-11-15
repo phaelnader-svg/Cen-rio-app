@@ -178,11 +178,10 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
   if (['service_order.', 'order.', 'receipt.', 'production.plan_'].some((p) => t.startsWith(p)))
     keys.push(['attention'], ['service-orders'], ['service-order'], ['os-state']);
   if (t === 'attachment.changed') keys.push(['issue']);
-  // Fase 10 — qualidade, embalagem, expedição, entregas, logística e devoluções.
+  // Fase 10 — qualidade, expedição, entregas, logística e devoluções (S1: sem embalagem).
   const quality = [
     ['inspections'],
     ['inspection'],
-    ['packaging'],
     ['pieces'],
     ['piece'],
     ['deliveries'],
@@ -198,16 +197,14 @@ function invalidate(qc: QueryClient, event: RealtimeEvent) {
     ['os-state'],
   ];
   if (
-    ['quality.', 'packaging.', 'item.', 'delivery.', 'logistics.', 'return.'].some((p) =>
-      t.startsWith(p),
-    ) ||
+    ['quality.', 'item.', 'delivery.', 'logistics.', 'return.'].some((p) => t.startsWith(p)) ||
     t.startsWith('production.task_') ||
     t === 'pickup.updated' ||
     t === 'pickup.status_changed'
   )
     keys.push(...quality, ['my-tasks'], ['production-task'], ['fin']);
   if (t === 'notification.created')
-    keys.push(['inspections'], ['packaging'], ['logistics-jobs'], ['logistics-route']);
+    keys.push(['inspections'], ['logistics-jobs'], ['logistics-route']);
   if (t === 'quality.template_changed') keys.push(['quality-templates']);
   // Fase 11: eventos financeiros (sem valores) só chegam a quem vê o financeiro.
   if (t.startsWith('finance.')) keys.push(['fin']);

@@ -164,7 +164,7 @@ const FLOW: { title: string; text: string }[] = [
   },
   {
     title: 'Qualidade e entrega',
-    text: 'Inspeção, embalagem e entrega confirmada pelo celular.',
+    text: 'Inspeção e entrega confirmada pelo celular.',
   },
 ];
 

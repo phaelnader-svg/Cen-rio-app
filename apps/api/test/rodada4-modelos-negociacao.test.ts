@@ -201,29 +201,21 @@ async function inspectAndApprove(c: Client, inspectionId: string) {
   return r.body as { status: string };
 }
 
-/** Embalagem pela tela de embalagem: inicia a tarefa e conclui com proteção e local. */
+/**
+ * Reformulação S1: não há embalagem. Aprovada, a peça já está pronta para entrega; aqui só se
+ * confere que nada de embalagem nasceu e a peça vai para a expedição pelo mapa da oficina.
+ */
 async function packOnTablet(c: Client, itemId: string) {
-  const p = await db().packagingRecord.findFirstOrThrow({
-    where: { serviceOrderItemId: itemId },
-    orderBy: { createdAt: 'desc' },
-  });
-  expect(p.status).toBe('PENDENTE');
-  const st = await act(c, p.taskId!, 'start');
-  expect(st.status, JSON.stringify(st.body)).toBe(200);
-  expect((await db().packagingRecord.findUniqueOrThrow({ where: { id: p.id } })).status).toBe(
-    'EM_ANDAMENTO',
-  );
-  expect(await stage(itemId)).toBe('EM_EMBALAGEM');
+  expect(await db().packagingRecord.count({ where: { serviceOrderItemId: itemId } })).toBe(0);
+  expect(
+    await db().productionTask.count({
+      where: { serviceOrderItemId: itemId, activity: 'EMBALAGEM' },
+    }),
+  ).toBe(0);
+  expect(await stage(itemId)).toBe('PRONTA_ENTREGA');
   const loc = await db().itemLocation.findUniqueOrThrow({ where: { key: 'EXPEDICAO' } });
-  const cur = await db().packagingRecord.findUniqueOrThrow({ where: { id: p.id } });
-  const r = await post(c, `/api/v1/packaging/${p.id}/complete`, {
-    protection: 'PLASTICO_BOLHA',
-    locationId: loc.id,
-    version: cur.version,
-  });
+  const r = await post(c, `/api/v1/pieces/${itemId}/move`, { locationId: loc.id, note: 'Pronta' });
   expect(r.status, JSON.stringify(r.body)).toBe(200);
-  expect(r.body).toMatchObject({ status: 'CONCLUIDA', location: { label: 'Expedição' } });
-  return p;
 }
 
 /** Tablets da equipe de produção; todos chegam às 08:30 (relógio operacional fixo, 09:00). */
@@ -311,14 +303,10 @@ async function reformaToPacked(admin: Client, tablets: Record<string, Client>, n
   expect(await db().qualityInspection.findUniqueOrThrow({ where: { id: insp!.id } })).toMatchObject(
     { status: 'APROVADA', decidedById: p.thiago },
   );
-  expect(await stage(piece.itemId)).toBe('AGUARDANDO_EMBALAGEM');
-  const pack = await db().packagingRecord.findFirstOrThrow({
-    where: { serviceOrderItemId: piece.itemId },
-  });
-  expect(pack.assigneeUserId).toBe(p.joao);
-  // 5) Embalagem (João).
+  // Reformulação S1: aprovada → pronta para entrega (sem embalagem); a peça vai para a expedição.
+  expect(await stage(piece.itemId)).toBe('PRONTA_ENTREGA');
   await packOnTablet(tablets.João!, piece.itemId);
-  return { ...piece, inspectionId: insp!.id, packagingId: pack.id };
+  return { ...piece, inspectionId: insp!.id };
 }
 
 describe('F5-04 — reforma (modelo simplificado) até qualidade e embalagem', () => {
@@ -334,15 +322,12 @@ describe('F5-04 — reforma (modelo simplificado) até qualidade e embalagem', (
       include: { currentLocation: true },
     });
     expect(item.currentLocation?.key).toBe('EXPEDICAO');
-    expect(
-      await db().packagingRecord.findUniqueOrThrow({ where: { id: piece.packagingId } }),
-    ).toMatchObject({ status: 'CONCLUIDA', protection: 'PLASTICO_BOLHA' });
-    // Todas as tarefas do modelo e a tarefa de embalagem concluídas; nenhuma tarefa extra.
+    // Todas as tarefas do modelo concluídas; nenhuma tarefa extra (S1: nem de embalagem).
     const all = await db().productionTask.findMany({
       where: { serviceOrderItemId: piece.itemId, status: { not: 'CANCELADA' } },
     });
     expect(all.map((x) => x.activity).sort()).toEqual(
-      ['CORTE_TECIDO', 'DESMONTAGEM', 'EMBALAGEM', 'MONTAGEM'].sort(),
+      ['CORTE_TECIDO', 'DESMONTAGEM', 'MONTAGEM'].sort(),
     );
     expect(all.every((x) => x.status === 'CONCLUIDA')).toBe(true);
   });
@@ -415,11 +400,6 @@ describe('F5-10 — cabeceira (modelo simplificado): inspeção por habilitado e
     expect(
       await db().qualityInspection.findUniqueOrThrow({ where: { id: row0!.id } }),
     ).toMatchObject({ status: 'APROVADA', decidedById: p.joao, inspectorUserId: p.joao });
-    expect(await stage(piece.itemId)).toBe('AGUARDANDO_EMBALAGEM');
-    const pack = await db().packagingRecord.findFirstOrThrow({
-      where: { serviceOrderItemId: piece.itemId },
-    });
-    expect(pack.assigneeUserId).toBe(p.joao);
     await packOnTablet(joao, piece.itemId);
     expect(await stage(piece.itemId)).toBe('PRONTA_ENTREGA');
   });
@@ -452,7 +432,6 @@ describe('F5-10 — cabeceira (modelo simplificado): inspeção por habilitado e
     expect(
       (await db().qualityInspection.findUniqueOrThrow({ where: { id: row0!.id } })).decidedById,
     ).toBe(p.gestor);
-    expect(await stage(piece.itemId)).toBe('AGUARDANDO_EMBALAGEM');
     await packOnTablet(tablets.João!, piece.itemId);
     expect(await stage(piece.itemId)).toBe('PRONTA_ENTREGA');
   });

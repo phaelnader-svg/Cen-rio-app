@@ -119,8 +119,8 @@ describe('Interruptores de funcionalidade', () => {
     expect((await admin.get('/api/v1/modules')).body).toEqual({
       logistica: true,
       ajuda: true,
-      embalagem: true,
       // Etapa E1 (decisão do proprietário): travas de materiais desligadas por padrão.
+      // Reformulação S1: a embalagem deixou de existir (sem interruptor).
       materiais: false,
     });
     const list = (await admin.get('/api/company/modules')).body as {
@@ -130,24 +130,19 @@ describe('Interruptores de funcionalidade', () => {
       version: number;
       updatedBy: unknown;
     }[];
-    expect(list.map((m) => m.key)).toEqual(['logistica', 'ajuda', 'embalagem', 'materiais']);
+    expect(list.map((m) => m.key)).toEqual(['logistica', 'ajuda', 'materiais']);
     expect(list.every((m) => m.version === 0 && m.updatedBy === null)).toBe(true);
-    expect(list.filter((m) => m.enabled).map((m) => m.key)).toEqual([
-      'logistica',
-      'ajuda',
-      'embalagem',
-    ]);
-    // Fase 1: logística e travas de materiais passaram a ser configuráveis; Fase 3: a embalagem.
+    expect(list.filter((m) => m.enabled).map((m) => m.key)).toEqual(['logistica', 'ajuda']);
+    // Fase 1: logística e travas de materiais passaram a ser configuráveis.
     expect(list.filter((m) => m.configurable).map((m) => m.key)).toEqual([
       'logistica',
       'ajuda',
-      'embalagem',
       'materiais',
     ]);
     expect(await db().moduleSetting.count()).toBe(0);
   });
 
-  it('registro de chave desconhecida não muda nada nem quebra a leitura; o da embalagem vale (Fase 3)', async () => {
+  it('registro de chave desconhecida não muda nada nem quebra a leitura; o da embalagem (removida na S1) também é ignorado', async () => {
     await db().moduleSetting.createMany({
       data: [
         { key: 'modulo_futuro', enabled: false },
@@ -158,15 +153,17 @@ describe('Interruptores de funcionalidade', () => {
     expect((await admin.get('/api/v1/modules')).body).toEqual({
       logistica: true,
       ajuda: true,
-      embalagem: false,
       materiais: false,
     });
     // Fase 1: a logística passou a ser configurável — o registro gravado agora vale.
     await db().moduleSetting.create({ data: { key: 'logistica', enabled: false } });
-    expect((await admin.get('/api/v1/modules')).body).toMatchObject({
+    expect((await admin.get('/api/v1/modules')).body).toEqual({
       logistica: false,
-      embalagem: false,
+      ajuda: true,
+      materiais: false,
     });
+    // A linha antiga da embalagem continua gravada (histórico), sem efeito.
+    expect(await db().moduleSetting.count({ where: { key: 'embalagem' } })).toBe(1);
   });
 
   it('alteração: só o gestor com empresa.configurar; versão conferida; auditada; repetir o mesmo estado não grava', async () => {
@@ -190,8 +187,9 @@ describe('Interruptores de funcionalidade', () => {
     // Entrada inválida, chave inexistente, chave ainda não configurável.
     expect((await put(admin, 'ajuda', { enabled: 'nao', version: 0 })).status).toBe(400);
     expect((await put(admin, 'inexistente', { enabled: false, version: 0 })).status).toBe(404);
-    // A logística passou a ser configurável na Fase 1 (fase1-materiais-estoque-entrega.test.ts) e a
-    // embalagem na Fase 3 (fase3-qualidade-embalagem.test.ts). Nada foi gravado até aqui.
+    // A logística passou a ser configurável na Fase 1 (fase1-materiais-estoque-entrega.test.ts); a
+    // embalagem deixou de existir na Reformulação S1 (404). Nada foi gravado até aqui.
+    expect((await put(admin, 'embalagem', { enabled: false, version: 0 })).status).toBe(404);
     expect(await db().moduleSetting.count()).toBe(0);
     // Versão desatualizada.
     expect((await put(admin, 'ajuda', { enabled: false, version: 3 })).body.error.code).toBe(
@@ -215,11 +213,10 @@ describe('Interruptores de funcionalidade', () => {
     expect((await put(admin, 'ajuda', { enabled: true, version: 0 })).status).toBe(409);
     expect((await put(admin, 'ajuda', { enabled: false, version: 1 })).body.version).toBe(1);
     expect(await db().auditLog.count({ where: { action: 'company.module_updated' } })).toBe(1);
-    // Logística e embalagem continuam ligadas (fora desta fase).
-    expect((await admin.get('/api/v1/modules')).body).toMatchObject({
-      logistica: true,
-      embalagem: true,
-    });
+    // A logística continua ligada (fora desta fase); não existe mais embalagem (S1).
+    const after = (await admin.get('/api/v1/modules')).body;
+    expect(after).toMatchObject({ logistica: true });
+    expect(after).not.toHaveProperty('embalagem');
   });
 });
 

@@ -1,13 +1,12 @@
 'use client';
 
-import type { InspectionDto, PackagingDto, QualityTemplateDto } from '@cenario/shared';
+import type { InspectionDto, QualityTemplateDto } from '@cenario/shared';
 import { useFocusParam } from '@/lib/focus-param';
 import { useTabParam } from '@/lib/tab-param';
 import {
   FULFILLMENT_STAGE_LABEL,
   INSPECTION_REASON_LABEL,
   INSPECTION_STATUS_LABEL,
-  PACKAGING_STATUS_LABEL,
   PIECE_TYPES,
   PIECE_TYPE_LABEL,
   PRIORITY_LABEL,
@@ -30,14 +29,13 @@ import { Checkbox, Field, Input, Select, Textarea } from '@/components/ui/field'
 import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { Tabs } from '@/components/ui/tabs';
 import { api, newIdempotencyKey } from '@/lib/api';
-import { formatDateTime } from '@/lib/format';
-import { useWorkers } from '@/lib/production';
+import {} from '@/lib/format';
+import {} from '@/lib/production';
 import {
   useInspection,
   useInspections,
   useInspectors,
   useLocations,
-  usePackaging,
   useQualitySettings,
   useQualityTemplates,
 } from '@/lib/quality';
@@ -62,23 +60,20 @@ export function QualityPage() {
   const [tab, setTab] = useTabParam('inspections', [
     'inspections',
     'history',
-    'packaging',
     'templates',
     'settings',
   ]);
   const open = useInspections({ scope: 'open' });
-  const packaging = usePackaging('open');
   return (
     <>
       <PageHeader
-        title="Qualidade e embalagem"
-        description="Inspeção final de cada peça (Thiago como inspetor principal), reprovações com correção e nova inspeção, embalagem só depois da aprovação."
+        title="Qualidade"
+        description="Inspeção final de cada peça (Thiago como inspetor principal) e reprovações com correção e nova inspeção. Aprovada, a peça fica pronta para entrega."
       />
       <Tabs
         tabs={[
           { key: 'inspections', label: 'Inspeções', count: open.data?.length },
           { key: 'history', label: 'Histórico' },
-          { key: 'packaging', label: 'Embalagens', count: packaging.data?.length },
           { key: 'templates', label: 'Checklists' },
           { key: 'settings', label: 'Inspetor e localizações' },
         ]}
@@ -87,7 +82,6 @@ export function QualityPage() {
       >
         {tab === 'inspections' && <InspectionList scope="open" />}
         {tab === 'history' && <InspectionList scope="all" />}
-        {tab === 'packaging' && <PackagingList />}
         {tab === 'templates' && <Templates />}
         {tab === 'settings' && <Settings />}
       </Tabs>
@@ -151,131 +145,6 @@ function InspectionRow({ i }: { i: InspectionDto }) {
         Abrir
       </Link>
     </li>
-  );
-}
-
-function PackagingList() {
-  const q = usePackaging('all');
-  const [assign, setAssign] = useState<PackagingDto | null>(null);
-  if (q.isPending) return <Spinner />;
-  if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
-  if (!q.data.length)
-    return (
-      <Card>
-        <EmptyState
-          title="Nenhuma embalagem"
-          description="A embalagem é liberada pela aprovação da qualidade."
-        />
-      </Card>
-    );
-  return (
-    <Card className="overflow-hidden">
-      <ul className="divide-y divide-line" data-testid="packaging-list">
-        {q.data.map((p) => (
-          <li
-            key={p.id}
-            className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5 text-sm"
-            data-testid={`packaging-${p.code}`}
-            data-focus-id={p.id}
-          >
-            <span className="w-24 font-mono font-semibold">{p.code}</span>
-            <div className="min-w-0 flex-1">
-              <p className="font-medium">
-                {p.piece.code} · {p.piece.description} · {p.piece.customer}
-              </p>
-              <p className="text-ink-muted">
-                Aprovação {p.inspectionCode} · {p.assignee?.displayName ?? 'Sem responsável'}
-                {p.tapeceiroAuthorized ? ' (tapeceiro autorizado)' : ''}
-                {p.location ? ` · ${p.location.label}` : ''}
-                {p.completedAt ? ` · ${formatDateTime(p.completedAt)}` : ''}
-              </p>
-            </div>
-            <Badge
-              tone={p.status === 'CONCLUIDA' ? 'ok' : p.status === 'PENDENTE' ? 'warn' : 'neutral'}
-            >
-              {PACKAGING_STATUS_LABEL[p.status]}
-            </Badge>
-            {p.status === 'PENDENTE' && (
-              <Button size="sm" variant="secondary" onClick={() => setAssign(p)}>
-                Designar
-              </Button>
-            )}
-          </li>
-        ))}
-      </ul>
-      {assign && <AssignPackagingDialog p={assign} onClose={() => setAssign(null)} />}
-    </Card>
-  );
-}
-
-function AssignPackagingDialog({ p, onClose }: { p: PackagingDto; onClose: () => void }) {
-  const workers = useWorkers();
-  const [userId, setUserId] = useState(p.assignee?.userId ?? '');
-  const [authorize, setAuthorize] = useState(false);
-  const { m, error } = useSend(onClose);
-  const chosen = workers.data?.find((w) => w.userId === userId);
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title={`Quem embala ${p.piece.code}`}
-      description="Ordem: João quando disponível, depois Thiago; o tapeceiro responsável só com a sua autorização."
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>
-            Cancelar
-          </Button>
-          <Button
-            disabled={!userId || (chosen?.isTapeceiro && !authorize)}
-            loading={m.isPending}
-            onClick={() =>
-              m.mutate({
-                run: () =>
-                  api(`/api/v1/packaging/${p.id}/assign`, {
-                    method: 'POST',
-                    body: {
-                      assigneeUserId: userId,
-                      authorizeTapeceiro: authorize,
-                      version: p.version,
-                    },
-                  }),
-                ok: 'Responsável pela embalagem definido.',
-              })
-            }
-          >
-            Designar
-          </Button>
-        </>
-      }
-    >
-      {error && (
-        <Alert tone="danger" className="mb-3">
-          {error}
-        </Alert>
-      )}
-      <Field label="Responsável">
-        {(f) => (
-          <Select {...f} value={userId} onChange={(e) => setUserId(e.target.value)}>
-            <option value="">Escolha</option>
-            {workers.data?.map((w) => (
-              <option key={w.userId} value={w.userId}>
-                {w.displayName}
-                {w.isTapeceiro ? ' (tapeceiro)' : ''}
-              </option>
-            ))}
-          </Select>
-        )}
-      </Field>
-      {chosen?.isTapeceiro && (
-        <div className="mt-3">
-          <Checkbox
-            label="Autorizo o tapeceiro a embalar esta peça"
-            checked={authorize}
-            onChange={(e) => setAuthorize(e.target.checked)}
-          />
-        </div>
-      )}
-    </Dialog>
   );
 }
 

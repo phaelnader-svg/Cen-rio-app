@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
-import { type Client, createTestApp, db, idemKey, resetDatabase } from './helpers';
+import { type Client, createTestApp, db, resetDatabase } from './helpers';
 import { post, qualityKit } from './quality-helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = any;
 
 /**
- * Reformulação, Fase 3 — qualidade simplificada ("Tudo conforme"), autoaprovação SÓ do gestor com
- * justificativa auditada e destacada (D4), e embalagem opcional pelo interruptor da Fase 0, com
- * os efeitos em entrega, cobrança, prazo e mão de obra. Banco descartável, dados fictícios.
+ * Reformulação, Fase 3 — qualidade simplificada ("Tudo conforme") e autoaprovação SÓ do gestor com
+ * justificativa auditada e destacada (D4). A embalagem opcional desta fase foi removida de vez na
+ * Reformulação S1 (ver remocao-s1-embalagem.test.ts). Banco descartável, dados fictícios.
  */
 let app: App;
 const k = qualityKit(() => app);
@@ -26,16 +26,6 @@ const ok = <T = J>(r: { status: number; body: J }, status = 200): T => {
 const approve = (c: Client, i: { id: string; version: number }, body: Record<string, unknown>) =>
   post(c, `/api/v1/quality/inspections/${i.id}/approve`, { version: i.version, ...body });
 
-async function setModule(admin: Client, key: string, enabled: boolean) {
-  const list = ok<{ key: string; version: number }[]>(await admin.get('/api/company/modules'));
-  const m = list.find((x) => x.key === key)!;
-  return admin.req(
-    'PUT',
-    `/api/company/modules/${key}`,
-    { enabled, version: m.version },
-    { 'idempotency-key': idemKey() },
-  );
-}
 /** Dá a permissão de gestor da qualidade a um funcionário (sem mexer nas funções). */
 async function makeQualityManager(userId: string) {
   await db().userPermission.create({ data: { userId, permission: 'qualidade.gerenciar' } });
@@ -64,9 +54,9 @@ describe('Qualidade simplificada', () => {
     expect(items.every((x) => x.result === 'OK')).toBe(true);
     expect(items[0]!.note).toBe('conferido à mão');
     expect(items.every((x) => x.checkedById === s.ids.thiago)).toBe(true);
-    // Embalagem (ligada por padrão) continua obrigatória: registro criado, peça aguardando.
-    expect(await db().packagingRecord.count({ where: { serviceOrderItemId: s.sofa.id } })).toBe(1);
-    expect(await k.stage(s.sofa.id)).toBe('AGUARDANDO_EMBALAGEM');
+    // Reformulação S1: sem embalagem — aprovada, a peça fica pronta para entrega.
+    expect(await db().packagingRecord.count({ where: { serviceOrderItemId: s.sofa.id } })).toBe(0);
+    expect(await k.stage(s.sofa.id)).toBe('PRONTA_ENTREGA');
 
     // Com item não conforme, "Tudo conforme" é recusado e nada muda.
     await k.finish(s.tablets.Márcio!, s.poltronaTask.id);
@@ -174,133 +164,5 @@ describe('Qualidade simplificada', () => {
     expect(
       await db().auditLog.count({ where: { action: 'quality.inspection_self_approved' } }),
     ).toBe(0);
-  });
-});
-
-describe('Embalagem opcional (interruptor da Fase 0)', () => {
-  it('desligada: aprovada vai direto a "pronta para entrega"; sem liberação financeira prematura', async () => {
-    const s = await k.scenario();
-    // Mão de obra: uma liberada na aprovação, outra só na entrega.
-    const laborQ = ok(
-      await post(s.admin, '/api/v1/finance/labor', {
-        professionalUserId: s.ids.ricardo,
-        serviceOrderId: s.so.id,
-        serviceOrderItemId: s.sofa.id,
-        service: 'Revestimento do sofá',
-        agreedCents: 30000,
-        eligibility: 'QUALIDADE_APROVADA',
-      }),
-      201,
-    );
-    // A da entrega fica nas poltronas (uma mão de obra por peça).
-    const laborE = ok(
-      await post(s.admin, '/api/v1/finance/labor', {
-        professionalUserId: s.ids.marcio,
-        serviceOrderId: s.so.id,
-        serviceOrderItemId: s.poltronas.id,
-        service: 'Troca de tecido das poltronas',
-        agreedCents: 45000,
-        eligibility: 'ENTREGA_CONCLUIDA',
-      }),
-      201,
-    );
-    const order = await db().serviceOrder.findUniqueOrThrow({ where: { id: s.so.id } });
-    const rec = ok(
-      await post(s.admin, '/api/v1/finance/receivables', {
-        orderId: order.orderId,
-        description: 'Saldo na entrega',
-        amountCents: 100000,
-        dueTrigger: 'ENTREGA',
-        expectedMethod: 'PIX',
-      }),
-      201,
-    );
-    ok(await setModule(s.admin, 'embalagem', false));
-
-    // Produção da peça concluída: nada liberado ainda.
-    await k.finish(s.tablets.Ricardo!, s.sofaTask.id);
-    const status = async (id: string) =>
-      (await db().productionPayable.findUniqueOrThrow({ where: { id } })).status;
-    expect(await status(laborQ.id)).toBe('PREVISTO');
-
-    const insp = await k.approveOpen(s, s.sofa.id);
-    const row = await db().qualityInspection.findUniqueOrThrow({ where: { id: insp.id } });
-    expect(row.packagingRequired).toBe(false);
-    expect(await db().packagingRecord.count({ where: { serviceOrderItemId: s.sofa.id } })).toBe(0);
-    expect(await k.stage(s.sofa.id)).toBe('PRONTA_ENTREGA');
-    // Aviso de "pronta para entrega" continua saindo (uma vez, sem embalagem).
-    expect(
-      await db().notification.count({
-        where: { kind: 'PRONTO_ENTREGA', dedupeKey: { contains: s.sofa.id } },
-      }),
-    ).toBeGreaterThan(0);
-    // Mão de obra: liberada a da aprovação; a da entrega, NÃO (sem liberação prematura).
-    expect(await status(laborQ.id)).toBe('LIBERADO');
-    expect(await status(laborE.id)).toBe('PREVISTO');
-    // Cobrança com vencimento na entrega continua aguardando a entrega.
-    const recNow = ok(await s.admin.get(`/api/v1/finance/receivables/${rec.id}`));
-    expect(recNow.effectiveDueDate).toBeNull();
-
-    // A poltrona ainda não está pronta: a OS não pode ser entregue por inteiro ainda.
-    const elig = ok(await s.admin.get(`/api/v1/service-orders/${s.so.id}/direct-delivery`));
-    expect(elig.eligible).toBe(false);
-    expect(JSON.stringify(elig.blocks)).not.toMatch(/embalagem/i);
-    await k.finish(s.tablets.Márcio!, s.poltronaTask.id);
-    await k.approveOpen(s, s.poltronas.id);
-    // Poltronas aprovadas (sem embalagem): a mão de obra "na entrega" segue prevista.
-    expect(await k.stage(s.poltronas.id)).toBe('PRONTA_ENTREGA');
-    expect(await status(laborE.id)).toBe('PREVISTO');
-    const e2 = ok(await s.admin.get(`/api/v1/service-orders/${s.so.id}/direct-delivery`));
-    expect(e2).toMatchObject({ eligible: true, blocks: [] });
-    // Entrega: só então libera a mão de obra da entrega e vence a cobrança.
-    ok(
-      await post(s.admin, `/api/v1/service-orders/${s.so.id}/deliver`, { note: 'Cliente buscou' }),
-    );
-    expect(await k.stage(s.sofa.id)).toBe('ENTREGUE');
-    expect(await status(laborE.id)).toBe('LIBERADO');
-    expect(
-      ok(await s.admin.get(`/api/v1/finance/receivables/${rec.id}`)).effectiveDueDate,
-    ).not.toBeNull();
-  });
-
-  it('ligada: fluxo de sempre; mudar o interruptor não altera o que já foi decidido', async () => {
-    const s = await k.scenario();
-    // Sofá aprovado com a embalagem LIGADA: embalagem pendente continua exigida mesmo depois de
-    // desligar o interruptor.
-    await k.finish(s.tablets.Ricardo!, s.sofaTask.id);
-    await k.approveOpen(s, s.sofa.id);
-    expect(await k.stage(s.sofa.id)).toBe('AGUARDANDO_EMBALAGEM');
-    ok(await setModule(s.admin, 'embalagem', false));
-    expect(await k.stage(s.sofa.id)).toBe('AGUARDANDO_EMBALAGEM');
-    const elig = ok(await s.admin.get(`/api/v1/service-orders/${s.so.id}/direct-delivery`));
-    expect(JSON.stringify(elig.blocks)).toMatch(/embalagem/i);
-    await k.pack(s, s.sofa.id);
-    expect(await k.stage(s.sofa.id)).toBe('PRONTA_ENTREGA');
-
-    // Poltronas aprovadas com a embalagem DESLIGADA; religar não volta a exigir.
-    await k.finish(s.tablets.Márcio!, s.poltronaTask.id);
-    await k.approveOpen(s, s.poltronas.id);
-    expect(await k.stage(s.poltronas.id)).toBe('PRONTA_ENTREGA');
-    ok(await setModule(s.admin, 'embalagem', true));
-    // Recalcula (ex.: qualquer evento da peça) e continua pronta.
-    expect(await k.stage(s.poltronas.id)).toBe('PRONTA_ENTREGA');
-    const audit = await db().auditLog.findMany({
-      where: { action: { startsWith: 'company.module' } },
-    });
-    expect(audit.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('quem não gerencia a empresa não muda o interruptor', async () => {
-    const s = await k.scenario();
-    for (const c of [s.tablets.Thiago!, s.tablets.Ricardo!]) {
-      const r = await c.req(
-        'PUT',
-        '/api/company/modules/embalagem',
-        { enabled: false, version: 0 },
-        { 'idempotency-key': idemKey() },
-      );
-      expect([401, 403]).toContain(r.status);
-    }
-    expect(await db().moduleSetting.count({ where: { key: 'embalagem' } })).toBe(0);
   });
 });

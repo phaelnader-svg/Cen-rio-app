@@ -302,7 +302,7 @@ export async function loadAttention(
     });
   }
 
-  // Fase 10: qualidade (inspeção sem inspetor, correções, embalagem sem responsável, peças
+  // Fase 10: qualidade (inspeção sem inspetor, correções, peças
   // prontas sem entrega) e logística (ocorrências, entregas frustradas).
   const quality = await qualityAttention(prisma);
   // A tarefa de correção já aparece no item da qualidade: sem "prazo interno" repetido.

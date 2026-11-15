@@ -7,10 +7,10 @@ import { openServiceOrder } from './os-helpers';
  * Reformulação, Fase 3 — pela tela:
  *  1. o gestor que executou a peça aprova com "Tudo conforme" SÓ depois de justificar; a
  *     justificativa aparece na inspeção e a auditoria a mostra como exceção destacada;
- *  2. com a embalagem desligada, a peça aprovada fica "Pronta para entrega" (sem embalagem) e o
+ *  2. sem embalagem (removida na Reformulação S1), a peça aprovada fica "Pronta para entrega" e o
  *     estado geral aparece igual na lista de OS e no cabeçalho;
  *  3. programação semanal numa tela só (endereços antigos abrem a aba certa) e menu enxuto.
- * Dados fictícios. O interruptor da embalagem é religado no fim (outros specs dependem dele).
+ * Dados fictícios.
  * Prefixo "zz-": usa o plano da semana atual, que `production.spec` espera ainda não existir.
  */
 const origin = `http://localhost:${E2E.webPort}`;
@@ -31,18 +31,13 @@ async function call(page: Page, method: 'POST' | 'GET' | 'PUT', path: string, da
   expect(r.ok(), `${method} ${path}: ${await r.text()}`).toBe(true);
   return r.json();
 }
-async function setPackaging(page: Page, enabled: boolean) {
-  const list = (await call(page, 'GET', '/api/company/modules')) as {
-    key: string;
-    version: number;
-    enabled: boolean;
-  }[];
-  const m = list.find((x) => x.key === 'embalagem')!;
-  if (m.enabled !== enabled)
-    await call(page, 'PUT', '/api/company/modules/embalagem', { enabled, version: m.version });
+/** Reformulação S1: o interruptor de embalagem não existe mais (não há o que desligar). */
+async function setPackaging(page: Page, _enabled: boolean) {
+  const list = (await call(page, 'GET', '/api/company/modules')) as { key: string }[];
+  expect(list.map((x) => x.key)).not.toContain('embalagem');
 }
 
-test('qualidade: autoaprovação justificada do gestor, "Tudo conforme" e embalagem desligada', async ({
+test('qualidade: autoaprovação justificada do gestor, "Tudo conforme" e pronta sem embalagem', async ({
   page,
 }) => {
   test.setTimeout(180_000);
@@ -124,7 +119,7 @@ test('qualidade: autoaprovação justificada do gestor, "Tudo conforme" e embala
     await expect(page.getByTestId('self-approval-note')).toContainText(
       'Inspetor ausente; conferido com o cliente',
     );
-    await expect(page.getByText('Embalagem dispensada')).toBeVisible();
+    await expect(page.getByText(/Embalagem/)).toHaveCount(0);
 
     // Auditoria: exceção destacada.
     await page.goto('/painel/auditoria');
@@ -147,7 +142,7 @@ test('qualidade: autoaprovação justificada do gestor, "Tudo conforme" e embala
     await expect(page.getByTestId(`so-${so.code}`)).not.toContainText('Aberta');
     const piece = await call(page, 'GET', `/api/v1/pieces/${sofa.id}`);
     expect(piece.stage).toBe('PRONTA_ENTREGA');
-    expect(piece.packaging).toBeNull();
+    expect(piece).not.toHaveProperty('packaging');
   } finally {
     await setPackaging(page, true);
   }
@@ -218,7 +213,7 @@ test('desfazer a entrega direta: prévia, justificativa e histórico preservado'
     for (const t of added.tasks as { id: string; serviceOrder: { id: string } }[])
       if (t.serviceOrder.id === so.id)
         await call(page, 'POST', `/api/v1/production-tasks/${t.id}/cancel`, { reason: 'Fora' });
-    // As duas peças executadas pelo gestor, aprovadas com justificativa (embalagem desligada).
+    // As duas peças executadas pelo gestor, aprovadas com justificativa (sem embalagem, S1).
     for (const item of so.items) {
       const task = await call(page, 'POST', `/api/v1/production-plans/${plan.id}/tasks`, {
         serviceOrderId: so.id,

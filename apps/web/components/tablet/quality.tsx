@@ -13,31 +13,19 @@ import {
   INSPECTION_STATUS_LABEL,
   PIECE_TYPE_LABEL,
   PRIORITY_LABEL,
-  PROTECTIONS,
-  PROTECTION_LABEL,
   SELF_APPROVAL_REASON_MIN,
   SERVICE_TYPE_LABEL,
   TASK_STATUS_LABEL,
-  type Protection,
 } from '@cenario/shared';
 import clsx from 'clsx';
-import {
-  BadgeCheck,
-  Camera,
-  Check,
-  ChevronRight,
-  Minus,
-  PackageCheck,
-  ThumbsDown,
-  X,
-} from 'lucide-react';
+import { BadgeCheck, Camera, Check, ChevronRight, Minus, ThumbsDown, X } from 'lucide-react';
 import { useState } from 'react';
 import { useSend } from '@/components/production/use-send';
 import { Button } from '@/components/ui/button';
 import { Alert, Spinner } from '@/components/ui/misc';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
-import { useInspection, useInspections, useLocations, usePackagingRecord } from '@/lib/quality';
+import { useInspection, useInspections } from '@/lib/quality';
 import { uploadPhoto } from '@/lib/photos';
 import { useOnline } from './tasks';
 
@@ -488,8 +476,8 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
                 onChange={(e) => setReason(e.target.value)}
               />
               <p className="text-sm text-ink-muted">
-                A correção vai para o responsável pela peça com prioridade alta; a embalagem fica
-                bloqueada até a nova inspeção.
+                A correção vai para o responsável pela peça com prioridade alta; a peça só fica
+                pronta para entrega depois da nova inspeção.
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Button
@@ -524,9 +512,6 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
               Autoaprovação do gestor — justificativa: {i.selfApprovalReason}
             </span>
           )}
-          {i.status === 'APROVADA' && !i.packagingRequired && (
-            <span className="mt-1 block">Embalagem dispensada (desligada na aprovação).</span>
-          )}
         </Alert>
       )}
 
@@ -550,138 +535,25 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
   );
 }
 
-// ─────────────────────────── Correção e embalagem (dentro da tarefa) ───────────────────────────
+// ─────────────────────────── Correção (dentro da tarefa) ───────────────────────────
 
 export function QualityInfo({ t, large }: { t: ProductionTaskDto; large?: boolean }) {
-  if (!t.qualityFor) return null;
+  if (t.qualityFor?.kind !== 'CORRECAO') return null;
   const q = t.qualityFor;
   return (
     <span
       className={clsx(
-        'mt-2 block rounded-xl px-3 py-2',
-        q.kind === 'CORRECAO' ? 'bg-danger-50 text-danger-600' : 'bg-brand-50 text-brand-700',
+        'mt-2 block rounded-xl bg-danger-50 px-3 py-2 text-danger-600',
         large ? 'text-lg' : 'text-sm',
       )}
       data-testid="quality-info"
     >
-      {q.kind === 'CORRECAO' ? (
-        <>
-          Correção da inspeção {q.code}: {q.note}
-          {q.defects.length > 0 && (
-            <span className="block">
-              Defeitos:{' '}
-              {q.defects.map((d) => `${d.label}${d.note ? ` — ${d.note}` : ''}`).join('; ')}
-            </span>
-          )}
-        </>
-      ) : (
-        <>Embalagem liberada pela aprovação {q.code}</>
+      Correção da inspeção {q.code}: {q.note}
+      {q.defects.length > 0 && (
+        <span className="block">
+          Defeitos: {q.defects.map((d) => `${d.label}${d.note ? ` — ${d.note}` : ''}`).join('; ')}
+        </span>
       )}
     </span>
-  );
-}
-
-/** Conclusão da embalagem: proteção usada e local onde a peça ficou (fotos opcionais). */
-export function PackagingPanel({ packagingId }: { packagingId: string }) {
-  const q = usePackagingRecord(packagingId);
-  const locations = useLocations();
-  const online = useOnline();
-  const { m, error } = useSend();
-  const [protection, setProtection] = useState<Protection | null>(null);
-  const [locationId, setLocationId] = useState('');
-  const [notes, setNotes] = useState('');
-  const [key] = useState(newIdempotencyKey);
-  if (q.isPending) return <Spinner />;
-  if (q.isError) return null;
-  const p = q.data;
-  if (p.status === 'CONCLUIDA')
-    return (
-      <Alert tone="ok" title="Embalagem concluída">
-        {p.protection ? PROTECTION_LABEL[p.protection] : ''} · {p.location?.label}
-      </Alert>
-    );
-  if (p.status !== 'PENDENTE' && p.status !== 'EM_ANDAMENTO')
-    return (
-      <Alert tone="warn" title="Embalagem suspensa">
-        {p.invalidReason ?? 'Aguarde nova aprovação da qualidade.'}
-      </Alert>
-    );
-  const active = (locations.data ?? []).filter((l) => l.active);
-  return (
-    <section
-      className="space-y-4 rounded-2xl border border-line bg-subtle p-5"
-      data-testid="packaging-panel"
-    >
-      <h2 className="flex items-center gap-2 text-xl font-semibold">
-        <PackageCheck className="size-6" aria-hidden /> Concluir embalagem ({p.code})
-      </h2>
-      <div>
-        <p className="mb-2 text-base font-medium">Proteção usada</p>
-        <div className="flex flex-wrap gap-2">
-          {PROTECTIONS.map((x) => (
-            <Button
-              key={x}
-              size="lg"
-              variant={protection === x ? 'primary' : 'secondary'}
-              onClick={() => setProtection(x)}
-              aria-pressed={protection === x}
-            >
-              {PROTECTION_LABEL[x]}
-            </Button>
-          ))}
-        </div>
-      </div>
-      <div>
-        <label className="mb-2 block text-base font-medium" htmlFor="packaging-location">
-          Onde a peça ficou
-        </label>
-        <select
-          id="packaging-location"
-          className="input input-lg"
-          value={locationId}
-          onChange={(e) => setLocationId(e.target.value)}
-        >
-          <option value="">Escolha o local</option>
-          {active.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="mb-2 block text-base font-medium" htmlFor="packaging-notes">
-          Observações (opcional)
-        </label>
-        <textarea
-          id="packaging-notes"
-          className="input input-lg min-h-16"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-        />
-      </div>
-      <PhotoButton entityType="PACKAGING" entityId={p.id} />
-      {error && <Alert tone="danger">{error}</Alert>}
-      <Button
-        size="xl"
-        className="w-full"
-        disabled={!online || !protection || !locationId}
-        loading={m.isPending}
-        icon={<PackageCheck className="size-6" aria-hidden />}
-        onClick={() =>
-          m.mutate({
-            run: () =>
-              api(`/api/v1/packaging/${p.id}/complete`, {
-                method: 'POST',
-                body: { protection, locationId, notes: notes.trim() || null, version: p.version },
-                idempotencyKey: key,
-              }),
-            ok: 'Embalagem concluída.',
-          })
-        }
-      >
-        Concluir embalagem
-      </Button>
-    </section>
   );
 }

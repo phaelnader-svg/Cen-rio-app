@@ -283,9 +283,9 @@ export const PERMISSIONS = {
   },
   'qualidade.gerenciar': {
     group: 'qualidade',
-    label: 'Gerenciar qualidade e embalagem',
+    label: 'Gerenciar qualidade',
     description:
-      'Consultar todas as inspeções, aprovar diretamente, designar substitutos, autorizar o executor, acompanhar correções, configurar checklists e localizações e distribuir embalagens (gestor).',
+      'Consultar todas as inspeções, aprovar diretamente, designar substitutos, autorizar o executor, acompanhar correções, configurar checklists e localizações (gestor).',
     critical: true,
   },
   'entregas.ver': {

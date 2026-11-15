@@ -49,8 +49,8 @@ import { deliveryDomainEvent, deliveryEvent } from './shipping';
  * informado" no fechamento semanal, roteiro e filas da logística.
  *
  * Regras de elegibilidade = as da logística (mesma função): tarefas obrigatórias concluídas,
- * inspeção de qualidade aprovada, sem correção aberta, embalagem concluída e sem bloqueio de
- * expedição. A qualidade obrigatória nunca é pulada.
+ * inspeção de qualidade aprovada, sem correção aberta e sem bloqueio de expedição (S1: sem
+ * embalagem). A qualidade obrigatória nunca é pulada.
  *
  * Concorrência e repetição: trava a OS e as peças (ordem fixa), e uma repetição depois de
  * concluída devolve `created: false` sem gravar nada. A rota também exige chave de idempotência

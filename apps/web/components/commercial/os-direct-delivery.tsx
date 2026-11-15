@@ -14,7 +14,7 @@ import { RevertDirectDelivery } from './revert-direct-delivery';
 
 /**
  * Reformulação, Fase 1 — "Marcar como entregue" direto na OS.
- * Mesmas exigências da logística (qualidade aprovada, embalagem, sem correção aberta); grava a
+ * Mesmas exigências da logística (qualidade aprovada, sem correção aberta; S1: sem embalagem); grava a
  * entrega como "confirmação direta pela OS", sem viagem. Fase 3 (D5): a última entrega direta pode
  * ser desfeita, com prévia e justificativa, por quem tem entregas.gerenciar E financeiro.gerenciar.
  */

@@ -6,7 +6,6 @@ import {
   deliveryCode,
   inspectionCode,
   logisticsCode,
-  packagingCode,
   taskCode,
   type AttentionItemDto,
   type LogisticsKind,
@@ -94,32 +93,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       deadline: dateOnly(c?.dueDate ?? null),
       nextActions: ['Acompanhar a correção; nova inspeção é obrigatória'],
       link: `/painel/qualidade/inspecoes/${i.id}`,
-    });
-  }
-
-  // Embalagens aprovadas sem responsável.
-  const unassigned = await prisma.packagingRecord.findMany({
-    where: { status: 'PENDENTE', assigneeUserId: null },
-    include: { serviceOrderItem: { include: pieceInclude } },
-  });
-  for (const r of unassigned) {
-    const p = r.serviceOrderItem;
-    items.push({
-      ...base,
-      key: `QUALIDADE:embalagem:${r.id}`,
-      type: 'QUALIDADE',
-      category: 'ACAO',
-      title: `${packagingCode(r.number)} · ${pieceCode(p)} · ${p.description}`,
-      description: 'Aprovada pela qualidade, sem ninguém disponível para embalar.',
-      serviceOrder: { id: p.serviceOrder.id, code: serviceOrderCode(p.serviceOrder.number) },
-      employee: null,
-      priority: p.serviceOrder.priority,
-      status: r.status,
-      statusLabel: 'Aguardando responsável',
-      at: r.createdAt.toISOString(),
-      deadline: dateOnly(p.serviceOrder.promisedDate),
-      nextActions: ['Designar quem embala (tapeceiro só com autorização)'],
-      link: `/painel/qualidade?tab=packaging&foco=${r.id}`,
     });
   }
 

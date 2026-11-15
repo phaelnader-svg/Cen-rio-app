@@ -115,7 +115,7 @@ describe('F10-19 — presença e ocorrências', () => {
 });
 
 describe('F10-19 — qualidade e entrega', () => {
-  it('inspeção, embalagem, pronto e entrega: cada etapa vencida resolve o próprio aviso', async () => {
+  it('inspeção, pronto e entrega: cada etapa vencida resolve o próprio aviso (S1: sem embalagem)', async () => {
     const s = await k.scenario();
     await k.finish(s.tablets.Ricardo!, s.sofaTask.id);
     const inspNotices = () =>
@@ -126,10 +126,8 @@ describe('F10-19 — qualidade e entrega', () => {
     await k.approveOpen(s, s.sofa.id);
     // Aprovada: nenhum aviso de inspeção da peça continua pedindo ação.
     expect((await inspNotices()).every((n) => n.resolvedAt !== null)).toBe(true);
-    const packNotices = () => db().notification.findMany({ where: { kind: 'EMBALAGEM_LIBERADA' } });
-    expect((await packNotices()).some((n) => n.resolvedAt === null)).toBe(true);
-    await k.pack(s, s.sofa.id);
-    expect((await packNotices()).every((n) => n.resolvedAt !== null)).toBe(true);
+    // Reformulação S1: nenhum aviso de embalagem nasce.
+    expect(await db().notification.count({ where: { kind: 'EMBALAGEM_LIBERADA' } })).toBe(0);
     expect(await k.stage(s.sofa.id)).toBe('PRONTA_ENTREGA');
     const ready = () =>
       db().notification.findMany({

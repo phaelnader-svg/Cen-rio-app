@@ -5,18 +5,21 @@ import { z } from 'zod';
  * nova imagem e sem apagar nada (o histórico continua legível). Fonte única: o servidor decide
  * pela tabela `module_settings`; a interface só esconde o que o servidor já recusa.
  *
- * Ausência de registro = valor padrão. Logística, ajuda e embalagem vêm "ligadas" (comportamento
+ * Ausência de registro = valor padrão. Logística e ajuda vêm "ligadas" (comportamento
  * anterior até alguém desligar). Etapa E1 da correção da reformulação: as travas de materiais
  * ("materiais") vêm DESLIGADAS — a produção não depende do processo formal de compras, medições,
  * aprovações, recebimentos ou reservas; quem quiser esse controle liga em Empresa → Funcionalidades.
  *
- * `configurable: false` = a chave existe mas ainda não pode ser alterada (nenhuma hoje: a
- * embalagem passou a ser configurável na Reformulação, Fase 3).
+ * `configurable: false` = a chave existe mas ainda não pode ser alterada (nenhuma hoje).
  *
  * Fase 1: a logística passou a ser configurável (a entrega direta pela OS substitui a operação de
  * entregas) e "materiais" controla as travas de materiais na liberação da produção.
  */
-export const MODULE_KEYS = ['logistica', 'ajuda', 'embalagem', 'materiais'] as const;
+/**
+ * Reformulação S1: "embalagem" deixou de existir (a embalagem não é mais etapa). Um registro antigo
+ * com essa chave em `module_settings` é ignorado por `resolveModules` (chave desconhecida).
+ */
+export const MODULE_KEYS = ['logistica', 'ajuda', 'materiais'] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
 export interface ModuleDefinition {
@@ -38,13 +41,6 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
     label: 'Pedidos de ajuda',
     description:
       'Pedir ajudante, ajuda urgente e apoio prolongado pelo tablet, com fila e avisos ao gestor. Desligada, a produção continua normal e o histórico fica só para consulta.',
-    defaultEnabled: true,
-    configurable: true,
-  },
-  embalagem: {
-    label: 'Embalagem obrigatória',
-    description:
-      'Ligada, toda peça aprovada na qualidade passa pela embalagem antes de ficar "pronta para entrega". Desligada, a peça fica pronta para entrega logo após a aprovação. Vale para as aprovações feitas a partir da mudança: embalagens já abertas continuam e nada do histórico muda.',
     defaultEnabled: true,
     configurable: true,
   },
@@ -86,7 +82,6 @@ export const MODULE_NOTIFICATION_KINDS: Record<ModuleKey, readonly string[]> = {
     'AJUDA_CANCELADA',
     'AJUDA_CONCLUIDA',
   ],
-  embalagem: [],
   materiais: [],
 };
 

@@ -168,25 +168,18 @@ describe('Central — o que faltava (F10-04/05/06/09/13f/13g, F1-15a)', () => {
     expect(item(await attention(s.admin), `PRAZO:${s.sofaTask.id}`)!.category).toBe('CRITICO');
   });
 
-  it('F10-13g: embalagem aprovada sem responsável aparece com link para ela; designada, sai', async () => {
+  it('F10-13g (Reformulação S1): a Central não pede embalagem — nem para um registro antigo sem responsável', async () => {
     const s = await k.scenario();
     await k.finish(s.tablets.Ricardo!, s.sofaTask.id);
-    await k.approveOpen(s, s.sofa.id);
-    const rec = await db().packagingRecord.findFirstOrThrow({ where: { status: 'PENDENTE' } });
-    // Ninguém disponível para embalar.
-    await db().packagingRecord.update({ where: { id: rec.id }, data: { assigneeUserId: null } });
+    const insp = await k.approveOpen(s, s.sofa.id);
+    expect(await db().packagingRecord.count()).toBe(0);
+    // Registro gravado pela versão anterior (pendente, sem responsável): só histórico.
+    const rec = await db().packagingRecord.create({
+      data: { serviceOrderItemId: s.sofa.id, serviceOrderId: s.so.id, inspectionId: insp.id },
+    });
     const a = await attention(s.admin, '?type=QUALIDADE');
-    expect(item(a, `QUALIDADE:embalagem:${rec.id}`)).toMatchObject({
-      category: 'ACAO',
-      link: `/painel/qualidade?tab=packaging&foco=${rec.id}`,
-    });
-    await db().packagingRecord.update({
-      where: { id: rec.id },
-      data: { assigneeUserId: s.ids.joao },
-    });
-    expect(item(await attention(s.admin, '?type=QUALIDADE'), `QUALIDADE:embalagem:${rec.id}`)).toBe(
-      undefined,
-    );
+    expect(item(a, `QUALIDADE:embalagem:${rec.id}`)).toBe(undefined);
+    expect(JSON.stringify(a)).not.toMatch(/tab=packaging/);
   });
 
   it('F1-15a: divergência no recebimento de PEÇA de cliente aparece na Central enquanto o serviço está ativo', async () => {

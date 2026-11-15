@@ -97,7 +97,7 @@ export function DeliveriesPage() {
     <>
       <PageHeader
         title="Expedição e entregas"
-        description="Peças prontas (inspeção aprovada, correções encerradas, embalagem concluída e sem bloqueio), agenda de entregas e ocorrências. Só o gestor agenda e confirma; nada é agendado sozinho."
+        description="Peças prontas (inspeção aprovada, correções encerradas e sem bloqueio), agenda de entregas e ocorrências. Só o gestor agenda e confirma; nada é agendado sozinho."
       />
       <Tabs
         tabs={[

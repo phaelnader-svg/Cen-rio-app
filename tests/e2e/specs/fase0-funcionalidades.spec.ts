@@ -4,7 +4,7 @@ import { loginAdmin } from './helpers';
 /**
  * Reformulação, Fase 0 — o gestor desliga e religa os pedidos de ajuda em Empresa →
  * Funcionalidades. Desligados: somem do menu e a tela de histórico avisa que estão desativados.
- * Embalagem aparece, mas não pode ser alterada ainda; a logística passou a ser configurável na
+ * Reformulação S1: a embalagem não existe mais (nenhum interruptor); a logística passou a ser configurável na
  * Fase 1 (coberta em aa-fase1-materiais-estoque-entrega.spec.ts) e continua ligada por padrão.
  * Termina religado (os outros specs usam a ajuda).
  */
@@ -19,9 +19,8 @@ test('funcionalidades: desligar e religar os pedidos de ajuda pelo painel', asyn
   // Fase 1: a logística passou a ser configurável — habilitada para o gestor e ligada por padrão.
   await expect(page.getByTestId('module-logistica-toggle')).toBeEnabled();
   await expect(page.getByTestId('module-logistica-toggle')).toBeChecked();
-  // Fase 3: a embalagem passou a ser configurável (ligada por padrão).
-  await expect(page.getByTestId('module-embalagem-toggle')).toBeEnabled();
-  await expect(page.getByTestId('module-embalagem-toggle')).toBeChecked();
+  // Reformulação S1: não há interruptor de embalagem.
+  await expect(page.getByTestId('module-embalagem-toggle')).toHaveCount(0);
   const help = page.getByTestId('module-ajuda-toggle');
   await expect(help).toBeChecked();
 

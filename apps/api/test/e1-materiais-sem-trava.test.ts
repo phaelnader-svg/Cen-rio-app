@@ -114,7 +114,8 @@ describe('E1 — a produção não depende do processo formal de materiais', () 
       defaultEnabled: false,
     });
     // As demais funcionalidades não mudaram nesta etapa.
-    for (const k of ['logistica', 'ajuda', 'embalagem'])
+    // (Reformulação S1: a embalagem deixou de existir.)
+    for (const k of ['logistica', 'ajuda'])
       expect(list.find((m) => m.key === k)).toMatchObject({ enabled: true });
     // A leitura do tablet/painel (só booleanos) também reflete o padrão.
     expect(ok<J>(await admin.get('/api/v1/modules')).materiais).toBe(false);

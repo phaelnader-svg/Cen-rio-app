@@ -37,7 +37,6 @@ import { parseDateOnly } from '../commercial/common';
 import { idParams } from '../presenters';
 import { refreshAvailabilityOfUser } from '../attendance/common';
 import { qualityTaskClosed } from '../quality/inspections';
-import { packagingStarted } from '../quality/packaging';
 import { notify, taskNotice } from '../notifications/notify';
 import { readinessOf } from '../purchasing/common';
 import {
@@ -976,7 +975,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           // Fase 9: não retoma enquanto uma ocorrência aberta impede a tarefa.
           resume: own && t.status === 'PAUSADA' && !(await hasBlockingIssue(prisma, t.id)),
           progress: own && (t.status === 'EM_EXECUCAO' || t.status === 'PAUSADA'),
-          complete: own && t.status === 'EM_EXECUCAO' && t.activity !== 'EMBALAGEM',
+          complete: own && t.status === 'EM_EXECUCAO',
           manage: canManage(request),
         },
       };
@@ -1074,7 +1073,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_STARTED, u);
         if (t.supportForTaskId) await supportStarted(tx, actor, t.id, now);
         if (t.issueId) await actionStarted(tx, actor, t.id);
-        if (t.activity === 'EMBALAGEM') await packagingStarted(tx, actor, t.id);
         return;
       }
       if (action === 'pause') {
@@ -1173,11 +1171,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       }
       // Conclusão
       if (t.status === 'CONCLUIDA') return; // conclusão repetida: sem novos eventos nem liberações
-      // Fase 10: a embalagem conclui pela tela própria (proteção, local e aprovação vigente).
-      if (t.activity === 'EMBALAGEM')
-        throw Errors.business(
-          'Conclua a embalagem pela tela de embalagem (proteção usada e local da peça).',
-        );
+      // Reformulação S1: uma tarefa de embalagem antiga (só histórico) conclui como qualquer outra;
+      // nada da embalagem é exigido nem gravado.
       if (t.status !== 'EM_EXECUCAO')
         throw Errors.business('Só tarefas em execução podem ser concluídas.');
       // Registro adicional só quando a etapa exige (regra técnica definida pelo gestor).

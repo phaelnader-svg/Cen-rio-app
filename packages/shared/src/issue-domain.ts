@@ -139,7 +139,7 @@ export const ATTENTION_TYPE_LABEL: Record<AttentionType, string> = {
   PRESENCA: 'Presença',
   IMPEDIMENTO: 'Pausa por impedimento',
   PRAZO: 'Prazo interno da tarefa',
-  QUALIDADE: 'Qualidade e embalagem',
+  QUALIDADE: 'Qualidade',
   LOGISTICA: 'Entregas e logística',
   RASCUNHO_ANTIGO: 'Rascunho de semana passada',
   PRAZO_OS: 'Prazo da OS',

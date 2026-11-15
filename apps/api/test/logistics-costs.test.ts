@@ -995,19 +995,10 @@ describe('Entrega completa (CA6-02, 05, 07 pela entrega)', () => {
       (await post(thiago, `/api/v1/quality/inspections/${i.id}/approve`, { version: i.version }))
         .status,
     ).toBe(200);
-    const pack = await db().packagingRecord.findFirstOrThrow({
-      where: { serviceOrderItemId: so.items[0].id },
-    });
-    const loc = (await db().itemLocation.findUniqueOrThrow({ where: { key: 'EXPEDICAO' } })).id;
+    // Reformulação S1: sem embalagem — a aprovação já deixa a peça pronta para entrega.
     expect(
-      (
-        await post(joao, `/api/v1/packaging/${pack.id}/complete`, {
-          protection: 'PLASTICO_BOLHA',
-          locationId: loc,
-          version: pack.version,
-        })
-      ).status,
-    ).toBe(200);
+      await db().packagingRecord.count({ where: { serviceOrderItemId: so.items[0].id } }),
+    ).toBe(0);
     const customerId = (await db().serviceOrder.findUniqueOrThrow({ where: { id: so.id } }))
       .customerId;
     const d = await post(admin, '/api/v1/deliveries', {

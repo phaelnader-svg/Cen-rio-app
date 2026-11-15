@@ -9,8 +9,6 @@ import type {
   InspectionStatus,
   LogisticsKind,
   LogisticsStatus,
-  PackagingStatus,
-  Protection,
   ReadinessCheck,
   ReturnStatus,
 } from './quality-domain';
@@ -89,8 +87,6 @@ export interface InspectionDto {
   decisionNote: string | null;
   /** Reformulação Fase 3 (D4): justificativa do gestor que aprovou a própria execução. */
   selfApprovalReason: string | null;
-  /** Reformulação Fase 3: a embalagem era exigida quando a inspeção foi aprovada. */
-  packagingRequired: boolean;
   invalidatedAt: string | null;
   invalidReason: string | null;
   items: InspectionItemDto[];
@@ -127,26 +123,6 @@ export interface QualityTemplateDto {
   version: number;
 }
 
-export interface PackagingDto {
-  id: string;
-  number: number;
-  code: string;
-  status: PackagingStatus;
-  piece: PieceRefDto;
-  inspectionCode: string;
-  assignee: PersonRefDto | null;
-  tapeceiroAuthorized: boolean;
-  taskId: string | null;
-  protection: Protection | null;
-  location: { id: string; label: string } | null;
-  notes: string | null;
-  startedAt: string | null;
-  completedAt: string | null;
-  completedBy: string | null;
-  invalidReason: string | null;
-  version: number;
-}
-
 export interface LocationDto {
   id: string;
   key: string;
@@ -159,7 +135,6 @@ export interface LocationDto {
 export interface PieceStatusDto extends PieceRefDto {
   readiness: { ready: boolean; missing: ReadinessCheck[] };
   inspection: { id: string; code: string; status: InspectionStatus; round: number } | null;
-  packaging: { id: string; code: string; status: PackagingStatus } | null;
   delivery: { id: string; code: string; status: DeliveryStatus; scheduledDate: string } | null;
   labelPayload: string;
   history?: QualityHistoryDto[];

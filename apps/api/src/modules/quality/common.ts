@@ -13,14 +13,12 @@ import {
   type FulfillmentStage,
   type InspectionStatus,
   type NotificationKind,
-  type PackagingStatus,
   type Permission,
   type PieceRefDto,
   type SubstituteReason,
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { appendEvent } from '../../core/events/append';
-import { moduleEnabled } from '../../core/modules';
 import { loadUserPermissions } from '../../core/permissions';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
@@ -360,7 +358,6 @@ export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
   const inspection = await db.qualityInspection.findFirst({
     where: { serviceOrderItemId: itemId, status: { not: 'CANCELADA' } },
     orderBy: { round: 'desc' },
-    include: { packaging: true },
   });
   const openCorrections = await db.productionTask.count({
     where: { activity: 'CORRECAO', inspection: { serviceOrderItemId: itemId }, status: OPEN_TASK },
@@ -395,18 +392,8 @@ export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
       requiredTasksDone,
       inspection: (inspection?.status ?? null) as InspectionStatus | null,
       openCorrections,
-      // Fase 3: aprovada com a embalagem desligada = embalagem dispensada (vale como concluída).
-      packaging: (inspection?.status === 'APROVADA'
-        ? inspection.packagingRequired
-          ? (inspection.packaging?.status ?? null)
-          : 'DISPENSADA'
-        : null) as PackagingStatus | 'DISPENSADA' | null,
+      // Reformulação S1: a embalagem não entra mais na prontidão (nem a antiga, só histórico).
       shippingBlock,
-      // Fase 3: aprovada = o que ficou gravado; antes disso, o interruptor atual.
-      packagingRequired:
-        inspection?.status === 'APROVADA'
-          ? inspection.packagingRequired
-          : await moduleEnabled(db, 'embalagem'),
       cancelled: item.serviceOrder.status === 'CANCELADA',
       returned: item.fulfillmentStage === 'DEVOLVIDA',
       delivered: delivered > 0,
@@ -425,7 +412,7 @@ export async function readinessOfItem(db: Tx | PrismaClient, itemId: string) {
 
 /**
  * Recalcula a etapa da peça (determinística, a partir do banco). Ao chegar em "Pronta para
- * entrega", avisa o gestor uma única vez por embalagem — nunca agenda nada sozinho.
+ * entrega", avisa o gestor uma única vez por aprovação — nunca agenda nada sozinho.
  */
 export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: string) {
   const s = await readinessOfItem(tx, itemId);
@@ -466,9 +453,8 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
     'service_order_item',
   );
   await resolveStageNotices(tx, actor, itemId, before, s.stage);
-  // Uma vez por embalagem; sem embalagem (dispensada, Fase 3), uma vez por aprovação.
-  const readyKey =
-    s.inspection?.packaging?.id ?? (s.inspection?.packagingRequired ? null : s.inspection?.id);
+  // Uma vez por aprovação (S1: sem embalagem).
+  const readyKey = s.inspection?.id;
   if (s.stage === 'PRONTA_ENTREGA' && readyKey) {
     const siblings = await tx.serviceOrderItem.findMany({
       where: { serviceOrderId: updated.serviceOrderId },

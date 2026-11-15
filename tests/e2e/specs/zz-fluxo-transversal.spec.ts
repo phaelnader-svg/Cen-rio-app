@@ -13,7 +13,7 @@ import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
  *   (tablet do João) → OS automática → medição → necessidade → compra → recebimento do material
  *   com conferência técnica (tablet do Thiago) → material liberado → A planejar → publicação →
  *   tablets → início → execução das tarefas do modelo simplificado (João prepara; o titular faz
- *   corte/costura e montagem) → qualidade (Thiago) → embalagem (João) → pronto para entrega →
+ *   corte/costura e montagem) → qualidade (Thiago) → pronto para entrega (S1: sem embalagem) →
  *   entrega real (André) → obrigação financeira (DEVIDO) → Meus Ganhos (PIN, D12) → confirmação
  *   da semana (D13) → pagamento → Central sem as pendências resolvidas.
  *
@@ -448,27 +448,16 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
         )
         .toBe('LIBERADO');
 
-      // ───────────── Embalagem (João) → pronto para entrega ─────────────
+      // ───────────── Aprovada → pronto para entrega (S1: sem embalagem) ─────────────
       await joao.page.reload();
-      const pack = myCard(joao.page, /Embalar/);
-      await expect(pack).toBeVisible();
-      await pack
-        .getByRole('button', { name: /^Abrir/ })
-        .first()
-        .click();
-      await joao.page.getByTestId('task-actions').getByRole('button', { name: 'Iniciar' }).click();
-      const panel = joao.page.getByTestId('packaging-panel');
-      await panel.getByRole('button', { name: 'Plástico bolha' }).click();
-      await panel.getByLabel('Onde a peça ficou').selectOption({ label: 'Expedição' });
-      await panel.getByRole('button', { name: 'Concluir embalagem' }).click();
-      await expect(joao.page.getByText('Embalagem concluída').first()).toBeVisible();
+      await expect(myCard(joao.page, /Embalar/)).toHaveCount(0);
       await setClock(null);
 
       // ───── TRANSIÇÃO 5a (pronto → entrega real): agenda no painel, entrega no celular ─────
       await page.goto('/painel/entregas');
       await page.getByRole('tab', { name: /Prontas para entrega/ }).click();
       const ready = page.getByTestId(`ready-${sofa.code}`);
-      await expect(ready).toContainText('Expedição');
+      await expect(ready).toBeVisible();
       await page
         .getByTestId('ready-pieces')
         .locator('div')

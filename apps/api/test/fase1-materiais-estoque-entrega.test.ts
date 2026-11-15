@@ -732,8 +732,8 @@ describe('Logística desligável e reversível', () => {
       // Etapa E1 (decisão do proprietário): as travas de materiais vêm desligadas por padrão.
       materiais: false,
       ajuda: true,
-      embalagem: true,
     });
+    expect(ok<J>(await admin.get('/api/v1/modules'))).not.toHaveProperty('embalagem'); // S1
     expect(await db().moduleSetting.count()).toBe(0);
   });
 });

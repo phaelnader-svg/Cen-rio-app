@@ -256,7 +256,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           <div className="space-y-6">
             {canDelivery && <OsDirectDelivery serviceOrderId={s.id} />}
             {canQuality && (
-              <Section title="Peças na qualidade, embalagem e entrega" bodyClassName="p-0">
+              <Section title="Peças na qualidade e entrega" bodyClassName="p-0">
                 <OsQualityDelivery serviceOrderId={s.id} />
               </Section>
             )}
@@ -1219,7 +1219,7 @@ function CancelDialog({ so, onClose }: { so: ServiceOrderDto; onClose: () => voi
   );
 }
 
-/** Fase 12: situação de cada peça da OS na qualidade, embalagem e entrega (Fase 10). */
+/** Fase 12: situação de cada peça da OS na qualidade e entrega (Fase 10; S1: sem embalagem). */
 function OsQualityDelivery({ serviceOrderId }: { serviceOrderId: string }) {
   const q = usePieces({ serviceOrderId });
   if (q.isPending) return <Spinner />;
@@ -1247,7 +1247,6 @@ function OsQualityDelivery({ serviceOrderId }: { serviceOrderId: string }) {
               {p.inspection.code} (rodada {p.inspection.round})
             </Link>
           )}
-          {p.packaging && <span className="text-ink-muted">{p.packaging.code}</span>}
           {p.delivery && (
             <Link
               className="text-brand-700 hover:underline"

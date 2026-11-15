@@ -118,7 +118,6 @@ export const taskInclude = {
       },
     },
   },
-  packagingRecord: { select: { id: true } },
 } as const;
 export type TaskRow = Prisma.ProductionTaskGetPayload<{ include: typeof taskInclude }>;
 
@@ -229,14 +228,13 @@ export function toTaskDto(t: TaskRow, timeZone: string): ProductionTaskDto {
         }
       : null,
     qualityFor:
-      t.inspection && (t.activity === 'CORRECAO' || t.activity === 'EMBALAGEM')
+      t.inspection && t.activity === 'CORRECAO'
         ? {
             inspectionId: t.inspection.id,
             code: inspectionCode(t.inspection.number),
-            kind: t.activity,
-            note: t.activity === 'CORRECAO' ? t.inspection.decisionNote : null,
-            defects: t.activity === 'CORRECAO' ? t.inspection.items : [],
-            packagingId: t.packagingRecord?.id ?? null,
+            kind: 'CORRECAO' as const,
+            note: t.inspection.decisionNote,
+            defects: t.inspection.items,
           }
         : null,
     version: t.version,

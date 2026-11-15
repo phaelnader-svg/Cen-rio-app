@@ -32,8 +32,9 @@ describe('estado operacional da peça', () => {
       AGUARDANDO_INSPECAO: 'AGUARDANDO_QUALIDADE',
       EM_INSPECAO: 'AGUARDANDO_QUALIDADE',
       EM_CORRECAO: 'CORRECAO_NECESSARIA',
-      AGUARDANDO_EMBALAGEM: 'EMBALAGEM',
-      EM_EMBALAGEM: 'EMBALAGEM',
+      // S1: etapas de embalagem antigas (só histórico) são lidas como pronta para entrega.
+      AGUARDANDO_EMBALAGEM: 'PRONTA_PARA_ENTREGA',
+      EM_EMBALAGEM: 'PRONTA_PARA_ENTREGA',
       BLOQUEIO_EXPEDICAO: 'PRONTA_PARA_ENTREGA',
       PRONTA_ENTREGA: 'PRONTA_PARA_ENTREGA',
       ENTREGA_AGENDADA: 'PRONTA_PARA_ENTREGA',
@@ -101,7 +102,6 @@ describe('estado operacional da peça', () => {
       requiredTasksDone: 1,
       inspection: 'APROVADA' as const,
       openCorrections: 0,
-      packaging: 'CONCLUIDA' as const,
       shippingBlock: false,
       cancelled: false,
       returned: false,
@@ -112,7 +112,6 @@ describe('estado operacional da peça', () => {
     const of = (o: Partial<typeof base>) =>
       operationalItemState({ stage: computeStage({ ...base, ...o }), tasks: [] }).state;
     expect(of({})).toBe('PRONTA_PARA_ENTREGA');
-    expect(of({ packaging: 'PENDENTE' })).toBe('EMBALAGEM');
     expect(of({ inspection: null })).toBe('AGUARDANDO_QUALIDADE');
     expect(of({ inspection: 'REPROVADA' })).toBe('CORRECAO_NECESSARIA');
     expect(of({ delivered: true })).toBe('ENTREGUE');
@@ -135,9 +134,11 @@ describe('estado operacional da OS', () => {
     expect(operationalOrderState([s('AGUARDANDO_QUALIDADE'), s('CORRECAO_NECESSARIA')]).state).toBe(
       'CORRECAO_NECESSARIA',
     );
-    expect(operationalOrderState([s('PRONTA_PARA_ENTREGA'), s('EMBALAGEM')]).state).toBe(
-      'EMBALAGEM',
+    expect(operationalOrderState([s('PRONTA_PARA_ENTREGA'), s('AGUARDANDO_QUALIDADE')]).state).toBe(
+      'AGUARDANDO_QUALIDADE',
     );
+    // S1: não existe mais o estado "Embalagem".
+    expect(OPERATIONAL_STATES as readonly string[]).not.toContain('EMBALAGEM');
   });
 
   it('sem peças ativas: entregue > devolvida > cancelada; OS cancelada é sempre cancelada', () => {

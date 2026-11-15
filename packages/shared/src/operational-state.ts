@@ -13,7 +13,8 @@ import type { FulfillmentStage } from './quality-domain';
  * - "Aguardando materiais" vem do bloqueio MATERIAIS das tarefas (regra atual de prontidão), não
  *   de marcações por material (Fase 1).
  * - "Entregue" só existe com entrega concluída da logística (regra atual; Fase 1).
- * - Enquanto a embalagem for obrigatória, a peça aprovada passa por EMBALAGEM antes de "pronta".
+ * - Reformulação S1: não há embalagem. A peça aprovada fica "pronta para entrega"; uma peça antiga
+ *   gravada numa etapa de embalagem é lida como pronta (o recálculo grava a etapa nova).
  * - Peça sem tarefa obrigatória publicada = NAO_PLANEJADA (não é presumida "pronta").
  */
 export const OPERATIONAL_STATES = [
@@ -24,7 +25,6 @@ export const OPERATIONAL_STATES = [
   'EM_PRODUCAO',
   'CORRECAO_NECESSARIA',
   'AGUARDANDO_QUALIDADE',
-  'EMBALAGEM',
   'PRONTA_PARA_ENTREGA',
   'EM_ENTREGA',
   'ENTREGUE',
@@ -41,7 +41,6 @@ export const OPERATIONAL_STATE_LABEL: Record<OperationalState, string> = {
   EM_PRODUCAO: 'Em produção',
   CORRECAO_NECESSARIA: 'Correção necessária',
   AGUARDANDO_QUALIDADE: 'Aguardando qualidade',
-  EMBALAGEM: 'Embalagem',
   PRONTA_PARA_ENTREGA: 'Pronta para entrega',
   EM_ENTREGA: 'Em entrega',
   ENTREGUE: 'Entregue',
@@ -64,7 +63,6 @@ export const OPERATIONAL_NEXT_STEP: Record<
   EM_PRODUCAO: { text: 'Acompanhar a produção', area: 'producao' },
   CORRECAO_NECESSARIA: { text: 'Fazer a correção apontada na inspeção', area: 'qualidade' },
   AGUARDANDO_QUALIDADE: { text: 'Inspecionar a qualidade', area: 'qualidade' },
-  EMBALAGEM: { text: 'Embalar as peças', area: 'qualidade' },
   PRONTA_PARA_ENTREGA: { text: 'Entregar ao cliente', area: 'qualidade' },
   EM_ENTREGA: { text: 'Concluir a entrega', area: 'qualidade' },
   ENTREGUE: { text: 'Serviço entregue', area: null },
@@ -84,7 +82,6 @@ export const OPERATIONAL_STATE_TONE: Record<
   EM_PRODUCAO: 'brand',
   CORRECAO_NECESSARIA: 'danger',
   AGUARDANDO_QUALIDADE: 'info',
-  EMBALAGEM: 'info',
   PRONTA_PARA_ENTREGA: 'ok',
   EM_ENTREGA: 'brand',
   ENTREGUE: 'ok',
@@ -101,7 +98,6 @@ const RANK: Record<OperationalState, number> = {
   EM_PRODUCAO: 3,
   CORRECAO_NECESSARIA: 4,
   AGUARDANDO_QUALIDADE: 5,
-  EMBALAGEM: 6,
   PRONTA_PARA_ENTREGA: 7,
   EM_ENTREGA: 8,
   ENTREGUE: 9,
@@ -172,12 +168,12 @@ export function operationalItemState(i: OperationalItemInput): OperationalItemSt
       return { state: 'AGUARDANDO_QUALIDADE', reasons: [] };
     case 'EM_CORRECAO':
       return { state: 'CORRECAO_NECESSARIA', reasons: [] };
-    case 'AGUARDANDO_EMBALAGEM':
-    case 'EM_EMBALAGEM':
-      return { state: 'EMBALAGEM', reasons: [] };
     case 'BLOQUEIO_EXPEDICAO':
       return { state: 'PRONTA_PARA_ENTREGA', reasons: ['BLOQUEIO_EXPEDICAO'] };
+    // Só histórico (S1): etapas de embalagem gravadas antes da remoção valem como "pronta".
     case 'PRONTA_ENTREGA':
+    case 'AGUARDANDO_EMBALAGEM':
+    case 'EM_EMBALAGEM':
       return { state: 'PRONTA_PARA_ENTREGA', reasons: [] };
     case 'ENTREGA_AGENDADA':
       return { state: 'PRONTA_PARA_ENTREGA', reasons: ['ENTREGA_AGENDADA'] };

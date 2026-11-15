@@ -5,11 +5,9 @@ import {
   approveInspectionSchema,
   assignInspectorSchema,
   assignLogisticsOccurrenceSchema,
-  assignPackagingSchema,
   assignPickupLogisticsSchema,
   cancelWithReasonSchema,
   checkInspectionItemSchema,
-  completePackagingSchema,
   confirmReturnSchema,
   createDeliverySchema,
   createReturnSchema,
@@ -84,7 +82,6 @@ import {
   resolveOccurrence,
   toOccurrenceDto,
 } from './logistics';
-import { assignPackaging, completePackaging, packagingInclude, toPackagingDto } from './packaging';
 import {
   cancelReturn,
   confirmReturn,
@@ -117,10 +114,6 @@ import {
 } from '../finance/billing';
 import { setTripParticipants, tripCostTeamProblem } from '../pickups/service';
 
-const PACKAGING_ACCESS = {
-  session: 'any',
-  anyPermissions: ['producao.executar', 'qualidade.gerenciar'],
-} as const;
 const LOCATION_READ = {
   session: 'any',
   anyPermissions: [
@@ -204,6 +197,9 @@ async function pieceStatus(
     : undefined;
   return {
     ...pieceRef(item),
+    // Reformulação S1: etapa calculada agora (sem embalagem). Uma peça antiga ainda gravada numa
+    // etapa de embalagem aparece como pronta, sem gravar nada na leitura.
+    stage: r.stage,
     readiness: r.readiness,
     inspection: r.inspection
       ? {
@@ -211,13 +207,6 @@ async function pieceStatus(
           code: `IQ-${String(r.inspection.number).padStart(5, '0')}`,
           status: r.inspection.status,
           round: r.inspection.round,
-        }
-      : null,
-    packaging: r.inspection?.packaging
-      ? {
-          id: r.inspection.packaging.id,
-          code: `EB-${String(r.inspection.packaging.number).padStart(5, '0')}`,
-          status: r.inspection.packaging.status,
         }
       : null,
     delivery: di
@@ -512,78 +501,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     saveTemplate(r, idParams.parse(r.params).id),
   );
 
-  // ─────────────────────────── Embalagem ───────────────────────────
-
-  app.get('/api/v1/packaging', { config: { access: PACKAGING_ACCESS } }, async (request) => {
-    const q = z
-      .object({ scope: z.enum(['open', 'all', 'mine']).default('open') })
-      .parse(request.query);
-    const manager = isManager(request, 'qualidade.gerenciar');
-    const rows = await prisma.packagingRecord.findMany({
-      where: {
-        ...(q.scope === 'all' ? {} : { status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } }),
-        ...(!manager || q.scope === 'mine' ? { assigneeUserId: request.auth!.userId } : {}),
-      },
-      include: packagingInclude,
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
-    return Promise.all(rows.map((r) => toPackagingDto(prisma, r)));
-  });
-
-  app.get('/api/v1/packaging/:id', { config: { access: PACKAGING_ACCESS } }, async (request) => {
-    const { id } = idParams.parse(request.params);
-    const r = await prisma.packagingRecord.findUnique({ where: { id }, include: packagingInclude });
-    if (!r) throw Errors.notFound('Embalagem');
-    if (!isManager(request, 'qualidade.gerenciar') && r.assigneeUserId !== request.auth!.userId)
-      throw Errors.forbidden();
-    return toPackagingDto(prisma, r);
-  });
-
-  app.post(
-    '/api/v1/packaging/:id/assign',
-    { config: { access: QUALITY_MANAGE } },
-    async (request) => {
-      const { id } = idParams.parse(request.params);
-      const input = assignPackagingSchema.parse(request.body);
-      await prisma.$transaction((tx) => assignPackaging(tx, actorFrom(request), id, input));
-      return toPackagingDto(
-        prisma,
-        await prisma.packagingRecord.findUniqueOrThrow({
-          where: { id },
-          include: packagingInclude,
-        }),
-      );
-    },
-  );
-
-  app.post(
-    '/api/v1/packaging/:id/complete',
-    { config: { access: PACKAGING_ACCESS, idempotent: true } },
-    async (request) => {
-      const { id } = idParams.parse(request.params);
-      const input = completePackagingSchema.parse(request.body);
-      const actor = actorFrom(request);
-      await prisma.$transaction((tx) =>
-        completePackaging(
-          tx,
-          actor,
-          { userId: request.auth!.userId, isManager: isManager(request, 'qualidade.gerenciar') },
-          id,
-          input,
-          device(request),
-        ),
-      );
-      await prisma.$transaction((tx) => refreshAvailabilityOfUser(tx, actor, request.auth!.userId));
-      return toPackagingDto(
-        prisma,
-        await prisma.packagingRecord.findUniqueOrThrow({
-          where: { id },
-          include: packagingInclude,
-        }),
-      );
-    },
-  );
+  // Reformulação S1: as rotas de embalagem (/api/v1/packaging…) deixaram de existir (404).
 
   // ─────────────────────────── Localizações e peças ───────────────────────────
 

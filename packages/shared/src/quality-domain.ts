@@ -256,6 +256,7 @@ export const FULFILLMENT_STAGES = [
   'AGUARDANDO_INSPECAO',
   'EM_INSPECAO',
   'EM_CORRECAO',
+  /** Só histórico (Reformulação S1): `computeStage` não produz mais as duas etapas de embalagem. */
   'AGUARDANDO_EMBALAGEM',
   'EM_EMBALAGEM',
   'BLOQUEIO_EXPEDICAO',
@@ -291,44 +292,23 @@ export interface ReadinessInput {
   inspection: InspectionStatus | null;
   /** Correções (tarefas) ainda não concluídas. */
   openCorrections: number;
-  /**
-   * Situação da embalagem da inspeção aprovada. `DISPENSADA` (Reformulação Fase 3): a inspeção foi
-   * aprovada com o interruptor "embalagem" desligado — vale como concluída.
-   */
-  packaging:
-    | 'PENDENTE'
-    | 'EM_ANDAMENTO'
-    | 'CONCLUIDA'
-    | 'INVALIDADA'
-    | 'CANCELADA'
-    | 'DISPENSADA'
-    | null;
   /** Ocorrência logística aberta que bloqueia a expedição. */
   shippingBlock: boolean;
-  /**
-   * Reformulação Fase 3: a peça vai precisar de embalagem? Depois da aprovação, o que ficou gravado
-   * nela; antes, o interruptor atual. Ausente = sim (comportamento anterior).
-   */
-  packagingRequired?: boolean;
 }
 
-export const READINESS_CHECKS = [
-  'TAREFAS',
-  'INSPECAO',
-  'CORRECOES',
-  'EMBALAGEM',
-  'SEM_BLOQUEIO',
-] as const;
+export const READINESS_CHECKS = ['TAREFAS', 'INSPECAO', 'CORRECOES', 'SEM_BLOQUEIO'] as const;
 export type ReadinessCheck = (typeof READINESS_CHECKS)[number];
 export const READINESS_CHECK_LABEL: Record<ReadinessCheck, string> = {
   TAREFAS: 'Tarefas obrigatórias concluídas',
   INSPECAO: 'Inspeção final aprovada',
   CORRECOES: 'Nenhuma correção obrigatória pendente',
-  EMBALAGEM: 'Embalagem concluída',
   SEM_BLOQUEIO: 'Sem bloqueio crítico de expedição',
 };
 
-/** "Pronto para entrega" exige as cinco condições, sem exceção. */
+/**
+ * "Pronto para entrega" exige as quatro condições, sem exceção. Reformulação S1: a embalagem deixou
+ * de existir como etapa — a peça aprovada na qualidade fica pronta para entrega direto.
+ */
 export function deliveryReadiness(i: ReadinessInput): {
   ready: boolean;
   missing: ReadinessCheck[];
@@ -337,8 +317,6 @@ export function deliveryReadiness(i: ReadinessInput): {
   if (i.requiredTasks === 0 || i.requiredTasksDone < i.requiredTasks) missing.push('TAREFAS');
   if (i.inspection !== 'APROVADA') missing.push('INSPECAO');
   if (i.openCorrections > 0) missing.push('CORRECOES');
-  if (i.packagingRequired !== false && i.packaging !== 'CONCLUIDA' && i.packaging !== 'DISPENSADA')
-    missing.push('EMBALAGEM');
   if (i.shippingBlock) missing.push('SEM_BLOQUEIO');
   return { ready: missing.length === 0, missing };
 }
@@ -364,13 +342,11 @@ export function computeStage(
   if (i.openCorrections > 0 || i.inspection === 'REPROVADA') return 'EM_CORRECAO';
   if (i.inspection === 'EM_ANDAMENTO') return 'EM_INSPECAO';
   if (i.inspection !== 'APROVADA') return 'AGUARDANDO_INSPECAO';
-  if (i.packaging === 'EM_ANDAMENTO') return 'EM_EMBALAGEM';
-  if (i.packaging !== 'CONCLUIDA' && i.packaging !== 'DISPENSADA') return 'AGUARDANDO_EMBALAGEM';
   if (i.shippingBlock) return 'BLOQUEIO_EXPEDICAO';
   return i.scheduled ? 'ENTREGA_AGENDADA' : 'PRONTA_ENTREGA';
 }
 
-// ─────────────────────────── Embalagem e localização ───────────────────────────
+// ───────────── Embalagem (só leitura do histórico, Reformulação S1) e localização ─────────────
 
 export const PACKAGING_STATUSES = [
   'PENDENTE',

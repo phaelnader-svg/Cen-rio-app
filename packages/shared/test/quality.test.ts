@@ -19,7 +19,6 @@ const ready = {
   requiredTasksDone: 2,
   inspection: 'APROVADA' as const,
   openCorrections: 0,
-  packaging: 'CONCLUIDA' as const,
   shippingBlock: false,
 };
 const flags = {
@@ -31,7 +30,7 @@ const flags = {
 };
 
 describe('Fase 10 — regras de qualidade e expedição', () => {
-  it('pronto para entrega exige as cinco condições', () => {
+  it('pronto para entrega exige as quatro condições (S1: sem embalagem)', () => {
     expect(deliveryReadiness(ready)).toEqual({ ready: true, missing: [] });
     expect(
       deliveryReadiness({
@@ -39,10 +38,9 @@ describe('Fase 10 — regras de qualidade e expedição', () => {
         requiredTasksDone: 1,
         inspection: 'REPROVADA',
         openCorrections: 1,
-        packaging: null,
         shippingBlock: true,
       }).missing,
-    ).toEqual(['TAREFAS', 'INSPECAO', 'CORRECOES', 'EMBALAGEM', 'SEM_BLOQUEIO']);
+    ).toEqual(['TAREFAS', 'INSPECAO', 'CORRECOES', 'SEM_BLOQUEIO']);
     expect(deliveryReadiness({ ...ready, requiredTasks: 0, requiredTasksDone: 0 }).missing).toEqual(
       ['TAREFAS'],
     );
@@ -53,11 +51,13 @@ describe('Fase 10 — regras de qualidade e expedição', () => {
     expect(computeStage({ ...ready, ...flags, scheduled: true })).toBe('ENTREGA_AGENDADA');
     expect(computeStage({ ...ready, ...flags, inTransit: true })).toBe('EM_TRANSPORTE');
     expect(computeStage({ ...ready, ...flags, shippingBlock: true })).toBe('BLOQUEIO_EXPEDICAO');
-    expect(computeStage({ ...ready, ...flags, packaging: 'PENDENTE' })).toBe(
-      'AGUARDANDO_EMBALAGEM',
-    );
+    // S1: aprovada, a peça fica pronta direto — nenhuma etapa de embalagem é produzida.
+    for (const f of [flags, { ...flags, scheduled: true }])
+      expect(['AGUARDANDO_EMBALAGEM', 'EM_EMBALAGEM']).not.toContain(
+        computeStage({ ...ready, ...f }),
+      );
     expect(computeStage({ ...ready, ...flags, inspection: 'REPROVADA' })).toBe('EM_CORRECAO');
-    expect(computeStage({ ...ready, ...flags, inspection: 'INVALIDADA', packaging: null })).toBe(
+    expect(computeStage({ ...ready, ...flags, inspection: 'INVALIDADA' })).toBe(
       'AGUARDANDO_INSPECAO',
     );
     expect(computeStage({ ...ready, ...flags, requiredTasksDone: 1 })).toBe('EM_PRODUCAO');

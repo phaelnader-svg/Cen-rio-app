@@ -21,7 +21,6 @@ import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { onItemTechnicalChange } from '../../core/item-changes';
-import { moduleEnabled } from '../../core/modules';
 import { loadUserPermissions } from '../../core/permissions';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
@@ -47,7 +46,6 @@ import {
   substituteText,
   type PieceRow,
 } from './common';
-import { createPackaging, invalidatePackaging, packagingTaskCancelled } from './packaging';
 import { flagDeliveryForItem } from './shipping';
 
 export interface Viewer {
@@ -169,7 +167,6 @@ export async function toInspectionDto(
     decidedBy: r.decidedBy?.displayName ?? null,
     decisionNote: r.decisionNote,
     selfApprovalReason: r.selfApprovalReason,
-    packagingRequired: r.packagingRequired,
     invalidatedAt: r.invalidatedAt?.toISOString() ?? null,
     invalidReason: r.invalidReason,
     items: r.items.map((i) => ({
@@ -557,8 +554,9 @@ export async function approveInspection(
     throw Errors.conflict(
       'A peça foi alterada tecnicamente depois que esta inspeção foi criada: é preciso uma nova inspeção.',
     );
-  // Fase 3: a exigência de embalagem é a do interruptor NO MOMENTO da aprovação (fica gravada).
-  const packagingRequired = await moduleEnabled(tx, 'embalagem');
+  // Reformulação S1: não existe mais embalagem — a aprovação deixa a peça pronta para entrega.
+  // `packaging_required` fica gravado como falso (a coluna continua, só para o histórico).
+  const packagingRequired = false;
   const now = new Date();
   const u = await tx.qualityInspection.update({
     where: { id },
@@ -583,7 +581,6 @@ export async function approveInspection(
     data: {
       itemVersion: u.itemVersion,
       osRevision: u.osRevision,
-      packagingRequired,
       ...(selfReason ? { selfApproval: true } : {}),
     },
     deviceId,
@@ -592,8 +589,8 @@ export async function approveInspection(
     action: 'quality.inspection_approved',
     entityType: 'quality_inspection',
     entityId: id,
-    summary: `Inspeção ${code} aprovada (${pieceCode(item)}, versão técnica ${u.itemVersion}, revisão da OS ${u.osRevision})${packagingRequired ? '' : ' — embalagem dispensada (interruptor desligado)'}.`,
-    changes: { allConform: Boolean(input.allConform), packagingRequired },
+    summary: `Inspeção ${code} aprovada (${pieceCode(item)}, versão técnica ${u.itemVersion}, revisão da OS ${u.osRevision}).`,
+    changes: { allConform: Boolean(input.allConform) },
   });
   const viewerName = selfReason
     ? ((await tx.user.findUnique({ where: { id: actor.userId! }, select: { displayName: true } }))
@@ -609,7 +606,6 @@ export async function approveInspection(
       changes: { selfApproval: true, reason: selfReason, decidedAt: now.toISOString() },
     });
   await inspectionEvent(tx, actor, EVENT_TYPES.INSPECTION_APPROVED, u);
-  if (packagingRequired) await createPackaging(tx, actor, u, item);
   await refreshItemStage(tx, actor, item.id);
   return u;
 }
@@ -766,7 +762,7 @@ export async function rejectInspection(
     'qualidade.gerenciar',
     'SERVICO_REPROVADO',
     `SERVICO_REPROVADO:${id}`,
-    `${code} · ${label} reprovada: ${input.reason}. Correção com ${worker.displayName}; a embalagem fica bloqueada até nova aprovação.`,
+    `${code} · ${label} reprovada: ${input.reason}. Correção com ${worker.displayName}; a peça só fica pronta para entrega depois de nova aprovação.`,
     item.serviceOrderId,
   );
   await flagDeliveryForItem(
@@ -869,7 +865,7 @@ export async function assignInspector(
 
 /**
  * Alteração técnica relevante: a aprovação anterior deixa de valer (fica no histórico como
- * "invalidada"), a embalagem é invalidada e nasce uma nova inspeção. Uma inspeção ainda aberta
+ * "invalidada") e nasce uma nova inspeção. Uma inspeção ainda aberta
  * é cancelada e recriada com a versão nova. Reprovada: a próxima rodada já usará a versão nova.
  */
 export async function invalidateApproval(
@@ -898,7 +894,6 @@ export async function invalidateApproval(
         version: { increment: 1 },
       },
     });
-    await invalidatePackaging(tx, actor, i.id, `Aprovação ${code} invalidada: ${reason}`);
     await qualityEvent(tx, actor, itemId, {
       kind: 'APROVACAO_INVALIDADA',
       inspectionId: i.id,
@@ -1001,10 +996,8 @@ export async function qualityTaskClosed(
     });
     return;
   }
-  if (t.activity === 'EMBALAGEM') {
-    if (status === 'CANCELADA') await packagingTaskCancelled(tx, actor, t.id);
-    return;
-  }
+  // Tarefa de embalagem antiga (só histórico, S1): encerrar não dispara nada.
+  if (t.activity === 'EMBALAGEM') return;
   if (t.inspectionId) return;
   const items = t.serviceOrderItemId
     ? [t.serviceOrderItemId]

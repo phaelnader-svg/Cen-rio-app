@@ -27,7 +27,8 @@ import {
 } from './production-helpers';
 
 /**
- * Fase 10 — qualidade, correções, embalagem, expedição, entregas e logística. Dados fictícios.
+ * Fase 10 — qualidade, correções, expedição, entregas e logística. Dados fictícios.
+ * Reformulação S1: a embalagem não existe mais — aprovada, a peça fica pronta para entrega.
  * OS com sofá (reforma completa, Ricardo) e poltronas (troca de tecido, Márcio); Thiago é o
  * inspetor; João embala. Relógio operacional fixo; tarefas liberadas desde ontem.
  */
@@ -218,7 +219,7 @@ async function approve(c: Client, i: Insp, key = idemKey()) {
   return post(c, `/api/v1/quality/inspections/${i.id}/approve`, { version: cur.version }, key);
 }
 
-/** Sofá produzido e aprovado pelo Thiago (embalagem liberada). */
+/** Sofá produzido e aprovado pelo Thiago (S1: já fica pronto para entrega). */
 async function approvedSofa(s: S) {
   await finish(s.tablets.Ricardo!, s.sofaTask.id);
   const [i] = await inspectionsOf(s.tablets.Thiago!);
@@ -227,33 +228,17 @@ async function approvedSofa(s: S) {
   if (r.status !== 200) throw new Error(`approve: ${JSON.stringify(r.body)}`);
   return r.body as Insp;
 }
-type Pack = {
-  id: string;
-  status: string;
-  version: number;
-  assignee: { displayName: string } | null;
-  taskId: string;
-};
-const packagingOf = async (itemId: string) =>
-  db().packagingRecord.findFirst({
-    where: { serviceOrderItemId: itemId },
-    orderBy: { createdAt: 'desc' },
-  });
 const locationId = async (key: string) =>
   (await db().itemLocation.findUniqueOrThrow({ where: { key } })).id;
 
-/** Sofá embalado pelo João → pronto para entrega. */
+/** Sofá aprovado → pronto para entrega (S1: sem embalagem; a peça vai para a expedição). */
 async function readySofa(s: S) {
   await approvedSofa(s);
-  const p = (await packagingOf(s.sofa.id))!;
-  const r = await post(s.tablets.João!, `/api/v1/packaging/${p.id}/complete`, {
-    protection: 'PLASTICO_BOLHA',
+  const r = await post(s.tablets.João!, `/api/v1/pieces/${s.sofa.id}/move`, {
     locationId: await locationId('EXPEDICAO'),
-    notes: 'Pés embalados à parte',
-    version: p.version,
+    note: 'Pronta para entrega',
   });
-  if (r.status !== 200) throw new Error(`pack: ${JSON.stringify(r.body)}`);
-  return r.body as Pack;
+  if (r.status !== 200) throw new Error(`move: ${JSON.stringify(r.body)}`);
 }
 
 async function schedule(s: S, body: Record<string, unknown> = {}) {
@@ -521,7 +506,7 @@ describe('Inspeção e responsabilidade', () => {
     const ok = await approve(s.tablets.Thiago!, i);
     expect(ok.status).toBe(200);
     expect(ok.body).toMatchObject({ status: 'APROVADA', decidedBy: 'Thiago' });
-    expect(await stage(s.sofa.id)).toBe('AGUARDANDO_EMBALAGEM');
+    expect(await stage(s.sofa.id)).toBe('PRONTA_ENTREGA'); // S1: sem embalagem
   });
 });
 
@@ -563,7 +548,7 @@ describe('Reprovação, correção e reinspeção', () => {
     expect(await notices(s.ids.ricardo, 'CORRECAO_ATRIBUIDA')).toHaveLength(1);
     expect(await notices(s.ids.gestor, 'SERVICO_REPROVADO')).toHaveLength(1);
     expect(await stage(s.sofa.id)).toBe('EM_CORRECAO');
-    // Embalagem bloqueada: nada de registro de embalagem.
+    // S1: nunca há registro de embalagem.
     expect(await db().packagingRecord.count()).toBe(0);
     // Histórico imutável: a decisão não muda e nada é apagado.
     await expect(
@@ -626,13 +611,12 @@ describe('Reprovação, correção e reinspeção', () => {
     expect(second.items.every((x) => x.result === null)).toBe(true);
     await checkAll(s.tablets.Thiago!, second);
     expect((await approve(s.tablets.Thiago!, second)).status).toBe(200);
-    expect(await stage(s.sofa.id)).toBe('AGUARDANDO_EMBALAGEM');
+    expect(await stage(s.sofa.id)).toBe('PRONTA_ENTREGA'); // S1: sem embalagem
   });
 
   it('10. alteração técnica após a aprovação invalida a aprovação e exige reverificação', async () => {
     const s = await scenario();
     await approvedSofa(s);
-    const pack = (await packagingOf(s.sofa.id))!;
     const item = await db().serviceOrderItem.findUniqueOrThrow({ where: { id: s.sofa.id } });
     const upd = await s.admin.put(`/api/v1/service-orders/${s.so.id}/items/${s.sofa.id}`, {
       serviceType: item.serviceType,
@@ -650,38 +634,24 @@ describe('Reprovação, correção e reinspeção', () => {
     ]);
     expect(rounds[0]!.invalidReason).toMatch(/Alteração técnica/);
     expect(rounds[1]!.itemVersion).toBe(item.version + 1);
-    const p = await db().packagingRecord.findUniqueOrThrow({ where: { id: pack.id } });
-    expect(p.status).toBe('INVALIDADA');
-    const t = await db().productionTask.findUniqueOrThrow({ where: { id: pack.taskId! } });
-    expect(t.status).toBe('CANCELADA');
+    // A aprovação antiga não libera a peça alterada (S1: não há embalagem a invalidar).
+    expect(await db().packagingRecord.count()).toBe(0);
     expect(await stage(s.sofa.id)).toBe('AGUARDANDO_INSPECAO');
     expect(await notices(s.ids.gestor, 'APROVACAO_INVALIDADA')).toHaveLength(1);
-    // A aprovação antiga não libera a peça alterada.
-    const done = await post(s.tablets.João!, `/api/v1/packaging/${p.id}/complete`, {
-      protection: 'MANTA',
-      locationId: await locationId('EXPEDICAO'),
-      version: p.version,
-    });
-    expect(done.status).toBe(422);
+    expect((await s.admin.get(`/api/v1/pieces/${s.sofa.id}`)).body.readiness.ready).toBe(false);
     const history = (await s.admin.get(`/api/v1/pieces/${s.sofa.id}`)).body.history as {
       kind: string;
     }[];
     expect(history.map((h) => h.kind)).toEqual(
-      expect.arrayContaining([
-        'APROVADA',
-        'APROVACAO_INVALIDADA',
-        'EMBALAGEM_INVALIDADA',
-        'INSPECAO_CRIADA',
-      ]),
+      expect.arrayContaining(['APROVADA', 'APROVACAO_INVALIDADA', 'INSPECAO_CRIADA']),
     );
   });
 });
 
-describe('Embalagem e pronto para entrega', () => {
-  it('11. embalagem bloqueada antes da aprovação (sem registro, sem tarefa avulsa, sem conclusão genérica)', async () => {
+describe('Pronto para entrega (S1: sem embalagem)', () => {
+  it('11. embalagem não existe: sem tarefa avulsa, sem registro, sem tarefa depois da aprovação', async () => {
     const s = await scenario();
     await finish(s.tablets.Ricardo!, s.sofaTask.id);
-    expect(await db().packagingRecord.count()).toBe(0);
     const avulsa = await post(s.admin, `/api/v1/production-plans/${s.plan.id}/tasks`, {
       serviceOrderId: s.so.id,
       serviceOrderItemId: s.sofa.id,
@@ -693,69 +663,14 @@ describe('Embalagem e pronto para entrega', () => {
     const i = (await inspectionsOf(s.tablets.Thiago!))[0]!;
     await checkAll(s.tablets.Thiago!, i);
     expect((await approve(s.tablets.Thiago!, i)).status).toBe(200);
-    const p = (await packagingOf(s.sofa.id))!;
-    await act(s.tablets.João!, p.taskId!, 'start');
-    const generic = await act(s.tablets.João!, p.taskId!, 'complete', { note: 'Embalado' });
-    expect(generic.status).toBe(422);
-    expect(generic.body.error.message).toMatch(/tela de embalagem/);
+    expect(await db().packagingRecord.count()).toBe(0);
+    expect(await db().productionTask.count({ where: { activity: 'EMBALAGEM' } })).toBe(0);
+    expect(await notices(s.ids.joao, 'EMBALAGEM_LIBERADA')).toHaveLength(0);
+    expect((await s.tablets.João!.get('/api/v1/packaging')).status).toBe(404);
+    expect(await stage(s.sofa.id)).toBe('PRONTA_ENTREGA');
   });
 
-  it('12. embalagem vai para o João (disponível); ocupado → Thiago; tapeceiro só com autorização', async () => {
-    const s = await scenario();
-    await approvedSofa(s);
-    const p = (await packagingOf(s.sofa.id))!;
-    expect(p.assigneeUserId).toBe(s.ids.joao);
-    expect(await notices(s.ids.joao, 'EMBALAGEM_LIBERADA')).toHaveLength(1);
-    const joaoPack = (await s.tablets.João!.get('/api/v1/packaging')).body as Pack[];
-    expect(joaoPack.map((x) => x.id)).toEqual([p.id]);
-    await act(s.tablets.João!, p.taskId!, 'start');
-    // João agora está ocupado: a embalagem das poltronas vai para o Thiago.
-    await finish(s.tablets.Márcio!, s.poltronaTask.id);
-    const pi = await inspection(s.tablets.Thiago!, (await openOf(s.poltronas.id)).id);
-    await checkAll(s.tablets.Thiago!, pi);
-    await approve(s.tablets.Thiago!, pi);
-    const p2 = (await packagingOf(s.poltronas.id))!;
-    expect(p2.assigneeUserId).toBe(s.ids.thiago);
-    // Gestor redistribui ao tapeceiro: só com autorização explícita.
-    const deny = await post(s.admin, `/api/v1/packaging/${p2.id}/assign`, {
-      assigneeUserId: s.ids.marcio,
-      version: p2.version,
-    });
-    expect(deny.status).toBe(422);
-    const okAssign = await post(s.admin, `/api/v1/packaging/${p2.id}/assign`, {
-      assigneeUserId: s.ids.marcio,
-      authorizeTapeceiro: true,
-      version: p2.version,
-    });
-    expect(okAssign.status).toBe(200);
-    expect(okAssign.body).toMatchObject({
-      assignee: { displayName: 'Márcio' },
-      tapeceiroAuthorized: true,
-    });
-    // João conclui a embalagem do sofá com proteção e local.
-    const done = await post(s.tablets.João!, `/api/v1/packaging/${p.id}/complete`, {
-      protection: 'MANTA',
-      locationId: await locationId('EXPEDICAO'),
-      notes: 'Almofadas em saco separado',
-      version: (await db().packagingRecord.findUniqueOrThrow({ where: { id: p.id } })).version,
-    });
-    expect(done.status).toBe(200);
-    expect(done.body).toMatchObject({
-      status: 'CONCLUIDA',
-      protection: 'MANTA',
-      location: { label: 'Expedição' },
-    });
-    expect((await db().productionTask.findUniqueOrThrow({ where: { id: p.taskId! } })).status).toBe(
-      'CONCLUIDA',
-    );
-    const item = await db().serviceOrderItem.findUniqueOrThrow({
-      where: { id: s.sofa.id },
-      include: { currentLocation: true },
-    });
-    expect(item.currentLocation?.key).toBe('EXPEDICAO');
-  });
-
-  it('13. pronto para entrega exige as cinco condições; avisa o gestor uma vez; não agenda sozinho', async () => {
+  it('13. pronto para entrega exige as quatro condições; avisa o gestor uma vez; não agenda sozinho', async () => {
     const s = await scenario();
     await readySofa(s);
     expect(await stage(s.sofa.id)).toBe('PRONTA_ENTREGA');
@@ -765,7 +680,7 @@ describe('Embalagem e pronto para entrega', () => {
     expect(await notices(s.ids.gestor, 'PRONTO_ENTREGA')).toHaveLength(1);
     expect(await db().delivery.count()).toBe(0);
     const polt = (await s.admin.get(`/api/v1/pieces/${s.poltronas.id}`)).body;
-    expect(polt.readiness.missing).toEqual(['TAREFAS', 'INSPECAO', 'EMBALAGEM']);
+    expect(polt.readiness.missing).toEqual(['TAREFAS', 'INSPECAO']);
     // Leitura da etiqueta (QR/código) encontra a peça.
     const byLabel = await s.tablets.João!.get(
       `/api/v1/pieces/by-label?code=${encodeURIComponent(piece.labelPayload)}`,
@@ -1070,7 +985,7 @@ describe('Devolução e cancelamento', () => {
     await expect(db().pieceReturn.delete({ where: { id: r.body.id } })).rejects.toThrow();
   });
 
-  it('21. cancelamento: OS cancelada limpa inspeções, embalagens e entregas; correção auditável do recebimento', async () => {
+  it('21. cancelamento: OS cancelada limpa inspeções e entregas; correção auditável do recebimento', async () => {
     const s = await scenario();
     await approvedSofa(s);
     const customerId = (await db().serviceOrder.findUniqueOrThrow({ where: { id: s.so.id } }))
@@ -1082,8 +997,7 @@ describe('Devolução e cancelamento', () => {
       version: so.version,
     });
     expect(cancel.status).toBe(200);
-    const pack = (await packagingOf(s.sofa.id))!;
-    expect(pack.status).toBe('CANCELADA');
+    expect(await db().packagingRecord.count()).toBe(0);
     expect((await db().delivery.findUniqueOrThrow({ where: { id: pre.id } })).status).toBe(
       'CANCELADA',
     );
@@ -1184,13 +1098,7 @@ describe('Segurança, concorrência e sincronização', () => {
       post(s.admin, `/api/v1/quality/inspections/${i.id}/approve`, { version: i.version }),
     ]);
     expect([a.status, b.status].sort()).toEqual([200, 409]);
-    expect(await db().packagingRecord.count()).toBe(1);
-    const p = (await packagingOf(s.sofa.id))!;
-    await post(s.tablets.João!, `/api/v1/packaging/${p.id}/complete`, {
-      protection: 'MANTA',
-      locationId: await locationId('EXPEDICAO'),
-      version: p.version,
-    });
+    expect(await db().packagingRecord.count()).toBe(0);
     const customerId = (await db().serviceOrder.findUniqueOrThrow({ where: { id: s.so.id } }))
       .customerId;
     const [d1, d2] = await Promise.all([schedule(s, { customerId }), schedule(s, { customerId })]);
@@ -1198,7 +1106,7 @@ describe('Segurança, concorrência e sincronização', () => {
     expect(await db().deliveryItem.count({ where: { active: true } })).toBe(1);
   });
 
-  it('24. idempotência: repetir aprovação, embalagem e saída não duplica nada', async () => {
+  it('24. idempotência: repetir aprovação e saída não duplica nada', async () => {
     const s = await scenario();
     await finish(s.tablets.Ricardo!, s.sofaTask.id);
     const i = await checkAll(s.tablets.Thiago!, (await inspectionsOf(s.tablets.Thiago!))[0]!);
@@ -1221,18 +1129,8 @@ describe('Segurança, concorrência e sincronização', () => {
       version: i.version,
     });
     expect(c.status).toBe(200); // repetição pelo mesmo inspetor: sem efeito
-    expect(await db().packagingRecord.count()).toBe(1);
+    expect(await db().packagingRecord.count()).toBe(0);
     expect(await db().qualityEvent.count({ where: { kind: 'APROVADA' } })).toBe(1);
-    const p = (await packagingOf(s.sofa.id))!;
-    const body = {
-      protection: 'MANTA',
-      locationId: await locationId('EXPEDICAO'),
-      version: p.version,
-    };
-    await post(s.tablets.João!, `/api/v1/packaging/${p.id}/complete`, body);
-    const again = await post(s.tablets.João!, `/api/v1/packaging/${p.id}/complete`, body);
-    expect(again.status).toBe(200);
-    expect(await db().qualityEvent.count({ where: { kind: 'EMBALADA' } })).toBe(1);
     expect(await notices(s.ids.gestor, 'PRONTO_ENTREGA')).toHaveLength(1);
     const customerId = (await db().serviceOrder.findUniqueOrThrow({ where: { id: s.so.id } }))
       .customerId;

@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { loadUserPermissions } from '../src/core/permissions';
 import type { AccessRule } from '../src/core/types';
+import { etapasConcluidas } from './remocao/catalogo';
 import { panelUserWith } from './commercial-helpers';
 import {
   ADMIN,
@@ -31,6 +32,23 @@ import {
 const ROOT = resolve(__dirname, '../../..');
 
 // ── Linha de base gerada UMA VEZ a partir de 9fb1786 (não depende de git em tempo de execução) ──
+/**
+ * Reformulação por remoção real: rotas de 9fb1786 removidas DE PROPÓSITO, por etapa aprovada pelo
+ * dono (tests/remocao/etapas-concluidas.json). Só deixam de ser exigidas depois que a etapa é
+ * registrada como concluída; qualquer outra rota que sumir continua quebrando as travas abaixo.
+ */
+const REMOVIDAS_POR_ETAPA: Record<string, readonly string[]> = {
+  S1: [
+    'GET /api/v1/packaging',
+    'GET /api/v1/packaging/:id',
+    'POST /api/v1/packaging/:id/assign',
+    'POST /api/v1/packaging/:id/complete',
+  ],
+};
+const REMOVIDAS_AUTORIZADAS = new Set(
+  [...etapasConcluidas()].flatMap((e) => REMOVIDAS_POR_ETAPA[e] ?? []),
+);
+
 /** ALL_PERMISSIONS em 9fb1786 (packages/shared/src/permissions.ts). */
 const BASELINE_PERMISSIONS = [
   'painel.acessar',
@@ -1395,6 +1413,7 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
     let compared = 0;
     for (const [key, access] of Object.entries(BASELINE_ROUTES)) {
       if (access === null) continue; // relógio de teste do E2E: fora do app padrão (ver F1-12b)
+      if (REMOVIDAS_AUTORIZADAS.has(key)) continue; // remoção real aprovada (ver F1-12b)
       compared += 1;
       const cur = now.get(key);
       expect(cur, `${key} sumiu do catálogo`).toBeDefined();
@@ -1402,7 +1421,7 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
       if (JSON.stringify(cur) !== JSON.stringify(expected))
         changed.push(`${key}: ${JSON.stringify(access)} → ${JSON.stringify(cur)}`);
     }
-    expect(compared).toBe(379);
+    expect(compared).toBe(379 - REMOVIDAS_AUTORIZADAS.size);
     expect(changed).toEqual([]);
   });
 
@@ -1467,13 +1486,18 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
 // ─────────────────────────────────────── F1-12b ───────────────────────────────────────
 
 describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava contra remoção)', () => {
-  it('as 381 rotas (método + caminho) de 9fb1786 existem no app atual', () => {
+  it('as 381 rotas (método + caminho) de 9fb1786 existem no app atual — exceto as de remoção real aprovada', () => {
     const keys = Object.keys(BASELINE_ROUTES);
     expect(keys.length).toBe(381);
+    const has = (k: string) => app.app.hasRoute(split(k) as { method: 'GET'; url: string });
     const missing = keys
       .filter((k) => BASELINE_ROUTES[k] !== null)
-      .filter((k) => !app.app.hasRoute(split(k) as { method: 'GET'; url: string }));
+      .filter((k) => !REMOVIDAS_AUTORIZADAS.has(k))
+      .filter((k) => !has(k));
     expect(missing).toEqual([]);
+    // As removidas de verdade não voltaram (e são só as da lista autorizada).
+    for (const k of REMOVIDAS_AUTORIZADAS) expect(keys, k).toContain(k);
+    expect([...REMOVIDAS_AUTORIZADAS].filter(has)).toEqual([]);
   });
 
   it('as rotas do relógio de teste (só com ENABLE_TEST_CLOCK) continuam registradas quando ligadas', async () => {
