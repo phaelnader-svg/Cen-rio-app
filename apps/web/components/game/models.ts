@@ -293,6 +293,29 @@ export function stationModel(kind: string, w: number, d: number, accent = PALETT
       g.add(box(0.48, 0.5, 0.06, mat(PALETTE.ink), 0, 0.5, d / 2 + 0.58));
       g.add(cyl(0.03, 0.42, PALETTE.metal, 0, 0, d / 2 + 0.35, 6));
       break;
+    case 'QUADRO_METAS': {
+      // Quadro em cavalete: moldura, fundo claro e trilho da barra (preenchida pelo motor).
+      const legH = 1.9;
+      for (const s of [-1, 1])
+        g.add(box(0.05, legH, 0.05, mat(PALETTE.woodDark), s * (w / 2 - 0.08), 0, 0));
+      g.add(box(w, 1.05, 0.06, mat(PALETTE.woodDark), 0, 0.8, 0));
+      g.add(box(w - 0.1, 0.95, 0.02, mat('#fbf7ef'), 0, 0.85, 0.04));
+      g.add(box(w - 0.3, 0.12, 0.02, mat('#d9d2c4'), 0, 1.05, 0.055));
+      const marks = 3;
+      for (let i = 1; i <= marks; i++)
+        g.add(
+          box(
+            0.015,
+            0.2,
+            0.02,
+            mat(PALETTE.ink),
+            -(w - 0.3) / 2 + ((w - 0.3) * i) / marks,
+            1.0,
+            0.06,
+          ),
+        );
+      break;
+    }
     case 'MESA_REUNIAO':
       table(g, w, d, 0.75, '#c8a57d', PALETTE.woodDark);
       for (let i = 0; i < 3; i++)

@@ -9,6 +9,7 @@ import { shopTimezone, todayIso } from '../finance/common';
 import { brl, osCodeOf } from './common';
 import { planCharges } from './charges';
 import { prepareContract } from './contracts';
+import { goalsAnswer, isGoalsQuestion } from './cash-chat';
 
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const addDays = (iso: string, n: number) => {
@@ -45,6 +46,13 @@ registerOfficeHook(async (ctx, intent) => {
   if (intent.acao !== 'FINANCEIRO') return { reply: '', effect: { kind: 'NADA' } };
   const { prisma, perms } = ctx;
   const text = intent.pedido ?? '';
+  // Quadro de Metas: meta, crescimento da semana, queda do caixa, projeção.
+  if (isGoalsQuestion(text)) {
+    if (!perms.has('financeiro.ver'))
+      return nada('O Quadro de Metas exige a permissão financeiro.ver.');
+    const a = await goalsAnswer(prisma, text);
+    return { reply: a.reply, effect: a.effect };
+  }
   const t = norm(text);
   const today = todayIso(await shopTimezone(prisma));
   const finView = perms.has('financeiro.ver');

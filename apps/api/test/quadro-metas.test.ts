@@ -370,3 +370,109 @@ describe('caixa a partir dos registros oficiais', () => {
     expect(goal.achieved).not.toBeNull();
   });
 });
+
+describe('chat e Gerente: perguntas sobre o Quadro de Metas', () => {
+  it('meta, semana, queda do caixa e projeção — com os lançamentos que justificam', async () => {
+    const admin = await loginAdmin(app);
+    const { acc, orderId, so } = await setup(admin);
+    // Esta semana: paga material (o caixa cai) e há recebimentos confirmado e condicionado.
+    const pay = (
+      await post(admin, '/api/v1/finance/payables', {
+        beneficiary: 'Espumas Vale',
+        category: 'MATERIAL',
+        description: 'Espuma D28',
+        amountCents: 250_000,
+        dueDate: today,
+      })
+    ).body as { id: string; version: number };
+    await post(admin, `/api/v1/finance/payables/${pay.id}/payments`, {
+      amountCents: 250_000,
+      paidAt: today,
+      method: 'PIX',
+      version: pay.version,
+    });
+    await post(admin, '/api/v1/finance/receivables', {
+      orderId,
+      serviceOrderId: so.id,
+      description: 'Entrada',
+      amountCents: 1_000_000,
+      dueTrigger: 'DATA',
+      dueDate: addDaysIso(today, 3),
+      expectedMethod: 'PIX',
+    });
+    await post(admin, '/api/v1/finance/receivables', {
+      orderId,
+      serviceOrderId: so.id,
+      description: 'Saldo na entrega',
+      amountCents: 2_000_000,
+      dueTrigger: 'ENTREGA',
+      expectedMethod: 'PIX',
+    });
+    void acc;
+    const ask = async (text: string) =>
+      (await post(admin, '/api/v1/game/command', { text, spaceKey: 'ESCRITORIO' })).body as {
+        reply: string;
+        effect: { kind: string; panel?: string; filter?: string };
+      };
+
+    const a1 = await ask('Quanto falta pra bater os 100 mil?');
+    expect(a1.reply).toMatch(
+      /saldo R\$\s?47\.500,00 de R\$\s?100\.000,00 \(47,5% da meta\) — faltam R\$\s?52\.500,00/,
+    );
+    expect(a1.effect).toMatchObject({ kind: 'ABRIR_PAINEL', panel: 'METAS' });
+    expect(a1.effect.filter).toMatch(/^MOVES:goalId=/);
+
+    const a2 = await ask('Quanto eu cresci essa semana?');
+    expect(a2.reply).toMatch(
+      /abertura R\$\s?50\.000,00, agora R\$\s?47\.500,00 — −R\$\s?2\.500,00 \(−5%\)/,
+    );
+    expect(a2.effect.filter).toBe(
+      `MOVES:week=${thisWeek}|Lançamentos da semana de ${thisWeek.split('-').reverse().join('/')}`,
+    );
+
+    const a3 = await ask('Por que o caixa caiu desde segunda?');
+    expect(a3.reply).toMatch(/O caixa caiu/);
+    expect(a3.reply).toMatch(
+      /R\$\s?2\.500,00 material \(fornecedor\) \(Espumas Vale — Espuma D28\)/,
+    );
+    expect(a3.effect.filter).toMatch(/sign=out/);
+
+    const g100 = (await board(admin)).goals.find((g) => g.targetCents === 10_000_000)!;
+    expect(
+      (
+        await admin.req(
+          'PUT',
+          `/api/v1/office/cash/goals/${g100.id}`,
+          {
+            name: g100.name,
+            targetCents: g100.targetCents,
+            deadline: addDaysIso(today, 10),
+            accountIds: [],
+            active: true,
+            version: g100.version,
+          },
+          { 'idempotency-key': idemKey() },
+        )
+      ).status,
+    ).toBe(200);
+    const a4 = await ask('Com o que tenho pra receber e pagar, bato a meta até o prazo?');
+    expect(a4.reply).toMatch(/Não: mesmo recebendo tudo, faltariam R\$\s?22\.500,00/);
+    expect(a4.reply).toMatch(/Confirmado \(com data até o prazo\): \+R\$\s?10\.000,00/);
+    expect(a4.reply).toMatch(/Depende de entrega\/retirada: \+R\$\s?20\.000,00/);
+    expect(a4.effect.filter).toBe('TAB:RECEBER');
+
+    const agents = (await admin.get('/api/v1/game/agents')).body as {
+      id: string;
+      roleKey: string;
+    }[];
+    const ger = agents.find((x) => x.roleKey === 'GERENTE')!;
+    const m = (
+      await post(admin, `/api/v1/game/agents/${ger.id}/messages`, {
+        content: 'Por que o caixa caiu desde segunda?',
+      })
+    ).body as { author: string; content: string; references: { href: string }[] }[];
+    const r = m.find((x) => x.author === 'AGENTE')!;
+    expect(r.content).toMatch(/O caixa caiu/);
+    expect(r.references[0]!.href).toMatch(/^\/jogo\?caixa=moves:ids=/);
+  });
+});

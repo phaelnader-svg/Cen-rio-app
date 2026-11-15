@@ -15,6 +15,9 @@ import {
   type RemovalImpact,
   QUICK_FILTERS,
   QUICK_FILTER_LABEL,
+  brlCents,
+  signedBrl,
+  signedPct,
   askMestre,
   catalogOf,
   clearanceAround,
@@ -78,6 +81,7 @@ import {
   useSpaces,
 } from './game-api';
 import { FichaPanel, FinancePanel } from './office-finance';
+import { type Drill, GoalsPanel, nextGoalOf, useCash } from './office-goals';
 import { AdsPanel, ConnectionsPanel, InboxPanel, MarketingPanel, useInbox } from './office-panels';
 import { AgentConfigPanel, AgentPanel, EmployeePanel } from './people-panels';
 import { PiecePanel } from './piece-panel';
@@ -105,6 +109,7 @@ type Side =
   | { t: 'ficha'; so: string; focus: string | null }
   | { t: 'finance'; filter: string | null }
   | { t: 'quick'; f: QuickFilter }
+  | { t: 'goals'; tab: string | null; drill: Drill | null }
   | { t: 'os'; id: string }
   | null;
 
@@ -140,6 +145,9 @@ export function GameWorld() {
   const integrations = useIntegrations();
   const canSeeInbox = can('atendimento.ver');
   const canOffice = can('financeiro.ver') || can('pedidos.ver');
+  const canFinView = can('financeiro.ver');
+  const cash = useCash(canFinView);
+  const goal = nextGoalOf(cash.data);
   const inbox = useInbox(canSeeInbox);
   const unread = (inbox.data ?? []).reduce((a, r) => a + r.unread, 0);
   const [spaceKey, setSpaceKey] = useState('TAPECARIA');
@@ -215,12 +223,87 @@ export function GameWorld() {
     const q = new URLSearchParams(window.location.search);
     const conv = q.get('conversa');
     const central = q.get('central');
-    if (conv || central) {
+    const caixa = q.get('caixa');
+    if (caixa) {
+      setSpaceKey('ESCRITORIO');
+      setSide({
+        t: 'goals',
+        tab: null,
+        drill: caixa.startsWith('moves:')
+          ? { title: 'Lançamentos citados', query: caixa.slice(6) }
+          : null,
+      });
+      window.history.replaceState(null, '', window.location.pathname);
+    } else if (conv || central) {
       setSpaceKey('ESCRITORIO');
       setSide(conv ? { t: 'inbox', conv } : { t: 'central' });
       window.history.replaceState(null, '', window.location.pathname);
     }
   }, []);
+
+  // Quadro de Metas no escritório: barra avança/recua com cada movimentação confirmada.
+  const lastWeekSeen = useRef<string | null>(null);
+  useEffect(() => {
+    const e = engine.current;
+    const b = cash.data;
+    if (!e || !b) return;
+    const g = nextGoalOf(b);
+    if (g)
+      e.setGoalBoard({
+        fraction: g.balanceCents / g.targetCents,
+        text: `🎯 ${brlCents(g.balanceCents)} de ${brlCents(g.targetCents)} (${g.pctOfGoal.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%)`,
+        tone: g.belowAfterAchieved ? '#b42323' : '#1f7a46',
+      });
+    // Conquista nova (ainda não comemorada neste navegador): confete e aviso.
+    let seen: string[] = [];
+    try {
+      seen = JSON.parse(
+        window.localStorage.getItem('cenario-metas-comemoradas') ?? '[]',
+      ) as string[];
+    } catch {
+      seen = [];
+    }
+    const fresh = b.goals.filter((x) => x.achieved && !seen.includes(x.id));
+    if (fresh.length) {
+      e.celebrate();
+      toast(
+        'ok',
+        `🏆 Meta conquistada: ${fresh.map((x) => `${x.name} em ${x.achieved!.at.slice(0, 10).split('-').reverse().join('/')}`).join(', ')}`,
+      );
+      try {
+        window.localStorage.setItem(
+          'cenario-metas-comemoradas',
+          JSON.stringify([...seen, ...fresh.map((x) => x.id)]),
+        );
+      } catch {
+        /* sem armazenamento: comemora de novo na próxima vez */
+      }
+    }
+    // Semana recém-fechada: anima a barra da abertura ao fechamento (uma vez).
+    const closed = b.weeks.find((w) => !w.partial);
+    if (closed && g && lastWeekSeen.current === null) {
+      let last = '';
+      try {
+        last = window.localStorage.getItem('cenario-metas-semana') ?? '';
+      } catch {
+        last = '';
+      }
+      lastWeekSeen.current = closed.weekStart;
+      if (last !== closed.weekStart) {
+        e.setGoalBoard({
+          from: closed.openingCents / g.targetCents,
+          fraction: g.balanceCents / g.targetCents,
+          text: `Semana fechada: ${signedBrl(closed.deltaCents)} (${signedPct(closed.pct)})`,
+          tone: closed.deltaCents >= 0 ? '#1f7a46' : '#b42323',
+        });
+        try {
+          window.localStorage.setItem('cenario-metas-semana', closed.weekStart);
+        } catch {
+          /* ignora */
+        }
+      }
+    }
+  }, [cash.data, layout, toast]);
 
   // Tempo real: qualquer mudança operacional recarrega o retrato; a planta e os agentes também.
   useEffect(
@@ -437,7 +520,9 @@ export function GameWorld() {
         const agent = agents.data?.find(
           (a) => a.deskStationId === t.id && a.status !== 'DESATIVADO',
         );
-        if (agent && canUseAgents) setSide({ t: 'agent', id: agent.id });
+        if (st?.kind === 'QUADRO_METAS' && canFinView)
+          setSide({ t: 'goals', tab: null, drill: null });
+        else if (agent && canUseAgents) setSide({ t: 'agent', id: agent.id });
         else if (st && catalogOf(st.kind).desk) setSide({ t: 'desk', id: t.id });
         else setSide({ t: 'station', id: t.id });
         if (p) walkNear(p.x, p.y);
@@ -959,6 +1044,18 @@ export function GameWorld() {
         break;
       case 'ABRIR_PAINEL':
         setSel(null);
+        if (effect.panel === 'METAS') {
+          goOffice();
+          const f = effect.filter ?? '';
+          setSide({
+            t: 'goals',
+            tab: f.startsWith('TAB:') ? f.slice(4) : null,
+            drill: f.startsWith('MOVES:')
+              ? { title: f.split('|')[1] ?? 'Lançamentos', query: f.slice(6).split('|')[0]! }
+              : null,
+          });
+          break;
+        }
         if (effect.panel === 'FINANCEIRO') {
           if (effect.serviceOrderId)
             setSide({ t: 'ficha', so: effect.serviceOrderId, focus: effect.filter ?? null });
@@ -1517,6 +1614,18 @@ export function GameWorld() {
               💼 Financeiro
             </button>
           ) : null}
+          {canFinView ? (
+            <button
+              className="flex items-center gap-2 rounded-2xl border border-line bg-white/95 px-3 py-2 text-xs font-semibold shadow-card"
+              onClick={() => setSide({ t: 'goals', tab: null, drill: null })}
+              data-testid="goals-chip"
+            >
+              🎯 Quadro de Metas
+              {goal
+                ? ` · ${goal.pctOfGoal.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%`
+                : ''}
+            </button>
+          ) : null}
           {canSeeInbox ? (
             <button
               className="flex items-center gap-2 rounded-2xl border border-line bg-white/95 px-3 py-2 text-xs font-semibold shadow-card"
@@ -1697,6 +1806,13 @@ export function GameWorld() {
               setSide({ t: 'agentConfig', agentId: agentSel.id, deskId: agentSel.deskStationId })
             }
             onOpenConversation={(id) => setSide({ t: 'inbox', conv: id })}
+            onOpenCash={(query) =>
+              setSide({
+                t: 'goals',
+                tab: null,
+                drill: { title: 'Lançamentos citados pelo Gerente', query },
+              })
+            }
             onOpenPanel={(p) =>
               setSide(
                 p === 'inbox'
@@ -1817,6 +1933,24 @@ export function GameWorld() {
             onOpenFicha={
               canOffice ? () => setSide({ t: 'ficha', so: side.id, focus: null }) : undefined
             }
+          />
+        ) : side?.t === 'goals' ? (
+          <GoalsPanel
+            key={`${side.tab ?? ''}${side.drill?.query ?? ''}`}
+            initialTab={side.tab}
+            initialDrill={side.drill}
+            canManage={can('financeiro.gerenciar')}
+            onClose={() => setSide(null)}
+            onAnimateWeek={(w, g) => {
+              if (!g) return;
+              engine.current?.setGoalBoard({
+                from: w.openingCents / g.targetCents,
+                fraction: w.closingCents / g.targetCents,
+                text: `Semana ${w.weekStart.slice(8, 10)}/${w.weekStart.slice(5, 7)}: ${signedBrl(w.deltaCents)} (${signedPct(w.pct)})`,
+                tone: w.deltaCents >= 0 ? '#1f7a46' : '#b42323',
+              });
+              if (spaceKey !== 'ESCRITORIO') switchSpace('ESCRITORIO');
+            }}
           />
         ) : side?.t === 'quick' ? (
           <Panel

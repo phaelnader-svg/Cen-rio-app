@@ -137,6 +137,10 @@ export class GameEngine {
   private resizeObs: ResizeObserver;
 
   private staticGroup = new THREE.Group();
+  /** Quadros de Metas posicionados no escritório (barra animada + texto). */
+  private boards: { holder: THREE.Group; w: number }[] = [];
+  private boardState: { target: number; current: number; text: string; tone: string } | null = null;
+  private confetti: { m: THREE.Mesh; v: THREE.Vector3; life: number }[] = [];
   private pieceGroup = new THREE.Group();
   private peopleGroup = new THREE.Group();
   private overlayGroup = new THREE.Group();
@@ -714,6 +718,7 @@ export class GameEngine {
     this.buildWalls(layout, build);
 
     // Estações.
+    this.boards = [];
     for (const s of layout.stations) {
       const f = footprint(s);
       const holder = new THREE.Group();
@@ -726,6 +731,7 @@ export class GameEngine {
       wrap.add(holder);
       this.staticGroup.add(wrap);
       this.register(holder, { kind: 'station', id: s.id });
+      if (s.kind === 'QUADRO_METAS') this.boards.push({ holder, w: s.wCm * CM });
       if (opts.selectedId === s.id) this.selectionBox(f);
       const agent = opts.agentDesks[s.id];
       const showName = build || s.assigneeUserIds.length === 0 || catalogOf(s.kind).desk;
@@ -739,6 +745,7 @@ export class GameEngine {
         this.staticGroup.add(lb);
       }
     }
+    if (this.boardState) this.drawBoards(true);
     // Armazenagem.
     for (const u of layout.storageUnits) {
       const f = footprint(u);
@@ -1287,10 +1294,112 @@ export class GameEngine {
     return true;
   }
 
+  /**
+   * Quadro de Metas: fração da meta (0..1), texto e cor. A barra anima até o novo valor
+   * (avança ou recua). `from` reinicia a animação (ex.: abertura → fechamento da semana).
+   */
+  setGoalBoard(s: { fraction: number; text: string; tone?: string; from?: number }) {
+    const target = Math.max(0, Math.min(1, s.fraction));
+    const current =
+      s.from !== undefined
+        ? Math.max(0, Math.min(1, s.from))
+        : (this.boardState?.current ?? target);
+    const changedText = this.boardState?.text !== s.text || this.boardState?.tone !== s.tone;
+    this.boardState = { target, current, text: s.text, tone: s.tone ?? '#1f7a46' };
+    this.drawBoards(changedText);
+  }
+
+  /** Comemoração breve (confete) sobre os quadros. */
+  celebrate() {
+    for (const b of this.boards) {
+      const p = new THREE.Vector3();
+      b.holder.getWorldPosition(p);
+      for (let i = 0; i < 70; i++) {
+        const m = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.06, 0.1),
+          new THREE.MeshBasicMaterial({
+            color: ['#a8743f', '#1f7a46', '#2c5ea8', '#e0a63a', '#b42323'][i % 5],
+            side: THREE.DoubleSide,
+          }),
+        );
+        m.position.set(p.x + (Math.random() - 0.5) * 0.6, 2.2, p.z + (Math.random() - 0.5) * 0.4);
+        this.staticGroup.add(m);
+        this.confetti.push({
+          m,
+          v: new THREE.Vector3(
+            (Math.random() - 0.5) * 2.2,
+            2 + Math.random() * 2.5,
+            (Math.random() - 0.5) * 2.2,
+          ),
+          life: 2.6,
+        });
+      }
+    }
+  }
+
+  boardHolders() {
+    return this.boards.map((b) => b.holder);
+  }
+
+  private drawBoards(relabel: boolean) {
+    const s = this.boardState;
+    if (!s) return;
+    for (const b of this.boards) {
+      const trackW = b.w - 0.3;
+      let bar = b.holder.getObjectByName('goalbar') as THREE.Mesh | undefined;
+      if (!bar) {
+        bar = new THREE.Mesh(
+          new THREE.BoxGeometry(1, 0.1, 0.03),
+          new THREE.MeshStandardMaterial({
+            color: s.tone,
+            emissive: s.tone,
+            emissiveIntensity: 0.25,
+          }),
+        );
+        bar.name = 'goalbar';
+        b.holder.add(bar);
+      }
+      (bar.material as THREE.MeshStandardMaterial).color.set(s.tone);
+      (bar.material as THREE.MeshStandardMaterial).emissive.set(s.tone);
+      const f = Math.max(0.001, s.current);
+      bar.scale.x = trackW * f;
+      bar.position.set(-trackW / 2 + (trackW * f) / 2, 1.11, 0.075);
+      if (relabel) {
+        const old = b.holder.getObjectByName('goaltext');
+        if (old) b.holder.remove(old);
+        const lb = label(s.text, {
+          size: 18,
+          bg: 'rgba(255,250,242,0.96)',
+          fg: '#1d2523',
+          border: s.tone,
+        });
+        lb.name = 'goaltext';
+        lb.position.set(0, 2.25, 0);
+        b.holder.add(lb);
+      }
+    }
+  }
+
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
     const dt = Math.min(0.05, this.clock.getDelta());
     const t = this.clock.elapsedTime;
+    if (this.boardState && Math.abs(this.boardState.target - this.boardState.current) > 0.0005) {
+      const d = this.boardState.target - this.boardState.current;
+      this.boardState.current += Math.sign(d) * Math.min(Math.abs(d), dt * 0.35);
+      this.drawBoards(false);
+    }
+    if (this.confetti.length) {
+      for (const c of this.confetti) {
+        c.v.y -= 4.5 * dt;
+        c.m.position.addScaledVector(c.v, dt);
+        c.m.rotation.x += dt * 6;
+        c.m.rotation.y += dt * 4;
+        c.life -= dt;
+      }
+      for (const c of this.confetti.filter((x) => x.life <= 0)) this.staticGroup.remove(c.m);
+      this.confetti = this.confetti.filter((x) => x.life > 0);
+    }
     for (const e of this.pieces.values()) {
       const d = e.to.clone().sub(e.g.position);
       const dist = d.length();

@@ -40,8 +40,8 @@ export function Palette({
   const office = kind === 'ESCRITORIO';
   const stations = (Object.keys(STATION_KINDS) as StationKind[]).filter((k) =>
     office
-      ? ['MESA_ESCRITORIO', 'MESA_REUNIAO', 'ESTACAO_LIVRE'].includes(k)
-      : k !== 'MESA_REUNIAO',
+      ? ['MESA_ESCRITORIO', 'MESA_REUNIAO', 'ESTACAO_LIVRE', 'QUADRO_METAS'].includes(k)
+      : k !== 'MESA_REUNIAO' && k !== 'QUADRO_METAS',
   );
   return (
     <Panel

@@ -224,6 +224,15 @@ export const STATION_KINDS = {
     frontClearCm: 90,
     areaHint: 'REUNIAO',
   },
+  /** Quadro de Metas do caixa (escritório): saldo, próxima meta e semana. */
+  QUADRO_METAS: {
+    label: 'Quadro de Metas',
+    wCm: 180,
+    dCm: 30,
+    hCm: 190,
+    frontClearCm: 100,
+    areaHint: 'ESCRITORIO',
+  },
 } as const satisfies Record<string, CatalogEntry>;
 export type StationKind = keyof typeof STATION_KINDS;
 
@@ -1313,6 +1322,7 @@ export function suggestedOffice(): LayoutContent {
       desk('Mesa 3', 60, 250),
       desk('Mesa 4', 300, 250),
       station('MESA_REUNIAO', 'Mesa de reunião', reu, 560, 240, { wCm: 110, dCm: 220 }),
+      station('QUADRO_METAS', 'Quadro de Metas', esc, 270, 565, { rotation: 180 }),
     ],
     storageUnits: [storageUnit('ARMARIO', 'Arquivo', esc, 450, 480, 180)],
   };

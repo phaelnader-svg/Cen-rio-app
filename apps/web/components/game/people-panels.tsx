@@ -206,6 +206,7 @@ export function AgentPanel({
   onClose,
   onConfigure,
   onOpenConversation,
+  onOpenCash,
   onOpenPanel,
 }: {
   agent: AgentDto;
@@ -213,6 +214,7 @@ export function AgentPanel({
   onClose: () => void;
   onConfigure: () => void;
   onOpenConversation?: (id: string) => void;
+  onOpenCash?: (query: string) => void;
   onOpenPanel?: (p: 'inbox' | 'ads' | 'marketing' | 'central') => void;
 }) {
   const conv = useConversation(agent.id);
@@ -447,6 +449,9 @@ export function AgentPanel({
                         if (r.type === 'CONVERSA' && onOpenConversation) {
                           ev.preventDefault();
                           onOpenConversation(r.id);
+                        } else if (r.href?.startsWith('/jogo?caixa=moves:') && onOpenCash) {
+                          ev.preventDefault();
+                          onOpenCash(decodeURIComponent(r.href.slice('/jogo?caixa=moves:'.length)));
                         }
                       }}
                       target="_blank"

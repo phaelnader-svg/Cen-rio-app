@@ -39,6 +39,7 @@ import { PROVIDERS, missingEnv } from '../integrations/registry';
 import { channelAgentAnswer } from './agent-channels';
 import { AGENT_TEMPLATES } from './agent-templates';
 import { obsoleteReason, refreshPending } from './proposal-validity';
+import { goalsAnswer, isGoalsQuestion } from '../office/cash-chat';
 import { AGENT_MANAGE, AGENT_USE, GAME_ACCESS, ensureDefaultSpaces } from './common';
 
 const AGENT_AUDIENCE = 'permission:agentes.usar|permission:agentes.gerenciar' as const;
@@ -161,6 +162,16 @@ async function answer(
     dataScopes: agent.dataScopes,
     policies: (agent.actionPolicies ?? {}) as Record<string, string>,
   };
+  // Gerente: perguntas sobre o Quadro de Metas (mesmos números do quadro, com os lançamentos).
+  if (
+    agent.roleKey === 'GERENTE' &&
+    question &&
+    isGoalsQuestion(question) &&
+    permissions.has('financeiro.ver')
+  ) {
+    const g = await goalsAnswer(prisma, question);
+    return { content: g.reply, references: g.references, proposals: [], tasks: [] };
+  }
   const channel = await channelAgentAnswer(prisma, agent, permissions, question);
   if (channel) return channel;
   if (agent.roleKey === 'GERENTE') return managerAnswer(ctx, question);

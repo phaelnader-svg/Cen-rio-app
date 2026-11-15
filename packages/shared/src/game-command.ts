@@ -145,6 +145,12 @@ export function parseCommandRules(text: string, today: string): CommandIntent {
   const t = normCmd(text);
   const osNum = /\b(?:os|o\.s|ordem(?: de servico)?)\s*(?:n(?:o|umero)?\s*)?(\d{1,7})\b/.exec(t);
 
+  // Quadro de Metas (caixa): metas, crescimento da semana, queda do caixa, projeção.
+  if (
+    /\b(metas?|bater|bato|cresci|crescemos|crescimento|caixa|\d+\s*mil)\b/.test(t) &&
+    !/\b(mov\w*|joga|mesas?)\b/.test(t)
+  )
+    return { ...empty('FINANCEIRO'), pedido: text.trim() };
   // Financeiro e conversas (resolvidos pelo escritório).
   if (
     /\b(whatsapp|whats|zap|instagram|insta|direct|messenger|conversa|conversas|mensagens?)\b/.test(
@@ -265,6 +271,10 @@ export const COMMAND_SUGGESTIONS = [
   'Coloca mais duas mesas perto da janela',
   'Aumenta o escritório dois metros',
   'Cria uma mesa para o agente de compras',
+  'Quanto falta pra bater os 100 mil?',
+  'Quanto eu cresci essa semana?',
+  'Por que o caixa caiu desde segunda?',
+  'Com o que tenho pra receber e pagar, bato a meta até o prazo?',
 ];
 
 /** Número por extenso ou dígito ("dois metros" → 2). */
@@ -344,7 +354,7 @@ export type CommandEffect =
   | { kind: 'ABRIR_CONVERSA'; conversationId: string }
   | {
       kind: 'ABRIR_PAINEL';
-      panel: 'CENTRAL' | 'CAIXA_ENTRADA' | 'CAMPANHAS' | 'PUBLICACOES' | 'FINANCEIRO';
+      panel: 'CENTRAL' | 'CAIXA_ENTRADA' | 'CAMPANHAS' | 'PUBLICACOES' | 'FINANCEIRO' | 'METAS';
       filter?: string;
       serviceOrderId?: string;
     }
