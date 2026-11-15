@@ -1,0 +1,6 @@
+• application_logs {"unit": "cenario-backup-upload", "lines": 200, "since_minutes": 1440} → job 1fedca58-90f7-4af5-96d9-fa1045822181 (mensagem 22618868609329133)
+{"jti": "1fedca58-90f7-4af5-96d9-fa1045822181", "operacao": "application_logs", "classe": "READ_ONLY", "parametros": {"unit": "cenario-backup-upload", "lines": 200, "since_minutes": 1440}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-15T07:47:00.457821Z", "fim": "2026-11-15T07:47:00.772235Z", "duracao_s": 0.314, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ journalctl --no-pager -o short-iso -u cenario-backup-upload.service -n 200 --since -1440min
+2026-11-15T07:30:04+0000 cenario-homolog systemd[1]: Starting cenario-backup-upload.service - Cenário Gestão — envio dos backups ao Cloud Storage...
+2026-11-15T07:30:05+0000 cenario-homolog systemd[1]: cenario-backup-upload.service: Deactivated successfully.
+2026-11-15T07:30:05+0000 cenario-homolog systemd[1]: Finished cenario-backup-upload.service - Cenário Gestão — envio dos backups ao Cloud Storage.

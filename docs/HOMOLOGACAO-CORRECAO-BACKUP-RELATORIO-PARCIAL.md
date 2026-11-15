@@ -113,3 +113,20 @@ fechado. Nada é reiniciado.
 O timer dispara o serviço sozinho, sem depender do portão. Não havia backup novo para enviar: o
 diário da homologação sai às ~17:14 UTC. O envio automático de um backup novo é conferido em
 **15/11, 07:45 UTC**. Evidências: `docs/evidencias/homologacao-correcao-backup/d1-20261114/`.
+
+## 7. Verificação D+2 — 15/11/2026, 07:46 UTC (só leitura)
+
+| Verificação                       | Resultado                                                                                                                                                                                                                           |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Execução automática das 07:30 UTC | ✔ `Starting… / Deactivated successfully / Finished` às **07:30:04–07:30:05**, com o portão fechado. Nada a enviar, sem erro e sem "skipped"                                                                                        |
+| Envio do backup diário de 14/11   | ✔ `cenario-staging-20261114T171407Z` **já estava no bucket**: foi enviado às 23:50:10 UTC de 14/11, pelo ponto de recuperação do deploy da E1, que envia o que estiver pendente. Por isso o timer das 07:30 não tinha o que mandar |
+| `smoke_test`                      | ✔ 20/20, "Saúde: OK": último backup há 4 h (`cenario-staging-20261115T034025Z`), último envio ao bucket há 0 h, nenhum backup local sem cópia externa há mais de 36 h                                                              |
+| Portão                            | fechado                                                                                                                                                                                                                             |
+| Contêineres                       | 5 saudáveis (api e web "Up 4 hours", do deploy da S1; postgres e backup "Up 5 weeks")                                                                                                                                               |
+
+**Ressalva:** o objetivo específico desta verificação, ver o **timer** enviar sozinho um backup
+diário novo, não pôde ser comprovado hoje. O backup das 17:14 de 14/11 já tinha sido enviado por
+outra rotina antes das 07:30. O timer continua rodando todo dia, sem depender do portão, e nenhum
+backup ficou sem cópia externa. A próxima oportunidade é o backup diário de 15/11 (~17:14 UTC),
+que deve aparecer como "enviado" na execução de **16/11 às 07:30 UTC**, se nenhum deploy ou ponto
+de recuperação o enviar antes. Evidências: `docs/evidencias/homologacao-correcao-backup/d2-20261115/`.

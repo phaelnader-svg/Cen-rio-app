@@ -1,0 +1,3 @@
+• gate_status {} → job eee9c7c9-62d2-41c0-960b-4fcb990abf67 (mensagem 22618871223002390)
+{"jti": "eee9c7c9-62d2-41c0-960b-4fcb990abf67", "operacao": "gate_status", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-15T07:47:20.712658Z", "fim": "2026-11-15T07:47:20.930981Z", "duracao_s": 0.218, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)
