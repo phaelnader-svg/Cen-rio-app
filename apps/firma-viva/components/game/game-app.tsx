@@ -1,12 +1,11 @@
 'use client';
 /**
- * Entrada própria do jogo (/jogo): mesma sessão, usuários e permissões do painel. Exige sessão
- * web com `jogo.acessar`; cada ação pelo mapa continua exigindo a permissão do fluxo oficial.
+ * Firma Viva: o jogo abre na organização da sessão. Funciona sem o Cenário Gestão (planta,
+ * mesas, agentes); com ele conectado, o mapa mostra e opera a empresa real.
  */
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Alert, Spinner } from '@/components/ui/misc';
-import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
 import { useMe } from '@/lib/hooks';
 import { RealtimeProvider } from '@/lib/realtime';
@@ -17,8 +16,12 @@ export function GameApp() {
   const router = useRouter();
   const unauthenticated = me.error instanceof ApiError && me.error.status === 401;
   useEffect(() => {
-    if (unauthenticated) router.replace('/entrar?voltar=/jogo');
+    if (unauthenticated) {
+      const back = `${window.location.pathname}${window.location.search}`;
+      router.replace(`/entrar?proximo=${encodeURIComponent(back)}`);
+    }
   }, [unauthenticated, router]);
+  const ended = useCallback(() => router.replace('/entrar?motivo=encerrada'), [router]);
   if (me.isPending || unauthenticated)
     return (
       <div className="grid min-h-dvh place-items-center">
@@ -28,25 +31,26 @@ export function GameApp() {
   if (me.isError)
     return (
       <div className="mx-auto max-w-md p-8">
-        <Alert tone="danger" title="Não foi possível abrir o jogo">
+        <Alert tone="danger" title="Não foi possível abrir o Firma Viva">
           {me.error.message}
         </Alert>
       </div>
     );
-  const perms = new Set(me.data.permissions);
-  if (me.data.session.kind !== 'WEB' || !perms.has('jogo.acessar'))
+  if (!me.data.organization)
     return (
       <div className="mx-auto max-w-md p-8">
-        <Alert tone="warn" title="Jogo indisponível para esta conta">
-          É preciso entrar pelo navegador com a permissão “Entrar no jogo de gestão”.
+        <Alert tone="warn" title="Sem organização">
+          Sua conta ainda não faz parte de nenhuma organização. Peça um convite a quem administra a
+          sua empresa no Firma Viva.
         </Alert>
-        <Button className="mt-4" variant="secondary" onClick={() => router.replace('/painel')}>
-          Voltar ao painel
-        </Button>
       </div>
     );
   return (
-    <RealtimeProvider onSessionEnded={() => router.replace('/entrar?motivo=encerrada')}>
+    <RealtimeProvider
+      key={me.data.organization.id}
+      enabled={me.data.organization.cenario.status === 'CONECTADA'}
+      onSessionEnded={ended}
+    >
       <GameWorld />
     </RealtimeProvider>
   );

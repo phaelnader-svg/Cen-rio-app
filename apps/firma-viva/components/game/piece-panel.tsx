@@ -35,6 +35,7 @@ import {
   fmtDateTime,
   fmtQty,
 } from './ui';
+import { cenarioUrl } from '@/lib/links';
 
 const MODEL_ICON: Record<string, string> = {
   SOFA: '🛋️',
@@ -277,7 +278,7 @@ export function PiecePanel({
         label: `Comprar ${fmtQty(ex.toBuy)} ${u} de ${firstMissing.description}`,
         run: () =>
           window.open(
-            `/painel/compras/novo?req=${firstMissing.requirementId}`,
+            cenarioUrl(`/painel/compras/novo?req=${firstMissing.requirementId}`),
             '_blank',
             'noopener',
           ),
@@ -285,7 +286,7 @@ export function PiecePanel({
     else if (firstMissing.awaiting > 0)
       action = {
         label: `Registrar chegada de ${firstMissing.description}`,
-        run: () => window.open('/painel/recebimento-materiais', '_blank', 'noopener'),
+        run: () => window.open(cenarioUrl('/painel/recebimento-materiais'), '_blank', 'noopener'),
       };
     else actionNote = `${firstMissing.description}: aguardando compra em aberto ou reserva.`;
   } else if (wf.phase === 'AGUARDANDO_PLANEJAMENTO')
@@ -332,7 +333,7 @@ export function PiecePanel({
             </button>
           ) : null}
           <a
-            href={`/painel/os/${piece.serviceOrderId}`}
+            href={cenarioUrl(`/painel/os/${piece.serviceOrderId}`)}
             target="_blank"
             rel="noreferrer"
             className="rounded-lg p-1 text-ink-muted hover:bg-bronze-100"
@@ -677,7 +678,7 @@ export function PiecePanel({
                             <a
                               data-testid="material-buy"
                               className="inline-flex items-center gap-1 rounded-lg bg-bronze-500 px-2 py-1 text-xs font-semibold text-white"
-                              href={`/painel/compras/novo?req=${l.requirementId}`}
+                              href={cenarioUrl(`/painel/compras/novo?req=${l.requirementId}`)}
                               target="_blank"
                               rel="noreferrer"
                             >
@@ -696,7 +697,7 @@ export function PiecePanel({
                           {l.awaiting > 0 ? (
                             <a
                               className="rounded-lg border border-line-strong px-2 py-1 text-xs font-semibold"
-                              href="/painel/recebimento-materiais"
+                              href={cenarioUrl('/painel/recebimento-materiais')}
                               target="_blank"
                               rel="noreferrer"
                             >

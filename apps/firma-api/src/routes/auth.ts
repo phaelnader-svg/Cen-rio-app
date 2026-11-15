@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { SESSION_COOKIE } from '../app';
-import { ROLE_LABEL, type Role } from '../context';
+import type { CenarioConnection } from '@firma/db';
+import { ROLE_LABEL, atLeast, type Role } from '../context';
 import { audit } from '../lib/audit';
 import { hashPassword, randomToken, verifyPassword } from '../lib/crypto';
 import { E } from '../lib/errors';
@@ -33,6 +34,27 @@ function fail(keys: string[]) {
     }
     failures.set(k, f);
   }
+}
+
+/**
+ * O que a pessoa pode fazer no jogo agora: o papel na organização limita; com a empresa
+ * conectada, vale no máximo o que a autorização do Cenário liberou.
+ */
+export function effectivePermissions(role: Role, c: CenarioConnection | null): string[] {
+  const own = ['jogo.acessar'];
+  if (atLeast(role, 'GESTOR')) own.push('jogo.construir', 'agentes.usar', 'agentes.gerenciar');
+  if (!c || c.status !== 'CONECTADA') return own;
+  const fromCenario = c.permissions.filter(
+    (p) => atLeast(role, 'GESTOR') || p.endsWith('.ver') || p.endsWith('.acessar'),
+  );
+  return [
+    ...new Set([
+      ...own.filter(
+        (p) => p === 'jogo.acessar' || fromCenario.includes(p) || !c.permissions.length,
+      ),
+      ...fromCenario,
+    ]),
+  ];
 }
 
 export async function authRoutes(app: FastifyInstance) {
@@ -81,6 +103,7 @@ export async function authRoutes(app: FastifyInstance) {
     const current = memberships.find((m) => m.orgId === sessionOrgId) ?? null;
     const c = current?.org.connection;
     return {
+      permissions: current ? effectivePermissions(current.role as Role, c ?? null) : [],
       user: { id: user.id, name: user.name, email: user.email },
       organizations: memberships.map((m) => ({
         id: m.org.id,

@@ -1,0 +1,62 @@
+# Firma Viva — pilha própria (banco, API, web e Caddy), separada do Cenário Gestão.
+# Fala com o Cenário Gestão só pela API pública dele (autorização delegada), nunca pelo banco.
+# Segredos vêm do ambiente da VM (Secret Manager), nunca do repositório.
+name: firma-viva
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: firma
+      POSTGRES_PASSWORD: ${FIRMA_POSTGRES_PASSWORD:?defina FIRMA_POSTGRES_PASSWORD}
+      POSTGRES_DB: firma_viva
+    volumes:
+      - firma_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U firma -d firma_viva']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  firma-api:
+    image: ${FIRMA_API_IMAGE:?defina FIRMA_API_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      FIRMA_APP_ENV: ${FIRMA_APP_ENV:-preview}
+      NODE_ENV: production
+      FIRMA_DATABASE_URL: postgresql://firma:${FIRMA_POSTGRES_PASSWORD}@postgres:5432/firma_viva
+      FIRMA_API_PORT: '4100'
+      FIRMA_WEB_URL: https://${FIRMA_DOMAIN:?defina FIRMA_DOMAIN}
+      FIRMA_COOKIE_SECURE: 'true'
+      FIRMA_TOKEN_HASH_SECRET: ${FIRMA_TOKEN_HASH_SECRET:?segredo}
+      FIRMA_SEAL_KEY: ${FIRMA_SEAL_KEY:?segredo (32 bytes base64)}
+      CENARIO_API_URL: ${CENARIO_API_URL:?endereço da API do Cenário Gestão (servidor)}
+      CENARIO_WEB_URL: ${CENARIO_WEB_URL:?endereço do Cenário Gestão (navegador)}
+      FIRMA_CENARIO_CLIENT_ID: ${FIRMA_CENARIO_CLIENT_ID:-firma-viva}
+      FIRMA_CENARIO_CLIENT_SECRET: ${FIRMA_CENARIO_CLIENT_SECRET:?segredo do aplicativo no Cenário}
+
+  firma-web:
+    image: ${FIRMA_WEB_IMAGE:?defina FIRMA_WEB_IMAGE}
+    restart: unless-stopped
+    depends_on: [firma-api]
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      FIRMA_DOMAIN: ${FIRMA_DOMAIN}
+      FIRMA_DOMAIN_WWW: ${FIRMA_DOMAIN_WWW:-www.firmaviva.invalid}
+    volumes:
+      - ./Caddyfile.firma:/etc/caddy/Caddyfile:ro
+      - firma_caddy:/data
+
+volumes:
+  firma_pgdata:
+  firma_caddy:

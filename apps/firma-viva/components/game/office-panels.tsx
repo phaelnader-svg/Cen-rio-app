@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { GBtn, KV, Panel, Section, Tone, fmtDateTime } from './ui';
+import { cenarioUrl } from '@/lib/links';
 
 export interface ConnectionCard {
   key: string;
@@ -36,7 +37,19 @@ export interface ConnectionCard {
     wabas: { id: string; name: string; phones: { id: string; display: string }[] }[];
     adAccounts: { id: string; name: string }[];
   } | null;
-  company?: { name: string | null; document: string | null };
+  company?: { name: string | null; document: string | null } | null;
+  /** Conexão da organização no Firma Viva (autorização delegada do Cenário Gestão). */
+  firma?: {
+    status: string;
+    company: { name: string; document: string | null } | null;
+    cenarioUser: { name: string; email: string | null } | null;
+    scopes: string[];
+    permissions: string[];
+    connectedAt: string | null;
+    lastSyncAt: string | null;
+    lastError: string | null;
+    canManage: boolean;
+  };
   user?: { displayName: string; email: string };
   permissions?: number;
 }
@@ -114,7 +127,8 @@ const STATUS_LABEL: Record<string, string> = {
   PENDENTE: 'Escolher conta',
   ERRO: 'Erro',
   PLANEJADA: 'Planejada',
-  EXPIRADA: 'Reconectar',
+  EXPIRADA: 'Expirada — reconectar',
+  REVOGADA: 'Revogada — reconectar',
 };
 const CONV_STATUS: Record<string, string> = {
   ABERTA: 'Aberta',
@@ -235,9 +249,133 @@ export function ConnectionsPanel({
   );
 }
 
+const SCOPE_LABEL: Record<string, string> = {
+  jogo: 'Planta e agentes',
+  operacao: 'Operação da oficina',
+  escritorio: 'Escritório e financeiro',
+};
+
+/** Cartão "Cenário Gestão": conectar pela tela oficial, estado, permissões e desconectar. */
+function CenarioCard({ c }: { c: ConnectionCard }) {
+  const f = c.firma;
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+  if (!f) return null;
+  const start = async () => {
+    setBusy('conectar');
+    try {
+      const r = await api<{ url: string }>('/api/conexoes/cenario/iniciar', { method: 'POST' });
+      window.location.href = r.url; // tela oficial do Cenário Gestão (login e autorização lá)
+    } catch (e) {
+      toast('danger', e instanceof ApiError ? e.message : 'Não foi possível iniciar a conexão.');
+      setBusy(null);
+    }
+  };
+  const disconnect = async () => {
+    if (
+      !window.confirm(
+        'Desconectar o Cenário Gestão? A planta e as configurações continuam aqui; ações com dados da empresa ficam indisponíveis até reconectar.',
+      )
+    )
+      return;
+    setBusy('desconectar');
+    try {
+      await api('/api/conexoes/cenario/desconectar', { method: 'POST' });
+      toast('ok', 'Cenário Gestão desconectado. A planta continua disponível.');
+      await qc.invalidateQueries();
+    } catch (e) {
+      toast('danger', e instanceof ApiError ? e.message : 'Não foi possível desconectar.');
+    } finally {
+      setBusy(null);
+    }
+  };
+  const suspended = f.status === 'EXPIRADA' || f.status === 'REVOGADA';
+  return (
+    <div className="space-y-2" data-testid="cenario-card">
+      {f.status === 'CONECTADA' ? (
+        <>
+          <KV k="Empresa" v={f.company?.name ?? '—'} />
+          {f.company?.document ? <KV k="CNPJ" v={f.company.document} /> : null}
+          <KV
+            k="Autorizado por"
+            v={`${f.cenarioUser?.name ?? ''}${f.cenarioUser?.email ? ` (${f.cenarioUser.email})` : ''}`}
+          />
+          <KV
+            k="Permissões"
+            v={`${f.permissions.length} liberadas · ${f.scopes.map((s) => SCOPE_LABEL[s] ?? s).join(', ')}`}
+          />
+          <KV k="Conectado em" v={f.connectedAt ? fmtDateTime(f.connectedAt) : '—'} />
+          <KV k="Última sincronização" v={f.lastSyncAt ? fmtDateTime(f.lastSyncAt) : '—'} />
+          <p className="text-ink-muted">
+            Sua senha do Cenário não fica no Firma Viva: guardamos só a autorização, protegida no
+            servidor. Revogue quando quiser aqui ou em Aplicativos conectados, no Cenário.
+          </p>
+        </>
+      ) : suspended ? (
+        <div
+          className="rounded-lg bg-danger-50 p-2 text-danger-700"
+          data-testid="cenario-suspended"
+        >
+          <div className="font-bold">Conexão suspensa</div>
+          {f.status === 'REVOGADA'
+            ? 'A autorização foi revogada no Cenário Gestão.'
+            : 'A autorização expirou.'}{' '}
+          As ações com dados da empresa estão pausadas. A planta e as configurações continuam aqui.
+          Clique em “Reconectar Cenário Gestão” e autorize de novo na tela oficial.
+        </div>
+      ) : (
+        <p className="text-ink-soft">
+          Conecte o Cenário Gestão para ver OS, funcionários, materiais, estoque e o caixa da sua
+          empresa no mapa. Você entra na tela oficial do Cenário, escolhe a empresa, revisa as
+          permissões e autoriza. Sua senha é digitada só lá.
+        </p>
+      )}
+      {f.canManage ? (
+        <div className="flex flex-wrap gap-1.5">
+          {f.status !== 'CONECTADA' ? (
+            <GBtn
+              tone="primary"
+              onClick={() => void start()}
+              disabled={busy !== null}
+              testId="cenario-connect"
+            >
+              {busy === 'conectar'
+                ? 'Abrindo o Cenário…'
+                : suspended || f.status === 'DESCONECTADA'
+                  ? 'Reconectar Cenário Gestão'
+                  : 'Conectar Cenário Gestão'}
+            </GBtn>
+          ) : (
+            <>
+              <GBtn
+                onClick={() => void start()}
+                disabled={busy !== null}
+                testId="cenario-reconnect"
+              >
+                Reconectar
+              </GBtn>
+              <GBtn
+                tone="danger"
+                onClick={() => void disconnect()}
+                disabled={busy !== null}
+                testId="cenario-disconnect"
+              >
+                {busy === 'desconectar' ? 'Desconectando…' : 'Desconectar'}
+              </GBtn>
+            </>
+          )}
+        </div>
+      ) : (
+        <p className="text-ink-muted">Só administradores da organização conectam ou desconectam.</p>
+      )}
+    </div>
+  );
+}
+
 function stateTone(c: ConnectionCard) {
   if (c.status === 'CONECTADA') return c.mode === 'TESTE_LOCAL' ? 'info' : 'ok';
-  if (c.status === 'ERRO' || c.status === 'EXPIRADA') return 'risco';
+  if (c.status === 'ERRO' || c.status === 'EXPIRADA' || c.status === 'REVOGADA') return 'risco';
   return 'atencao';
 }
 
@@ -300,17 +438,7 @@ function ConnectionItem({
       </button>
       {open ? (
         <div className="space-y-2 border-t border-line p-2.5">
-          {c.key === 'CENARIO' ? (
-            <>
-              <KV k="Empresa" v={c.company?.name ?? 'Cenário Estofados'} />
-              <KV k="CNPJ" v={c.company?.document ?? 'não cadastrado'} />
-              <KV k="Sessão" v={`${c.user?.displayName ?? ''} (${c.user?.email ?? ''})`} />
-              <KV k="Permissões" v={`${c.permissions ?? 0} liberadas para você`} />
-              <p className="text-ink-muted">
-                Os agentes usam a mesma sessão, permissões e ações do Cenário Gestão.
-              </p>
-            </>
-          ) : null}
+          {c.key === 'CENARIO' ? <CenarioCard c={c} /> : null}
           <ul className="list-disc pl-4 text-ink-soft">
             {c.capabilities.map((x) => (
               <li key={x}>{x}</li>
@@ -738,7 +866,7 @@ function ConversationPanel({
             {d.serviceOrder ? (
               <a
                 className="font-semibold text-brand-700 underline"
-                href={`/painel/os/${d.serviceOrder.id}`}
+                href={cenarioUrl(`/painel/os/${d.serviceOrder.id}`)}
                 target="_blank"
                 rel="noreferrer"
                 data-testid="conv-os"

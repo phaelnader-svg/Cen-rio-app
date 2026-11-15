@@ -20,7 +20,7 @@ import {
   type LayoutContent,
 } from '@cenario/shared';
 import type { Prisma } from '@firma/db';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { atLeast } from '../context';
@@ -428,7 +428,7 @@ export async function gameRoutes(app: FastifyInstance) {
     const cenarioCard = {
       key: 'CENARIO',
       label: 'Cenário Gestão',
-      group: 'Empresa',
+      group: 'SISTEMA',
       provider: 'Cenário Gestão',
       auth: 'SESSAO',
       capabilities: [
@@ -467,7 +467,7 @@ export async function gameRoutes(app: FastifyInstance) {
   });
 
   // ───────────── Repasse ao Cenário Gestão ─────────────
-  async function forward(request: FastifyRequest, reply: import('fastify').FastifyReply) {
+  async function forward(request: FastifyRequest, reply: FastifyReply) {
     const path = request.url; // inclui a consulta
     const bare = path.split('?')[0]!;
     const c = await db.cenarioConnection.findUnique({ where: { orgId: request.org!.id } });

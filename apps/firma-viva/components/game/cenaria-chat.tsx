@@ -1,6 +1,6 @@
 'use client';
 /**
- * "Falar com a Cenário": caixa principal de conversa com o jogo, em qualquer ambiente e modo.
+ * "Falar com a Firma": caixa principal de conversa com o jogo, em qualquer ambiente e modo.
  * Envia a frase ao servidor (que interpreta, valida e resolve) e entrega o EFEITO ao mapa.
  * Consultas abrem na hora; prévias e confirmações aparecem como cartões aqui mesmo.
  */
@@ -73,13 +73,13 @@ export function CenariaChat({
     <section
       className="pointer-events-auto flex w-[min(440px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border-2 border-brand-600/50 bg-[#fffaf2]/97 shadow-pop"
       data-testid="cenaria-chat"
-      aria-label="Falar com a Cenário"
+      aria-label="Falar com a Firma"
     >
       <button
         className="flex items-center gap-2 border-b border-brand-600/20 bg-brand-700 px-3 py-2 text-left text-sm font-bold text-[#f5ebdf]"
         onClick={() => setOpen((o) => !o)}
       >
-        <MessageCircle className="size-4" /> Falar com a Cenário
+        <MessageCircle className="size-4" /> Falar com a Firma
         <span className="ml-auto text-[10px] font-semibold opacity-80">
           {config.data?.provider === 'anthropic'
             ? `IA: ${config.data.model}`
@@ -183,7 +183,7 @@ export function CenariaChat({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onFocus={() => setOpen(true)}
-          aria-label="Falar com a Cenário"
+          aria-label="Falar com a Firma"
           data-testid="cenaria-input"
         />
         <button

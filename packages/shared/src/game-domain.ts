@@ -1147,6 +1147,8 @@ export function suggestedWorkshop(team: TeamHint[] = []): LayoutContent {
   const D = 1200;
   const user = (n: string) => team.find((t) => t.displayName === n)?.userId;
   const ids = (...n: string[]) => n.map(user).filter((x): x is string => Boolean(x));
+  // Bancadas com nome da pessoa só quando ela existe na equipe (outras empresas: nome genérico).
+  const benchOf = (n: string, fallback: string) => (user(n) ? `Bancada do ${n}` : fallback);
   const A = {
     marcenaria: area('MARCENARIA', 0, 0, 400, 380),
     corte: area('CORTE', 400, 0, 450, 380),
@@ -1172,12 +1174,26 @@ export function suggestedWorkshop(team: TeamHint[] = []): LayoutContent {
     station('BANCADA_DESMANCHE', 'Bancada do desmanche', A.desmanche, 60, 440, {
       assigneeUserIds: ids('João'),
     }),
-    station('BANCADA_TAPECEIRO', 'Bancada do Ricardo', A.montagem, 440, 520, {
-      assigneeUserIds: ids('Ricardo'),
-    }),
-    station('BANCADA_TAPECEIRO', 'Bancada do Márcio', A.montagem, 720, 520, {
-      assigneeUserIds: ids('Márcio'),
-    }),
+    station(
+      'BANCADA_TAPECEIRO',
+      benchOf('Ricardo', 'Bancada de tapeçaria 1'),
+      A.montagem,
+      440,
+      520,
+      {
+        assigneeUserIds: ids('Ricardo'),
+      },
+    ),
+    station(
+      'BANCADA_TAPECEIRO',
+      benchOf('Márcio', 'Bancada de tapeçaria 2'),
+      A.montagem,
+      720,
+      520,
+      {
+        assigneeUserIds: ids('Márcio'),
+      },
+    ),
     station('MESA_INSPECAO', 'Mesa de inspeção', A.qualidade, 1030, 560, {
       assigneeUserIds: ids('Thiago'),
       activities: ['ACABAMENTO', 'CORRECAO'],

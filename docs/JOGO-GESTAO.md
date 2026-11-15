@@ -1,6 +1,11 @@
 # Jogo de gestão — empresa virtual da Cenário Estofados
 
-Entrada própria em **`/jogo`** dentro do Cenário Gestão: mesma empresa, mesmos usuários, sessão e
+> **Agora é o Firma Viva**, um produto independente com endereço, login e banco próprios
+> (ver **[docs/FIRMA-VIVA.md](FIRMA-VIVA.md)**). O jogo saiu do Cenário Gestão (menu
+> "Empresa virtual" e rota `/jogo` removidos); ele se conecta ao Cenário pela integração
+> **Cenário Gestão** (autorização delegada). As regras abaixo continuam valendo para o mapa.
+
+Histórico: a primeira versão ficava em **`/jogo`** dentro do Cenário Gestão, com a mesma empresa, mesmos usuários, sessão e
 permissões. O mapa isométrico (identidade visual própria da Cenário: piso de madeira clara, paredes
 em verde petróleo, detalhes em bronze) é a interface principal; painéis sobre o mapa mostram detalhes
 e executam ações **pelas rotas oficiais**. O Cenário Gestão continua sendo a fonte oficial dos dados.
@@ -19,8 +24,8 @@ pnpm dev                        # API :4000 e web :3000
 JOGO_EMAIL=<SEED_ADMIN_EMAIL> JOGO_PASSWORD=<SEED_ADMIN_PASSWORD> node scripts/jogo-dados-sinteticos.mjs
 ```
 
-1. Entre em <http://localhost:3000/entrar> com o gestor e clique em **Empresa virtual** no menu
-   (ou abra <http://localhost:3000/jogo>).
+1. Abra o Firma Viva em <http://localhost:3100> (veja docs/FIRMA-VIVA.md para criar a conta e
+   conectar o Cenário Gestão).
 2. Tablets: abra <http://localhost:3000/tablet> em outra janela/dispositivo, digite o **código de
    vinculação** impresso pelo script e entre com o PIN do funcionário (também impresso).
 3. O script cria 4 OS fictícias: **Ana** (sofá retrátil, falta material — vermelho), **Bruno**

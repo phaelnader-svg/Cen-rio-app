@@ -1,6 +1,6 @@
 'use client';
 /**
- * Empresa virtual da Cenário: mapa isométrico com dois modos.
+ * Firma Viva: mapa isométrico da empresa com dois modos.
  * - Gestão: andar, consultar a operação, clicar em sofás, pessoas, estantes e agentes.
  * - Construção: editar a planta (com o Mestre de Obras), salvar com versão e impacto.
  * A interface nunca "simula" a operação: tudo que muda no mapa vem do servidor (tempo real).
@@ -44,7 +44,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
-import { useCan } from '@/lib/hooks';
+import { useCan, useMe } from '@/lib/hooks';
 import { useRealtime } from '@/lib/realtime';
 import {
   ImpactDialog,
@@ -89,6 +89,7 @@ import { peopleOnMap, piecesOnMap } from './placement';
 import { MaterialPanel, StoragePanel } from './storage-panel';
 import { GBtn, KV, Panel, Tone, fmtClock, fmtDate } from './ui';
 import { useServiceOrder } from './game-api';
+import { cenarioUrl } from '@/lib/links';
 
 type Side =
   | { t: 'piece'; id: string }
@@ -131,6 +132,8 @@ const SNAPSHOT_EVENTS = [
 
 export function GameWorld() {
   const can = useCan();
+  const me = useMe();
+  const cenarioStatus = me.data?.organization?.cenario.status ?? 'NAO_CONECTADA';
   const canBuild = can('jogo.construir');
   const canManageAgents = can('agentes.gerenciar');
   const canUseAgents = can('agentes.usar');
@@ -224,6 +227,14 @@ export function GameWorld() {
     const conv = q.get('conversa');
     const central = q.get('central');
     const caixa = q.get('caixa');
+    // Retorno da tela oficial do Cenário Gestão (conectar/reconectar).
+    const conexao = q.get('conexao');
+    if (conexao) {
+      void qc.invalidateQueries();
+      const msg = q.get('mensagem');
+      if (conexao === 'ok') toast('ok', 'Cenário Gestão conectado. A empresa já aparece no mapa.');
+      else toast('danger', msg ?? 'A conexão com o Cenário Gestão não foi concluída.');
+    }
     if (caixa) {
       setSpaceKey('ESCRITORIO');
       setSide({
@@ -239,7 +250,7 @@ export function GameWorld() {
       setSide(conv ? { t: 'inbox', conv } : { t: 'central' });
       window.history.replaceState(null, '', window.location.pathname);
     }
-  }, []);
+  }, [qc, toast]);
 
   // Quadro de Metas no escritório: barra avança/recua com cada movimentação confirmada.
   const lastWeekSeen = useRef<string | null>(null);
@@ -986,7 +997,7 @@ export function GameWorld() {
     }, 120);
   };
 
-  // ───────────── Falar com a Cenário ─────────────
+  // ───────────── Falar com a Firma ─────────────
   const openBuild = (key: string) => {
     const sp = spaces.data?.find((s) => s.key === key);
     if (!sp) return false;
@@ -1204,7 +1215,7 @@ export function GameWorld() {
           body: {
             assigneeUserId: assignPrev.userId,
             version: assignPrev.taskVersion,
-            ...(assignPrev.published ? { reason: 'Atribuído por Falar com a Cenário' } : {}),
+            ...(assignPrev.published ? { reason: 'Atribuído por Falar com a Firma' } : {}),
           },
         });
         setAssignPrev({
@@ -1246,7 +1257,7 @@ export function GameWorld() {
       await api(`/api/v1/production-plans/${assignPrev.planId}/publish`, {
         method: 'POST',
         idempotencyKey: newIdempotencyKey(),
-        body: { version: plan.version, notes: 'Publicado por Falar com a Cenário' },
+        body: { version: plan.version, notes: 'Publicado por Falar com a Firma' },
       });
       setAssignPrev({
         ...assignPrev,
@@ -1405,15 +1416,36 @@ export function GameWorld() {
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start gap-2 p-2 sm:p-3">
         <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border-2 border-bronze-500/60 bg-[#fffaf2]/95 px-3 py-1.5 shadow-pop">
           <span className="grid size-8 place-items-center rounded-xl bg-brand-700 text-sm font-black text-[#f5ebdf]">
-            C
+            F
           </span>
           <div className="leading-tight">
-            <div className="text-sm font-black text-brand-800">Cenário</div>
+            <div className="text-sm font-black text-brand-800" data-testid="org-name">
+              {me.data?.organization?.name ?? 'Firma Viva'}
+            </div>
             <div className="text-[10px] font-semibold tracking-wide text-bronze-600 uppercase">
-              Empresa virtual
+              Firma Viva
             </div>
           </div>
         </div>
+        {cenarioStatus !== 'CONECTADA' ? (
+          <button
+            className={clsx(
+              'pointer-events-auto rounded-2xl border px-3 py-2 text-xs font-bold shadow-card',
+              cenarioStatus === 'EXPIRADA' || cenarioStatus === 'REVOGADA'
+                ? 'border-danger-600/30 bg-danger-50 text-danger-700'
+                : 'border-brand-200 bg-brand-50 text-brand-800',
+            )}
+            onClick={() => {
+              setSpaceKey('ESCRITORIO');
+              setSide({ t: 'central' });
+            }}
+            data-testid="connect-cenario-chip"
+          >
+            {cenarioStatus === 'EXPIRADA' || cenarioStatus === 'REVOGADA'
+              ? '⚠ Reconectar Cenário Gestão'
+              : '🔌 Conectar Cenário Gestão'}
+          </button>
+        ) : null}
         <nav
           className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-line bg-white/95 p-1 shadow-card"
           aria-label="Ambientes"
@@ -1565,10 +1597,10 @@ export function GameWorld() {
             <MapIcon className="size-4" />
           </button>
           <Link
-            href="/painel"
+            href="/organizacao"
             className="rounded-xl px-2 py-1.5 text-xs font-semibold text-ink-soft hover:bg-subtle"
           >
-            Painel
+            Organização
           </Link>
         </div>
       </div>
@@ -1629,7 +1661,11 @@ export function GameWorld() {
             })}
           </div>
           {!canSeeProduction ? (
-            <span className="text-danger-700">Sem permissão de ver a produção.</span>
+            <span className="text-danger-700">
+              {cenarioStatus === 'CONECTADA'
+                ? 'Sem permissão de ver a produção.'
+                : 'Conecte o Cenário Gestão para ver as OS e a produção da empresa.'}
+            </span>
           ) : null}
         </div>
       ) : null}
@@ -1969,7 +2005,7 @@ export function GameWorld() {
             onOpenOs={(soId) => {
               const p = snapshot.data?.pieces.find((x) => x.serviceOrderId === soId);
               if (p) goPiece(p.id);
-              else window.open(`/painel/os/${soId}`, '_blank');
+              else window.open(cenarioUrl(`/painel/os/${soId}`), '_blank');
             }}
           />
         ) : side?.t === 'os' ? (
@@ -2201,7 +2237,7 @@ function OsPanel({
             ))}
           </ul>
           <a
-            href={`/painel/os/${d.id}`}
+            href={cenarioUrl(`/painel/os/${d.id}`)}
             target="_blank"
             rel="noreferrer"
             className="mt-3 inline-block text-xs font-semibold underline"

@@ -13,6 +13,7 @@ import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useMaterial, useSlot } from './game-api';
 import { GBtn, KV, Panel, Section, Tone, UNIT_LABEL, fmtDate, fmtDateTime, fmtQty } from './ui';
+import { cenarioUrl } from '@/lib/links';
 
 const KIND_LABEL: Record<string, string> = {
   TECIDO: 'Tecido',
@@ -270,7 +271,7 @@ function MaterialCard({
                 ) : null}
                 {w.missing - Math.max(0, m.available) > 0 ? (
                   <a
-                    href={`/painel/compras/novo?req=${w.requirementId}`}
+                    href={cenarioUrl(`/painel/compras/novo?req=${w.requirementId}`)}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 rounded bg-bronze-500 px-1.5 py-0.5 font-semibold text-white"
@@ -313,7 +314,7 @@ function MaterialCard({
           m.purchases.map((p, i) => (
             <a
               key={`${p.purchaseOrderId}-${i}`}
-              href={`/painel/compras/${p.purchaseOrderId}`}
+              href={cenarioUrl(`/painel/compras/${p.purchaseOrderId}`)}
               target="_blank"
               rel="noreferrer"
               className="block text-xs underline"

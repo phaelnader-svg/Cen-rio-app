@@ -8,7 +8,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @cenario/api --filter @cenario/web dev",
+    "dev": "pnpm --parallel --filter @cenario/api --filter @cenario/web --filter @firma/api --filter @firma/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint . --max-warnings=0",
@@ -24,7 +24,8 @@
     "backup": "bash scripts/backup.sh",
     "restore": "bash scripts/restore.sh",
     "test:backup": "bash scripts/test-backup-restore.sh",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "db:firma:migrate": "pnpm --filter @firma/db migrate:deploy"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

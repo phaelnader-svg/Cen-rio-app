@@ -19,7 +19,12 @@ export const E = {
   forbidden: (message = 'Seu papel nesta organização não permite esta ação.') =>
     new FirmaError(403, 'FORBIDDEN', message),
   origin: () => new FirmaError(403, 'ORIGIN_NOT_ALLOWED', 'Origem da requisição não autorizada.'),
-  notFound: (what = 'Registro') => new FirmaError(404, 'NOT_FOUND', `${what} não encontrado.`),
+  notFound: (what = 'Registro') =>
+    new FirmaError(
+      404,
+      'NOT_FOUND',
+      `${what} não ${/(ção|gem|ia|a)$/.test(what) ? 'encontrada' : 'encontrado'}.`,
+    ),
   conflict: (message: string, details?: unknown) =>
     new FirmaError(409, 'CONFLICT', message, details),
   versionConflict: (currentVersion: number) =>
