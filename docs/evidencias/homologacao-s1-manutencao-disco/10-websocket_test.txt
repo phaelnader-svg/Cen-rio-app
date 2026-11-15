@@ -1,0 +1,3 @@
+• websocket_test {} → job 5ba478aa-c635-4953-9754-0e9d32e9445c (mensagem 22618742728004333)
+{"jti": "5ba478aa-c635-4953-9754-0e9d32e9445c", "operacao": "websocket_test", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-15T04:04:03.996792Z", "fim": "2026-11-15T04:04:04.334954Z", "duracao_s": 0.338, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+✔ WebSocket /api/realtime pelo proxy: HTTP 401 (esperado 401 sem sessão, ou 101)
