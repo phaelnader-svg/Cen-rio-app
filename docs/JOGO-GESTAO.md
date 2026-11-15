@@ -93,7 +93,8 @@ falhas e, na reconexão, o jogo recarrega o estado do servidor.
   (fila do João → início no tablet → bancada do João → compra/recebimento do tecido → mesa de corte
   → máquina de costura → qualidade → embalagem → expedição, com o gestor recebendo 403 ao tentar
   iniciar); Gerente/Compras com referências e propostas; tablet sem acesso.
-- Demonstração no navegador (Playwright, tablets reais em `/tablet`) das três jornadas pedidas.
+- Demonstração no navegador (Playwright, tablets reais em `/tablet`) das três jornadas pedidas,
+  sem erros de console: capturas e roteiro em `docs/evidencias/jogo/`.
 - Travas existentes atualizadas com justificativa: menu do painel (`rodada4-menu`) e linha de base
   de permissões/migrations (`rodada4-travas-estruturais`). `prisma migrate diff --exit-code` sem
   diferença; reversão manual em `packages/db/rollback/20270302000000_jogo_gestao.down.sql` testada.
