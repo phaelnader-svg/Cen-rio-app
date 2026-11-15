@@ -1,4 +1,4 @@
-# Deploy 9fb6b03 (E1 + S1) — promoção das imagens no Cloud Shell
+# Deploy 9fb6b03 (E1 + S1) — promoção das imagens no Cloud Shell (revisão 2: auditada; NÃO executar sem autorização expressa)
 
 Autorização do dono: deploy em produção de `9fb6b032c3c2496204043baa15bc2fb55a6b5e01` (branch `claude/reformulacao-s1`), versão atual `696e3e9`, retorno `rollback_version 696e3e9`.
 
@@ -8,6 +8,13 @@ A produção não constrói imagens: recebe por digest exatamente as que rodaram
 |---|---|
 | api | `sha256:723530c305ced018d90106930c0b9b0db441b389e3ec8bc282e0b4f41f717ef0` |
 | web | `sha256:aec4622f844317e2b69d8844f77ef5f04d32269167104cf6f5b917d54fd90259` |
+
+## Por que dois commits
+
+- `9fb6b03` (branch `claude/reformulacao-s1`) é o **código da aplicação** que vai para produção. Ele não entra no Cloud Shell: só as imagens já construídas dele na homologação (Cloud Build `09a46bbd…`, conta `cenario-build`, fonte `git archive` do commit exato).
+- `9ff142e` (branch `claude/deploy-banco-limpo`) é só a **árvore de scripts de infraestrutura** de onde sai `promover-imagens.sh`; é a mesma versão instalada em `/opt/cenario` na VM de produção. Nenhum código de aplicação desse commit é executado ou implantado.
+- `promover-imagens.sh` é idêntico byte a byte nos dois commits: SHA-256 `537a0137b8b8a1b0f42a290624c02f9bbb3424337c7cf63a3a1dd77235448d31`. A revisão 2 confere esse hash antes de executar.
+- O script só lê o repositório `cenario-homolog` e acrescenta a etiqueta `<sha>` no repositório `cenario-prod` (`gcloud container images add-tag`) ao manifesto do digest homologado. Não toca VM, banco, portão, IAM nem segredos, e nunca sobrescreve uma etiqueta existente com outro digest.
 
 O bloco usa o mesmo `promover-imagens.sh` (árvore `9ff142e`) que promoveu a 696e3e9: o script recusa se o digest de origem divergir e nunca sobrescreve um destino existente com outro digest. Só a versão e os digests mudaram em relação ao bloco 2 de `docs/PRODUCAO-DEPLOY-696e3e9-CLOUDSHELL.md`.
 
@@ -37,6 +44,7 @@ else
   git -C "$CLONE" worktree add --detach "$ARVORE" "$COMMIT"
 fi
 cd "$ARVORE"
+echo "537a0137b8b8a1b0f42a290624c02f9bbb3424337c7cf63a3a1dd77235448d31  infra/prod/gcp/promover-imagens.sh" | sha256sum -c - || { echo "✘ promover-imagens.sh diferente do auditado: nada feito"; exit 1; }
 [ "$(git rev-parse HEAD)" = "$COMMIT" ] || { echo "✘ diretório de trabalho fora de $COMMIT"; exit 1; }
 echo "• scripts: $(git rev-parse HEAD) em $ARVORE"
 echo "• conta gcloud: $(gcloud config get-value account 2>/dev/null)"
