@@ -19,6 +19,8 @@ export default tseslint.config(
       '**/test-results/**',
       'apps/web/next-env.d.ts',
       'apps/web/public/sw.js',
+      // Roteiros de validação (Playwright em Node) guardados junto das capturas.
+      'docs/evidencias/**/*.cjs',
     ],
   },
   js.configs.recommended,

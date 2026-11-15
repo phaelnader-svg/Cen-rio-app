@@ -114,19 +114,90 @@ desmarque "Medidas ilustrativas" quando tiver preenchido:
 6. Escritório: medidas, mesas existentes e quem senta em cada uma.
 7. Quais localizações físicas (`Qualidade → Localizações`) correspondem a quais áreas.
 
-## Integrações externas (status no painel 🔌 do escritório)
+## Central de Conexões, caixa de entrada e agentes nos canais
 
-| Integração                   | Situação           | O que falta                                                                            |
-| ---------------------------- | ------------------ | -------------------------------------------------------------------------------------- |
-| Cenário Gestão               | Conectada          | —                                                                                      |
-| WhatsApp Business            | Precisa configurar | conta autorizada na API oficial e número da empresa (`WHATSAPP_API_TOKEN`)             |
-| Instagram (Meta Graph API)   | Precisa configurar | conta profissional ligada a página e token de publicação (`INSTAGRAM_ACCESS_TOKEN`)    |
-| Emissor fiscal               | Precisa configurar | provedor, certificado e regime (`FISCAL_API_TOKEN`)                                    |
-| Modelo de orçamento/contrato | Precisa configurar | texto padrão, condições e cláusulas da Cenário                                         |
-| Modelo de linguagem          | Opcional           | `ANTHROPIC_API_KEY` para respostas livres (hoje os agentes usam regras sobre os dados) |
+No **Escritório**, o chip **🔌 Central de Conexões** mostra cada conta (sessão do Cenário Gestão,
+WhatsApp Business, Instagram profissional, Página do Facebook/Messenger, Meta Business e Anúncios,
+Assinatura digital, Emissão fiscal, Cobranças, Banco PJ, Maquininha, Contabilidade, Agenda e
+entregas; Google Ads, Perfil da Empresa e E-mail aparecem como planejadas). Cada cartão diz a conta
+autorizada, o estado, a última sincronização, o que falta no servidor (variável a variável) e o que
+falta fora do sistema. Conectar usa o **OAuth oficial da Meta** (Embedded Signup com coexistência
+para o WhatsApp); os tokens ficam **cifrados no servidor** (AES-256-GCM) e nunca vão ao navegador.
 
-Com variável presente, a integração aparece como "modo de teste": aprovações ficam registradas como
-execução de teste. Nenhum envio, publicação, compra, pagamento ou nota acontece sem aprovação.
+Fora de produção, **"Usar conta de teste"** conecta uma conta simulada: a mensagem de cliente
+simulada é assinada (`X-Hub-Signature-256`) e entra pelo **mesmo webhook** `/api/webhooks/meta`
+que a Meta usaria; envios e publicações ficam marcados como teste.
+
+- **📥 Caixa de entrada** (WhatsApp, Instagram Direct, Messenger): resumo do pedido do cliente
+  (fotos e medidas que faltam), rascunho do agente de Atendimento, revisão e envio, regra de cada
+  canal (texto livre só na janela de 24 h; fora dela, modelo aprovado no WhatsApp e bloqueio no
+  Instagram/Messenger), "Assumir conversa" (o agente para), vínculo com cliente/OS e encerramento.
+  Reenvios do webhook não duplicam mensagens.
+- **Agentes**: Atendimento, Marketing, Tráfego e Documentos (além de Gerente e Compras). Cada um
+  tem permissão por canal (consultar, preparar rascunho, executar regras liberadas) e casos de envio
+  automático escolhidos pelo gestor ("pedir fotos e medidas", "confirmar recebimento de fotos").
+  Marketing prepara posts com fotos das OS (publicar exige `marketing.publicar`). Tráfego lê
+  campanhas, gastos e resultados e **propõe** mudança de orçamento com campanha, valor atual → novo e
+  a mudança exata; só executa depois da aprovação (`anuncios.gerenciar`). O Gerente responde
+  "quem está esperando orçamento no WhatsApp?" com links que abrem as conversas.
+- **Histórico** de cada agente: canal, conta, horário, conteúdo, situação e quem aprovou (tabela
+  somente-inserção).
+
+## Escritório financeiro (ficha do sofá e painel 💼)
+
+Clique no sofá → **💼 Ficha**: orçamento aprovado, contrato, entrada, saldo, nota, materiais,
+retirada e entrega, **cada um com seu próprio estado** vindo do registro oficial.
+
+1. **Contrato** — o agente Documentos preenche o modelo versionado da Cenário (cliente, CPF,
+   endereço, itens, tecido, valor, parcelas, prazo, retirada/entrega) e lista o que falta. O gestor
+   revisa texto e signatários; **"Revisar e enviar…" mostra provedor e signatários antes de
+   confirmar**. O retorno da Clicksign (webhook com HMAC) marca assinado/recusado e arquiva o PDF
+   assinado. Revisões anteriores ficam no histórico (substituídas, nunca apagadas).
+2. **Cobrança** — plano sobre o saldo a lançar (ex.: R$ 3.000 em 50/50 → 2 × R$ 1.500; cartão =
+   uma cobrança parcelada). Aprovar cria as **contas a receber oficiais** e emite a cobrança
+   (Pix copia-e-cola/boleto/link). Vencimento ajustável, cancelamento, mensagem pronta para o
+   WhatsApp (vira rascunho na conversa do cliente). **A baixa só acontece pela confirmação do
+   provedor e uma única vez** (evento único por id + `payment_id` único na cobrança + bloqueio da
+   linha): reenviar a mesma confirmação, ou receber "confirmado" depois de "recebido", não gera nova
+   baixa. Estorno do provedor usa o estorno oficial.
+3. **Nota** — perfis fiscais configuráveis (reforma = NFS-e; fabricação = a definir com a
+   contabilidade). A nota é preparada, revisada e autorizada; sem perfil validado, códigos, alíquota,
+   CPF/CNPJ, endereço ou conexão, a tela diz exatamente o que falta. Número, status e arquivos
+   ficam guardados e entram no fechamento do mês.
+4. **Materiais** — necessidade da OS, cotações e "Escolher e abrir pedido" no fluxo oficial de compras.
+
+O painel **💼 Financeiro** (chip no escritório) tem: previsão de 7/30 dias (a receber, a pagar,
+vencidos, maquininha), **Pagar** (preparar com favorecido, valor, vencimento e conta de origem →
+confirmar → "autorize no app do banco"; só vira pago pela conciliação do extrato ou confirmação do
+provedor), **Banco** (importar OFX/CSV sem duplicar, conciliar com sugestões), **Fechamento**
+(documentos do mês por tipo, pendências e pacote .zip para a contabilidade), **Fiscal** (perfis) e
+**Entregas** (paradas do dia com saldo a cobrar, fotos e nota). Na expedição, o painel do sofá
+mostra o saldo a receber.
+
+"Falar com a Cenário" entende: "Prepare o contrato da Ana", "Gere a entrada por Pix da OS 142"
+(só prévia), "Quais entregas de amanhã têm saldo?", "Quais contas vencem até sexta?", "Preparar o
+pagamento do fornecedor de espuma", "Separe as notas e comprovantes do mês".
+
+## O que configurar para sair do modo de teste
+
+| Conexão                | Variáveis no servidor                                                                                                   | Fora do sistema                                                                                                                    |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Meta (todas)           | `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI` (…/api/v1/connections/meta/callback), `META_WEBHOOK_VERIFY_TOKEN` | App no Meta for Developers, webhook apontando para `/api/webhooks/meta`, empresa verificada, Revisão do App das permissões         |
+| WhatsApp Business      | + `META_WA_CONFIG_ID` (Embedded Signup com coexistência)                                                                | Número elegível à coexistência (app WhatsApp Business atualizado); testar antes com número de teste; modelos aprovados para > 24 h |
+| Instagram / Messenger  | —                                                                                                                       | Conta profissional ligada à Página; `instagram_manage_messages`, `instagram_content_publish`, `pages_messaging` aprovadas          |
+| Meta Ads               | —                                                                                                                       | Conta de anúncios no Gerenciador de Negócios; `ads_read`/`ads_management`                                                          |
+| Publicação de fotos    | `PUBLIC_MEDIA_BASE_URL`                                                                                                 | A Meta exige a imagem em endereço público HTTPS                                                                                    |
+| Assinatura (Clicksign) | `CLICKSIGN_ACCESS_TOKEN`, `CLICKSIGN_BASE_URL`, `CLICKSIGN_WEBHOOK_SECRET`                                              | Plano com API; webhook para `/api/webhooks/clicksign`; homologar no sandbox (adaptador feito pela documentação v3)                 |
+| Cobranças (Asaas)      | `ASAAS_API_KEY`, `ASAAS_BASE_URL`, `ASAAS_WEBHOOK_TOKEN`                                                                | Conta Asaas com chave Pix; webhook de cobranças para `/api/webhooks/asaas`                                                         |
+| Emissão fiscal         | `FISCAL_PROVIDER`, `FISCAL_API_TOKEN`                                                                                   | Cadastro no Emissor Nacional (SJC desde 01/10/2026), certificado A1, perfis validados pela contabilidade; integração real pendente |
+| Banco PJ / Maquininha  | —                                                                                                                       | Informar banco e adquirente para avaliar API; hoje: importação de extrato e relatório                                              |
+| Segredos               | `INTEGRATIONS_SECRET_KEY` (cifra os tokens; sem ela usa `TOKEN_HASH_SECRET`)                                            | —                                                                                                                                  |
+| Interpretação por IA   | `GAME_AI_PROVIDER=anthropic`, `ANTHROPIC_API_KEY`, `GAME_AI_MODEL` (opcional)                                           | Opcional: sem ela, regras e sugestões clicáveis                                                                                    |
+
+Evidências: `docs/evidencias/jogo/conexoes` (WhatsApp de ponta a ponta, Instagram, Messenger,
+post de teste, campanhas e aprovação de orçamento) e `docs/evidencias/jogo/financeiro` (primeira
+demonstração: contrato → assinatura → entrada → baixa única → ficha). Testes:
+`apps/api/test/conexoes.test.ts` e `apps/api/test/escritorio-financeiro.test.ts`.
 
 ## Lacunas encontradas (pontos exatos a completar)
 
@@ -137,11 +208,11 @@ execução de teste. Nenhum envio, publicação, compra, pagamento ou nota acont
 2. **Histórico de reservas**: reserva não é movimentação de estoque; a ficha mostra movimentações e
    reservas ativas, mas não reservas já consumidas/liberadas (precisaria de um endpoint de histórico
    de `stock_reservations`).
-3. **Agentes**: Gerente e Compras usam regras explícitas sobre os dados (prazos, filas, faltas,
-   saldo livre, contas e recebimentos) e citam os registros; perguntas livres caem nessas análises.
-   WhatsApp, Orçamentos, Financeiro/fiscal e Instagram ficam configuráveis, mas sem motor até as
-   integrações acima. O caixa do Gerente considera contas a pagar e recebimentos; a mão de obra por
-   produção ainda não entra na conta.
+3. **Agentes**: Gerente, Compras, Atendimento, Marketing, Tráfego e Documentos usam regras
+   explícitas sobre os dados e citam os registros (a IA, quando configurada, só interpreta frases
+   do chat). A mão de obra por produção ainda não entra na previsão de caixa. Emissão fiscal real,
+   API de pagamentos do banco e da maquininha dependem do provedor escolhido (hoje: teste local,
+   importação de extrato e relatório).
 4. **Compra a partir da proposta**: aprovar abre o pedido oficial já preenchido em rascunho; o
    agente não cria nem confirma pedido.
 5. **Módulos/peças**: o cadastro distingue peças por item da OS (`OS-00012/1`, `/2`); não há
@@ -154,6 +225,7 @@ execução de teste. Nenhum envio, publicação, compra, pagamento ou nota acont
 
 ## Reversão
 
-Ver `packages/db/rollback/20270302000000_jogo_gestao.down.sql` (remove só as tabelas e permissões
+Ver `packages/db/rollback/20270309000000_conexoes_escritorio.down.sql` (conexões, caixa de entrada e
+escritório financeiro) e `packages/db/rollback/20270302000000_jogo_gestao.down.sql` (remove só as tabelas e permissões
 do jogo; dados operacionais intactos). O código do jogo fica isolado em `modules/game` e
 `components/game`.
