@@ -59,7 +59,7 @@ services:
       context: ../../..
       dockerfile: infra/homolog/Dockerfile
       target: firma-api
-      args: { NEXT_PUBLIC_CENARIO_WEB_URL: 'https://${CENARIO_HOST}' }
+      args: { NEXT_PUBLIC_CENARIO_WEB_URL: '${FIRMA_CENARIO_WEB_URL:-https://${CENARIO_HOST}}' }
     restart: unless-stopped
     depends_on: { postgres: { condition: service_healthy }, api: { condition: service_started } }
     environment:
@@ -72,10 +72,12 @@ services:
       FIRMA_COOKIE_SECURE: 'true'
       FIRMA_TOKEN_HASH_SECRET: ${FIRMA_TOKEN_HASH_SECRET:?}
       FIRMA_SEAL_KEY: ${FIRMA_SEAL_KEY:?}
-      CENARIO_API_URL: http://api:4000
-      CENARIO_WEB_URL: https://${CENARIO_HOST}
+      # Cenário Gestão conectado: o de teste (padrão) ou o de PRODUÇÃO (firma-teste.sh producao).
+      CENARIO_API_URL: ${FIRMA_CENARIO_API_URL:-http://api:4000}
+      CENARIO_WEB_URL: ${FIRMA_CENARIO_WEB_URL:-https://${CENARIO_HOST}}
+      FIRMA_CENARIO_SCOPES: ${FIRMA_CENARIO_SCOPES:-jogo operacao escritorio}
       FIRMA_CENARIO_CLIENT_ID: firma-viva
-      FIRMA_CENARIO_CLIENT_SECRET: ${FIRMA_CENARIO_CLIENT_SECRET:?}
+      FIRMA_CENARIO_CLIENT_SECRET: ${FIRMA_CENARIO_SEGREDO_PRODUCAO:-${FIRMA_CENARIO_CLIENT_SECRET}}
 
   firma-web:
     image: firma-teste-firma-web
@@ -83,7 +85,7 @@ services:
       context: ../../..
       dockerfile: infra/homolog/Dockerfile
       target: firma-web
-      args: { NEXT_PUBLIC_CENARIO_WEB_URL: 'https://${CENARIO_HOST}' }
+      args: { NEXT_PUBLIC_CENARIO_WEB_URL: '${FIRMA_CENARIO_WEB_URL:-https://${CENARIO_HOST}}' }
     restart: unless-stopped
     depends_on: [firma-api]
 

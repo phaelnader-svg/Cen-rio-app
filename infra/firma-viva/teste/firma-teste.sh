@@ -7,6 +7,8 @@
 #   bash infra/firma-viva/teste/firma-teste.sh dns          # registros DNS exatos para firmaviva.com.br
 #   bash infra/firma-viva/teste/firma-teste.sh validar      # depois do DNS: HTTPS, login e jogo no domínio
 #   bash infra/firma-viva/teste/firma-teste.sh atualizar    # publica de novo o código atual
+#   bash infra/firma-viva/teste/firma-teste.sh producao     # liga ao Cenário Gestão de PRODUÇÃO (modo consulta)
+#   bash infra/firma-viva/teste/firma-teste.sh voltar-teste # volta ao Cenário de teste (empresa fictícia)
 #   bash infra/firma-viva/teste/firma-teste.sh status | convite <email> | destruir
 #
 # Nada aqui toca a homologação ou a produção do Cenário Gestão (outra VM, outro IP, outro banco).
@@ -253,6 +255,48 @@ validar_de_fora() {
   echo "Abra https://$DOMAIN e entre com a sua conta (convite de dono)."
 }
 
+# Liga o Firma Viva ao Cenário Gestão de PRODUÇÃO em MODO CONSULTA (somente leitura).
+# Pré-requisito: no Cenário (Administração → Aplicativos conectados), cadastrar "firma-viva" com o
+# retorno https://firmaviva.com.br/api/conexoes/cenario/retorno e copiar o segredo mostrado.
+# O segredo é digitado aqui SEM eco, vai para a VM pela conexão SSH (entrada padrão) e fica só em
+# $DIR/.env (root). Nunca aparece na tela, em argumentos de comando nem no repositório.
+producao() {
+  local cen="${CENARIO_PRODUCAO:-https://cenariogestao.com.br}" seg=""
+  say "Ligando o Firma Viva ($DOMAIN) ao Cenário Gestão de produção ($cen) em modo consulta"
+  read -rs -p "Cole o segredo do aplicativo firma-viva gerado no Cenário (não aparece na tela): " seg
+  echo
+  [[ ${#seg} -ge 32 && "$seg" =~ ^[A-Za-z0-9_-]+$ ]] || die "Segredo inválido (copie de novo do Cenário)."
+  run_vm <<FIM
+set -eu
+cd $DIR
+umask 077
+sed -i '/^FIRMA_CENARIO_API_URL=/d; /^FIRMA_CENARIO_WEB_URL=/d; /^FIRMA_CENARIO_SCOPES=/d; /^FIRMA_CENARIO_SEGREDO_PRODUCAO=/d' .env
+printf '%s\n' "FIRMA_CENARIO_API_URL=$cen" "FIRMA_CENARIO_WEB_URL=$cen" "FIRMA_CENARIO_SCOPES=consulta" "FIRMA_CENARIO_SEGREDO_PRODUCAO=$seg" >> .env
+# Conexões antigas apontavam para o Cenário de TESTE: ficam desconectadas (tokens apagados).
+$DC exec -T postgres psql -U app -d firma_viva -qc "UPDATE cenario_connections SET status='DESCONECTADA', access_enc=NULL, refresh_enc=NULL, access_expires_at=NULL, last_error='Trocado para o Cenário Gestão de produção: conecte de novo.' WHERE status <> 'DESCONECTADA'"
+$DC build firma-web
+$DC up -d firma-api firma-web
+sleep 8
+# Prova sem efeito: o Cenário reconhece o aplicativo e o segredo (concessão desconhecida → 400;
+# segredo errado seria 401). Nada é criado no Cenário.
+$DC exec -T firma-api node -e "fetch(process.env.CENARIO_API_URL+'/api/oauth/token',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({grant_type:'conferencia',client_id:process.env.FIRMA_CENARIO_CLIENT_ID,client_secret:process.env.FIRMA_CENARIO_CLIENT_SECRET})}).then(async r=>{const b=await r.json().catch(()=>({}));if(r.status===400&&b.error==='unsupported_grant_type'){console.log('  ✔ Cenário de produção reconhece o aplicativo e o segredo');process.exit(0)}console.log('  ✖ Cenário respondeu '+r.status+' '+(b.error||'')+': confira o cadastro e o segredo');process.exit(1)}).catch(e=>{console.log('  ✖ sem acesso ao Cenário: '+e.message);process.exit(1)})"
+FIM
+  echo "Pronto. Em https://$DOMAIN: Central de Conexões → Conectar Cenário Gestão."
+}
+
+# Volta ao Cenário Gestão de TESTE (empresa fictícia) da própria VM.
+voltar_teste() {
+  run_vm <<FIM
+set -eu
+cd $DIR
+sed -i '/^FIRMA_CENARIO_API_URL=/d; /^FIRMA_CENARIO_WEB_URL=/d; /^FIRMA_CENARIO_SCOPES=/d; /^FIRMA_CENARIO_SEGREDO_PRODUCAO=/d' .env
+$DC exec -T postgres psql -U app -d firma_viva -qc "UPDATE cenario_connections SET status='DESCONECTADA', access_enc=NULL, refresh_enc=NULL, access_expires_at=NULL WHERE status <> 'DESCONECTADA'"
+$DC build firma-web
+$DC up -d firma-api firma-web
+FIM
+  echo "Firma Viva voltou a usar o Cenário de teste (empresa fictícia)."
+}
+
 case "${1:-}" in
   subir)
     shift; dono=""
@@ -270,6 +314,8 @@ case "${1:-}" in
   atualizar) enviar_codigo; gerar_env "$(ip)"; construir_e_subir; registrar_app ;;
   dns) mostrar_dns ;;
   validar) validar && validar_de_fora ;;
+  producao) producao ;;
+  voltar-teste) voltar_teste ;;
   convite)
     [[ -n "${2:-}" ]] || die "uso: convite <email>"
     run_vm <<EOF
