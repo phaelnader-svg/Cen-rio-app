@@ -114,6 +114,7 @@ describe('modo consulta (Cenário de produção)', () => {
     expect(mesa.placement).toMatchObject({ areaId: montagem.id, label: 'Mesa de produção' });
     expect(mesa.customerName).toBe('Cliente Real');
     expect(snap.canPlan).toBe(false);
+    expect(snap.pieces[1]!.placement.label).toBe('Sem localização registrada');
 
     // Tentativas de alterar a empresa pelo jogo: recusadas aqui, sem chegar ao Cenário.
     for (const [m, path] of [

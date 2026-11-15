@@ -480,7 +480,22 @@ export async function gameRoutes(app: FastifyInstance) {
             taskId: null,
             label: area!.label,
           }
-        : placePiece(layout, { stage: w.stage, tasks: [] });
+        : (() => {
+            // Sem movimentação registrada no Cenário: fica na espera, com o texto do recebimento.
+            const base = placePiece(layout, { stage: w.stage, tasks: [] });
+            const hold =
+              layout.areas.find((a) => a.function === 'ESPERA') ??
+              layout.areas.find((a) => a.function === 'RECEBIMENTO');
+            return {
+              ...base,
+              kind: 'AREA' as const,
+              areaId: hold?.id ?? base.areaId,
+              areaFunction: hold?.function ?? base.areaFunction,
+              label: w.receiptLocations.length
+                ? `Sem localização registrada (recebida: ${w.receiptLocations.join(', ')})`
+                : 'Sem localização registrada',
+            };
+          })();
       const n = Number(/(\d+)/.exec(w.serviceOrderCode)?.[1] ?? 0);
       pieces.push({
         id: w.id,
