@@ -35,55 +35,45 @@ import {
 } from './agent-engines';
 import { requireConnection } from '../integrations/connections';
 import { updateDailyBudget } from '../integrations/meta';
+import { PROVIDERS, missingEnv } from '../integrations/registry';
+import { channelAgentAnswer } from './agent-channels';
 import { AGENT_TEMPLATES } from './agent-templates';
 import { AGENT_MANAGE, AGENT_USE, GAME_ACCESS, ensureDefaultSpaces } from './common';
 
 const AGENT_AUDIENCE = 'permission:agentes.usar|permission:agentes.gerenciar' as const;
 
-function integrations(): IntegrationDto[] {
-  const env = process.env;
-  const has = (k: string) => Boolean(env[k] && env[k]!.trim());
-  return [
-    {
-      key: 'CENARIO',
-      label: 'Cenário Gestão (OS, produção, estoque, compras, financeiro)',
-      status: 'CONECTADA',
-      detail: 'Mesmo banco e mesmas permissões do sistema.',
-    },
-    {
-      key: 'WHATSAPP',
-      label: 'WhatsApp Business',
-      status: has('WHATSAPP_API_TOKEN') ? 'MODO_TESTE' : 'PRECISA_CONFIGURAR',
-      detail: has('WHATSAPP_API_TOKEN')
-        ? 'Credencial presente; envios ficam em modo de teste.'
-        : 'Defina a conta autorizada (API oficial) e o número da empresa.',
-    },
-    {
-      key: 'INSTAGRAM',
-      label: 'Instagram (Meta Graph API)',
-      status: has('INSTAGRAM_ACCESS_TOKEN') ? 'MODO_TESTE' : 'PRECISA_CONFIGURAR',
-      detail: 'Conta profissional ligada a uma página e token de publicação.',
-    },
-    {
-      key: 'FISCAL',
-      label: 'Emissor fiscal (NFS-e/NF-e)',
-      status: has('FISCAL_API_TOKEN') ? 'MODO_TESTE' : 'PRECISA_CONFIGURAR',
-      detail: 'Provedor de emissão, certificado e regime tributário.',
-    },
-    {
-      key: 'MODELO_ORCAMENTO',
-      label: 'Modelo de orçamento e contrato da Cenário',
+/** Estado das conexões da Central (mesma fonte que o painel), no formato dos agentes. */
+async function integrations(prisma: PrismaClient): Promise<IntegrationDto[]> {
+  const rows = await prisma.integrationConnection.findMany();
+  const list: IntegrationDto[] = PROVIDERS.filter((p) => p.auth !== 'PLANEJADA').map((p) => {
+    const c = rows.find((r) => r.providerKey === p.key);
+    if (p.auth === 'SESSAO')
+      return { key: p.key, label: p.label, status: 'CONECTADA', detail: p.capabilities.join('; ') };
+    if (c?.status === 'CONECTADA')
+      return {
+        key: p.key,
+        label: p.label,
+        status: c.mode === 'TESTE_LOCAL' ? 'MODO_TESTE' : 'CONECTADA',
+        detail: c.accountLabel ?? p.provider,
+      };
+    const missing = missingEnv(p).map((m) => m.name);
+    return {
+      key: p.key,
+      label: p.label,
       status: 'PRECISA_CONFIGURAR',
-      detail: 'Envie o modelo padrão (texto, condições, cláusulas) para o agente usar.',
-    },
-    {
-      key: 'LLM',
-      label: 'Modelo de linguagem (respostas livres)',
-      status: has('ANTHROPIC_API_KEY') ? 'MODO_TESTE' : 'PRECISA_CONFIGURAR',
-      detail:
-        'Nesta versão os agentes usam regras sobre os dados do Cenário; o modelo de linguagem é opcional.',
-    },
-  ];
+      detail: missing.length
+        ? `Conecte na Central de Conexões. Falta no servidor: ${missing.join(', ')}.`
+        : 'Conecte na Central de Conexões.',
+    };
+  });
+  list.push({
+    key: 'LLM',
+    label: 'Modelo de linguagem (respostas livres)',
+    status: process.env.ANTHROPIC_API_KEY?.trim() ? 'CONECTADA' : 'PRECISA_CONFIGURAR',
+    detail:
+      'Opcional: os agentes usam regras sobre os dados do Cenário; o modelo só interpreta frases livres.',
+  });
+  return list;
 }
 
 const engineOf = (a: AiAgent): AgentDto['engine'] =>
@@ -170,10 +160,12 @@ async function answer(
     dataScopes: agent.dataScopes,
     policies: (agent.actionPolicies ?? {}) as Record<string, string>,
   };
+  const channel = await channelAgentAnswer(prisma, agent, permissions, question);
+  if (channel) return channel;
   if (agent.roleKey === 'GERENTE') return managerAnswer(ctx, question);
   if (agent.roleKey === 'COMPRAS') return purchasingAnswer(ctx, question);
   const t = AGENT_TEMPLATES.find((x) => x.roleKey === agent.roleKey);
-  const pending = integrations().filter(
+  const pending = (await integrations(prisma)).filter(
     (i) => t?.integrations.includes(i.key) && i.status === 'PRECISA_CONFIGURAR',
   );
   return integrationPendingAnswer(
@@ -186,7 +178,9 @@ async function answer(
 export async function gameAgentRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
-  app.get('/api/v1/game/integrations', { config: { access: GAME_ACCESS } }, () => integrations());
+  app.get('/api/v1/game/integrations', { config: { access: GAME_ACCESS } }, () =>
+    integrations(prisma),
+  );
   app.get(
     '/api/v1/game/agent-templates',
     { config: { access: GAME_ACCESS } },

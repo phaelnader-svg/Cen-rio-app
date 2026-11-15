@@ -17,8 +17,6 @@ import { campaigns, publishInstagram } from './meta';
 
 const VIEW = { session: 'WEB', permissions: ['jogo.acessar', 'agentes.usar'] } as const;
 const PUBLISH = { session: 'WEB', permissions: ['jogo.acessar', 'marketing.publicar'] } as const;
-const ADS = { session: 'WEB', permissions: ['jogo.acessar', 'anuncios.gerenciar'] } as const;
-const brl = (c: number) =>
   (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export async function marketingRoutes(app: FastifyInstance) {
@@ -273,5 +271,4 @@ export async function marketingRoutes(app: FastifyInstance) {
     return { content, proposals: proposals.map((p) => p.id) };
   });
 
-  void ADS;
 }

@@ -3,7 +3,10 @@ import {
   ACTIVITY_LABEL_GAME,
   AGENT_ACTIONS,
   AGENT_DATA_SCOPES,
+  AGENT_CHANNELS,
   AGENT_POLICY,
+  AUTO_SEND_RULES,
+  CHANNEL_POLICY,
   type AgentDto,
   type AgentRoleTemplate,
   type GameEmployeeDto,
@@ -16,7 +19,25 @@ import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useAgentTemplates, useConversation, useIntegrations } from './game-api';
+import { AgentActions } from './office-panels';
 import { GBtn, KV, Panel, Section, TASK_STATUS_LABEL, Tone, fmtDateTime } from './ui';
+
+const CHANNEL_LABEL: Record<string, string> = {
+  WHATSAPP: 'WhatsApp',
+  INSTAGRAM: 'Instagram',
+  MESSENGER: 'Messenger',
+  META_ADS: 'Meta Ads',
+};
+const CHANNEL_POLICY_LABEL: Record<string, string> = {
+  NENHUM: 'Sem acesso',
+  CONSULTAR: 'Consultar',
+  RASCUNHO: 'Preparar rascunho',
+  EXECUTAR: 'Executar (regras liberadas)',
+};
+const AUTO_SEND_LABEL: Record<string, string> = {
+  PEDIR_FOTOS_MEDIDAS: 'Pedir fotos e medidas quando faltarem',
+  CONFIRMAR_RECEBIMENTO: 'Confirmar recebimento de fotos',
+};
 
 const ATTENDANCE: Record<string, string> = {
   PRESENTE: 'Presente',
@@ -153,11 +174,15 @@ export function AgentPanel({
   canManage,
   onClose,
   onConfigure,
+  onOpenConversation,
+  onOpenPanel,
 }: {
   agent: AgentDto;
   canManage: boolean;
   onClose: () => void;
   onConfigure: () => void;
+  onOpenConversation?: (id: string) => void;
+  onOpenPanel?: (p: 'inbox' | 'ads' | 'marketing' | 'central') => void;
 }) {
   const conv = useConversation(agent.id);
   const qc = useQueryClient();
@@ -203,7 +228,9 @@ export function AgentPanel({
       toast(
         'ok',
         decision === 'APROVAR'
-          ? 'Aprovado. O fluxo oficial abriu para você concluir.'
+          ? href
+            ? 'Aprovado. O fluxo oficial abriu para você concluir.'
+            : 'Aprovado e executado (veja o histórico do agente).'
           : 'Proposta rejeitada.',
       );
     } catch (e) {
@@ -220,7 +247,18 @@ export function AgentPanel({
         ]
       : agent.roleKey === 'COMPRAS'
         ? ['O que preciso comprar?', 'Quais compras liberam OS?']
-        : ['O que falta configurar?'];
+        : agent.roleKey === 'ATENDIMENTO'
+          ? ['Quem está esperando orçamento?', 'Quem está esperando no WhatsApp?']
+          : agent.roleKey === 'MARKETING'
+            ? ['O que tenho para postar?']
+            : agent.roleKey === 'TRAFEGO'
+              ? ['Como estão as campanhas?']
+              : ['O que falta configurar?'];
+  const panelOf: Record<string, 'inbox' | 'ads' | 'marketing'> = {
+    ATENDIMENTO: 'inbox',
+    TRAFEGO: 'ads',
+    MARKETING: 'marketing',
+  };
   const d = conv.data;
   return (
     <Panel
@@ -245,13 +283,25 @@ export function AgentPanel({
       onClose={onClose}
       className="h-full"
       actions={
-        canManage ? (
-          <GBtn tone="ghost" onClick={onConfigure}>
-            Configurar
-          </GBtn>
-        ) : null
+        <>
+          {panelOf[agent.roleKey] && onOpenPanel ? (
+            <GBtn tone="ghost" onClick={() => onOpenPanel(panelOf[agent.roleKey]!)}>
+              {agent.roleKey === 'ATENDIMENTO'
+                ? 'Caixa de entrada'
+                : agent.roleKey === 'TRAFEGO'
+                  ? 'Campanhas'
+                  : 'Publicações'}
+            </GBtn>
+          ) : null}
+          {canManage ? (
+            <GBtn tone="ghost" onClick={onConfigure}>
+              Configurar
+            </GBtn>
+          ) : null}
+        </>
       }
     >
+      <AgentActions agentId={agent.id} />
       <Section title="Tarefas e pendências">
         {d?.tasks.length ? (
           <ul className="space-y-1">
@@ -300,8 +350,9 @@ export function AgentPanel({
                         tone="primary"
                         className="!px-2 !py-1 text-xs"
                         onClick={() => decide(p.id, 'APROVAR', String(p.payload.href ?? ''))}
+                        testId="proposal-approve"
                       >
-                        Aprovar e abrir fluxo
+                        {p.payload.href ? 'Aprovar e abrir fluxo' : 'Aprovar e executar'}
                       </GBtn>
                       <GBtn
                         tone="ghost"
@@ -344,6 +395,12 @@ export function AgentPanel({
                     <a
                       key={`${r.type}${r.id}`}
                       href={r.href}
+                      onClick={(ev) => {
+                        if (r.type === 'CONVERSA' && onOpenConversation) {
+                          ev.preventDefault();
+                          onOpenConversation(r.id);
+                        }
+                      }}
                       target="_blank"
                       rel="noreferrer"
                       className="rounded bg-bronze-100 px-1.5 py-0.5 text-[11px] text-bronze-600 underline"
@@ -429,6 +486,8 @@ export function AgentConfigPanel({
     instructions: agent?.instructions ?? '',
     dataScopes: agent?.dataScopes ?? [],
     actionPolicies: (agent?.actionPolicies ?? {}) as Record<string, string>,
+    channelPolicies: (agent?.channelPolicies ?? {}) as Record<string, string>,
+    autoSendRules: (agent?.autoSendRules ?? []) as string[],
     deskStationId: agent?.deskStationId ?? deskId,
     color: agent?.color ?? '#7c3aed',
     status: agent?.status ?? 'ATIVO',
@@ -443,6 +502,8 @@ export function AgentConfigPanel({
       instructions: t.instructions,
       dataScopes: t.dataScopes,
       actionPolicies: t.actionPolicies,
+      channelPolicies: t.channelPolicies ?? {},
+      autoSendRules: t.autoSendRules ?? [],
       color: t.color,
     }));
   const save = async () => {
@@ -607,6 +668,52 @@ export function AgentConfigPanel({
             Compras, mensagens, publicações, pagamentos e notas sempre passam pela sua aprovação.
             Integrações não configuradas rodam em modo de teste.
           </p>
+        </fieldset>
+        <fieldset data-testid="agent-channels">
+          <legend className="font-semibold">Canais</legend>
+          <div className="mt-1 space-y-1">
+            {AGENT_CHANNELS.map((c) => (
+              <label key={c} className="flex items-center justify-between gap-2">
+                <span>{CHANNEL_LABEL[c] ?? c}</span>
+                <select
+                  className="rounded border border-line-strong px-1 py-0.5"
+                  value={form.channelPolicies[c] ?? 'NENHUM'}
+                  onChange={(e) => {
+                    const { [c]: _old, ...rest } = form.channelPolicies;
+                    setForm({
+                      ...form,
+                      channelPolicies:
+                        e.target.value === 'NENHUM' ? rest : { ...rest, [c]: e.target.value },
+                    });
+                  }}
+                >
+                  {['NENHUM', ...CHANNEL_POLICY].map((p) => (
+                    <option key={p} value={p}>
+                      {CHANNEL_POLICY_LABEL[p] ?? p}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          <div className="mt-1.5 font-semibold">Envio automático (só com “Executar” no canal)</div>
+          {AUTO_SEND_RULES.map((r) => (
+            <label key={r} className="flex items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={form.autoSendRules.includes(r)}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    autoSendRules: e.target.checked
+                      ? [...form.autoSendRules, r]
+                      : form.autoSendRules.filter((x) => x !== r),
+                  })
+                }
+              />
+              {AUTO_SEND_LABEL[r] ?? r}
+            </label>
+          ))}
         </fieldset>
         {needs.length ? (
           <div className="rounded-lg border border-warn-600/30 bg-warn-50 p-2">

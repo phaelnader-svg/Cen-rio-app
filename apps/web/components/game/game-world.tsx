@@ -73,6 +73,7 @@ import {
   useSnapshot,
   useSpaces,
 } from './game-api';
+import { AdsPanel, ConnectionsPanel, InboxPanel, MarketingPanel, useInbox } from './office-panels';
 import { AgentConfigPanel, AgentPanel, EmployeePanel } from './people-panels';
 import { PiecePanel } from './piece-panel';
 import { peopleOnMap, piecesOnMap } from './placement';
@@ -92,6 +93,10 @@ type Side =
   | { t: 'mestre' }
   | { t: 'room' }
   | { t: 'integrations' }
+  | { t: 'central' }
+  | { t: 'inbox'; conv: string | null }
+  | { t: 'ads' }
+  | { t: 'marketing' }
   | { t: 'os'; id: string }
   | null;
 
@@ -125,6 +130,9 @@ export function GameWorld() {
   const agents = useAgents();
   const people = usePeople();
   const integrations = useIntegrations();
+  const canSeeInbox = can('atendimento.ver');
+  const inbox = useInbox(canSeeInbox);
+  const unread = (inbox.data ?? []).reduce((a, r) => a + r.unread, 0);
   const [spaceKey, setSpaceKey] = useState('TAPECARIA');
   const [mode, setMode] = useState<'GESTAO' | 'CONSTRUCAO'>('GESTAO');
   const [preview, setPreview] = useState(false);
@@ -192,6 +200,18 @@ export function GameWorld() {
     return () => e.dispose();
   }, []);
 
+  // Links diretos: /jogo?conversa=<id> (respostas dos agentes) e /jogo?central=<conexão> (retorno OAuth).
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const conv = q.get('conversa');
+    const central = q.get('central');
+    if (conv || central) {
+      setSpaceKey('ESCRITORIO');
+      setSide(conv ? { t: 'inbox', conv } : { t: 'central' });
+      window.history.replaceState(null, '', window.location.pathname);
+    }
+  }, []);
+
   // Tempo real: qualquer mudança operacional recarrega o retrato; a planta e os agentes também.
   useEffect(
     () =>
@@ -203,6 +223,16 @@ export function GameWorld() {
         if (ev.type === 'game.agent_changed' || ev.type === 'game.proposal_changed') {
           void qc.invalidateQueries({ queryKey: ['game-agents'] });
           void qc.invalidateQueries({ queryKey: ['game-agent'] });
+          void qc.invalidateQueries({ queryKey: ['agent-actions'] });
+        }
+        if (ev.type.startsWith('inbox.')) {
+          void qc.invalidateQueries({ queryKey: ['inbox'] });
+          void qc.invalidateQueries({ queryKey: ['inbox-conv'] });
+          void qc.invalidateQueries({ queryKey: ['agent-actions'] });
+        }
+        if (ev.type.startsWith('connection.')) {
+          void qc.invalidateQueries({ queryKey: ['connections'] });
+          void qc.invalidateQueries({ queryKey: ['game-integrations'] });
         }
       }),
     [realtime, qc],
@@ -846,6 +876,9 @@ export function GameWorld() {
       : l.storageUnits.some((s) => s.id === id)
         ? 'storage'
         : 'decor';
+  const goOffice = () => {
+    if (!building && spaceKey !== 'ESCRITORIO') setSpaceKey('ESCRITORIO');
+  };
   const handleEffect = (effect: CommandEffect) => {
     switch (effect.kind) {
       case 'ABRIR_PECA':
@@ -893,6 +926,24 @@ export function GameWorld() {
         break;
       case 'ATRIBUIR_PREVIA':
         setAssignPrev(effect);
+        break;
+      case 'ABRIR_CONVERSA':
+        setSel(null);
+        goOffice();
+        setSide({ t: 'inbox', conv: effect.conversationId });
+        break;
+      case 'ABRIR_PAINEL':
+        setSel(null);
+        goOffice();
+        setSide(
+          effect.panel === 'CENTRAL'
+            ? { t: 'central' }
+            : effect.panel === 'CAMPANHAS'
+              ? { t: 'ads' }
+              : effect.panel === 'PUBLICACOES'
+                ? { t: 'marketing' }
+                : { t: 'inbox', conv: null },
+        );
         break;
       default:
         break;
@@ -1389,16 +1440,33 @@ export function GameWorld() {
         </div>
       ) : null}
 
-      {!building && space?.kind === 'ESCRITORIO' && integrations.data ? (
-        <button
-          className="pointer-events-auto absolute top-[7.5rem] left-3 flex items-center gap-2 rounded-2xl border border-line bg-white/95 px-3 py-2 text-xs font-semibold shadow-card sm:top-20"
-          onClick={() => setSide({ t: 'integrations' })}
-          data-testid="integrations-chip"
-        >
-          🔌 Integrações: {integrations.data.filter((i) => i.status === 'CONECTADA').length}{' '}
-          conectada(s) · {integrations.data.filter((i) => i.status !== 'CONECTADA').length} a
-          configurar
-        </button>
+      {!building && space?.kind === 'ESCRITORIO' ? (
+        <div className="pointer-events-auto absolute top-[7.5rem] left-3 flex flex-col items-start gap-1.5 sm:top-20">
+          <button
+            className="flex items-center gap-2 rounded-2xl border border-line bg-white/95 px-3 py-2 text-xs font-semibold shadow-card"
+            onClick={() => setSide({ t: 'central' })}
+            data-testid="central-chip"
+          >
+            🔌 Central de Conexões
+            {integrations.data
+              ? ` · ${integrations.data.filter((i) => i.status !== 'PRECISA_CONFIGURAR').length} ativa(s)`
+              : ''}
+          </button>
+          {canSeeInbox ? (
+            <button
+              className="flex items-center gap-2 rounded-2xl border border-line bg-white/95 px-3 py-2 text-xs font-semibold shadow-card"
+              onClick={() => setSide({ t: 'inbox', conv: null })}
+              data-testid="inbox-chip"
+            >
+              📥 Caixa de entrada
+              {unread ? (
+                <span className="rounded-full bg-brand-600 px-1.5 text-[10px] font-bold text-white">
+                  {unread}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {/* Construção: paleta + barra de ferramentas */}
@@ -1558,6 +1626,18 @@ export function GameWorld() {
             onConfigure={() =>
               setSide({ t: 'agentConfig', agentId: agentSel.id, deskId: agentSel.deskStationId })
             }
+            onOpenConversation={(id) => setSide({ t: 'inbox', conv: id })}
+            onOpenPanel={(p) =>
+              setSide(
+                p === 'inbox'
+                  ? { t: 'inbox', conv: null }
+                  : p === 'ads'
+                    ? { t: 'ads' }
+                    : p === 'marketing'
+                      ? { t: 'marketing' }
+                      : { t: 'central' },
+              )
+            }
           />
         ) : side?.t === 'agentConfig' ? (
           <AgentConfigPanel
@@ -1662,6 +1742,31 @@ export function GameWorld() {
           />
         ) : side?.t === 'os' ? (
           <OsPanel id={side.id} onClose={() => setSide(null)} />
+        ) : side?.t === 'central' ? (
+          <ConnectionsPanel
+            canManage={can('conexoes.gerenciar')}
+            onClose={() => setSide(null)}
+            onOpenInbox={() => setSide({ t: 'inbox', conv: null })}
+            onOpenAds={() => setSide({ t: 'ads' })}
+            onOpenMarketing={() => setSide({ t: 'marketing' })}
+          />
+        ) : side?.t === 'inbox' ? (
+          <InboxPanel
+            convId={side.conv}
+            onSelect={(id) => setSide({ t: 'inbox', conv: id })}
+            onClose={() => setSide(null)}
+            canReply={can('atendimento.responder')}
+          />
+        ) : side?.t === 'ads' ? (
+          <AdsPanel
+            onClose={() => setSide(null)}
+            onOpenAgent={() => {
+              const a = agents.data?.find((x) => x.roleKey === 'TRAFEGO');
+              if (a) setSide({ t: 'agent', id: a.id });
+            }}
+          />
+        ) : side?.t === 'marketing' ? (
+          <MarketingPanel onClose={() => setSide(null)} canPublish={can('marketing.publicar')} />
         ) : side?.t === 'integrations' ? (
           <Panel
             title="Integrações dos agentes"

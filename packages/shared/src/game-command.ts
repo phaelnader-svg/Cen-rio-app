@@ -341,6 +341,13 @@ export type CommandEffect =
       title: string;
       rows: { label: string; detail: string; effect: CommandEffect | null; href?: string }[];
     }
+  | { kind: 'ABRIR_CONVERSA'; conversationId: string }
+  | {
+      kind: 'ABRIR_PAINEL';
+      panel: 'CENTRAL' | 'CAIXA_ENTRADA' | 'CAMPANHAS' | 'PUBLICACOES' | 'FINANCEIRO';
+      filter?: string;
+      serviceOrderId?: string;
+    }
   | { kind: 'NADA' };
 
 export interface CommandResultDto {

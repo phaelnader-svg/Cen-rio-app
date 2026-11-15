@@ -43,7 +43,9 @@ describe('Central de Conexões', () => {
     const r = await admin.get('/api/v1/connections');
     expect(r.status).toBe(200);
     const cards = (r.body as { cards?: unknown[] }).cards ?? (r.body as unknown[]);
-    const byKey = Object.fromEntries((cards as { key: string }[]).map((c) => [c.key, c])) as Record<
+    const byKey = Object.fromEntries(
+      (cards as { key: string }[]).map((c) => [c.key, c]),
+    ) as unknown as Record<
       string,
       { status: string; missing: string[]; testModeAvailable: boolean }
     >;
@@ -157,7 +159,9 @@ describe('WhatsApp em modo de teste: mensagem → rascunho do agente → envio �
       customer: { id: string };
       messages: { status: string }[];
     };
-    expect(linked.serviceOrder.number).toBe(so.number);
+    expect(linked.serviceOrder.number).toBe(
+      (await db().serviceOrder.findUniqueOrThrow({ where: { id: so.id } })).number,
+    );
     expect(linked.customer.id).toBeTruthy();
     expect(linked.messages.map((m) => m.status)).toEqual(['RECEBIDA', 'ENVIADA_TESTE']);
 
@@ -310,5 +314,55 @@ describe('Instagram, Messenger e Meta Ads (modo de teste)', () => {
     });
     expect(rej.body).toMatchObject({ status: 'REJEITADA' });
     expect(await db().agentAction.count({ where: { kind: 'ALTERAR_ORCAMENTO' } })).toBe(1);
+  });
+});
+
+describe('Gerente e "Falar com a Cenário" sobre conversas', () => {
+  it('quem está esperando orçamento no WhatsApp? abre as conversas', async () => {
+    const admin = await loginAdmin(app);
+    await post(admin, '/api/v1/connections/WHATSAPP/test-mode', {});
+    await post(admin, '/api/v1/connections/INSTAGRAM/test-mode', {});
+    await post(admin, '/api/v1/connections/WHATSAPP/simulate', {
+      from: '5512990000002',
+      name: 'Bruno Alves',
+      text: 'Qual o valor para reformar 4 cadeiras?',
+    });
+    await post(admin, '/api/v1/connections/INSTAGRAM/simulate', {
+      from: 'ig-2',
+      text: 'Quanto custa trocar o tecido?',
+    });
+    const r = await post(admin, '/api/v1/game/command', {
+      text: 'quem está esperando orçamento no WhatsApp?',
+      spaceKey: 'ESCRITORIO',
+    });
+    expect(r.status).toBe(200);
+    const eff = (
+      r.body as {
+        effect: {
+          kind: string;
+          rows: { label: string; effect: { kind: string; conversationId: string } }[];
+        };
+      }
+    ).effect;
+    expect(eff.kind).toBe('LISTA');
+    expect(eff.rows).toHaveLength(1);
+    expect(eff.rows[0]!.label).toMatch(/Bruno Alves \(WhatsApp\)/);
+    expect(eff.rows[0]!.effect.kind).toBe('ABRIR_CONVERSA');
+
+    const agents = (await admin.get('/api/v1/game/agents')).body as {
+      id: string;
+      roleKey: string;
+    }[];
+    const gerente = agents.find((a) => a.roleKey === 'GERENTE')!;
+    const m = await post(admin, `/api/v1/game/agents/${gerente.id}/messages`, {
+      content: 'Quem está esperando orçamento no WhatsApp?',
+    });
+    expect(m.status).toBe(201);
+    const reply = (
+      m.body as { author: string; content: string; references: { type: string; href: string }[] }[]
+    ).find((x) => x.author === 'AGENTE')!;
+    expect(reply.content).toMatch(/1 esperando orçamento no WhatsApp/);
+    expect(reply.references[0]).toMatchObject({ type: 'CONVERSA' });
+    expect(reply.references[0]!.href).toMatch(/^\/jogo\?conversa=/);
   });
 });

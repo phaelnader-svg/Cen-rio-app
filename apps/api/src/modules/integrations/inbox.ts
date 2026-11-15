@@ -15,6 +15,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
+import { registerOfficeHook } from '../game/command';
 import { idParams } from '../presenters';
 import { connectionOf, requireConnection } from './connections';
 import {
@@ -292,6 +293,60 @@ export function sendRule(
   };
 }
 
+/** "Falar com a Cenário": perguntas sobre conversas (ex.: quem está esperando orçamento no WhatsApp?). */
+registerOfficeHook(async (ctx, intent) => {
+  if (intent.acao !== 'CONVERSAS') return { reply: '', effect: { kind: 'NADA' } };
+  if (!ctx.perms.has('atendimento.ver'))
+    return {
+      reply: 'Ver conversas de clientes exige a permissão atendimento.ver.',
+      effect: { kind: 'NADA' },
+    };
+  const t = norm(intent.pedido ?? '');
+  const channel = /whats|zap/.test(t)
+    ? 'WHATSAPP'
+    : /insta|direct/.test(t)
+      ? 'INSTAGRAM'
+      : /messenger|facebook|pagina/.test(t)
+        ? 'MESSENGER'
+        : null;
+  const waitingQuote = /orcamento|esperando|aguardando/.test(t);
+  const unread = /nao lid|sem resposta|nova/.test(t);
+  const rows = await ctx.prisma.inboxConversation.findMany({
+    where: {
+      ...(channel ? { channel } : {}),
+      ...(waitingQuote ? { status: 'AGUARDANDO_ORCAMENTO' } : { status: { not: 'ENCERRADA' } }),
+      ...(unread ? { unread: { gt: 0 } } : {}),
+    },
+    orderBy: { lastInboundAt: 'asc' },
+    take: 20,
+  });
+  const where = channel
+    ? ` no ${channel === 'WHATSAPP' ? 'WhatsApp' : channel === 'INSTAGRAM' ? 'Instagram' : 'Messenger'}`
+    : '';
+  if (!rows.length)
+    return {
+      reply: `Ninguém ${waitingQuote ? 'esperando orçamento' : 'com conversa aberta'}${where} agora.`,
+      effect: { kind: 'ABRIR_PAINEL', panel: 'CAIXA_ENTRADA', filter: channel ?? undefined },
+    };
+  const since = (d: Date | null) => {
+    if (!d) return '';
+    const h = Math.round((Date.now() - d.getTime()) / 3600_000);
+    return h < 1 ? 'há menos de 1 h' : h < 48 ? `há ${h} h` : `há ${Math.round(h / 24)} dias`;
+  };
+  return {
+    reply: `${rows.length} ${rows.length === 1 ? 'pessoa' : 'pessoas'} ${waitingQuote ? 'esperando orçamento' : 'com conversa aberta'}${where} (as mais antigas primeiro). Toque para abrir a conversa.`,
+    effect: {
+      kind: 'LISTA',
+      title: waitingQuote ? `Esperando orçamento${where}` : `Conversas abertas${where}`,
+      rows: rows.map((c) => ({
+        label: `${c.contactName ?? c.contactHandle ?? 'Contato'} (${c.channel === 'WHATSAPP' ? 'WhatsApp' : c.channel === 'INSTAGRAM' ? 'Instagram' : 'Messenger'})`,
+        detail: `${since(c.lastInboundAt)} · ${c.summary ?? ''}`.slice(0, 220),
+        effect: { kind: 'ABRIR_CONVERSA', conversationId: c.id },
+      })),
+    },
+  };
+});
+
 export async function inboxRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -307,11 +362,9 @@ export async function inboxRoutes(app: FastifyInstance) {
         const q = request.query as Record<string, string>;
         const expected = process.env.META_WEBHOOK_VERIFY_TOKEN;
         if (q['hub.mode'] !== 'subscribe' || !expected || q['hub.verify_token'] !== expected)
-          return reply
-            .status(401)
-            .send({
-              error: { code: 'UNAUTHENTICATED', message: 'Token de verificação inválido.' },
-            });
+          return reply.status(401).send({
+            error: { code: 'UNAUTHENTICATED', message: 'Token de verificação inválido.' },
+          });
         return reply.type('text/plain').send(q['hub.challenge'] ?? '');
       },
     );

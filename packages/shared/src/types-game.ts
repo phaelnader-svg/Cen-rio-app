@@ -186,7 +186,17 @@ export interface AgentDto {
 }
 
 export interface AgentReference {
-  type: 'OS' | 'TAREFA' | 'MATERIAL' | 'COMPRA' | 'CONTA' | 'RECEBIVEL' | 'FUNCIONARIO';
+  type:
+    | 'OS'
+    | 'TAREFA'
+    | 'MATERIAL'
+    | 'COMPRA'
+    | 'CONTA'
+    | 'RECEBIVEL'
+    | 'FUNCIONARIO'
+    | 'CONVERSA'
+    | 'POST'
+    | 'CAMPANHA';
   id: string;
   label: string;
   href?: string;
