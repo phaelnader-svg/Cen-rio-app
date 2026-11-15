@@ -103,6 +103,7 @@ if [ -e "$ARVORE" ]; then
   [ "$(git -C "$ARVORE" rev-parse HEAD)" = "$COMMIT" ] || { echo "✘ $ARVORE existe e não está em $COMMIT: nada feito"; exit 1; }
   [ -z "$(git -C "$ARVORE" status --porcelain)" ] || { echo "✘ $ARVORE tem alterações locais: nada feito"; exit 1; }
 else
+  git -C "$CLONE" worktree prune
   git -C "$CLONE" worktree add --detach "$ARVORE" "$COMMIT"
 fi
 cd "$ARVORE"
@@ -263,6 +264,6 @@ a reversão acima. `rollback_to_recovery_point` **não** é necessário (nenhum 
 | `test_vm_sh_prod.sh`, `test_provisionar.sh` | OK |
 | `test_runner_prod.py` (14 testes) | OK |
 | `pacote_scripts` do runner `9ff142e`, perfil prod, sobre o pacote gerado | aceito (commit `af2c0d451e06…`, 24 arquivos); `.sha256` adulterado é recusado |
-| Bloco da Etapa A com `gcloud` simulado | normal ✔; reexecução idempotente ✔; `.sha256` conflitante no bucket → nada publicado ✔; SHA divergente → nada publicado ✔ |
+| Bloco da Etapa A com `gcloud` simulado | normal ✔ (pacote publicado = pacote revisado, byte a byte); pasta de trabalho apagada à mão ✔; reexecução idempotente ✔; `.tar.gz` ou `.sha256` conflitante no bucket → nada publicado ✔; SHA divergente → nada publicado ✔ |
 | `web` de `696e3e9` compilado localmente, `NODE_ENV=production` | sem `SITE_COMERCIAL`: `/conheca` 404; com `SITE_COMERCIAL=1`: 200 com a landing; `/entrar` 200 nos dois |
 | Bloco da Etapa C contra os dois servidores locais | com a correção: `VALIDAÇÃO: OK`; sem: 4 falhas, todas em `/conheca` |
