@@ -487,6 +487,7 @@ describe('jogo — Falar com a Cenário', () => {
     expect(r.effect.kind).toBe('MOVER_PREVIA');
     if (r.effect.kind !== 'MOVER_PREVIA') return;
     expect(r.effect.objectId).toBe(mesa.id);
+    expect(r.effect.targetLabel).toBe('Costura');
     expect(r.effect.from).toMatchObject({ xCm: mesa.xCm, yCm: mesa.yCm });
     const { clearanceAround, footprint, contentOfSpace } = await import('./jogo-helpers');
     const after = contentOfSpace(shop);

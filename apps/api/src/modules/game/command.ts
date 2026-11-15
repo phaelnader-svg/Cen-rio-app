@@ -384,7 +384,12 @@ function previewMove(space: GameSpaceDto, o: Obj, destino: string) {
         normCmd(fn).includes(t),
     );
   const area = l.areas.find((a) => dTerms.length && (has(a.name, dTerms) || fnMatch(a.function)));
-  const target = objectsOf(space)
+  // Destino com nome de móvel ("bancada do Márcio") mira o móvel; só a função ("costura") mira a área.
+  const namesFurniture =
+    /\b(mesa|bancada|maquina|estante|prateleira|armario|gaveteiro|suporte|estrado|balcao|palete)\b/.test(
+      normCmd(destino),
+    );
+  const target = (area && !namesFurniture ? [] : objectsOf(space))
     .filter((x) => x.id !== o.id)
     .map((x) => ({ x, sc: score(x.name, x.kind, dTerms) }))
     .filter((x) => x.sc >= dTerms.length * 10 - 1)
@@ -439,13 +444,11 @@ function previewMove(space: GameSpaceDto, o: Obj, destino: string) {
       from: { xCm: o.xCm, yCm: o.yCm, rotation: o.rotation },
       to: { xCm: Math.round(best.rect.x), yCm: Math.round(best.rect.y), rotation: best.rotation },
       occupied,
-      alternatives: spots
-        .slice(1)
-        .map((s) => ({
-          xCm: Math.round(s.rect.x),
-          yCm: Math.round(s.rect.y),
-          rotation: s.rotation,
-        })),
+      alternatives: spots.slice(1).map((s) => ({
+        xCm: Math.round(s.rect.x),
+        yCm: Math.round(s.rect.y),
+        rotation: s.rotation,
+      })),
     } as CommandEffect,
   };
 }
