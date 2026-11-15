@@ -244,6 +244,15 @@ echo "Resultado: \$ok ok, \$falhou falha(s)"
 EOF
 }
 
+# Conferência de fora (Cloud Shell): o domínio responde com HTTPS válido para quem acessa da internet.
+validar_de_fora() {
+  say "Conferindo de fora da VM (Cloud Shell)"
+  curl -fsS -o /dev/null "https://$DOMAIN/entrar" && echo "  ✔ https://$DOMAIN/entrar com certificado válido" \
+    || die "https://$DOMAIN não respondeu com certificado válido de fora da VM."
+  curl -fsS "https://$DOMAIN/entrar" | grep -q 'Firma Viva' && echo "  ✔ página de login do Firma Viva"
+  echo "Abra https://$DOMAIN e entre com a sua conta (convite de dono)."
+}
+
 case "${1:-}" in
   subir)
     shift; dono=""
@@ -260,7 +269,7 @@ case "${1:-}" in
     ;;
   atualizar) enviar_codigo; gerar_env "$(ip)"; construir_e_subir; registrar_app ;;
   dns) mostrar_dns ;;
-  validar) validar ;;
+  validar) validar && validar_de_fora ;;
   convite)
     [[ -n "${2:-}" ]] || die "uso: convite <email>"
     run_vm <<EOF

@@ -407,4 +407,6 @@ if (osD) {
 
 log('\nTablets para a demonstração (vincule em /tablet com o código; PIN do funcionário):');
 for (const p of pairing) log(`  ${p.name.padEnd(8)} PIN ${p.pin}  código ${p.code}`);
-log('\nPronto: abra /jogo com a conta do gestor.');
+log(
+  '\nPronto: no Firma Viva, conecte o Cenário Gestão (Central de Conexões) com a conta do gestor.',
+);

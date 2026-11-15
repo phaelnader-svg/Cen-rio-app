@@ -113,6 +113,43 @@ produção o link do convite também aparece na tela para quem convidou.
 | **Cenário Gestão (web)** | Tela `/autorizar`, página "Aplicativos conectados", login com retorno (`?proximo=`); menu "Empresa virtual" e rota `/jogo` removidos.                                                                                                                                                                       |
 | **Firma Viva**           | `apps/firma-api` + `packages/firma-db` (migration inicial) e `apps/firma-viva`, com o próprio banco e o próprio domínio. Imagens: `infra/homolog/Dockerfile` alvos `firma-api` e `firma-web`; pilha em `infra/firma-viva/` (Compose + Caddy com `FIRMA_DOMAIN`).                                            |
 
+## Versão de teste em firmaviva.com.br (hospedagem separada)
+
+Pilha própria em `infra/firma-viva/teste/` — **outra VM, outro IP e outro banco**; não toca a
+homologação nem a produção do Cenário Gestão. Inclui um **Cenário Gestão de teste** com empresa
+fictícia (equipe, OS, tablets) só para a autorização e o mapa. Tudo com dados fictícios.
+
+```bash
+# No Cloud Shell, na raiz do repositório, na branch que quer publicar:
+bash infra/firma-viva/teste/firma-teste.sh subir --dono <seu-email>
+```
+
+O comando reserva um IP fixo, cria a VM `firma-teste` (e2-standard-2, Debian 12, Docker), envia o
+código do último commit, gera os segredos **na VM** (`/opt/firma-teste/.env`, só root), constrói as
+imagens, sobe PostgreSQL + Cenário de teste + Firma Viva + Caddy (HTTPS automático), cria os dados
+fictícios e imprime:
+
+- o **link provisório** `https://firma.<IP-com-hífens>.sslip.io` (funciona sem DNS);
+- o **convite de dono** da organização "Cenário Estofados" para o e-mail informado;
+- o login do gestor do **Cenário de teste** (`https://cenario.<IP>.sslip.io`) para autorizar a conexão
+  e os códigos/PIN dos tablets fictícios;
+- os **registros DNS exatos** (com o IP reservado): `A @ → IP`, `A www → IP` (TTL 300) e,
+  opcionalmente, `CAA @ 0 issue "letsencrypt.org"`. Sem AAAA.
+
+Depois que o DNS propagar: `bash infra/firma-viva/teste/firma-teste.sh validar` — confere que
+`firmaviva.com.br` aponta para o IP, ativa o domínio (o provisório continua valendo), espera o
+certificado e valida **HTTPS, redirecionamento http→https, página de login, login com a conta de
+validação, sessão, abertura do `/jogo`, planta carregando, cookie Secure/HttpOnly e www → domínio**.
+Outros comandos: `dns`, `status`, `atualizar`, `convite <email>`, `destruir`.
+
+**Ensaio feito antes de publicar** (mesmas imagens e o mesmo Compose, com certificado interno no
+lugar do Let's Encrypt): as quatro imagens constroem; os seis serviços sobem saudáveis; app
+cadastrado, dados fictícios, contas e convite criados pelos comandos do script; todas as
+verificações do `validar` passaram; no navegador, convite → conta do dono → jogo → tela oficial do
+Cenário de teste → conectado com 5 peças no mapa, sem erros de console
+(`docs/evidencias/firma-viva/ensaio-teste/`). O ensaio encontrou e corrigiu um defeito real: a API
+do Firma Viva não iniciava na imagem (cliente do banco empacotado de forma incompatível).
+
 ## Testes e evidências
 
 - `apps/api/test/autorizacao-aplicativos.test.ts` (6): tela oficial exige login, PKCE, código de
