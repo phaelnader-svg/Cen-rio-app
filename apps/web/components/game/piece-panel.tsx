@@ -103,6 +103,8 @@ export function PiecePanel({
   const qc = useQueryClient();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  /** Recusa da última ação (ex.: outra OS reservou a última unidade): fica visível até a próxima. */
+  const [lastError, setLastError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const atShipping = [
     'BLOQUEIO_EXPEDICAO',
@@ -138,19 +140,21 @@ export function PiecePanel({
       qc.invalidateQueries({ queryKey: ['game-snapshot'] }),
       qc.invalidateQueries({ queryKey: ['service-order', piece.serviceOrderId] }),
       qc.invalidateQueries({ queryKey: ['game-readiness', piece.serviceOrderId] }),
+      // Estoque livre e compras de estoque (mesma fonte da central de compras).
+      qc.invalidateQueries({ queryKey: ['needs'] }),
     ]);
   };
   const run = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(true);
+    setLastError(null);
     try {
       await fn();
       toast('ok', label);
       await refresh();
     } catch (e) {
-      toast(
-        'danger',
-        e instanceof ApiError ? e.message : 'Não foi possível concluir. Tente de novo.',
-      );
+      const msg = e instanceof ApiError ? e.message : 'Não foi possível concluir. Tente de novo.';
+      toast('danger', msg);
+      setLastError(msg);
       await refresh();
     } finally {
       setBusy(false);
@@ -432,6 +436,14 @@ export function PiecePanel({
             }
           />
         </div>
+        {lastError ? (
+          <div
+            className="rounded-lg border border-danger-600/30 bg-danger-50 p-1.5 text-xs text-danger-700"
+            data-testid="piece-error"
+          >
+            ⚠️ Não foi feito: {lastError} Os números abaixo já foram atualizados.
+          </div>
+        ) : null}
         {wf.blockedReason ? (
           <div
             className="rounded-lg bg-danger-50 p-1.5 text-xs text-danger-700"
