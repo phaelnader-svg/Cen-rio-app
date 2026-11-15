@@ -12,6 +12,7 @@
     "perf": "vitest run -c vitest.perf.config.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "1.8.0",
     "@cenario/db": "workspace:*",
     "@cenario/shared": "workspace:*",
     "@fastify/cookie": "11.1.2",
