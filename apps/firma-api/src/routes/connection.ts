@@ -236,7 +236,10 @@ async function revokeAtCenario(app: FastifyInstance, refreshToken: string) {
   try {
     await app.cenarioFetch(`${env.CENARIO_API_URL}/api/oauth/revoke`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(env.FIRMA_CENARIO_COOKIE ? { cookie: env.FIRMA_CENARIO_COOKIE } : {}),
+      },
       body: JSON.stringify({
         token: refreshToken,
         client_id: env.FIRMA_CENARIO_CLIENT_ID,

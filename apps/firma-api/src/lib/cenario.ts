@@ -29,7 +29,11 @@ export async function tokenRequest(app: FastifyInstance, body: Record<string, st
   const { env } = app.firma;
   const res = await app.cenarioFetch(`${env.CENARIO_API_URL}/api/oauth/token`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      accept: 'application/json',
+      ...(env.FIRMA_CENARIO_COOKIE ? { cookie: env.FIRMA_CENARIO_COOKIE } : {}),
+    },
     body: JSON.stringify({
       ...body,
       client_id: env.FIRMA_CENARIO_CLIENT_ID,
@@ -138,6 +142,9 @@ export async function cenarioCall(
         authorization: `Bearer ${app.firma.unseal(conn.accessEnc!)}`,
         accept: opts.accept ?? 'application/json',
         'x-app-actor': encodeURIComponent(`${request.user!.name} (${request.org!.name})`),
+        ...(app.firma.env.FIRMA_CENARIO_COOKIE
+          ? { cookie: app.firma.env.FIRMA_CENARIO_COOKIE }
+          : {}),
         ...(opts.contentType ? { 'content-type': opts.contentType } : {}),
         ...(opts.idempotencyKey ? { 'idempotency-key': opts.idempotencyKey } : {}),
       },

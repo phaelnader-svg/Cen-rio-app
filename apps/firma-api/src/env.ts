@@ -39,6 +39,11 @@ const schema = z
     CENARIO_WEB_URL: url.default('http://localhost:3000'),
     FIRMA_CENARIO_CLIENT_ID: z.string().default('firma-viva'),
     /**
+     * Só para testar contra a HOMOLOGAÇÃO do Cenário: cookie do portão do proxy (cenario_homolog=…)
+     * enviado nas chamadas servidor a servidor. Vazio em produção.
+     */
+    FIRMA_CENARIO_COOKIE: z.string().default(''),
+    /**
      * Permissões pedidas ao Cenário. "consulta" = somente leitura (mapa da oficina e OS, sem
      * alterar nada); "jogo operacao escritorio" = integração completa do jogo.
      */
@@ -62,6 +67,12 @@ const schema = z
       if (!e.FIRMA_WEB_URL.startsWith('https://'))
         ctx.addIssue({ code: 'custom', path: ['FIRMA_WEB_URL'], message: 'Use HTTPS.' });
     }
+    if (e.FIRMA_APP_ENV === 'production' && e.FIRMA_CENARIO_COOKIE)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['FIRMA_CENARIO_COOKIE'],
+        message: 'Só para homologação.',
+      });
     if (Buffer.from(e.FIRMA_SEAL_KEY, 'base64').length !== 32)
       ctx.addIssue({ code: 'custom', path: ['FIRMA_SEAL_KEY'], message: '32 bytes em base64.' });
   })
