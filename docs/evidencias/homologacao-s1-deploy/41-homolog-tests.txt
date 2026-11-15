@@ -1,0 +1,70 @@
+• run_homologation_tests {"suite": "completo"} → job 205ea0f5-f446-4522-9135-65f44919c8a5 (mensagem 22618591242512521)
+{"jti": "205ea0f5-f446-4522-9135-65f44919c8a5", "operacao": "run_homologation_tests", "classe": "READ_ONLY", "parametros": {"suite": "completo"}, "status": "falhou", "exit_code": 1, "inicio": "2026-11-15T03:44:12.218786Z", "fim": "2026-11-15T03:44:20.233193Z", "duracao_s": 8.014, "motivo": "suítes com falha: ['saude']", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh saude
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ proxy exige autenticação (sem credencial: 401)
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ web (tela de entrada): 200
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+✔ certificado válido por mais 53 dias (até Jan  7 16:14:09 2027 GMT)
+✔ último backup há 0 h (cenario-staging-20261115T034025Z)
+✔ último envio ao bucket há 0 h
+✔ nenhum backup local sem cópia externa há mais de 36 h
+✔ migrations: 37 aplicadas, nenhuma pendente/com falha
+✘ disco em 90%
+✔ memória disponível 1063 MB
+Saúde: 1 problema(s)
+✘ suíte saude: bash /opt/cenario/infra/homolog/gcp/vm.sh: código 1
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh diagnosticar-acesso 24
+== Configuração
+• domínio: «HOMOLOG_DOMAIN-mascarado» · usuário do proxy: «HOMOLOG_BASIC_USER-mascarado» (minúsculo, sem acento)
+• segredo homolog-proxy-password: 23 caracteres; só caracteres imprimíveis comuns
+• /run/cenario/env gerado em: 2026-11-15T03:42:38Z (o hash da senha do proxy é calculado nesse momento)
+== Fluxo do navegador (de dentro da VM)
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+== Tentativas registradas pelo Caddy nas últimas 24 h
+• 155 requisições de navegadores (+ 57 de testes internos)
+• Safari: 7 aceitas · 0 recusadas COM senha enviada · 1 pedidos de senha (sem credencial)
+• últimas (hora UTC · status · método · caminho · senha enviada? · cookie? · usuário aceito · navegador):
+    11-15T00:09:22 308 GET / · - · - ·  · Safari
+    11-15T00:10:16 308 GET /?query=SELECT%20version%28%29 · - · - ·  · outro
+    11-15T00:10:20 308 GET / · - · - ·  · outro
+    11-15T00:10:21 308 POST /upnp/control/basicevent1 · - · - ·  · outro
+    11-15T00:11:09 308 GET /admin/config.php · - · - ·  · outro
+    11-15T00:13:13 308 POST /ipp · - · - ·  · outro
+    11-15T00:47:44 308 GET / · - · - ·  · outro
+    11-15T00:57:22 308 GET / · - · - ·  · outro
+    11-15T00:58:03 308 GET / · - · - ·  · outro
+    11-15T01:04:24 308 GET / · - · - ·  · outro
+    11-15T01:05:14 308 GET /aaa9 · - · - ·  · outro
+    11-15T01:05:15 308 GET /aab9 · - · - ·  · outro
+    11-15T01:57:38 308 GET / · - · - ·  · outro
+    11-15T01:57:57 308 GET / · - · - ·  · outro
+    11-15T02:02:04 308 GET / · - · - ·  · outro
+    11-15T02:11:56 308 GET / · - · - ·  · outro
+    11-15T02:34:03 308 GET /.git/config · - · - ·  · outro
+    11-15T02:38:15 308 GET / · - · - ·  · outro
+    11-15T02:55:18 308 GET / · - · - ·  · outro
+    11-15T02:55:18 308 GET /favicon.ico · - · - ·  · outro
+    11-15T03:16:43 308 GET /.git/refs/ · - · - ·  · Safari
+    11-15T03:22:36 308 POST / · - · - ·  · outro
+    11-15T03:31:22 200 GET /api/ready · - · cookie ·  · outro
+    11-15T03:43:32 200 GET /api/ready · - · cookie ·  · outro
+    11-15T03:43:36 401 GET /api/realtime · - · cookie ·  · outro
+== Leitura
+• o Safari passou pelo proxy; se a tela não abriu, veja os status != 2xx/3xx acima
+✔ suíte acesso
+✔ WebSocket /api/realtime pelo proxy: HTTP 401 (esperado 401 sem sessão, ou 101)
+✔ suíte websocket

@@ -1,0 +1,6 @@
+• migration_precheck {"version": "9fb6b032c3c2496204043baa15bc2fb55a6b5e01"} → job f4207663-cf6e-4019-bebf-8837dfc94e07 (mensagem 22618581861963430)
+{"jti": "f4207663-cf6e-4019-bebf-8837dfc94e07", "operacao": "migration_precheck", "classe": "READ_ONLY", "parametros": {"version": "9fb6b032c3c2496204043baa15bc2fb55a6b5e01"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-15T03:40:04.365633Z", "fim": "2026-11-15T03:40:08.822610Z", "duracao_s": 4.457, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh preflight 9fb6b032c3c2496204043baa15bc2fb55a6b5e01
+• imagem 9fb6b032c3c2496204043baa15bc2fb55a6b5e01: 37 migrations · banco: 37 aplicadas (37 registros)
+• pendentes (0): nenhuma
+PREFLIGHT: OK (nenhuma migration incompleta, desconhecida, divergente ou fora de ordem; esquema e dados compatíveis com as pendentes)

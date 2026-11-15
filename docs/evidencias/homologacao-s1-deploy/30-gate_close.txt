@@ -1,0 +1,3 @@
+• gate_close {} → job 5d0d4be5-679f-44b0-92d0-6063dff5fa6c (mensagem 22618898331904484)
+{"jti": "5d0d4be5-679f-44b0-92d0-6063dff5fa6c", "operacao": "gate_close", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-15T03:43:13.036521Z", "fim": "2026-11-15T03:43:13.183002Z", "duracao_s": 0.146, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: fechado (/etc/cenario/publicacao-autorizada)

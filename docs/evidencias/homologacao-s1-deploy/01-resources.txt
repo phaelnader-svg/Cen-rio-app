@@ -1,0 +1,21 @@
+• resources {} → job 25cc9f63-c895-46ad-bcd0-ff55a5a169c4 (mensagem 22618616125225438)
+{"jti": "25cc9f63-c895-46ad-bcd0-ff55a5a169c4", "operacao": "resources", "classe": "READ_ONLY", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-15T03:31:40.264187Z", "fim": "2026-11-15T03:31:42.704200Z", "duracao_s": 2.44, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+$ free -m
+               total        used        free      shared  buff/cache   available
+Mem:            1976         906         872          57         414        1070
+Swap:           2047         171        1876
+$ swapon --show
+NAME      TYPE SIZE   USED PRIO
+/swapfile file   2G 171.5M   -2
+$ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        30G   23G  5.3G  82% /
+$ uptime
+ 03:31:40 up 36 days, 18:59,  0 user,  load average: 0.49, 0.16, 0.05
+$ docker stats --no-stream --format table {{.Name}}	{{.MemUsage}}	{{.CPUPerc}}
+NAME                         MEM USAGE / LIMIT   CPU %
+cenario-homolog-web-1        160.3MiB / 448MiB   0.00%
+cenario-homolog-api-1        129MiB / 512MiB     0.03%
+cenario-homolog-caddy-1      28.8MiB / 192MiB    0.00%
+cenario-homolog-backup-1     2.297MiB / 256MiB   0.00%
+cenario-homolog-postgres-1   87.57MiB / 448MiB   0.06%

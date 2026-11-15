@@ -1,0 +1,3 @@
+• gate_open {} → job f2b13e37-78e0-4620-b0d9-9037deaa45ab (mensagem 22618557957596672)
+{"jti": "f2b13e37-78e0-4620-b0d9-9037deaa45ab", "operacao": "gate_open", "classe": "MUTATING", "parametros": {}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-15T03:38:17.762425Z", "fim": "2026-11-15T03:38:17.949357Z", "duracao_s": 0.187, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+portão de publicação: ABERTO (/etc/cenario/publicacao-autorizada)

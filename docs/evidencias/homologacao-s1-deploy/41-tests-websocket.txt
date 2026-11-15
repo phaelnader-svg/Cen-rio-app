@@ -1,0 +1,4 @@
+• run_homologation_tests {"suite": "websocket"} → job 76c22fd1-307a-479b-b147-b2b595bb3911 (mensagem 22618590157494823)
+{"jti": "76c22fd1-307a-479b-b147-b2b595bb3911", "operacao": "run_homologation_tests", "classe": "READ_ONLY", "parametros": {"suite": "websocket"}, "status": "concluido", "exit_code": 0, "inicio": "2026-11-15T03:44:33.887366Z", "fim": "2026-11-15T03:44:34.168261Z", "duracao_s": 0.281, "motivo": "", "truncado": {"stdout": false, "stderr": false}}
+✔ WebSocket /api/realtime pelo proxy: HTTP 401 (esperado 401 sem sessão, ou 101)
+✔ suíte websocket
