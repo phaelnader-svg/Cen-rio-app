@@ -33,6 +33,8 @@ import {
   managerAnswer,
   purchasingAnswer,
 } from './agent-engines';
+import { requireConnection } from '../integrations/connections';
+import { updateDailyBudget } from '../integrations/meta';
 import { AGENT_TEMPLATES } from './agent-templates';
 import { AGENT_MANAGE, AGENT_USE, GAME_ACCESS, ensureDefaultSpaces } from './common';
 
@@ -85,7 +87,7 @@ function integrations(): IntegrationDto[] {
 }
 
 const engineOf = (a: AiAgent): AgentDto['engine'] =>
-  a.roleKey === 'GERENTE' || a.roleKey === 'COMPRAS'
+  ['GERENTE', 'COMPRAS', 'ATENDIMENTO', 'MARKETING', 'TRAFEGO', 'DOCUMENTOS'].includes(a.roleKey)
     ? 'DADOS_CENARIO'
     : a.roleKey === 'PERSONALIZADA'
       ? 'INSTRUCOES'
@@ -106,6 +108,8 @@ function toDto(a: AiAgent & { _count?: { proposals: number } }): AgentDto {
     version: a.version,
     pendingProposals: a._count?.proposals ?? 0,
     engine: engineOf(a),
+    channelPolicies: (a.channelPolicies ?? {}) as Record<string, string>,
+    autoSendRules: (a.autoSendRules ?? []) as string[],
   };
 }
 
@@ -214,6 +218,8 @@ export async function gameAgentRoutes(app: FastifyInstance) {
             instructions: input.instructions,
             dataScopes: input.dataScopes,
             actionPolicies: input.actionPolicies as Prisma.InputJsonValue,
+            channelPolicies: input.channelPolicies as Prisma.InputJsonValue,
+            autoSendRules: input.autoSendRules as Prisma.InputJsonValue,
             color: input.color,
             deskStationId: input.deskStationId ?? null,
             createdById: actor.userId,
@@ -225,7 +231,12 @@ export async function gameAgentRoutes(app: FastifyInstance) {
           entityType: 'ai_agent',
           entityId: created.id,
           summary: `Agente "${created.name}" (${created.roleLabel}) criado.`,
-          changes: { dataScopes: input.dataScopes, actionPolicies: input.actionPolicies },
+          changes: {
+            dataScopes: input.dataScopes,
+            actionPolicies: input.actionPolicies,
+            channelPolicies: input.channelPolicies,
+            autoSendRules: input.autoSendRules,
+          },
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.GAME_AGENT_CHANGED,
@@ -260,6 +271,8 @@ export async function gameAgentRoutes(app: FastifyInstance) {
           data: {
             ...rest,
             actionPolicies: rest.actionPolicies as Prisma.InputJsonValue | undefined,
+            channelPolicies: rest.channelPolicies as Prisma.InputJsonValue | undefined,
+            autoSendRules: rest.autoSendRules as Prisma.InputJsonValue | undefined,
             version: { increment: 1 },
           },
           include: pendingCount,
@@ -412,8 +425,44 @@ export async function gameAgentRoutes(app: FastifyInstance) {
           'EMITIR_NOTA',
           'REGISTRAR_PAGAMENTO',
         ].includes(p.kind);
-        const status =
+        let status: 'REJEITADA' | 'EXECUTADA_TESTE' | 'APROVADA' =
           input.decision === 'REJEITAR' ? 'REJEITADA' : external ? 'EXECUTADA_TESTE' : 'APROVADA';
+        // Tráfego: a mudança de orçamento só é aplicada no Meta Ads depois desta aprovação.
+        if (p.kind === 'ALTERAR_ORCAMENTO' && input.decision !== 'REJEITAR') {
+          if (!request.auth!.permissions.has('anuncios.gerenciar'))
+            throw Errors.forbidden('Aprovar mudança de orçamento exige a permissão de anúncios.');
+          const pl = p.payload as {
+            campaignId: string;
+            campaignName: string;
+            fromCents: number;
+            toCents: number;
+          };
+          const c = await requireConnection(tx, 'META_ADS');
+          const r = await updateDailyBudget(
+            {
+              providerKey: c.providerKey,
+              mode: c.mode,
+              config: c.config,
+              secret: c.secret as never,
+            },
+            pl.campaignId,
+            pl.toCents,
+          );
+          status = r.test ? 'EXECUTADA_TESTE' : 'APROVADA';
+          await tx.agentAction.create({
+            data: {
+              agentId: p.agentId,
+              channel: 'META_ADS',
+              accountLabel: c.accountLabel,
+              kind: 'ALTERAR_ORCAMENTO',
+              summary: `Orçamento diário de "${pl.campaignName}": ${pl.fromCents / 100} → ${pl.toCents / 100} reais`,
+              content: p.detail,
+              status: r.test ? 'EXECUTADO_TESTE' : 'EXECUTADO',
+              approvedById: actor.userId,
+              ref: { proposalId: p.id, campaignId: pl.campaignId },
+            },
+          });
+        }
         const u = await tx.aiAgentProposal.update({
           where: { id },
           data: {

@@ -155,8 +155,15 @@ export const AGENT_ROLE_KEYS = [
   'ORCAMENTOS',
   'FINANCEIRO',
   'INSTAGRAM',
+  'ATENDIMENTO',
+  'MARKETING',
+  'TRAFEGO',
+  'DOCUMENTOS',
   'PERSONALIZADA',
 ] as const;
+export const AGENT_CHANNELS = ['WHATSAPP', 'INSTAGRAM', 'MESSENGER', 'META_ADS'] as const;
+export const CHANNEL_POLICY = ['CONSULTAR', 'RASCUNHO', 'EXECUTAR'] as const;
+export const AUTO_SEND_RULES = ['PEDIR_FOTOS_MEDIDAS', 'CONFIRMAR_RECEBIMENTO'] as const;
 export const AGENT_DATA_SCOPES = [
   'producao',
   'os',
@@ -193,6 +200,10 @@ export const agentSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
     .default('#7c3aed'),
+  /** Canais que o agente acessa e o que pode fazer em cada um. */
+  channelPolicies: z.partialRecord(z.enum(AGENT_CHANNELS), z.enum(CHANNEL_POLICY)).default({}),
+  /** Casos de envio automático liberados (só valem com política EXECUTAR no canal). */
+  autoSendRules: z.array(z.enum(AUTO_SEND_RULES)).max(10).default([]),
 });
 export const updateAgentSchema = agentSchema.partial().extend({
   version: versionSchema,

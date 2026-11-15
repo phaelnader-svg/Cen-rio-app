@@ -149,6 +149,9 @@ export const EVENT_TYPES = {
   GAME_LAYOUT_SAVED: 'game.layout_saved',
   GAME_AGENT_CHANGED: 'game.agent_changed',
   GAME_PROPOSAL_CHANGED: 'game.proposal_changed',
+  CONNECTION_CHANGED: 'connection.changed',
+  INBOX_MESSAGE: 'inbox.message',
+  OFFICE_CHANGED: 'office.changed',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

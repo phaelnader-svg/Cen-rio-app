@@ -179,6 +179,8 @@ export interface AgentDto {
   deskStationId: string | null;
   version: number;
   pendingProposals: number;
+  channelPolicies: Record<string, string>;
+  autoSendRules: string[];
   /** Funciona com dados do Cenário Gestão nesta versão. */
   engine: 'DADOS_CENARIO' | 'AGUARDANDO_INTEGRACAO' | 'INSTRUCOES';
 }
@@ -234,4 +236,6 @@ export interface AgentRoleTemplate {
   actionPolicies: Record<string, string>;
   color: string;
   integrations: string[];
+  channelPolicies?: Record<string, string>;
+  autoSendRules?: string[];
 }

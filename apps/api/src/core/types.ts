@@ -29,6 +29,8 @@ export interface DeviceContext {
 /** Regra de acesso declarada em toda rota (verificada globalmente; ausência = erro na inicialização). */
 export type AccessRule =
   | { public: true }
+  /** Webhook de provedor externo: sem sessão nem Origin; o handler EXIGE a assinatura/token do provedor. */
+  | { webhook: true }
   | { device: true }
   | {
       session: 'any' | SessionKind;

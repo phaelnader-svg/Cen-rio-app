@@ -50,7 +50,7 @@ function allows(
   kind: 'WEB' | 'DEVICE',
   perms: ReadonlySet<Permission>,
 ): boolean {
-  if ('public' in access || 'device' in access) return true;
+  if ('public' in access || 'device' in access || 'webhook' in access) return true;
   if (access.session !== 'any' && access.session !== kind) return false;
   const surface: Permission = kind === 'WEB' ? 'painel.acessar' : 'producao.acessar';
   const required = [...(access.surfaceExempt ? [] : [surface]), ...(access.permissions ?? [])];
@@ -98,6 +98,33 @@ describe('Matriz de acesso: todas as rotas', () => {
     );
   });
 
+  it('webhooks de provedores são só os listados e recusam chamada sem assinatura/token (401)', async () => {
+    const hooks = routes()
+      .filter((r) => 'webhook' in r.access)
+      .map((r) => `${r.method} ${r.url}`);
+    expect(hooks.sort()).toEqual(
+      [
+        'GET /api/webhooks/meta',
+        'POST /api/webhooks/meta',
+        'POST /api/webhooks/asaas',
+        'POST /api/webhooks/clicksign',
+      ].sort(),
+    );
+    const anon = new HttpClient(app);
+    for (const h of hooks.filter((x) => x.startsWith('POST'))) {
+      const res = await anon.req('POST', h.slice(5), { event: 'x' });
+      expect(res.status, h).toBe(401);
+    }
+    expect(
+      (
+        await anon.req(
+          'GET',
+          '/api/webhooks/meta?hub.mode=subscribe&hub.verify_token=errado&hub.challenge=1',
+        )
+      ).status,
+    ).toBe(401);
+  });
+
   it('sem sessão, toda rota protegida responde 401 (nenhuma executa)', async () => {
     const anon = new HttpClient(app);
     const leaks: string[] = [];
@@ -126,6 +153,8 @@ describe('Matriz de acesso: todas as rotas', () => {
     const leaks: string[] = [];
     for (const r of routes()) {
       if (r.method === 'GET') continue;
+      // Webhooks não usam cookie de sessão: autenticam por assinatura (teste próprio abaixo).
+      if (r.url.startsWith('/api/webhooks/')) continue;
       const res = await foreign.req(
         r.method as 'POST',
         concrete(r.url),

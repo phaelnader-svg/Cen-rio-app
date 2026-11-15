@@ -1293,7 +1293,7 @@ const split = (key: string) => {
 
 /** O que a regra permite para uma sessão de painel (mesma lógica do plugin de autenticação). */
 function webAllows(access: AccessRule, perms: ReadonlySet<string>): boolean {
-  if ('public' in access || 'device' in access) return true;
+  if ('public' in access || 'device' in access || 'webhook' in access) return true;
   if (access.session !== 'any' && access.session !== 'WEB') return false;
   const required = [
     ...(access.surfaceExempt ? [] : ['painel.acessar']),
@@ -1332,16 +1332,20 @@ afterAll(() => app.close());
  * Acréscimos permitidos desde 9fb1786: Rodada 1 (decisão do proprietário — F3-17) e o jogo de
  * gestão (empresa virtual), que só ganha permissões próprias e nenhuma função padrão além do gestor.
  */
-const GAME_PERMISSIONS = ['jogo.acessar', 'jogo.construir', 'agentes.usar', 'agentes.gerenciar'];
+const GAME_PERMISSIONS = [
+  'jogo.acessar',
+  'jogo.construir',
+  'agentes.usar',
+  'agentes.gerenciar',
+  'conexoes.gerenciar',
+  'atendimento.ver',
+  'atendimento.responder',
+  'marketing.publicar',
+  'anuncios.gerenciar',
+];
 const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir', ...GAME_PERMISSIONS];
 const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
-  gestor: [
-    'agentes.gerenciar',
-    'agentes.usar',
-    'estoque.conferir',
-    'jogo.acessar',
-    'jogo.construir',
-  ], // o gestor sempre recebe o catálogo completo
+  gestor: [...GAME_PERMISSIONS, 'estoque.conferir'].sort(), // o gestor sempre recebe o catálogo completo
   tapeceiro: [],
   cabeceiras_qualidade: [],
   ajudante: [],
@@ -1511,6 +1515,9 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270223000000_custo_operacional_equipe_propria: DROP CONSTRAINT "logistics_costs_phase6"':
     'Regra CHECK recriada na mesma migration com a mesma condição e um status a mais (OPERACIONAL): ' +
     'amplia o aceito, nenhuma linha é apagada nem alterada.',
+  '20270309000000_conexoes_escritorio: UPDATE OR':
+    'Gatilho de imutabilidade "BEFORE UPDATE OR DELETE" do histórico de ações dos agentes (tabela ' +
+    'nova): bloqueia alterações, não altera nem apaga dados.',
   '20270302000000_jogo_gestao: UPDATE OR':
     'Gatilho de imutabilidade "BEFORE UPDATE OR DELETE" do histórico de plantas e das conversas com ' +
     'os agentes (tabelas novas): bloqueia alterações, não altera nem apaga dados.',
