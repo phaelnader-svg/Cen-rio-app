@@ -8,6 +8,7 @@
 #   bash infra/firma-viva/teste/firma-teste.sh validar      # depois do DNS: HTTPS, login e jogo no domínio
 #   bash infra/firma-viva/teste/firma-teste.sh atualizar    # publica de novo o código atual
 #   bash infra/firma-viva/teste/firma-teste.sh producao     # liga ao Cenário Gestão de PRODUÇÃO (modo consulta)
+#   bash infra/firma-viva/teste/firma-teste.sh homologacao  # liga à HOMOLOGAÇÃO do Cenário (modo consulta)
 #   bash infra/firma-viva/teste/firma-teste.sh voltar-teste # volta ao Cenário de teste (empresa fictícia)
 #   bash infra/firma-viva/teste/firma-teste.sh status | convite <email> | destruir
 #
@@ -255,31 +256,41 @@ validar_de_fora() {
   echo "Abra https://$DOMAIN e entre com a sua conta (convite de dono)."
 }
 
-# Liga o Firma Viva ao Cenário Gestão de PRODUÇÃO em MODO CONSULTA (somente leitura).
-# Pré-requisito: no Cenário (Administração → Aplicativos conectados), cadastrar "firma-viva" com o
-# retorno https://firmaviva.com.br/api/conexoes/cenario/retorno e copiar o segredo mostrado.
+# Liga o Firma Viva a um Cenário Gestão real em MODO CONSULTA (somente leitura).
+#   producao    → https://cenariogestao.com.br
+#   homologacao → https://teste.cenariogestao.com.br (o cookie do portão do proxy é lido do Secret
+#                 Manager pela SUA conta e vai direto para a VM; nunca aparece na tela)
+# Pré-requisito: no Cenário escolhido (Administração → Aplicativos conectados), cadastrar
+# "firma-viva" com o retorno https://firmaviva.com.br/api/conexoes/cenario/retorno e copiar o segredo.
 # O segredo é digitado aqui SEM eco, vai para a VM pela conexão SSH (entrada padrão) e fica só em
 # $DIR/.env (root). Nunca aparece na tela, em argumentos de comando nem no repositório.
-producao() {
-  local cen="${CENARIO_PRODUCAO:-https://cenariogestao.com.br}" seg=""
-  say "Ligando o Firma Viva ($DOMAIN) ao Cenário Gestão de produção ($cen) em modo consulta"
-  read -rs -p "Cole o segredo do aplicativo firma-viva gerado no Cenário (não aparece na tela): " seg
+ligar_cenario() {
+  local rotulo="$1" cen="$2" cookie="" seg=""
+  if [[ "$rotulo" == homologação ]]; then
+    local gate
+    gate="$("${G[@]}" secrets versions access latest --secret=homolog-gate-token 2>/dev/null)" \
+      || die "Não consegui ler o segredo homolog-gate-token com a sua conta."
+    [[ "$gate" =~ ^[A-Za-z0-9_-]+$ ]] || die "homolog-gate-token em formato inesperado."
+    cookie="cenario_homolog=$gate"
+  fi
+  say "Ligando o Firma Viva ($DOMAIN) ao Cenário Gestão de $rotulo ($cen) em modo consulta"
+  read -rs -p "Cole o segredo do aplicativo firma-viva gerado nesse Cenário (não aparece na tela): " seg
   echo
   [[ ${#seg} -ge 32 && "$seg" =~ ^[A-Za-z0-9_-]+$ ]] || die "Segredo inválido (copie de novo do Cenário)."
   run_vm <<FIM
 set -eu
 cd $DIR
 umask 077
-sed -i '/^FIRMA_CENARIO_API_URL=/d; /^FIRMA_CENARIO_WEB_URL=/d; /^FIRMA_CENARIO_SCOPES=/d; /^FIRMA_CENARIO_SEGREDO_PRODUCAO=/d' .env
-printf '%s\n' "FIRMA_CENARIO_API_URL=$cen" "FIRMA_CENARIO_WEB_URL=$cen" "FIRMA_CENARIO_SCOPES=consulta" "FIRMA_CENARIO_SEGREDO_PRODUCAO=$seg" >> .env
-# Conexões antigas apontavam para o Cenário de TESTE: ficam desconectadas (tokens apagados).
-$DC exec -T postgres psql -U app -d firma_viva -qc "UPDATE cenario_connections SET status='DESCONECTADA', access_enc=NULL, refresh_enc=NULL, access_expires_at=NULL, last_error='Trocado para o Cenário Gestão de produção: conecte de novo.' WHERE status <> 'DESCONECTADA'"
+sed -i '/^FIRMA_CENARIO_API_URL=/d; /^FIRMA_CENARIO_WEB_URL=/d; /^FIRMA_CENARIO_SCOPES=/d; /^FIRMA_CENARIO_SEGREDO_PRODUCAO=/d; /^FIRMA_CENARIO_COOKIE=/d' .env
+printf '%s\n' "FIRMA_CENARIO_API_URL=$cen" "FIRMA_CENARIO_WEB_URL=$cen" "FIRMA_CENARIO_SCOPES=consulta" "FIRMA_CENARIO_SEGREDO_PRODUCAO=$seg" "FIRMA_CENARIO_COOKIE=$cookie" >> .env
+# Conexões antigas apontavam para outro Cenário: ficam desconectadas (tokens apagados).
+$DC exec -T postgres psql -U app -d firma_viva -qc "UPDATE cenario_connections SET status='DESCONECTADA', access_enc=NULL, refresh_enc=NULL, access_expires_at=NULL, last_error='Trocado para o Cenário Gestão de $rotulo: conecte de novo.' WHERE status <> 'DESCONECTADA'"
 $DC build firma-web
 $DC up -d firma-api firma-web
 sleep 8
 # Prova sem efeito: o Cenário reconhece o aplicativo e o segredo (concessão desconhecida → 400;
 # segredo errado seria 401). Nada é criado no Cenário.
-$DC exec -T firma-api node -e "fetch(process.env.CENARIO_API_URL+'/api/oauth/token',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({grant_type:'conferencia',client_id:process.env.FIRMA_CENARIO_CLIENT_ID,client_secret:process.env.FIRMA_CENARIO_CLIENT_SECRET})}).then(async r=>{const b=await r.json().catch(()=>({}));if(r.status===400&&b.error==='unsupported_grant_type'){console.log('  ✔ Cenário de produção reconhece o aplicativo e o segredo');process.exit(0)}console.log('  ✖ Cenário respondeu '+r.status+' '+(b.error||'')+': confira o cadastro e o segredo');process.exit(1)}).catch(e=>{console.log('  ✖ sem acesso ao Cenário: '+e.message);process.exit(1)})"
+$DC exec -T firma-api node -e "fetch(process.env.CENARIO_API_URL+'/api/oauth/token',{method:'POST',headers:Object.assign({'content-type':'application/json'},process.env.FIRMA_CENARIO_COOKIE?{cookie:process.env.FIRMA_CENARIO_COOKIE}:{}),body:JSON.stringify({grant_type:'conferencia',client_id:process.env.FIRMA_CENARIO_CLIENT_ID,client_secret:process.env.FIRMA_CENARIO_CLIENT_SECRET})}).then(async r=>{const b=await r.json().catch(()=>({}));if(r.status===400&&b.error==='unsupported_grant_type'){console.log('  ✔ o Cenário reconhece o aplicativo e o segredo');process.exit(0)}console.log('  ✖ Cenário respondeu '+r.status+' '+(b.error||'')+': confira o cadastro e o segredo');process.exit(1)}).catch(e=>{console.log('  ✖ sem acesso ao Cenário: '+e.message);process.exit(1)})"
 FIM
   echo "Pronto. Em https://$DOMAIN: Central de Conexões → Conectar Cenário Gestão."
 }
@@ -289,7 +300,7 @@ voltar_teste() {
   run_vm <<FIM
 set -eu
 cd $DIR
-sed -i '/^FIRMA_CENARIO_API_URL=/d; /^FIRMA_CENARIO_WEB_URL=/d; /^FIRMA_CENARIO_SCOPES=/d; /^FIRMA_CENARIO_SEGREDO_PRODUCAO=/d' .env
+sed -i '/^FIRMA_CENARIO_API_URL=/d; /^FIRMA_CENARIO_WEB_URL=/d; /^FIRMA_CENARIO_SCOPES=/d; /^FIRMA_CENARIO_SEGREDO_PRODUCAO=/d; /^FIRMA_CENARIO_COOKIE=/d' .env
 $DC exec -T postgres psql -U app -d firma_viva -qc "UPDATE cenario_connections SET status='DESCONECTADA', access_enc=NULL, refresh_enc=NULL, access_expires_at=NULL WHERE status <> 'DESCONECTADA'"
 $DC build firma-web
 $DC up -d firma-api firma-web
@@ -314,7 +325,8 @@ case "${1:-}" in
   atualizar) enviar_codigo; gerar_env "$(ip)"; construir_e_subir; registrar_app ;;
   dns) mostrar_dns ;;
   validar) validar && validar_de_fora ;;
-  producao) producao ;;
+  producao) ligar_cenario produção "${CENARIO_PRODUCAO:-https://cenariogestao.com.br}" ;;
+  homologacao) ligar_cenario homologação https://teste.cenariogestao.com.br ;;
   voltar-teste) voltar_teste ;;
   convite)
     [[ -n "${2:-}" ]] || die "uso: convite <email>"

@@ -76,6 +76,8 @@ services:
       CENARIO_API_URL: ${FIRMA_CENARIO_API_URL:-http://api:4000}
       CENARIO_WEB_URL: ${FIRMA_CENARIO_WEB_URL:-https://${CENARIO_HOST}}
       FIRMA_CENARIO_SCOPES: ${FIRMA_CENARIO_SCOPES:-jogo operacao escritorio}
+      # Só para a homologação do Cenário (portão do proxy). Vazio nos outros casos.
+      FIRMA_CENARIO_COOKIE: ${FIRMA_CENARIO_COOKIE:-}
       FIRMA_CENARIO_CLIENT_ID: firma-viva
       FIRMA_CENARIO_CLIENT_SECRET: ${FIRMA_CENARIO_SEGREDO_PRODUCAO:-${FIRMA_CENARIO_CLIENT_SECRET}}
 
