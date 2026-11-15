@@ -3992,7 +3992,7 @@ model AiAgentProposal {
   detail       String    @db.VarChar(4000)
   payload      Json      @default("{}")
   evidence     Json      @default("[]")
-  /// PENDENTE | APROVADA | REJEITADA | EXECUTADA_TESTE
+  /// PENDENTE | APROVADA | REJEITADA | EXECUTADA_TESTE | OBSOLETA
   status       String    @default("PENDENTE") @db.VarChar(20)
   decidedById  String?   @map("decided_by_id") @db.Uuid
   decidedAt    DateTime? @map("decided_at") @db.Timestamptz(3)

@@ -131,6 +131,92 @@ const TEST_ACCOUNTS: Record<
   BANCO_PJ: { label: 'Conta PJ de teste', accountId: 'banco-teste', config: {} },
 };
 
+/**
+ * O que cada conexão já teve validado de ponta a ponta (testes automáticos e navegador) e o que
+ * depende de configuração/conta real. Mostrado no cartão para não confundir "modo de teste" com
+ * integração real.
+ */
+const VERIFIED: Record<string, { tested: string[]; pending: string[] }> = {
+  CENARIO: {
+    tested: ['Sessão, permissões e fluxos oficiais (OS, produção, estoque, compras, financeiro)'],
+    pending: [],
+  },
+  WHATSAPP: {
+    tested: [
+      'Mensagem recebida pelo webhook assinado (conta de teste)',
+      'Rascunho do agente, revisão e envio (teste)',
+      'Vínculo com OS',
+      'Regra das 24 h e modelo aprovado',
+    ],
+    pending: ['Autorização OAuth/Embedded Signup com coexistência', 'Envio real pela Cloud API'],
+  },
+  INSTAGRAM: {
+    tested: [
+      'Direct recebido pelo webhook (teste)',
+      'Post: rascunho → aprovação → publicação (teste)',
+    ],
+    pending: ['Publicação real (imagem em endereço público HTTPS)', 'Revisão do App da Meta'],
+  },
+  MESSENGER: {
+    tested: ['Mensagem recebida pelo webhook (teste)', 'Resposta revisada (teste)'],
+    pending: ['Envio real pela Página'],
+  },
+  META_ADS: {
+    tested: [
+      'Leitura de campanhas (dados de teste)',
+      'Mudança de orçamento executada só após aprovação (teste)',
+    ],
+    pending: ['Leitura e alteração reais na Marketing API'],
+  },
+  ASSINATURA: {
+    tested: [
+      'Contrato preparado, revisado e enviado (teste)',
+      'Retorno de assinatura com HMAC e PDF arquivado',
+    ],
+    pending: [
+      'Envio real à Clicksign (adaptador pela documentação v3, ainda não homologado no sandbox)',
+    ],
+  },
+  FISCAL: {
+    tested: [
+      'Nota preparada pelo agente',
+      'Bloqueio com a lista do que falta',
+      'Autorização em homologação local (sem valor fiscal)',
+    ],
+    pending: [
+      'Emissão real: provedor compatível com o Emissor Nacional, certificado A1 e perfis validados pela contabilidade',
+    ],
+  },
+  COBRANCAS: {
+    tested: [
+      'Plano entrada/saldo e cartão',
+      'Pix de teste',
+      'Baixa única pelo retorno do provedor (reenvio ignorado)',
+    ],
+    pending: ['Cobrança real no Asaas (sandbox ainda não homologado)'],
+  },
+  BANCO_PJ: {
+    tested: [
+      'Importação OFX/CSV sem duplicar',
+      'Conciliação com baixa oficial',
+      'Pagamento preparado → confirmado → pago só pela conciliação',
+    ],
+    pending: ['Pagamento pela API do banco (depende do banco da conta PJ)'],
+  },
+  MAQUININHA: {
+    tested: ['Importação do relatório: bruto, taxa, líquido e previsão'],
+    pending: ['API da adquirente'],
+  },
+  CONTABILIDADE: {
+    tested: ['Fechamento do mês com pendências e pacote ZIP'],
+    pending: ['Envio automático por e-mail'],
+  },
+  AGENDA_ENTREGAS: {
+    tested: ['Entregas do dia com saldo (leitura do fluxo oficial)'],
+    pending: ['Sincronizar com o Google Agenda'],
+  },
+};
+
 function card(
   p: ProviderDef,
   c: Awaited<ReturnType<typeof connectionOf>>,
@@ -160,6 +246,17 @@ function card(
     external: p.external,
     docsUrl: p.docsUrl,
     testModeAvailable: p.testMode && testModeAllowed(),
+    verified: VERIFIED[p.key] ?? { tested: [], pending: [] },
+    realIntegration:
+      p.auth === 'PLANEJADA'
+        ? 'nao'
+        : c?.mode === 'TESTE_LOCAL'
+          ? 'teste'
+          : p.key === 'FISCAL' && c?.status === 'CONECTADA'
+            ? 'parcial'
+            : c?.status === 'CONECTADA' || p.auth === 'SESSAO'
+              ? 'sim'
+              : 'nao',
     pendingAccounts: accounts
       ? {
           pages: accounts.pages.map((x) => ({
@@ -185,6 +282,41 @@ export async function connectionRoutes(app: FastifyInstance) {
       where: { id: request.auth!.userId! },
       select: { displayName: true, email: true },
     });
+    const [bank, lastTx, cards, docs] = await Promise.all([
+      prisma.bankAccount.findFirst({ where: { active: true }, orderBy: { createdAt: 'asc' } }),
+      prisma.bankTransaction.findFirst({ orderBy: { importedAt: 'desc' } }),
+      prisma.cardSettlement.findFirst({ orderBy: { createdAt: 'desc' } }),
+      prisma.accountingDocument.count(),
+    ]);
+    const imported: Record<string, Record<string, unknown>> = {
+      BANCO_PJ: bank
+        ? {
+            status: 'CONECTADA',
+            mode: 'IMPORTACAO',
+            realIntegration: 'sim',
+            accountLabel: `${bank.label} (${bank.bank}) · por extrato`,
+            lastSyncAt: lastTx?.importedAt.toISOString() ?? null,
+          }
+        : {
+            status: 'DESCONECTADA',
+            accountLabel: 'Cadastre a conta PJ e importe o extrato (Financeiro → Banco)',
+          },
+      MAQUININHA: cards
+        ? {
+            status: 'CONECTADA',
+            mode: 'IMPORTACAO',
+            realIntegration: 'sim',
+            accountLabel: `${cards.provider} · por relatório`,
+            lastSyncAt: cards.createdAt.toISOString(),
+          }
+        : { status: 'DESCONECTADA', accountLabel: 'Importe o relatório de vendas da maquininha' },
+      CONTABILIDADE: {
+        status: 'CONECTADA',
+        mode: 'IMPORTACAO',
+        realIntegration: 'sim',
+        accountLabel: `Pacote mensal manual · ${docs} documento(s) registrados`,
+      },
+    };
     return PROVIDERS.map((p) => {
       const row = rows.find((r) => r.providerKey === p.key);
       const c = row
@@ -204,7 +336,7 @@ export async function connectionRoutes(app: FastifyInstance) {
               permissions: [...request.auth!.permissions].length,
               lastSyncAt: new Date().toISOString(),
             }
-          : {},
+          : (imported[p.key] ?? {}),
       );
     });
   });

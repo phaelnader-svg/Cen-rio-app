@@ -68,6 +68,10 @@ export interface PieceVisual {
   rot: number;
   label: string;
   highlight?: boolean;
+  /** Situação curta (ícone + texto): Na fila, Em execução, Parada… */
+  phase?: string;
+  /** Filtro rápido ativo e a peça não atende: fica esmaecida. */
+  dimmed?: boolean;
   /** Posição física confirmada (fantasma), quando diferente da representada. */
   confirmed?: { x: number; y: number; text: string } | null;
 }
@@ -1004,7 +1008,7 @@ export class GameEngine {
     const seen = new Set<string>();
     for (const p of list) {
       seen.add(p.id);
-      const key = `${p.model}|${p.tone}|${p.label}|${p.highlight ? 1 : 0}|${p.confirmed?.text ?? ''}`;
+      const key = `${p.model}|${p.tone}|${p.label}|${p.highlight ? 1 : 0}|${p.confirmed?.text ?? ''}|${p.phase ?? ''}|${p.dimmed ? 1 : 0}`;
       let e = this.pieces.get(p.id);
       const to = new THREE.Vector3(p.x * CM, 0, p.y * CM);
       if (!e || e.key !== key) {
@@ -1031,7 +1035,7 @@ export class GameEngine {
         g.add(ring);
         const icon = p.tone === 'FALTA' ? '⛔' : p.tone === 'DISPONIVEL' ? '✅' : '❔';
         const tag = label(
-          `${p.osCode} · ${p.tone === 'FALTA' ? 'falta material' : p.tone === 'DISPONIVEL' ? 'material ok' : 'a conferir'}`,
+          `${p.osCode} · ${p.tone === 'FALTA' ? 'falta material' : p.tone === 'DISPONIVEL' ? 'material ok' : 'a conferir'}${p.phase ? ` · ${p.phase}` : ''}`,
           {
             size: 20,
             bg: p.highlight ? 'rgba(168,116,63,0.97)' : 'rgba(255,255,255,0.94)',
@@ -1053,6 +1057,16 @@ export class GameEngine {
         }
         g.position.copy(old ? old.g.position : to);
         g.rotation.y = p.rot;
+        if (p.dimmed)
+          g.traverse((o) => {
+            const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+            if (m && 'opacity' in m) {
+              const c = m.clone();
+              c.transparent = true;
+              c.opacity = Math.min(c.opacity, 0.22);
+              (o as THREE.Mesh).material = c;
+            }
+          });
         if (old) {
           this.pieceGroup.remove(old.g);
           if (old.ghost) this.pieceGroup.remove(old.ghost);

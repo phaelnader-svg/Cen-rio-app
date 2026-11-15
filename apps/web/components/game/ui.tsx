@@ -13,7 +13,9 @@ export function Panel({
   className,
   actions,
   testId,
+  wrapTitle,
 }: {
+  wrapTitle?: boolean;
   title: ReactNode;
   subtitle?: ReactNode;
   icon?: ReactNode;
@@ -34,7 +36,15 @@ export function Panel({
       <header className="flex items-start gap-3 border-b border-bronze-500/25 bg-gradient-to-r from-[#f5ebdf] to-[#fffaf2] px-4 py-3">
         {icon ? <div className="mt-0.5 text-xl">{icon}</div> : null}
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-bold text-ink">{title}</h2>
+          <h2
+            className={clsx(
+              'text-base font-bold text-ink',
+              wrapTitle ? 'leading-snug' : 'truncate',
+            )}
+            title={typeof title === 'string' ? title : undefined}
+          >
+            {title}
+          </h2>
           {subtitle ? <div className="text-xs text-ink-soft">{subtitle}</div> : null}
         </div>
         {actions}
@@ -152,11 +162,20 @@ export function KV({ k, v }: { k: string; v: ReactNode }) {
   );
 }
 
+/** Horário de São Paulo (fuso da oficina), igual ao tablet. */
+export const fmtClock = (d: Date | number) =>
+  new Date(d).toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 export const fmtDate = (iso: string | null | undefined) =>
   iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—';
 export const fmtDateTime = (iso: string | null | undefined) =>
   iso
     ? new Date(iso).toLocaleString('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
         day: '2-digit',
         month: '2-digit',
         hour: '2-digit',

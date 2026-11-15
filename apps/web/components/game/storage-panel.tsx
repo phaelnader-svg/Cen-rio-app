@@ -134,9 +134,14 @@ function MaterialCard({
   const u = UNIT_LABEL[m.unit] ?? m.unit;
   const refresh = () =>
     Promise.all(
-      ['game-slot', 'game-material', 'game-snapshot', 'game-readiness', 'game-material-search'].map(
-        (k) => qc.invalidateQueries({ queryKey: [k] }),
-      ),
+      [
+        'game-slot',
+        'game-material',
+        'game-snapshot',
+        'game-readiness',
+        'game-material-search',
+        'needs',
+      ].map((k) => qc.invalidateQueries({ queryKey: [k] })),
     );
   const act = async (label: string, fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -263,19 +268,44 @@ function MaterialCard({
                     Reservar {fmtQty(Math.min(w.missing, m.available))} {u}
                   </GBtn>
                 ) : null}
-                <a
-                  href={`/painel/compras/novo?req=${w.requirementId}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 rounded bg-bronze-500 px-1.5 py-0.5 font-semibold text-white"
-                >
-                  <ShoppingCart className="size-3" /> Comprar
-                </a>
+                {w.missing - Math.max(0, m.available) > 0 ? (
+                  <a
+                    href={`/painel/compras/novo?req=${w.requirementId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded bg-bronze-500 px-1.5 py-0.5 font-semibold text-white"
+                    title="A tela oficial desconta o estoque livre e compras de estoque em aberto"
+                  >
+                    <ShoppingCart className="size-3" /> Comprar{' '}
+                    {fmtQty(Math.round((w.missing - Math.max(0, m.available)) * 1000) / 1000)} {u}
+                  </a>
+                ) : null}
               </li>
             ))}
           </ul>
         ) : (
           <p className="text-xs text-ink-muted">Nenhuma OS aguardando.</p>
+        )}
+      </Section>
+      <Section title="Destino das reservas encerradas">
+        {m.reservationHistory?.length ? (
+          <ul className="space-y-0.5 text-xs" data-testid="reservation-history">
+            {m.reservationHistory.map((r, i) => (
+              <li key={i}>
+                {r.osCode}: {fmtQty(r.quantity)} {u} ·{' '}
+                {r.status === 'CONSUMIDA'
+                  ? 'consumida na produção'
+                  : r.status === 'LIBERADA'
+                    ? 'liberada de volta ao estoque'
+                    : r.status.toLowerCase()}
+                {r.closedAt ? ` em ${fmtDateTime(r.closedAt)}` : ''}
+                {r.by ? ` · ${r.by}` : ''}
+                {r.reason ? ` (${r.reason})` : ''}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-ink-muted">Nenhuma reserva encerrada ainda.</p>
         )}
       </Section>
       <Section title="Compras em aberto">

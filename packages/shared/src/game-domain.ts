@@ -991,6 +991,8 @@ export function placePiece(
     );
   if (done.length && done.length === active.length)
     return at('QUALIDADE', 'AREA', 'Produção concluída');
+  if (input.tasks.some((t) => t.status === 'RASCUNHO'))
+    return at('RECEBIMENTO', 'SEM_PLANEJAMENTO', 'Planejada · aguardando publicação da semana');
   return at('RECEBIMENTO', 'SEM_PLANEJAMENTO', 'Aguardando planejamento');
 }
 

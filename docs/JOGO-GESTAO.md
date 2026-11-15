@@ -114,6 +114,36 @@ desmarque "Medidas ilustrativas" quando tiver preenchido:
 6. Escritório: medidas, mesas existentes e quem senta em cada uma.
 7. Quais localizações físicas (`Qualidade → Localizações`) correspondem a quais áreas.
 
+## Leitura operacional (correções das capturas)
+
+- **Situação da peça separada** (`packages/shared/src/game-workflow.ts`): estado geral, etapa(s) em
+  execução (só depois do "Iniciar" no tablet), próxima etapa com motivo do bloqueio e nomes,
+  materiais, estação da etapa e última posição física confirmada. "Aguardando planejamento" →
+  "Planejada (rascunho)" → "Na fila" → "Em execução" → "Qualidade/Embalagem" → "Pronta para entrega".
+- **Dependências**: seguem o modelo oficial de produção. No modelo "Reforma de sofá", corte não
+  depende do desmanche (etapas paralelas); a montagem espera preparação e costura. A API recusa o
+  início com o motivo e o tablet mostra o mesmo "Por que espera".
+- **Horários** do jogo no fuso de São Paulo (igual ao tablet).
+- **Ficha do sofá**: resumo no topo (situação, etapa atual, próxima, responsável, prazo, bloqueio,
+  próxima ação), abas Materiais / Atribuição / Serviço / Histórico, título inteiro, origem do tecido
+  quando o campo da OS está vazio. Materiais mostram necessária, reservada, livre para reservar e
+  restante a comprar; "Reservar" usa a reserva oficial e "Comprar" abre a compra oficial, que já
+  desconta estoque livre e compras de estoque em aberto.
+- **Filtros rápidos**: Sem material, Parados, Em execução e Prontos para entrega (esmaecem o resto
+  do mapa e listam o que pede decisão).
+- **Estante**: destino das reservas encerradas (consumida/liberada); ficha e estante atualizam em
+  tempo real após reserva, entrada e recebimento.
+- **Gerente**: propostas que os dados já resolveram viram **OBSOLETA** com o motivo (migration
+  `20270316000000_jogo_propostas_obsoletas`); aprovar uma proposta antiga é recusado. Caixa sem
+  saldo inicial é apresentado como diferença; separa vencidos, com data e condicionados à entrega;
+  inclui produção devida do fechamento semanal; cada número tem a conta/recebível ao lado.
+- **Mapa sem conexão**: "Mapa pendente de atualização" e atualização ao reconectar.
+- **Central**: status real (modo de teste, por importação, conectada sem emissão real) e, em cada
+  cartão, o que foi testado de ponta a ponta e o que depende de conta real.
+
+Evidências: `docs/evidencias/jogo/operacao` (roteiro `validacao-operacao-playwright.cjs` com
+navegador e tablet). Testes: `apps/api/test/jogo-operacao.test.ts`.
+
 ## Central de Conexões, caixa de entrada e agentes nos canais
 
 No **Escritório**, o chip **🔌 Central de Conexões** mostra cada conta (sessão do Cenário Gestão,

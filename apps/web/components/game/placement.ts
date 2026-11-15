@@ -13,6 +13,7 @@ import {
   frontRect,
   obstaclesOf,
   overlaps,
+  pieceWorkflow,
   rectOfArea,
 } from '@cenario/shared';
 import { FURNITURE_SIZE } from './models';
@@ -32,6 +33,7 @@ export function piecesOnMap(
   l: LayoutContent,
   pieces: GamePieceDto[],
   highlightId: string | null,
+  matches?: (p: GamePieceDto) => boolean,
 ): PieceVisual[] {
   const out: PieceVisual[] = [];
   const taken: Rect[] = [];
@@ -128,7 +130,7 @@ export function piecesOnMap(
         confirmed = {
           x: a.xCm + a.wCm - 60,
           y: a.yCm + 60 + (out.filter((o) => o.confirmed).length % 4) * 50,
-          text: `${conf.label} (${new Date(conf.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})`,
+          text: `${conf.label} (${new Date(conf.at).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})`,
         };
     }
     out.push({
@@ -140,6 +142,11 @@ export function piecesOnMap(
       y: rect.y + rect.d / 2,
       rot,
       label: p.placement.label,
+      phase: (() => {
+        const w = pieceWorkflow(p);
+        return `${w.icon} ${w.phaseLabel.replace(' (rascunho, não publicada)', '').replace('Parada (bloqueada)', 'Parada')}`;
+      })(),
+      dimmed: matches ? !matches(p) : false,
       highlight: p.id === highlightId,
       confirmed,
     });

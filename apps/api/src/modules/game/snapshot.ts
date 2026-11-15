@@ -59,7 +59,10 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
           productionTasks: {
             where: { status: { notIn: ['CANCELADA'] } },
             orderBy: [{ sequence: 'asc' }, { number: 'asc' }],
-            include: { assignee: { select: { displayName: true } } },
+            include: {
+              assignee: { select: { displayName: true } },
+              dependsOn: { select: { dependsOnId: true } },
+            },
           },
           productionPlanItems: { select: { id: true }, orderBy: { createdAt: 'desc' }, take: 1 },
         },
@@ -102,6 +105,10 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
         completedAt: t.completedAt?.toISOString() ?? null,
         blockers: t.blockers,
         planId: t.planId,
+        dependsOn:
+          (t as { dependsOn?: { dependsOnId: string }[] }).dependsOn?.map((d) => d.dependsOnId) ??
+          [],
+        scheduledAt: t.scheduledAt?.toISOString() ?? null,
       });
 
       const pieces: GamePieceDto[] = [];
@@ -246,6 +253,8 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
               completedAt: i.task.completedAt,
               blockers: i.task.blockers,
               planId: i.task.plan?.id ?? null,
+              dependsOn: (i.task as unknown as { dependsOn?: string[] }).dependsOn ?? [],
+              scheduledAt: null,
               osCode: i.task.serviceOrder.code,
               itemCode: i.task.serviceOrderItem?.code ?? null,
             })),

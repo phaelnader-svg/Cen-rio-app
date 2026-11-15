@@ -51,6 +51,10 @@ export interface GameTaskRef {
   completedAt: string | null;
   blockers: string[];
   planId: string | null;
+  /** Etapas que precisam terminar antes (ids de tarefas), conforme o modelo oficial. */
+  dependsOn: string[];
+  /** Data de início programada (fila semanal/legado). */
+  scheduledAt: string | null;
 }
 
 export interface GamePieceDto {
@@ -124,6 +128,15 @@ export interface GameSlotMaterialDto {
   minQuantity: number | null;
   address: string;
   reservations: { serviceOrderId: string; osCode: string; quantity: number; status: string }[];
+  /** Reservas encerradas e seu destino (CONSUMIDA na produção ou LIBERADA ao estoque). */
+  reservationHistory: {
+    osCode: string;
+    quantity: number;
+    status: string;
+    closedAt: string | null;
+    by: string | null;
+    reason: string | null;
+  }[];
   waiting: { serviceOrderId: string; osCode: string; requirementId: string; missing: number }[];
   purchases: {
     purchaseOrderId: string;
@@ -217,7 +230,7 @@ export interface AgentProposalDto {
   detail: string;
   payload: Record<string, unknown>;
   evidence: AgentReference[];
-  status: 'PENDENTE' | 'APROVADA' | 'REJEITADA' | 'EXECUTADA_TESTE';
+  status: 'PENDENTE' | 'APROVADA' | 'REJEITADA' | 'EXECUTADA_TESTE' | 'OBSOLETA';
   createdAt: string;
   decidedAt: string | null;
   decisionNote: string | null;

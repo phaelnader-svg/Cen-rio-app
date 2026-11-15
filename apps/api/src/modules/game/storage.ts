@@ -36,11 +36,21 @@ export async function gameStorageRoutes(app: FastifyInstance) {
   ): Promise<GameSlotMaterialDto | null> {
     const it = await prisma.stockItem.findUnique({ where: { id: stockItemId } });
     if (!it) return null;
-    const [reservations, poItems, movements] = await Promise.all([
+    const [reservations, closedRes, poItems, movements] = await Promise.all([
       prisma.stockReservation.findMany({
         where: { stockItemId, status: 'ATIVA' },
         include: { serviceOrder: { select: { number: true } } },
         orderBy: { createdAt: 'asc' },
+      }),
+      // Destino das reservas encerradas (consumidas na produção ou liberadas de volta ao estoque).
+      prisma.stockReservation.findMany({
+        where: { stockItemId, status: { not: 'ATIVA' } },
+        include: {
+          serviceOrder: { select: { number: true } },
+          closedBy: { select: { displayName: true } },
+        },
+        orderBy: { closedAt: 'desc' },
+        take: 10,
       }),
       prisma.purchaseOrderItem.findMany({
         where: { stockItemId, purchaseOrder: { status: { in: [...OPEN_PO] } } },
@@ -101,6 +111,14 @@ export async function gameStorageRoutes(app: FastifyInstance) {
         osCode: serviceOrderCode(r.serviceOrder.number),
         quantity: num(r.quantity),
         status: r.status,
+      })),
+      reservationHistory: closedRes.map((r) => ({
+        osCode: serviceOrderCode(r.serviceOrder.number),
+        quantity: num(r.quantity),
+        status: r.status,
+        closedAt: r.closedAt?.toISOString() ?? null,
+        by: r.closedBy?.displayName ?? null,
+        reason: r.closeReason,
       })),
       waiting: waiting.map((w) => ({
         serviceOrderId: w.serviceOrderId,

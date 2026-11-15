@@ -1518,6 +1518,9 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270309000000_conexoes_escritorio: UPDATE OR':
     'Gatilho de imutabilidade "BEFORE UPDATE OR DELETE" do histórico de ações dos agentes (tabela ' +
     'nova): bloqueia alterações, não altera nem apaga dados.',
+  '20270316000000_jogo_propostas_obsoletas: DROP CONSTRAINT "ai_agent_proposals_status"':
+    'Regra CHECK das propostas dos agentes recriada na mesma migration com a mesma condição e um ' +
+    'status a mais (OBSOLETA): amplia o aceito, nenhuma linha é apagada nem alterada.',
   '20270302000000_jogo_gestao: UPDATE OR':
     'Gatilho de imutabilidade "BEFORE UPDATE OR DELETE" do histórico de plantas e das conversas com ' +
     'os agentes (tabelas novas): bloqueia alterações, não altera nem apaga dados.',

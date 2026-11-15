@@ -5,6 +5,7 @@ import {
   AGENT_DATA_SCOPES,
   AGENT_CHANNELS,
   AGENT_POLICY,
+  pieceWorkflow,
   AUTO_SEND_RULES,
   CHANNEL_POLICY,
   type AgentDto,
@@ -79,9 +80,29 @@ export function EmployeePanel({
     >
       <Section title="Agora (conforme os registros)">
         <KV
-          k="Presença hoje"
-          v={e.attendance ? (ATTENDANCE[e.attendance] ?? e.attendance) : 'Sem registro'}
+          k="Presença hoje (registro de chegada)"
+          v={e.attendance ? (ATTENDANCE[e.attendance] ?? e.attendance) : 'Sem registro de chegada'}
         />
+        <KV
+          k="Etapa em execução (tablet)"
+          v={
+            e.currentTask
+              ? `${e.currentTask.status === 'PAUSADA' ? 'Pausada' : 'Sim'} · ${ACTIVITY_LABEL_GAME[e.currentTask.activity] ?? e.currentTask.activity}`
+              : 'Nenhuma'
+          }
+        />
+        {e.currentTask && (!e.attendance || e.attendance !== 'PRESENTE') ? (
+          <p
+            className="my-1 rounded-lg border border-warn-600/30 bg-warn-50 p-1.5 text-xs text-warn-600"
+            data-testid="presence-mismatch"
+          >
+            Há etapa iniciada no tablet, mas{' '}
+            {e.attendance
+              ? `a presença está como "${ATTENDANCE[e.attendance] ?? e.attendance}"`
+              : 'não há registro de chegada hoje'}
+            . As duas informações vêm de registros diferentes.
+          </p>
+        ) : null}
         <KV k="Área" v={area?.name ?? '—'} />
         <KV k="Estação" v={station?.name ?? 'Sem estação vinculada'} />
         {e.currentTask ? (
@@ -106,28 +127,38 @@ export function EmployeePanel({
           <p className="mt-2 text-xs text-ink-muted">Nenhum serviço iniciado no tablet.</p>
         )}
       </Section>
-      <Section title={`Fila (${e.queue.length})`}>
+      <Section
+        title={`Fila da semana: ${e.queue.length} etapa(s) em ${new Set(e.queue.map((q) => q.itemCode ?? q.osCode)).size} peça(s)`}
+      >
         {e.queue.length ? (
           <ol className="space-y-1.5" data-testid="employee-queue">
-            {e.queue.map((t, i) => (
-              <li key={t.id}>
-                <button
-                  className="flex w-full items-center gap-2 rounded-lg border border-line bg-white px-2 py-1.5 text-left text-xs hover:bg-subtle"
-                  onClick={() => {
-                    const p = pieceOf(t.id);
-                    if (p) onOpenPiece(p.id);
-                  }}
-                >
-                  <span className="w-5 text-center font-bold text-bronze-600">{i + 1}</span>
-                  <span className="flex-1">
-                    <b>{t.itemCode ?? t.osCode}</b> · {t.title}
-                    <span className="block text-ink-muted">
-                      {TASK_STATUS_LABEL[t.status] ?? t.status}
+            {e.queue.map((t, i) => {
+              const p = pieceOf(t.id);
+              const step = p ? pieceWorkflow(p).steps.find((s) => s.taskId === t.id) : null;
+              const available = step ? step.available : t.status === 'LIBERADA';
+              const title = t.title.replace(/\s+—\s+OS-[\d/]+$/, '');
+              return (
+                <li key={t.id}>
+                  <button
+                    className="flex w-full items-center gap-2 rounded-lg border border-line bg-white px-2 py-1.5 text-left text-xs hover:bg-subtle"
+                    onClick={() => {
+                      if (p) onOpenPiece(p.id);
+                    }}
+                    data-testid="queue-item"
+                  >
+                    <span className="w-5 text-center font-bold text-bronze-600">{i + 1}</span>
+                    <span className="flex-1">
+                      <b>{t.itemCode ?? t.osCode}</b> · {title}
+                      <span className={`block ${available ? 'text-ok-600' : 'text-danger-700'}`}>
+                        {available
+                          ? '✅ Disponível para iniciar no tablet'
+                          : `⛔ ${TASK_STATUS_LABEL[t.status] ?? t.status}${step?.reason ? `: ${step.reason}` : ''}`}
+                      </span>
                     </span>
-                  </span>
-                </button>
-              </li>
-            ))}
+                  </button>
+                </li>
+              );
+            })}
           </ol>
         ) : (
           <p className="text-xs text-ink-muted">Fila vazia nesta semana.</p>
@@ -235,6 +266,8 @@ export function AgentPanel({
       );
     } catch (e) {
       toast('danger', e instanceof ApiError ? e.message : 'Não foi possível decidir.');
+      // Proposta desatualizada: recarrega para mostrar o motivo e a situação atual.
+      await qc.invalidateQueries({ queryKey: ['game-agent', agent.id] });
     }
   };
   const quick =
@@ -374,6 +407,21 @@ export function AgentPanel({
           </p>
         )}
       </Section>
+      {d?.proposals.some((p) => p.status === 'OBSOLETA') ? (
+        <Section title="Propostas desatualizadas (os dados mudaram)">
+          <ul className="space-y-1 text-xs" data-testid="agent-obsolete">
+            {d.proposals
+              .filter((p) => p.status === 'OBSOLETA')
+              .slice(0, 5)
+              .map((p) => (
+                <li key={p.id} className="rounded-lg border border-line bg-subtle p-1.5">
+                  <s className="text-ink-muted">{p.title}</s>
+                  <div className="text-ink-soft">{p.decisionNote}</div>
+                </li>
+              ))}
+          </ul>
+        </Section>
+      ) : null}
       <Section title="Conversa">
         <div
           className="max-h-[38vh] space-y-2 overflow-y-auto rounded-xl bg-subtle p-2"

@@ -17,6 +17,8 @@ import { now as clockNow } from '../../core/clock';
 import { serviceOrderCode } from '../commercial/common';
 import { serviceDeadlines } from '../deadlines/service';
 import { requirementsWithProgress, specOf, stockSpecKey } from '../purchasing/common';
+import { buildClosingItems } from '../finance/closing';
+import { dueContext, dueOf } from '../finance/revenue';
 import { num } from './common';
 
 export interface AgentContext {
@@ -398,7 +400,7 @@ export async function managerAnswer(ctx: AgentContext, question: string): Promis
     }
   }
 
-  // 4. Dinheiro: contas da semana × recebimentos previstos.
+  // 4. Dinheiro: contas da semana × recebimentos, separando o que é certo do que depende de algo.
   if (can(ctx, 'financeiro', 'financeiro.ver')) {
     const end = new Date(`${week.end}T00:00:00Z`);
     const [payables, receivables] = await Promise.all([
@@ -408,37 +410,86 @@ export async function managerAnswer(ctx: AgentContext, question: string): Promis
       }),
       prisma.customerReceivable.findMany({
         where: { status: { in: ['ABERTO', 'PARCIAL'] } },
+        include: { order: { select: { number: true } } },
         orderBy: { dueDate: 'asc' },
       }),
     ]);
+    const dctx = await dueContext(
+      prisma,
+      receivables.map((r) => r.orderId),
+    );
+    const open = (r: (typeof receivables)[number]) => r.amountCents - r.receivedCents;
+    const overdue = receivables.filter((r) => dueOf(r, dctx).overdue);
+    const confirmed = receivables.filter(
+      (r) => !overdue.includes(r) && r.dueTrigger === 'DATA' && r.dueDate && r.dueDate <= end,
+    );
+    const onEvent = receivables.filter((r) => !overdue.includes(r) && r.dueTrigger !== 'DATA');
+    const sum = (xs: typeof receivables) => xs.reduce((s, r) => s + open(r), 0);
     const toPay = payables.reduce((s, p) => s + p.amountCents - p.paidCents, 0);
-    const dueRec = receivables.filter((r) => !r.dueDate || r.dueDate <= end);
-    const toReceive = dueRec.reduce((s, r) => s + r.amountCents - r.receivedCents, 0);
-    out.push('', 'Caixa da semana:');
+    const overduePay = payables.filter((p) => p.dueDate < new Date(`${week.start}T00:00:00Z`));
+    // Pagamento por produção: fechamento oficial da semana (obrigações devidas aos profissionais).
+    let labor = 0;
+    let laborItems: { code: string; who: string; cents: number }[] = [];
+    try {
+      const monday = (() => {
+        const d = new Date(`${week.start}T12:00:00Z`);
+        d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+        return d.toISOString().slice(0, 10);
+      })();
+      const built = await buildClosingItems(prisma, monday);
+      laborItems = built.items
+        .filter((i) => i.kind === 'MAO_DE_OBRA' && i.state === 'DEVIDO' && i.currentOpenCents > 0)
+        .map((i) => ({ code: i.code, who: i.beneficiary.displayName, cents: i.currentOpenCents }));
+      labor = laborItems.reduce((s, i) => s + i.cents, 0);
+    } catch {
+      laborItems = [];
+    }
+    const certain = sum(overdue) + sum(confirmed);
+    const totalOut = toPay + labor;
+    out.push('', `Caixa da semana (até ${week.end.split('-').reverse().join('/')}):`);
     out.push(
-      `• Contas a pagar até ${week.end.split('-').reverse().join('/')}: ${money(toPay)} (${payables.length} conta(s)).`,
+      '• Saldo bancário inicial: não cadastrado — o cálculo abaixo é a diferença entre contas e recebimentos previstos, não o caixa real.',
     );
     out.push(
-      `• Recebimentos previstos (vencidos, da semana ou na entrega/retirada): ${money(toReceive)} (${dueRec.length}).`,
+      `• A pagar: ${money(toPay)} em ${payables.length} conta(s)${overduePay.length ? `, das quais ${money(overduePay.reduce((s, p) => s + p.amountCents - p.paidCents, 0))} já vencidas` : ''}${labor ? ` + ${money(labor)} de produção devida (fechamento semanal)` : ''}.`,
+    );
+    out.push(`• A receber vencido (cobrar já): ${money(sum(overdue))} (${overdue.length}).`);
+    out.push(
+      `• A receber com data nesta semana (confirmado no cadastro): ${money(sum(confirmed))} (${confirmed.length}).`,
     );
     out.push(
-      toReceive >= toPay
-        ? `• Cobre as contas com folga de ${money(toReceive - toPay)} — se receber tudo.`
-        : `• Faltam ${money(toPay - toReceive)} para cobrir as contas: antecipe cobranças ou entregas que liberam pagamento.`,
+      `• A receber condicionado à entrega/retirada: ${money(sum(onEvent))} (${onEvent.length}) — só entra se a entrega acontecer.`,
     );
-    for (const p of payables.slice(0, 3))
+    out.push(
+      certain >= totalOut
+        ? `• Diferença com o que é certo: sobra ${money(certain - totalOut)}.`
+        : `• Diferença com o que é certo: faltam ${money(totalOut - certain)}${sum(onEvent) ? `; com as entregas previstas, ${certain + sum(onEvent) >= totalOut ? `sobra ${money(certain + sum(onEvent) - totalOut)}` : `ainda faltam ${money(totalOut - certain - sum(onEvent))}`}` : ''}. Cobre os vencidos primeiro e priorize entregas com saldo.`,
+    );
+    for (const p of payables.slice(0, 6))
       refs.push({
         type: 'CONTA',
         id: p.id,
-        label: `${p.description} (${money(p.amountCents - p.paidCents)})`,
+        label: `Conta: ${p.description} (${money(p.amountCents - p.paidCents)}, vence ${p.dueDate.toISOString().slice(0, 10).split('-').reverse().join('/')})`,
         href: '/painel/financeiro?aba=contas',
       });
-    for (const r of dueRec.slice(0, 3))
+    for (const [kind, xs] of [
+      ['vencido', overdue],
+      ['data', confirmed],
+      ['entrega', onEvent],
+    ] as const)
+      for (const r of xs.slice(0, 4))
+        refs.push({
+          type: 'RECEBIVEL',
+          id: r.id,
+          label: `Recebível (${kind}): PED-${String(r.order.number).padStart(5, '0')} ${r.description} (${money(open(r))})`,
+          href: '/painel/financeiro?aba=receitas',
+        });
+    for (const l of laborItems.slice(0, 4))
       refs.push({
-        type: 'RECEBIVEL',
-        id: r.id,
-        label: `${r.description} (${money(r.amountCents - r.receivedCents)})`,
-        href: '/painel/financeiro?aba=receitas',
+        type: 'CONTA',
+        id: l.code,
+        label: `Produção devida ${l.code}: ${l.who} (${money(l.cents)})`,
+        href: '/painel/financeiro/fechamento',
       });
   } else if (ctx.dataScopes.includes('financeiro')) {
     out.push(
@@ -470,6 +521,42 @@ export async function managerAnswer(ctx: AgentContext, question: string): Promis
             { type: 'OS', id: u.id, label: serviceOrderCode(u.number), href: `/painel/os/${u.id}` },
           ],
         });
+  }
+  // 6. OS prontas: a ação atual é entregar e receber o saldo (conforme os registros).
+  const ready = await prisma.serviceOrder.findMany({
+    where: {
+      status: 'ABERTA',
+      items: {
+        some: {
+          fulfillmentStage: { in: ['PRONTA_ENTREGA', 'ENTREGA_AGENDADA', 'BLOQUEIO_EXPEDICAO'] },
+        },
+      },
+    },
+    include: { items: { select: { fulfillmentStage: true } } },
+    take: 6,
+  });
+  if (ready.length) {
+    out.push('', 'Prontas na expedição:');
+    for (const so of ready) {
+      let saldo = '';
+      if (can(ctx, 'financeiro', 'financeiro.ver')) {
+        const { orderRevenue } = await import('../finance/revenue');
+        const rev = await orderRevenue(prisma, so.orderId);
+        const open = Math.max(0, (rev.finalCents ?? 0) - rev.receivedCents);
+        saldo = open > 0 ? `; cobrar saldo de ${money(open)} na entrega` : '; pedido quitado';
+      }
+      const scheduled = so.items.some((i) => i.fulfillmentStage === 'ENTREGA_AGENDADA');
+      const blocked = so.items.some((i) => i.fulfillmentStage === 'BLOQUEIO_EXPEDICAO');
+      out.push(
+        `• ${serviceOrderCode(so.number)}: ${blocked ? 'expedição bloqueada — resolver o bloqueio' : scheduled ? 'entrega agendada — acompanhar' : 'agendar a entrega'}${saldo}.`,
+      );
+      refs.push({
+        type: 'OS',
+        id: so.id,
+        label: serviceOrderCode(so.number),
+        href: `/painel/os/${so.id}`,
+      });
+    }
   }
   if (/compr|falt|materia/i.test(question) && !ctx.dataScopes.includes('compras'))
     out.push(

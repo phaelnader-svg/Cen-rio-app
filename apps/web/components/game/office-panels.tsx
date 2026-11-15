@@ -20,7 +20,10 @@ export interface ConnectionCard {
   capabilities: string[];
   scopes: string[];
   status: string;
-  mode: 'TESTE_LOCAL' | 'PRODUCAO' | null;
+  mode: 'TESTE_LOCAL' | 'PRODUCAO' | 'IMPORTACAO' | null;
+  verified: { tested: string[]; pending: string[] };
+  /** sim = integração real ativa; teste = conta de teste local; parcial = conectada sem emissão real. */
+  realIntegration: 'sim' | 'teste' | 'parcial' | 'nao';
   accountLabel: string | null;
   lastSyncAt: string | null;
   lastError: string | null;
@@ -288,7 +291,11 @@ function ConnectionItem({
         <Tone tone={stateTone(c)}>
           {c.status === 'CONECTADA' && test
             ? 'Modo de teste'
-            : (STATUS_LABEL[c.status] ?? c.status)}
+            : c.mode === 'IMPORTACAO' && c.status === 'CONECTADA'
+              ? 'Por importação'
+              : c.realIntegration === 'parcial'
+                ? 'Conectada (sem emissão real)'
+                : (STATUS_LABEL[c.status] ?? c.status)}
         </Tone>
       </button>
       {open ? (
@@ -311,6 +318,33 @@ function ConnectionItem({
           </ul>
           {c.lastError ? (
             <div className="rounded bg-danger-50 p-1.5 text-danger-700">{c.lastError}</div>
+          ) : null}
+          {c.verified.tested.length || c.verified.pending.length ? (
+            <div
+              className="rounded-lg border border-line bg-white p-2"
+              data-testid={`verified-${c.key}`}
+            >
+              {c.verified.tested.length ? (
+                <>
+                  <div className="font-semibold text-ok-600">
+                    Testado de ponta a ponta{c.realIntegration === 'sim' ? '' : ' (modo de teste)'}:
+                  </div>
+                  {c.verified.tested.map((x) => (
+                    <div key={x}>✓ {x}</div>
+                  ))}
+                </>
+              ) : null}
+              {c.verified.pending.length ? (
+                <>
+                  <div className="mt-1 font-semibold text-warn-600">
+                    Depende de configuração/conta real:
+                  </div>
+                  {c.verified.pending.map((x) => (
+                    <div key={x}>• {x}</div>
+                  ))}
+                </>
+              ) : null}
+            </div>
           ) : null}
           {c.missing.length ? (
             <div

@@ -38,6 +38,7 @@ import { updateDailyBudget } from '../integrations/meta';
 import { PROVIDERS, missingEnv } from '../integrations/registry';
 import { channelAgentAnswer } from './agent-channels';
 import { AGENT_TEMPLATES } from './agent-templates';
+import { obsoleteReason, refreshPending } from './proposal-validity';
 import { AGENT_MANAGE, AGENT_USE, GAME_ACCESS, ensureDefaultSpaces } from './common';
 
 const AGENT_AUDIENCE = 'permission:agentes.usar|permission:agentes.gerenciar' as const;
@@ -300,6 +301,9 @@ export async function gameAgentRoutes(app: FastifyInstance) {
     { config: { access: AGENT_USE } },
     async (request): Promise<AgentConversationDto> => {
       const { id } = idParams.parse(request.params);
+      if (!(await prisma.aiAgent.findUnique({ where: { id } }))) throw Errors.notFound('Agente');
+      // Propostas antigas que os dados já resolveram ficam marcadas como desatualizadas.
+      await refreshPending(prisma, id);
       const a = await prisma.aiAgent.findUnique({ where: { id }, include: pendingCount });
       if (!a) throw Errors.notFound('Agente');
       const [messages, proposals] = await Promise.all([
@@ -363,6 +367,7 @@ export async function gameAgentRoutes(app: FastifyInstance) {
             references: result.references as unknown as Prisma.InputJsonValue,
           },
         });
+        await refreshPending(tx, id);
         // Propostas novas (não duplica proposta pendente igual).
         for (const p of result.proposals) {
           const same = await tx.aiAgentProposal.findFirst({
@@ -407,6 +412,37 @@ export async function gameAgentRoutes(app: FastifyInstance) {
       const { id } = idParams.parse(request.params);
       const input = decideProposalSchema.parse(request.body);
       const actor = actorFrom(request);
+      // Revalida no momento da aprovação: se os dados mudaram, a proposta caduca (e não executa).
+      const pre = await prisma.aiAgentProposal.findUnique({ where: { id } });
+      if (pre?.status === 'PENDENTE' && input.decision === 'APROVAR') {
+        const why = await obsoleteReason(prisma, pre);
+        if (why) {
+          await prisma.$transaction(async (tx) => {
+            await tx.aiAgentProposal.updateMany({
+              where: { id, status: 'PENDENTE' },
+              data: {
+                status: 'OBSOLETA',
+                decidedAt: new Date(),
+                decisionNote: `Desatualizada: ${why}`.slice(0, 500),
+              },
+            });
+            await audit(tx, actor, {
+              action: 'game.proposal_obsolete',
+              entityType: 'ai_agent_proposal',
+              entityId: id,
+              summary: `Proposta "${pre.title}" não aprovada: ${why}`,
+            });
+            await appendEvent(tx, actor, {
+              type: EVENT_TYPES.GAME_PROPOSAL_CHANGED,
+              aggregateType: 'ai_agent',
+              aggregateId: pre.agentId,
+              payload: { id: pre.agentId },
+              audience: AGENT_AUDIENCE,
+            });
+          });
+          throw Errors.conflict(`Proposta desatualizada: ${why}`, { obsolete: true });
+        }
+      }
       return prisma.$transaction(async (tx) => {
         await tx.$queryRaw`SELECT id FROM ai_agent_proposals WHERE id = ${id}::uuid FOR UPDATE`;
         const p = await tx.aiAgentProposal.findUnique({ where: { id }, include: { agent: true } });

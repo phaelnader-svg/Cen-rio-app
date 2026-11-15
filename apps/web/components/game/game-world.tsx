@@ -11,12 +11,16 @@ import {
   type GameSpaceDto,
   type LayoutContent,
   type MestreReply,
+  type QuickFilter,
   type RemovalImpact,
+  QUICK_FILTERS,
+  QUICK_FILTER_LABEL,
   askMestre,
   catalogOf,
   clearanceAround,
   dragTip,
   footprint,
+  pieceWorkflow,
   rectOfArea,
 } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
@@ -79,7 +83,7 @@ import { AgentConfigPanel, AgentPanel, EmployeePanel } from './people-panels';
 import { PiecePanel } from './piece-panel';
 import { peopleOnMap, piecesOnMap } from './placement';
 import { MaterialPanel, StoragePanel } from './storage-panel';
-import { GBtn, KV, Panel, Tone, fmtDate } from './ui';
+import { GBtn, KV, Panel, Tone, fmtClock, fmtDate } from './ui';
 import { useServiceOrder } from './game-api';
 
 type Side =
@@ -100,6 +104,7 @@ type Side =
   | { t: 'marketing' }
   | { t: 'ficha'; so: string; focus: string | null }
   | { t: 'finance'; filter: string | null }
+  | { t: 'quick'; f: QuickFilter }
   | { t: 'os'; id: string }
   | null;
 
@@ -145,6 +150,7 @@ export function GameWorld() {
   const [overlays, setOverlays] = useState<Overlays>({});
   const [tip, setTip] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
+  const [quick, setQuick] = useState<QuickFilter | null>(null);
   const [mestre, setMestre] = useState<{
     history: { who: 'eu' | 'mestre'; text: string }[];
     pending: MestreReply | null;
@@ -222,6 +228,10 @@ export function GameWorld() {
       realtime.subscribe((ev) => {
         if (SNAPSHOT_EVENTS.some((p) => ev.type.startsWith(p)))
           void qc.invalidateQueries({ queryKey: ['game-snapshot'] });
+        // Reserva, entrada, recebimento de compra: ficha (materiais) e estante na hora.
+        if (/^(stock\.|material|purchase_order\.|receipt|reservation)/.test(ev.type))
+          for (const k of ['game-readiness', 'game-slot', 'game-material', 'needs'])
+            void qc.invalidateQueries({ queryKey: [k] });
         if (ev.type === 'game.layout_saved')
           void qc.invalidateQueries({ queryKey: ['game-spaces'] });
         if (ev.type === 'game.agent_changed' || ev.type === 'game.proposal_changed') {
@@ -292,7 +302,14 @@ export function GameWorld() {
     if (!e || !layout || !space) return;
     const workshop = space.key === 'TAPECARIA';
     const pieces =
-      workshop && snapshot.data ? piecesOnMap(layout, snapshot.data.pieces, highlight) : [];
+      workshop && snapshot.data
+        ? piecesOnMap(
+            layout,
+            snapshot.data.pieces,
+            highlight,
+            quick ? QUICK_FILTERS[quick] : undefined,
+          )
+        : [];
     e.setPieces(pieces);
     e.setPeople(
       peopleOnMap(
@@ -304,7 +321,7 @@ export function GameWorld() {
           : [],
       ),
     );
-  }, [snapshot.data, agents.data, layout, space, highlight, building, preview]);
+  }, [snapshot.data, agents.data, layout, space, highlight, building, preview, quick]);
 
   useEffect(() => {
     engine.current?.setOverlays(overlays);
@@ -1380,7 +1397,7 @@ export function GameWorld() {
             )}
             title={
               snapshot.dataUpdatedAt
-                ? `Última atualização: ${new Date(snapshot.dataUpdatedAt).toLocaleTimeString('pt-BR')}`
+                ? `Última atualização: ${fmtClock(snapshot.dataUpdatedAt)}`
                 : undefined
             }
           >
@@ -1395,11 +1412,11 @@ export function GameWorld() {
               )}
             />
             {sync === 'ok'
-              ? `Sincronizado ${snapshot.dataUpdatedAt ? new Date(snapshot.dataUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}`
+              ? `Sincronizado ${snapshot.dataUpdatedAt ? fmtClock(snapshot.dataUpdatedAt) : ''}`
               : sync === 'sync'
                 ? 'Atualizando…'
                 : sync === 'offline'
-                  ? 'Sem tempo real — recupera ao voltar'
+                  ? `Mapa pendente de atualização${snapshot.dataUpdatedAt ? ` (dados de ${fmtClock(snapshot.dataUpdatedAt)})` : ''} — atualiza ao reconectar`
                   : 'Falha ao atualizar — tentando de novo'}
           </span>
           <button
@@ -1446,6 +1463,28 @@ export function GameWorld() {
           <span className="flex items-center gap-1 text-info-600">
             📍 posição física confirmada
           </span>
+          <div
+            className="flex w-full flex-wrap gap-1 border-t border-line pt-1.5"
+            data-testid="quick-filters"
+          >
+            {(Object.keys(QUICK_FILTERS) as QuickFilter[]).map((f) => {
+              const n = (snapshot.data?.pieces ?? []).filter(QUICK_FILTERS[f]).length;
+              return (
+                <button
+                  key={f}
+                  data-testid={`quick-${f}`}
+                  onClick={() => {
+                    const on = quick === f ? null : f;
+                    setQuick(on);
+                    setSide(on ? { t: 'quick', f: on } : null);
+                  }}
+                  className={`rounded-full border px-2 py-0.5 font-semibold ${quick === f ? 'border-brand-600 bg-brand-600 text-white' : 'border-line bg-white'}`}
+                >
+                  {QUICK_FILTER_LABEL[f]} · {n}
+                </button>
+              );
+            })}
+          </div>
           {!canSeeProduction ? (
             <span className="text-danger-700">Sem permissão de ver a produção.</span>
           ) : null}
@@ -1779,6 +1818,58 @@ export function GameWorld() {
               canOffice ? () => setSide({ t: 'ficha', so: side.id, focus: null }) : undefined
             }
           />
+        ) : side?.t === 'quick' ? (
+          <Panel
+            title={QUICK_FILTER_LABEL[side.f]}
+            subtitle="O que pede decisão agora — toque para abrir a ficha"
+            icon="🔎"
+            onClose={() => {
+              setSide(null);
+              setQuick(null);
+            }}
+            testId="quick-panel"
+          >
+            <ul className="space-y-1.5 text-xs">
+              {(snapshot.data?.pieces ?? []).filter(QUICK_FILTERS[side.f]).map((p) => {
+                const w = pieceWorkflow(p);
+                return (
+                  <li key={p.id}>
+                    <button
+                      className="w-full rounded-xl border border-line bg-white p-2 text-left hover:border-brand-600/50"
+                      onClick={() => goPiece(p.id)}
+                      data-testid="quick-row"
+                    >
+                      <div className="flex justify-between gap-2">
+                        <b>
+                          {p.itemCode} · {p.description}
+                        </b>
+                        <span>{w.icon}</span>
+                      </div>
+                      <div className="text-ink-soft">
+                        {p.customerName ?? ''} · {w.phaseLabel}
+                        {w.current ? ` · ${w.current.label} com ${w.current.assignee}` : ''}
+                      </div>
+                      {w.blockedReason || (w.next && !w.next.available && w.next.reason) ? (
+                        <div className="text-danger-700">
+                          ⛔ {w.blockedReason ?? w.next?.reason}
+                        </div>
+                      ) : w.next ? (
+                        <div className="text-ok-600">
+                          Próxima: {w.next.label} · {w.next.assignee ?? 'sem responsável'}
+                        </div>
+                      ) : null}
+                      {p.tone === 'FALTA' ? (
+                        <div className="text-danger-700">Material: {w.material.label}</div>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+              {!(snapshot.data?.pieces ?? []).some(QUICK_FILTERS[side.f]) ? (
+                <li className="text-ink-muted">Nenhuma peça neste filtro.</li>
+              ) : null}
+            </ul>
+          </Panel>
         ) : side?.t === 'ficha' ? (
           <FichaPanel
             key={`${side.so}${side.focus ?? ''}`}
