@@ -16,7 +16,7 @@ import {
   type ProductionTaskDetailDto,
   type ReadinessLineDto,
 } from '@cenario/shared';
-import { useQueries, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ExternalLink, MapPin, ShoppingCart } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
@@ -84,6 +84,7 @@ export function PiecePanel({
   onClose,
   onLocateMaterial,
   onFocusEmployee,
+  onOpenFicha,
 }: {
   piece: GamePieceDto;
   snapshot: GameSnapshotDto;
@@ -91,6 +92,8 @@ export function PiecePanel({
   onClose: () => void;
   onLocateMaterial: (description: string) => void;
   onFocusEmployee: (userId: string) => void;
+  /** Ficha comercial (contrato, entrada, saldo, nota) — só com permissão de pedidos/financeiro. */
+  onOpenFicha?: () => void;
 }) {
   const so = useServiceOrder(piece.serviceOrderId);
   const readiness = useReadiness(piece.serviceOrderId);
@@ -100,6 +103,20 @@ export function PiecePanel({
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const atShipping = [
+    'BLOQUEIO_EXPEDICAO',
+    'PRONTA_ENTREGA',
+    'ENTREGA_AGENDADA',
+    'EM_TRANSPORTE',
+  ].includes(piece.stage);
+  const balance = useQuery({
+    queryKey: ['office-ficha', piece.serviceOrderId],
+    queryFn: () =>
+      api<{ balanceCents: number | null; finalCents: number | null }>(
+        `/api/v1/office/service-orders/${piece.serviceOrderId}/ficha`,
+      ),
+    enabled: Boolean(onOpenFicha) && atShipping,
+  });
   const siblings = snapshot.pieces.filter((p) => p.serviceOrderId === piece.serviceOrderId);
   const upholsterers = people.filter((p) => p.roles.some((r) => /tapeceir/i.test(r)));
   const workers = people.filter((p) =>
@@ -208,17 +225,42 @@ export function PiecePanel({
       onClose={onClose}
       className="h-full"
       actions={
-        <a
-          href={`/painel/os/${piece.serviceOrderId}`}
-          target="_blank"
-          rel="noreferrer"
-          className="rounded-lg p-1 text-ink-muted hover:bg-bronze-100"
-          title="Abrir a OS no painel"
-        >
-          <ExternalLink className="size-5" />
-        </a>
+        <>
+          {onOpenFicha ? (
+            <button
+              type="button"
+              onClick={onOpenFicha}
+              data-testid="open-ficha"
+              className="rounded-lg border border-bronze-500/40 px-2 py-1 text-xs font-semibold text-bronze-600 hover:bg-bronze-100"
+              title="Contrato, entrada, saldo e nota"
+            >
+              💼 Ficha
+            </button>
+          ) : null}
+          <a
+            href={`/painel/os/${piece.serviceOrderId}`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg p-1 text-ink-muted hover:bg-bronze-100"
+            title="Abrir a OS no painel"
+          >
+            <ExternalLink className="size-5" />
+          </a>
+        </>
       }
     >
+      {atShipping && balance.data && balance.data.balanceCents !== null ? (
+        <button
+          type="button"
+          onClick={onOpenFicha}
+          data-testid="shipping-balance"
+          className={`mb-2 w-full rounded-xl border px-3 py-2 text-left text-xs font-semibold ${balance.data.balanceCents > 0 ? 'border-warn-600/40 bg-warn-50 text-warn-600' : 'border-ok-600/30 bg-ok-50 text-ok-600'}`}
+        >
+          {balance.data.balanceCents > 0
+            ? `💰 Saldo a receber na entrega: ${(balance.data.balanceCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+            : '💰 Pedido quitado — pode entregar'}
+        </button>
+      ) : null}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Tone tone={piece.tone}>
           {piece.tone === 'FALTA' ? '⛔' : piece.tone === 'DISPONIVEL' ? '✅' : '❔'}{' '}

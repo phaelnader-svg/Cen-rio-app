@@ -71,7 +71,10 @@ async function loadOrder(db: Tx | PrismaClient, id: string) {
       customer: {
         include: { addresses: { where: { archivedAt: null }, orderBy: { isPrimary: 'desc' } } },
       },
-      items: { orderBy: { position: 'asc' } },
+      items: {
+        orderBy: { position: 'asc' },
+        include: { serviceOrderItems: { select: { serviceType: true } } },
+      },
       serviceOrders: { orderBy: { number: 'asc' } },
       receivables: { where: { status: { not: 'CANCELADO' } }, orderBy: { createdAt: 'asc' } },
     },
@@ -117,7 +120,7 @@ export async function fillContract(db: Tx | PrismaClient, order: OrderFull, temp
   const items = order.items
     .map((i) => {
       const fabric = [i.fabricName, i.fabricColor, i.fabricReference].filter(Boolean).join(' · ');
-      return `- ${i.quantity}× ${i.description} — ${SERVICE[i.serviceType ?? 'OUTRO']}${fabric ? `; tecido: ${fabric}` : ''}${i.technicalNotes ? `; ${i.technicalNotes}` : ''}${i.agreedValueCents ? ` (${brl(i.agreedValueCents)})` : ''}`;
+      return `- ${i.quantity}× ${i.description} — ${SERVICE[i.serviceType ?? i.serviceOrderItems[0]?.serviceType ?? 'OUTRO']}${fabric ? `; tecido: ${fabric}` : ''}${i.technicalNotes ? `; ${i.technicalNotes}` : ''}${i.agreedValueCents ? ` (${brl(i.agreedValueCents)})` : ''}`;
     })
     .join('\n');
   const planned = order.receivables.length
@@ -144,7 +147,12 @@ export async function fillContract(db: Tx | PrismaClient, order: OrderFull, temp
       'valor aprovado',
     ),
     parcelas: val(planned, 'condições de pagamento'),
-    prazo: val(fmt(order.promisedDate), 'prazo prometido'),
+    prazo: val(
+      fmt(
+        order.promisedDate ?? order.serviceOrders.find((s) => s.promisedDate)?.promisedDate ?? null,
+      ),
+      'prazo prometido',
+    ),
     retirada: order.customerDropOff
       ? 'O CONTRATANTE entregará as peças na oficina.'
       : `Retirada no endereço ${addr(c.addresses[0]) ?? '[a combinar]'}.`,

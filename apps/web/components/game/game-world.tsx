@@ -73,6 +73,7 @@ import {
   useSnapshot,
   useSpaces,
 } from './game-api';
+import { FichaPanel, FinancePanel } from './office-finance';
 import { AdsPanel, ConnectionsPanel, InboxPanel, MarketingPanel, useInbox } from './office-panels';
 import { AgentConfigPanel, AgentPanel, EmployeePanel } from './people-panels';
 import { PiecePanel } from './piece-panel';
@@ -97,6 +98,8 @@ type Side =
   | { t: 'inbox'; conv: string | null }
   | { t: 'ads' }
   | { t: 'marketing' }
+  | { t: 'ficha'; so: string; focus: string | null }
+  | { t: 'finance'; filter: string | null }
   | { t: 'os'; id: string }
   | null;
 
@@ -131,6 +134,7 @@ export function GameWorld() {
   const people = usePeople();
   const integrations = useIntegrations();
   const canSeeInbox = can('atendimento.ver');
+  const canOffice = can('financeiro.ver') || can('pedidos.ver');
   const inbox = useInbox(canSeeInbox);
   const unread = (inbox.data ?? []).reduce((a, r) => a + r.unread, 0);
   const [spaceKey, setSpaceKey] = useState('TAPECARIA');
@@ -230,6 +234,10 @@ export function GameWorld() {
           void qc.invalidateQueries({ queryKey: ['inbox-conv'] });
           void qc.invalidateQueries({ queryKey: ['agent-actions'] });
         }
+        if (ev.type.startsWith('office.') || ev.type.startsWith('finance.'))
+          void qc.invalidateQueries({
+            predicate: (q) => String(q.queryKey[0]).startsWith('office'),
+          });
         if (ev.type.startsWith('connection.')) {
           void qc.invalidateQueries({ queryKey: ['connections'] });
           void qc.invalidateQueries({ queryKey: ['game-integrations'] });
@@ -934,6 +942,15 @@ export function GameWorld() {
         break;
       case 'ABRIR_PAINEL':
         setSel(null);
+        if (effect.panel === 'FINANCEIRO') {
+          if (effect.serviceOrderId)
+            setSide({ t: 'ficha', so: effect.serviceOrderId, focus: effect.filter ?? null });
+          else {
+            goOffice();
+            setSide({ t: 'finance', filter: effect.filter ?? null });
+          }
+          break;
+        }
         goOffice();
         setSide(
           effect.panel === 'CENTRAL'
@@ -1452,6 +1469,15 @@ export function GameWorld() {
               ? ` · ${integrations.data.filter((i) => i.status !== 'PRECISA_CONFIGURAR').length} ativa(s)`
               : ''}
           </button>
+          {can('financeiro.ver') ? (
+            <button
+              className="flex items-center gap-2 rounded-2xl border border-line bg-white/95 px-3 py-2 text-xs font-semibold shadow-card"
+              onClick={() => setSide({ t: 'finance', filter: null })}
+              data-testid="finance-chip"
+            >
+              💼 Financeiro
+            </button>
+          ) : null}
           {canSeeInbox ? (
             <button
               className="flex items-center gap-2 rounded-2xl border border-line bg-white/95 px-3 py-2 text-xs font-semibold shadow-card"
@@ -1608,6 +1634,11 @@ export function GameWorld() {
               setSearchOpen(true);
             }}
             onFocusEmployee={goEmployee}
+            onOpenFicha={
+              canOffice
+                ? () => setSide({ t: 'ficha', so: pieceSel.serviceOrderId, focus: null })
+                : undefined
+            }
           />
         ) : empSel && layout && snapshot.data ? (
           <EmployeePanel
@@ -1741,7 +1772,30 @@ export function GameWorld() {
             }}
           />
         ) : side?.t === 'os' ? (
-          <OsPanel id={side.id} onClose={() => setSide(null)} />
+          <OsPanel
+            id={side.id}
+            onClose={() => setSide(null)}
+            onOpenFicha={
+              canOffice ? () => setSide({ t: 'ficha', so: side.id, focus: null }) : undefined
+            }
+          />
+        ) : side?.t === 'ficha' ? (
+          <FichaPanel
+            key={`${side.so}${side.focus ?? ''}`}
+            soId={side.so}
+            focus={side.focus}
+            onClose={() => setSide(null)}
+            canFin={can('financeiro.gerenciar')}
+            canDocs={can('pedidos.gerenciar')}
+            canBuy={can('compras.gerenciar')}
+          />
+        ) : side?.t === 'finance' ? (
+          <FinancePanel
+            key={side.filter ?? ''}
+            filter={side.filter}
+            onClose={() => setSide(null)}
+            onOpenFicha={(so) => setSide({ t: 'ficha', so, focus: null })}
+          />
         ) : side?.t === 'central' ? (
           <ConnectionsPanel
             canManage={can('conexoes.gerenciar')}
@@ -1841,7 +1895,15 @@ export function GameWorld() {
 }
 
 /** Ficha resumida de uma OS sem posição no mapa (rotas oficiais). */
-function OsPanel({ id, onClose }: { id: string; onClose: () => void }) {
+function OsPanel({
+  id,
+  onClose,
+  onOpenFicha,
+}: {
+  id: string;
+  onClose: () => void;
+  onOpenFicha?: () => void;
+}) {
   const so = useServiceOrder(id);
   const d = so.data;
   return (
@@ -1875,6 +1937,11 @@ function OsPanel({ id, onClose }: { id: string; onClose: () => void }) {
           >
             Abrir no painel
           </a>
+          {onOpenFicha ? (
+            <GBtn tone="bronze" className="mt-2 w-full" onClick={onOpenFicha}>
+              💼 Ficha comercial (contrato, entrada, saldo, nota)
+            </GBtn>
+          ) : null}
         </>
       ) : (
         <p className="text-xs text-ink-muted">{so.isError ? so.error.message : 'Carregando…'}</p>
