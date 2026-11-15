@@ -554,8 +554,7 @@ model Customer {
   deliveries Delivery[]
 
   // Fase 11: financeiro operacional.
-  receivables        CustomerReceivable[]
-  inboxConversations InboxConversation[]
+  receivables CustomerReceivable[]
 
   @@index([phone])
   @@index([whatsapp])
@@ -655,16 +654,13 @@ model CommercialOrder {
   // Simplificação Fase 2 — "Novo serviço": o pedido é o registro do serviço fechado antes da
   // chegada. Com `autoServiceOrder`, cada recebimento confirmado gera a OS das peças recebidas.
   /// Pedido criado pelo fluxo Novo serviço: a OS nasce automaticamente na chegada das peças.
-  autoServiceOrder Boolean          @default(false) @map("auto_service_order")
+  autoServiceOrder Boolean   @default(false) @map("auto_service_order")
   /// Estabilização da Fase 2: o cliente entrega as peças na tapeçaria (Novo serviço sem retirada).
-  customerDropOff  Boolean          @default(false) @map("customer_drop_off")
+  customerDropOff  Boolean   @default(false) @map("customer_drop_off")
   /// Prazo de entrega combinado com o cliente (copiado para a OS gerada).
-  promisedDate     DateTime?        @map("promised_date") @db.Date
+  promisedDate     DateTime? @map("promised_date") @db.Date
   /// Observações técnicas conhecidas no fechamento (copiadas para a OS gerada).
-  technicalNotes   String?          @map("technical_notes") @db.VarChar(4000)
-  // Escritório do jogo: contratos e notas do pedido (orçamento aprovado).
-  contracts        Contract[]
-  fiscalDocs       FiscalDocument[]
+  technicalNotes   String?   @map("technical_notes") @db.VarChar(4000)
 
   @@index([customerId])
   @@index([status])
@@ -987,12 +983,8 @@ model ServiceOrder {
 
   /// Simplificação Fase 2: recebimento que gerou esta OS automaticamente (único). Vazio = OS
   /// criada manualmente (fluxo anterior, preservado).
-  sourceReceiptId    String?             @unique @map("source_receipt_id") @db.Uuid
-  sourceReceipt      Receipt?            @relation(fields: [sourceReceiptId], references: [id], onDelete: Restrict)
-  // Escritório do jogo.
-  contracts          Contract[]
-  fiscalDocs         FiscalDocument[]
-  inboxConversations InboxConversation[]
+  sourceReceiptId String?  @unique @map("source_receipt_id") @db.Uuid
+  sourceReceipt   Receipt? @relation(fields: [sourceReceiptId], references: [id], onDelete: Restrict)
 
   @@index([orderId])
   @@index([customerId])
@@ -1441,8 +1433,6 @@ model Supplier {
 
   // Fase 11: financeiro operacional.
   payables AccountPayable[]
-  /// Escritório do jogo: cotações.
-  quotes   PurchaseQuote[]
 
   @@index([name])
   @@map("suppliers")
@@ -2972,8 +2962,6 @@ model CustomerReceivable {
   serviceOrder ServiceOrder?           @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
   payments     CustomerPayment[]
   reports      CustomerPaymentReport[]
-  /// Escritório do jogo: cobranças no provedor (Pix/boleto/cartão).
-  charges      PaymentCharge[]
 
   @@index([orderId])
   @@index([status, dueDate])
@@ -3466,8 +3454,6 @@ model AccountPayable {
   payments      PayablePayment[]
   expense       OperationalExpense?
   logisticsCost LogisticsCost?
-  /// Escritório do jogo: pagamentos preparados (confirmados pelo gestor).
-  paymentOrders PaymentOrder[]
 
   @@index([status, dueDate])
   @@map("account_payables")
@@ -3934,33 +3920,28 @@ model GameLayoutRevision {
 
 /// Agente de IA do escritório. Função, instruções, dados consultáveis e política de ações.
 model AiAgent {
-  id              String   @id @default(uuid()) @db.Uuid
-  deskStationId   String?  @map("desk_station_id") @db.Uuid
-  name            String   @db.VarChar(60)
+  id             String   @id @default(uuid()) @db.Uuid
+  deskStationId  String?  @map("desk_station_id") @db.Uuid
+  name           String   @db.VarChar(60)
   /// GERENTE | COMPRAS | WHATSAPP | ORCAMENTOS | FINANCEIRO | INSTAGRAM | PERSONALIZADA
-  roleKey         String   @map("role_key") @db.VarChar(40)
-  roleLabel       String   @map("role_label") @db.VarChar(80)
-  instructions    String   @db.VarChar(4000)
-  dataScopes      String[] @default([]) @map("data_scopes")
+  roleKey        String   @map("role_key") @db.VarChar(40)
+  roleLabel      String   @map("role_label") @db.VarChar(80)
+  instructions   String   @db.VarChar(4000)
+  dataScopes     String[] @default([]) @map("data_scopes")
   /// { acao: 'NUNCA' | 'PROPOR' | 'EXECUTAR_APROVADO' }
-  actionPolicies  Json     @default("{}") @map("action_policies")
+  actionPolicies Json     @default("{}") @map("action_policies")
   /// ATIVO | PAUSADO | DESATIVADO
-  status          String   @default("ATIVO") @db.VarChar(15)
-  color           String   @default("#7c3aed") @db.VarChar(9)
-  /// Canais que o agente acessa: { canal: 'CONSULTAR' | 'RASCUNHO' | 'EXECUTAR' }.
-  channelPolicies Json     @default("{}") @map("channel_policies")
-  /// Casos de envio automático liberados pelo gestor (ex.: confirmação de recebimento de fotos).
-  autoSendRules   Json     @default("[]") @map("auto_send_rules")
-  version         Int      @default(1)
-  createdById     String?  @map("created_by_id") @db.Uuid
-  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  status         String   @default("ATIVO") @db.VarChar(15)
+  color          String   @default("#7c3aed") @db.VarChar(9)
+  version        Int      @default(1)
+  createdById    String?  @map("created_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   desk      GameStation?      @relation(fields: [deskStationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   createdBy User?             @relation("AiAgentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
   messages  AiAgentMessage[]
   proposals AiAgentProposal[]
-  actions   AgentAction[]
 
   @@map("ai_agents")
 }
@@ -4004,421 +3985,4 @@ model AiAgentProposal {
 
   @@index([agentId, status])
   @@map("ai_agent_proposals")
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Central de Conexões, caixa de entrada e agentes com canais (aditivo).
-// Segredos ficam cifrados no servidor (AES-256-GCM); nunca voltam para o navegador.
-// ─────────────────────────────────────────────────────────────────────────────
-
-model IntegrationConnection {
-  id            String    @id @default(uuid()) @db.Uuid
-  providerKey   String    @unique @map("provider_key") @db.VarChar(40)
-  /// DESCONECTADA | CONECTADA | ERRO | PENDENTE
-  status        String    @default("DESCONECTADA") @db.VarChar(20)
-  /// PRODUCAO | SANDBOX | TESTE_LOCAL
-  mode          String    @default("PRODUCAO") @db.VarChar(20)
-  accountLabel  String?   @map("account_label") @db.VarChar(160)
-  accountId     String?   @map("account_id") @db.VarChar(160)
-  scopes        String[]  @default([])
-  /// Configuração não secreta (ids de página, número, conta de anúncios…).
-  config        Json      @default("{}")
-  secretEnc     String?   @map("secret_enc")
-  lastSyncAt    DateTime? @map("last_sync_at") @db.Timestamptz(3)
-  lastError     String?   @map("last_error") @db.VarChar(1000)
-  connectedById String?   @map("connected_by_id") @db.Uuid
-  version       Int       @default(1)
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  @@map("integration_connections")
-}
-
-/// Estado do OAuth (anti-CSRF): uso único, expira em 15 minutos.
-model IntegrationOAuthState {
-  state       String    @id @db.VarChar(80)
-  providerKey String    @map("provider_key") @db.VarChar(40)
-  userId      String    @map("user_id") @db.Uuid
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  usedAt      DateTime? @map("used_at") @db.Timestamptz(3)
-
-  @@map("integration_oauth_states")
-}
-
-/// Notificação recebida de um provedor (webhook). Única por provedor + id do evento:
-/// reenvios da mesma notificação nunca são processados duas vezes.
-model IntegrationWebhookEvent {
-  id          String    @id @default(uuid()) @db.Uuid
-  providerKey String    @map("provider_key") @db.VarChar(40)
-  eventId     String    @map("event_id") @db.VarChar(200)
-  payload     Json
-  receivedAt  DateTime  @default(now()) @map("received_at") @db.Timestamptz(3)
-  processedAt DateTime? @map("processed_at") @db.Timestamptz(3)
-  result      String?   @db.VarChar(500)
-
-  @@unique([providerKey, eventId])
-  @@map("integration_webhook_events")
-}
-
-model InboxConversation {
-  id               String    @id @default(uuid()) @db.Uuid
-  /// WHATSAPP | INSTAGRAM | MESSENGER
-  channel          String    @db.VarChar(20)
-  externalThreadId String    @map("external_thread_id") @db.VarChar(160)
-  contactName      String?   @map("contact_name") @db.VarChar(160)
-  contactHandle    String?   @map("contact_handle") @db.VarChar(160)
-  customerId       String?   @map("customer_id") @db.Uuid
-  serviceOrderId   String?   @map("service_order_id") @db.Uuid
-  orderId          String?   @map("order_id") @db.Uuid
-  /// ABERTA | AGUARDANDO_ORCAMENTO | EM_ATENDIMENTO | ENCERRADA
-  status           String    @default("ABERTA") @db.VarChar(30)
-  /// Gestor assumiu: agentes não respondem sozinhos.
-  humanTakeover    Boolean   @default(false) @map("human_takeover")
-  lastInboundAt    DateTime? @map("last_inbound_at") @db.Timestamptz(3)
-  lastMessageAt    DateTime? @map("last_message_at") @db.Timestamptz(3)
-  unread           Int       @default(0)
-  summary          String?   @db.VarChar(2000)
-  version          Int       @default(1)
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  customer     Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  serviceOrder ServiceOrder?  @relation(fields: [serviceOrderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  messages     InboxMessage[]
-
-  @@unique([channel, externalThreadId])
-  @@index([status, lastMessageAt])
-  @@map("inbox_conversations")
-}
-
-model InboxMessage {
-  id             String    @id @default(uuid()) @db.Uuid
-  conversationId String    @map("conversation_id") @db.Uuid
-  /// IN | OUT
-  direction      String    @db.VarChar(3)
-  externalId     String?   @map("external_id") @db.VarChar(200)
-  /// TEXT | IMAGE | AUDIO | VIDEO | DOCUMENT | TEMPLATE | OTHER
-  kind           String    @default("TEXT") @db.VarChar(20)
-  text           String?   @db.VarChar(4096)
-  media          Json      @default("[]")
-  /// RECEBIDA | RASCUNHO | ENVIADA | ENVIADA_TESTE | FALHOU | DESCARTADA
-  status         String    @db.VarChar(20)
-  error          String?   @db.VarChar(500)
-  agentId        String?   @map("agent_id") @db.Uuid
-  createdById    String?   @map("created_by_id") @db.Uuid
-  approvedById   String?   @map("approved_by_id") @db.Uuid
-  sentAt         DateTime? @map("sent_at") @db.Timestamptz(3)
-  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-
-  conversation InboxConversation @relation(fields: [conversationId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-
-  @@unique([conversationId, externalId])
-  @@index([conversationId, createdAt])
-  @@map("inbox_messages")
-}
-
-/// Histórico (imutável) do que cada agente fez ou preparou em cada canal.
-model AgentAction {
-  id           String   @id @default(uuid()) @db.Uuid
-  agentId      String?  @map("agent_id") @db.Uuid
-  channel      String   @db.VarChar(30)
-  accountLabel String?  @map("account_label") @db.VarChar(160)
-  kind         String   @db.VarChar(40)
-  summary      String   @db.VarChar(500)
-  content      String?  @db.VarChar(4096)
-  /// RASCUNHO | ENVIADO | ENVIADO_TESTE | PUBLICADO | PUBLICADO_TESTE | PROPOSTO | APROVADO | FALHOU
-  status       String   @db.VarChar(20)
-  approvedById String?  @map("approved_by_id") @db.Uuid
-  ref          Json     @default("{}")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-
-  agent AiAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-
-  @@index([agentId, createdAt])
-  @@map("agent_actions")
-}
-
-model MarketingPost {
-  id           String    @id @default(uuid()) @db.Uuid
-  channel      String    @default("INSTAGRAM") @db.VarChar(20)
-  caption      String    @db.VarChar(2200)
-  mediaUrls    String[]  @default([]) @map("media_urls")
-  scheduledFor DateTime? @map("scheduled_for") @db.Timestamptz(3)
-  /// RASCUNHO | PUBLICADO | PUBLICADO_TESTE | FALHOU
-  status       String    @default("RASCUNHO") @db.VarChar(20)
-  externalId   String?   @map("external_id") @db.VarChar(160)
-  agentId      String?   @map("agent_id") @db.Uuid
-  approvedById String?   @map("approved_by_id") @db.Uuid
-  publishedAt  DateTime? @map("published_at") @db.Timestamptz(3)
-  error        String?   @db.VarChar(500)
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  @@map("marketing_posts")
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Escritório: contratos, cobranças, notas, banco, compras e documentos (aditivo).
-// O Cenário Gestão continua sendo a fonte oficial: baixas e pagamentos usam as funções
-// do financeiro existente (receivePayment, payPayable).
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Modelo de contrato da Cenário, versionado (nova versão = nova linha).
-model ContractTemplate {
-  id          String   @id @default(uuid()) @db.Uuid
-  key         String   @db.VarChar(40)
-  version     Int
-  name        String   @db.VarChar(120)
-  body        String
-  current     Boolean  @default(true)
-  createdById String?  @map("created_by_id") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-
-  contracts Contract[]
-
-  @@unique([key, version])
-  @@map("contract_templates")
-}
-
-model Contract {
-  id                 String    @id @default(uuid()) @db.Uuid
-  number             Int       @unique @default(autoincrement())
-  orderId            String    @map("order_id") @db.Uuid
-  serviceOrderId     String?   @map("service_order_id") @db.Uuid
-  templateId         String    @map("template_id") @db.Uuid
-  /// Versão do contrato desta OS/pedido (1, 2…); revisões preservam as anteriores.
-  revision           Int       @default(1)
-  body               String
-  /// RASCUNHO | ENVIADO | ASSINADO | RECUSADO | CANCELADO | SUBSTITUIDO
-  status             String    @default("RASCUNHO") @db.VarChar(20)
-  signers            Json      @default("[]")
-  provider           String?   @db.VarChar(40)
-  providerEnvelopeId String?   @unique @map("provider_envelope_id") @db.VarChar(160)
-  sentAt             DateTime? @map("sent_at") @db.Timestamptz(3)
-  signedAt           DateTime? @map("signed_at") @db.Timestamptz(3)
-  signedFileId       String?   @map("signed_file_id") @db.Uuid
-  supersedesId       String?   @map("supersedes_id") @db.Uuid
-  createdById        String?   @map("created_by_id") @db.Uuid
-  version            Int       @default(1)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  order        CommercialOrder  @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  serviceOrder ServiceOrder?    @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  template     ContractTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-
-  @@index([orderId])
-  @@map("contracts")
-}
-
-/// Cobrança no provedor (Pix, boleto, cartão, link) de uma conta a receber oficial.
-model PaymentCharge {
-  id               String    @id @default(uuid()) @db.Uuid
-  receivableId     String    @map("receivable_id") @db.Uuid
-  provider         String    @db.VarChar(40)
-  providerChargeId String    @unique @map("provider_charge_id") @db.VarChar(160)
-  /// PIX | BOLETO | CARTAO | LINK
-  billingType      String    @map("billing_type") @db.VarChar(20)
-  amountCents      Int       @map("amount_cents")
-  installments     Int?
-  dueDate          DateTime  @map("due_date") @db.Date
-  /// ABERTA | PAGA | VENCIDA | CANCELADA | ESTORNADA
-  status           String    @default("ABERTA") @db.VarChar(20)
-  pixPayload       String?   @map("pix_payload")
-  paymentUrl       String?   @map("payment_url") @db.VarChar(500)
-  paidAt           DateTime? @map("paid_at") @db.Timestamptz(3)
-  /// Recebimento oficial (customer_payments) gerado pela confirmação do provedor.
-  paymentId        String?   @unique @map("payment_id") @db.Uuid
-  createdById      String?   @map("created_by_id") @db.Uuid
-  version          Int       @default(1)
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  receivable CustomerReceivable @relation(fields: [receivableId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-
-  @@index([receivableId])
-  @@map("payment_charges")
-}
-
-/// Perfil fiscal por tipo de operação (reforma = serviço/NFS-e; fabricação = conforme a contabilidade).
-model FiscalProfile {
-  id                    String   @id @default(uuid()) @db.Uuid
-  name                  String   @db.VarChar(120)
-  /// NFSE | NFE
-  documentKind          String   @map("document_kind") @db.VarChar(10)
-  /// Tipos de serviço da OS atendidos (REFORMA_COMPLETA, FABRICACAO…).
-  serviceTypes          String[] @default([]) @map("service_types")
-  /// Código de tributação nacional (cTribNac) / item da lista de serviços.
-  serviceCode           String?  @map("service_code") @db.VarChar(20)
-  municipalTaxCode      String?  @map("municipal_tax_code") @db.VarChar(20)
-  cnae                  String?  @db.VarChar(20)
-  issRatePercent        Decimal? @map("iss_rate_percent") @db.Decimal(5, 2)
-  /// NCM/CFOP para NF-e (fabricação), quando aplicável.
-  ncm                   String?  @db.VarChar(10)
-  cfop                  String?  @db.VarChar(10)
-  descriptionTemplate   String   @map("description_template") @db.VarChar(1000)
-  validatedByAccountant Boolean  @default(false) @map("validated_by_accountant")
-  active                Boolean  @default(true)
-  version               Int      @default(1)
-  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt             DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  documents FiscalDocument[]
-
-  @@map("fiscal_profiles")
-}
-
-model FiscalDocument {
-  id              String    @id @default(uuid()) @db.Uuid
-  orderId         String    @map("order_id") @db.Uuid
-  serviceOrderId  String?   @map("service_order_id") @db.Uuid
-  profileId       String    @map("profile_id") @db.Uuid
-  /// RASCUNHO | SOLICITADA | AUTORIZADA | REJEITADA | CANCELADA
-  status          String    @default("RASCUNHO") @db.VarChar(20)
-  customerData    Json      @map("customer_data")
-  description     String    @db.VarChar(2000)
-  amountCents     Int       @map("amount_cents")
-  fiscalData      Json      @default("{}") @map("fiscal_data")
-  provider        String?   @db.VarChar(40)
-  providerRef     String?   @unique @map("provider_ref") @db.VarChar(160)
-  number          String?   @db.VarChar(40)
-  accessKey       String?   @map("access_key") @db.VarChar(80)
-  files           Json      @default("[]")
-  rejectionReason String?   @map("rejection_reason") @db.VarChar(1000)
-  issuedAt        DateTime? @map("issued_at") @db.Timestamptz(3)
-  createdById     String?   @map("created_by_id") @db.Uuid
-  approvedById    String?   @map("approved_by_id") @db.Uuid
-  version         Int       @default(1)
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  order        CommercialOrder @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  serviceOrder ServiceOrder?   @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  profile      FiscalProfile   @relation(fields: [profileId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-
-  @@index([orderId])
-  @@map("fiscal_documents")
-}
-
-model BankAccount {
-  id        String   @id @default(uuid()) @db.Uuid
-  label     String   @db.VarChar(120)
-  bank      String   @db.VarChar(80)
-  /// Conta mascarada (ex.: ag 0001 · cc ****1234)
-  masked    String?  @db.VarChar(80)
-  /// IMPORTACAO | API | TESTE_LOCAL
-  provider  String   @default("IMPORTACAO") @db.VarChar(20)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-
-  transactions BankTransaction[]
-  payments     PaymentOrder[]
-
-  @@map("bank_accounts")
-}
-
-/// Lançamento do extrato (importado ou da API). Único por conta + identificador do banco.
-model BankTransaction {
-  id             String    @id @default(uuid()) @db.Uuid
-  accountId      String    @map("account_id") @db.Uuid
-  fitId          String    @map("fit_id") @db.VarChar(160)
-  date           DateTime  @db.Date
-  amountCents    Int       @map("amount_cents")
-  description    String    @db.VarChar(300)
-  /// RECEBIMENTO | PAGAMENTO | DESPESA | IGNORADO
-  reconciledKind String?   @map("reconciled_kind") @db.VarChar(20)
-  reconciledRef  String?   @map("reconciled_ref") @db.Uuid
-  reconciledAt   DateTime? @map("reconciled_at") @db.Timestamptz(3)
-  reconciledById String?   @map("reconciled_by_id") @db.Uuid
-  source         String    @db.VarChar(10)
-  importedAt     DateTime  @default(now()) @map("imported_at") @db.Timestamptz(3)
-
-  account BankAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-
-  @@unique([accountId, fitId])
-  @@index([date])
-  @@map("bank_transactions")
-}
-
-/// Pagamento preparado pelo agente e confirmado pelo gestor; só marca a conta como paga
-/// depois da confirmação do provedor ou da conciliação do extrato.
-model PaymentOrder {
-  id            String    @id @default(uuid()) @db.Uuid
-  payableId     String    @map("payable_id") @db.Uuid
-  accountId     String    @map("account_id") @db.Uuid
-  beneficiary   String    @db.VarChar(160)
-  amountCents   Int       @map("amount_cents")
-  dueDate       DateTime  @map("due_date") @db.Date
-  method        String    @db.VarChar(20)
-  /// PREPARADO | AGUARDANDO_APP | PAGO | FALHOU | CANCELADO
-  status        String    @default("PREPARADO") @db.VarChar(20)
-  providerRef   String?   @unique @map("provider_ref") @db.VarChar(160)
-  proofFileId   String?   @map("proof_file_id") @db.Uuid
-  confirmedById String?   @map("confirmed_by_id") @db.Uuid
-  confirmedAt   DateTime? @map("confirmed_at") @db.Timestamptz(3)
-  paidAt        DateTime? @map("paid_at") @db.Timestamptz(3)
-  createdById   String?   @map("created_by_id") @db.Uuid
-  version       Int       @default(1)
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-
-  payable AccountPayable @relation(fields: [payableId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-  account BankAccount    @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-
-  @@index([payableId])
-  @@map("payment_orders")
-}
-
-/// Venda na maquininha (importada do relatório ou da API): bruto, taxa, líquido e depósito.
-model CardSettlement {
-  id           String    @id @default(uuid()) @db.Uuid
-  provider     String    @db.VarChar(40)
-  externalId   String    @map("external_id") @db.VarChar(160)
-  saleDate     DateTime  @map("sale_date") @db.Date
-  grossCents   Int       @map("gross_cents")
-  feeCents     Int       @map("fee_cents")
-  netCents     Int       @map("net_cents")
-  installments Int       @default(1)
-  expectedDate DateTime  @map("expected_date") @db.Date
-  settledAt    DateTime? @map("settled_at") @db.Date
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-
-  @@unique([provider, externalId])
-  @@map("card_settlements")
-}
-
-model PurchaseQuote {
-  id                     String   @id @default(uuid()) @db.Uuid
-  supplierId             String   @map("supplier_id") @db.Uuid
-  materialRequirementIds String[] @map("material_requirement_ids") @db.Uuid
-  description            String   @db.VarChar(300)
-  unitPriceCents         Int      @map("unit_price_cents")
-  quantity               Decimal  @db.Decimal(12, 3)
-  leadDays               Int?     @map("lead_days")
-  notes                  String?  @db.VarChar(500)
-  chosen                 Boolean  @default(false)
-  createdById            String?  @map("created_by_id") @db.Uuid
-  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-
-  supplier Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict, onUpdate: NoAction)
-
-  @@map("purchase_quotes")
-}
-
-/// Documento do fechamento mensal (nota recebida, comprovante, extrato) enviado ao escritório.
-model AccountingDocument {
-  id          String   @id @default(uuid()) @db.Uuid
-  /// AAAA-MM
-  month       String   @db.VarChar(7)
-  /// NOTA_EMITIDA | NOTA_RECEBIDA | COMPROVANTE | EXTRATO | OUTRO
-  kind        String   @db.VarChar(20)
-  title       String   @db.VarChar(200)
-  fileId      String?  @map("file_id") @db.Uuid
-  refType     String?  @map("ref_type") @db.VarChar(40)
-  refId       String?  @map("ref_id") @db.Uuid
-  createdById String?  @map("created_by_id") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-
-  @@index([month])
-  @@map("accounting_documents")
 }
