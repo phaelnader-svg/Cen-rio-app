@@ -61,7 +61,7 @@ export async function buildApp(opts: {
       throw new Error(`Rota sem regra de acesso: ${String(route.method)} ${route.url}`);
   });
 
-  const allowed = new Set([env.FIRMA_WEB_URL]);
+  const allowed = new Set([env.FIRMA_WEB_URL, ...env.FIRMA_EXTRA_ORIGINS]);
   app.addHook('onRequest', async (request, reply) => {
     const access = request.routeOptions.config?.rule;
     if (!access) return;

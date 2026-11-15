@@ -18,6 +18,16 @@ const schema = z
     FIRMA_API_PORT: z.coerce.number().int().default(4100),
     /** Endereço público do jogo (ex.: https://firmaviva.com.br). */
     FIRMA_WEB_URL: url.default('http://localhost:3100'),
+    /** Outros endereços do jogo aceitos ao mesmo tempo (ex.: o provisório enquanto o domínio vira). */
+    FIRMA_EXTRA_ORIGINS: z
+      .string()
+      .default('')
+      .transform((v) =>
+        v
+          .split(',')
+          .map((o) => o.trim().replace(/\/$/, ''))
+          .filter(Boolean),
+      ),
     FIRMA_TOKEN_HASH_SECRET: z.string().min(32),
     /** Chave AES-256 (base64, 32 bytes) para selar os tokens da conexão. */
     FIRMA_SEAL_KEY: z.string().min(40),

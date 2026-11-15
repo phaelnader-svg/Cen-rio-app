@@ -1,0 +1,107 @@
+# Firma Viva — PILHA DE TESTE em VM própria (separada da homologação e da produção do Cenário).
+# Banco isolado (firma_viva e cenario_teste no mesmo PostgreSQL desta VM), dados FICTÍCIOS e um
+# Cenário Gestão de teste só para autorizar a conexão. Nenhum dado real é usado.
+# Variáveis em /opt/firma-teste/.env (geradas na VM por firma-teste.sh; nunca no repositório).
+name: firma-teste
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: firma_viva
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U app -d firma_viva']
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # ── Cenário Gestão de TESTE (empresa fictícia) ──
+  api:
+    image: firma-teste-cenario-api
+    build: { context: ../../.., dockerfile: infra/homolog/Dockerfile, target: api }
+    restart: unless-stopped
+    depends_on: { postgres: { condition: service_healthy } }
+    environment:
+      APP_ENV: staging
+      NODE_ENV: production
+      MIGRATE_ON_START: '1'
+      DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD}@postgres:5432/cenario_teste
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      ALLOWED_ORIGINS: https://${CENARIO_HOST:?}
+      COOKIE_SECURE: 'true'
+      TOKEN_HASH_SECRET: ${CENARIO_TOKEN_HASH_SECRET:?}
+      STORAGE_DIR: /data/storage
+      GAME_WEB_URL: ${FIRMA_WEB_URL:?}
+      SEED_ADMIN_EMAIL: ${CENARIO_GESTOR_EMAIL:?}
+      SEED_ADMIN_PASSWORD: ${CENARIO_GESTOR_SENHA:?}
+      SEED_ADMIN_NAME: Gestor (teste)
+      FIRMA_CENARIO_CLIENT_SECRET: ${FIRMA_CENARIO_CLIENT_SECRET:?}
+    volumes:
+      - storage:/data/storage
+
+  web:
+    image: firma-teste-cenario-web
+    build: { context: ../../.., dockerfile: infra/homolog/Dockerfile, target: web }
+    restart: unless-stopped
+    depends_on: [api]
+
+  # ── Firma Viva ──
+  firma-api:
+    image: firma-teste-firma-api
+    build:
+      context: ../../..
+      dockerfile: infra/homolog/Dockerfile
+      target: firma-api
+      args: { NEXT_PUBLIC_CENARIO_WEB_URL: 'https://${CENARIO_HOST}' }
+    restart: unless-stopped
+    depends_on: { postgres: { condition: service_healthy }, api: { condition: service_started } }
+    environment:
+      FIRMA_APP_ENV: preview
+      NODE_ENV: production
+      FIRMA_DATABASE_URL: postgresql://app:${POSTGRES_PASSWORD}@postgres:5432/firma_viva
+      FIRMA_API_PORT: '4100'
+      FIRMA_WEB_URL: ${FIRMA_WEB_URL:?}
+      FIRMA_EXTRA_ORIGINS: ${FIRMA_EXTRA_ORIGINS:-}
+      FIRMA_COOKIE_SECURE: 'true'
+      FIRMA_TOKEN_HASH_SECRET: ${FIRMA_TOKEN_HASH_SECRET:?}
+      FIRMA_SEAL_KEY: ${FIRMA_SEAL_KEY:?}
+      CENARIO_API_URL: http://api:4000
+      CENARIO_WEB_URL: https://${CENARIO_HOST}
+      FIRMA_CENARIO_CLIENT_ID: firma-viva
+      FIRMA_CENARIO_CLIENT_SECRET: ${FIRMA_CENARIO_CLIENT_SECRET:?}
+
+  firma-web:
+    image: firma-teste-firma-web
+    build:
+      context: ../../..
+      dockerfile: infra/homolog/Dockerfile
+      target: firma-web
+      args: { NEXT_PUBLIC_CENARIO_WEB_URL: 'https://${CENARIO_HOST}' }
+    restart: unless-stopped
+    depends_on: [firma-api]
+
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports: ['80:80', '443:443']
+    environment:
+      FIRMA_HOSTS: ${FIRMA_HOSTS:?}
+      FIRMA_WWW: ${FIRMA_WWW:-www.firmaviva.invalid}
+      FIRMA_CANONICAL: ${FIRMA_CANONICAL:?}
+      CENARIO_HOST: ${CENARIO_HOST}
+    volumes:
+      - ./Caddyfile.teste:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+    depends_on: [firma-web, web]
+
+volumes:
+  pgdata:
+  storage:
+  caddy:

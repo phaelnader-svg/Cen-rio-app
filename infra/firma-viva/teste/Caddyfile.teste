@@ -1,0 +1,49 @@
+# Pilha de TESTE do Firma Viva. HTTPS automático (Let's Encrypt) em todos os endereços.
+#   FIRMA_HOSTS: endereços do jogo (provisório e, depois do DNS, firmaviva.com.br), separados por ", "
+#   FIRMA_WWW:   www.firmaviva.com.br (redireciona para FIRMA_CANONICAL) — só depois do DNS
+#   CENARIO_HOST: Cenário Gestão de teste (empresa fictícia), usado para autorizar a conexão
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
+(seguranca) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	request_body {
+		max_size 12MB
+	}
+	encode zstd gzip
+}
+
+{$FIRMA_WWW} {
+	redir https://{$FIRMA_CANONICAL}{uri} permanent
+}
+
+{$FIRMA_HOSTS} {
+	import seguranca
+	@api path /api/*
+	handle @api {
+		reverse_proxy firma-api:4100
+	}
+	handle {
+		reverse_proxy firma-web:3100
+	}
+}
+
+{$CENARIO_HOST} {
+	import seguranca
+	@api path /api/*
+	handle @api {
+		reverse_proxy api:4000
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}
