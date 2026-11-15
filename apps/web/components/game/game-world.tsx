@@ -279,6 +279,31 @@ export function GameWorld() {
         /* sem armazenamento: comemora de novo na próxima vez */
       }
     }
+    // Entrega concluída (fluxo oficial): comemora uma vez; o saldo segue em A receber.
+    let seenDel: string[] = [];
+    try {
+      seenDel = JSON.parse(
+        window.localStorage.getItem('cenario-entregas-comemoradas') ?? '[]',
+      ) as string[];
+    } catch {
+      seenDel = [];
+    }
+    const freshDel = (b.deliveries ?? []).filter((d) => !seenDel.includes(d.id));
+    if (freshDel.length) {
+      e.celebrate();
+      toast(
+        'ok',
+        `🚚 Entrega concluída: ${freshDel.map((d) => `${d.osCodes.join(', ')} (${d.customer})${d.openCents > 0 ? ` — saldo ${brlCents(d.openCents)} em A receber` : ''}`).join('; ')}`,
+      );
+      try {
+        window.localStorage.setItem(
+          'cenario-entregas-comemoradas',
+          JSON.stringify([...seenDel, ...freshDel.map((d) => d.id)]),
+        );
+      } catch {
+        /* ignora */
+      }
+    }
     // Semana recém-fechada: anima a barra da abertura ao fechamento (uma vez).
     const closed = b.weeks.find((w) => !w.partial);
     if (closed && g && lastWeekSeen.current === null) {
@@ -1560,6 +1585,27 @@ export function GameWorld() {
           <span className="flex items-center gap-1 text-info-600">
             📍 posição física confirmada
           </span>
+          {canFinView && goal ? (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 border-t border-line pt-1.5 text-left"
+              onClick={() => setSide({ t: 'goals', tab: null, drill: null })}
+              data-testid="goals-compact"
+              title="Quadro de Metas (barra = saldo ÷ meta)"
+            >
+              <span>🎯</span>
+              <span className="h-2 flex-1 overflow-hidden rounded-full bg-subtle">
+                <span
+                  className={`block h-full ${goal.belowAfterAchieved ? 'bg-danger-600' : 'bg-ok-600'}`}
+                  style={{ width: `${Math.min(100, Math.max(0, goal.pctOfGoal))}%` }}
+                />
+              </span>
+              <span className="font-semibold">
+                {brlCents(goal.balanceCents)} de {brlCents(goal.targetCents)} · faltam{' '}
+                {brlCents(goal.missingCents)}
+              </span>
+            </button>
+          ) : null}
           <div
             className="flex w-full flex-wrap gap-1 border-t border-line pt-1.5"
             data-testid="quick-filters"

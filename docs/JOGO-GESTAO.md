@@ -114,6 +114,43 @@ desmarque "Medidas ilustrativas" quando tiver preenchido:
 6. Escritório: medidas, mesas existentes e quem senta em cada uma.
 7. Quais localizações físicas (`Qualidade → Localizações`) correspondem a quais áreas.
 
+## Quadro de Metas (caixa no escritório)
+
+Objeto **Quadro de Metas** no Escritório (posicionável no modo Construção; clique abre o resumo) e
+versão compacta na Tapeçaria (barra + "faltam R$ …"). A barra 3D avança ou recua quando o
+financeiro confirma um movimento; conquista de meta e entrega concluída têm comemoração breve; ao
+fechar a semana a barra anima da abertura ao fechamento.
+
+- **Ponto de partida**: saldo informado por conta, com data e hora (aba Contas e saldo). Só entram
+  os movimentos posteriores. Corrigir = informar de novo (o anterior fica no histórico).
+- **Fontes, sem contar o mesmo dinheiro duas vezes**: conta "por registros" usa os recebimentos de
+  clientes, pagamentos de contas e de mão de obra por produção do financeiro (com estornos); conta
+  "por extrato" (vira automaticamente ao importar o extrato) usa só as linhas do extrato, ligadas
+  pela conciliação ao registro oficial — registros sem conciliação aparecem "a conciliar" e não
+  somam. Lançamento manual (aporte, retirada, transferência, despesa sem conta) some quando a linha
+  do extrato o representa; casamento automático por valor e data evita duplicidade. Cartão: com o
+  relatório da maquininha, entra o líquido quando cai (bruto, taxa e previsão visíveis).
+- **Transferências** entre contas incluídas não mudam o total; **aportes e retiradas** são
+  separados para mostrar a variação da operação.
+- **Semana** de segunda a domingo (São Paulo): abertura, fechamento, entrou/saiu, variação em R$ e
+  % sobre abertura positiva ("não se aplica" se ≤ 0), maiores entradas/saídas, gráfico e
+  correções feitas depois do fechamento (lançamento e efeito).
+- **Metas**: R$ 100/200/300 mil iniciais e metas próprias (valor, prazo, contas). "% da meta" =
+  saldo ÷ meta; "evolução desde o início" tem rótulo próprio. Conquista fica no histórico; se o
+  saldo cair, mostra o saldo verdadeiro e quanto falta para recuperar; prazo vencido mostra o
+  resultado na data prevista.
+- **A receber / a pagar / projeção**: vencido, com data, depende de entrega/retirada, cartão a cair,
+  contas, mão de obra liberada e prevista — com as premissas.
+- **Cada número abre os lançamentos** (data, conta, valor, categoria, origem e vínculo com OS,
+  pedido, conta a pagar ou mão de obra).
+- **Chat e Gerente**: "Quanto falta pra bater os 100 mil?", "Quanto eu cresci essa semana?", "Por
+  que o caixa caiu desde segunda?", "Com o que tenho pra receber e pagar, bato a meta até o prazo?".
+
+Demonstração: `scripts/jogo-quadro-metas-demo.mjs` (depois de `jogo-dados-sinteticos.mjs` e da
+produção da Ana até a expedição com `ONLY2=1 node docs/evidencias/jogo/demonstracao-playwright.cjs`).
+Evidências em `docs/evidencias/jogo/quadro-metas`; testes em `apps/api/test/quadro-metas.test.ts`.
+Migration `20270323000000_jogo_quadro_metas` (com rollback).
+
 ## Leitura operacional (correções das capturas)
 
 - **Situação da peça separada** (`packages/shared/src/game-workflow.ts`): estado geral, etapa(s) em

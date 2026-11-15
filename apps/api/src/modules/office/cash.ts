@@ -929,6 +929,47 @@ export async function cashBoard(db: Db) {
         : null,
     ].filter(Boolean),
   };
+  // Entregas concluídas (fluxo oficial) nos últimos 14 dias: comemora e mostra o saldo que
+  // continua em "A receber" até ser liquidado.
+  const since = new Date(clockNow().getTime() - 14 * 86400_000);
+  const delivered = await db.delivery.findMany({
+    where: { status: 'CONCLUIDA', completedAt: { gte: since } },
+    include: {
+      customer: { select: { name: true } },
+      items: {
+        where: { status: { in: ['ENTREGUE', 'DIVERGENTE'] } },
+        include: {
+          serviceOrderItem: {
+            include: { serviceOrder: { select: { id: true, number: true, orderId: true } } },
+          },
+        },
+      },
+    },
+    orderBy: { completedAt: 'desc' },
+  });
+  const deliveries = [];
+  for (const d of delivered) {
+    const sos = [
+      ...new Map(
+        d.items.map((i) => [i.serviceOrderItem.serviceOrder.id, i.serviceOrderItem.serviceOrder]),
+      ).values(),
+    ];
+    let open = 0;
+    for (const orderId of new Set(sos.map((s) => s.orderId))) {
+      const r = await db.customerReceivable.findMany({
+        where: { orderId, status: { in: ['ABERTO', 'PARCIAL'] } },
+      });
+      open += r.reduce((s, x) => s + x.amountCents - x.receivedCents, 0);
+    }
+    deliveries.push({
+      id: d.id,
+      customer: d.customer.name,
+      completedAt: d.completedAt!.toISOString(),
+      osCodes: sos.map((s) => osCode(s.number)),
+      serviceOrderIds: sos.map((s) => s.id),
+      openCents: open,
+    });
+  }
   return {
     today: st.today,
     startedAt: st.startedAt,
@@ -945,6 +986,7 @@ export async function cashBoard(db: Db) {
     weeks: weekViews.reverse(),
     obligations: ob,
     projection,
+    deliveries,
     moveCount: st.moves.length,
   };
 }

@@ -41,14 +41,12 @@ export async function goalsAnswer(db: Db, text: string): Promise<GoalsAnswer> {
     b.goals[0];
   const week = b.weeks[0];
   const refsOf = (moves: { id: string; description: string; amountCents: number }[]) =>
-    moves
-      .slice(0, 6)
-      .map((m) => ({
-        type: 'CONTA' as const,
-        id: m.id,
-        label: `${signedBrl(m.amountCents)} · ${m.description}`.slice(0, 120),
-        href: `/jogo?caixa=moves:ids=${encodeURIComponent(m.id)}`,
-      }));
+    moves.slice(0, 6).map((m) => ({
+      type: 'CONTA' as const,
+      id: m.id,
+      label: `${signedBrl(m.amountCents)} · ${m.description}`.slice(0, 120),
+      href: `/jogo?caixa=moves:ids=${encodeURIComponent(m.id)}`,
+    }));
 
   // 4. Projeção até o prazo da meta.
   if (
@@ -124,11 +122,15 @@ export async function goalsAnswer(db: Db, text: string): Promise<GoalsAnswer> {
         week.withdrawalsCents || week.contributionsCents
           ? `Sem aportes/retiradas, a operação variou ${signedBrl(week.operationalDeltaCents)}.`
           : '',
-        'Abri as saídas da semana.',
+        fell || outs.length ? 'Abri as saídas da semana.' : 'Abri os lançamentos da semana.',
       ]
         .filter(Boolean)
         .join('\n'),
-      effect: open(`MOVES:week=${week.weekStart}&sign=out|Saídas desde ${br(week.weekStart)}`),
+      effect: open(
+        fell || outs.length
+          ? `MOVES:week=${week.weekStart}&sign=out|Saídas desde ${br(week.weekStart)}`
+          : `MOVES:week=${week.weekStart}|Lançamentos desde ${br(week.weekStart)}`,
+      ),
       references: refsOf(outs),
     };
   }

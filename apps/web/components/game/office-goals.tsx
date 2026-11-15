@@ -11,6 +11,10 @@ import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { GBtn, Panel, Section, Tone, fmtDateTime } from './ui';
 
+/** Agora no horário de São Paulo, no formato do campo datetime-local. */
+function nowLocal() {
+  return new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 16);
+}
 const br = (iso: string | null | undefined) =>
   iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—';
 type Link = CashMoveDto['links'][number];
@@ -134,6 +138,14 @@ export interface CashBoard {
     premises: string[];
   };
   moveCount: number;
+  deliveries: {
+    id: string;
+    customer: string;
+    completedAt: string;
+    osCodes: string[];
+    serviceOrderIds: string[];
+    openCents: number;
+  }[];
 }
 
 export const useCash = (enabled = true) =>
@@ -273,6 +285,23 @@ export function GoalsPanel({
                 </div>
               ) : null}
             </div>
+            {b.deliveries.slice(0, 3).map((d) => (
+              <div
+                key={d.id}
+                className="mt-1 rounded-lg bg-ok-50 p-1.5 text-ok-600"
+                data-testid="goals-delivery"
+              >
+                🚚🎉 Entregue: {d.osCodes.join(', ')} ({d.customer}) em {br(d.completedAt)}
+                {d.openCents > 0 ? (
+                  <>
+                    {' '}
+                    — saldo de <b>{brlCents(d.openCents)}</b> continua em A receber até ser pago.
+                  </>
+                ) : (
+                  ' — pedido quitado.'
+                )}
+              </div>
+            ))}
             {!b.startedAt ? (
               <p className="mt-1 rounded bg-warn-50 p-1.5 text-warn-600">
                 Informe o saldo de hoje de cada conta (aba Contas) para começar.
@@ -448,7 +477,6 @@ function WeekCard({
   onAnimate: (w: Week, g: Goal | null) => void;
   goal: Goal | null;
 }) {
-  const ids = (xs: CashMoveDto[]) => xs.map((m) => m.id).join(',');
   return (
     <div
       className={clsx(
@@ -954,10 +982,6 @@ function AccountsTab({
     toAccountId: '',
   });
   const reais = (s: string) => Math.round(Number(s.replace(/\./g, '').replace(',', '.')) * 100);
-  const nowLocal = () => {
-    const d = new Date(Date.now() - 3 * 3600_000);
-    return d.toISOString().slice(0, 16);
-  };
   return (
     <div className="space-y-2 text-xs" data-testid="goals-accounts">
       {b.accounts.map((a) => {

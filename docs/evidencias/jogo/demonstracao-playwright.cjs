@@ -159,6 +159,8 @@ const idem = () => ({ 'idempotency-key': crypto.randomUUID().replace(/-/g, ''), 
     // Reabre a ficha: material verde. Planeja (titular Márcio) e publica pelo jogo.
     await g.getByTestId('game-search').fill('Ana');
     await g.getByTestId('search-results').getByText('OS-00001/1').click();
+    // Ficha em abas: o planejamento fica em "Atribuição e fila".
+    await g.getByTestId('piece-tab-ATRIBUICAO').click();
     await g.getByTestId('plan-form').waitFor();
     await wait(g, 1500);
     await shot(g, '23-os-ana-material-ok-planejar');
@@ -277,6 +279,11 @@ const idem = () => ({ 'idempotency-key': crypto.randomUUID().replace(/-/g, ''), 
     await g.getByTestId('search-results').getByText('OS-00001/1').click();
     await wait(g, 2500);
     await shot(g, '31-sofa-na-expedicao');
+    if (process.env.ONLY2) {
+      log('ONLY2: parando depois da expedição.');
+      await browser.close();
+      return;
+    }
   }
   // ───────────── Demonstração 1: expandir a empresa ─────────────
   log('Demo 1: expandir a empresa');
