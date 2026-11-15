@@ -9,12 +9,15 @@ import {
   agentSchema,
   blankLayout,
   createSpaceSchema,
+  furnitureModel,
+  placePiece,
   resetSpaceSchema,
   saveLayoutSchema,
   suggestedOffice,
   suggestedWorkshop,
   updateAgentSchema,
   type AgentDto,
+  type GamePieceDto,
   type GameSnapshotDto,
   type GameSpaceDto,
   type LayoutContent,
@@ -25,7 +28,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { atLeast } from '../context';
 import { audit } from '../lib/audit';
-import { cenarioCall, cenarioJson, isActive } from '../lib/cenario';
+import { cenarioCall, cenarioJson, isActive, isReadOnly } from '../lib/cenario';
 import { E } from '../lib/errors';
 import {
   ensureLocalSpaces,
@@ -55,9 +58,15 @@ function slugKey(name: string) {
 export async function gameRoutes(app: FastifyInstance) {
   const { db } = app.firma;
 
+  /** Conexão ativa em modo COMPLETO (o jogo grava planta/agentes no Cenário). */
   async function connected(request: FastifyRequest) {
     const c = await db.cenarioConnection.findUnique({ where: { orgId: request.org!.id } });
-    return isActive(c) ? c : null;
+    return isActive(c) && !isReadOnly(c) ? c : null;
+  }
+  /** Conexão ativa em modo CONSULTA (somente leitura). */
+  async function readOnlyConnection(request: FastifyRequest) {
+    const c = await db.cenarioConnection.findUnique({ where: { orgId: request.org!.id } });
+    return isActive(c) && isReadOnly(c) ? c : null;
   }
   const idem = (request: FastifyRequest) =>
     (request.headers['idempotency-key'] as string | undefined) ?? randomUUID();
@@ -420,6 +429,116 @@ export async function gameRoutes(app: FastifyInstance) {
     '/api/v1/game/integrations': () => [],
   };
 
+  // ───────────── Modo consulta: retrato a partir do mapa da oficina do Cenário ─────────────
+  interface WorkshopPiece {
+    id: string;
+    code: string;
+    description: string;
+    pieceType: string;
+    quantity: number;
+    serviceOrderId: string;
+    serviceOrderCode: string;
+    customerName: string;
+    stage: string;
+    receiptLocations: string[];
+    movedAt: string | null;
+    movedBy: string | null;
+  }
+  interface WorkshopMap {
+    areas: { id: string; key: string; label: string; pieces: WorkshopPiece[] }[];
+    unplaced: WorkshopPiece[];
+  }
+  /** Localização física do Cenário → área da planta do jogo (mesma tabela do Cenário). */
+  const AREA_OF_LOCATION: Record<string, string> = {
+    RECEBIMENTO: 'RECEBIMENTO',
+    AGUARDANDO_PRODUCAO: 'ESPERA',
+    MESA_PRODUCAO: 'MONTAGEM',
+    AREA_TESTES: 'QUALIDADE',
+    EMBALAGEM: 'EMBALAGEM',
+    EXPEDICAO: 'EXPEDICAO',
+  };
+
+  async function consultaSnapshot(request: FastifyRequest): Promise<GameSnapshotDto> {
+    const orgId = request.org!.id;
+    await ensureLocalSpaces(db, orgId);
+    const shop =
+      (await db.space.findUnique({ where: { orgId_key: { orgId, key: 'TAPECARIA' } } })) ??
+      (await db.space.findFirst({ where: { orgId, kind: 'OFICINA' } }));
+    const layout = shop ? spaceDto(shop) : { areas: [], stations: [] };
+    const map = await cenarioJson<WorkshopMap>(request, 'GET', '/api/v1/workshop-map');
+    const pieces: GamePieceDto[] = [];
+    const push = (w: WorkshopPiece, area: WorkshopMap['areas'][number] | null) => {
+      const fn = area ? AREA_OF_LOCATION[area.key] : undefined;
+      const target = fn ? layout.areas.find((a) => a.function === fn) : undefined;
+      const placement = target
+        ? {
+            kind: 'AREA' as const,
+            stationId: null,
+            areaId: target.id,
+            areaFunction: target.function,
+            userId: null,
+            taskId: null,
+            label: area!.label,
+          }
+        : placePiece(layout, { stage: w.stage, tasks: [] });
+      const n = Number(/(\d+)/.exec(w.serviceOrderCode)?.[1] ?? 0);
+      pieces.push({
+        id: w.id,
+        itemCode: w.code,
+        serviceOrderId: w.serviceOrderId,
+        osCode: w.serviceOrderCode,
+        osNumber: n,
+        osVersion: 0,
+        customerName: w.customerName,
+        description: w.description,
+        pieceType: w.pieceType,
+        model: furnitureModel(w.pieceType, w.description),
+        quantity: w.quantity,
+        serviceType: '',
+        fabric: null,
+        priority: 'NORMAL',
+        promisedDate: null,
+        stage: w.stage,
+        readiness: 'SEM_LEVANTAMENTO',
+        tone: 'A_CONFERIR',
+        upholstererUserId: null,
+        upholstererName: null,
+        planned: true,
+        planItemId: null,
+        tasks: [],
+        placement,
+        currentTask: null,
+        nextTask: null,
+        confirmedLocation: area
+          ? { label: area.label, areaId: target?.id ?? null, at: w.movedAt ?? '', by: w.movedBy }
+          : null,
+        photoCount: 0,
+        consulta: true,
+      } as GamePieceDto);
+    };
+    for (const a of map.areas) for (const w of a.pieces) push(w, a);
+    for (const w of map.unplaced) push(w, null);
+    return {
+      generatedAt: new Date().toISOString(),
+      lastSeq: null,
+      pieces,
+      employees: [],
+      slotAlerts: {},
+      canPlan: false,
+      canExecuteStock: false,
+      mode: 'CONSULTA',
+    };
+  }
+
+  app.get(
+    '/api/v1/game/snapshot',
+    { config: { rule: { org: 'MEMBRO' } } },
+    async (request, reply) => {
+      if (await readOnlyConnection(request)) return consultaSnapshot(request);
+      return forward(request, reply);
+    },
+  );
+
   // ───────────── Central de Conexões: cartão "Cenário Gestão" do Firma Viva ─────────────
   app.get('/api/v1/connections', { config: { rule: { org: 'MEMBRO' } } }, async (request) => {
     const c = await db.cenarioConnection.findUnique({ where: { orgId: request.org!.id } });
@@ -431,12 +550,17 @@ export async function gameRoutes(app: FastifyInstance) {
       group: 'SISTEMA',
       provider: 'Cenário Gestão',
       auth: 'SESSAO',
-      capabilities: [
-        'OS, etapas, funcionários, materiais e estoque da empresa no mapa',
-        'Atribuir etapas (o funcionário confirma o início no tablet oficial)',
-        'Reservas e compras pelo fluxo oficial',
-        'Caixa, cobranças, contratos e notas no Escritório',
-      ],
+      capabilities: isReadOnly(c)
+        ? [
+            'Modo consulta (somente leitura): OS abertas e onde cada peça está na oficina',
+            'Nada é alterado no Cenário a partir do jogo (OS, estoque e financeiro intactos)',
+          ]
+        : [
+            'OS, etapas, funcionários, materiais e estoque da empresa no mapa',
+            'Atribuir etapas (o funcionário confirma o início no tablet oficial)',
+            'Reservas e compras pelo fluxo oficial',
+            'Caixa, cobranças, contratos e notas no Escritório',
+          ],
       scopes: view.scopes,
       status,
       mode: c && status === 'CONECTADA' ? 'PRODUCAO' : null,
@@ -457,7 +581,7 @@ export async function gameRoutes(app: FastifyInstance) {
       permissions: view.permissions.length,
       firma: { ...view, canManage: atLeast(request.org!.role, 'ADMIN') },
     };
-    if (!isActive(c)) return [cenarioCard];
+    if (!isActive(c) || isReadOnly(c)) return [cenarioCard];
     try {
       const r = await cenarioJson<{ key: string }[]>(request, 'GET', '/api/v1/connections');
       return [cenarioCard, ...r.filter((x) => x.key !== 'CENARIO')];
@@ -471,7 +595,11 @@ export async function gameRoutes(app: FastifyInstance) {
     const path = request.url; // inclui a consulta
     const bare = path.split('?')[0]!;
     const c = await db.cenarioConnection.findUnique({ where: { orgId: request.org!.id } });
-    if (!isActive(c) && request.method === 'GET' && offline[bare]) return offline[bare]!();
+    const consulta = isActive(c) && isReadOnly(c);
+    if ((!isActive(c) || consulta) && request.method === 'GET' && offline[bare])
+      return offline[bare]!();
+    // Modo consulta: o jogo nunca envia alterações ao Cenário Gestão.
+    if (consulta && request.method !== 'GET') throw E.readOnly();
     // Membros só acompanham: nada que altere a empresa.
     if (request.method !== 'GET' && !atLeast(request.org!.role, 'GESTOR'))
       throw E.forbidden('Seu papel nesta organização só permite acompanhar.');

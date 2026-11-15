@@ -22,13 +22,16 @@ export type PiecePhase =
   | 'QUALIDADE'
   | 'EMBALAGEM'
   | 'PRONTA_ENTREGA'
-  | 'EM_ENTREGA';
+  | 'EM_ENTREGA'
+  /** Conexão em modo consulta: só a etapa geral e a posição (sem etapas de produção). */
+  | 'NA_OFICINA';
 
 export const PHASE_INFO: Record<
   PiecePhase,
   { label: string; icon: string; tone: 'ok' | 'atencao' | 'risco' | 'info' }
 > = {
   AGUARDANDO_PLANEJAMENTO: { label: 'Aguardando planejamento', icon: '🗓️', tone: 'atencao' },
+  NA_OFICINA: { label: 'Na oficina (modo consulta)', icon: '👁️', tone: 'info' },
   AGUARDANDO_PUBLICACAO: {
     label: 'Planejada (rascunho, não publicada)',
     icon: '📝',
@@ -113,7 +116,9 @@ function stepOf(t: GameTaskRef, all: GameTaskRef[]): WorkflowStep {
 }
 
 export function pieceWorkflow(
-  p: Pick<GamePieceDto, 'stage' | 'tasks' | 'readiness' | 'planned' | 'upholstererName'>,
+  p: Pick<GamePieceDto, 'stage' | 'tasks' | 'readiness' | 'planned' | 'upholstererName'> & {
+    consulta?: boolean;
+  },
 ): PieceWorkflow {
   const open = p.tasks.filter((t) => t.status !== 'CONCLUIDA' && t.status !== 'CANCELADA');
   const steps = open.map((t) => stepOf(t, p.tasks));
@@ -128,6 +133,7 @@ export function pieceWorkflow(
   else if (['PRONTA_ENTREGA', 'ENTREGA_AGENDADA', 'BLOQUEIO_EXPEDICAO'].includes(stage))
     phase = 'PRONTA_ENTREGA';
   else if (stage === 'EM_TRANSPORTE') phase = 'EM_ENTREGA';
+  else if (p.consulta) phase = 'NA_OFICINA';
   else if (running) phase = running.status === 'PAUSADA' ? 'PAUSADA' : 'EM_EXECUCAO';
   else if (!p.tasks.length || !p.planned) phase = 'AGUARDANDO_PLANEJAMENTO';
   else if (open.length && open.every((t) => t.status === 'RASCUNHO'))

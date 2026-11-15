@@ -7,16 +7,15 @@ import type { CenarioConnection } from '@firma/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../lib/audit';
-import { cenarioJson, isActive, tokenRequest } from '../lib/cenario';
+import { cenarioJson, isActive, isReadOnly, tokenRequest } from '../lib/cenario';
 import { pkceChallenge, randomToken } from '../lib/crypto';
 import { E } from '../lib/errors';
 import { syncOnConnect } from '../lib/sync';
 
-export const CENARIO_SCOPES = ['jogo', 'operacao', 'escritorio'];
-
 export function connectionView(c: CenarioConnection | null) {
   return {
     status: c?.status ?? 'NAO_CONECTADA',
+    mode: c && isReadOnly(c) ? 'CONSULTA' : 'COMPLETO',
     company: c ? { name: c.companyName, document: c.companyDocument } : null,
     cenarioUser: c?.cenarioUserName ? { name: c.cenarioUserName, email: c.cenarioUserEmail } : null,
     scopes: c?.scopes ?? [],
@@ -53,7 +52,7 @@ export async function connectionRoutes(app: FastifyInstance) {
       const url = new URL(`${env.CENARIO_WEB_URL}/autorizar`);
       url.searchParams.set('client_id', env.FIRMA_CENARIO_CLIENT_ID);
       url.searchParams.set('redirect_uri', env.FIRMA_CENARIO_REDIRECT_URI);
-      url.searchParams.set('scope', CENARIO_SCOPES.join(' '));
+      url.searchParams.set('scope', env.FIRMA_CENARIO_SCOPES.join(' '));
       url.searchParams.set('state', state);
       url.searchParams.set('code_challenge', pkceChallenge(verifier));
       url.searchParams.set('code_challenge_method', 'S256');
@@ -162,7 +161,9 @@ export async function connectionRoutes(app: FastifyInstance) {
           where: { orgId: org.id },
           data: { permissions: me.permissions },
         });
-        const summary = await syncOnConnect(request);
+        const summary = isReadOnly({ scopes: data.scopes })
+          ? 'Modo consulta: a planta continua a do Firma Viva; nada é enviado ao Cenário.'
+          : await syncOnConnect(request);
         await audit(request, {
           action: 'conexao.conectada',
           summary: `Cenário Gestão conectado: ${company.name} (autorizado por ${user.name}). ${summary}`,

@@ -1446,6 +1446,15 @@ export function GameWorld() {
               : '🔌 Conectar Cenário Gestão'}
           </button>
         ) : null}
+        {snapshot.data?.mode === 'CONSULTA' ? (
+          <span
+            className="pointer-events-auto rounded-2xl border border-info-600/20 bg-info-50 px-3 py-2 text-xs font-bold text-info-600 shadow-card"
+            title="Conexão em modo consulta: o Firma Viva só lê as OS e a posição das peças no Cenário Gestão. Nada é alterado daqui."
+            data-testid="consulta-chip"
+          >
+            👁️ Modo consulta · somente leitura
+          </span>
+        ) : null}
         <nav
           className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-line bg-white/95 p-1 shadow-card"
           aria-label="Ambientes"

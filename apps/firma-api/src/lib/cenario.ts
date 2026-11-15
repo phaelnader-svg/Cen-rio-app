@@ -16,6 +16,11 @@ export interface CenarioResponse {
 
 const refreshing = new Map<string, Promise<CenarioConnection>>();
 
+/** Conexão só com o escopo de consulta: o Firma Viva nunca envia alterações ao Cenário. */
+export function isReadOnly(c: Pick<CenarioConnection, 'scopes'> | null) {
+  return Boolean(c && c.scopes.length > 0 && c.scopes.every((s) => s === 'consulta'));
+}
+
 export function isActive(c: CenarioConnection | null): c is CenarioConnection {
   return Boolean(c && c.status === 'CONECTADA' && c.accessEnc && c.refreshEnc);
 }

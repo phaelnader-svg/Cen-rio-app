@@ -88,6 +88,8 @@ export interface GamePieceDto {
   /** Posição física confirmada por alguém (separada da etapa registrada). */
   confirmedLocation: { label: string; areaId: string | null; at: string; by: string | null } | null;
   photoCount: number;
+  /** Vem de uma conexão em modo consulta (somente leitura, sem etapas de produção). */
+  consulta?: boolean;
 }
 
 export interface GameEmployeeDto {
@@ -114,6 +116,8 @@ export interface GameSnapshotDto {
   slotAlerts: Record<string, 'FALTA' | 'BAIXO' | 'OK'>;
   canPlan: boolean;
   canExecuteStock: boolean;
+  /** COMPLETO: integração do jogo; CONSULTA: mapa da oficina do Cenário, somente leitura. */
+  mode?: 'COMPLETO' | 'CONSULTA';
 }
 
 export interface GameSlotMaterialDto {

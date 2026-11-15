@@ -38,6 +38,14 @@ const schema = z
     /** Tela oficial do Cenário Gestão vista pelo navegador (login + autorização). */
     CENARIO_WEB_URL: url.default('http://localhost:3000'),
     FIRMA_CENARIO_CLIENT_ID: z.string().default('firma-viva'),
+    /**
+     * Permissões pedidas ao Cenário. "consulta" = somente leitura (mapa da oficina e OS, sem
+     * alterar nada); "jogo operacao escritorio" = integração completa do jogo.
+     */
+    FIRMA_CENARIO_SCOPES: z
+      .string()
+      .default('jogo operacao escritorio')
+      .transform((v) => v.split(/[\s,]+/).filter(Boolean)),
     FIRMA_CENARIO_CLIENT_SECRET: z.string().min(32),
     /** Retorno da autorização (cadastrado no Cenário). Padrão: <FIRMA_WEB_URL>/api/conexoes/cenario/retorno. */
     FIRMA_CENARIO_REDIRECT_URI: z.string().url().optional(),

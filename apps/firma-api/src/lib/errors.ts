@@ -43,6 +43,13 @@ export const E = {
       'CONEXAO_NECESSARIA',
       'Conecte o Cenário Gestão para ver e operar os dados da empresa (Central de Conexões → Conectar Cenário Gestão).',
     ),
+  /** Conexão em modo consulta: nada é alterado no Cenário a partir do jogo. */
+  readOnly: () =>
+    new FirmaError(
+      403,
+      'CONEXAO_SOMENTE_CONSULTA',
+      'A conexão com o Cenário Gestão está em modo consulta: o Firma Viva só lê os dados da empresa. Faça a alteração no Cenário Gestão.',
+    ),
   /** Autorização expirada/revogada: ações integradas suspensas até reconectar. */
   suspended: (why: string) =>
     new FirmaError(
