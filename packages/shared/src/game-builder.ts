@@ -37,6 +37,7 @@ import {
   pathLengthCm,
   rectOfArea,
 } from './game-domain';
+import { numberWord } from './game-command';
 
 export interface LayoutPatch {
   addStations?: StationDef[];
@@ -250,6 +251,14 @@ export function findSpots(l: LayoutContent, req: SpotRequest, limit = 3): Spot[]
   const out: Spot[] = [];
   for (const c of candidates) {
     if (out.some((o) => overlaps(o.rect, c.rect, 50))) continue;
+    // Mesmas regras do editor: nada de sobreposição, vão estreito ou frente de trabalho bloqueada.
+    if (
+      clearanceAround(l, req.ignoreId ?? '__novo__', c.rect, req.frontClearCm, c.rotation).some(
+        (p) => p.severity === 'erro',
+      ) ||
+      (req.extra ?? []).some((x) => overlaps(x, c.rect, PERSON_PASSAGE_CM))
+    )
+      continue;
     if (
       req.keepMainPath &&
       !sofaRoute(
@@ -429,8 +438,23 @@ function cutNearSewing(l: LayoutContent): MestreReply {
   };
 }
 
+/** Ponto logo para dentro da janela mais próxima do pedido (ou null se não houver janela). */
+function windowPoint(l: LayoutContent) {
+  const w = l.doc.windows?.[0];
+  if (!w) return null;
+  const c = doorCenter(l, { id: w.id, wall: w.wall, offsetCm: w.offsetCm, widthCm: w.widthCm });
+  if (!c) return null;
+  const inset = 150;
+  return {
+    x: Math.min(l.widthCm - inset, Math.max(inset, c.x)),
+    y: Math.min(l.depthCm - inset, Math.max(inset, c.y)),
+  };
+}
+
 function moreDesks(l: LayoutContent, text: string): MestreReply {
   const n = Math.min(20, numberIn(text) ?? 4);
+  const wantsWindow = /janela/.test(norm(text));
+  const near = wantsWindow ? windowPoint(l) : null;
   const c = STATION_KINDS.MESA_ESCRITORIO;
   // Cada mesa ocupa a mesa + 90 cm de cadeira atrás + 60 cm de circulação.
   const perDesk = (c.wCm + 40) * (c.dCm + 90 + 60);
@@ -448,6 +472,7 @@ function moreDesks(l: LayoutContent, text: string): MestreReply {
           dCm: c.dCm,
           frontClearCm: c.frontClearCm,
           prefer: esc ? rectOfArea(esc) : null,
+          near,
           extra,
           rotations: [0, 180],
         },
@@ -492,6 +517,13 @@ function moreDesks(l: LayoutContent, text: string): MestreReply {
     }
   }
   const lines = [
+    ...(wantsWindow
+      ? [
+          near
+            ? 'Puxei as mesas para perto da janela: luz boa e ninguém de costas para ela.'
+            : 'Não achei janela cadastrada nesta sala. Marque em Ambiente → Janelas e peça de novo; por ora, encaixei onde cabe.',
+        ]
+      : []),
     `Cada mesa pede uns ${(perDesk / 10000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m² contando cadeira e corredor.`,
     resize
       ? `Na sala atual (${m(l.widthCm)} × ${m(l.depthCm)}) não cabem ${n}. Com ${m(resize.widthCm)} × ${m(resize.depthCm)} cabem — e ninguém senta no colo de ninguém.`
@@ -629,8 +661,9 @@ function agentDesk(l: LayoutContent, text: string): MestreReply {
       ],
       quickReplies: [],
     };
+  const create = /\b(cri|crie|cria|nova|monta|monte|coloca|coloque|poe|bota)\w*\b/.test(norm(text));
   const empty = l.stations.filter((s) => s.kind === 'MESA_ESCRITORIO' && /^Mesa \d+$/.test(s.name));
-  if (empty.length)
+  if (empty.length && !create)
     return {
       lines: [
         `Já tem mesa sobrando: ${empty[0]!.name}. Não precisa comprar móvel.`,
@@ -725,8 +758,56 @@ function tutorial(l: LayoutContent): MestreReply {
 }
 
 /** Responde a um pedido em linguagem natural com base na planta atual. */
+function resizeRoom(l: LayoutContent, text: string): MestreReply {
+  const t = norm(text);
+  const meters = numberWord(text) ?? 1;
+  const delta = Math.round(meters * 100) * (/diminu|reduz/.test(t) ? -1 : 1);
+  const width = /largura|lado|leste|oeste/.test(t);
+  const widthCm = width ? Math.max(200, l.widthCm + delta) : l.widthCm;
+  const depthCm = width ? l.depthCm : Math.max(200, l.depthCm + delta);
+  // Áreas encostadas na parede que anda acompanham a mudança.
+  const updateAreas = l.areas
+    .filter((a) => (width ? a.xCm + a.wCm >= l.widthCm : a.yCm + a.dCm >= l.depthCm))
+    .map((a) =>
+      width
+        ? { ...a, wCm: Math.max(50, a.wCm + delta) }
+        : { ...a, dCm: Math.max(50, a.dCm + delta) },
+    );
+  const outside = [...l.stations, ...l.storageUnits].filter((o) => {
+    const f = footprint(o);
+    return f.x + f.w > widthCm || f.y + f.d > depthCm;
+  });
+  return {
+    lines: [
+      `${delta > 0 ? 'Aumentei' : 'Diminuí'} ${m(Math.abs(delta))} na ${width ? 'largura' : 'profundidade'}: a sala fica com ${m(widthCm)} × ${m(depthCm)} (${Math.round((widthCm * depthCm) / 10000)} m²).`,
+      outside.length
+        ? `Atenção: ${outside.map((o) => ('name' in o ? o.name : o.label)).join(', ')} ficaria fora da parede. Mova antes de aplicar.`
+        : 'Nada fica do lado de fora. Parede nova, sem quebradeira.',
+      'É prévia: aplique, confira e salve.',
+    ],
+    suggestion: {
+      title: `Sala com ${m(widthCm)} × ${m(depthCm)}`,
+      patch: { resize: { widthCm, depthCm }, updateAreas },
+      highlights: [{ x: 0, y: 0, w: widthCm, d: depthCm }],
+      problems: outside.map((o) => ({
+        rect: footprint(o),
+        gapCm: 0,
+        requiredCm: 0,
+        message: 'Ficaria fora da sala.',
+        severity: 'erro' as const,
+      })),
+    },
+    quickReplies: ['Coloca mais duas mesas perto da janela'],
+  };
+}
+
 export function askMestre(l: LayoutContent, text: string): MestreReply {
   const t = norm(text);
+  if (
+    /\b(aument|amplia|diminu|reduz)\w*\b/.test(t) &&
+    /(metro|\bm\b|escritorio|sala|oficina|tapecaria|largura|profundidade)/.test(t)
+  )
+    return resizeRoom(l, text);
   if (/agente/.test(t)) return agentDesk(l, text);
   if (/corte/.test(t) && /costura/.test(t)) return cutNearSewing(l);
   if (/marcenaria/.test(t)) return carpentryWithPath(l);

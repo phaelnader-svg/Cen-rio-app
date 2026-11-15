@@ -94,6 +94,17 @@ export const layoutDocSchema = z.object({
   walls: z.array(wallSchema).max(200).default([]),
   doors: z.array(doorSchema).max(50).default([]),
   decor: z.array(decorSchema).max(300).default([]),
+  windows: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(40),
+        wall: z.string().min(1).max(40),
+        offsetCm: z.number().int().min(0).max(20000),
+        widthCm: z.number().int().min(30).max(2000),
+      }),
+    )
+    .max(50)
+    .default([]),
   notes: z.string().max(1000).nullable().optional(),
 });
 

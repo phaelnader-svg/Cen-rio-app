@@ -46,3 +46,4 @@ export * from './game-domain';
 export * from './game-builder';
 export * from './schemas/game';
 export * from './types-game';
+export * from './game-command';

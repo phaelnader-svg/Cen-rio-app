@@ -889,6 +889,75 @@ export function RoomSettings({
             ))}
         </div>
       </Section>
+      <Section title="Janelas">
+        {(draft.doc.windows ?? []).map((w) => (
+          <div
+            key={w.id}
+            className="mb-1 grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-1 rounded-lg bg-subtle p-1.5 text-xs"
+          >
+            <label>
+              Parede
+              <select
+                className="mt-0.5 w-full rounded border border-line-strong px-1 py-0.5"
+                value={w.wall}
+                onChange={(e) =>
+                  apply((l) => {
+                    l.doc.windows!.find((x) => x.id === w.id)!.wall = e.target.value;
+                  })
+                }
+              >
+                {walls.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <NumField
+              label="Distância"
+              value={w.offsetCm}
+              onChange={(n) =>
+                apply((l) => {
+                  l.doc.windows!.find((x) => x.id === w.id)!.offsetCm = Math.max(0, n);
+                })
+              }
+            />
+            <NumField
+              label="Largura"
+              value={w.widthCm}
+              onChange={(n) =>
+                apply((l) => {
+                  l.doc.windows!.find((x) => x.id === w.id)!.widthCm = Math.max(30, n);
+                })
+              }
+            />
+            <button
+              className="pb-1 text-danger-700"
+              onClick={() =>
+                apply((l) => {
+                  l.doc.windows = (l.doc.windows ?? []).filter((x) => x.id !== w.id);
+                })
+              }
+              aria-label="Remover janela"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        <GBtn
+          onClick={() =>
+            apply((l) => {
+              l.doc.windows = [
+                ...(l.doc.windows ?? []),
+                { id: newGameId().slice(0, 8), wall: 'N', offsetCm: 100, widthCm: 150 },
+              ];
+            })
+          }
+          testId="add-window"
+        >
+          + Janela
+        </GBtn>
+      </Section>
       <Section title="Recomeçar">
         <div className="flex gap-1.5">
           <GBtn onClick={() => onReset('SUGERIDA')}>Da planta sugerida</GBtn>

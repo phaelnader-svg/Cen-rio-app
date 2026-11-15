@@ -61,6 +61,7 @@ const asDoc = (v: unknown): LayoutDoc => {
     walls: d.walls ?? [],
     doors: d.doors ?? [],
     decor: d.decor ?? [],
+    windows: d.windows ?? [],
     notes: d.notes ?? null,
   };
 };

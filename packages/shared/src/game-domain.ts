@@ -343,10 +343,19 @@ export interface DecorDef {
   rotation: Rotation;
 }
 
+/** Janela numa parede (externa N/S/L/O ou interna): referência para o Mestre de Obras. */
+export interface WindowDef {
+  id: string;
+  wall: string;
+  offsetCm: number;
+  widthCm: number;
+}
+
 export interface LayoutDoc {
   walls: WallDef[];
   doors: DoorDef[];
   decor: DecorDef[];
+  windows?: WindowDef[];
   notes?: string | null;
 }
 

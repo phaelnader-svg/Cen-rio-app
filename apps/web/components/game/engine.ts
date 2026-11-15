@@ -868,6 +868,30 @@ export class GameEngine {
         top.position.copy(m.position).setY(H + 0.02);
         group.add(top);
       }
+      // Janelas: vidro claro na parede (referência do Mestre de Obras).
+      for (const win of l.doc.windows?.filter((x) => x.wall === w.id) ?? []) {
+        const mid = (start + win.offsetCm + win.widthCm / 2) * CM;
+        const glassH = Math.min(1.1, H - 0.6);
+        if (glassH <= 0.1) continue;
+        const glass = new THREE.Mesh(
+          new THREE.BoxGeometry(
+            horizontal ? win.widthCm * CM : T + 0.04,
+            glassH,
+            horizontal ? T + 0.04 : win.widthCm * CM,
+          ),
+          new THREE.MeshStandardMaterial({
+            color: '#bfe3f2',
+            transparent: true,
+            opacity: 0.75,
+            emissive: '#9fd3f0',
+            emissiveIntensity: 0.25,
+          }),
+        );
+        const off = w.ext ? (w.id === 'N' || w.id === 'O' ? -T / 2 : T / 2) : 0;
+        if (horizontal) glass.position.set(mid, 0.9 + glassH / 2, w.y1 * CM + off);
+        else glass.position.set(w.x1 * CM + off, 0.9 + glassH / 2, mid);
+        group.add(glass);
+      }
       // Portas: soleira e placa do destino.
       for (const d of doors) {
         const c = doorCenter(l, d);

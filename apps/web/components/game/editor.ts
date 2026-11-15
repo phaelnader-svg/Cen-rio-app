@@ -85,6 +85,16 @@ export function useLayoutDraft() {
     });
   }, []);
 
+  /** Troca o rascunho registrando `before` como passo de desfazer (aplicar uma prévia). */
+  const commitFrom = useCallback((before: LayoutContent, after: LayoutContent) => {
+    setSt((cur) => ({
+      ...cur,
+      draft: clone(after),
+      past: [...cur.past.slice(-99), clone(before)],
+      future: [],
+    }));
+  }, []);
+
   const dirty = useMemo(
     () => (st.draft ? JSON.stringify(st.draft) !== st.base : false),
     [st.draft, st.base],
@@ -94,6 +104,7 @@ export function useLayoutDraft() {
     load,
     apply,
     live,
+    commitFrom,
     undo,
     redo,
     dirty,

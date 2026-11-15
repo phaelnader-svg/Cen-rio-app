@@ -416,6 +416,7 @@ export async function gameSpaceRoutes(app: FastifyInstance) {
             walls: input.doc.walls,
             doors: input.doc.doors,
             decor: input.doc.decor,
+            windows: input.doc.windows,
             notes: input.doc.notes ?? null,
           },
           areas: input.areas.map((a) => ({

@@ -7,6 +7,7 @@
  */
 import {
   type ClearanceProblem,
+  type CommandEffect,
   type GameSpaceDto,
   type LayoutContent,
   type MestreReply,
@@ -62,6 +63,7 @@ import {
   rotateObj,
   useLayoutDraft,
 } from './editor';
+import { CenariaChat } from './cenaria-chat';
 import { GameEngine, type Overlays, type PickTarget } from './engine';
 import {
   useAgents,
@@ -75,7 +77,8 @@ import { AgentConfigPanel, AgentPanel, EmployeePanel } from './people-panels';
 import { PiecePanel } from './piece-panel';
 import { peopleOnMap, piecesOnMap } from './placement';
 import { MaterialPanel, StoragePanel } from './storage-panel';
-import { GBtn, Panel, Tone } from './ui';
+import { GBtn, KV, Panel, Tone, fmtDate } from './ui';
+import { useServiceOrder } from './game-api';
 
 type Side =
   | { t: 'piece'; id: string }
@@ -89,6 +92,7 @@ type Side =
   | { t: 'mestre' }
   | { t: 'room' }
   | { t: 'integrations' }
+  | { t: 'os'; id: string }
   | null;
 
 const SNAPSHOT_EVENTS = [
@@ -138,6 +142,26 @@ export function GameWorld() {
   const [q, setQ] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const editor = useLayoutDraft();
+  const [draftKey, setDraftKey] = useState<string | null>(null);
+  const [pending, setPending] = useState<Extract<
+    CommandEffect,
+    { kind: 'MOVER_PREVIA' | 'PLANTA' }
+  > | null>(null);
+  const [movePrev, setMovePrev] = useState<
+    | (Extract<CommandEffect, { kind: 'MOVER_PREVIA' }> & {
+        before: LayoutContent;
+        applied: boolean;
+      })
+    | null
+  >(null);
+  const [assignPrev, setAssignPrev] = useState<
+    | (Extract<CommandEffect, { kind: 'ATRIBUIR_PREVIA' }> & {
+        result?: string;
+        planId?: string | null;
+      })
+    | null
+  >(null);
+  const [cardBusy, setCardBusy] = useState(false);
   const host = useRef<HTMLDivElement>(null);
   const engine = useRef<GameEngine | null>(null);
   const pickRef = useRef<(t: PickTarget | null, p: { x: number; y: number } | null) => void>(
@@ -257,6 +281,7 @@ export function GameWorld() {
   const enterBuild = () => {
     if (!space) return;
     editor.load(space);
+    setDraftKey(space.key);
     setMode('CONSTRUCAO');
     setPreview(false);
     setSide({ t: 'mestre' });
@@ -289,7 +314,10 @@ export function GameWorld() {
     setSel(null);
     setOverlays({});
     const next = spaces.data?.find((s) => s.key === key);
-    if (building && next) editor.load(next);
+    if (building && next) {
+      editor.load(next);
+      setDraftKey(next.key);
+    }
     window.setTimeout(() => engine.current?.placePlayerAtDoorTo(from), 50);
   };
 
@@ -488,18 +516,22 @@ export function GameWorld() {
   }, [mode, preview, editor, doRotate, doDuplicate, doRemove]);
 
   // ───────────── Salvar ─────────────
-  const save = async (transfers?: {
-    areas: Record<string, string>;
-    stations: Record<string, string>;
-    slots: Record<string, string>;
-  }) => {
-    if (!editor.draft || !space) return;
+  const save = async (
+    transfers?: {
+      areas: Record<string, string>;
+      stations: Record<string, string>;
+      slots: Record<string, string>;
+    },
+    override?: LayoutContent,
+  ) => {
+    const body0 = override ?? editor.draft;
+    if (!body0 || !space) return;
     setSaving(true);
     try {
       const saved = await api<GameSpaceDto>(`/api/v1/game/spaces/${space.key}`, {
         method: 'PUT',
         idempotencyKey: newIdempotencyKey(),
-        body: { ...editor.draft, version: space.version, ...(transfers ? { transfers } : {}) },
+        body: { ...body0, version: space.version, ...(transfers ? { transfers } : {}) },
       });
       qc.setQueryData<GameSpaceDto[]>(['game-spaces'], (old) =>
         old?.map((s) => (s.key === saved.key ? saved : s)),
@@ -789,6 +821,339 @@ export function GameWorld() {
     }, 120);
   };
 
+  // ───────────── Falar com a Cenário ─────────────
+  const openBuild = (key: string) => {
+    const sp = spaces.data?.find((s) => s.key === key);
+    if (!sp) return false;
+    if (building && draftKey === key && editor.draft) return true;
+    if (
+      building &&
+      editor.dirty &&
+      !window.confirm('Há mudanças não salvas na planta. Descartar para abrir a prévia?')
+    )
+      return false;
+    if (key !== spaceKey) setSpaceKey(key);
+    editor.load(sp);
+    setDraftKey(key);
+    setMode('CONSTRUCAO');
+    setPreview(false);
+    setSel(null);
+    return true;
+  };
+  const objKind = (l: LayoutContent, id: string) =>
+    l.stations.some((s) => s.id === id)
+      ? 'station'
+      : l.storageUnits.some((s) => s.id === id)
+        ? 'storage'
+        : 'decor';
+  const handleEffect = (effect: CommandEffect) => {
+    switch (effect.kind) {
+      case 'ABRIR_PECA':
+        setSel(null);
+        goPiece(effect.pieceId);
+        break;
+      case 'ABRIR_OS_SEM_POSICAO':
+        setSel(null);
+        setSide({ t: 'os', id: effect.serviceOrderId });
+        break;
+      case 'MATERIAL': {
+        setSel(null);
+        const withLoc = effect.items.find((i) => i.locations.length);
+        if (withLoc) {
+          const loc = withLoc.locations[0]!;
+          goMaterial(withLoc.stockItemId, loc);
+          // Destaca TODAS as posições do material no mesmo ambiente.
+          window.setTimeout(() => {
+            const sp = spaces.data?.find((s) => s.key === loc.spaceKey);
+            const rects = effect.items
+              .flatMap((i) => i.locations)
+              .filter((l) => l.spaceKey === loc.spaceKey)
+              .map((l) => sp?.storageUnits.find((u) => u.id === l.unitId))
+              .filter((u): u is NonNullable<typeof u> => Boolean(u))
+              .map((u) => footprint(u));
+            const f = rects[0];
+            setOverlays({
+              highlights: rects,
+              pulse: f ? { x: f.x + f.w / 2, y: f.y + f.d / 2 } : null,
+            });
+          }, 200);
+        } else if (effect.items[0]) setSide({ t: 'material', id: effect.items[0].stockItemId });
+        else if (effect.exclusive[0]) {
+          const p = snapshot.data?.pieces.find(
+            (x) => x.serviceOrderId === effect.exclusive[0]!.serviceOrderId,
+          );
+          if (p) goPiece(p.id);
+          else setSide({ t: 'os', id: effect.exclusive[0].serviceOrderId });
+        }
+        break;
+      }
+      case 'MOVER_PREVIA':
+      case 'PLANTA':
+        if (openBuild(effect.spaceKey)) setPending(effect);
+        break;
+      case 'ATRIBUIR_PREVIA':
+        setAssignPrev(effect);
+        break;
+      default:
+        break;
+    }
+  };
+  // Prévias da planta esperam o rascunho do ambiente certo ficar pronto.
+  useEffect(() => {
+    if (!pending || !building || draftKey !== pending.spaceKey || !editor.draft) return;
+    const p = pending;
+    setPending(null);
+    if (p.kind === 'PLANTA') {
+      setSide({ t: 'mestre' });
+      askTheMestre(p.text);
+      return;
+    }
+    const before = JSON.parse(JSON.stringify(editor.draft)) as LayoutContent;
+    editor.live((d) => {
+      const o = [...d.stations, ...d.storageUnits, ...d.doc.decor].find((x) => x.id === p.objectId);
+      if (o) o.rotation = p.to.rotation as typeof o.rotation;
+      moveObj(d, p.objectId, p.to.xCm, p.to.yCm);
+    }, false);
+    setMovePrev({ ...p, before, applied: false });
+    setSide(null);
+    setSel({ kind: objKind(before, p.objectId) as 'station', id: p.objectId });
+    const o = [...before.stations, ...before.storageUnits, ...before.doc.decor].find(
+      (x) => x.id === p.objectId,
+    );
+    if (o) {
+      const a = footprint(o);
+      const b = footprint({ ...o, xCm: p.to.xCm, yCm: p.to.yCm, rotation: p.to.rotation as 0 });
+      const x0 = Math.min(a.x, b.x);
+      const y0 = Math.min(a.y, b.y);
+      engine.current?.fitRect({
+        x: x0,
+        y: y0,
+        w: Math.max(a.x + a.w, b.x + b.w) - x0,
+        d: Math.max(a.y + a.d, b.y + b.d) - y0,
+      });
+      setOverlays({
+        preview: [b],
+        highlights: [
+          b,
+          ...p.alternatives.map((alt) =>
+            footprint({ ...o, xCm: alt.xCm, yCm: alt.yCm, rotation: alt.rotation as 0 }),
+          ),
+        ],
+      });
+    }
+  }, [pending, building, draftKey, editor.draft]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const moveCheck = (() => {
+    if (!movePrev || !editor.draft) return null;
+    const o = [
+      ...editor.draft.stations,
+      ...editor.draft.storageUnits,
+      ...editor.draft.doc.decor,
+    ].find((x) => x.id === movePrev.objectId);
+    if (!o) return null;
+    const problems = clearanceAround(
+      editor.draft,
+      o.id,
+      footprint(o),
+      catalogOf(o.kind).frontClearCm,
+      o.rotation,
+    );
+    return { o, problems, errors: problems.filter((x) => x.severity === 'erro') };
+  })();
+  const cancelMove = () => {
+    if (!movePrev) return;
+    if (!movePrev.applied)
+      editor.live((d) => {
+        const o = [...d.stations, ...d.storageUnits, ...d.doc.decor].find(
+          (x) => x.id === movePrev.objectId,
+        );
+        if (o) o.rotation = movePrev.from.rotation as typeof o.rotation;
+        moveObj(d, movePrev.objectId, movePrev.from.xCm, movePrev.from.yCm);
+      }, false);
+    setMovePrev(null);
+    setOverlays({});
+  };
+  const applyMove = async () => {
+    if (!movePrev || !editor.draft) return;
+    const after = editor.draft;
+    editor.commitFrom(movePrev.before, after);
+    await save(undefined, after);
+    setMovePrev({ ...movePrev, applied: true });
+    setOverlays({});
+  };
+  const undoMove = async () => {
+    if (!movePrev) return;
+    editor.undo();
+    await save(undefined, movePrev.before);
+    setMovePrev(null);
+  };
+  const confirmAssign = async () => {
+    if (!assignPrev) return;
+    setCardBusy(true);
+    try {
+      if (assignPrev.mode === 'TROCAR_RESPONSAVEL') {
+        await api(`/api/v1/production-tasks/${assignPrev.taskId}`, {
+          method: 'PUT',
+          body: {
+            assigneeUserId: assignPrev.userId,
+            version: assignPrev.taskVersion,
+            ...(assignPrev.published ? { reason: 'Atribuído por Falar com a Cenário' } : {}),
+          },
+        });
+        setAssignPrev({
+          ...assignPrev,
+          result: `Feito: ${assignPrev.etapa} com ${assignPrev.funcionario}. O início é confirmado no tablet.`,
+        });
+      } else {
+        const r = await api<{ planned: { planId: string }[] }>('/api/v1/production/plan-services', {
+          method: 'POST',
+          idempotencyKey: newIdempotencyKey(),
+          body: {
+            entries: [
+              {
+                serviceOrderId: assignPrev.serviceOrderId,
+                startDate: assignPrev.data,
+                pieces: assignPrev.pieces,
+              },
+            ],
+          },
+        });
+        setAssignPrev({
+          ...assignPrev,
+          result: 'Planejado em rascunho. Publique a semana para ir à fila dos tablets.',
+          planId: r.planned[0]?.planId ?? null,
+        });
+      }
+      void qc.invalidateQueries({ queryKey: ['game-snapshot'] });
+    } catch (e) {
+      toast('danger', e instanceof ApiError ? e.message : 'Não foi possível confirmar.');
+    } finally {
+      setCardBusy(false);
+    }
+  };
+  const publishAssign = async () => {
+    if (!assignPrev?.planId) return;
+    setCardBusy(true);
+    try {
+      const plan = await api<{ version: number }>(`/api/v1/production-plans/${assignPrev.planId}`);
+      await api(`/api/v1/production-plans/${assignPrev.planId}/publish`, {
+        method: 'POST',
+        idempotencyKey: newIdempotencyKey(),
+        body: { version: plan.version, notes: 'Publicado por Falar com a Cenário' },
+      });
+      setAssignPrev({
+        ...assignPrev,
+        planId: null,
+        result: 'Semana publicada: a etapa está na fila do tablet.',
+      });
+      void qc.invalidateQueries({ queryKey: ['game-snapshot'] });
+    } catch (e) {
+      toast('danger', e instanceof ApiError ? e.message : 'Não foi possível publicar.');
+    } finally {
+      setCardBusy(false);
+    }
+  };
+  const chatCard = movePrev ? (
+    <div
+      className="rounded-xl border-2 border-bronze-500 bg-bronze-100 p-2.5"
+      data-testid="move-card"
+    >
+      <div className="font-bold">
+        {movePrev.applied ? 'Aplicado e salvo' : 'Prévia'}: {movePrev.objectName} →{' '}
+        {movePrev.targetLabel}
+      </div>
+      {!movePrev.applied ? (
+        <>
+          <div className="text-ink-soft">
+            Arraste o móvel para ajustar.{' '}
+            {movePrev.occupied
+              ? 'O lugar pedido está ocupado; mostrei o vão livre mais próximo (e outras opções tracejadas).'
+              : ''}
+          </div>
+          {moveCheck?.problems.length ? (
+            <ul className="mt-1 list-disc pl-4 text-[11px]" data-testid="move-problems">
+              {moveCheck.problems.slice(0, 3).map((x, i) => (
+                <li key={i} className={x.severity === 'erro' ? 'text-danger-700' : 'text-warn-600'}>
+                  {x.message}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="mt-1 text-[11px] text-ok-600">
+              ✅ Posição válida pelas regras do editor.
+            </div>
+          )}
+          <div className="mt-2 flex gap-1.5">
+            <GBtn
+              tone="bronze"
+              disabled={saving || Boolean(moveCheck?.errors.length)}
+              onClick={() => void applyMove()}
+              testId="move-apply"
+            >
+              Aplicar
+            </GBtn>
+            <GBtn tone="ghost" onClick={cancelMove} testId="move-cancel">
+              Cancelar
+            </GBtn>
+          </div>
+        </>
+      ) : (
+        <div className="mt-1.5 flex items-center gap-1.5">
+          <span className="text-ink-soft">
+            Gravado na planta (mesmo fluxo do arrastar e salvar).
+          </span>
+          <GBtn tone="ghost" onClick={() => void undoMove()} testId="move-undo">
+            Desfazer
+          </GBtn>
+          <GBtn tone="ghost" onClick={() => setMovePrev(null)}>
+            Fechar
+          </GBtn>
+        </div>
+      )}
+    </div>
+  ) : assignPrev ? (
+    <div
+      className="rounded-xl border-2 border-brand-500 bg-brand-50 p-2.5"
+      data-testid="assign-card"
+    >
+      <div className="font-bold">
+        {assignPrev.mode === 'PLANEJAR' ? 'Planejar serviço' : 'Atribuir etapa'} — confira
+      </div>
+      <KV k="OS" v={`${assignPrev.osCode} (${assignPrev.pieceLabel})`} />
+      <KV k="Etapa" v={assignPrev.etapa} />
+      <KV k="Funcionário" v={assignPrev.funcionario} />
+      <KV k="Data" v={fmtDate(assignPrev.data)} />
+      {assignPrev.result ? (
+        <div className="mt-1 font-semibold text-ok-600">{assignPrev.result}</div>
+      ) : null}
+      <div className="mt-2 flex gap-1.5">
+        {!assignPrev.result ? (
+          <GBtn
+            tone="primary"
+            disabled={cardBusy || !snapshot.data?.canPlan}
+            onClick={() => void confirmAssign()}
+            testId="assign-confirm"
+          >
+            Confirmar
+          </GBtn>
+        ) : null}
+        {assignPrev.planId ? (
+          <GBtn
+            tone="bronze"
+            disabled={cardBusy}
+            onClick={() => void publishAssign()}
+            testId="assign-publish"
+          >
+            Publicar a semana
+          </GBtn>
+        ) : null}
+        <GBtn tone="ghost" onClick={() => setAssignPrev(null)}>
+          {assignPrev.result ? 'Fechar' : 'Cancelar'}
+        </GBtn>
+      </div>
+    </div>
+  ) : null;
+
   // ───────────── Render ─────────────
   const pieceSel = side?.t === 'piece' ? snapshot.data?.pieces.find((p) => p.id === side.id) : null;
   const empSel =
@@ -1004,7 +1369,7 @@ export function GameWorld() {
       {/* Legenda (Gestão) */}
       {!building && space?.key === 'TAPECARIA' ? (
         <div
-          className="pointer-events-auto absolute bottom-3 left-3 flex flex-wrap gap-1.5 rounded-2xl border border-line bg-white/95 p-2 text-xs shadow-card"
+          className="pointer-events-auto absolute top-[7.5rem] left-3 flex max-w-sm flex-wrap gap-1.5 rounded-2xl border border-line bg-white/95 p-2 text-xs shadow-card sm:top-20"
           data-testid="legend"
         >
           <Tone tone="FALTA">⛔ Falta material · {counts.falta}</Tone>
@@ -1026,7 +1391,7 @@ export function GameWorld() {
 
       {!building && space?.kind === 'ESCRITORIO' && integrations.data ? (
         <button
-          className="pointer-events-auto absolute bottom-3 left-3 flex items-center gap-2 rounded-2xl border border-line bg-white/95 px-3 py-2 text-xs font-semibold shadow-card"
+          className="pointer-events-auto absolute top-[7.5rem] left-3 flex items-center gap-2 rounded-2xl border border-line bg-white/95 px-3 py-2 text-xs font-semibold shadow-card sm:top-20"
           onClick={() => setSide({ t: 'integrations' })}
           data-testid="integrations-chip"
         >
@@ -1040,11 +1405,11 @@ export function GameWorld() {
       {building ? (
         <>
           {!preview ? (
-            <div className="pointer-events-none absolute top-20 left-3 w-64 max-sm:hidden">
+            <div className="pointer-events-none absolute top-20 left-3 flex max-h-[calc(100vh-34rem)] min-h-40 w-64 flex-col max-sm:hidden">
               <Palette onAdd={addFromPalette} kind={layout?.kind ?? 'OFICINA'} />
             </div>
           ) : null}
-          <div className="pointer-events-none absolute right-3 bottom-3 left-3 flex justify-center lg:right-[440px] lg:left-72">
+          <div className="pointer-events-none absolute right-3 bottom-3 left-3 flex justify-center lg:right-[440px] lg:left-[470px]">
             <div
               className="pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 rounded-2xl border-2 border-bronze-500/60 bg-[#fffaf2]/97 p-1.5 shadow-pop"
               data-testid="build-toolbar"
@@ -1123,6 +1488,10 @@ export function GameWorld() {
       ) : null}
 
       {/* Painel lateral */}
+      <div className="pointer-events-none absolute bottom-3 left-3 z-10">
+        <CenariaChat spaceKey={spaceKey} onEffect={(e) => handleEffect(e)} card={chatCard} />
+      </div>
+
       <aside className="pointer-events-none absolute top-20 right-3 bottom-3 flex w-[min(420px,calc(100vw-1.5rem))] flex-col">
         {building && sel && editor.draft && !preview ? (
           <Properties
@@ -1291,6 +1660,8 @@ export function GameWorld() {
               else window.open(`/painel/os/${soId}`, '_blank');
             }}
           />
+        ) : side?.t === 'os' ? (
+          <OsPanel id={side.id} onClose={() => setSide(null)} />
         ) : side?.t === 'integrations' ? (
           <Panel
             title="Integrações dos agentes"
@@ -1361,5 +1732,48 @@ export function GameWorld() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Ficha resumida de uma OS sem posição no mapa (rotas oficiais). */
+function OsPanel({ id, onClose }: { id: string; onClose: () => void }) {
+  const so = useServiceOrder(id);
+  const d = so.data;
+  return (
+    <Panel
+      title={d ? `${d.code} · ${d.customer.name}` : 'Ordem de serviço'}
+      subtitle="Sem posição no mapa"
+      icon="📄"
+      onClose={onClose}
+      testId="os-panel"
+    >
+      {d ? (
+        <>
+          <p className="mb-2 rounded-lg bg-warn-50 p-2 text-xs text-warn-600">
+            Esta OS não tem peça na oficina agora (cancelada, entregue ou sem peças em produção).
+          </p>
+          <KV k="Situação" v={d.status} />
+          <KV k="Prazo" v={fmtDate(d.promisedDate)} />
+          <KV k="Prioridade" v={d.priority} />
+          <ul className="mt-2 space-y-1 text-xs">
+            {d.items.map((i) => (
+              <li key={i.id} className="rounded-lg border border-line bg-white px-2 py-1">
+                <b>{i.code}</b> · {i.description}
+              </li>
+            ))}
+          </ul>
+          <a
+            href={`/painel/os/${d.id}`}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-block text-xs font-semibold underline"
+          >
+            Abrir no painel
+          </a>
+        </>
+      ) : (
+        <p className="text-xs text-ink-muted">{so.isError ? so.error.message : 'Carregando…'}</p>
+      )}
+    </Panel>
   );
 }

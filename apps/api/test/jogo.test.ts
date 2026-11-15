@@ -4,6 +4,7 @@ import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import { type Client, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
 import { act, serviceOrderWith, tabletOf, today, userIdOf } from './production-helpers';
+import { openServiceOrder } from './measurement-helpers';
 import { confirmedFabricPurchase, createSupplier, ok, receive } from './purchasing-helpers';
 
 /**
@@ -386,5 +387,144 @@ describe('jogo — decisões com os agentes', () => {
     const t = await tabletOf(app, admin, 'João', '121212');
     expect((await t.get('/api/v1/game/spaces')).status).toBe(403);
     expect((await t.get('/api/v1/game/snapshot')).status).toBe(403);
+  });
+});
+
+describe('jogo — Falar com a Cenário', () => {
+  const say = async (c: Client, text: string, spaceKey = 'TAPECARIA') => {
+    const r = await c.post('/api/v1/game/command', { text, spaceKey });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    return r.body as import('@cenario/shared').CommandResultDto;
+  };
+
+  it('encontra OS por nome (único e com mais de um resultado), por número e sem posição', async () => {
+    const admin = await loginAdmin(app);
+    const a = await openServiceOrder(admin, 'Hadassa Lima');
+    await openServiceOrder(admin, 'Hadassa Souza');
+    const many = await say(admin, 'Cadê o sofá da Hadassa?');
+    expect(many.effect.kind).toBe('ESCOLHER');
+    if (many.effect.kind !== 'ESCOLHER') return;
+    expect(many.effect.options).toHaveLength(2);
+    expect(many.effect.options.map((o) => o.label).join(' ')).toMatch(
+      /Hadassa Lima.*|Hadassa Souza/,
+    );
+    expect(many.effect.options.every((o) => o.effect.kind === 'ABRIR_PECA')).toBe(true);
+    const one = await say(admin, 'Cadê o sofá da Hadassa Lima?');
+    expect(one.effect).toMatchObject({
+      kind: 'ABRIR_PECA',
+      pieceId: a.items[0].id,
+      serviceOrderId: a.id,
+    });
+    expect(one.interpretedBy).toBe('REGRAS');
+    const so = (await admin.get(`/api/v1/service-orders/${a.id}`)).body;
+    const byNumber = await say(admin, `Abre a OS ${so.number}`);
+    expect(byNumber.effect).toMatchObject({ kind: 'ABRIR_PECA', serviceOrderId: a.id });
+    expect(
+      (
+        await post(admin, `/api/v1/service-orders/${a.id}/cancel`, {
+          reason: 'Teste do jogo',
+          version: so.version,
+        })
+      ).status,
+    ).toBe(200);
+    const gone = await say(admin, `Abre a OS ${so.number}`);
+    expect(gone.effect).toMatchObject({ kind: 'ABRIR_OS_SEM_POSICAO', serviceOrderId: a.id });
+    expect(gone.reply).toMatch(/sem posição no mapa/);
+    expect((await say(admin, 'Abre a OS 99999')).effect.kind).toBe('NADA');
+  });
+
+  it('localiza material com endereço (todas as posições) e sem endereço; tecido fica com a OS', async () => {
+    const admin = await loginAdmin(app);
+    const grampo = (
+      await post(admin, '/api/v1/stock-items', {
+        kind: 'OUTRO',
+        description: 'Grampos 80/10',
+        unit: 'EMBALAGEM',
+      })
+    ).body;
+    await post(admin, '/api/v1/stock-items', {
+      kind: 'OUTRO',
+      description: 'Percinta elástica',
+      unit: 'METRO',
+    });
+    await post(admin, `/api/v1/stock-items/${grampo.id}/adjust`, {
+      quantity: 7,
+      reason: 'Saldo inicial',
+    });
+    const shop = await space(admin, 'TAPECARIA');
+    shop.storageUnits.find((u) => u.label === 'Estante A')!.slots[0]!.stockItemIds = [grampo.id];
+    shop.storageUnits.find((u) => u.label === 'Estante B')!.slots[2]!.stockItemIds = [grampo.id];
+    expect((await put(admin, '/api/v1/game/spaces/TAPECARIA', shop)).status).toBe(200);
+    const r = await say(admin, 'Onde fica o grampo?');
+    expect(r.effect.kind).toBe('MATERIAL');
+    if (r.effect.kind !== 'MATERIAL') return;
+    expect(r.effect.items[0]!.locations.map((l) => l.address)).toEqual(
+      expect.arrayContaining([
+        'Tapeçaria → Estoque → Estante A → Prateleira 1',
+        'Tapeçaria → Estoque → Estante B → Prateleira 3',
+      ]),
+    );
+    expect(r.effect.items[0]).toMatchObject({ onHand: 7, available: 7 });
+    expect(r.reply).toMatch(/Saldo 7/);
+    const noAddr = await say(admin, 'Onde fica a percinta?');
+    expect(noAddr.effect.kind === 'MATERIAL' && noAddr.effect.items[0]!.locations.length).toBe(0);
+    expect(noAddr.reply).toMatch(/ainda não tem endereço/);
+    await serviceOrderWith(admin, 'missing', 'Cliente Linho');
+    const fabric = await say(admin, 'Onde fica o linho bege?');
+    expect(fabric.effect.kind === 'MATERIAL' && fabric.effect.exclusive.length).toBe(1);
+  });
+
+  it('move a mesa de corte para perto da costura (prévia válida) e para um lugar ocupado', async () => {
+    const admin = await loginAdmin(app);
+    const shop = await space(admin, 'TAPECARIA');
+    const mesa = shop.stations.find((s) => s.kind === 'MESA_CORTE')!;
+    const r = await say(admin, 'Joga a mesa de corte pra perto da costura');
+    expect(r.effect.kind).toBe('MOVER_PREVIA');
+    if (r.effect.kind !== 'MOVER_PREVIA') return;
+    expect(r.effect.objectId).toBe(mesa.id);
+    expect(r.effect.from).toMatchObject({ xCm: mesa.xCm, yCm: mesa.yCm });
+    const { clearanceAround, footprint, contentOfSpace } = await import('./jogo-helpers');
+    const after = contentOfSpace(shop);
+    const m = after.stations.find((s) => s.id === mesa.id)!;
+    Object.assign(m, {
+      xCm: r.effect.to.xCm,
+      yCm: r.effect.to.yCm,
+      rotation: r.effect.to.rotation,
+    });
+    expect(
+      clearanceAround(after, m.id, footprint(m), 80, m.rotation).filter(
+        (p) => p.severity === 'erro',
+      ),
+    ).toEqual([]);
+    // Nada mudou no servidor: é só prévia.
+    expect((await space(admin, 'TAPECARIA')).version).toBe(shop.version);
+    const busy = await say(admin, 'Joga a mesa de corte em cima da bancada do Márcio');
+    expect(busy.effect).toMatchObject({
+      kind: 'MOVER_PREVIA',
+      occupied: true,
+      targetLabel: 'Bancada do Márcio',
+    });
+    expect(busy.reply).toMatch(/já ocupa esse lugar/);
+  });
+
+  it('atribuição só vira prévia; planta chama o Mestre; sem permissão de construir não move', async () => {
+    const admin = await loginAdmin(app);
+    const { so } = await serviceOrderWith(admin, 'none', 'Cliente Atribuição');
+    const num = (await admin.get(`/api/v1/service-orders/${so.id}`)).body.number;
+    const r = await say(admin, `Passa o desmanche da OS ${num} pro João amanhã`);
+    expect(r.effect).toMatchObject({
+      kind: 'ATRIBUIR_PREVIA',
+      mode: 'PLANEJAR',
+      funcionario: 'João',
+      serviceOrderId: so.id,
+    });
+    expect(await db().productionTask.count({ where: { serviceOrderId: so.id } })).toBe(0);
+    expect(
+      (await say(admin, 'aumenta o escritório dois metros', 'ESCRITORIO')).effect,
+    ).toMatchObject({ kind: 'PLANTA', spaceKey: 'ESCRITORIO' });
+    const t = await tabletOf(app, admin, 'João', '121212');
+    expect((await t.post('/api/v1/game/command', { text: 'Cadê o sofá da Ana?' })).status).toBe(
+      403,
+    );
   });
 });
