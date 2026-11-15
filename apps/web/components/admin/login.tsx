@@ -26,6 +26,9 @@ export function AdminLogin() {
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const reason = params.get('motivo');
+  // Retorno seguro depois do login (ex.: tela oficial de autorização de um aplicativo).
+  const next = params.get('proximo');
+  const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : null;
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -42,7 +45,7 @@ export function AdminLogin() {
     try {
       const me = await api('/api/auth/login', { method: 'POST', body: parsed.data });
       qc.setQueryData(['me'], me);
-      router.replace('/painel');
+      router.replace(safeNext ?? '/painel');
     } catch (err) {
       setFormError(errorMessage(err));
       setLoading(false);

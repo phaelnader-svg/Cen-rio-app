@@ -46,6 +46,8 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
   '/painel/funcionarios': { group: 'Administração', anyOf: ['funcionarios.ver'] },
   '/painel/funcoes': { group: 'Administração', anyOf: ['funcoes.ver'] },
   '/painel/dispositivos': { group: 'Administração', anyOf: ['dispositivos.ver', 'sessoes.ver'] },
+  // Aplicativos conectados (autorização delegada, ex.: Firma Viva).
+  '/painel/aplicativos': { group: 'Administração', anyOf: ['empresa.configurar', 'sessoes.ver'] },
   '/painel/clientes': { group: 'Serviços', anyOf: ['clientes.ver'] },
   '/painel/pedidos': { group: 'Serviços', anyOf: ['pedidos.ver'] },
   '/painel/retiradas': { group: 'Serviços', anyOf: ['retiradas.ver'] },

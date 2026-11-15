@@ -80,6 +80,7 @@ import { roleRoutes } from './modules/roles/routes';
 import { sessionRoutes } from './modules/sessions/routes';
 import { syncRoutes } from './modules/sync/routes';
 import { tabletRoutes } from './modules/tablet/routes';
+import { oauthRoutes } from './modules/apps/oauth';
 import { authPlugin } from './plugins/auth';
 import { errorHandlerPlugin } from './plugins/error-handler';
 import { idempotencyPlugin } from './plugins/idempotency';
@@ -238,6 +239,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(confirmationRoutes);
   await app.register(valueRequestRoutes);
   await app.register(billingRoutes);
+  // Autorização delegada de aplicativos (OAuth 2.0 + PKCE), ex.: Firma Viva.
+  await app.register(oauthRoutes);
   // Relógio de teste: só existe com ENABLE_TEST_CLOCK (validado para APP_ENV=test).
   if (env.ENABLE_TEST_CLOCK && env.APP_ENV === 'test') await app.register(testClockRoutes);
 

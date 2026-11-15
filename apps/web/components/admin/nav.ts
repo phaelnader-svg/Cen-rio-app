@@ -23,6 +23,7 @@ import {
   ShieldCheck,
   Siren,
   TabletSmartphone,
+  PlugZap,
   Truck,
   Undo2,
   Wallet,
@@ -123,6 +124,13 @@ export const NAV: NavItem[] = [
     label: 'Dispositivos e sessões',
     icon: TabletSmartphone,
     anyOf: ['dispositivos.ver', 'sessoes.ver'],
+  },
+  // Aplicativos com acesso delegado (ex.: Firma Viva): cadastrar, ver e revogar autorizações.
+  {
+    href: '/painel/aplicativos',
+    label: 'Aplicativos conectados',
+    icon: PlugZap,
+    anyOf: ['empresa.configurar', 'sessoes.ver'],
   },
   { href: '/painel/clientes', label: 'Clientes', icon: Contact, anyOf: ['clientes.ver'] },
   {
