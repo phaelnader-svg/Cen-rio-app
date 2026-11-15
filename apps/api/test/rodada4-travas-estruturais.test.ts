@@ -1586,7 +1586,8 @@ describe('F1-13 — nenhuma tela removida, menu de materiais restaurado, nenhum 
         if (c) expect(sql, `${name} recria ${c[1]}`).toContain(`ADD CONSTRAINT ${c[1]}`);
       }
     }
-    expect(found.sort()).toEqual(Object.keys(ALLOWED_DESTRUCTIVE).sort());
+    // Mesma exceção justificada pode aparecer mais de uma vez na migration (ex.: dois gatilhos).
+    expect([...new Set(found)].sort()).toEqual(Object.keys(ALLOWED_DESTRUCTIVE).sort());
   });
 });
 
