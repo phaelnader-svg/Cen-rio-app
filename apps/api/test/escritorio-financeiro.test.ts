@@ -272,3 +272,245 @@ describe('primeira demonstração: contrato → entrada → baixa única', () =>
     ).toBe(401);
   });
 });
+
+describe('fiscal: perfis, o que falta e autorização com revisão', () => {
+  it('não emite sem perfil validado; com tudo configurado autoriza (teste) e guarda arquivos', async () => {
+    const admin = await loginAdmin(app);
+    const { soId, orderId } = await approvedOrder(admin);
+    const prep = await post(admin, `/api/v1/office/orders/${orderId}/fiscal`, {});
+    expect(prep.status).toBe(200);
+    const doc = prep.body as {
+      id: string;
+      version: number;
+      profile: { name: string };
+      missing: string[];
+    };
+    expect(doc.profile.name).toBe('Reforma de estofados (serviço)');
+    expect(doc.missing).toEqual(
+      expect.arrayContaining([
+        'perfil fiscal validado pela contabilidade',
+        'código de tributação nacional do serviço',
+        'alíquota de ISS',
+        'conexão com o emissor fiscal (Central de Conexões)',
+        'CNPJ da Cenário',
+      ]),
+    );
+    expect(
+      (await post(admin, `/api/v1/office/fiscal/${doc.id}/authorize`, { version: doc.version }))
+        .status,
+    ).toBe(422);
+
+    const profiles = (await admin.get('/api/v1/office/fiscal/profiles')).body as {
+      id: string;
+      name: string;
+      version: number;
+      hint: string;
+      descriptionTemplate: string;
+    }[];
+    const reforma = profiles.find((p) => p.name.startsWith('Reforma'))!;
+    expect(reforma.hint).toMatch(/14\.11/);
+    const saved = await admin.req(
+      'PUT',
+      `/api/v1/office/fiscal/profiles/${reforma.id}`,
+      {
+        documentKind: 'NFSE',
+        serviceCode: '141101',
+        municipalTaxCode: null,
+        cnae: '9529199',
+        issRatePercent: 3,
+        ncm: null,
+        cfop: null,
+        descriptionTemplate: reforma.descriptionTemplate,
+        validatedByAccountant: true,
+        version: reforma.version,
+      },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(saved.status).toBe(200);
+    await db().companySettings.update({ where: { id: 1 }, data: { document: '11222333000181' } });
+    await post(admin, '/api/v1/connections/FISCAL/test-mode', {});
+    const again = (await admin.get(`/api/v1/office/orders/${orderId}/fiscal`)).body as {
+      id: string;
+      version: number;
+      missing: string[];
+    }[];
+    expect(again[0]!.missing).toEqual([]);
+    const ok = await post(admin, `/api/v1/office/fiscal/${doc.id}/authorize`, {
+      version: again[0]!.version,
+    });
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({ status: 'AUTORIZADA', number: 'TESTE-000001' });
+    expect((ok.body as { files: unknown[] }).files).toHaveLength(2);
+    const ficha = (await admin.get(`/api/v1/office/service-orders/${soId}/ficha`)).body as {
+      steps: { key: string; state: string }[];
+    };
+    expect(ficha.steps.find((s) => s.key === 'NOTA')!.state).toBe('Autorizada nº TESTE-000001');
+    // Fechamento do mês: nota emitida no pacote.
+    const month = new Date().toISOString().slice(0, 7);
+    const closing = (await admin.get(`/api/v1/office/accounting/${month}`)).body as {
+      groups: { kind: string; docs: unknown[] }[];
+      pending: { kind: string }[];
+    };
+    expect(closing.groups.find((g) => g.kind === 'NOTA_EMITIDA')!.docs).toHaveLength(2);
+    expect(closing.pending.map((p) => p.kind)).toContain('EXTRATO');
+    const zipRes = await app.app.inject({
+      method: 'GET',
+      url: `/api/v1/office/accounting/${month}/package`,
+      headers: { cookie: [...admin.cookies].map(([k, v]) => `${k}=${v}`).join('; ') },
+    });
+    expect(zipRes.statusCode).toBe(200);
+    expect(zipRes.rawPayload.subarray(0, 2).toString()).toBe('PK');
+  });
+});
+
+describe('banco: extrato, pagamento preparado e conciliação', () => {
+  it('pagamento só vira pago pela conciliação; reimportar o extrato não duplica', async () => {
+    const admin = await loginAdmin(app);
+    const pay = await post(admin, '/api/v1/finance/payables', {
+      beneficiary: 'Espumas Vale Ltda',
+      category: 'MATERIAL',
+      description: 'Espuma D28 — NF 123',
+      amountCents: 84000,
+      dueDate: '2026-11-20',
+    });
+    expect(pay.status).toBe(201);
+    const payableId = (pay.body as { id: string }).id;
+    const acc = (
+      await post(admin, '/api/v1/office/bank/accounts', {
+        label: 'Conta PJ',
+        bank: 'Banco Teste',
+        masked: 'ag 0001 · cc ****1234',
+      })
+    ).body as { id: string };
+    const po = (
+      await post(admin, `/api/v1/office/payables/${payableId}/payment-order`, {
+        accountId: acc.id,
+        method: 'PIX',
+      })
+    ).body as {
+      id: string;
+      status: string;
+      version: number;
+      beneficiary: string;
+      amountCents: number;
+    };
+    expect(po).toMatchObject({
+      status: 'PREPARADO',
+      beneficiary: 'Espumas Vale Ltda',
+      amountCents: 84000,
+    });
+    const conf = (
+      await post(admin, `/api/v1/office/payment-orders/${po.id}/confirm`, { version: po.version })
+    ).body as { status: string };
+    expect(conf.status).toBe('AGUARDANDO_APP');
+    expect((await db().accountPayable.findUniqueOrThrow({ where: { id: payableId } })).status).toBe(
+      'ABERTO',
+    );
+
+    const csv =
+      'data;descricao;valor\n15/11/2026;PIX ENVIADO ESPUMAS VALE;-840,00\n15/11/2026;PIX RECEBIDO ANA;1.500,00\n';
+    const imp = (
+      await post(admin, `/api/v1/office/bank/accounts/${acc.id}/import`, {
+        format: 'CSV',
+        content: csv,
+      })
+    ).body as { imported: number };
+    expect(imp.imported).toBe(2);
+    const dup = (
+      await post(admin, `/api/v1/office/bank/accounts/${acc.id}/import`, {
+        format: 'CSV',
+        content: csv,
+      })
+    ).body as { imported: number; duplicates: number };
+    expect(dup).toMatchObject({ imported: 0, duplicates: 2 });
+    const txs = (await admin.get('/api/v1/office/bank/transactions')).body as {
+      id: string;
+      amountCents: number;
+      suggestions: { refType: string; refId: string }[];
+    }[];
+    const out = txs.find((t) => t.amountCents === -84000)!;
+    expect(out.suggestions[0]).toMatchObject({ refType: 'payment_order', refId: po.id });
+    const rec = await post(admin, `/api/v1/office/bank/transactions/${out.id}/reconcile`, {
+      refType: 'payment_order',
+      refId: po.id,
+    });
+    expect(rec.status).toBe(200);
+    expect((await db().accountPayable.findUniqueOrThrow({ where: { id: payableId } })).status).toBe(
+      'PAGO',
+    );
+    expect((await db().paymentOrder.findUniqueOrThrow({ where: { id: po.id } })).status).toBe(
+      'PAGO',
+    );
+    expect(
+      (
+        await post(admin, `/api/v1/office/bank/transactions/${out.id}/reconcile`, {
+          refType: 'payment_order',
+          refId: po.id,
+        })
+      ).status,
+    ).toBe(409);
+    expect(await db().payablePayment.count({ where: { payableId } })).toBe(1);
+
+    // Maquininha: bruto, taxa, líquido; previsão da semana.
+    const card = (
+      await post(admin, '/api/v1/office/card/import', {
+        provider: 'Stone',
+        content:
+          'data;bruto;taxa;liquido;parcelas;previsao\n15/11/2026;1.000,00;-31,90;968,10;1;16/11/2026\n',
+      })
+    ).body as { imported: number };
+    expect(card.imported).toBe(1);
+    const fc = (await admin.get('/api/v1/office/forecast?days=7')).body as {
+      inCents: number;
+      cards: unknown[];
+    };
+    expect(fc.cards).toHaveLength(1);
+    expect(fc.inCents).toBe(96810);
+  });
+});
+
+describe('Falar com a Cenário — pedidos financeiros', () => {
+  it('prepara o contrato, mostra a prévia da entrada e lista contas até sexta', async () => {
+    const admin = await loginAdmin(app);
+    const { soId } = await approvedOrder(admin);
+    const ask = async (text: string) =>
+      (await post(admin, '/api/v1/game/command', { text, spaceKey: 'ESCRITORIO' })).body as {
+        reply: string;
+        effect: {
+          kind: string;
+          serviceOrderId?: string;
+          filter?: string;
+          rows?: { label: string }[];
+        };
+      };
+    const c = await ask('Prepare o contrato da Ana Paula');
+    expect(c.effect).toMatchObject({
+      kind: 'ABRIR_PAINEL',
+      panel: 'FINANCEIRO',
+      serviceOrderId: soId,
+      filter: 'CONTRATO',
+    });
+    expect(c.reply).toMatch(/Preparei o contrato/);
+    expect(await db().contract.count()).toBe(1);
+    expect(await db().contract.count({ where: { status: 'ENVIADO' } })).toBe(0);
+    const so = await db().serviceOrder.findUniqueOrThrow({ where: { id: soId } });
+    const e = await ask(`Gere a entrada por Pix da OS ${so.number}`);
+    expect(e.reply).toMatch(/Entrada \(50%\) R\$\s?1\.500,00/);
+    expect(e.effect.filter).toBe('COBRANCA:ENTRADA:50:PIX');
+    expect(await db().customerReceivable.count()).toBe(0); // só prévia
+    await post(admin, '/api/v1/finance/payables', {
+      beneficiary: 'Espumas Vale',
+      category: 'MATERIAL',
+      description: 'Espuma D28',
+      amountCents: 84000,
+      dueDate: '2026-11-18',
+    });
+    const p = await ask('Quais contas vencem até sexta?');
+    expect(p.effect.kind).toBe('LISTA');
+    expect(p.effect.rows![0]!.label).toMatch(/Espumas Vale/);
+    const f = await ask('Preparar o pagamento do fornecedor de espuma');
+    expect(f.effect.rows).toHaveLength(1);
+    const n = await ask('Separe as notas e comprovantes do mês');
+    expect(n.effect).toMatchObject({ kind: 'ABRIR_PAINEL', filter: 'FECHAMENTO' });
+  });
+});

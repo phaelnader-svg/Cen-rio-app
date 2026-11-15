@@ -36,6 +36,7 @@ import {
 import type { PrismaClient } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
+import type { ActorContext } from '../../core/types';
 import { now as clockNow } from '../../core/clock';
 import { serviceOrderCode } from '../commercial/common';
 import { requirementsWithProgress } from '../purchasing/common';
@@ -118,7 +119,14 @@ async function interpretWithModel(text: string, today: string): Promise<CommandI
   }
 }
 
-type Ctx = { prisma: PrismaClient; perms: ReadonlySet<string>; spaceKey: string; today: string };
+type Ctx = {
+  prisma: PrismaClient;
+  perms: ReadonlySet<string>;
+  spaceKey: string;
+  today: string;
+  /** Quem pediu (auditoria das ações preparadas pelo chat). */
+  actor?: ActorContext;
+};
 
 const can = (ctx: Ctx, ...p: string[]) => p.some((x) => ctx.perms.has(x));
 
@@ -656,6 +664,7 @@ export async function gameCommandRoutes(app: FastifyInstance) {
         perms: request.auth!.permissions,
         spaceKey: input.spaceKey ?? 'TAPECARIA',
         today,
+        actor: actorFrom(request),
       };
       const { reply, effect } = await resolveIntent(ctx, intent);
       await prisma.$transaction((tx) =>
