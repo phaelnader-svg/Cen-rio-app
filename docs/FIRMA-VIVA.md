@@ -150,6 +150,18 @@ Cenário de teste → conectado com 5 peças no mapa, sem erros de console
 (`docs/evidencias/firma-viva/ensaio-teste/`). O ensaio encontrou e corrigiu um defeito real: a API
 do Firma Viva não iniciava na imagem (cliente do banco empacotado de forma incompatível).
 
+## Modo consulta (Cenário Gestão de produção)
+
+O Cenário de produção (linha da reformulação) não tem a API do jogo. Com `FIRMA_CENARIO_SCOPES=consulta`
+o Firma Viva pede só o escopo **consulta** (somente leitura) e monta o mapa a partir de
+`GET /api/v1/workshop-map` do Cenário: OS abertas e a posição de cada peça (ou "Sem localização
+registrada"), sobre a planta guardada no Firma Viva. Nenhuma alteração é enviada ao Cenário: o
+repasse recusa qualquer escrita (`CONEXAO_SOMENTE_CONSULTA`) e a planta/agentes ficam no Firma Viva.
+A autorização de aplicativos para a produção está na branch `claude/autorizacao-apps-9fb6b03`
+(commit `0a2546f`, sobre `9fb6b03`), com o roteiro em
+`docs/PRODUCAO-DEPLOY-0a2546f-AUTORIZACAO-APPS.md` daquela branch. Ligar o Firma Viva de
+`firmaviva.com.br` à produção: `firma-teste.sh atualizar` e depois `firma-teste.sh producao`.
+
 ## Testes e evidências
 
 - `apps/api/test/autorizacao-aplicativos.test.ts` (6): tela oficial exige login, PKCE, código de
