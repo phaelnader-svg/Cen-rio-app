@@ -4,14 +4,17 @@
 #   A. Compose resolvido (docker compose config, valores fictícios): o PostgreSQL monta pgdata_2026_11;
 #      pgdata continua declarado (preservado); storage, backups e caddy_data iguais; /conheca desligada
 #      (web sem SITE_COMERCIAL); nenhuma outra diferença entre a configuração resolvida de BASE e a atual.
-#   B. Repositório: entre BASE e HEAD, em infra/prod e scripts/{backup,restore}.sh, só mudam o Compose
+#   B. Repositório: entre BASE e ALVO, em infra/prod e scripts/{backup,restore}.sh, só mudam o Compose
 #      e os 2 testes do pacote (este e o ensaio-deploy-banco-limpo.sh).
 # BASE = commit dos scripts da correção do envio de backups (padrão 2f078850696c).
+# ALVO = o pacote do banco limpo (padrão 9ff142e274b1). Fixo: pacotes posteriores (ex.: /conheca ligada,
+# test_conheca_ligada.sh) mudam o Compose de novo e não invalidam esta prova.
 # Executar: bash infra/prod/gcp/testes/test_deploy_banco_limpo.sh
 set -euo pipefail
 AQUI="$(cd "$(dirname "$0")" && pwd)"
 RAIZ="$(cd "$AQUI/../../../.." && pwd)"
 BASE="${BASE:-2f078850696c73854483b9f5f9ba1e88a6c4ea0d}"
+ALVO="${ALVO:-9ff142e274b1cc04953bbfb5161a7940962530d5}"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 FALHAS=0
 igual() { if [[ "$1" == "$2" ]]; then echo "  ✔ $3: $1"; else echo "  ✘ $3: '$1' (esperado '$2')"; FALHAS=$((FALHAS + 1)); fi; }
@@ -29,8 +32,9 @@ CENARIO_WEB_IMAGE=registro/web:x
 EOF
 config() { docker compose -p cenario-prod --project-directory "$RAIZ/infra/prod" -f "$1" --env-file "$TMP/env" config --format json; }
 git -C "$RAIZ" show "$BASE:infra/prod/docker-compose.prod.yml" > "$TMP/base.yml"
+git -C "$RAIZ" show "$ALVO:infra/prod/docker-compose.prod.yml" > "$TMP/alvo.yml"
 config "$TMP/base.yml" > "$TMP/base.json"
-config "$RAIZ/infra/prod/docker-compose.prod.yml" > "$TMP/novo.json"
+config "$TMP/alvo.yml" > "$TMP/novo.json"
 
 echo "A. Compose resolvido"
 python3 - "$TMP/base.json" "$TMP/novo.json" > "$TMP/a.out" <<'PY'
@@ -55,17 +59,17 @@ igual "$(grep '^volumes' "$TMP/a.out")" "volumes backups caddy_data pgdata_2026_
 igual "$(grep '^nomes' "$TMP/a.out")" "nomes cenario-prod_backups cenario-prod_caddy_data cenario-prod_pgdata_2026_11 cenario-prod_storage" "nomes reais dos volumes em uso"
 # O Compose omite da configuração resolvida os volumes declarados e não usados: "pgdata" continua
 # DECLARADO no arquivo, e o Compose nunca apaga volume sem "down -v" ou "volume rm".
-igual "$(awk '/^volumes:/{v=1;next} v&&/^[^ ]/{v=0} v' "$RAIZ/infra/prod/docker-compose.prod.yml" | sed 's/ *#.*//' | tr -d ' :' | xargs)" \
+igual "$(awk '/^volumes:/{v=1;next} v&&/^[^ ]/{v=0} v' "$TMP/alvo.yml" | sed 's/ *#.*//' | tr -d ' :' | xargs)" \
   "pgdata pgdata_2026_11 storage backups caddy_data" "volumes declarados no arquivo (pgdata preservado)"
-if grep -qE 'volume rm|down -v|--volumes' "$RAIZ/infra/prod/gcp/vm.sh"; then echo "  ✘ vm.sh remove volumes"; FALHAS=$((FALHAS + 1)); else echo "  ✔ vm.sh nunca remove volumes (sem 'volume rm', 'down -v', '--volumes')"; fi
+if git -C "$RAIZ" show "$ALVO:infra/prod/gcp/vm.sh" | grep -qE 'volume rm|down -v|--volumes'; then echo "  ✘ vm.sh remove volumes"; FALHAS=$((FALHAS + 1)); else echo "  ✔ vm.sh nunca remove volumes (sem 'volume rm', 'down -v', '--volumes')"; fi
 for s in api web caddy backup; do igual "$(grep "^$s " "$TMP/a.out")" "$s igual" "serviço $s sem mudança"; done
 igual "$(grep '^SITE_COMERCIAL' "$TMP/a.out")" "SITE_COMERCIAL False" "/conheca desligada (web sem SITE_COMERCIAL)"
 igual "$(grep '^resto' "$TMP/a.out")" "resto igual" "nenhuma outra diferença na configuração resolvida"
 
-echo "B. Repositório: arquivos alterados desde $BASE"
-mudou="$(git -C "$RAIZ" diff --name-only "$BASE" HEAD -- infra/prod scripts/backup.sh scripts/restore.sh | sort | xargs)"
+echo "B. Repositório: arquivos alterados de $BASE a $ALVO"
+mudou="$(git -C "$RAIZ" diff --name-only "$BASE" "$ALVO" -- infra/prod scripts/backup.sh scripts/restore.sh | sort | xargs)"
 igual "$mudou" "infra/prod/docker-compose.prod.yml infra/prod/gcp/testes/ensaio-deploy-banco-limpo.sh infra/prod/gcp/testes/test_deploy_banco_limpo.sh" "arquivos do pacote alterados (Compose + 2 testes)"
-linhas="$(git -C "$RAIZ" diff "$BASE" HEAD -- infra/prod/docker-compose.prod.yml | grep -E '^[+-][^+-]' | grep -vE '^[+-]\s*#' | sed 's/ *#.*//' | xargs)"
+linhas="$(git -C "$RAIZ" diff "$BASE" "$ALVO" -- infra/prod/docker-compose.prod.yml | grep -E '^[+-][^+-]' | grep -vE '^[+-]\s*#' | sed 's/ *#.*//' | xargs)"
 igual "$linhas" "- - pgdata:/var/lib/postgresql/data + - pgdata_2026_11:/var/lib/postgresql/data - pgdata: + pgdata: + pgdata_2026_11:" "linhas efetivas do Compose"
 
 echo
