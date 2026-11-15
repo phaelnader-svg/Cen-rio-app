@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import type { GamePieceDto, GameSnapshotDto, GameSpaceDto } from '@cenario/shared';
+import type {
+  CommandResultDto,
+  GamePieceDto,
+  GameSnapshotDto,
+  GameSpaceDto,
+} from '@cenario/shared';
 import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import { type Client, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
@@ -394,7 +399,7 @@ describe('jogo — Falar com a Cenário', () => {
   const say = async (c: Client, text: string, spaceKey = 'TAPECARIA') => {
     const r = await c.post('/api/v1/game/command', { text, spaceKey });
     expect(r.status, JSON.stringify(r.body)).toBe(200);
-    return r.body as import('@cenario/shared').CommandResultDto;
+    return r.body as CommandResultDto;
   };
 
   it('encontra OS por nome (único e com mais de um resultado), por número e sem posição', async () => {
