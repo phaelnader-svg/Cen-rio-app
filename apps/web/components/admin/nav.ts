@@ -35,7 +35,7 @@ import {
   Route,
   type LucideIcon,
   ListTodo,
-  Gamepad2,
+  PlugZap,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -60,7 +60,6 @@ export const NAV_GROUPS = [
 export type NavGroup = (typeof NAV_GROUPS)[number];
 const GROUP_PREFIXES: [string, NavGroup][] = [
   ['/painel/atencao', 'Início'],
-  ['/jogo', 'Início'],
   ['/painel/servicos', 'Serviços'],
   ['/painel/clientes', 'Serviços'],
   ['/painel/pedidos', 'Serviços'],
@@ -106,8 +105,6 @@ export const NAV: NavItem[] = [
     icon: Siren,
     anyOf: ['ocorrencias.ver', 'ocorrencias.gerenciar'],
   },
-  // Jogo de gestão: entrada própria (mesma sessão e permissões).
-  { href: '/jogo', label: 'Empresa virtual', icon: Gamepad2, anyOf: ['jogo.acessar'] },
   { href: '/painel/funcionarios', label: 'Funcionários', icon: Users, anyOf: ['funcionarios.ver'] },
   {
     href: '/painel/funcoes',
@@ -120,6 +117,13 @@ export const NAV: NavItem[] = [
     label: 'Dispositivos e sessões',
     icon: TabletSmartphone,
     anyOf: ['dispositivos.ver', 'sessoes.ver'],
+  },
+  // Aplicativos com acesso delegado (ex.: Firma Viva): ver e revogar autorizações.
+  {
+    href: '/painel/aplicativos',
+    label: 'Aplicativos conectados',
+    icon: PlugZap,
+    anyOf: ['conexoes.gerenciar', 'sessoes.ver'],
   },
   { href: '/painel/clientes', label: 'Clientes', icon: Contact, anyOf: ['clientes.ver'] },
   {

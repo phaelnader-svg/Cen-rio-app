@@ -17,6 +17,17 @@ export interface AuthContext {
   deviceId: string | null;
   permissions: ReadonlySet<Permission>;
   expiresAt: Date;
+  /**
+   * Acesso delegado por aplicativo autorizado (OAuth). Permissões já reduzidas aos escopos.
+   * `onBehalfOf`: pessoa do aplicativo que acionou (cabeçalho X-App-Actor), só para auditoria.
+   */
+  app?: {
+    grantId: string;
+    clientName: string;
+    externalLabel: string | null;
+    scopes: readonly string[];
+    onBehalfOf: string | null;
+  };
 }
 
 export interface DeviceContext {
@@ -28,7 +39,14 @@ export interface DeviceContext {
 
 /** Regra de acesso declarada em toda rota (verificada globalmente; ausência = erro na inicialização). */
 export type AccessRule =
-  | { public: true }
+  | {
+      public: true;
+      /**
+       * Chamada servidor a servidor sem navegador (ex.: troca de token OAuth). Sem cookie e sem
+       * Origin; o handler autentica o cliente (segredo) antes de qualquer efeito.
+       */
+      serverToServer?: true;
+    }
   /** Webhook de provedor externo: sem sessão nem Origin; o handler EXIGE a assinatura/token do provedor. */
   | { webhook: true }
   | { device: true }
@@ -63,6 +81,8 @@ export interface ActorContext {
   sessionId: string | null;
   ip: string | null;
   requestId: string | null;
+  /** Aplicativo/organização/pessoa por meio de quem a ação veio (acesso delegado). */
+  via?: string | null;
 }
 
 declare module 'fastify' {

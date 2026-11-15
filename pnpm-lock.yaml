@@ -44,7 +44,7 @@ importers:
   apps/api:
     dependencies:
       '@anthropic-ai/sdk':
-        specifier: ^1.8.0
+        specifier: 1.8.0
         version: 1.8.0(zod@4.1.13)
       '@cenario/db':
         specifier: workspace:*
@@ -110,6 +110,52 @@ importers:
       ws:
         specifier: 8.22.0
         version: 8.22.0
+
+  apps/firma-api:
+    dependencies:
+      '@cenario/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@fastify/cookie':
+        specifier: 11.1.2
+        version: 11.1.2
+      '@fastify/helmet':
+        specifier: 13.1.1
+        version: 13.1.1
+      '@firma/db':
+        specifier: workspace:*
+        version: link:../../packages/firma-db
+      '@node-rs/argon2':
+        specifier: 2.2.2
+        version: 2.2.2
+      '@prisma/client':
+        specifier: 6.19.3
+        version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+      fastify:
+        specifier: 5.12.5
+        version: 5.12.5
+      zod:
+        specifier: 4.1.13
+        version: 4.1.13
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+      tsup:
+        specifier: 8.5.1
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.29)(tsx@4.23.15)(typescript@5.9.3)
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
+      vitest:
+        specifier: 4.1.11
+        version: 4.1.11(@opentelemetry/api@1.10.0)(@types/node@22.20.5)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
 
   apps/web:
     dependencies:
@@ -190,6 +236,22 @@ importers:
       tsx:
         specifier: 4.23.15
         version: 4.23.15
+
+  packages/firma-db:
+    dependencies:
+      '@prisma/client':
+        specifier: 6.19.3
+        version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+    devDependencies:
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
+      dotenv-cli:
+        specifier: 11.0.0
+        version: 11.0.0
+      prisma:
+        specifier: 6.19.3
+        version: 6.19.3(typescript@5.9.3)
 
   packages/shared:
     dependencies:

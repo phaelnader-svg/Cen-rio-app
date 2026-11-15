@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "perf": "vitest run -c vitest.perf.config.ts"
+    "perf": "vitest run -c vitest.perf.config.ts",
+    "app-client": "tsx --env-file-if-exists=../../.env src/cli/app-client.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",

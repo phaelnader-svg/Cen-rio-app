@@ -279,3 +279,29 @@ describe('Gerente: propostas antigas e caixa', () => {
     );
   });
 });
+
+describe('planta: mesa do agente transferida para mesa nova no mesmo salvamento', () => {
+  it('remove a mesa do Gerente e cria outra: o agente vai para a nova sem erro', async () => {
+    const admin = await loginAdmin(app);
+    const office = (await admin.get('/api/v1/game/spaces/ESCRITORIO')).body;
+    const agents = (await admin.get('/api/v1/game/agents')).body as {
+      id: string;
+      name: string;
+      deskStationId: string | null;
+    }[];
+    const gerente = agents.find((a) => a.name === 'Gerente')!;
+    const oldDesk = office.stations.find((s: { id: string }) => s.id === gerente.deskStationId);
+    const newDesk = { ...oldDesk, id: crypto.randomUUID(), name: 'Mesa nova do Gerente' };
+    const body = {
+      ...office,
+      stations: [...office.stations.filter((s: { id: string }) => s.id !== oldDesk.id), newDesk],
+      transfers: { areas: {}, stations: { [oldDesk.id]: newDesk.id }, slots: {} },
+    };
+    const r = await admin.put('/api/v1/game/spaces/ESCRITORIO', body, {
+      'idempotency-key': idemKey(),
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    const after = (await admin.get('/api/v1/game/agents')).body as typeof agents;
+    expect(after.find((a) => a.id === gerente.id)!.deskStationId).toBe(newDesk.id);
+  });
+});

@@ -88,15 +88,15 @@ async function applyLayout(
       const target = after.areas.find((x) => x.id === transfers.areas[a.id]);
       if (target && !target.itemLocationId) target.itemLocationId = a.itemLocationId;
     }
+  // Agentes cuja mesa sai da planta: a mudança de mesa é aplicada depois que as estações novas
+  // existirem (o destino pode ser uma mesa criada neste mesmo salvamento).
+  const agentMoves: { from: string; to: string | null }[] = [];
   for (const s of before.stations) {
     if (after.stations.some((x) => x.id === s.id)) continue;
     const target = after.stations.find((x) => x.id === transfers.stations[s.id]);
     if (target)
       target.assigneeUserIds = [...new Set([...target.assigneeUserIds, ...s.assigneeUserIds])];
-    await tx.aiAgent.updateMany({
-      where: { deskStationId: s.id },
-      data: { deskStationId: target?.id ?? null, version: { increment: 1 } },
-    });
+    agentMoves.push({ from: s.id, to: target?.id ?? null });
   }
   const afterSlots = new Map(
     after.storageUnits.flatMap((u) => u.slots.map((sl) => [sl.id, sl] as const)),
@@ -201,6 +201,11 @@ async function applyLayout(
         data: [...new Set(s.assigneeUserIds)].map((userId) => ({ stationId: s.id, userId })),
       });
   }
+  for (const m of agentMoves)
+    await tx.aiAgent.updateMany({
+      where: { deskStationId: m.from },
+      data: { deskStationId: m.to, version: { increment: 1 } },
+    });
   // Armazenagem e posições
   const keepUnits = new Set(after.storageUnits.map((u) => u.id));
   const removedUnits = await tx.gameStorageUnit.findMany({

@@ -423,7 +423,7 @@ export async function connectionRoutes(app: FastifyInstance) {
             lastError: q.error_description ?? 'Autorização cancelada na Meta.',
           }),
         );
-        return reply.redirect(`/jogo?central=${st.providerKey}`);
+        return reply.redirect(`${app.ctx.env.GAME_WEB_URL}/jogo?central=${st.providerKey}`);
       }
       try {
         const token = await exchangeCode(q.code);
@@ -450,7 +450,7 @@ export async function connectionRoutes(app: FastifyInstance) {
           }),
         );
       }
-      return reply.redirect(`/jogo?central=${st.providerKey}`);
+      return reply.redirect(`${app.ctx.env.GAME_WEB_URL}/jogo?central=${st.providerKey}`);
     },
   );
 

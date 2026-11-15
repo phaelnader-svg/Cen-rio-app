@@ -39,11 +39,14 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[] }> = {
   '/painel': { group: 'Início' },
   '/painel/servicos/novo': { group: 'Serviços', anyOf: ['pedidos.gerenciar'] },
   '/painel/atencao': { group: 'Início', anyOf: ['ocorrencias.ver', 'ocorrencias.gerenciar'] },
-  // Jogo de gestão (empresa virtual): entrada própria, mesma sessão e permissões.
-  '/jogo': { group: 'Início', anyOf: ['jogo.acessar'] },
   '/painel/funcionarios': { group: 'Administração', anyOf: ['funcionarios.ver'] },
   '/painel/funcoes': { group: 'Administração', anyOf: ['funcoes.ver'] },
   '/painel/dispositivos': { group: 'Administração', anyOf: ['dispositivos.ver', 'sessoes.ver'] },
+  // Aplicativos conectados (autorização delegada, ex.: Firma Viva). O jogo não fica mais no painel.
+  '/painel/aplicativos': {
+    group: 'Administração',
+    anyOf: ['conexoes.gerenciar', 'sessoes.ver'],
+  },
   '/painel/clientes': { group: 'Serviços', anyOf: ['clientes.ver'] },
   '/painel/pedidos': { group: 'Serviços', anyOf: ['pedidos.ver'] },
   '/painel/retiradas': { group: 'Serviços', anyOf: ['retiradas.ver'] },

@@ -49,3 +49,5 @@ export * from './types-game';
 export * from './game-command';
 export * from './game-workflow';
 export * from './cash-board';
+export * from './app-auth';
+export * from './agent-templates';

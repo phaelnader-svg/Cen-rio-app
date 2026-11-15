@@ -8,6 +8,11 @@ export function actorFrom(request: FastifyRequest): ActorContext {
     sessionId: request.auth?.sessionId ?? null,
     ip: request.ip ?? null,
     requestId: request.id ?? null,
+    via: request.auth?.app
+      ? [request.auth.app.clientName, request.auth.app.externalLabel, request.auth.app.onBehalfOf]
+          .filter(Boolean)
+          .join(' · ')
+      : null,
   };
 }
 
@@ -27,6 +32,16 @@ export interface AuditEntry {
 
 /** Grava auditoria dentro da transação da alteração (atômico com a mudança). */
 export async function audit(tx: Tx, actor: ActorContext, entry: AuditEntry): Promise<void> {
+  if (actor.via) {
+    // Acesso delegado: registra por qual aplicativo, organização e pessoa a ação veio.
+    entry = {
+      ...entry,
+      summary: `${entry.summary} [via ${actor.via}]`,
+      changes: Array.isArray(entry.changes)
+        ? { itens: entry.changes, via: actor.via }
+        : { ...(entry.changes ?? {}), via: actor.via },
+    };
+  }
   await tx.auditLog.create({
     data: {
       actorUserId: actor.userId,
