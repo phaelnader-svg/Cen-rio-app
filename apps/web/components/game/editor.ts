@@ -23,74 +23,83 @@ import {
   rectOfArea,
   storageUnit,
 } from '@cenario/shared';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
-const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
 
-export type Selection = { kind: 'station' | 'storage' | 'decor' | 'area' | 'wall' | 'door'; id: string } | null;
+export type Selection = {
+  kind: 'station' | 'storage' | 'decor' | 'area' | 'wall' | 'door';
+  id: string;
+} | null;
+
+interface DraftState {
+  draft: LayoutContent | null;
+  base: string;
+  past: LayoutContent[];
+  future: LayoutContent[];
+}
 
 export function useLayoutDraft() {
-  const [draft, setDraft] = useState<LayoutContent | null>(null);
-  const past = useRef<LayoutContent[]>([]);
-  const future = useRef<LayoutContent[]>([]);
-  const base = useRef<string>('');
-  const [, force] = useState(0);
+  const [st, setSt] = useState<DraftState>({ draft: null, base: '', past: [], future: [] });
 
   const load = useCallback((l: LayoutContent) => {
     const c = clone(l);
-    base.current = JSON.stringify(c);
-    past.current = [];
-    future.current = [];
-    setDraft(c);
+    setSt({ draft: c, base: JSON.stringify(c), past: [], future: [] });
   }, []);
 
-  const apply = useCallback((fn: (l: LayoutContent) => void) => {
-    setDraft((cur) => {
-      if (!cur) return cur;
-      const next = clone(cur);
-      fn(next);
-      past.current.push(cur);
-      if (past.current.length > 100) past.current.shift();
-      future.current = [];
-      return next;
-    });
-  }, []);
-
-  /** Mudança contínua (arraste): não empilha um passo por pixel. */
+  /** Mudança com passo de desfazer (`commit`) ou sem (arraste contínuo). */
   const live = useCallback((fn: (l: LayoutContent) => void, commit: boolean) => {
-    setDraft((cur) => {
-      if (!cur) return cur;
-      const next = clone(cur);
+    setSt((cur) => {
+      if (!cur.draft) return cur;
+      const next = clone(cur.draft);
       fn(next);
-      if (commit) {
-        past.current.push(cur);
-        future.current = [];
-      }
-      return next;
+      return commit
+        ? { ...cur, draft: next, past: [...cur.past.slice(-99), cur.draft], future: [] }
+        : { ...cur, draft: next };
     });
   }, []);
+  const apply = useCallback((fn: (l: LayoutContent) => void) => live(fn, true), [live]);
 
   const undo = useCallback(() => {
-    setDraft((cur) => {
-      const prev = past.current.pop();
-      if (!prev || !cur) return cur;
-      future.current.push(cur);
-      return prev;
+    setSt((cur) => {
+      const prev = cur.past[cur.past.length - 1];
+      if (!prev || !cur.draft) return cur;
+      return {
+        ...cur,
+        draft: prev,
+        past: cur.past.slice(0, -1),
+        future: [...cur.future, cur.draft],
+      };
     });
-    force((n) => n + 1);
   }, []);
   const redo = useCallback(() => {
-    setDraft((cur) => {
-      const next = future.current.pop();
-      if (!next || !cur) return cur;
-      past.current.push(cur);
-      return next;
+    setSt((cur) => {
+      const next = cur.future[cur.future.length - 1];
+      if (!next || !cur.draft) return cur;
+      return {
+        ...cur,
+        draft: next,
+        future: cur.future.slice(0, -1),
+        past: [...cur.past, cur.draft],
+      };
     });
-    force((n) => n + 1);
   }, []);
 
-  const dirty = useMemo(() => (draft ? JSON.stringify(draft) !== base.current : false), [draft]);
-  return { draft, load, apply, live, undo, redo, dirty, canUndo: past.current.length > 0, canRedo: future.current.length > 0 };
+  const dirty = useMemo(
+    () => (st.draft ? JSON.stringify(st.draft) !== st.base : false),
+    [st.draft, st.base],
+  );
+  return {
+    draft: st.draft,
+    load,
+    apply,
+    live,
+    undo,
+    redo,
+    dirty,
+    canUndo: st.past.length > 0,
+    canRedo: st.future.length > 0,
+  };
 }
 
 /** Área que contém o retângulo (para vincular a estação automaticamente). */
@@ -98,7 +107,11 @@ export function areaFor(l: LayoutContent, r: { x: number; y: number; w: number; 
   const inside = l.areas.filter((a) => contains(rectOfArea(a), r));
   if (inside.length) return inside.sort((a, b) => a.wCm * a.dCm - b.wCm * b.dCm)[0]!;
   const c = { x: r.x + r.w / 2, y: r.y + r.d / 2 };
-  return l.areas.find((a) => c.x >= a.xCm && c.x <= a.xCm + a.wCm && c.y >= a.yCm && c.y <= a.yCm + a.dCm) ?? null;
+  return (
+    l.areas.find(
+      (a) => c.x >= a.xCm && c.x <= a.xCm + a.wCm && c.y >= a.yCm && c.y <= a.yCm + a.dCm,
+    ) ?? null
+  );
 }
 
 export function addStation(l: LayoutContent, kind: StationKind, at: { x: number; y: number }) {
@@ -125,7 +138,13 @@ export function addStation(l: LayoutContent, kind: StationKind, at: { x: number;
 export function addStorage(l: LayoutContent, kind: StorageKind, at: { x: number; y: number }) {
   const n = l.storageUnits.filter((u) => u.kind === kind).length;
   const letter = String.fromCharCode(65 + (n % 26));
-  const u = storageUnit(kind, kind === 'ESTANTE' ? `Estante ${letter}` : `${kindLabel(kind)} ${n + 1}`, undefined, 0, 0);
+  const u = storageUnit(
+    kind,
+    kind === 'ESTANTE' ? `Estante ${letter}` : `${kindLabel(kind)} ${n + 1}`,
+    undefined,
+    0,
+    0,
+  );
   u.xCm = Math.round(at.x - u.wCm / 2);
   u.yCm = Math.round(at.y - u.dCm / 2);
   u.areaId = areaFor(l, footprint(u))?.id ?? null;
@@ -134,12 +153,28 @@ export function addStorage(l: LayoutContent, kind: StorageKind, at: { x: number;
 }
 
 const kindLabel = (k: string) =>
-  ({ PRATELEIRA: 'Prateleira', ARMARIO: 'Armário', GAVETEIRO: 'Gaveteiro', SUPORTE_ROLOS: 'Suporte de tecidos', ESTRADO_ESPUMA: 'Estrado de espumas', ESTANTE: 'Estante' })[k] ?? k;
+  ({
+    PRATELEIRA: 'Prateleira',
+    ARMARIO: 'Armário',
+    GAVETEIRO: 'Gaveteiro',
+    SUPORTE_ROLOS: 'Suporte de tecidos',
+    ESTRADO_ESPUMA: 'Estrado de espumas',
+    ESTANTE: 'Estante',
+  })[k] ?? k;
 
 export function addDecor(l: LayoutContent, kind: DecorKind, at: { x: number; y: number }) {
   const c = DECOR_KINDS[kind];
   const id = newGameId();
-  l.doc.decor.push({ id, kind, name: c.label, xCm: Math.round(at.x - c.wCm / 2), yCm: Math.round(at.y - c.dCm / 2), wCm: c.wCm, dCm: c.dCm, rotation: 0 });
+  l.doc.decor.push({
+    id,
+    kind,
+    name: c.label,
+    xCm: Math.round(at.x - c.wCm / 2),
+    yCm: Math.round(at.y - c.dCm / 2),
+    wCm: c.wCm,
+    dCm: c.dCm,
+    rotation: 0,
+  });
   return id;
 }
 
@@ -161,7 +196,13 @@ export function addArea(l: LayoutContent, fn: AreaFunction, at: { x: number; y: 
 
 export function addWall(l: LayoutContent, at: { x: number; y: number }) {
   const id = newGameId().slice(0, 8);
-  l.doc.walls.push({ id, x1: Math.round(at.x - 150), y1: Math.round(at.y), x2: Math.round(at.x + 150), y2: Math.round(at.y) });
+  l.doc.walls.push({
+    id,
+    x1: Math.round(at.x - 150),
+    y1: Math.round(at.y),
+    x2: Math.round(at.x + 150),
+    y2: Math.round(at.y),
+  });
   return id;
 }
 
@@ -175,12 +216,25 @@ export function rotateObj(l: LayoutContent, id: string) {
     Object.assign(
       w,
       horizontal
-        ? { x1: Math.round(cx), x2: Math.round(cx), y1: Math.round(cy - half), y2: Math.round(cy + half) }
-        : { y1: Math.round(cy), y2: Math.round(cy), x1: Math.round(cx - half), x2: Math.round(cx + half) },
+        ? {
+            x1: Math.round(cx),
+            x2: Math.round(cx),
+            y1: Math.round(cy - half),
+            y2: Math.round(cy + half),
+          }
+        : {
+            y1: Math.round(cy),
+            y2: Math.round(cy),
+            x1: Math.round(cx - half),
+            x2: Math.round(cx + half),
+          },
     );
     return;
   }
-  const o = l.stations.find((s) => s.id === id) ?? l.storageUnits.find((s) => s.id === id) ?? l.doc.decor.find((s) => s.id === id);
+  const o =
+    l.stations.find((s) => s.id === id) ??
+    l.storageUnits.find((s) => s.id === id) ??
+    l.doc.decor.find((s) => s.id === id);
   if (!o) return;
   const before = footprint(o);
   o.rotation = ((o.rotation + 90) % 360) as Rotation;
@@ -193,7 +247,14 @@ export function rotateObj(l: LayoutContent, id: string) {
 export function duplicateObj(l: LayoutContent, id: string) {
   const s = l.stations.find((x) => x.id === id);
   if (s) {
-    const c = { ...clone(s), id: newGameId(), name: `${s.name} (cópia)`, xCm: s.xCm + 40, yCm: s.yCm + 40, assigneeUserIds: [] };
+    const c = {
+      ...clone(s),
+      id: newGameId(),
+      name: `${s.name} (cópia)`,
+      xCm: s.xCm + 40,
+      yCm: s.yCm + 40,
+      assigneeUserIds: [],
+    };
     l.stations.push(c);
     return c.id;
   }
@@ -216,7 +277,14 @@ export function duplicateObj(l: LayoutContent, id: string) {
   }
   const a = l.areas.find((x) => x.id === id);
   if (a) {
-    const c = { ...clone(a), id: newGameId(), name: `${a.name} 2`, xCm: a.xCm + 60, yCm: a.yCm + 60, itemLocationId: null };
+    const c = {
+      ...clone(a),
+      id: newGameId(),
+      name: `${a.name} 2`,
+      xCm: a.xCm + 60,
+      yCm: a.yCm + 60,
+      itemLocationId: null,
+    };
     l.areas.push(c);
     return c.id;
   }
@@ -233,7 +301,10 @@ export function removeObj(l: LayoutContent, id: string) {
 }
 
 export function moveObj(l: LayoutContent, id: string, x: number, y: number) {
-  const o = l.stations.find((s) => s.id === id) ?? l.storageUnits.find((s) => s.id === id) ?? l.doc.decor.find((s) => s.id === id);
+  const o =
+    l.stations.find((s) => s.id === id) ??
+    l.storageUnits.find((s) => s.id === id) ??
+    l.doc.decor.find((s) => s.id === id);
   if (o) {
     o.xCm = Math.round(x);
     o.yCm = Math.round(y);
@@ -248,8 +319,16 @@ export function moveObj(l: LayoutContent, id: string, x: number, y: number) {
     // Mover a área leva junto o que está dentro dela.
     const dx = Math.round(x) - a.xCm;
     const dy = Math.round(y) - a.yCm;
-    for (const s of l.stations) if (s.areaId === a.id) { s.xCm += dx; s.yCm += dy; }
-    for (const u of l.storageUnits) if (u.areaId === a.id) { u.xCm += dx; u.yCm += dy; }
+    for (const s of l.stations)
+      if (s.areaId === a.id) {
+        s.xCm += dx;
+        s.yCm += dy;
+      }
+    for (const u of l.storageUnits)
+      if (u.areaId === a.id) {
+        u.xCm += dx;
+        u.yCm += dy;
+      }
     a.xCm += dx;
     a.yCm += dy;
   }

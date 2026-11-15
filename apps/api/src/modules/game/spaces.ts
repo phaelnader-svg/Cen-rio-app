@@ -69,7 +69,11 @@ async function applyLayout(
   spaceId: string,
   before: LayoutContent,
   after: LayoutContent,
-  transfers: { areas: Record<string, string>; stations: Record<string, string>; slots: Record<string, string> },
+  transfers: {
+    areas: Record<string, string>;
+    stations: Record<string, string>;
+    slots: Record<string, string>;
+  },
 ) {
   const now = new Date();
   // Vínculos que mudam de dono antes de comparar.
@@ -94,7 +98,9 @@ async function applyLayout(
       data: { deskStationId: target?.id ?? null, version: { increment: 1 } },
     });
   }
-  const afterSlots = new Map(after.storageUnits.flatMap((u) => u.slots.map((sl) => [sl.id, sl] as const)));
+  const afterSlots = new Map(
+    after.storageUnits.flatMap((u) => u.slots.map((sl) => [sl.id, sl] as const)),
+  );
   for (const u of before.storageUnits)
     for (const sl of u.slots) {
       if (afterSlots.has(sl.id)) continue;
@@ -105,15 +111,26 @@ async function applyLayout(
   // Ids não podem pertencer a outro ambiente.
   const foreign = async (model: 'gameArea' | 'gameStation' | 'gameStorageUnit', ids: string[]) => {
     if (!ids.length) return false;
-    const rows = await (tx[model] as unknown as {
-      findMany: (a: unknown) => Promise<{ id: string; spaceId: string }[]>;
-    }).findMany({ where: { id: { in: ids } }, select: { id: true, spaceId: true } });
+    const rows = await (
+      tx[model] as unknown as {
+        findMany: (a: unknown) => Promise<{ id: string; spaceId: string }[]>;
+      }
+    ).findMany({ where: { id: { in: ids } }, select: { id: true, spaceId: true } });
     return rows.some((r) => r.spaceId !== spaceId);
   };
   if (
-    (await foreign('gameArea', after.areas.map((a) => a.id))) ||
-    (await foreign('gameStation', after.stations.map((s) => s.id))) ||
-    (await foreign('gameStorageUnit', after.storageUnits.map((u) => u.id)))
+    (await foreign(
+      'gameArea',
+      after.areas.map((a) => a.id),
+    )) ||
+    (await foreign(
+      'gameStation',
+      after.stations.map((s) => s.id),
+    )) ||
+    (await foreign(
+      'gameStorageUnit',
+      after.storageUnits.map((u) => u.id),
+    ))
   )
     throw Errors.validation(undefined, 'Há objetos de outro ambiente nesta planta. Recarregue.');
 
@@ -124,7 +141,10 @@ async function applyLayout(
     data: { active: false, itemLocationId: null },
   });
   // Libera localizações físicas antes de reatribuir (índice único das áreas ativas).
-  await tx.gameArea.updateMany({ where: { spaceId, id: { in: [...keepAreas] } }, data: { itemLocationId: null } });
+  await tx.gameArea.updateMany({
+    where: { spaceId, id: { in: [...keepAreas] } },
+    data: { itemLocationId: null },
+  });
   for (const a of after.areas) {
     const data = {
       function: a.function,
@@ -137,7 +157,11 @@ async function applyLayout(
       itemLocationId: a.itemLocationId ?? null,
       active: true,
     };
-    await tx.gameArea.upsert({ where: { id: a.id }, create: { id: a.id, spaceId, ...data }, update: data });
+    await tx.gameArea.upsert({
+      where: { id: a.id },
+      create: { id: a.id, spaceId, ...data },
+      update: data,
+    });
   }
   // Estações
   const keepStations = new Set(after.stations.map((s) => s.id));
@@ -145,7 +169,9 @@ async function applyLayout(
     where: { spaceId, active: true, id: { notIn: [...keepStations] } },
     select: { id: true },
   });
-  await tx.gameStationAssignee.deleteMany({ where: { stationId: { in: removedStations.map((s) => s.id) } } });
+  await tx.gameStationAssignee.deleteMany({
+    where: { stationId: { in: removedStations.map((s) => s.id) } },
+  });
   await tx.gameStation.updateMany({
     where: { id: { in: removedStations.map((s) => s.id) } },
     data: { active: false },
@@ -164,7 +190,11 @@ async function applyLayout(
       shared: s.shared,
       active: true,
     };
-    await tx.gameStation.upsert({ where: { id: s.id }, create: { id: s.id, spaceId, ...data }, update: data });
+    await tx.gameStation.upsert({
+      where: { id: s.id },
+      create: { id: s.id, spaceId, ...data },
+      update: data,
+    });
     await tx.gameStationAssignee.deleteMany({ where: { stationId: s.id } });
     if (s.assigneeUserIds.length)
       await tx.gameStationAssignee.createMany({
@@ -178,8 +208,13 @@ async function applyLayout(
     select: { id: true },
   });
   const ru = removedUnits.map((u) => u.id);
-  const removedSlotRows = await tx.gameStorageSlot.findMany({ where: { unitId: { in: ru } }, select: { id: true } });
-  await tx.gameSlotMaterial.deleteMany({ where: { slotId: { in: removedSlotRows.map((s) => s.id) } } });
+  const removedSlotRows = await tx.gameStorageSlot.findMany({
+    where: { unitId: { in: ru } },
+    select: { id: true },
+  });
+  await tx.gameSlotMaterial.deleteMany({
+    where: { slotId: { in: removedSlotRows.map((s) => s.id) } },
+  });
   await tx.gameStorageSlot.updateMany({ where: { unitId: { in: ru } }, data: { active: false } });
   await tx.gameStorageUnit.updateMany({ where: { id: { in: ru } }, data: { active: false } });
   for (const u of after.storageUnits) {
@@ -194,18 +229,31 @@ async function applyLayout(
       rotation: u.rotation,
       active: true,
     };
-    await tx.gameStorageUnit.upsert({ where: { id: u.id }, create: { id: u.id, spaceId, ...data }, update: data });
+    await tx.gameStorageUnit.upsert({
+      where: { id: u.id },
+      create: { id: u.id, spaceId, ...data },
+      update: data,
+    });
     const keepSlots = u.slots.map((s) => s.id);
     const gone = await tx.gameStorageSlot.findMany({
       where: { unitId: u.id, active: true, id: { notIn: keepSlots } },
       select: { id: true },
     });
     await tx.gameSlotMaterial.deleteMany({ where: { slotId: { in: gone.map((g) => g.id) } } });
-    await tx.gameStorageSlot.updateMany({ where: { id: { in: gone.map((g) => g.id) } }, data: { active: false } });
+    await tx.gameStorageSlot.updateMany({
+      where: { id: { in: gone.map((g) => g.id) } },
+      data: { active: false },
+    });
     for (const sl of u.slots) {
-      const other = await tx.gameStorageSlot.findUnique({ where: { id: sl.id }, select: { unitId: true } });
+      const other = await tx.gameStorageSlot.findUnique({
+        where: { id: sl.id },
+        select: { unitId: true },
+      });
       if (other && other.unitId !== u.id)
-        throw Errors.validation(undefined, 'Posição de estoque pertence a outro móvel. Recarregue.');
+        throw Errors.validation(
+          undefined,
+          'Posição de estoque pertence a outro móvel. Recarregue.',
+        );
       await tx.gameStorageSlot.upsert({
         where: { id: sl.id },
         create: { id: sl.id, unitId: u.id, label: sl.label, level: sl.level },
@@ -214,7 +262,10 @@ async function applyLayout(
       await tx.gameSlotMaterial.deleteMany({ where: { slotId: sl.id } });
       if (sl.stockItemIds.length)
         await tx.gameSlotMaterial.createMany({
-          data: [...new Set(sl.stockItemIds)].map((stockItemId) => ({ slotId: sl.id, stockItemId })),
+          data: [...new Set(sl.stockItemIds)].map((stockItemId) => ({
+            slotId: sl.id,
+            stockItemId,
+          })),
         });
     }
   }
@@ -230,7 +281,10 @@ async function applyLayout(
 export async function syncStockLocations(tx: Tx, actor: ActorContext, touched: Set<string>) {
   if (!touched.size) return 0;
   const rows = await tx.gameSlotMaterial.findMany({
-    where: { stockItemId: { in: [...touched] }, slot: { active: true, unit: { active: true, space: { active: true } } } },
+    where: {
+      stockItemId: { in: [...touched] },
+      slot: { active: true, unit: { active: true, space: { active: true } } },
+    },
     include: { slot: { include: { unit: { include: { area: true, space: true } } } } },
     orderBy: { createdAt: 'asc' },
   });
@@ -267,7 +321,9 @@ export async function syncStockLocations(tx: Tx, actor: ActorContext, touched: S
 function describeChange(before: LayoutContent, after: LayoutContent) {
   const parts: string[] = [];
   if (before.widthCm !== after.widthCm || before.depthCm !== after.depthCm)
-    parts.push(`medidas ${before.widthCm}×${before.depthCm} → ${after.widthCm}×${after.depthCm} cm`);
+    parts.push(
+      `medidas ${before.widthCm}×${before.depthCm} → ${after.widthCm}×${after.depthCm} cm`,
+    );
   const diff = (label: string, a: { id: string }[], b: { id: string }[]) => {
     const add = b.filter((x) => !a.some((y) => y.id === x.id)).length;
     const del = a.filter((x) => !b.some((y) => y.id === x.id)).length;
@@ -277,7 +333,8 @@ function describeChange(before: LayoutContent, after: LayoutContent) {
   diff('área(s)', before.areas, after.areas);
   diff('estação(ões)', before.stations, after.stations);
   diff('móvel(is) de estoque', before.storageUnits, after.storageUnits);
-  if (before.doc.doors.length !== after.doc.doors.length) parts.push(`portas ${before.doc.doors.length} → ${after.doc.doors.length}`);
+  if (before.doc.doors.length !== after.doc.doors.length)
+    parts.push(`portas ${before.doc.doors.length} → ${after.doc.doors.length}`);
   return parts.join(', ') || 'ajustes de posição e nomes';
 }
 
@@ -298,28 +355,34 @@ export async function gameSpaceRoutes(app: FastifyInstance) {
     return s;
   });
 
-  app.get('/api/v1/game/spaces/:key/revisions', { config: { access: GAME_ACCESS } }, async (request) => {
-    const { key } = keyParams.parse(request.params);
-    const space = await prisma.gameSpace.findUnique({ where: { key } });
-    if (!space) throw Errors.notFound('Ambiente');
-    const rows = await prisma.gameLayoutRevision.findMany({
-      where: { spaceId: space.id },
-      orderBy: { version: 'desc' },
-      take: 50,
-    });
-    const users = await prisma.user.findMany({
-      where: { id: { in: rows.map((r) => r.createdById).filter((x): x is string => Boolean(x)) } },
-      select: { id: true, displayName: true },
-    });
-    return rows.map(
-      (r): GameLayoutRevisionDto => ({
-        version: r.version,
-        summary: r.summary,
-        createdAt: r.createdAt.toISOString(),
-        createdBy: users.find((u) => u.id === r.createdById)?.displayName ?? null,
-      }),
-    );
-  });
+  app.get(
+    '/api/v1/game/spaces/:key/revisions',
+    { config: { access: GAME_ACCESS } },
+    async (request) => {
+      const { key } = keyParams.parse(request.params);
+      const space = await prisma.gameSpace.findUnique({ where: { key } });
+      if (!space) throw Errors.notFound('Ambiente');
+      const rows = await prisma.gameLayoutRevision.findMany({
+        where: { spaceId: space.id },
+        orderBy: { version: 'desc' },
+        take: 50,
+      });
+      const users = await prisma.user.findMany({
+        where: {
+          id: { in: rows.map((r) => r.createdById).filter((x): x is string => Boolean(x)) },
+        },
+        select: { id: true, displayName: true },
+      });
+      return rows.map(
+        (r): GameLayoutRevisionDto => ({
+          version: r.version,
+          summary: r.summary,
+          createdAt: r.createdAt.toISOString(),
+          createdBy: users.find((u) => u.id === r.createdById)?.displayName ?? null,
+        }),
+      );
+    },
+  );
 
   /** Salva a planta. 409 VERSION_CONFLICT se outra pessoa salvou antes; 409 CONFLICT com
    * `details.impacts` quando uma remoção tem vínculos e falta escolher o destino. */
@@ -349,28 +412,55 @@ export async function gameSpaceRoutes(app: FastifyInstance) {
           depthCm: input.depthCm,
           gridCm: input.gridCm,
           illustrative: input.illustrative,
-          doc: { walls: input.doc.walls, doors: input.doc.doors, decor: input.doc.decor, notes: input.doc.notes ?? null },
-          areas: input.areas.map((a) => ({ ...a, color: a.color ?? null, itemLocationId: a.itemLocationId ?? null })),
+          doc: {
+            walls: input.doc.walls,
+            doors: input.doc.doors,
+            decor: input.doc.decor,
+            notes: input.doc.notes ?? null,
+          },
+          areas: input.areas.map((a) => ({
+            ...a,
+            color: a.color ?? null,
+            itemLocationId: a.itemLocationId ?? null,
+          })),
           stations: input.stations.map((s) => ({ ...s, areaId: s.areaId ?? null })),
           storageUnits: input.storageUnits.map((u) => ({ ...u, areaId: u.areaId ?? null })),
         };
         // Referências válidas.
         const users = [...new Set(after.stations.flatMap((s) => s.assigneeUserIds))];
         if (users.length) {
-          const ok = await tx.user.count({ where: { id: { in: users }, active: true, employee: { isNot: null } } });
+          const ok = await tx.user.count({
+            where: { id: { in: users }, active: true, employee: { isNot: null } },
+          });
           if (ok !== users.length)
-            throw Errors.validation(undefined, 'Há estação vinculada a funcionário inexistente ou desativado.');
+            throw Errors.validation(
+              undefined,
+              'Há estação vinculada a funcionário inexistente ou desativado.',
+            );
         }
-        const items = [...new Set(after.storageUnits.flatMap((u) => u.slots.flatMap((s) => s.stockItemIds)))];
-        if (items.length && (await tx.stockItem.count({ where: { id: { in: items } } })) !== items.length)
+        const items = [
+          ...new Set(after.storageUnits.flatMap((u) => u.slots.flatMap((s) => s.stockItemIds))),
+        ];
+        if (
+          items.length &&
+          (await tx.stockItem.count({ where: { id: { in: items } } })) !== items.length
+        )
           throw Errors.validation(undefined, 'Há posição de estoque com material inexistente.');
-        const locs = after.areas.map((a) => a.itemLocationId).filter((x): x is string => Boolean(x));
+        const locs = after.areas
+          .map((a) => a.itemLocationId)
+          .filter((x): x is string => Boolean(x));
         if (new Set(locs).size !== locs.length)
-          throw Errors.validation(undefined, 'Cada localização física só pode ser representada por uma área.');
+          throw Errors.validation(
+            undefined,
+            'Cada localização física só pode ser representada por uma área.',
+          );
 
         // Impacto das remoções com vínculos.
         const agents = await tx.aiAgent.findMany({
-          where: { deskStationId: { in: before.stations.map((s) => s.id) }, status: { not: 'DESATIVADO' } },
+          where: {
+            deskStationId: { in: before.stations.map((s) => s.id) },
+            status: { not: 'DESATIVADO' },
+          },
           select: { deskStationId: true, name: true },
         });
         const impacts = removalImpacts(before, after, {
@@ -379,7 +469,11 @@ export async function gameSpaceRoutes(app: FastifyInstance) {
         const t = input.transfers ?? { areas: {}, stations: {}, slots: {} };
         const missing: RemovalImpact[] = impacts.filter((i) => {
           const chosen =
-            i.kind === 'AREA' ? t.areas[i.id] : i.kind === 'ESTACAO' ? t.stations[i.id] : t.slots[i.id];
+            i.kind === 'AREA'
+              ? t.areas[i.id]
+              : i.kind === 'ESTACAO'
+                ? t.stations[i.id]
+                : t.slots[i.id];
           return !chosen || !i.targets.some((x) => x.id === chosen);
         });
         if (missing.length)
@@ -423,7 +517,11 @@ export async function gameSpaceRoutes(app: FastifyInstance) {
           entityType: 'game_space',
           entityId: head.id,
           summary: `Planta "${after.name}" salva (versão ${s.version}): ${summary}`,
-          changes: { version: s.version, impacts: impacts.map((i) => ({ kind: i.kind, id: i.id, name: i.name })), transfers: t },
+          changes: {
+            version: s.version,
+            impacts: impacts.map((i) => ({ kind: i.kind, id: i.id, name: i.name })),
+            transfers: t,
+          },
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.GAME_LAYOUT_SAVED,
@@ -438,127 +536,152 @@ export async function gameSpaceRoutes(app: FastifyInstance) {
     },
   );
 
-  app.post('/api/v1/game/spaces', { config: { access: GAME_BUILD, idempotent: true } }, async (request, reply) => {
-    const input = createSpaceSchema.parse(request.body);
-    const actor = actorFrom(request);
-    const out = await prisma.$transaction(async (tx) => {
-      let key = slugKey(input.name);
-      for (let i = 2; await tx.gameSpace.findUnique({ where: { key } }); i++) key = `${slugKey(input.name).slice(0, 26)}_${i}`;
-      const content =
-        input.start === 'SUGERIDA'
-          ? input.kind === 'ESCRITORIO'
-            ? suggestedOffice()
-            : suggestedWorkshop(await teamHints(tx))
-          : blankLayout(input.name, input.kind, input.widthCm, input.depthCm);
-      content.name = input.name;
-      if (input.start === 'EM_BRANCO') {
-        content.widthCm = input.widthCm;
-        content.depthCm = input.depthCm;
-      }
-      const position = (await tx.gameSpace.count()) + 1;
-      const s = await tx.gameSpace.create({
-        data: {
-          key,
-          name: content.name,
-          kind: input.kind,
-          widthCm: content.widthCm,
-          depthCm: content.depthCm,
-          gridCm: content.gridCm,
-          illustrative: content.illustrative,
-          doc: content.doc as unknown as Prisma.InputJsonValue,
-          position,
-          updatedById: actor.userId,
-        },
+  app.post(
+    '/api/v1/game/spaces',
+    { config: { access: GAME_BUILD, idempotent: true } },
+    async (request, reply) => {
+      const input = createSpaceSchema.parse(request.body);
+      const actor = actorFrom(request);
+      const out = await prisma.$transaction(async (tx) => {
+        let key = slugKey(input.name);
+        for (let i = 2; await tx.gameSpace.findUnique({ where: { key } }); i++)
+          key = `${slugKey(input.name).slice(0, 26)}_${i}`;
+        const content =
+          input.start === 'SUGERIDA'
+            ? input.kind === 'ESCRITORIO'
+              ? suggestedOffice()
+              : suggestedWorkshop(await teamHints(tx))
+            : blankLayout(input.name, input.kind, input.widthCm, input.depthCm);
+        content.name = input.name;
+        if (input.start === 'EM_BRANCO') {
+          content.widthCm = input.widthCm;
+          content.depthCm = input.depthCm;
+        }
+        const position = (await tx.gameSpace.count()) + 1;
+        const s = await tx.gameSpace.create({
+          data: {
+            key,
+            name: content.name,
+            kind: input.kind,
+            widthCm: content.widthCm,
+            depthCm: content.depthCm,
+            gridCm: content.gridCm,
+            illustrative: content.illustrative,
+            doc: content.doc as unknown as Prisma.InputJsonValue,
+            position,
+            updatedById: actor.userId,
+          },
+        });
+        await insertContent(tx, s.id, content);
+        await tx.gameLayoutRevision.create({
+          data: {
+            spaceId: s.id,
+            version: 1,
+            summary: 'Ambiente criado.',
+            snapshot: content as unknown as Prisma.InputJsonValue,
+            createdById: actor.userId,
+          },
+        });
+        await audit(tx, actor, {
+          action: 'game.space_created',
+          entityType: 'game_space',
+          entityId: s.id,
+          summary: `Ambiente "${content.name}" criado no jogo (${content.widthCm}×${content.depthCm} cm).`,
+        });
+        await appendEvent(tx, actor, {
+          type: EVENT_TYPES.GAME_LAYOUT_SAVED,
+          aggregateType: 'game_space',
+          aggregateId: s.id,
+          payload: { key, version: 1 },
+          audience: GAME_AUDIENCE,
+        });
+        return loadSpace(tx, key);
       });
-      await insertContent(tx, s.id, content);
-      await tx.gameLayoutRevision.create({
-        data: { spaceId: s.id, version: 1, summary: 'Ambiente criado.', snapshot: content as unknown as Prisma.InputJsonValue, createdById: actor.userId },
-      });
-      await audit(tx, actor, {
-        action: 'game.space_created',
-        entityType: 'game_space',
-        entityId: s.id,
-        summary: `Ambiente "${content.name}" criado no jogo (${content.widthCm}×${content.depthCm} cm).`,
-      });
-      await appendEvent(tx, actor, {
-        type: EVENT_TYPES.GAME_LAYOUT_SAVED,
-        aggregateType: 'game_space',
-        aggregateId: s.id,
-        payload: { key, version: 1 },
-        audience: GAME_AUDIENCE,
-      });
-      return loadSpace(tx, key);
-    });
-    return reply.status(201).send(out);
-  });
+      return reply.status(201).send(out);
+    },
+  );
 
   /** Recomeça um ambiente do zero ou da planta sugerida (o histórico anterior é mantido).
    * Vínculos existentes (funcionários, materiais, agentes) precisam ser refeitos. */
-  app.post('/api/v1/game/spaces/:key/reset', { config: { access: GAME_BUILD, idempotent: true } }, async (request) => {
-    const { key } = keyParams.parse(request.params);
-    const input = resetSpaceSchema.parse(request.body);
-    const actor = actorFrom(request);
-    return prisma.$transaction(async (tx) => {
-      const head = await lockSpace(tx, key);
-      if (head.version !== input.version) throw Errors.versionConflict(head.version);
-      const current = (await loadSpace(tx, key))!;
-      const content =
-        input.start === 'SUGERIDA'
-          ? current.kind === 'ESCRITORIO'
-            ? suggestedOffice()
-            : suggestedWorkshop(await teamHints(tx))
-          : blankLayout(current.name, current.kind, current.widthCm, current.depthCm);
-      content.name = current.name;
-      await linkLocations(tx, content.areas);
-      const touched = new Set(current.storageUnits.flatMap((u) => u.slots.flatMap((s) => s.stockItemIds)));
-      const transfers = { areas: {}, stations: {}, slots: {} };
-      // Recomeçar desfaz vínculos: agentes ficam sem mesa, materiais saem do mapa.
-      await tx.aiAgent.updateMany({
-        where: { deskStationId: { in: current.stations.map((s) => s.id) } },
-        data: { deskStationId: null, version: { increment: 1 } },
+  app.post(
+    '/api/v1/game/spaces/:key/reset',
+    { config: { access: GAME_BUILD, idempotent: true } },
+    async (request) => {
+      const { key } = keyParams.parse(request.params);
+      const input = resetSpaceSchema.parse(request.body);
+      const actor = actorFrom(request);
+      return prisma.$transaction(async (tx) => {
+        const head = await lockSpace(tx, key);
+        if (head.version !== input.version) throw Errors.versionConflict(head.version);
+        const current = (await loadSpace(tx, key))!;
+        const content =
+          input.start === 'SUGERIDA'
+            ? current.kind === 'ESCRITORIO'
+              ? suggestedOffice()
+              : suggestedWorkshop(await teamHints(tx))
+            : blankLayout(current.name, current.kind, current.widthCm, current.depthCm);
+        content.name = current.name;
+        await linkLocations(tx, content.areas);
+        const touched = new Set(
+          current.storageUnits.flatMap((u) => u.slots.flatMap((s) => s.stockItemIds)),
+        );
+        const transfers = { areas: {}, stations: {}, slots: {} };
+        // Recomeçar desfaz vínculos: agentes ficam sem mesa, materiais saem do mapa.
+        await tx.aiAgent.updateMany({
+          where: { deskStationId: { in: current.stations.map((s) => s.id) } },
+          data: { deskStationId: null, version: { increment: 1 } },
+        });
+        // Desativa tudo e cria o conteúdo novo (ids novos).
+        await applyLayout(
+          tx,
+          actor,
+          head.id,
+          contentOf(current),
+          { ...content, areas: [], stations: [], storageUnits: [] },
+          transfers,
+        );
+        await insertContent(tx, head.id, content);
+        const s = await tx.gameSpace.update({
+          where: { id: head.id },
+          data: {
+            widthCm: content.widthCm,
+            depthCm: content.depthCm,
+            gridCm: content.gridCm,
+            illustrative: content.illustrative,
+            doc: content.doc as unknown as Prisma.InputJsonValue,
+            version: { increment: 1 },
+            updatedById: actor.userId,
+          },
+        });
+        await syncStockLocations(tx, actor, touched);
+        const saved = (await loadSpace(tx, key))!;
+        await tx.gameLayoutRevision.create({
+          data: {
+            spaceId: head.id,
+            version: s.version,
+            summary:
+              input.start === 'SUGERIDA' ? 'Recomeçou da planta sugerida.' : 'Recomeçou do zero.',
+            snapshot: contentOf(saved) as unknown as Prisma.InputJsonValue,
+            createdById: actor.userId,
+          },
+        });
+        await audit(tx, actor, {
+          action: 'game.layout_reset',
+          entityType: 'game_space',
+          entityId: head.id,
+          summary: `Planta "${current.name}" recomeçada (${input.start === 'SUGERIDA' ? 'sugerida' : 'em branco'}).`,
+        });
+        await appendEvent(tx, actor, {
+          type: EVENT_TYPES.GAME_LAYOUT_SAVED,
+          aggregateType: 'game_space',
+          aggregateId: head.id,
+          payload: { key, version: s.version },
+          audience: GAME_AUDIENCE,
+        });
+        return saved;
       });
-      // Desativa tudo e cria o conteúdo novo (ids novos).
-      await applyLayout(tx, actor, head.id, contentOf(current), { ...content, areas: [], stations: [], storageUnits: [] }, transfers);
-      await insertContent(tx, head.id, content);
-      const s = await tx.gameSpace.update({
-        where: { id: head.id },
-        data: {
-          widthCm: content.widthCm,
-          depthCm: content.depthCm,
-          gridCm: content.gridCm,
-          illustrative: content.illustrative,
-          doc: content.doc as unknown as Prisma.InputJsonValue,
-          version: { increment: 1 },
-          updatedById: actor.userId,
-        },
-      });
-      await syncStockLocations(tx, actor, touched);
-      const saved = (await loadSpace(tx, key))!;
-      await tx.gameLayoutRevision.create({
-        data: {
-          spaceId: head.id,
-          version: s.version,
-          summary: input.start === 'SUGERIDA' ? 'Recomeçou da planta sugerida.' : 'Recomeçou do zero.',
-          snapshot: contentOf(saved) as unknown as Prisma.InputJsonValue,
-          createdById: actor.userId,
-        },
-      });
-      await audit(tx, actor, {
-        action: 'game.layout_reset',
-        entityType: 'game_space',
-        entityId: head.id,
-        summary: `Planta "${current.name}" recomeçada (${input.start === 'SUGERIDA' ? 'sugerida' : 'em branco'}).`,
-      });
-      await appendEvent(tx, actor, {
-        type: EVENT_TYPES.GAME_LAYOUT_SAVED,
-        aggregateType: 'game_space',
-        aggregateId: head.id,
-        payload: { key, version: s.version },
-        audience: GAME_AUDIENCE,
-      });
-      return saved;
-    });
-  });
+    },
+  );
 
   app.get('/api/v1/game/people', { config: { access: GAME_ACCESS } }, async () => {
     const rows = await prisma.employee.findMany({
@@ -577,12 +700,19 @@ export async function gameSpaceRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/v1/game/item-locations', { config: { access: GAME_ACCESS } }, async () =>
-    prisma.itemLocation.findMany({ where: { active: true }, orderBy: { position: 'asc' }, select: { id: true, key: true, label: true } }),
+    prisma.itemLocation.findMany({
+      where: { active: true },
+      orderBy: { position: 'asc' },
+      select: { id: true, key: true, label: true },
+    }),
   );
 
   app.get('/api/v1/game/spaces-summary', { config: { access: GAME_ACCESS } }, async () => {
     await ensureDefaultSpaces(prisma);
-    const rows = await prisma.gameSpace.findMany({ where: { active: true }, orderBy: [{ position: 'asc' }] });
+    const rows = await prisma.gameSpace.findMany({
+      where: { active: true },
+      orderBy: [{ position: 'asc' }],
+    });
     return rows.map(
       (r): GameSpaceSummaryDto => ({
         id: r.id,

@@ -7,7 +7,10 @@ import * as THREE from 'three';
 import type { FurnitureModel } from '@cenario/shared';
 
 const mats = new Map<string, THREE.MeshStandardMaterial>();
-export function mat(color: string, opts: { rough?: number; metal?: number; emissive?: string; opacity?: number } = {}) {
+export function mat(
+  color: string,
+  opts: { rough?: number; metal?: number; emissive?: string; opacity?: number } = {},
+) {
   const key = `${color}|${opts.rough ?? 0.85}|${opts.metal ?? 0}|${opts.emissive ?? ''}|${opts.opacity ?? 1}`;
   let m = mats.get(key);
   if (!m) {
@@ -16,8 +19,12 @@ export function mat(color: string, opts: { rough?: number; metal?: number; emiss
       roughness: opts.rough ?? 0.85,
       metalness: opts.metal ?? 0,
       flatShading: true,
-      ...(opts.emissive ? { emissive: new THREE.Color(opts.emissive), emissiveIntensity: 0.6 } : {}),
-      ...(opts.opacity !== undefined && opts.opacity < 1 ? { transparent: true, opacity: opts.opacity } : {}),
+      ...(opts.emissive
+        ? { emissive: new THREE.Color(opts.emissive), emissiveIntensity: 0.6 }
+        : {}),
+      ...(opts.opacity !== undefined && opts.opacity < 1
+        ? { transparent: true, opacity: opts.opacity }
+        : {}),
     });
     mats.set(key, m);
   }
@@ -41,8 +48,19 @@ export const PALETTE = {
   ink: '#1d2523',
 };
 
-const box = (w: number, h: number, d: number, color: string | THREE.Material, x = 0, y = 0, z = 0) => {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), typeof color === 'string' ? mat(color) : color);
+const box = (
+  w: number,
+  h: number,
+  d: number,
+  color: string | THREE.Material,
+  x = 0,
+  y = 0,
+  z = 0,
+) => {
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, d),
+    typeof color === 'string' ? mat(color) : color,
+  );
   m.position.set(x, y + h / 2, z);
   m.castShadow = true;
   m.receiveShadow = true;
@@ -69,14 +87,30 @@ function legs(g: THREE.Group, w: number, d: number, h: number, color = PALETTE.w
     for (const sz of [-1, 1]) g.add(box(t, h, t, color, sx * (w / 2 - t), 0, sz * (d / 2 - t)));
 }
 
-function table(g: THREE.Group, w: number, d: number, h: number, top = PALETTE.wood, legColor = PALETTE.woodDark) {
+function table(
+  g: THREE.Group,
+  w: number,
+  d: number,
+  h: number,
+  top = PALETTE.wood,
+  legColor = PALETTE.woodDark,
+) {
   legs(g, w, d, h - 0.05, legColor);
   g.add(box(w, 0.05, d, top, 0, h - 0.05, 0));
 }
 
 /** Cor de tecido estável a partir de um texto (código da OS). */
 export function fabricColor(seed: string) {
-  const colors = ['#8c5a4a', '#5f7f6e', '#6d6a8f', '#9b7b52', '#4f6f86', '#a0574f', '#7b8656', '#8a6f8c'];
+  const colors = [
+    '#8c5a4a',
+    '#5f7f6e',
+    '#6d6a8f',
+    '#9b7b52',
+    '#4f6f86',
+    '#a0574f',
+    '#7b8656',
+    '#8a6f8c',
+  ];
   let h = 0;
   for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return colors[h % colors.length]!;
@@ -88,7 +122,15 @@ export function furniture(model: FurnitureModel, color: string) {
   const g = new THREE.Group();
   const fabric = mat(color, { rough: 1 });
   const cushion = mat(new THREE.Color(color).offsetHSL(0, -0.05, 0.08).getStyle(), { rough: 1 });
-  const add = (w: number, h: number, d: number, m: THREE.Material, x: number, y: number, z: number) => g.add(box(w, h, d, m, x, y, z));
+  const add = (
+    w: number,
+    h: number,
+    d: number,
+    m: THREE.Material,
+    x: number,
+    y: number,
+    z: number,
+  ) => g.add(box(w, h, d, m, x, y, z));
   const sofa = (w: number, d: number, seats: number) => {
     add(w, 0.18, d, fabric, 0, 0.08, 0);
     for (let i = 0; i < seats; i++) {
@@ -99,7 +141,9 @@ export function furniture(model: FurnitureModel, color: string) {
     add(0.15, 0.5, d, fabric, -w / 2 + 0.075, 0.08, 0);
     add(0.15, 0.5, d, fabric, w / 2 - 0.075, 0.08, 0);
     add(w, 0.6, 0.12, fabric, 0, 0.08, -d / 2 + 0.06);
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(cyl(0.025, 0.08, PALETTE.woodDark, sx * (w / 2 - 0.08), 0, sz * (d / 2 - 0.08), 6));
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1])
+        g.add(cyl(0.025, 0.08, PALETTE.woodDark, sx * (w / 2 - 0.08), 0, sz * (d / 2 - 0.08), 6));
   };
   switch (model) {
     case 'SOFA':
@@ -126,7 +170,9 @@ export function furniture(model: FurnitureModel, color: string) {
       add(0.15, 0.45, 0.85, fabric, -0.35, 0.12, 0);
       add(0.15, 0.45, 0.85, fabric, 0.35, 0.12, 0);
       add(0.85, 0.75, 0.15, fabric, 0, 0.12, -0.35);
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.add(cyl(0.025, 0.12, PALETTE.woodDark, sx * 0.35, 0, sz * 0.35, 6));
+      for (const sx of [-1, 1])
+        for (const sz of [-1, 1])
+          g.add(cyl(0.025, 0.12, PALETTE.woodDark, sx * 0.35, 0, sz * 0.35, 6));
       break;
     case 'CADEIRA':
       add(0.48, 0.06, 0.48, cushion, 0, 0.45, 0);
@@ -178,7 +224,10 @@ export function stationModel(kind: string, w: number, d: number, accent = PALETT
     case 'MESA_CORTE': {
       table(g, w, d, 0.9, '#efe7d6', PALETTE.metal);
       g.add(box(w * 0.9, 0.01, d * 0.7, mat('#c9d6a3'), 0, 0.9, 0));
-      const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, d * 0.9, 12), mat('#7b8656'));
+      const roll = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.1, 0.1, d * 0.9, 12),
+        mat('#7b8656'),
+      );
       roll.rotation.x = Math.PI / 2;
       roll.position.set(-w / 2 + 0.25, 1.0, 0);
       roll.castShadow = true;
@@ -196,21 +245,36 @@ export function stationModel(kind: string, w: number, d: number, accent = PALETT
     }
     case 'BANCADA_MARCENARIA':
       table(g, w, d, 0.9, '#c89b68', PALETTE.woodDark);
-      g.add(box(0.25, 0.12, 0.2, mat(PALETTE.metal, { metal: 0.5 }), w / 2 - 0.2, 0.9, d / 2 - 0.15));
+      g.add(
+        box(0.25, 0.12, 0.2, mat(PALETTE.metal, { metal: 0.5 }), w / 2 - 0.2, 0.9, d / 2 - 0.15),
+      );
       g.add(box(1.2, 0.02, 0.6, mat('#d4b48c'), -0.2, 0.9, 0));
       g.add(box(w * 0.9, 0.05, 0.05, mat(PALETTE.woodDark), 0, 0.15, 0));
       break;
     case 'MESA_INSPECAO':
       table(g, w, d, 0.75, '#f3f1ec', PALETTE.metal);
       g.add(cyl(0.02, 0.6, PALETTE.metal, w / 2 - 0.15, 0.75, -d / 2 + 0.15, 6));
-      g.add(box(0.25, 0.06, 0.15, mat('#fff7d1', { emissive: '#fff1a8' }), w / 2 - 0.25, 1.35, -d / 2 + 0.15));
+      g.add(
+        box(
+          0.25,
+          0.06,
+          0.15,
+          mat('#fff7d1', { emissive: '#fff1a8' }),
+          w / 2 - 0.25,
+          1.35,
+          -d / 2 + 0.15,
+        ),
+      );
       g.add(box(0.3, 0.02, 0.22, mat('#b9d3ee'), -0.3, 0.75, 0));
       break;
     case 'MESA_EMBALAGEM':
       table(g, w, d, 0.8, '#e7dcc8', PALETTE.metal);
       g.add(box(0.5, 0.35, 0.4, mat(PALETTE.cardboard), -0.4, 0.8, 0));
       {
-        const r = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.6, 12), mat('#dfe9f0', { opacity: 0.8 }));
+        const r = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.12, 0.12, 0.6, 12),
+          mat('#dfe9f0', { opacity: 0.8 }),
+        );
         r.rotation.z = Math.PI / 2;
         r.position.set(0.5, 0.92, 0);
         g.add(r);
@@ -219,7 +283,9 @@ export function stationModel(kind: string, w: number, d: number, accent = PALETT
     case 'MESA_ESCRITORIO':
       table(g, w, d, 0.75, '#d8c3a5', PALETTE.ink);
       g.add(box(0.5, 0.32, 0.04, mat(PALETTE.ink), 0, 0.8, -d / 2 + 0.12));
-      g.add(box(0.46, 0.27, 0.01, mat('#1f3a5f', { emissive: '#2c5ea8' }), 0, 0.825, -d / 2 + 0.145));
+      g.add(
+        box(0.46, 0.27, 0.01, mat('#1f3a5f', { emissive: '#2c5ea8' }), 0, 0.825, -d / 2 + 0.145),
+      );
       g.add(box(0.06, 0.06, 0.06, mat(PALETTE.ink), 0, 0.75, -d / 2 + 0.12));
       g.add(box(0.4, 0.02, 0.14, mat('#e8e4dc'), 0, 0.75, 0.05));
       // Cadeira na frente (lado sul).
@@ -233,7 +299,17 @@ export function stationModel(kind: string, w: number, d: number, accent = PALETT
         for (const s of [-1, 1]) {
           const long = w >= d;
           const off = (i - 1) * (long ? w / 3 : d / 3);
-          g.add(box(0.45, 0.45, 0.45, mat(PALETTE.wallLow), long ? off : s * (w / 2 + 0.3), 0, long ? s * (d / 2 + 0.3) : off));
+          g.add(
+            box(
+              0.45,
+              0.45,
+              0.45,
+              mat(PALETTE.wallLow),
+              long ? off : s * (w / 2 + 0.3),
+              0,
+              long ? s * (d / 2 + 0.3) : off,
+            ),
+          );
         }
       break;
     default:
@@ -241,27 +317,57 @@ export function stationModel(kind: string, w: number, d: number, accent = PALETT
       table(g, w, d, 0.85, kind === 'BANCADA_DESMANCHE' ? '#c5a17a' : '#9fb7a6', PALETTE.woodDark);
       g.add(box(w - 0.12, 0.03, d - 0.12, mat(PALETTE.woodDark), 0, 0.25, 0));
       g.add(box(0.3, 0.06, 0.12, mat(accent), w / 2 - 0.3, 0.85, -d / 2 + 0.12));
-      g.add(box(0.15, 0.03, 0.04, mat(PALETTE.metal, { metal: 0.6 }), -w / 2 + 0.3, 0.85, -d / 2 + 0.12));
+      g.add(
+        box(
+          0.15,
+          0.03,
+          0.04,
+          mat(PALETTE.metal, { metal: 0.6 }),
+          -w / 2 + 0.3,
+          0.85,
+          -d / 2 + 0.12,
+        ),
+      );
   }
   return outer;
 }
 
-export function storageModel(kind: string, w: number, d: number, levels: number, tones: (string | null)[]) {
+export function storageModel(
+  kind: string,
+  w: number,
+  d: number,
+  levels: number,
+  tones: (string | null)[],
+) {
   const { outer, inner: g } = centered(w, d);
-  const H = kind === 'GAVETEIRO' ? 1.0 : kind === 'ESTRADO_ESPUMA' ? 0.2 : kind === 'PRATELEIRA' ? 1.6 : kind === 'ARMARIO' ? 1.9 : 2.0;
+  const H =
+    kind === 'GAVETEIRO'
+      ? 1.0
+      : kind === 'ESTRADO_ESPUMA'
+        ? 0.2
+        : kind === 'PRATELEIRA'
+          ? 1.6
+          : kind === 'ARMARIO'
+            ? 1.9
+            : 2.0;
   if (kind === 'ESTRADO_ESPUMA') {
     g.add(box(w, 0.12, d, mat(PALETTE.wood), 0, 0, 0));
     const colors = ['#f2e3a4', '#e9d07e', '#f6eccb', '#d9c27a'];
-    for (let i = 0; i < 6; i++) g.add(box(w * 0.9, 0.18, d * 0.85, mat(colors[i % 4]!), 0, 0.12 + i * 0.19, 0));
+    for (let i = 0; i < 6; i++)
+      g.add(box(w * 0.9, 0.18, d * 0.85, mat(colors[i % 4]!), 0, 0.12 + i * 0.19, 0));
     marker(g, tones[0] ?? null, w, d, 1.4);
     return outer;
   }
   if (kind === 'SUPORTE_ROLOS') {
-    for (const sx of [-1, 1]) g.add(box(0.06, 1.8, d, mat(PALETTE.metal, { metal: 0.4 }), sx * (w / 2 - 0.03), 0, 0));
+    for (const sx of [-1, 1])
+      g.add(box(0.06, 1.8, d, mat(PALETTE.metal, { metal: 0.4 }), sx * (w / 2 - 0.03), 0, 0));
     const colors = ['#8c5a4a', '#5f7f6e', '#6d6a8f', '#9b7b52', '#4f6f86', '#a0574f'];
     for (let lv = 0; lv < levels; lv++) {
       for (let i = 0; i < 2; i++) {
-        const r = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, w - 0.15, 12), mat(colors[(lv * 2 + i) % colors.length]!));
+        const r = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.11, 0.11, w - 0.15, 12),
+          mat(colors[(lv * 2 + i) % colors.length]!),
+        );
         r.rotation.z = Math.PI / 2;
         r.position.set(0, 0.35 + lv * 0.55, (i - 0.5) * 0.28);
         r.castShadow = true;
@@ -275,7 +381,17 @@ export function storageModel(kind: string, w: number, d: number, levels: number,
     g.add(box(w, H, d, mat('#6b7b7b', { metal: 0.3 }), 0, 0, 0));
     for (let i = 0; i < levels; i++) {
       const y = 0.08 + i * ((H - 0.12) / levels);
-      g.add(box(w - 0.08, (H - 0.12) / levels - 0.03, 0.02, mat(tones[i] ? toneColor(tones[i]!) : '#8a9a9a'), 0, y, d / 2));
+      g.add(
+        box(
+          w - 0.08,
+          (H - 0.12) / levels - 0.03,
+          0.02,
+          mat(tones[i] ? toneColor(tones[i]!) : '#8a9a9a'),
+          0,
+          y,
+          d / 2,
+        ),
+      );
       g.add(box(0.12, 0.02, 0.03, mat(PALETTE.steel), 0, y + 0.06, d / 2 + 0.02));
     }
     return outer;
@@ -283,19 +399,41 @@ export function storageModel(kind: string, w: number, d: number, levels: number,
   if (kind === 'ARMARIO') {
     g.add(box(w, H, d, mat('#d8c3a5'), 0, 0, 0));
     g.add(box(0.01, H - 0.1, 0.01, mat(PALETTE.woodDark), 0, 0.05, d / 2 + 0.005));
-    for (let i = 0; i < levels; i++) slotTone(g, tones[i] ?? null, w, d, 0.2 + i * ((H - 0.2) / levels));
+    for (let i = 0; i < levels; i++)
+      slotTone(g, tones[i] ?? null, w, d, 0.2 + i * ((H - 0.2) / levels));
     return outer;
   }
   // Estante / prateleira: montantes metálicos, prateleiras e caixas.
   for (const sx of [-1, 1])
-    for (const sz of [-1, 1]) g.add(box(0.04, H, 0.04, mat(PALETTE.metal, { metal: 0.5 }), sx * (w / 2 - 0.02), 0, sz * (d / 2 - 0.02)));
+    for (const sz of [-1, 1])
+      g.add(
+        box(
+          0.04,
+          H,
+          0.04,
+          mat(PALETTE.metal, { metal: 0.5 }),
+          sx * (w / 2 - 0.02),
+          0,
+          sz * (d / 2 - 0.02),
+        ),
+      );
   for (let lv = 0; lv < levels; lv++) {
     const y = 0.12 + lv * ((H - 0.15) / levels);
     g.add(box(w, 0.03, d, mat('#c8ccc8'), 0, y, 0));
     const n = Math.max(1, Math.floor(w / 0.45));
     for (let i = 0; i < n; i++)
       if ((lv * 7 + i * 3) % 4 !== 0)
-        g.add(box(0.34, 0.22, d * 0.75, mat(i % 2 ? PALETTE.cardboard : '#b98f5c'), -w / 2 + 0.25 + i * ((w - 0.3) / Math.max(1, n - 1 || 1)), y + 0.03, 0));
+        g.add(
+          box(
+            0.34,
+            0.22,
+            d * 0.75,
+            mat(i % 2 ? PALETTE.cardboard : '#b98f5c'),
+            -w / 2 + 0.25 + i * ((w - 0.3) / Math.max(1, n - 1 || 1)),
+            y + 0.03,
+            0,
+          ),
+        );
     slotTone(g, tones[lv] ?? null, w, d, y);
   }
   return outer;
@@ -307,11 +445,31 @@ function toneColor(t: string) {
 /** Faixa colorida na frente de cada prateleira (vermelho falta, âmbar baixo, verde ok). */
 function slotTone(g: THREE.Group, tone: string | null, w: number, d: number, y: number) {
   if (!tone) return;
-  g.add(box(w * 0.96, 0.04, 0.015, mat(toneColor(tone), { emissive: toneColor(tone) }), 0, y, d / 2 + 0.01));
+  g.add(
+    box(
+      w * 0.96,
+      0.04,
+      0.015,
+      mat(toneColor(tone), { emissive: toneColor(tone) }),
+      0,
+      y,
+      d / 2 + 0.01,
+    ),
+  );
 }
 function marker(g: THREE.Group, tone: string | null, w: number, d: number, y: number) {
   if (!tone) return;
-  g.add(box(0.15, 0.15, 0.15, mat(toneColor(tone), { emissive: toneColor(tone) }), w / 2 - 0.1, y, d / 2 - 0.1));
+  g.add(
+    box(
+      0.15,
+      0.15,
+      0.15,
+      mat(toneColor(tone), { emissive: toneColor(tone) }),
+      w / 2 - 0.1,
+      y,
+      d / 2 - 0.1,
+    ),
+  );
 }
 
 export function decorModel(kind: string, w: number, d: number) {
@@ -333,8 +491,10 @@ export function decorModel(kind: string, w: number, d: number) {
       }
       break;
     case 'PALETE':
-      for (let i = 0; i < 3; i++) g.add(box(w, 0.04, 0.12, mat('#b98a5a'), 0, 0.1, -d / 2 + 0.1 + i * ((d - 0.2) / 2)));
-      for (let i = 0; i < 5; i++) g.add(box(0.12, 0.02, d, mat('#c89b68'), -w / 2 + 0.06 + i * ((w - 0.12) / 4), 0.14, 0));
+      for (let i = 0; i < 3; i++)
+        g.add(box(w, 0.04, 0.12, mat('#b98a5a'), 0, 0.1, -d / 2 + 0.1 + i * ((d - 0.2) / 2)));
+      for (let i = 0; i < 5; i++)
+        g.add(box(0.12, 0.02, d, mat('#c89b68'), -w / 2 + 0.06 + i * ((w - 0.12) / 4), 0.14, 0));
       break;
     case 'LIXEIRA':
       g.add(cyl(0.22, 0.65, '#3f7d75', 0, 0, 0, 10));
@@ -403,7 +563,10 @@ export function avatar(color: string, style: AvatarStyle = 'PESSOA', skinIndex =
 }
 
 /** Etiqueta com texto (sprite em canvas). */
-export function label(text: string, opts: { bg?: string; fg?: string; size?: number; icon?: string; border?: string } = {}) {
+export function label(
+  text: string,
+  opts: { bg?: string; fg?: string; size?: number; icon?: string; border?: string } = {},
+) {
   const size = opts.size ?? 28;
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d')!;
@@ -429,7 +592,9 @@ export function label(text: string, opts: { bg?: string; fg?: string; size?: num
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }),
+  );
   const scale = 0.0125 * (size / 28);
   sprite.scale.set(c.width * scale, c.height * scale, 1);
   sprite.renderOrder = 10;
@@ -454,7 +619,10 @@ export function floorText(text: string, color = '#1d2523', maxW = 3) {
   tex.colorSpace = THREE.SRGBColorSpace;
   const w = Math.min(maxW, (c.width / c.height) * 0.45);
   const h = w * (c.height / c.width);
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }),
+  );
   m.rotation.x = -Math.PI / 2;
   return m;
 }

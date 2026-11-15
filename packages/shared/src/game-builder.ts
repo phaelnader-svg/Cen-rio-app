@@ -86,18 +86,15 @@ const NUMBERS: Record<string, number> = {
   dez: 10,
 };
 
-const norm = (s: string) =>
-  s
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
+const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 export function numberIn(text: string): number | null {
   const t = norm(text);
   const d = /(\d+)\s*(mesas|bancadas|estacoes|agentes|lugares)?/.exec(t);
   if (d) return Number(d[1]);
   for (const [w, n] of Object.entries(NUMBERS))
-    if (new RegExp(`\\bmais\\s+${w}\\b|\\b${w}\\s+(mesas|bancadas|estacoes|agentes)`).test(t)) return n;
+    if (new RegExp(`\\bmais\\s+${w}\\b|\\b${w}\\s+(mesas|bancadas|estacoes|agentes)`).test(t))
+      return n;
   return null;
 }
 
@@ -138,7 +135,8 @@ export function mainDoors(l: LayoutContent) {
     return Math.hypot(c.x - m.x, c.y - m.y);
   };
   const entry = [...ext].sort((a, b) => dist(a, rec) - dist(b, rec))[0] ?? null;
-  const exit = [...ext].filter((d) => d !== entry).sort((a, b) => dist(a, exp) - dist(b, exp))[0] ?? entry;
+  const exit =
+    [...ext].filter((d) => d !== entry).sort((a, b) => dist(a, exp) - dist(b, exp))[0] ?? entry;
   return { entry, exit };
 }
 
@@ -186,7 +184,12 @@ export function chokepoints(l: LayoutContent, extra: Rect[] = []): Rect[] {
       const cx = Math.floor(x / sofa.cell);
       const cy = Math.floor(y / sofa.cell);
       if (sofa.blocked[cy * sofa.cols + cx])
-        out.push({ x: cx * sofa.cell - 25, y: cy * sofa.cell - 25, w: sofa.cell + 50, d: sofa.cell + 50 });
+        out.push({
+          x: cx * sofa.cell - 25,
+          y: cy * sofa.cell - 25,
+          w: sofa.cell + 50,
+          d: sofa.cell + 50,
+        });
     }
   }
   return mergeRects(out);
@@ -235,9 +238,10 @@ export function findSpots(l: LayoutContent, req: SpotRequest, limit = 3): Spot[]
         const c = center(rect);
         const nearD = req.near ? Math.hypot(c.x - req.near.x, c.y - req.near.y) : 0;
         // Encostar na parede ou no limite da área preferida é bom (libera o miolo).
-        const wallHug =
-          Math.min(x, y, l.widthCm - (x + w), l.depthCm - (y + d)) <= 20 ? -60 : 0;
-        const prefD = req.prefer ? Math.hypot(c.x - center(req.prefer).x, c.y - center(req.prefer).y) : 0;
+        const wallHug = Math.min(x, y, l.widthCm - (x + w), l.depthCm - (y + d)) <= 20 ? -60 : 0;
+        const prefD = req.prefer
+          ? Math.hypot(c.x - center(req.prefer).x, c.y - center(req.prefer).y)
+          : 0;
         const score = (inPreferred ? 0 : 400 + prefD) + nearD + wallHug;
         candidates.push({ rect, rotation, score, inPreferred });
       }
@@ -246,7 +250,14 @@ export function findSpots(l: LayoutContent, req: SpotRequest, limit = 3): Spot[]
   const out: Spot[] = [];
   for (const c of candidates) {
     if (out.some((o) => overlaps(o.rect, c.rect, 50))) continue;
-    if (req.keepMainPath && !sofaRoute(l, [...(req.extra ?? []), c.rect], req.ignoreId ? new Set([req.ignoreId]) : undefined))
+    if (
+      req.keepMainPath &&
+      !sofaRoute(
+        l,
+        [...(req.extra ?? []), c.rect],
+        req.ignoreId ? new Set([req.ignoreId]) : undefined,
+      )
+    )
       continue;
     out.push(c);
     if (out.length >= limit) break;
@@ -254,7 +265,13 @@ export function findSpots(l: LayoutContent, req: SpotRequest, limit = 3): Spot[]
   return out;
 }
 
-function stationAt(kind: StationKind, name: string, spot: Spot, areaId: string | null, extra: Partial<StationDef> = {}): StationDef {
+function stationAt(
+  kind: StationKind,
+  name: string,
+  spot: Spot,
+  areaId: string | null,
+  extra: Partial<StationDef> = {},
+): StationDef {
   const c = STATION_KINDS[kind];
   return {
     id: newGameId(),
@@ -273,7 +290,8 @@ function stationAt(kind: StationKind, name: string, spot: Spot, areaId: string |
   };
 }
 
-const areaOf = (l: LayoutContent, fn: AreaFunction) => l.areas.find((a) => a.function === fn) ?? null;
+const areaOf = (l: LayoutContent, fn: AreaFunction) =>
+  l.areas.find((a) => a.function === fn) ?? null;
 const m = (cm: number) => `${(cm / 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} m`;
 
 // ───────────────────────────── Intenções ─────────────────────────────
@@ -300,7 +318,12 @@ function newUpholsterer(l: LayoutContent): MestreReply {
       quickReplies: ['Verifique as passagens da planta.'],
     };
   const best = spots[0]!;
-  const st = stationAt('BANCADA_TAPECEIRO', 'Bancada nova (tapeceiro)', best, best.inPreferred ? (mont?.id ?? null) : null);
+  const st = stationAt(
+    'BANCADA_TAPECEIRO',
+    'Bancada nova (tapeceiro)',
+    best,
+    best.inPreferred ? (mont?.id ?? null) : null,
+  );
   return {
     lines: [
       best.inPreferred
@@ -308,7 +331,9 @@ function newUpholsterer(l: LayoutContent): MestreReply {
         : `Na montagem não cabe sem apertar. Achei um canto fora dela${mont ? `, a ${(Math.round(Math.hypot(center(best.rect).x - center(rectOfArea(mont)).x, center(best.rect).y - center(rectOfArea(mont)).y) / 10) / 10).toLocaleString('pt-BR')} m de lá` : ''}.`,
       'O caminho do portão até a expedição continua passando sofá de frente.',
       'Depois de aplicar, vincule a bancada ao novo tapeceiro (cadastro em Funcionários).',
-      spots.length > 1 ? `Tenho mais ${spots.length - 1} opção(ões) marcada(s) em tracejado.` : 'Só achei essa. A oficina está cheia de boas ideias.',
+      spots.length > 1
+        ? `Tenho mais ${spots.length - 1} opção(ões) marcada(s) em tracejado.`
+        : 'Só achei essa. A oficina está cheia de boas ideias.',
     ],
     suggestion: {
       title: 'Bancada para o novo tapeceiro',
@@ -327,12 +352,21 @@ function cutNearSewing(l: LayoutContent): MestreReply {
   const cost = areaOf(l, 'COSTURA');
   if (!cost)
     return {
-      lines: ['Não achei a área de costura. Crie a área (Áreas → Costura) e eu ajudo a encaixar o corte.'],
+      lines: [
+        'Não achei a área de costura. Crie a área (Áreas → Costura) e eu ajudo a encaixar o corte.',
+      ],
       quickReplies: [],
     };
   const sewing = l.stations.filter((s) => s.kind === 'MAQUINA_COSTURA');
   const target = sewing.length
-    ? center(sewing.map(footprint).reduce((a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.max(a.x + a.w, b.x + b.w) - Math.min(a.x, b.x), d: Math.max(a.y + a.d, b.y + b.d) - Math.min(a.y, b.y) })))
+    ? center(
+        sewing.map(footprint).reduce((a, b) => ({
+          x: Math.min(a.x, b.x),
+          y: Math.min(a.y, b.y),
+          w: Math.max(a.x + a.w, b.x + b.w) - Math.min(a.x, b.x),
+          d: Math.max(a.y + a.d, b.y + b.d) - Math.min(a.y, b.y),
+        })),
+      )
     : center(rectOfArea(cost));
   const c = STATION_KINDS.MESA_CORTE;
   const corte = areaOf(l, 'CORTE');
@@ -346,10 +380,21 @@ function cutNearSewing(l: LayoutContent): MestreReply {
     keepMainPath: true,
   });
   if (!spots.length)
-    return { lines: ['A mesa de corte é grandona (3 × 1,6 m). Não achei vão perto da costura. Libere um pedaço da área ao lado.'], quickReplies: [] };
+    return {
+      lines: [
+        'A mesa de corte é grandona (3 × 1,6 m). Não achei vão perto da costura. Libere um pedaço da área ao lado.',
+      ],
+      quickReplies: [],
+    };
   const best = spots[0]!;
-  const dist = Math.round(Math.hypot(center(best.rect).x - target.x, center(best.rect).y - target.y) / 10) / 10;
-  const before = cut ? Math.round(Math.hypot(center(footprint(cut)).x - target.x, center(footprint(cut)).y - target.y) / 10) / 10 : null;
+  const dist =
+    Math.round(Math.hypot(center(best.rect).x - target.x, center(best.rect).y - target.y) / 10) /
+    10;
+  const before = cut
+    ? Math.round(
+        Math.hypot(center(footprint(cut)).x - target.x, center(footprint(cut)).y - target.y) / 10,
+      ) / 10
+    : null;
   return {
     lines: [
       'Corte e costura são vizinhos de porta: o tecido cortado vai direto para a máquina.',
@@ -357,10 +402,25 @@ function cutNearSewing(l: LayoutContent): MestreReply {
       'Deixe o lado comprido livre: é por ali que o rolo de tecido abre.',
     ],
     suggestion: {
-      title: cut ? 'Mover a mesa de corte para perto da costura' : 'Nova mesa de corte perto da costura',
+      title: cut
+        ? 'Mover a mesa de corte para perto da costura'
+        : 'Nova mesa de corte perto da costura',
       patch: cut
-        ? { moveStations: [{ id: cut.id, xCm: Math.round(best.rect.x), yCm: Math.round(best.rect.y), rotation: best.rotation }] }
-        : { addStations: [stationAt('MESA_CORTE', 'Mesa de corte', best, corte?.id ?? null, { shared: true })] },
+        ? {
+            moveStations: [
+              {
+                id: cut.id,
+                xCm: Math.round(best.rect.x),
+                yCm: Math.round(best.rect.y),
+                rotation: best.rotation,
+              },
+            ],
+          }
+        : {
+            addStations: [
+              stationAt('MESA_CORTE', 'Mesa de corte', best, corte?.id ?? null, { shared: true }),
+            ],
+          },
       highlights: spots.map((s) => s.rect),
       path: sofaRoute(l, [best.rect], cut ? new Set([cut.id]) : undefined) ?? undefined,
       problems: [],
@@ -381,17 +441,40 @@ function moreDesks(l: LayoutContent, text: string): MestreReply {
     const extra: Rect[] = [];
     const esc = areaOf(layout, 'ESCRITORIO');
     for (let i = 0; i < n; i++) {
-      const s = findSpots(layout, {
-        wCm: c.wCm,
-        dCm: c.dCm,
-        frontClearCm: c.frontClearCm,
-        prefer: esc ? rectOfArea(esc) : null,
-        extra,
-        rotations: [0, 180],
-      }, 1)[0];
+      const s = findSpots(
+        layout,
+        {
+          wCm: c.wCm,
+          dCm: c.dCm,
+          frontClearCm: c.frontClearCm,
+          prefer: esc ? rectOfArea(esc) : null,
+          extra,
+          rotations: [0, 180],
+        },
+        1,
+      )[0];
       if (!s) break;
-      extra.push(s.rect, frontRect({ xCm: s.rect.x, yCm: s.rect.y, wCm: c.wCm, dCm: c.dCm, rotation: s.rotation } as StationDef, c.frontClearCm));
-      placed.push(stationAt('MESA_ESCRITORIO', `Mesa ${layout.stations.filter((x) => x.kind === 'MESA_ESCRITORIO').length + i + 1}`, s, esc?.id ?? null));
+      extra.push(
+        s.rect,
+        frontRect(
+          {
+            xCm: s.rect.x,
+            yCm: s.rect.y,
+            wCm: c.wCm,
+            dCm: c.dCm,
+            rotation: s.rotation,
+          } as StationDef,
+          c.frontClearCm,
+        ),
+      );
+      placed.push(
+        stationAt(
+          'MESA_ESCRITORIO',
+          `Mesa ${layout.stations.filter((x) => x.kind === 'MESA_ESCRITORIO').length + i + 1}`,
+          s,
+          esc?.id ?? null,
+        ),
+      );
     }
     return placed;
   };
@@ -415,14 +498,17 @@ function moreDesks(l: LayoutContent, text: string): MestreReply {
       : `Cabem ${placed.length} mesa(s) na sala atual, com 90 cm para a cadeira.`,
     'Uma mesa pode ficar vazia; depois é só colocar um agente ou uma pessoa nela.',
   ];
-  if (placed.length < n) lines.push(`Só consegui ${placed.length}. Acima disso, vale outro ambiente.`);
+  if (placed.length < n)
+    lines.push(`Só consegui ${placed.length}. Acima disso, vale outro ambiente.`);
   return {
     lines,
     suggestion: {
       title: `Encaixar ${placed.length} mesa(s)${resize ? ' em sala maior' : ''}`,
       patch: {
         addStations: placed,
-        ...(resize ? { resize, updateAreas: work.areas.filter((a) => a.yCm + a.dCm > l.depthCm) } : {}),
+        ...(resize
+          ? { resize, updateAreas: work.areas.filter((a) => a.yCm + a.dCm > l.depthCm) }
+          : {}),
       },
       highlights: placed.map(footprint),
       problems: [],
@@ -439,7 +525,9 @@ function carpentryWithPath(l: LayoutContent): MestreReply {
   let areaRect: Rect;
   if (existing) {
     areaRect = rectOfArea(existing);
-    lines.push(`Já existe ${existing.name} (${m(existing.wCm)} × ${m(existing.dCm)}). Vou só conferir o caminho.`);
+    lines.push(
+      `Já existe ${existing.name} (${m(existing.wCm)} × ${m(existing.dCm)}). Vou só conferir o caminho.`,
+    );
   } else {
     // Área de 3,5 × 3 m num canto livre, longe do corredor principal.
     const spot = findSpots(l, { wCm: 350, dCm: 300, frontClearCm: 0, keepMainPath: true }, 1)[0];
@@ -467,10 +555,21 @@ function carpentryWithPath(l: LayoutContent): MestreReply {
   }
   // Bancada dentro da área nova.
   const b = STATION_KINDS.BANCADA_MARCENARIA;
-  const benchSpot = findSpots(l, { wCm: b.wCm, dCm: b.dCm, frontClearCm: b.frontClearCm, prefer: areaRect }, 1)[0];
-  const bench = benchSpot && contains(areaRect, benchSpot.rect)
-    ? stationAt('BANCADA_MARCENARIA', 'Bancada de marcenaria', benchSpot, newArea?.id ?? existing?.id ?? null, { shared: true })
-    : null;
+  const benchSpot = findSpots(
+    l,
+    { wCm: b.wCm, dCm: b.dCm, frontClearCm: b.frontClearCm, prefer: areaRect },
+    1,
+  )[0];
+  const bench =
+    benchSpot && contains(areaRect, benchSpot.rect)
+      ? stationAt(
+          'BANCADA_MARCENARIA',
+          'Bancada de marcenaria',
+          benchSpot,
+          newArea?.id ?? existing?.id ?? null,
+          { shared: true },
+        )
+      : null;
   // Caminho de sofá da marcenaria até a expedição.
   const extra = bench ? [footprint(bench)] : [];
   const g = buildGrid(l, { inflateCm: SOFA_PASSAGE_CM / 2 - 5, extra });
@@ -480,18 +579,34 @@ function carpentryWithPath(l: LayoutContent): MestreReply {
   const problems: ClearanceProblem[] = [];
   if (!exp) lines.push('Não há área de expedição. Crie uma e eu traço o caminho.');
   else if (path) {
-    lines.push(`Caminho livre de ${m(pathLengthCm(path))} até a ${exp.name}, com ${SOFA_PASSAGE_CM} cm de largura: estrutura pronta passa de frente.`);
+    lines.push(
+      `Caminho livre de ${m(pathLengthCm(path))} até a ${exp.name}, com ${SOFA_PASSAGE_CM} cm de largura: estrutura pronta passa de frente.`,
+    );
   } else {
     const chokes = chokepoints(l, extra);
     for (const r of chokes)
-      problems.push({ rect: r, gapCm: 0, requiredCm: SOFA_PASSAGE_CM, message: 'Aqui a estrutura entala.', severity: 'erro' });
-    lines.push('O caminho até a expedição trava. Marquei os gargalos em vermelho: algo precisa andar uns palmos.');
+      problems.push({
+        rect: r,
+        gapCm: 0,
+        requiredCm: SOFA_PASSAGE_CM,
+        message: 'Aqui a estrutura entala.',
+        severity: 'erro',
+      });
+    lines.push(
+      'O caminho até a expedição trava. Marquei os gargalos em vermelho: algo precisa andar uns palmos.',
+    );
   }
   return {
     lines,
     suggestion: {
-      title: newArea ? 'Área de marcenaria com caminho até a expedição' : 'Caminho da marcenaria até a expedição',
-      patch: { addAreas: newArea ? [newArea] : [], addStations: bench && !l.stations.some((s) => s.kind === 'BANCADA_MARCENARIA') ? [bench] : [] },
+      title: newArea
+        ? 'Área de marcenaria com caminho até a expedição'
+        : 'Caminho da marcenaria até a expedição',
+      patch: {
+        addAreas: newArea ? [newArea] : [],
+        addStations:
+          bench && !l.stations.some((s) => s.kind === 'BANCADA_MARCENARIA') ? [bench] : [],
+      },
       highlights: [areaRect],
       path: path ?? undefined,
       problems,
@@ -501,7 +616,11 @@ function carpentryWithPath(l: LayoutContent): MestreReply {
 }
 
 function agentDesk(l: LayoutContent, text: string): MestreReply {
-  const role = /compra/.test(norm(text)) ? 'Compras' : /gerent/.test(norm(text)) ? 'Gerente' : 'novo agente';
+  const role = /compra/.test(norm(text))
+    ? 'Compras'
+    : /gerent/.test(norm(text))
+      ? 'Gerente'
+      : 'novo agente';
   if (l.kind !== 'ESCRITORIO')
     return {
       lines: [
@@ -518,7 +637,12 @@ function agentDesk(l: LayoutContent, text: string): MestreReply {
         `Clique nela no modo Gestão → "Colocar agente" → função ${role}.`,
         'Defina o que ele pode ler (estoque, compras, OS) e o que só pode PROPOR. Comprar mesmo, só com sua aprovação.',
       ],
-      suggestion: { title: `Mesa para o agente de ${role}`, patch: {}, highlights: [footprint(empty[0]!)], problems: [] },
+      suggestion: {
+        title: `Mesa para o agente de ${role}`,
+        patch: {},
+        highlights: [footprint(empty[0]!)],
+        problems: [],
+      },
       quickReplies: [],
       followUp: 'CONFIGURAR_AGENTE',
     };
@@ -540,13 +664,23 @@ function agentDesk(l: LayoutContent, text: string): MestreReply {
 function checkPassages(l: LayoutContent): MestreReply {
   const problems: ClearanceProblem[] = [];
   for (const s of l.stations)
-    problems.push(...clearanceAround(l, s.id, footprint(s), catalogOf(s.kind).frontClearCm, s.rotation));
+    problems.push(
+      ...clearanceAround(l, s.id, footprint(s), catalogOf(s.kind).frontClearCm, s.rotation),
+    );
   for (const u of l.storageUnits)
-    problems.push(...clearanceAround(l, u.id, footprint(u), catalogOf(u.kind).frontClearCm, u.rotation));
+    problems.push(
+      ...clearanceAround(l, u.id, footprint(u), catalogOf(u.kind).frontClearCm, u.rotation),
+    );
   const route = l.kind === 'OFICINA' ? sofaRoute(l) : null;
   const chokes = l.kind === 'OFICINA' && !route ? chokepoints(l) : [];
   for (const r of chokes)
-    problems.push({ rect: r, gapCm: 0, requiredCm: SOFA_PASSAGE_CM, message: 'Gargalo no caminho do sofá.', severity: 'erro' });
+    problems.push({
+      rect: r,
+      gapCm: 0,
+      requiredCm: SOFA_PASSAGE_CM,
+      message: 'Gargalo no caminho do sofá.',
+      severity: 'erro',
+    });
   const errors = problems.filter((p) => p.severity === 'erro').length;
   const warns = problems.length - errors;
   const lines = [
@@ -564,8 +698,16 @@ function checkPassages(l: LayoutContent): MestreReply {
   if (worst) lines.push(worst.message);
   return {
     lines,
-    suggestion: { title: 'Verificação de passagens', patch: {}, highlights: [], path: route ?? undefined, problems },
-    quickReplies: problems.length ? ['Contratei mais um tapeceiro. Onde posso montar a bancada dele?'] : [],
+    suggestion: {
+      title: 'Verificação de passagens',
+      patch: {},
+      highlights: [],
+      path: route ?? undefined,
+      problems,
+    },
+    quickReplies: problems.length
+      ? ['Contratei mais um tapeceiro. Onde posso montar a bancada dele?']
+      : [],
   };
 }
 
@@ -588,7 +730,8 @@ export function askMestre(l: LayoutContent, text: string): MestreReply {
   if (/agente/.test(t)) return agentDesk(l, text);
   if (/corte/.test(t) && /costura/.test(t)) return cutNearSewing(l);
   if (/marcenaria/.test(t)) return carpentryWithPath(l);
-  if (/mesa/.test(t) && (/escritorio|maior|encaix|mais/.test(t) || l.kind === 'ESCRITORIO')) return moreDesks(l, text);
+  if (/mesa/.test(t) && (/escritorio|maior|encaix|mais/.test(t) || l.kind === 'ESCRITORIO'))
+    return moreDesks(l, text);
   if (/tapeceir|contrat|costureir|bancada|funcionari|ajudante/.test(t)) return newUpholsterer(l);
   if (/caminho|passag|corredor|aperto|verific|confer/.test(t)) return checkPassages(l);
   return tutorial(l);

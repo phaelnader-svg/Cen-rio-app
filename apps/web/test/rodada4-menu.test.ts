@@ -39,6 +39,8 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[] }> = {
   '/painel': { group: 'Início' },
   '/painel/servicos/novo': { group: 'Serviços', anyOf: ['pedidos.gerenciar'] },
   '/painel/atencao': { group: 'Início', anyOf: ['ocorrencias.ver', 'ocorrencias.gerenciar'] },
+  // Jogo de gestão (empresa virtual): entrada própria, mesma sessão e permissões.
+  '/jogo': { group: 'Início', anyOf: ['jogo.acessar'] },
   '/painel/funcionarios': { group: 'Administração', anyOf: ['funcionarios.ver'] },
   '/painel/funcoes': { group: 'Administração', anyOf: ['funcoes.ver'] },
   '/painel/dispositivos': { group: 'Administração', anyOf: ['dispositivos.ver', 'sessoes.ver'] },

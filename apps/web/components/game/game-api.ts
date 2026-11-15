@@ -27,7 +27,11 @@ export interface GamePerson {
 }
 
 export const useSpaces = () =>
-  useQuery({ queryKey: ['game-spaces'], queryFn: () => api<GameSpaceDto[]>('/api/v1/game/spaces'), staleTime: 60_000 });
+  useQuery({
+    queryKey: ['game-spaces'],
+    queryFn: () => api<GameSpaceDto[]>('/api/v1/game/spaces'),
+    staleTime: 60_000,
+  });
 
 /** Retrato da operação: recarregado pelos eventos (tempo real) e, por segurança, a cada 20 s. */
 export const useSnapshot = (enabled: boolean) =>
@@ -40,9 +44,17 @@ export const useSnapshot = (enabled: boolean) =>
   });
 
 export const useAgents = () =>
-  useQuery({ queryKey: ['game-agents'], queryFn: () => api<AgentDto[]>('/api/v1/game/agents'), staleTime: 30_000 });
+  useQuery({
+    queryKey: ['game-agents'],
+    queryFn: () => api<AgentDto[]>('/api/v1/game/agents'),
+    staleTime: 30_000,
+  });
 export const usePeople = () =>
-  useQuery({ queryKey: ['game-people'], queryFn: () => api<GamePerson[]>('/api/v1/game/people'), staleTime: 120_000 });
+  useQuery({
+    queryKey: ['game-people'],
+    queryFn: () => api<GamePerson[]>('/api/v1/game/people'),
+    staleTime: 120_000,
+  });
 export const useItemLocations = () =>
   useQuery({
     queryKey: ['game-item-locations'],
@@ -50,9 +62,17 @@ export const useItemLocations = () =>
     staleTime: 300_000,
   });
 export const useIntegrations = () =>
-  useQuery({ queryKey: ['game-integrations'], queryFn: () => api<IntegrationDto[]>('/api/v1/game/integrations'), staleTime: 300_000 });
+  useQuery({
+    queryKey: ['game-integrations'],
+    queryFn: () => api<IntegrationDto[]>('/api/v1/game/integrations'),
+    staleTime: 300_000,
+  });
 export const useAgentTemplates = () =>
-  useQuery({ queryKey: ['game-agent-templates'], queryFn: () => api<AgentRoleTemplate[]>('/api/v1/game/agent-templates'), staleTime: 600_000 });
+  useQuery({
+    queryKey: ['game-agent-templates'],
+    queryFn: () => api<AgentRoleTemplate[]>('/api/v1/game/agent-templates'),
+    staleTime: 600_000,
+  });
 export const useConversation = (id: string | null) =>
   useQuery({
     queryKey: ['game-agent', id],
@@ -60,13 +80,22 @@ export const useConversation = (id: string | null) =>
     enabled: Boolean(id),
   });
 export const useSlot = (id: string | null) =>
-  useQuery({ queryKey: ['game-slot', id], queryFn: () => api<GameSlotDetailDto>(`/api/v1/game/slots/${id}`), enabled: Boolean(id) });
+  useQuery({
+    queryKey: ['game-slot', id],
+    queryFn: () => api<GameSlotDetailDto>(`/api/v1/game/slots/${id}`),
+    enabled: Boolean(id),
+  });
 export const useMaterial = (id: string | null) =>
-  useQuery({ queryKey: ['game-material', id], queryFn: () => api<GameSlotMaterialDto>(`/api/v1/game/materials/${id}`), enabled: Boolean(id) });
+  useQuery({
+    queryKey: ['game-material', id],
+    queryFn: () => api<GameSlotMaterialDto>(`/api/v1/game/materials/${id}`),
+    enabled: Boolean(id),
+  });
 export const useMaterialSearch = (q: string, enabled = true) =>
   useQuery({
     queryKey: ['game-material-search', q],
-    queryFn: () => api<GameMaterialSearchDto[]>(`/api/v1/game/materials?q=${encodeURIComponent(q)}`),
+    queryFn: () =>
+      api<GameMaterialSearchDto[]>(`/api/v1/game/materials?q=${encodeURIComponent(q)}`),
     enabled,
     staleTime: 10_000,
   });
@@ -79,7 +108,11 @@ export const useRevisions = (key: string | null) =>
 
 /** Ficha da OS, prontidão de materiais e fotos: rotas oficiais do Cenário Gestão. */
 export const useServiceOrder = (id: string | null) =>
-  useQuery({ queryKey: ['service-order', id], queryFn: () => api<ServiceOrderDto>(`/api/v1/service-orders/${id}`), enabled: Boolean(id) });
+  useQuery({
+    queryKey: ['service-order', id],
+    queryFn: () => api<ServiceOrderDto>(`/api/v1/service-orders/${id}`),
+    enabled: Boolean(id),
+  });
 export const useReadiness = (id: string | null) =>
   useQuery({
     queryKey: ['game-readiness', id],
@@ -89,6 +122,7 @@ export const useReadiness = (id: string | null) =>
 export const usePhotos = (entityType: string, id: string | null) =>
   useQuery({
     queryKey: ['game-photos', entityType, id],
-    queryFn: () => api<AttachmentDto[]>(`/api/v1/attachments?entityType=${entityType}&entityId=${id}`),
+    queryFn: () =>
+      api<AttachmentDto[]>(`/api/v1/attachments?entityType=${entityType}&entityId=${id}`),
     enabled: Boolean(id),
   });

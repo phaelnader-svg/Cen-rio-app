@@ -29,7 +29,9 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
 
   app.get(
     '/api/v1/game/snapshot',
-    { config: { access: { ...GAME_ACCESS, anyPermissions: ['producao.ver', 'producao.planejar'] } } },
+    {
+      config: { access: { ...GAME_ACCESS, anyPermissions: ['producao.ver', 'producao.planejar'] } },
+    },
     async (request): Promise<GameSnapshotDto> => {
       await ensureDefaultSpaces(prisma);
       const perms = request.auth!.permissions;
@@ -83,7 +85,9 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
         _count: { _all: true },
       });
       const photoCount = new Map(photos.map((p) => [p.entityId, p._count._all]));
-      const areaByLocation = new Map(l.areas.filter((a) => a.itemLocationId).map((a) => [a.itemLocationId!, a.id]));
+      const areaByLocation = new Map(
+        l.areas.filter((a) => a.itemLocationId).map((a) => [a.itemLocationId!, a.id]),
+      );
 
       const ref = (t: (typeof orders)[number]['productionTasks'][number]): GameTaskRef => ({
         id: t.id,
@@ -119,10 +123,14 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
             })),
             names,
           });
-          const current = refs.find((t) => t.status === 'EM_EXECUCAO' || t.status === 'PAUSADA') ?? null;
+          const current =
+            refs.find((t) => t.status === 'EM_EXECUCAO' || t.status === 'PAUSADA') ?? null;
           const next =
-            refs.find((t) => t.id !== current?.id && ['LIBERADA', 'PROGRAMADA', 'BLOQUEADA', 'RASCUNHO'].includes(t.status)) ??
-            null;
+            refs.find(
+              (t) =>
+                t.id !== current?.id &&
+                ['LIBERADA', 'PROGRAMADA', 'BLOQUEADA', 'RASCUNHO'].includes(t.status),
+            ) ?? null;
           const ev = item.locationEvents[0];
           pieces.push({
             id: item.id,
@@ -131,7 +139,8 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
             osCode: serviceOrderCode(so.number),
             osNumber: so.number,
             osVersion: so.version,
-            customerName: perms.has('os.ver') || perms.has('clientes.ver') ? so.customer.name : null,
+            customerName:
+              perms.has('os.ver') || perms.has('clientes.ver') ? so.customer.name : null,
             description: item.description,
             pieceType: item.pieceType,
             model: furnitureModel(item.pieceType, item.description),
@@ -165,7 +174,10 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
 
       // Funcionários: tarefa iniciada (qualquer tipo) e fila oficial da semana.
       const running = await prisma.productionTask.findMany({
-        where: { status: { in: ['EM_EXECUCAO', 'PAUSADA'] }, assigneeUserId: { in: users.map((u) => u.userId) } },
+        where: {
+          status: { in: ['EM_EXECUCAO', 'PAUSADA'] },
+          assigneeUserId: { in: users.map((u) => u.userId) },
+        },
         include: {
           assignee: { select: { displayName: true } },
           serviceOrder: { select: { number: true } },
@@ -174,15 +186,21 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
         orderBy: [{ status: 'asc' }, { startedAt: 'desc' }],
       });
       const s = await prisma.companySettings.findUnique({ where: { id: 1 } });
-      const today = new Intl.DateTimeFormat('en-CA', { timeZone: s?.timezone ?? 'America/Sao_Paulo' }).format(clockNow());
+      const today = new Intl.DateTimeFormat('en-CA', {
+        timeZone: s?.timezone ?? 'America/Sao_Paulo',
+      }).format(clockNow());
       const attendance = await prisma.operationalAttendance.findMany({
         where: { date: new Date(`${today}T00:00:00Z`), employeeId: { in: users.map((u) => u.id) } },
         select: { employeeId: true, situation: true },
       });
       const employees: GameEmployeeDto[] = [];
       for (const e of users) {
-        const isProduction = e.user.roles.some((r) => ['tapeceiro', 'ajudante', 'cabeceiras_qualidade'].includes(r.role.key ?? ''));
-        const stationIds = l.stations.filter((st) => st.assigneeUserIds.includes(e.userId)).map((st) => st.id);
+        const isProduction = e.user.roles.some((r) =>
+          ['tapeceiro', 'ajudante', 'cabeceiras_qualidade'].includes(r.role.key ?? ''),
+        );
+        const stationIds = l.stations
+          .filter((st) => st.assigneeUserIds.includes(e.userId))
+          .map((st) => st.id);
         if (!isProduction && !stationIds.length) continue;
         const mine = running.filter((t) => t.assigneeUserId === e.userId);
         const cur = mine.find((t) => t.status === 'EM_EXECUCAO') ?? mine[0] ?? null;
@@ -191,13 +209,19 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
           ? {
               ...ref({ ...cur, assignee: cur.assignee } as never),
               osCode: serviceOrderCode(cur.serviceOrder.number),
-              itemCode: cur.serviceOrderItem ? formatServiceOrderItemCode(cur.serviceOrder.number, cur.serviceOrderItem.position) : null,
+              itemCode: cur.serviceOrderItem
+                ? formatServiceOrderItemCode(cur.serviceOrder.number, cur.serviceOrderItem.position)
+                : null,
             }
           : null;
         const station = cur
-          ? pieces.find((p) => p.currentTask?.id === cur.id)?.placement.stationId ??
-            l.stations.find((st) => st.assigneeUserIds.includes(e.userId) && (st.activities.length === 0 || st.activities.includes(cur.activity)))?.id ??
-            null
+          ? (pieces.find((p) => p.currentTask?.id === cur.id)?.placement.stationId ??
+            l.stations.find(
+              (st) =>
+                st.assigneeUserIds.includes(e.userId) &&
+                (st.activities.length === 0 || st.activities.includes(cur.activity)),
+            )?.id ??
+            null)
           : (stationIds[0] ?? null);
         employees.push({
           userId: e.userId,
@@ -244,7 +268,8 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
             if (!it) continue;
             const avail = num(it.onHand) - num(it.reserved);
             if (avail <= 0) tone = 'FALTA';
-            else if (it.minQuantity !== null && avail < num(it.minQuantity) && tone !== 'FALTA') tone = 'BAIXO';
+            else if (it.minQuantity !== null && avail < num(it.minQuantity) && tone !== 'FALTA')
+              tone = 'BAIXO';
           }
           if (sl.stockItemIds.length) slotAlerts[sl.id] = tone;
         }

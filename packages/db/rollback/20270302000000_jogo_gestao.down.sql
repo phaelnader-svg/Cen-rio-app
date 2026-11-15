@@ -1,7 +1,8 @@
 -- REVERSÃO MANUAL da migration 20270302000000_jogo_gestao (jogo de gestão). Uso somente com
 -- backup recente e a aplicação PARADA, voltando ao código anterior. Remove apenas as tabelas do
--- jogo; nenhum dado operacional (OS, tarefas, estoque, compras) é tocado. A localização textual
--- gravada em stock_items.location pelo jogo permanece (é campo do cadastro oficial).
+-- jogo (com suas chaves e gatilhos); nenhum dado operacional (OS, tarefas, estoque, compras) é
+-- tocado. O endereço textual gravado em stock_items.location pelo jogo (prefixo "▦ ") permanece:
+-- é campo do cadastro oficial e pode ser editado no painel.
 BEGIN;
 DROP TABLE IF EXISTS "ai_agent_proposals";
 DROP TABLE IF EXISTS "ai_agent_messages";
@@ -14,5 +15,8 @@ DROP TABLE IF EXISTS "game_station_assignees";
 DROP TABLE IF EXISTS "game_stations";
 DROP TABLE IF EXISTS "game_areas";
 DROP TABLE IF EXISTS "game_spaces";
+-- Permissões do jogo deixam de existir no código anterior; remova-as das funções.
+DELETE FROM "role_permissions" WHERE "permission" IN ('jogo.acessar', 'jogo.construir', 'agentes.usar', 'agentes.gerenciar');
+DELETE FROM "user_permissions" WHERE "permission" IN ('jogo.acessar', 'jogo.construir', 'agentes.usar', 'agentes.gerenciar');
 DELETE FROM "_prisma_migrations" WHERE "migration_name" = '20270302000000_jogo_gestao';
 COMMIT;

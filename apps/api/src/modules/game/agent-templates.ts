@@ -69,4 +69,3 @@ export const AGENT_TEMPLATES: AgentRoleTemplate[] = [
     integrations: ['INSTAGRAM'],
   },
 ];
-

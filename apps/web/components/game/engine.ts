@@ -96,7 +96,11 @@ export interface Overlays {
 }
 
 export interface EngineCallbacks {
-  onPick(target: PickTarget | null, floorCm: { x: number; y: number } | null, ev: PointerEvent): void;
+  onPick(
+    target: PickTarget | null,
+    floorCm: { x: number; y: number } | null,
+    ev: PointerEvent,
+  ): void;
   onDrag?(target: PickTarget, xCm: number, yCm: number, phase: 'move' | 'end'): void;
   onHover?(target: PickTarget | null): void;
   onArrive?(tag: string): void;
@@ -145,23 +149,42 @@ export class GameEngine {
     snapCm: 10,
     agentDesks: {},
   };
-  private pieces = new Map<string, { g: THREE.Group; to: THREE.Vector3; rot: number; ghost?: THREE.Object3D; key: string }>();
-  private people = new Map<string, { g: THREE.Group; path: THREE.Vector3[]; face: number; key: string; seated: boolean }>();
+  private pieces = new Map<
+    string,
+    { g: THREE.Group; to: THREE.Vector3; rot: number; ghost?: THREE.Object3D; key: string }
+  >();
+  private people = new Map<
+    string,
+    { g: THREE.Group; path: THREE.Vector3[]; face: number; key: string; seated: boolean }
+  >();
   private player: { g: THREE.Group; path: THREE.Vector3[]; tag: string | null } | null = null;
   private mestre: THREE.Group | null = null;
   private walkGrid: ReturnType<typeof buildGrid> | null = null;
 
   // Ponteiro
-  private down: { x: number; y: number; target: PickTarget | null; button: number; moved: boolean; start: THREE.Vector3 | null; grab: { dx: number; dz: number } | null } | null = null;
+  private down: {
+    x: number;
+    y: number;
+    target: PickTarget | null;
+    button: number;
+    moved: boolean;
+    start: THREE.Vector3 | null;
+    grab: { dx: number; dz: number } | null;
+  } | null = null;
   private pinch: { d: number; size: number } | null = null;
   private touches = new Map<number, { x: number; y: number }>();
-  private dragging: { target: PickTarget; obj: THREE.Object3D; dx: number; dz: number } | null = null;
+  private dragging: { target: PickTarget; obj: THREE.Object3D; dx: number; dz: number } | null =
+    null;
 
   constructor(
     private container: HTMLElement,
     private cb: EngineCallbacks,
   ) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: false });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: false,
+      preserveDrawingBuffer: false,
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -261,8 +284,30 @@ export class GameEngine {
     this.updateCamera();
   }
 
+  /** Posição na tela (px, relativa à janela) de um objeto do mapa — usada pelos testes. */
+  screenOf(id: string, heightM = 0.6) {
+    const o = this.objects.get(id) ?? this.pieces.get(id)?.g ?? this.people.get(id)?.g;
+    if (!o) return null;
+    const p = new THREE.Vector3();
+    o.getWorldPosition(p);
+    p.y += heightM;
+    p.project(this.camera);
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
+  }
+
   viewCenterCm() {
     return { x: this.target.x / CM, y: this.target.z / CM };
+  }
+
+  /** Enquadra um retângulo (cm) com folga, para mostrar uma sugestão inteira. */
+  fitRect(r: { x: number; y: number; w: number; d: number }) {
+    const el = this.container;
+    const aspect = (el.clientWidth || 1) / (el.clientHeight || 1);
+    this.target.set((r.x + r.w / 2) * CM, 0, (r.y + r.d / 2) * CM);
+    const span = (r.w + r.d) * CM;
+    this.viewSize = Math.min(60, Math.max(6, Math.max((span * 0.75) / aspect, span * 0.45) * 1.4));
+    this.updateCamera();
   }
 
   focus(xCm: number, yCm: number, viewSize?: number) {
@@ -275,7 +320,10 @@ export class GameEngine {
 
   private ndc(ev: { clientX: number; clientY: number }) {
     const r = this.renderer.domElement.getBoundingClientRect();
-    return new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    return new THREE.Vector2(
+      ((ev.clientX - r.left) / r.width) * 2 - 1,
+      -((ev.clientY - r.top) / r.height) * 2 + 1,
+    );
   }
 
   private floorAt(ev: { clientX: number; clientY: number }) {
@@ -297,7 +345,14 @@ export class GameEngine {
         const unit = this.layout?.storageUnits.find((u) => u.id === t.id);
         if (unit) {
           const levels = unit.slots.length || 1;
-          const H = unit.kind === 'GAVETEIRO' ? 1.0 : unit.kind === 'ESTRADO_ESPUMA' ? 1.4 : unit.kind === 'PRATELEIRA' ? 1.6 : 2.0;
+          const H =
+            unit.kind === 'GAVETEIRO'
+              ? 1.0
+              : unit.kind === 'ESTRADO_ESPUMA'
+                ? 1.4
+                : unit.kind === 'PRATELEIRA'
+                  ? 1.6
+                  : 2.0;
           t.level = Math.min(levels, Math.max(1, Math.floor((local.y / H) * levels) + 1));
         }
       }
@@ -310,10 +365,14 @@ export class GameEngine {
   private bindInput() {
     const el = this.renderer.domElement;
     el.addEventListener('contextmenu', (e) => e.preventDefault());
-    el.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      this.zoomBy(e.deltaY > 0 ? 1.12 : 1 / 1.12);
-    }, { passive: false });
+    el.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        this.zoomBy(e.deltaY > 0 ? 1.12 : 1 / 1.12);
+      },
+      { passive: false },
+    );
     el.addEventListener('pointerdown', (e) => {
       el.setPointerCapture(e.pointerId);
       this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -330,14 +389,26 @@ export class GameEngine {
         const obj = this.objects.get(target.id);
         if (obj) grab = { dx: start.x - obj.position.x, dz: start.z - obj.position.z };
       }
-      this.down = { x: e.clientX, y: e.clientY, target, button: e.button, moved: false, start, grab };
+      this.down = {
+        x: e.clientX,
+        y: e.clientY,
+        target,
+        button: e.button,
+        moved: false,
+        start,
+        grab,
+      };
     });
     el.addEventListener('pointermove', (e) => {
-      if (this.touches.has(e.pointerId)) this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (this.touches.has(e.pointerId))
+        this.touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.pinch && this.touches.size === 2) {
         const [a, b] = [...this.touches.values()];
         const d = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-        this.viewSize = Math.min(60, Math.max(3, (this.pinch.size * this.pinch.d) / Math.max(1, d)));
+        this.viewSize = Math.min(
+          60,
+          Math.max(3, (this.pinch.size * this.pinch.d) / Math.max(1, d)),
+        );
         this.updateCamera();
         return;
       }
@@ -358,7 +429,8 @@ export class GameEngine {
         if (!p) return;
         const obj = this.objects.get(dn.target.id);
         if (!obj) return;
-        if (!this.dragging) this.dragging = { target: dn.target, obj, dx: dn.grab.dx, dz: dn.grab.dz };
+        if (!this.dragging)
+          this.dragging = { target: dn.target, obj, dx: dn.grab.dx, dz: dn.grab.dz };
         const nx = p.x - this.dragging.dx;
         const nz = p.z - this.dragging.dz;
         const { x, y } = this.snapOrigin(dn.target, nx, nz);
@@ -383,7 +455,11 @@ export class GameEngine {
       if (this.dragging) {
         const p = this.floorAt(e);
         if (p) {
-          const { x, y } = this.snapOrigin(this.dragging.target, p.x - this.dragging.dx, p.z - this.dragging.dz);
+          const { x, y } = this.snapOrigin(
+            this.dragging.target,
+            p.x - this.dragging.dx,
+            p.z - this.dragging.dz,
+          );
           this.cb.onDrag?.(this.dragging.target, x, y, 'end');
         }
         this.dragging = null;
@@ -413,7 +489,10 @@ export class GameEngine {
     let w = 0;
     let d = 0;
     if (l) {
-      const s = l.stations.find((x) => x.id === t.id) ?? l.storageUnits.find((x) => x.id === t.id) ?? l.doc.decor.find((x) => x.id === t.id);
+      const s =
+        l.stations.find((x) => x.id === t.id) ??
+        l.storageUnits.find((x) => x.id === t.id) ??
+        l.doc.decor.find((x) => x.id === t.id);
       if (s) {
         const f = footprint(s);
         w = f.w;
@@ -452,13 +531,24 @@ export class GameEngine {
   }
 
   setLayout(layout: LayoutContent, opts: SceneOptions) {
-    const firstTime = !this.layout || this.layout.name !== layout.name || this.layout.widthCm !== layout.widthCm || this.layout.depthCm !== layout.depthCm;
+    const firstTime =
+      !this.layout ||
+      this.layout.name !== layout.name ||
+      this.layout.widthCm !== layout.widthCm ||
+      this.layout.depthCm !== layout.depthCm;
     const spaceChanged = !this.layout || this.layout.name !== layout.name;
     this.layout = layout;
     this.opts = opts;
     this.clearGroup(this.staticGroup);
-    this.pickables = this.pickables.filter((p) => p.parent && !this.isIn(p, this.staticGroup) && (this.isIn(p, this.pieceGroup) || this.isIn(p, this.peopleGroup)));
-    for (const [id, o] of this.objects) if (!this.isIn(o, this.pieceGroup) && !this.isIn(o, this.peopleGroup)) this.objects.delete(id);
+    this.pickables = this.pickables.filter(
+      (p) =>
+        p.parent &&
+        !this.isIn(p, this.staticGroup) &&
+        (this.isIn(p, this.pieceGroup) || this.isIn(p, this.peopleGroup)),
+    );
+    for (const [id, o] of this.objects)
+      if (!this.isIn(o, this.pieceGroup) && !this.isIn(o, this.peopleGroup))
+        this.objects.delete(id);
     const build = opts.mode === 'CONSTRUCAO' && !opts.preview;
     const W = layout.widthCm * CM;
     const D = layout.depthCm * CM;
@@ -468,7 +558,10 @@ export class GameEngine {
     base.position.set(W / 2, -0.16, D / 2);
     base.receiveShadow = true;
     this.staticGroup.add(base);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, D), mat(PALETTE.floor, { rough: 0.95 }));
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(W, D),
+      mat(PALETTE.floor, { rough: 0.95 }),
+    );
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(W / 2, 0, D / 2);
     floor.receiveShadow = true;
@@ -476,7 +569,10 @@ export class GameEngine {
     // Tábuas: linhas a cada 20 cm no sentido leste-oeste.
     const planks = new THREE.Group();
     for (let z = 0.2; z < D; z += 0.2) {
-      const ln = new THREE.Mesh(new THREE.PlaneGeometry(W, 0.008), new THREE.MeshBasicMaterial({ color: PALETTE.floorLine }));
+      const ln = new THREE.Mesh(
+        new THREE.PlaneGeometry(W, 0.008),
+        new THREE.MeshBasicMaterial({ color: PALETTE.floorLine }),
+      );
       ln.rotation.x = -Math.PI / 2;
       ln.position.set(W / 2, 0.001, z);
       planks.add(ln);
@@ -490,25 +586,46 @@ export class GameEngine {
       for (let z = 0; z <= D + 1e-6; z += g) lines.push(0, 0.004, z, W, 0.004, z);
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
-      this.staticGroup.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: '#7d6a4a', transparent: true, opacity: 0.35 })));
+      this.staticGroup.add(
+        new THREE.LineSegments(
+          geo,
+          new THREE.LineBasicMaterial({ color: '#7d6a4a', transparent: true, opacity: 0.35 }),
+        ),
+      );
       const meter: number[] = [];
       for (let x = 0; x <= W + 1e-6; x += 1) meter.push(x, 0.005, 0, x, 0.005, D);
       for (let z = 0; z <= D + 1e-6; z += 1) meter.push(0, 0.005, z, W, 0.005, z);
       const mgeo = new THREE.BufferGeometry();
       mgeo.setAttribute('position', new THREE.Float32BufferAttribute(meter, 3));
-      this.staticGroup.add(new THREE.LineSegments(mgeo, new THREE.LineBasicMaterial({ color: '#5a4a2e', transparent: true, opacity: 0.55 })));
+      this.staticGroup.add(
+        new THREE.LineSegments(
+          mgeo,
+          new THREE.LineBasicMaterial({ color: '#5a4a2e', transparent: true, opacity: 0.55 }),
+        ),
+      );
       // Réguas nas bordas.
       for (let x = 0; x <= W + 1e-6; x += Math.max(1, Math.round(W / 8))) {
-        const s = label(`${x.toFixed(0)} m`, { size: 20, bg: 'rgba(255,255,255,0.85)', fg: '#1d2523' });
+        const s = label(`${x.toFixed(0)} m`, {
+          size: 20,
+          bg: 'rgba(255,255,255,0.85)',
+          fg: '#1d2523',
+        });
         s.position.set(x, 0.05, -0.35);
         this.staticGroup.add(s);
       }
       for (let z = 0; z <= D + 1e-6; z += Math.max(1, Math.round(D / 6))) {
-        const s = label(`${z.toFixed(0)} m`, { size: 20, bg: 'rgba(255,255,255,0.85)', fg: '#1d2523' });
+        const s = label(`${z.toFixed(0)} m`, {
+          size: 20,
+          bg: 'rgba(255,255,255,0.85)',
+          fg: '#1d2523',
+        });
         s.position.set(-0.45, 0.05, z);
         this.staticGroup.add(s);
       }
-      const dims = label(`${(W).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} × ${(D).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} m · ${Math.round(W * D)} m²${layout.illustrative ? ' · medidas ilustrativas' : ''}`, { size: 24, bg: layout.illustrative ? 'rgba(161,92,7,0.9)' : 'rgba(29,74,69,0.9)' });
+      const dims = label(
+        `${W.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} × ${D.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} m · ${Math.round(W * D)} m²${layout.illustrative ? ' · medidas ilustrativas' : ''}`,
+        { size: 24, bg: layout.illustrative ? 'rgba(161,92,7,0.9)' : 'rgba(29,74,69,0.9)' },
+      );
       dims.position.set(W / 2, 0.05, D + 0.7);
       this.staticGroup.add(dims);
       // Alças da sala (largura leste, profundidade sul).
@@ -516,7 +633,10 @@ export class GameEngine {
         ['room:e', W, D / 2],
         ['room:s', W / 2, D],
       ] as const) {
-        const h = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 0.35), mat('#a8743f', { emissive: '#a8743f' }));
+        const h = new THREE.Mesh(
+          new THREE.BoxGeometry(0.35, 0.35, 0.35),
+          mat('#a8743f', { emissive: '#a8743f' }),
+        );
         h.position.set(x, 0.2, z);
         this.staticGroup.add(h);
         this.register(h, { kind: 'handle', id });
@@ -528,7 +648,12 @@ export class GameEngine {
       const r = rectOfArea(a);
       const tile = new THREE.Mesh(
         new THREE.PlaneGeometry(r.w * CM, r.d * CM),
-        new THREE.MeshStandardMaterial({ color: a.color ?? AREA_FUNCTION_COLOR[a.function], transparent: true, opacity: build ? 0.75 : 0.55, roughness: 1 }),
+        new THREE.MeshStandardMaterial({
+          color: a.color ?? AREA_FUNCTION_COLOR[a.function],
+          transparent: true,
+          opacity: build ? 0.75 : 0.55,
+          roughness: 1,
+        }),
       );
       tile.rotation.x = -Math.PI / 2;
       tile.position.set((r.x + r.w / 2) * CM, 0.003, (r.y + r.d / 2) * CM);
@@ -536,18 +661,29 @@ export class GameEngine {
       this.staticGroup.add(tile);
       const border = new THREE.LineSegments(
         new THREE.EdgesGeometry(new THREE.BoxGeometry(r.w * CM, 0.001, r.d * CM)),
-        new THREE.LineBasicMaterial({ color: opts.selectedId === a.id ? '#a8743f' : '#5a4a2e', transparent: true, opacity: opts.selectedId === a.id ? 1 : 0.4 }),
+        new THREE.LineBasicMaterial({
+          color: opts.selectedId === a.id ? '#a8743f' : '#5a4a2e',
+          transparent: true,
+          opacity: opts.selectedId === a.id ? 1 : 0.4,
+        }),
       );
       border.position.copy(tile.position).setY(0.006);
       this.staticGroup.add(border);
       const t = floorText(a.name, '#1d2523', Math.min(r.w * CM * 0.8, 3.2));
-      t.position.set((r.x + 20) * CM + (t.geometry as THREE.PlaneGeometry).parameters.width / 2, 0.008, (r.y + 30) * CM);
+      t.position.set(
+        (r.x + 20) * CM + (t.geometry as THREE.PlaneGeometry).parameters.width / 2,
+        0.008,
+        (r.y + 30) * CM,
+      );
       this.staticGroup.add(t);
       if (build) {
         tile.userData.pick = { kind: 'area', id: a.id };
         this.pickables.push(tile);
         this.objects.set(a.id, tile);
-        const dl = label(`${(r.w / 100).toLocaleString('pt-BR')} × ${(r.d / 100).toLocaleString('pt-BR')} m`, { size: 18, bg: 'rgba(255,255,255,0.8)', fg: '#4a5552' });
+        const dl = label(
+          `${(r.w / 100).toLocaleString('pt-BR')} × ${(r.d / 100).toLocaleString('pt-BR')} m`,
+          { size: 18, bg: 'rgba(255,255,255,0.8)', fg: '#4a5552' },
+        );
         dl.position.set((r.x + r.w / 2) * CM, 0.05, (r.y + r.d - 25) * CM);
         this.staticGroup.add(dl);
         if (opts.selectedId === a.id)
@@ -557,7 +693,10 @@ export class GameEngine {
             ['sw', r.x, r.y + r.d],
             ['se', r.x + r.w, r.y + r.d],
           ] as const) {
-            const h = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.12, 0.28), mat('#1d4a45', { emissive: '#2f6f68' }));
+            const h = new THREE.Mesh(
+              new THREE.BoxGeometry(0.28, 0.12, 0.28),
+              mat('#1d4a45', { emissive: '#2f6f68' }),
+            );
             h.position.set(x * CM, 0.06, z * CM);
             this.staticGroup.add(h);
             this.register(h, { kind: 'handle', id: `${a.id}:${c}` });
@@ -587,7 +726,11 @@ export class GameEngine {
       const agent = opts.agentDesks[s.id];
       const showName = build || s.assigneeUserIds.length === 0 || catalogOf(s.kind).desk;
       if (showName && !agent) {
-        const lb = label(s.name, { size: 18, bg: build ? 'rgba(29,74,69,0.85)' : 'rgba(255,255,255,0.85)', fg: build ? '#fff' : '#1d2523' });
+        const lb = label(s.name, {
+          size: 18,
+          bg: build ? 'rgba(29,74,69,0.85)' : 'rgba(255,255,255,0.85)',
+          fg: build ? '#fff' : '#1d2523',
+        });
         lb.position.set((f.x + f.w / 2) * CM, 1.35, (f.y + f.d / 2) * CM);
         this.staticGroup.add(lb);
       }
@@ -598,7 +741,9 @@ export class GameEngine {
       const holder = new THREE.Group();
       holder.position.set((f.x + f.w / 2) * CM, 0, (f.y + f.d / 2) * CM);
       const levels = u.slots.length || (STORAGE_KINDS[u.kind]?.levels ?? 1);
-      const tones = [...u.slots].sort((a, b) => a.level - b.level).map((sl) => opts.slotTones[sl.id] ?? null);
+      const tones = [...u.slots]
+        .sort((a, b) => a.level - b.level)
+        .map((sl) => opts.slotTones[sl.id] ?? null);
       const m = storageModel(u.kind, u.wCm * CM, u.dCm * CM, levels, tones);
       m.position.set((-u.wCm / 2) * CM, 0, (-u.dCm / 2) * CM);
       holder.add(m);
@@ -607,7 +752,11 @@ export class GameEngine {
       this.register(holder, { kind: 'storage', id: u.id });
       if (opts.selectedId === u.id) this.selectionBox(f);
       const lb = label(u.label, { size: 18, bg: 'rgba(168,116,63,0.92)' });
-      lb.position.set((f.x + f.w / 2) * CM, u.kind === 'ESTRADO_ESPUMA' ? 1.7 : 2.25, (f.y + f.d / 2) * CM);
+      lb.position.set(
+        (f.x + f.w / 2) * CM,
+        u.kind === 'ESTRADO_ESPUMA' ? 1.7 : 2.25,
+        (f.y + f.d / 2) * CM,
+      );
       this.staticGroup.add(lb);
     }
     // Decoração.
@@ -629,7 +778,9 @@ export class GameEngine {
     this.mestre = null;
     if (opts.mode === 'CONSTRUCAO') {
       const g = avatar('#e76f1a', 'MESTRE', 1);
-      const entry = layout.doc.doors[0] ? doorCenter(layout, layout.doc.doors[0]) : { x: 100, y: layout.depthCm - 100 };
+      const entry = layout.doc.doors[0]
+        ? doorCenter(layout, layout.doc.doors[0])
+        : { x: 100, y: layout.depthCm - 100 };
       const p = this.freeNear(entry ?? { x: 100, y: 100 }, 120);
       g.position.set(p.x * CM, 0, p.y * CM);
       g.rotation.y = Math.PI / 4;
@@ -652,11 +803,21 @@ export class GameEngine {
   }
 
   private selectionBox(f: Rect) {
-    const geo = new THREE.EdgesGeometry(new THREE.BoxGeometry(f.w * CM + 0.06, 1.2, f.d * CM + 0.06));
+    const geo = new THREE.EdgesGeometry(
+      new THREE.BoxGeometry(f.w * CM + 0.06, 1.2, f.d * CM + 0.06),
+    );
     const l = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: '#a8743f' }));
     l.position.set((f.x + f.w / 2) * CM, 0.6, (f.y + f.d / 2) * CM);
     this.staticGroup.add(l);
-    const ring = new THREE.Mesh(new THREE.PlaneGeometry(f.w * CM + 0.2, f.d * CM + 0.2), new THREE.MeshBasicMaterial({ color: '#a8743f', transparent: true, opacity: 0.25, depthWrite: false }));
+    const ring = new THREE.Mesh(
+      new THREE.PlaneGeometry(f.w * CM + 0.2, f.d * CM + 0.2),
+      new THREE.MeshBasicMaterial({
+        color: '#a8743f',
+        transparent: true,
+        opacity: 0.25,
+        depthWrite: false,
+      }),
+    );
     ring.rotation.x = -Math.PI / 2;
     ring.position.set((f.x + f.w / 2) * CM, 0.01, (f.y + f.d / 2) * CM);
     this.staticGroup.add(ring);
@@ -664,7 +825,10 @@ export class GameEngine {
 
   private buildWalls(l: LayoutContent, build: boolean) {
     const ext = exteriorWalls(l.widthCm, l.depthCm);
-    const all = [...ext.map((w) => ({ ...w, ext: true })), ...l.doc.walls.map((w) => ({ ...w, ext: false }))];
+    const all = [
+      ...ext.map((w) => ({ ...w, ext: true })),
+      ...l.doc.walls.map((w) => ({ ...w, ext: false })),
+    ];
     for (const w of all) {
       const tall = w.ext ? w.id === 'N' || w.id === 'O' : true;
       const H = w.ext ? (tall ? 2.6 : 0.35) : build ? 1.6 : 1.1;
@@ -672,7 +836,9 @@ export class GameEngine {
       const horizontal = w.y1 === w.y2;
       const len = horizontal ? Math.abs(w.x2 - w.x1) : Math.abs(w.y2 - w.y1);
       const start = horizontal ? Math.min(w.x1, w.x2) : Math.min(w.y1, w.y2);
-      const doors = l.doc.doors.filter((d) => d.wall === w.id).sort((a, b) => a.offsetCm - b.offsetCm);
+      const doors = l.doc.doors
+        .filter((d) => d.wall === w.id)
+        .sort((a, b) => a.offsetCm - b.offsetCm);
       const segs: [number, number][] = [];
       let cur = 0;
       for (const d of doors) {
@@ -684,7 +850,10 @@ export class GameEngine {
       for (const [a, b] of segs) {
         const sl = (b - a) * CM;
         const color = w.ext ? (tall ? PALETTE.wall : PALETTE.wallLow) : '#6f9c94';
-        const m = new THREE.Mesh(new THREE.BoxGeometry(horizontal ? sl : T, H, horizontal ? T : sl), mat(color));
+        const m = new THREE.Mesh(
+          new THREE.BoxGeometry(horizontal ? sl : T, H, horizontal ? T : sl),
+          mat(color),
+        );
         const mid = (start + (a + b) / 2) * CM;
         const off = w.ext ? (w.id === 'N' || w.id === 'O' ? -T / 2 : T / 2) : 0;
         if (horizontal) m.position.set(mid, H / 2, w.y1 * CM + off);
@@ -692,7 +861,10 @@ export class GameEngine {
         m.castShadow = true;
         m.receiveShadow = true;
         group.add(m);
-        const top = new THREE.Mesh(new THREE.BoxGeometry(horizontal ? sl : T + 0.02, 0.04, horizontal ? T + 0.02 : sl), mat(PALETTE.wallTop));
+        const top = new THREE.Mesh(
+          new THREE.BoxGeometry(horizontal ? sl : T + 0.02, 0.04, horizontal ? T + 0.02 : sl),
+          mat(PALETTE.wallTop),
+        );
         top.position.copy(m.position).setY(H + 0.02);
         group.add(top);
       }
@@ -701,15 +873,26 @@ export class GameEngine {
         const c = doorCenter(l, d);
         if (!c) continue;
         const mat2 = new THREE.Mesh(
-          new THREE.PlaneGeometry(horizontal ? d.widthCm * CM : 0.6, horizontal ? 0.6 : d.widthCm * CM),
-          new THREE.MeshStandardMaterial({ color: d.toSpaceKey ? '#a8743f' : '#7a8481', transparent: true, opacity: 0.75 }),
+          new THREE.PlaneGeometry(
+            horizontal ? d.widthCm * CM : 0.6,
+            horizontal ? 0.6 : d.widthCm * CM,
+          ),
+          new THREE.MeshStandardMaterial({
+            color: d.toSpaceKey ? '#a8743f' : '#7a8481',
+            transparent: true,
+            opacity: 0.75,
+          }),
         );
         mat2.rotation.x = -Math.PI / 2;
         mat2.position.set(c.x * CM, 0.012, c.y * CM);
         this.staticGroup.add(mat2);
         this.register(mat2, { kind: 'door', id: d.id });
         if (d.label || d.toSpaceKey) {
-          const s = label(d.toSpaceKey ? `→ ${d.label ?? d.toSpaceKey}` : (d.label ?? 'Porta'), { size: 18, bg: d.toSpaceKey ? 'rgba(168,116,63,0.95)' : 'rgba(29,37,35,0.75)', icon: d.toSpaceKey ? '🚪' : undefined });
+          const s = label(d.toSpaceKey ? `→ ${d.label ?? d.toSpaceKey}` : (d.label ?? 'Porta'), {
+            size: 18,
+            bg: d.toSpaceKey ? 'rgba(168,116,63,0.95)' : 'rgba(29,37,35,0.75)',
+            icon: d.toSpaceKey ? '🚪' : undefined,
+          });
           s.position.set(c.x * CM, tall && w.ext ? 2.3 : 1.0, c.y * CM);
           this.staticGroup.add(s);
         }
@@ -737,7 +920,11 @@ export class GameEngine {
     tag.position.set(0, 1.5, 0);
     g.add(tag);
     const d0 = this.layout.doc.doors[0];
-    const entry = at ?? (d0 ? doorCenter(this.layout, d0) : null) ?? { x: this.layout.widthCm / 2, y: this.layout.depthCm - 100 };
+    const entry = at ??
+      (d0 ? doorCenter(this.layout, d0) : null) ?? {
+        x: this.layout.widthCm / 2,
+        y: this.layout.depthCm - 100,
+      };
     const p = this.freeNear(entry, 90);
     g.position.set(p.x * CM, 0, p.y * CM);
     this.peopleGroup.add(g);
@@ -768,14 +955,19 @@ export class GameEngine {
   }
 
   playerCm() {
-    return this.player ? { x: this.player.g.position.x / CM, y: this.player.g.position.z / CM } : null;
+    return this.player
+      ? { x: this.player.g.position.x / CM, y: this.player.g.position.z / CM }
+      : null;
   }
 
   /** Move a representação de um objeto durante o arraste (antes de virar estado). */
   previewMove(id: string, xCm: number, yCm: number) {
     const o = this.objects.get(id);
     if (!o || !this.layout) return;
-    const s = this.layout.stations.find((x) => x.id === id) ?? this.layout.storageUnits.find((x) => x.id === id) ?? this.layout.doc.decor.find((x) => x.id === id);
+    const s =
+      this.layout.stations.find((x) => x.id === id) ??
+      this.layout.storageUnits.find((x) => x.id === id) ??
+      this.layout.doc.decor.find((x) => x.id === id);
     if (s) {
       const f = footprint({ ...s, xCm, yCm });
       o.position.set((f.x + f.w / 2) * CM, 0, (f.y + f.d / 2) * CM);
@@ -797,18 +989,40 @@ export class GameEngine {
         const body = furniture(p.model, fabricColor(p.osCode));
         g.add(body);
         // Anel e ícone do semáforo de materiais (cor + ícone + texto).
-        const tone = p.tone === 'FALTA' ? '#b42323' : p.tone === 'DISPONIVEL' ? '#1f7a46' : '#a15c07';
+        const tone =
+          p.tone === 'FALTA' ? '#b42323' : p.tone === 'DISPONIVEL' ? '#1f7a46' : '#a15c07';
         const [sw, sd] = FURNITURE_SIZE[p.model];
-        const ring = new THREE.Mesh(new THREE.RingGeometry(Math.max(sw, sd) * 0.55, Math.max(sw, sd) * 0.62, 32), new THREE.MeshBasicMaterial({ color: tone, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(Math.max(sw, sd) * 0.55, Math.max(sw, sd) * 0.62, 32),
+          new THREE.MeshBasicMaterial({
+            color: tone,
+            transparent: true,
+            opacity: 0.85,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          }),
+        );
         ring.rotation.x = -Math.PI / 2;
         ring.position.y = 0.02;
         g.add(ring);
         const icon = p.tone === 'FALTA' ? '⛔' : p.tone === 'DISPONIVEL' ? '✅' : '❔';
-        const tag = label(`${p.osCode} · ${p.tone === 'FALTA' ? 'falta material' : p.tone === 'DISPONIVEL' ? 'material ok' : 'a conferir'}`, { size: 20, bg: p.highlight ? 'rgba(168,116,63,0.97)' : 'rgba(255,255,255,0.94)', fg: p.highlight ? '#fff' : '#1d2523', icon, border: tone });
+        const tag = label(
+          `${p.osCode} · ${p.tone === 'FALTA' ? 'falta material' : p.tone === 'DISPONIVEL' ? 'material ok' : 'a conferir'}`,
+          {
+            size: 20,
+            bg: p.highlight ? 'rgba(168,116,63,0.97)' : 'rgba(255,255,255,0.94)',
+            fg: p.highlight ? '#fff' : '#1d2523',
+            icon,
+            border: tone,
+          },
+        );
         tag.position.set(0, p.model === 'CABECEIRA' ? 1.6 : 1.25, 0);
         g.add(tag);
         if (p.highlight) {
-          const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 4, 8), new THREE.MeshBasicMaterial({ color: '#a8743f', transparent: true, opacity: 0.6 }));
+          const beam = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.06, 0.06, 4, 8),
+            new THREE.MeshBasicMaterial({ color: '#a8743f', transparent: true, opacity: 0.6 }),
+          );
           beam.position.y = 2.4;
           beam.name = 'beam';
           g.add(beam);
@@ -826,11 +1040,17 @@ export class GameEngine {
         this.pieces.set(p.id, e);
         if (p.confirmed) {
           const ghost = new THREE.Group();
-          const pin = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.4, 8), mat('#2c5ea8', { emissive: '#2c5ea8' }));
+          const pin = new THREE.Mesh(
+            new THREE.ConeGeometry(0.15, 0.4, 8),
+            mat('#2c5ea8', { emissive: '#2c5ea8' }),
+          );
           pin.rotation.x = Math.PI;
           pin.position.y = 0.5;
           ghost.add(pin);
-          const t = label(`📍 ${p.osCode}: ${p.confirmed.text}`, { size: 16, bg: 'rgba(44,94,168,0.92)' });
+          const t = label(`📍 ${p.osCode}: ${p.confirmed.text}`, {
+            size: 16,
+            bg: 'rgba(44,94,168,0.92)',
+          });
           t.position.y = 1.0;
           ghost.add(t);
           ghost.position.set(p.confirmed.x * CM, 0, p.confirmed.y * CM);
@@ -862,10 +1082,19 @@ export class GameEngine {
       if (!e || e.key !== key) {
         const old = e;
         const g = avatar(p.color, p.kind === 'agent' ? 'AGENTE' : 'PESSOA', p.name.length);
-        const tag = label(p.status ? `${p.name} · ${p.status}` : p.name, { size: 18, bg: p.kind === 'agent' ? 'rgba(91,33,182,0.92)' : 'rgba(29,37,35,0.85)', icon: p.kind === 'agent' ? '🤖' : undefined });
+        const tag = label(p.status ? `${p.name} · ${p.status}` : p.name, {
+          size: 18,
+          bg: p.kind === 'agent' ? 'rgba(91,33,182,0.92)' : 'rgba(29,37,35,0.85)',
+          icon: p.kind === 'agent' ? '🤖' : undefined,
+        });
         tag.position.set(0, 1.5, 0);
         g.add(tag);
-        if (p.dim) g.traverse((o) => ((o as THREE.Mesh).isMesh ? (((o as THREE.Mesh).material as THREE.Material) = mat('#9aa3a1', { opacity: 0.6 })) : null));
+        if (p.dim)
+          g.traverse((o) =>
+            (o as THREE.Mesh).isMesh
+              ? (((o as THREE.Mesh).material as THREE.Material) = mat('#9aa3a1', { opacity: 0.6 }))
+              : null,
+          );
         g.position.copy(old ? old.g.position : to);
         if (old) this.peopleGroup.remove(old.g);
         this.peopleGroup.add(g);
@@ -900,7 +1129,10 @@ export class GameEngine {
     this.clearGroup(this.overlayGroup);
     for (const p of o.problems ?? []) {
       const color = p.severity === 'erro' ? '#b42323' : '#d08a16';
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(0.05, p.rect.w * CM), Math.max(0.05, p.rect.d * CM)), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, depthWrite: false }));
+      const m = new THREE.Mesh(
+        new THREE.PlaneGeometry(Math.max(0.05, p.rect.w * CM), Math.max(0.05, p.rect.d * CM)),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, depthWrite: false }),
+      );
       m.rotation.x = -Math.PI / 2;
       m.position.set((p.rect.x + p.rect.w / 2) * CM, 0.02, (p.rect.y + p.rect.d / 2) * CM);
       this.overlayGroup.add(m);
@@ -911,31 +1143,64 @@ export class GameEngine {
       }
     }
     for (const r of o.highlights ?? []) {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(r.w * CM, r.d * CM), new THREE.MeshBasicMaterial({ color: '#a8743f', transparent: true, opacity: 0.25, depthWrite: false }));
+      const m = new THREE.Mesh(
+        new THREE.PlaneGeometry(r.w * CM, r.d * CM),
+        new THREE.MeshBasicMaterial({
+          color: '#a8743f',
+          transparent: true,
+          opacity: 0.25,
+          depthWrite: false,
+        }),
+      );
       m.rotation.x = -Math.PI / 2;
       m.position.set((r.x + r.w / 2) * CM, 0.015, (r.y + r.d / 2) * CM);
       this.overlayGroup.add(m);
-      const e = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(r.w * CM, 0.02, r.d * CM)), new THREE.LineDashedMaterial({ color: '#8d5f31', dashSize: 0.15, gapSize: 0.1 }));
+      const e = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(r.w * CM, 0.02, r.d * CM)),
+        new THREE.LineDashedMaterial({ color: '#8d5f31', dashSize: 0.15, gapSize: 0.1 }),
+      );
       e.computeLineDistances();
       e.position.copy(m.position);
       this.overlayGroup.add(e);
     }
     for (const r of o.preview ?? []) {
-      const e = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(r.w * CM, 0.9, r.d * CM)), new THREE.LineBasicMaterial({ color: '#a8743f' }));
+      const e = new THREE.LineSegments(
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(r.w * CM, 0.9, r.d * CM)),
+        new THREE.LineBasicMaterial({ color: '#a8743f' }),
+      );
       e.position.set((r.x + r.w / 2) * CM, 0.45, (r.y + r.d / 2) * CM);
       this.overlayGroup.add(e);
     }
     if (o.path && o.path.length > 1) {
       const pts = o.path.map((p) => new THREE.Vector3(p.x * CM, 0.03, p.y * CM));
       const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.1);
-      const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(8, pts.length * 6), 0.05, 6), new THREE.MeshBasicMaterial({ color: '#1f7a46', transparent: true, opacity: 0.8 }));
+      const tube = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, Math.max(8, pts.length * 6), 0.05, 6),
+        new THREE.MeshBasicMaterial({ color: '#1f7a46', transparent: true, opacity: 0.8 }),
+      );
       this.overlayGroup.add(tube);
-      const band = new THREE.Mesh(new THREE.TubeGeometry(curve, Math.max(8, pts.length * 6), 0.5, 6), new THREE.MeshBasicMaterial({ color: '#1f7a46', transparent: true, opacity: 0.12, depthWrite: false }));
+      const band = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, Math.max(8, pts.length * 6), 0.5, 6),
+        new THREE.MeshBasicMaterial({
+          color: '#1f7a46',
+          transparent: true,
+          opacity: 0.12,
+          depthWrite: false,
+        }),
+      );
       band.scale.y = 0.02;
       this.overlayGroup.add(band);
     }
     if (o.pulse) {
-      const r = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.45, 32), new THREE.MeshBasicMaterial({ color: '#a8743f', transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
+      const r = new THREE.Mesh(
+        new THREE.RingGeometry(0.3, 0.45, 32),
+        new THREE.MeshBasicMaterial({
+          color: '#a8743f',
+          transparent: true,
+          opacity: 0.9,
+          side: THREE.DoubleSide,
+        }),
+      );
       r.rotation.x = -Math.PI / 2;
       r.position.set(o.pulse.x * CM, 0.03, o.pulse.y * CM);
       r.name = 'pulse';
@@ -945,7 +1210,13 @@ export class GameEngine {
 
   // ───────────────────────────── Laço de animação ─────────────────────────────
 
-  private walkStep(obj: THREE.Object3D, path: THREE.Vector3[], speed: number, dt: number, t: number) {
+  private walkStep(
+    obj: THREE.Object3D,
+    path: THREE.Vector3[],
+    speed: number,
+    dt: number,
+    t: number,
+  ) {
     const next = path[0];
     const legL = obj.getObjectByName('legL');
     const legR = obj.getObjectByName('legR');
@@ -993,7 +1264,8 @@ export class GameEngine {
       } else e.g.position.y = 0;
       e.g.rotation.y += (e.rot - e.g.rotation.y) * Math.min(1, dt * 5);
       const beam = e.g.getObjectByName('beam');
-      if (beam) (beam as THREE.Mesh).scale.x = (beam as THREE.Mesh).scale.z = 1 + Math.sin(t * 4) * 0.3;
+      if (beam)
+        (beam as THREE.Mesh).scale.x = (beam as THREE.Mesh).scale.z = 1 + Math.sin(t * 4) * 0.3;
     }
     for (const e of this.people.values()) {
       const moving = this.walkStep(e.g, e.path, 1.6, dt, t);
@@ -1018,7 +1290,10 @@ export class GameEngine {
   };
 
   /** Ponto da frente de uma estação (cm), onde a pessoa fica de pé. */
-  static workSpot(s: { xCm: number; yCm: number; wCm: number; dCm: number; rotation: number }, depth = 45) {
+  static workSpot(
+    s: { xCm: number; yCm: number; wCm: number; dCm: number; rotation: number },
+    depth = 45,
+  ) {
     const fr = frontRect(s as never, depth);
     return { x: fr.x + fr.w / 2, y: fr.y + fr.d / 2, face: Math.PI - (s.rotation * Math.PI) / 180 };
   }

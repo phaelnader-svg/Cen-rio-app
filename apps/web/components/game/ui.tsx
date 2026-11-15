@@ -54,7 +54,15 @@ export function Panel({
   );
 }
 
-export function Section({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
+export function Section({
+  title,
+  children,
+  right,
+}: {
+  title: string;
+  children: ReactNode;
+  right?: ReactNode;
+}) {
   return (
     <div className="mb-4">
       <div className="mb-1.5 flex items-center justify-between">
@@ -107,7 +115,13 @@ export function GBtn({
   );
 }
 
-export function Tone({ tone, children }: { tone: 'FALTA' | 'DISPONIVEL' | 'A_CONFERIR' | 'risco' | 'atencao' | 'ok' | 'info'; children: ReactNode }) {
+export function Tone({
+  tone,
+  children,
+}: {
+  tone: 'FALTA' | 'DISPONIVEL' | 'A_CONFERIR' | 'risco' | 'atencao' | 'ok' | 'info';
+  children: ReactNode;
+}) {
   const map = {
     FALTA: 'bg-danger-50 text-danger-700 border-danger-600/30',
     risco: 'bg-danger-50 text-danger-700 border-danger-600/30',
@@ -117,7 +131,16 @@ export function Tone({ tone, children }: { tone: 'FALTA' | 'DISPONIVEL' | 'A_CON
     atencao: 'bg-warn-50 text-warn-600 border-warn-600/30',
     info: 'bg-info-50 text-info-600 border-info-600/30',
   } as const;
-  return <span className={clsx('inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold', map[tone])}>{children}</span>;
+  return (
+    <span
+      className={clsx(
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold',
+        map[tone],
+      )}
+    >
+      {children}
+    </span>
+  );
 }
 
 export function KV({ k, v }: { k: string; v: ReactNode }) {
@@ -129,9 +152,17 @@ export function KV({ k, v }: { k: string; v: ReactNode }) {
   );
 }
 
-export const fmtDate = (iso: string | null | undefined) => (iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—');
+export const fmtDate = (iso: string | null | undefined) =>
+  iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—';
 export const fmtDateTime = (iso: string | null | undefined) =>
-  iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+  iso
+    ? new Date(iso).toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : '—';
 export const fmtQty = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
 export const UNIT_LABEL: Record<string, string> = {
   METRO: 'm',

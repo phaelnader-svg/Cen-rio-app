@@ -93,8 +93,6 @@ export function navGroupOf(href: string): NavGroup {
 
 export const NAV: NavItem[] = [
   { href: '/painel', label: 'Início', icon: LayoutDashboard },
-  // Jogo de gestão: entrada própria (mesma sessão e permissões).
-  { href: '/jogo', label: 'Empresa virtual', icon: Gamepad2, anyOf: ['jogo.acessar'] },
   // Simplificação Fase 2: entrada principal do gestor (cliente + serviço + retirada).
   {
     href: '/painel/servicos/novo',
@@ -108,6 +106,8 @@ export const NAV: NavItem[] = [
     icon: Siren,
     anyOf: ['ocorrencias.ver', 'ocorrencias.gerenciar'],
   },
+  // Jogo de gestão: entrada própria (mesma sessão e permissões).
+  { href: '/jogo', label: 'Empresa virtual', icon: Gamepad2, anyOf: ['jogo.acessar'] },
   { href: '/painel/funcionarios', label: 'Funcionários', icon: Users, anyOf: ['funcionarios.ver'] },
   {
     href: '/painel/funcoes',

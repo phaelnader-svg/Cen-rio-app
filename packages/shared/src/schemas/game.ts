@@ -1,10 +1,5 @@
 import { z } from 'zod';
-import {
-  AREA_FUNCTIONS,
-  DECOR_KINDS,
-  STATION_KINDS,
-  STORAGE_KINDS,
-} from '../game-domain';
+import { AREA_FUNCTIONS, DECOR_KINDS, STATION_KINDS, STORAGE_KINDS } from '../game-domain';
 import { idSchema, versionSchema } from './common';
 
 const cm = (max = 20000) => z.number().int().min(-500).max(max);
@@ -20,13 +15,19 @@ export const gameAreaSchema = z.object({
   yCm: cm(),
   wCm: size(),
   dCm: size(),
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .nullable()
+    .optional(),
   itemLocationId: idSchema.nullable().optional(),
 });
 
 export const gameStationSchema = z.object({
   id: idSchema,
-  kind: z.enum(Object.keys(STATION_KINDS) as [keyof typeof STATION_KINDS, ...(keyof typeof STATION_KINDS)[]]),
+  kind: z.enum(
+    Object.keys(STATION_KINDS) as [keyof typeof STATION_KINDS, ...(keyof typeof STATION_KINDS)[]],
+  ),
   name: name(80),
   areaId: idSchema.nullable().optional(),
   xCm: cm(),
@@ -48,7 +49,9 @@ export const gameStorageSlotSchema = z.object({
 
 export const gameStorageUnitSchema = z.object({
   id: idSchema,
-  kind: z.enum(Object.keys(STORAGE_KINDS) as [keyof typeof STORAGE_KINDS, ...(keyof typeof STORAGE_KINDS)[]]),
+  kind: z.enum(
+    Object.keys(STORAGE_KINDS) as [keyof typeof STORAGE_KINDS, ...(keyof typeof STORAGE_KINDS)[]],
+  ),
   label: name(60),
   areaId: idSchema.nullable().optional(),
   xCm: cm(),
@@ -59,7 +62,13 @@ export const gameStorageUnitSchema = z.object({
   slots: z.array(gameStorageSlotSchema).max(50),
 });
 
-const wallSchema = z.object({ id: z.string().min(1).max(40), x1: cm(), y1: cm(), x2: cm(), y2: cm() });
+const wallSchema = z.object({
+  id: z.string().min(1).max(40),
+  x1: cm(),
+  y1: cm(),
+  x2: cm(),
+  y2: cm(),
+});
 const doorSchema = z.object({
   id: z.string().min(1).max(40),
   wall: z.string().min(1).max(40),
@@ -70,7 +79,9 @@ const doorSchema = z.object({
 });
 const decorSchema = z.object({
   id: z.string().min(1).max(40),
-  kind: z.enum(Object.keys(DECOR_KINDS) as [keyof typeof DECOR_KINDS, ...(keyof typeof DECOR_KINDS)[]]),
+  kind: z.enum(
+    Object.keys(DECOR_KINDS) as [keyof typeof DECOR_KINDS, ...(keyof typeof DECOR_KINDS)[]],
+  ),
   name: z.string().max(60).nullable().optional(),
   xCm: cm(),
   yCm: cm(),
@@ -167,7 +178,10 @@ export const agentSchema = z.object({
   dataScopes: z.array(z.enum(AGENT_DATA_SCOPES)).max(AGENT_DATA_SCOPES.length),
   actionPolicies: z.partialRecord(z.enum(AGENT_ACTIONS), z.enum(AGENT_POLICY)).default({}),
   deskStationId: idSchema.nullable().optional(),
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#7c3aed'),
+  color: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .default('#7c3aed'),
 });
 export const updateAgentSchema = agentSchema.partial().extend({
   version: versionSchema,

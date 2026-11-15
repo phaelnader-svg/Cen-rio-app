@@ -1,5 +1,7 @@
 -- Jogo de gestão (empresa virtual): planta editável, áreas, estações, endereçamento físico do
--- estoque e agentes do escritório. Puramente aditiva: nenhuma tabela existente é alterada.
+-- estoque e agentes do escritório. Puramente aditiva: só cria tabelas novas; nenhuma tabela,
+-- coluna ou dado existente é alterado. As chaves estrangeiras usam o padrão NO ACTION na
+-- atualização (ids uuid nunca mudam).
 
 -- CreateTable
 CREATE TABLE "game_spaces" (
@@ -207,59 +209,64 @@ CREATE INDEX "ai_agent_messages_agent_id_created_at_idx" ON "ai_agent_messages"(
 CREATE INDEX "ai_agent_proposals_agent_id_status_idx" ON "ai_agent_proposals"("agent_id", "status");
 
 -- AddForeignKey
-ALTER TABLE "game_areas" ADD CONSTRAINT "game_areas_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "game_spaces"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_spaces" ADD CONSTRAINT "game_spaces_updated_by_id_fkey" FOREIGN KEY ("updated_by_id") REFERENCES "users"("id") ON DELETE SET NULL;
 
 -- AddForeignKey
-ALTER TABLE "game_stations" ADD CONSTRAINT "game_stations_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "game_spaces"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_areas" ADD CONSTRAINT "game_areas_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "game_spaces"("id") ON DELETE RESTRICT;
 
 -- AddForeignKey
-ALTER TABLE "game_stations" ADD CONSTRAINT "game_stations_area_id_fkey" FOREIGN KEY ("area_id") REFERENCES "game_areas"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_areas" ADD CONSTRAINT "game_areas_item_location_id_fkey" FOREIGN KEY ("item_location_id") REFERENCES "item_locations"("id") ON DELETE SET NULL;
 
 -- AddForeignKey
-ALTER TABLE "game_station_assignees" ADD CONSTRAINT "game_station_assignees_station_id_fkey" FOREIGN KEY ("station_id") REFERENCES "game_stations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "game_stations" ADD CONSTRAINT "game_stations_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "game_spaces"("id") ON DELETE RESTRICT;
 
 -- AddForeignKey
-ALTER TABLE "game_storage_units" ADD CONSTRAINT "game_storage_units_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "game_spaces"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_stations" ADD CONSTRAINT "game_stations_area_id_fkey" FOREIGN KEY ("area_id") REFERENCES "game_areas"("id") ON DELETE RESTRICT;
 
 -- AddForeignKey
-ALTER TABLE "game_storage_units" ADD CONSTRAINT "game_storage_units_area_id_fkey" FOREIGN KEY ("area_id") REFERENCES "game_areas"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_station_assignees" ADD CONSTRAINT "game_station_assignees_station_id_fkey" FOREIGN KEY ("station_id") REFERENCES "game_stations"("id") ON DELETE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "game_storage_slots" ADD CONSTRAINT "game_storage_slots_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "game_storage_units"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_station_assignees" ADD CONSTRAINT "game_station_assignees_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT;
 
 -- AddForeignKey
-ALTER TABLE "game_slot_materials" ADD CONSTRAINT "game_slot_materials_slot_id_fkey" FOREIGN KEY ("slot_id") REFERENCES "game_storage_slots"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "game_storage_units" ADD CONSTRAINT "game_storage_units_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "game_spaces"("id") ON DELETE RESTRICT;
 
 -- AddForeignKey
-ALTER TABLE "game_layout_revisions" ADD CONSTRAINT "game_layout_revisions_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "game_spaces"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_storage_units" ADD CONSTRAINT "game_storage_units_area_id_fkey" FOREIGN KEY ("area_id") REFERENCES "game_areas"("id") ON DELETE RESTRICT;
 
 -- AddForeignKey
-ALTER TABLE "ai_agents" ADD CONSTRAINT "ai_agents_desk_station_id_fkey" FOREIGN KEY ("desk_station_id") REFERENCES "game_stations"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "game_storage_slots" ADD CONSTRAINT "game_storage_slots_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "game_storage_units"("id") ON DELETE RESTRICT;
 
 -- AddForeignKey
-ALTER TABLE "ai_agent_messages" ADD CONSTRAINT "ai_agent_messages_agent_id_fkey" FOREIGN KEY ("agent_id") REFERENCES "ai_agents"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_slot_materials" ADD CONSTRAINT "game_slot_materials_slot_id_fkey" FOREIGN KEY ("slot_id") REFERENCES "game_storage_slots"("id") ON DELETE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "ai_agent_proposals" ADD CONSTRAINT "ai_agent_proposals_agent_id_fkey" FOREIGN KEY ("agent_id") REFERENCES "ai_agents"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_slot_materials" ADD CONSTRAINT "game_slot_materials_stock_item_id_fkey" FOREIGN KEY ("stock_item_id") REFERENCES "stock_items"("id") ON DELETE RESTRICT;
 
+-- AddForeignKey
+ALTER TABLE "game_layout_revisions" ADD CONSTRAINT "game_layout_revisions_space_id_fkey" FOREIGN KEY ("space_id") REFERENCES "game_spaces"("id") ON DELETE RESTRICT;
 
--- Vínculos com o cadastro oficial (sem relação Prisma, para não alterar modelos existentes).
-ALTER TABLE "game_areas" ADD CONSTRAINT "game_areas_item_location_fkey"
-  FOREIGN KEY ("item_location_id") REFERENCES "item_locations"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "game_station_assignees" ADD CONSTRAINT "game_station_assignees_user_fkey"
-  FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "game_slot_materials" ADD CONSTRAINT "game_slot_materials_stock_item_fkey"
-  FOREIGN KEY ("stock_item_id") REFERENCES "stock_items"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE "game_spaces" ADD CONSTRAINT "game_spaces_updated_by_fkey"
-  FOREIGN KEY ("updated_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "game_layout_revisions" ADD CONSTRAINT "game_layout_revisions_created_by_fkey"
-  FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "ai_agents" ADD CONSTRAINT "ai_agents_created_by_fkey"
-  FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "ai_agent_messages" ADD CONSTRAINT "ai_agent_messages_user_fkey"
-  FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE "ai_agent_proposals" ADD CONSTRAINT "ai_agent_proposals_decided_by_fkey"
-  FOREIGN KEY ("decided_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+-- AddForeignKey
+ALTER TABLE "game_layout_revisions" ADD CONSTRAINT "game_layout_revisions_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE SET NULL;
+
+-- AddForeignKey
+ALTER TABLE "ai_agents" ADD CONSTRAINT "ai_agents_desk_station_id_fkey" FOREIGN KEY ("desk_station_id") REFERENCES "game_stations"("id") ON DELETE SET NULL;
+
+-- AddForeignKey
+ALTER TABLE "ai_agents" ADD CONSTRAINT "ai_agents_created_by_id_fkey" FOREIGN KEY ("created_by_id") REFERENCES "users"("id") ON DELETE SET NULL;
+
+-- AddForeignKey
+ALTER TABLE "ai_agent_messages" ADD CONSTRAINT "ai_agent_messages_agent_id_fkey" FOREIGN KEY ("agent_id") REFERENCES "ai_agents"("id") ON DELETE RESTRICT;
+
+-- AddForeignKey
+ALTER TABLE "ai_agent_messages" ADD CONSTRAINT "ai_agent_messages_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL;
+
+-- AddForeignKey
+ALTER TABLE "ai_agent_proposals" ADD CONSTRAINT "ai_agent_proposals_agent_id_fkey" FOREIGN KEY ("agent_id") REFERENCES "ai_agents"("id") ON DELETE RESTRICT;
+
+-- AddForeignKey
+ALTER TABLE "ai_agent_proposals" ADD CONSTRAINT "ai_agent_proposals_decided_by_id_fkey" FOREIGN KEY ("decided_by_id") REFERENCES "users"("id") ON DELETE SET NULL;
 
 -- Regras de coerência.
 ALTER TABLE "game_spaces" ADD CONSTRAINT "game_spaces_dims" CHECK (
@@ -282,10 +289,14 @@ ALTER TABLE "ai_agent_proposals" ADD CONSTRAINT "ai_agent_proposals_status" CHEC
 CREATE UNIQUE INDEX "game_areas_item_location_active" ON "game_areas"("item_location_id")
   WHERE "active" AND "item_location_id" IS NOT NULL;
 
--- Histórico de plantas e conversas: imutáveis (mesma função da auditoria).
-CREATE TRIGGER "game_layout_revisions_immutable"
-  BEFORE UPDATE OR DELETE ON "game_layout_revisions"
-  FOR EACH ROW EXECUTE FUNCTION cenario_reject_mutation();
-CREATE TRIGGER "ai_agent_messages_immutable"
-  BEFORE UPDATE OR DELETE ON "ai_agent_messages"
-  FOR EACH ROW EXECUTE FUNCTION cenario_reject_mutation();
+-- Histórico de plantas e conversas: somente inserção (mesma função de imutabilidade da
+-- auditoria). Um gatilho por tabela, criado no laço abaixo.
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['game_layout_revisions', 'ai_agent_messages'] LOOP
+    EXECUTE format(
+      'CREATE TRIGGER %I BEFORE UPDATE OR DELETE ON %I FOR EACH ROW EXECUTE FUNCTION cenario_reject_mutation()',
+      t || '_immutable', t);
+  END LOOP;
+END $$;

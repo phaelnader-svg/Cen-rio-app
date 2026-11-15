@@ -29,15 +29,33 @@ describe('planta sugerida', () => {
     const w = suggestedWorkshop(team);
     expect((w.widthCm * w.depthCm) / 10000).toBe(180);
     expect(w.illustrative).toBe(true);
-    for (const fn of ['RECEBIMENTO', 'DESMANCHE', 'CORTE', 'COSTURA', 'MARCENARIA', 'MONTAGEM', 'QUALIDADE', 'EMBALAGEM', 'EXPEDICAO', 'ESTOQUE'])
+    for (const fn of [
+      'RECEBIMENTO',
+      'DESMANCHE',
+      'CORTE',
+      'COSTURA',
+      'MARCENARIA',
+      'MONTAGEM',
+      'QUALIDADE',
+      'EMBALAGEM',
+      'EXPEDICAO',
+      'ESTOQUE',
+    ])
       expect(w.areas.some((a) => a.function === fn)).toBe(true);
     expect(sofaRoute(w)).not.toBeNull();
-    expect(w.stations.find((s) => s.name === 'Bancada do Ricardo')!.assigneeUserIds).toEqual([RICARDO]);
+    expect(w.stations.find((s) => s.name === 'Bancada do Ricardo')!.assigneeUserIds).toEqual([
+      RICARDO,
+    ]);
   });
 
   it('ids únicos e estáveis entre áreas, estações e posições', () => {
     const w = suggestedWorkshop(team);
-    const ids = [...w.areas, ...w.stations, ...w.storageUnits, ...w.storageUnits.flatMap((u) => u.slots)].map((x) => x.id);
+    const ids = [
+      ...w.areas,
+      ...w.stations,
+      ...w.storageUnits,
+      ...w.storageUnits.flatMap((u) => u.slots),
+    ].map((x) => x.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
@@ -46,33 +64,64 @@ describe('posição representada da peça (só pelos registros)', () => {
   const l = suggestedWorkshop(team);
   const desmanche = l.stations.find((s) => s.name === 'Bancada do desmanche')!;
   const corte = l.stations.find((s) => s.kind === 'MESA_CORTE')!;
-  const t = (id: string, activity: string, status: string, assigneeUserId: string | null) => ({ id, activity, status, assigneeUserId });
+  const t = (id: string, activity: string, status: string, assigneeUserId: string | null) => ({
+    id,
+    activity,
+    status,
+    assigneeUserId,
+  });
 
   it('sem planejamento → recebimento', () => {
     expect(placePiece(l, { stage: 'EM_PRODUCAO', tasks: [] }).kind).toBe('SEM_PLANEJAMENTO');
   });
   it('atribuído e liberado → fila do João, junto da estação dele', () => {
-    const p = placePiece(l, { stage: 'EM_PRODUCAO', tasks: [t('a', 'DESMONTAGEM', 'LIBERADA', JOAO)], names: { [JOAO]: 'João' } });
+    const p = placePiece(l, {
+      stage: 'EM_PRODUCAO',
+      tasks: [t('a', 'DESMONTAGEM', 'LIBERADA', JOAO)],
+      names: { [JOAO]: 'João' },
+    });
     expect(p).toMatchObject({ kind: 'FILA', userId: JOAO, stationId: desmanche.id });
     expect(p.label).toContain('fila de João');
   });
   it('João iniciou → estação do João; concluiu → aguardando a etapa seguinte', () => {
-    expect(placePiece(l, { stage: 'EM_PRODUCAO', tasks: [t('a', 'DESMONTAGEM', 'EM_EXECUCAO', JOAO)] })).toMatchObject({ kind: 'ESTACAO', stationId: desmanche.id });
-    const after = placePiece(l, { stage: 'EM_PRODUCAO', tasks: [t('a', 'DESMONTAGEM', 'CONCLUIDA', JOAO), t('b', 'CORTE_TECIDO', 'BLOQUEADA', MARCIO)] });
+    expect(
+      placePiece(l, { stage: 'EM_PRODUCAO', tasks: [t('a', 'DESMONTAGEM', 'EM_EXECUCAO', JOAO)] }),
+    ).toMatchObject({ kind: 'ESTACAO', stationId: desmanche.id });
+    const after = placePiece(l, {
+      stage: 'EM_PRODUCAO',
+      tasks: [
+        t('a', 'DESMONTAGEM', 'CONCLUIDA', JOAO),
+        t('b', 'CORTE_TECIDO', 'BLOQUEADA', MARCIO),
+      ],
+    });
     expect(after.kind).toBe('AGUARDANDO_ETAPA');
     expect(after.areaFunction).toBe('ESPERA');
   });
   it('Márcio inicia o corte → estação configurada para a etapa (mesa de corte compartilhada)', () => {
-    const p = placePiece(l, { stage: 'EM_PRODUCAO', tasks: [t('a', 'DESMONTAGEM', 'CONCLUIDA', JOAO), t('b', 'CORTE_TECIDO', 'EM_EXECUCAO', MARCIO)] });
+    const p = placePiece(l, {
+      stage: 'EM_PRODUCAO',
+      tasks: [
+        t('a', 'DESMONTAGEM', 'CONCLUIDA', JOAO),
+        t('b', 'CORTE_TECIDO', 'EM_EXECUCAO', MARCIO),
+      ],
+    });
     expect(p).toMatchObject({ kind: 'ESTACAO', stationId: corte.id, userId: MARCIO });
   });
   it('costura vai para a máquina vinculada ao Márcio (vínculo + etapa)', () => {
-    const p = placePiece(l, { stage: 'EM_PRODUCAO', tasks: [t('c', 'COSTURA', 'EM_EXECUCAO', MARCIO)] });
+    const p = placePiece(l, {
+      stage: 'EM_PRODUCAO',
+      tasks: [t('c', 'COSTURA', 'EM_EXECUCAO', MARCIO)],
+    });
     expect(l.stations.find((s) => s.id === p.stationId)!.name).toBe('Máquina de costura 1');
   });
   it('embalada/pronta → expedição', () => {
-    expect(placePiece(l, { stage: 'PRONTA_ENTREGA', tasks: [t('a', 'DESMONTAGEM', 'CONCLUIDA', JOAO)] }).areaFunction).toBe('EXPEDICAO');
-    expect(placePiece(l, { stage: 'AGUARDANDO_INSPECAO', tasks: [] }).areaFunction).toBe('QUALIDADE');
+    expect(
+      placePiece(l, { stage: 'PRONTA_ENTREGA', tasks: [t('a', 'DESMONTAGEM', 'CONCLUIDA', JOAO)] })
+        .areaFunction,
+    ).toBe('EXPEDICAO');
+    expect(placePiece(l, { stage: 'AGUARDANDO_INSPECAO', tasks: [] }).areaFunction).toBe(
+      'QUALIDADE',
+    );
   });
 });
 
@@ -130,18 +179,25 @@ describe('Mestre de Obras', () => {
   it('escritório maior com mais quatro mesas: redimensiona e encaixa 4', () => {
     const r = askMestre(o, 'Mudei para um escritório maior. Como encaixo mais quatro mesas?');
     expect(r.suggestion!.patch.addStations).toHaveLength(4);
-    if (r.suggestion!.patch.resize) expect(r.suggestion!.patch.resize.depthCm).toBeGreaterThan(o.depthCm);
+    if (r.suggestion!.patch.resize)
+      expect(r.suggestion!.patch.resize.depthCm).toBeGreaterThan(o.depthCm);
   });
   it('marcenaria com caminho até a expedição (ou gargalos marcados)', () => {
     const noCarp = clone(w);
     noCarp.areas = noCarp.areas.filter((a) => a.function !== 'MARCENARIA');
     noCarp.stations = noCarp.stations.filter((s) => s.kind !== 'BANCADA_MARCENARIA');
-    const r = askMestre(noCarp, 'Quero criar uma área de marcenaria e deixar um caminho livre até a expedição.');
+    const r = askMestre(
+      noCarp,
+      'Quero criar uma área de marcenaria e deixar um caminho livre até a expedição.',
+    );
     expect(r.suggestion!.patch.addAreas?.[0]?.function).toBe('MARCENARIA');
     expect(Boolean(r.suggestion!.path) || r.suggestion!.problems.length > 0).toBe(true);
   });
   it('agente de compras: usa mesa livre do escritório', () => {
-    const r = askMestre(o, 'Quero mais um agente para compras. Como coloco a mesa e configuro a função?');
+    const r = askMestre(
+      o,
+      'Quero mais um agente para compras. Como coloco a mesa e configuro a função?',
+    );
     expect(r.followUp).toBe('CONFIGURAR_AGENTE');
     expect(r.lines.join(' ')).toMatch(/Compras/);
   });
@@ -157,13 +213,23 @@ describe('impacto da remoção', () => {
     after.storageUnits = after.storageUnits.filter((u) => u.id !== before.storageUnits[1]!.id);
     const imp = removalImpacts(before, after);
     expect(imp.map((i) => i.kind).sort()).toEqual(['ESTACAO', 'POSICAO']);
-    expect(imp.find((i) => i.kind === 'ESTACAO')!.targets.some((t) => t.id === after.stations.find((s) => s.name === 'Bancada do Márcio')!.id)).toBe(true);
+    expect(
+      imp
+        .find((i) => i.kind === 'ESTACAO')!
+        .targets.some(
+          (t) => t.id === after.stations.find((s) => s.name === 'Bancada do Márcio')!.id,
+        ),
+    ).toBe(true);
   });
   it('área com estações dentro pede destino', () => {
     const before = suggestedWorkshop(team);
     const after = clone(before);
     const mont = after.areas.find((a) => a.function === 'MONTAGEM')!;
     after.areas = after.areas.filter((a) => a.id !== mont.id);
-    expect(removalImpacts(before, after).find((i) => i.kind === 'AREA')!.links.join(' ')).toMatch(/estação/);
+    expect(
+      removalImpacts(before, after)
+        .find((i) => i.kind === 'AREA')!
+        .links.join(' '),
+    ).toMatch(/estação/);
   });
 });

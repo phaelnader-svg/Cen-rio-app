@@ -162,6 +162,14 @@ model User {
   leaveEvents        AttendanceLeaveEvent[] @relation("LeaveEventActor")
   proposalsRequested RescheduleProposal[]   @relation("ProposalRequestedBy")
 
+  // Jogo de gestão (relações inversas; nenhuma coluna nova em users).
+  gameSpacesUpdated  GameSpace[]           @relation("GameSpaceUpdatedBy")
+  gameStations       GameStationAssignee[] @relation("GameStationAssignee")
+  gameRevisions      GameLayoutRevision[]  @relation("GameRevisionCreatedBy")
+  aiAgentsCreated    AiAgent[]             @relation("AiAgentCreatedBy")
+  aiAgentMessages    AiAgentMessage[]      @relation("AiAgentMessageUser")
+  aiProposalsDecided AiAgentProposal[]     @relation("AiAgentProposalDecidedBy")
+
   @@map("users")
 }
 
@@ -1458,6 +1466,8 @@ model StockItem {
   reservations  StockReservation[]
   purchaseItems PurchaseOrderItem[]
   issues        ProductionIssue[]
+  /// Jogo de gestão: posições do mapa onde o material está guardado.
+  gameSlots     GameSlotMaterial[]
 
   @@map("stock_items")
 }
@@ -2659,6 +2669,8 @@ model ItemLocation {
   items     ServiceOrderItem[]
   events    ItemLocationEvent[]
   packaging PackagingRecord[]
+  /// Jogo de gestão: área do mapa que representa esta localização.
+  gameAreas GameArea[]
 
   @@map("item_locations")
 }
@@ -3731,7 +3743,8 @@ model AttendanceLeaveEvent {
 // Jogo de gestão (empresa virtual). Aditivo: nenhuma tabela existente muda de significado.
 // A planta é só representação; a fonte dos dados operacionais continua sendo OS, tarefas,
 // estoque e compras. Vínculos com usuários, materiais e localizações físicas usam chaves
-// estrangeiras declaradas na migration (sem relação Prisma para não alterar os modelos antigos).
+// estrangeiras com NO ACTION na atualização (ids nunca mudam); nos modelos antigos entram só
+// os campos de relação inversa, sem nenhuma mudança de tabela.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Espaço do jogo (Tapeçaria, Escritório ou ambiente criado pelo gestor).
@@ -3755,6 +3768,7 @@ model GameSpace {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  updatedBy    User?                @relation("GameSpaceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
   areas        GameArea[]
   stations     GameStation[]
   storageUnits GameStorageUnit[]
@@ -3781,7 +3795,8 @@ model GameArea {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  space        GameSpace         @relation(fields: [spaceId], references: [id], onDelete: Restrict)
+  space        GameSpace         @relation(fields: [spaceId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  itemLocation ItemLocation?     @relation(fields: [itemLocationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   stations     GameStation[]
   storageUnits GameStorageUnit[]
 
@@ -3808,8 +3823,8 @@ model GameStation {
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  space     GameSpace             @relation(fields: [spaceId], references: [id], onDelete: Restrict)
-  area      GameArea?             @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  space     GameSpace             @relation(fields: [spaceId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  area      GameArea?             @relation(fields: [areaId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   assignees GameStationAssignee[]
   agents    AiAgent[]
 
@@ -3824,7 +3839,8 @@ model GameStationAssignee {
   userId    String   @map("user_id") @db.Uuid
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  station GameStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+  station GameStation @relation(fields: [stationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user    User        @relation("GameStationAssignee", fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@id([stationId, userId])
   @@index([userId])
@@ -3847,8 +3863,8 @@ model GameStorageUnit {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  space GameSpace         @relation(fields: [spaceId], references: [id], onDelete: Restrict)
-  area  GameArea?         @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  space GameSpace         @relation(fields: [spaceId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  area  GameArea?         @relation(fields: [areaId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   slots GameStorageSlot[]
 
   @@index([spaceId])
@@ -3865,7 +3881,7 @@ model GameStorageSlot {
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  unit      GameStorageUnit    @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  unit      GameStorageUnit    @relation(fields: [unitId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   materials GameSlotMaterial[]
 
   @@index([unitId])
@@ -3877,7 +3893,8 @@ model GameSlotMaterial {
   stockItemId String   @map("stock_item_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  slot GameStorageSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  slot      GameStorageSlot @relation(fields: [slotId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  stockItem StockItem       @relation(fields: [stockItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
 
   @@id([slotId, stockItemId])
   @@index([stockItemId])
@@ -3894,7 +3911,8 @@ model GameLayoutRevision {
   createdById String?  @map("created_by_id") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  space GameSpace @relation(fields: [spaceId], references: [id], onDelete: Restrict)
+  space     GameSpace @relation(fields: [spaceId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  createdBy User?     @relation("GameRevisionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([spaceId, version])
   @@map("game_layout_revisions")
@@ -3920,7 +3938,8 @@ model AiAgent {
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  desk      GameStation?      @relation(fields: [deskStationId], references: [id], onDelete: SetNull)
+  desk      GameStation?      @relation(fields: [deskStationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdBy User?             @relation("AiAgentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
   messages  AiAgentMessage[]
   proposals AiAgentProposal[]
 
@@ -3938,7 +3957,8 @@ model AiAgentMessage {
   references Json     @default("[]")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  agent AiAgent @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  agent AiAgent @relation(fields: [agentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  user  User?   @relation("AiAgentMessageUser", fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([agentId, createdAt])
   @@map("ai_agent_messages")
@@ -3960,7 +3980,8 @@ model AiAgentProposal {
   decisionNote String?   @map("decision_note") @db.VarChar(500)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  agent AiAgent @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  agent     AiAgent @relation(fields: [agentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  decidedBy User?   @relation("AiAgentProposalDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([agentId, status])
   @@map("ai_agent_proposals")

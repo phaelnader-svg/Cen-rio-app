@@ -20,14 +20,32 @@ import {
 } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Building2, Eye, Hammer, Map as MapIcon, Minus, Plus, Redo2, Save, Search, Undo2 } from 'lucide-react';
+import {
+  Building2,
+  Eye,
+  Hammer,
+  Map as MapIcon,
+  Minus,
+  Plus,
+  Redo2,
+  Save,
+  Search,
+  Undo2,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useCan } from '@/lib/hooks';
 import { useRealtime } from '@/lib/realtime';
-import { ImpactDialog, MestrePanel, Palette, type PaletteItem, Properties, RoomSettings } from './build-panels';
+import {
+  ImpactDialog,
+  MestrePanel,
+  Palette,
+  type PaletteItem,
+  Properties,
+  RoomSettings,
+} from './build-panels';
 import {
   type Selection,
   addArea,
@@ -45,7 +63,14 @@ import {
   useLayoutDraft,
 } from './editor';
 import { GameEngine, type Overlays, type PickTarget } from './engine';
-import { useAgents, useMaterialSearch, usePeople, useSnapshot, useSpaces } from './game-api';
+import {
+  useAgents,
+  useIntegrations,
+  useMaterialSearch,
+  usePeople,
+  useSnapshot,
+  useSpaces,
+} from './game-api';
 import { AgentConfigPanel, AgentPanel, EmployeePanel } from './people-panels';
 import { PiecePanel } from './piece-panel';
 import { peopleOnMap, piecesOnMap } from './placement';
@@ -63,9 +88,24 @@ type Side =
   | { t: 'material'; id: string }
   | { t: 'mestre' }
   | { t: 'room' }
+  | { t: 'integrations' }
   | null;
 
-const SNAPSHOT_EVENTS = ['production.', 'stock.', 'material', 'quality.', 'item.', 'purchase_order.', 'attendance.', 'help.', 'issue.', 'packaging', 'delivery.', 'service_order.', 'notification.'];
+const SNAPSHOT_EVENTS = [
+  'production.',
+  'stock.',
+  'material',
+  'quality.',
+  'item.',
+  'purchase_order.',
+  'attendance.',
+  'help.',
+  'issue.',
+  'packaging',
+  'delivery.',
+  'service_order.',
+  'notification.',
+];
 
 export function GameWorld() {
   const can = useCan();
@@ -80,6 +120,7 @@ export function GameWorld() {
   const snapshot = useSnapshot(canSeeProduction);
   const agents = useAgents();
   const people = usePeople();
+  const integrations = useIntegrations();
   const [spaceKey, setSpaceKey] = useState('TAPECARIA');
   const [mode, setMode] = useState<'GESTAO' | 'CONSTRUCAO'>('GESTAO');
   const [preview, setPreview] = useState(false);
@@ -88,7 +129,10 @@ export function GameWorld() {
   const [overlays, setOverlays] = useState<Overlays>({});
   const [tip, setTip] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
-  const [mestre, setMestre] = useState<{ history: { who: 'eu' | 'mestre'; text: string }[]; pending: MestreReply | null }>({ history: [], pending: null });
+  const [mestre, setMestre] = useState<{
+    history: { who: 'eu' | 'mestre'; text: string }[];
+    pending: MestreReply | null;
+  }>({ history: [], pending: null });
   const [impacts, setImpacts] = useState<RemovalImpact[] | null>(null);
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState('');
@@ -96,11 +140,16 @@ export function GameWorld() {
   const editor = useLayoutDraft();
   const host = useRef<HTMLDivElement>(null);
   const engine = useRef<GameEngine | null>(null);
-  const pickRef = useRef<(t: PickTarget | null, p: { x: number; y: number } | null) => void>(() => {});
-  const dragRef = useRef<(t: PickTarget, x: number, y: number, phase: 'move' | 'end') => void>(() => {});
+  const pickRef = useRef<(t: PickTarget | null, p: { x: number; y: number } | null) => void>(
+    () => {},
+  );
+  const dragRef = useRef<(t: PickTarget, x: number, y: number, phase: 'move' | 'end') => void>(
+    () => {},
+  );
   const arriveRef = useRef<(tag: string) => void>(() => {});
 
-  const space: GameSpaceDto | undefined = spaces.data?.find((s) => s.key === spaceKey) ?? spaces.data?.[0];
+  const space: GameSpaceDto | undefined =
+    spaces.data?.find((s) => s.key === spaceKey) ?? spaces.data?.[0];
   const building = mode === 'CONSTRUCAO';
   const layout: LayoutContent | null = building && editor.draft ? editor.draft : (space ?? null);
 
@@ -113,6 +162,9 @@ export function GameWorld() {
       onArrive: (tag) => arriveRef.current(tag),
     });
     engine.current = e;
+    // Apoio a testes automatizados em desenvolvimento (nunca em produção).
+    if (process.env.NODE_ENV !== 'production')
+      (window as unknown as { __cenarioGame?: GameEngine }).__cenarioGame = e;
     return () => e.dispose();
   }, []);
 
@@ -120,8 +172,10 @@ export function GameWorld() {
   useEffect(
     () =>
       realtime.subscribe((ev) => {
-        if (SNAPSHOT_EVENTS.some((p) => ev.type.startsWith(p))) void qc.invalidateQueries({ queryKey: ['game-snapshot'] });
-        if (ev.type === 'game.layout_saved') void qc.invalidateQueries({ queryKey: ['game-spaces'] });
+        if (SNAPSHOT_EVENTS.some((p) => ev.type.startsWith(p)))
+          void qc.invalidateQueries({ queryKey: ['game-snapshot'] });
+        if (ev.type === 'game.layout_saved')
+          void qc.invalidateQueries({ queryKey: ['game-spaces'] });
         if (ev.type === 'game.agent_changed' || ev.type === 'game.proposal_changed') {
           void qc.invalidateQueries({ queryKey: ['game-agents'] });
           void qc.invalidateQueries({ queryKey: ['game-agent'] });
@@ -141,7 +195,12 @@ export function GameWorld() {
   }, [realtime.status, qc]);
 
   const agentDesks = useMemo(
-    () => Object.fromEntries((agents.data ?? []).filter((a) => a.deskStationId && a.status !== 'DESATIVADO').map((a) => [a.deskStationId!, { name: a.name, color: a.color, status: a.status }])),
+    () =>
+      Object.fromEntries(
+        (agents.data ?? [])
+          .filter((a) => a.deskStationId && a.status !== 'DESATIVADO')
+          .map((a) => [a.deskStationId!, { name: a.name, color: a.color, status: a.status }]),
+      ),
     [agents.data],
   );
 
@@ -151,7 +210,13 @@ export function GameWorld() {
     engine.current.setLayout(layout, {
       mode,
       preview,
-      selectedId: building ? (sel?.id ?? null) : side && 'id' in side ? side.id : side?.t === 'storage' ? side.unitId : null,
+      selectedId: building
+        ? (sel?.id ?? null)
+        : side && 'id' in side
+          ? side.id
+          : side?.t === 'storage'
+            ? side.unitId
+            : null,
       slotTones: snapshot.data?.slotAlerts ?? {},
       editable: canBuild,
       snapCm: 10,
@@ -164,16 +229,30 @@ export function GameWorld() {
     const e = engine.current;
     if (!e || !layout || !space) return;
     const workshop = space.key === 'TAPECARIA';
-    const pieces = workshop && snapshot.data ? piecesOnMap(layout, snapshot.data.pieces, highlight) : [];
+    const pieces =
+      workshop && snapshot.data ? piecesOnMap(layout, snapshot.data.pieces, highlight) : [];
     e.setPieces(pieces);
-    e.setPeople(peopleOnMap(layout, space.kind, workshop ? (snapshot.data?.employees ?? []) : [], space.kind === 'ESCRITORIO' || !workshop ? (agents.data ?? []).filter((a) => layout.stations.some((s) => s.id === a.deskStationId)) : []));
+    e.setPeople(
+      peopleOnMap(
+        layout,
+        space.kind,
+        workshop ? (snapshot.data?.employees ?? []) : [],
+        space.kind === 'ESCRITORIO' || !workshop
+          ? (agents.data ?? []).filter((a) => layout.stations.some((s) => s.id === a.deskStationId))
+          : [],
+      ),
+    );
   }, [snapshot.data, agents.data, layout, space, highlight, building, preview]);
 
   useEffect(() => {
     engine.current?.setOverlays(overlays);
   }, [overlays]);
 
-  const viewCenter = () => engine.current?.viewCenterCm() ?? { x: (layout?.widthCm ?? 600) / 2, y: (layout?.depthCm ?? 600) / 2 };
+  const viewCenter = () =>
+    engine.current?.viewCenterCm() ?? {
+      x: (layout?.widthCm ?? 600) / 2,
+      y: (layout?.depthCm ?? 600) / 2,
+    };
 
   const enterBuild = () => {
     if (!space) return;
@@ -183,10 +262,14 @@ export function GameWorld() {
     setSide({ t: 'mestre' });
     setSel(null);
     if (!mestre.history.length)
-      setMestre({ history: [{ who: 'mestre', text: askMestre(space, 'ajuda').lines.join('\n') }], pending: null });
+      setMestre({
+        history: [{ who: 'mestre', text: askMestre(space, 'ajuda').lines.join('\n') }],
+        pending: null,
+      });
   };
   const leaveBuild = () => {
-    if (editor.dirty && !window.confirm('Há mudanças não salvas na planta. Sair e descartar?')) return;
+    if (editor.dirty && !window.confirm('Há mudanças não salvas na planta. Sair e descartar?'))
+      return;
     setMode('GESTAO');
     setSel(null);
     setSide(null);
@@ -194,7 +277,12 @@ export function GameWorld() {
     setTip(null);
   };
   const switchSpace = (key: string) => {
-    if (building && editor.dirty && !window.confirm('Há mudanças não salvas. Trocar de ambiente e descartar?')) return;
+    if (
+      building &&
+      editor.dirty &&
+      !window.confirm('Há mudanças não salvas. Trocar de ambiente e descartar?')
+    )
+      return;
     const from = spaceKey;
     setSpaceKey(key);
     setSide(null);
@@ -221,9 +309,17 @@ export function GameWorld() {
       if (['station', 'storage', 'decor', 'area', 'wall'].includes(t.kind)) {
         setSel({ kind: t.kind as 'station', id: t.id });
         setSide(null);
-        const o = [...layout.stations, ...layout.storageUnits, ...layout.doc.decor].find((x) => x.id === t.id);
+        const o = [...layout.stations, ...layout.storageUnits, ...layout.doc.decor].find(
+          (x) => x.id === t.id,
+        );
         if (o) {
-          const probs = clearanceAround(layout, o.id, footprint(o), catalogOf(o.kind).frontClearCm, o.rotation);
+          const probs = clearanceAround(
+            layout,
+            o.id,
+            footprint(o),
+            catalogOf(o.kind).frontClearCm,
+            o.rotation,
+          );
           setOverlays({ problems: probs });
           setTip(dragTip(probs));
         }
@@ -255,7 +351,9 @@ export function GameWorld() {
         break;
       case 'station': {
         const st = layout.stations.find((s) => s.id === t.id);
-        const agent = agents.data?.find((a) => a.deskStationId === t.id && a.status !== 'DESATIVADO');
+        const agent = agents.data?.find(
+          (a) => a.deskStationId === t.id && a.status !== 'DESATIVADO',
+        );
         if (agent && canUseAgents) setSide({ t: 'agent', id: agent.id });
         else if (st && catalogOf(st.kind).desk) setSide({ t: 'desk', id: t.id });
         else setSide({ t: 'station', id: t.id });
@@ -264,7 +362,9 @@ export function GameWorld() {
       }
       case 'storage': {
         const u = layout.storageUnits.find((x) => x.id === t.id);
-        const slot = u ? ([...u.slots].sort((a, b) => a.level - b.level)[(t.level ?? 1) - 1] ?? u.slots[0]) : null;
+        const slot = u
+          ? ([...u.slots].sort((a, b) => a.level - b.level)[(t.level ?? 1) - 1] ?? u.slots[0])
+          : null;
         setSide({ t: 'storage', unitId: t.id, slotId: slot?.id ?? null });
         if (p) walkNear(p.x, p.y);
         break;
@@ -299,7 +399,9 @@ export function GameWorld() {
         dragHandle(tmp, t.id, x, y);
         const [aid] = t.id.split(':');
         const a = tmp.areas.find((z) => z.id === aid);
-        setOverlays({ highlights: [a ? rectOfArea(a) : { x: 0, y: 0, w: tmp.widthCm, d: tmp.depthCm }] });
+        setOverlays({
+          highlights: [a ? rectOfArea(a) : { x: 0, y: 0, w: tmp.widthCm, d: tmp.depthCm }],
+        });
       }
       return;
     }
@@ -319,7 +421,13 @@ export function GameWorld() {
     const o = [...l.stations, ...l.storageUnits, ...l.doc.decor].find((z) => z.id === t.id);
     if (!o) return;
     const rect = footprint({ ...o, xCm: x, yCm: y });
-    const probs: ClearanceProblem[] = clearanceAround(l, o.id, rect, catalogOf(o.kind).frontClearCm, o.rotation);
+    const probs: ClearanceProblem[] = clearanceAround(
+      l,
+      o.id,
+      rect,
+      catalogOf(o.kind).frontClearCm,
+      o.rotation,
+    );
     setOverlays({ problems: probs });
     setTip(dragTip(probs));
     if (phase === 'move') e.previewMove(o.id, x, y);
@@ -329,7 +437,10 @@ export function GameWorld() {
   // ───────────── Teclado ─────────────
   const selRef = useRef(sel);
   selRef.current = sel;
-  const doRotate = useCallback(() => selRef.current && editor.apply((l) => rotateObj(l, selRef.current!.id)), [editor]);
+  const doRotate = useCallback(
+    () => selRef.current && editor.apply((l) => rotateObj(l, selRef.current!.id)),
+    [editor],
+  );
   const doDuplicate = useCallback(() => {
     if (!selRef.current) return;
     let nid: string | null = null;
@@ -377,7 +488,11 @@ export function GameWorld() {
   }, [mode, preview, editor, doRotate, doDuplicate, doRemove]);
 
   // ───────────── Salvar ─────────────
-  const save = async (transfers?: { areas: Record<string, string>; stations: Record<string, string>; slots: Record<string, string> }) => {
+  const save = async (transfers?: {
+    areas: Record<string, string>;
+    stations: Record<string, string>;
+    slots: Record<string, string>;
+  }) => {
     if (!editor.draft || !space) return;
     setSaving(true);
     try {
@@ -386,17 +501,26 @@ export function GameWorld() {
         idempotencyKey: newIdempotencyKey(),
         body: { ...editor.draft, version: space.version, ...(transfers ? { transfers } : {}) },
       });
-      qc.setQueryData<GameSpaceDto[]>(['game-spaces'], (old) => old?.map((s) => (s.key === saved.key ? saved : s)));
+      qc.setQueryData<GameSpaceDto[]>(['game-spaces'], (old) =>
+        old?.map((s) => (s.key === saved.key ? saved : s)),
+      );
       editor.load(saved);
       setImpacts(null);
       toast('ok', `Planta salva (versão ${saved.version}).`);
       void qc.invalidateQueries({ queryKey: ['game-snapshot'] });
       void qc.invalidateQueries({ queryKey: ['game-revisions', saved.key] });
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && (e.details as { impacts?: RemovalImpact[] } | undefined)?.impacts) {
+      if (
+        e instanceof ApiError &&
+        e.status === 409 &&
+        (e.details as { impacts?: RemovalImpact[] } | undefined)?.impacts
+      ) {
         setImpacts((e.details as { impacts: RemovalImpact[] }).impacts);
       } else if (e instanceof ApiError && e.code === 'VERSION_CONFLICT') {
-        toast('danger', 'Outra pessoa salvou esta planta antes. Recarregue o ambiente (suas mudanças ficam no rascunho até você sair).');
+        toast(
+          'danger',
+          'Outra pessoa salvou esta planta antes. Recarregue o ambiente (suas mudanças ficam no rascunho até você sair).',
+        );
         void qc.invalidateQueries({ queryKey: ['game-spaces'] });
       } else toast('danger', e instanceof ApiError ? e.message : 'Não foi possível salvar.');
     } finally {
@@ -405,10 +529,24 @@ export function GameWorld() {
   };
 
   const reset = async (start: 'SUGERIDA' | 'EM_BRANCO') => {
-    if (!space || !window.confirm(start === 'SUGERIDA' ? 'Recomeçar da planta sugerida? Os vínculos atuais serão desfeitos.' : 'Recomeçar do zero? A sala fica vazia (só a porta).')) return;
+    if (
+      !space ||
+      !window.confirm(
+        start === 'SUGERIDA'
+          ? 'Recomeçar da planta sugerida? Os vínculos atuais serão desfeitos.'
+          : 'Recomeçar do zero? A sala fica vazia (só a porta).',
+      )
+    )
+      return;
     try {
-      const saved = await api<GameSpaceDto>(`/api/v1/game/spaces/${space.key}/reset`, { method: 'POST', idempotencyKey: newIdempotencyKey(), body: { version: space.version, start } });
-      qc.setQueryData<GameSpaceDto[]>(['game-spaces'], (old) => old?.map((s) => (s.key === saved.key ? saved : s)));
+      const saved = await api<GameSpaceDto>(`/api/v1/game/spaces/${space.key}/reset`, {
+        method: 'POST',
+        idempotencyKey: newIdempotencyKey(),
+        body: { version: space.version, start },
+      });
+      qc.setQueryData<GameSpaceDto[]>(['game-spaces'], (old) =>
+        old?.map((s) => (s.key === saved.key ? saved : s)),
+      );
       editor.load(saved);
       toast('ok', 'Planta recomeçada.');
     } catch (e) {
@@ -420,14 +558,23 @@ export function GameWorld() {
     const name = window.prompt('Nome do novo ambiente (ex.: Depósito, Showroom, Escritório 2):');
     if (!name) return;
     const office = /escrit/i.test(name);
-    const dims = window.prompt('Medidas em metros (largura x profundidade):', office ? '8 x 6' : '6 x 5');
+    const dims = window.prompt(
+      'Medidas em metros (largura x profundidade):',
+      office ? '8 x 6' : '6 x 5',
+    );
     const m = /([\d.,]+)\s*[x×]\s*([\d.,]+)/i.exec(dims ?? '');
     if (!m) return;
     try {
       const s = await api<GameSpaceDto>('/api/v1/game/spaces', {
         method: 'POST',
         idempotencyKey: newIdempotencyKey(),
-        body: { name, kind: office ? 'ESCRITORIO' : 'OUTRO', widthCm: Math.round(Number(m[1]!.replace(',', '.')) * 100), depthCm: Math.round(Number(m[2]!.replace(',', '.')) * 100), start: 'EM_BRANCO' },
+        body: {
+          name,
+          kind: office ? 'ESCRITORIO' : 'OUTRO',
+          widthCm: Math.round(Number(m[1]!.replace(',', '.')) * 100),
+          depthCm: Math.round(Number(m[2]!.replace(',', '.')) * 100),
+          start: 'EM_BRANCO',
+        },
       });
       await qc.invalidateQueries({ queryKey: ['game-spaces'] });
       setSpaceKey(s.key);
@@ -442,27 +589,88 @@ export function GameWorld() {
     const at = viewCenter();
     let id: string | null = null;
     editor.apply((l) => {
-      id = p.type === 'station' ? addStation(l, p.kind, at) : p.type === 'storage' ? addStorage(l, p.kind, at) : p.type === 'decor' ? addDecor(l, p.kind, at) : p.type === 'area' ? addArea(l, p.fn, at) : addWall(l, at);
+      id =
+        p.type === 'station'
+          ? addStation(l, p.kind, at)
+          : p.type === 'storage'
+            ? addStorage(l, p.kind, at)
+            : p.type === 'decor'
+              ? addDecor(l, p.kind, at)
+              : p.type === 'area'
+                ? addArea(l, p.fn, at)
+                : addWall(l, at);
     });
-    window.setTimeout(() => id && setSel({ kind: p.type === 'area' ? 'area' : p.type === 'wall' ? 'wall' : p.type, id }), 0);
+    window.setTimeout(
+      () =>
+        id &&
+        setSel({ kind: p.type === 'area' ? 'area' : p.type === 'wall' ? 'wall' : p.type, id }),
+      0,
+    );
   };
 
   const askTheMestre = (text: string) => {
     if (!editor.draft) return;
     const reply = askMestre(editor.draft, text);
-    setMestre((m) => ({ history: [...m.history, { who: 'eu', text }, { who: 'mestre', text: reply.lines.join('\n') }], pending: reply }));
+    setMestre((m) => ({
+      history: [...m.history, { who: 'eu', text }, { who: 'mestre', text: reply.lines.join('\n') }],
+      pending: reply,
+    }));
     const s = reply.suggestion;
-    setOverlays(s ? { problems: s.problems, highlights: s.highlights, path: s.path ?? null, preview: [...(s.patch.addStations ?? []).map(footprint), ...(s.patch.addAreas ?? []).map(rectOfArea)] } : {});
-    const first = s?.highlights[0] ?? s?.problems[0]?.rect;
-    if (first) engine.current?.focus(first.x + first.w / 2, first.y + first.d / 2);
-    if (reply.followUp === 'CONFIGURAR_AGENTE' && spaceKey !== 'ESCRITORIO' && spaces.data?.some((x) => x.key === 'ESCRITORIO'))
-      setMestre((m) => ({ ...m, history: [...m.history, { who: 'mestre', text: 'Dica: use a aba Escritório no topo.' }] }));
+    setOverlays(
+      s
+        ? {
+            problems: s.problems,
+            highlights: s.highlights,
+            path: s.path ?? null,
+            preview: [
+              ...(s.patch.addStations ?? []).map(footprint),
+              ...(s.patch.addAreas ?? []).map(rectOfArea),
+            ],
+          }
+        : {},
+    );
+    // Enquadra tudo o que foi marcado (sugestões, caminho e apertos), inclusive a sala ampliada.
+    const rects = [
+      ...(s?.highlights ?? []),
+      ...(s?.problems.map((p) => p.rect) ?? []),
+      ...(s?.path?.map((p) => ({ x: p.x, y: p.y, w: 1, d: 1 })) ?? []),
+    ];
+    if (rects.length) {
+      const x0 = Math.min(...rects.map((r) => r.x));
+      const y0 = Math.min(...rects.map((r) => r.y));
+      const x1 = Math.max(...rects.map((r) => r.x + r.w));
+      const y1 = Math.max(...rects.map((r) => r.y + r.d));
+      engine.current?.fitRect({
+        x: x0,
+        y: y0,
+        w: Math.max(200, x1 - x0),
+        d: Math.max(200, y1 - y0),
+      });
+    }
+    if (
+      reply.followUp === 'CONFIGURAR_AGENTE' &&
+      spaceKey !== 'ESCRITORIO' &&
+      spaces.data?.some((x) => x.key === 'ESCRITORIO')
+    )
+      setMestre((m) => ({
+        ...m,
+        history: [...m.history, { who: 'mestre', text: 'Dica: use a aba Escritório no topo.' }],
+      }));
   };
   const applyMestre = () => {
     const s = mestre.pending?.suggestion;
     if (!s) return;
     editor.apply((l) => applyPatch(l, s.patch));
-    setMestre((m) => ({ history: [...m.history, { who: 'mestre', text: 'Apliquei no rascunho. Ajuste à vontade e salve. Se não gostar: Ctrl+Z.' }], pending: { ...m.pending!, suggestion: undefined } }));
+    setMestre((m) => ({
+      history: [
+        ...m.history,
+        {
+          who: 'mestre',
+          text: 'Apliquei no rascunho. Ajuste à vontade e salve. Se não gostar: Ctrl+Z.',
+        },
+      ],
+      pending: { ...m.pending!, suggestion: undefined },
+    }));
     setOverlays({ path: s.path ?? null });
     const added = s.patch.addStations?.[0];
     if (added) setSel({ kind: 'station', id: added.id });
@@ -470,16 +678,53 @@ export function GameWorld() {
 
   // ───────────── Busca ─────────────
   const term = q.trim().toLowerCase();
-  const matSearch = useMaterialSearch(term, term.length >= 2 && (can('estoque.ver') || can('estoque.gerenciar') || can('compras.ver')));
+  const matSearch = useMaterialSearch(
+    term,
+    term.length >= 2 && (can('estoque.ver') || can('estoque.gerenciar') || can('compras.ver')),
+  );
   const results = useMemo(() => {
     if (term.length < 2) return [];
     const pieces = (snapshot.data?.pieces ?? [])
-      .filter((p) => [p.itemCode, p.osCode, p.customerName ?? '', p.description].some((s) => s.toLowerCase().includes(term)))
+      .filter((p) =>
+        [p.itemCode, p.osCode, p.customerName ?? '', p.description].some((s) =>
+          s.toLowerCase().includes(term),
+        ),
+      )
       .slice(0, 6)
-      .map((p) => ({ key: `p${p.id}`, icon: '🛋️', label: `${p.itemCode} · ${p.description}`, sub: `${p.customerName ?? ''} · ${p.placement.label}`, go: () => goPiece(p.id) }));
-    const emp = (snapshot.data?.employees ?? []).filter((e) => e.name.toLowerCase().includes(term)).map((e) => ({ key: `e${e.userId}`, icon: '👷', label: e.name, sub: e.currentTask?.title ?? 'sem tarefa iniciada', go: () => goEmployee(e.userId) }));
-    const ag = (agents.data ?? []).filter((a) => `${a.name} ${a.roleLabel}`.toLowerCase().includes(term)).map((a) => ({ key: `a${a.id}`, icon: '🤖', label: a.name, sub: a.roleLabel, go: () => goAgent(a.id) }));
-    const mats = (matSearch.data ?? []).slice(0, 6).map((m) => ({ key: `m${m.stockItemId}`, icon: '🧵', label: `${m.code} · ${m.description}`, sub: m.locations[0]?.address ?? (m.legacyLocation ? `cadastro: ${m.legacyLocation}` : 'sem posição no mapa'), go: () => goMaterial(m.stockItemId, m.locations[0]) }));
+      .map((p) => ({
+        key: `p${p.id}`,
+        icon: '🛋️',
+        label: `${p.itemCode} · ${p.description}`,
+        sub: `${p.customerName ?? ''} · ${p.placement.label}`,
+        go: () => goPiece(p.id),
+      }));
+    const emp = (snapshot.data?.employees ?? [])
+      .filter((e) => e.name.toLowerCase().includes(term))
+      .map((e) => ({
+        key: `e${e.userId}`,
+        icon: '👷',
+        label: e.name,
+        sub: e.currentTask?.title ?? 'sem tarefa iniciada',
+        go: () => goEmployee(e.userId),
+      }));
+    const ag = (agents.data ?? [])
+      .filter((a) => `${a.name} ${a.roleLabel}`.toLowerCase().includes(term))
+      .map((a) => ({
+        key: `a${a.id}`,
+        icon: '🤖',
+        label: a.name,
+        sub: a.roleLabel,
+        go: () => goAgent(a.id),
+      }));
+    const mats = (matSearch.data ?? []).slice(0, 6).map((m) => ({
+      key: `m${m.stockItemId}`,
+      icon: '🧵',
+      label: `${m.code} · ${m.description}`,
+      sub:
+        m.locations[0]?.address ??
+        (m.legacyLocation ? `cadastro: ${m.legacyLocation}` : 'sem posição no mapa'),
+      go: () => goMaterial(m.stockItemId, m.locations[0]),
+    }));
     return [...pieces, ...emp, ...ag, ...mats];
   }, [term, snapshot.data, agents.data, matSearch.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -490,7 +735,10 @@ export function GameWorld() {
     setSide({ t: 'piece', id });
     window.setTimeout(() => {
       const ws = spaces.data?.find((s) => s.key === 'TAPECARIA');
-      const vis = ws && snapshot.data ? piecesOnMap(ws, snapshot.data.pieces, id).find((v) => v.id === id) : null;
+      const vis =
+        ws && snapshot.data
+          ? piecesOnMap(ws, snapshot.data.pieces, id).find((v) => v.id === id)
+          : null;
       if (vis) {
         engine.current?.focus(vis.x, vis.y, 9);
         engine.current?.walkTo(vis.x, vis.y + 80);
@@ -504,7 +752,10 @@ export function GameWorld() {
     setSide({ t: 'employee', id: userId });
     window.setTimeout(() => {
       const ws = spaces.data?.find((s) => s.key === 'TAPECARIA');
-      const v = ws && snapshot.data ? peopleOnMap(ws, 'OFICINA', snapshot.data.employees, []).find((x) => x.id === userId) : null;
+      const v =
+        ws && snapshot.data
+          ? peopleOnMap(ws, 'OFICINA', snapshot.data.employees, []).find((x) => x.id === userId)
+          : null;
       if (v) {
         engine.current?.focus(v.x, v.y, 9);
         setOverlays({ pulse: { x: v.x, y: v.y } });
@@ -518,7 +769,10 @@ export function GameWorld() {
     if (sp && sp.key !== spaceKey) switchSpace(sp.key);
     setSide({ t: 'agent', id });
   };
-  const goMaterial = (stockItemId: string, loc?: { spaceKey: string; unitId: string; slotId: string }) => {
+  const goMaterial = (
+    stockItemId: string,
+    loc?: { spaceKey: string; unitId: string; slotId: string },
+  ) => {
     setSearchOpen(false);
     if (!loc) return setSide({ t: 'material', id: stockItemId });
     if (loc.spaceKey !== spaceKey) switchSpace(loc.spaceKey);
@@ -537,16 +791,38 @@ export function GameWorld() {
 
   // ───────────── Render ─────────────
   const pieceSel = side?.t === 'piece' ? snapshot.data?.pieces.find((p) => p.id === side.id) : null;
-  const empSel = side?.t === 'employee' ? snapshot.data?.employees.find((e) => e.userId === side.id) : null;
+  const empSel =
+    side?.t === 'employee' ? snapshot.data?.employees.find((e) => e.userId === side.id) : null;
   const agentSel = side?.t === 'agent' ? agents.data?.find((a) => a.id === side.id) : null;
-  const storageSel = side?.t === 'storage' ? layout?.storageUnits.find((u) => u.id === side.unitId) : null;
+  const storageSel =
+    side?.t === 'storage' ? layout?.storageUnits.find((u) => u.id === side.unitId) : null;
   const deskSel = side?.t === 'desk' ? layout?.stations.find((s) => s.id === side.id) : null;
   const stationSel = side?.t === 'station' ? layout?.stations.find((s) => s.id === side.id) : null;
-  const allDesks = (spaces.data ?? []).flatMap((s) => s.stations.filter((st) => st.kind === 'MESA_ESCRITORIO').map((st) => ({ id: st.id, name: `${s.name} · ${st.name}`, taken: agents.data?.find((a) => a.deskStationId === st.id && a.status !== 'DESATIVADO')?.id ?? null })));
-  const sync = snapshot.isError ? 'erro' : realtime.status !== 'online' ? 'offline' : snapshot.isFetching ? 'sync' : 'ok';
+  const allDesks = (spaces.data ?? []).flatMap((s) =>
+    s.stations
+      .filter((st) => st.kind === 'MESA_ESCRITORIO')
+      .map((st) => ({
+        id: st.id,
+        name: `${s.name} · ${st.name}`,
+        taken:
+          agents.data?.find((a) => a.deskStationId === st.id && a.status !== 'DESATIVADO')?.id ??
+          null,
+      })),
+  );
+  const sync = snapshot.isError
+    ? 'erro'
+    : realtime.status !== 'online'
+      ? 'offline'
+      : snapshot.isFetching
+        ? 'sync'
+        : 'ok';
   const counts = useMemo(() => {
     const ps = snapshot.data?.pieces ?? [];
-    return { falta: ps.filter((p) => p.tone === 'FALTA').length, ok: ps.filter((p) => p.tone === 'DISPONIVEL').length, conferir: ps.filter((p) => p.tone === 'A_CONFERIR').length };
+    return {
+      falta: ps.filter((p) => p.tone === 'FALTA').length,
+      ok: ps.filter((p) => p.tone === 'DISPONIVEL').length,
+      conferir: ps.filter((p) => p.tone === 'A_CONFERIR').length,
+    };
   }, [snapshot.data]);
 
   return (
@@ -556,27 +832,68 @@ export function GameWorld() {
       {/* Barra superior */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start gap-2 p-2 sm:p-3">
         <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border-2 border-bronze-500/60 bg-[#fffaf2]/95 px-3 py-1.5 shadow-pop">
-          <span className="grid size-8 place-items-center rounded-xl bg-brand-700 text-sm font-black text-[#f5ebdf]">C</span>
+          <span className="grid size-8 place-items-center rounded-xl bg-brand-700 text-sm font-black text-[#f5ebdf]">
+            C
+          </span>
           <div className="leading-tight">
             <div className="text-sm font-black text-brand-800">Cenário</div>
-            <div className="text-[10px] font-semibold tracking-wide text-bronze-600 uppercase">Empresa virtual</div>
+            <div className="text-[10px] font-semibold tracking-wide text-bronze-600 uppercase">
+              Empresa virtual
+            </div>
           </div>
         </div>
-        <nav className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-line bg-white/95 p-1 shadow-card" aria-label="Ambientes">
+        <nav
+          className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-line bg-white/95 p-1 shadow-card"
+          aria-label="Ambientes"
+        >
           {spaces.data?.map((s) => (
-            <button key={s.key} onClick={() => switchSpace(s.key)} data-testid={`space-${s.key}`} className={clsx('rounded-xl px-3 py-1.5 text-sm font-semibold', s.key === spaceKey ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-subtle')}>
+            <button
+              key={s.key}
+              onClick={() => switchSpace(s.key)}
+              data-testid={`space-${s.key}`}
+              className={clsx(
+                'rounded-xl px-3 py-1.5 text-sm font-semibold',
+                s.key === spaceKey ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-subtle',
+              )}
+            >
               {s.kind === 'ESCRITORIO' ? '🏢' : s.kind === 'OFICINA' ? '🪡' : '📦'} {s.name}
             </button>
           ))}
           {building && canBuild ? (
-            <button onClick={createSpace} className="rounded-xl px-2 py-1.5 text-sm font-semibold text-bronze-600 hover:bg-bronze-100" title="Adicionar ambiente">+ Ambiente</button>
+            <button
+              onClick={createSpace}
+              className="rounded-xl px-2 py-1.5 text-sm font-semibold text-bronze-600 hover:bg-bronze-100"
+              title="Adicionar ambiente"
+            >
+              + Ambiente
+            </button>
           ) : null}
         </nav>
-        <div className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-line bg-white/95 p-1 shadow-card" role="group" aria-label="Modo">
-          <button onClick={() => (building ? leaveBuild() : undefined)} data-testid="mode-gestao" className={clsx('flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-semibold', !building ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-subtle')}>
+        <div
+          className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-line bg-white/95 p-1 shadow-card"
+          role="group"
+          aria-label="Modo"
+        >
+          <button
+            onClick={() => (building ? leaveBuild() : undefined)}
+            data-testid="mode-gestao"
+            className={clsx(
+              'flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-semibold',
+              !building ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-subtle',
+            )}
+          >
             <Building2 className="size-4" /> Gestão
           </button>
-          <button onClick={() => (!building && canBuild ? enterBuild() : undefined)} disabled={!canBuild} title={canBuild ? 'Editar a planta' : 'Exige jogo.construir'} data-testid="mode-construcao" className={clsx('flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40', building ? 'bg-bronze-500 text-white' : 'text-ink-soft hover:bg-subtle')}>
+          <button
+            onClick={() => (!building && canBuild ? enterBuild() : undefined)}
+            disabled={!canBuild}
+            title={canBuild ? 'Editar a planta' : 'Exige jogo.construir'}
+            data-testid="mode-construcao"
+            className={clsx(
+              'flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40',
+              building ? 'bg-bronze-500 text-white' : 'text-ink-soft hover:bg-subtle',
+            )}
+          >
             <Hammer className="size-4" /> Construção
           </button>
         </div>
@@ -595,10 +912,16 @@ export function GameWorld() {
             data-testid="game-search"
           />
           {searchOpen && results.length ? (
-            <ul className="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-2xl border border-line bg-white p-1 shadow-pop" data-testid="search-results">
+            <ul
+              className="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-2xl border border-line bg-white p-1 shadow-pop"
+              data-testid="search-results"
+            >
               {results.map((r) => (
                 <li key={r.key}>
-                  <button className="flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-subtle" onClick={r.go}>
+                  <button
+                    className="flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-subtle"
+                    onClick={r.go}
+                  >
                     <span>{r.icon}</span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold">{r.label}</span>
@@ -614,33 +937,103 @@ export function GameWorld() {
           <span
             data-testid="sync-status"
             data-status={sync}
-            className={clsx('mr-1 flex items-center gap-1.5 rounded-xl px-2 py-1 text-xs font-semibold', sync === 'ok' ? 'text-ok-600' : sync === 'sync' ? 'text-info-600' : 'bg-danger-50 text-danger-700')}
-            title={snapshot.dataUpdatedAt ? `Última atualização: ${new Date(snapshot.dataUpdatedAt).toLocaleTimeString('pt-BR')}` : undefined}
+            className={clsx(
+              'mr-1 flex items-center gap-1.5 rounded-xl px-2 py-1 text-xs font-semibold',
+              sync === 'ok'
+                ? 'text-ok-600'
+                : sync === 'sync'
+                  ? 'text-info-600'
+                  : 'bg-danger-50 text-danger-700',
+            )}
+            title={
+              snapshot.dataUpdatedAt
+                ? `Última atualização: ${new Date(snapshot.dataUpdatedAt).toLocaleTimeString('pt-BR')}`
+                : undefined
+            }
           >
-            <span className={clsx('size-2 rounded-full', sync === 'ok' ? 'bg-ok-600' : sync === 'sync' ? 'animate-pulse bg-info-600' : 'animate-pulse bg-danger-600')} />
-            {sync === 'ok' ? `Sincronizado ${snapshot.dataUpdatedAt ? new Date(snapshot.dataUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}` : sync === 'sync' ? 'Atualizando…' : sync === 'offline' ? 'Sem tempo real — recupera ao voltar' : 'Falha ao atualizar — tentando de novo'}
+            <span
+              className={clsx(
+                'size-2 rounded-full',
+                sync === 'ok'
+                  ? 'bg-ok-600'
+                  : sync === 'sync'
+                    ? 'animate-pulse bg-info-600'
+                    : 'animate-pulse bg-danger-600',
+              )}
+            />
+            {sync === 'ok'
+              ? `Sincronizado ${snapshot.dataUpdatedAt ? new Date(snapshot.dataUpdatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}`
+              : sync === 'sync'
+                ? 'Atualizando…'
+                : sync === 'offline'
+                  ? 'Sem tempo real — recupera ao voltar'
+                  : 'Falha ao atualizar — tentando de novo'}
           </span>
-          <button className="rounded-xl p-2 hover:bg-subtle" onClick={() => engine.current?.zoomBy(1 / 1.2)} aria-label="Aproximar"><Plus className="size-4" /></button>
-          <button className="rounded-xl p-2 hover:bg-subtle" onClick={() => engine.current?.zoomBy(1.2)} aria-label="Afastar"><Minus className="size-4" /></button>
-          <button className="rounded-xl p-2 hover:bg-subtle" onClick={() => engine.current?.overview()} aria-label="Visão geral" title="Visão geral" data-testid="overview"><MapIcon className="size-4" /></button>
-          <Link href="/painel" className="rounded-xl px-2 py-1.5 text-xs font-semibold text-ink-soft hover:bg-subtle">Painel</Link>
+          <button
+            className="rounded-xl p-2 hover:bg-subtle"
+            onClick={() => engine.current?.zoomBy(1 / 1.2)}
+            aria-label="Aproximar"
+          >
+            <Plus className="size-4" />
+          </button>
+          <button
+            className="rounded-xl p-2 hover:bg-subtle"
+            onClick={() => engine.current?.zoomBy(1.2)}
+            aria-label="Afastar"
+          >
+            <Minus className="size-4" />
+          </button>
+          <button
+            className="rounded-xl p-2 hover:bg-subtle"
+            onClick={() => engine.current?.overview()}
+            aria-label="Visão geral"
+            title="Visão geral"
+            data-testid="overview"
+          >
+            <MapIcon className="size-4" />
+          </button>
+          <Link
+            href="/painel"
+            className="rounded-xl px-2 py-1.5 text-xs font-semibold text-ink-soft hover:bg-subtle"
+          >
+            Painel
+          </Link>
         </div>
       </div>
 
       {/* Legenda (Gestão) */}
       {!building && space?.key === 'TAPECARIA' ? (
-        <div className="pointer-events-auto absolute bottom-3 left-3 flex flex-wrap gap-1.5 rounded-2xl border border-line bg-white/95 p-2 text-xs shadow-card" data-testid="legend">
+        <div
+          className="pointer-events-auto absolute bottom-3 left-3 flex flex-wrap gap-1.5 rounded-2xl border border-line bg-white/95 p-2 text-xs shadow-card"
+          data-testid="legend"
+        >
           <Tone tone="FALTA">⛔ Falta material · {counts.falta}</Tone>
           <Tone tone="DISPONIVEL">✅ Material disponível · {counts.ok}</Tone>
           <Tone tone="A_CONFERIR">❔ A conferir · {counts.conferir}</Tone>
-          <span className="flex items-center gap-1 text-info-600">📍 posição física confirmada</span>
-          {!canSeeProduction ? <span className="text-danger-700">Sem permissão de ver a produção.</span> : null}
+          <span className="flex items-center gap-1 text-info-600">
+            📍 posição física confirmada
+          </span>
+          {!canSeeProduction ? (
+            <span className="text-danger-700">Sem permissão de ver a produção.</span>
+          ) : null}
         </div>
       ) : null}
       {!building && space?.illustrative ? (
         <div className="pointer-events-none absolute top-[4.5rem] left-1/2 -translate-x-1/2 rounded-full bg-warn-600/90 px-3 py-1 text-xs font-semibold text-white shadow-card">
           Planta com medidas ilustrativas — ajuste no modo Construção
         </div>
+      ) : null}
+
+      {!building && space?.kind === 'ESCRITORIO' && integrations.data ? (
+        <button
+          className="pointer-events-auto absolute bottom-3 left-3 flex items-center gap-2 rounded-2xl border border-line bg-white/95 px-3 py-2 text-xs font-semibold shadow-card"
+          onClick={() => setSide({ t: 'integrations' })}
+          data-testid="integrations-chip"
+        >
+          🔌 Integrações: {integrations.data.filter((i) => i.status === 'CONECTADA').length}{' '}
+          conectada(s) · {integrations.data.filter((i) => i.status !== 'CONECTADA').length} a
+          configurar
+        </button>
       ) : null}
 
       {/* Construção: paleta + barra de ferramentas */}
@@ -651,19 +1044,79 @@ export function GameWorld() {
               <Palette onAdd={addFromPalette} kind={layout?.kind ?? 'OFICINA'} />
             </div>
           ) : null}
-          <div className="pointer-events-auto absolute bottom-3 left-1/2 flex -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 rounded-2xl border-2 border-bronze-500/60 bg-[#fffaf2]/97 p-1.5 shadow-pop" data-testid="build-toolbar">
-            <GBtn tone="ghost" onClick={editor.undo} disabled={!editor.canUndo || preview} title="Desfazer (Ctrl+Z)"><Undo2 className="size-4" /></GBtn>
-            <GBtn tone="ghost" onClick={editor.redo} disabled={!editor.canRedo || preview} title="Refazer (Ctrl+Y)"><Redo2 className="size-4" /></GBtn>
-            <GBtn tone="ghost" onClick={() => setSide({ t: 'room' })} disabled={preview}>🏠 Ambiente</GBtn>
-            <GBtn tone="ghost" onClick={() => { setSide({ t: 'mestre' }); askTheMestre('Verifique as passagens da planta.'); }} disabled={preview}>✔ Verificar passagens</GBtn>
-            <GBtn tone={preview ? 'primary' : 'ghost'} onClick={() => { setPreview((v) => !v); setSel(null); }} testId="preview-toggle"><Eye className="size-4" /> {preview ? 'Voltar a editar' : 'Pré-visualizar'}</GBtn>
-            <GBtn tone="bronze" onClick={() => setSide({ t: 'mestre' })}>🦺 Mestre de Obras</GBtn>
-            <GBtn tone="primary" onClick={() => void save()} disabled={!editor.dirty || saving} testId="save-layout"><Save className="size-4" /> {saving ? 'Salvando…' : editor.dirty ? 'Salvar planta' : 'Salvo'}</GBtn>
+          <div className="pointer-events-none absolute right-3 bottom-3 left-3 flex justify-center lg:right-[440px] lg:left-72">
+            <div
+              className="pointer-events-auto flex flex-wrap items-center justify-center gap-1.5 rounded-2xl border-2 border-bronze-500/60 bg-[#fffaf2]/97 p-1.5 shadow-pop"
+              data-testid="build-toolbar"
+            >
+              <GBtn
+                tone="ghost"
+                onClick={editor.undo}
+                disabled={!editor.canUndo || preview}
+                title="Desfazer (Ctrl+Z)"
+              >
+                <Undo2 className="size-4" />
+              </GBtn>
+              <GBtn
+                tone="ghost"
+                onClick={editor.redo}
+                disabled={!editor.canRedo || preview}
+                title="Refazer (Ctrl+Y)"
+              >
+                <Redo2 className="size-4" />
+              </GBtn>
+              <GBtn tone="ghost" onClick={() => setSide({ t: 'room' })} disabled={preview}>
+                🏠 Ambiente
+              </GBtn>
+              <GBtn
+                tone="ghost"
+                onClick={() => {
+                  setSide({ t: 'mestre' });
+                  askTheMestre('Verifique as passagens da planta.');
+                }}
+                disabled={preview}
+              >
+                ✔ Verificar passagens
+              </GBtn>
+              <GBtn
+                tone={preview ? 'primary' : 'ghost'}
+                onClick={() => {
+                  setPreview((v) => !v);
+                  setSel(null);
+                }}
+                testId="preview-toggle"
+              >
+                <Eye className="size-4" /> {preview ? 'Voltar a editar' : 'Pré-visualizar'}
+              </GBtn>
+              <GBtn tone="bronze" onClick={() => setSide({ t: 'mestre' })}>
+                🦺 Mestre de Obras
+              </GBtn>
+              <GBtn
+                tone="primary"
+                onClick={() => void save()}
+                disabled={!editor.dirty || saving}
+                testId="save-layout"
+              >
+                <Save className="size-4" />{' '}
+                {saving ? 'Salvando…' : editor.dirty ? 'Salvar planta' : 'Salvo'}
+              </GBtn>
+            </div>
           </div>
           {tip && sel ? (
-            <div className="pointer-events-auto absolute bottom-20 left-1/2 max-w-md -translate-x-1/2 rounded-2xl border border-[#e76f1a]/50 bg-[#fff3e6] px-3 py-2 text-xs shadow-pop" data-testid="drag-tip">
+            <div
+              className="pointer-events-auto absolute bottom-24 left-1/2 max-w-md -translate-x-1/2 rounded-2xl border border-[#e76f1a]/50 bg-[#fff3e6] px-3 py-2 text-xs shadow-pop"
+              data-testid="drag-tip"
+            >
               🦺 <b>Mestre de Obras:</b> {tip}{' '}
-              <button className="underline" onClick={() => { setSide({ t: 'mestre' }); askTheMestre('Verifique as passagens da planta.'); }}>Ver opções</button>
+              <button
+                className="underline"
+                onClick={() => {
+                  setSide({ t: 'mestre' });
+                  askTheMestre('Verifique as passagens da planta.');
+                }}
+              >
+                Ver opções
+              </button>
             </div>
           ) : null}
         </>
@@ -672,25 +1125,71 @@ export function GameWorld() {
       {/* Painel lateral */}
       <aside className="pointer-events-none absolute top-20 right-3 bottom-3 flex w-[min(420px,calc(100vw-1.5rem))] flex-col">
         {building && sel && editor.draft && !preview ? (
-          <Properties draft={editor.draft} sel={sel} people={people.data ?? []} apply={editor.apply} onRotate={doRotate} onDuplicate={doDuplicate} onRemove={doRemove} onClose={() => setSel(null)} />
+          <Properties
+            draft={editor.draft}
+            sel={sel}
+            people={people.data ?? []}
+            apply={editor.apply}
+            onRotate={doRotate}
+            onDuplicate={doDuplicate}
+            onRemove={doRemove}
+            onClose={() => setSel(null)}
+          />
         ) : building && side?.t === 'room' && editor.draft ? (
-          <RoomSettings draft={editor.draft} spaceKey={spaceKey} apply={editor.apply} spaces={(spaces.data ?? []).map((s) => ({ key: s.key, name: s.name }))} onReset={reset} onClose={() => setSide(null)} />
+          <RoomSettings
+            draft={editor.draft}
+            spaceKey={spaceKey}
+            apply={editor.apply}
+            spaces={(spaces.data ?? []).map((s) => ({ key: s.key, name: s.name }))}
+            onReset={reset}
+            onClose={() => setSide(null)}
+          />
         ) : building && side?.t === 'mestre' ? (
-          <MestrePanel history={mestre.history} pending={mestre.pending} onAsk={askTheMestre} onApply={applyMestre} onDiscard={() => { setOverlays({}); setMestre((m) => ({ ...m, pending: null })); }} onClose={() => setSide(null)} />
+          <MestrePanel
+            history={mestre.history}
+            pending={mestre.pending}
+            onAsk={askTheMestre}
+            onApply={applyMestre}
+            onDiscard={() => {
+              setOverlays({});
+              setMestre((m) => ({ ...m, pending: null }));
+            }}
+            onClose={() => setSide(null)}
+          />
         ) : pieceSel && snapshot.data ? (
           <PiecePanel
             key={pieceSel.id}
             piece={pieceSel}
             snapshot={snapshot.data}
             people={people.data ?? []}
-            onClose={() => { setSide(null); setHighlight(null); }}
-            onLocateMaterial={(d) => { setQ(d.split(' ')[0] ?? d); setSearchOpen(true); }}
+            onClose={() => {
+              setSide(null);
+              setHighlight(null);
+            }}
+            onLocateMaterial={(d) => {
+              setQ(d.split(' ')[0] ?? d);
+              setSearchOpen(true);
+            }}
             onFocusEmployee={goEmployee}
           />
         ) : empSel && layout && snapshot.data ? (
-          <EmployeePanel e={empSel} layout={spaces.data?.find((s) => s.key === 'TAPECARIA') ?? layout} snapshot={snapshot.data} onClose={() => setSide(null)} onOpenPiece={goPiece} />
+          <EmployeePanel
+            e={empSel}
+            layout={spaces.data?.find((s) => s.key === 'TAPECARIA') ?? layout}
+            snapshot={snapshot.data}
+            onClose={() => setSide(null)}
+            onOpenPiece={goPiece}
+          />
         ) : agentSel ? (
-          <AgentPanel key={agentSel.id} agent={agentSel} canManage={canManageAgents} onClose={() => setSide(null)} onConfigure={() => setSide({ t: 'agentConfig', agentId: agentSel.id, deskId: agentSel.deskStationId })} />
+          <AgentPanel
+            key={agentSel.id}
+            agent={agentSel}
+            canManage={canManageAgents}
+            onClose={() => setSide(null)}
+            onConfigure={() =>
+              setSide({ t: 'agentConfig', agentId: agentSel.id, deskId: agentSel.deskStationId })
+            }
+          />
         ) : side?.t === 'agentConfig' ? (
           <AgentConfigPanel
             key={side.agentId ?? `new${side.deskId}`}
@@ -701,48 +1200,165 @@ export function GameWorld() {
             onSaved={(a) => setSide({ t: 'agent', id: a.id })}
           />
         ) : deskSel ? (
-          <Panel title={deskSel.name} subtitle="Mesa vazia" icon="🪑" onClose={() => setSide(null)} testId="desk-panel">
-            <p className="mb-2 text-xs text-ink-soft">Uma mesa pode ficar vazia. Coloque um agente para trabalhar aqui ou mude um agente existente de mesa.</p>
+          <Panel
+            title={deskSel.name}
+            subtitle="Mesa vazia"
+            icon="🪑"
+            onClose={() => setSide(null)}
+            testId="desk-panel"
+          >
+            <p className="mb-2 text-xs text-ink-soft">
+              Uma mesa pode ficar vazia. Coloque um agente para trabalhar aqui ou mude um agente
+              existente de mesa.
+            </p>
             {canManageAgents ? (
               <>
-                <GBtn tone="primary" className="w-full" onClick={() => setSide({ t: 'agentConfig', agentId: null, deskId: deskSel.id })} testId="desk-new-agent">Colocar agente nesta mesa</GBtn>
+                <GBtn
+                  tone="primary"
+                  className="w-full"
+                  onClick={() => setSide({ t: 'agentConfig', agentId: null, deskId: deskSel.id })}
+                  testId="desk-new-agent"
+                >
+                  Colocar agente nesta mesa
+                </GBtn>
                 <div className="mt-3 text-xs font-semibold">Mudar agente para cá</div>
-                {(agents.data ?? []).filter((a) => a.status !== 'DESATIVADO').map((a) => (
-                  <button key={a.id} className="mt-1 block w-full rounded-lg border border-line bg-white px-2 py-1 text-left text-xs" onClick={async () => {
-                    try {
-                      await api(`/api/v1/game/agents/${a.id}`, { method: 'PUT', body: { deskStationId: deskSel.id, version: a.version } });
-                      await qc.invalidateQueries({ queryKey: ['game-agents'] });
-                      toast('ok', `${a.name} mudou de mesa.`);
-                    } catch (e) { toast('danger', e instanceof ApiError ? e.message : 'Falhou.'); }
-                  }}>{a.name} ({a.roleLabel})</button>
-                ))}
+                {(agents.data ?? [])
+                  .filter((a) => a.status !== 'DESATIVADO')
+                  .map((a) => (
+                    <button
+                      key={a.id}
+                      className="mt-1 block w-full rounded-lg border border-line bg-white px-2 py-1 text-left text-xs"
+                      onClick={async () => {
+                        try {
+                          await api(`/api/v1/game/agents/${a.id}`, {
+                            method: 'PUT',
+                            body: { deskStationId: deskSel.id, version: a.version },
+                          });
+                          await qc.invalidateQueries({ queryKey: ['game-agents'] });
+                          toast('ok', `${a.name} mudou de mesa.`);
+                        } catch (e) {
+                          toast('danger', e instanceof ApiError ? e.message : 'Falhou.');
+                        }
+                      }}
+                    >
+                      {a.name} ({a.roleLabel})
+                    </button>
+                  ))}
               </>
-            ) : <p className="text-xs text-ink-muted">Configurar agentes exige agentes.gerenciar.</p>}
+            ) : (
+              <p className="text-xs text-ink-muted">Configurar agentes exige agentes.gerenciar.</p>
+            )}
           </Panel>
         ) : stationSel && layout ? (
-          <Panel title={stationSel.name} subtitle={catalogOf(stationSel.kind).label} icon="🛠️" onClose={() => setSide(null)} testId="station-panel">
+          <Panel
+            title={stationSel.name}
+            subtitle={catalogOf(stationSel.kind).label}
+            icon="🛠️"
+            onClose={() => setSide(null)}
+            testId="station-panel"
+          >
             <div className="text-xs">
               <div className="mb-1 font-semibold">Funcionários vinculados</div>
-              {stationSel.assigneeUserIds.length ? stationSel.assigneeUserIds.map((u) => <div key={u}>{people.data?.find((p) => p.userId === u)?.name ?? '—'}</div>) : <div className="text-ink-muted">Nenhum{stationSel.shared ? ' (compartilhada)' : ''}.</div>}
+              {stationSel.assigneeUserIds.length ? (
+                stationSel.assigneeUserIds.map((u) => (
+                  <div key={u}>{people.data?.find((p) => p.userId === u)?.name ?? '—'}</div>
+                ))
+              ) : (
+                <div className="text-ink-muted">
+                  Nenhum{stationSel.shared ? ' (compartilhada)' : ''}.
+                </div>
+              )}
               <div className="mt-2 mb-1 font-semibold">No momento</div>
-              {(snapshot.data?.pieces ?? []).filter((p) => p.placement.stationId === stationSel.id).map((p) => (
-                <button key={p.id} className="block underline" onClick={() => goPiece(p.id)}>{p.itemCode} · {p.placement.label}</button>
-              ))}
+              {(snapshot.data?.pieces ?? [])
+                .filter((p) => p.placement.stationId === stationSel.id)
+                .map((p) => (
+                  <button key={p.id} className="block underline" onClick={() => goPiece(p.id)}>
+                    {p.itemCode} · {p.placement.label}
+                  </button>
+                ))}
             </div>
           </Panel>
         ) : storageSel ? (
-          <StoragePanel unit={storageSel} slotId={side?.t === 'storage' ? side.slotId : null} onSelectSlot={(id) => setSide({ t: 'storage', unitId: storageSel.id, slotId: id })} canMove={can('estoque.gerenciar')} onClose={() => setSide(null)} onOpenOs={(soId) => { const p = snapshot.data?.pieces.find((x) => x.serviceOrderId === soId); if (p) goPiece(p.id); else window.open(`/painel/os/${soId}`, '_blank'); }} />
+          <StoragePanel
+            unit={storageSel}
+            slotId={side?.t === 'storage' ? side.slotId : null}
+            onSelectSlot={(id) => setSide({ t: 'storage', unitId: storageSel.id, slotId: id })}
+            canMove={can('estoque.gerenciar')}
+            onClose={() => setSide(null)}
+            onOpenOs={(soId) => {
+              const p = snapshot.data?.pieces.find((x) => x.serviceOrderId === soId);
+              if (p) goPiece(p.id);
+              else window.open(`/painel/os/${soId}`, '_blank');
+            }}
+          />
+        ) : side?.t === 'integrations' ? (
+          <Panel
+            title="Integrações dos agentes"
+            subtitle="O que já funciona e o que falta configurar"
+            icon="🔌"
+            onClose={() => setSide(null)}
+            testId="integrations-panel"
+          >
+            <ul className="space-y-2">
+              {integrations.data?.map((i) => (
+                <li key={i.key} className="rounded-xl border border-line bg-white p-2.5 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <b>{i.label}</b>
+                    <Tone
+                      tone={
+                        i.status === 'CONECTADA'
+                          ? 'ok'
+                          : i.status === 'MODO_TESTE'
+                            ? 'info'
+                            : 'atencao'
+                      }
+                    >
+                      {i.status === 'CONECTADA'
+                        ? 'Conectada'
+                        : i.status === 'MODO_TESTE'
+                          ? 'Modo de teste'
+                          : 'Precisa configurar'}
+                    </Tone>
+                  </div>
+                  <div className="mt-1 text-ink-soft">{i.detail}</div>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-ink-muted">
+              Mensagens, publicações, compras, pagamentos e notas só acontecem depois da sua
+              aprovação. Sem integração configurada, a aprovação fica registrada como execução de
+              teste.
+            </p>
+          </Panel>
         ) : side?.t === 'material' ? (
-          <MaterialPanel id={side.id} canMove={can('estoque.gerenciar')} onClose={() => setSide(null)} onOpenOs={(soId) => { const p = snapshot.data?.pieces.find((x) => x.serviceOrderId === soId); if (p) goPiece(p.id); }} />
+          <MaterialPanel
+            id={side.id}
+            canMove={can('estoque.gerenciar')}
+            onClose={() => setSide(null)}
+            onOpenOs={(soId) => {
+              const p = snapshot.data?.pieces.find((x) => x.serviceOrderId === soId);
+              if (p) goPiece(p.id);
+            }}
+          />
         ) : null}
       </aside>
 
-      {impacts ? <ImpactDialog impacts={impacts} onCancel={() => setImpacts(null)} onConfirm={(t) => void save(t)} /> : null}
+      {impacts ? (
+        <ImpactDialog
+          impacts={impacts}
+          onCancel={() => setImpacts(null)}
+          onConfirm={(t) => void save(t)}
+        />
+      ) : null}
       {!spaces.data && spaces.isPending ? (
-        <div className="absolute inset-0 grid place-items-center text-sm font-semibold text-brand-800">Abrindo a empresa virtual…</div>
+        <div className="absolute inset-0 grid place-items-center text-sm font-semibold text-brand-800">
+          Abrindo a empresa virtual…
+        </div>
       ) : null}
       {spaces.isError ? (
-        <div className="absolute inset-0 grid place-items-center"><Panel title="Não foi possível abrir o jogo">{spaces.error.message}</Panel></div>
+        <div className="absolute inset-0 grid place-items-center">
+          <Panel title="Não foi possível abrir o jogo">{spaces.error.message}</Panel>
+        </div>
       ) : null}
     </div>
   );

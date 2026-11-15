@@ -1328,10 +1328,20 @@ afterAll(() => app.close());
 
 // ─────────────────────────────────────── F1-07b ───────────────────────────────────────
 
-/** Acréscimos permitidos desde 9fb1786 (Rodada 1, decisão do proprietário — F3-17). */
-const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir'];
+/**
+ * Acréscimos permitidos desde 9fb1786: Rodada 1 (decisão do proprietário — F3-17) e o jogo de
+ * gestão (empresa virtual), que só ganha permissões próprias e nenhuma função padrão além do gestor.
+ */
+const GAME_PERMISSIONS = ['jogo.acessar', 'jogo.construir', 'agentes.usar', 'agentes.gerenciar'];
+const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir', ...GAME_PERMISSIONS];
 const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
-  gestor: ['estoque.conferir'], // o gestor sempre recebe o catálogo completo
+  gestor: [
+    'agentes.gerenciar',
+    'agentes.usar',
+    'estoque.conferir',
+    'jogo.acessar',
+    'jogo.construir',
+  ], // o gestor sempre recebe o catálogo completo
   tapeceiro: [],
   cabeceiras_qualidade: [],
   ajudante: [],
@@ -1341,7 +1351,7 @@ const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
 const ALLOWED_ACCESS_CHANGES: Record<string, AccessRule> = {};
 
 describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9fb1786)', () => {
-  it('o catálogo de permissões é superconjunto do de 9fb1786; único acréscimo: estoque.conferir', () => {
+  it('o catálogo de permissões é superconjunto do de 9fb1786; acréscimos: estoque.conferir e as do jogo', () => {
     const now = new Set<string>(ALL_PERMISSIONS);
     expect(BASELINE_PERMISSIONS.filter((p) => !now.has(p))).toEqual([]);
     const base = new Set<string>(BASELINE_PERMISSIONS);
@@ -1358,10 +1368,9 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
         `${key} perdeu`,
       ).toEqual([]);
       const base = new Set(perms);
-      expect(
-        [...cur].filter((p) => !base.has(p)),
-        `${key} ganhou`,
-      ).toEqual(ALLOWED_ROLE_ADDITIONS[key]);
+      expect([...cur].filter((p) => !base.has(p)).sort(), `${key} ganhou`).toEqual(
+        ALLOWED_ROLE_ADDITIONS[key],
+      );
     }
   });
 
@@ -1502,6 +1511,9 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270223000000_custo_operacional_equipe_propria: DROP CONSTRAINT "logistics_costs_phase6"':
     'Regra CHECK recriada na mesma migration com a mesma condição e um status a mais (OPERACIONAL): ' +
     'amplia o aceito, nenhuma linha é apagada nem alterada.',
+  '20270302000000_jogo_gestao: UPDATE OR':
+    'Gatilho de imutabilidade "BEFORE UPDATE OR DELETE" do histórico de plantas e das conversas com ' +
+    'os agentes (tabelas novas): bloqueia alterações, não altera nem apaga dados.',
 };
 
 describe('F1-13 — nenhuma tela removida, menu de materiais restaurado, nenhum dado excluído', () => {

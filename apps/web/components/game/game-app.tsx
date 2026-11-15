@@ -28,7 +28,9 @@ export function GameApp() {
   if (me.isError)
     return (
       <div className="mx-auto max-w-md p-8">
-        <Alert tone="danger" title="Não foi possível abrir o jogo">{me.error.message}</Alert>
+        <Alert tone="danger" title="Não foi possível abrir o jogo">
+          {me.error.message}
+        </Alert>
       </div>
     );
   const perms = new Set(me.data.permissions);

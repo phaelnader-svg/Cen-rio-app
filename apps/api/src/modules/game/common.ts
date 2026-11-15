@@ -20,7 +20,10 @@ import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { AGENT_TEMPLATES } from './agent-templates';
 
 export const GAME_ACCESS = { session: 'WEB', permissions: ['jogo.acessar'] } as const;
-export const GAME_BUILD = { session: 'WEB', permissions: ['jogo.acessar', 'jogo.construir'] } as const;
+export const GAME_BUILD = {
+  session: 'WEB',
+  permissions: ['jogo.acessar', 'jogo.construir'],
+} as const;
 export const AGENT_USE = { session: 'WEB', permissions: ['jogo.acessar', 'agentes.usar'] } as const;
 export const AGENT_MANAGE = {
   session: 'WEB',
@@ -54,7 +57,12 @@ type SpaceRow = Prisma.GameSpaceGetPayload<{ include: typeof spaceInclude }>;
 
 const asDoc = (v: unknown): LayoutDoc => {
   const d = (v ?? {}) as Partial<LayoutDoc>;
-  return { walls: d.walls ?? [], doors: d.doors ?? [], decor: d.decor ?? [], notes: d.notes ?? null };
+  return {
+    walls: d.walls ?? [],
+    doors: d.doors ?? [],
+    decor: d.decor ?? [],
+    notes: d.notes ?? null,
+  };
 };
 
 export function toSpaceDto(s: SpaceRow, updatedBy: string | null = null): GameSpaceDto {

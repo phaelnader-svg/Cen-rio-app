@@ -528,7 +528,8 @@ export function obstaclesOf(l: LayoutContent, ignore?: ReadonlySet<string>): Rec
   const out: Rect[] = [];
   for (const s of l.stations) if (!ignore?.has(s.id)) out.push(footprint(s));
   for (const u of l.storageUnits) if (!ignore?.has(u.id)) out.push(footprint(u));
-  for (const d of l.doc.decor) if (!ignore?.has(d.id) && d.kind !== 'CADEIRA') out.push(footprint(d));
+  for (const d of l.doc.decor)
+    if (!ignore?.has(d.id) && d.kind !== 'CADEIRA') out.push(footprint(d));
   return out;
 }
 
@@ -657,7 +658,10 @@ export function findPath(g: OccupancyGrid, from: GridPoint, to: GridPoint): Grid
   }
   cells.reverse();
   return simplifyPath(
-    cells.map((c) => ({ x: ((c % g.cols) + 0.5) * g.cell, y: (Math.floor(c / g.cols) + 0.5) * g.cell })),
+    cells.map((c) => ({
+      x: ((c % g.cols) + 0.5) * g.cell,
+      y: (Math.floor(c / g.cols) + 0.5) * g.cell,
+    })),
   );
 }
 
@@ -668,7 +672,10 @@ function simplifyPath(points: GridPoint[]): GridPoint[] {
     const p = out[out.length - 1]!;
     const c = points[i]!;
     const n = points[i + 1]!;
-    if (Math.sign(c.x - p.x) === Math.sign(n.x - c.x) && Math.sign(c.y - p.y) === Math.sign(n.y - c.y))
+    if (
+      Math.sign(c.x - p.x) === Math.sign(n.x - c.x) &&
+      Math.sign(c.y - p.y) === Math.sign(n.y - c.y)
+    )
       continue;
     out.push(c);
   }
@@ -790,17 +797,34 @@ function frontProblem(rect: Rect, gap: number, need: number): ClearanceProblem {
 function intersect(a: Rect, b: Rect): Rect {
   const x = Math.max(a.x, b.x);
   const y = Math.max(a.y, b.y);
-  return { x, y, w: Math.max(1, Math.min(a.x + a.w, b.x + b.w) - x), d: Math.max(1, Math.min(a.y + a.d, b.y + b.d) - y) };
+  return {
+    x,
+    y,
+    w: Math.max(1, Math.min(a.x + a.w, b.x + b.w) - x),
+    d: Math.max(1, Math.min(a.y + a.d, b.y + b.d) - y),
+  };
 }
 
 /** Todos os problemas de passagem da planta inteira (painel "Verificar planta"). */
 export function layoutProblems(l: LayoutContent) {
   const out: (ClearanceProblem & { objectId: string; objectName: string })[] = [];
   for (const s of l.stations)
-    for (const p of clearanceAround(l, s.id, footprint(s), catalogOf(s.kind).frontClearCm, s.rotation))
+    for (const p of clearanceAround(
+      l,
+      s.id,
+      footprint(s),
+      catalogOf(s.kind).frontClearCm,
+      s.rotation,
+    ))
       out.push({ ...p, objectId: s.id, objectName: s.name });
   for (const u of l.storageUnits)
-    for (const p of clearanceAround(l, u.id, footprint(u), catalogOf(u.kind).frontClearCm, u.rotation))
+    for (const p of clearanceAround(
+      l,
+      u.id,
+      footprint(u),
+      catalogOf(u.kind).frontClearCm,
+      u.rotation,
+    ))
       out.push({ ...p, objectId: u.id, objectName: u.label });
   return out;
 }
@@ -865,7 +889,12 @@ export function placePiece(
   const name = (u: string | null) => (u ? (input.names?.[u] ?? 'responsável') : 'sem responsável');
   const active = input.tasks.filter((t) => t.status !== 'CANCELADA' && t.status !== 'RASCUNHO');
   const running = active.find((t) => RUNNING.includes(t.status));
-  const at = (fn: AreaFunction, kind: PlacementKind, label: string, extra: Partial<Placement> = {}) => {
+  const at = (
+    fn: AreaFunction,
+    kind: PlacementKind,
+    label: string,
+    extra: Partial<Placement> = {},
+  ) => {
     const area = areaByFunction(l, fn) ?? areaByFunction(l, 'ESPERA') ?? l.areas[0] ?? null;
     return {
       kind,
@@ -901,7 +930,10 @@ export function placePiece(
         kind: 'ESTACAO',
         stationId: st.id,
         areaId: st.areaId ?? null,
-        areaFunction: l.areas.find((a) => a.id === st.areaId)?.function ?? ACTIVITY_AREA[running.activity] ?? 'MONTAGEM',
+        areaFunction:
+          l.areas.find((a) => a.id === st.areaId)?.function ??
+          ACTIVITY_AREA[running.activity] ??
+          'MONTAGEM',
         userId: running.assigneeUserId,
         taskId: running.id,
         label,
@@ -919,7 +951,8 @@ export function placePiece(
       kind: 'FILA',
       stationId: st?.id ?? null,
       areaId: st?.areaId ?? areaByFunction(l, 'ESPERA')?.id ?? null,
-      areaFunction: (l.areas.find((a) => a.id === st?.areaId)?.function ?? 'ESPERA') as AreaFunction,
+      areaFunction: (l.areas.find((a) => a.id === st?.areaId)?.function ??
+        'ESPERA') as AreaFunction,
       userId: next.assigneeUserId,
       taskId: next.id,
       label: `Na fila de ${name(next.assigneeUserId)} · ${ACTIVITY_LABEL_GAME[next.activity] ?? next.activity}${next.status === 'PROGRAMADA' ? ' (programada)' : ''}`,
@@ -927,17 +960,28 @@ export function placePiece(
   }
   if (done.length && active.length > done.length) {
     const pending = active.find((t) => !['CONCLUIDA'].includes(t.status));
-    return at('ESPERA', 'AGUARDANDO_ETAPA', `Aguardando a etapa seguinte${pending ? `: ${ACTIVITY_LABEL_GAME[pending.activity] ?? pending.activity}` : ''}`, {
-      taskId: pending?.id ?? null,
-      userId: pending?.assigneeUserId ?? null,
-    });
+    return at(
+      'ESPERA',
+      'AGUARDANDO_ETAPA',
+      `Aguardando a etapa seguinte${pending ? `: ${ACTIVITY_LABEL_GAME[pending.activity] ?? pending.activity}` : ''}`,
+      {
+        taskId: pending?.id ?? null,
+        userId: pending?.assigneeUserId ?? null,
+      },
+    );
   }
   if (next)
-    return at('ESPERA', 'AGUARDANDO_ETAPA', `Aguardando liberação · ${ACTIVITY_LABEL_GAME[next.activity] ?? next.activity} com ${name(next.assigneeUserId)}`, {
-      taskId: next.id,
-      userId: next.assigneeUserId,
-    });
-  if (done.length && done.length === active.length) return at('QUALIDADE', 'AREA', 'Produção concluída');
+    return at(
+      'ESPERA',
+      'AGUARDANDO_ETAPA',
+      `Aguardando liberação · ${ACTIVITY_LABEL_GAME[next.activity] ?? next.activity} com ${name(next.assigneeUserId)}`,
+      {
+        taskId: next.id,
+        userId: next.assigneeUserId,
+      },
+    );
+  if (done.length && done.length === active.length)
+    return at('QUALIDADE', 'AREA', 'Produção concluída');
   return at('RECEBIMENTO', 'SEM_PLANEJAMENTO', 'Aguardando planejamento');
 }
 
@@ -955,13 +999,11 @@ export type FurnitureModel =
   | 'OUTRO';
 
 export function furnitureModel(pieceType: string, description = ''): FurnitureModel {
-  const d = description
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
+  const d = description.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   if (pieceType === 'SOFA' || pieceType === 'CANTO_ALEMAO') {
     if (/retrat|reclin/.test(d)) return 'SOFA_RETRATIL';
-    if (/canto|chaise|em l\b|l\s?shape/.test(d) || pieceType === 'CANTO_ALEMAO') return 'SOFA_CANTO';
+    if (/canto|chaise|em l\b|l\s?shape/.test(d) || pieceType === 'CANTO_ALEMAO')
+      return 'SOFA_CANTO';
     return 'SOFA';
   }
   const known = ['POLTRONA', 'CADEIRA', 'CABECEIRA', 'PUFE', 'BANCO', 'COLCHAO'] as const;
@@ -990,7 +1032,10 @@ export function newGameId(): string {
   const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   if (c?.randomUUID) return c.randomUUID();
   seq++;
-  const hex = (n: number) => Math.floor(Math.random() * 16 ** n).toString(16).padStart(n, '0');
+  const hex = (n: number) =>
+    Math.floor(Math.random() * 16 ** n)
+      .toString(16)
+      .padStart(n, '0');
   return `${hex(8)}-${hex(4)}-4${hex(3)}-a${hex(3)}-${hex(8)}${(seq % 65536).toString(16).padStart(4, '0')}`;
 }
 
@@ -1053,7 +1098,14 @@ export function storageUnit(
   };
 }
 
-const area = (fn: AreaFunction, xCm: number, yCm: number, wCm: number, dCm: number, name?: string): AreaDef => ({
+const area = (
+  fn: AreaFunction,
+  xCm: number,
+  yCm: number,
+  wCm: number,
+  dCm: number,
+  name?: string,
+): AreaDef => ({
   id: newGameId(),
   function: fn,
   name: name ?? AREA_FUNCTION_LABEL[fn],
@@ -1135,12 +1187,46 @@ export function suggestedWorkshop(team: TeamHint[] = []): LayoutContent {
       doors: [
         { id: newGameId(), wall: 'S', offsetCm: 80, widthCm: 300, label: 'Portão de recebimento' },
         { id: newGameId(), wall: 'S', offsetCm: 1100, widthCm: 300, label: 'Portão de expedição' },
-        { id: newGameId(), wall: 'O', offsetCm: 150, widthCm: 100, label: 'Escritório', toSpaceKey: 'ESCRITORIO' },
+        {
+          id: newGameId(),
+          wall: 'O',
+          offsetCm: 150,
+          widthCm: 100,
+          label: 'Escritório',
+          toSpaceKey: 'ESCRITORIO',
+        },
       ],
       decor: [
-        { id: newGameId(), kind: 'PALETE', name: 'Palete de chegada', xCm: 60, yCm: 880, wCm: 120, dCm: 100, rotation: 0 },
-        { id: newGameId(), kind: 'LIXEIRA', name: 'Retalhos', xCm: 330, yCm: 700, wCm: 50, dCm: 50, rotation: 0 },
-        { id: newGameId(), kind: 'QUADRO', name: 'Quadro da semana', xCm: 560, yCm: 5, wCm: 120, dCm: 10, rotation: 0 },
+        {
+          id: newGameId(),
+          kind: 'PALETE',
+          name: 'Palete de chegada',
+          xCm: 60,
+          yCm: 880,
+          wCm: 120,
+          dCm: 100,
+          rotation: 0,
+        },
+        {
+          id: newGameId(),
+          kind: 'LIXEIRA',
+          name: 'Retalhos',
+          xCm: 330,
+          yCm: 700,
+          wCm: 50,
+          dCm: 50,
+          rotation: 0,
+        },
+        {
+          id: newGameId(),
+          kind: 'QUADRO',
+          name: 'Quadro da semana',
+          xCm: 560,
+          yCm: 5,
+          wCm: 120,
+          dCm: 10,
+          rotation: 0,
+        },
       ],
       notes:
         'Planta sugerida com medidas e posições ilustrativas (~180 m²). Ajuste pelas medidas reais da oficina.',
@@ -1166,12 +1252,46 @@ export function suggestedOffice(): LayoutContent {
     doc: {
       walls: [],
       doors: [
-        { id: newGameId(), wall: 'L', offsetCm: 250, widthCm: 100, label: 'Tapeçaria', toSpaceKey: 'TAPECARIA' },
+        {
+          id: newGameId(),
+          wall: 'L',
+          offsetCm: 250,
+          widthCm: 100,
+          label: 'Tapeçaria',
+          toSpaceKey: 'TAPECARIA',
+        },
       ],
       decor: [
-        { id: newGameId(), kind: 'PLANTA', name: 'Planta', xCm: 20, yCm: 530, wCm: 50, dCm: 50, rotation: 0 },
-        { id: newGameId(), kind: 'BEBEDOURO', name: 'Bebedouro', xCm: 500, yCm: 20, wCm: 40, dCm: 40, rotation: 0 },
-        { id: newGameId(), kind: 'SOFA_ESPERA', name: 'Sofá do cliente', xCm: 60, yCm: 470, wCm: 200, dCm: 90, rotation: 180 },
+        {
+          id: newGameId(),
+          kind: 'PLANTA',
+          name: 'Planta',
+          xCm: 20,
+          yCm: 530,
+          wCm: 50,
+          dCm: 50,
+          rotation: 0,
+        },
+        {
+          id: newGameId(),
+          kind: 'BEBEDOURO',
+          name: 'Bebedouro',
+          xCm: 500,
+          yCm: 20,
+          wCm: 40,
+          dCm: 40,
+          rotation: 0,
+        },
+        {
+          id: newGameId(),
+          kind: 'SOFA_ESPERA',
+          name: 'Sofá do cliente',
+          xCm: 60,
+          yCm: 470,
+          wCm: 200,
+          dCm: 90,
+          rotation: 180,
+        },
       ],
       notes: 'Escritório sugerido (medidas ilustrativas).',
     },
@@ -1187,7 +1307,12 @@ export function suggestedOffice(): LayoutContent {
   };
 }
 
-export function blankLayout(name: string, kind: SpaceKind, widthCm: number, depthCm: number): LayoutContent {
+export function blankLayout(
+  name: string,
+  kind: SpaceKind,
+  widthCm: number,
+  depthCm: number,
+): LayoutContent {
   return {
     name,
     kind,
@@ -1195,7 +1320,11 @@ export function blankLayout(name: string, kind: SpaceKind, widthCm: number, dept
     depthCm,
     gridCm: 50,
     illustrative: false,
-    doc: { walls: [], doors: [{ id: newGameId(), wall: 'S', offsetCm: 50, widthCm: 120, label: 'Entrada' }], decor: [] },
+    doc: {
+      walls: [],
+      doors: [{ id: newGameId(), wall: 'S', offsetCm: 50, widthCm: 120, label: 'Entrada' }],
+      decor: [],
+    },
     areas: [],
     stations: [],
     storageUnits: [],
@@ -1249,7 +1378,8 @@ export function removalImpacts(
   for (const s of before.stations) {
     if (keptStations.has(s.id)) continue;
     const links: string[] = [];
-    if (s.assigneeUserIds.length) links.push(`${s.assigneeUserIds.length} funcionário(s) vinculado(s)`);
+    if (s.assigneeUserIds.length)
+      links.push(`${s.assigneeUserIds.length} funcionário(s) vinculado(s)`);
     if (live.agentByDesk?.[s.id]) links.push(`Agente ${live.agentByDesk[s.id]} nesta mesa`);
     if (links.length)
       out.push({
@@ -1257,7 +1387,9 @@ export function removalImpacts(
         id: s.id,
         name: s.name,
         links,
-        targets: after.stations.filter((x) => x.kind === s.kind || (catalogOf(x.kind).desk && catalogOf(s.kind).desk)).map((x) => ({ id: x.id, name: x.name })),
+        targets: after.stations
+          .filter((x) => x.kind === s.kind || (catalogOf(x.kind).desk && catalogOf(s.kind).desk))
+          .map((x) => ({ id: x.id, name: x.name })),
       });
   }
   for (const u of before.storageUnits)
@@ -1275,6 +1407,11 @@ export function removalImpacts(
 }
 
 /** Endereço legível de uma posição de estoque (Estoque → Estante A → Prateleira 2). */
-export function slotAddress(spaceName: string, areaName: string | null, unitLabel: string, slotLabel: string) {
+export function slotAddress(
+  spaceName: string,
+  areaName: string | null,
+  unitLabel: string,
+  slotLabel: string,
+) {
   return [spaceName, areaName, unitLabel, slotLabel].filter(Boolean).join(' → ');
 }
