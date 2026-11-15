@@ -48,3 +48,4 @@ export * from './schemas/game';
 export * from './types-game';
 export * from './game-command';
 export * from './game-workflow';
+export * from './cash-board';

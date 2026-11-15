@@ -81,7 +81,39 @@ export function parseStatement(format: 'OFX' | 'CSV', content: string): Statemen
 }
 
 /** Sugestões de conciliação: recebimentos (contas a receber em aberto / baixas do provedor) e pagamentos. */
-async function suggestions(db: Db, t: { amountCents: number; date: Date }) {
+async function suggestions(db: Db, t: { amountCents: number; date: Date; accountId?: string }) {
+  const manual = await manualSuggestions(db, t);
+  return [...manual, ...(await officialSuggestions(db, t))];
+}
+async function manualSuggestions(db: Db, t: { amountCents: number; date: Date }) {
+  const from = new Date(t.date.getTime() - 5 * 86400_000);
+  const to = new Date(t.date.getTime() + 5 * 86400_000);
+  const linked = new Set(
+    (
+      await db.bankTransaction.findMany({
+        where: { reconciledKind: 'MANUAL' },
+        select: { reconciledRef: true },
+      })
+    ).map((x) => x.reconciledRef!),
+  );
+  const entries = await db.cashEntry.findMany({
+    where: {
+      amountCents: t.amountCents,
+      occurredAt: { gte: from, lte: to },
+      kind: { not: 'ESTORNO' },
+      reversedBy: null,
+    },
+  });
+  return entries
+    .filter((e) => !linked.has(e.id))
+    .map((e) => ({
+      kind: 'MANUAL' as const,
+      refType: 'cash_entry',
+      refId: e.id,
+      label: `Lançamento manual do Quadro de Metas: ${e.description} (${brl(e.amountCents)})`,
+    }));
+}
+async function officialSuggestions(db: Db, t: { amountCents: number; date: Date }) {
   const amount = Math.abs(t.amountCents);
   const from = new Date(t.date.getTime() - 5 * 86400_000);
   const to = new Date(t.date.getTime() + 5 * 86400_000);
@@ -121,7 +153,42 @@ async function suggestions(db: Db, t: { amountCents: number; date: Date }) {
     where: { status: { in: ['ABERTO', 'PARCIAL'] } },
     take: 300,
   });
+  // Pagamentos já registrados no financeiro (fornecedor e mão de obra) ainda sem linha do extrato.
+  const linked = new Set(
+    (
+      await db.bankTransaction.findMany({
+        where: { reconciledRef: { not: null } },
+        select: { reconciledRef: true },
+      })
+    ).map((x) => x.reconciledRef!),
+  );
+  const paidPayables = (
+    await db.payablePayment.findMany({
+      where: { amountCents: amount, paidAt: { gte: from, lte: to }, reversal: null },
+      include: { payable: true },
+      take: 5,
+    })
+  ).filter((p) => !linked.has(p.id));
+  const paidLabor = (
+    await db.professionalPayment.findMany({
+      where: { amountCents: amount, paidAt: { gte: from, lte: to }, reversal: null },
+      include: { payable: { include: { professional: { select: { displayName: true } } } } },
+      take: 5,
+    })
+  ).filter((p) => !linked.has(p.id));
   return [
+    ...paidPayables.map((p) => ({
+      kind: 'PAGAMENTO' as const,
+      refType: 'payable_payment',
+      refId: p.id,
+      label: `Pagamento já registrado: ${p.payable.beneficiary} — ${p.payable.description} (${brl(p.amountCents)})`,
+    })),
+    ...paidLabor.map((p) => ({
+      kind: 'PAGAMENTO' as const,
+      refType: 'professional_payment',
+      refId: p.id,
+      label: `Mão de obra já paga: ${p.payable.professional.displayName} (${brl(p.amountCents)})`,
+    })),
     ...orders.map((o) => ({
       kind: 'PAGAMENTO' as const,
       refType: 'payment_order',
@@ -219,6 +286,8 @@ export async function bankRoutes(app: FastifyInstance) {
           Number.isFinite(l.amountCents) &&
           l.amountCents !== 0,
       );
+      if (acc.cashSource !== 'EXTRATO')
+        await prisma.bankAccount.update({ where: { id }, data: { cashSource: 'EXTRATO' } });
       const res = await prisma.bankTransaction.createMany({
         data: lines.map((l) => ({
           accountId: id,
@@ -293,6 +362,10 @@ export async function bankRoutes(app: FastifyInstance) {
             'customer_receivable',
             'payment_order',
             'account_payable',
+            'payable_payment',
+            'professional_payment',
+            'cash_entry',
+            'transferencia',
             'ignorar',
           ]),
           refId: z.string().uuid().optional(),
@@ -310,6 +383,16 @@ export async function bankRoutes(app: FastifyInstance) {
         if (b.refType === 'customer_payment') {
           kind = 'RECEBIMENTO';
           ref = b.refId!;
+        } else if (b.refType === 'payable_payment' || b.refType === 'professional_payment') {
+          // Pagamento já registrado no financeiro: só liga a linha do extrato a ele.
+          kind = 'PAGAMENTO';
+          ref = b.refId!;
+        } else if (b.refType === 'cash_entry') {
+          // Lançamento manual do Quadro de Metas: a linha do extrato passa a representá-lo.
+          kind = 'MANUAL';
+          ref = b.refId!;
+        } else if (b.refType === 'transferencia') {
+          kind = 'TRANSFERENCIA';
         } else if (b.refType === 'customer_receivable') {
           const r = await tx.customerReceivable.findUniqueOrThrow({ where: { id: b.refId! } });
           const { payment } = await receivePayment(tx, actor, r.id, {

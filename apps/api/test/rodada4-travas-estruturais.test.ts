@@ -1521,6 +1521,9 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270316000000_jogo_propostas_obsoletas: DROP CONSTRAINT "ai_agent_proposals_status"':
     'Regra CHECK das propostas dos agentes recriada na mesma migration com a mesma condição e um ' +
     'status a mais (OBSOLETA): amplia o aceito, nenhuma linha é apagada nem alterada.',
+  '20270323000000_jogo_quadro_metas: UPDATE OR':
+    'Gatilhos de imutabilidade "BEFORE UPDATE OR DELETE" dos saldos iniciais e lançamentos manuais ' +
+    'do Quadro de Metas (tabelas novas): bloqueiam alterações, não alteram nem apagam dados.',
   '20270302000000_jogo_gestao: UPDATE OR':
     'Gatilho de imutabilidade "BEFORE UPDATE OR DELETE" do histórico de plantas e das conversas com ' +
     'os agentes (tabelas novas): bloqueia alterações, não altera nem apaga dados.',

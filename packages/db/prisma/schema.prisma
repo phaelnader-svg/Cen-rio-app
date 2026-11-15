@@ -169,6 +169,9 @@ model User {
   aiAgentsCreated    AiAgent[]             @relation("AiAgentCreatedBy")
   aiAgentMessages    AiAgentMessage[]      @relation("AiAgentMessageUser")
   aiProposalsDecided AiAgentProposal[]     @relation("AiAgentProposalDecidedBy")
+  cashSnapshots      CashSnapshot[]        @relation("CashSnapshotCreatedBy")
+  cashEntries        CashEntry[]           @relation("CashEntryCreatedBy")
+  cashGoals          CashGoal[]            @relation("CashGoalCreatedBy")
 
   @@map("users")
 }
@@ -993,6 +996,8 @@ model ServiceOrder {
   contracts          Contract[]
   fiscalDocs         FiscalDocument[]
   inboxConversations InboxConversation[]
+  /// Quadro de Metas: lançamentos manuais vinculados à OS.
+  cashEntries        CashEntry[]
 
   @@index([orderId])
   @@index([customerId])
@@ -3468,6 +3473,8 @@ model AccountPayable {
   logisticsCost LogisticsCost?
   /// Escritório do jogo: pagamentos preparados (confirmados pelo gestor).
   paymentOrders PaymentOrder[]
+  /// Quadro de Metas: lançamentos manuais vinculados à conta.
+  cashEntries   CashEntry[]
 
   @@index([status, dueDate])
   @@map("account_payables")
@@ -4301,18 +4308,26 @@ model FiscalDocument {
 }
 
 model BankAccount {
-  id        String   @id @default(uuid()) @db.Uuid
-  label     String   @db.VarChar(120)
-  bank      String   @db.VarChar(80)
+  id             String   @id @default(uuid()) @db.Uuid
+  label          String   @db.VarChar(120)
+  bank           String   @db.VarChar(80)
   /// Conta mascarada (ex.: ag 0001 · cc ****1234)
-  masked    String?  @db.VarChar(80)
+  masked         String?  @db.VarChar(80)
   /// IMPORTACAO | API | TESTE_LOCAL
-  provider  String   @default("IMPORTACAO") @db.VarChar(20)
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  provider       String   @default("IMPORTACAO") @db.VarChar(20)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// Quadro de Metas: conta considerada no caixa.
+  includedInCash Boolean  @default(true) @map("included_in_cash")
+  /// REGISTROS (recebimentos/pagamentos oficiais) | EXTRATO (linhas do extrato conciliadas).
+  cashSource     String   @default("REGISTROS") @map("cash_source") @db.VarChar(10)
+  /// Recebe os registros oficiais que não têm conta definida.
+  cashDefault    Boolean  @default(false) @map("cash_default")
 
-  transactions BankTransaction[]
-  payments     PaymentOrder[]
+  transactions  BankTransaction[]
+  payments      PaymentOrder[]
+  cashSnapshots CashSnapshot[]
+  cashEntries   CashEntry[]
 
   @@map("bank_accounts")
 }
@@ -4421,4 +4436,100 @@ model AccountingDocument {
 
   @@index([month])
   @@map("accounting_documents")
+}
+
+/// Quadro de Metas: saldo informado de uma conta num instante (ponto de partida). Somente inserção.
+model CashSnapshot {
+  id          String   @id @default(uuid()) @db.Uuid
+  accountId   String   @map("account_id") @db.Uuid
+  amountCents Int      @map("amount_cents")
+  takenAt     DateTime @map("taken_at") @db.Timestamptz(3)
+  /// MANUAL | EXTRATO
+  source      String   @default("MANUAL") @db.VarChar(10)
+  note        String?  @db.VarChar(300)
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  account   BankAccount @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  createdBy User?       @relation("CashSnapshotCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([accountId, takenAt])
+  @@map("cash_snapshots")
+}
+
+/// Quadro de Metas: movimento registrado à mão (aporte, retirada, transferência, despesa sem
+/// registro oficial). Correção = estorno (novo lançamento). Somente inserção.
+model CashEntry {
+  id              String   @id @default(uuid()) @db.Uuid
+  accountId       String   @map("account_id") @db.Uuid
+  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(3)
+  amountCents     Int      @map("amount_cents")
+  /// RECEBIMENTO | DESPESA | MATERIAL | MAO_DE_OBRA | TRANSFERENCIA | APORTE | RETIRADA | AJUSTE | ESTORNO
+  kind            String   @db.VarChar(20)
+  category        String   @db.VarChar(40)
+  description     String   @db.VarChar(300)
+  serviceOrderId  String?  @map("service_order_id") @db.Uuid
+  payableId       String?  @map("payable_id") @db.Uuid
+  transferGroupId String?  @map("transfer_group_id") @db.Uuid
+  reversalOfId    String?  @unique @map("reversal_of_id") @db.Uuid
+  reason          String?  @db.VarChar(500)
+  createdById     String?  @map("created_by_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  account      BankAccount     @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  serviceOrder ServiceOrder?   @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  payable      AccountPayable? @relation(fields: [payableId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  reversalOf   CashEntry?      @relation("CashEntryReversal", fields: [reversalOfId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  reversedBy   CashEntry?      @relation("CashEntryReversal")
+  createdBy    User?           @relation("CashEntryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([accountId, occurredAt])
+  @@map("cash_entries")
+}
+
+model CashGoal {
+  id          String    @id @default(uuid()) @db.Uuid
+  name        String    @db.VarChar(80)
+  targetCents Int       @map("target_cents")
+  deadline    DateTime? @db.Date
+  /// Contas consideradas (vazio = todas as contas incluídas no caixa).
+  accountIds  String[]  @default([]) @map("account_ids") @db.Uuid
+  active      Boolean   @default(true)
+  version     Int       @default(1)
+  createdById String?   @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy   User?                @relation("CashGoalCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  achievement CashGoalAchievement?
+
+  @@map("cash_goals")
+}
+
+/// Primeira vez que o saldo alcançou a meta (fica no histórico mesmo que o saldo caia depois).
+model CashGoalAchievement {
+  id           String   @id @default(uuid()) @db.Uuid
+  goalId       String   @unique @map("goal_id") @db.Uuid
+  achievedAt   DateTime @map("achieved_at") @db.Timestamptz(3)
+  balanceCents Int      @map("balance_cents")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  goal CashGoal @relation(fields: [goalId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@map("cash_goal_achievements")
+}
+
+/// Fechamento de uma semana (segunda a domingo, São Paulo) com o retrato dos lançamentos,
+/// para mostrar correções feitas depois do fechamento.
+model CashWeekClosing {
+  id           String   @id @default(uuid()) @db.Uuid
+  weekStart    DateTime @unique @map("week_start") @db.Date
+  openingCents Int      @map("opening_cents")
+  closingCents Int      @map("closing_cents")
+  inCents      Int      @map("in_cents")
+  outCents     Int      @map("out_cents")
+  entries      Json     @default("[]")
+  closedAt     DateTime @default(now()) @map("closed_at") @db.Timestamptz(3)
+
+  @@map("cash_week_closings")
 }

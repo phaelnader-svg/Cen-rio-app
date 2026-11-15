@@ -70,6 +70,7 @@ import './modules/office/chat';
 import { fichaRoutes } from './modules/office/ficha';
 import { fiscalRoutes } from './modules/office/fiscal';
 import { bankRoutes } from './modules/office/bank';
+import { cashRoutes } from './modules/office/cash';
 import { closingRoutes as officeClosingRoutes } from './modules/office/closing';
 import { supplierRoutes } from './modules/purchasing/suppliers';
 import { orderRoutes } from './modules/orders/routes';
@@ -231,6 +232,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(fichaRoutes);
   await app.register(fiscalRoutes);
   await app.register(bankRoutes);
+  await app.register(cashRoutes);
   await app.register(officeClosingRoutes);
   await app.register(leftoverRoutes);
   await app.register(forecastRoutes);
