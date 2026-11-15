@@ -62,7 +62,7 @@ python3 infra/homolog/gcp/autonomia/operar.py op recovery_point_create
 python3 infra/homolog/gcp/autonomia/operar.py op migrate version=0a2546f33f9b568e89899b69f39080d655c2084d
 python3 infra/homolog/gcp/autonomia/operar.py op activate_version version=0a2546f33f9b568e89899b69f39080d655c2084d
 python3 infra/homolog/gcp/autonomia/operar.py op gate_close
-python3 infra/homolog/gcp/autonomia/operar.py op migration_verify
+python3 infra/homolog/gcp/autonomia/operar.py op migration_verify version=0a2546f33f9b568e89899b69f39080d655c2084d
 python3 infra/homolog/gcp/autonomia/operar.py op smoke_test
 python3 infra/homolog/gcp/autonomia/operar.py op run_homologation_tests suite=acesso
 python3 infra/homolog/gcp/autonomia/operar.py op container_logs service=api lines=300
@@ -73,13 +73,28 @@ recebe exatamente essas imagens. Conferência pela tela (você, com a senha do p
 `https://teste.cenariogestao.com.br/painel/aplicativos` abre, cadastra um aplicativo de teste com
 retorno HTTPS e mostra o segredo uma vez; `https://teste.cenariogestao.com.br/autorizar?…` exige login.
 
+### Resultado na homologação (15/11/2026, operador `claude-operador`)
+
+| Item                 | Resultado                                                                                                                                                                                            |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Versão ativa         | antes `9fb6b03…` → depois **`0a2546f…`** (etiqueta, pilha, candidata e migrada)                                                                                                                      |
+| Build                | `b1b0066d-830c-4a99-9504-f575796cd8e0`, SUCCESS (21:56:42 → 22:02:03 UTC)                                                                                                                            |
+| Imagem api           | `sha256:d617da5b0ae2f5b9071537240d57cdac47edfece9d5758f8b077f15f87981566`                                                                                                                            |
+| Imagem web           | `sha256:0623de338e7d2658e8520361df88bd6c921cd33e14c9d84a23facffccbf5adcc`                                                                                                                            |
+| Ponto de recuperação | `cenario-staging-20261115T220427Z` (versão `9fb6b03`): restauração de teste IDÊNTICA, enviado ao bucket; `backup_validate`: SHA256SUMS conferido                                                     |
+| Precheck             | exatamente 1 pendente, `20270330000000_autorizacao_aplicativos`, esquema compatível                                                                                                                  |
+| Migration            | só essa aplicada (41 s); 38/38                                                                                                                                                                       |
+| Verificações         | `version` ✔ · `migration_verify` 38/38, 0 pendentes · `health` ✔ · `smoke_test` ✔ · WebSocket 401 sem sessão (esperado) ✔ · suíte `acesso` ✔ · logs: api 0 respostas 5xx e 0 erros, web 0 erros |
+| Impressão digital    | só as 4 tabelas `oauth_*` novas (0 linhas, com colunas e índices) e o registro da migration (37 → 38); nada mais mudou                                                                               |
+| Indisponibilidade    | ≈3 min (22:04:19 → ≈22:07:20 UTC); portão fechado no fim                                                                                                                                             |
+
 ## 4. Promoção das imagens (Cloud Shell, sua conta)
 
 Mesmo procedimento e mesmo `promover-imagens.sh` (árvore `9ff142e`) da promoção de `696e3e9`
 (`docs/PRODUCAO-DEPLOY-696e3e9-CLOUDSHELL.md`), só com a versão e os digests novos:
 
 ```bash
-bash infra/prod/gcp/promover-imagens.sh 0a2546f33f9b568e89899b69f39080d655c2084d <digest-api-homologado> <digest-web-homologado>
+bash infra/prod/gcp/promover-imagens.sh 0a2546f33f9b568e89899b69f39080d655c2084d sha256:d617da5b0ae2f5b9071537240d57cdac47edfece9d5758f8b077f15f87981566 sha256:0623de338e7d2658e8520361df88bd6c921cd33e14c9d84a23facffccbf5adcc
 ```
 
 **O que altera:** só acrescenta a etiqueta `0a2546f…` no Artifact Registry `cenario-prod`, apontando
