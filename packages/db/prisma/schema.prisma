@@ -3726,3 +3726,242 @@ model AttendanceLeaveEvent {
   @@index([leaveId, createdAt])
   @@map("attendance_leave_events")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Jogo de gestão (empresa virtual). Aditivo: nenhuma tabela existente muda de significado.
+// A planta é só representação; a fonte dos dados operacionais continua sendo OS, tarefas,
+// estoque e compras. Vínculos com usuários, materiais e localizações físicas usam chaves
+// estrangeiras declaradas na migration (sem relação Prisma para não alterar os modelos antigos).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Espaço do jogo (Tapeçaria, Escritório ou ambiente criado pelo gestor).
+model GameSpace {
+  id           String   @id @default(uuid()) @db.Uuid
+  key          String   @unique @db.VarChar(40)
+  name         String   @db.VarChar(80)
+  /// OFICINA | ESCRITORIO | OUTRO
+  kind         String   @db.VarChar(20)
+  widthCm      Int      @map("width_cm")
+  depthCm      Int      @map("depth_cm")
+  gridCm       Int      @default(50) @map("grid_cm")
+  /// Paredes, portas e móveis decorativos (sem vínculos operacionais).
+  doc          Json     @default("{}")
+  /// Medidas e posições ainda ilustrativas (sugestão inicial não conferida).
+  illustrative Boolean  @default(true)
+  position     Int      @default(0)
+  active       Boolean  @default(true)
+  version      Int      @default(1)
+  updatedById  String?  @map("updated_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  areas        GameArea[]
+  stations     GameStation[]
+  storageUnits GameStorageUnit[]
+  revisions    GameLayoutRevision[]
+
+  @@map("game_spaces")
+}
+
+/// Área funcional (recebimento, corte, costura…). Identificador estável: renomear ou mover
+/// preserva os vínculos.
+model GameArea {
+  id             String   @id @db.Uuid
+  spaceId        String   @map("space_id") @db.Uuid
+  function       String   @db.VarChar(30)
+  name           String   @db.VarChar(80)
+  xCm            Int      @map("x_cm")
+  yCm            Int      @map("y_cm")
+  wCm            Int      @map("w_cm")
+  dCm            Int      @map("d_cm")
+  color          String?  @db.VarChar(9)
+  /// Localização física do sistema (item_locations) representada por esta área.
+  itemLocationId String?  @map("item_location_id") @db.Uuid
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  space        GameSpace         @relation(fields: [spaceId], references: [id], onDelete: Restrict)
+  stations     GameStation[]
+  storageUnits GameStorageUnit[]
+
+  @@index([spaceId])
+  @@map("game_areas")
+}
+
+/// Estação de trabalho (bancada, mesa de corte, máquina, mesa do escritório).
+model GameStation {
+  id         String   @id @db.Uuid
+  spaceId    String   @map("space_id") @db.Uuid
+  areaId     String?  @map("area_id") @db.Uuid
+  kind       String   @db.VarChar(30)
+  name       String   @db.VarChar(80)
+  xCm        Int      @map("x_cm")
+  yCm        Int      @map("y_cm")
+  wCm        Int      @map("w_cm")
+  dCm        Int      @map("d_cm")
+  rotation   Int      @default(0)
+  /// Etapas de produção atendidas (production_activity). Vazio = qualquer etapa.
+  activities String[] @default([])
+  shared     Boolean  @default(false)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  space     GameSpace             @relation(fields: [spaceId], references: [id], onDelete: Restrict)
+  area      GameArea?             @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  assignees GameStationAssignee[]
+  agents    AiAgent[]
+
+  @@index([spaceId])
+  @@map("game_stations")
+}
+
+/// Funcionário vinculado à estação (estações compartilhadas têm vários; uma pessoa pode ter
+/// estações em várias etapas).
+model GameStationAssignee {
+  stationId String   @map("station_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  station GameStation @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@id([stationId, userId])
+  @@index([userId])
+  @@map("game_station_assignees")
+}
+
+/// Móvel de armazenagem (estante, armário, gaveteiro, prateleira avulsa).
+model GameStorageUnit {
+  id        String   @id @db.Uuid
+  spaceId   String   @map("space_id") @db.Uuid
+  areaId    String?  @map("area_id") @db.Uuid
+  kind      String   @db.VarChar(30)
+  label     String   @db.VarChar(60)
+  xCm       Int      @map("x_cm")
+  yCm       Int      @map("y_cm")
+  wCm       Int      @map("w_cm")
+  dCm       Int      @map("d_cm")
+  rotation  Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  space GameSpace         @relation(fields: [spaceId], references: [id], onDelete: Restrict)
+  area  GameArea?         @relation(fields: [areaId], references: [id], onDelete: Restrict)
+  slots GameStorageSlot[]
+
+  @@index([spaceId])
+  @@map("game_storage_units")
+}
+
+/// Posição endereçável (Prateleira 2, Gaveta 1…) e os materiais do catálogo guardados nela.
+model GameStorageSlot {
+  id        String   @id @db.Uuid
+  unitId    String   @map("unit_id") @db.Uuid
+  label     String   @db.VarChar(60)
+  level     Int      @default(1)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  unit      GameStorageUnit    @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  materials GameSlotMaterial[]
+
+  @@index([unitId])
+  @@map("game_storage_slots")
+}
+
+model GameSlotMaterial {
+  slotId      String   @map("slot_id") @db.Uuid
+  stockItemId String   @map("stock_item_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  slot GameStorageSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  @@id([slotId, stockItemId])
+  @@index([stockItemId])
+  @@map("game_slot_materials")
+}
+
+/// Histórico imutável de cada planta salva (quem, quando, resumo e cópia completa).
+model GameLayoutRevision {
+  id          String   @id @default(uuid()) @db.Uuid
+  spaceId     String   @map("space_id") @db.Uuid
+  version     Int
+  summary     String   @db.VarChar(1000)
+  snapshot    Json
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  space GameSpace @relation(fields: [spaceId], references: [id], onDelete: Restrict)
+
+  @@unique([spaceId, version])
+  @@map("game_layout_revisions")
+}
+
+/// Agente de IA do escritório. Função, instruções, dados consultáveis e política de ações.
+model AiAgent {
+  id             String   @id @default(uuid()) @db.Uuid
+  deskStationId  String?  @map("desk_station_id") @db.Uuid
+  name           String   @db.VarChar(60)
+  /// GERENTE | COMPRAS | WHATSAPP | ORCAMENTOS | FINANCEIRO | INSTAGRAM | PERSONALIZADA
+  roleKey        String   @map("role_key") @db.VarChar(40)
+  roleLabel      String   @map("role_label") @db.VarChar(80)
+  instructions   String   @db.VarChar(4000)
+  dataScopes     String[] @default([]) @map("data_scopes")
+  /// { acao: 'NUNCA' | 'PROPOR' | 'EXECUTAR_APROVADO' }
+  actionPolicies Json     @default("{}") @map("action_policies")
+  /// ATIVO | PAUSADO | DESATIVADO
+  status         String   @default("ATIVO") @db.VarChar(15)
+  color          String   @default("#7c3aed") @db.VarChar(9)
+  version        Int      @default(1)
+  createdById    String?  @map("created_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  desk      GameStation?      @relation(fields: [deskStationId], references: [id], onDelete: SetNull)
+  messages  AiAgentMessage[]
+  proposals AiAgentProposal[]
+
+  @@map("ai_agents")
+}
+
+model AiAgentMessage {
+  id         String   @id @default(uuid()) @db.Uuid
+  agentId    String   @map("agent_id") @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  /// USUARIO | AGENTE
+  author     String   @db.VarChar(10)
+  content    String   @db.VarChar(20000)
+  /// Registros que justificam a resposta (OS, materiais, tarefas, contas).
+  references Json     @default("[]")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  agent AiAgent @relation(fields: [agentId], references: [id], onDelete: Restrict)
+
+  @@index([agentId, createdAt])
+  @@map("ai_agent_messages")
+}
+
+/// Ação proposta por um agente, pronta para revisão. Nada é executado sem aprovação.
+model AiAgentProposal {
+  id           String    @id @default(uuid()) @db.Uuid
+  agentId      String    @map("agent_id") @db.Uuid
+  kind         String    @db.VarChar(40)
+  title        String    @db.VarChar(200)
+  detail       String    @db.VarChar(4000)
+  payload      Json      @default("{}")
+  evidence     Json      @default("[]")
+  /// PENDENTE | APROVADA | REJEITADA | EXECUTADA_TESTE
+  status       String    @default("PENDENTE") @db.VarChar(20)
+  decidedById  String?   @map("decided_by_id") @db.Uuid
+  decidedAt    DateTime? @map("decided_at") @db.Timestamptz(3)
+  decisionNote String?   @map("decision_note") @db.VarChar(500)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  agent AiAgent @relation(fields: [agentId], references: [id], onDelete: Restrict)
+
+  @@index([agentId, status])
+  @@map("ai_agent_proposals")
+}

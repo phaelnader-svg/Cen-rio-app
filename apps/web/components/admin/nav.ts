@@ -35,6 +35,7 @@ import {
   Route,
   type LucideIcon,
   ListTodo,
+  Gamepad2,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -59,6 +60,7 @@ export const NAV_GROUPS = [
 export type NavGroup = (typeof NAV_GROUPS)[number];
 const GROUP_PREFIXES: [string, NavGroup][] = [
   ['/painel/atencao', 'Início'],
+  ['/jogo', 'Início'],
   ['/painel/servicos', 'Serviços'],
   ['/painel/clientes', 'Serviços'],
   ['/painel/pedidos', 'Serviços'],
@@ -91,6 +93,8 @@ export function navGroupOf(href: string): NavGroup {
 
 export const NAV: NavItem[] = [
   { href: '/painel', label: 'Início', icon: LayoutDashboard },
+  // Jogo de gestão: entrada própria (mesma sessão e permissões).
+  { href: '/jogo', label: 'Empresa virtual', icon: Gamepad2, anyOf: ['jogo.acessar'] },
   // Simplificação Fase 2: entrada principal do gestor (cliente + serviço + retirada).
   {
     href: '/painel/servicos/novo',

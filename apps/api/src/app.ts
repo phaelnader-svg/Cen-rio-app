@@ -55,6 +55,10 @@ import { purchaseOrderRoutes } from './modules/purchasing/purchase-orders';
 import { shortageRoutes } from './modules/purchasing/shortages';
 import { materialReceiptRoutes } from './modules/purchasing/receipts';
 import { stockRoutes } from './modules/purchasing/stock';
+import { gameSpaceRoutes } from './modules/game/spaces';
+import { gameSnapshotRoutes } from './modules/game/snapshot';
+import { gameStorageRoutes } from './modules/game/storage';
+import { gameAgentRoutes } from './modules/game/agents';
 import { supplierRoutes } from './modules/purchasing/suppliers';
 import { orderRoutes } from './modules/orders/routes';
 import { pickupRoutes } from './modules/pickups/routes';
@@ -200,6 +204,11 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(shortageRoutes);
   await app.register(materialReceiptRoutes);
   await app.register(stockRoutes);
+  // Jogo de gestão (empresa virtual): planta, retrato da operação, estoque no mapa e agentes.
+  await app.register(gameSpaceRoutes);
+  await app.register(gameSnapshotRoutes);
+  await app.register(gameStorageRoutes);
+  await app.register(gameAgentRoutes);
   await app.register(leftoverRoutes);
   await app.register(forecastRoutes);
   await app.register(productionPlanRoutes);

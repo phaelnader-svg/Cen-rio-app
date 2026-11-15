@@ -42,3 +42,7 @@ export * from './schemas/finance';
 export * from './types-finance';
 export * from './closing-domain';
 export * from './types-management';
+export * from './game-domain';
+export * from './game-builder';
+export * from './schemas/game';
+export * from './types-game';
