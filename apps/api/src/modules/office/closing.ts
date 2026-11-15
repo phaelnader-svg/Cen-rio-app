@@ -145,7 +145,10 @@ export async function closingRoutes(app: FastifyInstance) {
         'pendencias',
         ...c.pending.map((p) => `${p.kind};${p.label.replace(/;/g, ',')};`),
       );
-      files.unshift({ name: 'indice.csv', data: Buffer.from(`﻿${index.join('\n')}\n`, 'utf8') });
+      files.unshift({
+        name: 'indice.csv',
+        data: Buffer.from(`\uFEFF${index.join('\n')}\n`, 'utf8'),
+      });
       await prisma.$transaction((tx) =>
         audit(tx, actorFrom(request), {
           action: 'office.accounting_package',

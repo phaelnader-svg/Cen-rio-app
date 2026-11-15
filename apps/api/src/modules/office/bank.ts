@@ -18,7 +18,6 @@ import { receivePayment } from '../finance/revenue';
 import { idParams } from '../presenters';
 import { type Db, OFFICE_FIN, OFFICE_FIN_VIEW, brl, officeEvent } from './common';
 
-const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const addDays = (iso: string, n: number) => {
   const d = new Date(`${iso}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
