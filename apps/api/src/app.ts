@@ -3,7 +3,7 @@ import helmet from '@fastify/helmet';
 import multipart from '@fastify/multipart';
 import websocket from '@fastify/websocket';
 import { EVENT_TYPES } from '@cenario/shared';
-import { createPrismaClient, type PrismaClient } from '@cenario/db';
+import { createPrismaClient, ensureAppDbRole, type PrismaClient } from '@cenario/db';
 import {
   createCompanyPrisma,
   createSystemPrisma,
@@ -124,6 +124,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   });
 
   const base = options.prisma ?? createPrismaClient({ url: env.DATABASE_URL });
+  // Papel cenario_app e privilégios (refeitos após restaurar um backup sem GRANTs).
+  await ensureAppDbRole(base);
   // Multi-empresa (etapa 3): todo acesso ao banco passa por um destes dois clientes. O da
   // empresa só enxerga a empresa da requisição; o do sistema atravessa empresas e é usado só onde
   // isso é necessário (core/tenant.ts).

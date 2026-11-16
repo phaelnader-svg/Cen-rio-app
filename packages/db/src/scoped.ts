@@ -100,3 +100,35 @@ export function scopedPrismaClient(base: PrismaClient, scope: Scope): PrismaClie
     },
   });
 }
+
+/**
+ * Garante o papel `cenario_app` e os privilégios dele (idempotente). Roda na conexão do dono
+ * (a mesma das migrations) ao iniciar a API: os backups são gerados com `--no-privileges`, então
+ * uma restauração traz as tabelas e as políticas mas não os GRANTs — sem isto a API ficaria sem
+ * acesso a nada depois de restaurar.
+ */
+export async function ensureAppDbRole(owner: PrismaClient): Promise<void> {
+  await owner.$executeRawUnsafe(`DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${APP_DB_ROLE}') THEN
+    BEGIN
+      CREATE ROLE ${APP_DB_ROLE} NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+    EXCEPTION WHEN duplicate_object THEN NULL; -- outra instância criou ao mesmo tempo
+    END;
+  END IF;
+  IF NOT pg_has_role(current_user, '${APP_DB_ROLE}', 'MEMBER') THEN
+    EXECUTE format('GRANT ${APP_DB_ROLE} TO %I', current_user);
+  END IF;
+END
+$$`);
+  await owner.$executeRawUnsafe(`GRANT USAGE ON SCHEMA public TO ${APP_DB_ROLE}`);
+  await owner.$executeRawUnsafe(
+    `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${APP_DB_ROLE}`,
+  );
+  await owner.$executeRawUnsafe(
+    `GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA public TO ${APP_DB_ROLE}`,
+  );
+  await owner.$executeRawUnsafe(
+    `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO ${APP_DB_ROLE}`,
+  );
+}

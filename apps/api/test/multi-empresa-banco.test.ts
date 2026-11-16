@@ -2,7 +2,7 @@ import { Prisma, TENANCY, scopedPrismaClient, type Tx } from '@cenario/db';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { FAKE_CPF, createCustomer, createOrder } from './commercial-helpers';
-import { createTestApp, db, loginAdmin, rawDb, resetDatabase } from './helpers';
+import { createTestApp, db, loginAdmin, ownerDb, rawDb, resetDatabase } from './helpers';
 
 /**
  * Multi-empresa — etapa 2: o banco sabe de quem é cada linha.
@@ -212,5 +212,13 @@ describe('Multi-empresa: banco', () => {
       SELECT current_user AS u, r.rolsuper AS s, r.rolbypassrls AS b
         FROM pg_roles r WHERE r.rolname = current_user`;
     expect(rows).toEqual([{ u: 'cenario_app', s: false, b: false }]);
+  });
+
+  it('etapa 3: depois de restaurar um backup sem GRANTs, a API refaz os privilégios ao iniciar', async () => {
+    await ownerDb().$executeRawUnsafe('REVOKE ALL ON "customers" FROM cenario_app');
+    await expect(db().customer.count()).rejects.toThrow(/permission denied/);
+    const outra = await createTestApp();
+    await outra.close();
+    expect(await db().customer.count()).toBeGreaterThanOrEqual(0);
   });
 });

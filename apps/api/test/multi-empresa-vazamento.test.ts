@@ -2,6 +2,9 @@ import { Prisma, TENANCY } from '@cenario/db';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import type { AccessRule } from '../src/core/types';
+import { runAsCompany } from '../src/core/tenant';
+import { hashSecret } from '../src/lib/crypto';
+import { GESTOR_ROLE_KEY } from '@cenario/shared';
 import { createCustomer, createOrder, createPickup } from './commercial-helpers';
 import { type Client, createTestApp, db, loginAdmin, resetDatabase } from './helpers';
 
@@ -11,11 +14,10 @@ import { type Client, createTestApp, db, loginAdmin, resetDatabase } from './hel
  * Coleta os ids de TODAS as linhas das tabelas de empresa (mapa em packages/db/src/tenancy.ts) e
  * percorre as rotas de leitura da API procurando qualquer um deles na resposta.
  *
- * Etapa 1 (agora): só existe uma empresa. O teste prova que o detector ENXERGA os dados quando
- * eles estão visíveis — o gestor da própria empresa vê os próprios registros. Sem isso, um teste
- * de "zero vazamentos" poderia passar só por estar cego.
- * Etapa 3: o mesmo detector roda logado na empresa B contra os ids da empresa A e precisa achar
- * zero (o `it.todo` abaixo vira teste de verdade).
+ * Primeiro o teste prova que o detector ENXERGA os dados quando eles estão visíveis (o gestor da
+ * própria empresa vê os próprios registros) — sem isso, "zero vazamentos" poderia passar só por
+ * estar cego. Depois (etapa 3) o mesmo detector roda logado na empresa B contra os ids da empresa
+ * A, nas listas e nas rotas com /:id, e precisa achar zero.
  */
 let app: App;
 beforeAll(async () => {
@@ -26,6 +28,7 @@ afterAll(() => app.close());
 beforeEach(resetDatabase);
 
 type Route = { method: string; url: string; access: AccessRule };
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 
 /** Rotas de leitura sem parâmetro (listas, painéis, relatórios) acessíveis por sessão. */
 function listRoutes(): string[] {
@@ -62,6 +65,20 @@ async function idsDaEmpresa(): Promise<Map<string, string>> {
     for (const r of rows) ids.set(r.id, table_name);
   }
   return ids;
+}
+
+/** Rotas de leitura com parâmetros (/:id…) acessíveis por sessão. */
+function paramRoutes(): string[] {
+  return (app.app.routeCatalog as Route[])
+    .filter(
+      (r) =>
+        r.method === 'GET' &&
+        r.url.startsWith('/api') &&
+        r.url.includes(':') &&
+        !('public' in r.access) &&
+        !r.url.includes('/realtime'),
+    )
+    .map((r) => r.url);
 }
 
 /** Percorre as rotas de leitura e devolve onde algum id de fora apareceu. */
@@ -104,6 +121,106 @@ describe('Multi-empresa: detector de vazamento', () => {
     expect(tabelasVistas).toContain('pickup_requests');
   });
 
-  it.todo('etapa 3: logado na empresa B, nenhuma rota mostra um id da empresa A');
-  it.todo('etapa 3: rotas com parâmetro (/:id) respondem 404 para ids da empresa A');
+  it('etapa 3: logado na empresa B, nenhuma rota de leitura mostra um dado da empresa A', async () => {
+    const adminA = await loginAdmin(app);
+    const customer = await createCustomer(adminA);
+    const order = await createOrder(adminA, customer);
+    await createPickup(adminA, order);
+    const idsA = await idsDaEmpresa();
+
+    const { client: adminB } = await criarEmpresaB();
+    const { rotas, achados } = await varrerVazamentos(adminB, idsA);
+    expect(rotas).toBeGreaterThan(40);
+    expect(achados).toEqual([]);
+  });
+
+  it('etapa 3: rotas com parâmetro (/:id…) não entregam nada da empresa A para a empresa B', async () => {
+    const adminA = await loginAdmin(app);
+    const customer = await createCustomer(adminA);
+    const order = await createOrder(adminA, customer);
+    await createPickup(adminA, order);
+    const idsA = await idsDaEmpresa();
+    // Um id de cada tabela da empresa A, mais os usuários e funcionários (alvo comum de /:id).
+    const amostra = new Map<string, string>();
+    for (const [id, tabela] of idsA) if (!amostra.has(tabela)) amostra.set(tabela, id);
+    const candidatos = [...amostra.values()];
+
+    const varrer = async (client: Client) => {
+      const vistos: string[] = [];
+      let chamadas = 0;
+      for (const url of paramRoutes()) {
+        for (const id of candidatos) {
+          const res = await client.get(url.replace(/:[A-Za-z]+/g, id));
+          chamadas += 1;
+          if (res.status !== 200) continue;
+          for (const m of JSON.stringify(res.body).matchAll(UUID_RE)) {
+            const tabela = idsA.get(m[0]);
+            if (tabela) vistos.push(`${url} → ${tabela}`);
+          }
+        }
+      }
+      return { chamadas, vistos: [...new Set(vistos)] };
+    };
+    // Controle: o gestor da própria empresa A acha os dados dela por essas mesmas rotas.
+    const controle = await varrer(adminA);
+    expect(controle.vistos.length).toBeGreaterThan(5);
+
+    const { client: adminB } = await criarEmpresaB();
+    const b = await varrer(adminB);
+    expect(b.chamadas).toBeGreaterThan(100);
+    expect(b.vistos).toEqual([]);
+  });
+
+  it('etapa 3: a empresa A continua vendo tudo o que é dela depois que a B existe', async () => {
+    const adminA = await loginAdmin(app);
+    const customer = await createCustomer(adminA);
+    await criarEmpresaB();
+    const lista = await adminA.get('/api/v1/customers');
+    expect(JSON.stringify(lista.body)).toContain(customer.id);
+  });
 });
+
+/**
+ * Empresa B de teste: empresa 2 com um gestor (mesmas permissões do gestor da empresa 1) e um
+ * cliente próprio. Etapa 4 troca isto pelo "Criar conta" de verdade.
+ */
+async function criarEmpresaB() {
+  await db().companySettings.create({ data: { id: 2, tradeName: 'Tapeçaria B' } });
+  const email = 'gestor@empresa-b.local';
+  const password = 'SenhaDaEmpresaB1';
+  await runAsCompany(2, async () => {
+    const modelo = await db().role.findFirstOrThrow({
+      where: { companyId: 1, key: GESTOR_ROLE_KEY },
+      include: { permissions: true },
+    });
+    const role = await db().role.create({
+      data: {
+        key: GESTOR_ROLE_KEY,
+        name: modelo.name,
+        system: true,
+        permissions: { create: modelo.permissions.map((p) => ({ permission: p.permission })) },
+      },
+    });
+    const user = await db().user.create({
+      data: {
+        displayName: 'Gestor B',
+        email,
+        passwordHash: await hashSecret(password),
+        roles: { create: { roleId: role.id } },
+      },
+    });
+    await db().employee.create({
+      data: {
+        userId: user.id,
+        fullName: 'Gestor B',
+        displayName: 'Gestor B',
+        jobTitle: 'Gestor',
+        color: '#1D4ED8',
+      },
+    });
+  });
+  const client = await loginAdmin(app, { email, password });
+  // A empresa B tem dados próprios (o detector não pode confundir com os da A).
+  await createCustomer(client, { name: 'Cliente da B' });
+  return { client };
+}

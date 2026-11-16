@@ -9,7 +9,7 @@
  * dimensionar a migração em lotes (que depende de autorização específica: backup antes,
  * processamento em lotes, conferência de hash e nunca sobrescrever o original sem aprovação).
  */
-import { createPrismaClient } from '@cenario/db';
+import { createPrismaClient, scopedPrismaClient } from '@cenario/db';
 import type { Readable } from 'node:stream';
 import { metadataReport } from '../core/storage/image';
 import { LocalFileStorage } from '../core/storage/storage';
@@ -22,7 +22,9 @@ async function main() {
   if (!url || !dir) throw new Error('Defina DATABASE_URL e STORAGE_DIR.');
   const idx = process.argv.indexOf('--lote');
   const lote = idx > 0 ? Math.max(1, Number(process.argv[idx + 1]) || 200) : 200;
-  const prisma = createPrismaClient({ url });
+  const base = createPrismaClient({ url });
+  // Ferramenta de manutenção: percorre os arquivos de todas as empresas (multi-empresa).
+  const prisma = scopedPrismaClient(base, () => ({ companyId: null, bypass: true }));
   const storage = new LocalFileStorage(dir);
   const total = { fotos: 0, bytes: 0, exif: 0, gps: 0, girar: 0, ilegiveis: 0, ausentes: 0 };
   const porFinalidade: Record<string, number> = {};
@@ -62,7 +64,7 @@ async function main() {
       cursor = rows[rows.length - 1]!.id;
     }
   } finally {
-    await prisma.$disconnect();
+    await base.$disconnect();
   }
   process.stdout.write(
     `${JSON.stringify(
