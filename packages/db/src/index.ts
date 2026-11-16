@@ -31,3 +31,4 @@ export function isUniqueViolation(error: unknown, field?: string): boolean {
   const target = (error.meta?.target ?? []) as string[] | string;
   return Array.isArray(target) ? target.includes(field) : String(target).includes(field);
 }
+export * from './tenancy';
