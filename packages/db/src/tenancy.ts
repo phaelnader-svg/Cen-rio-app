@@ -197,6 +197,18 @@ export const TENANCY: Record<string, TenancyEntry> = {
   LogisticsFreeTrip: E,
   LogisticsTripParticipant: E,
 
+  // ── Orçamentos ──────────────────────────────────────────────────────────────────────
+  QuoteCatalogItem: {
+    class: 'empresa',
+    seededPerCompany: true,
+    note: 'Base de preços do orçamento; a migration de 2027-04-13 gravou a base inicial na empresa 1.',
+  },
+  QuoteSettings: {
+    class: 'empresa',
+    note: 'Uma linha por empresa (UNIQUE company_id). Hoje lida pelo id 1; etapa 3 lê pela empresa.',
+  },
+  Quote: numbered,
+
   // ── Financeiro ──────────────────────────────────────────────────────────────────────
   CustomerReceivable: numbered,
   CustomerPayment: E,

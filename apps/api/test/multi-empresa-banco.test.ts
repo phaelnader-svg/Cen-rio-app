@@ -75,7 +75,7 @@ describe('Multi-empresa: banco', () => {
       if (!comFk.has(t)) problemas.push(`${t}: sem FK para company_settings`);
     }
     expect(problemas).toEqual([]);
-    expect(tabelasComEmpresa.length).toBe(126);
+    expect(tabelasComEmpresa.length).toBe(129);
   });
 
   it('nenhuma unicidade de tabela de empresa vale no sistema inteiro sem motivo', async () => {

@@ -355,6 +355,15 @@ ALTER TABLE "logistics_free_trips" ADD CONSTRAINT "logistics_free_trips_company_
 ALTER TABLE "logistics_trip_participants" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE "logistics_trip_participants" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
 ALTER TABLE "logistics_trip_participants" ADD CONSTRAINT "logistics_trip_participants_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "quote_catalog_items" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "quote_catalog_items" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "quote_catalog_items" ADD CONSTRAINT "quote_catalog_items_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "quote_settings" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "quote_settings" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "quote_settings" ADD CONSTRAINT "quote_settings_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "quotes" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "quotes" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "quotes" ADD CONSTRAINT "quotes_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "customer_receivables" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE "customer_receivables" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
 ALTER TABLE "customer_receivables" ADD CONSTRAINT "customer_receivables_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -438,7 +447,7 @@ ALTER TABLE "closing_payment_reversals" ADD CONSTRAINT "closing_payment_reversal
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'commercial_orders', GREATEST(
   COALESCE((SELECT MAX("number") FROM "commercial_orders"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "commercial_orders_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "commercial_orders_number_seq"));
 ALTER TABLE "commercial_orders" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "commercial_orders_number_seq";
 DROP INDEX "commercial_orders_number_key";
@@ -448,7 +457,7 @@ CREATE TRIGGER "commercial_orders_company_number" BEFORE INSERT ON "commercial_o
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'pickup_requests', GREATEST(
   COALESCE((SELECT MAX("number") FROM "pickup_requests"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "pickup_requests_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "pickup_requests_number_seq"));
 ALTER TABLE "pickup_requests" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "pickup_requests_number_seq";
 DROP INDEX "pickup_requests_number_key";
@@ -458,7 +467,7 @@ CREATE TRIGGER "pickup_requests_company_number" BEFORE INSERT ON "pickup_request
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'receipts', GREATEST(
   COALESCE((SELECT MAX("number") FROM "receipts"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "receipts_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "receipts_number_seq"));
 ALTER TABLE "receipts" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "receipts_number_seq";
 DROP INDEX "receipts_number_key";
@@ -468,7 +477,7 @@ CREATE TRIGGER "receipts_company_number" BEFORE INSERT ON "receipts"
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'piece_returns', GREATEST(
   COALESCE((SELECT MAX("number") FROM "piece_returns"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "piece_returns_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "piece_returns_number_seq"));
 ALTER TABLE "piece_returns" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "piece_returns_number_seq";
 DROP INDEX "piece_returns_number_key";
@@ -478,7 +487,7 @@ CREATE TRIGGER "piece_returns_company_number" BEFORE INSERT ON "piece_returns"
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'service_orders', GREATEST(
   COALESCE((SELECT MAX("number") FROM "service_orders"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "service_orders_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "service_orders_number_seq"));
 ALTER TABLE "service_orders" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "service_orders_number_seq";
 DROP INDEX "service_orders_number_key";
@@ -488,7 +497,7 @@ CREATE TRIGGER "service_orders_company_number" BEFORE INSERT ON "service_orders"
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'measurements', GREATEST(
   COALESCE((SELECT MAX("number") FROM "measurements"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "measurements_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "measurements_number_seq"));
 ALTER TABLE "measurements" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "measurements_number_seq";
 DROP INDEX "measurements_number_key";
@@ -498,7 +507,7 @@ CREATE TRIGGER "measurements_company_number" BEFORE INSERT ON "measurements"
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'stock_items', GREATEST(
   COALESCE((SELECT MAX("number") FROM "stock_items"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "stock_items_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "stock_items_number_seq"));
 ALTER TABLE "stock_items" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "stock_items_number_seq";
 DROP INDEX "stock_items_number_key";
@@ -508,7 +517,7 @@ CREATE TRIGGER "stock_items_company_number" BEFORE INSERT ON "stock_items"
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'purchase_orders', GREATEST(
   COALESCE((SELECT MAX("number") FROM "purchase_orders"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "purchase_orders_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "purchase_orders_number_seq"));
 ALTER TABLE "purchase_orders" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "purchase_orders_number_seq";
 DROP INDEX "purchase_orders_number_key";
@@ -518,7 +527,7 @@ CREATE TRIGGER "purchase_orders_company_number" BEFORE INSERT ON "purchase_order
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'material_receipts', GREATEST(
   COALESCE((SELECT MAX("number") FROM "material_receipts"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "material_receipts_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "material_receipts_number_seq"));
 ALTER TABLE "material_receipts" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "material_receipts_number_seq";
 DROP INDEX "material_receipts_number_key";
@@ -528,7 +537,7 @@ CREATE TRIGGER "material_receipts_company_number" BEFORE INSERT ON "material_rec
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'material_arrivals', GREATEST(
   COALESCE((SELECT MAX("number") FROM "material_arrivals"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "material_arrivals_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "material_arrivals_number_seq"));
 ALTER TABLE "material_arrivals" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "material_arrivals_number_seq";
 DROP INDEX "material_arrivals_number_key";
@@ -538,7 +547,7 @@ CREATE TRIGGER "material_arrivals_company_number" BEFORE INSERT ON "material_arr
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'production_tasks', GREATEST(
   COALESCE((SELECT MAX("number") FROM "production_tasks"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "production_tasks_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "production_tasks_number_seq"));
 ALTER TABLE "production_tasks" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "production_tasks_number_seq";
 DROP INDEX "production_tasks_number_key";
@@ -548,7 +557,7 @@ CREATE TRIGGER "production_tasks_company_number" BEFORE INSERT ON "production_ta
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'reschedule_proposals', GREATEST(
   COALESCE((SELECT MAX("number") FROM "reschedule_proposals"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "reschedule_proposals_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "reschedule_proposals_number_seq"));
 ALTER TABLE "reschedule_proposals" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "reschedule_proposals_number_seq";
 DROP INDEX "reschedule_proposals_number_key";
@@ -558,7 +567,7 @@ CREATE TRIGGER "reschedule_proposals_company_number" BEFORE INSERT ON "reschedul
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'help_requests', GREATEST(
   COALESCE((SELECT MAX("number") FROM "help_requests"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "help_requests_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "help_requests_number_seq"));
 ALTER TABLE "help_requests" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "help_requests_number_seq";
 DROP INDEX "help_requests_number_key";
@@ -568,7 +577,7 @@ CREATE TRIGGER "help_requests_company_number" BEFORE INSERT ON "help_requests"
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'production_issues', GREATEST(
   COALESCE((SELECT MAX("number") FROM "production_issues"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "production_issues_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "production_issues_number_seq"));
 ALTER TABLE "production_issues" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "production_issues_number_seq";
 DROP INDEX "production_issues_number_key";
@@ -578,7 +587,7 @@ CREATE TRIGGER "production_issues_company_number" BEFORE INSERT ON "production_i
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'labor_reviews', GREATEST(
   COALESCE((SELECT MAX("number") FROM "labor_reviews"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "labor_reviews_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "labor_reviews_number_seq"));
 ALTER TABLE "labor_reviews" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "labor_reviews_number_seq";
 DROP INDEX "labor_reviews_number_key";
@@ -588,7 +597,7 @@ CREATE TRIGGER "labor_reviews_company_number" BEFORE INSERT ON "labor_reviews"
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'attendance_leaves', GREATEST(
   COALESCE((SELECT MAX("number") FROM "attendance_leaves"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "attendance_leaves_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "attendance_leaves_number_seq"));
 ALTER TABLE "attendance_leaves" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "attendance_leaves_number_seq";
 DROP INDEX "attendance_leaves_number_key";
@@ -598,7 +607,7 @@ CREATE TRIGGER "attendance_leaves_company_number" BEFORE INSERT ON "attendance_l
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'quality_inspections', GREATEST(
   COALESCE((SELECT MAX("number") FROM "quality_inspections"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "quality_inspections_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "quality_inspections_number_seq"));
 ALTER TABLE "quality_inspections" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "quality_inspections_number_seq";
 DROP INDEX "quality_inspections_number_key";
@@ -608,7 +617,7 @@ CREATE TRIGGER "quality_inspections_company_number" BEFORE INSERT ON "quality_in
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'packaging_records', GREATEST(
   COALESCE((SELECT MAX("number") FROM "packaging_records"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "packaging_records_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "packaging_records_number_seq"));
 ALTER TABLE "packaging_records" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "packaging_records_number_seq";
 DROP INDEX "packaging_records_number_key";
@@ -618,7 +627,7 @@ CREATE TRIGGER "packaging_records_company_number" BEFORE INSERT ON "packaging_re
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'deliveries', GREATEST(
   COALESCE((SELECT MAX("number") FROM "deliveries"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "deliveries_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "deliveries_number_seq"));
 ALTER TABLE "deliveries" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "deliveries_number_seq";
 DROP INDEX "deliveries_number_key";
@@ -628,7 +637,7 @@ CREATE TRIGGER "deliveries_company_number" BEFORE INSERT ON "deliveries"
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'logistics_occurrences', GREATEST(
   COALESCE((SELECT MAX("number") FROM "logistics_occurrences"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "logistics_occurrences_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "logistics_occurrences_number_seq"));
 ALTER TABLE "logistics_occurrences" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "logistics_occurrences_number_seq";
 DROP INDEX "logistics_occurrences_number_key";
@@ -636,9 +645,19 @@ CREATE UNIQUE INDEX "logistics_occurrences_company_id_number_key" ON "logistics_
 CREATE TRIGGER "logistics_occurrences_company_number" BEFORE INSERT ON "logistics_occurrences"
   FOR EACH ROW EXECUTE FUNCTION assign_company_number();
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
+SELECT 1, 'quotes', GREATEST(
+  COALESCE((SELECT MAX("number") FROM "quotes"), 0),
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "quotes_number_seq"));
+ALTER TABLE "quotes" ALTER COLUMN "number" DROP DEFAULT;
+DROP SEQUENCE "quotes_number_seq";
+DROP INDEX "quotes_number_key";
+CREATE UNIQUE INDEX "quotes_company_id_number_key" ON "quotes"("company_id", "number");
+CREATE TRIGGER "quotes_company_number" BEFORE INSERT ON "quotes"
+  FOR EACH ROW EXECUTE FUNCTION assign_company_number();
+INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'customer_receivables', GREATEST(
   COALESCE((SELECT MAX("number") FROM "customer_receivables"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "customer_receivables_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "customer_receivables_number_seq"));
 ALTER TABLE "customer_receivables" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "customer_receivables_number_seq";
 DROP INDEX "customer_receivables_number_key";
@@ -648,7 +667,7 @@ CREATE TRIGGER "customer_receivables_company_number" BEFORE INSERT ON "customer_
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'production_payables', GREATEST(
   COALESCE((SELECT MAX("number") FROM "production_payables"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "production_payables_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "production_payables_number_seq"));
 ALTER TABLE "production_payables" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "production_payables_number_seq";
 DROP INDEX "production_payables_number_key";
@@ -658,7 +677,7 @@ CREATE TRIGGER "production_payables_company_number" BEFORE INSERT ON "production
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'logistics_costs', GREATEST(
   COALESCE((SELECT MAX("number") FROM "logistics_costs"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "logistics_costs_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "logistics_costs_number_seq"));
 ALTER TABLE "logistics_costs" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "logistics_costs_number_seq";
 DROP INDEX "logistics_costs_number_key";
@@ -668,7 +687,7 @@ CREATE TRIGGER "logistics_costs_company_number" BEFORE INSERT ON "logistics_cost
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'account_payables', GREATEST(
   COALESCE((SELECT MAX("number") FROM "account_payables"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "account_payables_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "account_payables_number_seq"));
 ALTER TABLE "account_payables" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "account_payables_number_seq";
 DROP INDEX "account_payables_number_key";
@@ -678,7 +697,7 @@ CREATE TRIGGER "account_payables_company_number" BEFORE INSERT ON "account_payab
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'operational_expenses', GREATEST(
   COALESCE((SELECT MAX("number") FROM "operational_expenses"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "operational_expenses_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "operational_expenses_number_seq"));
 ALTER TABLE "operational_expenses" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "operational_expenses_number_seq";
 DROP INDEX "operational_expenses_number_key";
@@ -688,7 +707,7 @@ CREATE TRIGGER "operational_expenses_company_number" BEFORE INSERT ON "operation
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'value_change_requests', GREATEST(
   COALESCE((SELECT MAX("number") FROM "value_change_requests"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "value_change_requests_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "value_change_requests_number_seq"));
 ALTER TABLE "value_change_requests" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "value_change_requests_number_seq";
 DROP INDEX "value_change_requests_number_key";
@@ -698,7 +717,7 @@ CREATE TRIGGER "value_change_requests_company_number" BEFORE INSERT ON "value_ch
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'weekly_closing_confirmations', GREATEST(
   COALESCE((SELECT MAX("number") FROM "weekly_closing_confirmations"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "weekly_closing_confirmations_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "weekly_closing_confirmations_number_seq"));
 ALTER TABLE "weekly_closing_confirmations" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "weekly_closing_confirmations_number_seq";
 DROP INDEX "weekly_closing_confirmations_number_key";
@@ -708,7 +727,7 @@ CREATE TRIGGER "weekly_closing_confirmations_company_number" BEFORE INSERT ON "w
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
 SELECT 1, 'closing_payments', GREATEST(
   COALESCE((SELECT MAX("number") FROM "closing_payments"), 0),
-  (SELECT CASE WHEN is_called THEN last_value ELSE 0 END FROM "closing_payments_number_seq"));
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "closing_payments_number_seq"));
 ALTER TABLE "closing_payments" ALTER COLUMN "number" DROP DEFAULT;
 DROP SEQUENCE "closing_payments_number_seq";
 DROP INDEX "closing_payments_number_key";
@@ -733,6 +752,11 @@ DROP INDEX "item_locations_key_key";
 CREATE UNIQUE INDEX "item_locations_company_id_key_key" ON "item_locations"("company_id", "key");
 DROP INDEX "weekly_closings_week_start_key";
 CREATE UNIQUE INDEX "weekly_closings_company_id_week_start_key" ON "weekly_closings"("company_id", "week_start");
+-- Orçamentos: uma configuração por empresa (o id deixa de ser fixo em 1).
+CREATE SEQUENCE "quote_settings_id_seq" AS INTEGER OWNED BY "quote_settings"."id";
+SELECT setval('"quote_settings_id_seq"', GREATEST((SELECT MAX("id") FROM "quote_settings"), 1));
+ALTER TABLE "quote_settings" ALTER COLUMN "id" SET DEFAULT nextval('"quote_settings_id_seq"');
+CREATE UNIQUE INDEX "quote_settings_company_id_key" ON "quote_settings"("company_id");
 DROP INDEX "customers_document_unique";
 CREATE UNIQUE INDEX "customers_document_unique" ON "customers"("company_id", "document") WHERE "document" IS NOT NULL;
 DROP INDEX "inventory_categories_name_key";

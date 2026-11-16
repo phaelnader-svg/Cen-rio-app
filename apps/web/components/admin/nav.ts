@@ -1,6 +1,7 @@
 import type { ModuleKey, Permission } from '@cenario/shared';
 import {
   ClipboardPlus,
+  Calculator,
   Building2,
   Contact,
   PackageOpen,
@@ -59,6 +60,7 @@ const GROUP_PREFIXES: [string, NavGroup][] = [
   ['/painel/atencao', 'Início'],
   ['/painel/servicos', 'Serviços'],
   ['/painel/clientes', 'Serviços'],
+  ['/painel/orcamentos', 'Serviços'],
   ['/painel/pedidos', 'Serviços'],
   ['/painel/retiradas', 'Serviços'],
   ['/painel/roteiro', 'Serviços'],
@@ -115,6 +117,13 @@ export const NAV: NavItem[] = [
     anyOf: ['empresa.configurar', 'sessoes.ver'],
   },
   { href: '/painel/clientes', label: 'Clientes', icon: Contact, anyOf: ['clientes.ver'] },
+  // Módulo Orçamentos: proposta comercial com materiais automáticos, contrato e O.S. do orçamento.
+  {
+    href: '/painel/orcamentos',
+    label: 'Orçamentos',
+    icon: Calculator,
+    anyOf: ['orcamentos.ver', 'orcamentos.gerenciar'],
+  },
   {
     href: '/painel/pedidos',
     label: 'Pedidos comerciais',

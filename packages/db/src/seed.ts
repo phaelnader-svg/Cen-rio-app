@@ -89,6 +89,10 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
     // O id foi gravado explicitamente: a sequência precisa andar até ele (senão a próxima empresa
     // criada tentaria usar o mesmo número).
     await prisma.$executeRaw`SELECT setval('company_settings_id_seq', GREATEST((SELECT MAX(id) FROM company_settings), 1))`;
+    // Os orçamentos da Cenário Estofados são numerados a partir de 10200 (migration
+    // 20270413000000_orcamentos). Com a numeração por empresa, o ponto de partida fica no contador.
+    await prisma.$executeRaw`INSERT INTO company_counters (company_id, key, last_value)
+      VALUES (${SEED_COMPANY_ID}, 'quotes', 10199) ON CONFLICT DO NOTHING`;
     log('✔ Configurações da empresa presentes.');
 
     // 1. Funções padrão e permissões
