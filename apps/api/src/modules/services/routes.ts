@@ -347,6 +347,9 @@ export async function serviceRoutes(app: FastifyInstance) {
             participantUserIds: p.participantUserIds,
             instructions: p.instructions ?? null,
             externalReference: null,
+            bringSamples: p.bringSamples ?? false,
+            samplesDescription: p.samplesDescription ?? null,
+            bringCardMachine: p.bringCardMachine ?? false,
             items: items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
             logisticsUserId: responsible?.userId ?? null,
             tripCost: hasCost

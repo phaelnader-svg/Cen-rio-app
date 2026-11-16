@@ -785,6 +785,10 @@ model PickupRequest {
   /// Protocolo/identificador no sistema da logística (integração futura).
   externalReference String?      @map("external_reference") @db.VarChar(80)
   status            PickupStatus @default(AGUARDANDO_AGENDAMENTO)
+  /// Agenda de Retiradas: levar mostruário ao cliente (e qual) e levar a maquininha de cartão.
+  bringSamples       Boolean @default(false) @map("bring_samples")
+  samplesDescription String? @map("samples_description") @db.VarChar(200)
+  bringCardMachine   Boolean @default(false) @map("bring_card_machine")
   version           Int          @default(1)
   createdById       String?      @map("created_by_id") @db.Uuid
   createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -3921,6 +3925,8 @@ model ServiceOrderMaterial {
 
   @@index([serviceOrderId])
   @@index([sourceModelMaterialId])
+  @@index([linkedPurchaseItemId])
+  @@index([linkedCostId])
   @@map("service_order_materials")
 }
 
