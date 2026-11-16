@@ -223,8 +223,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             </button>
             <p className="truncate text-sm font-medium text-ink-muted">{data.company.tradeName}</p>
             <div className="ml-auto flex items-center gap-2">
-              {/* Complemento "Ambiente interativo": Firma Viva já com a empresa, em outra guia. */}
-              {modules.ambiente_interativo && (
+              {/* Complemento "Ambiente interativo" (só o dono, quem configura a empresa): Firma Viva em outra guia. */}
+              {modules.ambiente_interativo && perms.has('empresa.configurar') && (
                 <a
                   href={AMBIENTE_INTERATIVO_PATH}
                   target="_blank"

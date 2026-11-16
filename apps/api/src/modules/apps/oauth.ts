@@ -123,15 +123,19 @@ export async function oauthRoutes(app: FastifyInstance) {
   /**
    * Entrada direta (botão "Acessar ambiente interativo"): com `prompt=none`, a confirmação é
    * dispensada quando a empresa tem o complemento "Ambiente interativo" ligado (a contratação é a
-   * autorização da empresa). Desligado, a entrada direta é recusada. A pessoa continua precisando
+   * autorização da empresa). Desligado, a entrada direta é recusada; e só o dono (permissão
+   * empresa.configurar) entra. A pessoa continua precisando
    * estar logada no Cenário, e o aplicativo nunca recebe mais do que ela pode fazer.
    */
-  async function directEntry(prompt?: string) {
+  async function directEntry(prompt: string | undefined, userId: string) {
     if (prompt !== 'none') return false;
     if (!(await moduleEnabled(prisma, 'ambiente_interativo')))
       throw Errors.business(
         'O Ambiente interativo não está ativo para esta empresa. Fale com o Cenário Gestão para contratar o complemento.',
       );
+    // Só o dono (quem configura a empresa) usa o ambiente interativo.
+    if (!(await loadUserPermissions(prisma, userId)).has('empresa.configurar'))
+      throw Errors.forbidden('O ambiente interativo é só para quem administra a empresa.');
     return true;
   }
 
@@ -161,7 +165,7 @@ export async function oauthRoutes(app: FastifyInstance) {
           };
         }),
         redirectHost: new URL(q.redirect_uri).host,
-        skipConsent: await directEntry(q.prompt),
+        skipConsent: await directEntry(q.prompt, request.auth!.userId),
       };
     },
   );
@@ -170,7 +174,7 @@ export async function oauthRoutes(app: FastifyInstance) {
   app.post('/api/oauth/authorize', { config: { access: { session: 'WEB' } } }, async (request) => {
     const body = authorizeQuery.extend({ decision: z.enum(['allow', 'deny']) }).parse(request.body);
     const { client, scopes } = await validateRequest(body);
-    await directEntry(body.prompt);
+    await directEntry(body.prompt, request.auth!.userId);
     const target = new URL(body.redirect_uri);
     target.searchParams.set('state', body.state);
     if (body.decision === 'deny') {

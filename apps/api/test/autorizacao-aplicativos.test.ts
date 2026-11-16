@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { createTokenHasher } from '../src/lib/crypto';
+import { panelUserWith } from './commercial-helpers';
 import { Client, createTestApp, db, loginAdmin, resetDatabase } from './helpers';
 
 /**
@@ -316,6 +317,12 @@ describe('autorização delegada de aplicativos', () => {
     expect(on.body.skipConsent).toBe(true);
     // Sem sessão no Cenário, nada feito (o app nunca entra sem login do Cenário).
     expect((await new Client(app).get(`/api/oauth/authorize/info?${q}`)).status).toBe(401);
+    // Só o dono (quem configura a empresa) entra; o resto da equipe é recusado.
+    const equipe = await panelUserWith(app, admin, 'equipe', ['os.ver', 'producao.ver']);
+    expect((await equipe.get(`/api/oauth/authorize/info?${q}`)).status).toBe(403);
+    expect((await equipe.post('/api/oauth/authorize', { ...p, decision: 'allow' })).status).toBe(
+      403,
+    );
 
     const r = await admin.post('/api/oauth/authorize', { ...p, decision: 'allow' });
     expect(r.status).toBe(200);

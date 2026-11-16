@@ -43,6 +43,6 @@ describe('ambiente interativo', () => {
     expect(header).toContain('rel="noopener noreferrer"');
     expect(header).toContain('bg-ok-600');
     // Complemento "Ambiente interativo": o botão segue a funcionalidade da empresa.
-    expect(header).toContain('modules.ambiente_interativo && (');
+    expect(header).toContain("modules.ambiente_interativo && perms.has('empresa.configurar') && (");
   });
 });
