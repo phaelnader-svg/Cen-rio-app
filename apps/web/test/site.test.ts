@@ -20,6 +20,7 @@ const SITE_FILES = [
   'components/site/config.ts',
   'app/(site)/layout.tsx',
   'app/(site)/conheca/page.tsx',
+  'app/page.tsx',
 ];
 
 describe('ativação da landing', () => {
@@ -91,7 +92,17 @@ describe('isolamento e promessas', () => {
     expect(annualOffer({ ...SITE, monthlyPrice: null })).toBeNull();
   });
 
-  it('a raiz do sistema continua indo para o painel', () => {
-    expect(src('app/page.tsx')).toMatch(/redirect\('\/painel'\)/);
+  it('a raiz mostra a landing só quando publicada; senão continua indo para o painel', () => {
+    const root = src('app/page.tsx');
+    expect(root).toMatch(/if \(siteMode\(\) !== 'live'\) redirect\('\/painel'\)/);
+    expect(root).toMatch(/<Landing preview=\{false\} \/>/);
+    expect(root).toMatch(/force-dynamic/);
+  });
+
+  it('o topo da landing tem o botão Entrar indo para /entrar', () => {
+    const landing = src('components/site/landing.tsx');
+    expect(landing).toMatch(
+      /href="\/entrar"[\s\S]{0,200}BUTTON_VARIANTS\.primary[\s\S]{0,200}Entrar/,
+    );
   });
 });

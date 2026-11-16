@@ -78,6 +78,13 @@ export function pendingItems(
 
 export type SiteMode = 'off' | 'preview' | 'live';
 
+/** Título e descrição da landing (usados em / e em /conheca). */
+export const SITE_META = {
+  title: 'Cenário Gestão · Sistema de gestão para tapeçarias',
+  description:
+    'O Cenário Gestão nasceu dentro da Cenário Estofados para organizar a nossa própria operação. Do pedido à entrega, no escritório e no tablet da oficina.',
+};
+
 export function siteMode(
   env: Record<string, string | undefined> = process.env,
   pending: string[] = pendingItems(),
