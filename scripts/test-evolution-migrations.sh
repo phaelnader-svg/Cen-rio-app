@@ -86,7 +86,9 @@ columns() {
   q "SELECT table_name || '|' || string_agg(column_name, ',' ORDER BY ordinal_position)
      FROM information_schema.columns WHERE table_schema = 'public' GROUP BY table_name ORDER BY 1"
 }
-schema_dump() { pg_dump -s "$URL" | grep -v '^\\restrict\|^\\unrestrict\|^$'; }
+# A imagem postgres do CI expõe `pg_attver` (versão interna da coluna) como opção de
+# coluna no pg_dump; muda a cada recriação de tabela e não é estrutura: fica fora da comparação.
+schema_dump() { pg_dump -s "$URL" | grep -v '^\\restrict\|^\\unrestrict\|^$\|SET (pg_attver=[0-9]*);$'; }
 indexes() { q "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY 1"; }
 
 step "1. Código legado ($LEGACY_REF) e banco gerado por ele"
