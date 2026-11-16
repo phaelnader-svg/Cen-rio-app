@@ -68,6 +68,8 @@ import { serviceOrderRoutes } from './modules/service-orders/routes';
 import { osMaterialRoutes } from './modules/os-materials/routes';
 import { serviceModelRoutes } from './modules/service-models/routes';
 import { workshopMapRoutes } from './modules/workshop-map/routes';
+import { gameSpaceRoutes } from './modules/game/spaces';
+import { gameSnapshotRoutes } from './modules/game/snapshot';
 import { directDeliveryRoutes } from './modules/quality/direct-delivery';
 import { inventoryRoutes } from './modules/inventory/routes';
 import { companyRoutes } from './modules/company/routes';
@@ -206,6 +208,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(osMaterialRoutes);
   await app.register(serviceModelRoutes);
   await app.register(workshopMapRoutes);
+  await app.register(gameSpaceRoutes);
+  await app.register(gameSnapshotRoutes);
   await app.register(directDeliveryRoutes);
   await app.register(inventoryRoutes);
   await app.register(attachmentRoutes);

@@ -179,6 +179,12 @@ model User {
   modelMaterialsUpdated ServiceModelMaterial[] @relation("ModelMaterialUpdatedBy")
   // Reformulação, Fase 3: entregas diretas desfeitas.
   deliveriesReverted    Delivery[]             @relation("DeliveryRevertedBy")
+  gameSpacesUpdated     GameSpace[]            @relation("GameSpaceUpdatedBy")
+  gameStations          GameStationAssignee[]  @relation("GameStationAssignee")
+  gameRevisions         GameLayoutRevision[]   @relation("GameRevisionCreatedBy")
+  aiAgentsCreated       AiAgent[]              @relation("AiAgentCreatedBy")
+  aiAgentMessages       AiAgentMessage[]       @relation("AiAgentMessageUser")
+  aiProposalsDecided    AiAgentProposal[]      @relation("AiAgentProposalDecidedBy")
 
   @@map("users")
 }
@@ -341,9 +347,9 @@ model Session {
   ipAddress     String?     @map("ip_address") @db.VarChar(64)
   userAgent     String?     @map("user_agent") @db.VarChar(300)
 
-  user      User    @relation("SessionUser", fields: [userId], references: [id], onDelete: Cascade)
-  device    Device? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  revokedBy User?   @relation("SessionRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+  user       User        @relation("SessionUser", fields: [userId], references: [id], onDelete: Cascade)
+  device     Device?     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  revokedBy  User?       @relation("SessionRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
   oauthGrant OAuthGrant?
 
   @@index([userId, revokedAt])
@@ -1500,6 +1506,7 @@ model StockItem {
   reservations  StockReservation[]
   purchaseItems PurchaseOrderItem[]
   issues        ProductionIssue[]
+  gameSlots     GameSlotMaterial[]
 
   @@map("stock_items")
 }
@@ -2707,6 +2714,7 @@ model ItemLocation {
   items     ServiceOrderItem[]
   events    ItemLocationEvent[]
   packaging PackagingRecord[]
+  gameAreas GameArea[]
 
   @@map("item_locations")
 }
@@ -4037,4 +4045,243 @@ model OAuthAccessToken {
   @@index([grantId])
   @@index([expiresAt])
   @@map("oauth_access_tokens")
+}
+
+model GameSpace {
+  id           String   @id @default(uuid()) @db.Uuid
+  key          String   @unique @db.VarChar(40)
+  name         String   @db.VarChar(80)
+  /// OFICINA | ESCRITORIO | OUTRO
+  kind         String   @db.VarChar(20)
+  widthCm      Int      @map("width_cm")
+  depthCm      Int      @map("depth_cm")
+  gridCm       Int      @default(50) @map("grid_cm")
+  /// Paredes, portas e móveis decorativos (sem vínculos operacionais).
+  doc          Json     @default("{}")
+  /// Medidas e posições ainda ilustrativas (sugestão inicial não conferida).
+  illustrative Boolean  @default(true)
+  position     Int      @default(0)
+  active       Boolean  @default(true)
+  version      Int      @default(1)
+  updatedById  String?  @map("updated_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  updatedBy    User?                @relation("GameSpaceUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  areas        GameArea[]
+  stations     GameStation[]
+  storageUnits GameStorageUnit[]
+  revisions    GameLayoutRevision[]
+
+  @@map("game_spaces")
+}
+
+/// Área funcional (recebimento, corte, costura…). Identificador estável: renomear ou mover
+/// preserva os vínculos.
+model GameArea {
+  id             String   @id @db.Uuid
+  spaceId        String   @map("space_id") @db.Uuid
+  function       String   @db.VarChar(30)
+  name           String   @db.VarChar(80)
+  xCm            Int      @map("x_cm")
+  yCm            Int      @map("y_cm")
+  wCm            Int      @map("w_cm")
+  dCm            Int      @map("d_cm")
+  color          String?  @db.VarChar(9)
+  /// Localização física do sistema (item_locations) representada por esta área.
+  itemLocationId String?  @map("item_location_id") @db.Uuid
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  space        GameSpace         @relation(fields: [spaceId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  itemLocation ItemLocation?     @relation(fields: [itemLocationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  stations     GameStation[]
+  storageUnits GameStorageUnit[]
+
+  @@index([spaceId])
+  @@map("game_areas")
+}
+
+/// Estação de trabalho (bancada, mesa de corte, máquina, mesa do escritório).
+model GameStation {
+  id         String   @id @db.Uuid
+  spaceId    String   @map("space_id") @db.Uuid
+  areaId     String?  @map("area_id") @db.Uuid
+  kind       String   @db.VarChar(30)
+  name       String   @db.VarChar(80)
+  xCm        Int      @map("x_cm")
+  yCm        Int      @map("y_cm")
+  wCm        Int      @map("w_cm")
+  dCm        Int      @map("d_cm")
+  rotation   Int      @default(0)
+  /// Etapas de produção atendidas (production_activity). Vazio = qualquer etapa.
+  activities String[] @default([])
+  shared     Boolean  @default(false)
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  space     GameSpace             @relation(fields: [spaceId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  area      GameArea?             @relation(fields: [areaId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  assignees GameStationAssignee[]
+  agents    AiAgent[]
+
+  @@index([spaceId])
+  @@map("game_stations")
+}
+
+/// Funcionário vinculado à estação (estações compartilhadas têm vários; uma pessoa pode ter
+/// estações em várias etapas).
+model GameStationAssignee {
+  stationId String   @map("station_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  station GameStation @relation(fields: [stationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user    User        @relation("GameStationAssignee", fields: [userId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@id([stationId, userId])
+  @@index([userId])
+  @@map("game_station_assignees")
+}
+
+/// Móvel de armazenagem (estante, armário, gaveteiro, prateleira avulsa).
+model GameStorageUnit {
+  id        String   @id @db.Uuid
+  spaceId   String   @map("space_id") @db.Uuid
+  areaId    String?  @map("area_id") @db.Uuid
+  kind      String   @db.VarChar(30)
+  label     String   @db.VarChar(60)
+  xCm       Int      @map("x_cm")
+  yCm       Int      @map("y_cm")
+  wCm       Int      @map("w_cm")
+  dCm       Int      @map("d_cm")
+  rotation  Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  space GameSpace         @relation(fields: [spaceId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  area  GameArea?         @relation(fields: [areaId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  slots GameStorageSlot[]
+
+  @@index([spaceId])
+  @@map("game_storage_units")
+}
+
+/// Posição endereçável (Prateleira 2, Gaveta 1…) e os materiais do catálogo guardados nela.
+model GameStorageSlot {
+  id        String   @id @db.Uuid
+  unitId    String   @map("unit_id") @db.Uuid
+  label     String   @db.VarChar(60)
+  level     Int      @default(1)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  unit      GameStorageUnit    @relation(fields: [unitId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  materials GameSlotMaterial[]
+
+  @@index([unitId])
+  @@map("game_storage_slots")
+}
+
+model GameSlotMaterial {
+  slotId      String   @map("slot_id") @db.Uuid
+  stockItemId String   @map("stock_item_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  slot      GameStorageSlot @relation(fields: [slotId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  stockItem StockItem       @relation(fields: [stockItemId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@id([slotId, stockItemId])
+  @@index([stockItemId])
+  @@map("game_slot_materials")
+}
+
+/// Histórico imutável de cada planta salva (quem, quando, resumo e cópia completa).
+model GameLayoutRevision {
+  id          String   @id @default(uuid()) @db.Uuid
+  spaceId     String   @map("space_id") @db.Uuid
+  version     Int
+  summary     String   @db.VarChar(1000)
+  snapshot    Json
+  createdById String?  @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  space     GameSpace @relation(fields: [spaceId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  createdBy User?     @relation("GameRevisionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([spaceId, version])
+  @@map("game_layout_revisions")
+}
+
+/// Agente de IA do escritório. Função, instruções, dados consultáveis e política de ações.
+model AiAgent {
+  id             String   @id @default(uuid()) @db.Uuid
+  deskStationId  String?  @map("desk_station_id") @db.Uuid
+  name           String   @db.VarChar(60)
+  /// GERENTE | COMPRAS | WHATSAPP | ORCAMENTOS | FINANCEIRO | INSTAGRAM | PERSONALIZADA
+  roleKey        String   @map("role_key") @db.VarChar(40)
+  roleLabel      String   @map("role_label") @db.VarChar(80)
+  instructions   String   @db.VarChar(4000)
+  dataScopes     String[] @default([]) @map("data_scopes")
+  /// { acao: 'NUNCA' | 'PROPOR' | 'EXECUTAR_APROVADO' }
+  actionPolicies Json     @default("{}") @map("action_policies")
+  /// ATIVO | PAUSADO | DESATIVADO
+  status         String   @default("ATIVO") @db.VarChar(15)
+  color          String   @default("#7c3aed") @db.VarChar(9)
+  version        Int      @default(1)
+  createdById    String?  @map("created_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  desk      GameStation?      @relation(fields: [deskStationId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdBy User?             @relation("AiAgentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  messages  AiAgentMessage[]
+  proposals AiAgentProposal[]
+
+  @@map("ai_agents")
+}
+
+model AiAgentMessage {
+  id         String   @id @default(uuid()) @db.Uuid
+  agentId    String   @map("agent_id") @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  /// USUARIO | AGENTE
+  author     String   @db.VarChar(10)
+  content    String   @db.VarChar(20000)
+  /// Registros que justificam a resposta (OS, materiais, tarefas, contas).
+  references Json     @default("[]")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  agent AiAgent @relation(fields: [agentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  user  User?   @relation("AiAgentMessageUser", fields: [userId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([agentId, createdAt])
+  @@map("ai_agent_messages")
+}
+
+/// Ação proposta por um agente, pronta para revisão. Nada é executado sem aprovação.
+model AiAgentProposal {
+  id           String    @id @default(uuid()) @db.Uuid
+  agentId      String    @map("agent_id") @db.Uuid
+  kind         String    @db.VarChar(40)
+  title        String    @db.VarChar(200)
+  detail       String    @db.VarChar(4000)
+  payload      Json      @default("{}")
+  evidence     Json      @default("[]")
+  /// PENDENTE | APROVADA | REJEITADA | EXECUTADA_TESTE | OBSOLETA
+  status       String    @default("PENDENTE") @db.VarChar(20)
+  decidedById  String?   @map("decided_by_id") @db.Uuid
+  decidedAt    DateTime? @map("decided_at") @db.Timestamptz(3)
+  decisionNote String?   @map("decision_note") @db.VarChar(500)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  agent     AiAgent @relation(fields: [agentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  decidedBy User?   @relation("AiAgentProposalDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([agentId, status])
+  @@map("ai_agent_proposals")
 }

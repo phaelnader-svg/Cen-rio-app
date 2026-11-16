@@ -152,6 +152,8 @@ export const EVENT_TYPES = {
    * SEM valores: o Meus Ganhos aberto recarrega pela API (PIN/D12 continuam valendo).
    */
   FINANCE_OWN_CHANGED: 'finance.own_changed',
+  /** Jogo de gestão: a planta (oficina ou escritório) foi salva; o Firma Viva recarrega. */
+  GAME_LAYOUT_SAVED: 'game.layout_saved',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

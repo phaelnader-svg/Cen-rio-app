@@ -4,8 +4,9 @@
  * o usuário que autorizou já possui (permissões efetivas = permissões do usuário ∩ escopos).
  * Ações exclusivas do tablet (iniciar/concluir etapa) e de administração nunca são liberadas.
  *
- * Nesta versão só existe o escopo de CONSULTA (somente leitura): o aplicativo vê a empresa, as
- * OS, a produção, as entregas e o mapa da oficina, e não consegue alterar nada.
+ * CONSULTA (somente leitura): o aplicativo vê a empresa, as OS, a produção, as entregas e o mapa
+ * da oficina. JOGO: sincroniza a planta (oficina e escritório), as estações e quem trabalha em
+ * cada uma; não altera OS, estoque nem financeiro.
  */
 import type { Permission } from './permissions';
 
@@ -21,6 +22,12 @@ export const APP_SCOPES = {
     description:
       'Ver a empresa, as OS, a produção, as entregas e onde cada peça está na oficina. Não altera OS, estoque nem financeiro.',
     permissions: ['painel.acessar', 'empresa.ver', 'os.ver', 'producao.ver', 'entregas.ver'],
+  },
+  jogo: {
+    label: 'Planta e pessoas',
+    description:
+      'Sincronizar a planta da oficina e do escritório, as estações e quem trabalha em cada uma.',
+    permissions: ['painel.acessar', 'jogo.acessar', 'jogo.construir'],
   },
 } as const satisfies Record<string, AppScopeDef>;
 

@@ -1347,9 +1347,12 @@ afterAll(() => app.close());
 // ─────────────────────────────────────── F1-07b ───────────────────────────────────────
 
 /** Acréscimos permitidos desde 9fb1786 (Rodada 1, decisão do proprietário — F3-17). */
-const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir'];
+// Ambiente interativo, etapa 1 (aprovada pelo proprietário em 16/11): permissões NOVAS do jogo, que
+// nenhuma função padrão recebe; só o gestor (catálogo completo) e quem o gestor liberar.
+const GAME_PERMISSIONS = ['jogo.acessar', 'jogo.construir', 'agentes.usar', 'agentes.gerenciar'];
+const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir', ...GAME_PERMISSIONS];
 const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
-  gestor: ['estoque.conferir'], // o gestor sempre recebe o catálogo completo
+  gestor: ['estoque.conferir', ...GAME_PERMISSIONS], // o gestor sempre recebe o catálogo completo
   tapeceiro: [],
   cabeceiras_qualidade: [],
   ajudante: [],
@@ -1376,10 +1379,9 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
         `${key} perdeu`,
       ).toEqual([]);
       const base = new Set(perms);
-      expect(
-        [...cur].filter((p) => !base.has(p)),
-        `${key} ganhou`,
-      ).toEqual(ALLOWED_ROLE_ADDITIONS[key]);
+      expect([...cur].filter((p) => !base.has(p)).sort(), `${key} ganhou`).toEqual(
+        [...ALLOWED_ROLE_ADDITIONS[key]!].sort(),
+      );
     }
   });
 
@@ -1399,7 +1401,7 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
       expect(
         [...cur].filter((p) => !base.includes(p)).sort(),
         `${role.key} ganhou no banco`,
-      ).toEqual(ALLOWED_ROLE_ADDITIONS[role.key!]);
+      ).toEqual([...ALLOWED_ROLE_ADDITIONS[role.key!]!].sort());
     }
     // Permissões efetivas de quem entra como gestor (o que o servidor realmente checa).
     const gestor = await db().user.findUniqueOrThrow({ where: { email: ADMIN.email } });
@@ -1545,6 +1547,9 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270323000000_reformulacao_fase_3: UPDATE CASCADE':
     'Não é comando: "ON UPDATE CASCADE" da chave estrangeira nova de quem desfez a entrega direta ' +
     '(deliveries.reverted_by_id; padrão do Prisma). Nenhuma linha é alterada.',
+  '20270406000000_jogo_gestao: UPDATE OR':
+    'Não é comando: "BEFORE UPDATE OR DELETE" do gatilho que torna IMUTÁVEIS o histórico de ' +
+    'plantas e as conversas com os agentes (tabelas novas). Protege dados em vez de alterá-los.',
 };
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
