@@ -3,7 +3,7 @@
 import type { MeDto } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ArrowLeft, BadgeCheck, Inbox, LogOut, RadioTower, Ruler, Wallet } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, LogOut, RadioTower, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ConnectionIndicator } from '@/components/connection-indicator';
 import { SyncPanel } from '@/components/sync-panel';
@@ -11,11 +11,8 @@ import { Button } from '@/components/ui/button';
 import { Avatar } from '@/components/ui/misc';
 import { api } from '@/lib/api';
 import { useModules } from '@/lib/hooks';
-import { MaterialReceiving } from '@/components/purchasing/material-receiving';
-import { usePendingReceipts } from '@/lib/purchasing';
 import { useMyAttendance } from '@/lib/attendance';
-import { MyMeasurementDetail, MyMeasurements, useMyOpenCount } from './measurements';
-import { ArrivalsCenter, MyTripsToday, useArrivalsCount } from './arrivals';
+import { MyTripsToday } from './my-trips';
 import { LogisticsJobs } from './logistics';
 import { MyValues } from './my-values';
 import { DepartScreen, PresenceCard } from './presence';
@@ -35,10 +32,6 @@ type Screen =
   | 'task'
   | 'notifications'
   | 'sync'
-  | 'measurements'
-  | 'measurement'
-  | 'materials'
-  | 'arrivals'
   | 'depart'
   | 'inspections'
   | 'inspection'
@@ -81,25 +74,17 @@ export function TabletHome({ me }: { me: MeDto }) {
   const canSync = me.permissions.includes('sincronizacao.diagnosticar');
   // Fase 11: só os próprios valores de produção, se o gestor autorizar.
   const canSeeValues = me.permissions.includes('financeiro.producao_propria');
-  const canMeasure =
-    me.permissions.includes('medicoes.extraordinarias') ||
-    me.permissions.includes('medicoes.gerenciar');
   const canExecute = me.permissions.includes('producao.executar');
-  // Fase 8: quem pede ajuda nas próprias tarefas (tapeceiros e cabeceiras). Reformulação, Fase 0:
-  // com os pedidos de ajuda desligados, o botão e "Meus pedidos" somem (o servidor também recusa).
-  const canAskHelp = me.permissions.includes('ajuda.solicitar') && modules.ajuda;
   // Fase 9: "Tenho um problema" nas próprias tarefas.
   const reportUserId = me.permissions.includes('ocorrencias.registrar') ? me.user.id : null;
   // Presença operacional (Fase 7): quem registra a própria chegada e saída.
   const canPresence =
     me.permissions.includes('presenca.registrar') && !me.permissions.includes('presenca.gerenciar');
   const attendance = useMyAttendance(canPresence);
-  const openCount = useMyOpenCount(canMeasure);
   const todayCount = useMyTodayCount(canExecute);
   // Evolução Fase 4: com fila semanal publicada, a tela inicial vira "Minha semana".
   const queue = useMyQueue(canExecute);
   const weekly = Boolean(queue.data && queue.data.total > 0);
-  const [measurementId, setMeasurementId] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [taskFrom, setTaskFrom] = useState<Screen>('home');
   // Fase 10: inspeções de qualidade (Thiago) e logística (André, Izaías).
@@ -107,9 +92,6 @@ export function TabletHome({ me }: { me: MeDto }) {
   const logisticsOnly = me.permissions.includes('logistica.executar') && !canExecute;
   const inspectionCount = useMyInspectionCount(canInspect);
   const [inspectionId, setInspectionId] = useState<string | null>(null);
-  const pendingMaterials = usePendingReceipts(!logisticsOnly);
-  // Simplificação Fase 3: central compartilhada "Aguardando chegada" (peças + materiais).
-  const arrivalsCount = useArrivalsCount(!logisticsOnly);
 
   const openTask = (id: string, from: Screen = 'home') => {
     setTaskId(id);
@@ -237,7 +219,6 @@ export function TabletHome({ me }: { me: MeDto }) {
                   setScreen('queue');
                   window.scrollTo({ top: 0 });
                 }}
-                canAskHelp={canAskHelp}
                 reportUserId={reportUserId}
               />
             )}
@@ -246,22 +227,6 @@ export function TabletHome({ me }: { me: MeDto }) {
               {canExecute ? 'Outras atividades' : 'Atividades'}
             </h2>
             <ul className="grid gap-4 md:grid-cols-2">
-              <li>
-                <Tile
-                  onClick={() => setScreen('arrivals')}
-                  testId="tile-arrivals"
-                  icon={<Inbox className="size-7" aria-hidden />}
-                  title="Aguardando chegada"
-                  text="Peças de clientes, materiais comprados e conferência do que chegou."
-                  count={
-                    arrivalsCount === undefined && pendingMaterials.data === undefined
-                      ? undefined
-                      : (arrivalsCount ?? 0) + (pendingMaterials.data?.length ?? 0)
-                  }
-                  countTestId="arrivals-count"
-                  countLabel="aviso(s) aguardando chegada"
-                />
-              </li>
               {canInspect && (
                 <li>
                   <Tile
@@ -273,20 +238,6 @@ export function TabletHome({ me }: { me: MeDto }) {
                     count={inspectionCount}
                     countTestId="inspections-count"
                     countLabel="inspeção(ões) aguardando"
-                  />
-                </li>
-              )}
-              {canMeasure && (
-                <li>
-                  <Tile
-                    onClick={() => setScreen('measurements')}
-                    testId="tile-measurements"
-                    icon={<Ruler className="size-7" aria-hidden />}
-                    title="Medições atribuídas"
-                    text="Medir peças e informar materiais."
-                    count={openCount}
-                    countTestId="measurements-count"
-                    countLabel="medição(ões) para fazer"
                   />
                 </li>
               )}
@@ -314,17 +265,6 @@ export function TabletHome({ me }: { me: MeDto }) {
             </ul>
             {canExecute && <MyTripsToday />}
           </>
-        ) : screen === 'arrivals' || screen === 'materials' ? (
-          <>
-            {back('Voltar ao início', 'home')}
-            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Aguardando chegada</h1>
-            <ArrivalsAndReceiving
-              key={screen}
-              initial={screen === 'materials' ? 'conferencia' : 'avisos'}
-              arrivals={arrivalsCount}
-              receipts={pendingMaterials.data?.length}
-            />
-          </>
         ) : screen === 'queue' ? (
           <>
             {back('Voltar à minha semana', 'home')}
@@ -346,7 +286,6 @@ export function TabletHome({ me }: { me: MeDto }) {
             <MyTaskDetail
               key={taskId}
               id={taskId}
-              canAskHelp={canAskHelp}
               reportUserId={reportUserId}
               onOpen={(id) => openTask(id, taskFrom)}
             />
@@ -388,26 +327,6 @@ export function TabletHome({ me }: { me: MeDto }) {
             {back('Voltar ao Meu dia', 'home')}
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">Avisos</h1>
             <NotificationsInbox onOpenTask={(id) => openTask(id, 'notifications')} />
-          </>
-        ) : screen === 'measurements' ? (
-          <>
-            {back('Voltar ao início', 'home')}
-            <h1 className="mb-5 text-2xl font-semibold tracking-tight">Medições atribuídas</h1>
-            <MyMeasurements
-              onOpen={(id) => {
-                setMeasurementId(id);
-                setScreen('measurement');
-              }}
-            />
-          </>
-        ) : screen === 'measurement' && measurementId ? (
-          <>
-            {back('Voltar às medições', 'measurements')}
-            <MyMeasurementDetail
-              key={measurementId}
-              id={measurementId}
-              onBack={() => setScreen('measurements')}
-            />
           </>
         ) : (
           <>
@@ -495,60 +414,5 @@ function BackButton({ label, onClick }: { label: string; onClick: () => void }) 
     >
       {label}
     </Button>
-  );
-}
-
-/**
- * Reformulação, Fase 2: "Aguardando chegada" e "Recebimento de materiais" numa só entrada. A
- * chegada física (avisos de peças e materiais) e a conferência dos pedidos de compra continuam as
- * mesmas telas de antes, agora lado a lado; nada mudou nas regras nem nas permissões.
- */
-function ArrivalsAndReceiving({
-  initial,
-  arrivals,
-  receipts,
-}: {
-  initial: 'avisos' | 'conferencia';
-  arrivals: number | undefined;
-  receipts: number | undefined;
-}) {
-  const [section, setSection] = useState(initial);
-  const option = (
-    key: 'avisos' | 'conferencia',
-    label: string,
-    count: number | undefined,
-    countTestId: string,
-  ) => (
-    <button
-      type="button"
-      onClick={() => setSection(key)}
-      aria-pressed={section === key}
-      data-testid={`arrivals-section-${key}`}
-      className={clsx(
-        'flex min-h-14 flex-1 items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-lg font-semibold',
-        section === key
-          ? 'border-brand-700 bg-brand-50 text-brand-800'
-          : 'border-line bg-surface text-ink-soft hover:bg-subtle',
-      )}
-    >
-      {label}
-      {count !== undefined && (
-        <span
-          className="grid min-w-9 place-items-center rounded-full bg-brand-700 px-2 py-0.5 text-base text-white"
-          data-testid={countTestId}
-        >
-          {count}
-        </span>
-      )}
-    </button>
-  );
-  return (
-    <>
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row">
-        {option('avisos', 'Avisos de chegada', arrivals, 'arrivals-section-count')}
-        {option('conferencia', 'Conferir materiais', receipts, 'materials-count')}
-      </div>
-      {section === 'avisos' ? <ArrivalsCenter /> : <MaterialReceiving large />}
-    </>
   );
 }

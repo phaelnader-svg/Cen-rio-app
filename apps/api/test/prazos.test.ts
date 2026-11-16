@@ -4,7 +4,7 @@ import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
-import { createCustomer, createOrder, panelUserWith, receiptBody } from './commercial-helpers';
+import { createCustomer, createOrder, panelUserWith, markArrived } from './commercial-helpers';
 import { today, userIdOf } from './production-helpers';
 
 /**
@@ -72,13 +72,9 @@ async function os(
   );
   expect(
     (
-      await post(
-        admin,
-        '/api/v1/receipts',
-        receiptBody(
-          order.id,
-          order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
-        ),
+      await markArrived(
+        order.id,
+        order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
       )
     ).status,
   ).toBe(201);
@@ -189,9 +185,9 @@ describe('Estado do prazo da OS na Central, na lista e no detalhe (fonte única)
       { pieceType: 'SOFA', description: 'Sofá' },
       { pieceType: 'POLTRONA', description: 'Poltrona' },
     ]);
-    await db().serviceOrder.update({
-      where: { id: a.id },
-      data: { materialsReadiness: 'AGUARDANDO_COMPRA' },
+    // Material da lista simples ainda não disponível na oficina.
+    await db().serviceOrderMaterial.create({
+      data: { serviceOrderId: a.id, description: 'Tecido linho', available: false },
     });
     // Planejada, não iniciada.
     const b = await os(admin, 'Cliente Não Iniciada', inWindow());
@@ -302,7 +298,7 @@ describe('Estado do prazo da OS na Central, na lista e no detalhe (fonte única)
     expect((await soDto(admin, frustrated.id)).deadline.state).toBe('ATRASADO');
   });
 
-  it('várias OS do mesmo pedido: um item por OS; chegada parcial herda o prazo vigente do pedido', async () => {
+  it('OS nascida no fechamento e prazo do pedido: um item por OS; "peças na oficina" encerra o prazo do pedido', async () => {
     const admin = await loginAdmin(app);
     const r = await post(admin, '/api/v1/services', {
       customer: { mode: 'NOVO', kind: 'PF', name: 'Cliente Duas OS', phone: '(11) 97777-1111' },
@@ -320,15 +316,8 @@ describe('Estado do prazo da OS na Central, na lista e no detalhe (fonte única)
       where: { id: r.body.order.id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
-    const receive = (itemId: string) =>
-      post(admin, '/api/v1/receipts', {
-        orderId: order.id,
-        pickupId: null,
-        origin: 'ENTREGUE_PELO_CLIENTE',
-        lines: [{ orderItemId: itemId, quantity: 1, condition: 'BOA', location: 'Recepção' }],
-      });
-    expect((await receive(order.items[0]!.id)).status).toBe(201);
-    // Antes da segunda chegada: um item da OS e um do pedido (peça faltando), sem confusão.
+    // A OS nasce no fechamento (D1) com as duas peças; a chegada é a marca "peças na oficina".
+    expect(r.body.serviceOrder).toBeTruthy();
     let items = await deadlineItems(admin);
     expect(items.map((i) => i.type).sort()).toEqual(['PRAZO_OS', 'PRAZO_PEDIDO']);
     expect(items.find((i) => i.type === 'PRAZO_PEDIDO')).toMatchObject({
@@ -337,12 +326,15 @@ describe('Estado do prazo da OS na Central, na lista e no detalhe (fonte única)
       status: 'PRAZO_VENCIDO',
     });
     expect(items.find((i) => i.type === 'PRAZO_PEDIDO')!.description).toContain(
-      'Peça ainda não recebida: 1× Poltrona',
+      'Peças ainda não recebidas',
     );
-    expect((await receive(order.items[1]!.id)).status).toBe(201);
+    const arrived = await post(admin, `/api/v1/orders/${order.id}/arrived`, {
+      version: order.version,
+    });
+    expect(arrived.status, JSON.stringify(arrived.body)).toBe(200);
     items = await deadlineItems(admin);
     expect(items.filter((i) => i.type === 'PRAZO_PEDIDO')).toEqual([]);
-    expect(items.filter((i) => i.type === 'PRAZO_OS')).toHaveLength(2);
+    expect(items.filter((i) => i.type === 'PRAZO_OS')).toHaveLength(1);
     expect(new Set(items.map((i) => i.key)).size).toBe(items.length);
   });
 
@@ -362,7 +354,7 @@ describe('Estado do prazo da OS na Central, na lista e no detalhe (fonte única)
 
 // ─────────────────────────── Pedido: peças ainda não recebidas ───────────────────────────
 
-describe('Atenção do pedido antes da OS (peças ainda não recebidas)', () => {
+describe('Atenção do pedido: peças ainda não recebidas na oficina', () => {
   it('prazo próximo com peça não recebida aparece; a chegada faz o alerta sumir; fora da janela, nada', async () => {
     const admin = await loginAdmin(app);
     const mk = async (name: string, promised: string, phone: string) => {
@@ -386,7 +378,10 @@ describe('Atenção do pedido antes da OS (peças ainda não recebidas)', () => 
     };
     const near = await mk('Cliente Pedido Próximo', inWindow(), '(11) 96666-1111');
     await mk('Cliente Pedido Longe', outside(), '(11) 96666-2222');
-    let items = await deadlineItems(admin);
+    // A OS nasce no fechamento (D1) e tem o seu próprio item; aqui interessa o do pedido.
+    const ofOrders = async () =>
+      (await deadlineItems(admin)).filter((i) => i.type === 'PRAZO_PEDIDO');
+    let items = await ofOrders();
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
       key: `PRAZO_PEDIDO:${near}`,
@@ -403,26 +398,12 @@ describe('Atenção do pedido antes da OS (peças ainda não recebidas)', () => 
       include: { items: true },
     });
     expect(
-      (
-        await post(admin, '/api/v1/receipts', {
-          orderId: near,
-          pickupId: null,
-          origin: 'ENTREGUE_PELO_CLIENTE',
-          lines: [
-            {
-              orderItemId: order.items[0]!.id,
-              quantity: 1,
-              condition: 'BOA',
-              location: 'Recepção',
-            },
-          ],
-        })
-      ).status,
-    ).toBe(201);
+      (await post(admin, `/api/v1/orders/${near}/arrived`, { version: order.version })).status,
+    ).toBe(200);
     items = await deadlineItems(admin);
     expect(items.filter((i) => i.type === 'PRAZO_PEDIDO')).toEqual([]);
     expect((await admin.get(`/api/v1/orders/${near}`)).body.deadline).toBeNull();
-    // A OS nascida na chegada herdou o prazo vigente do pedido.
+    // A OS nascida no fechamento herdou o prazo do pedido.
     const so = await db().serviceOrder.findFirstOrThrow({ where: { orderId: near } });
     expect(so.promisedDate?.toISOString().slice(0, 10)).toBe(inWindow());
   });
@@ -448,7 +429,7 @@ describe('Atenção do pedido antes da OS (peças ainda não recebidas)', () => 
 // ─────────────────────────── Prazo do pedido editável ───────────────────────────
 
 describe('Prazo do pedido: edição com motivo, histórico e "aplicar às OS abertas?"', () => {
-  /** Pedido do Novo serviço com 3 peças; as 2 primeiras chegam em chegadas separadas (2 OS). */
+  /** Pedido do Novo serviço com 3 peças e duas OS abertas (a automática e uma manual). */
   async function scenario(admin: Client) {
     const r = await post(admin, '/api/v1/services', {
       customer: {
@@ -474,21 +455,27 @@ describe('Prazo do pedido: edição com motivo, histórico e "aplicar às OS abe
       where: { id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
-    const receive = async (k: number) => {
-      const rc = await post(admin, '/api/v1/receipts', {
-        orderId: id,
-        pickupId: null,
-        origin: 'ENTREGUE_PELO_CLIENTE',
-        lines: [
-          { orderItemId: order.items[k]!.id, quantity: 1, condition: 'BOA', location: 'Recepção' },
-        ],
-      });
-      expect(rc.status, JSON.stringify(rc.body)).toBe(201);
-      return rc.body.generatedServiceOrder.id as string;
-    };
-    const os1 = await receive(0);
-    const os2 = await receive(1);
-    return { id, order, receive, os1, os2 };
+    // A OS nasce no fechamento com as 3 peças (D1). Para ter duas OS abertas, a 2ª peça sai da
+    // OS automática (ainda sem tarefas) e vai para uma OS manual com o mesmo prazo.
+    const os1 = r.body.serviceOrder.id as string;
+    await db().serviceOrderItem.deleteMany({
+      where: { serviceOrderId: os1, orderItemId: { in: [order.items[1]!.id, order.items[2]!.id] } },
+    });
+    const manual = await post(admin, '/api/v1/service-orders', {
+      orderId: id,
+      promisedDate: inWindow(),
+      items: [
+        {
+          orderItemId: order.items[1]!.id,
+          quantity: 1,
+          serviceType: 'REFORMA_COMPLETA',
+          description: 'Poltrona',
+        },
+      ],
+    });
+    expect(manual.status, JSON.stringify(manual.body)).toBe(201);
+    const os2 = manual.body.id as string;
+    return { id, order, os1, os2 };
   }
   const change = (c: Client, id: string, body: Record<string, unknown>, key = idemKey()) =>
     put(c, `/api/v1/orders/${id}/promised-date`, body, key);
@@ -570,9 +557,6 @@ describe('Prazo do pedido: edição com motivo, histórico e "aplicar às OS abe
     // NÃO: pedido assume o novo prazo; OS existentes mantêm os seus.
     expect(await promised(s.os1)).toBe(inWindow());
     expect(await promised(s.os2)).toBe(inWindow());
-    // A OS que nasce depois herda o prazo VIGENTE do pedido (não o da OS irmã).
-    const os3 = await s.receive(2);
-    expect(await promised(os3)).toBe(next);
   });
 
   it('SIM: aplica às OS abertas pertinentes, com revisão/auditoria/histórico; repetição idempotente; fila intacta (D9)', async () => {

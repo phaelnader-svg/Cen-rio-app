@@ -92,13 +92,8 @@ export function NewServiceOrderPage() {
         title="Nova OS técnica"
         description={`${available.data.customer.name} · ${available.data.order.contractedService}`}
       />
-      {available.data.items.every((i) => i.receivedQuantity === 0) ? (
-        <Alert tone="warn" title="Aguardando a chegada das peças">
-          A OS técnica só pode ser criada depois que a peça chegar à oficina. Registre o recebimento
-          primeiro.
-        </Alert>
-      ) : available.data.items.every((i) => i.available <= 0) ? (
-        <Alert tone="info">Todas as peças recebidas deste pedido já estão em OS.</Alert>
+      {available.data.items.every((i) => i.available <= 0) ? (
+        <Alert tone="info">Todas as peças deste pedido já estão em OS.</Alert>
       ) : (
         <ServiceOrderForm data={available.data} />
       )}

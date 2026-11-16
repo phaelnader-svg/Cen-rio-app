@@ -335,19 +335,6 @@ export interface PieceReturnDto {
   }[];
   /** Fase 12: o que ficou para o gestor revisar depois da confirmação. */
   review: {
-    /** Reservas ativas da OS sem peça definida (não são rateadas por suposição). */
-    reservations: { id: string; serviceOrder: string; material: string; quantity: number }[];
-    /**
-     * Etapa 2: necessidades ATIVAS "Toda a OS" de OS com peça devolvida — não são canceladas
-     * automaticamente (podem valer para as peças que ficaram): o gestor revisa.
-     */
-    requirements: {
-      id: string;
-      serviceOrderId: string;
-      serviceOrder: string;
-      material: string;
-      quantity: number;
-    }[];
     /** Valores de produção das peças devolvidas com trabalho executado ou valor devido. */
     laborToReview: number;
   };

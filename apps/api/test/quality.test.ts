@@ -947,14 +947,13 @@ describe('Devolução e cancelamento', () => {
     const oiPolt = (
       await db().serviceOrderItem.findUniqueOrThrow({ where: { id: s.poltronas.id } })
     ).orderItemId;
-    const receiptsBefore = await db().receiptLine.findMany();
     const r = await post(s.admin, '/api/v1/returns', {
       orderId: order.orderId,
       reason: 'Cliente desistiu da reforma das poltronas',
       returnDate: today(),
       lines: [{ orderItemId: oiPolt, quantity: 2, serviceOrderItemIds: [s.poltronas.id] }],
     });
-    expect(r.status).toBe(201);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
     expect(r.body).toMatchObject({ status: 'REGISTRADA', responsible: { userId: s.ids.gestor } });
     const dup = await post(s.admin, '/api/v1/returns', {
       orderId: order.orderId,
@@ -977,15 +976,13 @@ describe('Devolução e cancelamento', () => {
       (await db().commercialOrderItem.findUniqueOrThrow({ where: { id: oiPolt } }))
         .returnedQuantity,
     ).toBe(2);
-    expect(await db().receiptLine.findMany()).toEqual(receiptsBefore);
     // A OS segue ativa para o sofá.
     expect((await db().serviceOrder.findUniqueOrThrow({ where: { id: s.so.id } })).status).toBe(
       'ABERTA',
     );
     await expect(db().pieceReturn.delete({ where: { id: r.body.id } })).rejects.toThrow();
   });
-
-  it('21. cancelamento: OS cancelada limpa inspeções e entregas; correção auditável do recebimento', async () => {
+  it('21. cancelamento: OS cancelada limpa inspeções e entregas', async () => {
     const s = await scenario();
     await approvedSofa(s);
     const customerId = (await db().serviceOrder.findUniqueOrThrow({ where: { id: s.so.id } }))
@@ -1008,44 +1005,6 @@ describe('Devolução e cancelamento', () => {
         where: { serviceOrderId: s.so.id, status: { notIn: ['CONCLUIDA', 'CANCELADA'] } },
       }),
     ).toBe(0);
-    // Peças voltaram a ficar livres: a correção do recebimento é permitida, com histórico.
-    const line = await db().receiptLine.findFirstOrThrow({
-      where: {
-        orderItemId: (
-          await db().serviceOrderItem.findUniqueOrThrow({ where: { id: s.poltronas.id } })
-        ).orderItemId,
-      },
-    });
-    const corr = await post(s.admin, `/api/v1/receipt-lines/${line.id}/corrections`, {
-      newQuantity: 1,
-      reason: 'Contagem errada: veio só uma poltrona',
-    });
-    expect(corr.status).toBe(201);
-    expect(corr.body).toMatchObject({ previousQuantity: 2, newQuantity: 1 });
-    expect((await db().receiptLine.findUniqueOrThrow({ where: { id: line.id } })).quantity).toBe(2);
-    expect(
-      (await db().commercialOrderItem.findUniqueOrThrow({ where: { id: line.orderItemId } }))
-        .receivedQuantity,
-    ).toBe(1);
-    const list = (await s.admin.get(`/api/v1/receipts/${line.receiptId}/corrections`)).body;
-    expect(list).toHaveLength(1);
-    await expect(db().receiptCorrection.deleteMany({})).rejects.toThrow();
-  });
-
-  it('21b. correção de recebimento recusada quando deixaria peça em OS sem cobertura', async () => {
-    const s = await scenario();
-    const line = await db().receiptLine.findFirstOrThrow({
-      where: {
-        orderItemId: (await db().serviceOrderItem.findUniqueOrThrow({ where: { id: s.sofa.id } }))
-          .orderItemId,
-      },
-    });
-    const r = await post(s.admin, `/api/v1/receipt-lines/${line.id}/corrections`, {
-      newQuantity: 0,
-      reason: 'Tentativa de zerar o recebimento',
-    });
-    expect(r.status).toBe(422);
-    expect(r.body.error.message).toMatch(/OS ativa/);
   });
 });
 

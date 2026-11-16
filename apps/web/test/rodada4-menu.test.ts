@@ -1,13 +1,12 @@
 /**
- * Remediação pós-auditoria, Rodada 4 — F10-01: menu do painel em seis áreas (Início, Serviços,
- * Produção, Compras, Financeiro, Administração).
+ * Remediação pós-auditoria, Rodada 4 — F10-01: menu do painel por áreas (Início, Serviços,
+ * Produção, Financeiro, Administração). A área "Compras" saiu com a remoção real de Compras,
+ * Fornecedores, Recebimento de materiais, Estoque formal, Prontidão e Materiais aprovados.
  *
  * Prova pela estrutura real do menu (components/admin/nav.ts) e pela mesma regra de montagem da
  * barra lateral (components/admin/shell.tsx): filtro por permissão, ordenação por área e um
  * cabeçalho por área (exceto "Início", cuja entrada é o próprio link "Início"). Os cabeçalhos são
- * verificados separadamente dos links — "Financeiro" e "Compras" também são nomes de links.
- * A parte da API do item "Recebimento de materiais" está em
- * apps/api/test/rodada4-travas-estruturais.test.ts.
+ * verificados separadamente dos links — "Financeiro" também é nome de link.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -52,12 +51,7 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
   '/painel/pedidos': { group: 'Serviços', anyOf: ['pedidos.ver'] },
   '/painel/retiradas': { group: 'Serviços', anyOf: ['retiradas.ver'] },
   '/painel/roteiro': { group: 'Serviços', anyOf: ['entregas.ver', 'retiradas.ver'] },
-  '/painel/recebimentos': { group: 'Serviços', anyOf: ['recebimentos.registrar', 'pedidos.ver'] },
   '/painel/os': { group: 'Serviços', anyOf: ['os.ver'] },
-  '/painel/medicoes': {
-    group: 'Produção',
-    anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
-  },
   '/painel/producao/programacao': {
     group: 'Produção',
     anyOf: ['producao.ver', 'producao.planejar'],
@@ -74,32 +68,12 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
       'entregas.gerenciar',
     ],
   },
-  '/painel/ajuda': { group: 'Produção', anyOf: ['producao.ver', 'producao.planejar'] },
   '/painel/reprogramacao': { group: 'Produção', anyOf: ['producao.ver', 'producao.planejar'] },
   '/painel/producao/modelos': {
     group: 'Produção',
     anyOf: ['producao.ver', 'producao.planejar', 'qualidade.gerenciar', 'os.gerenciar'],
   },
-  '/painel/compras': {
-    group: 'Compras',
-    anyOf: ['compras.ver', 'compras.gerenciar', 'compras.aprovar'],
-  },
-  '/painel/fornecedores': { group: 'Compras', anyOf: ['compras.ver', 'compras.gerenciar'] },
-  // Sem filtro de propósito: o recebimento vale para qualquer funcionário (API ANY_EMPLOYEE).
-  '/painel/recebimento-materiais': { group: 'Compras' },
-  '/painel/estoque': {
-    group: 'Compras',
-    anyOf: ['estoque.ver', 'estoque.gerenciar', 'compras.ver'],
-  },
-  '/painel/estoque-oficina': { group: 'Compras', anyOf: ['estoque.ver', 'estoque.gerenciar'] },
-  '/painel/prontidao': {
-    group: 'Compras',
-    anyOf: ['os.ver', 'estoque.ver', 'compras.ver', 'materiais.ver'],
-  },
-  '/painel/materiais': {
-    group: 'Compras',
-    anyOf: ['materiais.ver', 'materiais.aprovar', 'compras.ver'],
-  },
+  '/painel/estoque-oficina': { group: 'Produção', anyOf: ['estoque.ver', 'estoque.gerenciar'] },
   '/painel/qualidade': { group: 'Serviços', anyOf: ['qualidade.gerenciar'] },
   '/painel/entregas': { group: 'Serviços', anyOf: ['entregas.ver', 'entregas.gerenciar'] },
   // B6: as mesmas permissões que a API aceita para consultar (RETURNS_VIEW).
@@ -111,13 +85,12 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
   '/painel/sincronizacao': { group: 'Administração', anyOf: ['sincronizacao.diagnosticar'] },
 };
 
-describe('F10-01 — menu em seis áreas', () => {
-  it('as seis áreas, na ordem: Início, Serviços, Produção, Compras, Financeiro, Administração', () => {
+describe('F10-01 — menu por áreas', () => {
+  it('as cinco áreas, na ordem: Início, Serviços, Produção, Financeiro, Administração', () => {
     expect([...NAV_GROUPS]).toEqual([
       'Início',
       'Serviços',
       'Produção',
-      'Compras',
       'Financeiro',
       'Administração',
     ]);
@@ -131,13 +104,13 @@ describe('F10-01 — menu em seis áreas', () => {
     expect(shell).toContain("{header && item.group !== 'Início' && (");
   });
 
-  it('gestor (todas as permissões): cinco cabeçalhos de área e "Início" como primeiro link', () => {
+  it('gestor (todas as permissões): quatro cabeçalhos de área e "Início" como primeiro link', () => {
     const e = sidebar(ALL_PERMISSIONS);
-    expect(headers(e)).toEqual(['Serviços', 'Produção', 'Compras', 'Financeiro', 'Administração']);
+    expect(headers(e)).toEqual(['Serviços', 'Produção', 'Financeiro', 'Administração']);
     expect(e[0]).toEqual({ kind: 'link', text: 'Início', href: '/painel' });
     expect(e[1]).toEqual({ kind: 'link', text: 'Central de atenção', href: '/painel/atencao' });
-    // Cabeçalho ≠ link homônimo: "Financeiro" e "Compras" aparecem como cabeçalho E como link.
-    for (const name of ['Financeiro', 'Compras']) {
+    // Cabeçalho ≠ link homônimo: "Financeiro" aparece como cabeçalho E como link.
+    for (const name of ['Financeiro']) {
       const at = e.findIndex((x) => x.kind === 'header' && x.text === name);
       expect(at, name).toBeGreaterThan(0);
       expect(e.filter((x) => x.kind === 'link' && x.text === name)).toHaveLength(1);
@@ -160,27 +133,36 @@ describe('F10-01 — menu em seis áreas', () => {
       for (const p of [...(item.anyOf ?? []), ...(item.allOf ?? [])])
         expect(isPermission(p), `${item.href}: ${p}`).toBe(true);
     }
-    // F1-13: "Materiais aprovados" voltou ao menu, na área Compras.
-    expect(NAV.find((i) => i.href === '/painel/materiais')?.label).toBe('Materiais aprovados');
+    // Remoção real: nenhum item dos módulos removidos voltou ao menu.
+    for (const href of [
+      '/painel/recebimentos',
+      '/painel/medicoes',
+      '/painel/ajuda',
+      '/painel/compras',
+      '/painel/fornecedores',
+      '/painel/recebimento-materiais',
+      '/painel/estoque',
+      '/painel/prontidao',
+      '/painel/materiais',
+    ])
+      expect(NAV.find((i) => i.href === href)).toBeUndefined();
   });
 
-  it('Reformulação Fase 3: área Produção enxuta (8 links), sem perder rotas', () => {
+  it('Reformulação Fase 3: área Produção enxuta (7 links), sem perder rotas', () => {
     const e = sidebar(ALL_PERMISSIONS);
     const start = e.findIndex((x) => x.kind === 'header' && x.text === 'Produção');
     const end = e.findIndex((x, i) => i > start && x.kind === 'header');
     expect(links(e.slice(start, end))).toEqual([
-      'Medições',
       'Programação semanal',
       'Quadro de produção',
       'Mapa da oficina',
-      'Pedidos de ajuda',
       'Reprogramação',
       'Modelos de serviço',
+      'Estoque da oficina',
       'Presença da equipe',
     ]);
     // Saíram do menu, mas as páginas continuam existindo (abrem pelo endereço e por link).
     for (const page of [
-      'planejamento/page.tsx',
       'producao/a-planejar/page.tsx',
       'producao/planejamento/page.tsx',
       'competencias/page.tsx',
@@ -190,58 +172,34 @@ describe('F10-01 — menu em seis áreas', () => {
 
   it('itens por permissão: cada perfil vê só as áreas e links que pode abrir', () => {
     const fin = sidebar(['painel.acessar', 'financeiro.ver']);
-    expect(links(fin)).toEqual(['Início', 'Recebimento de materiais', 'Financeiro']);
-    expect(headers(fin)).toEqual(['Compras', 'Financeiro']);
+    expect(links(fin)).toEqual(['Início', 'Financeiro']);
+    expect(headers(fin)).toEqual(['Financeiro']);
 
     const pres = sidebar(['painel.acessar', 'presenca.ver']);
-    expect(links(pres)).toEqual(['Início', 'Presença da equipe', 'Recebimento de materiais']);
-    expect(headers(pres)).toEqual(['Produção', 'Compras']);
+    expect(links(pres)).toEqual(['Início', 'Presença da equipe']);
+    expect(headers(pres)).toEqual(['Produção']);
 
-    const compras = sidebar(['painel.acessar', 'compras.ver']);
-    expect(headers(compras)).toEqual(['Compras']);
-    expect(links(compras)).toEqual([
-      'Início',
-      'Compras',
-      'Fornecedores',
-      'Recebimento de materiais',
-      'Estoque',
-      'Prontidão de materiais',
-      'Materiais aprovados',
-    ]);
+    const estoque = sidebar(['painel.acessar', 'estoque.ver']);
+    expect(headers(estoque)).toEqual(['Produção']);
+    expect(links(estoque)).toEqual(['Início', 'Estoque da oficina']);
 
     const admin = sidebar(['painel.acessar', 'funcionarios.ver', 'auditoria.ver']);
-    expect(headers(admin)).toEqual(['Compras', 'Administração']);
-    expect(links(admin)).toEqual([
-      'Início',
-      'Recebimento de materiais',
-      'Funcionários',
-      'Auditoria',
-    ]);
-  });
+    expect(headers(admin)).toEqual(['Administração']);
+    expect(links(admin)).toEqual(['Início', 'Funcionários', 'Auditoria']);
 
-  it('"Recebimento de materiais" não tem filtro: qualquer usuário do painel vê o link', () => {
-    // Não é vazamento: a fila e o registro do recebimento aceitam qualquer sessão autenticada
-    // (GET /api/v1/material-receipts/pending e POST /api/v1/material-receipts: { session: 'any' }),
-    // provado pela API em apps/api/test/rodada4-travas-estruturais.test.ts.
-    const item = NAV.find((i) => i.href === '/painel/recebimento-materiais')!;
-    expect(item.label).toBe('Recebimento de materiais');
-    expect(item.anyOf).toBeUndefined();
-    expect(links(sidebar(['painel.acessar']))).toEqual(['Início', 'Recebimento de materiais']);
+    // Sem nenhuma permissão de área: só "Início" (o antigo link sem filtro saiu com o módulo).
+    expect(links(sidebar(['painel.acessar']))).toEqual(['Início']);
   });
 });
 
-/** Homologação funcional F′ — B1, B2 e B6: menu × permissões efetivas da API. */
-describe('Menu alinhado às permissões da API (B1, B2, B6)', () => {
+/** Homologação funcional F′ — B1 e B6: menu × permissões efetivas da API (B2 saiu com o módulo). */
+describe('Menu alinhado às permissões da API (B1, B6)', () => {
   const tem = (perms: string[], href: string) =>
     links(sidebar(['painel.acessar', ...perms])).includes(NAV.find((i) => i.href === href)!.label);
   it('B1: "Novo serviço" só com pedidos.gerenciar E retiradas.gerenciar', () => {
     expect(tem(['pedidos.gerenciar'], '/painel/servicos/novo')).toBe(false);
     expect(tem(['retiradas.gerenciar'], '/painel/servicos/novo')).toBe(false);
     expect(tem(['pedidos.gerenciar', 'retiradas.gerenciar'], '/painel/servicos/novo')).toBe(true);
-  });
-  it('B2: "Recebimento de materiais" para todo funcionário (API: ANY_EMPLOYEE)', () => {
-    expect(tem([], '/painel/recebimento-materiais')).toBe(true);
-    expect(tem(['os.ver'], '/painel/recebimento-materiais')).toBe(true);
   });
   it('B6: "Devoluções" com devolucoes.gerenciar OU pedidos.ver (API: RETURNS_VIEW)', () => {
     expect(tem(['pedidos.ver'], '/painel/devolucoes')).toBe(true);

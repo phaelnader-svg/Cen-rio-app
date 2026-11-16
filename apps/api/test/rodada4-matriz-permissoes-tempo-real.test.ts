@@ -30,21 +30,7 @@ import {
   scenario,
   setOwner,
 } from './labor-helpers';
-import {
-  approvedNeeds,
-  confirmPurchase,
-  confirmedFabricPurchase,
-  createPurchase,
-  createSupplier,
-  linen,
-} from './purchasing-helpers';
 import { day, today } from './production-helpers';
-import {
-  ask,
-  prepareCompany as preparePresence,
-  scenario as presenceScenario,
-  setClock as setPresenceClock,
-} from './presence-helpers';
 
 /**
  * O valor como número isolado — nunca como pedaço de um id (UUID ou código), que pode conter os
@@ -153,20 +139,13 @@ async function world() {
     expectedMethod: 'PIX',
   });
   expect(rec.status, JSON.stringify(rec.body)).toBe(201);
-  // Compras: uma necessidade comprada (aguardando entrega) e outra ainda a comprar.
-  const bought = await approvedNeeds(s.admin, 'Cliente Compra Feita', (so) => [
-    linen(so.items[0].id),
-  ]);
-  await approvedNeeds(s.admin, 'Cliente A Comprar', (so) => [linen(so.items[0].id)]);
-  const supplier = await createSupplier(s.admin);
-  const po = await confirmedFabricPurchase(s.admin, supplier.id, bought.reqs[0]!, 4567);
-  return { s, ric, review, receivable: rec.body as { id: string }, po: po as { id: string } };
+  return { s, ric, review, receivable: rec.body as { id: string } };
 }
 
 // ═══════════════════════════════ A) MATRIZ DE PERMISSÕES ═══════════════════════════════
 
 describe('Matriz — Central e Início por perfil, com dados reais de todos os domínios', () => {
-  it('cada perfil vê só o próprio domínio; sem financeiro nada monetário; sem compras nada de compras', async () => {
+  it('cada perfil vê só o próprio domínio; sem financeiro nada monetário', async () => {
     const w = await world();
     const { admin } = w.s;
     const profiles = {
@@ -181,12 +160,6 @@ describe('Matriz — Central e Início por perfil, com dados reais de todos os d
         'financeiro.gerenciar',
         'os.ver',
       ]),
-      compras: await panelUserWith(app, admin, 'mx-comp', [
-        'ocorrencias.ver',
-        'compras.ver',
-        'compras.gerenciar',
-        'os.ver',
-      ]),
     };
 
     // Gestor: todos os cartões existem (o corte abaixo é de permissão, não falta de dado).
@@ -195,8 +168,6 @@ describe('Matriz — Central e Início por perfil, com dados reais de todos os d
     expect(gKeys).toContain(`FINANCEIRO:revisao:${w.review.id}`);
     expect(gKeys).toContain(`FINANCEIRO:confirmacao:${w.s.ids.ricardo}`);
     expect(gKeys).toContain(`COBRANCA:VENCIDA:${w.receivable.id}`);
-    expect(gKeys).toContain(`MATERIAL:aguardando-entrega:${w.po.id}`);
-    expect(gKeys).toContain('MATERIAL:comprar');
     expect(JSON.stringify(g)).toMatch(/R\$/); // a cobrança traz o saldo: o teste de vazamento discrimina
 
     // Operacional: nada de financeiro nem de compras; nenhum valor monetário.
@@ -204,7 +175,6 @@ describe('Matriz — Central e Início por perfil, com dados reais de todos os d
     expect(op.items.filter((i) => isFin(i.type) || COMPRAS_KEY.test(i.key))).toEqual([]);
     expect(JSON.stringify(op)).not.toMatch(MONEY);
     expect(moneyKeys(op)).toEqual([]);
-    expect(JSON.stringify(op)).not.toContain(w.po.id);
     // O filtro por tipo não fura o corte (nem contagem).
     for (const t of ['FINANCEIRO', 'COBRANCA', 'MATERIAL']) {
       const f = await attention(profiles.operacional, `?type=${t}`);
@@ -218,22 +188,11 @@ describe('Matriz — Central e Início por perfil, com dados reais de todos os d
     expect(finKeys).toContain(`FINANCEIRO:revisao:${w.review.id}`);
     expect(finKeys).toContain(`COBRANCA:VENCIDA:${w.receivable.id}`);
     expect(finKeys.filter((k) => COMPRAS_KEY.test(k))).toEqual([]);
-    expect(JSON.stringify(fin)).not.toContain(w.po.id);
     expect(
       (await attention(profiles.financeiro, '?type=MATERIAL')).items.filter((i) =>
         COMPRAS_KEY.test(i.key),
       ),
     ).toEqual([]);
-
-    // Compras sem financeiro: vê os cartões de compras, nada financeiro, nenhum valor.
-    const comp = await attention(profiles.compras);
-    const compKeys = comp.items.map((i) => i.key);
-    expect(compKeys).toContain(`MATERIAL:aguardando-entrega:${w.po.id}`);
-    expect(compKeys).toContain('MATERIAL:comprar');
-    expect(comp.items.filter((i) => isFin(i.type))).toEqual([]);
-    expect(JSON.stringify(comp)).not.toMatch(MONEY);
-    expect(JSON.stringify(comp)).not.toMatch(valueOf(123457, 45678, 77777, 4567));
-    expect(moneyKeys(comp)).toEqual([]);
 
     // Início: finance null sem financeiro.ver (com cobranças e mão de obra reais existentes).
     const OVERVIEW_KEYS = [
@@ -244,10 +203,7 @@ describe('Matriz — Central e Início por perfil, com dados reais de todos os d
       'operations',
       'today',
     ];
-    for (const [tag, c] of [
-      ['operacional', profiles.operacional],
-      ['compras', profiles.compras],
-    ] as const) {
+    for (const [tag, c] of [['operacional', profiles.operacional]] as const) {
       const o = await overview(c);
       expect(o.finance, tag).toBeNull();
       expect(JSON.stringify(o), tag).not.toMatch(/Cents|overdueCount|laborReviews|valueRequests/);
@@ -290,7 +246,6 @@ describe('Matriz — Central e Início por perfil, com dados reais de todos os d
       'ocorrencias.ver',
     ]);
     const fin = await panelUserWith(app, admin, 'mx-dl-fin', ['ocorrencias.ver', 'financeiro.ver']);
-    const comp = await panelUserWith(app, admin, 'mx-dl-comp', ['ocorrencias.ver', 'compras.ver']);
     const finance = [
       F(`/weekly-closings/${WEEK}`),
       F('/labor-reviews'),
@@ -298,58 +253,20 @@ describe('Matriz — Central e Início por perfil, com dados reais de todos os d
       F(`/receivables/${w.receivable.id}`),
       F(`/labor/${w.ric.id}`),
     ];
-    const purchasing = [`/api/v1/purchase-orders/${w.po.id}`, '/api/v1/purchase-orders'];
     const status = async (c: Client, urls: string[]) =>
       Object.fromEntries(await Promise.all(urls.map(async (u) => [u, (await c.get(u)).status])));
     const all = (urls: string[], s: number) => Object.fromEntries(urls.map((u) => [u, s]));
     // Quem tem a permissão abre (o link existe e funciona).
-    expect(await status(admin, [...finance, ...purchasing])).toEqual(
-      all([...finance, ...purchasing], 200),
-    );
+    expect(await status(admin, finance)).toEqual(all(finance, 200));
     expect(await status(fin, finance)).toEqual(all(finance, 200));
-    expect(await status(comp, purchasing)).toEqual(all(purchasing, 200));
     // Sem a permissão: recusado, com IDs reais.
-    expect(await status(op, [...finance, ...purchasing])).toEqual(
-      all([...finance, ...purchasing], 403),
-    );
-    expect(await status(fin, purchasing)).toEqual(all(purchasing, 403));
-    expect(await status(comp, finance)).toEqual(all(finance, 403));
+    expect(await status(op, finance)).toEqual(all(finance, 403));
     for (const t of [w.s.tablets.Ricardo!, w.s.tablets['João']!])
-      expect(await status(t, [...finance, ...purchasing])).toEqual(
-        all([...finance, ...purchasing], 403),
-      );
+      expect(await status(t, finance)).toEqual(all(finance, 403));
     // Os 403 não carregam dado do registro.
     const denied = await op.get(F(`/labor-reviews/${w.review.id}`));
     expect(JSON.stringify(denied.body)).not.toMatch(valueOf(45678));
     expect(JSON.stringify(denied.body)).not.toMatch(/Márcio/);
-  });
-
-  it('deep link do pedido de ajuda: painel sem produção e tablet de outra pessoa → 403; o próprio e o gestor abrem', async () => {
-    setAttendanceClock();
-    await preparePresence();
-    // Só o Ricardo chegou: o pedido fica PENDENTE (ninguém mais é parte dele).
-    const s = await presenceScenario(app, { arrive: ['Ricardo'] });
-    const h = await ask(s.tablets.Ricardo!, { taskId: s.main.id, kind: 'PARAFUSAR' });
-    expect(h.status, JSON.stringify(h.body)).toBe(201);
-    setPresenceClock('09:30');
-    // O link da Central aponta para este pedido exato.
-    const a = await attention(s.admin, '?type=AJUDA');
-    const link = a.items.find((i) => i.key === `AJUDA:${h.body.id}`)?.link;
-    expect(link).toBe(`/painel/ajuda?foco=${h.body.id}`);
-    const url = `/api/v1/help-requests/${h.body.id}`;
-    const fin = await panelUserWith(app, s.admin, 'mx-help-fin', [
-      'ocorrencias.ver',
-      'financeiro.ver',
-    ]);
-    expect((await fin.get(url)).status).toBe(403);
-    expect((await fin.get('/api/v1/help-requests')).status).toBe(403);
-    // Tablet de um colega que não é parte do pedido.
-    expect(h.body.status).toBe('PENDENTE');
-    const res = await s.tablets['Márcio']!.get(url);
-    expect(res.status).toBe(403);
-    expect(JSON.stringify(res.body)).not.toContain(s.main.id);
-    expect((await s.tablets.Ricardo!.get(url)).status).toBe(200);
-    expect((await s.admin.get(url)).status).toBe(200);
   });
 
   it('Meus Ganhos: as 4 rotas só no tablet com financeiro.producao_propria', async () => {
@@ -475,7 +392,6 @@ async function people() {
     'producao.acessar',
     'producao.executar',
     'financeiro.ver',
-    'compras.ver',
     'sincronizacao.diagnosticar',
     'financeiro.producao_propria',
   ]);
@@ -497,7 +413,7 @@ async function people() {
 }
 type Who = keyof Awaited<ReturnType<typeof people>>['clients'];
 
-/** Gera, pelas rotas reais: financeiro (mão de obra), compras (rascunho), diagnóstico e um marcador "all". */
+/** Gera, pelas rotas reais: financeiro (mão de obra), diagnóstico e um marcador "all". */
 async function fire(s: Awaited<ReturnType<typeof scenario>>, paulaDevice: Client) {
   const ric = await labor(s.admin, {
     professionalUserId: s.ids.ricardo,
@@ -506,31 +422,27 @@ async function fire(s: Awaited<ReturnType<typeof scenario>>, paulaDevice: Client
     agreedCents: 98765,
     eligibility: 'PRODUCAO_CONCLUIDA',
   });
-  const { reqs } = await approvedNeeds(s.admin, 'Cliente Tempo Real', (so) => [
-    linen(so.items[0].id),
-  ]);
-  const supplier = await createSupplier(s.admin);
-  const po = await createPurchase(s.admin, {
-    supplierId: supplier.id,
-    items: [
-      {
-        sourcing: 'EXCLUSIVO_OS',
-        allocations: [{ materialRequirementId: reqs[0]!.id, quantity: 12 }],
-        quantity: 12,
-        unitPriceCents: 4321,
-      },
-    ],
-  });
-  expect(po.status, JSON.stringify(po.body)).toBe(201);
   const sig = await paulaDevice.post(
     '/api/sync/signal',
     { message: 'diag-tablet' },
     { 'idempotency-key': idemKey() },
   );
   expect(sig.status).toBe(201);
-  const c = await confirmPurchase(s.admin, po.body); // purchase_order.confirmed: audiência "all" (marcador final)
-  expect(c.status).toBe(200);
-  return { laborId: ric.id, poId: po.body.id as string };
+  // Marcador final com audiência "all": alternar o interruptor da logística (company.module_updated).
+  const mods = (await s.admin.get('/api/company/modules')).body as {
+    key: string;
+    enabled: boolean;
+    version: number;
+  }[];
+  const lg = mods.find((m) => m.key === 'logistica')!;
+  const c = await s.admin.req(
+    'PUT',
+    '/api/company/modules/logistica',
+    { enabled: !lg.enabled, version: lg.version },
+    { 'idempotency-key': idemKey() },
+  );
+  expect(c.status, JSON.stringify(c.body)).toBe(200);
+  return { laborId: ric.id };
 }
 
 /** O que cada sessão pode e não pode receber dos eventos de `fire`. */
@@ -542,7 +454,7 @@ function checkAudience(got: Record<Who, Ev[]>, ids: { ricardo: string; paula: st
   const diag = (w: Who) => got[w].filter((e) => e.type === 'sync.signal');
   // Marcador "all": todos receberam o fim da sequência (as ausências abaixo são reais).
   for (const w of Object.keys(got) as Who[])
-    expect(types(w).has('purchase_order.confirmed'), w).toBe(true);
+    expect(types(w).has('company.module_updated'), w).toBe(true);
   // Financeiro gerencial: só sessões WEB com financeiro.ver.
   expect(finMgmt('gestor').length).toBeGreaterThan(0);
   expect(finMgmt('paulaWeb').length).toBeGreaterThan(0);
@@ -557,11 +469,6 @@ function checkAudience(got: Record<Who, Ev[]>, ids: { ricardo: string; paula: st
   }
   for (const w of ['gestor', 'paulaWeb', 'paulaDevice', 'marcio', 'ops'] as const)
     expect(own(w), w).toEqual([]);
-  // Compras (rascunho criado: audiência de gestão de compras/estoque): só WEB com compras.ver.
-  for (const w of ['gestor', 'paulaWeb'] as const)
-    expect(types(w).has('purchase_order.created'), w).toBe(true);
-  for (const w of ['paulaDevice', 'ricardo', 'marcio', 'ops'] as const)
-    expect(types(w).has('purchase_order.created'), w).toBe(false);
   // Diagnóstico preservado: chega aos tablets com a permissão (inclusive a Paula no tablet) e ao painel.
   for (const w of ['gestor', 'paulaWeb', 'paulaDevice', 'ricardo', 'marcio'] as const)
     expect(
@@ -571,22 +478,22 @@ function checkAudience(got: Record<Who, Ev[]>, ids: { ricardo: string; paula: st
   expect(diag('ops')).toEqual([]);
   // Nenhum payload leva valores (nem para o gestor).
   for (const w of Object.keys(got) as Who[]) {
-    expect(JSON.stringify(got[w]), w).not.toMatch(valueOf(98765, 4321, 51852));
+    expect(JSON.stringify(got[w]), w).not.toMatch(valueOf(98765));
     expect(moneyKeys(got[w].map((e) => e.payload)), w).toEqual([]);
   }
 }
 
 describe('Tempo real — audiência por permissão, por pessoa e por tipo de sessão', () => {
-  it('ao vivo: cada sessão recebe o que lhe cabe; a mesma pessoa vê finance/compras no painel e não no tablet', async () => {
+  it('ao vivo: cada sessão recebe o que lhe cabe; a mesma pessoa vê o financeiro no painel e não no tablet', async () => {
     const { s, clients, paulaId } = await people();
     const ws = {} as Record<Who, WsClient>;
     for (const [w, c] of Object.entries(clients))
       ws[w as Who] = track(await WsClient.connect(app, c));
-    const ids = await fire(s, clients.paulaDevice);
+    await fire(s, clients.paulaDevice);
     await Promise.all(
       Object.values(ws).map((w) =>
         w.waitFor(
-          (m) => m.event?.type === 'purchase_order.confirmed' && m.event.aggregateId === ids.poId,
+          (m) => m.event?.type === 'company.module_updated' && m.event.aggregateId === 'logistica',
         ),
       ),
     );

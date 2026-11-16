@@ -214,7 +214,7 @@ export function Dashboard() {
                 detail="pedidos sem retirada agendada"
               />
               <Stat
-                href="/painel/recebimentos"
+                href="/painel/pedidos"
                 icon={<PackageCheck className="size-4" aria-hidden />}
                 label="Recebidos parcialmente"
                 value={partial.data?.total ?? '—'}
@@ -239,11 +239,11 @@ export function Dashboard() {
           <h2 className="mb-3 font-semibold">Operação agora</h2>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Stat
-              href="/painel/prontidao"
+              href="/painel/os"
               icon={<PackageCheck className="size-4" aria-hidden />}
               label="Aguardando material"
               value={<span data-testid="ops-materials">{ops.awaitingMaterials}</span>}
-              detail="OS com material que ainda segura a produção"
+              detail="OS com material da lista ainda fora da oficina"
             />
             <Stat
               href="/painel/producao"

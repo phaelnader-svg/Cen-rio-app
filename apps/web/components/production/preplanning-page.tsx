@@ -17,7 +17,7 @@ import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Select, Textarea } from '@/components/ui/field';
-import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
+import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { Tabs } from '@/components/ui/tabs';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { formatDay, todayIso } from '@/lib/commercial';
@@ -166,23 +166,6 @@ function pieceLine(i: PipelineServiceDto) {
     .join(' · ');
 }
 
-function MaterialsBadge({ i }: { i: PipelineServiceDto }) {
-  const tone =
-    i.materials.state === 'COMPLETO'
-      ? 'ok'
-      : i.materials.state === 'COM_DIVERGENCIA'
-        ? 'danger'
-        : i.materials.state === 'SEM_LEVANTAMENTO'
-          ? 'neutral'
-          : 'warn';
-  return (
-    <Badge tone={tone}>
-      Materiais: {i.materials.label}
-      {i.materials.inConference ? ' · em conferência' : ''}
-    </Badge>
-  );
-}
-
 function ServiceHead({ i }: { i: PipelineServiceDto }) {
   return (
     <div className="min-w-0 flex-1">
@@ -203,9 +186,6 @@ function ServiceHead({ i }: { i: PipelineServiceDto }) {
           ? ` · titular: ${[...new Set(i.pieces.map((p) => p.upholsterer?.displayName).filter(Boolean))].join(', ')}`
           : ''}
       </p>
-      <div className="mt-1.5 flex flex-wrap gap-1.5">
-        <MaterialsBadge i={i} />
-      </div>
       {i.pendencies.length > 0 && (
         <ul className="mt-1.5 space-y-0.5 text-sm text-warn-600">
           {i.pendencies.map((p) => (
@@ -466,10 +446,6 @@ function SimpleList({
                   >
                     Resolver na OS
                   </Link>
-                  {' · '}
-                  <Link href="/painel/prontidao" className="text-brand-700 hover:underline">
-                    Prontidão de materiais
-                  </Link>
                 </p>
               )}
             </div>
@@ -657,12 +633,6 @@ function PlanDialog({
               <p className="font-semibold">
                 {s.serviceOrder.code} · <span className="font-normal">{s.customerName}</span>
               </p>
-              {s.materials.state !== 'COMPLETO' && (
-                <p className="mt-1 text-sm text-warn-600">
-                  Materiais: {s.materials.label}. Pode planejar; as etapas que exigem material só
-                  são liberadas quando ele estiver disponível.
-                </p>
-              )}
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <Field label="Data de início" required>
                   {(p) => (

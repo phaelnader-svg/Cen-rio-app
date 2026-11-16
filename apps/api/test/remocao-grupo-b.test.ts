@@ -1,4 +1,10 @@
-import { ALL_PERMISSIONS, MODULE_KEYS, READINESS_CHECKS, evaluateRelease } from '@cenario/shared';
+import {
+  ALL_PERMISSIONS,
+  MODULE_KEYS,
+  READINESS_CHECKS,
+  RELEASE_BLOCKERS,
+  evaluateRelease,
+} from '@cenario/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import {
@@ -70,12 +76,9 @@ describe('Remoção real — Grupo B: regras de domínio', () => {
 
   const base = {
     osActive: true,
-    pieceReceived: true,
     published: true,
     assigned: true,
     dependenciesDone: true,
-    materialsReady: true,
-    requiresMaterials: false,
     manuallyBlocked: false,
     openIssue: false,
     scheduledAt: null,
@@ -84,15 +87,14 @@ describe('Remoção real — Grupo B: regras de domínio', () => {
   futuro('S2')(
     'S2: material não comprado/recebido NUNCA bloqueia a tarefa (sem bloqueio MATERIAIS)',
     () => {
-      const r = evaluateRelease({ ...base, requiresMaterials: true, materialsReady: false });
-      expect(r.blockers).not.toContain('MATERIAIS');
+      expect((RELEASE_BLOCKERS as readonly string[]).includes('MATERIAIS')).toBe(false);
+      expect(evaluateRelease(base).blockers).toEqual([]);
     },
   );
   futuro('S5')(
     'S5: peça ainda não recebida NÃO bloqueia a tarefa (chegada é opcional — D1)',
     () => {
-      const r = evaluateRelease({ ...base, pieceReceived: false });
-      expect(r.blockers).not.toContain('PECA_NAO_RECEBIDA');
+      expect((RELEASE_BLOCKERS as readonly string[]).includes('PECA_NAO_RECEBIDA')).toBe(false);
     },
   );
   it('controle: bloqueios legítimos continuam (Grupo A embutido)', () => {

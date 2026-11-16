@@ -4,7 +4,6 @@ import type { PickupDto, PickupStatus } from '@cenario/shared';
 import { PICKUP_STATUS_LABEL, PICKUP_TEAM_LABEL, formatMoney, formatPhone } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil } from 'lucide-react';
-import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -26,6 +25,7 @@ const ACTION_LABEL: Partial<Record<PickupStatus, string>> = {
   AGENDADA: 'Marcar como agendada',
   EM_EXECUCAO: 'Equipe a caminho / em execução',
   RETIRADA_REALIZADA: 'Confirmar retirada realizada',
+  RECEBIDA_NA_OFICINA: 'Peças chegaram na oficina',
   COM_OCORRENCIA: 'Registrar ocorrência',
   AGUARDANDO_AGENDAMENTO: 'Voltar para aguardando agendamento',
   CANCELADA: 'Cancelar retirada',
@@ -82,17 +82,6 @@ export function PickupDetailDialog({ id, onClose }: { id: string; onClose: () =>
                 >
                   Editar / reagendar
                 </Button>
-              )}
-            {can('recebimentos.registrar') &&
-              ['AGENDADA', 'EM_EXECUCAO', 'RETIRADA_REALIZADA', 'COM_OCORRENCIA'].includes(
-                p.status,
-              ) && (
-                <Link
-                  href={`/painel/recebimentos/novo?pedido=${p.order.id}&retirada=${p.id}`}
-                  className="inline-flex h-8 items-center rounded-lg bg-brand-700 px-3 text-sm font-semibold text-white hover:bg-brand-800"
-                >
-                  Registrar recebimento na oficina
-                </Link>
               )}
           </div>
           {manage && p.allowedTransitions.length > 0 && (

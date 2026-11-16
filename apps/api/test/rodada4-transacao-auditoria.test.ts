@@ -12,21 +12,14 @@
  * Falhas são injetadas com triggers temporários `BEFORE INSERT ... RAISE EXCEPTION` (removidos
  * no afterEach). Todas as ações passam pelas rotas reais.
  */
-import { EVENT_TYPES, closingWeekStart, mondayOf } from '@cenario/shared';
+import { closingWeekStart, mondayOf } from '@cenario/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
-import { createTestApp, db, idemKey, loginAdmin, resetDatabase, setupTablet } from './helpers';
-import { address, createCustomer, createOrder, receiptBody } from './commercial-helpers';
+import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import { address, createCustomer, createOrder, markArrived } from './commercial-helpers';
 import { F, PINS, adjust, finish, labor, prepareCompany, row, scenario } from './labor-helpers';
-import {
-  approvedNeeds,
-  confirmPurchase,
-  createPurchase,
-  createSupplier,
-  linen,
-} from './purchasing-helpers';
 import { day, today, userIdOf } from './production-helpers';
 
 let app: App;
@@ -327,6 +320,7 @@ describe('F1-06 — auditoria das ações novas, na mesma transação', () => {
       customerDropOff: false,
       responsible: andre,
       tripCostId: cost.id,
+      serviceOrderId: r.body.serviceOrder.id, // a OS nasce no fechamento (D1)
     });
   });
 
@@ -514,13 +508,9 @@ describe('F1-06 — auditoria das ações novas, na mesma transação', () => {
     const order = await createOrder(admin, customer, [
       { pieceType: 'SOFA', description: 'Sofá', quantity: 1 },
     ]);
-    const rec = await post(
-      admin,
-      '/api/v1/receipts',
-      receiptBody(
-        order.id,
-        order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
-      ),
+    const rec = await markArrived(
+      order.id,
+      order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
     );
     expect(rec.status).toBe(201);
     const so = await post(admin, '/api/v1/service-orders', {
@@ -618,118 +608,5 @@ describe('F1-06 — auditoria das ações novas, na mesma transação', () => {
       where: { weekStart: new Date(`${weekAhead}T00:00:00Z`) },
     });
     expect(await auditOf('production.plan_created', dest.id)).toHaveLength(1);
-  });
-});
-
-// ─────────────────────────── F1-06 + F3-20b ───────────────────────────
-
-describe('F3-20b / F1-06 — auditoria da chegada física de materiais', () => {
-  async function fabricPurchase(admin: Client) {
-    const { reqs } = await approvedNeeds(admin, 'Cliente Material R4', (s) => [
-      linen(s.items[0].id, 15),
-    ]);
-    const supplier = await createSupplier(admin);
-    const po = await createPurchase(admin, {
-      supplierId: supplier.id,
-      expectedDate: today(),
-      items: [
-        {
-          sourcing: 'EXCLUSIVO_OS',
-          allocations: [{ materialRequirementId: reqs[0]!.id, quantity: 15 }],
-          quantity: 15,
-          unitPriceCents: 4500,
-        },
-      ],
-    });
-    expect(po.status, JSON.stringify(po.body)).toBe(201);
-    const c = await confirmPurchase(admin, po.body);
-    expect(c.status, JSON.stringify(c.body)).toBe(200);
-    const item = await db().purchaseOrderItem.findFirstOrThrow({
-      where: { purchaseOrderId: po.body.id },
-    });
-    return { po: c.body as { id: string; code: string }, item };
-  }
-
-  it('material_arrival.registered lida pela rota de auditoria: ator, entidade e conteúdo seguro; falha nela desfaz a chegada', async () => {
-    const admin = await loginAdmin(app);
-    const { po, item } = await fabricPurchase(admin);
-    const { tablet: joao, employee } = await setupTablet(app, admin, {
-      name: 'Tablet João',
-      employee: 'João',
-      pin: '111222',
-    });
-    const joaoId = employee.userId;
-    const card = async () =>
-      (
-        (await joao.get('/api/v1/arrivals')).body.materials as {
-          purchaseOrderId: string;
-          version: number;
-        }[]
-      ).find((m) => m.purchaseOrderId === po.id)!;
-    const c0 = await card();
-    expect(c0).toBeTruthy();
-    const body = {
-      version: c0.version,
-      lines: [{ purchaseOrderItemId: item.id, quantity: 3, physicalUnit: 'ROLO' }],
-    };
-    const poVersion = (await db().purchaseOrder.findUniqueOrThrow({ where: { id: po.id } }))
-      .version;
-
-    // Falha na auditoria: nenhuma chegada, versão do pedido intacta, nenhum evento no outbox.
-    await failAudit('material_arrival.registered');
-    const bad = await post(joao, `/api/v1/arrivals/purchase-orders/${po.id}/confirm`, body);
-    expect(bad.status).toBeGreaterThanOrEqual(500);
-    expect(await db().materialArrival.count()).toBe(0);
-    expect((await db().purchaseOrder.findUniqueOrThrow({ where: { id: po.id } })).version).toBe(
-      poVersion,
-    );
-    expect(
-      await db().domainEvent.count({ where: { type: EVENT_TYPES.MATERIAL_ARRIVAL_REGISTERED } }),
-    ).toBe(0);
-    expect(await auditOf('material_arrival.registered')).toHaveLength(0);
-    await clearFailures();
-
-    const r = await post(joao, `/api/v1/arrivals/purchase-orders/${po.id}/confirm`, body);
-    expect(r.status, JSON.stringify(r.body)).toBe(201);
-    const arrivalId = r.body.arrival.id as string;
-
-    // Leitura pela rota real de auditoria (gestor com auditoria.ver).
-    const list = await admin.get(`/api/audit?entityType=material_arrival&entityId=${arrivalId}`);
-    expect(list.status).toBe(200);
-    const items = list.body.items as {
-      action: string;
-      entityType: string;
-      entityId: string;
-      actor: { id: string; displayName: string } | null;
-      summary: string;
-      changes: unknown;
-      ipAddress: string | null;
-    }[];
-    expect(items).toHaveLength(1);
-    const a = items[0]!;
-    expect(a).toMatchObject({
-      action: 'material_arrival.registered',
-      entityType: 'material_arrival',
-      entityId: arrivalId,
-      actor: { id: joaoId, displayName: 'João' },
-    });
-    expect(a.summary).toContain(r.body.arrival.code);
-    expect(a.summary).toContain(po.code);
-    expect(a.summary).toContain('3 rolo(s) de');
-    expect(a.summary).toMatch(/aguardando conferência/);
-    expect(a.changes).toEqual({
-      lines: [{ purchaseOrderItemId: item.id, quantity: 3, physicalUnit: 'ROLO' }],
-      problem: null,
-    });
-    // Conteúdo seguro: sem preço/valores do pedido nem PIN do tablet.
-    const json = JSON.stringify(a);
-    expect(json).not.toMatch(/Cents|price|preço|valor|4500|67500/i);
-    expect(json).not.toContain('111222');
-    // Sessão do tablet que registrou (no banco).
-    const row0 = (await auditOf('material_arrival.registered', arrivalId))[0]!;
-    expect(await sessionOf(joaoId)).toContain(row0.sessionId);
-    expect(row0.requestId).toBeTruthy();
-    // Tablet (sem auditoria.ver, sessão de tablet) não lê a auditoria.
-    expect((await joao.get('/api/audit')).status).toBe(403);
   });
 });

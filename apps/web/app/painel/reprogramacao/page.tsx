@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
-import { ReschedulePage } from '@/components/help/pages';
+import { ReschedulePage } from '@/components/production/reschedule-pages';
 
 export const metadata: Metadata = { title: 'Reprogramação' };
 

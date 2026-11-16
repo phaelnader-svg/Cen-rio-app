@@ -1,5 +1,6 @@
 import type { App } from '../src/app';
-import { type Client, idemKey, loginAdmin } from './helpers';
+import { refreshOrderStatus } from '../src/modules/commercial/status';
+import { type Client, db, idemKey, loginAdmin } from './helpers';
 
 /** CPFs/CNPJs fictícios com dígitos verificadores válidos (gerados para teste). */
 export const FAKE_CPF = ['52998224725', '11144477735', '39053344705'];
@@ -76,17 +77,23 @@ export async function createPickup(
   return r.body;
 }
 
-export function receiptBody(
+/**
+ * Recebimentos removidos: a chegada à oficina é só uma marcação opcional ("Peças na oficina" no
+ * pedido ou "chegaram na oficina" na retirada). Nos testes, marca direto as quantidades chegadas.
+ */
+export async function markArrived(
   orderId: string,
   lines: { orderItemId: string; quantity: number }[],
-  pickupId: string | null = null,
 ) {
-  return {
-    orderId,
-    pickupId,
-    origin: pickupId ? 'RETIRADA' : 'ENTREGUE_PELO_CLIENTE',
-    lines: lines.map((l) => ({ ...l, condition: 'BOA', location: 'Área de recebimento' })),
-  };
+  await db().$transaction(async (tx) => {
+    for (const l of lines)
+      await tx.commercialOrderItem.update({
+        where: { id: l.orderItemId },
+        data: { receivedQuantity: { increment: l.quantity } },
+      });
+    await refreshOrderStatus(tx, orderId);
+  });
+  return { status: 201 as const, body: null as unknown };
 }
 
 /** Usuário de painel com uma função contendo só as permissões indicadas. */

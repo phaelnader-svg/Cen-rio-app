@@ -3,7 +3,6 @@ import type { FastifyInstance } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
 import { detectAbsences, detectOpenShifts } from '../attendance/absence';
 import { clock, setAttendanceClock } from '../attendance/common';
-import { processHelpQueue } from '../help/queue';
 import { processIssueRisks } from '../issues/service';
 import { releaseDueTasks } from '../production/common';
 
@@ -36,11 +35,10 @@ export async function testClockRoutes(app: FastifyInstance) {
     return { now: clock().toISOString(), controlled: input.now !== null };
   });
 
-  /** Executa já a verificação de ausência e a fila (sem esperar os timers). */
+  /** Executa já a verificação de ausência e os prazos (sem esperar os timers). */
   app.post('/api/test/attendance/check', { config: { access: ACCESS } }, async () => ({
     flagged: await detectAbsences(prisma),
     openShifts: await detectOpenShifts(prisma),
-    assigned: await processHelpQueue(prisma),
     issueRisks: await processIssueRisks(prisma),
     // O relógio de teste também vale para a liberação por horário (planos LEGADO).
     released: await releaseDueTasks(prisma),

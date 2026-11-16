@@ -1,5 +1,4 @@
 import {
-  MATERIALS_PENDING_STATES,
   PRODUCTION_STOP_BLOCKERS,
   closingWeekStart,
   deliveryCode,
@@ -73,7 +72,7 @@ export async function managementRoutes(app: FastifyInstance) {
         await Promise.all([
           prisma.serviceOrder.count({ where: active }),
           prisma.serviceOrder.count({
-            where: { ...active, materialsReadiness: { in: [...MATERIALS_PENDING_STATES] } },
+            where: { ...active, simpleMaterials: { some: { removedAt: null, available: false } } },
           }),
           prisma.serviceOrderItem.groupBy({
             by: ['fulfillmentStage'],

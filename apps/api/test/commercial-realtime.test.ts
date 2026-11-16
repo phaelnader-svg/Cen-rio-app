@@ -1,10 +1,11 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
-import { createCustomer, createOrder, createPickup, receiptBody } from './commercial-helpers';
+import { createCustomer, createOrder, createPickup } from './commercial-helpers';
 import {
   type Client,
   WsClient,
   createTestApp,
+  db,
   idemKey,
   loginAdmin,
   resetDatabase,
@@ -64,7 +65,7 @@ async function upload(client: Client, entityType: string, entityId: string) {
 }
 
 describe('Sincronização do fluxo comercial', () => {
-  it('pedido, retirada, recebimento e OS chegam em tempo real a outra sessão do painel', async () => {
+  it('pedido, retirada, chegada na oficina e OS chegam em tempo real a outra sessão do painel', async () => {
     const admin = await loginAdmin(app);
     const other = await loginAdmin(app);
     const w = track(await WsClient.connect(app, other));
@@ -85,24 +86,23 @@ describe('Sincronização do fluxo comercial', () => {
     await w.waitFor(
       (m) => m.event?.type === 'pickup.created' && m.event.payload.status === 'AGENDADA',
     );
-    await admin.post(
-      '/api/v1/receipts',
-      receiptBody(
-        order.id,
-        order.items.map((i: { id: string; quantity: number }) => ({
-          orderItemId: i.id,
-          quantity: i.quantity,
-        })),
-        pickup.id,
-      ),
-      { 'idempotency-key': idemKey() },
-    );
-    const receipt = await w.waitFor((m) => m.event?.type === 'receipt.registered');
-    expect(receipt.event.payload.orderStatus).toBe('RECEBIDO');
+    // Recebimentos removidos: a chegada à oficina é a última transição da própria retirada.
+    for (const toStatus of ['EM_EXECUCAO', 'RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA']) {
+      const cur = await db().pickupRequest.findUniqueOrThrow({ where: { id: pickup.id } });
+      const t = await admin.post(
+        `/api/v1/pickups/${pickup.id}/transition`,
+        { toStatus, version: cur.version },
+        { 'idempotency-key': idemKey() },
+      );
+      expect(t.status, JSON.stringify(t.body)).toBe(200);
+    }
     await w.waitFor(
       (m) =>
         m.event?.type === 'pickup.status_changed' &&
         m.event.payload.status === 'RECEBIDA_NA_OFICINA',
+    );
+    expect((await db().commercialOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
+      'RECEBIDO',
     );
     await admin.post(
       '/api/v1/service-orders',

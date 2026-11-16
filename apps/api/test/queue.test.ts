@@ -189,7 +189,7 @@ describe('LEGADO preservado (CA2-01)', () => {
     expect(onlyReassignableBlockers(['DEPENDENCIAS'])).toBe(true);
     expect(onlyReassignableBlockers([])).toBe(true);
     expect(onlyReassignableBlockers(['HORARIO'])).toBe(false);
-    expect(onlyReassignableBlockers(['DEPENDENCIAS', 'MATERIAIS'])).toBe(false);
+    expect(onlyReassignableBlockers(['DEPENDENCIAS', 'BLOQUEIO'])).toBe(false);
   });
 });
 
@@ -226,52 +226,6 @@ describe('FILA_SEMANAL', () => {
     expect(upd.status).toBe(422);
     const dbRows = await db().productionTask.findMany({ where: { planId: plan.id } });
     expect(dbRows.every((t) => t.scheduledAt === null && t.queueExclusive)).toBe(true);
-  });
-
-  it('CA2-03/04: sem horário, mas dependência e materiais seguem exigidos; início explícito', async () => {
-    const admin = await loginAdmin(app);
-    const { so } = await serviceOrderWith(admin, 'missing', 'Cliente Materiais');
-    const joao = await userIdOf('João');
-    const plan = await createPlan(admin, today(), 'FILA_SEMANAL');
-    await addOs(admin, plan.id, {
-      serviceOrderId: so.id,
-      principalUserId: await userIdOf('Ricardo'),
-      generate: false,
-    });
-    const mk = async (body: Record<string, unknown>) =>
-      (
-        await post(admin, `/api/v1/production-plans/${plan.id}/tasks`, {
-          serviceOrderId: so.id,
-          activity: 'PREPARACAO',
-          assigneeUserId: joao,
-          ...body,
-        })
-      ).body as T;
-    const a = await mk({ title: 'A' });
-    const b = await mk({ title: 'B (depende de A)', dependsOn: [a.id] });
-    const m = await mk({ title: 'M (materiais)', requiresMaterials: true });
-    const pub = await publish(admin, (await admin.get(`/api/v1/production-plans/${plan.id}`)).body);
-    const s = (id: string) => pub.tasks.find((t: T) => t.id === id);
-    expect(s(a.id).status).toBe('LIBERADA');
-    expect(s(b.id)).toMatchObject({ status: 'BLOQUEADA', blockers: ['DEPENDENCIAS'] });
-    expect(s(m.id)).toMatchObject({ status: 'BLOQUEADA', blockers: ['MATERIAIS'] });
-    const tablet = await tabletOf(app, admin, 'João', '271828');
-    expect((await act(tablet, b.id, 'start')).status).toBe(422);
-    expect((await act(tablet, m.id, 'start')).status).toBe(422);
-    expect((await act(tablet, a.id, 'start')).status).toBe(200);
-    expect((await act(tablet, a.id, 'complete')).status).toBe(200);
-    // B fica disponível na hora, mas NÃO inicia sozinha.
-    const q = await queueOf(tablet);
-    expect(q.current).toBeNull();
-    expect(q.next!.id).toBe(b.id);
-    expect(q.next!.status).toBe('LIBERADA');
-    expect(
-      (await db().productionTask.findUniqueOrThrow({ where: { id: b.id } })).startedAt,
-    ).toBeNull();
-    // Horários reais do servidor no início/conclusão.
-    const done = await db().productionTask.findUniqueOrThrow({ where: { id: a.id } });
-    expect(done.startedAt).toBeInstanceOf(Date);
-    expect(done.completedAt).toBeInstanceOf(Date);
   });
 
   it('CA2-05: 20 tarefas, 4 concluídas na segunda; a 5ª aparece na terça, sem duplicar nem zerar', async () => {

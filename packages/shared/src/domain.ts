@@ -113,25 +113,19 @@ export const PICKUP_TRANSITIONS: Record<PickupStatus, readonly PickupStatus[]> =
   AGUARDANDO_AGENDAMENTO: ['AGENDADA', 'CANCELADA'],
   AGENDADA: ['EM_EXECUCAO', 'AGUARDANDO_AGENDAMENTO', 'COM_OCORRENCIA', 'CANCELADA'],
   EM_EXECUCAO: ['RETIRADA_REALIZADA', 'COM_OCORRENCIA'],
-  RETIRADA_REALIZADA: ['COM_OCORRENCIA'],
+  // Recebimentos removidos: a chegada à oficina é marcada direto na retirada.
+  RETIRADA_REALIZADA: ['RECEBIDA_NA_OFICINA', 'COM_OCORRENCIA'],
   COM_OCORRENCIA: [
     'AGENDADA',
     'AGUARDANDO_AGENDAMENTO',
     'EM_EXECUCAO',
     'RETIRADA_REALIZADA',
+    'RECEBIDA_NA_OFICINA',
     'CANCELADA',
   ],
   RECEBIDA_NA_OFICINA: [],
   CANCELADA: [],
 };
-
-/** Situações em que a retirada ainda pode originar recebimento. */
-export const PICKUP_RECEIVABLE: readonly PickupStatus[] = [
-  'AGENDADA',
-  'EM_EXECUCAO',
-  'RETIRADA_REALIZADA',
-  'COM_OCORRENCIA',
-];
 
 export const PICKUP_TEAMS = ['LOGISTICA_TERCEIRIZADA', 'EQUIPE_PROPRIA'] as const;
 export type PickupTeam = (typeof PICKUP_TEAMS)[number];

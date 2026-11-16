@@ -17,7 +17,6 @@
  */
 import {
   EVENT_TYPES,
-  MATERIAL_READINESS_LABEL,
   PIPELINE_STAGE_LABEL,
   RELEASE_BLOCKER_LABEL,
   formatServiceOrderItemCode,
@@ -25,7 +24,6 @@ import {
   planServicesSchema,
   reschedulePlannedSchema,
   selectProductionTemplate,
-  type MaterialReadiness,
   type PipelineServiceDto,
   type PipelineStage,
   type PlanServicesResultDto,
@@ -43,7 +41,6 @@ import { Errors } from '../../lib/errors';
 import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { notify, taskNotice } from '../notifications/notify';
 import { idParams } from '../presenters';
-import { readinessOf } from '../purchasing/common';
 import {
   MANAGEMENT,
   PLAN,
@@ -53,7 +50,6 @@ import {
   lockTasks,
   reevaluateTasks,
   taskEvent,
-  materialsGateOn,
 } from './common';
 import { distributeServiceOrder } from './distribution';
 import { placeServiceInQueue } from './queue-placement';
@@ -134,7 +130,6 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
       items: {
         orderBy: { position: 'asc' },
         include: {
-          orderItem: { select: { receivedQuantity: true } },
           upholsterer: { select: { id: true, displayName: true } },
         },
       },
@@ -158,23 +153,10 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
     },
     orderBy: [{ promisedDate: 'asc' }, { number: 'asc' }],
   });
-  // Chegadas físicas de material aguardando conferência, por OS de destino.
-  const conference = new Set(
-    (
-      await db.purchaseAllocation.findMany({
-        where: {
-          serviceOrderId: { in: sos.map((s) => s.id) },
-          item: { purchaseOrder: { arrivals: { some: { status: 'PENDENTE_CONFERENCIA' } } } },
-        },
-        select: { serviceOrderId: true },
-      })
-    ).map((r) => r.serviceOrderId),
-  );
-
   const items: PipelineServiceDto[] = [];
   for (const so of sos) {
-    // Só OS com as peças fisicamente recebidas entram na produção.
-    if (!so.items.length || so.items.some((i) => i.orderItem.receivedQuantity <= 0)) continue;
+    // Remoção de Recebimentos: a OS nasce no fechamento e entra na produção sem esperar a chegada.
+    if (!so.items.length) continue;
     const tasks = so.productionTasks;
     const planItem =
       [...so.productionPlanItems].sort((a, b) => +b.plan.weekStart - +a.plan.weekStart)[0] ?? null;
@@ -200,7 +182,6 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
       stage = 'AGUARDANDO_CONDICAO';
     else stage = 'PLANEJADO_PUBLICADO';
 
-    const readiness = await readinessOf(db, so.id);
     const blockers = [
       ...new Set(
         tasks
@@ -251,11 +232,6 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
       customerName: so.customer.name,
       receivedAt: (so.sourceReceipt?.receivedAt ?? so.createdAt).toISOString(),
       pieces,
-      materials: {
-        state: readiness.state,
-        label: MATERIAL_READINESS_LABEL[readiness.state as MaterialReadiness] ?? readiness.state,
-        inConference: conference.has(so.id),
-      },
       stage,
       plan: planItem
         ? {
@@ -328,20 +304,6 @@ export async function publicationPreview(
     pendencies.push(
       `${unassigned} tarefa(s) sem responsável: ficarão bloqueadas até o gestor definir.`,
     );
-  const materialsBlocked: PublicationPreviewDto['materialsBlocked'] = [];
-  // Fase 1: com as travas de materiais desligadas, nenhuma tarefa fica bloqueada por material.
-  const gateOn = await materialsGateOn(db);
-  for (const id of gateOn ? soIds : []) {
-    const r = await readinessOf(db, id);
-    if (
-      r.state !== 'COMPLETO' &&
-      drafts.some((t) => t.serviceOrderId === id && t.requiresMaterials)
-    )
-      materialsBlocked.push({
-        code: code(id),
-        label: MATERIAL_READINESS_LABEL[r.state as MaterialReadiness] ?? r.state,
-      });
-  }
   const today = await todayIn(db);
   const startDates = soIds.map((id) => {
     const it = plan.items.find((i) => i.serviceOrderId === id);
@@ -364,7 +326,6 @@ export async function publicationPreview(
     byAssignee: [...byAssignee.values()].sort((a, b) => a.displayName.localeCompare(b.displayName)),
     startDates,
     pendencies,
-    materialsBlocked,
     conflicts,
     publishable: drafts.length > 0,
   };
@@ -415,15 +376,13 @@ export async function preplanningRoutes(app: FastifyInstance) {
           const so = await tx.serviceOrder.findUnique({
             where: { id: entry.serviceOrderId },
             include: {
-              items: { orderBy: { position: 'asc' }, include: { orderItem: true } },
+              items: { orderBy: { position: 'asc' } },
               productionPlanItems: { include: { plan: { select: { weekStart: true } } } },
             },
           });
           if (!so) throw Errors.notFound('Ordem de serviço');
           const code = serviceOrderCode(so.number);
           if (so.status !== 'ABERTA') throw Errors.business(`${code}: a OS não está aberta.`);
-          if (so.items.some((i) => i.orderItem.receivedQuantity <= 0))
-            throw Errors.business(`${code}: as peças ainda não chegaram à oficina.`);
           if (so.productionPlanItems.length) {
             const w = dateOnly(so.productionPlanItems[0]!.plan.weekStart)!;
             throw Errors.conflict(

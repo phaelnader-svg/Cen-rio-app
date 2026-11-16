@@ -17,7 +17,6 @@ import {
   userIdOf,
   type Task,
 } from './production-helpers';
-import { confirmedFabricPurchase, createSupplier, ok, receive } from './purchasing-helpers';
 
 let app: App;
 beforeAll(async () => {
@@ -69,7 +68,6 @@ describe('Planejamento semanal', () => {
     const cands = (await admin.get(`/api/v1/production-plans/${plan.id}/candidates`)).body;
     expect(cands[0]).toMatchObject({
       serviceOrder: { code: so.code },
-      materialsState: 'SEM_LEVANTAMENTO',
       inPlan: false,
     });
 
@@ -116,7 +114,9 @@ describe('Planejamento semanal', () => {
     const published = await publish(admin, added);
     expect(published).toMatchObject({ status: 'PUBLICADO', revision: 1 });
     expect(published.revisions[0]).toMatchObject({ revision: 1, offSchedule: false });
-    expect(published.tasks.every((t: Task) => t.status === 'BLOQUEADA')).toBe(true);
+    // Sem trava de material (S2): só as etapas que dependem de outra ficam bloqueadas.
+    expect(published.tasks.some((t: Task) => t.status === 'BLOQUEADA')).toBe(true);
+    expect(published.tasks.some((t: Task) => t.status !== 'BLOQUEADA')).toBe(true);
     expect(
       (await ricardoTablet.get('/api/v1/production-tasks/mine')).body.today.length,
     ).toBeGreaterThan(0);
@@ -230,25 +230,6 @@ describe('Planejamento semanal', () => {
 });
 
 describe('Liberação e materiais', () => {
-  it('material incompleto bloqueia corte/costura; desmontagem segue liberada; chegada libera', async () => {
-    const { admin, reqs, t } = await publishedSofa('missing');
-    expect(t('DESMONTAGEM').status).toBe('LIBERADA');
-    expect(t('CORTE_TECIDO')).toMatchObject({ status: 'BLOQUEADA', blockers: ['MATERIAIS'] });
-    expect(t('COSTURA').blockers).toEqual(expect.arrayContaining(['DEPENDENCIAS', 'MATERIAIS']));
-    const ricardo = await tabletOf(app, admin, 'Ricardo', '482915');
-    const early = await act(ricardo, t('CORTE_TECIDO').id, 'start');
-    expect(early.status).toBe(422);
-    expect(early.body.error.message).toMatch(/Materiais/);
-
-    // Materiais chegam (Fase 4) → a prontidão completa reavalia e libera o corte.
-    const supplier = await createSupplier(admin);
-    const po = await confirmedFabricPurchase(admin, supplier.id, reqs[0]!);
-    await receive(admin, po.id, [ok(po.items[0].id, 12)]);
-    const corte = (await admin.get(`/api/v1/production-tasks/${t('CORTE_TECIDO').id}`)).body;
-    expect(corte).toMatchObject({ status: 'LIBERADA', blockers: [] });
-    expect(corte.events.map((e: { kind: string }) => e.kind)).toContain('LIBERADA');
-  });
-
   it('material completo: corte liberado na publicação; antes do horário só programada', async () => {
     const { admin, t } = await publishedSofa('complete', day(2));
     expect(t('CORTE_TECIDO').status).toBe('PROGRAMADA');

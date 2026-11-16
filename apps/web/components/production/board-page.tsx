@@ -14,7 +14,7 @@ import { useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { PriorityBadge } from '@/components/commercial/badges';
 import { Input, Select } from '@/components/ui/field';
-import { HelpAndRescheduleBanner } from '@/components/help/pages';
+import { RescheduleBanner } from '@/components/production/reschedule-pages';
 import { Alert, Avatar, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { addDays, formatDay, todayIso } from '@/lib/commercial';
 import { useCan, useMe } from '@/lib/hooks';
@@ -102,7 +102,7 @@ export function ProductionBoardPage() {
           ) : undefined
         }
       />
-      <HelpAndRescheduleBanner />
+      <RescheduleBanner />
       <Card className="mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
         <label className="field">
           <span className="label">De</span>

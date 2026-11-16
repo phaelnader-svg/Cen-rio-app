@@ -18,7 +18,7 @@ import {
   createOrder,
   createPickup,
   panelUserWith,
-  receiptBody,
+  markArrived,
 } from './commercial-helpers';
 import { openServiceOrder } from './measurement-helpers';
 import {
@@ -294,7 +294,7 @@ describe('Ciclo de vida (CA6-05..08)', () => {
   it('4. agendar não libera; a realização constitui o devido uma única vez', async () => {
     const { admin, ids } = await base();
     await setPayee(admin, ids.andre);
-    const { order, pickup } = await pickupOf(admin);
+    const { pickup } = await pickupOf(admin);
     await tripCost(admin, {
       pickupId: pickup.id,
       amountCents: 10000,
@@ -306,19 +306,7 @@ describe('Ciclo de vida (CA6-05..08)', () => {
     await step(admin, pickup.id, 'RETIRADA_REALIZADA');
     expect((await costOf(pickup.id)).status).toBe('DEVIDO');
     // Recebimento na oficina (RECEBIDA_NA_OFICINA) não constitui de novo.
-    const rec = await post(
-      admin,
-      '/api/v1/receipts',
-      receiptBody(
-        order.id,
-        order.items.map((i: { id: string; quantity: number }) => ({
-          orderItemId: i.id,
-          quantity: i.quantity,
-        })),
-        pickup.id,
-      ),
-    );
-    expect(rec.status).toBe(201);
+    await step(admin, pickup.id, 'RECEBIDA_NA_OFICINA');
     expect((await db().pickupRequest.findUniqueOrThrow({ where: { id: pickup.id } })).status).toBe(
       'RECEBIDA_NA_OFICINA',
     );
@@ -333,21 +321,12 @@ describe('Ciclo de vida (CA6-05..08)', () => {
       version: c.version,
     });
     expect(edit.status).toBe(422);
-    // Retirada recebida direto (sem passos da logística) também constitui.
+    // Retirada que vai para a oficina sem passar por "realizada" (ocorrência → recebida) também
+    // constitui: a chegada à oficina é marcada na própria retirada (Recebimentos removidos).
     const other = await pickupOf(admin, 'Cliente Recebido Direto');
     await tripCost(admin, { pickupId: other.pickup.id, amountCents: 5000 });
-    await post(
-      admin,
-      '/api/v1/receipts',
-      receiptBody(
-        other.order.id,
-        other.order.items.map((i: { id: string; quantity: number }) => ({
-          orderItemId: i.id,
-          quantity: i.quantity,
-        })),
-        other.pickup.id,
-      ),
-    );
+    await step(admin, other.pickup.id, 'COM_OCORRENCIA', 'Cliente trouxe as peças');
+    await step(admin, other.pickup.id, 'RECEBIDA_NA_OFICINA');
     expect((await costOf(other.pickup.id)).status).toBe('DEVIDO');
   });
 
@@ -498,11 +477,7 @@ async function sameCustomerOrders(admin: Client, n: number) {
     const order = await createOrder(admin, customer, [
       { pieceType: 'POLTRONA', description: `Poltrona ${k + 1}`, quantity: 1 },
     ]);
-    await post(
-      admin,
-      '/api/v1/receipts',
-      receiptBody(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]),
-    );
+    await markArrived(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]);
     const so = await post(admin, '/api/v1/service-orders', {
       orderId: order.id,
       items: [
@@ -591,17 +566,12 @@ describe('Rateio e OS (CA6-09, 10)', () => {
       method: 'PIX',
       version: p.version,
     });
-    await post(
-      admin,
-      '/api/v1/receipts',
-      receiptBody(
-        order.id,
-        order.items.map((i: { id: string; quantity: number }) => ({
-          orderItemId: i.id,
-          quantity: i.quantity,
-        })),
-        pickup.id,
-      ),
+    await markArrived(
+      order.id,
+      order.items.map((i: { id: string; quantity: number }) => ({
+        orderItemId: i.id,
+        quantity: i.quantity,
+      })),
     );
     const so = await post(admin, '/api/v1/service-orders', {
       orderId: order.id,

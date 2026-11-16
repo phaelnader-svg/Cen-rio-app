@@ -7,7 +7,7 @@ import {
   createOrder,
   createPickup,
   panelUserWith,
-  receiptBody,
+  markArrived,
 } from './commercial-helpers';
 import { day, userIdOf } from './production-helpers';
 
@@ -44,16 +44,12 @@ async function receivedOrder(admin: Client, name = 'Cliente OS Completa') {
     { pieceType: 'SOFA', description: 'Sofá 3 lugares', quantity: 1 },
     { pieceType: 'POLTRONA', description: 'Poltronas', quantity: 2 },
   ]);
-  const rec = await post(
-    admin,
-    '/api/v1/receipts',
-    receiptBody(
-      order.id,
-      order.items.map((i: { id: string; quantity: number }) => ({
-        orderItemId: i.id,
-        quantity: i.quantity,
-      })),
-    ),
+  const rec = await markArrived(
+    order.id,
+    order.items.map((i: { id: string; quantity: number }) => ({
+      orderItemId: i.id,
+      quantity: i.quantity,
+    })),
   );
   if (rec.status !== 201) throw new Error(`receipt: ${JSON.stringify(rec.body)}`);
   return { customer, order };

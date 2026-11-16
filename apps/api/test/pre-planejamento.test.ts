@@ -11,17 +11,9 @@ import {
   loginAdmin,
   resetDatabaseWithMaterialsGate,
 } from './helpers';
-import { createCustomer, createOrder, panelUserWith, receiptBody } from './commercial-helpers';
+import { createCustomer, createOrder, panelUserWith, markArrived } from './commercial-helpers';
 import { compareQueue, mondayOf } from '@cenario/shared';
-import {
-  act,
-  createPlan,
-  day,
-  serviceOrderWith,
-  tabletOf,
-  today,
-  userIdOf,
-} from './production-helpers';
+import { act, createPlan, day, tabletOf, today, userIdOf } from './production-helpers';
 
 /**
  * Simplificação Fase 4 — pré-planejamento: fila "A planejar", planejamento individual e em
@@ -91,13 +83,9 @@ async function os(
     customer,
     pieces.map((p) => ({ pieceType: p.pieceType, description: p.description, quantity: 1 })),
   );
-  const rec = await post(
-    admin,
-    '/api/v1/receipts',
-    receiptBody(
-      order.id,
-      order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
-    ),
+  const rec = await markArrived(
+    order.id,
+    order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
   );
   expect(rec.status).toBe(201);
   const so = await post(admin, '/api/v1/service-orders', {
@@ -147,14 +135,13 @@ const money = async () => ({
 });
 
 describe('A. Fila "A planejar"', () => {
-  it('OS recebida e não planejada aparece; não recebida e cancelada não (CA4-01..03)', async () => {
+  it('OS não planejada aparece, mesmo sem a chegada marcada; cancelada não (CA4-01..03, D1)', async () => {
     const admin = await loginAdmin(app);
     const a = await sofa(admin, 'Cliente A Planejar');
     const e = await entryOf(admin, a.id);
     expect(e).toMatchObject({ stage: 'A_PLANEJAR', plan: null, blockers: [] });
     expect(e!.pieces[0]).toMatchObject({ needsUpholsterer: true, upholsterer: null });
-    expect(e!.materials.label).toBeTruthy();
-    // Legado: OS cujas peças não chegaram (recebimento zerado) não é planejável.
+    // Remoção de Recebimentos (D1): a OS nasce no fechamento e é planejável sem a chegada marcada.
     const b = await sofa(admin, 'Cliente Sem Peça');
     const item = await db().serviceOrderItem.findFirstOrThrow({ where: { serviceOrderId: b.id } });
     await db().commercialOrderItem.update({
@@ -168,9 +155,9 @@ describe('A. Fila "A planejar"', () => {
     });
     const ids = (await pipeline(admin)).items.map((i) => i.serviceOrder.id);
     expect(ids).toContain(a.id);
-    expect(ids).not.toContain(b.id);
+    expect(ids).toContain(b.id);
     expect(ids).not.toContain(c.id);
-    // Planejar OS não recebida é recusado também pela API.
+    // A API também aceita planejar a OS cujas peças ainda não chegaram.
     const p = await team();
     const r = await planServices(admin, [
       {
@@ -179,7 +166,7 @@ describe('A. Fila "A planejar"', () => {
         pieces: [{ serviceOrderItemId: item.id, upholstererUserId: p.ricardo }],
       },
     ]);
-    expect(r.status).toBe(422);
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
     // OS com a produção concluída: aparece em "Concluídos", nunca como pendência de planejamento.
     const d = await sofa(admin, 'Cliente Concluída');
     const planned = await planServices(admin, [
@@ -284,7 +271,10 @@ describe('B. Planejamento individual e publicação', () => {
     expect(qj.items[0]!.executable).toBe(true); // primeira etapa de preparação liberada
     const qr = await queue(ricardo);
     expect(qr.items.length).toBe(tap.length);
-    expect(qr.items.every((i) => !i.executable)).toBe(true); // depende da preparação
+    // Sem o bloqueio por material (S2): só espera a etapa que depende de outra (a preparação).
+    const deps = new Map(tasks.map((t) => [t.id, t.dependsOn.length > 0]));
+    for (const i of qr.items) expect(i.executable, i.task.activity).toBe(!deps.get(i.task.id));
+    expect(qr.items.some((i) => !i.executable)).toBe(true);
     // Nada é iniciado automaticamente nem valor algum muda.
     expect(await db().productionTask.count({ where: { startedAt: { not: null } } })).toBe(0);
     expect(await money()).toEqual(before);
@@ -632,27 +622,6 @@ describe('D. Semana publicada, reprogramação e histórico', () => {
 });
 
 describe('E. Materiais, permissões e compatibilidade', () => {
-  it('material faltando: planejar é permitido, mas a tarefa não é liberada (CA4-16)', async () => {
-    const admin = await loginAdmin(app);
-    const p = await team();
-    const { so } = await serviceOrderWith(admin, 'missing', 'Cliente Material Faltando');
-    const items = so.items as { id: string }[];
-    const pieces = items.map((i) => ({ serviceOrderItemId: i.id, upholstererUserId: p.ricardo }));
-    const e0 = (await entryOf(admin, so.id))!;
-    expect(e0.materials.state).not.toBe('COMPLETO');
-    const r = await planServices(admin, [{ serviceOrderId: so.id, startDate: today(), pieces }]);
-    expect(r.status, JSON.stringify(r.body)).toBe(201);
-    const prev = (
-      await admin.get(`/api/v1/production-plans/${r.body.planned[0].planId}/publication-preview`)
-    ).body;
-    expect(prev.materialsBlocked.length).toBe(1);
-    expect((await publishWeek(admin, r.body.planned[0].planId)).status).toBe(200);
-    const needing = (await tasksOf(so.id)).filter((t) => t.requiresMaterials);
-    expect(needing.length).toBeGreaterThan(0);
-    expect(needing.every((t) => t.status === 'BLOQUEADA')).toBe(true);
-    expect(needing.some((t) => t.blockers.includes('MATERIAIS'))).toBe(true);
-  });
-
   it('permissões na API: tablet e painel sem planejar recebem 403 (CA4-23)', async () => {
     const admin = await loginAdmin(app);
     const p = await team();

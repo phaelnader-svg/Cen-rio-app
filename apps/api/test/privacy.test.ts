@@ -74,8 +74,6 @@ describe('Privacidade do cliente no tablet (Fase 8)', () => {
       `/api/v1/production-tasks/${next}`,
       `/api/v1/production-tasks/${ricQueue.items[0].task.id}`,
       '/api/v1/notifications?limit=50',
-      '/api/v1/help-requests/mine',
-      '/api/v1/help-requests/support-options',
       '/api/v1/issues/mine',
     ];
     let checked = 0;

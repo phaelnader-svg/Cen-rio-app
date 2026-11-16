@@ -1,6 +1,5 @@
 import {
   DEADLINE_REASON_LABEL,
-  MATERIALS_PENDING_STATES,
   MATERIAL_ALERT_DAYS,
   NOTIFICATION_KIND_LABEL,
   OPERATIONAL_ALERT_KINDS,
@@ -112,15 +111,11 @@ async function currentFacts(db: Tx | PrismaClient) {
           OR: [{ scheduledAt: { lte: horizon } }, { status: { in: ['EM_EXECUCAO', 'PAUSADA'] } }],
         },
       },
-      OR: [
-        { materialsReadiness: { in: [...MATERIALS_PENDING_STATES] } },
-        { simpleMaterials: { some: { removedAt: null, available: false } } },
-      ],
+      simpleMaterials: { some: { removedAt: null, available: false } },
     },
     select: {
       id: true,
       number: true,
-      materialsReadiness: true,
       customer: { select: { name: true } },
       simpleMaterials: {
         where: { removedAt: null, available: false },
@@ -133,8 +128,8 @@ async function currentFacts(db: Tx | PrismaClient) {
 
 /**
  * Recalcula os alertas internos (idempotente). Avisa quem já cuida de cada assunto: prazo →
- * `os.gerenciar`; peça pronta → `entregas.gerenciar`; material → `os.gerenciar` e
- * `compras.gerenciar`. Resolve os avisos cujo fato deixou de existir.
+ * `os.gerenciar`; peça pronta → `entregas.gerenciar`; material (lista simples da OS) →
+ * `os.gerenciar`. Resolve os avisos cujo fato deixou de existir.
  */
 export async function refreshOperationalAlerts(prisma: PrismaClient) {
   return prisma.$transaction(
@@ -181,22 +176,19 @@ export async function refreshOperationalAlerts(prisma: PrismaClient) {
       for (const so of f.soon) {
         const subject = `MATERIAL_FALTANTE:${so.id}`;
         active.add(subject);
-        const what = so.simpleMaterials.length
-          ? so.simpleMaterials
-              .map((m) => m.description)
-              .slice(0, 3)
-              .join(', ')
-          : 'materiais da compra formal';
-        for (const perm of ['os.gerenciar', 'compras.gerenciar'] as Permission[])
-          await notifyUsersWith(
-            tx,
-            SYSTEM,
-            perm,
-            'MATERIAL_FALTANTE',
-            subject,
-            `${serviceOrderCode(so.number)} (${so.customer.name}) tem produção para os próximos ${MATERIAL_ALERT_DAYS} dias e ainda falta: ${what}.`,
-            so.id,
-          );
+        const what = so.simpleMaterials
+          .map((m) => m.description)
+          .slice(0, 3)
+          .join(', ');
+        await notifyUsersWith(
+          tx,
+          SYSTEM,
+          'os.gerenciar',
+          'MATERIAL_FALTANTE',
+          subject,
+          `${serviceOrderCode(so.number)} (${so.customer.name}) tem produção para os próximos ${MATERIAL_ALERT_DAYS} dias e ainda falta: ${what}.`,
+          so.id,
+        );
       }
       // Resolve o que deixou de valer (fato corrigido, OS entregue, prazo normalizado…).
       const open = await tx.notification.findMany({
@@ -384,7 +376,7 @@ export async function loadToday(
       link: `/painel/os/${oldReady[0]!.serviceOrderId}?tab=qualidade`,
       priority: 'NORMAL',
     });
-  if (f.soon.length && can(perms, 'os.gerenciar', 'compras.gerenciar'))
+  if (f.soon.length && can(perms, 'os.gerenciar'))
     suggestions.push({
       key: 'materiais',
       title: `Providenciar materiais de ${f.soon.length} OS com produção próxima`,

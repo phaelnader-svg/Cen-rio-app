@@ -1,21 +1,13 @@
 import type { ModuleKey, Permission } from '@cenario/shared';
 import {
   ClipboardPlus,
-  Boxes,
   Building2,
-  ListChecks,
-  PackagePlus,
-  ShoppingCart,
-  Store,
   Contact,
-  PackageCheck,
   PackageOpen,
   CalendarRange,
-  Ruler,
   ClipboardList,
   FileSignature,
   GitPullRequestArrow,
-  HandHelping,
   Hammer,
   LayoutDashboard,
   RadioTower,
@@ -59,7 +51,6 @@ export const NAV_GROUPS = [
   'Início',
   'Serviços',
   'Produção',
-  'Compras',
   'Financeiro',
   'Administração',
 ] as const;
@@ -71,24 +62,15 @@ const GROUP_PREFIXES: [string, NavGroup][] = [
   ['/painel/pedidos', 'Serviços'],
   ['/painel/retiradas', 'Serviços'],
   ['/painel/roteiro', 'Serviços'],
-  ['/painel/recebimentos', 'Serviços'],
   ['/painel/os', 'Serviços'],
   ['/painel/qualidade', 'Serviços'],
   ['/painel/entregas', 'Serviços'],
   ['/painel/devolucoes', 'Serviços'],
   ['/painel/producao', 'Produção'],
-  ['/painel/ajuda', 'Produção'],
   ['/painel/reprogramacao', 'Produção'],
   ['/painel/competencias', 'Produção'],
-  ['/painel/medicoes', 'Produção'],
-  ['/painel/planejamento', 'Produção'],
   ['/painel/presenca', 'Produção'],
-  ['/painel/compras', 'Compras'],
-  ['/painel/fornecedores', 'Compras'],
-  ['/painel/recebimento-materiais', 'Compras'],
-  ['/painel/estoque', 'Compras'],
-  ['/painel/prontidao', 'Compras'],
-  ['/painel/materiais', 'Compras'],
+  ['/painel/estoque-oficina', 'Produção'],
   ['/painel/financeiro', 'Financeiro'],
 ];
 export function navGroupOf(href: string): NavGroup {
@@ -155,23 +137,11 @@ export const NAV: NavItem[] = [
     anyOf: ['entregas.ver', 'retiradas.ver'],
     module: 'logistica',
   },
-  {
-    href: '/painel/recebimentos',
-    label: 'Recebimentos',
-    icon: PackageCheck,
-    anyOf: ['recebimentos.registrar', 'pedidos.ver'],
-  },
   { href: '/painel/os', label: 'Ordens de serviço', icon: ClipboardList, anyOf: ['os.ver'] },
   {
-    href: '/painel/medicoes',
-    label: 'Medições',
-    icon: Ruler,
-    anyOf: ['medicoes.gerenciar', 'materiais.ver', 'materiais.aprovar'],
-  },
-  {
     // Reformulação, Fase 3: "A planejar" + "Planejamento de produção" numa tela só. Os endereços
-    // antigos continuam abrindo as abas correspondentes; "Planejamento de sexta" (medições) e
-    // "Competências da equipe" saíram do menu e seguem por link (Medições e Programação semanal).
+    // antigos continuam abrindo as abas correspondentes; "Competências da equipe" saiu do menu e
+    // segue por link (Programação semanal).
     href: '/painel/producao/programacao',
     label: 'Programação semanal',
     icon: CalendarRange,
@@ -198,13 +168,6 @@ export const NAV: NavItem[] = [
     ],
   },
   {
-    href: '/painel/ajuda',
-    label: 'Pedidos de ajuda',
-    icon: HandHelping,
-    anyOf: ['producao.ver', 'producao.planejar'],
-    module: 'ajuda',
-  },
-  {
     href: '/painel/reprogramacao',
     label: 'Reprogramação',
     icon: GitPullRequestArrow,
@@ -217,48 +180,12 @@ export const NAV: NavItem[] = [
     icon: Workflow,
     anyOf: ['producao.ver', 'producao.planejar', 'qualidade.gerenciar', 'os.gerenciar'],
   },
-  {
-    href: '/painel/compras',
-    label: 'Compras',
-    icon: ShoppingCart,
-    anyOf: ['compras.ver', 'compras.gerenciar', 'compras.aprovar'],
-  },
-  {
-    href: '/painel/fornecedores',
-    label: 'Fornecedores',
-    icon: Store,
-    anyOf: ['compras.ver', 'compras.gerenciar'],
-  },
-  // Sem filtro de propósito: registrar a chegada de material é permitido a QUALQUER funcionário
-  // (API: ANY_EMPLOYEE). Só a lista "aguardando conferência" exige estoque/compras — a tela a
-  // esconde de quem não tem essas permissões (B2).
-  { href: '/painel/recebimento-materiais', label: 'Recebimento de materiais', icon: PackagePlus },
-  {
-    href: '/painel/estoque',
-    label: 'Estoque',
-    icon: Boxes,
-    anyOf: ['estoque.ver', 'estoque.gerenciar', 'compras.ver'],
-  },
   // Reformulação, Fase 1: estoque simples da oficina (independente das OS).
   {
     href: '/painel/estoque-oficina',
     label: 'Estoque da oficina',
     icon: Warehouse,
     anyOf: ['estoque.ver', 'estoque.gerenciar'],
-  },
-  {
-    href: '/painel/prontidao',
-    label: 'Prontidão de materiais',
-    icon: ListChecks,
-    anyOf: ['os.ver', 'estoque.ver', 'compras.ver', 'materiais.ver'],
-  },
-  // Rodada 3 (F10-02): a lista consolidada (bruta) dos materiais aprovados não ficava acessível pelo
-  // menu (só por um link no planejamento).
-  {
-    href: '/painel/materiais',
-    label: 'Materiais aprovados',
-    icon: ClipboardList,
-    anyOf: ['materiais.ver', 'materiais.aprovar', 'compras.ver'],
   },
   {
     href: '/painel/qualidade',

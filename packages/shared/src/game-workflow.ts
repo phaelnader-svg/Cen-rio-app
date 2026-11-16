@@ -5,7 +5,19 @@
  * última posição física confirmada e a próxima ação para quem gerencia.
  * Função pura sobre os dados do retrato (mesmas regras oficiais: liberação, dependências).
  */
-import { MATERIAL_READINESS_LABEL, type MaterialReadiness } from './purchasing-domain';
+/**
+ * Situação do material da peça como o Cenário a envia (o processo formal de compras saiu do
+ * sistema; o rótulo fica aqui para o jogo continuar mostrando o que vier gravado).
+ */
+const MATERIAL_READINESS_LABEL: Record<string, string> = {
+  SEM_LEVANTAMENTO: 'Sem levantamento',
+  AGUARDANDO_APROVACAO: 'Aguardando aprovação',
+  AGUARDANDO_COMPRA: 'Aguardando compra',
+  AGUARDANDO_RECEBIMENTO: 'Aguardando recebimento',
+  PARCIALMENTE_DISPONIVEL: 'Parcialmente disponível',
+  COMPLETO: 'Completo',
+  COM_DIVERGENCIA: 'Com divergência',
+};
 import { RELEASE_BLOCKER_LABEL, type ReleaseBlocker } from './production-domain';
 import { FULFILLMENT_STAGE_LABEL, type FulfillmentStage } from './quality-domain';
 import { ACTIVITY_LABEL_GAME } from './game-domain';
@@ -162,7 +174,7 @@ export function pieceWorkflow(
     material: {
       readiness: p.readiness ?? 'SEM_LEVANTAMENTO',
       label:
-        MATERIAL_READINESS_LABEL[(p.readiness ?? 'SEM_LEVANTAMENTO') as MaterialReadiness] ??
+        MATERIAL_READINESS_LABEL[p.readiness ?? 'SEM_LEVANTAMENTO'] ??
         String(p.readiness),
     },
     responsible: running?.assignee ?? next?.assignee ?? p.upholstererName ?? null,

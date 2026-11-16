@@ -12,10 +12,10 @@ import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
+import { now as clockNow } from '../../core/clock';
 import { Errors } from '../../lib/errors';
 import { parseDateOnly, serviceOrderCode, snapshotAddress } from '../commercial/common';
 import { lockRow } from '../finance/common';
-import { todayIn } from '../measurements/service';
 import { idParams } from '../presenters';
 import { company } from '../production/common';
 import {
@@ -194,7 +194,9 @@ export async function deliverServiceOrderDirect(
         : {}) as unknown as Prisma.InputJsonValue,
       contactName: so.customer.name,
       contactPhone: so.customer.phone ?? null,
-      scheduledDate: parseDateOnly(todayIn(timezone))!,
+      scheduledDate: parseDateOnly(
+        new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(clockNow()),
+      )!,
       team: 'EQUIPE_PROPRIA',
       responsibleUserId: null,
       requiresInstallation: false,

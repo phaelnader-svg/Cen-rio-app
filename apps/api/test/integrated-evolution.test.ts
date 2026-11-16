@@ -4,7 +4,7 @@ import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import type { Client } from './helpers';
 import { WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
-import { createCustomer, createOrder, receiptBody } from './commercial-helpers';
+import { createCustomer, createOrder, markArrived } from './commercial-helpers';
 import { openServiceOrder } from './measurement-helpers';
 import { act, addOs, createPlan, publish, tabletOf, today, userIdOf } from './production-helpers';
 import { allowAll } from './labor-helpers';
@@ -116,13 +116,9 @@ describe.sequential('Cenários integrados da Evolução (Fase 8)', () => {
     ]);
     expect(
       (
-        await post(
-          admin,
-          '/api/v1/receipts',
-          receiptBody(
-            order.id,
-            order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
-          ),
+        await markArrived(
+          order.id,
+          order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
         )
       ).status,
     ).toBe(201);
@@ -388,12 +384,7 @@ describe.sequential('Cenários integrados da Evolução (Fase 8)', () => {
       reason: 'Tecido do cliente já na oficina',
     });
     expect((await act(m, corteB.id, 'start')).status).toBe(200);
-    // Ajuda (cenário 6): o Márcio pede apoio; ele continua o responsável principal da etapa.
-    const help = await post(m, '/api/v1/help-requests', { taskId: corteB.id, kind: 'PARAFUSAR' });
-    expect(help.status, JSON.stringify(help.body)).toBe(201);
     expect((await taskRow(corteB.id)).assigneeUserId).toBe(ids['Márcio']);
-    const support = await db().productionTask.findMany({ where: { supportForTaskId: corteB.id } });
-    expect(support.every((t) => t.assigneeUserId !== ids['Márcio'])).toBe(true);
     const url = `/api/v1/service-order-items/${B}/upholsterer`;
     const body = {
       userId: ids['Ricardo'],

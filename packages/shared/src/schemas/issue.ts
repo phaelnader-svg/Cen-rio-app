@@ -7,7 +7,7 @@ import {
   ISSUE_STATUSES,
 } from '../issue-domain';
 import { SKILLS } from '../help-domain';
-import { MATERIAL_UNITS } from '../measurements-domain';
+import { MATERIAL_UNITS } from '../materials-domain';
 import { PRIORITIES } from '../domain';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
 
@@ -27,8 +27,6 @@ export const openIssueSchema = z
     canContinue: z.boolean().optional(),
     material: z
       .object({
-        requirementId: idSchema.nullable().optional(),
-        stockItemId: idSchema.nullable().optional(),
         description: optionalText(200),
         quantity: z.number().positive('Informe a quantidade.').max(100000),
         unit: z.enum(MATERIAL_UNITS, { message: 'Escolha a unidade.' }),
@@ -54,11 +52,11 @@ export const openIssueSchema = z
     if (v.kind === 'MATERIAL') {
       if (!v.material)
         ctx.addIssue({ code: 'custom', path: ['material'], message: 'Informe o material.' });
-      else if (!v.material.requirementId && !v.material.stockItemId && !v.material.description)
+      else if (!v.material.description)
         ctx.addIssue({
           code: 'custom',
           path: ['material', 'description'],
-          message: 'Escolha o material ou descreva-o.',
+          message: 'Descreva o material.',
         });
     }
   });

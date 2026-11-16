@@ -83,7 +83,8 @@ export const ROTAS_REMOVIDAS: Record<Etapa, readonly Rota[]> = {
     ['GET', '/api/v1/stock-reservations'],
     ['POST', '/api/v1/stock-reservations'],
     ['GET', '/api/v1/material-leftovers'],
-    ['POST', `/api/v1/service-orders/${U}/material-list/${U}/reconcile`],
+    // A conciliação da lista simples com o custo formal (financeiro) FICA: também vale para
+    // lançamentos do financeiro, que não saem com Compras.
   ],
   // S5 — OS no fechamento: o módulo formal de recebimentos sai (D1)
   S5: [
@@ -111,12 +112,13 @@ export const ROTAS_REMOVIDAS: Record<Etapa, readonly Rota[]> = {
     ['POST', '/api/v1/finance/trip-costs/free'],
     ['GET', '/api/v1/finance/logistics-defaults'],
     ['POST', '/api/v1/finance/logistics-costs'],
-  ],
-  // S7 — interruptores e pedidos de ajuda (D3: remoção completa)
-  S7: [
+    // Interruptores: com a logística mantida, o interruptor 'logistica' e suas rotas ficam até a S6.
     ['GET', '/api/v1/modules'],
     ['GET', '/api/company/modules'],
     ['PUT', '/api/company/modules/materiais'],
+  ],
+  // S7 — pedidos de ajuda (D3: remoção completa)
+  S7: [
     ['GET', '/api/v1/help-requests'],
     ['POST', '/api/v1/help-requests'],
     ['GET', '/api/v1/help-requests/mine'],

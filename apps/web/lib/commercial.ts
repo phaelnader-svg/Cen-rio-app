@@ -14,7 +14,6 @@ import type {
   OrderSummaryDto,
   PageDto,
   PickupDto,
-  ReceiptDto,
   ServiceOrderDto,
   ServiceOrderRevisionDto,
   ServiceOrderSummaryDto,
@@ -134,42 +133,6 @@ export const usePickup = (id: string | null) =>
     queryKey: ['pickup', id],
     queryFn: () => api<PickupDto>(`/api/v1/pickups/${id}`),
     enabled: Boolean(id),
-  });
-
-export const useReceipts = (orderId?: string, enabled = true) =>
-  useQuery({
-    queryKey: ['receipts', orderId ?? 'all'],
-    queryFn: () => api<ReceiptDto[]>(`/api/v1/receipts${qs({ orderId })}`),
-    enabled,
-  });
-
-export interface PendingReceiptOrder {
-  id: string;
-  code: string;
-  status: string;
-  customer: CustomerSummaryDto;
-  items: {
-    id: string;
-    pieceType: string;
-    description: string;
-    quantity: number;
-    receivedQuantity: number;
-    pending: number;
-  }[];
-  pickups: {
-    id: string;
-    code: string;
-    status: string;
-    scheduledDate: string | null;
-    items: { orderItemId: string; quantity: number }[];
-  }[];
-}
-
-export const usePendingReceipts = (enabled = true) =>
-  useQuery({
-    queryKey: ['receipts-pending'],
-    queryFn: () => api<PendingReceiptOrder[]>('/api/v1/receipts/pending'),
-    enabled,
   });
 
 export const useServiceOrders = (

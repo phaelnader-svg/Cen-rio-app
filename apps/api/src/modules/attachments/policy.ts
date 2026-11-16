@@ -5,7 +5,7 @@ import type { PrismaClient, Tx } from '@cenario/db';
 export const VIEW_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   COMMERCIAL_ORDER: ['pedidos.ver', 'os.ver'],
   PICKUP: ['retiradas.ver', 'pedidos.ver'],
-  RECEIPT: ['pedidos.ver', 'recebimentos.registrar', 'os.ver'],
+  RECEIPT: ['pedidos.ver', 'os.ver'],
   SERVICE_ORDER: ['os.ver'],
   SERVICE_ORDER_ITEM: ['os.ver'],
   PRODUCTION_TASK: ['producao.ver', 'producao.planejar'],
@@ -22,7 +22,8 @@ export const VIEW_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
 export const MANAGE_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   COMMERCIAL_ORDER: ['pedidos.gerenciar'],
   PICKUP: ['retiradas.gerenciar'],
-  RECEIPT: ['recebimentos.registrar'],
+  // Recebimentos removidos: fotos antigas só para consulta.
+  RECEIPT: [],
   SERVICE_ORDER: ['os.gerenciar'],
   SERVICE_ORDER_ITEM: ['os.gerenciar'],
   PRODUCTION_TASK: ['producao.planejar'],

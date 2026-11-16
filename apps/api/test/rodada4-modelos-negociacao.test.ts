@@ -26,15 +26,8 @@ import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
 import { createTestApp, db, loginAdmin, resetDatabase, setupTablet } from './helpers';
-import { createCustomer, createOrder, createPickup, receiptBody } from './commercial-helpers';
-import {
-  createMeasurement,
-  fillAndSubmit,
-  gestorUserId,
-  grant,
-  nextFriday,
-} from './measurement-helpers';
-import { confirmedFabricPurchase, createSupplier, linen, ok, receive } from './purchasing-helpers';
+import { createCustomer, createOrder, createPickup, markArrived } from './commercial-helpers';
+import { gestorUserId, grant } from './measurement-helpers';
 import {
   act,
   addOs,
@@ -94,7 +87,7 @@ async function installSimplified() {
 
 // ─────────────────────────── Produção → qualidade → embalagem ───────────────────────────
 
-/** OS aberta (peça recebida) com UMA peça, mais materiais medidos, comprados e recebidos. */
+/** OS aberta com UMA peça (as peças marcadas como na oficina). */
 async function pieceWithMaterials(
   admin: Client,
   name: string,
@@ -104,11 +97,7 @@ async function pieceWithMaterials(
   const order = await createOrder(admin, customer, [
     { pieceType: piece.pieceType, description: name, quantity: 1 },
   ]);
-  const rec = await post(
-    admin,
-    '/api/v1/receipts',
-    receiptBody(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]),
-  );
+  const rec = await markArrived(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]);
   expect(rec.status, JSON.stringify(rec.body)).toBe(201);
   const so = await post(admin, '/api/v1/service-orders', {
     orderId: order.id,
@@ -123,27 +112,6 @@ async function pieceWithMaterials(
   });
   expect(so.status, JSON.stringify(so.body)).toBe(201);
   const item = so.body.items[0] as { id: string };
-  // Materiais pelo fluxo real: medição aprovada → compra confirmada → recebimento conferido.
-  const m = (
-    await createMeasurement(admin, {
-      serviceOrderId: so.body.id,
-      kind: 'ROTINA',
-      assigneeUserId: await gestorUserId(),
-      dueDate: nextFriday(),
-    })
-  ).body;
-  const sub = await fillAndSubmit(admin, m, { items: [linen(item.id)] });
-  expect(sub.status, JSON.stringify(sub.body)).toBe(200);
-  const appr = await post(admin, `/api/v1/measurements/${m.id}/request/approve`, {
-    version: sub.body.request.version,
-  });
-  expect(appr.status, JSON.stringify(appr.body)).toBe(200);
-  const req = await db().materialRequirement.findFirstOrThrow({
-    where: { serviceOrderId: so.body.id, origin: 'SOLICITACAO_APROVADA' },
-  });
-  const supplier = await createSupplier(admin, `Fornecedor ${name}`);
-  const po = await confirmedFabricPurchase(admin, supplier.id, req);
-  expect((await receive(admin, po.id, [ok(po.items[0].id, 12)])).status).toBe(201);
   return { soId: so.body.id as string, itemId: item.id };
 }
 

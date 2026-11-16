@@ -5,7 +5,7 @@
  * fiscal: tributos são estimativas configuradas pelo gestor.
  */
 import { formatNumber } from './domain';
-import { formatCents } from './purchasing-domain';
+import { formatCents } from './materials-domain';
 
 export const receivableCode = (n: number) => formatNumber('RC', n);
 export const payableCode = (n: number) => formatNumber('CPG', n);

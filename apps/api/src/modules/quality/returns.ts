@@ -1,7 +1,6 @@
 import {
   EVENT_TYPES,
   anyPermissionAudience,
-  receiptCorrectionProblem,
   returnCode,
   type PieceReturnDto,
   type ReturnStatus,
@@ -17,12 +16,8 @@ import {
   lockOrderItems,
   orderCode,
   parseDateOnly,
-  serviceOrderCode,
 } from '../commercial/common';
 import { settleLaborOfWithdrawal } from '../finance/withdrawal';
-import { lockRows } from '../purchasing/common';
-import { cancelRequirements } from '../purchasing/requirements';
-import { releaseReservationsOfItems } from '../purchasing/withdrawal';
 import { itemAllocations, refreshOrderStatus } from '../commercial/status';
 import { notify, taskNotice } from '../notifications/notify';
 import { onServiceOrderCancelled, protectCancelledServiceOrder } from '../production/cancellation';
@@ -102,34 +97,7 @@ async function reviewOf(
   r: ReturnRow,
   soItems: { id: string; serviceOrderId: string }[],
 ): Promise<PieceReturnDto['review']> {
-  if (r.status !== 'CONFIRMADA' || !soItems.length)
-    return { reservations: [], requirements: [], laborToReview: 0 };
-  const soIds = [...new Set(soItems.map((i) => i.serviceOrderId))];
-  const reservations = await db.stockReservation.findMany({
-    where: {
-      serviceOrderId: { in: soIds },
-      status: 'ATIVA',
-      serviceOrder: { status: 'ABERTA' },
-      OR: [{ materialRequirementId: null }, { requirement: { serviceOrderItemId: null } }],
-    },
-    include: {
-      stockItem: { select: { description: true } },
-      serviceOrder: { select: { number: true } },
-    },
-  });
-  // Etapa 2: necessidades "Toda a OS" não são canceladas pela devolução de uma peça (podem valer
-  // para as peças que ficaram): ficam aqui para o gestor manter ou cancelar.
-  const requirements = await db.materialRequirement.findMany({
-    where: {
-      serviceOrderId: { in: soIds },
-      serviceOrderItemId: null,
-      origin: 'SOLICITACAO_APROVADA',
-      status: 'ATIVA',
-      serviceOrder: { status: 'ABERTA' },
-    },
-    include: { serviceOrder: { select: { number: true } } },
-    orderBy: { createdAt: 'asc' },
-  });
+  if (r.status !== 'CONFIRMADA' || !soItems.length) return { laborToReview: 0 };
   const laborToReview = await db.productionPayable.count({
     where: {
       serviceOrderItemId: { in: soItems.map((i) => i.id) },
@@ -137,19 +105,6 @@ async function reviewOf(
     },
   });
   return {
-    reservations: reservations.map((x) => ({
-      id: x.id,
-      serviceOrder: serviceOrderCode(x.serviceOrder.number),
-      material: x.stockItem.description,
-      quantity: Number(x.quantity),
-    })),
-    requirements: requirements.map((x) => ({
-      id: x.id,
-      serviceOrderId: x.serviceOrderId!,
-      serviceOrder: serviceOrderCode(x.serviceOrder!.number),
-      material: x.description,
-      quantity: Number(x.quantity ?? 0),
-    })),
     laborToReview,
   };
 }
@@ -356,25 +311,15 @@ export async function confirmReturn(
   await lockOrder(tx, r.orderId);
   await lockOrderItems(tx, r.orderId);
   await validateLines(tx, r.orderId, r.lines, r.id);
-  // Etapa 2: mesma ordem de bloqueio da aprovação de medição (necessidades → OS). Uma aprovação
-  // concorrente ou termina antes (e a sucessora criada é vista e cancelada abaixo) ou espera e
-  // encontra a peça devolvida (409).
+  // Trava as OS das peças devolvidas (ordem estável) antes de mexer nelas.
   const pieces = r.lines.flatMap((l) => l.serviceOrderItemIds);
   if (pieces.length) {
-    const reqs = await tx.materialRequirement.findMany({
-      where: { serviceOrderItemId: { in: pieces }, status: 'ATIVA' },
-      select: { id: true },
-    });
-    await lockRows(
-      tx,
-      'material_requirements',
-      reqs.map((x) => x.id),
-    );
     const sos = await tx.serviceOrderItem.findMany({
       where: { id: { in: pieces } },
       select: { serviceOrderId: true },
     });
-    await lockRows(tx, 'service_orders', [...new Set(sos.map((x) => x.serviceOrderId))]);
+    for (const soId of [...new Set(sos.map((x) => x.serviceOrderId))].sort())
+      await tx.$queryRaw`SELECT id FROM service_orders WHERE id = ${soId}::uuid FOR UPDATE`;
   }
   const code = returnCode(r.number);
   const reason = `Devolvida ao cliente (${code}): ${r.reason}`;
@@ -424,17 +369,8 @@ export async function confirmReturn(
     });
     if (so.status !== 'ABERTA') continue;
     if (so.items.some((i) => i.fulfillmentStage !== 'DEVOLVIDA')) {
-      // Devolução parcial (Fase 12): só as reservas e os valores das peças devolvidas.
+      // Devolução parcial (Fase 12): só os valores das peças devolvidas.
       const items = returnedBySo.get(so.id) ?? [];
-      // Etapa 2: a necessidade da peça devolvida deixa de existir operacionalmente (CANCELADA,
-      // com o motivo da devolução) ANTES de liberar as reservas — não volta para "A comprar".
-      await cancelRequirements(
-        tx,
-        actor,
-        { serviceOrderId: so.id, serviceOrderItemId: { in: items } },
-        `Peça devolvida (${code}): ${r.reason}`,
-      );
-      await releaseReservationsOfItems(tx, actor, so.id, items, `Peça devolvida (${code})`);
       await settleLaborOfWithdrawal(
         tx,
         actor,
@@ -512,77 +448,6 @@ export async function cancelReturn(
   });
   await returnEvent(tx, actor, u);
   return u;
-}
-
-/**
- * Correção auditável de recebimento: o registro original é imutável; a correção fica numa
- * tabela própria e ajusta a quantidade recebida do item do pedido — só quando não deixa peças
- * em OS ou devolvidas sem cobertura.
- */
-export async function correctReceiptLine(
-  tx: Tx,
-  actor: ActorContext,
-  receiptLineId: string,
-  input: { newQuantity: number; reason: string },
-) {
-  const line = await tx.receiptLine.findUnique({
-    where: { id: receiptLineId },
-    include: { receipt: true, orderItem: true },
-  });
-  if (!line) throw Errors.notFound('Linha de recebimento');
-  await lockOrder(tx, line.receipt.orderId);
-  await lockOrderItems(tx, line.receipt.orderId);
-  const oi = await tx.commercialOrderItem.findUniqueOrThrow({ where: { id: line.orderItemId } });
-  const last = await tx.receiptCorrection.findFirst({
-    where: { receiptLineId },
-    orderBy: { createdAt: 'desc' },
-  });
-  const effective = last?.newQuantity ?? line.quantity;
-  if (effective === input.newQuantity) throw Errors.business('A quantidade informada é a atual.');
-  const alloc = await itemAllocations(tx, line.receipt.orderId);
-  const problem = receiptCorrectionProblem({
-    currentReceived: oi.receivedQuantity,
-    lineQuantity: effective,
-    newLineQuantity: input.newQuantity,
-    ordered: oi.quantity,
-    inServiceOrders: alloc.inServiceOrders(oi.id),
-    returned: oi.returnedQuantity,
-  });
-  if (problem) throw Errors.business(problem);
-  const correction = await tx.receiptCorrection.create({
-    data: {
-      receiptLineId,
-      orderItemId: oi.id,
-      previousQuantity: effective,
-      newQuantity: input.newQuantity,
-      reason: input.reason,
-      actorId: actor.userId,
-    },
-  });
-  await tx.commercialOrderItem.update({
-    where: { id: oi.id },
-    data: { receivedQuantity: oi.receivedQuantity - effective + input.newQuantity },
-  });
-  await refreshOrderStatus(tx, line.receipt.orderId);
-  await audit(tx, actor, {
-    action: 'receipt.corrected',
-    entityType: 'receipt',
-    entityId: line.receiptId,
-    summary: `Recebimento corrigido ("${oi.description}"): ${effective} → ${input.newQuantity}. Justificativa: ${input.reason}`,
-    changes: { quantity: { from: effective, to: input.newQuantity } },
-  });
-  await appendEvent(tx, actor, {
-    type: EVENT_TYPES.RECEIPT_CORRECTED,
-    aggregateType: 'receipt',
-    aggregateId: line.receiptId,
-    payload: { id: line.receiptId, orderId: line.receipt.orderId, correctionId: correction.id },
-    audience: anyPermissionAudience(
-      'pedidos.ver',
-      'recebimentos.registrar',
-      'devolucoes.gerenciar',
-    ),
-  });
-  return { correction, orderId: line.receipt.orderId };
 }
 
 /** OS cancelada: inspeções abertas são canceladas; a peça sai das entregas (S1: sem embalagem). */

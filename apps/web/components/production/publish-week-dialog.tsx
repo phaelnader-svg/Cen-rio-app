@@ -103,11 +103,6 @@ export function PublishWeekDialog({ planId, onClose }: { planId: string; onClose
                 ))}
               </ul>
             </div>
-            {p.materialsBlocked.length > 0 && (
-              <Alert tone="warn" title="Materiais pendentes (as etapas ficam bloqueadas)">
-                {p.materialsBlocked.map((x) => `${x.code}: ${x.label}`).join(' · ')}
-              </Alert>
-            )}
             {[...p.pendencies, ...p.conflicts].length > 0 && (
               <Alert tone="warn" title="Pendências e conflitos">
                 <ul>

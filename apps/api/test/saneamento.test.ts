@@ -21,7 +21,7 @@ import {
   createOrder,
   createPickup,
   panelUserWith,
-  receiptBody,
+  markArrived,
 } from './commercial-helpers';
 import { addOs, createPlan, day, tabletOf, today, userIdOf } from './production-helpers';
 
@@ -88,13 +88,9 @@ async function os(
     customer,
     pieces.map((p) => ({ pieceType: p.pieceType, description: p.description, quantity: 1 })),
   );
-  const rec = await post(
-    admin,
-    '/api/v1/receipts',
-    receiptBody(
-      order.id,
-      order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
-    ),
+  const rec = await markArrived(
+    order.id,
+    order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
   );
   expect(rec.status).toBe(201);
   const so = await post(admin, '/api/v1/service-orders', {
@@ -187,7 +183,7 @@ describe('A. Novo serviço: tipo de serviço por peça', () => {
     promisedDate: day(30),
     items,
   });
-  /** Novo serviço sem retirada (o cliente traz as peças) + chegada → OS automática. */
+  /** Novo serviço sem retirada (o cliente traz as peças): a OS nasce no fechamento (D1). */
   async function newService(admin: Client, name: string, items: Record<string, unknown>[]) {
     const r = await post(admin, '/api/v1/services', {
       customer: customer(name),
@@ -198,20 +194,8 @@ describe('A. Novo serviço: tipo de serviço por peça', () => {
       where: { id: r.body.order.id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
-    const rec = await post(admin, '/api/v1/receipts', {
-      orderId: order.id,
-      pickupId: null,
-      origin: 'ENTREGUE_PELO_CLIENTE',
-      lines: order.items.map((i) => ({
-        orderItemId: i.id,
-        quantity: i.quantity,
-        condition: 'BOA',
-        location: 'Área de recebimento',
-      })),
-    });
-    expect(rec.status, JSON.stringify(rec.body)).toBe(201);
     const so = await db().serviceOrder.findUniqueOrThrow({
-      where: { id: rec.body.generatedServiceOrder.id },
+      where: { id: r.body.serviceOrder.id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
     return { order, so };

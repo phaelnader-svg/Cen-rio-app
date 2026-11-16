@@ -39,7 +39,7 @@ import { createPickup, setTripParticipants, validatePickupItems } from './servic
 
 const VIEW = { session: 'WEB', permissions: ['retiradas.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['retiradas.gerenciar'] } as const;
-export const PICKUP_AUDIENCE = anyPermissionAudience('retiradas.ver', 'recebimentos.registrar');
+export const PICKUP_AUDIENCE = anyPermissionAudience('retiradas.ver');
 const EDITABLE: PickupStatus[] = ['AGUARDANDO_AGENDAMENTO', 'AGENDADA', 'COM_OCORRENCIA'];
 
 const fullInclude = {
@@ -350,7 +350,7 @@ export async function pickupRoutes(app: FastifyInstance) {
 
   /**
    * Registro manual do andamento (confirmações da logística nesta fase).
-   * "Recebida na oficina" só é atingida pelo registro de recebimento físico.
+   * "Recebida na oficina" marca as peças da retirada como chegadas (sem tela de recebimento).
    */
   app.post('/api/v1/pickups/:id/transition', { config: { access: MANAGE } }, async (request) => {
     const { id } = idParams.parse(request.params);
@@ -393,6 +393,7 @@ export async function pickupRoutes(app: FastifyInstance) {
           recordedById: actor.userId,
         },
       });
+      if (input.toStatus === 'RECEBIDA_NA_OFICINA') await markPickupArrived(tx, id);
       await refreshOrderStatus(tx, before.orderId);
       if (PICKUP_ASSIGNMENT_DONE.includes(input.toStatus))
         await resolvePickupAssignment(tx, actor, id);
@@ -409,4 +410,20 @@ export async function pickupRoutes(app: FastifyInstance) {
     });
     return loadPickupDto(prisma, id, can(request, 'pedidos.valores'));
   });
+}
+
+/** Soma as peças da retirada ao recebido de cada item do pedido (nunca além do pedido). */
+async function markPickupArrived(tx: Tx, pickupId: string) {
+  const items = await tx.pickupRequestItem.findMany({
+    where: { pickupId },
+    include: { orderItem: { select: { quantity: true, receivedQuantity: true } } },
+  });
+  for (const i of items) {
+    const next = Math.min(i.orderItem.quantity, i.orderItem.receivedQuantity + i.quantity);
+    if (next !== i.orderItem.receivedQuantity)
+      await tx.commercialOrderItem.update({
+        where: { id: i.orderItemId },
+        data: { receivedQuantity: next },
+      });
+  }
 }

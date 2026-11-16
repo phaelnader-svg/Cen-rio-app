@@ -18,7 +18,7 @@ import {
   createOrder,
   createPickup,
   panelUserWith,
-  receiptBody,
+  markArrived,
 } from './commercial-helpers';
 import { grant, openServiceOrder } from './measurement-helpers';
 import { day, tabletOf, today, userIdOf } from './production-helpers';
@@ -341,11 +341,7 @@ async function sameCustomer(admin: Client, n: number) {
     const order = await createOrder(admin, customer, [
       { pieceType: 'POLTRONA', description: `Poltrona ${k}`, quantity: 1 },
     ]);
-    await post(
-      admin,
-      '/api/v1/receipts',
-      receiptBody(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]),
-    );
+    await markArrived(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]);
     const so = await post(admin, '/api/v1/service-orders', {
       orderId: order.id,
       items: [

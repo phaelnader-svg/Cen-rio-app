@@ -27,10 +27,7 @@ export const PRODUCTION_KEYS = [
   'attendance-open-shifts',
   'attendance-leaves',
   'attendance-holidays',
-  // Fase 8 — ajuda e reprogramação
-  'my-help',
-  'help-requests',
-  'help-request',
+  // Fase 8 — reprogramação
   'reschedule-proposals',
   'planning-actions',
   'skills',

@@ -24,8 +24,6 @@ import { refreshOperationalAlerts, todayRoutes } from './modules/management/toda
 import { attachmentRoutes } from './modules/attachments/routes';
 import { authRoutes } from './modules/auth/routes';
 import { customerRoutes } from './modules/customers/routes';
-import { materialRoutes } from './modules/materials/routes';
-import { measurementRoutes } from './modules/measurements/routes';
 import { releaseDueTasks } from './modules/production/common';
 import { productionPlanRoutes } from './modules/production/plans';
 import { productionProductivityRoutes } from './modules/production/productivity';
@@ -50,20 +48,10 @@ import { valueRequestRoutes } from './modules/finance/value-requests';
 import { billingRoutes } from './modules/finance/billing';
 import { processIssueRisks } from './modules/issues/service';
 import { deviceCustomerPrivacy } from './core/device-privacy';
-import { processHelpQueue } from './modules/help/queue';
 import { testClockRoutes } from './modules/testing/routes';
-import { forecastRoutes } from './modules/purchasing/forecasts';
-import { leftoverRoutes } from './modules/purchasing/leftovers';
-import { purchaseOrderRoutes } from './modules/purchasing/purchase-orders';
-import { shortageRoutes } from './modules/purchasing/shortages';
-import { materialReceiptRoutes } from './modules/purchasing/receipts';
-import { stockRoutes } from './modules/purchasing/stock';
-import { supplierRoutes } from './modules/purchasing/suppliers';
 import { orderRoutes } from './modules/orders/routes';
 import { pickupRoutes } from './modules/pickups/routes';
 import { serviceRoutes } from './modules/services/routes';
-import { arrivalRoutes } from './modules/arrivals/routes';
-import { receiptRoutes } from './modules/receipts/routes';
 import { serviceOrderRoutes } from './modules/service-orders/routes';
 import { osMaterialRoutes } from './modules/os-materials/routes';
 import { serviceModelRoutes } from './modules/service-models/routes';
@@ -202,8 +190,6 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(orderRoutes);
   await app.register(pickupRoutes);
   await app.register(serviceRoutes);
-  await app.register(arrivalRoutes);
-  await app.register(receiptRoutes);
   await app.register(serviceOrderRoutes);
   await app.register(osMaterialRoutes);
   await app.register(serviceModelRoutes);
@@ -214,15 +200,6 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(inventoryRoutes);
   await app.register(attachmentRoutes);
   // Fase 3 — medições e solicitações de materiais
-  await app.register(measurementRoutes);
-  await app.register(materialRoutes);
-  await app.register(supplierRoutes);
-  await app.register(purchaseOrderRoutes);
-  await app.register(shortageRoutes);
-  await app.register(materialReceiptRoutes);
-  await app.register(stockRoutes);
-  await app.register(leftoverRoutes);
-  await app.register(forecastRoutes);
   await app.register(productionPlanRoutes);
   await app.register(productionProductivityRoutes);
   await app.register(productionTaskRoutes);
@@ -274,7 +251,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   let alertTimer: NodeJS.Timeout | null = null;
   let releaseTimer: NodeJS.Timeout | null = null;
   let absenceTimer: NodeJS.Timeout | null = null;
-  let helpTimer: NodeJS.Timeout | null = null;
+  let issueTimer: NodeJS.Timeout | null = null;
   let started = false;
 
   return {
@@ -326,16 +303,15 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           60_000,
         );
         absenceTimer.unref();
-        // Fase 8: fila de ajuda (atribuição quando alguém fica livre e alerta de atraso).
-        helpTimer = setInterval(
+        // Fase 9: prazos de resolução das ocorrências e propostas sem sentido.
+        issueTimer = setInterval(
           () =>
-            void processHelpQueue(prisma)
-              // Fase 9: prazos de resolução das ocorrências e propostas sem sentido.
-              .then(() => processIssueRisks(prisma))
-              .catch((err: unknown) => app.log.warn({ err }, 'Falha ao processar a fila de ajuda')),
+            void processIssueRisks(prisma).catch((err: unknown) =>
+              app.log.warn({ err }, 'Falha ao processar os prazos das ocorrências'),
+            ),
           30_000,
         );
-        helpTimer.unref();
+        issueTimer.unref();
       }
     },
     async close() {
@@ -343,7 +319,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       if (alertTimer) clearInterval(alertTimer);
       if (releaseTimer) clearInterval(releaseTimer);
       if (absenceTimer) clearInterval(absenceTimer);
-      if (helpTimer) clearInterval(helpTimer);
+      if (issueTimer) clearInterval(issueTimer);
       processor.stop();
       hub.stop();
       await feed.stop();

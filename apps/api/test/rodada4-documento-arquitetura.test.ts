@@ -60,23 +60,12 @@ describe('F1-01 — documento da Fase 1 (19 seções + matriz)', () => {
 });
 
 describe('F1-02b — reaproveitamento de módulos sem duplicação', () => {
-  it('recebimento de peças: um único ponto de criação, usado pela chegada no tablet', () => {
-    expect(filesWith(/\.receipt\.create\(/)).toEqual(['modules/receipts/service.ts']);
-    const arrivals = read('apps/api/src/modules/arrivals/routes.ts');
-    expect(arrivals).toMatch(/import \{[^}]*registerReceipt[^}]*\} from '\.\.\/receipts\/service'/);
-    expect(arrivals).toMatch(/registerReceipt\(/);
-  });
-
-  it('recebimento de materiais: um único ponto de criação, usado pela chegada de materiais', () => {
-    expect(filesWith(/\.materialReceipt\.create\(/)).toEqual(['modules/purchasing/receipts.ts']);
-    const arrivals = read('apps/api/src/modules/arrivals/routes.ts');
-    expect(arrivals).toMatch(
-      /import \{[^}]*registerMaterialReceipt[^}]*\} from '\.\.\/purchasing\/receipts'/,
-    );
-  });
-
-  it('estoque: movimentações nascem num único lugar', () => {
-    expect(filesWith(/\.stockMovement\.create\(/)).toEqual(['modules/purchasing/common.ts']);
+  // Recebimentos, recebimento de materiais e estoque formal saíram (remoção real S4/S5): ninguém
+  // mais cria esses registros.
+  it('nenhum código cria recebimento, recebimento de material ou movimento de estoque formal', () => {
+    expect(filesWith(/\.receipt\.create\(/)).toEqual([]);
+    expect(filesWith(/\.materialReceipt\.create\(/)).toEqual([]);
+    expect(filesWith(/\.stockMovement\.create\(/)).toEqual([]);
   });
 
   it('Central do Gestor estende a Central existente (uma rota, uma montagem)', () => {

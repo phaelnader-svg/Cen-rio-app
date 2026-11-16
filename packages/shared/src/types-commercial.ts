@@ -1,11 +1,8 @@
 import type { OperationalState } from './operational-state';
 import type { OrderDeadlineState, ServiceDeadline } from './deadline-domain';
-import type { MaterialReadiness } from './purchasing-domain';
 import type {
   AttachmentEntity,
   CustomerKind,
-  MaterialKind,
-  MaterialSourcing,
   MeasurementKind,
   OrderServiceState,
   OrderStatus,
@@ -249,34 +246,9 @@ export interface ServiceOrderItemDto {
   measuredAt: string | null;
   measuredBy: string | null;
   measurementKind: MeasurementKind | null;
-  /** Onde a peça foi guardada no recebimento (texto livre do recebimento). */
-  locations: string[];
-  /**
-   * Reformulação, Fase 2: localização ATUAL registrada (mapa da oficina); null = ainda não
-   * movida desde o recebimento (vale o texto de `locations`).
-   */
+  /** Reformulação, Fase 2: localização ATUAL registrada (mapa da oficina); null = sem registro. */
   currentLocation: { id: string; label: string } | null;
   version: number;
-}
-
-export interface MaterialRequirementDto {
-  id: string;
-  serviceOrderItemId: string | null;
-  kind: MaterialKind;
-  description: string;
-  quantity: number | null;
-  unit: string | null;
-  sourcing: MaterialSourcing;
-  notes: string | null;
-  createdAt: string;
-  /** PREVISAO_MANUAL (não conferida) ou SOLICITACAO_APROVADA (conferida na Fase 3). */
-  origin: 'PREVISAO_MANUAL' | 'SOLICITACAO_APROVADA' | 'PREVISAO_COMPRA';
-  /** Etapa 2: ATIVA (vale hoje), SUBSTITUIDA (por nova medição) ou CANCELADA (histórico). */
-  status: 'ATIVA' | 'SUBSTITUIDA' | 'CANCELADA';
-  closeReason: string | null;
-  color: string | null;
-  foamDensity: string | null;
-  thicknessCm: number | null;
 }
 
 /** INFORMATIVO (etapa E1): mostrado só como aviso; não impede o início da produção. */
@@ -285,11 +257,6 @@ export type ReadinessState = 'OK' | 'PENDENTE' | 'FASE_FUTURA' | 'INFORMATIVO';
 export interface ServiceOrderReadinessDto {
   measurements: ReadinessState;
   technicalLead: ReadinessState;
-  materials: ReadinessState;
-  /** Prontidão detalhada de materiais (Fase 4). */
-  materialsState: MaterialReadiness;
-  /** Etapa E1: travas de materiais ligadas? Desligadas (padrão), materiais e medições só informam. */
-  materialsGate: boolean;
   /** Etapa E1: linhas da lista simples da OS ainda não disponíveis na oficina (só aviso). */
   simpleMaterialsPending: number;
   scheduling: ReadinessState;
@@ -323,7 +290,6 @@ export interface ServiceOrderDto extends ServiceOrderSummaryDto {
   technicalInstructions: string | null;
   notes: string | null;
   items: ServiceOrderItemDto[];
-  materials: MaterialRequirementDto[];
   readiness: ServiceOrderReadinessDto;
   cancelledAt: string | null;
   cancelReason: string | null;
@@ -409,6 +375,8 @@ export interface NewServiceResultDto {
     /** O cliente entrega as peças na tapeçaria (sem retirada). */
     customerDropOff: boolean;
   };
+  /** OS criada no fechamento do serviço (null só se nenhuma peça ficou livre). */
+  serviceOrder: { id: string; code: string } | null;
   /** null quando o cliente entrega as peças (sem retirada). */
   pickup: {
     id: string;

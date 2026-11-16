@@ -5,7 +5,6 @@ import {
   anyPermissionAudience,
   evaluateRelease,
   formatServiceOrderItemCode,
-  q3,
   issueCode,
   localParts,
   type IssueKind,
@@ -21,12 +20,10 @@ import type { FastifyRequest } from 'fastify';
 import { audit } from '../../core/audit';
 import { now as clockNow } from '../../core/clock';
 import { appendEvent } from '../../core/events/append';
-import { moduleEnabled } from '../../core/modules';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { notify, taskNotice } from '../notifications/notify';
-import { onReadinessChanged, readinessOf } from '../purchasing/common';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -314,60 +311,6 @@ export async function domainTaskEvent(
   });
 }
 
-// ─────────────────────────── Materiais por tarefa (Fase 6) ───────────────────────────
-
-type Readiness = Awaited<ReturnType<typeof readinessOf>>;
-
-/**
- * Reformulação, Fase 1: travas de materiais ligadas? (interruptor "materiais"; padrão DESLIGADO
- * desde a etapa E1: só travam se o gestor ligar). Memorizado por cache de prontidão: uma reavaliação lê a configuração
- * uma vez só, e todas as tarefas daquela passada usam a mesma decisão.
- */
-const gateMemo = new WeakMap<Map<string, Readiness>, Promise<boolean>>();
-export function materialsGateOn(db: Tx | PrismaClient, cache?: Map<string, Readiness>) {
-  if (!cache) return moduleEnabled(db, 'materiais');
-  let p = gateMemo.get(cache);
-  if (!p) {
-    p = moduleEnabled(db, 'materiais');
-    gateMemo.set(cache, p);
-  }
-  return p;
-}
-
-/**
- * Materiais de uma tarefa. Sem vínculos, vale a prontidão da OS inteira
- * (comportamento conservador da Fase 5). Com vínculos, bastam os materiais
- * vinculados estarem cobertos (recebidos/reservados) — desde que não haja
- * medição ou solicitação pendente na OS (que poderia criar novas necessidades).
- *
- * Fase 1: com as travas de materiais DESLIGADAS, materiais nunca seguram a tarefa (a
- * disponibilidade vira só informação de planejamento). Dependências, responsável, bloqueios
- * manuais, ocorrências e horário continuam valendo como antes.
- */
-export async function taskMaterialsReady(
-  db: Tx | PrismaClient,
-  task: { id: string; serviceOrderId: string; requiresMaterials: boolean },
-  cache = new Map<string, Readiness>(),
-): Promise<boolean> {
-  if (!task.requiresMaterials) return true;
-  if (!(await materialsGateOn(db, cache))) return true;
-  let r = cache.get(task.serviceOrderId);
-  if (!r) {
-    r = await readinessOf(db, task.serviceOrderId);
-    cache.set(task.serviceOrderId, r);
-  }
-  const links = await db.productionTaskMaterial.findMany({
-    where: { taskId: task.id },
-    select: { requirementId: true },
-  });
-  if (!links.length) return r.state === 'COMPLETO';
-  if (r.openMeasurements + r.pendingRequests + r.forecasts > 0) return false;
-  return links.every((l) => {
-    const line = r.lines.find((x) => x.requirementId === l.requirementId);
-    return Boolean(line) && q3(line!.covered) >= q3(line!.need);
-  });
-}
-
 // ─────────────────────────── Liberação ───────────────────────────
 
 /** Fase 9: ocorrência aberta que impede a tarefa (bloqueio total ou "faz outra atividade"). */
@@ -431,7 +374,6 @@ export async function reevaluateTasks(
   if (!taskIds.length) return 0;
   let changed = 0;
   await lockTasks(tx, taskIds);
-  const readiness = new Map<string, Readiness>();
   const blocked: BlockedTask[] = [];
   const tz = (await company(tx)).timezone;
   const starts = new Map<string, Date | null>();
@@ -447,24 +389,14 @@ export async function reevaluateTasks(
       where: { id },
       include: {
         plan: { select: { status: true, mode: true } },
-        serviceOrder: {
-          select: {
-            status: true,
-            items: { select: { id: true, orderItem: { select: { receivedQuantity: true } } } },
-          },
-        },
+        serviceOrder: { select: { status: true } },
         dependsOn: { include: { dependsOn: { select: { status: true } } } },
       },
     });
     if (!t || !(TASK_WAITING as readonly string[]).includes(t.status)) continue;
-    const materialsReady = await taskMaterialsReady(tx, t, readiness);
     const openIssue = await hasBlockingIssue(tx, t.id);
-    const items = t.serviceOrderItemId
-      ? t.serviceOrder.items.filter((i) => i.id === t.serviceOrderItemId)
-      : t.serviceOrder.items;
     const result = evaluateRelease({
       osActive: t.serviceOrder.status === 'ABERTA',
-      pieceReceived: items.length > 0 && items.every((i) => i.orderItem.receivedQuantity > 0),
       // Tarefa de apoio (Fase 8) nasce de uma tarefa principal já liberada.
       published:
         t.plan?.status === 'PUBLICADO' ||
@@ -474,8 +406,6 @@ export async function reevaluateTasks(
       dependenciesDone: t.dependsOn.every(
         (d) => d.dependsOn.status === 'CONCLUIDA' || d.dependsOn.status === 'CANCELADA',
       ),
-      materialsReady,
-      requiresMaterials: t.requiresMaterials,
       manuallyBlocked: Boolean(t.blockedReason),
       openIssue,
       scheduledAt: t.scheduledAt,
@@ -541,15 +471,6 @@ export async function waitingTaskIds(
   return rows.map((r) => r.id);
 }
 
-// Mudança de prontidão de materiais (Fase 4) reavalia as tarefas que exigem materiais.
-onReadinessChanged(async (tx, actor, serviceOrderId) => {
-  await reevaluateTasks(
-    tx,
-    actor,
-    await waitingTaskIds(tx, { serviceOrderId, requiresMaterials: true }),
-  );
-});
-
 /**
  * Libera as tarefas cujo horário programado chegou (executado periodicamente e
  * idempotente: tarefas já liberadas não geram novos eventos).
@@ -595,18 +516,19 @@ export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
         take: 500,
       })
     : [];
-  // Etapa E1: com as travas de materiais desligadas (padrão), tarefas que continuam gravadas como
-  // bloqueadas por MATERIAIS (de antes da mudança do padrão, ou de quando a trava estava ligada)
-  // são reavaliadas aqui e liberadas, sem depender de alguém mexer nelas. Idempotente.
-  const byMaterials = (await materialsGateOn(prisma))
-    ? []
-    : await prisma.productionTask.findMany({
-        where: { status: { in: [...TASK_WAITING] }, blockers: { has: 'MATERIAIS' } },
-        select: { id: true },
-        orderBy: { id: 'asc' },
-        take: 500,
-      });
-  const ids = [...new Set([...byTime, ...byStart, ...byMaterials].map((t) => t.id))].sort();
+  // Remoção dos módulos de materiais e recebimentos: tarefas que continuam gravadas com os
+  // bloqueios antigos (MATERIAIS, PECA_NAO_RECEBIDA) são reavaliadas aqui e liberadas, sem
+  // depender de alguém mexer nelas. Idempotente.
+  const byLegacy = await prisma.productionTask.findMany({
+    where: {
+      status: { in: [...TASK_WAITING] },
+      blockers: { hasSome: ['MATERIAIS', 'PECA_NAO_RECEBIDA'] },
+    },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+    take: 500,
+  });
+  const ids = [...new Set([...byTime, ...byStart, ...byLegacy].map((t) => t.id))].sort();
   if (!ids.length) return 0;
   const system: ActorContext = { userId: null, sessionId: null, ip: null, requestId: null };
   return prisma.$transaction(async (tx) => {
@@ -615,7 +537,7 @@ export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
       await audit(tx, system, {
         action: 'production.release_tick',
         entityType: 'production_task',
-        summary: `${changed} tarefa(s) reavaliada(s) pelo horário programado, data de início ou travas de materiais desligadas.`,
+        summary: `${changed} tarefa(s) reavaliada(s) pelo horário programado, data de início ou bloqueios antigos removidos.`,
       });
     return changed;
   });

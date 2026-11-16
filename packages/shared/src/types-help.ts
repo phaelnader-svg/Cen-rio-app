@@ -1,7 +1,4 @@
 import type {
-  CandidateEvaluation,
-  HelpKind,
-  HelpStatus,
   PlanningActionKind,
   ProposalAlternative,
   ProposalKind,
@@ -15,45 +12,6 @@ export interface HelpTaskRefDto {
   code: string;
   title: string;
   status: TaskStatus;
-}
-
-export interface HelpRequestEventDto {
-  id: string;
-  kind: string;
-  fromStatus: string | null;
-  toStatus: string | null;
-  note: string | null;
-  actor: string | null;
-  /** Candidatos avaliados (motivos e pontuação) quando houve tentativa de atribuição. */
-  candidates: CandidateEvaluation[] | null;
-  createdAt: string;
-}
-
-export interface HelpRequestDto {
-  id: string;
-  number: number;
-  code: string;
-  task: HelpTaskRefDto;
-  serviceOrder: { id: string; code: string };
-  requester: { userId: string; displayName: string };
-  helper: { userId: string; displayName: string } | null;
-  kind: HelpKind;
-  estimatedMinutes: number;
-  urgent: boolean;
-  justification: string | null;
-  note: string | null;
-  status: HelpStatus;
-  supportTask: HelpTaskRefDto | null;
-  /** Minutos desde o pedido (até atribuição/fim). */
-  waitingMinutes: number;
-  proposalId: string | null;
-  createdAt: string;
-  assignedAt: string | null;
-  completedAt: string | null;
-  cancelledAt: string | null;
-  cancelReason: string | null;
-  events?: HelpRequestEventDto[];
-  version: number;
 }
 
 export interface ProposalTaskDto extends HelpTaskRefDto {
@@ -73,7 +31,6 @@ export interface RescheduleProposalDto {
   alternatives: ProposalAlternative[];
   proposedAlternativeId: string;
   chosenAlternativeId: string | null;
-  helpRequest: { id: string; code: string } | null;
   decidedBy: string | null;
   decidedAt: string | null;
   decisionNote: string | null;
@@ -88,7 +45,6 @@ export interface PlanningActionDto {
   reason: string;
   actor: string | null;
   task: HelpTaskRefDto | null;
-  helpRequestCode: string | null;
   proposalCode: string | null;
   createdAt: string;
 }

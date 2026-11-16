@@ -80,106 +80,6 @@ const informedTotal = async (serviceOrderId: string) =>
 
 // ════════════════════════════════════════════════════════════════════ 11.1 materiais da OS
 describe('Materiais necessários da OS (lista simples)', () => {
-  it('cadastro, edição e as 4 combinações independentes de comprado × na oficina; aviso informativo', async () => {
-    const admin = await loginAdmin(app);
-    const so = await openServiceOrder(admin, 'Cliente Materiais');
-    const combos = [
-      {
-        description: 'Tecido linho bege',
-        quantity: 12,
-        unit: 'm',
-        purchased: true,
-        available: true,
-      },
-      { description: 'Espuma D33', quantity: 2, unit: 'placa', purchased: true, available: false },
-      {
-        description: 'Percinta elástica',
-        quantity: 10,
-        unit: 'm',
-        purchased: false,
-        available: true,
-      },
-      {
-        description: 'Cola de contato',
-        quantity: 1,
-        unit: 'un',
-        purchased: false,
-        available: false,
-      },
-    ];
-    let list: J;
-    for (const c of combos) list = ok(await send(admin, 'POST', L(so.id), c), 201);
-    expect(list.materials.map((m: J) => [m.description, m.purchased, m.available])).toEqual(
-      combos.map((c) => [c.description, c.purchased, c.available]),
-    );
-    expect(list.summary).toEqual({ total: 4, purchased: 2, available: 2, notAvailable: 2 });
-    expect(list.notice).toBe('Existem materiais ainda não disponíveis na oficina.');
-    // Nenhum indicador implica o outro: marcar "na oficina" não marca "comprado" e vice-versa.
-    const cola = list.materials[3];
-    list = ok(
-      await send(admin, 'PATCH', `${L(so.id)}/${cola.id}`, {
-        available: true,
-        version: cola.version,
-      }),
-    );
-    expect(list.materials[3]).toMatchObject({ available: true, purchased: false });
-    const cola2 = list.materials[3];
-    list = ok(
-      await send(admin, 'PATCH', `${L(so.id)}/${cola2.id}`, {
-        purchased: true,
-        version: cola2.version,
-      }),
-    );
-    expect(list.materials[3]).toMatchObject({ available: true, purchased: true });
-    // Desmarcar funciona dos dois lados, de forma independente.
-    const cola3 = list.materials[3];
-    list = ok(
-      await send(admin, 'PATCH', `${L(so.id)}/${cola3.id}`, {
-        available: false,
-        version: cola3.version,
-      }),
-    );
-    expect(list.materials[3]).toMatchObject({ available: false, purchased: true });
-    // Edição de campos (descrição, quantidade, observação) com versão.
-    const espuma = list.materials[1];
-    list = ok(
-      await send(admin, 'PATCH', `${L(so.id)}/${espuma.id}`, {
-        description: 'Espuma D33 — 5 cm',
-        quantity: 3,
-        notes: 'Conferir densidade',
-        version: espuma.version,
-      }),
-    );
-    expect(list.materials[1]).toMatchObject({
-      description: 'Espuma D33 — 5 cm',
-      quantity: 3,
-      notes: 'Conferir densidade',
-    });
-    // Versão antiga: conflito (nada muda).
-    expect(
-      (
-        await send(admin, 'PATCH', `${L(so.id)}/${espuma.id}`, {
-          available: true,
-          version: espuma.version,
-        })
-      ).status,
-    ).toBe(409);
-    // Nada formal foi criado: nenhuma compra, reserva, movimento de estoque, conta a pagar.
-    expect(await db().purchaseOrder.count()).toBe(0);
-    expect(await db().stockReservation.count()).toBe(0);
-    expect(await db().stockMovement.count()).toBe(0);
-    expect(await db().accountPayable.count()).toBe(0);
-    expect(await db().inventoryAdjustment.count()).toBe(0);
-    // Auditoria de cada mudança, com valores antes/depois.
-    const audits = await db().auditLog.findMany({
-      where: { entityType: 'service_order_material' },
-    });
-    expect(audits.filter((a) => a.action === 'service_order.material_list_added')).toHaveLength(4);
-    expect(
-      audits.filter((a) => a.action === 'service_order.material_list_updated').length,
-    ).toBeGreaterThanOrEqual(4);
-  });
-
   it('custo opcional: em branco ≠ zero; só o comprado vira realizado; edição, desmarcar e remover lançam a diferença (sem duplicar)', async () => {
     const admin = await loginAdmin(app);
     const so = await openServiceOrder(admin, 'Cliente Custos');
@@ -384,17 +284,6 @@ describe('Materiais necessários da OS (lista simples)', () => {
     // O histórico continua legível.
     expect(ok(await admin.get(L(so.id))).materials).toHaveLength(1);
   });
-
-  it('compatibilidade: necessidades antigas e compras formais continuam como estavam', async () => {
-    const admin = await loginAdmin(app);
-    const { so, reqs } = await serviceOrderWith(admin, 'missing');
-    const before = await db().materialRequirement.count();
-    ok(await send(admin, 'POST', L(so.id), { description: 'Tecido novo (lista simples)' }), 201);
-    expect(await db().materialRequirement.count()).toBe(before);
-    expect(reqs.length).toBeGreaterThan(0);
-    const readiness = ok(await admin.get(`/api/v1/service-orders/${so.id}/material-readiness`));
-    expect(readiness.state).not.toBe('COMPLETO');
-  });
 });
 
 // ════════════════════════════════════════════════════════════════════ 11.2 produção
@@ -424,48 +313,14 @@ async function publishedSofa(materials: 'none' | 'missing' | 'complete', gate?: 
 const taskOf = async (admin: Client, id: string) =>
   ok(await admin.get(`/api/v1/production-tasks/${id}`));
 
-describe('Produção sem trava de materiais (interruptor "materiais")', () => {
-  it('LIGADO (explicitamente; o padrão é desligado desde a E1) = comportamento anterior: sem levantamento, corte bloqueado por MATERIAIS', async () => {
-    const { t } = await publishedSofa('none', true);
-    expect(t('CORTE_TECIDO')).toMatchObject({ status: 'BLOQUEADA', blockers: ['MATERIAIS'] });
-  });
-
-  it('DESLIGADO: OS sem materiais e com materiais pendentes iniciam; pausa, retomada e conclusão; religar volta a travar o que aguarda', async () => {
-    const { admin, so, t } = await publishedSofa('missing', true);
-    const corte = t('CORTE_TECIDO');
-    expect(corte.blockers).toContain('MATERIAIS');
-    // Lista simples com material pendente (não disponível): só aviso.
-    ok(await send(admin, 'POST', L(so.id), { description: 'Tecido', available: false }), 201);
-    ok(await setModule(admin, 'materiais', false));
-    // A troca reavalia na hora: MATERIAIS sai; dependências e horário continuam valendo.
-    const released = await taskOf(admin, corte.id);
-    expect(released.blockers).not.toContain('MATERIAIS');
-    expect(released.status).toBe('LIBERADA');
-    const costura = await taskOf(admin, t('COSTURA').id);
-    expect(costura.blockers).toContain('DEPENDENCIAS');
-    expect(costura.blockers).not.toContain('MATERIAIS');
-    // Execução completa pelo tablet (responsável, início, pausa, retomada, conclusão).
-    const ricardo = await tabletOf(app, admin, 'Ricardo', '482915');
-    expect((await act(ricardo, corte.id, 'start')).status).toBe(200);
-    const paused = await act(ricardo, corte.id, 'pause', { reason: 'AGUARDANDO_ORIENTACAO' });
-    expect(paused.status, JSON.stringify(paused.body)).toBe(200);
-    expect((await act(ricardo, corte.id, 'resume')).status).toBe(200);
-    expect((await act(ricardo, corte.id, 'complete', { note: 'Corte feito' })).status).toBe(200);
-    const done = await taskOf(admin, corte.id);
-    expect(done.status).toBe('CONCLUIDA');
-    // O tablet mostra a disponibilidade da lista simples, sem custos.
-    const detail = ok(await ricardo.get(`/api/v1/production-tasks/${t('COSTURA').id}`));
-    expect(JSON.stringify(detail)).not.toMatch(/costCents/);
-    // Religar: a tarefa que ainda aguarda volta a ser travada por material (a dependência já foi
-    // cumprida pelo corte concluído); a tarefa concluída não muda.
-    ok(await setModule(admin, 'materiais', true));
-    expect((await taskOf(admin, t('COSTURA').id)).blockers).toEqual(['MATERIAIS']);
-    expect((await taskOf(admin, corte.id)).status).toBe('CONCLUIDA');
-  });
-
-  it('DESLIGADO: outras regras continuam — tarefa de outra pessoa não inicia; bloqueio manual segue valendo', async () => {
+describe('Produção sem trava de materiais (o interruptor "materiais" foi removido)', () => {
+  it('material não trava a produção; outras regras continuam — tarefa de outra pessoa não inicia', async () => {
     const { admin, t } = await publishedSofa('none');
-    ok(await setModule(admin, 'materiais', false));
+    // Remoção de Compras/Medições: o interruptor deixou de existir (404) e nada trava por material.
+    expect(
+      (await send(admin, 'PUT', '/api/company/modules/materiais', { enabled: false, version: 0 }))
+        .status,
+    ).toBe(404);
     const corte = await taskOf(admin, t('CORTE_TECIDO').id);
     expect(corte.status).toBe('LIBERADA');
     const marcio = await tabletOf(app, admin, 'Márcio', '736152');
@@ -727,13 +582,8 @@ describe('Logística desligável e reversível', () => {
 
   it('padrão: instalação existente continua com a logística ligada (nada muda sem decisão do gestor)', async () => {
     const admin = await loginAdmin(app);
-    expect(ok(await admin.get('/api/v1/modules'))).toMatchObject({
-      logistica: true,
-      // Etapa E1 (decisão do proprietário): as travas de materiais vêm desligadas por padrão.
-      materiais: false,
-      ajuda: true,
-    });
-    expect(ok<J>(await admin.get('/api/v1/modules'))).not.toHaveProperty('embalagem'); // S1
+    // S1 tirou "embalagem"; a remoção dos módulos tirou "ajuda" e "materiais".
+    expect(ok(await admin.get('/api/v1/modules'))).toEqual({ logistica: true });
     expect(await db().moduleSetting.count()).toBe(0);
   });
 });

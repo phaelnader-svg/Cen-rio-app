@@ -16,10 +16,12 @@ import { z } from 'zod';
  * entregas) e "materiais" controla as travas de materiais na liberação da produção.
  */
 /**
- * Reformulação S1: "embalagem" deixou de existir (a embalagem não é mais etapa). Um registro antigo
- * com essa chave em `module_settings` é ignorado por `resolveModules` (chave desconhecida).
+ * Reformulação S1: "embalagem" deixou de existir (a embalagem não é mais etapa). Remoção dos módulos
+ * (2026-11): "ajuda" (pedidos de ajuda) e "materiais" (travas de materiais) também deixaram de
+ * existir. Registros antigos com essas chaves em `module_settings` são ignorados por
+ * `resolveModules` (chave desconhecida).
  */
-export const MODULE_KEYS = ['logistica', 'ajuda', 'materiais', 'ambiente_interativo'] as const;
+export const MODULE_KEYS = ['logistica', 'ambiente_interativo'] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
 export interface ModuleDefinition {
@@ -35,20 +37,6 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
     description:
       'Retiradas, entregas agendadas, roteiro e custos de viagem. Desligada, a entrega é confirmada direto na OS ("Marcar como entregue"); o histórico de viagens fica só para consulta. Só pode ser desligada sem entregas e retiradas em andamento.',
     defaultEnabled: true,
-    configurable: true,
-  },
-  ajuda: {
-    label: 'Pedidos de ajuda',
-    description:
-      'Pedir ajudante, ajuda urgente e apoio prolongado pelo tablet, com fila e avisos ao gestor. Desligada, a produção continua normal e o histórico fica só para consulta.',
-    defaultEnabled: true,
-    configurable: true,
-  },
-  materiais: {
-    label: 'Travas de materiais na produção',
-    description:
-      'Ligada, as etapas que exigem material só são liberadas com compra recebida ou reserva. Desligada (padrão), a produção começa mesmo com materiais pendentes: a disponibilidade vira só aviso, e compras, reservas e estoque formais continuam disponíveis para quem quiser usar.',
-    defaultEnabled: false,
     configurable: true,
   },
   ambiente_interativo: {
@@ -82,20 +70,27 @@ export function resolveModules(rows: readonly { key: string; enabled: boolean }[
 /** Avisos de tablet/painel que pertencem a um módulo (escondidos quando ele está desligado). */
 export const MODULE_NOTIFICATION_KINDS: Record<ModuleKey, readonly string[]> = {
   logistica: ['ENTREGA_ATRIBUIDA', 'ENTREGA_AGENDADA', 'ENTREGA_CONCLUIDA'],
-  ajuda: [
-    'AJUDA_SOLICITADA',
-    'AJUDA_ATRIBUIDA',
-    'AJUDA_EM_ESPERA',
-    'AJUDA_CANCELADA',
-    'AJUDA_CONCLUIDA',
-  ],
-  materiais: [],
   ambiente_interativo: [],
 };
 
-/** Tipos de notificação a esconder no estado atual (vazio = nenhum). */
+/**
+ * Avisos de funcionalidades removidas do sistema (pedidos de ajuda, compras, medições e
+ * recebimentos): os registros antigos ficam no banco, mas nunca aparecem mais.
+ */
+export const RETIRED_NOTIFICATION_KINDS: readonly string[] = [
+  'AJUDA_SOLICITADA',
+  'AJUDA_ATRIBUIDA',
+  'AJUDA_EM_ESPERA',
+  'AJUDA_CANCELADA',
+  'AJUDA_CONCLUIDA',
+];
+
+/** Tipos de notificação a esconder no estado atual. */
 export function hiddenNotificationKinds(state: ModuleState): string[] {
-  return MODULE_KEYS.filter((k) => !state[k]).flatMap((k) => MODULE_NOTIFICATION_KINDS[k]);
+  return [
+    ...RETIRED_NOTIFICATION_KINDS,
+    ...MODULE_KEYS.filter((k) => !state[k]).flatMap((k) => MODULE_NOTIFICATION_KINDS[k]),
+  ];
 }
 
 export const updateModuleSchema = z.object({

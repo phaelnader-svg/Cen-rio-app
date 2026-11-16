@@ -2,7 +2,6 @@ import {
   EVENT_TYPES,
   PRINCIPAL_ACTIVITIES,
   compareTasks,
-  helpRequestCode,
   localParts,
   onlyReassignableBlockers,
   pickCandidate,
@@ -32,20 +31,15 @@ import {
 import { assertUpholstererRule, setUpholsterer } from '../production/distribution';
 import { assertWorker, reviseIfPublishedBy } from '../production/plans';
 import { openLaborReviews } from '../finance/labor-review';
-import { supportReassigned } from './support';
 import { loadQueue } from '../production/queue';
 import { immediateAt } from '../../core/clock';
 import {
   HELP_AUDIENCE,
   SYSTEM,
-  assignTo,
   evaluateCandidates,
-  helpDomainEvent,
-  helpEvent,
   isImportant,
   notifyPlanners,
   planningAction,
-  type HelpRow,
 } from './engine';
 
 const WAITING = ['BLOQUEADA', 'PROGRAMADA', 'LIBERADA'] as const;
@@ -121,9 +115,6 @@ export async function changeTask(
     where: { id: taskId },
     data: { ...change, version: { increment: 1 } },
   });
-  // Simplificação Fase 7: tarefa de apoio → o pedido de ajuda acompanha o novo ajudante.
-  if (change.assigneeUserId && change.assigneeUserId !== t.assigneeUserId && t.supportForTaskId)
-    await supportReassigned(tx, actor, taskId, change.assigneeUserId, reason);
   const changes: Record<string, { from: unknown; to: unknown }> = {};
   if (t.assigneeUserId !== updated.assigneeUserId)
     changes.assigneeUserId = { from: t.assigneeUserId, to: updated.assigneeUserId };
@@ -318,7 +309,6 @@ export async function createProposal(
     proposedAlternativeId: string;
     dedupeKey: string;
     attendanceId?: string | null;
-    helpRequestId?: string | null;
     issueId?: string | null;
     /** Simplificação Fase 7: quem pediu (tablet); recebe a decisão. */
     requestedById?: string | null;
@@ -336,7 +326,6 @@ export async function createProposal(
         proposedAlternativeId: p.proposedAlternativeId,
         dedupeKey: p.dedupeKey,
         attendanceId: p.attendanceId ?? null,
-        helpRequestId: p.helpRequestId ?? null,
         issueId: p.issueId ?? null,
         requestedById: p.requestedById ?? null,
         createdAt: clock(),
@@ -354,7 +343,6 @@ export async function createProposal(
     automatic: true,
     reason: `${code}: ${p.problem}`,
     proposalId: proposal.id,
-    helpRequestId: p.helpRequestId ?? null,
   });
   await audit(tx, actor, {
     action: 'reschedule.proposed',
@@ -377,118 +365,6 @@ export async function createProposal(
     `${code} — ${p.problem} Escolha uma alternativa em Reprogramação.`,
   );
   return proposal;
-}
-
-/** Ajuda urgente sem ninguém livre: propõe ao gestor interromper uma tarefa não crítica. */
-export async function proposeUrgentInterruption(
-  tx: Tx,
-  actor: ActorContext,
-  req: HelpRow,
-  interruptible: { userId: string; taskId: string }[],
-  evaluation: unknown,
-  /** Fase 9: pedido normal esperando além do limite → proposta de CONFLITO (risco de atraso). */
-  mode: 'URGENTE' | 'ATRASO' = 'URGENTE',
-) {
-  const late = mode === 'ATRASO';
-  const tasks = await tx.productionTask.findMany({
-    where: { id: { in: interruptible.map((i) => i.taskId) } },
-    include: { assignee: { select: { displayName: true } } },
-  });
-  const requester = await tx.user.findUniqueOrThrow({ where: { id: req.requesterUserId } });
-  const sorted = tasks.sort((a, b) =>
-    (a.assignee?.displayName ?? '').localeCompare(b.assignee?.displayName ?? '', 'pt-BR'),
-  );
-  const alternatives: ProposalAlternative[] = [
-    ...sorted.map((t, i) => ({
-      id: `INTERROMPER_${i + 1}`,
-      title: `Pausar ${taskCode(t.number)} de ${t.assignee?.displayName} para ajudar ${requester.displayName}`,
-      actions: [
-        {
-          type: 'INTERRUPT_FOR_HELP' as const,
-          taskId: t.id,
-          toUserId: t.assigneeUserId,
-          helpRequestId: req.id,
-        },
-      ],
-      impacts: [
-        `${taskCode(t.number)} · ${t.title} (${t.assignee?.displayName}) é pausada como "interrupção programada" durante o apoio (${req.estimatedMinutes} min); o andamento é preservado.`,
-      ],
-      critical: true,
-      recommended: i === 0,
-    })),
-    {
-      id: 'AGUARDAR',
-      title: 'Manter na fila até alguém ficar livre',
-      actions: [],
-      impacts: [
-        `${requester.displayName} continua aguardando ajuda${late ? ' — a tarefa pode atrasar' : ''}.`,
-      ],
-      critical: false,
-      recommended: false,
-    },
-  ];
-  const waited = Math.floor((clock().getTime() - req.createdAt.getTime()) / 60_000);
-  const proposal = await createProposal(tx, actor, {
-    kind: late ? 'CONFLITO' : 'AJUDA_URGENTE',
-    critical: true,
-    situation: late
-      ? `${requester.displayName} aguarda ajudante há ${waited} min (${helpRequestCode(req.number)}).`
-      : `${requester.displayName} pediu ajuda urgente (${helpRequestCode(req.number)}): ${req.justification ?? ''}`,
-    problem: late
-      ? `Falta de ajudante com risco de atraso para ${requester.displayName}; atender exige interromper uma tarefa em andamento.`
-      : `Nenhum ajudante livre para a ajuda urgente de ${requester.displayName}; atender exige interromper uma tarefa em andamento.`,
-    affectedTaskIds: [req.taskId, ...sorted.map((t) => t.id)],
-    alternatives,
-    proposedAlternativeId: alternatives[0]!.id,
-    dedupeKey: late ? `CONFLITO_AJUDA:${req.id}` : `AJUDA_URGENTE:${req.id}`,
-    helpRequestId: req.id,
-  });
-  if (late) {
-    // O pedido continua na fila: se alguém ficar livre antes, é atribuído e a proposta perde o efeito.
-    await helpEvent(tx, actor, req, {
-      kind: 'CONFLITO_PROPOSTO',
-      note: `Espera além do limite: ${proposal ? proposalCode(proposal.number) : 'proposta'} enviada ao gestor (nada foi interrompido).`,
-      evaluation,
-    });
-    await planningAction(tx, actor, {
-      kind: 'PROPOSTA_CRIADA',
-      automatic: true,
-      reason: `${helpRequestCode(req.number)} com risco de atraso: proposta de conflito ao gestor.`,
-      helpRequestId: req.id,
-      proposalId: proposal?.id ?? null,
-    });
-    return req;
-  }
-  const u = await tx.helpRequest.update({
-    where: { id: req.id },
-    data: { status: 'ESCALADA', escalatedAt: clock(), version: { increment: 1 } },
-  });
-  await helpEvent(tx, actor, req, {
-    kind: 'ESCALADA',
-    from: req.status,
-    to: 'ESCALADA',
-    note: 'Urgente sem ajudante livre: encaminhada ao gestor (nada foi interrompido).',
-    evaluation,
-  });
-  await planningAction(tx, actor, {
-    kind: 'AJUDA_ESCALADA',
-    automatic: true,
-    reason: `${helpRequestCode(req.number)} urgente encaminhada ao gestor${proposal ? ` (${proposalCode(proposal.number)})` : ''}.`,
-    helpRequestId: req.id,
-    proposalId: proposal?.id ?? null,
-  });
-  await helpDomainEvent(tx, actor, EVENT_TYPES.HELP_ESCALATED, u);
-  await notify(tx, actor, [
-    {
-      userId: req.requesterUserId,
-      kind: 'AJUDA_EM_ESPERA',
-      dedupeKey: `AJUDA_ESCALADA:${req.id}`,
-      body: `Ninguém está livre agora. Seu pedido urgente ${helpRequestCode(req.number)} foi encaminhado ao gestor para decidir.`,
-      taskId: req.taskId,
-      includeActor: true,
-    },
-  ]);
-  return u;
 }
 
 /** Candidatos (presentes, livres e capacitados) para assumir uma etapa. */
@@ -774,13 +650,6 @@ async function applyAction(tx: Tx, actor: ActorContext, a: ProposalAction, reaso
       );
       return { action: a, result: r.changes };
     }
-    // Simplificação Fase 7: apoio prolongado aprovado → vínculo registrado (tarefa de apoio).
-    case 'ASSIGN_PROLONGED_SUPPORT': {
-      if (!a.toUserId || !a.helpRequestId) throw Errors.business('Escolha o ajudante.');
-      const { approveProlongedSupport } = await import('./approvals');
-      await approveProlongedSupport(tx, actor, a.helpRequestId, a.toUserId, reason);
-      return { action: a, result: 'apoio prolongado atribuído' };
-    }
     case 'RESCHEDULE': {
       const cfg = await attendanceConfig(tx);
       if (!a.toDate) throw Errors.business('Escolha a nova data.');
@@ -852,70 +721,12 @@ async function applyAction(tx: Tx, actor: ActorContext, a: ProposalAction, reaso
       );
       return { action: a, result: r.changes };
     }
-    case 'INTERRUPT_FOR_HELP': {
-      await lockTasks(tx, [a.taskId]);
-      const t = await tx.productionTask.findUniqueOrThrow({ where: { id: a.taskId } });
-      if (t.status !== 'EM_EXECUCAO' || t.assigneeUserId !== a.toUserId) {
-        throw Errors.business(
-          'A tarefa a interromper já não está em execução: a proposta precisa ser reavaliada.',
-        );
-      }
-      const paused = await tx.productionTask.update({
-        where: { id: t.id },
-        data: {
-          status: 'PAUSADA',
-          pauseReason: 'INTERRUPCAO_PROGRAMADA',
-          pauseNote: 'Interrompida para apoio urgente (aprovado pelo gestor)',
-          version: { increment: 1 },
-        },
-      });
-      await taskEvent(tx, actor, null, t, {
-        kind: 'PAUSADA',
-        from: 'EM_EXECUCAO',
-        to: 'PAUSADA',
-        note: reason.slice(0, 500),
-        changes: { reason: 'INTERRUPCAO_PROGRAMADA', impediment: false },
-      });
-      await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_PAUSED, paused, {
-        reason: 'INTERRUPCAO_PROGRAMADA',
-      });
-      const req = await tx.helpRequest.findUniqueOrThrow({ where: { id: a.helpRequestId! } });
-      if (req.status !== 'ESCALADA' && req.status !== 'PENDENTE') {
-        throw Errors.business('O pedido de ajuda já foi resolvido ou cancelado.');
-      }
-      const helper = await tx.user.findUniqueOrThrow({ where: { id: t.assigneeUserId! } });
-      await assignTo(
-        tx,
-        actor,
-        req,
-        helper.id,
-        helper.displayName,
-        clock(),
-        null,
-        `Aprovado pelo gestor: ${taskCode(t.number)} pausada para o apoio.`,
-        false,
+    // Ações ligadas aos pedidos de ajuda (removidos do sistema): propostas antigas não aplicam.
+    default:
+      throw Errors.business(
+        'Esta proposta dependia dos pedidos de ajuda, que foram removidos do sistema. Rejeite-a.',
       );
-      return { action: a, result: 'interrompida e apoio atribuído' };
-    }
   }
-}
-
-/** Devolve à fila um pedido escalado (gestor rejeitou ou escolheu aguardar). */
-async function backToQueue(tx: Tx, actor: ActorContext, helpRequestId: string, note: string) {
-  const req = await tx.helpRequest.findUniqueOrThrow({ where: { id: helpRequestId } });
-  if (req.status !== 'ESCALADA') return null;
-  const u = await tx.helpRequest.update({
-    where: { id: req.id },
-    data: { status: 'PENDENTE', version: { increment: 1 } },
-  });
-  await helpEvent(tx, actor, req, {
-    kind: 'DEVOLVIDA_A_FILA',
-    from: 'ESCALADA',
-    to: 'PENDENTE',
-    note,
-  });
-  await helpDomainEvent(tx, actor, EVENT_TYPES.HELP_QUEUED, u);
-  return u;
 }
 
 export async function decideProposal(
@@ -961,38 +772,7 @@ export async function decideProposal(
       automatic: false,
       reason: `${code} rejeitada${input.note ? `: ${input.note}` : ''}.`,
       proposalId: id,
-      helpRequestId: p.helpRequestId,
     });
-    const prolonged =
-      p.helpRequestId && p.kind === 'APOIO_PROLONGADO'
-        ? await (
-            await import('./approvals')
-          ).refuseProlongedSupport(
-            tx,
-            actor,
-            p.helpRequestId,
-            input.note ?? 'Recusado pelo gestor.',
-          )
-        : null;
-    if (p.helpRequestId && !prolonged) {
-      const back = await backToQueue(
-        tx,
-        actor,
-        p.helpRequestId,
-        input.note ?? 'Gestor manteve na fila.',
-      );
-      if (back) {
-        await notify(tx, actor, [
-          {
-            userId: back.requesterUserId,
-            kind: 'REPROGRAMACAO_REJEITADA',
-            dedupeKey: `REJEITADA:${id}`,
-            body: `O gestor não autorizou interromper outra tarefa (${code}). Seu pedido ${helpRequestCode(back.number)} segue na fila${input.note ? `: ${input.note}` : '.'}`,
-            taskId: back.taskId,
-          },
-        ]);
-      }
-    }
   } else {
     const alts = p.alternatives as unknown as ProposalAlternative[];
     const alt = alts.find((a) => a.id === (input.alternativeId ?? p.proposedAlternativeId));
@@ -1017,9 +797,6 @@ export async function decideProposal(
     const reason = `${code} aprovada pelo gestor (${alt.title})${input.note ? `: ${input.note}` : ''}`;
     const applied = [];
     for (const a of actions) applied.push(await applyAction(tx, actor, a, reason));
-    if (p.helpRequestId && alt.actions.length === 0) {
-      await backToQueue(tx, actor, p.helpRequestId, reason);
-    }
     await tx.rescheduleProposal.update({
       where: { id },
       data: {
@@ -1037,7 +814,6 @@ export async function decideProposal(
       automatic: false,
       reason,
       proposalId: id,
-      helpRequestId: p.helpRequestId,
       after: { alternative: alt.id, actions },
     });
   }
@@ -1057,7 +833,7 @@ export async function decideProposal(
         userId: p.requestedById,
         kind: 'PEDIDO_DECIDIDO',
         dedupeKey: `PEDIDO_DECIDIDO:${id}`,
-        body: `Seu pedido de ${p.kind === 'APOIO_PROLONGADO' ? 'apoio prolongado' : 'transferência'} (${code}) foi ${approved ? 'aprovado' : 'recusado'} pelo gestor${input.note ? `: ${input.note}` : '.'}`,
+        body: `Seu pedido de transferência (${code}) foi ${approved ? 'aprovado' : 'recusado'} pelo gestor${input.note ? `: ${input.note}` : '.'}`,
         taskId: p.affectedTaskIds[0] ?? null,
       },
     ]);

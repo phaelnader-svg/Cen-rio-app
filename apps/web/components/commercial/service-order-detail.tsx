@@ -2,9 +2,6 @@
 
 import type {
   Permission,
-  MaterialKind,
-  MaterialSourcing,
-  MaterialUnit,
   Priority,
   ReadinessState,
   ServiceOrderDto,
@@ -13,19 +10,12 @@ import type {
 } from '@cenario/shared';
 import {
   FULFILLMENT_STAGE_LABEL,
-  MATERIAL_KINDS,
-  MATERIAL_KIND_LABEL,
-  MATERIAL_SOURCINGS,
-  MATERIAL_SOURCING_LABEL,
-  MATERIAL_READINESS_LABEL,
-  MATERIAL_UNIT_LABEL,
   MEASUREMENT_KIND_LABEL,
   PIECE_TYPE_LABEL,
   PRIORITIES,
   PRIORITY_LABEL,
   SERVICE_TYPES,
   SERVICE_TYPE_LABEL,
-  materialRequirementSchema,
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -49,11 +39,7 @@ import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { useEmployees, useServiceTimeline } from '@/lib/queries';
 import { usePieces } from '@/lib/quality';
-import { CreateMeasurementDialog } from '@/components/measurements/create-dialog';
-import { OsMaterialsOverview } from '@/components/purchasing/os-materials';
 import { OsProduction } from '@/components/production/os-production';
-import { MeasurementList } from '@/components/measurements/measurements-page';
-import { useMeasurements } from '@/lib/measurements';
 import { DeadlineBadge, PriorityBadge, ServiceOrderStatusBadge } from './badges';
 import { PhotoGallery } from './photo-gallery';
 import { BackLink, Detail, Section } from './section';
@@ -149,20 +135,19 @@ export function ServiceOrderDetail({ id }: { id: string }) {
   const so = useServiceOrder(id);
   const revisions = useServiceOrderRevisions(id);
   const [tab, setTab] = useTabParam('resumo', OS_TABS, OS_TAB_ALIASES);
-  // P3 (Fase 1): o contador da aba soma a lista simples e as necessidades formais.
+  // Contador da aba: lista simples de materiais da OS.
   const simpleMaterials = useOsMaterialList(id);
   const [editing, setEditing] = useState(false);
   const [editItem, setEditItem] = useState<ServiceOrderItemDto | null>(null);
   const [measureItem, setMeasureItem] = useState<ServiceOrderItemDto | null>(null);
   const [cancelling, setCancelling] = useState(false);
-  const [requestMeasurement, setRequestMeasurement] = useState(false);
 
   if (so.isPending) return <Spinner />;
   if (so.isError) return <Alert tone="danger">{so.error.message}</Alert>;
   const s = so.data;
   const open = s.status === 'ABERTA';
   const manage = can('os.gerenciar') && open;
-  // Registro direto de medidas: somente gestão (o fluxo normal é a medição atribuída).
+  // Registro direto das medidas das peças: gestão.
   const canMeasure = can('os.gerenciar') && open;
   const canProduction = can('producao.ver') || can('producao.planejar');
   const canQuality = ['qualidade.gerenciar', 'entregas.ver', 'entregas.gerenciar'].some((p) =>
@@ -170,7 +155,6 @@ export function ServiceOrderDetail({ id }: { id: string }) {
   );
   // Reformulação, Fase 1: entrega confirmada direto na OS (com ou sem a logística ligada).
   const canDelivery = can('os.ver') || can('entregas.ver');
-  const canRequestMeasurement = can('medicoes.gerenciar') && open;
   // Evolução Fase 5: valores de mão de obra só para quem vê o financeiro.
   const canLabor = can('financeiro.ver');
 
@@ -181,17 +165,9 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         title={s.code}
         description={`${s.customer.name} · pedido ${s.order.code} · criada em ${formatDateTime(s.createdAt)}${s.createdBy ? ` por ${s.createdBy}` : ''}`}
         actions={
-          (manage || canRequestMeasurement) && (
+          manage && (
             <>
-              {canRequestMeasurement && (
-                <Button
-                  icon={<Ruler className="size-4" aria-hidden />}
-                  onClick={() => setRequestMeasurement(true)}
-                >
-                  Solicitar medição
-                </Button>
-              )}
-              {manage && (
+              {
                 <>
                   <Button
                     variant="secondary"
@@ -208,7 +184,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                     Cancelar OS
                   </Button>
                 </>
-              )}
+              }
             </>
           )
         }
@@ -241,9 +217,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           {
             key: 'materiais',
             label: 'Materiais',
-            count:
-              (simpleMaterials.data?.summary.total ?? 0) +
-              s.materials.filter((m) => m.status === 'ATIVA').length,
+            count: simpleMaterials.data?.summary.total ?? 0,
           },
           ...(canProduction ? [{ key: 'producao', label: 'Produção' }] : []),
           ...(canQuality || canDelivery
@@ -307,13 +281,9 @@ export function ServiceOrderDetail({ id }: { id: string }) {
             <Section title="Prontidão para produção" className="lg:col-span-2">
               <ul className="divide-y divide-line" data-testid="readiness">
                 <ReadinessRow
-                  label="Medições"
+                  label="Medidas"
                   state={s.readiness.measurements}
-                  hint={
-                    s.readiness.materialsGate
-                      ? 'Gestor às sextas; extraordinárias por tapeceiro autorizado.'
-                      : 'Opcional: alimenta as compras formais, mas não impede o início da produção.'
-                  }
+                  hint="Opcional: medidas das peças registradas na aba Peças. Não impedem o início da produção."
                 />
                 <ReadinessRow
                   label="Responsável técnico"
@@ -322,13 +292,11 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 />
                 <ReadinessRow
                   label="Materiais"
-                  state={s.readiness.materials}
+                  state={s.readiness.simpleMaterialsPending > 0 ? 'INFORMATIVO' : 'OK'}
                   hint={
-                    s.readiness.materialsGate
-                      ? `${MATERIAL_READINESS_LABEL[s.readiness.materialsState]} — compras, recebimentos e reservas. Material completo não antecipa a produção.`
-                      : s.readiness.simpleMaterialsPending > 0
-                        ? `Aviso: ${s.readiness.simpleMaterialsPending} material(is) da lista ainda não está(ão) na oficina. Não impede o início.`
-                        : 'Materiais informados na aba Materiais. Não impedem o início da produção.'
+                    s.readiness.simpleMaterialsPending > 0
+                      ? `Aviso: ${s.readiness.simpleMaterialsPending} material(is) da lista ainda não está(ão) na oficina. Não impede o início.`
+                      : 'Materiais informados na aba Materiais. Não impedem o início da produção.'
                   }
                 />
                 <ReadinessRow
@@ -338,9 +306,8 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 />
               </ul>
               <p className="mt-3 rounded-lg bg-subtle px-3 py-2 text-xs text-ink-soft">
-                {s.readiness.materialsGate
-                  ? 'A produção só começa quando programação, materiais, responsável e dependências permitirem.'
-                  : 'A produção começa quando programação, responsável e dependências permitirem. Materiais pendentes aparecem só como aviso.'}
+                A produção começa quando programação, responsável e dependências permitirem.
+                Materiais pendentes aparecem só como aviso.
               </p>
             </Section>
             {canLabor && (
@@ -391,9 +358,9 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                   <dl className="grid gap-4 sm:grid-cols-3" data-testid={`so-item-${i.code}`}>
                     <Detail label="Peça">{`${i.quantity}× ${PIECE_TYPE_LABEL[i.pieceType]}`}</Detail>
                     <Detail label="Tipo de serviço">{SERVICE_TYPE_LABEL[i.serviceType]}</Detail>
-                    {/* Fase 2: a localização registrada (mapa) vale sobre o texto do recebimento. */}
+                    {/* Fase 2: a localização registrada no mapa da oficina. */}
                     <Detail label="Localização na oficina">
-                      {i.currentLocation ? (
+                      {i.currentLocation && (
                         <span data-testid={`so-item-location-${i.code}`}>
                           <Link
                             href="/painel/producao/mapa"
@@ -401,14 +368,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                           >
                             {i.currentLocation.label}
                           </Link>
-                          {i.locations.length > 0 && (
-                            <span className="block text-xs text-ink-muted">
-                              No recebimento: {i.locations.join(', ')}
-                            </span>
-                          )}
                         </span>
-                      ) : (
-                        i.locations.join(', ')
                       )}
                     </Detail>
                     <Detail label="Tecido">{i.fabricName}</Detail>
@@ -437,7 +397,9 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                           </p>
                         </dd>
                       ) : (
-                        <dd className="mt-0.5 text-[15px] text-warn-600">Medição pendente</dd>
+                        <dd className="mt-0.5 text-[15px] text-ink-muted">
+                          Sem medidas registradas
+                        </dd>
                       )}
                     </div>
                   </dl>
@@ -458,10 +420,6 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         {tab === 'materiais' && (
           <div className="space-y-8">
             <OsMaterialList serviceOrderId={s.id} open={open} />
-            {(can('os.ver') || can('estoque.ver') || can('compras.ver')) && (
-              <OsMaterialsOverview serviceOrderId={s.id} />
-            )}
-            <MaterialsTab so={s} manage={manage} />
           </div>
         )}
 
@@ -509,15 +467,6 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         <MeasureDialog so={s} item={measureItem} onClose={() => setMeasureItem(null)} />
       )}
       {cancelling && <CancelDialog so={s} onClose={() => setCancelling(false)} />}
-      {requestMeasurement && (
-        <CreateMeasurementDialog
-          target={{
-            serviceOrder: { id: s.id, code: s.code },
-            items: s.items.map((i) => ({ id: i.id, code: i.code, description: i.description })),
-          }}
-          onClose={() => setRequestMeasurement(false)}
-        />
-      )}
     </>
   );
 }
@@ -945,224 +894,6 @@ function MeasureDialog({
         )}
       </Field>
     </Dialog>
-  );
-}
-
-function MaterialsTab({ so, manage }: { so: ServiceOrderDto; manage: boolean }) {
-  const can = useCan();
-  const canSeeMeasurements =
-    can('medicoes.gerenciar') || can('materiais.ver') || can('materiais.aprovar');
-  const measurements = useMeasurements({ serviceOrderId: so.id }, canSeeMeasurements);
-  const qc = useQueryClient();
-  const toast = useToast();
-  const [kind, setKind] = useState<MaterialKind>('TECIDO');
-  const [sourcing, setSourcing] = useState<MaterialSourcing>('EXCLUSIVO_OS');
-  const [description, setDescription] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [unit, setUnit] = useState('m');
-  const [itemId, setItemId] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const done = (data: ServiceOrderDto) => {
-    qc.setQueryData(['service-order', so.id], data);
-    void qc.invalidateQueries({ queryKey: ['service-order', so.id, 'revisions'] });
-  };
-  const add = useMutation({
-    mutationFn: () =>
-      api<ServiceOrderDto>(`/api/v1/service-orders/${so.id}/materials`, {
-        method: 'POST',
-        body: materialRequirementSchema.parse({
-          kind,
-          sourcing: kind === 'TECIDO' ? 'EXCLUSIVO_OS' : sourcing,
-          description,
-          quantity: quantity ? Number(quantity.replace(',', '.')) : null,
-          unit,
-          serviceOrderItemId: itemId || null,
-        }),
-      }),
-    onSuccess: (d) => {
-      done(d);
-      setDescription('');
-      setQuantity('');
-      setError(null);
-      toast('ok', 'Material previsto.');
-    },
-    onError: (e) =>
-      setError(
-        e instanceof ApiError
-          ? e.message
-          : ((e as { issues?: { message: string }[] }).issues?.[0]?.message ?? 'Revise os dados.'),
-      ),
-  });
-  const remove = useMutation({
-    mutationFn: (mid: string) =>
-      api<ServiceOrderDto>(`/api/v1/service-orders/${so.id}/materials/${mid}`, {
-        method: 'DELETE',
-      }),
-    onSuccess: done,
-    onError: (e) => setError(errorMessage(e)),
-  });
-  return (
-    <div className="space-y-6">
-      <Alert tone="info" title="Solicitações e previsões">
-        Materiais aprovados vêm das medições conferidas pelo gestor e seguem para Compras. Tecidos
-        são sempre comprados especificamente para a OS; a chegada de materiais não antecipa a
-        programação.
-      </Alert>
-      {canSeeMeasurements && (
-        <div>
-          <h2 className="mb-2 font-semibold">Medições desta OS</h2>
-          {measurements.data ? (
-            <MeasurementList rows={measurements.data} empty="Nenhuma medição solicitada." />
-          ) : (
-            <Spinner />
-          )}
-        </div>
-      )}
-      <Section title="Solicitados e previstos" bodyClassName="p-0">
-        {so.materials.length === 0 ? (
-          <EmptyState title="Nenhum material previsto" />
-        ) : (
-          <ul className="divide-y divide-line" data-testid="materials">
-            {so.materials.map((mt) => (
-              <li key={mt.id} className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm">
-                <span className="font-medium">{MATERIAL_KIND_LABEL[mt.kind]}</span>
-                <span className="flex-1">
-                  {[
-                    mt.description,
-                    mt.foamDensity,
-                    mt.thicknessCm ? `${String(mt.thicknessCm).replace('.', ',')} cm` : null,
-                    mt.color,
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  {mt.quantity
-                    ? ` · ${String(mt.quantity).replace('.', ',')} ${(mt.unit && MATERIAL_UNIT_LABEL[mt.unit as MaterialUnit]) ?? mt.unit ?? ''}`
-                    : ''}
-                  {mt.serviceOrderItemId
-                    ? ` · ${so.items.find((i) => i.id === mt.serviceOrderItemId)?.code ?? ''}`
-                    : ''}
-                </span>
-                <span className="text-ink-muted">{MATERIAL_SOURCING_LABEL[mt.sourcing]}</span>
-                {mt.status === 'SUBSTITUIDA' ? (
-                  <span title={mt.closeReason ?? undefined}>
-                    <Badge>Substituído por nova medição</Badge>
-                  </span>
-                ) : mt.status === 'CANCELADA' ? (
-                  <span title={mt.closeReason ?? undefined}>
-                    <Badge>Cancelado</Badge>
-                  </span>
-                ) : mt.origin === 'SOLICITACAO_APROVADA' ? (
-                  <Badge tone="ok">Aprovado para compra</Badge>
-                ) : (
-                  <Badge>Previsão manual · não entra na compra</Badge>
-                )}
-                {manage && mt.origin !== 'SOLICITACAO_APROVADA' && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    aria-label={`Remover ${mt.description}`}
-                    icon={<Trash2 className="size-3.5" aria-hidden />}
-                    onClick={() => remove.mutate(mt.id)}
-                  />
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-      {manage && (
-        <Section title="Prever material">
-          <p className="mb-4 text-sm text-ink-muted" data-testid="forecast-hint">
-            Previsão é só uma anotação: ainda não gera necessidade de compra nem aparece em Compras
-            → A comprar. Para comprar, o material precisa vir de uma medição aprovada.
-          </p>
-          {error && (
-            <Alert tone="danger" className="mb-4">
-              {error}
-            </Alert>
-          )}
-          <div className="grid gap-4 sm:grid-cols-6">
-            <Field label="Tipo" className="sm:col-span-2">
-              {(p) => (
-                <Select
-                  {...p}
-                  value={kind}
-                  onChange={(e) => setKind(e.target.value as MaterialKind)}
-                >
-                  {MATERIAL_KINDS.map((k) => (
-                    <option key={k} value={k}>
-                      {MATERIAL_KIND_LABEL[k]}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-            <Field
-              label="Origem"
-              className="sm:col-span-4"
-              hint={kind === 'TECIDO' ? 'Tecido: sempre compra exclusiva para a OS.' : undefined}
-            >
-              {(p) => (
-                <Select
-                  {...p}
-                  value={kind === 'TECIDO' ? 'EXCLUSIVO_OS' : sourcing}
-                  disabled={kind === 'TECIDO'}
-                  onChange={(e) => setSourcing(e.target.value as MaterialSourcing)}
-                >
-                  {MATERIAL_SOURCINGS.map((s) => (
-                    <option key={s} value={s}>
-                      {MATERIAL_SOURCING_LABEL[s]}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-            <Field label="Descrição" className="sm:col-span-3">
-              {(p) => (
-                <Input
-                  {...p}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Quantidade">
-              {(p) => (
-                <Input
-                  {...p}
-                  inputMode="decimal"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
-                />
-              )}
-            </Field>
-            <Field label="Unidade">
-              {(p) => <Input {...p} value={unit} onChange={(e) => setUnit(e.target.value)} />}
-            </Field>
-            <Field label="Peça">
-              {(p) => (
-                <Select {...p} value={itemId} onChange={(e) => setItemId(e.target.value)}>
-                  <option value="">Toda a OS</option>
-                  {so.items.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.code}
-                    </option>
-                  ))}
-                </Select>
-              )}
-            </Field>
-          </div>
-          <Button
-            className="mt-4"
-            loading={add.isPending}
-            icon={<Plus className="size-4" aria-hidden />}
-            onClick={() => add.mutate()}
-          >
-            Adicionar material
-          </Button>
-        </Section>
-      )}
-    </div>
   );
 }
 

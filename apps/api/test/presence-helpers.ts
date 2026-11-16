@@ -61,8 +61,6 @@ export const depart = (c: Client, body: unknown = {}) =>
   post(c, '/api/v1/attendance/me/depart', body);
 export const attendanceAction = (admin: Client, body: Record<string, unknown>) =>
   admin.post('/api/v1/attendance/actions', { date: today(), ...body });
-export const ask = (c: Client, body: Record<string, unknown>, key = idemKey()) =>
-  post(c, '/api/v1/help-requests', body, key);
 export const notices = async (userId: string, kind?: string) =>
   db().notification.findMany({
     where: { userId, ...(kind ? { kind } : {}) },

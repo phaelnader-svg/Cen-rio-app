@@ -19,8 +19,6 @@ const base = {
   published: true,
   assigned: true,
   dependenciesDone: true,
-  materialsReady: true,
-  requiresMaterials: true,
   manuallyBlocked: false,
   scheduledAt: new Date('2026-10-08T11:30:00Z'),
   now: new Date('2026-10-08T12:00:00Z'),
@@ -33,13 +31,7 @@ describe('Liberação de tarefas', () => {
       'PROGRAMADA',
     );
     expect(evaluateRelease({ ...base, scheduledAt: null }).status).toBe('PROGRAMADA');
-    expect(evaluateRelease({ ...base, materialsReady: false })).toEqual({
-      status: 'BLOQUEADA',
-      blockers: ['MATERIAIS'],
-    });
-    expect(
-      evaluateRelease({ ...base, materialsReady: false, requiresMaterials: false }).status,
-    ).toBe('LIBERADA');
+    // Remoção de Compras/Medições: material nunca bloqueia a liberação da tarefa.
     expect(
       evaluateRelease({
         ...base,
@@ -119,9 +111,8 @@ describe('Evolução Fase 2 — fila semanal', () => {
         ...noTime,
         mode: 'FILA_SEMANAL',
         dependenciesDone: false,
-        materialsReady: false,
       }),
-    ).toEqual({ status: 'BLOQUEADA', blockers: ['DEPENDENCIAS', 'MATERIAIS'] });
+    ).toEqual({ status: 'BLOQUEADA', blockers: ['DEPENDENCIAS'] });
   });
 
   it('planos novos nascem em fila; LEGADO só se pedido', () => {

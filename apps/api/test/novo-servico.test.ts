@@ -118,26 +118,6 @@ const counts = async () => ({
   receivables: await db().customerReceivable.count(),
 });
 
-async function receive(
-  c: Client,
-  orderId: string,
-  lines: { orderItemId: string; quantity: number }[],
-  pickupId: string | null,
-  key = idemKey(),
-) {
-  return post(
-    c,
-    '/api/v1/receipts',
-    {
-      orderId,
-      pickupId,
-      origin: pickupId ? 'RETIRADA' : 'ENTREGUE_PELO_CLIENTE',
-      lines: lines.map((l) => ({ ...l, condition: 'BOA', location: 'Área de recebimento' })),
-    },
-    key,
-  );
-}
-
 describe('A. Novo serviço: uma operação, atômica e idempotente', () => {
   it('cliente novo + serviço fechado + retirada terceirizada com valor único (CA2-02,04..07,09,10)', async () => {
     const admin = await loginAdmin(app);
@@ -171,7 +151,7 @@ describe('A. Novo serviço: uma operação, atômica e idempotente', () => {
     expect(after.pickups - before.pickups).toBe(1);
     expect(after.costs - before.costs).toBe(1);
     // CA2-10/15: nada de OS, conta a pagar ou receita no agendamento.
-    expect(after.serviceOrders).toBe(before.serviceOrders);
+    expect(after.serviceOrders).toBe(before.serviceOrders + 1); // a OS nasce no fechamento (D1)
     expect(after.payables).toBe(before.payables);
     expect(after.receivables).toBe(before.receivables);
 
@@ -375,6 +355,7 @@ describe('A. Novo serviço: uma operação, atômica e idempotente', () => {
       orders: before.orders + 1,
       pickups: before.pickups + 1,
       costs: before.costs + 1,
+      serviceOrders: before.serviceOrders + 1, // a OS nasce no fechamento (D1)
       payables: now.payables,
       receivables: before.receivables + 2,
     });
@@ -653,10 +634,15 @@ describe('B. Equipes: própria (Thiago, configurável) e terceirizada (André + 
   });
 });
 
-describe('C. OS automática somente na chegada das peças', () => {
-  async function scheduled(admin: Client) {
+describe('C. OS automática no fechamento do serviço (D1: sem recebimento)', () => {
+  async function closed(
+    admin: Client,
+    extra: Record<string, unknown> | null = { pickup: { amountCents: 10000 } },
+  ) {
     await logisticsSetup(admin);
-    const r = await post(admin, '/api/v1/services', await body({ pickup: { amountCents: 10000 } }));
+    // null = sem retirada (o cliente traz as peças).
+    const payload = extra ? await body(extra) : { ...(await body()), pickup: null };
+    const r = await post(admin, '/api/v1/services', payload);
     expect(r.status, JSON.stringify(r.body)).toBe(201);
     const order = await db().commercialOrder.findUniqueOrThrow({
       where: { id: r.body.order.id },
@@ -665,40 +651,18 @@ describe('C. OS automática somente na chegada das peças', () => {
     return { res: r.body, order };
   }
 
-  it('sem recebimento não há OS; a chegada cria a OS com vínculos e valores (CA2-15,16,19,20)', async () => {
+  it('o fechamento cria a OS com vínculos e valores, sem esperar a chegada (CA2-15,16,19,20)', async () => {
     const admin = await loginAdmin(app);
-    const { res, order } = await scheduled(admin);
-    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(0);
-    // Criar OS manual antes da chegada continua bloqueado (regra preservada).
-    const manual = await post(admin, '/api/v1/service-orders', {
-      orderId: order.id,
-      items: [
-        {
-          orderItemId: order.items[0]!.id,
-          quantity: 1,
-          serviceType: 'REFORMA_COMPLETA',
-          description: 'Sofá',
-        },
-      ],
-    });
-    expect(manual.status).toBe(422);
-
-    const rec = await receive(
-      admin,
-      order.id,
-      order.items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
-      res.pickup.id,
-    );
-    expect(rec.status, JSON.stringify(rec.body)).toBe(201);
-    expect(rec.body.generatedServiceOrder).toMatchObject({ code: expect.stringMatching(/^OS-/) });
+    const { res, order } = await closed(admin);
+    expect(res.serviceOrder).toMatchObject({ code: expect.stringMatching(/^OS-/) });
     const so = await db().serviceOrder.findUniqueOrThrow({
-      where: { id: rec.body.generatedServiceOrder.id },
+      where: { id: res.serviceOrder.id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
     expect(so).toMatchObject({
       orderId: order.id,
       customerId: order.customerId,
-      sourceReceiptId: rec.body.id,
+      sourceReceiptId: null,
       status: 'ABERTA',
       technicalInstructions: 'Cliente quer costura dupla.',
       revenueCents: null,
@@ -713,100 +677,78 @@ describe('C. OS automática somente na chegada das peças', () => {
       technicalNotes: 'Trocar espuma do assento',
       upholstererUserId: null,
     });
+    // As peças ainda não chegaram: a OS existe, mas nada foi marcado como recebido.
+    expect(order.items.every((i) => i.receivedQuantity === 0)).toBe(true);
     // CA2-19/CA2-06: valores do pedido preservados; receita da OS = participação do pedido.
     const revenue = (await admin.get(`/api/v1/finance/orders/${order.id}`)).body;
     expect(JSON.stringify(revenue)).toContain('300000');
     expect(await db().customerReceivable.count()).toBe(0);
-    // CA2-20: nada de produção, titular, mão de obra ou planejamento automático.
+    // CA2-20: nada de produção, mão de obra ou planejamento automático.
     expect(await db().productionTask.count({ where: { serviceOrderId: so.id } })).toBe(0);
     expect(await db().productionPlanItem.count({ where: { serviceOrderId: so.id } })).toBe(0);
     expect(await db().productionPayable.count({ where: { serviceOrderId: so.id } })).toBe(0);
-    // Custo da retirada passou a devido e é rateado na OS gerada (regra da Fase 6).
-    const cost = await db().logisticsCost.findFirstOrThrow({
-      where: { pickupId: res.pickup.id },
-      include: { allocations: true },
-    });
-    expect(cost.status).toBe('DEVIDO');
-    expect(cost.allocations.filter((a) => a.serviceOrderId === so.id).length).toBeGreaterThan(0);
-    expect(await db().accountPayable.count()).toBe(1);
-    // Auditoria e histórico da OS registram a origem automática.
+    // Auditoria registra a origem automática.
     const log = await db().auditLog.findFirstOrThrow({
       where: { action: 'service_order.created', entityId: so.id },
     });
-    expect(log.summary).toMatch(/gerada automaticamente pelo recebimento/);
+    expect(log.summary).toMatch(/gerada automaticamente no fechamento/);
   });
 
-  it('recebimento parcial: só as peças que chegaram; repetição não duplica (CA2-17, CA2-18)', async () => {
+  it('a chegada das peças é só uma marca opcional: não cria outra OS (retirada ou "peças na oficina")', async () => {
     const admin = await loginAdmin(app);
-    const { res, order } = await scheduled(admin);
-    const [sofa, poltronas] = order.items;
-    const key = idemKey();
-    const lines = [
-      { orderItemId: sofa!.id, quantity: 1 },
-      { orderItemId: poltronas!.id, quantity: 1 },
-    ];
-    const r1 = await receive(admin, order.id, lines, res.pickup.id, key);
-    expect(r1.status, JSON.stringify(r1.body)).toBe(201);
-    // Repetição da mesma confirmação (reenvio de rede): mesmo recebimento, mesma OS.
-    const again = await receive(admin, order.id, lines, res.pickup.id, key);
-    expect(again.status).toBe(201);
-    expect(again.body.id).toBe(r1.body.id);
-    expect(await db().receipt.count({ where: { orderId: order.id } })).toBe(1);
+    const { res, order } = await closed(admin);
     expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(1);
-    const so1 = await db().serviceOrder.findUniqueOrThrow({
-      where: { id: r1.body.generatedServiceOrder.id },
-      include: { items: true },
-    });
-    expect(so1.items.map((i) => [i.orderItemId, i.quantity]).sort()).toEqual(
-      [
-        [sofa!.id, 1],
-        [poltronas!.id, 1],
-      ].sort(),
-    );
-    // A poltrona ausente NÃO foi marcada como recebida.
+    // A retirada chega na oficina: as peças dela passam a "recebidas", sem nova OS.
+    const pickup = await db().pickupRequest.findUniqueOrThrow({ where: { id: res.pickup.id } });
+    for (const to of ['EM_EXECUCAO', 'RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA']) {
+      const cur = await db().pickupRequest.findUniqueOrThrow({ where: { id: pickup.id } });
+      const t = await post(admin, `/api/v1/pickups/${pickup.id}/transition`, {
+        toStatus: to,
+        version: cur.version,
+      });
+      expect(t.status, `${to}: ${JSON.stringify(t.body)}`).toBeLessThan(300);
+    }
     const items = await db().commercialOrderItem.findMany({ where: { orderId: order.id } });
-    expect(items.find((i) => i.id === poltronas!.id)!.receivedQuantity).toBe(1);
+    expect(items.every((i) => i.receivedQuantity === i.quantity)).toBe(true);
     expect((await db().commercialOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
-      'RECEBIDO_PARCIAL',
+      'RECEBIDO',
     );
-    // Chegada da poltrona restante: nova OS só com ela.
-    const r2 = await receive(admin, order.id, [{ orderItemId: poltronas!.id, quantity: 1 }], null);
-    expect(r2.status, JSON.stringify(r2.body)).toBe(201);
-    const so2 = await db().serviceOrder.findUniqueOrThrow({
-      where: { id: r2.body.generatedServiceOrder.id },
-      include: { items: true },
-    });
-    expect(so2.items.map((i) => [i.orderItemId, i.quantity])).toEqual([[poltronas!.id, 1]]);
-    // Nenhuma peça em duas OS; total em OS = total recebido.
-    const inOs = await db().serviceOrderItem.aggregate({
-      where: { serviceOrder: { orderId: order.id } },
-      _sum: { quantity: true },
-    });
-    expect(inOs._sum.quantity).toBe(3);
-    // Recebimento além do pedido continua recusado (regra preservada) — sem OS extra.
-    const over = await receive(admin, order.id, [{ orderItemId: sofa!.id, quantity: 1 }], null);
-    expect(over.status).toBe(409);
-    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(2);
+    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(1);
   });
 
-  it('peça já colocada em OS manual não é duplicada; recebimentos simultâneos não duplicam OS', async () => {
+  it('"Peças na oficina" no pedido sem retirada: marca a chegada uma vez e recusa repetir', async () => {
     const admin = await loginAdmin(app);
-    const { order } = await scheduled(admin);
-    const [sofa, poltronas] = order.items;
-    const [a, b] = await Promise.all([
-      receive(admin, order.id, [{ orderItemId: sofa!.id, quantity: 1 }], null),
-      receive(admin, order.id, [{ orderItemId: sofa!.id, quantity: 1 }], null),
-    ]);
-    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    const { res, order } = await closed(admin, null);
+    expect(res.pickup).toBeNull();
+    const mark = (version: number) =>
+      post(admin, `/api/v1/orders/${order.id}/arrived`, { version });
+    const ok = await mark(order.version);
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    const after = await db().commercialOrder.findUniqueOrThrow({
+      where: { id: order.id },
+      include: { items: true },
+    });
+    expect(after.status).toBe('RECEBIDO');
+    expect(after.items.every((i) => i.receivedQuantity === i.quantity)).toBe(true);
+    expect((await mark(order.version)).status).toBe(409); // versão antiga
+    expect((await mark(after.version)).status).toBe(422); // nada mais a marcar
     expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(1);
-    // Banco: o mesmo recebimento não pode gerar duas OS.
-    const receiptId = (a.status === 201 ? a : b).body.id;
-    await expect(
-      db().serviceOrder.create({
-        data: { orderId: order.id, customerId: order.customerId, sourceReceiptId: receiptId },
-      }),
-    ).rejects.toThrow();
-    void poltronas;
+    expect(
+      await db().auditLog.count({ where: { action: 'order.pieces_arrived', entityId: order.id } }),
+    ).toBe(1);
+  });
+
+  it('repetição do fechamento com a mesma chave devolve a mesma OS (sem duplicar)', async () => {
+    const admin = await loginAdmin(app);
+    await logisticsSetup(admin);
+    const key = idemKey();
+    const payload = await body();
+    const r1 = await post(admin, '/api/v1/services', payload, key);
+    const r2 = await post(admin, '/api/v1/services', payload, key);
+    expect(r1.status, JSON.stringify(r1.body)).toBe(201);
+    expect(r2.status).toBe(201);
+    expect(r2.body.serviceOrder.id).toBe(r1.body.serviceOrder.id);
+    expect(await db().serviceOrder.count({ where: { orderId: r1.body.order.id } })).toBe(1);
   });
 
   it('pedidos antigos (fora do Novo serviço) continuam sem OS automática (CA2-22)', async () => {
@@ -815,17 +757,6 @@ describe('C. OS automática somente na chegada das peças', () => {
       admin,
       await createCustomer(admin, { name: 'Antigo', phone: null }),
     );
-    const r = await receive(
-      admin,
-      order.id,
-      order.items.map((i: { id: string; quantity: number }) => ({
-        orderItemId: i.id,
-        quantity: i.quantity,
-      })),
-      null,
-    );
-    expect(r.status).toBe(201);
-    expect(r.body.generatedServiceOrder).toBeNull();
     expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(0);
     // OS manual segue funcionando como antes.
     const so = await post(admin, '/api/v1/service-orders', {
@@ -935,20 +866,8 @@ describe('D. Segurança, permissões e tempo real', () => {
     expect(r.status).toBe(201);
     await ws.waitFor((m) => m.event?.type === 'order.created');
     await ws.waitFor((m) => m.event?.type === 'pickup.created');
-    const order = await db().commercialOrder.findUniqueOrThrow({
-      where: { id: r.body.order.id },
-      include: { items: true },
-    });
-    const rec = await receive(
-      admin,
-      order.id,
-      order.items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
-      r.body.pickup.id,
-    );
-    expect(rec.status).toBe(201);
-    await ws.waitFor((m) => m.event?.type === 'service_order.created');
-    const ev = await ws.waitFor((m) => m.event?.type === 'receipt.registered');
-    expect(ev.event.payload.serviceOrderId).toBe(rec.body.generatedServiceOrder.id);
+    const ev = await ws.waitFor((m) => m.event?.type === 'service_order.created');
+    expect(ev.event.payload.id ?? ev.event.aggregateId).toBe(r.body.serviceOrder.id);
     await ws.close();
   });
 });
@@ -961,7 +880,7 @@ describe('E. Estabilização: serviço sem retirada (cliente entrega as peças)'
     return { ...b, pickup: null };
   };
 
-  it('sem retirada é válido: nada de retirada, custo, agenda ou endereço inventado; a chegada gera a OS', async () => {
+  it('sem retirada é válido: nada de retirada, custo, agenda ou endereço inventado; a OS nasce no fechamento', async () => {
     const admin = await loginAdmin(app);
     await logisticsSetup(admin);
     const before = await counts();
@@ -977,7 +896,7 @@ describe('E. Estabilização: serviço sem retirada (cliente entrega as peças)'
       pickups: before.pickups,
       costs: before.costs,
       payables: before.payables,
-      serviceOrders: before.serviceOrders,
+      serviceOrders: before.serviceOrders + 1, // a OS do fechamento (D1)
     });
     const order = await db().commercialOrder.findUniqueOrThrow({
       where: { id: r.body.order.id },
@@ -1000,23 +919,14 @@ describe('E. Estabilização: serviço sem retirada (cliente entrega as peças)'
     expect(row.customerDropOff).toBe(true);
     // Agenda/roteiro: nenhuma parada para este pedido.
     expect(await db().pickupRequest.count({ where: { orderId: order.id } })).toBe(0);
-    // O cliente entrega as peças: recebimento "entregue pelo cliente" gera a OS automática.
-    const rec = await receive(
-      admin,
-      order.id,
-      order.items.map((i) => ({ orderItemId: i.id, quantity: i.quantity })),
-      null,
-    );
-    expect(rec.status, JSON.stringify(rec.body)).toBe(201);
+    // A OS nasceu no fechamento, com todas as peças (o cliente traz depois; marca opcional).
     const so = await db().serviceOrder.findMany({
       where: { orderId: order.id },
       include: { items: true },
     });
     expect(so).toHaveLength(1);
+    expect(so[0]!.id).toBe(r.body.serviceOrder.id);
     expect(so[0]!.items.reduce((a, i) => a + i.quantity, 0)).toBe(3);
-    expect((await db().commercialOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
-      'RECEBIDO',
-    );
     expect((await counts()).payables).toBe(before.payables); // nenhum custo de transporte
   });
 

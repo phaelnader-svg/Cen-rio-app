@@ -36,11 +36,10 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { PriorityBadge } from '@/components/commercial/badges';
 import { Section } from '@/components/commercial/section';
-import { ReadinessBadge } from '@/components/purchasing/badges';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Checkbox, Field, Input, Select } from '@/components/ui/field';
-import { HelpAndRescheduleBanner } from '@/components/help/pages';
+import { RescheduleBanner } from '@/components/production/reschedule-pages';
 import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { addDays, formatDay, todayIso } from '@/lib/commercial';
@@ -85,7 +84,7 @@ export function ProductionPlanningPage({ embedded = false }: { embedded?: boolea
           }
         />
       )}
-      <HelpAndRescheduleBanner />
+      <RescheduleBanner />
       <Card className="mb-6 flex flex-wrap items-center gap-3 p-4">
         <Button
           variant="secondary"
@@ -355,7 +354,6 @@ function CandidatesSection({
                 </span>
               </span>
               <PriorityBadge priority={c.serviceOrder.priority} />
-              <ReadinessBadge state={c.materialsState} />
               <Button
                 size="sm"
                 icon={<Plus className="size-3.5" aria-hidden />}
@@ -443,11 +441,6 @@ function AddOsDialog({
       {error && (
         <Alert tone="danger" className="mb-4">
           {error}
-        </Alert>
-      )}
-      {candidate.materialsState !== 'COMPLETO' && (
-        <Alert tone="warn" className="mb-4">
-          Materiais: as etapas que exigem material ficarão bloqueadas até a prontidão completa.
         </Alert>
       )}
       <div className="grid gap-4 sm:grid-cols-3">
@@ -560,7 +553,6 @@ function ItemSection({
       title={`${item.serviceOrder.code} · ${item.customerName}`}
       actions={
         <>
-          <ReadinessBadge state={item.materialsState} />
           <PriorityBadge priority={item.priority} />
           <Select
             aria-label={`Responsável principal da ${item.serviceOrder.code}`}
