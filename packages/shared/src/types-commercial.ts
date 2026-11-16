@@ -164,8 +164,8 @@ export interface PickupDto {
   number: number;
   code: string;
   status: PickupStatus;
-  /** `agreedValueCents`: valor do serviço; null sem `pedidos.valores` ou sem valor combinado. */
-  order: { id: string; code: string; contractedService: string; agreedValueCents: number | null };
+  /** `agreedValueCents`: valor do serviço; ausente sem `pedidos.valores`, null sem valor combinado. */
+  order: { id: string; code: string; contractedService: string; agreedValueCents?: number | null };
   customer: CustomerSummaryDto & { phone: string | null; whatsapp: string | null };
   address: AddressSnapshot | null;
   scheduledDate: string | null;

@@ -76,7 +76,8 @@ export async function loadPickupDto(
       id: p.orderId,
       code: orderCode(p.order.number),
       contractedService: p.order.contractedService,
-      agreedValueCents: valuesVisible ? p.order.agreedValueCents : null,
+      // Sem a permissão a chave nem aparece (nenhum campo de valor na resposta).
+      ...(valuesVisible ? { agreedValueCents: p.order.agreedValueCents } : {}),
     },
     customer: {
       ...toCustomerSummary(p.order.customer),

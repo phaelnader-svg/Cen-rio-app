@@ -225,7 +225,7 @@ describe('Solicitação de retirada', () => {
     const semValores = await panelUserWith(app, admin, 'agendasemvalor', ['retiradas.ver']);
     const agenda = await semValores.get('/api/v1/pickups?from=2026-11-01&to=2026-11-30');
     expect(agenda.status).toBe(200);
-    expect(agenda.body[0].order.agreedValueCents).toBeNull();
+    expect(agenda.body[0].order).not.toHaveProperty('agreedValueCents');
     const comValores = await admin.get('/api/v1/pickups?from=2026-11-01&to=2026-11-30');
     expect(comValores.body[0].order.agreedValueCents).toBe(350000);
   });

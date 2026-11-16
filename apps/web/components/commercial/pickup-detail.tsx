@@ -134,7 +134,7 @@ export function PickupDetailDialog({ id, onClose }: { id: string; onClose: () =>
                 .filter(Boolean)
                 .join(' · ') || 'Nada a levar'}
             </Detail>
-            {p.order.agreedValueCents !== null && (
+            {p.order.agreedValueCents !== undefined && p.order.agreedValueCents !== null && (
               <Detail label="Valor do serviço">{formatMoney(p.order.agreedValueCents)}</Detail>
             )}
             <Detail label="Endereço">
