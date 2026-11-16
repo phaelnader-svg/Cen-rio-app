@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 /**
  * Caddyfile de PRODUÇÃO com o Caddy REAL: o sistema interno continua fora dos buscadores
- * (X-Robots-Tag noindex) e só a página comercial pública (/conheca e /site/*) fica sem o
+ * (X-Robots-Tag noindex) e só a página comercial pública (/, /conheca e /site/*) fica sem o
  * cabeçalho — quem decide se ela pode ser indexada é o próprio Next.js (SITE_COMERCIAL).
  *
  * Únicas adaptações para rodar aqui: destinos `api:4000`/`web:3000` trocados por um servidor
@@ -104,7 +104,15 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
   });
 
   it('o sistema interno continua com noindex', async () => {
-    for (const path of ['/', '/painel', '/tablet', '/entrar', '/api/health', '/conheca-x']) {
+    for (const path of [
+      '/painel',
+      '/tablet',
+      '/entrar',
+      '/entrar/',
+      '/api/health',
+      '/conheca-x',
+      '/x',
+    ]) {
       const r = await get(port, path);
       expect(r.headers['x-robots-tag'], path).toBe('noindex, nofollow');
       expect(r.headers['x-content-type-options'], path).toBe('nosniff');
@@ -112,7 +120,7 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
   });
 
   it('a página comercial e as imagens dela não recebem o noindex do proxy', async () => {
-    for (const path of ['/conheca', '/site/inicio.webp']) {
+    for (const path of ['/', '/conheca', '/site/inicio.webp']) {
       const r = await get(port, path);
       expect(r.statusCode, path).toBe(200);
       expect(r.headers['x-robots-tag'], path).toBeUndefined();

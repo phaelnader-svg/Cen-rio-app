@@ -34,9 +34,9 @@
 	}
 
 	# Sistema interno da oficina: não deve aparecer em buscadores. Única exceção: a página
-	# comercial pública (/conheca) e as imagens dela (/site/*), que o próprio Next.js só libera
-	# para indexação quando está publicada (SITE_COMERCIAL=1 e sem pendências).
-	@privado not path /conheca /site/*
+	# comercial pública (raiz "/" e /conheca) e as imagens dela (/site/*), que o próprio Next.js
+	# só libera para indexação quando está publicada (SITE_COMERCIAL=1 e sem pendências).
+	@privado not path / /conheca /site/*
 	header @privado X-Robots-Tag "noindex, nofollow"
 
 	request_body {
