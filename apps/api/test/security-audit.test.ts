@@ -136,6 +136,12 @@ describe('Matriz de acesso: todas as rotas', () => {
         if (res.status !== 401) leaks.push(`${r.method} ${r.url} → ${res.status}`);
         continue;
       }
+      // Webhooks (Meta, Asaas, Clicksign): não usam cookie; sem a assinatura do provedor → 401.
+      if ('webhook' in r.access) {
+        const res = await foreign.req(r.method as 'POST', r.url, {});
+        if (res.status !== 401) leaks.push(`${r.method} ${r.url} → ${res.status}`);
+        continue;
+      }
       const res = await foreign.req(
         r.method as 'POST',
         concrete(r.url),
