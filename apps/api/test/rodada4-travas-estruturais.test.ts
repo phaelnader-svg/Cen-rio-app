@@ -1346,10 +1346,13 @@ afterAll(() => app.close());
 
 // ─────────────────────────────────────── F1-07b ───────────────────────────────────────
 
-/** Acréscimos permitidos desde 9fb1786 (Rodada 1, decisão do proprietário — F3-17). */
-const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir'];
+/**
+ * Acréscimos permitidos desde 9fb1786 (em ordem alfabética): estoque.conferir (Rodada 1, decisão do
+ * proprietário — F3-17) e as duas do módulo Orçamentos (pedido do proprietário, 2026-11-16).
+ */
+const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir', 'orcamentos.gerenciar', 'orcamentos.ver'];
 const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
-  gestor: ['estoque.conferir'], // o gestor sempre recebe o catálogo completo
+  gestor: ALLOWED_NEW_PERMISSIONS, // o gestor sempre recebe o catálogo completo
   tapeceiro: [],
   cabeceiras_qualidade: [],
   ajudante: [],
@@ -1359,11 +1362,11 @@ const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
 const ALLOWED_ACCESS_CHANGES: Record<string, AccessRule> = {};
 
 describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9fb1786)', () => {
-  it('o catálogo de permissões é superconjunto do de 9fb1786; único acréscimo: estoque.conferir', () => {
+  it('o catálogo de permissões é superconjunto do de 9fb1786; acréscimos só os listados', () => {
     const now = new Set<string>(ALL_PERMISSIONS);
     expect(BASELINE_PERMISSIONS.filter((p) => !now.has(p))).toEqual([]);
     const base = new Set<string>(BASELINE_PERMISSIONS);
-    expect(ALL_PERMISSIONS.filter((p) => !base.has(p))).toEqual(ALLOWED_NEW_PERMISSIONS);
+    expect(ALL_PERMISSIONS.filter((p) => !base.has(p)).sort()).toEqual(ALLOWED_NEW_PERMISSIONS);
   });
 
   it('DEFAULT_ROLES: toda função padrão de 9fb1786 continua com todas as permissões (acréscimos listados)', () => {
@@ -1376,10 +1379,9 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
         `${key} perdeu`,
       ).toEqual([]);
       const base = new Set(perms);
-      expect(
-        [...cur].filter((p) => !base.has(p)),
-        `${key} ganhou`,
-      ).toEqual(ALLOWED_ROLE_ADDITIONS[key]);
+      expect([...cur].filter((p) => !base.has(p)).sort(), `${key} ganhou`).toEqual(
+        ALLOWED_ROLE_ADDITIONS[key],
+      );
     }
   });
 
