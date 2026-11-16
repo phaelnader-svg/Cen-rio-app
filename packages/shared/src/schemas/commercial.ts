@@ -189,6 +189,10 @@ export const orderCancelFinanceSchema = z.object({
     .optional(),
 });
 
+/** Recebimentos removidos: marca as peças restantes do pedido como já na oficina. */
+export const markOrderArrivedSchema = z.object({ version: versionSchema });
+export type MarkOrderArrivedInput = z.infer<typeof markOrderArrivedSchema>;
+
 export const cancelOrderSchema = z.object({
   reason: trimmed(3, 500, 'Motivo do cancelamento'),
   version: versionSchema,

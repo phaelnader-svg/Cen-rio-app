@@ -4,15 +4,6 @@ import { setAttendanceClock } from '../src/modules/attendance/common';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
 import { act } from './production-helpers';
 import { openServiceOrder } from './measurement-helpers';
-import {
-  approvedNeeds,
-  confirmPurchase,
-  createPurchase,
-  createSupplier,
-  ok,
-  receive,
-  staples,
-} from './purchasing-helpers';
 import { post, prepareCompany, workshop } from './audit-helpers';
 
 /**
@@ -112,37 +103,6 @@ describe('Falhas no meio da transação não deixam registros parciais', () => {
     ).toBe(200);
     expect(await db().qualityInspection.count()).toBe(1);
   });
-
-  it('estoque: falha na movimentação desfaz a entrega do material reservado', async () => {
-    const admin = await loginAdmin(app);
-    const supplier = await createSupplier(admin);
-    const { so, reqs } = await approvedNeeds(admin, 'Cliente Estoque Falha', () => [staples()]);
-    const po = await createPurchase(admin, {
-      supplierId: supplier.id,
-      expectedDate: '2030-01-10',
-      items: [
-        {
-          sourcing: 'ESTOQUE',
-          allocations: [{ materialRequirementId: reqs[0]!.id, quantity: 2 }],
-          quantity: 6,
-          unitPriceCents: 1890,
-        },
-      ],
-    });
-    const c = await confirmPurchase(admin, po.body);
-    await receive(admin, c.body.id, [ok(c.body.items[0].id, 6)]);
-    const resv = await db().stockReservation.findFirstOrThrow({ where: { serviceOrderId: so.id } });
-    const before = await db().stockItem.findUniqueOrThrow({ where: { id: resv.stockItemId } });
-    await failOn('stock_movements', `NEW.type = 'SAIDA_OS'`);
-    const r = await post(admin, `/api/v1/stock-reservations/${resv.id}/consume`);
-    expect(r.status).toBe(500);
-    const after = await db().stockItem.findUniqueOrThrow({ where: { id: resv.stockItemId } });
-    expect(Number(after.onHand)).toBe(Number(before.onHand));
-    expect(Number(after.reserved)).toBe(Number(before.reserved));
-    expect((await db().stockReservation.findUniqueOrThrow({ where: { id: resv.id } })).status).toBe(
-      'ATIVA',
-    );
-  });
 });
 
 describe('Operações simultâneas', () => {
@@ -161,43 +121,6 @@ describe('Operações simultâneas', () => {
     expect(await db().qualityInspection.count({ where: { serviceOrderItemId: s.sofa.id } })).toBe(
       1,
     );
-  });
-
-  it('duas reservas simultâneas do último saldo: só uma entra, estoque nunca negativo', async () => {
-    const admin = await loginAdmin(app);
-    const supplier = await createSupplier(admin);
-    const a = await approvedNeeds(admin, 'Cliente Reserva A', () => [staples({ quantity: 3 })]);
-    const b = await openServiceOrder(admin, 'Cliente Reserva B');
-    const c2 = await openServiceOrder(admin, 'Cliente Reserva C');
-    // Compra de 4 com 1 destinado à OS A: entra 4 no estoque, 1 reservado, 3 disponíveis.
-    const po = await createPurchase(admin, {
-      supplierId: supplier.id,
-      expectedDate: '2030-01-10',
-      items: [
-        {
-          sourcing: 'ESTOQUE',
-          allocations: [{ materialRequirementId: a.reqs[0]!.id, quantity: 1 }],
-          quantity: 4,
-          unitPriceCents: 1890,
-        },
-      ],
-    });
-    expect(po.status).toBe(201);
-    const c = await confirmPurchase(admin, po.body);
-    await receive(admin, c.body.id, [ok(c.body.items[0].id, 4)]);
-    const stock = await db().stockItem.findFirstOrThrow();
-    expect(Number(stock.reserved)).toBe(1);
-    const reserve = (so: string) =>
-      post(admin, '/api/v1/stock-reservations', {
-        stockItemId: stock.id,
-        serviceOrderId: so,
-        quantity: 3,
-      });
-    const res = await Promise.all([reserve(b.id), reserve(c2.id)]);
-    expect(res.map((r) => r.status).sort()).toEqual([201, 409]);
-    const after = await db().stockItem.findUniqueOrThrow({ where: { id: stock.id } });
-    expect(Number(after.reserved)).toBe(4);
-    expect(Number(after.onHand)).toBeGreaterThanOrEqual(Number(after.reserved));
   });
 });
 

@@ -3,7 +3,6 @@
 import type { FabricRollDto, InventoryCategoryDto, InventoryItemDto } from '@cenario/shared';
 import { formatCents } from '@cenario/shared';
 import { Archive, ArchiveRestore, History, Plus, Trash2 } from 'lucide-react';
-import Link from 'next/link';
 import { useState } from 'react';
 import { MoneyInput } from '@/components/commercial/money-input';
 import { Button } from '@/components/ui/button';
@@ -49,13 +48,6 @@ export function InventoryPage() {
         title="Estoque da oficina"
         description="Controle simples do que há na oficina: categorias próprias, materiais e rolos de tecido. Não é baixado pelas OS — a quantidade muda só por ajuste, com histórico."
       />
-      <p className="mb-4 text-sm text-ink-muted">
-        O estoque formal (reservas por OS, sobras e movimentações) continua em{' '}
-        <Link className="text-brand-700 hover:underline" href="/painel/estoque">
-          Estoque
-        </Link>
-        .
-      </p>
       <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">

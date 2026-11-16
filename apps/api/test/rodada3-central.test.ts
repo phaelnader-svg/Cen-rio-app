@@ -4,7 +4,7 @@ import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
-import { createCustomer, createOrder, panelUserWith, receiptBody } from './commercial-helpers';
+import { createCustomer, createOrder, panelUserWith } from './commercial-helpers';
 import { openServiceOrder } from './measurement-helpers';
 import { day, today, userIdOf } from './production-helpers';
 import { post, qualityKit } from './quality-helpers';
@@ -92,7 +92,7 @@ describe('Central — o que faltava (F10-04/05/06/09/13f/13g, F1-15a)', () => {
     );
   });
 
-  it('F10-05/06: retiradas dos próximos 2 dias e retirada feita aguardando chegada (Central + Início); chegou, sai', async () => {
+  it('F10-05/06: retiradas dos próximos 2 dias (Central + Início); retirada feita aguarda chegada no Início; chegou, sai', async () => {
     const admin = await loginAdmin(app);
     const andre = await userIdOf('André');
     const soon = await pickup(admin, day(1), andre);
@@ -106,28 +106,13 @@ describe('Central — o que faltava (F10-04/05/06/09/13f/13g, F1-15a)', () => {
     // Retirada feita: aguardando chegada na oficina.
     expect((await transition(admin, soon.pickup.id, 'EM_EXECUCAO')).status).toBe(200);
     expect((await transition(admin, soon.pickup.id, 'RETIRADA_REALIZADA')).status).toBe(200);
-    a = await attention(admin, '?type=LOGISTICA');
-    expect(item(a, `LOGISTICA:aguardando-chegada:${soon.pickup.id}`)).toMatchObject({
-      link: `/painel/retiradas?foco=${soon.pickup.id}`,
-    });
-    o = await overview(admin);
-    expect(o.deliveries!.pickups).toEqual({ upcoming: 0, awaitingArrival: 1 });
-    // Chegou na oficina (recebimento): sai das duas.
-    const r = await post(
-      admin,
-      '/api/v1/receipts',
-      receiptBody(
-        soon.order.id,
-        soon.order.items.map((i: { id: string; quantity: number }) => ({
-          orderItemId: i.id,
-          quantity: i.quantity,
-        })),
-        soon.pickup.id,
-      ),
-    );
-    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    // Recebimentos removidos: a Central não cobra mais a chegada (é uma marca opcional).
     a = await attention(admin, '?type=LOGISTICA');
     expect(item(a, `LOGISTICA:aguardando-chegada:${soon.pickup.id}`)).toBeUndefined();
+    o = await overview(admin);
+    expect(o.deliveries!.pickups).toEqual({ upcoming: 0, awaitingArrival: 1 });
+    // Chegou na oficina (marcada na própria retirada): sai do Início.
+    expect((await transition(admin, soon.pickup.id, 'RECEBIDA_NA_OFICINA')).status).toBe(200);
     expect((await overview(admin)).deliveries!.pickups!.awaitingArrival).toBe(0);
   });
 
@@ -180,43 +165,6 @@ describe('Central — o que faltava (F10-04/05/06/09/13f/13g, F1-15a)', () => {
     const a = await attention(s.admin, '?type=QUALIDADE');
     expect(item(a, `QUALIDADE:embalagem:${rec.id}`)).toBe(undefined);
     expect(JSON.stringify(a)).not.toMatch(/tab=packaging/);
-  });
-
-  it('F1-15a: divergência no recebimento de PEÇA de cliente aparece na Central enquanto o serviço está ativo', async () => {
-    const admin = await loginAdmin(app);
-    const c = await createCustomer(admin, { name: 'Cliente Divergência', allowSimilar: true });
-    const order = await createOrder(admin, c);
-    const r = await post(admin, '/api/v1/receipts', {
-      ...receiptBody(
-        order.id,
-        order.items.map((i: { id: string; quantity: number }) => ({
-          orderItemId: i.id,
-          quantity: i.quantity,
-        })),
-      ),
-      divergences: 'Braço esquerdo trincado na chegada',
-    });
-    expect(r.status, JSON.stringify(r.body)).toBe(201);
-    const a = await attention(admin, '?type=RECEBIMENTO');
-    expect(item(a, `RECEBIMENTO:divergencia:${r.body.id}`)).toMatchObject({
-      category: 'ATENCAO',
-      description: 'Braço esquerdo trincado na chegada',
-      link: `/painel/pedidos/${order.id}`,
-    });
-    // Sem divergência: nada.
-    const clean = await createOrder(admin, c);
-    await post(
-      admin,
-      '/api/v1/receipts',
-      receiptBody(
-        clean.id,
-        clean.items.map((i: { id: string; quantity: number }) => ({
-          orderItemId: i.id,
-          quantity: i.quantity,
-        })),
-      ),
-    );
-    expect((await attention(admin, '?type=RECEBIMENTO')).items).toHaveLength(1);
   });
 });
 

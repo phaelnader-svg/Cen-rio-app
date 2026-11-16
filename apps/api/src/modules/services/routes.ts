@@ -24,7 +24,14 @@ import { loadTeam, upholsterersOf } from '../production/distribution';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { assertModuleEnabled } from '../../core/modules';
-import { asSnapshot, dateOnly, orderCode, pickupCode } from '../commercial/common';
+import {
+  asSnapshot,
+  dateOnly,
+  orderCode,
+  pickupCode,
+  serviceOrderCode,
+} from '../commercial/common';
+import { autoServiceOrderForOrder } from '../service-orders/auto';
 import { createCustomer } from '../customers/service';
 import { createOrder } from '../orders/service';
 import { createPickup } from '../pickups/service';
@@ -237,7 +244,7 @@ export async function serviceRoutes(app: FastifyInstance) {
           }
         }
 
-        // 2. Pedido = serviço fechado (valores só com pedidos.valores; OS automática na chegada).
+        // 2. Pedido = serviço fechado (valores só com pedidos.valores; OS automática no fechamento).
         const s = input.service;
         const order = await createOrder(tx, actor, perms, {
           customerId,
@@ -352,6 +359,8 @@ export async function serviceRoutes(app: FastifyInstance) {
               })
             : null;
         }
+        // Remoção de Recebimentos (D1): a OS nasce aqui, no fechamento do serviço.
+        const serviceOrder = await autoServiceOrderForOrder(tx, actor, order.id);
         await audit(tx, actor, {
           action: 'service.created',
           entityType: 'commercial_order',
@@ -366,6 +375,7 @@ export async function serviceRoutes(app: FastifyInstance) {
             customerDropOff: !p,
             responsible: responsible?.userId ?? null,
             tripCostId: cost?.id ?? null,
+            serviceOrderId: serviceOrder?.id ?? null,
           },
         });
         await appendEvent(tx, actor, {
@@ -387,6 +397,10 @@ export async function serviceRoutes(app: FastifyInstance) {
             totalPieces: items.reduce((a, i) => a + i.quantity, 0),
             agreedValueCents: perms.has('pedidos.valores') ? order.agreedValueCents : null,
             customerDropOff: !p,
+          },
+          serviceOrder: serviceOrder && {
+            id: serviceOrder.id,
+            code: serviceOrderCode(serviceOrder.number),
           },
           pickup: fresh && {
             id: fresh.id,

@@ -54,7 +54,7 @@ import { AddressFields, addressLines, emptyAddress, type AddressState } from './
 
 /**
  * Simplificação Fase 2 — "Novo serviço": cliente, serviço fechado e retirada em UM formulário e
- * UMA confirmação. A OS não é criada aqui: nasce sozinha quando as peças chegam à oficina.
+ * UMA confirmação. A OS nasce junto, no fechamento do serviço.
  */
 
 interface PieceRow {
@@ -394,7 +394,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
     >
       <PageHeader
         title="Novo serviço"
-        description="Cliente, serviço fechado e retirada em um só formulário. A OS é criada automaticamente quando as peças chegarem à oficina."
+        description="Cliente, serviço fechado e retirada em um só formulário. A OS é criada junto, ao registrar."
       />
 
       {/* 1. Cliente */}
@@ -789,7 +789,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
                   cols={4}
                   cents={p.laborCents}
                   onCents={(v, ok) => setPiece(p.key, { laborCents: v, laborOk: ok })}
-                  hint="Previsão: vira valor combinado só quando a peça chegar."
+                  hint="Previsão aplicada na OS criada ao registrar."
                   error={
                     !p.laborOk
                       ? 'Valor inválido.'
@@ -973,8 +973,8 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
         {!withPickup && (
           <div data-testid="ns-dropoff-info">
             <Alert tone="info">
-              Quando o cliente chegar com as peças, registre em Recebimentos (&quot;Entregue pelo
-              cliente&quot;): a OS é criada automaticamente com o que chegou.
+              O cliente entrega as peças na tapeçaria. Se quiser, marque &quot;Peças na
+              oficina&quot; no pedido quando elas chegarem (opcional).
             </Alert>
           </div>
         )}
@@ -1162,7 +1162,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
                     }`,
                 )
                 .join(' · ')}
-              hint="Aplicado na OS gerada na chegada; mão de obra prevista não é pagamento."
+              hint="Aplicado na OS criada ao registrar; mão de obra prevista não é pagamento."
               testId="ns-sum-owners"
             />
           )}
@@ -1260,7 +1260,9 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
               {p ? 'Aguardando retirada' : 'Aguardando entrega do cliente'}
             </p>
             <p className="text-sm text-ink-muted">
-              A OS será criada automaticamente quando as peças chegarem à oficina.
+              {result.serviceOrder
+                ? `OS ${result.serviceOrder.code} criada com as peças do serviço.`
+                : 'Nenhuma OS criada: não há peças livres neste pedido.'}
             </p>
           </div>
         </div>
@@ -1271,6 +1273,13 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
             text
           />
           <SummaryRow label="Pedido" value={result.order.code} testId="ns-done-order" />
+          {result.serviceOrder && (
+            <SummaryRow
+              label="Ordem de serviço"
+              value={result.serviceOrder.code}
+              testId="ns-done-os"
+            />
+          )}
           {p ? (
             <>
               <SummaryRow label="Retirada" value={p.code} text />
@@ -1322,11 +1331,21 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
           )}
           <Button
             type="button"
+            variant={result.serviceOrder ? 'secondary' : 'primary'}
             onClick={() => router.push(`/painel/pedidos/${result.order.id}`)}
             data-testid="ns-open-order"
           >
             Abrir pedido
           </Button>
+          {result.serviceOrder && (
+            <Button
+              type="button"
+              onClick={() => router.push(`/painel/os/${result.serviceOrder!.id}`)}
+              data-testid="ns-open-os"
+            >
+              Abrir OS
+            </Button>
+          )}
         </FormActions>
       </Card>
     </div>

@@ -3,21 +3,9 @@ import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
-import { createCustomer, createOrder, panelUserWith, receiptBody } from './commercial-helpers';
+import { createCustomer, createOrder, panelUserWith, markArrived } from './commercial-helpers';
 import { openServiceOrder } from './measurement-helpers';
 import { userIdOf, today } from './production-helpers';
-import {
-  approvedNeeds,
-  confirmPurchase,
-  confirmedFabricPurchase,
-  createPurchase,
-  createSupplier,
-  linen,
-  ok,
-  readiness,
-  receive,
-  staples,
-} from './purchasing-helpers';
 import { finish, post, prepareCompany, workshop } from './audit-helpers';
 
 /**
@@ -77,77 +65,6 @@ async function labor(admin: Client, body: Record<string, unknown>) {
   if (r.status !== 201) throw new Error(`labor: ${JSON.stringify(r.body)}`);
   return r.body as { id: string; code: string };
 }
-
-describe('A. Reservas de material em OS parcialmente devolvida', () => {
-  it('libera só as reservas das peças devolvidas; consumido e outras peças intactos; sem peça → revisão', async () => {
-    const admin = await loginAdmin(app);
-    const supplier = await createSupplier(admin);
-    const { so, reqs } = await approvedNeeds(admin, 'Cliente Reservas', (s) => [
-      staples({ serviceOrderItemId: s.items[0].id, description: 'Grampos do sofá' }),
-      staples({ serviceOrderItemId: s.items[1].id, description: 'Grampos das poltronas' }),
-      staples({ description: 'Cola de contato', quantity: 1 }),
-    ]);
-    const byDesc = (d: string) => reqs.find((r) => r.description === d)!;
-    const po = await createPurchase(admin, {
-      supplierId: supplier.id,
-      expectedDate: '2030-01-10',
-      items: reqs.map((r) => ({
-        sourcing: 'ESTOQUE',
-        allocations: [{ materialRequirementId: r.id, quantity: Number(r.quantity) }],
-        quantity: Number(r.quantity) + 2,
-        unitPriceCents: 1000,
-      })),
-    });
-    expect(po.status).toBe(201);
-    const c = await confirmPurchase(admin, po.body);
-    await receive(
-      admin,
-      c.body.id,
-      c.body.items.map((i: { id: string; quantity: number }) => ok(i.id, i.quantity)),
-    );
-    const resv = async (d: string) =>
-      db().stockReservation.findFirstOrThrow({ where: { materialRequirementId: byDesc(d).id } });
-    // O material do sofá já foi entregue à OS (consumido): nunca volta sozinho.
-    const sofaRes = await resv('Grampos do sofá');
-    expect((await post(admin, `/api/v1/stock-reservations/${sofaRes.id}/consume`)).status).toBe(
-      200,
-    );
-    const poltronaRes = await resv('Grampos das poltronas');
-    const stockBefore = await db().stockItem.findUniqueOrThrow({
-      where: { id: poltronaRes.stockItemId },
-    });
-
-    const ret = await returnPieces(admin, await orderOf(so.id), [
-      {
-        orderItemId: await orderItemOf(so.items[1].id),
-        quantity: 2,
-        serviceOrderItemIds: [so.items[1].id],
-      },
-    ]);
-    expect((await resv('Grampos das poltronas')).status).toBe('LIBERADA');
-    expect((await resv('Grampos das poltronas')).closeReason).toMatch(/Peça devolvida \(DV-/);
-    expect((await resv('Grampos do sofá')).status).toBe('CONSUMIDA');
-    expect((await resv('Cola de contato')).status).toBe('ATIVA');
-    const stockAfter = await db().stockItem.findUniqueOrThrow({
-      where: { id: poltronaRes.stockItemId },
-    });
-    expect(Number(stockAfter.reserved)).toBe(
-      Number(stockBefore.reserved) - Number(poltronaRes.quantity),
-    );
-    expect(Number(stockAfter.onHand)).toBe(Number(stockBefore.onHand));
-    // A reserva sem peça definida não é rateada: fica para o gestor revisar.
-    expect(ret.review.reservations).toEqual([
-      expect.objectContaining({ material: expect.stringContaining('Cola'), quantity: 1 }),
-    ]);
-    expect(await db().auditLog.count({ where: { action: 'stock.released_on_return' } })).toBe(1);
-    // A OS segue aberta com o sofá; o custo consumido do sofá continua na OS.
-    expect((await db().serviceOrder.findUniqueOrThrow({ where: { id: so.id } })).status).toBe(
-      'ABERTA',
-    );
-    const result = (await admin.get(`/api/v1/finance/service-orders/${so.id}`)).body;
-    expect(result.materials.consumedCents).toBeGreaterThan(0);
-  });
-});
 
 describe('B. Valores de produção de peças devolvidas', () => {
   it('peça devolvida sem execução: valor previsto cancelado com justificativa; outras peças intactas', async () => {
@@ -257,16 +174,12 @@ describe('C. Devolução pelo painel (inclusive peças avulsas) com destino e hi
     const admin = await loginAdmin(app);
     const customer = await createCustomer(admin, { name: 'Cliente Avulso' });
     const order = await createOrder(admin, customer);
-    const rec = await post(
-      admin,
-      '/api/v1/receipts',
-      receiptBody(
-        order.id,
-        order.items.map((i: { id: string; quantity: number }) => ({
-          orderItemId: i.id,
-          quantity: i.quantity,
-        })),
-      ) as Record<string, unknown>,
+    const rec = await markArrived(
+      order.id,
+      order.items.map((i: { id: string; quantity: number }) => ({
+        orderItemId: i.id,
+        quantity: i.quantity,
+      })),
     );
     expect(rec.status).toBe(201);
     const chairs = order.items.find((i: { pieceType: string }) => i.pieceType === 'CADEIRA');
@@ -366,87 +279,5 @@ describe('D. Situação comercial de pedidos com devolução', () => {
     }[];
     expect(list.find((x) => x.id === c.id)!.serviceState).toBe('SERVICO_CANCELADO');
     expect(list.find((x) => x.id === orderB)!.serviceState).toBe('DEVOLUCAO_TOTAL');
-  });
-});
-
-describe('E. Encerramento do saldo de compra parcialmente recebida', () => {
-  it('encerra só o pendente, com justificativa e autorização; necessidade volta a aparecer; custos preservados', async () => {
-    const admin = await loginAdmin(app);
-    const supplier = await createSupplier(admin);
-    const { so, reqs } = await approvedNeeds(admin, 'Cliente Saldo', (s) => [linen(s.items[0].id)]);
-    const po = await confirmedFabricPurchase(admin, supplier.id, reqs[0]!, 4500);
-    // Nada recebido: encerrar saldo não se aplica (cancela-se o pedido).
-    const early = await post(admin, `/api/v1/purchase-orders/${po.id}/close-balance`, {
-      reason: 'Fornecedor sem estoque',
-      version: po.version,
-    });
-    expect(early.status).toBe(422);
-    const rec = await receive(admin, po.id, [ok(po.items[0].id, 8)]);
-    expect(rec.status).toBe(201);
-    const cur = (await admin.get(`/api/v1/purchase-orders/${po.id}`)).body;
-    expect(cur).toMatchObject({ status: 'PARCIALMENTE_RECEBIDO', can: { closeBalance: true } });
-    const buyer = await panelUserWith(app, admin, 'comprador', [
-      'compras.ver',
-      'compras.gerenciar',
-    ]);
-    expect(
-      (
-        await post(buyer, `/api/v1/purchase-orders/${po.id}/close-balance`, {
-          reason: 'x'.repeat(5),
-          version: cur.version,
-        })
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await post(admin, `/api/v1/purchase-orders/${po.id}/close-balance`, {
-          reason: '',
-          version: cur.version,
-        })
-      ).status,
-    ).toBe(400);
-    const closed = await post(admin, `/api/v1/purchase-orders/${po.id}/close-balance`, {
-      reason: 'Fornecedor não tem mais o linho bege',
-      version: cur.version,
-    });
-    expect(closed.status).toBe(200);
-    expect(closed.body).toMatchObject({
-      status: 'RECEBIDO',
-      balanceCloseReason: 'Fornecedor não tem mais o linho bege',
-    });
-    expect(closed.body.items[0]).toMatchObject({
-      quantity: 12,
-      receivedQuantity: 8,
-      closedQuantity: 4,
-      pendingQuantity: 0,
-    });
-    expect(closed.body.history.map((h: { kind: string }) => h.kind)).toContain('SALDO_ENCERRADO');
-    // Necessidade volta a aparecer: comprado = recebido (8 de 12).
-    const r = await readiness(admin, so.id);
-    expect(r.lines[0]).toMatchObject({ need: 12, purchased: 8, received: 8 });
-    // Custos: consumido (recebido) intacto; "comprado" sem o saldo encerrado.
-    const result = (await admin.get(`/api/v1/finance/service-orders/${so.id}`)).body;
-    expect(result.materials).toMatchObject({ consumedCents: 8 * 4500, purchasedCents: 8 * 4500 });
-    // Pedido encerrado não recebe mais.
-    expect((await receive(admin, po.id, [ok(po.items[0].id, 1)])).status).not.toBe(201);
-    // Estorno depois do encerramento: o estornado também vira saldo encerrado; continua "recebido".
-    const line = await db().materialReceiptLine.findFirstOrThrow({
-      where: { purchaseOrderItemId: po.items[0].id },
-    });
-    const rev = await post(admin, `/api/v1/material-receipts/lines/${line.id}/reverse`, {
-      quantity: 2,
-      reason: 'Peça de tecido manchada',
-    });
-    expect(rev.status).toBe(200);
-    const after = (await admin.get(`/api/v1/purchase-orders/${po.id}`)).body;
-    expect(after.status).toBe('RECEBIDO');
-    expect(after.items[0]).toMatchObject({
-      receivedQuantity: 6,
-      closedQuantity: 6,
-      pendingQuantity: 0,
-    });
-    expect(await db().auditLog.count({ where: { action: 'purchase_order.saldo_encerrado' } })).toBe(
-      1,
-    );
   });
 });

@@ -81,8 +81,15 @@ export const TRECHOS_PROIBIDOS: Record<Etapa, readonly string[]> = {
     "'/api/v1/stock-",
   ],
   S5: ["'/api/v1/receipts"],
-  S6: ["'/api/v1/pickups", "'/api/v1/logistics", "'/api/v1/finance/trip-costs"],
-  S7: ["'/api/v1/help-requests", 'useModules', "'/api/company/modules"],
+  // Interruptores: com a logística mantida, useModules e /api/company/modules ficam até a S6.
+  S6: [
+    "'/api/v1/pickups",
+    "'/api/v1/logistics",
+    "'/api/v1/finance/trip-costs",
+    'useModules',
+    "'/api/company/modules",
+  ],
+  S7: ["'/api/v1/help-requests"],
   S8: [],
 };
 

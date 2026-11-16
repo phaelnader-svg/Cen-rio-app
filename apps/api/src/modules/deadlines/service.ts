@@ -33,7 +33,7 @@ const factsSelect = {
   id: true,
   status: true,
   promisedDate: true,
-  materialsReadiness: true,
+  simpleMaterials: { where: { removedAt: null, available: false }, select: { id: true }, take: 1 },
   items: {
     select: {
       fulfillmentStage: true,
@@ -105,7 +105,7 @@ export async function serviceDeadlines(
           (t.status === 'PAUSADA' && t.pauseImpediment) ||
           (OPEN_TASK.includes(t.status) && t.blockers.includes('OCORRENCIA')),
       ),
-      materialsReadiness: r.materialsReadiness,
+      materialsMissing: r.simpleMaterials.length > 0,
     };
     out.set(r.id, serviceDeadline(facts, calendar.today, calendar.workingDays));
   }

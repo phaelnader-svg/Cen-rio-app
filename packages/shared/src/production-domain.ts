@@ -262,11 +262,9 @@ export const TASK_ROLE_LABEL: Record<TaskRole, string> = {
 
 export const RELEASE_BLOCKERS = [
   'OS_INATIVA',
-  'PECA_NAO_RECEBIDA',
   'NAO_PUBLICADA',
   'SEM_RESPONSAVEL',
   'DEPENDENCIAS',
-  'MATERIAIS',
   'BLOQUEIO',
   'OCORRENCIA',
 ] as const;
@@ -281,14 +279,10 @@ export const onlyReassignableBlockers = (blockers: readonly string[]) =>
   blockers.every((b) => (REASSIGNABLE_WAITING_BLOCKERS as readonly string[]).includes(b));
 /**
  * Rodada 3 (F10-09/F10-21l): o que é BLOQUEIO DE PRODUÇÃO (exceção para o gestor): bloqueada pelo
- * gestor, sem material ou por ocorrência. Esperar a etapa anterior, a publicação, o responsável
- * ou a chegada da peça é a sequência normal do plano (cada uma tem a sua tela).
+ * gestor ou por ocorrência. Esperar a etapa anterior, a publicação ou o responsável é a
+ * sequência normal do plano (cada uma tem a sua tela). Material e chegada da peça nunca bloqueiam.
  */
-export const PRODUCTION_STOP_BLOCKERS: readonly ReleaseBlocker[] = [
-  'BLOQUEIO',
-  'MATERIAIS',
-  'OCORRENCIA',
-];
+export const PRODUCTION_STOP_BLOCKERS: readonly ReleaseBlocker[] = ['BLOQUEIO', 'OCORRENCIA'];
 export const isProductionStopped = (blockers: readonly string[]) =>
   blockers.some((b) => (PRODUCTION_STOP_BLOCKERS as readonly string[]).includes(b));
 
@@ -307,24 +301,18 @@ export const PLAN_MODE_LABEL: Record<PlanMode, string> = {
 
 export const RELEASE_BLOCKER_LABEL: Record<ReleaseBlocker, string> = {
   OS_INATIVA: 'A OS não está ativa',
-  PECA_NAO_RECEBIDA: 'Peça ainda não recebida na oficina',
   NAO_PUBLICADA: 'Programação ainda não publicada',
   SEM_RESPONSAVEL: 'Sem responsável designado',
   DEPENDENCIAS: 'Aguardando etapas anteriores',
-  MATERIAIS: 'Materiais não disponíveis/reservados',
   BLOQUEIO: 'Bloqueada pelo gestor',
   OCORRENCIA: 'Ocorrência aberta impede a tarefa',
 };
 
 export interface ReleaseInput {
   osActive: boolean;
-  pieceReceived: boolean;
   published: boolean;
   assigned: boolean;
   dependenciesDone: boolean;
-  /** Só conta quando a tarefa exige materiais. */
-  materialsReady: boolean;
-  requiresMaterials: boolean;
   manuallyBlocked: boolean;
   /** Fase 9: ocorrência aberta que impede a tarefa. */
   openIssue?: boolean;
@@ -350,11 +338,9 @@ export function evaluateRelease(i: ReleaseInput): {
 } {
   const blockers: ReleaseBlocker[] = [];
   if (!i.osActive) blockers.push('OS_INATIVA');
-  if (!i.pieceReceived) blockers.push('PECA_NAO_RECEBIDA');
   if (!i.published) blockers.push('NAO_PUBLICADA');
   if (!i.assigned) blockers.push('SEM_RESPONSAVEL');
   if (!i.dependenciesDone) blockers.push('DEPENDENCIAS');
-  if (i.requiresMaterials && !i.materialsReady) blockers.push('MATERIAIS');
   if (i.manuallyBlocked) blockers.push('BLOQUEIO');
   if (i.openIssue) blockers.push('OCORRENCIA');
   if (blockers.length) return { status: 'BLOQUEADA', blockers };

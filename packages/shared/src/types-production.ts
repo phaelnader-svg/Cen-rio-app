@@ -1,6 +1,5 @@
 import type { IssueKind } from './issue-domain';
 import type { PieceType, Priority, ServiceType } from './domain';
-import type { MaterialReadiness } from './purchasing-domain';
 import type { DistributionPendency, OwnerChangeKind, StepClass } from './distribution-domain';
 import type {
   CompletionRequirement,
@@ -14,7 +13,6 @@ import type {
   TaskStatus,
 } from './production-domain';
 import type { MeasurementDto } from './types-commercial';
-import type { ReadinessLineDto } from './types-purchasing';
 
 export interface ProductionTemplateDto {
   id: string;
@@ -170,10 +168,6 @@ export interface ProductionTaskDetailDto extends ProductionTaskDto {
       measurements: MeasurementDto[];
     }[];
   };
-  /** Materiais aprovados da OS (sem preços). */
-  materials: ReadinessLineDto[];
-  /** Fase 6: materiais (requisitos) vinculados a esta tarefa; vazio = depende da OS inteira. */
-  materialIds: string[];
   /** Fase 6: situação dos materiais desta tarefa. */
   taskMaterials: 'NAO_EXIGE' | 'DISPONIVEIS' | 'FALTANDO';
   /**
@@ -196,7 +190,6 @@ export interface ProductionTaskDetailDto extends ProductionTaskDto {
     changedBy: string | null;
     createdAt: string;
   }[];
-  materialsState: MaterialReadiness;
   /** Histórico de produção da OS (todas as tarefas). */
   osTasks: TaskRefDto[];
   can: {
@@ -221,7 +214,6 @@ export interface PlanItemDto {
   customerName: string;
   principal: { userId: string; displayName: string } | null;
   priority: Priority;
-  materialsState: MaterialReadiness;
   hasSofa: boolean;
 }
 
@@ -297,7 +289,6 @@ export interface MyQueueDto {
 export interface PlanCandidateDto {
   serviceOrder: { id: string; code: string; promisedDate: string | null; priority: Priority };
   customerName: string;
-  materialsState: MaterialReadiness;
   items: { id: string; code: string; pieceType: PieceType; description: string }[];
   technicalLead: { userId: string; displayName: string } | null;
   openTasks: number;
@@ -402,7 +393,6 @@ export interface PipelineServiceDto {
   customerName: string;
   receivedAt: string | null;
   pieces: PipelinePieceDto[];
-  materials: { state: string; label: string; inConference: boolean };
   stage: PipelineStage;
   /** Item do plano (semana) — nulo em "A planejar". */
   plan: {
@@ -449,7 +439,6 @@ export interface PublicationPreviewDto {
   byAssignee: { userId: string | null; displayName: string; tasks: number }[];
   startDates: { code: string; startDate: string | null }[];
   pendencies: string[];
-  materialsBlocked: { code: string; label: string }[];
   conflicts: string[];
   publishable: boolean;
 }

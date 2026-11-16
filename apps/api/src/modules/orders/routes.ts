@@ -3,6 +3,7 @@ import {
   itemValuesProblem,
   anyPermissionAudience,
   cancelOrderSchema,
+  markOrderArrivedSchema,
   createOrderSchema,
   orderPlannedIntentSchema,
   orderQuerySchema,
@@ -49,8 +50,7 @@ import { syncTripCost } from '../finance/trip-costs';
 import { assertIntentEligible, canPlanLabor, canPlanUpholsterer } from './planned-intent';
 import { createOrder } from './service';
 import { orderDeadlines, serviceDeadlines } from '../deadlines/service';
-import { changeServiceOrderPromisedDate } from '../service-orders/routes';
-import { cancelForecastsOfOrder, removeForecastsOfItems } from '../purchasing/forecasts';
+import { cancelServiceOrder, changeServiceOrderPromisedDate } from '../service-orders/routes';
 import { cancelOrderFinance, lockOrderReceivables, recordAgreedValue } from '../finance/revenue';
 import { resolvePickupAssignment } from '../notifications/notify';
 
@@ -59,11 +59,7 @@ const br = (d: string | null) => (d ? d.split('-').reverse().join('/') : 'sem pr
 
 const VIEW = { session: 'WEB', permissions: ['pedidos.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['pedidos.gerenciar'] } as const;
-export const ORDER_AUDIENCE = anyPermissionAudience(
-  'pedidos.ver',
-  'recebimentos.registrar',
-  'os.gerenciar',
-);
+export const ORDER_AUDIENCE = anyPermissionAudience('pedidos.ver', 'os.gerenciar');
 
 type OrderFull = CommercialOrder & {
   customer: Customer;
@@ -415,13 +411,6 @@ export async function orderRoutes(app: FastifyInstance) {
           );
         }
       }
-      // Etapa 3 (AB-7): previsão virgem sai junto com a peça; com qualquer vínculo, recusa.
-      await removeForecastsOfItems(
-        tx,
-        actorFrom(request),
-        id,
-        before.items.filter((i) => !keepIds.has(i.id)),
-      );
       await tx.commercialOrderItem.deleteMany({
         where: { orderId: id, id: { notIn: [...keepIds] } },
       });
@@ -622,6 +611,60 @@ export async function orderRoutes(app: FastifyInstance) {
     },
   );
 
+  /**
+   * Recebimentos removidos: "Peças na oficina" marca como chegadas as peças do pedido que não
+   * estão em retirada ativa (o cliente trouxe). Opcional — a OS e a produção não dependem disso.
+   */
+  app.post(
+    '/api/v1/orders/:id/arrived',
+    { config: { access: MANAGE, idempotent: true } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const input = markOrderArrivedSchema.parse(request.body);
+      const actor = actorFrom(request);
+      await prisma.$transaction(async (tx) => {
+        if (!(await lockOrder(tx, id))) throw Errors.notFound('Pedido');
+        await lockOrderItems(tx, id);
+        const before = await tx.commercialOrder.findUniqueOrThrow({
+          where: { id },
+          include: { items: true },
+        });
+        if (before.version !== input.version) throw Errors.versionConflict(before.version);
+        if (before.status === 'CANCELADO')
+          throw Errors.business('Pedido cancelado não pode ser alterado.');
+        const alloc = await itemAllocations(tx, id);
+        const marked: { orderItemId: string; from: number; to: number }[] = [];
+        for (const i of before.items) {
+          const to = Math.max(i.receivedQuantity, i.quantity - alloc.inPickups(i.id));
+          if (to === i.receivedQuantity) continue;
+          await tx.commercialOrderItem.update({
+            where: { id: i.id },
+            data: { receivedQuantity: to },
+          });
+          marked.push({ orderItemId: i.id, from: i.receivedQuantity, to });
+        }
+        if (!marked.length)
+          throw Errors.business(
+            'Não há peças a marcar: as restantes já chegaram ou estão em retirada ativa.',
+          );
+        await tx.commercialOrder.update({
+          where: { id },
+          data: { version: { increment: 1 } },
+        });
+        await refreshOrderStatus(tx, id);
+        await audit(tx, actor, {
+          action: 'order.pieces_arrived',
+          entityType: 'commercial_order',
+          entityId: id,
+          summary: `Pedido ${orderCode(before.number)}: peças marcadas como na oficina.`,
+          changes: { items: marked },
+        });
+        await emitOrderEvent(tx, request, id);
+      });
+      return loadOrderDto(prisma, request, id);
+    },
+  );
+
   app.post(
     '/api/v1/orders/:id/cancel',
     { config: { access: { session: 'WEB', permissions: ['pedidos.cancelar'] } } },
@@ -642,6 +685,13 @@ export async function orderRoutes(app: FastifyInstance) {
           );
         }
         const actor = actorFrom(request);
+        // A OS nasce no fechamento do serviço: cancelar o pedido cancela as OS ativas dele.
+        const activeOs = await tx.serviceOrder.findMany({
+          where: { orderId: id, status: 'ABERTA' },
+          select: { id: true },
+        });
+        for (const so of activeOs)
+          await cancelServiceOrder(tx, actor, so.id, `Pedido cancelado: ${input.reason}`);
         // Cobrança (AM-11): cobranças sem recebimento canceladas; com valor líquido recebido,
         // decisão explícita (reter e/ou reembolsar) na mesma transação — antes de cancelar.
         const finance = await cancelOrderFinance(tx, actor, id, input.reason, input.finance);
@@ -655,9 +705,6 @@ export async function orderRoutes(app: FastifyInstance) {
             version: { increment: 1 },
           },
         });
-        // Etapa 3: previsões de compra (pré-OS) deixam de gerar compra; compras e recebidos
-        // existentes permanecem (sem destino / candidato a sobra).
-        const cancelledForecasts = await cancelForecastsOfOrder(tx, actor, id, input.reason);
         // Retiradas ainda ativas são canceladas junto, com registro na linha do tempo.
         const pickups = await tx.pickupRequest.findMany({
           where: { orderId: id, status: { in: [...ACTIVE_PICKUP_STATUSES] } },
@@ -689,7 +736,7 @@ export async function orderRoutes(app: FastifyInstance) {
           changes: {
             reason: input.reason,
             cancelledPickups: pickups.length,
-            cancelledForecasts: cancelledForecasts.length,
+            cancelledServiceOrders: activeOs.length,
             receivedCents: finance.receivedCents,
             retainedCents: finance.retainedCents,
           },

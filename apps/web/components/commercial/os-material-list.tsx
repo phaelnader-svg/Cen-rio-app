@@ -81,7 +81,7 @@ export function OsMaterialList({
           data-testid="os-material-reconcile-notice"
         >
           Conciliação pendente: {pendingReconciliation.lines} material(is) com custo informado e a
-          OS também tem compra formal ({formatCents(pendingReconciliation.realizedCents)} no
+          OS também tem custo formal ({formatCents(pendingReconciliation.realizedCents)} no
           realizado). O valor continua contando até o financeiro indicar se é o mesmo material.
         </p>
       )}
@@ -519,10 +519,10 @@ function Reconciliation({
   const [choice, setChoice] = useState('');
   return (
     <div className="mt-1 space-y-1 text-xs" data-testid="os-material-reconciliation">
-      {r.status === 'PENDENTE' && <Badge tone="warn">Conciliar com a compra formal</Badge>}
+      {r.status === 'PENDENTE' && <Badge tone="warn">Conciliar com o custo formal</Badge>}
       {r.status === 'VINCULADO' && (
         <p className="text-ink-muted">
-          <Badge tone="ok">Mesmo material da compra formal</Badge>{' '}
+          <Badge tone="ok">Mesmo material do custo formal</Badge>{' '}
           {r.linked ? recordLabel(r.linked) : ''} — não conta de novo.
         </p>
       )}

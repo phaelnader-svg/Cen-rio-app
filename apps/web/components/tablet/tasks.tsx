@@ -8,7 +8,6 @@ import type {
   ProductionTaskDto,
 } from '@cenario/shared';
 import {
-  LINE_STAGE_LABEL,
   PAUSE_REASONS,
   PAUSE_REASON_LABEL,
   PIECE_TYPE_LABEL,
@@ -42,7 +41,6 @@ import { TaskStatusBadge } from '@/components/production/badges';
 import { TaskHistory, TaskRefs } from '@/components/production/task-history';
 import { useSend } from '@/components/production/use-send';
 import { useMe } from '@/lib/hooks';
-import { qtyText, specText } from '@/components/purchasing/format';
 import { Button } from '@/components/ui/button';
 import { Alert, Spinner } from '@/components/ui/misc';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
@@ -51,7 +49,7 @@ import { formatDateTime } from '@/lib/format';
 import { useMyQueue, useMyTasks, useNotifications, useTask } from '@/lib/production';
 import { useRealtime } from '@/lib/realtime';
 import { uploadPhoto } from '@/lib/photos';
-import { AlternativeTasks, HelpPanel, MyOpenHelp, SupportInfo, TransferPanel } from './help';
+import { AlternativeTasks, SupportInfo, TransferPanel } from './task-support';
 import { IssueInfo, MyOpenIssues, ProblemPanel } from './issues';
 import { QualityInfo } from './quality';
 
@@ -122,11 +120,9 @@ export function NotificationsButton({ onClick }: { onClick: () => void }) {
  */
 export function MyDay({
   onOpen,
-  canAskHelp,
   reportUserId,
 }: {
   onOpen: (id: string) => void;
-  canAskHelp?: boolean;
   /** Fase 9: quem registra problemas (mostra os próprios ainda abertos). */
   reportUserId?: string | null;
 }) {
@@ -166,7 +162,6 @@ export function MyDay({
         />
       </section>
 
-      {canAskHelp && <MyOpenHelp />}
       {reportUserId && <MyOpenIssues userId={reportUserId} />}
 
       {fila && <QueueSection queue={fila} onOpen={onOpen} />}
@@ -300,8 +295,8 @@ const ACCENT: Partial<Record<ProductionTaskDto['status'], string>> = {
 /** Situação dos materiais a partir do que a tarefa já informa (sem consulta extra). */
 function materialsOf(t: ProductionTaskDto): 'NAO_EXIGE' | 'DISPONIVEIS' | 'FALTANDO' {
   if (!t.requiresMaterials) return 'NAO_EXIGE';
-  // Etapa E1: com as travas desligadas, o servidor informa a lista simples da OS (só aviso).
-  return t.blockers.includes('MATERIAIS') || t.osMaterialsMissing ? 'FALTANDO' : 'DISPONIVEIS';
+  // O servidor informa a lista simples da OS (só aviso; não trava a tarefa).
+  return t.osMaterialsMissing ? 'FALTANDO' : 'DISPONIVEIS';
 }
 
 function MaterialsIndicator({ state }: { state: 'NAO_EXIGE' | 'DISPONIVEIS' | 'FALTANDO' }) {
@@ -519,12 +514,10 @@ function QuickAction({ t }: { t: ProductionTaskDto }) {
 export function MyTaskDetail({
   id,
   onOpen,
-  canAskHelp,
   reportUserId,
 }: {
   id: string;
   onOpen?: (id: string) => void;
-  canAskHelp?: boolean;
   /** Fase 9: usuário que pode registrar problemas nas próprias tarefas. */
   reportUserId?: string | null;
 }) {
@@ -557,9 +550,6 @@ export function MyTaskDetail({
         },
       },
     );
-  const myMaterials = t.materialIds.length
-    ? t.materials.filter((l) => t.materialIds.includes(l.requirementId))
-    : t.materials;
 
   return (
     <div className="space-y-6" data-testid="my-task-detail">
@@ -668,7 +658,6 @@ export function MyTaskDetail({
           )}
       </div>
 
-      {canAskHelp && (t.can.start || t.can.progress) && <HelpPanel t={t} />}
       <TransferPanel t={t} me={meQ.data?.user.id} />
       <AlternativeTasks t={t} onOpen={onOpen} />
       {reportUserId && t.assignee?.userId === reportUserId && !t.issueFor && <ProblemPanel t={t} />}
@@ -758,33 +747,12 @@ export function MyTaskDetail({
         </ul>
       </Block>
 
-      {/* Reformulação, Fase 2: um só bloco de materiais — os aprovados da tarefa (fluxo formal) e
-          a lista simples da OS (só situação; custo nunca aparece aqui). */}
-      <Block title={t.materialIds.length ? 'Materiais desta tarefa' : 'Materiais'}>
-        {myMaterials.length === 0 && (t.osMaterials ?? []).length === 0 ? (
+      {/* Lista simples de materiais da OS (só situação; custo nunca aparece aqui). */}
+      <Block title="Materiais">
+        {(t.osMaterials ?? []).length === 0 ? (
           <p className="text-base text-ink-muted">Nenhum material listado.</p>
         ) : (
           <div className="space-y-3">
-            {myMaterials.length > 0 && (
-              <ul className="space-y-2 text-base" data-testid="task-materials">
-                {myMaterials.map((l) => (
-                  <li key={l.requirementId} className="flex flex-wrap items-center gap-2">
-                    <span className="font-medium">{specText(l)}</span>
-                    <span className="text-ink-muted">· {qtyText(l.need, l.unit)}</span>
-                    <span
-                      className={clsx(
-                        'rounded-full px-2.5 py-0.5 text-sm font-semibold',
-                        l.stage === 'DISPONIVEL'
-                          ? 'bg-ok-50 text-ok-600'
-                          : 'bg-warn-50 text-warn-600',
-                      )}
-                    >
-                      {LINE_STAGE_LABEL[l.stage]}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
             {(t.osMaterials ?? []).length > 0 && (
               <ul className="space-y-2 text-base" data-testid="task-os-materials">
                 {(t.osMaterials ?? []).map((m, i) => (
@@ -949,11 +917,6 @@ function WhyWaiting({ t }: { t: ProductionTaskDetailDto }) {
     );
   }
   if (t.status !== 'BLOQUEADA') return null;
-  const missing = (
-    t.materialIds.length
-      ? t.materials.filter((l) => t.materialIds.includes(l.requirementId))
-      : t.materials
-  ).filter((l) => l.stage !== 'DISPONIVEL');
   return (
     <Alert tone="warn" title="Ainda não liberada — por quê:">
       <ul className="mt-1 list-disc space-y-1 pl-5 text-base" data-testid="why-waiting">
@@ -967,9 +930,7 @@ function WhyWaiting({ t }: { t: ProductionTaskDetailDto }) {
                     .filter((d) => !DONE.includes(d.status))
                     .map((d) => `${d.title} (${d.assignee ?? 'sem responsável'})`)
                     .join(', ')}`
-                : b === 'MATERIAIS' && missing.length
-                  ? `Falta material: ${missing.map((l) => `${specText(l)} — ${LINE_STAGE_LABEL[l.stage]}`).join('; ')}`
-                  : RELEASE_BLOCKER_LABEL[b]}
+                : RELEASE_BLOCKER_LABEL[b]}
             </li>
           ))}
       </ul>

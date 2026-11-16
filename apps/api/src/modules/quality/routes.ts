@@ -25,7 +25,6 @@ import {
   pickupExecutionSchema,
   qualitySettingsSchema,
   qualityTemplateSchema,
-  receiptCorrectionSchema,
   rejectInspectionSchema,
   resolveLogisticsOccurrenceSchema,
   stageQuerySchema,
@@ -82,14 +81,7 @@ import {
   resolveOccurrence,
   toOccurrenceDto,
 } from './logistics';
-import {
-  cancelReturn,
-  confirmReturn,
-  correctReceiptLine,
-  createReturn,
-  returnInclude,
-  toReturnDto,
-} from './returns';
+import { cancelReturn, confirmReturn, createReturn, returnInclude, toReturnDto } from './returns';
 import {
   arriveDelivery,
   cancelDelivery,
@@ -1243,65 +1235,6 @@ export async function qualityRoutes(app: FastifyInstance) {
       const input = cancelWithReasonSchema.parse(request.body);
       await prisma.$transaction((tx) => cancelReturn(tx, actorFrom(request), id, input));
       return returnDto(id);
-    },
-  );
-
-  app.post(
-    '/api/v1/receipt-lines/:id/corrections',
-    { config: { access: RETURNS_MANAGE, idempotent: true } },
-    async (request, reply) => {
-      const { id } = idParams.parse(request.params);
-      const input = receiptCorrectionSchema.parse(request.body);
-      const out = await prisma.$transaction(async (tx) => {
-        const r = await correctReceiptLine(tx, actorFrom(request), id, input);
-        await emitOrderEvent(tx, request, r.orderId);
-        return r.correction;
-      });
-      return reply.status(201).send({
-        id: out.id,
-        receiptLineId: out.receiptLineId,
-        previousQuantity: out.previousQuantity,
-        newQuantity: out.newQuantity,
-        reason: out.reason,
-        actor: request.auth!.displayName,
-        createdAt: out.createdAt.toISOString(),
-      });
-    },
-  );
-
-  app.get(
-    '/api/v1/receipts/:id/corrections',
-    {
-      config: {
-        access: {
-          session: 'WEB',
-          anyPermissions: ['pedidos.ver', 'recebimentos.registrar', 'devolucoes.gerenciar'],
-        },
-      },
-    },
-    async (request) => {
-      const { id } = idParams.parse(request.params);
-      const rows = await prisma.receiptCorrection.findMany({
-        where: { receiptLine: { receiptId: id } },
-        orderBy: { createdAt: 'asc' },
-      });
-      const actors = new Map(
-        (
-          await prisma.user.findMany({
-            where: { id: { in: rows.map((r) => r.actorId).filter((x): x is string => !!x) } },
-            select: { id: true, displayName: true },
-          })
-        ).map((u) => [u.id, u.displayName]),
-      );
-      return rows.map((r) => ({
-        id: r.id,
-        receiptLineId: r.receiptLineId,
-        previousQuantity: r.previousQuantity,
-        newQuantity: r.newQuantity,
-        reason: r.reason,
-        actor: r.actorId ? (actors.get(r.actorId) ?? null) : null,
-        createdAt: r.createdAt.toISOString(),
-      }));
     },
   );
 }

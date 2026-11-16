@@ -3,14 +3,6 @@ import type { App } from '../src/app';
 import type { Client } from './helpers';
 import { db, idemKey, setupTablet } from './helpers';
 import { openServiceOrder } from './measurement-helpers';
-import {
-  approvedNeeds,
-  confirmedFabricPurchase,
-  createSupplier,
-  linen,
-  ok,
-  receive,
-} from './purchasing-helpers';
 
 export const day = (offset: number) => {
   const d = new Date(Date.now() + offset * 86_400_000);
@@ -56,20 +48,16 @@ export async function publish(admin: Client, plan: { id: string; version: number
   return r.body;
 }
 
-/** OS de sofá + poltronas; materiais: sem levantamento, aprovados (faltando) ou completos. */
+/**
+ * OS de sofá + poltronas. Compras e materiais formais foram removidos: o parâmetro de materiais
+ * ficou só por compatibilidade das chamadas (a produção não depende de material).
+ */
 export async function serviceOrderWith(
   admin: Client,
-  materials: 'none' | 'missing' | 'complete',
+  _materials: 'none' | 'missing' | 'complete',
   name = 'Cliente Produção',
 ) {
-  if (materials === 'none') return { so: await openServiceOrder(admin, name), reqs: [] };
-  const { so, reqs } = await approvedNeeds(admin, name, (s) => [linen(s.items[0].id)]);
-  if (materials === 'complete') {
-    const supplier = await createSupplier(admin, `Fornecedor ${name}`);
-    const po = await confirmedFabricPurchase(admin, supplier.id, reqs[0]!);
-    await receive(admin, po.id, [ok(po.items[0].id, 12)]);
-  }
-  return { so, reqs };
+  return { so: await openServiceOrder(admin, name), reqs: [] as { id: string }[] };
 }
 
 export type Task = {

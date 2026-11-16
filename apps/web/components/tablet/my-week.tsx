@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Alert, Spinner } from '@/components/ui/misc';
 import { formatDay } from '@/lib/commercial';
 import { useMyQueue, useMyTasks } from '@/lib/production';
-import { MyOpenHelp } from './help';
 import { MyOpenIssues } from './issues';
 import { MyDay, TaskCard } from './tasks';
 
@@ -24,12 +23,10 @@ const DONE = ['CONCLUIDA', 'CANCELADA'];
 export function MyWeek({
   onOpen,
   onAll,
-  canAskHelp,
   reportUserId,
 }: {
   onOpen: (id: string) => void;
   onAll: () => void;
-  canAskHelp?: boolean;
   reportUserId?: string | null;
 }) {
   const queue = useMyQueue();
@@ -46,8 +43,7 @@ export function MyWeek({
     );
   const q = queue.data;
   // Sem fila semanal: experiência anterior (planos por horário), sem conversão.
-  if (q.total === 0)
-    return <MyDay onOpen={onOpen} canAskHelp={canAskHelp} reportUserId={reportUserId} />;
+  if (q.total === 0) return <MyDay onOpen={onOpen} reportUserId={reportUserId} />;
 
   const s = summarizeWeek(q);
   const inQueue = new Set(q.items.map((e) => e.task.id));
@@ -72,7 +68,6 @@ export function MyWeek({
         )}
       </section>
 
-      {canAskHelp && <MyOpenHelp />}
       {reportUserId && <MyOpenIssues userId={reportUserId} />}
 
       {s.upcoming.length > 0 && (

@@ -1,12 +1,6 @@
 'use client';
 
-import type {
-  AttentionDto,
-  CandidateEvaluation,
-  IssueDto,
-  IssueImpactDto,
-  IssueStatus,
-} from '@cenario/shared';
+import type { AttentionDto, IssueDto, IssueImpactDto, IssueStatus } from '@cenario/shared';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api } from './api';
 
@@ -51,11 +45,3 @@ export const useAttention = (filters: Record<string, string | undefined>, enable
     enabled,
   });
 };
-
-export const useHelpCandidates = (id: string | null) =>
-  useQuery({
-    queryKey: ['help-candidates', id],
-    queryFn: () =>
-      api<{ candidates: CandidateEvaluation[] }>(`/api/v1/help-requests/${id}/candidates`),
-    enabled: Boolean(id),
-  });

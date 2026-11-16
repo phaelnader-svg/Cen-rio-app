@@ -10,45 +10,30 @@ import {
 
 /** Reformulação, Fase 0 — interruptores de funcionalidades. */
 describe('módulos configuráveis', () => {
-  it('sem nenhum registro, tudo fica no padrão: logística, ajuda e embalagem ligadas; travas de materiais desligadas (etapa E1)', () => {
+  it('sem nenhum registro, a logística fica ligada (única funcionalidade configurável restante)', () => {
     const state = resolveModules([]);
     expect(Object.keys(state).sort()).toEqual([...MODULE_KEYS].sort());
-    const expected = { logistica: true, ajuda: true, materiais: false };
-    for (const k of MODULE_KEYS) {
-      expect(MODULES[k].defaultEnabled).toBe(expected[k]);
-      expect(state[k]).toBe(expected[k]);
-    }
+    expect(MODULES.logistica.defaultEnabled).toBe(true);
+    expect(state).toEqual({ logistica: true });
   });
 
-  it('Reformulação S1: as três funcionalidades restantes são configuráveis; "embalagem" não existe mais e um registro antigo dela é ignorado', () => {
-    expect(MODULE_KEYS.filter((k) => MODULES[k].configurable)).toEqual([
-      'logistica',
-      'ajuda',
-      'materiais',
-    ]);
+  it('S1 e remoção dos módulos: só a logística é configurável; registros antigos de "embalagem", "ajuda" e "materiais" são ignorados', () => {
+    expect(MODULE_KEYS.filter((k) => MODULES[k].configurable)).toEqual(['logistica']);
     const state = resolveModules([
       { key: 'logistica', enabled: false },
       { key: 'embalagem', enabled: false },
-      { key: 'ajuda', enabled: false },
-      { key: 'materiais', enabled: false },
+      { key: 'ajuda', enabled: true },
+      { key: 'materiais', enabled: true },
     ]);
-    expect(state).toEqual({ logistica: false, ajuda: false, materiais: false });
-    // Sem registro: logística e ajuda ligadas (comportamento anterior); etapa E1: as travas de
-    // materiais vêm desligadas (a produção não depende do processo formal de compras).
-    expect(resolveModules([])).toEqual({
-      logistica: true,
-      ajuda: true,
-      materiais: false,
-    });
+    expect(state).toEqual({ logistica: false });
   });
 
   it('chave desconhecida (gravada por versão futura) é ignorada sem erro', () => {
     expect(resolveModules([{ key: 'modulo-futuro', enabled: false }])).toEqual(resolveModules([]));
   });
 
-  it('avisos escondidos: só os de ajuda, e só com a ajuda desligada; todos são tipos de aviso válidos', () => {
-    expect(hiddenNotificationKinds(resolveModules([]))).toEqual([]);
-    const hidden = hiddenNotificationKinds(resolveModules([{ key: 'ajuda', enabled: false }]));
+  it('avisos dos pedidos de ajuda (removidos) nunca aparecem; todos são tipos de aviso válidos', () => {
+    const hidden = hiddenNotificationKinds(resolveModules([]));
     expect(hidden.length).toBe(5);
     expect(hidden.every((k) => k.startsWith('AJUDA_'))).toBe(true);
     for (const k of hidden) expect(NOTIFICATION_KINDS as readonly string[]).toContain(k);
@@ -58,13 +43,14 @@ describe('módulos configuráveis', () => {
     );
   });
 
-  it('Fase 1: logística desligada esconde só os avisos de entrega agendada; todos são tipos válidos', () => {
+  it('Fase 1: logística desligada esconde também os avisos de entrega agendada; todos são tipos válidos', () => {
     const hidden = hiddenNotificationKinds(resolveModules([{ key: 'logistica', enabled: false }]));
-    expect(hidden.sort()).toEqual(['ENTREGA_AGENDADA', 'ENTREGA_ATRIBUIDA', 'ENTREGA_CONCLUIDA']);
+    expect(hidden.filter((k) => !k.startsWith('AJUDA_')).sort()).toEqual([
+      'ENTREGA_AGENDADA',
+      'ENTREGA_ATRIBUIDA',
+      'ENTREGA_CONCLUIDA',
+    ]);
     for (const k of hidden) expect(NOTIFICATION_KINDS as readonly string[]).toContain(k);
-    expect(hiddenNotificationKinds(resolveModules([{ key: 'materiais', enabled: false }]))).toEqual(
-      [],
-    );
   });
 
   it('entrada da alteração: só booleano e versão inteira ≥ 0', () => {

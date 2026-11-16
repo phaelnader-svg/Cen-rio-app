@@ -28,7 +28,7 @@ const MAP = '/api/v1/workshop-map';
 const pieces = (m: J) => [...m.areas.flatMap((a: J) => a.pieces), ...m.unplaced];
 
 describe('Mapa da oficina', () => {
-  it('peças sem movimentação ficam em "sem localização" com o texto do recebimento; mover leva à área', async () => {
+  it('peças sem movimentação ficam em "sem localização"; mover leva à área', async () => {
     const admin = await loginAdmin(app);
     const so = await openServiceOrder(admin, 'Cliente Mapa');
     let map = ok(await admin.get(MAP));
@@ -38,7 +38,7 @@ describe('Mapa da oficina', () => {
     expect(mine[0]).toMatchObject({
       customerName: 'Cliente Mapa',
       stage: 'EM_PRODUCAO',
-      receiptLocations: ['Área de recebimento'],
+      receiptLocations: [], // sem Recebimentos, não há texto de local da chegada
       movedAt: null,
     });
     const area = ok(
@@ -53,11 +53,11 @@ describe('Mapa da oficina', () => {
     expect(map.unplaced.some((p: J) => p.id === piece.id)).toBe(false);
     // Histórico imutável continua sendo o registro de movimentações.
     expect(await db().itemLocationEvent.count({ where: { serviceOrderItemId: piece.id } })).toBe(1);
-    // A OS mostra a localização atual (e mantém o texto do recebimento).
+    // A OS mostra a localização atual.
     const detail = ok(await admin.get(`/api/v1/service-orders/${so.id}`));
     const it0 = detail.items.find((i: J) => i.id === piece.id);
     expect(it0.currentLocation).toEqual({ id: area.id, label: 'Bancada 3' });
-    expect(it0.locations).toEqual(['Área de recebimento']);
+    expect(it0.locations).toBeUndefined(); // o texto de local da chegada saiu com Recebimentos
     expect(detail.items.find((i: J) => i.id !== piece.id).currentLocation).toBeNull();
 
     // Área desativada com peça continua visível (ninguém perde a peça de vista); vazia some.

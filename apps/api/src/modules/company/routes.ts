@@ -21,7 +21,6 @@ import { moduleState } from '../../core/modules';
 import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
 import { pickupCode } from '../commercial/common';
-import { reevaluateTasks, waitingTaskIds } from '../production/common';
 
 function toDto(c: CompanySettings): CompanySettingsDto {
   return {
@@ -171,9 +170,6 @@ export async function companyRoutes(app: FastifyInstance) {
           summary: `${MODULES[key].label}: ${input.enabled ? 'ativada' : 'desativada'}.`,
           changes: { enabled: { from: wasEnabled, to: input.enabled } },
         });
-        // Fase 1: as travas de materiais valem na hora para as tarefas que aguardam início.
-        if (key === 'materiais')
-          await reevaluateTasks(tx, actor, await waitingTaskIds(tx, { requiresMaterials: true }));
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.COMPANY_MODULE_UPDATED,
           aggregateType: 'module_setting',

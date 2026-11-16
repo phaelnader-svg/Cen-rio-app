@@ -97,21 +97,6 @@ describe('F10-19 — presença e ocorrências', () => {
     // A atribuição em si continua ativa para quem a recebeu.
     expect(await active(s.ids.joao, 'OCORRENCIA_ATRIBUIDA')).toHaveLength(1);
   });
-
-  it('pedido de ajuda: a atribuição resolve o "procurando ajudante"', async () => {
-    const s = await scenario(app);
-    expect((await act(s.tablets.Ricardo!, s.sofaTask.id, 'start')).status).toBe(200);
-    const r = await s.tablets.Ricardo!.post(
-      '/api/v1/help-requests',
-      { taskId: s.sofaTask.id, kind: 'PARAFUSAR' },
-      { 'idempotency-key': crypto.randomUUID() },
-    );
-    expect(r.status, JSON.stringify(r.body)).toBe(201);
-    expect(r.body.status).toBe('ATRIBUIDA');
-    expect(await active(s.ids.ricardo, 'AJUDA_SOLICITADA')).toHaveLength(0);
-    const done = await resolved(s.ids.ricardo, 'AJUDA_SOLICITADA');
-    expect(done.map((n) => n.dedupeKey)).toEqual([`AJUDA_SOLICITADA:${r.body.id}`]);
-  });
 });
 
 describe('F10-19 — qualidade e entrega', () => {

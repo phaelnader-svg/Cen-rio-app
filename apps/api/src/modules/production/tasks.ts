@@ -18,7 +18,6 @@ import {
   completeTaskSchema,
   pauseTaskSchema,
   progressTaskSchema,
-  taskMaterialsSchema,
   taskCode,
   taskDependenciesSchema,
   taskReasonSchema,
@@ -38,7 +37,6 @@ import { idParams } from '../presenters';
 import { refreshAvailabilityOfUser } from '../attendance/common';
 import { qualityTaskClosed } from '../quality/inspections';
 import { notify, taskNotice } from '../notifications/notify';
-import { readinessOf } from '../purchasing/common';
 import {
   EXECUTE,
   PLAN,
@@ -53,19 +51,10 @@ import {
   reevaluateTasks,
   taskEvent,
   taskInclude,
-  taskMaterialsReady,
-  materialsGateOn,
   toTaskDto,
   taskNotBefore,
 } from './common';
 import { announceAssignments, assertWorker, reviseIfPublished } from './plans';
-import { cancelHelpForClosedTask, processHelpQueue } from '../help/queue';
-import {
-  supportCancelled,
-  supportCompleted,
-  supportReassigned,
-  supportStarted,
-} from '../help/support';
 import { suggestAlternative } from '../help/reschedule';
 import { assertUpholstererRule } from './distribution';
 import {
@@ -377,15 +366,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           input.assigneeUserId !== undefined ? input.assigneeUserId : t.assigneeUserId,
       });
       const updated = await tx.productionTask.update({ where: { id }, data });
-      // Simplificação Fase 7: trocar o executor do apoio troca o ajudante do pedido junto.
-      if (t.supportForTaskId && updated.assigneeUserId !== t.assigneeUserId)
-        await supportReassigned(
-          tx,
-          actor,
-          id,
-          updated.assigneeUserId,
-          input.reason ?? 'Responsável alterado no planejamento.',
-        );
       if (t.status !== 'RASCUNHO') {
         const changes: Record<string, { from: unknown; to: unknown }> = {};
         for (const k of [
@@ -517,77 +497,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
     },
   );
 
-  /**
-   * Fase 6: materiais aprovados de que a tarefa depende. Com vínculos, a tarefa é
-   * liberada quando ESSES materiais estão cobertos (ex.: corte só com o tecido);
-   * sem vínculos, continua dependendo da OS inteira. Nunca começa sem eles.
-   */
-  app.put(
-    '/api/v1/production-tasks/:id/materials',
-    { config: { access: PLAN } },
-    async (request) => {
-      const { id } = idParams.parse(request.params);
-      const input = taskMaterialsSchema.parse(request.body);
-      const actor = actorFrom(request);
-      await prisma.$transaction(async (tx) => {
-        await lockTasks(tx, [id]);
-        const t = await tx.productionTask.findUnique({ where: { id } });
-        if (!t) throw Errors.notFound('Tarefa');
-        if (t.version !== input.version) throw Errors.versionConflict(t.version);
-        if (!(TASK_WAITING as readonly string[]).includes(t.status) && t.status !== 'RASCUNHO') {
-          throw Errors.business(
-            'Só tarefas que ainda não começaram podem ter os materiais alterados.',
-          );
-        }
-        const ids = [...new Set(input.requirementIds)];
-        const valid = await tx.materialRequirement.count({
-          where: {
-            id: { in: ids },
-            serviceOrderId: t.serviceOrderId,
-            origin: 'SOLICITACAO_APROVADA',
-            status: 'ATIVA',
-          },
-        });
-        if (valid !== ids.length) {
-          throw Errors.business('Use somente materiais aprovados e atuais desta OS.');
-        }
-        const before = await tx.productionTaskMaterial.findMany({ where: { taskId: id } });
-        await tx.productionTaskMaterial.deleteMany({ where: { taskId: id } });
-        if (ids.length) {
-          await tx.productionTaskMaterial.createMany({
-            data: ids.map((requirementId) => ({ taskId: id, requirementId })),
-          });
-        }
-        await tx.productionTask.update({
-          where: { id },
-          // Vincular materiais implica exigir materiais.
-          data: { ...(ids.length ? { requiresMaterials: true } : {}), version: { increment: 1 } },
-        });
-        if (t.status !== 'RASCUNHO') {
-          await taskEvent(tx, actor, null, t, {
-            kind: 'MATERIAIS',
-            note: input.reason ?? null,
-            changes: { from: before.map((b) => b.requirementId), to: ids },
-          });
-          await reviseIfPublished(
-            tx,
-            request,
-            t.planId,
-            input.reason,
-            `materiais de ${taskCode(t.number)}`,
-          );
-          await reevaluateTasks(tx, actor, [id]);
-          const after = await tx.productionTask.findUniqueOrThrow({ where: { id } });
-          await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_DEPENDENCIES_UPDATED, after, {
-            changed: ['materials'],
-          });
-        }
-      });
-      const { timezone } = await company(prisma);
-      return toTaskDto(await loadTask(prisma, id), timezone);
-    },
-  );
-
   async function adminTransition(request: FastifyRequest, kind: 'cancel' | 'block' | 'unblock') {
     const { id } = idParams.parse(request.params);
     // Fase 10: o motivo do desbloqueio (opcional) também é validado — antes um texto longo ou
@@ -654,9 +563,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           summary: `Tarefa ${taskCode(t.number)} cancelada.`,
           changes: { from: t.status, reason: input.reason },
         });
-        // Fase 8: apoio cancelado encerra o pedido; tarefa principal cancelada cancela os pedidos.
-        if (t.supportForTaskId) await supportCancelled(tx, actor, t.id, input.reason);
-        else await cancelHelpForClosedTask(tx, actor, t.id);
         // Fase 9: resolução cancelada → ocorrência volta a aguardar delegação.
         if (t.issueId) await actionCancelled(tx, actor, t.id, input.reason);
         else await originalTaskClosed(tx, actor, t.id, 'CANCELADA');
@@ -695,11 +601,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       }
       await reevaluateTasks(tx, actor, [id]);
     });
-    if (kind === 'cancel') {
-      await processHelpQueue(prisma).catch((err: unknown) =>
-        request.log.warn({ err }, 'Falha ao reavaliar a fila de ajuda'),
-      );
-    }
     if (kind === 'cancel' && !(await prisma.productionTask.findUnique({ where: { id } })))
       return { deleted: true };
     const { timezone } = await company(prisma);
@@ -807,9 +708,9 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       include: taskInclude,
     });
     const dtos = rows.map((t) => toTaskDto(t, timezone)).sort(compareTasks);
-    // Etapa E1: com as travas de materiais desligadas (padrão), o aviso do cartão vem da lista simples
-    // da OS (mesma regra do detalhe da tarefa), numa consulta só. Nunca muda a situação da tarefa.
-    if (!(await materialsGateOn(prisma))) {
+    // O aviso do cartão vem da lista simples da OS (mesma regra do detalhe da tarefa), numa
+    // consulta só. Nunca muda a situação da tarefa.
+    {
       const soIds = [
         ...new Set(rows.filter((r) => r.requiresMaterials).map((r) => r.serviceOrderId)),
       ];
@@ -862,7 +763,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         select: { description: true, quantity: true, unit: true, available: true },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       });
-      const [events, so, readiness, osTasks, links, revisions] = await Promise.all([
+      const [events, so, osTasks, revisions] = await Promise.all([
         prisma.productionTaskEvent.findMany({
           where: { taskId: id },
           include: { actor: { select: { displayName: true } } },
@@ -872,7 +773,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           where: { id: t.serviceOrderId },
           include: { items: { orderBy: { position: 'asc' } } },
         }),
-        readinessOf(prisma, t.serviceOrderId),
         prisma.productionTask.findMany({
           where: { serviceOrderId: t.serviceOrderId, status: { not: 'RASCUNHO' } },
           select: {
@@ -884,10 +784,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           },
           orderBy: [{ sequence: 'asc' }, { number: 'asc' }],
         }),
-        prisma.productionTaskMaterial.findMany({
-          where: { taskId: id },
-          select: { requirementId: true },
-        }),
         prisma.serviceOrderRevision.findMany({
           where: { serviceOrderId: t.serviceOrderId, scope: { not: 'CRIACAO' } },
           include: { changedBy: { select: { displayName: true } } },
@@ -896,7 +792,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         }),
       ]);
       const own = t.assigneeUserId === me && request.auth!.permissions.has('producao.executar');
-      const materialIds = links.map((l) => l.requirementId);
       const itemCode = (itemId: string | null) => {
         const it = itemId ? so.items.find((i) => i.id === itemId) : null;
         return it ? formatServiceOrderItemCode(so.number, it.position) : null;
@@ -930,19 +825,12 @@ export async function productionTaskRoutes(app: FastifyInstance) {
               : [],
           })),
         },
-        materials: readiness.lines,
-        materialsState: readiness.state,
-        materialIds,
-        // Fase 1: com as travas desligadas, o indicador reflete a lista simples (só informativo).
+        // O indicador reflete a lista simples da OS (só informativo; nunca bloqueia).
         taskMaterials: !t.requiresMaterials
           ? 'NAO_EXIGE'
-          : !(await materialsGateOn(prisma))
-            ? osMaterials.some((m) => !m.available)
-              ? 'FALTANDO'
-              : 'DISPONIVEIS'
-            : (await taskMaterialsReady(prisma, t, new Map([[t.serviceOrderId, readiness]])))
-              ? 'DISPONIVEIS'
-              : 'FALTANDO',
+          : osMaterials.some((m) => !m.available)
+            ? 'FALTANDO'
+            : 'DISPONIVEIS',
         osMaterials: osMaterials.map((m) => ({
           description: m.description,
           quantity: m.quantity === null ? null : Number(m.quantity),
@@ -1002,12 +890,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         where: { id },
         include: {
           plan: { select: { status: true, mode: true } },
-          serviceOrder: {
-            select: {
-              status: true,
-              items: { select: { id: true, orderItem: { select: { receivedQuantity: true } } } },
-            },
-          },
+          serviceOrder: { select: { status: true } },
           dependsOn: { include: { dependsOn: { select: { status: true } } } },
           dependents: true,
         },
@@ -1025,12 +908,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           throw Errors.business('Esta tarefa não pode ser iniciada agora.');
         }
         // Verificação completa no momento do início (não confia no estado salvo nem no tablet).
-        const items = t.serviceOrderItemId
-          ? t.serviceOrder.items.filter((i) => i.id === t.serviceOrderItemId)
-          : t.serviceOrder.items;
         const check = evaluateRelease({
           osActive: true,
-          pieceReceived: items.length > 0 && items.every((i) => i.orderItem.receivedQuantity > 0),
           published:
             t.plan?.status === 'PUBLICADO' ||
             Boolean(t.supportForTaskId || t.issueId || t.inspectionId),
@@ -1038,8 +917,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           dependenciesDone: t.dependsOn.every(
             (d) => d.dependsOn.status === 'CONCLUIDA' || d.dependsOn.status === 'CANCELADA',
           ),
-          materialsReady: await taskMaterialsReady(tx, t),
-          requiresMaterials: t.requiresMaterials,
           manuallyBlocked: Boolean(t.blockedReason),
           openIssue: await hasBlockingIssue(tx, t.id),
           scheduledAt: t.scheduledAt,
@@ -1071,7 +948,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           to: 'EM_EXECUCAO',
         });
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_STARTED, u);
-        if (t.supportForTaskId) await supportStarted(tx, actor, t.id, now);
         if (t.issueId) await actionStarted(tx, actor, t.id);
         return;
       }
@@ -1214,10 +1090,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         summary: `Tarefa ${taskCode(t.number)} (${t.title}) concluída.`,
       });
       await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_COMPLETED, u);
-      // Fase 8: concluir o apoio encerra o pedido (a tarefa principal segue independente);
-      // concluir a principal cancela pedidos que nem começaram.
-      if (t.supportForTaskId) await supportCompleted(tx, actor, t.id, now);
-      else await cancelHelpForClosedTask(tx, actor, t.id);
       // Fase 9: concluir a resolução NÃO encerra a ocorrência — vai para verificação.
       if (t.issueId) await actionCompleted(tx, actor, t.id, completion!.note ?? null);
       else await originalTaskClosed(tx, actor, t.id, 'CONCLUIDA');
@@ -1252,10 +1124,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
     // Fase 7: disponibilidade operacional de quem executa (ocupado, em pausa, disponível).
     if (action !== 'progress') {
       await prisma.$transaction((tx) => refreshAvailabilityOfUser(tx, actor, request.auth!.userId));
-      // Fase 8: quem ficou livre pode atender a fila de ajuda.
-      await processHelpQueue(prisma).catch((err: unknown) =>
-        request.log.warn({ err }, 'Falha ao reavaliar a fila de ajuda'),
-      );
     }
     const { timezone } = await company(prisma);
     return toTaskDto(await loadTask(prisma, id), timezone);

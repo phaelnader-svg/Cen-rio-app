@@ -13,7 +13,6 @@ import {
   isCard,
 } from '../finance-domain';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
-import { periodQuerySchema } from './measurements';
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.');
 const month = z.string().regex(/^\d{4}-\d{2}$/, 'Mês no formato AAAA-MM.');
@@ -24,6 +23,12 @@ const cents = (label: string) =>
     .min(1, `${label} deve ser maior que zero.`)
     .max(1_000_000_000);
 const reason = (label = 'Motivo') => trimmed(3, 500, label);
+
+/** Período opcional (de/até) das consultas do financeiro. */
+export const periodQuerySchema = z.object({
+  from: dateOnly.optional(),
+  to: dateOnly.optional(),
+});
 
 // ─────────────────────────── Receita ───────────────────────────
 

@@ -47,11 +47,9 @@ export function summarizeWeek<T extends WeekViewTask>(q: WeekViewInput<T>, max =
 
 export const WEEK_WAIT_REASON_LABEL: Record<WeekWaitReason, string> = {
   OS_INATIVA: 'a OS não está ativa',
-  PECA_NAO_RECEBIDA: 'a peça ainda não chegou à oficina',
   NAO_PUBLICADA: 'a programação ainda não foi publicada',
   SEM_RESPONSAVEL: 'falta definir o responsável (gestor)',
   DEPENDENCIAS: 'aguardando etapas anteriores',
-  MATERIAIS: 'aguardando materiais',
   BLOQUEIO: 'bloqueada pelo gestor',
   OCORRENCIA: 'há uma ocorrência em aberto',
   PAUSADA_COM_OCORRENCIA: 'pausada até a ocorrência ser resolvida',

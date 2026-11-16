@@ -4,15 +4,12 @@ import {
   ATTENTION_LIST_LIMIT,
   ATTENTION_TYPE_PERMISSIONS,
   CATEGORY_ORDER,
-  HELP_KIND_LABEL,
-  HELP_STATUS_LABEL,
   ISSUE_IMPACT_LABEL,
   ISSUE_KIND_LABEL,
   ISSUE_STATUS_LABEL,
   PROPOSAL_KIND_LABEL,
   PRODUCTION_STOP_BLOCKERS,
   attentionQuerySchema,
-  helpRequestCode,
   isProductionStopped,
   localParts,
   mondayOf,
@@ -21,19 +18,16 @@ import {
   type AttentionCategory,
   type AttentionDto,
   type AttentionItemDto,
-  type HelpKind,
   type IssueImpact,
   type IssueKind,
   type Permission,
   type ProposalKind,
 } from '@cenario/shared';
 import type { PrismaClient } from '@cenario/db';
-import { moduleEnabled } from '../../core/modules';
 import type { FastifyInstance } from 'fastify';
 import type { z } from 'zod';
 import { attendanceConfig, clock, dbDate } from '../attendance/common';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
-import { WAIT_ALERT_MINUTES } from '../help/engine';
 import { deadlineAttention } from '../deadlines/attention';
 import { qualityAttention } from '../quality/attention';
 import { billingAttention } from '../finance/billing';
@@ -129,60 +123,9 @@ export async function loadAttention(
     });
   }
 
-  // 2. Ajuda: só escalada ou esperando além do limite. Reformulação, Fase 0: com os pedidos de
-  // ajuda desligados, nenhum pedido (nem os antigos ainda abertos) vira pendência operacional.
-  const helpOn = await moduleEnabled(prisma, 'ajuda');
-  const helps = await prisma.helpRequest.findMany({
-    where: { status: { in: helpOn ? ['PENDENTE', 'ESCALADA'] : [] } },
-    include: {
-      task: { select: { id: true, number: true, title: true } },
-      serviceOrder: { select: { id: true, number: true } },
-      requester: { select: { id: true, displayName: true } },
-    },
-  });
-  // Fase 10: pedido escalado que já virou proposta — a decisão é a proposta (um item só).
-  const proposedHelp = new Set(
-    (
-      await prisma.rescheduleProposal.findMany({
-        where: { status: 'PENDENTE', helpRequestId: { not: null } },
-        select: { helpRequestId: true },
-      })
-    ).map((p) => p.helpRequestId!),
-  );
-  for (const h of helps) {
-    if (proposedHelp.has(h.id)) continue;
-    const minutes = Math.floor((now.getTime() - h.createdAt.getTime()) / 60_000);
-    const limit = h.urgent ? WAIT_ALERT_MINUTES.urgent : WAIT_ALERT_MINUTES.normal;
-    if (h.status === 'PENDENTE' && minutes < limit && !h.urgent) continue;
-    const category: AttentionCategory =
-      h.status === 'ESCALADA' ? 'ACAO' : h.urgent && minutes >= limit ? 'CRITICO' : 'ATENCAO';
-    items.push({
-      key: `AJUDA:${h.id}`,
-      type: 'AJUDA',
-      category,
-      title: `${helpRequestCode(h.number)} · ${HELP_KIND_LABEL[h.kind as HelpKind]}${h.urgent ? ' (urgente)' : ''}`,
-      description: h.justification ?? h.note ?? `${h.requester.displayName} aguarda ajudante.`,
-      serviceOrder: { id: h.serviceOrder.id, code: serviceOrderCode(h.serviceOrder.number) },
-      task: { id: h.task.id, code: taskCode(h.task.number), title: h.task.title },
-      employee: { userId: h.requester.id, displayName: h.requester.displayName },
-      priority: h.urgent ? 'URGENTE' : 'NORMAL',
-      status: h.status,
-      statusLabel: HELP_STATUS_LABEL[h.status],
-      at: h.createdAt.toISOString(),
-      deadline: null,
-      solver: null,
-      impacts: [`Aguardando há ${minutes} min`],
-      nextActions:
-        h.status === 'ESCALADA'
-          ? ['Decidir a proposta em Reprogramação']
-          : ['Escolher o ajudante manualmente ou aguardar'],
-      link: `/painel/ajuda?foco=${h.id}`,
-    });
-  }
-
-  // 3. Propostas aguardando decisão (sem as nascidas de pedido de ajuda, se a ajuda está desligada).
+  // 2. Propostas aguardando decisão (sem as nascidas de pedidos de ajuda, que foram removidos).
   const proposals = await prisma.rescheduleProposal.findMany({
-    where: { status: 'PENDENTE', ...(helpOn ? {} : { helpRequestId: null }) },
+    where: { status: 'PENDENTE', helpRequestId: null },
     orderBy: { createdAt: 'desc' },
   });
   for (const p of proposals) {

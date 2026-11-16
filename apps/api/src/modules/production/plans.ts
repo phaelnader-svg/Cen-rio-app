@@ -35,7 +35,6 @@ import { distributeServiceOrder } from './distribution';
 import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
 import { notify, taskNotice } from '../notifications/notify';
-import { readinessOf } from '../purchasing/common';
 import {
   MANAGEMENT,
   PLAN,
@@ -46,7 +45,6 @@ import {
   reevaluateTasks,
   taskEvent,
   taskInclude,
-  taskMaterialsReady,
   toTaskDto,
 } from './common';
 import { placeServiceInQueue } from './queue-placement';
@@ -214,13 +212,6 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
     include: taskInclude,
     orderBy: [{ serviceOrderId: 'asc' }, { sequence: 'asc' }, { number: 'asc' }],
   });
-  const readinessCache = new Map<string, Awaited<ReturnType<typeof readinessOf>>>();
-  const states = new Map<string, Awaited<ReturnType<typeof readinessOf>>['state']>();
-  for (const it of plan.items) {
-    const r = await readinessOf(db, it.serviceOrderId);
-    readinessCache.set(it.serviceOrderId, r);
-    states.set(it.serviceOrderId, r.state);
-  }
   const weekStart = dateOnly(plan.weekStart)!;
   const weekEnd = addDays(weekStart, 6);
   const dtos = tasks.map((t) => toTaskDto(t, timezone));
@@ -272,20 +263,6 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
       }
     }
     const it = plan.items.find((i) => i.serviceOrderId === t.serviceOrder.id);
-    if (
-      t.requiresMaterials &&
-      !(await taskMaterialsReady(
-        db,
-        { id: t.id, serviceOrderId: t.serviceOrder.id, requiresMaterials: true },
-        readinessCache,
-      ))
-    ) {
-      conflicts.push({
-        kind: 'MATERIAIS',
-        message: `${t.code} (${t.serviceOrder.code}) exige materiais, que ainda não estão completos — ficará bloqueada.`,
-        taskIds: [t.id],
-      });
-    }
     const promised = it ? dateOnly(it.serviceOrder.promisedDate) : null;
     if (promised && t.scheduledDate && t.scheduledDate > promised) {
       conflicts.push({
@@ -334,7 +311,6 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
         ? { userId: i.principal.id, displayName: i.principal.displayName }
         : null,
       priority: i.priority,
-      materialsState: states.get(i.serviceOrderId)!,
       hasSofa: i.serviceOrder.items.some((x) => x.pieceType === 'SOFA'),
     })),
     tasks: dtos,
@@ -812,7 +788,6 @@ export async function productionPlanRoutes(app: FastifyInstance) {
             priority: so.priority,
           },
           customerName: so.customer.name,
-          materialsState: (await readinessOf(prisma, so.id)).state,
           items: so.items.map((i) => ({
             id: i.id,
             code: formatServiceOrderItemCode(so.number, i.position),

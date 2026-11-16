@@ -10,12 +10,6 @@ import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
 import { panelUserWith } from './commercial-helpers';
-import {
-  approvedNeeds,
-  confirmedFabricPurchase,
-  createSupplier,
-  linen,
-} from './purchasing-helpers';
 import { openServiceOrder } from './measurement-helpers';
 import { day, today } from './production-helpers';
 import { post, qualityKit } from './quality-helpers';
@@ -106,30 +100,6 @@ describe('Central — decisões que não chegavam (contraprovas)', () => {
     });
     await db().laborReview.update({ where: { id: rv.id }, data: { status: 'RESOLVIDA' } });
     expect(keys(await attention(s.admin, '?type=FINANCEIRO'))).toEqual([]);
-  });
-
-  it('7. material a comprar e chegada aguardando conferência aparecem (um item cada)', async () => {
-    const admin = await loginAdmin(app);
-    const { reqs } = await approvedNeeds(admin, 'Cliente Material', (so) => [
-      linen(so.items[0]!.id),
-    ]);
-    let a = await attention(admin, '?type=MATERIAL');
-    expect(keys(a)).toEqual(['MATERIAL:comprar']);
-    expect(a.items[0]!.link).toBe('/painel/compras');
-    const sup = await createSupplier(admin);
-    const po = await confirmedFabricPurchase(admin, sup.id, reqs[0]!);
-    await db().materialArrival.create({
-      data: {
-        purchaseOrderId: po.id,
-        lines: [{ purchaseOrderItemId: po.items[0]!.id, quantity: '1' }],
-        receivedById: await gestorId(),
-      },
-    });
-    a = await attention(admin, '?type=MATERIAL');
-    expect(keys(a)).toContain('MATERIAL:conferencia');
-    expect(a.items.find((i) => i.key === 'MATERIAL:conferencia')!.link).toBe(
-      '/painel/recebimento-materiais',
-    );
   });
 
   it('expediente de dia anterior sem saída aparece para quem gerencia a presença', async () => {
@@ -305,37 +275,6 @@ describe('F10-15: contagens da Central pela fonte completa (sem truncar por take
     const after = await attention(s.admin, '?type=OCORRENCIA');
     expect([after.counts.ACAO, after.total, after.items.length]).toEqual([230, 230, 230]);
   });
-
-  it('permissão continua filtrando a contagem; chegadas acima de 100 no título pela contagem da fonte', async () => {
-    const s = await k.scenario();
-    await db().laborReview.create({ data: { serviceOrderId: s.so.id, reason: 'Revisão' } });
-    const admin = await attention(s.admin, '?type=FINANCEIRO');
-    expect([admin.total, admin.counts.ACAO]).toEqual([1, 1]);
-    const viewer = await panelUserWith(app, s.admin, 'central', ['ocorrencias.ver']);
-    const v = await attention(viewer, '?type=FINANCEIRO');
-    expect([v.total, v.counts.ACAO, v.items.length]).toEqual([0, 0, 0]);
-    expect((await attention(viewer)).total).toBe((await attention(s.admin)).total - 1);
-
-    const { reqs } = await approvedNeeds(s.admin, 'Cliente Chegadas', (so) => [
-      linen(so.items[0]!.id),
-    ]);
-    const sup = await createSupplier(s.admin);
-    const po = await confirmedFabricPurchase(s.admin, sup.id, reqs[0]!);
-    const by = await gestorId();
-    await db().materialArrival.createMany({
-      data: Array.from({ length: 101 }, () => ({
-        purchaseOrderId: po.id,
-        lines: [{ purchaseOrderItemId: po.items[0]!.id, quantity: '1' }],
-        receivedById: by,
-      })),
-    });
-    const m = await attention(s.admin, '?type=MATERIAL');
-    expect(m.items.find((i) => i.key === 'MATERIAL:conferencia')!.title).toBe(
-      '101 chegada(s) de material aguardando conferência',
-    );
-    // Quem não vê estoque/compras não conta o aviso de material.
-    expect((await attention(viewer, '?type=MATERIAL')).total).toBe(0);
-  });
 });
 
 describe('Início — indicadores pelas fontes canônicas', () => {
@@ -367,20 +306,6 @@ describe('Início — indicadores pelas fontes canônicas', () => {
     const o2 = (await s.admin.get('/api/v1/management/overview')).body;
     expect(o2.operations.activeServiceOrders).toBe(0);
     expect(o2.operations.deadlines.late).toBe(0);
-  });
-
-  it('20. aguardando material pela prontidão canônica', async () => {
-    const admin = await loginAdmin(app);
-    const { so } = await approvedNeeds(admin, 'Cliente Prontidão', (x) => [linen(x.items[0]!.id)]);
-    const row = await db().serviceOrder.findUniqueOrThrow({ where: { id: so.id } });
-    const o = (await admin.get('/api/v1/management/overview')).body;
-    const pending = [
-      'AGUARDANDO_COMPRA',
-      'AGUARDANDO_RECEBIMENTO',
-      'PARCIALMENTE_DISPONIVEL',
-      'COM_DIVERGENCIA',
-    ];
-    expect(o.operations.awaitingMaterials).toBe(pending.includes(row.materialsReadiness) ? 1 : 0);
   });
 
   it('26, 27. financeiro só com permissão (null, nunca zero) e pela fonte canônica', async () => {
@@ -432,7 +357,8 @@ describe('Linha do tempo e auditoria das ações críticas', () => {
     await post(andre, `/api/v1/deliveries/${d.id}/complete`, { version: v });
     const t = (await s.admin.get(`/api/v1/service-orders/${s.so.id}/timeline`)).body;
     const domains = new Set((t.entries as { domain: string }[]).map((e) => e.domain));
-    for (const x of ['PEDIDO', 'RECEBIMENTO', 'OS', 'PRODUCAO', 'QUALIDADE', 'ENTREGA'])
+    // Recebimentos removidos: a linha do tempo não tem mais o domínio RECEBIMENTO.
+    for (const x of ['PEDIDO', 'OS', 'PRODUCAO', 'QUALIDADE', 'ENTREGA'])
       expect(domains.has(x), x).toBe(true);
     const ats = (t.entries as { at: string }[]).map((e) => e.at);
     expect(ats).toEqual([...ats].sort());

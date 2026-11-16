@@ -20,7 +20,7 @@ const facts = (over: Partial<DeadlineFacts> = {}): DeadlineFacts => ({
   planned: true,
   started: true,
   blocked: false,
-  materialsReadiness: 'COMPLETO',
+  materialsMissing: false,
   ...over,
 });
 const piece = (
@@ -95,7 +95,7 @@ describe('estado do prazo da OS (regra única)', () => {
     expect(r({ started: false }).reasons).toEqual(['PRODUCAO_NAO_INICIADA']);
     expect(r({ blocked: true }).reasons).toEqual(['BLOQUEADA']);
     expect(r({ pieces: [piece('BLOQUEIO_EXPEDICAO')] }).reasons).toEqual(['BLOQUEADA']);
-    expect(r({ materialsReadiness: 'AGUARDANDO_COMPRA' }).reasons).toEqual(['MATERIAIS']);
+    expect(r({ materialsMissing: true }).reasons).toEqual(['MATERIAIS']);
     expect(r({ pieces: [piece('EM_CORRECAO')] }).reasons).toEqual(['EM_CORRECAO']);
     expect(r({ pieces: [piece('PRONTA_ENTREGA')] }).reasons).toEqual(['PRONTA_SEM_ENTREGA']);
     // Provisória não é entrega agendada.
@@ -124,7 +124,7 @@ describe('estado do prazo da OS (regra única)', () => {
       at('2026-10-20', {
         planned: false,
         started: false,
-        materialsReadiness: 'AGUARDANDO_COMPRA',
+        materialsMissing: true,
         pieces: [piece('ENTREGA_AGENDADA', { status: 'AGENDADA', scheduledDate: '2026-10-19' })],
       }).state,
     ).toBe('PROXIMO');
@@ -133,7 +133,7 @@ describe('estado do prazo da OS (regra única)', () => {
     const d = at('2026-10-20', {
       started: false,
       blocked: true,
-      materialsReadiness: 'COM_DIVERGENCIA',
+      materialsMissing: true,
       pieces: [piece('EM_PRODUCAO'), piece('EM_CORRECAO')],
     });
     expect(d.reasons).toEqual(['PRODUCAO_NAO_INICIADA', 'BLOQUEADA', 'MATERIAIS', 'EM_CORRECAO']);

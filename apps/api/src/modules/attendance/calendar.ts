@@ -201,7 +201,7 @@ async function leaveNotice(
   ]);
 }
 
-export async function calendarRoutes(app: FastifyInstance, requeue: () => Promise<unknown>) {
+export async function calendarRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
   const tx = <T>(fn: (t: Tx) => Promise<T>) =>
     (prisma as PrismaClient).$transaction(fn, { timeout: 60_000 });
@@ -258,7 +258,6 @@ export async function calendarRoutes(app: FastifyInstance, requeue: () => Promis
         });
         return h;
       });
-      await requeue();
       return reply.status(201).send(holidayDto(row));
     },
   );
@@ -297,7 +296,6 @@ export async function calendarRoutes(app: FastifyInstance, requeue: () => Promis
         });
         return u;
       });
-      await requeue();
       return holidayDto(row);
     },
   );
@@ -354,7 +352,6 @@ export async function calendarRoutes(app: FastifyInstance, requeue: () => Promis
         await applyToday(t, actor, l);
         return l.id;
       });
-      await requeue();
       const row = await prisma.attendanceLeave.findUniqueOrThrow({
         where: { id },
         include: leaveInclude,
@@ -399,7 +396,6 @@ export async function calendarRoutes(app: FastifyInstance, requeue: () => Promis
         await leaveNotice(t, actor, u, 'corrigida');
         await applyToday(t, actor, { ...u, reason: input.reason });
       });
-      await requeue();
       return leaveDto(
         await prisma.attendanceLeave.findUniqueOrThrow({ where: { id }, include: leaveInclude }),
       );
@@ -440,7 +436,6 @@ export async function calendarRoutes(app: FastifyInstance, requeue: () => Promis
         });
         await leaveNotice(t, actor, u, 'cancelada');
       });
-      await requeue();
       return leaveDto(
         await prisma.attendanceLeave.findUniqueOrThrow({ where: { id }, include: leaveInclude }),
       );

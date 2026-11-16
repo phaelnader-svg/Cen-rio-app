@@ -116,8 +116,8 @@ export interface DeadlineFacts {
   started: boolean;
   /** Tarefa aberta com bloqueio não rotineiro, ocorrência que bloqueia ou pausa por impedimento. */
   blocked: boolean;
-  /** Situação gravada dos materiais da OS. */
-  materialsReadiness: string;
+  /** A lista simples de materiais da OS tem item ainda não disponível na oficina. */
+  materialsMissing: boolean;
 }
 
 export interface ServiceDeadline {
@@ -130,14 +130,6 @@ export interface ServiceDeadline {
   context: string[];
 }
 
-/** Prontidão de materiais que ainda segura a OS (mesma regra do motivo MATERIAIS e do Início). */
-export const MATERIALS_PENDING_STATES = [
-  'AGUARDANDO_COMPRA',
-  'AGUARDANDO_RECEBIMENTO',
-  'PARCIALMENTE_DISPONIVEL',
-  'COM_DIVERGENCIA',
-] as const;
-const MATERIALS_PENDING = new Set<string>(MATERIALS_PENDING_STATES);
 const FRUSTRATION_CONTEXT: Record<string, string> = {
   CLIENTE_INDISPONIVEL: 'Cliente indisponível para entrega.',
   ENDERECO_INCORRETO: 'Endereço de entrega incorreto.',
@@ -155,7 +147,7 @@ export function deadlineReasons(f: DeadlineFacts): DeadlineReason[] {
   if (inProduction && !f.planned) r.add('NAO_PLANEJADA');
   else if (inProduction && !f.started) r.add('PRODUCAO_NAO_INICIADA');
   if (f.blocked || pending.some((p) => p.stage === 'BLOQUEIO_EXPEDICAO')) r.add('BLOQUEADA');
-  if (inProduction && MATERIALS_PENDING.has(f.materialsReadiness)) r.add('MATERIAIS');
+  if (inProduction && f.materialsMissing) r.add('MATERIAIS');
   if (pending.some((p) => p.stage === 'EM_CORRECAO')) r.add('EM_CORRECAO');
   for (const p of pending) {
     if (p.delivery?.status === 'FRUSTRADA') r.add('ENTREGA_FRUSTRADA');

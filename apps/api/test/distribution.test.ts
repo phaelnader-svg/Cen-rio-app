@@ -9,7 +9,7 @@ import {
   loginAdmin,
   resetDatabaseWithMaterialsGate,
 } from './helpers';
-import { createCustomer, createOrder, receiptBody } from './commercial-helpers';
+import { createCustomer, createOrder, markArrived } from './commercial-helpers';
 import {
   act,
   addOs,
@@ -70,13 +70,9 @@ async function os(
     customer,
     pieces.map((p) => ({ pieceType: p.pieceType, description: p.description, quantity: 1 })),
   );
-  const rec = await post(
-    admin,
-    '/api/v1/receipts',
-    receiptBody(
-      order.id,
-      order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
-    ),
+  const rec = await markArrived(
+    order.id,
+    order.items.map((i: { id: string }) => ({ orderItemId: i.id, quantity: 1 })),
   );
   expect(rec.status).toBe(201);
   const so = await post(admin, '/api/v1/service-orders', {
@@ -246,41 +242,6 @@ describe('Distribuição automática (fila semanal)', () => {
         },
       }),
     ).rejects.toThrow(/Unique constraint/);
-  });
-
-  it('CA3-06/12: gerar não libera; publicação segue dependências, materiais e a fila', async () => {
-    const { admin, p, a, b, plan, of } = await twoSofas();
-    const joaoTab = await tabletOf(app, admin, 'João', '271828');
-    const ricTab = await tabletOf(app, admin, 'Ricardo', '482915');
-    expect((await act(joaoTab, of(a.id, 'DESMONTAGEM').id, 'start')).status).toBe(422); // rascunho
-    const pub = await publish(admin, plan);
-    const s = (id: string) => pub.tasks.find((t: T) => t.id === id) as T;
-    expect(s(of(a.id, 'DESMONTAGEM').id).status).toBe('LIBERADA');
-    expect(s(of(a.id, 'PREPARACAO').id)).toMatchObject({
-      status: 'BLOQUEADA',
-      blockers: ['DEPENDENCIAS'],
-    });
-    expect(s(of(a.id, 'CORTE_TECIDO').id).blockers).toContain('MATERIAIS');
-    expect(s(of(a.id, 'MONTAGEM').id).blockers).toEqual(expect.arrayContaining(['DEPENDENCIAS']));
-    // Filas: João recebe a preparação das duas peças; Ricardo, só a tapeçaria da peça A.
-    const qj = (await joaoTab.get('/api/v1/production-tasks/mine/queue')).body;
-    expect(qj.total).toBe(4);
-    const qr = (await ricTab.get('/api/v1/production-tasks/mine/queue')).body;
-    expect(
-      qr.items.map(
-        (e: { task: { serviceOrderItem: { id: string } } }) => e.task.serviceOrderItem.id,
-      ),
-    ).toEqual(Array(4).fill(a.id));
-    // Concluir a desmontagem libera a preparação, que não inicia sozinha; só uma principal ativa.
-    await act(joaoTab, of(a.id, 'DESMONTAGEM').id, 'start');
-    expect((await act(joaoTab, of(b.id, 'DESMONTAGEM').id, 'start')).status).toBe(409);
-    await act(joaoTab, of(a.id, 'DESMONTAGEM').id, 'complete');
-    const prep = await db().productionTask.findUniqueOrThrow({
-      where: { id: of(a.id, 'PREPARACAO').id },
-    });
-    expect(prep.status).toBe('LIBERADA');
-    expect(prep.startedAt).toBeNull();
-    void p;
   });
 
   it('CA3-07/03: sem titular, sem competência e etapa ambígua viram pendência, nunca atribuição arbitrária', async () => {

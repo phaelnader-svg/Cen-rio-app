@@ -4,7 +4,7 @@
  * As permissões são definidas em código (fonte única da verdade) e sincronizadas
  * com o banco pelo seed. Funções (roles) agrupam permissões e são editáveis pelo
  * gestor; permissões individuais podem ser concedidas a um usuário específico
- * (ex.: tapeceiro autorizado a fazer medições extraordinárias em fases futuras).
+ * (ex.: um tapeceiro autorizado a inspecionar a qualidade).
  *
  * Toda verificação é feita no backend. O frontend usa este catálogo apenas para
  * esconder elementos de interface.
@@ -17,9 +17,9 @@ export const PERMISSION_GROUPS = {
   dispositivos: 'Dispositivos e sessões',
   empresa: 'Empresa',
   comercial: 'Clientes e pedidos',
-  logistica: 'Retiradas e recebimentos',
+  logistica: 'Retiradas',
   servicos: 'Ordens de serviço',
-  compras: 'Compras e estoque',
+  compras: 'Estoque da oficina',
   producao: 'Produção',
   presenca: 'Presença operacional',
   qualidade: 'Qualidade e expedição',
@@ -148,11 +148,6 @@ export const PERMISSIONS = {
     description: 'Criar, agendar, reagendar e registrar o andamento das retiradas.',
     critical: true,
   },
-  'recebimentos.registrar': {
-    group: 'logistica',
-    label: 'Registrar recebimento de peças',
-    description: 'Registrar a chegada física das peças na oficina, com conferência.',
-  },
   'os.ver': {
     group: 'servicos',
     label: 'Ver ordens de serviço',
@@ -161,76 +156,19 @@ export const PERMISSIONS = {
   'os.gerenciar': {
     group: 'servicos',
     label: 'Criar e alterar ordens de serviço',
-    description: 'Criar OS após o recebimento e alterar informações técnicas.',
-    critical: true,
-  },
-  'medicoes.extraordinarias': {
-    group: 'servicos',
-    label: 'Executar medições atribuídas',
-    description:
-      'Tapeceiro autorizado: executa as medições que o gestor lhe atribuir (somente as próprias).',
-  },
-  'medicoes.gerenciar': {
-    group: 'servicos',
-    label: 'Gerenciar e delegar medições',
-    description:
-      'Criar medições (rotina de sexta e extraordinárias), atribuir responsáveis e cancelar.',
-    critical: true,
-  },
-  'materiais.ver': {
-    group: 'servicos',
-    label: 'Ver solicitações e lista de materiais',
-    description: 'Consultar solicitações de materiais, planejamento de sexta e lista consolidada.',
-  },
-  'materiais.aprovar': {
-    group: 'servicos',
-    label: 'Revisar e aprovar materiais',
-    description:
-      'Revisar quantidades, aprovar para compra ou devolver para correção. Aprovar não significa comprar.',
-    critical: true,
-  },
-  'compras.ver': {
-    group: 'compras',
-    label: 'Ver compras e fornecedores',
-    description: 'Consultar a central de compras, pedidos de compra, preços e fornecedores.',
-  },
-  'compras.gerenciar': {
-    group: 'compras',
-    label: 'Preparar pedidos de compra',
-    description: 'Cadastrar fornecedores e montar pedidos de compra (rascunho) com preços.',
-    critical: true,
-  },
-  'compras.aprovar': {
-    group: 'compras',
-    label: 'Confirmar e cancelar compras',
-    description:
-      'Confirmar ou cancelar pedidos de compra e autorizar recebimento acima do pedido (gestor).',
+    description: 'Criar OS e alterar informações técnicas.',
     critical: true,
   },
   'estoque.ver': {
     group: 'compras',
-    label: 'Ver estoque e prontidão de materiais',
-    description: 'Consultar estoque, movimentações, reservas, sobras e prontidão de materiais.',
+    label: 'Ver o estoque da oficina',
+    description: 'Consultar os materiais da oficina, o saldo e o histórico de entradas e saídas.',
   },
   'estoque.gerenciar': {
     group: 'compras',
-    label: 'Movimentar estoque',
+    label: 'Movimentar o estoque da oficina',
     description:
-      'Cadastrar materiais, reservar para OS, liberar, dar saída, ajustar e registrar sobras.',
-    critical: true,
-  },
-  'estoque.conferir': {
-    group: 'compras',
-    label: 'Conferência técnica de material',
-    description:
-      'Conferir e liberar material que exige validação de especificação (tecido, espuma, densidade, espessura, medida, quantidade, avaria e material exclusivo da OS). Receber a chegada física não exige esta permissão.',
-    critical: true,
-  },
-  'estoque.autorizar': {
-    group: 'compras',
-    label: 'Autorizar estornos e transferências',
-    description:
-      'Estornar recebimentos de materiais e transferir sobras de tecido entre OS (gestor).',
+      'Cadastrar materiais e registrar entradas, saídas e ajustes do estoque da oficina.',
     critical: true,
   },
   'producao.ver': {
@@ -251,12 +189,6 @@ export const PERMISSIONS = {
     description:
       'Ver as próprias tarefas e a OS correspondente; iniciar, pausar, retomar, registrar andamento e concluir as próprias tarefas.',
   },
-  'ajuda.solicitar': {
-    group: 'producao',
-    label: 'Pedir ajuda nas próprias tarefas',
-    description:
-      'Pedir apoio (normal ou urgente) nas próprias tarefas em andamento, consultar e cancelar os próprios pedidos.',
-  },
   'ocorrencias.registrar': {
     group: 'producao',
     label: 'Registrar problemas nas próprias tarefas',
@@ -272,7 +204,7 @@ export const PERMISSIONS = {
     group: 'producao',
     label: 'Delegar e encerrar ocorrências',
     description:
-      'Atribuir a solução, confirmar ou recusar a resolução, reabrir e cancelar ocorrências (com motivo) e escolher o ajudante manualmente (gestor).',
+      'Atribuir a solução, confirmar ou recusar a resolução, reabrir e cancelar ocorrências (com motivo) (gestor).',
     critical: true,
   },
   'qualidade.inspecionar': {
@@ -309,8 +241,7 @@ export const PERMISSIONS = {
   'devolucoes.gerenciar': {
     group: 'qualidade',
     label: 'Devoluções e correção de recebimento',
-    description:
-      'Registrar e confirmar devoluções de peças ao cliente e corrigir recebimentos físicos com justificativa (gestor).',
+    description: 'Registrar e confirmar devoluções de peças ao cliente (gestor).',
     critical: true,
   },
   'presenca.registrar': {
@@ -400,8 +331,7 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
   {
     key: GESTOR_ROLE_KEY,
     name: 'Gestor',
-    description:
-      'Responsável por clientes, orçamentos, OS, compras, programação, decisões e entregas.',
+    description: 'Responsável por clientes, orçamentos, OS, programação, decisões e entregas.',
     system: true,
     permissions: ALL_PERMISSIONS,
   },
@@ -413,10 +343,7 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
-      // Simplificação Fase 3: confirmar a chegada de peças na central compartilhada.
-      'recebimentos.registrar',
       'ocorrencias.registrar',
-      'ajuda.solicitar',
       'presenca.registrar',
       'sincronizacao.diagnosticar',
       // R1 (DEC-9): recebe por produção — vê os próprios ganhos no tablet (com PIN).
@@ -432,11 +359,8 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
-      // Simplificação Fase 3: confirmar a chegada de peças na central compartilhada.
-      'recebimentos.registrar',
       'qualidade.inspecionar',
       'ocorrencias.registrar',
-      'ajuda.solicitar',
       'presenca.registrar',
       'sincronizacao.diagnosticar',
     ],
@@ -449,8 +373,6 @@ export const DEFAULT_ROLES: readonly DefaultRoleDefinition[] = [
     permissions: [
       'producao.acessar',
       'producao.executar',
-      // Simplificação Fase 3: confirmar a chegada de peças na central compartilhada.
-      'recebimentos.registrar',
       'ocorrencias.registrar',
       'presenca.registrar',
       'sincronizacao.diagnosticar',

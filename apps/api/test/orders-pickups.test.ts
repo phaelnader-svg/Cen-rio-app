@@ -148,11 +148,14 @@ describe('Solicitação de retirada', () => {
     const exec = await t('EM_EXECUCAO', occ2.body.version);
     const done = await t('RETIRADA_REALIZADA', exec.body.version);
     expect(done.body.status).toBe('RETIRADA_REALIZADA');
-    // "Recebida na oficina" só pelo recebimento físico.
-    const manual = await t('RECEBIDA_NA_OFICINA', done.body.version);
-    expect(manual.status).toBe(422);
+    // Transição inválida a partir de "realizada".
     const invalid = await t('AGUARDANDO_AGENDAMENTO', done.body.version);
     expect(invalid.status).toBe(422);
+    // Recebimentos removidos: "Recebida na oficina" é marcada na própria retirada e marca as peças.
+    const arrived = await t('RECEBIDA_NA_OFICINA', done.body.version);
+    expect(arrived.status, JSON.stringify(arrived.body)).toBe(200);
+    expect(arrived.body.status).toBe('RECEBIDA_NA_OFICINA');
+    expect((await t('EM_EXECUCAO', arrived.body.version)).status).toBe(422);
     expect(done.body.events.map((e: { kind: string }) => e.kind)).toEqual([
       'SOLICITADA',
       'AGENDADA',

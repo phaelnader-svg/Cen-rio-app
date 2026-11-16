@@ -18,7 +18,7 @@ export function ServiceOrdersPage() {
     <>
       <PageHeader
         title="Ordens de serviço"
-        description="OS técnicas criadas a partir das peças recebidas. Para criar uma OS, abra o pedido após o recebimento."
+        description="OS técnicas: nascem no fechamento do serviço (Novo serviço) ou pelo pedido, com as peças ainda sem OS."
       />
       <Card className="mb-4 grid gap-3 p-4 sm:grid-cols-[1fr_220px]">
         <label className="relative">

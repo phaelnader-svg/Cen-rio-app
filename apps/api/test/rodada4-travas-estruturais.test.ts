@@ -2,8 +2,7 @@
  * Remediação pós-auditoria, Rodada 4 — travas estruturais contra regressão.
  * IDs: F1-07b (nenhuma permissão enfraquecida), F1-12b (endpoints antigos mantidos), F1-13
  * (nenhuma tela removida, nenhum dado excluído), F7-16 (a interface não define a natureza
- * jurídica do trabalho) e F10-01 (parte da API: "Recebimento de materiais" sem filtro no menu).
- * A estrutura do menu (F10-01) é provada no pacote web: apps/web/test/rodada4-menu.test.ts.
+ * jurídica do trabalho). O F10-01 ("Recebimento de materiais" no menu) saiu com a tela, na S4.
  *
  * Linha de base = commit auditado 9fb1786. Os dados abaixo foram extraídos UMA vez daquele commit
  * (fonte, git ls-tree e o routeCatalog do app de 9fb1786 construído em memória) e ficam gravados
@@ -17,7 +16,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { loadUserPermissions } from '../src/core/permissions';
 import type { AccessRule } from '../src/core/types';
-import { etapasConcluidas } from './remocao/catalogo';
+import { PERMISSOES_REMOVIDAS, etapasConcluidas } from './remocao/catalogo';
 import { panelUserWith } from './commercial-helpers';
 import {
   ADMIN,
@@ -44,10 +43,129 @@ const REMOVIDAS_POR_ETAPA: Record<string, readonly string[]> = {
     'POST /api/v1/packaging/:id/assign',
     'POST /api/v1/packaging/:id/complete',
   ],
+  // prontidão e bloqueios por material
+  S2: [
+    'DELETE /api/v1/service-orders/:id/materials/:materialId',
+    'GET /api/v1/material-readiness',
+    'GET /api/v1/service-orders/:id/material-readiness',
+    'POST /api/v1/service-orders/:id/materials',
+    'PUT /api/v1/production-tasks/:id/materials',
+  ],
+  // medições formais, previsões e materiais aprovados
+  S3: [
+    'GET /api/v1/materials/consolidated',
+    'GET /api/v1/materials/consolidated.csv',
+    'GET /api/v1/materials/planning',
+    'GET /api/v1/measurements',
+    'GET /api/v1/measurements/:id',
+    'GET /api/v1/measurements/assignees',
+    'GET /api/v1/measurements/awaiting',
+    'GET /api/v1/measurements/mine',
+    'GET /api/v1/orders/:id/material-forecasts',
+    'POST /api/v1/material-forecasts/:id/link',
+    'POST /api/v1/material-requirements/:id/cancel',
+    'POST /api/v1/measurements',
+    'POST /api/v1/measurements/:id/assign',
+    'POST /api/v1/measurements/:id/cancel',
+    'POST /api/v1/measurements/:id/request/approve',
+    'POST /api/v1/measurements/:id/request/reopen',
+    'POST /api/v1/measurements/:id/request/return',
+    'POST /api/v1/measurements/:id/request/review',
+    'POST /api/v1/measurements/:id/start',
+    'POST /api/v1/measurements/:id/submit',
+    'POST /api/v1/orders/:id/items/:itemId/material-forecasts',
+    'PUT /api/v1/material-forecasts/:id',
+    'PUT /api/v1/measurements/:id/draft',
+    'PUT /api/v1/measurements/:id/request/items',
+  ],
+  // compras, fornecedores, recebimento de materiais e estoque formal
+  S4: [
+    'GET /api/v1/material-arrivals',
+    'GET /api/v1/material-leftovers',
+    'GET /api/v1/material-receipts',
+    'GET /api/v1/material-receipts/:id',
+    'GET /api/v1/material-receipts/pending',
+    'GET /api/v1/purchase-orders',
+    'GET /api/v1/purchase-orders/:id',
+    'GET /api/v1/purchasing/needs',
+    'GET /api/v1/purchasing/shortages',
+    'GET /api/v1/stock-items',
+    'GET /api/v1/stock-movements',
+    'GET /api/v1/stock-reservations',
+    'GET /api/v1/suppliers',
+    'POST /api/v1/arrivals/purchase-orders/:id/confirm',
+    'POST /api/v1/material-leftovers',
+    'POST /api/v1/material-leftovers/:id/discard',
+    'POST /api/v1/material-leftovers/:id/transfer',
+    'POST /api/v1/material-receipts',
+    'POST /api/v1/material-receipts/lines/:id/rejection-decision',
+    'POST /api/v1/material-receipts/lines/:id/reverse',
+    'POST /api/v1/purchase-orders',
+    'POST /api/v1/purchase-orders/:id/cancel',
+    'POST /api/v1/purchase-orders/:id/close-balance',
+    'POST /api/v1/purchase-orders/:id/confirm',
+    'POST /api/v1/purchase-orders/:id/items/:itemId/authorize-extra',
+    'POST /api/v1/stock-items',
+    'POST /api/v1/stock-items/:id/adjust',
+    'POST /api/v1/stock-items/:id/issue',
+    'POST /api/v1/stock-reservations',
+    'POST /api/v1/stock-reservations/:id/consume',
+    'POST /api/v1/stock-reservations/:id/release',
+    'POST /api/v1/suppliers',
+    'PUT /api/v1/purchase-orders/:id',
+    'PUT /api/v1/stock-items/:id',
+    'PUT /api/v1/suppliers/:id',
+  ],
+  // recebimentos (a OS nasce no fechamento — D1)
+  S5: [
+    'GET /api/v1/arrivals',
+    'GET /api/v1/receipts',
+    'GET /api/v1/receipts/:id',
+    'GET /api/v1/receipts/:id/corrections',
+    'GET /api/v1/receipts/pending',
+    'POST /api/v1/arrivals/pickups/:id/confirm',
+    'POST /api/v1/receipt-lines/:id/corrections',
+    'POST /api/v1/receipts',
+  ],
+  // pedidos de ajuda
+  S7: [
+    'GET /api/v1/help-requests',
+    'GET /api/v1/help-requests/:id',
+    'GET /api/v1/help-requests/:id/candidates',
+    'GET /api/v1/help-requests/mine',
+    'POST /api/v1/help-requests',
+    'POST /api/v1/help-requests/:id/assign',
+    'POST /api/v1/help-requests/:id/cancel',
+    'POST /api/v1/help-requests/process',
+    'POST /api/v1/help-requests/prolonged',
+  ],
 };
 const REMOVIDAS_AUTORIZADAS = new Set(
   [...etapasConcluidas()].flatMap((e) => REMOVIDAS_POR_ETAPA[e] ?? []),
 );
+/** Permissões de 9fb1786 retiradas do catálogo por etapa concluída (remocao/catalogo.ts). */
+const PERMISSOES_REMOVIDAS_AUTORIZADAS = new Set<string>(
+  [...etapasConcluidas()].flatMap((e) => PERMISSOES_REMOVIDAS[e] ?? []),
+);
+/** Regra de acesso gravada na linha de base: as permissões são texto (algumas já não existem). */
+type BaselineAccess =
+  | Exclude<AccessRule, { session: unknown }>
+  | (Omit<Extract<AccessRule, { session: unknown }>, 'permissions' | 'anyPermissions'> & {
+      permissions?: readonly string[];
+      anyPermissions?: readonly string[];
+    });
+/** A regra de 9fb1786 sem as permissões removidas de propósito (o resto continua igual). */
+function semRemovidas(access: BaselineAccess): BaselineAccess {
+  if (!('session' in access)) return access;
+  const out = { ...access };
+  for (const k of ['permissions', 'anyPermissions'] as const) {
+    const list = access[k]?.filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p));
+    if (list === undefined) continue;
+    if (list.length) out[k] = list;
+    else delete out[k];
+  }
+  return out;
+}
 
 /** ALL_PERMISSIONS em 9fb1786 (packages/shared/src/permissions.ts). */
 const BASELINE_PERMISSIONS = [
@@ -145,7 +263,7 @@ const BASELINE_ROLES: Record<string, readonly string[]> = {
  * regra de acesso efetiva lida do routeCatalog do app daquele commit. null = rota só registrada
  * com ENABLE_TEST_CLOCK (relógio do E2E), fora do catálogo do app padrão.
  */
-const BASELINE_ROUTES: Record<string, AccessRule | null> = {
+const BASELINE_ROUTES: Record<string, BaselineAccess | null> = {
   'DELETE /api/devices/:id': { session: 'WEB', permissions: ['dispositivos.gerenciar'] },
   'DELETE /api/employees/:id/admin-access': {
     session: 'WEB',
@@ -1180,6 +1298,29 @@ const BASELINE_ROUTES: Record<string, AccessRule | null> = {
   'PUT /api/v1/suppliers/:id': { session: 'WEB', permissions: ['compras.gerenciar'] },
 };
 /** apps/web/app/(…)/page.tsx em 9fb1786 (54). */
+/** Telas de 9fb1786 removidas de propósito, por etapa aprovada (os dados ficam no banco). */
+const PAGINAS_REMOVIDAS_POR_ETAPA: Record<string, readonly string[]> = {
+  S2: ['apps/web/app/painel/prontidao/page.tsx'],
+  S3: [
+    'apps/web/app/painel/materiais/page.tsx',
+    'apps/web/app/painel/medicoes/[id]/page.tsx',
+    'apps/web/app/painel/medicoes/page.tsx',
+    'apps/web/app/painel/planejamento/page.tsx',
+  ],
+  S4: [
+    'apps/web/app/painel/compras/[id]/page.tsx',
+    'apps/web/app/painel/compras/novo/page.tsx',
+    'apps/web/app/painel/compras/page.tsx',
+    'apps/web/app/painel/estoque/page.tsx',
+    'apps/web/app/painel/fornecedores/page.tsx',
+    'apps/web/app/painel/recebimento-materiais/page.tsx',
+  ],
+  S5: [
+    'apps/web/app/painel/recebimentos/novo/page.tsx',
+    'apps/web/app/painel/recebimentos/page.tsx',
+  ],
+  S7: ['apps/web/app/painel/ajuda/page.tsx'],
+};
 const BASELINE_PAGES = [
   'apps/web/app/entrar/page.tsx',
   'apps/web/app/page.tsx',
@@ -1310,7 +1451,7 @@ const split = (key: string) => {
 };
 
 /** O que a regra permite para uma sessão de painel (mesma lógica do plugin de autenticação). */
-function webAllows(access: AccessRule, perms: ReadonlySet<string>): boolean {
+function webAllows(access: BaselineAccess, perms: ReadonlySet<string>): boolean {
   if ('public' in access || 'device' in access) return true;
   if (access.session !== 'any' && access.session !== 'WEB') return false;
   const required = [
@@ -1357,13 +1498,20 @@ const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
 };
 /** Regras de acesso de rotas antigas que mudaram desde 9fb1786 (nenhuma). */
 const ALLOWED_ACCESS_CHANGES: Record<string, AccessRule> = {};
+/** Acréscimos da função que ainda existem no catálogo (estoque.conferir saiu com a S4). */
+const adicoes = (key: string) =>
+  (ALLOWED_ROLE_ADDITIONS[key] ?? []).filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p));
 
 describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9fb1786)', () => {
-  it('o catálogo de permissões é superconjunto do de 9fb1786; único acréscimo: estoque.conferir', () => {
+  it('o catálogo de permissões é o de 9fb1786 menos as removidas por etapa; acréscimo só estoque.conferir', () => {
     const now = new Set<string>(ALL_PERMISSIONS);
-    expect(BASELINE_PERMISSIONS.filter((p) => !now.has(p))).toEqual([]);
+    expect(BASELINE_PERMISSIONS.filter((p) => !now.has(p)).sort()).toEqual(
+      BASELINE_PERMISSIONS.filter((p) => PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)).sort(),
+    );
     const base = new Set<string>(BASELINE_PERMISSIONS);
-    expect(ALL_PERMISSIONS.filter((p) => !base.has(p))).toEqual(ALLOWED_NEW_PERMISSIONS);
+    expect(ALL_PERMISSIONS.filter((p) => !base.has(p))).toEqual(
+      ALLOWED_NEW_PERMISSIONS.filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)),
+    );
   });
 
   it('DEFAULT_ROLES: toda função padrão de 9fb1786 continua com todas as permissões (acréscimos listados)', () => {
@@ -1372,14 +1520,14 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
     for (const [key, perms] of Object.entries(BASELINE_ROLES)) {
       const cur = now.get(key)!;
       expect(
-        perms.filter((p) => !cur.has(p)),
+        perms.filter((p) => !cur.has(p) && !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)),
         `${key} perdeu`,
       ).toEqual([]);
       const base = new Set(perms);
       expect(
         [...cur].filter((p) => !base.has(p)),
         `${key} ganhou`,
-      ).toEqual(ALLOWED_ROLE_ADDITIONS[key]);
+      ).toEqual(adicoes(key));
     }
   });
 
@@ -1393,18 +1541,26 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
       const cur = new Set(role.permissions.map((p) => p.permission));
       const base = BASELINE_ROLES[role.key!]!;
       expect(
-        base.filter((p) => !cur.has(p)),
+        base.filter((p) => !cur.has(p) && !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)),
         `${role.key} perdeu no banco`,
       ).toEqual([]);
       expect(
         [...cur].filter((p) => !base.includes(p)).sort(),
         `${role.key} ganhou no banco`,
-      ).toEqual(ALLOWED_ROLE_ADDITIONS[role.key!]);
+      ).toEqual(adicoes(role.key!));
+      expect(
+        [...cur].filter((p) => PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)),
+        `${role.key} ainda tem permissão removida no banco`,
+      ).toEqual([]);
     }
     // Permissões efetivas de quem entra como gestor (o que o servidor realmente checa).
     const gestor = await db().user.findUniqueOrThrow({ where: { email: ADMIN.email } });
     const effective = await loadUserPermissions(db(), gestor.id);
-    expect(BASELINE_PERMISSIONS.filter((p) => !effective.has(p as Permission))).toEqual([]);
+    expect(
+      BASELINE_PERMISSIONS.filter(
+        (p) => !effective.has(p as Permission) && !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p),
+      ),
+    ).toEqual([]);
   });
 
   it('toda rota de 9fb1786 exige exatamente a mesma regra de acesso de antes (nenhuma afrouxada)', () => {
@@ -1417,7 +1573,7 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
       compared += 1;
       const cur = now.get(key);
       expect(cur, `${key} sumiu do catálogo`).toBeDefined();
-      const expected = ALLOWED_ACCESS_CHANGES[key] ?? access;
+      const expected = ALLOWED_ACCESS_CHANGES[key] ?? semRemovidas(access);
       if (JSON.stringify(cur) !== JSON.stringify(expected))
         changed.push(`${key}: ${JSON.stringify(access)} → ${JSON.stringify(cur)}`);
     }
@@ -1425,15 +1581,18 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
     expect(changed).toEqual([]);
   });
 
-  describe('amostra sensível pela API: financeiro, compras e presença recusam como em 9fb1786', () => {
-    const DOMAINS = /^\/api\/v1\/(finance|purchase-orders|purchasing|suppliers|attendance)\b/;
+  describe('amostra sensível pela API: financeiro e presença recusam como em 9fb1786', () => {
+    // Compras/fornecedores saíram com a S4 (remoção real): as rotas respondem 404, ver F1-12b.
+    const DOMAINS = /^\/api\/v1\/(finance|attendance)\b/;
     const sample = Object.entries(BASELINE_ROUTES)
-      .filter((e): e is [string, AccessRule] => e[1] !== null && DOMAINS.test(split(e[0]).url))
-      .map(([key, access]) => ({ ...split(key), access }));
+      .filter(
+        (e): e is [string, BaselineAccess] =>
+          e[1] !== null && !REMOVIDAS_AUTORIZADAS.has(e[0]) && DOMAINS.test(split(e[0]).url),
+      )
+      .map(([key, access]) => ({ ...split(key), access: semRemovidas(access) }));
     const users: Record<string, string[]> = {
       neutro: [],
       fin: ['financeiro.ver'],
-      comp: ['compras.ver'],
       pres: ['presenca.ver'],
     };
     const clients: Record<string, Client> = {};
@@ -1443,9 +1602,8 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
         clients[tag] = await panelUserWith(app, admin, `r4b${tag}`, perms);
     });
 
-    it('a amostra cobre rotas de leitura e de escrita dos três domínios', () => {
+    it('a amostra cobre rotas de leitura e de escrita dos dois domínios', () => {
       expect(sample.filter((r) => r.url.startsWith('/api/v1/finance')).length).toBeGreaterThan(60);
-      expect(sample.filter((r) => /purchas|suppliers/.test(r.url)).length).toBeGreaterThan(10);
       expect(sample.filter((r) => r.url.startsWith('/api/v1/attendance')).length).toBeGreaterThan(
         10,
       );
@@ -1552,22 +1710,29 @@ const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
   '20270316000000_reformulacao_fase_2: UPDATE CASCADE': 5,
 };
 
-describe('F1-13 — nenhuma tela removida, menu de materiais restaurado, nenhum dado excluído', () => {
-  it('as 54 páginas Next de 9fb1786 continuam existindo', () => {
+describe('F1-13 — só as telas de remoção aprovada saíram, nenhum dado excluído', () => {
+  it('as 54 páginas Next de 9fb1786 continuam existindo — exceto as de remoção real aprovada', () => {
     expect(BASELINE_PAGES.length).toBe(54);
-    expect(BASELINE_PAGES.filter((p) => !existsSync(join(ROOT, p)))).toEqual([]);
+    const autorizadas = new Set(
+      [...etapasConcluidas()].flatMap((e) => PAGINAS_REMOVIDAS_POR_ETAPA[e] ?? []),
+    );
+    for (const p of autorizadas) expect(BASELINE_PAGES, p).toContain(p);
+    expect(BASELINE_PAGES.filter((p) => !autorizadas.has(p) && !existsSync(join(ROOT, p)))).toEqual(
+      [],
+    );
+    expect([...autorizadas].filter((p) => existsSync(join(ROOT, p)))).toEqual([]);
   });
 
   it('nenhuma página antiga virou redirecionamento (só a raiz, que já era)', () => {
-    const redirects = BASELINE_PAGES.filter((p) =>
-      /\bredirect\(/.test(readFileSync(join(ROOT, p), 'utf8')),
+    const redirects = BASELINE_PAGES.filter(
+      (p) => existsSync(join(ROOT, p)) && /\bredirect\(/.test(readFileSync(join(ROOT, p), 'utf8')),
     );
     expect(redirects).toEqual(['apps/web/app/page.tsx']);
   });
 
-  it('"Materiais aprovados" (/painel/materiais) voltou ao menu do painel', () => {
+  it('"Materiais aprovados" (/painel/materiais) saiu do menu junto com a tela (S3)', () => {
     const nav = readFileSync(join(ROOT, 'apps/web/components/admin/nav.ts'), 'utf8');
-    expect(nav).toMatch(/href: '\/painel\/materiais',\s*label: 'Materiais aprovados'/);
+    expect(nav).not.toMatch(/\/painel\/materiais'/);
   });
 
   it('as migrations de 9fb1786 continuam presentes e byte a byte iguais', () => {
@@ -1719,47 +1884,5 @@ describe('F7-16 — a interface não define a natureza jurídica da relação de
     const company = readFileSync(join(ROOT, 'apps/web/components/admin/company-page.tsx'), 'utf8');
     expect(stripComments(team)).toMatch(/não é registro de ponto, não calcula jornada/);
     expect(stripComments(company)).toMatch(/não é ponto eletrônico/);
-  });
-});
-
-// ─────────────────────────── F10-01 (lado da API do menu) ────────────────────────────
-
-describe('F10-01 — "Recebimento de materiais" sem filtro de permissão no menu (nav.ts)', () => {
-  /*
-   * O item não tem `anyOf` porque a regra do recebimento é "qualquer funcionário autenticado"
-   * (purchasing/common.ts ANY_EMPLOYEE). Prova abaixo que um usuário de painel SEM nenhuma
-   * permissão de compras/estoque abre a página sem recusa: as rotas que ela usa aceitam.
-   */
-  it('as rotas do recebimento valem para qualquer sessão; a lista de chegadas físicas é restrita', () => {
-    const rule = (k: string) => catalog(app).find((r) => `${r.method} ${r.url}` === k)?.access;
-    expect(rule('GET /api/v1/material-receipts/pending')).toEqual({ session: 'any' });
-    expect(rule('POST /api/v1/material-receipts')).toEqual({ session: 'any' });
-    expect(rule('GET /api/v1/material-arrivals')).toEqual({
-      session: 'WEB',
-      anyPermissions: ['estoque.ver', 'compras.ver', 'estoque.gerenciar'],
-    });
-  });
-
-  it('usuário de painel sem permissão de compras/estoque: a fila do recebimento responde 200 (link não leva a recusa)', async () => {
-    const admin = await loginAdmin(app);
-    const user = await panelUserWith(app, admin, 'r4bsemcompras', []);
-    expect((await user.get('/api/v1/material-receipts/pending')).status).toBe(200);
-    // A lista opcional de chegadas aguardando conferência é negada, e a página não a exibe:
-    expect((await user.get('/api/v1/material-arrivals?status=PENDENTE_CONFERENCIA')).status).toBe(
-      403,
-    );
-    const page = readFileSync(
-      join(ROOT, 'apps/web/components/purchasing/material-receiving.tsx'),
-      'utf8',
-    );
-    // Homologação funcional (B2): além de esconder em silêncio, a lista só é PEDIDA com a
-    // permissão que a API exige — o 403 deixou de acontecer.
-    expect(page).toMatch(/conference && seeArrivals && arrivals\.data\?\.length \?/);
-    expect(page).toMatch(
-      /const seeArrivals = can\('estoque\.ver'\) \|\| can\('compras\.ver'\) \|\| can\('estoque\.gerenciar'\);/,
-    );
-    expect(page).not.toMatch(/arrivals\.(isError|error)/);
-    // E a fila de pedidos é a principal: só ela trava a página com erro.
-    expect(page).toMatch(/if \(pending\.isError\) return <Alert/);
   });
 });

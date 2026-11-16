@@ -148,15 +148,15 @@ const FLOW: { title: string; text: string }[] = [
   { title: 'Pedido', text: 'Cliente, serviço e retirada numa tela só.' },
   {
     title: 'Retirada e chegada',
-    text: 'A retirada entra no roteiro do dia e a oficina confirma a chegada no tablet.',
+    text: 'A retirada entra no roteiro do dia e a chegada à oficina fica registrada no pedido.',
   },
   {
-    title: 'Medição',
-    text: 'Medidas, tecido e espuma lançados no tablet e aprovados no escritório.',
+    title: 'Ficha da peça',
+    text: 'Medidas, tecido e espuma registrados na própria ordem de serviço.',
   },
   {
     title: 'Material',
-    text: 'Compra, conferência no recebimento e estoque reservado para cada serviço.',
+    text: 'Lista de materiais de cada serviço e estoque simples da oficina.',
   },
   {
     title: 'Produção',
@@ -369,8 +369,9 @@ export function Landing({ preview }: { preview: boolean }) {
                 <span id="mensalidade">Um sistema, uma mensalidade</span>
               </SectionTitle>
               <p className="mt-4 text-[15px] leading-7 text-ink-soft sm:text-base">
-                Inclui o sistema inteiro, com tudo o que aparece nesta página: serviços, medição,
-                compras e estoque, produção, tablets da oficina, qualidade, entregas e financeiro.
+                Inclui o sistema inteiro, com tudo o que aparece nesta página: serviços, ficha da
+                peça, materiais e estoque, produção, tablets da oficina, qualidade, entregas e
+                financeiro.
               </p>
             </div>
             <div className="border-y border-line py-6">

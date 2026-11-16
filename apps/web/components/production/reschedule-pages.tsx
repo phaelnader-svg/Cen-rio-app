@@ -1,12 +1,8 @@
 'use client';
 
-import type { HelpStatus, ProposalAlternative, RescheduleProposalDto } from '@cenario/shared';
+import type { ProposalAlternative, RescheduleProposalDto } from '@cenario/shared';
 import { useFocusParam } from '@/lib/focus-param';
 import {
-  CANDIDATE_REASONS,
-  HELP_KIND_LABEL,
-  HELP_STATUSES,
-  HELP_STATUS_LABEL,
   PLANNING_ACTION_LABEL,
   PROPOSAL_KIND_LABEL,
   PROPOSAL_STATUS_LABEL,
@@ -15,7 +11,7 @@ import {
   type Skill,
 } from '@cenario/shared';
 import clsx from 'clsx';
-import { CalendarClock, GitPullRequestArrow, HandHelping, RefreshCw, Users } from 'lucide-react';
+import { CalendarClock, GitPullRequestArrow } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Section } from '@/components/commercial/section';
@@ -27,297 +23,11 @@ import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/component
 import { Tabs } from '@/components/ui/tabs';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
-import { useHelpCandidates } from '@/lib/issues';
-import {
-  useHelpRequest,
-  useHelpRequests,
-  useHelpRequestsByStatus,
-  usePlanningActions,
-  useProposals,
-  useSkills,
-} from '@/lib/help';
-import { useCan, useModules } from '@/lib/hooks';
+import { usePlanningActions, useProposals, useSkills } from '@/lib/help';
+import { useCan } from '@/lib/hooks';
 import { useWorkers } from '@/lib/production';
 
-const STATUS_TONE: Record<HelpStatus, 'warn' | 'ok' | 'info' | 'neutral' | 'danger' | 'brand'> = {
-  PENDENTE: 'warn',
-  ATRIBUIDA: 'brand',
-  EM_EXECUCAO: 'info',
-  CONCLUIDA: 'ok',
-  CANCELADA: 'neutral',
-  ESCALADA: 'danger',
-};
-const TAB_LABEL: Record<HelpStatus, string> = {
-  PENDENTE: 'Pendentes',
-  ATRIBUIDA: 'Atribuídas',
-  EM_EXECUCAO: 'Em execução',
-  CONCLUIDA: 'Concluídas',
-  CANCELADA: 'Canceladas',
-  ESCALADA: 'Escaladas',
-};
-
-// ─────────────────────────── Pedidos de ajuda ───────────────────────────
-
-/** Pedidos de ajuda por status, com a avaliação dos candidatos de cada atribuição. */
-export function HelpRequestsPage() {
-  const focus = useFocusParam();
-  const can = useCan();
-  const helpOn = useModules().ajuda;
-  const q = useHelpRequests();
-  const [chosenTab, setTab] = useState<HelpStatus | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
-  const { m, error } = useSend();
-  // Rodada 4 (F10-14): o link `?foco=<id>` abre a aba do status do pedido (não sempre Pendentes),
-  // até a pessoa escolher outra aba.
-  const focused = useHelpRequest(focus);
-  const tab: HelpStatus = chosenTab ?? focused.data?.status ?? 'PENDENTE';
-  // Rodada 4 (F7-14): a aba ativa vem paginada pelo próprio status (histórico sem limite fixo).
-  const paged = useHelpRequestsByStatus(tab);
-  const list = q.data ?? [];
-  const count = (s: HelpStatus) => list.filter((r) => r.status === s).length;
-  const rows = paged.data?.pages.flat() ?? [];
-  return (
-    <>
-      <PageHeader
-        title="Pedidos de ajuda"
-        description="Atribuição automática de ajudantes por regras fixas (competência, presença, ocupação, agenda e menor impacto). Cada escolha registra os candidatos avaliados e os motivos."
-        actions={
-          helpOn &&
-          can('producao.planejar') && (
-            <Button
-              variant="secondary"
-              icon={<RefreshCw className="size-4" aria-hidden />}
-              loading={m.isPending}
-              onClick={() =>
-                m.mutate({
-                  run: () =>
-                    api('/api/v1/help-requests/process', {
-                      method: 'POST',
-                      body: {},
-                      idempotencyKey: newIdempotencyKey(),
-                    }),
-                  ok: 'Fila reavaliada.',
-                })
-              }
-            >
-              Reavaliar fila
-            </Button>
-          )
-        }
-      />
-      {!helpOn && (
-        <div data-testid="help-disabled">
-          <Alert tone="info" title="Pedidos de ajuda desativados">
-            Os tablets não pedem mais ajuda e nada aqui gera pendência. O histórico abaixo continua
-            disponível para consulta; para voltar a usar, religue em Empresa → Funcionalidades.
-          </Alert>
-        </div>
-      )}
-      {error && <Alert tone="danger">{error}</Alert>}
-      <Tabs
-        tabs={HELP_STATUSES.map((s) => ({ key: s, label: TAB_LABEL[s], count: count(s) }))}
-        active={tab}
-        onChange={(k) => setTab(k as HelpStatus)}
-      >
-        {paged.isPending ? (
-          <Spinner />
-        ) : rows.length === 0 ? (
-          <EmptyState
-            icon={<HandHelping className="size-6" aria-hidden />}
-            title={`Nenhum pedido ${TAB_LABEL[tab].toLowerCase()}`}
-          />
-        ) : (
-          <Card className="mt-4 overflow-x-auto">
-            <table className="data-table" data-testid="help-table">
-              <thead>
-                <tr>
-                  <th>Pedido</th>
-                  <th>Quem pediu</th>
-                  <th>Tarefa</th>
-                  <th>Apoio</th>
-                  <th>Ajudante</th>
-                  <th>Espera</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="border-t border-line"
-                    data-testid={`help-row-${r.code}`}
-                    data-focus-id={r.id}
-                  >
-                    <td>
-                      <span className="font-mono font-semibold">{r.code}</span>
-                      {r.urgent && (
-                        <Badge tone="danger" className="ml-2">
-                          Urgente
-                        </Badge>
-                      )}
-                      <span className="block text-xs text-ink-muted">
-                        {formatDateTime(r.createdAt)}
-                      </span>
-                    </td>
-                    <td>{r.requester.displayName}</td>
-                    <td>
-                      <span className="font-mono text-xs text-ink-muted">
-                        {r.serviceOrder.code} · {r.task.code}
-                      </span>
-                      <span className="block">{r.task.title}</span>
-                    </td>
-                    <td>
-                      {HELP_KIND_LABEL[r.kind]} · {r.estimatedMinutes} min
-                      {r.justification && (
-                        <span className="block text-xs text-danger-600">{r.justification}</span>
-                      )}
-                    </td>
-                    <td>
-                      {r.helper?.displayName ?? '—'}
-                      <Badge tone={STATUS_TONE[r.status]} className="ml-2">
-                        {HELP_STATUS_LABEL[r.status]}
-                      </Badge>
-                    </td>
-                    <td>{r.waitingMinutes} min</td>
-                    <td className="text-right">
-                      <Button size="sm" variant="secondary" onClick={() => setOpen(r.id)}>
-                        Detalhes
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-        )}
-        {paged.hasNextPage && (
-          <div className="mt-4 flex justify-center">
-            <Button
-              variant="secondary"
-              loading={paged.isFetchingNextPage}
-              onClick={() => void paged.fetchNextPage()}
-              data-testid="help-load-more"
-            >
-              Carregar mais antigos
-            </Button>
-          </div>
-        )}
-      </Tabs>
-      {open && <HelpDetailDialog id={open} onClose={() => setOpen(null)} />}
-    </>
-  );
-}
-
-function HelpDetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
-  const q = useHelpRequest(id);
-  const can = useCan();
-  const { m, error } = useSend();
-  const [reason, setReason] = useState('');
-  const r = q.data;
-  const cancellable = r && ['PENDENTE', 'ATRIBUIDA', 'ESCALADA'].includes(r.status);
-  return (
-    <Dialog open onClose={onClose} title={r ? `Pedido ${r.code}` : 'Pedido'} size="lg">
-      {!r ? (
-        <Spinner />
-      ) : (
-        <div className="space-y-4" data-testid="help-detail">
-          <p className="text-[15px]">
-            <strong>{r.requester.displayName}</strong> pediu {HELP_KIND_LABEL[r.kind].toLowerCase()}{' '}
-            ({r.estimatedMinutes} min) em {r.task.code} · {r.task.title}
-            {r.note ? ` — ${r.note}` : ''}.
-          </p>
-          {r.proposalId && r.status === 'ESCALADA' && (
-            <Alert tone="warn" title="Aguardando decisão">
-              Sem ajudante livre: veja a proposta em{' '}
-              <Link className="underline" href="/painel/reprogramacao">
-                Reprogramação
-              </Link>
-              .
-            </Alert>
-          )}
-          <ol className="space-y-3">
-            {r.events?.map((e) => (
-              <li key={e.id} className="rounded-xl border border-line p-3">
-                <p className="text-sm text-ink-muted">
-                  {formatDateTime(e.createdAt)} · {e.actor ?? '—'}
-                </p>
-                <p className="font-semibold">
-                  {e.toStatus
-                    ? (HELP_STATUS_LABEL[e.toStatus as HelpStatus] ?? e.kind)
-                    : e.kind.replaceAll('_', ' ').toLowerCase()}
-                </p>
-                {e.note && <p className="text-sm">{e.note}</p>}
-                {e.candidates && (
-                  <table className="data-table mt-2" data-testid="candidates">
-                    <thead>
-                      <tr>
-                        <th>Candidato</th>
-                        <th>Situação</th>
-                        <th>Impacto</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {e.candidates.map((c) => (
-                        <tr key={c.userId} className="border-t border-line">
-                          <td>{c.name}</td>
-                          <td>
-                            {c.eligible ? (
-                              <Badge tone="ok">Elegível</Badge>
-                            ) : (
-                              c.reasons.map((x) => CANDIDATE_REASONS[x]).join(', ')
-                            )}
-                            {c.notes.length > 0 && (
-                              <span className="block text-xs text-ink-muted">
-                                {c.notes.join(' · ')}
-                              </span>
-                            )}
-                          </td>
-                          <td>{c.eligible ? c.score : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </li>
-            ))}
-          </ol>
-          {(r.status === 'PENDENTE' || r.status === 'ESCALADA') && can('producao.planejar') && (
-            <ManualHelper id={r.id} version={r.version} />
-          )}
-          {cancellable && can('producao.planejar') && (
-            <div className="flex flex-wrap items-end gap-3 border-t border-line pt-4">
-              <Field label="Motivo do cancelamento (opcional)" className="min-w-64 flex-1">
-                {(f) => <Input {...f} value={reason} onChange={(e) => setReason(e.target.value)} />}
-              </Field>
-              <Button
-                variant="outline-danger"
-                loading={m.isPending}
-                onClick={() =>
-                  m.mutate({
-                    run: () =>
-                      api(`/api/v1/help-requests/${r.id}/cancel`, {
-                        method: 'POST',
-                        body: { reason: reason || undefined, version: r.version },
-                        idempotencyKey: newIdempotencyKey(),
-                      }),
-                    ok: 'Pedido cancelado.',
-                  })
-                }
-              >
-                Cancelar pedido
-              </Button>
-            </div>
-          )}
-          {error && <Alert tone="danger">{error}</Alert>}
-        </div>
-      )}
-    </Dialog>
-  );
-}
-
-// ─────────────────────────── Reprogramação ───────────────────────────
-
-/** Propostas que exigem decisão do gestor e histórico de alterações (automáticas e aprovadas). */
+/** Reprogramação: propostas do motor e histórico (os pedidos de ajuda foram removidos). */
 export function ReschedulePage() {
   useFocusParam();
   const [tab, setTab] = useState<'pending' | 'decided' | 'history'>('pending');
@@ -414,9 +124,6 @@ function ProposalCard({ p }: { p: RescheduleProposalDto }) {
           <span className="text-ink-muted">Decisão{p.decidedBy ? ` de ${p.decidedBy}` : ''}:</span>{' '}
           {p.decisionNote}
         </p>
-      )}
-      {p.helpRequest && (
-        <p className="mt-2 text-sm text-ink-muted">Pedido de ajuda {p.helpRequest.code}</p>
       )}
       {error && (
         <Alert tone="danger" className="mt-3">
@@ -706,7 +413,7 @@ function PlanningHistory() {
                 <td>
                   {PLANNING_ACTION_LABEL[a.kind]}
                   <span className="block font-mono text-xs text-ink-muted">
-                    {[a.task?.code, a.helpRequestCode, a.proposalCode].filter(Boolean).join(' · ')}
+                    {[a.task?.code, a.proposalCode].filter(Boolean).join(' · ')}
                   </span>
                 </td>
                 <td>{a.automatic ? <Badge tone="info">Automática</Badge> : (a.actor ?? '—')}</td>
@@ -810,128 +517,22 @@ function SkillsCard({
 
 // ─────────────────────────── Integração com o quadro ───────────────────────────
 
-/** Aviso no quadro e no planejamento: decisões pendentes e pedidos de ajuda abertos. */
-export function HelpAndRescheduleBanner() {
+/** Aviso no quadro e no planejamento: reprogramações aguardando decisão. */
+export function RescheduleBanner() {
   const can = useCan();
   const proposals = useProposals('PENDENTE');
-  // Reformulação, Fase 0: com os pedidos de ajuda desligados, o aviso mostra só as reprogramações.
-  const helpOn = useModules().ajuda;
-  const help = useHelpRequests(undefined, helpOn);
   if (!can('producao.ver') && !can('producao.planejar')) return null;
-  const helps = helpOn ? (help.data ?? []) : [];
-  const waiting = helps.filter((r) => r.status === 'PENDENTE' || r.status === 'ESCALADA');
-  const active = helps.filter((r) => r.status === 'ATRIBUIDA' || r.status === 'EM_EXECUCAO');
   const pending = proposals.data?.length ?? 0;
-  if (!pending && !waiting.length && !active.length) return null;
+  if (!pending) return null;
   return (
     <Card className="mb-4 flex flex-wrap items-center gap-4 p-4 text-sm" data-testid="help-banner">
-      {pending > 0 && (
-        <Link
-          href="/painel/reprogramacao"
-          className="inline-flex items-center gap-2 font-semibold text-danger-600"
-        >
-          <CalendarClock className="size-4" aria-hidden /> {pending} reprogramação(ões) aguardando
-          sua decisão
-        </Link>
-      )}
-      {waiting.length > 0 && (
-        <Link
-          href="/painel/ajuda"
-          className="inline-flex items-center gap-2 font-semibold text-warn-600"
-        >
-          <HandHelping className="size-4" aria-hidden /> {waiting.length} pedido(s) de ajuda
-          aguardando ajudante
-        </Link>
-      )}
-      {active.length > 0 && (
-        <Link href="/painel/ajuda" className="inline-flex items-center gap-2 text-ink-soft">
-          <Users className="size-4" aria-hidden /> {active.length} apoio(s) em andamento
-        </Link>
-      )}
+      <Link
+        href="/painel/reprogramacao"
+        className="inline-flex items-center gap-2 font-semibold text-danger-600"
+      >
+        <CalendarClock className="size-4" aria-hidden /> {pending} reprogramação(ões) aguardando sua
+        decisão
+      </Link>
     </Card>
-  );
-}
-
-/**
- * Fase 9 — escolha manual do ajudante: candidatos avaliados agora (competência, presença,
- * ocupação, agenda). Impossível não aparece como opção; conflito pede aprovação explícita.
- */
-function ManualHelper({ id, version }: { id: string; version: number }) {
-  const q = useHelpCandidates(id);
-  const { m, error } = useSend();
-  const [confirm, setConfirm] = useState<{ userId: string; name: string } | null>(null);
-  const [note, setNote] = useState('');
-  const IMPOSSIBLE = ['SEM_COMPETENCIA', 'NAO_CONFIRMOU', 'AUSENTE', 'EXTERNO', 'ENCERRADO'];
-  const choose = (userId: string, confirmConflict: boolean) =>
-    m.mutate({
-      run: () =>
-        api(`/api/v1/help-requests/${id}/assign`, {
-          method: 'POST',
-          body: { helperUserId: userId, confirmConflict, note: note || undefined, version },
-          idempotencyKey: newIdempotencyKey(),
-        }),
-      ok: 'Ajudante escolhido.',
-    });
-  return (
-    <div className="space-y-2 border-t border-line pt-4" data-testid="manual-helper">
-      <p className="font-semibold">Escolher o ajudante manualmente</p>
-      {!q.data ? (
-        <Spinner />
-      ) : (
-        <ul className="space-y-2">
-          {q.data.candidates.map((c) => {
-            const impossible = c.reasons.some((x) => IMPOSSIBLE.includes(x));
-            const conflict = !c.eligible && !impossible;
-            return (
-              <li
-                key={c.userId}
-                className="flex flex-wrap items-center gap-3 rounded-xl border border-line p-3 text-sm"
-              >
-                <span className="font-semibold">{c.name}</span>
-                {c.eligible ? (
-                  <Badge tone="ok">Livre · impacto {c.score}</Badge>
-                ) : (
-                  <span className={impossible ? 'text-ink-muted' : 'text-warn-600'}>
-                    {c.reasons.map((x) => CANDIDATE_REASONS[x]).join(', ')}
-                  </span>
-                )}
-                {!impossible && (
-                  <Button
-                    size="sm"
-                    className="ml-auto"
-                    variant={conflict ? 'secondary' : 'primary'}
-                    loading={m.isPending}
-                    onClick={() =>
-                      conflict
-                        ? setConfirm({ userId: c.userId, name: c.name })
-                        : choose(c.userId, false)
-                    }
-                  >
-                    Escolher {c.name}
-                  </Button>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {confirm && (
-        <Alert tone="warn" title={`${confirm.name} tem conflito`}>
-          <p>Explique por que aprova o conflito (fica registrado como impacto).</p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Motivo" />
-            <Button
-              variant="danger"
-              disabled={note.trim().length < 3}
-              loading={m.isPending}
-              onClick={() => choose(confirm.userId, true)}
-            >
-              Aprovar e atribuir
-            </Button>
-          </div>
-        </Alert>
-      )}
-      {error && <Alert tone="danger">{error}</Alert>}
-    </div>
   );
 }

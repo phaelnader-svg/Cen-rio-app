@@ -71,7 +71,7 @@ export function AttentionPage() {
     <>
       <PageHeader
         title="Central de atenção"
-        description="Só o que pede atenção: ocorrências, pedidos de ajuda atrasados, reprogramações aguardando decisão, ausências com impacto, pausas por impedimento, prazos vencidos e OS atrasadas ou em risco. A operação normal não aparece aqui."
+        description="Só o que pede atenção: ocorrências, reprogramações aguardando decisão, ausências com impacto, pausas por impedimento, prazos vencidos e OS atrasadas ou em risco. A operação normal não aparece aqui."
       />
       <div className="mb-4 grid gap-3 sm:grid-cols-4" data-testid="attention-counts">
         {ATTENTION_CATEGORIES.map((c) => (

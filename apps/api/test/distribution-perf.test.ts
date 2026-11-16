@@ -5,7 +5,7 @@ import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import type { Client } from './helpers';
 import { WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
-import { createCustomer, createOrder, receiptBody } from './commercial-helpers';
+import { createCustomer, createOrder, markArrived } from './commercial-helpers';
 import { act, addOs, createPlan, publish, tabletOf, today, userIdOf } from './production-helpers';
 
 /**
@@ -51,11 +51,7 @@ async function cabeceira(admin: Client, i: number) {
   const order = await createOrder(admin, customer, [
     { pieceType: 'CABECEIRA', description: 'Cabeceira', quantity: 1 },
   ]);
-  await admin.post(
-    '/api/v1/receipts',
-    receiptBody(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]),
-    { 'idempotency-key': idemKey() },
-  );
+  await markArrived(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]);
   const so = await admin.post(
     '/api/v1/service-orders',
     {
