@@ -6,7 +6,9 @@
  *
  * CONSULTA (somente leitura): o aplicativo vê a empresa, as OS, a produção, as entregas e o mapa
  * da oficina. JOGO: sincroniza a planta (oficina e escritório), as estações e quem trabalha em
- * cada uma; não altera OS, estoque nem financeiro.
+ * cada uma; não altera OS, estoque nem financeiro. OPERAÇÃO: o dono planeja e mexe na produção
+ * pelo jogo (OS, etapas, quem faz o quê, estoque e reservas) pelas mesmas regras do painel; iniciar
+ * e concluir a execução continuam só no tablet do funcionário.
  */
 import type { Permission } from './permissions';
 
@@ -28,6 +30,28 @@ export const APP_SCOPES = {
     description:
       'Sincronizar a planta da oficina e do escritório, as estações e quem trabalha em cada uma.',
     permissions: ['painel.acessar', 'jogo.acessar', 'jogo.construir'],
+  },
+  operacao: {
+    label: 'Operação da oficina',
+    description:
+      'Ver e planejar OS, etapas, funcionários, estoque e reservas. Iniciar a execução continua sendo confirmado pelo funcionário no tablet.',
+    permissions: [
+      'painel.acessar',
+      'os.ver',
+      'os.gerenciar',
+      'pedidos.ver',
+      'producao.ver',
+      'producao.planejar',
+      'funcionarios.ver',
+      'presenca.ver',
+      'estoque.ver',
+      'estoque.gerenciar',
+      'clientes.ver',
+      'entregas.ver',
+      'ocorrencias.ver',
+      'retiradas.ver',
+      'qualidade.inspecionar',
+    ],
   },
 } as const satisfies Record<string, AppScopeDef>;
 
