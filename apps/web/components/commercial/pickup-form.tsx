@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/form';
 import { addressLines } from './address-form';
 import { TripCostFields, type TripCostValue } from '@/components/finance/trip-cost';
+import { PickupTakeFields, pickupTakeBody, type PickupTake } from './pickup-take-fields';
 
 /** Solicitar (a partir do pedido) ou editar/reagendar uma retirada. */
 export function PickupForm({
@@ -53,6 +54,11 @@ export function PickupForm({
   const [teamNotes, setTeamNotes] = useState(pickup?.teamNotes ?? '');
   const [instructions, setInstructions] = useState(pickup?.instructions ?? '');
   const [externalReference, setExternalReference] = useState(pickup?.externalReference ?? '');
+  const [take, setTake] = useState<PickupTake>({
+    bringSamples: pickup?.bringSamples ?? false,
+    samplesDescription: pickup?.samplesDescription ?? '',
+    bringCardMachine: pickup?.bringCardMachine ?? false,
+  });
   // Quantidade disponível para retirada por peça (considerando esta retirada, se edição).
   const available = (itemId: string) => {
     const it = order.items.find((i) => i.id === itemId)!;
@@ -91,6 +97,7 @@ export function PickupForm({
         teamNotes,
         instructions,
         externalReference,
+        ...pickupTakeBody(take),
         items,
       };
       if (pickup) {
@@ -257,6 +264,7 @@ export function PickupForm({
         {!pickup && team === 'LOGISTICA_TERCEIRIZADA' && (
           <TripCostFields kind="RETIRADA" onChange={(v, ok) => setTrip({ v, ok })} />
         )}
+        <PickupTakeFields value={take} onChange={setTake} error={errors.samplesDescription} />
         <fieldset>
           <legend className="mb-2 text-sm font-semibold">Peças a retirar</legend>
           {errors.items && <p className="mb-2 text-sm text-danger-600">{errors.items}</p>}

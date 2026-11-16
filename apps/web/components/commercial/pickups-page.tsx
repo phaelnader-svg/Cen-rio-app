@@ -1,19 +1,122 @@
 'use client';
 
 import type { PickupDto } from '@cenario/shared';
-import { PICKUP_STATUSES, PICKUP_STATUS_LABEL } from '@cenario/shared';
+import { PICKUP_STATUSES, PICKUP_STATUS_LABEL, formatMoney } from '@cenario/shared';
 import clsx from 'clsx';
-import { CalendarDays, ChevronLeft, ChevronRight, List, Truck } from 'lucide-react';
+import {
+  CalendarDays,
+  ChevronLeft,
+  Briefcase,
+  ChevronRight,
+  Clock,
+  CreditCard,
+  List,
+  Truck,
+  User,
+} from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/field';
+import { Dialog } from '@/components/ui/dialog';
 import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
-import { addDays, formatDay, todayIso, usePickups, weekStart, arrivalText } from '@/lib/commercial';
+import { holidayOf } from '@/lib/holidays';
+import { addDays, arrivalText, formatDay, todayIso, usePickups, weekStart } from '@/lib/commercial';
 import { PickupStatusBadge } from './badges';
 import { useFocusParam } from '@/lib/focus-param';
 import { PickupDetailDialog } from './pickup-detail';
 
 const OPEN = 'AGUARDANDO_AGENDAMENTO,AGENDADA,EM_EXECUCAO,RETIRADA_REALIZADA,COM_OCORRENCIA';
+const WEEKDAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+
+/** "AAAA-MM" ± n meses. */
+function addMonths(month: string, n: number): string {
+  const d = new Date(`${month}-01T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return d.toISOString().slice(0, 7);
+}
+
+function lastDayOfMonth(month: string): string {
+  return addDays(`${addMonths(month, 1)}-01`, -1);
+}
+
+function monthLabel(month: string): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(`${month}-01T00:00:00Z`));
+}
+
+function isWeekend(iso: string): boolean {
+  const dow = new Date(`${iso}T00:00:00Z`).getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
+/** Quem vai retirar: responsável + quem vai junto (ou a observação da equipe). */
+function whoText(p: PickupDto): string | null {
+  const names = [p.executor?.displayName, ...p.participants.map((x) => x.displayName)].filter(
+    (n): n is string => Boolean(n),
+  );
+  const unique = [...new Set(names)];
+  if (unique.length) return unique.join(', ');
+  return p.teamNotes || null;
+}
+
+function AgendaItem({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
+  const who = whoText(p);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid={`agenda-item-${p.code}`}
+      className={clsx(
+        'w-full rounded-lg border px-2 py-1.5 text-left text-xs leading-snug hover:shadow-[var(--shadow-card)]',
+        p.status === 'CANCELADA'
+          ? 'border-line bg-subtle text-ink-muted line-through'
+          : p.status === 'COM_OCORRENCIA'
+            ? 'border-danger-600/30 bg-surface'
+            : p.status === 'RECEBIDA_NA_OFICINA'
+              ? 'border-ok-600/20 bg-ok-50'
+              : 'border-info-600/20 bg-info-50',
+      )}
+    >
+      <span className="block font-semibold">
+        {p.windowStart ? arrivalText(p.windowStart, p.windowEnd) : 'Sem horário'}
+      </span>
+      <span className="block truncate font-medium">{p.customer.name}</span>
+      <span className="flex items-start gap-1 text-ink-soft">
+        <User className="mt-px size-3 shrink-0" aria-hidden />
+        <span className="min-w-0 break-words">
+          <span className="sr-only">Quem retira: </span>
+          {who ?? 'Quem retira: a definir'}
+        </span>
+      </span>
+      {p.bringSamples && (
+        <span className="flex items-start gap-1 text-bronze-600">
+          <Briefcase className="mt-px size-3 shrink-0" aria-hidden />
+          <span className="min-w-0 break-words">
+            Mostruário{p.samplesDescription ? `: ${p.samplesDescription}` : ''}
+          </span>
+        </span>
+      )}
+      {p.bringCardMachine && (
+        <span className="flex items-center gap-1 text-bronze-600">
+          <CreditCard className="size-3 shrink-0" aria-hidden />
+          Maquininha
+        </span>
+      )}
+      {p.order.agreedValueCents !== null && (
+        <span className="block font-medium text-ink">
+          <span className="sr-only">Valor do serviço: </span>
+          {formatMoney(p.order.agreedValueCents)}
+        </span>
+      )}
+      <span className="block text-ink-muted">
+        {p.code} · {PICKUP_STATUS_LABEL[p.status]}
+      </span>
+    </button>
+  );
+}
 
 function PickupLine({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
   return (
@@ -46,16 +149,20 @@ function PickupLine({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
 export function PickupsPage() {
   const [view, setView] = useState<'agenda' | 'lista'>('agenda');
   const [status, setStatus] = useState(OPEN);
-  const [week, setWeek] = useState(() => weekStart(todayIso()));
+  const today = todayIso();
+  const [month, setMonth] = useState(() => today.slice(0, 7));
+  const [waitingOpen, setWaitingOpen] = useState(false);
   // Rodada 3 (F10-06): link da Central abre o detalhe da retirada (`?foco=<id>`).
   const focus = useFocusParam();
   const [open, setOpen] = useState<string | null>(focus);
-  const weekEnd = addDays(week, 6);
-  const agenda = usePickups({ from: week, to: weekEnd }, view === 'agenda');
+  // Mês inteiro, em semanas completas (segunda a domingo).
+  const gridStart = weekStart(`${month}-01`);
+  const gridEnd = addDays(weekStart(lastDayOfMonth(month)), 6);
+  const agenda = usePickups({ from: gridStart, to: gridEnd }, view === 'agenda');
   const unscheduled = usePickups({ status: 'AGUARDANDO_AGENDAMENTO' }, view === 'agenda');
   const list = usePickups({ status }, view === 'lista');
-  const days = Array.from({ length: 7 }, (_, i) => addDays(week, i));
-  const today = todayIso();
+  const days: string[] = [];
+  for (let d = gridStart; d <= gridEnd; d = addDays(d, 1)) days.push(d);
 
   return (
     <>
@@ -99,95 +206,138 @@ export function PickupsPage() {
             <Button
               size="sm"
               variant="secondary"
-              aria-label="Semana anterior"
+              aria-label="Mês anterior"
               icon={<ChevronLeft className="size-4" aria-hidden />}
-              onClick={() => setWeek(addDays(week, -7))}
+              onClick={() => setMonth(addMonths(month, -1))}
             />
-            <Button size="sm" variant="secondary" onClick={() => setWeek(weekStart(today))}>
-              Esta semana
+            <Button size="sm" variant="secondary" onClick={() => setMonth(today.slice(0, 7))}>
+              Este mês
             </Button>
             <Button
               size="sm"
               variant="secondary"
-              aria-label="Próxima semana"
+              aria-label="Próximo mês"
               icon={<ChevronRight className="size-4" aria-hidden />}
-              onClick={() => setWeek(addDays(week, 7))}
+              onClick={() => setMonth(addMonths(month, 1))}
             />
-            <p className="ml-2 font-medium" data-testid="agenda-range">
-              {formatDay(week, true)} a {formatDay(weekEnd, true)}
+            <p className="ml-2 font-medium first-letter:uppercase" data-testid="agenda-range">
+              {monthLabel(month)}
             </p>
+            <Button
+              size="sm"
+              variant={unscheduled.data?.length ? 'primary' : 'secondary'}
+              className="ml-auto"
+              icon={<Clock className="size-3.5" aria-hidden />}
+              onClick={() => setWaitingOpen(true)}
+              data-testid="pickups-waiting"
+            >
+              Aguardando agendamento
+              {unscheduled.data ? ` (${unscheduled.data.length})` : ''}
+            </Button>
+          </div>
+          <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-3 rounded border border-danger-600/30 bg-danger-50" />
+              Feriado
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-3 rounded border border-line-strong bg-subtle" />
+              Sábado e domingo
+            </span>
           </div>
           {agenda.isError && <Alert tone="danger">{agenda.error.message}</Alert>}
-          <div className="grid gap-3 md:grid-cols-7" data-testid="agenda">
+          <div
+            className="hidden gap-2 pb-1 text-center text-xs font-semibold text-ink-muted md:grid md:grid-cols-7"
+            aria-hidden
+          >
+            {WEEKDAYS.map((w, i) => (
+              <span key={w} className={clsx(i >= 5 && 'text-ink-soft')}>
+                {w}
+              </span>
+            ))}
+          </div>
+          <div className="grid gap-2 md:grid-cols-7" data-testid="agenda">
             {days.map((d) => {
               const items = agenda.data?.filter((p) => p.scheduledDate === d) ?? [];
+              const inMonth = d.slice(0, 7) === month;
+              const holiday = holidayOf(d);
+              const weekend = isWeekend(d);
               return (
-                <Card
+                <div
                   key={d}
-                  className={clsx('min-h-36 p-3', d === today && 'ring-2 ring-brand-200')}
+                  data-testid={`agenda-day-${d}`}
+                  data-holiday={holiday ? 'true' : undefined}
+                  data-weekend={weekend ? 'true' : undefined}
+                  className={clsx(
+                    'rounded-xl border px-3 py-2 md:min-h-28 md:p-2',
+                    !inMonth && 'hidden opacity-55 md:block',
+                    holiday
+                      ? 'border-danger-600/30 bg-danger-50'
+                      : weekend
+                        ? 'border-line-strong bg-subtle'
+                        : 'border-line bg-surface',
+                    d === today && 'ring-2 ring-brand-500',
+                  )}
                 >
                   <p
                     className={clsx(
-                      'mb-2 text-sm font-semibold first-letter:uppercase',
-                      d === today ? 'text-brand-700' : 'text-ink-soft',
+                      'text-sm font-semibold',
+                      holiday
+                        ? 'text-danger-700'
+                        : d === today
+                          ? 'text-brand-700'
+                          : 'text-ink-soft',
                     )}
                   >
-                    {formatDay(d)}
+                    <span className="md:hidden first-letter:uppercase">{formatDay(d)}</span>
+                    <span className="hidden md:inline">{Number(d.slice(8))}</span>
+                    {d === today && <span className="ml-1.5 text-xs font-medium">hoje</span>}
                   </p>
-                  {agenda.isPending ? (
-                    <Spinner label="" />
-                  ) : items.length === 0 ? (
-                    <p className="text-xs text-ink-muted">—</p>
-                  ) : (
-                    <ul className="space-y-2">
+                  {holiday && (
+                    <p className="mb-1 text-[11px] leading-tight text-danger-700">{holiday.name}</p>
+                  )}
+                  {agenda.isPending ? null : items.length === 0 ? null : (
+                    <ul className="mt-1.5 space-y-1.5">
                       {items.map((p) => (
                         <li key={p.id}>
-                          <button
-                            type="button"
-                            onClick={() => setOpen(p.id)}
-                            className={clsx(
-                              'w-full rounded-lg border px-2.5 py-2 text-left text-xs hover:shadow-[var(--shadow-card)]',
-                              p.status === 'CANCELADA'
-                                ? 'border-line bg-subtle text-ink-muted line-through'
-                                : p.status === 'COM_OCORRENCIA'
-                                  ? 'border-danger-600/30 bg-danger-50'
-                                  : p.status === 'RECEBIDA_NA_OFICINA'
-                                    ? 'border-ok-600/20 bg-ok-50'
-                                    : 'border-info-600/20 bg-info-50',
-                            )}
-                          >
-                            <span className="block font-semibold">
-                              {p.windowStart
-                                ? arrivalText(p.windowStart, p.windowEnd)
-                                : 'Sem horário'}
-                            </span>
-                            <span className="block truncate">{p.customer.name}</span>
-                            <span className="block text-ink-muted">
-                              {p.code} · {PICKUP_STATUS_LABEL[p.status]}
-                            </span>
-                          </button>
+                          <AgendaItem p={p} onOpen={() => setOpen(p.id)} />
                         </li>
                       ))}
                     </ul>
                   )}
-                </Card>
+                </div>
               );
             })}
           </div>
-          <Card className="mt-6 overflow-hidden">
-            <h2 className="border-b border-line px-5 py-3.5 font-semibold">
-              Aguardando agendamento
-            </h2>
-            {unscheduled.data?.length ? (
-              <div className="divide-y divide-line">
-                {unscheduled.data.map((p) => (
-                  <PickupLine key={p.id} p={p} onOpen={() => setOpen(p.id)} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState title="Nenhuma retirada aguardando agendamento" />
-            )}
-          </Card>
+          {agenda.isPending && <Spinner className="mt-4" />}
+          {waitingOpen && (
+            <Dialog
+              open
+              onClose={() => setWaitingOpen(false)}
+              size="lg"
+              title="Aguardando agendamento"
+              description="Retiradas solicitadas que ainda não têm data. Abra uma para agendar."
+            >
+              {unscheduled.isPending ? (
+                <Spinner />
+              ) : unscheduled.data?.length ? (
+                <div className="-mx-1 divide-y divide-line">
+                  {unscheduled.data.map((p) => (
+                    <PickupLine
+                      key={p.id}
+                      p={p}
+                      onOpen={() => {
+                        setWaitingOpen(false);
+                        setOpen(p.id);
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState title="Nenhuma retirada aguardando agendamento" />
+              )}
+            </Dialog>
+          )}
         </>
       ) : (
         <>

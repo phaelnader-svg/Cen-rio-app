@@ -164,7 +164,8 @@ export interface PickupDto {
   number: number;
   code: string;
   status: PickupStatus;
-  order: { id: string; code: string; contractedService: string };
+  /** `agreedValueCents`: valor do serviço; null sem `pedidos.valores` ou sem valor combinado. */
+  order: { id: string; code: string; contractedService: string; agreedValueCents: number | null };
   customer: CustomerSummaryDto & { phone: string | null; whatsapp: string | null };
   address: AddressSnapshot | null;
   scheduledDate: string | null;
@@ -174,6 +175,14 @@ export interface PickupDto {
   teamNotes: string | null;
   instructions: string | null;
   externalReference: string | null;
+  /** O que levar ao cliente. */
+  bringSamples: boolean;
+  /** Qual mostruário (texto livre). */
+  samplesDescription: string | null;
+  bringCardMachine: boolean;
+  /** Quem vai retirar: responsável pela execução e quem vai junto. */
+  executor: { userId: string; displayName: string } | null;
+  participants: { userId: string; displayName: string }[];
   items: { orderItemId: string; pieceType: PieceType; description: string; quantity: number }[];
   events: PickupEventDto[];
   allowedTransitions: PickupStatus[];
