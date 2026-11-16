@@ -176,7 +176,7 @@ describe('jogo — leitura pelo Firma Viva (escopo "jogo")', () => {
         name: 'Firma Viva',
         secretHash: hash(SECRET),
         redirectUris: [REDIRECT],
-        allowedScopes: ['consulta', 'jogo'],
+        allowedScopes: ['consulta', 'jogo', 'operacao'],
       },
     });
     const admin = await loginAdmin(app);
@@ -194,5 +194,43 @@ describe('jogo — leitura pelo Firma Viva (escopo "jogo")', () => {
       authorization: `Bearer ${read.token}`,
     });
     expect(denied.status).toBe(403);
+  });
+
+  it('com "operacao" o dono planeja pelo jogo; iniciar a etapa continua só no tablet', async () => {
+    const hash = createTokenHasher(process.env.TOKEN_HASH_SECRET!);
+    await db().oAuthClient.create({
+      data: {
+        clientId: 'firma-viva',
+        name: 'Firma Viva',
+        secretHash: hash(SECRET),
+        redirectUris: [REDIRECT],
+        allowedScopes: ['consulta', 'jogo', 'operacao'],
+      },
+    });
+    const admin = await loginAdmin(app);
+    const op = await tokenFor(admin, 'jogo operacao');
+    const auth = { authorization: `Bearer ${op.token}`, 'idempotency-key': idemKey() };
+    expect((await op.server.req('GET', '/api/v1/service-orders', undefined, auth)).status).toBe(
+      200,
+    );
+    expect((await op.server.req('GET', '/api/v1/production-board', undefined, auth)).status).toBe(
+      200,
+    );
+    const start = await op.server.req(
+      'POST',
+      `/api/v1/production-tasks/${crypto.randomUUID()}/start`,
+      {},
+      auth,
+    );
+    expect(start.status).toBe(403);
+    // Sem "operacao", nada da produção é alterável nem visível além do mapa.
+    const onlyGame = await tokenFor(admin, 'jogo');
+    expect(
+      (
+        await onlyGame.server.req('GET', '/api/v1/service-orders', undefined, {
+          authorization: `Bearer ${onlyGame.token}`,
+        })
+      ).status,
+    ).toBe(403);
   });
 });
