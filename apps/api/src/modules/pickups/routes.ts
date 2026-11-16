@@ -21,6 +21,7 @@ import { idParams } from '../presenters';
 import {
   activeAddress,
   asSnapshot,
+  can,
   dateOnly,
   lockOrder,
   lockOrderItems,
@@ -43,6 +44,11 @@ const EDITABLE: PickupStatus[] = ['AGUARDANDO_AGENDAMENTO', 'AGENDADA', 'COM_OCO
 
 const fullInclude = {
   order: { include: { customer: true } },
+  logisticsUser: { select: { id: true, displayName: true } },
+  tripParticipants: {
+    include: { user: { select: { id: true, displayName: true } } },
+    orderBy: { createdAt: 'asc' as const },
+  },
   items: { include: { orderItem: true }, orderBy: { orderItem: { position: 'asc' as const } } },
   events: {
     include: { recordedBy: { select: { displayName: true } } },
@@ -50,7 +56,15 @@ const fullInclude = {
   },
 } satisfies Prisma.PickupRequestInclude;
 
-export async function loadPickupDto(db: PrismaClient | Tx, id: string): Promise<PickupDto> {
+/**
+ * `valuesVisible`: o valor do serviço (valor combinado do pedido) só sai com `pedidos.valores`,
+ * a mesma regra da tela do pedido.
+ */
+export async function loadPickupDto(
+  db: PrismaClient | Tx,
+  id: string,
+  valuesVisible = false,
+): Promise<PickupDto> {
   const p = await db.pickupRequest.findUnique({ where: { id }, include: fullInclude });
   if (!p) throw Errors.notFound('Retirada');
   return {
@@ -62,6 +76,8 @@ export async function loadPickupDto(db: PrismaClient | Tx, id: string): Promise<
       id: p.orderId,
       code: orderCode(p.order.number),
       contractedService: p.order.contractedService,
+      // Sem a permissão a chave nem aparece (nenhum campo de valor na resposta).
+      ...(valuesVisible ? { agreedValueCents: p.order.agreedValueCents } : {}),
     },
     customer: {
       ...toCustomerSummary(p.order.customer),
@@ -77,6 +93,16 @@ export async function loadPickupDto(db: PrismaClient | Tx, id: string): Promise<
     teamNotes: p.teamNotes,
     instructions: p.instructions,
     externalReference: p.externalReference,
+    bringSamples: p.bringSamples,
+    samplesDescription: p.samplesDescription,
+    bringCardMachine: p.bringCardMachine,
+    executor: p.logisticsUser
+      ? { userId: p.logisticsUser.id, displayName: p.logisticsUser.displayName }
+      : null,
+    participants: p.tripParticipants.map((t) => ({
+      userId: t.user.id,
+      displayName: t.user.displayName,
+    })),
     items: p.items.map((i) => ({
       orderItemId: i.orderItemId,
       pieceType: i.orderItem.pieceType,
@@ -127,6 +153,7 @@ export async function pickupRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/pickups', { config: { access: VIEW } }, async (request) => {
     const q = pickupQuerySchema.parse(request.query);
+    const values = can(request, 'pedidos.valores');
     const rows = await prisma.pickupRequest.findMany({
       where: {
         ...(q.status?.length ? { status: { in: q.status } } : {}),
@@ -148,12 +175,12 @@ export async function pickupRoutes(app: FastifyInstance) {
       ],
       take: q.limit,
     });
-    return Promise.all(rows.map((r) => loadPickupDto(prisma, r.id)));
+    return Promise.all(rows.map((r) => loadPickupDto(prisma, r.id, values)));
   });
 
   app.get('/api/v1/pickups/:id', { config: { access: VIEW } }, async (request) => {
     const { id } = idParams.parse(request.params);
-    return loadPickupDto(prisma, id);
+    return loadPickupDto(prisma, id, can(request, 'pedidos.valores'));
   });
 
   app.post(
@@ -167,7 +194,9 @@ export async function pickupRoutes(app: FastifyInstance) {
         async (tx) =>
           (await createPickup(tx, actorFrom(request), request.auth!.permissions, input)).id,
       );
-      return reply.status(201).send(await loadPickupDto(prisma, id));
+      return reply
+        .status(201)
+        .send(await loadPickupDto(prisma, id, can(request, 'pedidos.valores')));
     },
   );
 
@@ -241,6 +270,15 @@ export async function pickupRoutes(app: FastifyInstance) {
           teamNotes: input.teamNotes ?? null,
           instructions: input.instructions ?? null,
           externalReference: input.externalReference ?? null,
+          ...(input.bringSamples !== undefined
+            ? {
+                bringSamples: input.bringSamples,
+                samplesDescription: input.bringSamples ? (input.samplesDescription ?? null) : null,
+              }
+            : {}),
+          ...(input.bringCardMachine !== undefined
+            ? { bringCardMachine: input.bringCardMachine }
+            : {}),
           status,
           version: { increment: 1 },
           items: {
@@ -307,7 +345,7 @@ export async function pickupRoutes(app: FastifyInstance) {
       }
       await emitOrderEvent(tx, request, before.orderId);
     });
-    return loadPickupDto(prisma, id);
+    return loadPickupDto(prisma, id, can(request, 'pedidos.valores'));
   });
 
   /**
@@ -369,6 +407,6 @@ export async function pickupRoutes(app: FastifyInstance) {
       await syncTripCost(tx, actor, { pickupId: id }, input.note ?? undefined);
       await emitOrderEvent(tx, request, before.orderId);
     });
-    return loadPickupDto(prisma, id);
+    return loadPickupDto(prisma, id, can(request, 'pedidos.valores'));
   });
 }
