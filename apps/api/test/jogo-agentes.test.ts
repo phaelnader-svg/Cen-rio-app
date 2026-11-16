@@ -37,6 +37,8 @@ const agents = async (c: Client) => (await c.get('/api/v1/game/agents')).body as
 describe('jogo — agentes do escritório', () => {
   it('o dono cria um agente para uma função nova; quem só vê o jogo não cria', async () => {
     const admin = await loginAdmin(app);
+    // Ao abrir o escritório pela primeira vez entram os padrões: Gerente e Financeiro.
+    expect((await agents(admin)).map((a) => a.roleKey)).toEqual(['GERENTE', 'FINANCEIRO']);
     const r = await admin.req('POST', '/api/v1/game/agents', novoAgente, {
       'idempotency-key': idemKey(),
     });
@@ -46,7 +48,7 @@ describe('jogo — agentes do escritório', () => {
     expect(mine.roleKey).toBe('PERSONALIZADA');
     expect(mine.status).toBe('ATIVO');
     expect(mine.track).toEqual({});
-    // Os padrões continuam: Gerente e Financeiro; Compras não é mais oferecido.
+    // Compras não é mais oferecido como modelo.
     expect(list.map((a) => a.roleKey)).toEqual(
       expect.arrayContaining(['GERENTE', 'FINANCEIRO', 'PERSONALIZADA']),
     );
