@@ -85,7 +85,9 @@ columns() {
   q "SELECT table_name || '|' || string_agg(column_name, ',' ORDER BY ordinal_position)
      FROM information_schema.columns WHERE table_schema = 'public' GROUP BY table_name ORDER BY 1"
 }
-schema_dump() { pg_dump -s "$URL" | grep -v '^\\restrict\|^\\unrestrict\|^$'; }
+# PostgreSQL 16.16+ grava em cada coluna um carimbo interno de versão (`SET (pg_attver=N)`), que
+# muda sempre que a coluna é recriada e não faz parte do schema: fica fora da comparação.
+schema_dump() { pg_dump -s "$URL" | grep -v '^\\restrict\|^\\unrestrict\|^$' | grep -v 'SET (pg_attver='; }
 indexes() { q "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY 1"; }
 
 step "1. Código legado ($LEGACY_REF) e banco gerado por ele"
