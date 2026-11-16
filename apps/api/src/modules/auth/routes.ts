@@ -1,5 +1,4 @@
-import { adminLoginSchema, changePasswordSchema, signupSchema } from '@cenario/shared';
-import { isUniqueViolation } from '@cenario/db';
+import { adminLoginSchema, changePasswordSchema } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
 import { loadUserPermissions } from '../../core/permissions';
@@ -38,11 +37,6 @@ export async function authRoutes(app: FastifyInstance) {
 
     const permissions = await loadUserPermissions(prisma, user.id);
     if (!permissions.has('painel.acessar')) {
-      if (!user.employee && permissions.size === 0) {
-        throw Errors.forbidden(
-          'Sua conta foi criada e aguarda a liberação do gestor. Tente de novo depois que ela for liberada.',
-        );
-      }
       throw Errors.forbidden('Seu usuário não tem acesso ao painel administrativo.');
     }
     await throttle.reset(accountKey);
@@ -80,39 +74,6 @@ export async function authRoutes(app: FastifyInstance) {
       expiresAt: session.expiresAt,
       permissions,
     });
-  });
-
-  /**
-   * Criar conta (tela /entrar). A conta nasce sem funções nem permissões: não entra no painel
-   * até o gestor liberar (Funcionários → Contas aguardando liberação). A resposta é a mesma
-   * quando o e-mail já existe, para não revelar quais e-mails têm conta.
-   */
-  app.post('/api/auth/signup', { config: { access: { public: true } } }, async (request, reply) => {
-    const input = signupSchema.parse(request.body);
-    const ipKey = clientIpKey(request, 'signup-ip');
-    await throttle.assertAllowed([ipKey, 'signup:global']);
-    await throttle.registerFailure(ipKey, POLICIES.signup);
-    await throttle.registerFailure('signup:global', POLICIES.signupGlobal);
-
-    const passwordHash = await hashSecret(input.password);
-    const displayName = (input.email.split('@')[0] || 'Conta nova').slice(0, 60);
-    try {
-      await prisma.$transaction(async (tx) => {
-        const user = await tx.user.create({
-          data: { email: input.email, passwordHash, displayName, credentialsChangedAt: new Date() },
-        });
-        await audit(tx, actorFrom(request), {
-          action: 'auth.signup',
-          entityType: 'user',
-          entityId: user.id,
-          summary: `Conta criada pela tela de entrar (${input.email}); aguarda liberação do gestor.`,
-        });
-      });
-    } catch (error) {
-      if (!isUniqueViolation(error, 'email')) throw error;
-      request.log.info({ event: 'auth.signup_existing' }, 'Criar conta com e-mail já cadastrado');
-    }
-    return reply.status(202).send({ status: 'pending' });
   });
 
   /** Encerra a sessão atual (painel ou tablet). No tablet, o dispositivo continua vinculado. */

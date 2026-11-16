@@ -58,16 +58,3 @@ export const setAdminCredentialsSchema = z.object({
   email: z.string().trim().toLowerCase().email({ message: 'E-mail inválido.' }).max(EMAIL_MAX),
   password: passwordPolicySchema,
 });
-
-/** Liberação de uma conta criada pela tela de entrar: vira funcionário com as funções escolhidas. */
-export const approveAccountSchema = z.object({
-  ...employeeBase,
-  pin: pinSchema.optional(),
-});
-export type ApproveAccountInput = z.input<typeof approveAccountSchema>;
-
-export interface AccountRequestDto {
-  userId: string;
-  email: string;
-  createdAt: string;
-}

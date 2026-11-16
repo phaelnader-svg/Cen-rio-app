@@ -1,6 +1,5 @@
 import {
   EVENT_TYPES,
-  approveAccountSchema,
   createEmployeeSchema,
   setAdminCredentialsSchema,
   setEmployeeStatusSchema,
@@ -393,116 +392,6 @@ export async function employeeRoutes(app: FastifyInstance) {
         checkGestor: true,
       };
     });
-  });
-
-  // ---------------------------------------------------------------- contas criadas pela tela de entrar
-  /** Conta pendente: tem e-mail, não é funcionário e não tem nenhuma função ou permissão. */
-  const PENDING = {
-    email: { not: null },
-    active: true,
-    employee: { is: null },
-    roles: { none: {} },
-    permissions: { none: {} },
-  } as const;
-
-  async function getPendingOr404(tx: Tx, userId: string) {
-    await lockRow(tx, 'users', userId);
-    const user = await tx.user.findFirst({ where: { id: userId, ...PENDING } });
-    if (!user) throw Errors.notFound('Conta aguardando liberação');
-    return user;
-  }
-
-  app.get('/api/account-requests', { config: { access: MANAGE } }, async () => {
-    const users = await prisma.user.findMany({
-      where: PENDING,
-      select: { id: true, email: true, createdAt: true },
-      orderBy: { createdAt: 'asc' },
-      take: 200,
-    });
-    return users.map((u) => ({
-      userId: u.id,
-      email: u.email!,
-      createdAt: u.createdAt.toISOString(),
-    }));
-  });
-
-  /** Libera a conta: vira funcionário com as funções escolhidas (mesmas regras do cadastro). */
-  app.post(
-    '/api/account-requests/:id/approve',
-    { config: { access: MANAGE } },
-    async (request, reply) => {
-      const { id } = idParams.parse(request.params);
-      const input = approveAccountSchema.parse(request.body);
-      const auth = request.auth!;
-      const pinHash = input.pin ? await hashSecret(input.pin) : null;
-      const employee = await prisma.$transaction(async (tx) => {
-        const user = await getPendingOr404(tx, id);
-        const rolePerms = await loadRolesPermissions(tx, input.roleIds);
-        assertCanGrant(auth, [...rolePerms, ...input.extraPermissions]);
-        const actor = actorFrom(request);
-        await tx.user.update({
-          where: { id: user.id },
-          data: {
-            displayName: input.displayName,
-            ...(pinHash ? { pinHash, credentialsChangedAt: new Date() } : {}),
-            version: { increment: 1 },
-            roles: { create: input.roleIds.map((roleId) => ({ roleId })) },
-            permissions: {
-              create: [...new Set(input.extraPermissions)].map((permission) => ({ permission })),
-            },
-          },
-        });
-        const created = await tx.employee.create({
-          data: {
-            userId: user.id,
-            fullName: input.fullName,
-            displayName: input.displayName,
-            jobTitle: input.jobTitle,
-            responsibilities: input.responsibilities ?? null,
-            phone: input.phone ?? null,
-            color: input.color.toUpperCase(),
-          },
-          include: employeeInclude,
-        });
-        await audit(tx, actor, {
-          action: 'employee.account_approved',
-          entityType: 'employee',
-          entityId: created.id,
-          summary: `Conta ${user.email} liberada como ${created.displayName}.`,
-          changes: {
-            roles: created.user.roles.map((r) => r.role.name),
-            extraPermissions: input.extraPermissions,
-            tabletAccess: Boolean(pinHash),
-            panelAccess: true,
-          },
-        });
-        await appendEvent(tx, actor, {
-          type: EVENT_TYPES.EMPLOYEE_CREATED,
-          aggregateType: 'employee',
-          aggregateId: created.id,
-          payload: employeeEventPayload(created),
-        });
-        return created;
-      });
-      return reply.status(201).send(toEmployeeDto(employee));
-    },
-  );
-
-  /** Recusa: a conta pendente é apagada (nunca entrou no sistema; não tem registros ligados). */
-  app.post('/api/account-requests/:id/reject', { config: { access: MANAGE } }, async (request) => {
-    const { id } = idParams.parse(request.params);
-    await prisma.$transaction(async (tx) => {
-      const user = await getPendingOr404(tx, id);
-      await tx.session.deleteMany({ where: { userId: user.id } });
-      await tx.user.delete({ where: { id: user.id } });
-      await audit(tx, actorFrom(request), {
-        action: 'employee.account_rejected',
-        entityType: 'user',
-        entityId: user.id,
-        summary: `Conta ${user.email} recusada e apagada.`,
-      });
-    });
-    return { ok: true };
   });
 
   /** Foto de identificação (armazenamento privado). Aceita JPEG, PNG ou WebP. */

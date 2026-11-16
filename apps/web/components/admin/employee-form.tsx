@@ -1,7 +1,7 @@
 'use client';
 
-import type { AccountRequestDto, EmployeeDto, Permission } from '@cenario/shared';
-import { approveAccountSchema, createEmployeeSchema, updateEmployeeSchema } from '@cenario/shared';
+import type { EmployeeDto, Permission } from '@cenario/shared';
+import { createEmployeeSchema, updateEmployeeSchema } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -59,13 +59,10 @@ export function EmployeeForm({
   open,
   onClose,
   employee,
-  request,
 }: {
   open: boolean;
   onClose: () => void;
   employee?: EmployeeDto;
-  /** Liberação de uma conta criada pela tela de entrar (o e-mail e a senha já são da pessoa). */
-  request?: AccountRequestDto;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -104,16 +101,6 @@ export function EmployeeForm({
         const body = updateEmployeeSchema.parse({ ...base, version: employee.version });
         return api<EmployeeDto>(`/api/employees/${employee.id}`, { method: 'PUT', body });
       }
-      if (request) {
-        const body = approveAccountSchema.parse({
-          ...base,
-          ...(form.pin ? { pin: form.pin } : {}),
-        });
-        return api<EmployeeDto>(`/api/account-requests/${request.userId}/approve`, {
-          method: 'POST',
-          body,
-        });
-      }
       const body = createEmployeeSchema.parse({
         ...base,
         ...(form.pin ? { pin: form.pin } : {}),
@@ -127,14 +114,11 @@ export function EmployeeForm({
     },
     onSuccess: (saved) => {
       void qc.invalidateQueries({ queryKey: ['employees'] });
-      void qc.invalidateQueries({ queryKey: ['account-requests'] });
       toast(
         'ok',
         editing
           ? `Cadastro de ${saved.displayName} atualizado.`
-          : request
-            ? `Acesso de ${saved.displayName} liberado.`
-            : `${saved.displayName} cadastrado.`,
+          : `${saved.displayName} cadastrado.`,
       );
       onClose();
     },
@@ -169,18 +153,8 @@ export function EmployeeForm({
       open={open}
       onClose={onClose}
       size="lg"
-      title={
-        editing
-          ? `Editar ${employee!.displayName}`
-          : request
-            ? `Liberar acesso de ${request.email}`
-            : 'Novo funcionário'
-      }
-      description={
-        request
-          ? 'A pessoa já definiu o e-mail e a senha. Escolha as funções: elas definem o que ela vê no painel.'
-          : 'Dados de identificação, funções e permissões de acesso.'
-      }
+      title={editing ? `Editar ${employee!.displayName}` : 'Novo funcionário'}
+      description="Dados de identificação, funções e permissões de acesso."
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -193,7 +167,7 @@ export function EmployeeForm({
               mutation.mutate();
             }}
           >
-            {editing ? 'Salvar alterações' : request ? 'Liberar acesso' : 'Cadastrar'}
+            {editing ? 'Salvar alterações' : 'Cadastrar'}
           </Button>
         </>
       }
@@ -386,36 +360,32 @@ export function EmployeeForm({
               )}
             </Field>
             <div className="hidden sm:block" />
-            {!request && (
-              <>
-                <Field label="E-mail do painel" error={errors.email}>
-                  {(p) => (
-                    <Input
-                      {...p}
-                      type="email"
-                      autoComplete="off"
-                      value={form.email}
-                      onChange={(e) => set('email', e.target.value)}
-                    />
-                  )}
-                </Field>
-                <Field
-                  label="Senha do painel"
-                  error={errors.password}
-                  hint="Mínimo de 10 caracteres, com letras e números."
-                >
-                  {(p) => (
-                    <Input
-                      {...p}
-                      type="password"
-                      autoComplete="new-password"
-                      value={form.password}
-                      onChange={(e) => set('password', e.target.value)}
-                    />
-                  )}
-                </Field>
-              </>
-            )}
+            <Field label="E-mail do painel" error={errors.email}>
+              {(p) => (
+                <Input
+                  {...p}
+                  type="email"
+                  autoComplete="off"
+                  value={form.email}
+                  onChange={(e) => set('email', e.target.value)}
+                />
+              )}
+            </Field>
+            <Field
+              label="Senha do painel"
+              error={errors.password}
+              hint="Mínimo de 10 caracteres, com letras e números."
+            >
+              {(p) => (
+                <Input
+                  {...p}
+                  type="password"
+                  autoComplete="new-password"
+                  value={form.password}
+                  onChange={(e) => set('password', e.target.value)}
+                />
+              )}
+            </Field>
           </fieldset>
         )}
         <button type="submit" hidden />
