@@ -26,6 +26,11 @@ jobs:
       E2E_DATABASE_URL: postgresql://cenario:cenario_ci@localhost:5432/cenario_e2e_test
       TOKEN_HASH_SECRET: ci-only-secret-ci-only-secret-ci-only-secret
       ALLOWED_ORIGINS: http://localhost:3000
+      # Firma Viva (apps/firma-api): banco de teste próprio e valores só de CI.
+      FIRMA_TEST_DATABASE_URL: postgresql://cenario:cenario_ci@localhost:5432/firma_viva_test
+      FIRMA_TOKEN_HASH_SECRET: ci-only-firma-secret-ci-only-firma-secret
+      FIRMA_SEAL_KEY: Y2ktb25seS1zZWFsLWtleS1jaS1vbmx5LTMyYnl0ZXM=
+      FIRMA_CENARIO_CLIENT_SECRET: ci-only-firma-client-secret-ci-only-0123
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -38,6 +43,7 @@ jobs:
         run: |
           psql "postgresql://cenario:cenario_ci@localhost:5432/postgres" -c "CREATE DATABASE cenario_test"
           psql "postgresql://cenario:cenario_ci@localhost:5432/postgres" -c "CREATE DATABASE cenario_e2e_test"
+          psql "postgresql://cenario:cenario_ci@localhost:5432/postgres" -c "CREATE DATABASE firma_viva_test"
       - run: pnpm install --frozen-lockfile
       # Vulnerabilidades críticas em dependências bloqueiam o CI (o relatório completo fica no log).
       - run: pnpm audit --audit-level critical
