@@ -173,9 +173,7 @@ export function pieceWorkflow(
     blockedReason,
     material: {
       readiness: p.readiness ?? 'SEM_LEVANTAMENTO',
-      label:
-        MATERIAL_READINESS_LABEL[p.readiness ?? 'SEM_LEVANTAMENTO'] ??
-        String(p.readiness),
+      label: MATERIAL_READINESS_LABEL[p.readiness ?? 'SEM_LEVANTAMENTO'] ?? String(p.readiness),
     },
     responsible: running?.assignee ?? next?.assignee ?? p.upholstererName ?? null,
   };

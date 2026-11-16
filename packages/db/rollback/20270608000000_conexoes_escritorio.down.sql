@@ -1,4 +1,4 @@
--- REVERSÃO MANUAL da migration 20270420000000_conexoes_escritorio. Uso somente com backup recente e
+-- REVERSÃO MANUAL da migration 20270608000000_conexoes_escritorio. Uso somente com backup recente e
 -- a aplicação PARADA, voltando ao código anterior. Remove as tabelas da Central de Conexões, da
 -- caixa de entrada e do escritório financeiro do jogo. ATENÇÃO: cobranças, contratos e notas
 -- registrados aqui deixam de existir; as baixas oficiais (customer_payments) e pagamentos já
@@ -10,5 +10,5 @@ DROP TABLE IF EXISTS "accounting_documents", "purchase_quotes", "card_settlement
   "inbox_conversations", "integration_webhook_events", "integration_oauth_states",
   "integration_connections";
 ALTER TABLE "ai_agents" DROP COLUMN IF EXISTS "auto_send_rules", DROP COLUMN IF EXISTS "channel_policies";
-DELETE FROM "_prisma_migrations" WHERE "migration_name" = '20270420000000_conexoes_escritorio';
+DELETE FROM "_prisma_migrations" WHERE "migration_name" = '20270608000000_conexoes_escritorio';
 COMMIT;

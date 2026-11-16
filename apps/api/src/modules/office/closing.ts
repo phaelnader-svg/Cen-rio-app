@@ -1,16 +1,13 @@
 /**
- * Fechamento mensal (contabilidade), entregas com saldo, contas a pagar por período e
- * cotações de compra para materiais que travam OS. Tudo leitura dos registros oficiais,
- * exceto as cotações (novas) — o pedido de compra continua no fluxo oficial de compras.
+ * Fechamento mensal (contabilidade), entregas com saldo e contas a pagar por período. Tudo
+ * leitura dos registros oficiais. (As cotações de compra saíram junto com o processo de compras.)
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
-import { Errors } from '../../lib/errors';
 import { orderBalances } from '../finance/revenue';
 import { shopTimezone, todayIso } from '../finance/common';
-import { idParams } from '../presenters';
-import { OFFICE_FIN, OFFICE_FIN_VIEW, OFFICE_VIEW, brl, osCodeOf } from './common';
+import { OFFICE_FIN_VIEW, OFFICE_VIEW, brl, osCodeOf } from './common';
 import { zip } from './docs';
 
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -268,5 +265,4 @@ export async function closingRoutes(app: FastifyInstance) {
         : null,
     }));
   });
-
 }

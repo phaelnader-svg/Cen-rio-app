@@ -200,6 +200,19 @@ export interface AgentDto {
   autoSendRules: string[];
   /** Funciona com dados do Cenário Gestão nesta versão. */
   engine: 'DADOS_CENARIO' | 'AGUARDANDO_INTEGRACAO' | 'INSTRUCOES';
+  /**
+   * Histórico de acertos por tipo de proposta: quantas o dono aprovou, recusou ou ficaram
+   * desatualizadas. Serve para decidir quando liberar o agente para agir sozinho naquela função.
+   */
+  track: Record<string, AgentTrackRecord>;
+}
+
+export interface AgentTrackRecord {
+  aprovadas: number;
+  recusadas: number;
+  desatualizadas: number;
+  /** Aprovadas ÷ decididas (aprovadas + recusadas), de 0 a 1; null sem decisões. */
+  taxaAcerto: number | null;
 }
 
 export interface AgentReference {

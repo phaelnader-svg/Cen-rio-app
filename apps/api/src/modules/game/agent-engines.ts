@@ -93,8 +93,7 @@ export async function shortages(_prisma: PrismaClient): Promise<Shortage[]> {
 
 /** Compras: prioriza o que libera OS (tarefa bloqueada por material) e evita atraso. */
 export async function purchasingAnswer(ctx: AgentContext, question: string): Promise<AgentAnswer> {
-  if (!can(ctx, 'compras', 'estoque.ver'))
-    return blocked('Compras', 'compras');
+  if (!can(ctx, 'compras', 'estoque.ver')) return blocked('Compras', 'compras');
   const all = await shortages(ctx.prisma);
   // Primeiro o que o estoque já cobre (reservar), depois o que precisa comprar.
   const free = new Map<string, number>();

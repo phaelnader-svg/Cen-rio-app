@@ -1452,7 +1452,7 @@ const split = (key: string) => {
 
 /** O que a regra permite para uma sessão de painel (mesma lógica do plugin de autenticação). */
 function webAllows(access: BaselineAccess, perms: ReadonlySet<string>): boolean {
-  if ('public' in access || 'device' in access) return true;
+  if ('public' in access || 'device' in access || 'webhook' in access) return true;
   if (access.session !== 'any' && access.session !== 'WEB') return false;
   const required = [
     ...(access.surfaceExempt ? [] : ['painel.acessar']),
@@ -1539,10 +1539,7 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
         `${key} perdeu`,
       ).toEqual([]);
       const base = new Set(perms);
-      expect(
-        [...cur].filter((p) => !base.has(p)).sort(),
-        `${key} ganhou`,
-      ).toEqual(adicoes(key));
+      expect([...cur].filter((p) => !base.has(p)).sort(), `${key} ganhou`).toEqual(adicoes(key));
     }
   });
 
@@ -1721,9 +1718,19 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270601000000_jogo_gestao: UPDATE OR':
     'Não é comando: "BEFORE UPDATE OR DELETE" do gatilho que torna IMUTÁVEIS o histórico de ' +
     'plantas e as conversas com os agentes (tabelas novas). Protege dados em vez de alterá-los.',
+  '20270608000000_conexoes_escritorio: UPDATE OR':
+    'Não é comando: "BEFORE UPDATE OR DELETE" do gatilho que torna IMUTÁVEL o histórico das ' +
+    'ações dos agentes (tabela nova). Protege dados em vez de alterá-los.',
+  '20270615000000_jogo_propostas_obsoletas: DROP CONSTRAINT "ai_agent_proposals_status"':
+    'Regra CHECK recriada na mesma migration com a mesma condição e um status a mais (OBSOLETA): ' +
+    'amplia o aceito, nenhuma linha é apagada nem alterada.',
+  '20270622000000_jogo_quadro_metas: UPDATE OR':
+    'Não é comando: "BEFORE UPDATE OR DELETE" dos gatilhos que tornam IMUTÁVEIS os retratos do ' +
+    'caixa e os lançamentos do Quadro de Metas (tabelas novas).',
 };
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
+  '20270622000000_jogo_quadro_metas: UPDATE OR': 2,
   '20270309000000_materiais_estoque_entrega: UPDATE CASCADE': 16,
   '20270316000000_reformulacao_fase_2: UPDATE CASCADE': 5,
 };

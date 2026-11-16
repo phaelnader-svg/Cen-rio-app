@@ -37,32 +37,31 @@ export async function fichaOf(db: Db, serviceOrderId: string) {
   });
   if (!so) throw Errors.notFound('OS');
   const orderId = so.orderId;
-  const [rev, contract, receivables, fiscal, pickups, deliveries, receipts] =
-    await Promise.all([
-      orderRevenue(db, orderId),
-      db.contract.findFirst({ where: { orderId }, orderBy: { revision: 'desc' } }),
-      db.customerReceivable.findMany({
-        where: { orderId, status: { not: 'CANCELADO' } },
-        include: { charges: { orderBy: { createdAt: 'desc' } } },
-        orderBy: { createdAt: 'asc' },
-      }),
-      db.fiscalDocument.findFirst({
-        where: { orderId, status: { not: 'CANCELADA' } },
-        orderBy: { createdAt: 'desc' },
-      }),
-      db.pickupRequest.findMany({
-        where: { orderId, status: { not: 'CANCELADA' } },
-        orderBy: { createdAt: 'desc' },
-      }),
-      db.delivery.findMany({
-        where: {
-          items: { some: { serviceOrderItemId: { in: so.items.map((i) => i.id) }, active: true } },
-          status: { not: 'CANCELADA' },
-        },
-        orderBy: { scheduledDate: 'desc' },
-      }),
-      db.receipt.findMany({ where: { orderId }, orderBy: { createdAt: 'asc' }, take: 1 }),
-    ]);
+  const [rev, contract, receivables, fiscal, pickups, deliveries, receipts] = await Promise.all([
+    orderRevenue(db, orderId),
+    db.contract.findFirst({ where: { orderId }, orderBy: { revision: 'desc' } }),
+    db.customerReceivable.findMany({
+      where: { orderId, status: { not: 'CANCELADO' } },
+      include: { charges: { orderBy: { createdAt: 'desc' } } },
+      orderBy: { createdAt: 'asc' },
+    }),
+    db.fiscalDocument.findFirst({
+      where: { orderId, status: { not: 'CANCELADA' } },
+      orderBy: { createdAt: 'desc' },
+    }),
+    db.pickupRequest.findMany({
+      where: { orderId, status: { not: 'CANCELADA' } },
+      orderBy: { createdAt: 'desc' },
+    }),
+    db.delivery.findMany({
+      where: {
+        items: { some: { serviceOrderItemId: { in: so.items.map((i) => i.id) }, active: true } },
+        status: { not: 'CANCELADA' },
+      },
+      orderBy: { scheduledDate: 'desc' },
+    }),
+    db.receipt.findMany({ where: { orderId }, orderBy: { createdAt: 'asc' }, take: 1 }),
+  ]);
   const steps: FichaStep[] = [];
   const final = rev.finalCents;
   steps.push(

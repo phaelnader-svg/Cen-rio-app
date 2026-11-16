@@ -7,7 +7,6 @@ import type { AiAgentProposal, PrismaClient, Tx } from '@cenario/db';
 import { FULFILLMENT_STAGE_LABEL, type FulfillmentStage } from '@cenario/shared';
 import { serviceOrderCode } from '../commercial/common';
 import { orderRevenue } from '../finance/revenue';
-import { num } from './common';
 
 type Db = PrismaClient | Tx;
 const money = (c: number) =>

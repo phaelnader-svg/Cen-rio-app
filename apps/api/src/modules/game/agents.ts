@@ -11,6 +11,7 @@
 import {
   type AgentConversationDto,
   type AgentDto,
+  type AgentTrackRecord,
   type AgentMessageDto,
   type AgentProposalDto,
   type AgentReference,
@@ -85,8 +86,40 @@ const engineOf = (a: AiAgent): AgentDto['engine'] =>
       ? 'INSTRUCOES'
       : 'AGUARDANDO_INTEGRACAO';
 
-function toDto(a: AiAgent & { _count?: { proposals: number } }): AgentDto {
+type TrackRows = { agentId: string; kind: string; status: string; _count: { _all: number } }[];
+
+/** Histórico de acertos de cada agente por tipo de proposta (só leitura das decisões). */
+async function trackRecords(db: PrismaClient, agentIds: string[]) {
+  const rows = (await db.aiAgentProposal.groupBy({
+    by: ['agentId', 'kind', 'status'],
+    where: { agentId: { in: agentIds }, status: { in: ['APROVADA', 'REJEITADA', 'OBSOLETA'] } },
+    _count: { _all: true },
+  })) as unknown as TrackRows;
+  const out = new Map<string, Record<string, AgentTrackRecord>>();
+  for (const r of rows) {
+    const byKind = out.get(r.agentId) ?? {};
+    const t = (byKind[r.kind] ??= {
+      aprovadas: 0,
+      recusadas: 0,
+      desatualizadas: 0,
+      taxaAcerto: null,
+    });
+    if (r.status === 'APROVADA') t.aprovadas += r._count._all;
+    else if (r.status === 'REJEITADA') t.recusadas += r._count._all;
+    else t.desatualizadas += r._count._all;
+    const decided = t.aprovadas + t.recusadas;
+    t.taxaAcerto = decided ? Math.round((t.aprovadas / decided) * 100) / 100 : null;
+    out.set(r.agentId, byKind);
+  }
+  return out;
+}
+
+function toDto(
+  a: AiAgent & { _count?: { proposals: number } },
+  track: Record<string, AgentTrackRecord> = {},
+): AgentDto {
   return {
+    track,
     id: a.id,
     name: a.name,
     roleKey: a.roleKey,
@@ -205,7 +238,11 @@ export async function gameAgentRoutes(app: FastifyInstance) {
       include: pendingCount,
       orderBy: { createdAt: 'asc' },
     });
-    return rows.map(toDto);
+    const tracks = await trackRecords(
+      prisma,
+      rows.map((r) => r.id),
+    );
+    return rows.map((r) => toDto(r, tracks.get(r.id)));
   });
 
   app.post(
@@ -333,7 +370,7 @@ export async function gameAgentRoutes(app: FastifyInstance) {
       const live =
         a.status === 'ATIVO' ? await answer(prisma, a, request.auth!.permissions, '') : null;
       return {
-        agent: toDto(a),
+        agent: toDto(a, (await trackRecords(prisma, [a.id])).get(a.id)),
         messages: messages.reverse().map(msgDto),
         proposals: proposals.map(proposalDto),
         tasks: live?.tasks ?? [
