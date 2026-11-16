@@ -188,6 +188,9 @@ model User {
   cashSnapshots         CashSnapshot[]         @relation("CashSnapshotCreatedBy")
   cashEntries           CashEntry[]            @relation("CashEntryCreatedBy")
   cashGoals             CashGoal[]             @relation("CashGoalCreatedBy")
+  // Módulo Orçamentos.
+  quotesCreated         Quote[]                @relation("QuoteCreatedBy")
+  quotesDeleted         Quote[]                @relation("QuoteDeletedBy")
 
   @@map("users")
 }
@@ -4804,4 +4807,76 @@ model CashWeekClosing {
   closedAt     DateTime @default(now()) @map("closed_at") @db.Timestamptz(3)
 
   @@map("cash_week_closings")
+}
+
+// ─────────────────────────── Orçamentos ───────────────────────────
+
+/// Base de dados do orçamento (independente de compras e estoque): materiais com preço (Tecidos,
+/// Espumas, Insumos, Madeiramento), cidades da logística, serviços do tapeceiro e do ajudante,
+/// taxas da máquina e tapeceiros responsáveis. Os orçamentos salvos guardam cópia dos valores,
+/// então alterar ou excluir um cadastro não muda proposta já salva.
+model QuoteCatalogItem {
+  id           String   @id @default(uuid()) @db.Uuid
+  /// MATERIAL | LOGISTICA | MAO_TAPECEIRO | MAO_AJUDANTE | TAXA_MAQUINA | TAPECEIRO
+  kind         String   @db.VarChar(20)
+  category     String?  @db.VarChar(20)
+  name         String   @db.VarChar(160)
+  priceCents   Int?     @map("price_cents")
+  unit         String?  @db.VarChar(20)
+  km           Decimal? @db.Decimal(10, 2)
+  /// Taxa da máquina em pontos-base (250 = 2,5%).
+  rateBps      Int?     @map("rate_bps")
+  phone        String?  @db.VarChar(40)
+  /// Serviço do ajudante nascido de um serviço do tapeceiro (mesmo nome, preço próprio).
+  linkedItemId String?  @map("linked_item_id") @db.Uuid
+  position     Int      @default(0)
+  version      Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  linkedItem QuoteCatalogItem?  @relation("QuoteCatalogLink", fields: [linkedItemId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  linkedFrom QuoteCatalogItem[] @relation("QuoteCatalogLink")
+
+  @@index([kind, position])
+  @@map("quote_catalog_items")
+}
+
+/// Configuração do orçamento (uma linha; vira uma por empresa no multi-empresa).
+model QuoteSettings {
+  id                  Int      @id @default(1)
+  /// Alíquota do serviço/imposto em pontos-base (600 = 6%). Vazio = não cadastrada.
+  taxRateBps          Int?     @map("tax_rate_bps")
+  /// Nome da empresa na proposta. Vazio = nome fantasia da Empresa.
+  companyNameOverride String?  @map("company_name_override") @db.VarChar(90)
+  /// Logotipo da proposta (PNG/JPEG reduzido, em data URL).
+  logoDataUrl         String?  @map("logo_data_url")
+  version             Int      @default(1)
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("quote_settings")
+}
+
+/// Orçamento salvo: cópia completa da proposta (nunca recalculada) e a O.S. do orçamento.
+model Quote {
+  id           String    @id @default(uuid()) @db.Uuid
+  /// Numeração própria dos orçamentos (começa em 10200).
+  number       Int       @unique @default(autoincrement())
+  customerName String    @map("customer_name") @db.VarChar(160)
+  phone        String?   @db.VarChar(20)
+  service      String    @db.VarChar(120)
+  totalCents   Int       @map("total_cents")
+  snapshot     Json
+  workOrder    Json?     @map("work_order")
+  version      Int       @default(1)
+  createdById  String?   @map("created_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(3)
+  deletedById  String?   @map("deleted_by_id") @db.Uuid
+
+  createdBy User? @relation("QuoteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  deletedBy User? @relation("QuoteDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([deletedAt, createdAt])
+  @@map("quotes")
 }

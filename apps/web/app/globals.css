@@ -219,3 +219,32 @@
     @apply tabular-nums whitespace-nowrap;
   }
 }
+
+/* Impressão de documentos do painel (proposta, contrato e O.S. do orçamento): `printArea()` marca
+   o que não faz parte do documento; cada `.print-page` (menos a primeira) começa numa folha nova. */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+  [data-print-hidden] {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  main#conteudo {
+    max-width: none;
+    padding: 0;
+  }
+  .print-page:not([data-print-first]) {
+    break-before: page;
+  }
+  .print-flat {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

@@ -1487,9 +1487,12 @@ afterAll(() => app.close());
 
 // ─────────────────────────────────────── F1-07b ───────────────────────────────────────
 
-/** Acréscimos permitidos desde 9fb1786 (Rodada 1, decisão do proprietário — F3-17). */
-// Ambiente interativo, etapa 1 (aprovada pelo proprietário em 16/11): permissões NOVAS do jogo, que
-// nenhuma função padrão recebe; só o gestor (catálogo completo) e quem o gestor liberar.
+/**
+ * Acréscimos permitidos desde 9fb1786: estoque.conferir (Rodada 1, decisão do proprietário —
+ * F3-17), as duas do módulo Orçamentos (pedido do proprietário, 2026-11-16) e as do ambiente
+ * interativo (etapas 1 a 3, aprovadas pelo proprietário em 16/11), que nenhuma função padrão
+ * recebe; só o gestor (catálogo completo) e quem o gestor liberar.
+ */
 const GAME_PERMISSIONS = [
   'jogo.acessar',
   'jogo.construir',
@@ -1501,9 +1504,14 @@ const GAME_PERMISSIONS = [
   'marketing.publicar',
   'anuncios.gerenciar',
 ];
-const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir', ...GAME_PERMISSIONS];
+const ALLOWED_NEW_PERMISSIONS = [
+  'estoque.conferir',
+  'orcamentos.gerenciar',
+  'orcamentos.ver',
+  ...GAME_PERMISSIONS,
+];
 const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
-  gestor: ['estoque.conferir', ...GAME_PERMISSIONS], // o gestor sempre recebe o catálogo completo
+  gestor: ALLOWED_NEW_PERMISSIONS, // o gestor sempre recebe o catálogo completo
   tapeceiro: [],
   cabeceiras_qualidade: [],
   ajudante: [],
@@ -1518,14 +1526,14 @@ const adicoes = (key: string) =>
     .sort();
 
 describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9fb1786)', () => {
-  it('o catálogo de permissões é o de 9fb1786 menos as removidas por etapa; acréscimo só estoque.conferir', () => {
+  it('o catálogo de permissões é o de 9fb1786 menos as removidas por etapa; acréscimos só os listados', () => {
     const now = new Set<string>(ALL_PERMISSIONS);
     expect(BASELINE_PERMISSIONS.filter((p) => !now.has(p)).sort()).toEqual(
       BASELINE_PERMISSIONS.filter((p) => PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)).sort(),
     );
     const base = new Set<string>(BASELINE_PERMISSIONS);
-    expect(ALL_PERMISSIONS.filter((p) => !base.has(p))).toEqual(
-      ALLOWED_NEW_PERMISSIONS.filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)),
+    expect(ALL_PERMISSIONS.filter((p) => !base.has(p)).sort()).toEqual(
+      ALLOWED_NEW_PERMISSIONS.filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)).sort(),
     );
   });
 
