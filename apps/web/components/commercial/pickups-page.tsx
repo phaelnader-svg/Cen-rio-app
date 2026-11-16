@@ -1,19 +1,9 @@
 'use client';
 
 import type { PickupDto } from '@cenario/shared';
-import { PICKUP_STATUSES, PICKUP_STATUS_LABEL, formatMoney } from '@cenario/shared';
+import { PICKUP_STATUSES, PICKUP_STATUS_LABEL } from '@cenario/shared';
 import clsx from 'clsx';
-import {
-  CalendarDays,
-  ChevronLeft,
-  Briefcase,
-  ChevronRight,
-  Clock,
-  CreditCard,
-  List,
-  Truck,
-  User,
-} from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Clock, List, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/field';
@@ -52,18 +42,7 @@ function isWeekend(iso: string): boolean {
   return dow === 0 || dow === 6;
 }
 
-/** Quem vai retirar: responsável + quem vai junto (ou a observação da equipe). */
-function whoText(p: PickupDto): string | null {
-  const names = [p.executor?.displayName, ...p.participants.map((x) => x.displayName)].filter(
-    (n): n is string => Boolean(n),
-  );
-  const unique = [...new Set(names)];
-  if (unique.length) return unique.join(', ');
-  return p.teamNotes || null;
-}
-
 function AgendaItem({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
-  const who = whoText(p);
   return (
     <button
       type="button"
@@ -81,37 +60,10 @@ function AgendaItem({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
       )}
     >
       <span className="block font-semibold">
-        {p.windowStart ? arrivalText(p.windowStart, p.windowEnd) : 'Sem horário'}
+        {p.windowStart ? `${p.windowStart}${p.windowEnd ? `–${p.windowEnd}` : ''}` : 'Sem horário'}
       </span>
       <span className="block truncate font-medium">{p.customer.name}</span>
-      <span className="flex items-start gap-1 text-ink-soft">
-        <User className="mt-px size-3 shrink-0" aria-hidden />
-        <span className="min-w-0 break-words">
-          <span className="sr-only">Quem retira: </span>
-          {who ?? 'Quem retira: a definir'}
-        </span>
-      </span>
-      {p.bringSamples && (
-        <span className="flex items-start gap-1 text-bronze-600">
-          <Briefcase className="mt-px size-3 shrink-0" aria-hidden />
-          <span className="min-w-0 break-words">
-            Mostruário{p.samplesDescription ? `: ${p.samplesDescription}` : ''}
-          </span>
-        </span>
-      )}
-      {p.bringCardMachine && (
-        <span className="flex items-center gap-1 text-bronze-600">
-          <CreditCard className="size-3 shrink-0" aria-hidden />
-          Maquininha
-        </span>
-      )}
-      {p.order.agreedValueCents !== null && (
-        <span className="block font-medium text-ink">
-          <span className="sr-only">Valor do serviço: </span>
-          {formatMoney(p.order.agreedValueCents)}
-        </span>
-      )}
-      <span className="block text-ink-muted">
+      <span className="sr-only">
         {p.code} · {PICKUP_STATUS_LABEL[p.status]}
       </span>
     </button>
