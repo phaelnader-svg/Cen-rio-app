@@ -58,6 +58,7 @@ import { serviceModelRoutes } from './modules/service-models/routes';
 import { workshopMapRoutes } from './modules/workshop-map/routes';
 import { directDeliveryRoutes } from './modules/quality/direct-delivery';
 import { inventoryRoutes } from './modules/inventory/routes';
+import { quoteRoutes } from './modules/quotes/routes';
 import { companyRoutes } from './modules/company/routes';
 import { deviceRoutes } from './modules/devices/routes';
 import { employeeRoutes } from './modules/employees/routes';
@@ -194,6 +195,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(workshopMapRoutes);
   await app.register(directDeliveryRoutes);
   await app.register(inventoryRoutes);
+  await app.register(quoteRoutes);
   await app.register(attachmentRoutes);
   // Fase 3 — medições e solicitações de materiais
   await app.register(productionPlanRoutes);

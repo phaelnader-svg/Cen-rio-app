@@ -1487,10 +1487,13 @@ afterAll(() => app.close());
 
 // ─────────────────────────────────────── F1-07b ───────────────────────────────────────
 
-/** Acréscimos permitidos desde 9fb1786 (Rodada 1, decisão do proprietário — F3-17). */
-const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir'];
+/**
+ * Acréscimos permitidos desde 9fb1786 (em ordem alfabética): estoque.conferir (Rodada 1, decisão do
+ * proprietário — F3-17) e as duas do módulo Orçamentos (pedido do proprietário, 2026-11-16).
+ */
+const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir', 'orcamentos.gerenciar', 'orcamentos.ver'];
 const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
-  gestor: ['estoque.conferir'], // o gestor sempre recebe o catálogo completo
+  gestor: ALLOWED_NEW_PERMISSIONS, // o gestor sempre recebe o catálogo completo
   tapeceiro: [],
   cabeceiras_qualidade: [],
   ajudante: [],
@@ -1503,13 +1506,13 @@ const adicoes = (key: string) =>
   (ALLOWED_ROLE_ADDITIONS[key] ?? []).filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p));
 
 describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9fb1786)', () => {
-  it('o catálogo de permissões é o de 9fb1786 menos as removidas por etapa; acréscimo só estoque.conferir', () => {
+  it('o catálogo de permissões é o de 9fb1786 menos as removidas por etapa; acréscimos só os listados', () => {
     const now = new Set<string>(ALL_PERMISSIONS);
     expect(BASELINE_PERMISSIONS.filter((p) => !now.has(p)).sort()).toEqual(
       BASELINE_PERMISSIONS.filter((p) => PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)).sort(),
     );
     const base = new Set<string>(BASELINE_PERMISSIONS);
-    expect(ALL_PERMISSIONS.filter((p) => !base.has(p))).toEqual(
+    expect(ALL_PERMISSIONS.filter((p) => !base.has(p)).sort()).toEqual(
       ALLOWED_NEW_PERMISSIONS.filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)),
     );
   });
@@ -1524,10 +1527,7 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
         `${key} perdeu`,
       ).toEqual([]);
       const base = new Set(perms);
-      expect(
-        [...cur].filter((p) => !base.has(p)),
-        `${key} ganhou`,
-      ).toEqual(adicoes(key));
+      expect([...cur].filter((p) => !base.has(p)).sort(), `${key} ganhou`).toEqual(adicoes(key));
     }
   });
 
