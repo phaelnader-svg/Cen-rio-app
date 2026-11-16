@@ -1547,7 +1547,7 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270323000000_reformulacao_fase_3: UPDATE CASCADE':
     'Não é comando: "ON UPDATE CASCADE" da chave estrangeira nova de quem desfez a entrega direta ' +
     '(deliveries.reverted_by_id; padrão do Prisma). Nenhuma linha é alterada.',
-  '20270413000000_jogo_gestao: UPDATE OR':
+  '20270601000000_jogo_gestao: UPDATE OR':
     'Não é comando: "BEFORE UPDATE OR DELETE" do gatilho que torna IMUTÁVEIS o histórico de ' +
     'plantas e as conversas com os agentes (tabelas novas). Protege dados em vez de alterá-los.',
 };
