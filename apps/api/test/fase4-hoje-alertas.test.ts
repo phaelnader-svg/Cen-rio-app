@@ -4,7 +4,7 @@ import { setClock } from '../src/core/clock';
 import { productivity } from '../src/modules/finance/results';
 import { refreshOperationalAlerts } from '../src/modules/management/today';
 import { panelUserWith } from './commercial-helpers';
-import { createTestApp, db, idemKey, resetDatabase } from './helpers';
+import { createTestApp, db, idemKey, resetDatabase, naEmpresa1 } from './helpers';
 import { moneyKeys } from './labor-helpers';
 import { day, today } from './production-helpers';
 import { qualityKit } from './quality-helpers';
@@ -55,8 +55,8 @@ describe('Fase 4 — alertas internos', () => {
       where: { id: s.so.id },
       data: { promisedDate: new Date(`${day(-1)}T00:00:00Z`) },
     });
-    await refreshOperationalAlerts(app.ctx.prisma);
-    await refreshOperationalAlerts(app.ctx.prisma);
+    await naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma));
+    await naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma));
     const open = await alertsOf('PRAZO_EM_RISCO');
     expect(open.length).toBeGreaterThan(0);
     // Um aviso por pessoa (o gestor tem os.gerenciar), mesmo recalculando duas vezes.
@@ -69,7 +69,7 @@ describe('Fase 4 — alertas internos', () => {
       where: { id: s.so.id },
       data: { promisedDate: new Date(`${day(60)}T00:00:00Z`) },
     });
-    await refreshOperationalAlerts(app.ctx.prisma);
+    await naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma));
     expect(await alertsOf('PRAZO_EM_RISCO')).toHaveLength(0);
     expect((await alertsOf('PRAZO_EM_RISCO', true)).length).toBeGreaterThan(0);
   });
@@ -79,12 +79,12 @@ describe('Fase 4 — alertas internos', () => {
     await k.ready(s, 'sofa');
     expect(await k.stage(s.sofa.id)).toBe('PRONTA_ENTREGA');
     // No mesmo dia: ainda não é alerta.
-    await refreshOperationalAlerts(app.ctx.prisma);
+    await naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma));
     expect(await alertsOf('PECA_PRONTA_SEM_ENTREGA')).toHaveLength(0);
     // Três dias depois, sem entrega.
     const base = Date.now();
     setClock(() => new Date(base + 3 * DAY));
-    await refreshOperationalAlerts(app.ctx.prisma);
+    await naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma));
     const open = await alertsOf('PECA_PRONTA_SEM_ENTREGA');
     expect(open.filter((n) => n.userId === s.ids.gestor)).toHaveLength(1);
     expect(open[0]!.body).toMatch(/pronta há 3 dia/);
@@ -93,7 +93,7 @@ describe('Fase 4 — alertas internos', () => {
       where: { id: s.sofa.id },
       data: { fulfillmentStage: 'ENTREGUE' },
     });
-    await refreshOperationalAlerts(app.ctx.prisma);
+    await naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma));
     expect(await alertsOf('PECA_PRONTA_SEM_ENTREGA')).toHaveLength(0);
   });
 
@@ -102,12 +102,12 @@ describe('Fase 4 — alertas internos', () => {
     const m = await db().serviceOrderMaterial.create({
       data: { serviceOrderId: s.so.id, description: 'Espuma D33', available: false },
     });
-    await refreshOperationalAlerts(app.ctx.prisma);
+    await naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma));
     const open = await alertsOf('MATERIAL_FALTANTE');
     expect(open.filter((n) => n.userId === s.ids.gestor)).toHaveLength(1);
     expect(open[0]!.body).toMatch(/Espuma D33/);
     await db().serviceOrderMaterial.update({ where: { id: m.id }, data: { available: true } });
-    await refreshOperationalAlerts(app.ctx.prisma);
+    await naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma));
     expect(await alertsOf('MATERIAL_FALTANTE')).toHaveLength(0);
   });
 
@@ -121,7 +121,7 @@ describe('Fase 4 — alertas internos', () => {
       data: { serviceOrderId: s.so.id, description: 'Tecido linho', available: false },
     });
     const before = await businessSnapshot();
-    await refreshOperationalAlerts(app.ctx.prisma);
+    await naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma));
     expect(await businessSnapshot()).toBe(before);
     // Os avisos são registros internos (notifications); o módulo não tem nenhum canal externo.
   });
@@ -132,7 +132,9 @@ describe('Fase 4 — alertas internos', () => {
       where: { id: s.so.id },
       data: { promisedDate: new Date(`${day(-1)}T00:00:00Z`) },
     });
-    await Promise.all([1, 2, 3, 4].map(() => refreshOperationalAlerts(app.ctx.prisma)));
+    await Promise.all(
+      [1, 2, 3, 4].map(() => naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma))),
+    );
     const mine = (await alertsOf('PRAZO_EM_RISCO')).filter((n) => n.userId === s.ids.gestor);
     expect(mine).toHaveLength(1);
   });
@@ -151,7 +153,7 @@ describe('Fase 4 — painel "Hoje" e ações sugeridas', () => {
     await db().serviceOrderMaterial.create({
       data: { serviceOrderId: s.so.id, description: 'Grampo 106', available: false },
     });
-    await refreshOperationalAlerts(app.ctx.prisma);
+    await naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma));
     const before = await businessSnapshot();
     const r = await s.admin.get('/api/v1/management/today');
     expect(r.status, JSON.stringify(r.body)).toBe(200);

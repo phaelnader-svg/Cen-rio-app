@@ -25,6 +25,7 @@ import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { Errors } from '../../lib/errors';
 import { idParams } from '../presenters';
+import { requireCompanyId } from '../../core/tenant';
 
 /**
  * Módulo Orçamentos — proposta comercial com materiais automáticos.
@@ -71,8 +72,15 @@ async function catalogDtos(db: Tx | PrismaClient): Promise<QuoteCatalogItemDto[]
 
 async function settingsDto(db: Tx | PrismaClient): Promise<QuoteSettingsDto> {
   const [s, company] = await Promise.all([
-    db.quoteSettings.upsert({ where: { id: 1 }, create: { id: 1 }, update: {} }),
-    db.companySettings.findUnique({ where: { id: 1 }, select: { tradeName: true } }),
+    db.quoteSettings.upsert({
+      where: { companyId: requireCompanyId() },
+      create: {},
+      update: {},
+    }),
+    db.companySettings.findUnique({
+      where: { id: requireCompanyId() },
+      select: { tradeName: true },
+    }),
   ]);
   return {
     taxRateBps: s.taxRateBps,
@@ -308,8 +316,8 @@ export async function quoteRoutes(app: FastifyInstance) {
             });
         if (input.taxRateBps !== undefined)
           await tx.quoteSettings.upsert({
-            where: { id: 1 },
-            create: { id: 1, taxRateBps: input.taxRateBps },
+            where: { companyId: requireCompanyId() },
+            create: { taxRateBps: input.taxRateBps },
             update: { taxRateBps: input.taxRateBps, version: { increment: 1 } },
           });
         await audit(tx, actor, {
@@ -333,13 +341,13 @@ export async function quoteRoutes(app: FastifyInstance) {
       const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {
         const before = await tx.quoteSettings.upsert({
-          where: { id: 1 },
-          create: { id: 1 },
+          where: { companyId: requireCompanyId() },
+          create: {},
           update: {},
         });
         if (before.version !== input.version) throw Errors.versionConflict(before.version);
         await tx.quoteSettings.update({
-          where: { id: 1 },
+          where: { companyId: requireCompanyId() },
           data: {
             ...(input.taxRateBps !== undefined ? { taxRateBps: input.taxRateBps } : {}),
             ...(input.companyNameOverride !== undefined

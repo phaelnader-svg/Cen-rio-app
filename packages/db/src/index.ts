@@ -32,3 +32,4 @@ export function isUniqueViolation(error: unknown, field?: string): boolean {
   return Array.isArray(target) ? target.includes(field) : String(target).includes(field);
 }
 export * from './tenancy';
+export * from './scoped';

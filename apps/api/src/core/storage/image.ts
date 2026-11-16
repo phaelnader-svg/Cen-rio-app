@@ -69,7 +69,9 @@ export async function processImage(
   } catch (error) {
     if ((error as Error).message?.includes('pixel limit'))
       throw Errors.payloadTooLarge('A imagem tem resolução grande demais.');
-    throw Errors.unsupportedMedia('Não foi possível ler a imagem (arquivo inválido ou corrompido).');
+    throw Errors.unsupportedMedia(
+      'Não foi possível ler a imagem (arquivo inválido ou corrompido).',
+    );
   }
 }
 

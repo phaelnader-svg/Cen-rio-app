@@ -108,7 +108,11 @@ describe('F10-15: Central sob volume (contagem exata, consultas constantes)', ()
       results.push({ open: n, total: a.total, sql, rows, ms });
     }
     // (1) Sem N+1: o número de consultas não depende do volume.
-    expect(new Set(results.map((r) => r.sql)).size).toBe(1);
+    // Multi-empresa (etapa 3): cada consulta roda numa transação curta com o prelúdio da empresa;
+    // quando o pool abre uma conexão nova no meio da medição, aparece 1 comando a mais. Um N+1
+    // cresceria com o volume (centenas de consultas), não oscilaria em 1 ou 2.
+    const sqls = results.map((r) => r.sql);
+    expect(Math.max(...sqls) - Math.min(...sqls)).toBeLessThanOrEqual(2);
     // (2) Registros carregados = exceções abertas + uma parcela fixa (cenário e configuração).
     const fixed = results[0]!.rows - results[0]!.open;
     for (const r of results) expect(r.rows - r.open).toBe(fixed);

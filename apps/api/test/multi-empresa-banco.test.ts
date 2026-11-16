@@ -1,8 +1,8 @@
-import { Prisma, TENANCY, type Tx } from '@cenario/db';
+import { Prisma, TENANCY, scopedPrismaClient, type Tx } from '@cenario/db';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { FAKE_CPF, createCustomer, createOrder } from './commercial-helpers';
-import { createTestApp, db, loginAdmin, resetDatabase } from './helpers';
+import { createTestApp, db, loginAdmin, rawDb, resetDatabase } from './helpers';
 
 /**
  * Multi-empresa — etapa 2: o banco sabe de quem é cada linha.
@@ -57,10 +57,9 @@ describe('Multi-empresa: banco', () => {
     >`SELECT table_name, is_nullable, column_default FROM information_schema.columns
        WHERE table_schema = 'public' AND column_name = 'company_id'`;
     const fks = await db().$queryRaw<{ table_name: string }[]>`
-      SELECT tc.table_name FROM information_schema.table_constraints tc
-        JOIN information_schema.constraint_column_usage cu USING (constraint_name, table_schema)
-       WHERE tc.table_schema = 'public' AND tc.constraint_type = 'FOREIGN KEY'
-         AND cu.table_name = 'company_settings' AND tc.constraint_name LIKE '%company_id_fkey'`;
+      SELECT conrelid::regclass::text AS table_name FROM pg_constraint
+       WHERE contype = 'f' AND confrelid = 'company_settings'::regclass
+         AND conname LIKE '%company_id_fkey'`;
     const porTabela = new Map(cols.map((c) => [c.table_name, c]));
     const comFk = new Set(fks.map((f) => f.table_name));
     const problemas: string[] = [];
@@ -155,5 +154,63 @@ describe('Multi-empresa: banco', () => {
     const rows = await db().$queryRaw<{ last_value: number }[]>`
       SELECT last_value FROM company_counters WHERE company_id = 1 AND key = 'commercial_orders'`;
     expect(rows.map((r) => r.last_value)).toEqual([2]);
+  });
+
+  it('etapa 3: sem empresa definida, o banco não mostra nada e não grava nada', async () => {
+    const admin = await loginAdmin(app);
+    await createCustomer(admin);
+    const semEmpresa = scopedPrismaClient(rawDb(), () => ({ companyId: null, bypass: false }));
+    expect(await semEmpresa.customer.count()).toBe(0);
+    expect(await semEmpresa.user.count()).toBe(0);
+    const viaSql = await semEmpresa.$queryRaw<
+      { n: bigint }[]
+    >`SELECT COUNT(*)::bigint AS n FROM customers`;
+    expect(viaSql[0]!.n).toBe(0n);
+    await expect(
+      semEmpresa.customer.create({ data: { kind: 'PF', name: 'Sem dono', searchText: 'x' } }),
+    ).rejects.toThrow();
+  });
+
+  it('etapa 3: a empresa 2 não vê, não altera e não grava na empresa 1 — nem por SQL direto', async () => {
+    const admin = await loginAdmin(app);
+    const c1 = await createCustomer(admin);
+    await db().companySettings.create({ data: { id: 2, tradeName: 'Tapeçaria Exemplo' } });
+    const empresa2 = scopedPrismaClient(rawDb(), () => ({ companyId: 2, bypass: false }));
+
+    expect(await empresa2.customer.findUnique({ where: { id: c1.id } })).toBeNull();
+    expect(await empresa2.customer.count()).toBe(0);
+    const viaSql = await empresa2.$queryRawUnsafe<{ n: bigint }[]>(
+      'SELECT COUNT(*)::bigint AS n FROM customers WHERE id = $1::uuid',
+      c1.id,
+    );
+    expect(viaSql[0]!.n).toBe(0n);
+    const alterou = await empresa2.customer.updateMany({
+      where: { id: c1.id },
+      data: { name: 'Invadido' },
+    });
+    expect(alterou.count).toBe(0);
+    const apagou = await empresa2.$executeRawUnsafe(
+      'DELETE FROM customers WHERE id = $1::uuid',
+      c1.id,
+    );
+    expect(apagou).toBe(0);
+    await expect(
+      empresa2.customer.create({
+        data: { companyId: 1, kind: 'PF', name: 'Plantado', searchText: 'x' },
+      }),
+    ).rejects.toThrow();
+    // A empresa 2 enxerga só a si mesma na tabela de empresas.
+    expect((await empresa2.companySettings.findMany()).map((c) => c.id)).toEqual([2]);
+
+    const intacto = await db().customer.findUniqueOrThrow({ where: { id: c1.id } });
+    expect(intacto.name).toBe(c1.name);
+    expect(intacto.companyId).toBe(1);
+  });
+
+  it('etapa 3: a API trabalha com o papel cenario_app, sem superusuário nem BYPASSRLS', async () => {
+    const rows = await db().$queryRaw<{ u: string; s: boolean; b: boolean }[]>`
+      SELECT current_user AS u, r.rolsuper AS s, r.rolbypassrls AS b
+        FROM pg_roles r WHERE r.rolname = current_user`;
+    expect(rows).toEqual([{ u: 'cenario_app', s: false, b: false }]);
   });
 });

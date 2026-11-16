@@ -41,6 +41,7 @@ import {
   notifyPlanners,
   planningAction,
 } from './engine';
+import { requireCompanyId } from '../../core/tenant';
 
 const WAITING = ['BLOQUEADA', 'PROGRAMADA', 'LIBERADA'] as const;
 
@@ -393,7 +394,7 @@ export async function analyzeAbsence(
     include: { employee: true },
   });
   const cfg = await attendanceConfig(tx);
-  const settings = await tx.companySettings.findUnique({ where: { id: 1 } });
+  const settings = await tx.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const userId = att.employee.userId;
   const name = att.employee.displayName;
   const endOfDay = zonedDateTime(cfg.today, '23:59', cfg.timezone);

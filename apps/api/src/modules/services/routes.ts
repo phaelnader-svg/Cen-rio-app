@@ -37,6 +37,7 @@ import { createOrder } from '../orders/service';
 import { createPickup } from '../pickups/service';
 import { workers } from '../production/plans';
 import { usersWith } from '../quality/common';
+import { requireCompanyId } from '../../core/tenant';
 
 /**
  * Simplificação Fase 2 — "Novo serviço": cliente + serviço fechado + retirada em UMA operação.
@@ -83,7 +84,9 @@ async function peopleOf(db: Tx | PrismaClient, team: PickupTeam): Promise<Person
  * Inativo/inelegível = pendência explícita; o sistema nunca escolhe outro silenciosamente.
  */
 export async function ownTeamSettings(db: Tx | PrismaClient): Promise<OwnTeamSettingsDto> {
-  const settings = await db.companySettings.findUniqueOrThrow({ where: { id: 1 } });
+  const settings = await db.companySettings.findUniqueOrThrow({
+    where: { id: requireCompanyId() },
+  });
   const candidates = await ownTeamPeople(db);
   const userId = settings.ownTeamDefaultUserId;
   if (!userId)
@@ -108,7 +111,9 @@ export async function ownTeamSettings(db: Tx | PrismaClient): Promise<OwnTeamSet
 
 /** Recebedor configurado da logística (André), se ainda executa logística terceirizada. */
 async function outsourcedDefault(db: Tx | PrismaClient): Promise<Person | null> {
-  const settings = await db.companySettings.findUniqueOrThrow({ where: { id: 1 } });
+  const settings = await db.companySettings.findUniqueOrThrow({
+    where: { id: requireCompanyId() },
+  });
   if (!settings.logisticsPayeeUserId) return null;
   return (
     (await outsourcedPeople(db)).find((p) => p.userId === settings.logisticsPayeeUserId) ?? null
@@ -154,7 +159,9 @@ export async function serviceRoutes(app: FastifyInstance) {
     { config: { access: NEW_SERVICE } },
     async (request): Promise<NewServiceDefaultsDto> => {
       const perms = request.auth!.permissions;
-      const settings = await prisma.companySettings.findUniqueOrThrow({ where: { id: 1 } });
+      const settings = await prisma.companySettings.findUniqueOrThrow({
+        where: { id: requireCompanyId() },
+      });
       const outsourced = await outsourcedDefault(prisma);
       return {
         ownTeam: await ownTeamSettings(prisma),
@@ -440,7 +447,9 @@ export async function serviceRoutes(app: FastifyInstance) {
     return prisma.$transaction(async (tx) => {
       if (!(await lockRow(tx, 'company_settings', 1)))
         throw Errors.notFound('Configuração da empresa');
-      const before = await tx.companySettings.findUniqueOrThrow({ where: { id: 1 } });
+      const before = await tx.companySettings.findUniqueOrThrow({
+        where: { id: requireCompanyId() },
+      });
       if (before.version !== input.version) throw Errors.versionConflict(before.version);
       if (input.userId) {
         const candidates = await ownTeamPeople(tx);
@@ -455,7 +464,7 @@ export async function serviceRoutes(app: FastifyInstance) {
       }
       const actor = actorFrom(request);
       const updated = await tx.companySettings.update({
-        where: { id: 1 },
+        where: { id: requireCompanyId() },
         data: {
           ownTeamDefaultUserId: input.userId,
           updatedById: actor.userId,

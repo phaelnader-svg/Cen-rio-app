@@ -4,7 +4,15 @@ import type { App } from '../src/app';
 import { detectAbsences } from '../src/modules/attendance/absence';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
-import { createTestApp, db, employeeByName, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  createTestApp,
+  db,
+  employeeByName,
+  idemKey,
+  loginAdmin,
+  resetDatabase,
+  naEmpresa1,
+} from './helpers';
 import { createCustomer, createOrder, panelUserWith } from './commercial-helpers';
 import { openServiceOrder } from './measurement-helpers';
 import { act, day, today, userIdOf } from './production-helpers';
@@ -72,7 +80,7 @@ describe('F10-13k2 — Presença: ausência com impacto na Central', () => {
     // Antes do limite de chegada: Márcio só não chegou, nada de impacto.
     expect((await attention(s.admin, '?type=PRESENCA')).items).toEqual([]);
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(1);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(1);
     const r = await attendanceAction(s.admin, {
       employeeId: marcio.id,
       action: 'CONFIRMAR_AUSENCIA',
@@ -127,7 +135,7 @@ describe('F10-13k2 — Presença: ausência com impacto na Central', () => {
   it('ausência PRESUMIDA (após o limite) gera o item; a chegada da pessoa resolve e ele sai', async () => {
     const s = await scenario(app, { arrive: ['Ricardo', 'João', 'Thiago'] });
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(1); // só Márcio
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(1); // só Márcio
     const marcio = await employeeByName('Márcio');
     const att = await db().operationalAttendance.findUniqueOrThrow({
       where: {
@@ -147,7 +155,7 @@ describe('F10-13k2 — Presença: ausência com impacto na Central', () => {
   it('permissão: só "ocorrencias.ver" NÃO vê a ausência; com "presenca.ver" ou "presenca.gerenciar" vê', async () => {
     const s = await scenario(app, { arrive: ['Ricardo', 'João', 'Thiago'] });
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(1);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(1);
     const key = `PRESENCA:${(await attendanceOf((await employeeByName('Márcio')).id)).id}`;
     expect(item(await attention(s.admin), key)).toBeDefined(); // controle positivo
     const onlyIssues = await panelUserWith(app, s.admin, 'r4-ocorr', ['ocorrencias.ver']);

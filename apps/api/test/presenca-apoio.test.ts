@@ -3,7 +3,15 @@ import type { App } from '../src/app';
 import { detectAbsences, detectOpenShifts } from '../src/modules/attendance/absence';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
-import { WsClient, createTestApp, db, employeeByName, idemKey, resetDatabase } from './helpers';
+import {
+  WsClient,
+  createTestApp,
+  db,
+  employeeByName,
+  idemKey,
+  resetDatabase,
+  naEmpresa1,
+} from './helpers';
 import { panelUserWith } from './commercial-helpers';
 import { day, today } from './production-helpers';
 import {
@@ -169,14 +177,14 @@ describe('Presença (1–19)', () => {
   it('9–11. ausência presumida continua; feriado não gera ausência nem atraso', async () => {
     const s = await scenario(app, { arrive: ['Ricardo'] });
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(3);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(3);
     expect((await row('Márcio'))?.situation).toBe('AUSENCIA_PRESUMIDA');
     // Amanhã é feriado: ninguém é presumido ausente e a chegada tardia não é atraso.
     const h = await holiday(s.admin, day(1), 'Recesso da oficina');
     expect(h.status).toBe(201);
     expect((await holiday(s.admin, day(1))).status).toBe(409);
     setClock('10:30', day(1));
-    expect(await detectAbsences(app.ctx.prisma)).toBe(0);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(0);
     expect(
       await db().operationalAttendance.count({
         where: { date: new Date(`${day(1)}T00:00:00.000Z`) },
@@ -250,7 +258,7 @@ describe('Presença (1–19)', () => {
       ).status,
     ).toBe(422);
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(2); // Ricardo e Thiago; Márcio e João não
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(2); // Ricardo e Thiago; Márcio e João não
     expect(await teamDay(s.admin, 'Márcio')).toMatchObject({
       situation: 'FERIAS',
       availability: 'AUSENTE',
@@ -302,7 +310,7 @@ describe('Presença (1–19)', () => {
   it('férias que cobrem hoje convertem a ausência presumida (mesmo registro do gestor)', async () => {
     const s = await scenario(app, { arrive: [] });
     setClock('09:31');
-    await detectAbsences(app.ctx.prisma);
+    await naEmpresa1(() => detectAbsences(app.ctx.prisma));
     expect((await row('Thiago'))?.situation).toBe('AUSENCIA_PRESUMIDA');
     const thiago = await employeeByName('Thiago');
     await leave(s.admin, {
@@ -327,8 +335,8 @@ describe('Presença (1–19)', () => {
     expect((await arrive(s.tablets.João!)).status).toBe(200);
     expect((await arrive(s.tablets.Thiago!)).status).toBe(200);
     setClock('08:00');
-    expect(await detectOpenShifts(app.ctx.prisma)).toBe(2);
-    expect(await detectOpenShifts(app.ctx.prisma)).toBe(0); // idempotente
+    expect(await naEmpresa1(() => detectOpenShifts(app.ctx.prisma))).toBe(2);
+    expect(await naEmpresa1(() => detectOpenShifts(app.ctx.prisma))).toBe(0); // idempotente
     const alerts = await notices(await me(s.admin), 'EXPEDIENTE_ABERTO');
     expect(alerts).toHaveLength(2);
     expect(alerts.map((n) => n.body).join(' ')).toMatch(
@@ -443,7 +451,7 @@ describe('Ajuda e apoio (20–28)', () => {
     expect((await approve(presenceOnly, tr.body.id)).status).toBe(403);
     // Presença continua com quem gerencia a presença.
     setClock('09:31');
-    await detectAbsences(app.ctx.prisma);
+    await naEmpresa1(() => detectAbsences(app.ctx.prisma));
     expect((await notices(await me(presenceOnly))).map((n) => n.kind)).toContain(
       'AUSENCIA_PRESUMIDA',
     );
@@ -579,7 +587,7 @@ describe('Ausência, reprogramação e regras R1/R2 (38–43)', () => {
     setClock('10:15');
     await arrive(s.tablets.Ricardo!);
     setClock('09:31', day(1));
-    await detectAbsences(app.ctx.prisma);
+    await naEmpresa1(() => detectAbsences(app.ctx.prisma));
     const marcio = await employeeByName('Márcio');
     await leave(s.admin, {
       employeeId: marcio.id,
@@ -652,7 +660,7 @@ describe('Concorrência (44–46)', () => {
     const m = (await row('Márcio'))!;
     const marcio = await employeeByName('Márcio');
     const [, fix] = await Promise.all([
-      detectOpenShifts(app.ctx.prisma),
+      naEmpresa1(() => detectOpenShifts(app.ctx.prisma)),
       attendanceAction(s.admin, {
         employeeId: marcio.id,
         date: today(),
@@ -665,7 +673,10 @@ describe('Concorrência (44–46)', () => {
     expect(fix.status).toBe(200);
     // Feriado × verificação de ausência.
     setClock('09:31', day(1));
-    const [h, n] = await Promise.all([holiday(s.admin, day(1)), detectAbsences(app.ctx.prisma)]);
+    const [h, n] = await Promise.all([
+      holiday(s.admin, day(1)),
+      naEmpresa1(() => detectAbsences(app.ctx.prisma)),
+    ]);
     expect(h.status).toBe(201);
     expect(n).toBeGreaterThanOrEqual(0);
     // Transferência × troca de titular: CAS — nunca os dois.

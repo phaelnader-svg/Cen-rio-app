@@ -33,7 +33,9 @@ export function cookieOptions(secure: boolean, maxAgeSeconds: number) {
  * - Sessões web exigem `painel.acessar`; sessões de tablet exigem `producao.acessar`.
  */
 export const authPlugin = fp(async (app: FastifyInstance) => {
-  const { prisma, env, hashToken, cookies } = app.ctx;
+  // Multi-empresa: a credencial (cookie, token, tablet) é achada antes de se saber a empresa, por
+  // isso estas buscas usam o banco do sistema. A empresa encontrada passa a valer na requisição.
+  const { system: prisma, env, hashToken, cookies } = app.ctx;
   const allowedOrigins = new Set(env.ALLOWED_ORIGINS);
 
   app.decorateRequest('auth', null);
@@ -74,6 +76,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
       await resolveBearer(request, authz.slice(7).trim());
       if (!request.auth)
         throw Errors.unauthenticated('Autorização do aplicativo inválida, expirada ou revogada.');
+      bindCompany(request);
       enforce(request, access);
       return;
     }
@@ -91,6 +94,9 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     // 3. Sessão
     await resolveSession(request, reply);
 
+    // 3b. Empresa da requisição (a sessão manda; sem sessão, a do tablet pareado).
+    bindCompany(request);
+
     // 4. Regra de acesso
     enforce(request, access);
   });
@@ -105,6 +111,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     }
     request.device = {
       id: device.id,
+      companyId: device.companyId,
       name: device.name,
       assignedEmployeeId: device.assignedEmployeeId,
       restrictToAssigned: device.restrictToAssigned,
@@ -164,6 +171,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     }
     request.auth = {
       sessionId: session.id,
+      companyId: session.user.companyId,
       kind: session.kind,
       userId: session.userId,
       displayName: session.user.displayName,
@@ -218,6 +226,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
         : null;
     request.auth = {
       sessionId: g.sessionId,
+      companyId: g.user.companyId,
       kind: 'WEB',
       userId: g.userId,
       displayName: g.user.displayName,
@@ -234,6 +243,17 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
         onBehalfOf,
       },
     };
+  }
+
+  function bindCompany(request: FastifyRequest) {
+    const companyId = request.auth?.companyId ?? request.device?.companyId ?? null;
+    if (request.auth && request.device && request.device.companyId !== request.auth.companyId) {
+      // Sessão de uma empresa num tablet de outra: nunca deveria acontecer; nega tudo.
+      request.auth = null;
+      request.device = null;
+      return;
+    }
+    if (request.tenant) request.tenant.companyId = companyId;
   }
 
   function enforce(request: FastifyRequest, access: AccessRule) {

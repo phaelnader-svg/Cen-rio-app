@@ -10,6 +10,7 @@ import {
   idemKey,
   loginAdmin,
   resetDatabaseWithMaterialsGate,
+  naEmpresa1,
 } from './helpers';
 import { createCustomer, createOrder, panelUserWith, markArrived } from './commercial-helpers';
 import { compareQueue, mondayOf } from '@cenario/shared';
@@ -313,7 +314,7 @@ describe('B. Planejamento individual e publicação', () => {
     );
     // Chega o dia: a liberação periódica libera a primeira etapa.
     setClock(() => new Date(`${start}T12:00:00Z`));
-    await releaseDueTasks(app.ctx.prisma);
+    await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
     const q2 = await queue(joao);
     expect(q2.items[0]!.executable).toBe(true);
     expect(q2.items[0]!.task.status).toBe('LIBERADA');
@@ -573,7 +574,7 @@ describe('D. Semana publicada, reprogramação e histórico', () => {
     expect(withReason.body.version).toBe(e.plan!.version + 1);
     // Inicia uma tarefa (relógio no dia de início) → trocar de semana é recusado.
     setClock(() => new Date(`${next}T12:00:00Z`));
-    await releaseDueTasks(app.ctx.prisma);
+    await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
     const joao = await tabletOf(app, admin, 'João', '730561');
     const t = (await queue(joao)).items.find((i) => i.executable)!.task;
     const v = (await db().productionTask.findUniqueOrThrow({ where: { id: t.id } })).version;
@@ -748,7 +749,7 @@ describe('F. Estabilização (auditoria): liberação por OS e rascunhos antigos
 
     // Terça, meio-dia: só a OS de terça é liberada; a de quinta não é tocada.
     setClock(() => new Date(`${tuesday}T15:00:00Z`));
-    await releaseDueTasks(app.ctx.prisma);
+    await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
     const earlyTasks = await tasksOf(early.id);
     expect(earlyTasks.some((t) => t.status === 'LIBERADA')).toBe(true);
     expect(earlyTasks.some((t) => t.status === 'PROGRAMADA')).toBe(false);
@@ -760,18 +761,18 @@ describe('F. Estabilização (auditoria): liberação por OS e rascunhos antigos
     expect(ticks.at(-1)!.summary).toContain(`${releasedEarly} tarefa(s)`);
 
     // Novos ciclos no mesmo dia: nada muda → nenhum registro de auditoria novo.
-    for (let i = 0; i < 3; i++) await releaseDueTasks(app.ctx.prisma);
+    for (let i = 0; i < 3; i++) await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
     expect((await releaseTicks()).length).toBe(ticksBefore + 1);
     expect(await snapshot(late.id)).toEqual(lateBefore);
 
     // Quarta: a de quinta continua Programada (nunca antes da data).
     setClock(() => new Date(`${plusDays(monday, 2)}T23:00:00Z`));
-    await releaseDueTasks(app.ctx.prisma);
+    await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
     expect(await snapshot(late.id)).toEqual(lateBefore);
 
     // Quinta: chega a vez dela.
     setClock(() => new Date(`${thursday}T12:00:00Z`));
-    await releaseDueTasks(app.ctx.prisma);
+    await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
     const lateTasks = await tasksOf(late.id);
     expect(lateTasks.some((t) => t.status === 'LIBERADA')).toBe(true);
     expect(lateTasks.some((t) => t.status === 'PROGRAMADA')).toBe(false);
@@ -796,8 +797,8 @@ describe('F. Estabilização (auditoria): liberação por OS e rascunhos antigos
     const ticksBefore = (await releaseTicks()).length;
     setClock(() => new Date(`${day1}T12:00:00Z`));
     const counts = await Promise.all([
-      releaseDueTasks(app.ctx.prisma),
-      releaseDueTasks(app.ctx.prisma),
+      naEmpresa1(() => releaseDueTasks(app.ctx.prisma)),
+      naEmpresa1(() => releaseDueTasks(app.ctx.prisma)),
     ]);
     const released = (await tasksOf(so.id)).filter((t) => t.status === 'LIBERADA');
     expect(released.length).toBeGreaterThan(0);
@@ -914,7 +915,7 @@ describe('F. Estabilização (auditoria): liberação por OS e rascunhos antigos
     // Três semanas depois, ninguém publicou.
     const later = plusDays(start, 21);
     setClock(() => new Date(`${later}T12:00:00Z`));
-    await releaseDueTasks(app.ctx.prisma);
+    await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
     const e = (await entryOf(admin, so.id))!;
     expect(e.plan).toMatchObject({ planId: oldPlanId, startDate: start, planStatus: 'RASCUNHO' });
     expect(e.tasks.draft).toBeGreaterThan(0);
@@ -1031,7 +1032,7 @@ describe('G. Rascunhos de semanas passadas — aviso na Central de atenção (de
     ]);
     // Repetição: consultas e ciclos de liberação seguidos → o mesmo aviso, uma vez só.
     for (let i = 0; i < 3; i++) {
-      await releaseDueTasks(app.ctx.prisma);
+      await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
       expect(await drafts(admin)).toEqual(first);
     }
     // Nada mudou: rascunhos, itens, auditoria e eventos intactos.
@@ -1283,7 +1284,7 @@ describe('H. D9 (decisão C) — a data de início define a posição inicial na
     ).toBe(200);
     expect((await publishWeek(admin, planId)).status).toBe(200);
     setClock(() => new Date(`${base()}T12:00:00Z`));
-    await releaseDueTasks(app.ctx.prisma);
+    await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
     const laterTask = (await tasksOf(later.id)).find((t) => t.assigneeUserId === p.joao)!;
     const firstTask = (await tasksOf(first.id)).find((t) => t.assigneeUserId === p.joao)!;
     expect(laterTask.status).toBe('PROGRAMADA');

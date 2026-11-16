@@ -16,6 +16,8 @@ import { toRealtimeEvent } from './serialize';
 
 export interface ConnectionIdentity {
   sessionId: string;
+  /** Empresa da sessão: só eventos dela chegam a esta conexão (multi-empresa). */
+  companyId: number;
   userId: string;
   kind: SessionKind;
   deviceId: string | null;
@@ -206,7 +208,7 @@ export class RealtimeHub {
     }
     try {
       const missed = await this.prisma.domainEvent.findMany({
-        where: { seq: { gt: since } },
+        where: { seq: { gt: since }, companyId: conn.companyId },
         orderBy: { seq: 'asc' },
         take: MAX_REPLAY_EVENTS + 1,
       });
@@ -256,13 +258,14 @@ export class RealtimeHub {
   private deliver(conn: Connection, event: DomainEvent): boolean {
     if (event.seq <= conn.cursor) return false;
     conn.cursor = event.seq;
-    if (!this.canSee(conn, event.audience)) return false;
+    if (!this.canSee(conn, event)) return false;
     this.send(conn, { kind: 'event', event: toRealtimeEvent(event) });
     return true;
   }
 
-  private canSee(conn: Connection, audience: string): boolean {
-    return audienceAllows(audience, conn);
+  private canSee(conn: Connection, event: DomainEvent): boolean {
+    if (event.companyId !== conn.companyId) return false;
+    return audienceAllows(event.audience, conn);
   }
 
   private handleControlEvent(event: DomainEvent): void {

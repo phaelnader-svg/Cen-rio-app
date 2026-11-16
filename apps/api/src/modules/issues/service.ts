@@ -46,6 +46,7 @@ import {
   notifyIssueManagers,
   type IssueRow,
 } from './common';
+import { requireCompanyId } from '../../core/tenant';
 
 const WAITING = ['BLOQUEADA', 'PROGRAMADA', 'LIBERADA'];
 const DONE = ['CONCLUIDA', 'CANCELADA', 'RASCUNHO'];
@@ -162,7 +163,7 @@ export async function proposeBlock(tx: Tx, actor: ActorContext, issue: IssueRow)
     impact.deadlineRisk || impact.people.length > 0 || isImportantPriority(task.priority);
   if (!relevant) return null;
   const cfg = await attendanceConfig(tx);
-  const settings = await tx.companySettings.findUnique({ where: { id: 1 } });
+  const settings = await tx.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const nextDay = nextWorkingDay(
     cfg.today,
     settings?.workingDays ?? [1, 2, 3, 4, 5],
@@ -242,7 +243,7 @@ onTaskBlocked(async (tx, actor, blocked) => {
   });
   if (pending) return;
   const cfg = await attendanceConfig(tx);
-  const settings = await tx.companySettings.findUnique({ where: { id: 1 } });
+  const settings = await tx.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const nextDay = nextWorkingDay(
     cfg.today,
     settings?.workingDays ?? [1, 2, 3, 4, 5],

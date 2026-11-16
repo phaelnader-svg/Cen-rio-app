@@ -24,6 +24,7 @@ import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
 import { notify, taskNotice } from '../notifications/notify';
+import { requireCompanyId } from '../../core/tenant';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -50,7 +51,7 @@ export const canViewAll = (request: FastifyRequest) =>
   canManage(request) || (request.auth?.permissions.has('producao.ver') ?? false);
 
 export async function company(db: Tx | PrismaClient) {
-  const c = await db.companySettings.findUnique({ where: { id: 1 } });
+  const c = await db.companySettings.findUnique({ where: { id: requireCompanyId() } });
   return {
     timezone: c?.timezone ?? 'America/Sao_Paulo',
     workdayStart: c?.workdayStart ?? '08:30',

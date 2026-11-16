@@ -24,6 +24,7 @@ import {
   passwordPolicySchema,
 } from '@cenario/shared';
 import { createPrismaClient } from './index';
+import { scopedPrismaClient } from './scoped';
 
 const ARGON2_OPTIONS = { memoryCost: 19456, timeCost: 2, parallelism: 1 } as const;
 
@@ -77,7 +78,10 @@ export const SEED_COMPANY_ID = 1;
 
 export async function runSeed(options: { withTeam?: boolean; log?: (m: string) => void } = {}) {
   const log = options.log ?? ((m: string) => console.log(m));
-  const prisma = createPrismaClient();
+  const base = createPrismaClient();
+  // Multi-empresa: o seed trabalha na empresa da instalação (nº 1), com a trava do banco ativa
+  // e liberado para atravessar empresas só onde precisa conferir dados (ex.: e-mail único).
+  const prisma = scopedPrismaClient(base, () => ({ companyId: SEED_COMPANY_ID, bypass: true }));
   try {
     // 0. A empresa da instalação (multi-empresa: empresa nº 1). Vem antes de tudo, porque toda
     // tabela de empresa aponta para ela.
@@ -345,7 +349,7 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
       skipDuplicates: true,
     });
   } finally {
-    await prisma.$disconnect();
+    await base.$disconnect();
   }
 }
 

@@ -55,6 +55,7 @@ import {
   taskEvent,
 } from './common';
 import { announceAssignments, reviseIfPublishedBy } from './plans';
+import { requireCompanyId } from '../../core/tenant';
 
 const STARTED = ['EM_EXECUCAO', 'PAUSADA'];
 const DONE = ['CONCLUIDA', 'CANCELADA'];
@@ -123,7 +124,7 @@ async function preparationAssignee(
   const skill = ACTIVITY_SKILL[activity];
   const ok = (m: Member | undefined) => Boolean(m && m.canExecute && m.skills.has(skill));
   if (stepAssigneeUserId) return ok(team.get(stepAssigneeUserId)) ? stepAssigneeUserId : null;
-  const settings = await db.companySettings.findUnique({ where: { id: 1 } });
+  const settings = await db.companySettings.findUnique({ where: { id: requireCompanyId() } });
   if (settings?.preparationAssigneeUserId) {
     // Configurado mas inelegível (inativo, sem competência): pendência, nunca outro no lugar.
     return ok(team.get(settings.preparationAssigneeUserId))
@@ -841,7 +842,7 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
 
   /** Responsável padrão da preparação (vazio = único ajudante elegível). */
   app.get('/api/v1/production/distribution-settings', { config: { access: VIEW } }, async () => {
-    const s = await prisma.companySettings.findUnique({ where: { id: 1 } });
+    const s = await prisma.companySettings.findUnique({ where: { id: requireCompanyId() } });
     return { preparationAssigneeUserId: s?.preparationAssigneeUserId ?? null };
   });
   app.put(
@@ -859,7 +860,7 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
             throw Errors.business('Escolha um funcionário ativo que execute tarefas de produção.');
         }
         await tx.companySettings.update({
-          where: { id: 1 },
+          where: { id: requireCompanyId() },
           data: { preparationAssigneeUserId: input.preparationAssigneeUserId },
         });
         await audit(tx, actor, {

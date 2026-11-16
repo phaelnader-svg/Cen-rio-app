@@ -4,6 +4,13 @@ import multipart from '@fastify/multipart';
 import websocket from '@fastify/websocket';
 import { EVENT_TYPES } from '@cenario/shared';
 import { createPrismaClient, type PrismaClient } from '@cenario/db';
+import {
+  createCompanyPrisma,
+  createSystemPrisma,
+  forEachCompany,
+  tenantStorage,
+  type TenantStore,
+} from './core/tenant';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { Env } from './config/env';
@@ -116,14 +123,20 @@ export async function buildApp(options: BuildOptions): Promise<App> {
     },
   });
 
-  const prisma = options.prisma ?? createPrismaClient({ url: env.DATABASE_URL });
-  const feed = new EventFeed(prisma, env.DATABASE_URL, app.log, options.feedPollIntervalMs);
-  const hub = new RealtimeHub(prisma, feed, app.log);
-  const processor = new EventProcessor(prisma, app.log);
+  const base = options.prisma ?? createPrismaClient({ url: env.DATABASE_URL });
+  // Multi-empresa (etapa 3): todo acesso ao banco passa por um destes dois clientes. O da
+  // empresa só enxerga a empresa da requisição; o do sistema atravessa empresas e é usado só onde
+  // isso é necessário (core/tenant.ts).
+  const prisma = createCompanyPrisma(base);
+  const system = createSystemPrisma(base);
+  const feed = new EventFeed(system, env.DATABASE_URL, app.log, options.feedPollIntervalMs);
+  const hub = new RealtimeHub(system, feed, app.log);
+  const processor = new EventProcessor(system, app.log);
   const secure = env.COOKIE_SECURE;
   const ctx: AppContext = {
     env,
     prisma,
+    system,
     hashToken: createTokenHasher(env.TOKEN_HASH_SECRET),
     hub,
     storage: new LocalFileStorage(env.STORAGE_DIR),
@@ -136,6 +149,13 @@ export async function buildApp(options: BuildOptions): Promise<App> {
     clientIp,
   };
   app.decorate('ctx', ctx);
+  // Cada requisição ganha o seu "de qual empresa" (preenchido pela autenticação).
+  app.decorateRequest('tenant', null);
+  app.addHook('onRequest', (request, _reply, done) => {
+    const store: TenantStore = { companyId: null };
+    request.tenant = store;
+    tenantStorage.run(store, done);
+  });
   for (const warning of clientIp.warnings) app.log.warn({ alerta: 'ip-do-cliente' }, warning);
 
   app.addHook('onSend', async (request, reply, payload) => {
@@ -265,7 +285,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
         processor.start();
         maintenanceTimer = setInterval(
           () =>
-            void runMaintenance(prisma, app.log).catch((err: unknown) =>
+            void runMaintenance(system, app.log).catch((err: unknown) =>
               app.log.warn({ err }, 'Falha na manutenção periódica'),
             ),
           15 * 60_000,
@@ -274,8 +294,9 @@ export async function buildApp(options: BuildOptions): Promise<App> {
         // Reformulação Fase 4: alertas internos (prazo, peça pronta, material). Só o sininho.
         alertTimer = setInterval(
           () =>
-            void refreshOperationalAlerts(prisma).catch((err: unknown) =>
-              app.log.warn({ err }, 'Falha ao recalcular os alertas operacionais'),
+            void forEachCompany(system, () => refreshOperationalAlerts(prisma)).catch(
+              (err: unknown) =>
+                app.log.warn({ err }, 'Falha ao recalcular os alertas operacionais'),
             ),
           5 * 60_000,
         );
@@ -283,7 +304,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
         // Fase 5: libera as tarefas cujo horário programado chegou (idempotente).
         releaseTimer = setInterval(
           () =>
-            void releaseDueTasks(prisma).catch((err: unknown) =>
+            void forEachCompany(system, () => releaseDueTasks(prisma)).catch((err: unknown) =>
               app.log.warn({ err }, 'Falha ao liberar tarefas programadas'),
             ),
           30_000,
@@ -292,19 +313,20 @@ export async function buildApp(options: BuildOptions): Promise<App> {
         // Fase 7: ausência presumida após o limite configurado (idempotente).
         absenceTimer = setInterval(
           () =>
-            void detectAbsences(prisma)
-              // Simplificação Fase 7: expediente esquecido vira alerta (nunca saída inventada).
-              .then(() => detectOpenShifts(prisma))
-              .catch((err: unknown) =>
-                app.log.warn({ err }, 'Falha ao verificar presença da equipe'),
-              ),
+            void forEachCompany(system, () =>
+              detectAbsences(prisma)
+                // Simplificação Fase 7: expediente esquecido vira alerta (nunca saída inventada).
+                .then(() => detectOpenShifts(prisma)),
+            ).catch((err: unknown) =>
+              app.log.warn({ err }, 'Falha ao verificar presença da equipe'),
+            ),
           60_000,
         );
         absenceTimer.unref();
         // Fase 9: prazos de resolução das ocorrências e propostas sem sentido.
         issueTimer = setInterval(
           () =>
-            void processIssueRisks(prisma).catch((err: unknown) =>
+            void forEachCompany(system, () => processIssueRisks(prisma)).catch((err: unknown) =>
               app.log.warn({ err }, 'Falha ao processar os prazos das ocorrências'),
             ),
           30_000,
@@ -322,7 +344,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       hub.stop();
       await feed.stop();
       await app.close();
-      if (!options.prisma) await prisma.$disconnect();
+      if (!options.prisma) await base.$disconnect();
     },
   };
 }

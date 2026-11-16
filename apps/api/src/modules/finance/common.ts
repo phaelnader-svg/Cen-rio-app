@@ -5,6 +5,7 @@ import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { notifyOwnersOf } from './own-changed';
+import { requireCompanyId } from '../../core/tenant';
 
 /**
  * Fase 11 — financeiro operacional. Tudo do gestor (sessão do painel); o profissional por
@@ -34,7 +35,10 @@ export const localDateOf = (d: Date, timeZone: string) =>
   new Intl.DateTimeFormat('en-CA', { timeZone }).format(d);
 /** Fuso configurado da oficina (`company_settings.timezone`). */
 export async function shopTimezone(db: Tx | PrismaClient) {
-  const s = await db.companySettings.findUnique({ where: { id: 1 }, select: { timezone: true } });
+  const s = await db.companySettings.findUnique({
+    where: { id: requireCompanyId() },
+    select: { timezone: true },
+  });
   return s?.timezone ?? 'America/Sao_Paulo';
 }
 const nextDayIso = (iso: string) => {

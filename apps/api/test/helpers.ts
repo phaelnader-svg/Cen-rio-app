@@ -1,5 +1,6 @@
 import { runSeed } from '@cenario/db/seed';
-import { createPrismaClient, type PrismaClient } from '@cenario/db';
+import { createPrismaClient, scopedPrismaClient, type PrismaClient } from '@cenario/db';
+import { currentCompanyId, runAsCompany } from '../src/core/tenant';
 import WebSocket from 'ws';
 import { buildApp, type App } from '../src/app';
 import { loadEnv } from '../src/config/env';
@@ -8,9 +9,23 @@ export const ORIGIN = 'http://localhost:3000';
 export const ADMIN = { email: 'gestor@teste.local', password: 'SenhaDeTeste123' };
 
 let shared: PrismaClient | null = null;
-export function db(): PrismaClient {
+let sharedSystem: PrismaClient | null = null;
+/** Conexão direta (dona das tabelas): só para limpar o banco entre os testes. */
+export function rawDb(): PrismaClient {
   shared ??= createPrismaClient({ url: process.env.DATABASE_URL });
   return shared;
+}
+/**
+ * Banco "do sistema" para preparar e conferir dados nos testes: enxerga todas as empresas
+ * (multi-empresa). Linhas novas sem empresa explícita vão para a empresa definida em
+ * `asCompany` (padrão: 1, a Cenário Estofados).
+ */
+export function db(): PrismaClient {
+  sharedSystem ??= scopedPrismaClient(rawDb(), () => ({
+    companyId: currentCompanyId() ?? 1,
+    bypass: true,
+  }));
+  return sharedSystem;
 }
 
 /** Limpa todas as tabelas (exceto o controle de migrations) e recria os dados base. */
@@ -25,7 +40,7 @@ export async function resetDatabaseWithMaterialsGate() {
 }
 
 export async function resetDatabase() {
-  const prisma = db();
+  const prisma = rawDb();
   const tables = await prisma.$queryRaw<{ tablename: string }[]>`
     SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
   // Suítes com `startBackground()` mantêm tarefas periódicas gravando entre os testes; o TRUNCATE
@@ -46,7 +61,7 @@ export async function resetDatabase() {
 
 export async function createTestApp(overrides: Record<string, string> = {}): Promise<App> {
   const env = loadEnv({ ...process.env, ...overrides });
-  const built = await buildApp({ env, prisma: db(), logger: false, feedPollIntervalMs: 100 });
+  const built = await buildApp({ env, prisma: rawDb(), logger: false, feedPollIntervalMs: 100 });
   return built;
 }
 
@@ -261,3 +276,26 @@ export class WsClient {
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+let sharedOwner: PrismaClient | null = null;
+/**
+ * Dono das tabelas, atravessando empresas: para testes que aplicam e revertem migrations (DDL)
+ * dentro de uma transação.
+ */
+export function ownerDb(): PrismaClient {
+  sharedOwner ??= scopedPrismaClient(rawDb(), () => ({
+    companyId: currentCompanyId() ?? 1,
+    bypass: true,
+    owner: true,
+  }));
+  return sharedOwner;
+}
+
+/**
+ * Multi-empresa: roda como trabalho da empresa 1 (Cenário Estofados) — para chamar direto as
+ * tarefas periódicas (ausência presumida, alertas, liberação), que em produção rodam uma vez por
+ * empresa (`forEachCompany`).
+ */
+export function naEmpresa1<T>(fn: () => Promise<T>): Promise<T> {
+  return runAsCompany(1, fn);
+}

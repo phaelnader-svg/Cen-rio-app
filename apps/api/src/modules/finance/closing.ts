@@ -66,6 +66,7 @@ import {
 } from './labor';
 import { payPayable } from './payables';
 import { reversePayablePayment, tripCostInclude } from './trip-costs';
+import { requireCompanyId } from '../../core/tenant';
 
 type Db = Tx | PrismaClient;
 
@@ -84,7 +85,8 @@ const plusDays = (iso: string, n: number) => {
 
 async function tzOf(db: Db) {
   return (
-    (await db.companySettings.findUnique({ where: { id: 1 } }))?.timezone ?? 'America/Sao_Paulo'
+    (await db.companySettings.findUnique({ where: { id: requireCompanyId() } }))?.timezone ??
+    'America/Sao_Paulo'
   );
 }
 
@@ -242,7 +244,7 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
 
   // ── Logística ──
   const settings = await db.companySettings.findUnique({
-    where: { id: 1 },
+    where: { id: requireCompanyId() },
     include: { logisticsPayee: { include: { employee: { select: { active: true } } } } },
   });
   const configured = settings?.logisticsPayee

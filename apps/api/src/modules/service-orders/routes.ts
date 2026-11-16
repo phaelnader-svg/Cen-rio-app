@@ -43,6 +43,7 @@ import { orderRevenue } from '../finance/revenue';
 import { loadTeam, upholsterersOf } from '../production/distribution';
 import { loadOperationalState, loadOperationalStates } from './operational';
 import { createServiceOrder } from './service';
+import { requireCompanyId } from '../../core/tenant';
 
 const VIEW = { session: 'any', permissions: ['os.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['os.gerenciar'] } as const;
@@ -604,7 +605,9 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     async (request) => {
       const { id, itemId } = itemParams.parse(request.params);
       const input = measurementSchema.parse(request.body);
-      const company = await prisma.companySettings.findUnique({ where: { id: 1 } });
+      const company = await prisma.companySettings.findUnique({
+        where: { id: requireCompanyId() },
+      });
       const isManager = can(request, 'os.gerenciar');
       const routineDay =
         weekdayIn(company?.timezone ?? 'America/Sao_Paulo') === (company?.measurementWeekday ?? 5);

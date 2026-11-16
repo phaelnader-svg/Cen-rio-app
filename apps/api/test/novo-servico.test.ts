@@ -11,6 +11,7 @@ import {
   loginAdmin,
   resetDatabase,
   setupTablet,
+  ownerDb,
 } from './helpers';
 import { address, createCustomer, createOrder, panelUserWith } from './commercial-helpers';
 import { day, userIdOf } from './production-helpers';
@@ -1054,7 +1055,7 @@ describe('Rodada 3 — migration 20270223000000_custo_operacional_equipe_propria
     const before = await snapshot(db());
     // Sem custo operacional: a reversão volta à regra anterior e apaga o registro; reaplicar volta.
     await expect(
-      db().$transaction(async (tx) => {
+      ownerDb().$transaction(async (tx) => {
         for (const st of down) await tx.$executeRawUnsafe(st);
         expect((await rule(tx))[0]!.def).not.toContain('OPERACIONAL');
         expect(
@@ -1080,7 +1081,7 @@ describe('Rodada 3 — migration 20270223000000_custo_operacional_equipe_propria
     expect(own.status, JSON.stringify(own.body)).toBe(201);
     const after = await snapshot(db());
     await expect(
-      db().$transaction(async (tx) => {
+      ownerDb().$transaction(async (tx) => {
         for (const st of down) await tx.$executeRawUnsafe(st);
       }),
     ).rejects.toThrow(/Reversão bloqueada: 1 custo/);

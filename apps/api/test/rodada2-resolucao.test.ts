@@ -3,7 +3,7 @@ import type { App } from '../src/app';
 import { detectAbsences } from '../src/modules/attendance/absence';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
-import { createTestApp, db, employeeByName, resetDatabase } from './helpers';
+import { createTestApp, db, employeeByName, resetDatabase, naEmpresa1 } from './helpers';
 import { post, prepareCompany, scenario } from './labor-helpers';
 import { act, today } from './production-helpers';
 import { arrive, attendanceAction, setClock } from './presence-helpers';
@@ -42,7 +42,7 @@ describe('F10-19 — presença e ocorrências', () => {
   it('ausência presumida: a chegada resolve um aviso; a confirmação do gestor resolve o outro', async () => {
     const s = await scenario(app, { arrive: ['Ricardo'] });
     setClock('09:31');
-    expect(await detectAbsences(app.ctx.prisma)).toBe(3);
+    expect(await naEmpresa1(() => detectAbsences(app.ctx.prisma))).toBe(3);
     const gestor = await meId(s.admin);
     expect(await active(gestor, 'AUSENCIA_PRESUMIDA')).toHaveLength(3);
     const marcio = await employeeByName('Márcio');

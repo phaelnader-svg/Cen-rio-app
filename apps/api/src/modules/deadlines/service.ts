@@ -9,6 +9,7 @@ import {
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import { attendanceConfig, dbDate } from '../attendance/common';
 import { dateOnly } from '../commercial/common';
+import { requireCompanyId } from '../../core/tenant';
 
 type Db = PrismaClient | Tx;
 
@@ -22,7 +23,7 @@ const INACTIVE_STAGES = ['DEVOLVIDA', 'CANCELADA'];
 export async function deadlineCalendar(db: Db) {
   const cfg = await attendanceConfig(db);
   const c = await db.companySettings.findUnique({
-    where: { id: 1 },
+    where: { id: requireCompanyId() },
     select: { workingDays: true },
   });
   return { today: cfg.today, workingDays: c?.workingDays ?? [1, 2, 3, 4, 5] };

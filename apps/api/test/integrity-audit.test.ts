@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
-import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import { createTestApp, db, idemKey, loginAdmin, resetDatabase, ownerDb } from './helpers';
 import { act } from './production-helpers';
 import { openServiceOrder } from './measurement-helpers';
 import { post, prepareCompany, workshop } from './audit-helpers';
@@ -23,18 +23,19 @@ beforeEach(async () => {
   await prepareCompany();
 });
 afterEach(async () => {
-  await db().$executeRawUnsafe(`DROP TRIGGER IF EXISTS audit_fail ON financial_events`);
-  await db().$executeRawUnsafe(`DROP TRIGGER IF EXISTS audit_fail ON quality_inspections`);
-  await db().$executeRawUnsafe(`DROP TRIGGER IF EXISTS audit_fail ON stock_movements`);
-  await db().$executeRawUnsafe(`DROP FUNCTION IF EXISTS audit_fail_fn()`);
+  await ownerDb().$executeRawUnsafe(`DROP TRIGGER IF EXISTS audit_fail ON financial_events`);
+  await ownerDb().$executeRawUnsafe(`DROP TRIGGER IF EXISTS audit_fail ON quality_inspections`);
+  await ownerDb().$executeRawUnsafe(`DROP TRIGGER IF EXISTS audit_fail ON stock_movements`);
+  await ownerDb().$executeRawUnsafe(`DROP FUNCTION IF EXISTS audit_fail_fn()`);
   setAttendanceClock();
 });
 
 /** Instala uma falha simulada (erro do banco) no último passo de uma operação. */
 async function failOn(table: string, when = 'true') {
-  await db().$executeRawUnsafe(`CREATE OR REPLACE FUNCTION audit_fail_fn() RETURNS trigger AS $$
+  await ownerDb()
+    .$executeRawUnsafe(`CREATE OR REPLACE FUNCTION audit_fail_fn() RETURNS trigger AS $$
     BEGIN RAISE EXCEPTION 'falha simulada da auditoria'; END $$ LANGUAGE plpgsql`);
-  await db().$executeRawUnsafe(
+  await ownerDb().$executeRawUnsafe(
     `CREATE TRIGGER audit_fail BEFORE INSERT ON ${table} FOR EACH ROW WHEN (${when}) EXECUTE FUNCTION audit_fail_fn()`,
   );
 }
@@ -70,7 +71,7 @@ describe('Falhas no meio da transação não deixam registros parciais', () => {
     expect(cur).toMatchObject({ receivedCents: 0, status: 'ABERTO', version: rc.body.version });
     expect(await db().auditLog.count({ where: { action: 'finance.payment_recorded' } })).toBe(0);
     // Depois da falha, a mesma intenção (mesma chave) pode ser repetida e entra uma vez só.
-    await db().$executeRawUnsafe(`DROP TRIGGER audit_fail ON financial_events`);
+    await ownerDb().$executeRawUnsafe(`DROP TRIGGER audit_fail ON financial_events`);
     const again = await post(
       admin,
       `/api/v1/finance/receivables/${rc.body.id}/payments`,
@@ -97,7 +98,7 @@ describe('Falhas no meio da transação não deixam registros parciais', () => {
       (await db().serviceOrderItem.findUniqueOrThrow({ where: { id: s.sofa.id } }))
         .fulfillmentStage,
     ).toBe('EM_PRODUCAO');
-    await db().$executeRawUnsafe(`DROP TRIGGER audit_fail ON quality_inspections`);
+    await ownerDb().$executeRawUnsafe(`DROP TRIGGER audit_fail ON quality_inspections`);
     expect(
       (await act(s.tablets.Ricardo!, s.sofaTask.id, 'complete', { note: 'ok' }, key)).status,
     ).toBe(200);

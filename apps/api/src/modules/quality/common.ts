@@ -28,6 +28,7 @@ import { skillsByEmployee } from '../help/engine';
 import { notify, resolveNotifications } from '../notifications/notify';
 import { refreshLaborOf } from '../finance/labor';
 import { laborOwners, notifyOwnChanged } from '../finance/own-changed';
+import { requireCompanyId } from '../../core/tenant';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -277,7 +278,7 @@ const ABSENT = [
  * inspeção e a permissão de inspecionar (Thiago, no cadastro inicial).
  */
 export async function mainInspector(db: Tx | PrismaClient) {
-  const settings = await db.companySettings.findUnique({ where: { id: 1 } });
+  const settings = await db.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const candidates = settings?.qualityInspectorUserId
     ? [settings.qualityInspectorUserId]
     : await (async () => {

@@ -4,6 +4,7 @@ import type { Employee, PrismaClient, Tx } from '@cenario/db';
 import { z } from 'zod';
 import type { AuthContext } from '../core/types';
 import { Errors } from '../lib/errors';
+import { requireCompanyId } from '../core/tenant';
 
 export const idParams = z.object({ id: z.string().uuid({ message: 'Identificador inválido.' }) });
 
@@ -85,7 +86,7 @@ export async function buildMe(
     auth.deviceId
       ? db.device.findUnique({ where: { id: auth.deviceId }, select: { id: true, name: true } })
       : null,
-    db.companySettings.findUnique({ where: { id: 1 } }),
+    db.companySettings.findUnique({ where: { id: requireCompanyId() } }),
   ]);
   return {
     user: { id: user.id, email: user.email, displayName: user.displayName },

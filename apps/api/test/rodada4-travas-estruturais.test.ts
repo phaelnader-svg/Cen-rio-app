@@ -1681,6 +1681,9 @@ describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava 
  * Chave: "<pasta da migration>: <comando normalizado>".
  */
 const ALLOWED_DESTRUCTIVE: Record<string, string> = {
+  '20270427000000_multi_empresa_etapa3: UPDATE ON':
+    'Não é comando: é o privilégio "UPDATE ON" concedido ao papel cenario_app (GRANT nas tabelas e ' +
+    'sequências, e o padrão para as novas). Nenhuma linha é alterada.',
   '20270223000000_custo_operacional_equipe_propria: DROP CONSTRAINT "logistics_costs_phase6"':
     'Regra CHECK recriada na mesma migration com a mesma condição e um status a mais (OPERACIONAL): ' +
     'amplia o aceito, nenhuma linha é apagada nem alterada.',
@@ -1708,6 +1711,7 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
 const MULTI_EMPRESA_ETAPA2 = '20270420000000_multi_empresa_etapa2';
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
+  '20270427000000_multi_empresa_etapa3: UPDATE ON': 2,
   '20270309000000_materiais_estoque_entrega: UPDATE CASCADE': 16,
   '20270316000000_reformulacao_fase_2: UPDATE CASCADE': 5,
 };

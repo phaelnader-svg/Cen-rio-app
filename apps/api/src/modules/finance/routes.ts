@@ -96,6 +96,7 @@ import {
   setRevenueSplit,
   toReceivableDto,
 } from './revenue';
+import { requireCompanyId } from '../../core/tenant';
 
 const paymentParams = z.object({ id: z.string().uuid(), paymentId: z.string().uuid() });
 const reportParams = z.object({ kind: z.enum(REPORTS) });
@@ -130,7 +131,10 @@ export async function financeRoutes(app: FastifyInstance) {
     const input = financeSettingsSchema.parse(request.body);
     return tx(async (t) => {
       const before = await taxRate(t);
-      await t.companySettings.update({ where: { id: 1 }, data: { taxRateBps: input.taxRateBps } });
+      await t.companySettings.update({
+        where: { id: requireCompanyId() },
+        data: { taxRateBps: input.taxRateBps },
+      });
       await audit(t, actorFrom(request), {
         action: 'finance.settings',
         entityType: 'company_settings',

@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { refreshOperationalAlerts } from '../src/modules/management/today';
-import { createTestApp, db, idemKey, resetDatabase } from './helpers';
+import { createTestApp, db, idemKey, resetDatabase, naEmpresa1 } from './helpers';
 import { pay } from './labor-helpers';
 import { day, uploadPhoto } from './production-helpers';
 import { post, qualityKit } from './quality-helpers';
@@ -125,7 +125,7 @@ describe.runIf(STEP === 'seed')('Banco representativo das Fases 2, 3 e 4', () =>
         date: day(1),
       })
       .catch(() => null);
-    await refreshOperationalAlerts(app.ctx.prisma);
+    await naEmpresa1(() => refreshOperationalAlerts(app.ctx.prisma));
     const kinds = await db().notification.groupBy({
       by: ['kind'],
       where: {

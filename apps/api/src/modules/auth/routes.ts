@@ -10,7 +10,7 @@ import { cookieOptions } from '../../plugins/auth';
 import { buildMe } from '../presenters';
 
 export async function authRoutes(app: FastifyInstance) {
-  const { prisma, env, hashToken, cookies } = app.ctx;
+  const { prisma, system, env, hashToken, cookies } = app.ctx;
   const throttle = new AuthThrottle(prisma);
 
   /** Login do painel administrativo (e-mail + senha). */
@@ -20,7 +20,8 @@ export async function authRoutes(app: FastifyInstance) {
     const ipKey = clientIpKey(request, 'ip');
     await throttle.assertAllowed([accountKey, ipKey]);
 
-    const user = await prisma.user.findUnique({
+    // Multi-empresa: o e-mail é único no sistema todo e diz de qual empresa é o usuário.
+    const user = await system.user.findUnique({
       where: { email: input.email },
       include: { employee: { select: { active: true } } },
     });
@@ -35,6 +36,7 @@ export async function authRoutes(app: FastifyInstance) {
       throw Errors.invalidCredentials('E-mail ou senha incorretos.');
     }
 
+    if (request.tenant) request.tenant.companyId = user.companyId;
     const permissions = await loadUserPermissions(prisma, user.id);
     if (!permissions.has('painel.acessar')) {
       throw Errors.forbidden('Seu usuário não tem acesso ao painel administrativo.');

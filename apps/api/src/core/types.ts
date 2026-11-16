@@ -6,9 +6,12 @@ import type { ClientIpConfig } from './client-ip';
 import type { RealtimeHub } from './realtime/hub';
 import type { FileStorage } from './storage/storage';
 import type { EventProcessor } from './events/processor';
+import type { TenantStore } from './tenant';
 
 export interface AuthContext {
   sessionId: string;
+  /** Empresa do usuário (multi-empresa). */
+  companyId: number;
   kind: SessionKind;
   userId: string;
   displayName: string;
@@ -32,6 +35,7 @@ export interface AuthContext {
 
 export interface DeviceContext {
   id: string;
+  companyId: number;
   name: string;
   assignedEmployeeId: string | null;
   restrictToAssigned: boolean;
@@ -63,7 +67,10 @@ export type AccessRule =
 
 export interface AppContext {
   env: Env;
+  /** Banco da empresa da requisição (Row-Level Security; core/tenant.ts). */
   prisma: PrismaClient;
+  /** Banco do sistema: atravessa empresas. Só autenticação, fila de eventos e manutenção. */
+  system: PrismaClient;
   hashToken: (token: string) => string;
   hub: RealtimeHub;
   storage: FileStorage;
@@ -87,6 +94,7 @@ declare module 'fastify' {
   interface FastifyRequest {
     auth: AuthContext | null;
     device: DeviceContext | null;
+    tenant: TenantStore | null;
   }
   interface FastifyInstance {
     ctx: AppContext;

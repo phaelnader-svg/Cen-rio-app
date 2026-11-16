@@ -12,6 +12,7 @@ import {
   resetDatabase,
   setupTablet,
   withoutOwnChanged,
+  ownerDb,
 } from './helpers';
 import {
   createCustomer,
@@ -804,7 +805,8 @@ describe('Conferência com leitura consistente (estabilização — corrida do C
     });
     for (let i = 0; i < 400; i++) {
       if (done) return 'terminou';
-      const [r] = await db().$queryRaw<{ n: bigint }[]>`
+      // Dono das tabelas: o papel cenario_app não enxerga a espera das outras conexões.
+      const [r] = await ownerDb().$queryRaw<{ n: bigint }[]>`
         SELECT count(*) AS n FROM pg_stat_activity
          WHERE datname = current_database() AND wait_event_type = 'Lock'`;
       if (r!.n > 0n) return 'esperando trava';

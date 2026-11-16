@@ -17,7 +17,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
-import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import { createTestApp, db, idemKey, loginAdmin, resetDatabase, ownerDb } from './helpers';
 import { address, createCustomer, createOrder, markArrived } from './commercial-helpers';
 import { F, PINS, adjust, finish, labor, prepareCompany, row, scenario } from './labor-helpers';
 import { day, today, userIdOf } from './production-helpers';
@@ -53,7 +53,7 @@ const installed = new Set<string>();
  * transação via `set_config(..., true)`), opcionalmente só quando `when` vale para a linha.
  */
 async function failOn(table: string, opts: { nth?: number; when?: string } = {}) {
-  await db().$executeRawUnsafe(`CREATE OR REPLACE FUNCTION r4a_fail_fn() RETURNS trigger AS $$
+  await ownerDb().$executeRawUnsafe(`CREATE OR REPLACE FUNCTION r4a_fail_fn() RETURNS trigger AS $$
     DECLARE n int := coalesce(nullif(current_setting('r4a.n_' || TG_TABLE_NAME, true), ''), '0')::int + 1;
     BEGIN
       PERFORM set_config('r4a.n_' || TG_TABLE_NAME, n::text, true);
@@ -62,16 +62,16 @@ async function failOn(table: string, opts: { nth?: number; when?: string } = {})
       END IF;
       RETURN NEW;
     END $$ LANGUAGE plpgsql`);
-  await db().$executeRawUnsafe(
+  await ownerDb().$executeRawUnsafe(
     `CREATE TRIGGER r4a_fail BEFORE INSERT ON "${table}" FOR EACH ROW WHEN (${opts.when ?? 'true'}) EXECUTE FUNCTION r4a_fail_fn('${opts.nth ?? 1}')`,
   );
   installed.add(table);
 }
 async function clearFailures() {
   for (const t of installed)
-    await db().$executeRawUnsafe(`DROP TRIGGER IF EXISTS r4a_fail ON "${t}"`);
+    await ownerDb().$executeRawUnsafe(`DROP TRIGGER IF EXISTS r4a_fail ON "${t}"`);
   installed.clear();
-  await db().$executeRawUnsafe(`DROP FUNCTION IF EXISTS r4a_fail_fn()`);
+  await ownerDb().$executeRawUnsafe(`DROP FUNCTION IF EXISTS r4a_fail_fn()`);
 }
 /** Falha no INSERT da auditoria de UMA ação. */
 const failAudit = (action: string) =>

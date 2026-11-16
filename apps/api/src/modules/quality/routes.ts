@@ -105,6 +105,7 @@ import {
   withPaymentInstructions,
 } from '../finance/billing';
 import { setTripParticipants, tripCostTeamProblem } from '../pickups/service';
+import { requireCompanyId } from '../../core/tenant';
 
 const LOCATION_READ = {
   session: 'any',
@@ -364,7 +365,7 @@ export async function qualityRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/v1/quality/settings', { config: { access: QUALITY_MANAGE } }, async () => {
-    const s = await prisma.companySettings.findUnique({ where: { id: 1 } });
+    const s = await prisma.companySettings.findUnique({ where: { id: requireCompanyId() } });
     const main = await mainInspector(prisma);
     return {
       qualityInspectorUserId: s?.qualityInspectorUserId ?? null,
@@ -381,7 +382,7 @@ export async function qualityRoutes(app: FastifyInstance) {
           throw Errors.business('O inspetor principal precisa da permissão "Inspecionar peças".');
       }
       await tx.companySettings.update({
-        where: { id: 1 },
+        where: { id: requireCompanyId() },
         data: { qualityInspectorUserId: input.qualityInspectorUserId },
       });
       await audit(tx, actorFrom(request), {

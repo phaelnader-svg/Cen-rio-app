@@ -21,6 +21,7 @@ import { moduleState } from '../../core/modules';
 import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
 import { pickupCode } from '../commercial/common';
+import { requireCompanyId } from '../../core/tenant';
 
 function toDto(c: CompanySettings): CompanySettingsDto {
   return {
@@ -185,7 +186,9 @@ export async function companyRoutes(app: FastifyInstance) {
     '/api/company/settings',
     { config: { access: { session: 'WEB', permissions: ['empresa.ver'] } } },
     async () => {
-      const settings = await prisma.companySettings.findUnique({ where: { id: 1 } });
+      const settings = await prisma.companySettings.findUnique({
+        where: { id: requireCompanyId() },
+      });
       if (!settings) throw Errors.notFound('Configuração da empresa');
       return toDto(settings);
     },
@@ -199,11 +202,13 @@ export async function companyRoutes(app: FastifyInstance) {
       const settings = await prisma.$transaction(async (tx) => {
         if (!(await lockRow(tx, 'company_settings', 1)))
           throw Errors.notFound('Configuração da empresa');
-        const before = await tx.companySettings.findUniqueOrThrow({ where: { id: 1 } });
+        const before = await tx.companySettings.findUniqueOrThrow({
+          where: { id: requireCompanyId() },
+        });
         if (before.version !== input.version) throw Errors.versionConflict(before.version);
         const actor = actorFrom(request);
         const updated = await tx.companySettings.update({
-          where: { id: 1 },
+          where: { id: requireCompanyId() },
           data: {
             tradeName: input.tradeName,
             legalName: input.legalName ?? null,

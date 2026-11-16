@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Prisma } from '@cenario/db';
 import { SIMPLIFIED_PRODUCTION_TEMPLATES, classifyStep } from '@cenario/shared';
-import { db, resetDatabase } from './helpers';
+import { db, resetDatabase, ownerDb } from './helpers';
 
 /** Separa os comandos de um script de reversão respeitando blocos $$ … $$ (sem BEGIN/COMMIT). */
 function splitSql(sql: string): string[] {
@@ -293,7 +293,7 @@ describe('Banco de dados e migrations', () => {
     };
     // Reversão sem pedidos "cliente entrega": remove a coluna e o registro; reaplicar funciona.
     await expect(
-      db().$transaction(async (tx) => {
+      ownerDb().$transaction(async (tx) => {
         await run(tx);
         expect(await column(tx)).toEqual([]);
         expect(
@@ -308,7 +308,7 @@ describe('Banco de dados e migrations', () => {
     ).rejects.toThrow('desfazer');
     // Com um pedido "cliente entrega", a reversão é bloqueada (a informação se perderia).
     await db().commercialOrder.update({ where: { id: order.id }, data: { customerDropOff: true } });
-    await expect(db().$transaction(async (tx) => run(tx))).rejects.toThrow(
+    await expect(ownerDb().$transaction(async (tx) => run(tx))).rejects.toThrow(
       /Reversão bloqueada: 1 pedido/,
     );
     expect(await column(db())).toEqual([{ default: 'false', nullable: 'NO' }]);
@@ -366,7 +366,7 @@ describe('Banco de dados e migrations', () => {
     };
     // Sem intenção registrada: a reversão remove tudo; reaplicar a migration funciona.
     await expect(
-      db().$transaction(async (tx) => {
+      ownerDb().$transaction(async (tx) => {
         await run(tx, down);
         expect(await columns(tx)).toEqual([]);
         expect(
@@ -384,7 +384,7 @@ describe('Banco de dados e migrations', () => {
       where: { id: item.id },
       data: { plannedUpholstererUserId: owner, plannedLaborUnitCents: 1000 },
     });
-    await expect(db().$transaction(async (tx) => run(tx, down))).rejects.toThrow(
+    await expect(ownerDb().$transaction(async (tx) => run(tx, down))).rejects.toThrow(
       /Reversão bloqueada: 1 item/,
     );
     expect(await columns(db())).toHaveLength(2);
@@ -473,7 +473,7 @@ describe('Banco de dados e migrations', () => {
     // Sem uso: a reversão remove colunas, registros novos e o registro da migration; reaplicar
     // funciona. Tudo numa transação desfeita no fim.
     await expect(
-      db().$transaction(async (tx) => {
+      ownerDb().$transaction(async (tx) => {
         await run(tx, down);
         expect(await columns(tx)).toEqual([]);
         expect(
@@ -497,7 +497,7 @@ describe('Banco de dados e migrations', () => {
       where: { id: legacy.id },
       data: { serviceTypes: ['REPARO'] },
     });
-    await expect(db().$transaction(async (tx) => run(tx, down))).rejects.toThrow(
+    await expect(ownerDb().$transaction(async (tx) => run(tx, down))).rejects.toThrow(
       /Reversão bloqueada: 1 configuração/,
     );
     await db().productionTemplate.update({ where: { id: legacy.id }, data: { serviceTypes: [] } });

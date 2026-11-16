@@ -2,7 +2,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { releaseDueTasks } from '../src/modules/production/common';
 import { panelUserWith } from './commercial-helpers';
-import { createTestApp, db, idemKey, loginAdmin, resetDatabaseWithMaterialsGate } from './helpers';
+import {
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  resetDatabaseWithMaterialsGate,
+  naEmpresa1,
+} from './helpers';
 import {
   act,
   addOs,
@@ -239,10 +246,10 @@ describe('Liberação e materiais', () => {
     expect(early.body.error.message).toMatch(/horário/);
     // O relógio chega ao horário programado → liberação periódica (idempotente).
     const future = new Date(Date.now() + 3 * 86_400_000);
-    expect(await releaseDueTasks(app.ctx.prisma, future)).toBeGreaterThan(0);
+    expect(await naEmpresa1(() => releaseDueTasks(app.ctx.prisma, future))).toBeGreaterThan(0);
     const released = (await admin.get(`/api/v1/production-tasks/${t('CORTE_TECIDO').id}`)).body;
     expect(released.status).toBe('LIBERADA');
-    await releaseDueTasks(app.ctx.prisma, future);
+    await naEmpresa1(() => releaseDueTasks(app.ctx.prisma, future));
     expect(
       await db().domainEvent.count({
         where: { type: 'production.task_released', aggregateId: t('CORTE_TECIDO').id },

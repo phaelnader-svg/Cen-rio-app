@@ -21,9 +21,12 @@ import { dateOnly, localDateOf, parseDate, period, shopTimezone, todayIso } from
 import { materialSummary, syncMaterialCosts } from './costs';
 import { isEligible, laborInclude, refreshLaborOf, toLaborDto } from './labor';
 import { serviceOrderRevenue } from './revenue';
+import { requireCompanyId } from '../../core/tenant';
 
 export async function taxRate(db: Tx | PrismaClient) {
-  return (await db.companySettings.findUnique({ where: { id: 1 } }))?.taxRateBps ?? null;
+  return (
+    (await db.companySettings.findUnique({ where: { id: requireCompanyId() } }))?.taxRateBps ?? null
+  );
 }
 
 /**

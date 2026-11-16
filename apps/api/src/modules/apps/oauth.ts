@@ -26,6 +26,7 @@ import { createSession, revokeSessions } from '../../core/sessions';
 import type { ActorContext } from '../../core/types';
 import { randomToken, safeEqual } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
+import { requireCompanyId } from '../../core/tenant';
 
 const authorizeQuery = z.object({
   client_id: z.string().min(1).max(64),
@@ -90,7 +91,7 @@ export async function revokeGrant(
 }
 
 export async function oauthRoutes(app: FastifyInstance) {
-  const { prisma, env, hashToken } = app.ctx;
+  const { prisma, env, hashToken, system } = app.ctx;
 
   async function validateRequest(q: z.infer<typeof authorizeQuery>) {
     const client = await prisma.oAuthClient.findUnique({ where: { clientId: q.client_id } });
@@ -106,7 +107,7 @@ export async function oauthRoutes(app: FastifyInstance) {
   }
 
   async function company() {
-    const c = await prisma.companySettings.findUnique({ where: { id: 1 } });
+    const c = await prisma.companySettings.findUnique({ where: { id: requireCompanyId() } });
     return {
       name: c?.tradeName ?? 'Empresa',
       legalName: c?.legalName ?? null,
@@ -233,6 +234,37 @@ export async function oauthRoutes(app: FastifyInstance) {
     };
   }
 
+  /**
+   * Multi-empresa: o código, o token de renovação ou o token de acesso dizem de qual empresa é a
+   * autorização (busca no banco do sistema); a partir daí a requisição roda na empresa dela.
+   */
+  async function bindOAuthCompany(request: FastifyRequest, body: Record<string, unknown>) {
+    let companyId: number | null = null;
+    if (body.grant_type === 'authorization_code') {
+      const h = hashToken(String(body.code ?? ''));
+      companyId =
+        (await system.oAuthCode.findUnique({ where: { codeHash: h }, select: { companyId: true } }))
+          ?.companyId ?? null;
+    } else {
+      const h = hashToken(String(body.refresh_token ?? body.token ?? ''));
+      companyId =
+        (
+          await system.oAuthGrant.findUnique({
+            where: { refreshHash: h },
+            select: { companyId: true },
+          })
+        )?.companyId ??
+        (
+          await system.oAuthAccessToken.findUnique({
+            where: { tokenHash: h },
+            select: { companyId: true },
+          })
+        )?.companyId ??
+        null;
+    }
+    if (companyId != null && request.tenant) request.tenant.companyId = companyId;
+  }
+
   /** Troca o código (com PKCE) ou o token de renovação por tokens novos. Servidor a servidor. */
   app.post(
     '/api/oauth/token',
@@ -241,6 +273,7 @@ export async function oauthRoutes(app: FastifyInstance) {
       const body = (request.body ?? {}) as Record<string, unknown>;
       try {
         const client = await authenticateClient(request, body);
+        await bindOAuthCompany(request, body);
         const actor = actorFrom(request);
         if (body.grant_type === 'authorization_code') {
           const code = String(body.code ?? '');
@@ -366,6 +399,7 @@ export async function oauthRoutes(app: FastifyInstance) {
       const body = (request.body ?? {}) as Record<string, unknown>;
       try {
         const client = await authenticateClient(request, body);
+        await bindOAuthCompany(request, body);
         const token = String(body.token ?? '');
         const h = hashToken(token);
         const byRefresh = await prisma.oAuthGrant.findUnique({ where: { refreshHash: h } });
