@@ -1,0 +1,66 @@
+• recovery_point_create {} → job e929547f-974f-499d-ad37-f518686075cc (mensagem 22596145286725124)
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh ponto-recuperacao
+[2026-11-12T17:37:47Z] Impressão do banco antes do backup: 0687aa4cf44e46f9002890e1cb997f41 (4318 itens)
+[2026-11-12T17:37:47Z] Backup completo (banco + arquivos + SHA-256)…
+→ Banco de dados…
+→ Arquivos privados (/data/storage)…
+✔ Backup concluído: /data/backups/cenario-staging-20261112T173748Z
+[2026-11-12T17:37:49Z] • pasta deste backup: cenario-staging-20261112T173748Z
+[2026-11-12T17:37:49Z] ✔ cenario-staging-20261112T173748Z íntegro (SHA256SUMS). Restauração de teste em banco separado…
+• backup conferido: cenario-staging-20261112T173748Z
+→ Verificando integridade…
+→ Restaurando banco…
+→ Restaurando arquivos em /tmp/rs…
+✔ Restauração concluída. Rode 'pnpm db:status' para conferir as migrations.
+arquivos restaurados: 0
+  itens: 4318 · tabelas: 125 · colunas financeiras: 38 · migrations: 35 · restrições: 654 · índices: 403 · gatilhos: 67 · sequências: 29
+  ✔ dados, estrutura, sequências, migrations e valores financeiros IGUAIS ao original; definições iguais à referência
+  • 39 definição(ões) com texto reescrito pelo PostgreSQL no dump/restore (equivalentes; iguais à referência):
+      def-restricao|account_payables.account_payables_status
+      def-restricao|attendance_impacts.attendance_impacts_kind
+      def-restricao|attendance_leave_events.attendance_leave_events_action
+      def-restricao|attendance_leaves.attendance_leaves_kind
+      def-restricao|attendance_leaves.attendance_leaves_status
+      def-restricao|closing_payments.closing_payments_values
+      def-restricao|company_settings.company_settings_weekdays
+      def-restricao|customer_payment_reports.customer_payment_reports_method
+      def-restricao|customer_payment_reports.customer_payment_reports_status
+      def-restricao|customer_payments.customer_payments_installments
+      def-restricao|customer_receivables.customer_receivables_due_trigger
+      def-restricao|customer_receivables.customer_receivables_installments
+      def-restricao|customer_receivables.customer_receivables_method
+      def-restricao|customer_receivables.customer_receivables_status
+      def-restricao|deliveries.deliveries_origin
+      def-restricao|delivery_items.delivery_items_status
+      def-restricao|employee_skills.employee_skills_skill
+      def-restricao|help_requests.help_requests_kind
+      def-restricao|labor_reviews.labor_reviews_status_check
+      def-restricao|logistics_costs.logistics_costs_kind
+      def-restricao|logistics_costs.logistics_costs_phase6
+      def-restricao|logistics_occurrences.logistics_occurrences_kind
+      def-restricao|logistics_occurrences.logistics_occurrences_status
+      def-restricao|material_arrivals.material_arrivals_status_check
+      def-restricao|operational_attendances.operational_attendances_availability
+      def-restricao|packaging_records.packaging_records_protection
+      def-restricao|piece_returns.piece_returns_status
+      def-restricao|production_issues.production_issues_impact
+      def-restricao|production_issues.production_issues_kind
+      def-restricao|production_payables.production_payables_status
+      def-restricao|quality_inspection_items.quality_inspection_items_result
+      def-restricao|quality_inspections.quality_inspections_reason
+      def-restricao|reschedule_proposals.reschedule_proposals_kind
+      def-restricao|service_order_costs.service_order_costs_kind
+      def-restricao|service_order_items.service_order_items_stage
+      def-restricao|value_change_requests.value_change_requests_applied
+      def-restricao|value_change_requests.value_change_requests_status
+      def-restricao|weekly_closing_confirmations.weekly_closing_confirmations_kind
+      def-restricao|weekly_closings.weekly_closings_values
+[2026-11-12T17:38:09Z] ✔ Restauração de teste de cenario-staging-20261112T173748Z IDÊNTICA ao banco atual (conteúdo, vínculos, catálogo e valores).
+[2026-11-12T17:38:11Z] ✔ cenario-staging-20261111T171403Z enviado a gs://cenariogestao-homolog-backups/backups/
+[2026-11-12T17:38:11Z] ✔ cenario-staging-20261112T171404Z enviado a gs://cenariogestao-homolog-backups/backups/
+[2026-11-12T17:38:11Z] ✔ cenario-staging-20261112T173748Z enviado a gs://cenariogestao-homolog-backups/backups/
+[2026-11-12T17:38:11Z] ✔ PONTO DE RECUPERAÇÃO: cenario-staging-20261112T173748Z (versão 3e0d2d0f3eb88dac0599729a9b68bb92f822d4f1, impressão 0687aa4cf44e46f9002890e1cb997f41). Tudo o que for gravado depois dele se perde numa recuperação.
+NOTICE:  database "cenario_restore_check" does not exist, skipping
+ Container cenario-homolog-backup-run-1df98f99afdf Creating 
+ Container cenario-homolog-backup-run-1df98f99afdf Created 
+NOTICE:  database "cenario_restore_ref" does not exist, skipping

@@ -23,6 +23,7 @@ import { useToast } from '@/components/ui/toast';
 import { api, errorMessage } from '@/lib/api';
 import { useCan, useMe } from '@/lib/hooks';
 import { useEmployees } from '@/lib/queries';
+import { preparePhoto } from '@/lib/photos';
 import { EmployeeForm } from './employee-form';
 
 type Action =
@@ -397,10 +398,13 @@ function PhotoDialog({ employee, onClose }: { employee: EmployeeDto; onClose: ()
             loading={upload.isPending}
             onClick={() => {
               if (!file) return;
-              const fd = new FormData();
-              fd.append('file', file);
               upload.mutate(
-                () => api(`/api/employees/${employee.id}/photo`, { method: 'POST', body: fd }),
+                async () => {
+                  // Fase 2: reduzida no navegador; o servidor tira os metadados (EXIF/GPS).
+                  const fd = new FormData();
+                  fd.append('file', await preparePhoto(file));
+                  return api(`/api/employees/${employee.id}/photo`, { method: 'POST', body: fd });
+                },
                 {
                   onError: (e) => setError(errorMessage(e)),
                 },

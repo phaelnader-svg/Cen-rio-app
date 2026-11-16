@@ -147,7 +147,7 @@ export async function materialRoutes(app: FastifyInstance) {
         .header('content-type', 'text/csv; charset=utf-8')
         .header(
           'content-disposition',
-          `attachment; filename="materiais-aprovados-${new Date().toISOString().slice(0, 10)}.csv"`,
+          `attachment; filename="materiais-aprovados-lista-bruta-${new Date().toISOString().slice(0, 10)}.csv"`,
         )
         .send(csv);
     },

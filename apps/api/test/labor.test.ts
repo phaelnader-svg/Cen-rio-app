@@ -3,7 +3,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
-import { WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  WsClient,
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  resetDatabase,
+  withoutOwnChanged,
+} from './helpers';
 import { panelUserWith } from './commercial-helpers';
 import { grant, openServiceOrder } from './measurement-helpers';
 import {
@@ -487,7 +495,10 @@ describe('Privacidade e tablet (CA5-05, 06)', () => {
         expect(moneyKeys(r.body), `${name} ${p}`).toEqual([]);
       }
     expect(moneyKeys(ws.messages)).toEqual([]);
-    expect(JSON.stringify(ws.messages)).not.toMatch(/finance\.|80000/);
+    // Só o aviso próprio sem valores (F8-15b); nenhum outro evento financeiro.
+    expect(JSON.stringify(withoutOwnChanged(ws.messages, s.ids.ricardo))).not.toMatch(
+      /finance\.|80000/,
+    );
     // O painel do gestor recebe os eventos financeiros (revisão aberta).
     expect(JSON.stringify(wsAdmin.messages)).toMatch(/finance\./);
   });

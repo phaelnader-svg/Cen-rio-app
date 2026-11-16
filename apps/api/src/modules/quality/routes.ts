@@ -5,11 +5,9 @@ import {
   approveInspectionSchema,
   assignInspectorSchema,
   assignLogisticsOccurrenceSchema,
-  assignPackagingSchema,
   assignPickupLogisticsSchema,
   cancelWithReasonSchema,
   checkInspectionItemSchema,
-  completePackagingSchema,
   confirmReturnSchema,
   createDeliverySchema,
   createReturnSchema,
@@ -44,12 +42,13 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { loadUserPermissions } from '../../core/permissions';
 import { Errors } from '../../lib/errors';
+import { assertModuleEnabled } from '../../core/modules';
 import { refreshAvailabilityOfUser } from '../attendance/common';
 import { asSnapshot, dateOnly, lockOrder, pickupCode } from '../commercial/common';
 import { refreshOrderStatus } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { PICKUP_AUDIENCE } from '../pickups/routes';
-import { notify } from '../notifications/notify';
+import { notify, resolvePickupAssignment } from '../notifications/notify';
 import { idParams } from '../presenters';
 import { workers } from '../production/plans';
 import {
@@ -83,7 +82,6 @@ import {
   resolveOccurrence,
   toOccurrenceDto,
 } from './logistics';
-import { assignPackaging, completePackaging, packagingInclude, toPackagingDto } from './packaging';
 import {
   cancelReturn,
   confirmReturn,
@@ -116,10 +114,6 @@ import {
 } from '../finance/billing';
 import { setTripParticipants, tripCostTeamProblem } from '../pickups/service';
 
-const PACKAGING_ACCESS = {
-  session: 'any',
-  anyPermissions: ['producao.executar', 'qualidade.gerenciar'],
-} as const;
 const LOCATION_READ = {
   session: 'any',
   anyPermissions: [
@@ -203,6 +197,9 @@ async function pieceStatus(
     : undefined;
   return {
     ...pieceRef(item),
+    // Reformulação S1: etapa calculada agora (sem embalagem). Uma peça antiga ainda gravada numa
+    // etapa de embalagem aparece como pronta, sem gravar nada na leitura.
+    stage: r.stage,
     readiness: r.readiness,
     inspection: r.inspection
       ? {
@@ -210,13 +207,6 @@ async function pieceStatus(
           code: `IQ-${String(r.inspection.number).padStart(5, '0')}`,
           status: r.inspection.status,
           round: r.inspection.round,
-        }
-      : null,
-    packaging: r.inspection?.packaging
-      ? {
-          id: r.inspection.packaging.id,
-          code: `EB-${String(r.inspection.packaging.number).padStart(5, '0')}`,
-          status: r.inspection.packaging.status,
         }
       : null,
     delivery: di
@@ -511,78 +501,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     saveTemplate(r, idParams.parse(r.params).id),
   );
 
-  // ─────────────────────────── Embalagem ───────────────────────────
-
-  app.get('/api/v1/packaging', { config: { access: PACKAGING_ACCESS } }, async (request) => {
-    const q = z
-      .object({ scope: z.enum(['open', 'all', 'mine']).default('open') })
-      .parse(request.query);
-    const manager = isManager(request, 'qualidade.gerenciar');
-    const rows = await prisma.packagingRecord.findMany({
-      where: {
-        ...(q.scope === 'all' ? {} : { status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } }),
-        ...(!manager || q.scope === 'mine' ? { assigneeUserId: request.auth!.userId } : {}),
-      },
-      include: packagingInclude,
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-    });
-    return Promise.all(rows.map((r) => toPackagingDto(prisma, r)));
-  });
-
-  app.get('/api/v1/packaging/:id', { config: { access: PACKAGING_ACCESS } }, async (request) => {
-    const { id } = idParams.parse(request.params);
-    const r = await prisma.packagingRecord.findUnique({ where: { id }, include: packagingInclude });
-    if (!r) throw Errors.notFound('Embalagem');
-    if (!isManager(request, 'qualidade.gerenciar') && r.assigneeUserId !== request.auth!.userId)
-      throw Errors.forbidden();
-    return toPackagingDto(prisma, r);
-  });
-
-  app.post(
-    '/api/v1/packaging/:id/assign',
-    { config: { access: QUALITY_MANAGE } },
-    async (request) => {
-      const { id } = idParams.parse(request.params);
-      const input = assignPackagingSchema.parse(request.body);
-      await prisma.$transaction((tx) => assignPackaging(tx, actorFrom(request), id, input));
-      return toPackagingDto(
-        prisma,
-        await prisma.packagingRecord.findUniqueOrThrow({
-          where: { id },
-          include: packagingInclude,
-        }),
-      );
-    },
-  );
-
-  app.post(
-    '/api/v1/packaging/:id/complete',
-    { config: { access: PACKAGING_ACCESS, idempotent: true } },
-    async (request) => {
-      const { id } = idParams.parse(request.params);
-      const input = completePackagingSchema.parse(request.body);
-      const actor = actorFrom(request);
-      await prisma.$transaction((tx) =>
-        completePackaging(
-          tx,
-          actor,
-          { userId: request.auth!.userId, isManager: isManager(request, 'qualidade.gerenciar') },
-          id,
-          input,
-          device(request),
-        ),
-      );
-      await prisma.$transaction((tx) => refreshAvailabilityOfUser(tx, actor, request.auth!.userId));
-      return toPackagingDto(
-        prisma,
-        await prisma.packagingRecord.findUniqueOrThrow({
-          where: { id },
-          include: packagingInclude,
-        }),
-      );
-    },
-  );
+  // Reformulação S1: as rotas de embalagem (/api/v1/packaging…) deixaram de existir (404).
 
   // ─────────────────────────── Localizações e peças ───────────────────────────
 
@@ -742,6 +661,8 @@ export async function qualityRoutes(app: FastifyInstance) {
     { config: { access: DELIVERY_MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createDeliverySchema.parse(request.body);
+      // Fase 1: com a logística desligada, a entrega é confirmada direto na OS.
+      await assertModuleEnabled(prisma, 'logistica');
       if (input.tripCost && !request.auth!.permissions.has('financeiro.gerenciar'))
         throw Errors.forbidden('Informar o custo da viagem exige permissão do financeiro.');
       const teamProblem = tripCostTeamProblem(input.team, Boolean(input.tripCost));
@@ -770,6 +691,7 @@ export async function qualityRoutes(app: FastifyInstance) {
   app.put('/api/v1/deliveries/:id', { config: { access: DELIVERY_MANAGE } }, async (request) => {
     const { id } = idParams.parse(request.params);
     const input = updateDeliverySchema.parse(request.body);
+    await assertModuleEnabled(prisma, 'logistica');
     await prisma.$transaction((tx) => updateDelivery(tx, actorFrom(request), id, input));
     return deliveryDto(id);
   });
@@ -780,6 +702,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     async (request) => {
       const { id } = idParams.parse(request.params);
       const { version } = deliveryVersionSchema.parse(request.body);
+      await assertModuleEnabled(prisma, 'logistica');
       await prisma.$transaction((tx) => confirmDelivery(tx, actorFrom(request), id, version));
       return deliveryDto(id);
     },
@@ -1011,6 +934,9 @@ export async function qualityRoutes(app: FastifyInstance) {
           where: { id },
           data: { logisticsUserId: input.logisticsUserId, version: { increment: 1 } },
         });
+        // F10-19: a retirada mudou de mãos — o aviso de quem a tinha deixa de pedir ação.
+        if (cur.logisticsUserId && cur.logisticsUserId !== input.logisticsUserId)
+          await resolvePickupAssignment(tx, actor, id);
         await tx.pickupEvent.create({
           data: {
             pickupId: id,
@@ -1107,6 +1033,7 @@ export async function qualityRoutes(app: FastifyInstance) {
           },
         });
         await refreshOrderStatus(tx, p.orderId);
+        if (to === 'RETIRADA_REALIZADA') await resolvePickupAssignment(tx, actor, id);
         await audit(tx, actor, {
           action: 'pickup.status_changed',
           entityType: 'pickup_request',

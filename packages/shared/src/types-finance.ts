@@ -262,6 +262,20 @@ export interface MaterialCostSummaryDto {
   unpricedLines: number;
   /** Reservas de estoque ativas (consumo ainda não confirmado: fora do custo realizado). */
   activeReservations: number;
+  /** Fase 1: custo informado nos materiais da OS e já realizado (comprados), incluído no consumido. */
+  informedCents: number;
+  /** Fase 1: materiais da OS marcados como comprados sem custo informado (incluídos em unpricedLines). */
+  informedUnpriced: number;
+  /**
+   * Fase 1: há linha da lista simples com custo informado PENDENTE de conciliação com o custo formal
+   * da OS (possível duplicidade). Linhas vinculadas ou marcadas como distintas não contam.
+   */
+  mixedSources: boolean;
+  /** Fase 1: linhas pendentes de conciliação e quanto do realizado está em risco de duplicidade. */
+  pendingReconciliationLines: number;
+  pendingReconciliationCents: number;
+  /** Fase 1: linhas vinculadas a registro formal que depois teve estorno de recebimento (revisar). */
+  linkedReversedLines: number;
   lines: MaterialCostLineDto[];
 }
 
@@ -588,11 +602,34 @@ export interface MyEarningsDto {
     }[];
     /** R2: última solicitação de alteração deste item (só do próprio profissional). */
     request: OwnValueChangeDto | null;
+    /**
+     * Rodada 3 (F8-03, decisão C): só para o PREVISTO. Informação OPERACIONAL do planejamento
+     * (semana/data planejada da etapa ou da viagem) — NÃO é semana financeira: o previsto
+     * continua "sem semana definida" até ficar devido pelas regras normais.
+     */
+    plannedFor: { weekStart: string; date: string | null } | null;
     /** R2: pode pedir alteração agora (devido, sem revisão, sem pedido pendente, não quitado). */
     canRequest: boolean;
   }[];
   /** R2: conferência da semana pelo profissional (D13). */
   confirmation: WeekConfirmationDto;
+  /**
+   * Rodada 3 (F8-06): trabalho próprio de tapeçaria já CONCLUÍDO numa peça da qual a pessoa é a
+   * titular, sem nenhuma obrigação lançada para ela nessa peça. ESTADO INFORMATIVO apenas: não
+   * tem valor (nem R$ 0,00), não entra em total nenhum e não cria obrigação. Só na semana atual
+   * (é a situação de agora, não de uma semana).
+   */
+  pendingWork: OwnPendingWorkDto[];
+}
+
+export interface OwnPendingWorkDto {
+  serviceOrder: string;
+  piece: string;
+  description: string;
+  /** SEM_VALOR: "valor ainda não disponível"; EM_REVISAO: revisão financeira aberta na peça. */
+  state: 'SEM_VALOR' | 'EM_REVISAO';
+  label: string;
+  completedAt: string;
 }
 
 /** R2 — o que o profissional confere (ou a exceção cobre) e a situação ao vivo. */
@@ -614,6 +651,28 @@ export interface WeekConfirmationDto {
   changed: string[];
   /** Pedidos de alteração pendentes que impedem confirmar. */
   pendingRequests: string[];
+  /**
+   * Remediação F9-03/F9-06: todas as confirmações/exceções desta pessoa e semana (mais recente
+   * primeiro), cada uma com o retrato que identifica o estado conferido e a validade AO VIVO:
+   * VIGENTE = o retrato é o estado atual; EM_PARTE = parte das linhas mudou (pelo D13 só as linhas
+   * iguais ao estado atual continuam cobertas); INVALIDA = nenhuma linha confere mais.
+   */
+  history: {
+    code: string;
+    kind: 'PROFISSIONAL' | 'EXCECAO_ADMINISTRATIVA';
+    createdAt: string;
+    totalCents: number;
+    /** SHA-256 do retrato conferido (pessoa, semana, linhas ordenadas). */
+    hash: string;
+    /** Versão do fechamento semanal do gestor quando conferida (null: semana ainda não conferida, ou registro anterior a esta remediação). */
+    closingVersion: number | null;
+    status: 'VIGENTE' | 'EM_PARTE' | 'INVALIDA';
+    /** Códigos das linhas do retrato que não conferem mais com o estado atual. */
+    changed: string[];
+    /** Quando uma conferência posterior registrou que este retrato deixou de valer (null se ainda não houve). */
+    invalidatedAt: string | null;
+    invalidatedBy: string | null;
+  }[];
 }
 
 /** R2 — pedido de alteração visto pelo próprio profissional. */

@@ -6,9 +6,13 @@ import {
   purchaseOrderCode,
   q3,
   rejectionDecisionSchema,
+  requiresTechnicalConference,
   reverseReceiptSchema,
   unitError,
   type PendingMaterialReceiptDto,
+  RECEIVING_SITUATIONS,
+  receivingSituation,
+  type ReceivingRowDto,
 } from '@cenario/shared';
 import type { PurchaseOrderStatus, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
@@ -35,6 +39,7 @@ import {
   refreshReadiness,
   requirementsWithProgress,
   specOf,
+  pendingQuantity,
 } from './common';
 import {
   lockPurchaseOrder,
@@ -44,6 +49,8 @@ import {
 } from './purchase-orders';
 
 const EPS = 1e-6;
+const CONFERENCE_DENIED =
+  'Este material exige conferência técnica: registre só a chegada física. A conferência é feita por quem tem autorização de conferência.';
 
 const RECEIPT_VIEW = {
   session: 'WEB',
@@ -134,7 +141,13 @@ export async function registerMaterialReceipt(
   tx: Tx,
   actor: ActorContext,
   input: z.output<typeof materialReceiptSchema>,
-  opts: { deviceId?: string | null; expectedVersion?: number; arrivalId?: string } = {},
+  opts: {
+    deviceId?: string | null;
+    expectedVersion?: number;
+    arrivalId?: string;
+    /** Remediação F3-17: quem registra tem a capacidade de conferência técnica (`estoque.conferir`). */
+    canConfer?: boolean;
+  } = {},
 ): Promise<string> {
   const po = await lockPurchaseOrder(tx, input.purchaseOrderId);
   // Simplificação Fase 3: confirmação sobre tela desatualizada (já houve outro registro)
@@ -185,6 +198,9 @@ export async function registerMaterialReceipt(
     ).map((i) => [i.id, i]),
   );
   const seen = new Set<string>();
+  // F3-17: conferir uma chegada física, ou aceitar/recusar material que exige conferência técnica,
+  // pede a capacidade explícita de conferência — receber fisicamente não basta.
+  if (opts.arrivalId && !opts.canConfer) throw Errors.forbidden(CONFERENCE_DENIED);
   for (const [idx, l] of input.lines.entries()) {
     const item = items.get(l.purchaseOrderItemId);
     if (!item)
@@ -192,6 +208,8 @@ export async function registerMaterialReceipt(
         [{ path: `lines.${idx}`, message: 'Item não pertence ao pedido.' }],
         'Item não pertence ao pedido.',
       );
+    if (requiresTechnicalConference(item) && !opts.canConfer)
+      throw Errors.forbidden(CONFERENCE_DENIED);
     if (seen.has(item.id)) throw Errors.validation(undefined, 'Item repetido no recebimento.');
     seen.add(item.id);
     for (const v of [l.acceptedQuantity, l.rejectedQuantity ?? 0]) {
@@ -411,6 +429,88 @@ export async function materialReceiptRoutes(app: FastifyInstance) {
     );
   });
 
+  /**
+   * Rodada 3 (F6-03): fila "Recebimentos" — pedidos confirmados (aguardando, parciais, recebidos,
+   * aguardando conferência, conferidos) e cancelados, derivados do pedido e das chegadas. Sem
+   * preços; rascunhos não entram (não são compra).
+   */
+  app.get(
+    '/api/v1/purchasing/receiving',
+    { config: { access: RECEIPT_VIEW } },
+    async (request): Promise<ReceivingRowDto[]> => {
+      const q = z
+        .object({
+          situation: z.enum(RECEIVING_SITUATIONS).optional(),
+          limit: z.coerce.number().int().min(1).max(500).default(200),
+        })
+        .parse(request.query);
+      const orders = await prisma.purchaseOrder.findMany({
+        where: { status: { not: 'RASCUNHO' } },
+        select: {
+          id: true,
+          number: true,
+          status: true,
+          expectedDate: true,
+          updatedAt: true,
+          supplier: { select: { name: true } },
+          items: {
+            select: {
+              quantity: true,
+              receivedQuantity: true,
+              closedQuantity: true,
+              serviceOrder: { select: { id: true, number: true } },
+            },
+          },
+          receipts: {
+            select: { number: true, receivedAt: true },
+            orderBy: { receivedAt: 'desc' },
+            take: 5,
+          },
+          arrivals: { select: { status: true, receivedAt: true } },
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+      const rows: ReceivingRowDto[] = [];
+      for (const po of orders) {
+        const pendingConference = po.arrivals.filter(
+          (a) => a.status === 'PENDENTE_CONFERENCIA',
+        ).length;
+        const conferred = po.arrivals.filter((a) => a.status !== 'PENDENTE_CONFERENCIA').length;
+        const situation = receivingSituation({ status: po.status, pendingConference, conferred });
+        if (!situation || (q.situation && situation !== q.situation)) continue;
+        const sos = new Map(
+          po.items.flatMap((i) => (i.serviceOrder ? [[i.serviceOrder.id, i.serviceOrder]] : [])),
+        );
+        const last = [po.updatedAt, ...po.receipts.map((r) => r.receivedAt)].reduce((a, b) =>
+          a > b ? a : b,
+        );
+        rows.push({
+          id: po.id,
+          code: purchaseOrderCode(po.number),
+          supplier: po.supplier?.name ?? null,
+          status: po.status,
+          situation,
+          expectedDate: dateOnly(po.expectedDate),
+          itemCount: po.items.length,
+          pendingItems: po.items.filter((i) => pendingQuantity(i) > EPS).length,
+          pendingConference,
+          conferred,
+          receipts: po.receipts.map((r) => ({
+            code: materialReceiptCode(r.number),
+            receivedAt: r.receivedAt.toISOString(),
+          })),
+          lastActivityAt: last.toISOString(),
+          serviceOrders: [...sos.values()].map((s) => ({
+            id: s.id,
+            code: serviceOrderCode(s.number),
+          })),
+        });
+        if (rows.length >= q.limit) break;
+      }
+      return rows;
+    },
+  );
+
   app.get('/api/v1/material-receipts', { config: { access: RECEIPT_VIEW } }, async (request) => {
     const q = z
       .object({
@@ -453,6 +553,7 @@ export async function materialReceiptRoutes(app: FastifyInstance) {
           deviceId: request.auth?.deviceId ?? null,
           expectedVersion: input.expectedVersion,
           arrivalId: input.arrivalId,
+          canConfer: request.auth?.permissions.has('estoque.conferir') ?? false,
         }),
       );
       const r = await prisma.materialReceipt.findUniqueOrThrow({

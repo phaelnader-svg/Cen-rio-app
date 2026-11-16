@@ -41,6 +41,10 @@ import { assertActiveRequirement } from './requirements';
 
 const EPS = 1e-6;
 
+/** Rodada 3 (F6-18a): aviso devolvido na saída livre para uma OS. */
+export const STOCK_FREE_ISSUE_WARNING =
+  'Saída livre registrada: ela NÃO cobre a necessidade de material da OS (o "A comprar" e a prontidão não mudam). Para cobrir, reserve o material para a necessidade da OS.';
+
 export async function stockRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -250,7 +254,12 @@ export async function stockRoutes(app: FastifyInstance) {
         });
         return tx.stockItem.findUniqueOrThrow({ where: { id } });
       });
-      return toStockItemDto(item);
+      // Rodada 3 (F6-18a): saída livre NÃO cobre a necessidade da OS (não toca o "a comprar" nem
+      // a prontidão): quem registra é avisado de como cobrir de fato.
+      return {
+        ...toStockItemDto(item),
+        warning: input.serviceOrderId ? STOCK_FREE_ISSUE_WARNING : null,
+      };
     },
   );
 

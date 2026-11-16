@@ -125,3 +125,16 @@ export async function readiness(admin: Client, soId: string) {
   if (r.status !== 200) throw new Error(`readiness: ${JSON.stringify(r.body)}`);
   return r.body;
 }
+
+/**
+ * Remediação F3-17: concede a capacidade de conferência técnica (`estoque.conferir`) a um
+ * funcionário pelo modelo de permissões existente (concessão individual).
+ */
+export async function grantConference(displayName: string) {
+  const u = await db().user.findFirstOrThrow({ where: { displayName } });
+  await db().userPermission.upsert({
+    where: { userId_permission: { userId: u.id, permission: 'estoque.conferir' } },
+    create: { userId: u.id, permission: 'estoque.conferir' },
+    update: {},
+  });
+}

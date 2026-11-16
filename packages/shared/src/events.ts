@@ -19,6 +19,8 @@ export const EVENT_TYPES = {
   DEVICE_CONNECTION_CHANGED: 'device.connection_changed',
   SESSION_REVOKED: 'session.revoked',
   COMPANY_SETTINGS_UPDATED: 'company.settings_updated',
+  /** Reformulação, Fase 0: funcionalidade ligada ou desligada (payload só com chave e estado). */
+  COMPANY_MODULE_UPDATED: 'company.module_updated',
   SYNC_SIGNAL: 'sync.signal',
   CUSTOMER_CREATED: 'customer.created',
   CUSTOMER_UPDATED: 'customer.updated',
@@ -59,6 +61,11 @@ export const EVENT_TYPES = {
   MATERIAL_SHORTAGE_DETECTED: 'material.shortage_detected',
   MATERIAL_READINESS_CHANGED: 'material.readiness_changed',
   LEFTOVER_CHANGED: 'leftover.changed',
+  /** Reformulação, Fase 1: lista simples de materiais da OS e estoque simples (sem valores). */
+  OS_MATERIALS_CHANGED: 'os_materials.changed',
+  INVENTORY_CHANGED: 'inventory.changed',
+  /** Reformulação, Fase 2: materiais padrão dos modelos de serviço (sem valores). */
+  SERVICE_MODELS_CHANGED: 'service_models.changed',
   PRODUCTION_TEMPLATE_CHANGED: 'production.template_changed',
   PRODUCTION_PLAN_CREATED: 'production.plan_created',
   PRODUCTION_PLAN_UPDATED: 'production.plan_updated',
@@ -85,6 +92,8 @@ export const EVENT_TYPES = {
   PRODUCTION_TASK_IMPEDIMENT: 'production.task_impediment',
   NOTIFICATION_CREATED: 'notification.created',
   NOTIFICATION_READ: 'notification.read',
+  /** Rodada 2 (F10-19): avisos do usuário resolvidos pela ação que encerrou a condição. */
+  NOTIFICATION_RESOLVED: 'notification.resolved',
   // Fase 7 — presença operacional
   ATTENDANCE_ARRIVED: 'attendance.arrived',
   ATTENDANCE_LATE: 'attendance.late',
@@ -138,6 +147,11 @@ export const EVENT_TYPES = {
   FINANCE_PAYABLE_PAID: 'finance.payable_paid',
   FINANCE_EXPENSE_CREATED: 'finance.expense_created',
   FINANCE_COST_UPDATED: 'finance.cost_updated',
+  /**
+   * Rodada 2 (F8-15b): "seus ganhos mudaram" — só para o próprio profissional (`user:<id>`) e
+   * SEM valores: o Meus Ganhos aberto recarrega pela API (PIN/D12 continuam valendo).
+   */
+  FINANCE_OWN_CHANGED: 'finance.own_changed',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];
@@ -157,14 +171,42 @@ export function anyPermissionAudience(...permissions: string[]): EventAudience {
   return permissions.map((p) => `permission:${p}`).join('|') as EventAudience;
 }
 
+/**
+ * Rodada 3 (F1-09): permissões cuja audiência um TABLET (sessão DEVICE) pode receber — só as de
+ * execução na oficina. Eventos gerenciais/financeiros (`permission:financeiro.ver`, `…gerenciar`,
+ * `ocorrencias.ver`…) nunca chegam ao tablet, mesmo que o usuário dele tenha a permissão: o que é
+ * do próprio funcionário vai por `user:<id>` (ex.: `finance.own_changed`, sem valores).
+ */
+export const DEVICE_AUDIENCE_PERMISSIONS: ReadonlySet<string> = new Set([
+  'producao.acessar',
+  'producao.executar',
+  'producao.ver',
+  'ajuda.solicitar',
+  'ocorrencias.registrar',
+  'presenca.registrar',
+  'recebimentos.registrar',
+  'retiradas.ver',
+  'entregas.ver',
+  'logistica.executar',
+  'qualidade.inspecionar',
+  'estoque.conferir',
+  'materiais.ver',
+  'os.ver',
+  'sincronizacao.diagnosticar',
+]);
+
 /** Verifica se um destinatário atende à audiência do evento. */
 export function audienceAllows(
   audience: string,
-  who: { userId: string; permissions: ReadonlySet<string> },
+  who: { userId: string; permissions: ReadonlySet<string>; kind?: string },
 ): boolean {
   return audience.split('|').some((a) => {
     if (a === 'all') return true;
-    if (a.startsWith('permission:')) return who.permissions.has(a.slice('permission:'.length));
+    if (a.startsWith('permission:')) {
+      const p = a.slice('permission:'.length);
+      if (who.kind === 'DEVICE' && !DEVICE_AUDIENCE_PERMISSIONS.has(p)) return false;
+      return who.permissions.has(p);
+    }
     if (a.startsWith('user:')) return who.userId === a.slice('user:'.length);
     return false;
   });

@@ -37,7 +37,6 @@ import { parseDateOnly } from '../commercial/common';
 import { idParams } from '../presenters';
 import { refreshAvailabilityOfUser } from '../attendance/common';
 import { qualityTaskClosed } from '../quality/inspections';
-import { packagingStarted } from '../quality/packaging';
 import { notify, taskNotice } from '../notifications/notify';
 import { readinessOf } from '../purchasing/common';
 import {
@@ -55,6 +54,7 @@ import {
   taskEvent,
   taskInclude,
   taskMaterialsReady,
+  materialsGateOn,
   toTaskDto,
   taskNotBefore,
 } from './common';
@@ -75,7 +75,6 @@ import {
   actionStarted,
   originalTaskClosed,
 } from '../issues/service';
-import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 const deviceOf = (request: FastifyRequest) => request.auth?.deviceId ?? null;
 
@@ -244,7 +243,6 @@ async function assertSingleActive(
 
 export async function productionTaskRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
-  minimizeCustomerForDevices(app);
 
   // ─────────────────────────── Gestão ───────────────────────────
 
@@ -809,6 +807,26 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       include: taskInclude,
     });
     const dtos = rows.map((t) => toTaskDto(t, timezone)).sort(compareTasks);
+    // Etapa E1: com as travas de materiais desligadas (padrão), o aviso do cartão vem da lista simples
+    // da OS (mesma regra do detalhe da tarefa), numa consulta só. Nunca muda a situação da tarefa.
+    if (!(await materialsGateOn(prisma))) {
+      const soIds = [
+        ...new Set(rows.filter((r) => r.requiresMaterials).map((r) => r.serviceOrderId)),
+      ];
+      const missing = soIds.length
+        ? new Set(
+            (
+              await prisma.serviceOrderMaterial.findMany({
+                where: { serviceOrderId: { in: soIds }, removedAt: null, available: false },
+                select: { serviceOrderId: true },
+                distinct: ['serviceOrderId'],
+              })
+            ).map((m) => m.serviceOrderId),
+          )
+        : new Set<string>();
+      for (const d of dtos)
+        if (d.requiresMaterials) d.osMaterialsMissing = missing.has(d.serviceOrder.id);
+    }
     return {
       today: dtos.filter(
         (t) =>
@@ -839,6 +857,11 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       // Simplificação Fase 4: rascunho (pré-planejamento) não existe para quem executa.
       if (!canViewAll(request) && t.status === 'RASCUNHO') throw Errors.notFound('Tarefa');
       const { timezone } = await company(prisma);
+      const osMaterials = await prisma.serviceOrderMaterial.findMany({
+        where: { serviceOrderId: t.serviceOrderId, removedAt: null },
+        select: { description: true, quantity: true, unit: true, available: true },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
       const [events, so, readiness, osTasks, links, revisions] = await Promise.all([
         prisma.productionTaskEvent.findMany({
           where: { taskId: id },
@@ -910,11 +933,22 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         materials: readiness.lines,
         materialsState: readiness.state,
         materialIds,
+        // Fase 1: com as travas desligadas, o indicador reflete a lista simples (só informativo).
         taskMaterials: !t.requiresMaterials
           ? 'NAO_EXIGE'
-          : (await taskMaterialsReady(prisma, t, new Map([[t.serviceOrderId, readiness]])))
-            ? 'DISPONIVEIS'
-            : 'FALTANDO',
+          : !(await materialsGateOn(prisma))
+            ? osMaterials.some((m) => !m.available)
+              ? 'FALTANDO'
+              : 'DISPONIVEIS'
+            : (await taskMaterialsReady(prisma, t, new Map([[t.serviceOrderId, readiness]])))
+              ? 'DISPONIVEIS'
+              : 'FALTANDO',
+        osMaterials: osMaterials.map((m) => ({
+          description: m.description,
+          quantity: m.quantity === null ? null : Number(m.quantity),
+          unit: m.unit,
+          available: m.available,
+        })),
         // Só os nomes dos campos alterados (sem valores): nada comercial chega ao tablet.
         technicalHistory: revisions.map((r) => ({
           revision: r.revision,
@@ -941,7 +975,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           // Fase 9: não retoma enquanto uma ocorrência aberta impede a tarefa.
           resume: own && t.status === 'PAUSADA' && !(await hasBlockingIssue(prisma, t.id)),
           progress: own && (t.status === 'EM_EXECUCAO' || t.status === 'PAUSADA'),
-          complete: own && t.status === 'EM_EXECUCAO' && t.activity !== 'EMBALAGEM',
+          complete: own && t.status === 'EM_EXECUCAO',
           manage: canManage(request),
         },
       };
@@ -1039,7 +1073,6 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_STARTED, u);
         if (t.supportForTaskId) await supportStarted(tx, actor, t.id, now);
         if (t.issueId) await actionStarted(tx, actor, t.id);
-        if (t.activity === 'EMBALAGEM') await packagingStarted(tx, actor, t.id);
         return;
       }
       if (action === 'pause') {
@@ -1138,11 +1171,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       }
       // Conclusão
       if (t.status === 'CONCLUIDA') return; // conclusão repetida: sem novos eventos nem liberações
-      // Fase 10: a embalagem conclui pela tela própria (proteção, local e aprovação vigente).
-      if (t.activity === 'EMBALAGEM')
-        throw Errors.business(
-          'Conclua a embalagem pela tela de embalagem (proteção usada e local da peça).',
-        );
+      // Reformulação S1: uma tarefa de embalagem antiga (só histórico) conclui como qualquer outra;
+      // nada da embalagem é exigido nem gravado.
       if (t.status !== 'EM_EXECUCAO')
         throw Errors.business('Só tarefas em execução podem ser concluídas.');
       // Registro adicional só quando a etapa exige (regra técnica definida pelo gestor).

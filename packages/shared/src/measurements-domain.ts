@@ -77,6 +77,19 @@ export const UNITS_BY_KIND: Record<MaterialKind, readonly MaterialUnit[]> = {
 /** Unidades contáveis exigem quantidade inteira; metros e m² aceitam decimais. */
 export const DECIMAL_UNITS: readonly MaterialUnit[] = ['METRO', 'METRO_QUADRADO'];
 
+/**
+ * Remediação F3-17 — material que só fica disponível depois da conferência técnica (uma pessoa
+ * confirma referência e especificação no painel): controlado em metros/m² (a medida real só se
+ * conhece na conferência) OU comprado exclusivamente para uma OS (tecido, espuma etc. da peça do
+ * cliente). Material comum de estoque contável segue aceito pela contagem na porta.
+ */
+export function requiresTechnicalConference(item: {
+  unit: MaterialUnit;
+  sourcing: MaterialSourcing;
+}): boolean {
+  return DECIMAL_UNITS.includes(item.unit) || item.sourcing === 'EXCLUSIVO_OS';
+}
+
 export function unitError(kind: MaterialKind, unit: MaterialUnit, quantity: number): string | null {
   if (!UNITS_BY_KIND[kind].includes(unit)) {
     return `Unidade "${MATERIAL_UNIT_LABEL[unit]}" não é compatível com ${
@@ -243,9 +256,18 @@ export function describeMaterial(l: {
 }
 
 /** CSV com separador ";" e vírgula decimal (abre corretamente no Excel em pt-BR). */
+/**
+ * Rodada 3 (F6-10): a lista consolidada é BRUTA (soma o aprovado; não desconta compras, estoque nem
+ * reservas). Cada linha do CSV diz isso, para que o arquivo, fora da tela, não induza compra em
+ * dobro: o que comprar é Compras → A comprar (líquido).
+ */
+export const CONSOLIDATED_CSV_NOTE =
+  'BRUTA: não desconta compras, estoque nem reservas. Para comprar use Compras > A comprar';
 export function consolidatedToCsv(lines: ConsolidatedLine[]): string {
-  const esc = (v: string) => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const rows = [['Tipo', 'Material', 'Quantidade', 'Unidade', 'Destino', 'Origens'].join(';')];
+  const esc = (v: string) => (/[;"\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const rows = [
+    ['Tipo', 'Material', 'Quantidade', 'Unidade', 'Destino', 'Origens', 'Lista'].join(';'),
+  ];
   for (const l of lines) {
     rows.push(
       [
@@ -260,6 +282,7 @@ export function consolidatedToCsv(lines: ConsolidatedLine[]): string {
               `${o.itemCode ?? o.serviceOrderCode}: ${formatQuantity(o.quantity).replace(/\./g, '')}`,
           )
           .join(' | '),
+        CONSOLIDATED_CSV_NOTE,
       ]
         .map((c) => esc(String(c)))
         .join(';'),

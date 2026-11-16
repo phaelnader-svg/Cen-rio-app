@@ -7,6 +7,7 @@ import {
   confirmPieceArrivalSchema,
   materialReceiptCode,
   purchaseOrderCode,
+  requiresTechnicalConference,
   type ArrivalConfirmationDto,
   type ArrivalsDto,
   type MaterialArrivalDto,
@@ -14,6 +15,7 @@ import {
   type MaterialUnit,
   type PieceArrivalDto,
   type PieceArrivalStage,
+  type PhysicalUnit,
   type ReceiptIssue,
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
@@ -22,6 +24,7 @@ import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { shortCustomerName } from '../../core/device-privacy';
 import { appendEvent } from '../../core/events/append';
+import { now } from '../../core/clock';
 import { Errors } from '../../lib/errors';
 import {
   dateOnly,
@@ -30,7 +33,7 @@ import {
   receiptCode,
   serviceOrderCode,
 } from '../commercial/common';
-import { todayIso } from '../finance/common';
+import { shopTimezone, todayIso } from '../finance/common';
 import { lockPurchaseOrder } from '../purchasing/purchase-orders';
 import { registerMaterialReceipt } from '../purchasing/receipts';
 import { pickupBalance, registerReceipt } from '../receipts/service';
@@ -57,17 +60,31 @@ const CONFERENCE_VIEW = {
 const PIECE_STATUSES = ['AGENDADA', 'EM_EXECUCAO', 'RETIRADA_REALIZADA', 'COM_OCORRENCIA'] as const;
 const DECIMAL_UNITS: MaterialUnit[] = ['METRO', 'METRO_QUADRADO'];
 const DEFAULT_LOCATION = 'Área de recebimento';
+/** F3-17: unidade física registrada na chegada de um contável que aguarda conferência. */
+const COUNTED_PHYSICAL_UNIT: Record<MaterialUnit, PhysicalUnit> = {
+  METRO: 'ROLO',
+  METRO_QUADRADO: 'ROLO',
+  PLACA: 'PLACA',
+  PECA: 'PECA',
+  UNIDADE: 'UNIDADE',
+  EMBALAGEM: 'PACOTE',
+};
+const physicalUnitOf = (unit: MaterialUnit, informed?: PhysicalUnit) =>
+  DECIMAL_UNITS.includes(unit) ? (informed ?? 'ROLO') : COUNTED_PHYSICAL_UNIT[unit];
 const arrivalCode = (n: number) => `CH-${String(n).padStart(5, '0')}`;
 const num = (v: unknown) => Number(v ?? 0);
 
-function nowHm(timeZone = 'America/Sao_Paulo') {
+/** Hora local (HH:MM) no fuso configurado da oficina, pelo relógio operacional. */
+function nowHm(timeZone: string) {
   return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone }).format(
-    new Date(),
+    now(),
   );
 }
 
 async function pieceArrivals(db: PrismaClient | Tx, device: boolean): Promise<PieceArrivalDto[]> {
-  const today = todayIso();
+  // Rodada 4 (F3-04): "hoje" e a hora atual no fuso configurado da oficina (antes, fixo em SP).
+  const tz = await shopTimezone(db);
+  const today = todayIso(tz);
   const pickups = await db.pickupRequest.findMany({
     where: {
       status: { in: [...PIECE_STATUSES] },
@@ -84,7 +101,7 @@ async function pieceArrivals(db: PrismaClient | Tx, device: boolean): Promise<Pi
     },
     orderBy: [{ scheduledDate: 'asc' }, { windowStart: 'asc' }],
   });
-  const now = nowHm();
+  const nowLocal = nowHm(tz);
   const out: PieceArrivalDto[] = [];
   for (const p of pickups) {
     const balance = await pickupBalance(db as Tx, p.id);
@@ -104,7 +121,7 @@ async function pieceArrivals(db: PrismaClient | Tx, device: boolean): Promise<Pi
     let stage: PieceArrivalStage;
     let stageLabel: string;
     if (p.status === 'AGENDADA') {
-      const reached = Boolean(p.windowStart && now >= p.windowStart);
+      const reached = Boolean(p.windowStart && nowLocal >= p.windowStart);
       stage = reached ? 'RETIRADA_PREVISTA' : 'RETIRADA_HOJE';
       stageLabel = reached
         ? `Retirada prevista — equipe no cliente a partir das ${p.windowStart}`
@@ -155,7 +172,7 @@ async function itemsAwaitingConference(db: PrismaClient | Tx, poIds: string[]) {
 }
 
 async function materialArrivals(db: PrismaClient | Tx): Promise<MaterialArrivalDueDto[]> {
-  const today = todayIso();
+  const today = todayIso(await shopTimezone(db));
   const pos = await db.purchaseOrder.findMany({
     where: { status: { in: ['CONFIRMADO', 'PARCIALMENTE_RECEBIDO'] } },
     include: {
@@ -185,6 +202,7 @@ async function materialArrivals(db: PrismaClient | Tx): Promise<MaterialArrivalD
               1000,
           ) / 1000,
         mode: DECIMAL_UNITS.includes(i.unit) ? ('FISICA' as const) : ('CONTAGEM' as const),
+        conference: requiresTechnicalConference(i),
       }))
       .filter((i) => i.pending > 0 && !waiting.items.has(i.purchaseOrderItemId));
     if (!items.length) continue;
@@ -355,7 +373,7 @@ export async function arrivalRoutes(app: FastifyInstance) {
         for (const l of input.lines) {
           const item = items.get(l.purchaseOrderItemId);
           if (!item) throw Errors.validation(undefined, 'Item não pertence ao pedido.');
-          if (DECIMAL_UNITS.includes(item.unit)) {
+          if (requiresTechnicalConference(item)) {
             if (waiting.items.has(item.id))
               throw Errors.conflict(`"${item.description}" já chegou e aguarda conferência.`);
             if (!Number.isInteger(l.quantity))
@@ -363,6 +381,19 @@ export async function arrivalRoutes(app: FastifyInstance) {
                 undefined,
                 `"${item.description}": informe quantos volumes/rolos chegaram (número inteiro).`,
               );
+            // F3-17: contável exclusivo de OS conta-se na própria unidade do item, nunca além do
+            // que falta chegar (a conferência ainda recusa o que passar do pedido).
+            if (!DECIMAL_UNITS.includes(item.unit)) {
+              const pending =
+                num(item.quantity) +
+                num(item.extraAuthorized) -
+                num(item.receivedQuantity) -
+                num(item.closedQuantity);
+              if (l.quantity > pending + 1e-6)
+                throw Errors.conflict(
+                  `"${item.description}": chegaram mais do que o pedido (faltam ${pending}).`,
+                );
+            }
             physical.push(l);
           } else counted.push(l);
         }
@@ -409,7 +440,7 @@ export async function arrivalRoutes(app: FastifyInstance) {
                   description: item.description,
                   unit: item.unit,
                   physicalCount: l.quantity,
-                  physicalUnit: l.physicalUnit ?? 'ROLO',
+                  physicalUnit: physicalUnitOf(item.unit, l.physicalUnit),
                 };
               }) as unknown as Prisma.InputJsonValue,
               problemKind: problem?.kind ?? null,
@@ -430,7 +461,7 @@ export async function arrivalRoutes(app: FastifyInstance) {
             summary: `${arrivalCode(a.number)}: chegada física do pedido ${purchaseOrderCode(po.number)} (${physical
               .map(
                 (l) =>
-                  `${l.quantity} ${PHYSICAL_UNIT_LABEL[l.physicalUnit ?? 'ROLO']} de ${items.get(l.purchaseOrderItemId)!.description}`,
+                  `${l.quantity} ${PHYSICAL_UNIT_LABEL[physicalUnitOf(items.get(l.purchaseOrderItemId)!.unit, l.physicalUnit)]} de ${items.get(l.purchaseOrderItemId)!.description}`,
               )
               .join('; ')}) — aguardando conferência.`,
             changes: { lines: physical, problem },

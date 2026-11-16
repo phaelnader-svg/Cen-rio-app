@@ -1,6 +1,7 @@
 'use client';
 
 import type { DeliveryDto, PickupTeam, PieceStatusDto } from '@cenario/shared';
+import { useFocusParam } from '@/lib/focus-param';
 import {
   DELIVERY_ITEM_STATUS_LABEL,
   DELIVERY_STATUS_LABEL,
@@ -29,7 +30,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { useCustomer, arrivalText } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
-import { useCan } from '@/lib/hooks';
+import { useCan, useModules } from '@/lib/hooks';
 import { useWorkers } from '@/lib/production';
 import {
   useDeliveries,
@@ -88,6 +89,7 @@ export function DeliveryBadge({ status }: { status: DeliveryStatus }) {
 // ─────────────────────────── Página Expedição e entregas ───────────────────────────
 
 export function DeliveriesPage() {
+  useFocusParam();
   const [tab, setTab] = useTabParam('agenda', ['agenda', 'ready', 'shipping', 'occurrences']);
   const ready = usePieces({ stage: 'PRONTA_ENTREGA' });
   const occurrences = useLogisticsOccurrences({ status: 'ABERTA' });
@@ -95,7 +97,7 @@ export function DeliveriesPage() {
     <>
       <PageHeader
         title="Expedição e entregas"
-        description="Peças prontas (inspeção aprovada, correções encerradas, embalagem concluída e sem bloqueio), agenda de entregas e ocorrências. Só o gestor agenda e confirma; nada é agendado sozinho."
+        description="Peças prontas (inspeção aprovada, correções encerradas e sem bloqueio), agenda de entregas e ocorrências. Só o gestor agenda e confirma; nada é agendado sozinho."
       />
       <Tabs
         tabs={[
@@ -188,6 +190,7 @@ function Agenda() {
                         {d.openOccurrences > 0 && (
                           <Badge tone="danger">{d.openOccurrences} ocorrência(s)</Badge>
                         )}
+                        {d.origin === 'DIRETA' && <Badge tone="info">Confirmada na OS</Badge>}
                         <DeliveryBadge status={d.status} />
                         <Link
                           href={`/painel/entregas/${d.id}`}
@@ -211,6 +214,8 @@ function Agenda() {
 function ReadyPieces() {
   const q = usePieces({ stage: 'PRONTA_ENTREGA' });
   const can = useCan();
+  // Reformulação, Fase 1: sem logística, a entrega é confirmada na própria OS.
+  const logisticsOn = useModules().logistica;
   const [schedule, setSchedule] = useState<{
     customerId: string;
     customer: string;
@@ -239,7 +244,8 @@ function ReadyPieces() {
           key={list[0]!.customerId}
           title={list[0]!.customer}
           actions={
-            can('entregas.gerenciar') && (
+            can('entregas.gerenciar') &&
+            logisticsOn && (
               <Button
                 size="sm"
                 onClick={() =>
@@ -257,12 +263,23 @@ function ReadyPieces() {
         >
           <ul className="space-y-1 text-sm">
             {list.map((p) => (
-              <li key={p.id} data-testid={`ready-${p.code}`}>
+              <li key={p.id} data-testid={`ready-${p.code}`} data-focus-id={p.id}>
                 <span className="font-mono font-semibold">{p.code}</span> · {p.description} ·{' '}
                 {p.location?.label ?? 'sem local'}
                 {p.serviceOrder.promisedDate
                   ? ` · prometida ${p.serviceOrder.promisedDate.split('-').reverse().join('/')}`
                   : ''}
+                {!logisticsOn && (
+                  <>
+                    {' · '}
+                    <Link
+                      className="text-brand-700 hover:underline"
+                      href={`/painel/os/${p.serviceOrder.id}?tab=entrega`}
+                    >
+                      Marcar como entregue na {p.serviceOrder.code}
+                    </Link>
+                  </>
+                )}
               </li>
             ))}
           </ul>
@@ -824,11 +841,25 @@ export function DeliveryDetailPage({ id }: { id: string }) {
         </Alert>
       )}
       <div className="mb-4 flex flex-wrap items-center gap-3 text-sm" data-testid="delivery-header">
-        <DeliveryBadge status={d.status} />
+        {d.reverted ? (
+          <span data-testid="delivery-reverted">
+            <Badge tone="warn" dot>
+              Desfeita em {formatDateTime(d.reverted.at)} — {d.reverted.reason}
+            </Badge>
+          </span>
+        ) : (
+          <DeliveryBadge status={d.status} />
+        )}
         {d.provisional && <Badge tone="warn">Não confirmada ao cliente</Badge>}
-        <span>
-          {PICKUP_TEAM_LABEL[d.team]} · {d.responsible?.displayName ?? 'sem responsável'}
-        </span>
+        {d.origin === 'DIRETA' ? (
+          <span data-testid="delivery-origin-direct">
+            <Badge tone="info">Confirmada diretamente pela OS (sem roteiro nem viagem)</Badge>
+          </span>
+        ) : (
+          <span>
+            {PICKUP_TEAM_LABEL[d.team]} · {d.responsible?.displayName ?? 'sem responsável'}
+          </span>
+        )}
         {d.attempts > 0 && <Badge tone="danger">{d.attempts} tentativa(s) frustrada(s)</Badge>}
       </div>
       <div className="mb-6 space-y-4">

@@ -21,7 +21,7 @@ import { audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { attendanceConfig, clock, dbDate, leaveOn, team } from '../attendance/common';
-import { notify } from '../notifications/notify';
+import { notify, resolveNotifications } from '../notifications/notify';
 import { domainTaskEvent, taskEvent } from '../production/common';
 import { reviseIfPublishedBy } from '../production/plans';
 
@@ -106,6 +106,18 @@ export async function helpEvent(
       createdAt: clock(),
     },
   });
+  // F10-19: o pedido saiu da espera (atribuído, em andamento, concluído ou cancelado) — os avisos
+  // "ajuda solicitada/urgente" e "em espera" deixam de pedir ação (histórico canônico do pedido).
+  if (entry.to && ['ATRIBUIDA', 'EM_EXECUCAO', 'CONCLUIDA', 'CANCELADA'].includes(entry.to)) {
+    await resolveNotifications(tx, actor, 'AJUDA_SOLICITADA', [
+      `AJUDA_SOLICITADA:${req.id}`,
+      `AJUDA_URGENTE:${req.id}`,
+    ]);
+    await resolveNotifications(tx, actor, 'AJUDA_EM_ESPERA', [
+      `AJUDA_EM_ESPERA:${req.id}`,
+      `AJUDA_ESCALADA:${req.id}`,
+    ]);
+  }
 }
 
 export async function helpDomainEvent(tx: Tx, actor: ActorContext, type: EventType, req: HelpRow) {

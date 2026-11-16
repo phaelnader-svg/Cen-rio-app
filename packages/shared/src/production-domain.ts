@@ -19,7 +19,8 @@ export const PRODUCTION_ACTIVITIES = [
   'ACABAMENTO',
   'APOIO',
   'OUTRA',
-  // Fase 10 — correção após reprovação e embalagem após aprovação (ligadas à inspeção).
+  // Fase 10 — correção após reprovação (ligada à inspeção). EMBALAGEM: só histórico (Reformulação
+  // S1) — nenhuma tarefa de embalagem nasce mais; as antigas continuam legíveis.
   'CORRECAO',
   'EMBALAGEM',
 ] as const;
@@ -41,8 +42,8 @@ export const PRODUCTION_ACTIVITY_LABEL: Record<ProductionActivity, string> = {
   EMBALAGEM: 'Embalagem',
 };
 /**
- * Atividades que o gestor programa em modelos e tarefas manuais. Correção e embalagem só nascem
- * do fluxo de qualidade (ligadas à inspeção), nunca avulsas.
+ * Atividades que o gestor programa em modelos e tarefas manuais. Correção só nasce do fluxo de
+ * qualidade (ligada à inspeção), nunca avulsa; embalagem não existe mais (S1).
  */
 export const PLANNABLE_ACTIVITIES = [
   'DESMONTAGEM',
@@ -180,6 +181,10 @@ export const NOTIFICATION_KINDS = [
   // Simplificação Fase 7: expediente sem saída e pedidos com aprovação do gestor.
   'EXPEDIENTE_ABERTO',
   'PEDIDO_DECIDIDO',
+  // Reformulação, Fase 4: alertas internos (nunca saem do sistema).
+  'PRAZO_EM_RISCO',
+  'PECA_PRONTA_SEM_ENTREGA',
+  'MATERIAL_FALTANTE',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -238,6 +243,9 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   VALOR_DECIDIDO: 'Pedido de alteração de valor decidido',
   EXPEDIENTE_ABERTO: 'Expediente sem saída registrada',
   PEDIDO_DECIDIDO: 'Seu pedido foi decidido pelo gestor',
+  PRAZO_EM_RISCO: 'Prazo em risco',
+  PECA_PRONTA_SEM_ENTREGA: 'Peça pronta sem entrega',
+  MATERIAL_FALTANTE: 'Material faltando para a produção',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;
@@ -271,6 +279,18 @@ export type ReleaseBlocker = (typeof RELEASE_BLOCKERS)[number];
 export const REASSIGNABLE_WAITING_BLOCKERS: readonly ReleaseBlocker[] = ['DEPENDENCIAS'];
 export const onlyReassignableBlockers = (blockers: readonly string[]) =>
   blockers.every((b) => (REASSIGNABLE_WAITING_BLOCKERS as readonly string[]).includes(b));
+/**
+ * Rodada 3 (F10-09/F10-21l): o que é BLOQUEIO DE PRODUÇÃO (exceção para o gestor): bloqueada pelo
+ * gestor, sem material ou por ocorrência. Esperar a etapa anterior, a publicação, o responsável
+ * ou a chegada da peça é a sequência normal do plano (cada uma tem a sua tela).
+ */
+export const PRODUCTION_STOP_BLOCKERS: readonly ReleaseBlocker[] = [
+  'BLOQUEIO',
+  'MATERIAIS',
+  'OCORRENCIA',
+];
+export const isProductionStopped = (blockers: readonly string[]) =>
+  blockers.some((b) => (PRODUCTION_STOP_BLOCKERS as readonly string[]).includes(b));
 
 // ─────────────────────────── Modo do planejamento (Evolução, Fase 2) ───────────────────────────
 

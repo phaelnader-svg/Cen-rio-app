@@ -14,6 +14,7 @@ import { appendEvent } from '../../core/events/append';
 import { lockRow } from '../../core/locking';
 import { revokeSessions } from '../../core/sessions';
 import { sniffImageType } from '../../core/storage/storage';
+import { processImage } from '../../core/storage/image';
 import { diffObjects } from '../../lib/diff';
 import { hashSecret, sha256Hex } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
@@ -412,9 +413,11 @@ export async function employeeRoutes(app: FastifyInstance) {
     if (!mime) throw Errors.unsupportedMedia('Formato não suportado. Envie JPEG, PNG ou WebP.');
 
     await getEmployeeOr404(prisma, id);
+    // Fase 2: foto de identificação também sai orientada, sem metadados (EXIF/GPS) e reduzida.
+    const image = await processImage(data, mime, 1024);
     const fileId = randomUUID();
     const storageKey = `employee-photo/${fileId}`;
-    await storage.put(storageKey, data);
+    await storage.put(storageKey, image.data);
 
     try {
       const { employee, oldFile } = await prisma.$transaction(async (tx) => {
@@ -426,10 +429,14 @@ export async function employeeRoutes(app: FastifyInstance) {
             storageKey,
             purpose: 'employee-photo',
             originalName: (file.filename || 'foto').slice(0, 200),
-            mimeType: mime,
-            sizeBytes: data.length,
-            sha256: sha256Hex(data),
+            mimeType: image.mime,
+            sizeBytes: image.data.length,
+            sha256: sha256Hex(image.data),
             uploadedById: actor.userId,
+            processedAt: new Date(),
+            width: image.width,
+            height: image.height,
+            originalSizeBytes: data.length,
           },
         });
         const updated = await tx.employee.update({

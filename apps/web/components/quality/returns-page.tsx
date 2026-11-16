@@ -31,6 +31,9 @@ const today = () =>
  */
 export function ReturnsPage() {
   const q = useReturns();
+  // B6: consultar vale para pedidos.ver ou devolucoes.gerenciar; registrar, confirmar e cancelar
+  // continuam só com devolucoes.gerenciar (regra da API).
+  const manage = useCan()('devolucoes.gerenciar');
   const [create, setCreate] = useState(false);
   const [confirm, setConfirm] = useState<PieceReturnDto | null>(null);
   const [cancel, setCancel] = useState<PieceReturnDto | null>(null);
@@ -41,9 +44,11 @@ export function ReturnsPage() {
         title="Devoluções"
         description="Peças devolvidas ao cliente sem serviço (desistência, cancelamento) — de OS ou avulsas. O registro é confirmado quando o cliente recebe as peças."
         actions={
-          <Button icon={<Plus className="size-4" />} onClick={() => setCreate(true)}>
-            Registrar devolução
-          </Button>
+          manage && (
+            <Button icon={<Plus className="size-4" />} onClick={() => setCreate(true)}>
+              Registrar devolução
+            </Button>
+          )
         }
       />
       {q.isPending ? (
@@ -99,7 +104,7 @@ export function ReturnsPage() {
                 <Button size="sm" variant="secondary" onClick={() => setDetail(r)}>
                   Detalhes
                 </Button>
-                {r.status === 'REGISTRADA' && (
+                {manage && r.status === 'REGISTRADA' && (
                   <>
                     <Button size="sm" onClick={() => setConfirm(r)}>
                       Confirmar entrega ao cliente

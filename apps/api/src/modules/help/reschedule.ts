@@ -21,7 +21,7 @@ import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { attendanceConfig, brDate, clock, dbDate, holidayDates } from '../attendance/common';
 import { dateOnly } from '../commercial/common';
-import { notify, taskNotice } from '../notifications/notify';
+import { notify, resolveNotifications, taskNotice } from '../notifications/notify';
 import {
   domainTaskEvent,
   lockTasks,
@@ -703,6 +703,16 @@ export async function analyzeAbsence(
   });
 }
 
+/**
+ * F10-19: a proposta saiu de PENDENTE (decidida, ajustada, rejeitada ou obsoleta) — os avisos
+ * "reprogramação aguardando decisão" dela deixam de pedir ação (continuam no histórico).
+ */
+export const resolveProposalNotices = (tx: Tx, actor: ActorContext, proposalId: string) =>
+  resolveNotifications(tx, actor, 'REPROGRAMACAO_PENDENTE', [
+    `PROPOSTA:${proposalId}`,
+    `TRANSFERENCIA_PEDIDA:${proposalId}`,
+  ]);
+
 /** Chegada (ou nova análise) torna sem efeito as propostas pendentes de uma ausência. */
 export async function obsoleteProposals(
   tx: Tx,
@@ -721,6 +731,7 @@ export async function obsoleteProposals(
         version: { increment: 1 },
       },
     });
+    await resolveProposalNotices(tx, actor, p.id);
     await planningAction(tx, actor, {
       kind: 'PROPOSTA_OBSOLETA',
       automatic: true,
@@ -1036,6 +1047,7 @@ export async function decideProposal(
     entityId: id,
     summary: `${code} ${input.decision === 'APROVAR' ? 'aprovada' : 'rejeitada'}${input.note ? `: ${input.note}` : ''}.`,
   });
+  await resolveProposalNotices(tx, actor, id);
   const after = await tx.rescheduleProposal.findUniqueOrThrow({ where: { id } });
   // Simplificação Fase 7: quem pediu no tablet (transferência, apoio prolongado) recebe a decisão.
   if (p.requestedById) {

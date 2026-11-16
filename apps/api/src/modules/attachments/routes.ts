@@ -10,6 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
+import { processImage } from '../../core/storage/image';
 import { readImageUpload } from '../../core/storage/upload';
 import { sha256Hex } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
@@ -60,6 +61,9 @@ export async function attachmentRoutes(app: FastifyInstance) {
         entityType: a.entityType,
         entityId: a.entityId,
         url: `/api/files/${a.fileId}`,
+        thumbUrl: `/api/files/${a.fileId}/miniatura`,
+        width: a.file.width,
+        height: a.file.height,
         caption: a.caption,
         mimeType: a.file.mimeType,
         createdBy: a.createdBy?.displayName ?? null,
@@ -87,9 +91,13 @@ export async function attachmentRoutes(app: FastifyInstance) {
       if (!(await entityExists(prisma, fields.entityType, fields.entityId)))
         throw Errors.notFound('Registro');
 
+      // Fase 2: a foto é tratada ANTES de gravar (orientação, sem EXIF/GPS, reduzida, miniatura).
+      const image = await processImage(upload.data, upload.mime);
       const fileId = randomUUID();
       const storageKey = `attachment/${fileId}`;
-      await storage.put(storageKey, upload.data);
+      const thumbKey = `attachment-thumb/${fileId}`;
+      await storage.put(storageKey, image.data);
+      await storage.put(thumbKey, image.thumb);
       try {
         const created = await prisma.$transaction(async (tx) => {
           const actor = actorFrom(request);
@@ -99,10 +107,16 @@ export async function attachmentRoutes(app: FastifyInstance) {
               storageKey,
               purpose: 'attachment',
               originalName: upload.filename,
-              mimeType: upload.mime,
-              sizeBytes: upload.data.length,
-              sha256: sha256Hex(upload.data),
+              mimeType: image.mime,
+              sizeBytes: image.data.length,
+              sha256: sha256Hex(image.data),
               uploadedById: actor.userId,
+              processedAt: new Date(),
+              width: image.width,
+              height: image.height,
+              thumbKey,
+              thumbSizeBytes: image.thumb.length,
+              originalSizeBytes: upload.data.length,
             },
           });
           const a = await tx.attachment.create({
@@ -140,13 +154,17 @@ export async function attachmentRoutes(app: FastifyInstance) {
           entityType: created.entityType,
           entityId: created.entityId,
           url: `/api/files/${fileId}`,
+          thumbUrl: `/api/files/${fileId}/miniatura`,
+          width: image.width,
+          height: image.height,
           caption: created.caption,
-          mimeType: upload.mime,
+          mimeType: image.mime,
           createdBy: created.createdBy?.displayName ?? null,
           createdAt: created.createdAt.toISOString(),
         } satisfies AttachmentDto);
       } catch (error) {
         await storage.remove(storageKey).catch(() => undefined);
+        await storage.remove(thumbKey).catch(() => undefined);
         throw error;
       }
     },
@@ -188,6 +206,7 @@ export async function attachmentRoutes(app: FastifyInstance) {
         });
       });
       await storage.remove(a.file.storageKey).catch(() => undefined);
+      if (a.file.thumbKey) await storage.remove(a.file.thumbKey).catch(() => undefined);
       return reply.status(204).send();
     },
   );

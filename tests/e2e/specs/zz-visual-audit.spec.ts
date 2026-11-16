@@ -190,7 +190,7 @@ test.describe.serial('Fase 12 — auditoria visual', () => {
     for (const v of VIEWPORTS.slice(1)) {
       await t.page.setViewportSize({ width: v.width, height: v.height });
       findings.push(await audit(t.page, '/tablet', v.name, 'tablet-meu-dia'));
-      for (const tile of ['tile-materials', 'tile-measurements']) {
+      for (const tile of ['tile-arrivals', 'tile-measurements']) {
         const el = t.page.getByTestId(tile);
         if (await el.count()) {
           await el.click();

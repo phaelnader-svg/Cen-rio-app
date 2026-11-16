@@ -7,10 +7,11 @@
  * comparando cada linha confirmada com a linha atual.
  *
  * D13: todo pagamento de profissional (direto, parcial, em lote, conta a pagar da viagem,
- * antecipado) só passa se a linha do item na semana estiver coberta por uma confirmação do
- * profissional ou por uma exceção administrativa (motivo + gestor + linhas exatas). Mudou o
- * devido → a linha antiga não cobre mais. Pagamentos da própria semana não fazem parte da linha:
- * pagar em parte não invalida a confirmação.
+ * antecipado) só passa se a semana estiver coberta por uma confirmação do profissional VIGENTE
+ * (retrato idêntico ao estado atual da semana: mudou qualquer item/valor, ou entrou item novo →
+ * a confirmação inteira deixa de valer) ou se a linha estiver numa exceção administrativa
+ * (motivo + gestor + linhas exatas; cobertura linha a linha, inalterada). Pagamentos da própria
+ * semana não fazem parte da linha: pagar em parte não invalida a confirmação.
  */
 import { createHash } from 'node:crypto';
 import {
@@ -32,7 +33,7 @@ import { actorFrom, audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { FIN_MANAGE, dateOnly, financeEvent } from './common';
-import { OWN_EARNINGS, UNLOCK_HEADER, unlockValid } from './my-earnings';
+import { OWN_EARNINGS, UNLOCK_HEADER, unlockEvidence } from './my-earnings';
 import { markStaleRequests, pendingRequestCodes } from './value-requests';
 
 type Db = Tx | PrismaClient;
@@ -67,6 +68,46 @@ export const hashOf = (userId: string, weekStart: string, lines: readonly Confir
 
 const linesOf = (row: { items: Prisma.JsonValue }) => row.items as unknown as ConfirmationLine[];
 
+type CoverageRow = { kind: string; hash: string; items: Prisma.JsonValue };
+
+/**
+ * Situação da semana do profissional a partir das linhas atuais e das conferências gravadas
+ * (mais recentes primeiro): a MESMA regra do tablet, do fechamento e da Central.
+ */
+export function confirmationState<R extends CoverageRow>(
+  userId: string,
+  weekStart: string,
+  lines: readonly ConfirmationLine[],
+  rows: readonly R[],
+) {
+  const currentHash = lines.length ? hashOf(userId, weekStart, lines) : null;
+  const match = currentHash ? rows.find((r) => r.hash === currentHash) : undefined;
+  const state: WeekConfirmationDto['state'] = !lines.length
+    ? 'SEM_ITENS'
+    : match
+      ? match.kind === 'PROFISSIONAL'
+        ? 'CONFIRMADA'
+        : 'LIBERADA_POR_EXCECAO'
+      : rows.length
+        ? 'DESATUALIZADA'
+        : 'SEM_CONFIRMACAO';
+  return { state, currentHash, match };
+}
+
+/**
+ * Portão D13 (regra única): a conferência que cobre a linha atual do item — a do profissional
+ * só se o retrato for exatamente o estado atual da semana inteira (`payHash`); a exceção
+ * administrativa, linha a linha.
+ */
+export const coveringRow = <R extends CoverageRow>(
+  rows: readonly R[],
+  payHash: string,
+  line: ConfirmationLine,
+) =>
+  rows.find((r) =>
+    r.kind === 'PROFISSIONAL' ? r.hash === payHash : linesOf(r).some((l) => sameLine(l, line)),
+  );
+
 /** Situação ao vivo da semana do profissional (mesmo cálculo para tablet e fechamento). */
 export async function weekConfirmation(
   db: Db,
@@ -80,18 +121,8 @@ export async function weekConfirmation(
     where: { beneficiaryUserId: userId, weekStart: weekDate(weekStart) },
     orderBy: { createdAt: 'desc' },
   });
-  const currentHash = lines.length ? hashOf(userId, weekStart, lines) : null;
-  const match = currentHash ? rows.find((r) => r.hash === currentHash) : undefined;
+  const { state, currentHash, match } = confirmationState(userId, weekStart, lines, rows);
   const latest = match ?? rows[0] ?? null;
-  const state: WeekConfirmationDto['state'] = !lines.length
-    ? 'SEM_ITENS'
-    : match
-      ? match.kind === 'PROFISSIONAL'
-        ? 'CONFIRMADA'
-        : 'LIBERADA_POR_EXCECAO'
-      : rows.length
-        ? 'DESATUALIZADA'
-        : 'SEM_CONFIRMACAO';
   const changed: string[] = [];
   if (latest && !match) {
     const before = linesOf(latest);
@@ -99,6 +130,13 @@ export async function weekConfirmation(
     for (const x of before)
       if (!lines.some((l) => l.id === x.id) && !changed.includes(x.code)) changed.push(x.code);
   }
+  const history = await historyOf(
+    db,
+    rows,
+    personItems(b, userId).map(confirmationLine),
+    lines,
+    currentHash,
+  );
   return {
     state,
     weekStart,
@@ -115,7 +153,156 @@ export async function weekConfirmation(
       : null,
     changed: changed.sort(),
     pendingRequests: await pendingRequestCodes(db, userId, lines),
+    history,
   };
+}
+
+type ConfirmationRow = {
+  id: string;
+  number: number;
+  kind: string;
+  items: Prisma.JsonValue;
+  totalCents: number;
+  hash: string;
+  createdAt: Date;
+};
+
+/** Linhas de um retrato que não conferem mais com as linhas atuais da pessoa na semana. */
+const staleCodes = (row: ConfirmationRow, current: readonly ConfirmationLine[]) =>
+  linesOf(row)
+    .filter((x) => !current.some((l) => sameLine(x, l)))
+    .map((x) => x.code)
+    .sort();
+
+/**
+ * O que difere do retrato: linhas que mudaram/sumiram e, na confirmação do profissional (que
+ * cobre a semana inteira), também os itens que entraram no fechamento depois dela.
+ */
+const changedCodes = (
+  row: ConfirmationRow,
+  current: readonly ConfirmationLine[],
+  payable: readonly ConfirmationLine[],
+) => {
+  const out = new Set(staleCodes(row, current));
+  if (row.kind === 'PROFISSIONAL') {
+    const mine = linesOf(row);
+    for (const l of payable) if (!mine.some((x) => x.id === l.id)) out.add(l.code);
+  }
+  return [...out].sort();
+};
+
+/**
+ * F9-03/F9-06: histórico das conferências da semana. A validade é a mesma do portão D13 (linha a
+ * linha, ao vivo); a versão do fechamento e a invalidação vêm dos eventos financeiros já
+ * existentes (`financial_events`) — nada é recalculado para o passado nem inventado.
+ */
+async function historyOf(
+  db: Db,
+  rows: ConfirmationRow[],
+  current: readonly ConfirmationLine[],
+  payable: readonly ConfirmationLine[],
+  currentHash: string | null,
+): Promise<WeekConfirmationDto['history']> {
+  if (!rows.length) return [];
+  const events = await db.financialEvent.findMany({
+    where: {
+      entityType: 'weekly_closing_confirmation',
+      entityId: { in: rows.map((r) => r.id) },
+      kind: { in: ['CONFIRMADA', 'EXCECAO_ADMINISTRATIVA', 'INVALIDADA'] },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+  return rows.map((r) => {
+    const mine = events.filter((e) => e.entityId === r.id);
+    const created = mine.find((e) => e.kind !== 'INVALIDADA');
+    const invalid = mine.find((e) => e.kind === 'INVALIDADA');
+    const changed = changedCodes(r, current, payable);
+    const total = linesOf(r).length;
+    const closingVersion = (created?.data as { closingVersion?: number | null } | null)
+      ?.closingVersion;
+    return {
+      code: confirmationCode(r.number),
+      kind: r.kind as 'PROFISSIONAL' | 'EXCECAO_ADMINISTRATIVA',
+      createdAt: r.createdAt.toISOString(),
+      totalCents: r.totalCents,
+      hash: r.hash,
+      closingVersion: typeof closingVersion === 'number' ? closingVersion : null,
+      status:
+        r.kind === 'PROFISSIONAL'
+          ? r.hash === currentHash
+            ? 'VIGENTE'
+            : 'INVALIDA'
+          : r.hash === currentHash || !changed.length
+            ? 'VIGENTE'
+            : changed.length < total
+              ? 'EM_PARTE'
+              : 'INVALIDA',
+      changed,
+      invalidatedAt: invalid?.createdAt.toISOString() ?? null,
+      invalidatedBy: (invalid?.data as { by?: string } | null)?.by ?? null,
+    };
+  });
+}
+
+/**
+ * Versão do fechamento semanal do gestor no momento da conferência (null = semana ainda não
+ * conferida pelo gestor). Gravada no evento financeiro da própria conferência.
+ */
+async function closingStamp(tx: Tx, weekStart: string) {
+  const c = await tx.weeklyClosing.findUnique({
+    where: { weekStart: weekDate(weekStart) },
+    select: { version: true, status: true },
+  });
+  return { closingVersion: c?.version ?? null, closingStatus: c?.status ?? null };
+}
+
+/**
+ * F9-06: ao registrar uma nova conferência, as anteriores desta pessoa e semana cujo retrato não
+ * confere mais com o estado atual ganham o registro de invalidação (quando e por qual conferência
+ * isso foi constatado). Uma vez só por conferência; as linhas antigas continuam intactas.
+ */
+async function recordInvalidations(
+  tx: Tx,
+  actor: ActorContext,
+  input: { userId: string; weekStart: string; byId: string; byCode: string },
+  current: readonly ConfirmationLine[],
+  payable: readonly ConfirmationLine[],
+) {
+  const payHash = hashOf(input.userId, input.weekStart, payable);
+  const older = await tx.weeklyClosingConfirmation.findMany({
+    where: {
+      beneficiaryUserId: input.userId,
+      weekStart: weekDate(input.weekStart),
+      id: { not: input.byId },
+    },
+  });
+  if (!older.length) return;
+  const already = new Set(
+    (
+      await tx.financialEvent.findMany({
+        where: {
+          entityType: 'weekly_closing_confirmation',
+          entityId: { in: older.map((o) => o.id) },
+          kind: 'INVALIDADA',
+        },
+        select: { entityId: true },
+      })
+    ).map((e) => e.entityId),
+  );
+  for (const o of older) {
+    if (already.has(o.id)) continue;
+    const changed = changedCodes(o, current, payable);
+    // Profissional: vale inteira só se o retrato é exatamente o estado atual da semana.
+    const invalid = o.kind === 'PROFISSIONAL' ? o.hash !== payHash : changed.length > 0;
+    if (!invalid) continue;
+    await financeEvent(tx, actor, {
+      entityType: 'weekly_closing_confirmation',
+      entityId: o.id,
+      kind: 'INVALIDADA',
+      note: `${confirmationCode(o.number)}: valores mudaram (${changed.join(', ')}); constatado na conferência ${input.byCode}.`,
+      data: { by: input.byCode, byId: input.byId, changed },
+    });
+  }
 }
 
 /**
@@ -145,7 +332,11 @@ export async function assertPaymentCovered(
     where: { beneficiaryUserId: input.userId, weekStart: weekDate(input.weekStart) },
     orderBy: { createdAt: 'desc' },
   });
-  const hit = rows.find((r) => linesOf(r).some((l) => sameLine(l, line)));
+  // Decisão do proprietário (Rodada 1): a confirmação do profissional vale INTEIRA ou não vale —
+  // qualquer item/valor do retrato que mudar (ou item novo no fechamento da semana) invalida tudo,
+  // inclusive as linhas que não mudaram. A exceção administrativa segue linha a linha, como antes.
+  const payHash = hashOf(input.userId, input.weekStart, payableLines(personItems(b, input.userId)));
+  const hit = coveringRow(rows, payHash, line);
   if (!hit)
     throw Errors.business(
       `Esta semana ainda não foi confirmada pelo profissional (${item.code}). Peça a conferência no tablet ou use a exceção administrativa (com motivo).`,
@@ -157,15 +348,73 @@ export async function assertPaymentCovered(
   };
 }
 
+/**
+ * Rodada 2 (F10-11/F10-12) — a semana de TODOS os profissionais numa leitura só, com as mesmas
+ * regras do tablet/fechamento (`confirmationState`) e do portão D13 (`coveringRow`):
+ * - `state`: situação da conferência (SEM_CONFIRMACAO/DESATUALIZADA pedem a confirmação);
+ * - `available`: o que já pode ser pago — item DEVIDO da semana (ou saldo anterior), pagável
+ *   (obrigação vinculada, sem revisão), com saldo atual e coberto por confirmação VIGENTE do
+ *   profissional ou por exceção administrativa (linha a linha). Recebedor inativo não recebe.
+ * Nada é gravado; nenhum valor novo é calculado — as linhas são as de `buildClosingItems`.
+ */
+export async function weekCoverage(db: Db, weekStart: string, built?: Built) {
+  const b = built ?? (await build(db, weekStart));
+  const people = new Map<string, string>();
+  for (const i of b.items)
+    if (i.beneficiary.userId) people.set(i.beneficiary.userId, i.beneficiary.displayName);
+  const ids = [...people.keys()];
+  const [rows, active] = await Promise.all([
+    db.weeklyClosingConfirmation.findMany({
+      where: { weekStart: weekDate(weekStart), beneficiaryUserId: { in: ids } },
+      orderBy: { createdAt: 'desc' },
+    }),
+    db.user.findMany({ where: { id: { in: ids }, active: true }, select: { id: true } }),
+  ]);
+  const activeIds = new Set(active.map((u) => u.id));
+  return ids.map((userId) => {
+    const mine = personItems(b, userId);
+    const lines = payableLines(mine);
+    const own = rows.filter((r) => r.beneficiaryUserId === userId);
+    const { state } = confirmationState(userId, weekStart, lines, own);
+    const payHash = hashOf(userId, weekStart, lines);
+    const available = activeIds.has(userId)
+      ? mine.filter(
+          (i) =>
+            i.payable &&
+            i.currentOpenCents > 0 &&
+            (i.bucket === 'WEEK' || i.bucket === 'PREVIOUS') &&
+            coveringRow(own, payHash, confirmationLine(i)),
+        )
+      : [];
+    return { userId, displayName: people.get(userId)!, state, available };
+  });
+}
+
 /** Semana do pagamento: a do lote, ou a da data efetiva do pagamento. */
 export const paymentWeek = (paidAt: string, weekStart?: string) =>
   weekStart ?? closingWeekStart(paidAt);
 
 /** O profissional confere a semana que viu (hash) — nunca valor sabidamente contestado. */
+/** F10-20b: a última conferência (ou exceção) da pessoa na semana — o "antes" da auditoria. */
+async function previousConfirmation(tx: Tx, userId: string, weekStart: string) {
+  const r = await tx.weeklyClosingConfirmation.findFirst({
+    where: { beneficiaryUserId: userId, weekStart: weekDate(weekStart) },
+    orderBy: { createdAt: 'desc' },
+  });
+  return r ? { kind: r.kind, code: confirmationCode(r.number), hash: r.hash } : null;
+}
+
 export async function confirmWeek(
   tx: Tx,
   actor: ActorContext,
-  input: { userId: string; weekStart: string; hash: string; deviceId: string | null },
+  input: {
+    userId: string;
+    weekStart: string;
+    hash: string;
+    deviceId: string | null;
+    /** F9-02: prova do desbloqueio D12 (método e validade; nunca o PIN nem o token). */
+    verification?: { method: 'PIN_D12'; unlockExpiresAt: string } | null;
+  },
 ) {
   await lockWeek(tx, input.userId, input.weekStart);
   await markStaleRequests(tx, actor, { beneficiaryUserId: input.userId });
@@ -189,6 +438,8 @@ export async function confirmWeek(
     },
   });
   if (same) return same;
+  const stamp = await closingStamp(tx, input.weekStart);
+  const prior = await previousConfirmation(tx, input.userId, input.weekStart);
   const row = await tx.weeklyClosingConfirmation.create({
     data: {
       beneficiaryUserId: input.userId,
@@ -208,14 +459,28 @@ export async function confirmWeek(
     entityType: 'weekly_closing_confirmation',
     entityId: row.id,
     summary: `${code}: semana ${input.weekStart} conferida pelo profissional (${lines.length} item(ns)).`,
+    changes: {
+      before: prior,
+      after: { kind: 'PROFISSIONAL', code, items: lines.map((l) => l.code), hash },
+      verification: input.verification ?? null,
+      sessionId: actor.sessionId,
+      deviceId: input.deviceId,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'weekly_closing_confirmation',
     entityId: row.id,
     kind: 'CONFIRMADA',
     note: `Semana ${input.weekStart}`,
-    data: { hash, items: lines.length },
+    data: { hash, items: lines.length, ...stamp, verification: input.verification ?? null },
   });
+  await recordInvalidations(
+    tx,
+    actor,
+    { userId: input.userId, weekStart: input.weekStart, byId: row.id, byCode: code },
+    personItems(b, input.userId).map(confirmationLine),
+    lines,
+  );
   return row;
 }
 
@@ -241,6 +506,8 @@ export async function createException(
   } else lines = payableLines(mine);
   if (!lines.length) throw Errors.business('Nada a liberar para esta pessoa nesta semana.');
   const hash = hashOf(input.beneficiaryUserId, weekStart, lines);
+  const stamp = await closingStamp(tx, weekStart);
+  const prior = await previousConfirmation(tx, input.beneficiaryUserId, weekStart);
   const row = await tx.weeklyClosingConfirmation.create({
     data: {
       beneficiaryUserId: input.beneficiaryUserId,
@@ -261,14 +528,27 @@ export async function createException(
     entityType: 'weekly_closing_confirmation',
     entityId: row.id,
     summary: `${code}: exceção administrativa da semana ${weekStart} (${lines.map((l) => l.code).join(', ')}) — ${input.reason}`,
+    // F10-20b: o que valia antes (última conferência/exceção) e o que passa a valer.
+    changes: {
+      before: prior,
+      after: { kind: 'EXCECAO_ADMINISTRATIVA', code, items: lines.map((l) => l.code), hash },
+      reason: input.reason,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'weekly_closing_confirmation',
     entityId: row.id,
     kind: 'EXCECAO_ADMINISTRATIVA',
     note: input.reason,
-    data: { hash, items: lines.map((l) => l.code) },
+    data: { hash, items: lines.map((l) => l.code), ...stamp },
   });
+  await recordInvalidations(
+    tx,
+    actor,
+    { userId: input.beneficiaryUserId, weekStart, byId: row.id, byCode: code },
+    mine.map(confirmationLine),
+    payableLines(mine),
+  );
   return row;
 }
 
@@ -297,8 +577,8 @@ export async function confirmationRoutes(app: FastifyInstance) {
     { config: { access: OWN_EARNINGS, idempotent: true } },
     async (request, reply) => {
       const auth = request.auth!;
-      if (!unlockValid(hashToken, auth, request.headers[UNLOCK_HEADER]))
-        throw Errors.forbidden('Confirme seu PIN para ver seus ganhos.');
+      const verification = unlockEvidence(hashToken, auth, request.headers[UNLOCK_HEADER]);
+      if (!verification) throw Errors.forbidden('Confirme seu PIN para ver seus ganhos.');
       const input = confirmSchema.parse(request.body);
       const { week } = myEarningsQuerySchema.parse({ week: input.week });
       const row = await tx((t) =>
@@ -307,6 +587,7 @@ export async function confirmationRoutes(app: FastifyInstance) {
           weekStart: week!,
           hash: input.hash,
           deviceId: auth.deviceId,
+          verification,
         }),
       );
       void reply.header('cache-control', 'no-store');

@@ -247,11 +247,15 @@ describe('Ordem de serviço técnica', () => {
     expect(so.body.technicalLead.displayName).toBe('Ricardo');
     expect(so.body.items[0].locations).toEqual(['Área de recebimento']);
     expect(so.body.readiness).toEqual({
-      measurements: 'PENDENTE',
+      // Etapa E1: com as travas de materiais desligadas (padrão), medições e materiais só
+      // informam — não impedem o início da produção.
+      measurements: 'INFORMATIVO',
       technicalLead: 'OK',
       // Fase 4: prontidão de materiais calculada a partir dos registros (antes: FASE_FUTURA).
-      materials: 'PENDENTE',
+      materials: 'INFORMATIVO',
       materialsState: 'SEM_LEVANTAMENTO',
+      materialsGate: false,
+      simpleMaterialsPending: 0,
       scheduling: 'PENDENTE', // Fase 5: OK somente com tarefa em planejamento publicado.
       canStartProduction: false,
     });

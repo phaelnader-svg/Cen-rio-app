@@ -41,6 +41,9 @@ model User {
   permissions          UserPermission[]
   sessions             Session[]                @relation("SessionUser")
   revokedSessions      Session[]                @relation("SessionRevokedBy")
+  oauthCodes           OAuthCode[]              @relation("OAuthCodeUser")
+  oauthGrants          OAuthGrant[]             @relation("OAuthGrantUser")
+  oauthGrantsRevoked   OAuthGrant[]             @relation("OAuthGrantRevokedBy")
   auditLogs            AuditLog[]
   idempotencyKeys      IdempotencyKey[]
   uploadedFiles        StoredFile[]
@@ -140,6 +143,8 @@ model User {
 
   ownTeamDefaultFor CompanySettings[] @relation("OwnTeamDefault")
 
+  moduleSettingsUpdated ModuleSetting[] @relation("ModuleSettingUpdatedBy")
+
   tripParticipations        LogisticsTripParticipant[] @relation("TripParticipant")
   materialArrivals          MaterialArrival[]          @relation("MaterialArrivalBy")
   materialArrivalsConferred MaterialArrival[]          @relation("MaterialArrivalConferredBy")
@@ -155,12 +160,25 @@ model User {
   closingConfirmationsByMe WeeklyClosingConfirmation[] @relation("ConfirmationCreatedBy")
 
   // Simplificação Fase 7: calendário, folgas/férias e propostas pedidas pelo funcionário.
-  holidaysCreated    CompanyHoliday[]       @relation("HolidayCreatedBy")
-  holidaysUpdated    CompanyHoliday[]       @relation("HolidayUpdatedBy")
-  leavesCreated      AttendanceLeave[]      @relation("LeaveCreatedBy")
-  leavesCancelled    AttendanceLeave[]      @relation("LeaveCancelledBy")
-  leaveEvents        AttendanceLeaveEvent[] @relation("LeaveEventActor")
-  proposalsRequested RescheduleProposal[]   @relation("ProposalRequestedBy")
+  holidaysCreated       CompanyHoliday[]       @relation("HolidayCreatedBy")
+  holidaysUpdated       CompanyHoliday[]       @relation("HolidayUpdatedBy")
+  leavesCreated         AttendanceLeave[]      @relation("LeaveCreatedBy")
+  leavesCancelled       AttendanceLeave[]      @relation("LeaveCancelledBy")
+  leaveEvents           AttendanceLeaveEvent[] @relation("LeaveEventActor")
+  proposalsRequested    RescheduleProposal[]   @relation("ProposalRequestedBy")
+  // Reformulação, Fase 1: estoque simples e materiais da OS.
+  inventoryItemsCreated InventoryItem[]        @relation("InventoryItemCreatedBy")
+  fabricRollsCreated    FabricRoll[]           @relation("FabricRollCreatedBy")
+  inventoryAdjustments  InventoryAdjustment[]  @relation("InventoryAdjustmentActor")
+  osMaterialsCreated    ServiceOrderMaterial[] @relation("OsMaterialCreatedBy")
+  osMaterialsUpdated    ServiceOrderMaterial[] @relation("OsMaterialUpdatedBy")
+  osMaterialsRemoved    ServiceOrderMaterial[] @relation("OsMaterialRemovedBy")
+  osMaterialsReconciled ServiceOrderMaterial[] @relation("OsMaterialReconciledBy")
+  // Reformulação, Fase 2: materiais padrão dos modelos de serviço.
+  modelMaterialsCreated ServiceModelMaterial[] @relation("ModelMaterialCreatedBy")
+  modelMaterialsUpdated ServiceModelMaterial[] @relation("ModelMaterialUpdatedBy")
+  // Reformulação, Fase 3: entregas diretas desfeitas.
+  deliveriesReverted    Delivery[]             @relation("DeliveryRevertedBy")
 
   @@map("users")
 }
@@ -326,6 +344,7 @@ model Session {
   user      User    @relation("SessionUser", fields: [userId], references: [id], onDelete: Cascade)
   device    Device? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   revokedBy User?   @relation("SessionRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+  oauthGrant OAuthGrant?
 
   @@index([userId, revokedAt])
   @@index([deviceId, revokedAt])
@@ -400,6 +419,20 @@ model CompanySettings {
   ownTeamDefault       User?   @relation("OwnTeamDefault", fields: [ownTeamDefaultUserId], references: [id], onDelete: SetNull)
 
   @@map("company_settings")
+}
+
+/// Reformulação, Fase 0: funcionalidade operacional ligada/desligada (chave do catálogo
+/// `MODULES` em @cenario/shared). Só existem as linhas alteradas: sem linha = valor padrão, que
+/// preserva o comportamento anterior. Nada é apagado ao desligar — o histórico continua legível.
+model ModuleSetting {
+  key         String   @id @db.VarChar(40)
+  enabled     Boolean
+  version     Int      @default(1)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedBy   User?    @relation("ModuleSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("module_settings")
 }
 
 // ─────────────────────────── Auditoria e eventos ───────────────────────────
@@ -490,17 +523,24 @@ enum FileVisibility {
 /// Metadados de arquivos privados (fotos e documentos). O conteúdo fica no
 /// armazenamento privado e só é servido por rota autenticada.
 model StoredFile {
-  id           String         @id @default(uuid()) @db.Uuid
-  storageKey   String         @unique @map("storage_key") @db.VarChar(200)
-  purpose      String         @db.VarChar(40)
-  originalName String         @map("original_name") @db.VarChar(200)
-  mimeType     String         @map("mime_type") @db.VarChar(100)
-  sizeBytes    Int            @map("size_bytes")
-  sha256       String         @db.Char(64)
-  visibility   FileVisibility @default(PRIVATE)
-  uploadedById String?        @map("uploaded_by_id") @db.Uuid
-  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  deletedAt    DateTime?      @map("deleted_at") @db.Timestamptz(3)
+  id                String         @id @default(uuid()) @db.Uuid
+  storageKey        String         @unique @map("storage_key") @db.VarChar(200)
+  purpose           String         @db.VarChar(40)
+  originalName      String         @map("original_name") @db.VarChar(200)
+  mimeType          String         @map("mime_type") @db.VarChar(100)
+  sizeBytes         Int            @map("size_bytes")
+  sha256            String         @db.Char(64)
+  visibility        FileVisibility @default(PRIVATE)
+  uploadedById      String?        @map("uploaded_by_id") @db.Uuid
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  deletedAt         DateTime?      @map("deleted_at") @db.Timestamptz(3)
+  /// Reformulação, Fase 2: foto tratada (orientada, sem metadados, reduzida). NULL = anterior.
+  processedAt       DateTime?      @map("processed_at") @db.Timestamptz(3)
+  width             Int?
+  height            Int?
+  thumbKey          String?        @unique @map("thumb_key") @db.VarChar(200)
+  thumbSizeBytes    Int?           @map("thumb_size_bytes")
+  originalSizeBytes Int?           @map("original_size_bytes")
 
   uploadedBy    User?       @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   employeePhoto Employee?   @relation("EmployeePhoto")
@@ -972,6 +1012,8 @@ model ServiceOrder {
   productionPayables   ProductionPayable[]
   logisticsAllocations LogisticsCostAllocation[]
   laborReviews         LaborReview[]
+  /// Reformulação, Fase 1: lista simples de materiais necessários (comprado/na oficina).
+  simpleMaterials      ServiceOrderMaterial[]
 
   /// Simplificação Fase 2: recebimento que gerou esta OS automaticamente (único). Vazio = OS
   /// criada manualmente (fluxo anterior, preservado).
@@ -1583,11 +1625,13 @@ model PurchaseOrderItem {
   stockItemId      String?          @map("stock_item_id") @db.Uuid
   notes            String?          @db.VarChar(500)
 
-  purchaseOrder PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
-  serviceOrder  ServiceOrder?         @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
-  stockItem     StockItem?            @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
-  allocations   PurchaseAllocation[]
-  receiptLines  MaterialReceiptLine[]
+  purchaseOrder   PurchaseOrder          @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  serviceOrder    ServiceOrder?          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  stockItem       StockItem?             @relation(fields: [stockItemId], references: [id], onDelete: Restrict)
+  allocations     PurchaseAllocation[]
+  receiptLines    MaterialReceiptLine[]
+  /// Reformulação, Fase 1: materiais da OS conciliados com este item de compra formal.
+  osMaterialLinks ServiceOrderMaterial[] @relation("OsMaterialLinkedPurchase")
 
   @@unique([purchaseOrderId, position])
   @@index([serviceOrderId])
@@ -2095,6 +2139,8 @@ model Notification {
   serviceOrderId String?   @map("service_order_id") @db.Uuid
   dedupeKey      String    @map("dedupe_key") @db.VarChar(160)
   readAt         DateTime? @map("read_at") @db.Timestamptz(3)
+  /// Rodada 2 (F10-19): preenchida pela ação que resolve o aviso (nulo = ativa; legado = ativa).
+  resolvedAt     DateTime? @map("resolved_at") @db.Timestamptz(3)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   user         User            @relation("UserNotifications", fields: [userId], references: [id], onDelete: Restrict)
@@ -2541,6 +2587,10 @@ model QualityInspection {
   decidedById            String?          @map("decided_by_id") @db.Uuid
   decidedDeviceId        String?          @map("decided_device_id") @db.Uuid
   decisionNote           String?          @map("decision_note") @db.VarChar(1000)
+  /// Reformulação Fase 3 (D4): justificativa do gestor ao aprovar a própria execução.
+  selfApprovalReason     String?          @map("self_approval_reason") @db.VarChar(500)
+  /// Reformulação Fase 3: embalagem exigida quando a inspeção foi aprovada (interruptor).
+  packagingRequired      Boolean          @default(true) @map("packaging_required")
   invalidatedAt          DateTime?        @map("invalidated_at") @db.Timestamptz(3)
   invalidReason          String?          @map("invalid_reason") @db.VarChar(500)
   version                Int              @default(1)
@@ -2721,8 +2771,14 @@ model Delivery {
   completedAt          DateTime?                  @map("completed_at") @db.Timestamptz(3)
   completionNote       String?                    @map("completion_note") @db.VarChar(1000)
   cancelReason         String?                    @map("cancel_reason") @db.VarChar(500)
+  /// Reformulação, Fase 1: LOGISTICA (roteiro/viagem) ou DIRETA (confirmada pela OS, sem viagem).
+  origin               String                     @default("LOGISTICA") @db.VarChar(20)
   version              Int                        @default(1)
   createdById          String?                    @map("created_by_id") @db.Uuid
+  /// Reformulação Fase 3 (D5): entrega direta desfeita (continua registrada, marcada).
+  revertedAt           DateTime?                  @map("reverted_at") @db.Timestamptz(3)
+  revertedById         String?                    @map("reverted_by_id") @db.Uuid
+  revertReason         String?                    @map("revert_reason") @db.VarChar(500)
   createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -2730,6 +2786,7 @@ model Delivery {
   address     CustomerAddress?      @relation(fields: [addressId], references: [id], onDelete: Restrict)
   responsible User?                 @relation("DeliveryResponsible", fields: [responsibleUserId], references: [id], onDelete: SetNull)
   createdBy   User?                 @relation("DeliveryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  revertedBy  User?                 @relation("DeliveryRevertedBy", fields: [revertedById], references: [id], onDelete: SetNull)
   items       DeliveryItem[]
   events      DeliveryEvent[]
   occurrences LogisticsOccurrence[]
@@ -3035,7 +3092,9 @@ model ServiceOrderCost {
   actorId            String?  @map("actor_id") @db.Uuid
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  serviceOrder ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  serviceOrder    ServiceOrder           @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  /// Reformulação, Fase 1: materiais da OS conciliados com este lançamento formal.
+  osMaterialLinks ServiceOrderMaterial[] @relation("OsMaterialLinkedCost")
 
   @@index([serviceOrderId, occurredAt])
   @@map("service_order_costs")
@@ -3167,7 +3226,8 @@ model LogisticsCost {
   allocations LogisticsCostAllocation[]
 
   // Evolução Fase 6: custo da viagem ligado ao agendamento.
-  /// LANCADO (avulso/legado), PREVISTO (agendado), DEVIDO (realizado/taxa autorizada), CANCELADO.
+  /// LANCADO (avulso/legado), PREVISTO (agendado), DEVIDO (realizado/taxa autorizada), CANCELADO,
+  /// OPERACIONAL (Rodada 3: custo da equipe própria — custeio, sem recebedor nem obrigação).
   status              String                     @default("LANCADO") @db.VarChar(20)
   /// Recebedor vinculado (novos lançamentos). O texto `beneficiary` legado é preservado.
   payeeUserId         String?                    @map("payee_user_id") @db.Uuid
@@ -3722,4 +3782,257 @@ model AttendanceLeaveEvent {
 
   @@index([leaveId, createdAt])
   @@map("attendance_leave_events")
+}
+
+// ======================================================================================
+// Reformulação, Fase 1 — estoque simples (independente da OS) e materiais necessários da OS.
+// ======================================================================================
+
+/// Categoria personalizada do estoque simples (Tecidos, Espumas, Colas...). Nome único sem
+/// diferenciar maiúsculas (índice funcional na migration).
+model InventoryCategory {
+  id         String    @id @default(uuid()) @db.Uuid
+  name       String    @db.VarChar(60)
+  position   Int       @default(0)
+  archivedAt DateTime? @map("archived_at") @db.Timestamptz(3)
+  version    Int       @default(1)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  items          InventoryItem[]
+  osMaterials    ServiceOrderMaterial[]
+  modelMaterials ServiceModelMaterial[]
+
+  @@map("inventory_categories")
+}
+
+/// Material do estoque simples. Quantidade atualizada à mão (com ajuste auditado); nunca muda
+/// sozinha por causa de uma OS.
+model InventoryItem {
+  id                 String    @id @default(uuid()) @db.Uuid
+  name               String    @db.VarChar(160)
+  categoryId         String?   @map("category_id") @db.Uuid
+  unit               String    @db.VarChar(20)
+  quantity           Decimal   @default(0) @db.Decimal(12, 3)
+  referenceCostCents Int?      @map("reference_cost_cents")
+  location           String?   @db.VarChar(120)
+  notes              String?   @db.VarChar(500)
+  archivedAt         DateTime? @map("archived_at") @db.Timestamptz(3)
+  version            Int       @default(1)
+  createdById        String?   @map("created_by_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  category       InventoryCategory?     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  createdBy      User?                  @relation("InventoryItemCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  rolls          FabricRoll[]
+  adjustments    InventoryAdjustment[]
+  osMaterials    ServiceOrderMaterial[]
+  modelMaterials ServiceModelMaterial[]
+
+  @@index([categoryId])
+  @@map("inventory_items")
+}
+
+/// Rolo de tecido com identificação própria e metragem atualizada à mão.
+model FabricRoll {
+  id          String    @id @default(uuid()) @db.Uuid
+  itemId      String    @map("item_id") @db.Uuid
+  code        String    @db.VarChar(40)
+  color       String?   @db.VarChar(60)
+  reference   String?   @db.VarChar(80)
+  meters      Decimal   @default(0) @db.Decimal(12, 3)
+  notes       String?   @db.VarChar(500)
+  archivedAt  DateTime? @map("archived_at") @db.Timestamptz(3)
+  version     Int       @default(1)
+  createdById String?   @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  item        InventoryItem         @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  createdBy   User?                 @relation("FabricRollCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  adjustments InventoryAdjustment[]
+
+  @@index([itemId])
+  @@map("fabric_rolls")
+}
+
+/// Ajuste manual de quantidade (de um material ou da metragem de um rolo). Imutável (gatilho).
+model InventoryAdjustment {
+  id               String   @id @default(uuid()) @db.Uuid
+  itemId           String?  @map("item_id") @db.Uuid
+  rollId           String?  @map("roll_id") @db.Uuid
+  previousQuantity Decimal  @map("previous_quantity") @db.Decimal(12, 3)
+  newQuantity      Decimal  @map("new_quantity") @db.Decimal(12, 3)
+  reason           String?  @db.VarChar(500)
+  actorId          String?  @map("actor_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  item  InventoryItem? @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  roll  FabricRoll?    @relation(fields: [rollId], references: [id], onDelete: Restrict)
+  actor User?          @relation("InventoryAdjustmentActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([itemId, createdAt])
+  @@index([rollId, createdAt])
+  @@map("inventory_adjustments")
+}
+
+/// Material necessário da OS (lista simples). "Comprado" e "na oficina" são independentes; custo
+/// opcional (null = não informado, nunca zero). Remoção lógica (removedAt) preserva o histórico.
+model ServiceOrderMaterial {
+  id                    String    @id @default(uuid()) @db.Uuid
+  serviceOrderId        String    @map("service_order_id") @db.Uuid
+  description           String    @db.VarChar(200)
+  categoryId            String?   @map("category_id") @db.Uuid
+  inventoryItemId       String?   @map("inventory_item_id") @db.Uuid
+  quantity              Decimal?  @db.Decimal(12, 3)
+  unit                  String?   @db.VarChar(20)
+  notes                 String?   @db.VarChar(500)
+  purchased             Boolean   @default(false)
+  available             Boolean   @default(false)
+  costCents             Int?      @map("cost_cents")
+  version               Int       @default(1)
+  createdById           String?   @map("created_by_id") @db.Uuid
+  updatedById           String?   @map("updated_by_id") @db.Uuid
+  removedAt             DateTime? @map("removed_at") @db.Timestamptz(3)
+  removedById           String?   @map("removed_by_id") @db.Uuid
+  /// Conciliação com o custo formal: null (pendente quando há custo formal), VINCULADO (é o mesmo
+  /// registro formal — o custo informado deixa de contar) ou DISTINTO (custo à parte, conta).
+  reconciliation        String?   @db.VarChar(20)
+  linkedPurchaseItemId  String?   @map("linked_purchase_item_id") @db.Uuid
+  linkedCostId          String?   @map("linked_cost_id") @db.Uuid
+  reconciledById        String?   @map("reconciled_by_id") @db.Uuid
+  reconciledAt          DateTime? @map("reconciled_at") @db.Timestamptz(3)
+  /// Fase 2: material padrão do modelo de serviço que originou a linha (null = lançada à mão).
+  sourceModelMaterialId String?   @map("source_model_material_id") @db.Uuid
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  linkedPurchaseItem  PurchaseOrderItem?    @relation("OsMaterialLinkedPurchase", fields: [linkedPurchaseItemId], references: [id], onDelete: Restrict)
+  linkedCost          ServiceOrderCost?     @relation("OsMaterialLinkedCost", fields: [linkedCostId], references: [id], onDelete: Restrict)
+  reconciledBy        User?                 @relation("OsMaterialReconciledBy", fields: [reconciledById], references: [id], onDelete: SetNull)
+  serviceOrder        ServiceOrder          @relation(fields: [serviceOrderId], references: [id], onDelete: Restrict)
+  category            InventoryCategory?    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  inventoryItem       InventoryItem?        @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  createdBy           User?                 @relation("OsMaterialCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy           User?                 @relation("OsMaterialUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  removedBy           User?                 @relation("OsMaterialRemovedBy", fields: [removedById], references: [id], onDelete: SetNull)
+  sourceModelMaterial ServiceModelMaterial? @relation(fields: [sourceModelMaterialId], references: [id], onDelete: Restrict)
+
+  @@index([serviceOrderId])
+  @@index([sourceModelMaterialId])
+  @@map("service_order_materials")
+}
+
+/// Reformulação, Fase 2 — material padrão do modelo de serviço (por tipo de peça e, opcional,
+/// tipo de serviço; null = qualquer serviço). Só sugestão: aplicado numa OS vira linha da lista
+/// simples sem custo, não comprada e não disponível, revisável pelo gestor.
+model ServiceModelMaterial {
+  id              String       @id @default(uuid()) @db.Uuid
+  pieceType       PieceType    @map("piece_type")
+  serviceType     ServiceType? @map("service_type")
+  description     String       @db.VarChar(200)
+  categoryId      String?      @map("category_id") @db.Uuid
+  inventoryItemId String?      @map("inventory_item_id") @db.Uuid
+  /// Quantidade POR PEÇA (multiplicada pela quantidade da peça ao sugerir).
+  quantity        Decimal?     @db.Decimal(12, 3)
+  unit            String?      @db.VarChar(20)
+  notes           String?      @db.VarChar(500)
+  position        Int          @default(0)
+  archivedAt      DateTime?    @map("archived_at") @db.Timestamptz(3)
+  version         Int          @default(1)
+  createdById     String?      @map("created_by_id") @db.Uuid
+  updatedById     String?      @map("updated_by_id") @db.Uuid
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  category      InventoryCategory?     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  inventoryItem InventoryItem?         @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  createdBy     User?                  @relation("ModelMaterialCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy     User?                  @relation("ModelMaterialUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  osMaterials   ServiceOrderMaterial[]
+
+  @@index([pieceType, serviceType])
+  @@map("service_model_materials")
+}
+
+/// Aplicativo externo autorizado a pedir acesso delegado (ex.: Firma Viva). Só o hash do segredo.
+model OAuthClient {
+  id            String   @id @default(uuid()) @db.Uuid
+  clientId      String   @unique @map("client_id") @db.VarChar(64)
+  name          String   @db.VarChar(80)
+  secretHash    String   @map("secret_hash") @db.Char(64)
+  redirectUris  String[] @map("redirect_uris")
+  allowedScopes String[] @map("allowed_scopes")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  codes  OAuthCode[]
+  grants OAuthGrant[]
+
+  @@map("oauth_clients")
+}
+
+/// Código de autorização de uso único (PKCE S256), válido por poucos minutos.
+model OAuthCode {
+  id            String    @id @default(uuid()) @db.Uuid
+  codeHash      String    @unique @map("code_hash") @db.Char(64)
+  clientId      String    @map("client_id") @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  redirectUri   String    @map("redirect_uri") @db.VarChar(500)
+  scopes        String[]
+  codeChallenge String    @map("code_challenge") @db.VarChar(128)
+  externalRef   String?   @map("external_ref") @db.VarChar(80)
+  externalLabel String?   @map("external_label") @db.VarChar(120)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt        DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  client OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user   User        @relation("OAuthCodeUser", fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([expiresAt])
+  @@map("oauth_codes")
+}
+
+/// Concessão revogável: usuário + aplicativo + escopos, ligada a uma sessão própria.
+model OAuthGrant {
+  id               String    @id @default(uuid()) @db.Uuid
+  clientId         String    @map("client_id") @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  sessionId        String    @unique @map("session_id") @db.Uuid
+  scopes           String[]
+  externalRef      String?   @map("external_ref") @db.VarChar(80)
+  externalLabel    String?   @map("external_label") @db.VarChar(120)
+  refreshHash      String?   @unique @map("refresh_hash") @db.Char(64)
+  refreshExpiresAt DateTime? @map("refresh_expires_at") @db.Timestamptz(3)
+  lastUsedAt       DateTime? @map("last_used_at") @db.Timestamptz(3)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason    String?   @map("revoked_reason") @db.VarChar(40)
+  revokedById      String?   @map("revoked_by_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  client    OAuthClient        @relation(fields: [clientId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  user      User               @relation("OAuthGrantUser", fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  session   Session            @relation(fields: [sessionId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  revokedBy User?              @relation("OAuthGrantRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  tokens    OAuthAccessToken[]
+
+  @@index([userId, revokedAt])
+  @@map("oauth_grants")
+}
+
+model OAuthAccessToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  grantId   String   @map("grant_id") @db.Uuid
+  tokenHash String   @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  grant OAuthGrant @relation(fields: [grantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([grantId])
+  @@index([expiresAt])
+  @@map("oauth_access_tokens")
 }

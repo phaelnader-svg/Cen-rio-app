@@ -1,0 +1,24 @@
+{
+  "steps": [
+    {
+      "id": "promover",
+      "name": "gcr.io/cloud-builders/gcloud",
+      "entrypoint": "bash",
+      "env": [
+        "TAG=${_TAG}",
+        "API=${_API}",
+        "WEB=${_WEB}",
+        "ORIGEM=${_ORIGEM}",
+        "DESTINO=${_DESTINO}"
+      ],
+      "args": [
+        "-c",
+        "set -euo pipefail\nTAG=\"$$TAG\"; DIGEST_API=\"$$API\"; DIGEST_WEB=\"$$WEB\"; ORIGEM=\"$$ORIGEM\"; DESTINO=\"$$DESTINO\"\n[[ \"$$TAG\" =~ ^[0-9a-f]{40}$ ]] || { echo \"etiqueta inválida: $$TAG\"; exit 2; }\nfor d in \"$$DIGEST_API\" \"$$DIGEST_WEB\"; do [[ \"$$d\" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo \"digest inválido: $$d\"; exit 2; }; done\n[[ \"$$ORIGEM\" =~ ^[a-z0-9-]+-docker[.]pkg[.]dev/[a-z0-9-]+/cenario-homolog$ ]] || { echo \"origem inesperada\"; exit 2; }\n[[ \"$$DESTINO\" =~ ^[a-z0-9-]+-docker[.]pkg[.]dev/[a-z0-9-]+/cenario-prod$ ]] || { echo \"destino inesperado\"; exit 2; }\ndigest_de() { gcloud artifacts docker images describe \"$$1\" --format='value(image_summary.digest)' 2>/dev/null || true; }\nfor svc in api web; do\n  if [[ \"$$svc\" == api ]]; then esperado=\"$$DIGEST_API\"; else esperado=\"$$DIGEST_WEB\"; fi\n  src=\"$$ORIGEM/$$svc:$$TAG\"; dst=\"$$DESTINO/$$svc:$$TAG\"\n  origem=\"$$(digest_de \"$$src\")\"\n  [[ \"$$origem\" == \"$$esperado\" ]] || { echo \"✘ $$src tem digest '$${origem:-ausente}', homologado: $$esperado. NADA copiado.\"; exit 1; }\n  atual=\"$$(digest_de \"$$dst\")\"\n  if [[ -n \"$$atual\" ]]; then\n    [[ \"$$atual\" == \"$$esperado\" ]] || { echo \"✘ $$dst já existe com OUTRO digest ($$atual): nunca sobrescrito.\"; exit 1; }\n    echo \"• $$svc:$$TAG já promovida (digest $$esperado)\"; continue\n  fi\n  gcloud container images add-tag --quiet \"$$ORIGEM/$$svc@$$esperado\" \"$$dst\" >/dev/null\n  final=\"$$(digest_de \"$$dst\")\"\n  [[ \"$$final\" == \"$$esperado\" ]] || { echo \"✘ $$dst ficou com digest '$${final:-ausente}' (esperado $$esperado)\"; exit 1; }\n  echo \"✔ $$svc:$$TAG promovida com o digest homologado $$esperado\"\ndone"
+      ]
+    }
+  ],
+  "timeout": "1800s",
+  "options": {
+    "logging": "CLOUD_LOGGING_ONLY"
+  }
+}

@@ -20,6 +20,7 @@ import { createTokenHasher } from './lib/crypto';
 import { LOG_REDACT_PATHS } from './lib/log-redaction';
 import { auditRoutes } from './modules/audit/routes';
 import { managementRoutes } from './modules/management/routes';
+import { refreshOperationalAlerts, todayRoutes } from './modules/management/today';
 import { attachmentRoutes } from './modules/attachments/routes';
 import { authRoutes } from './modules/auth/routes';
 import { customerRoutes } from './modules/customers/routes';
@@ -27,6 +28,7 @@ import { materialRoutes } from './modules/materials/routes';
 import { measurementRoutes } from './modules/measurements/routes';
 import { releaseDueTasks } from './modules/production/common';
 import { productionPlanRoutes } from './modules/production/plans';
+import { productionProductivityRoutes } from './modules/production/productivity';
 import { productionTaskRoutes } from './modules/production/tasks';
 import { productionQueueRoutes } from './modules/production/queue';
 import { productionDistributionRoutes } from './modules/production/distribution';
@@ -47,6 +49,7 @@ import { confirmationRoutes } from './modules/finance/confirmations';
 import { valueRequestRoutes } from './modules/finance/value-requests';
 import { billingRoutes } from './modules/finance/billing';
 import { processIssueRisks } from './modules/issues/service';
+import { deviceCustomerPrivacy } from './core/device-privacy';
 import { processHelpQueue } from './modules/help/queue';
 import { testClockRoutes } from './modules/testing/routes';
 import { forecastRoutes } from './modules/purchasing/forecasts';
@@ -62,6 +65,11 @@ import { serviceRoutes } from './modules/services/routes';
 import { arrivalRoutes } from './modules/arrivals/routes';
 import { receiptRoutes } from './modules/receipts/routes';
 import { serviceOrderRoutes } from './modules/service-orders/routes';
+import { osMaterialRoutes } from './modules/os-materials/routes';
+import { serviceModelRoutes } from './modules/service-models/routes';
+import { workshopMapRoutes } from './modules/workshop-map/routes';
+import { directDeliveryRoutes } from './modules/quality/direct-delivery';
+import { inventoryRoutes } from './modules/inventory/routes';
 import { companyRoutes } from './modules/company/routes';
 import { deviceRoutes } from './modules/devices/routes';
 import { employeeRoutes } from './modules/employees/routes';
@@ -72,6 +80,7 @@ import { roleRoutes } from './modules/roles/routes';
 import { sessionRoutes } from './modules/sessions/routes';
 import { syncRoutes } from './modules/sync/routes';
 import { tabletRoutes } from './modules/tablet/routes';
+import { oauthRoutes } from './modules/apps/oauth';
 import { authPlugin } from './plugins/auth';
 import { errorHandlerPlugin } from './plugins/error-handler';
 import { idempotencyPlugin } from './plugins/idempotency';
@@ -169,6 +178,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(errorHandlerPlugin);
   await app.register(authPlugin);
   await app.register(idempotencyPlugin);
+  // Reformulação, Fase 0: privacidade do cliente nos tablets vale para todas as rotas (raiz).
+  deviceCustomerPrivacy(app);
 
   await app.register(healthRoutes);
   await app.register(authRoutes);
@@ -180,6 +191,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(companyRoutes);
   await app.register(auditRoutes);
   await app.register(managementRoutes);
+  await app.register(todayRoutes);
   await app.register(syncRoutes);
   await app.register(fileRoutes);
   await app.register(realtimeRoutes);
@@ -191,6 +203,11 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(arrivalRoutes);
   await app.register(receiptRoutes);
   await app.register(serviceOrderRoutes);
+  await app.register(osMaterialRoutes);
+  await app.register(serviceModelRoutes);
+  await app.register(workshopMapRoutes);
+  await app.register(directDeliveryRoutes);
+  await app.register(inventoryRoutes);
   await app.register(attachmentRoutes);
   // Fase 3 — medições e solicitações de materiais
   await app.register(measurementRoutes);
@@ -203,6 +220,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(leftoverRoutes);
   await app.register(forecastRoutes);
   await app.register(productionPlanRoutes);
+  await app.register(productionProductivityRoutes);
   await app.register(productionTaskRoutes);
   await app.register(productionQueueRoutes);
   await app.register(productionDistributionRoutes);
@@ -221,6 +239,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(confirmationRoutes);
   await app.register(valueRequestRoutes);
   await app.register(billingRoutes);
+  // Autorização delegada de aplicativos (OAuth 2.0 + PKCE), ex.: Firma Viva.
+  await app.register(oauthRoutes);
   // Relógio de teste: só existe com ENABLE_TEST_CLOCK (validado para APP_ENV=test).
   if (env.ENABLE_TEST_CLOCK && env.APP_ENV === 'test') await app.register(testClockRoutes);
 
@@ -247,6 +267,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   });
 
   let maintenanceTimer: NodeJS.Timeout | null = null;
+  let alertTimer: NodeJS.Timeout | null = null;
   let releaseTimer: NodeJS.Timeout | null = null;
   let absenceTimer: NodeJS.Timeout | null = null;
   let helpTimer: NodeJS.Timeout | null = null;
@@ -271,6 +292,15 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           15 * 60_000,
         );
         maintenanceTimer.unref();
+        // Reformulação Fase 4: alertas internos (prazo, peça pronta, material). Só o sininho.
+        alertTimer = setInterval(
+          () =>
+            void refreshOperationalAlerts(prisma).catch((err: unknown) =>
+              app.log.warn({ err }, 'Falha ao recalcular os alertas operacionais'),
+            ),
+          5 * 60_000,
+        );
+        alertTimer.unref();
         // Fase 5: libera as tarefas cujo horário programado chegou (idempotente).
         releaseTimer = setInterval(
           () =>
@@ -306,6 +336,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
     },
     async close() {
       if (maintenanceTimer) clearInterval(maintenanceTimer);
+      if (alertTimer) clearInterval(alertTimer);
       if (releaseTimer) clearInterval(releaseTimer);
       if (absenceTimer) clearInterval(absenceTimer);
       if (helpTimer) clearInterval(helpTimer);

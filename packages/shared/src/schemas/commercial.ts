@@ -527,7 +527,11 @@ export const newServicePickupSchema = z
     logisticsUserId: idSchema.nullable().optional(),
     /** Quem executa junto (ex.: Izaías). Não são credores (Fase 6). */
     participantUserIds: z.array(idSchema).max(6).default([]),
-    /** Valor TOTAL combinado com a equipe terceirizada (exige financeiro.gerenciar). */
+    /**
+     * Terceirizada: valor TOTAL combinado (vira obrigação do recebedor quando realizada).
+     * Equipe própria: custo OPERACIONAL da retirada (só custeio; nunca dívida com funcionário).
+     * Exige financeiro.gerenciar.
+     */
     amountCents: z.number().int().min(1).max(10_000_000).nullable().optional(),
     instructions: optionalText(1000),
     notes: optionalText(200),
@@ -540,12 +544,8 @@ export const newServicePickupSchema = z
         path: ['participantUserIds'],
         message: 'Participante repetido.',
       });
-    if (v.amountCents && v.team === 'EQUIPE_PROPRIA')
-      ctx.addIssue({
-        code: 'custom',
-        path: ['amountCents'],
-        message: 'Equipe própria não gera custo de terceirização.',
-      });
+    // Rodada 3 (F2-18, decisão do proprietário): equipe própria pode informar o custo
+    // OPERACIONAL da retirada (custeio, sem obrigação nem pagamento) — ver `upsertTripCost`.
   });
 
 export const newServicePaymentSchema = z.object({

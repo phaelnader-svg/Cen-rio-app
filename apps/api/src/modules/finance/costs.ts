@@ -1,4 +1,13 @@
-import { EVENT_TYPES, weightedAverageCents, type MaterialCostSummaryDto } from '@cenario/shared';
+import {
+  EVENT_TYPES,
+  osMaterialCostTotals,
+  osMaterialReconciliationStatus,
+  purchaseOrderCode,
+  realizedOsMaterialCost,
+  weightedAverageCents,
+  type FormalCostRecordDto,
+  type MaterialCostSummaryDto,
+} from '@cenario/shared';
 import type { PrismaClient, Tx } from '@cenario/db';
 import type { ActorContext } from '../../core/types';
 import { financeEvent } from './common';
@@ -78,6 +87,176 @@ type Entry = {
  * vira custo consumido sozinha: material comum só entra quando sai do estoque para a OS.
  */
 export async function syncMaterialCosts(tx: Tx, actor: ActorContext, serviceOrderId: string) {
+  const informed = await syncOsMaterialCosts(tx, actor, serviceOrderId);
+  return informed + (await syncFormalMaterialCosts(tx, actor, serviceOrderId));
+}
+
+/** Origem, no livro de custos, do custo informado na lista simples de materiais da OS. */
+export const OS_MATERIAL_SOURCE = 'MATERIAL_OS';
+
+/**
+ * Reformulação, Fase 1 — conciliação explícita entre a lista simples e o custo formal da OS.
+ * Registros formais que podem ser vinculados (e que tornam "pendentes" as linhas com custo
+ * informado): itens de compra EXCLUSIVA da OS em pedido ativo e lançamentos formais POSITIVOS do
+ * livro (compra recebida, saída de estoque, sobra recebida). Lançamentos manuais (AJUSTE_MANUAL)
+ * ficam de fora: são correções livres do gestor, não registros de compra.
+ */
+export const FORMAL_LINKABLE_SOURCES = ['COMPRA_EXCLUSIVA', 'SAIDA_ESTOQUE', 'SOBRA_ENTRADA'];
+
+export async function osFormalCostRecords(
+  db: Tx | PrismaClient,
+  serviceOrderId: string,
+): Promise<FormalCostRecordDto[]> {
+  const [items, entries] = await Promise.all([
+    db.purchaseOrderItem.findMany({
+      where: {
+        serviceOrderId,
+        sourcing: 'EXCLUSIVO_OS',
+        purchaseOrder: { status: { in: [...ACTIVE_PO] } },
+      },
+      include: { purchaseOrder: { select: { number: true, createdAt: true } } },
+      orderBy: [{ purchaseOrder: { number: 'asc' } }, { position: 'asc' }],
+    }),
+    db.serviceOrderCost.findMany({
+      where: { serviceOrderId, category: 'MATERIAL', source: { in: FORMAL_LINKABLE_SOURCES } },
+      orderBy: [{ occurredAt: 'asc' }, { id: 'asc' }],
+    }),
+  ]);
+  return [
+    ...items.map(
+      (i): FormalCostRecordDto => ({
+        kind: 'COMPRA',
+        id: i.id,
+        description: i.description,
+        amountCents:
+          i.unitPriceCents === null
+            ? null
+            : Math.round((num(i.quantity) - num(i.closedQuantity)) * i.unitPriceCents),
+        reference: purchaseOrderCode(i.purchaseOrder.number),
+        occurredAt: i.purchaseOrder.createdAt.toISOString(),
+      }),
+    ),
+    ...entries.map(
+      (e): FormalCostRecordDto => ({
+        kind: 'LANCAMENTO',
+        id: e.id,
+        description: e.description,
+        amountCents: e.amountCents,
+        reference: e.source,
+        occurredAt: e.occurredAt.toISOString(),
+      }),
+    ),
+  ];
+}
+
+/** Seleção das colunas de conciliação de uma linha (com a situação do pedido vinculado). */
+export const reconciliationSelect = {
+  reconciliation: true,
+  linkedCostId: true,
+  linkedPurchaseItemId: true,
+  linkedPurchaseItem: { select: { purchaseOrder: { select: { status: true } } } },
+} as const;
+
+/**
+ * Conciliação EFETIVA: um vínculo com item de compra cujo pedido deixou de estar ativo (ex.:
+ * cancelado) não vale mais — a linha volta a pendente e o custo informado volta a contar, para que
+ * nenhum custo desapareça do resultado.
+ */
+export function effectiveReconciliation(r: {
+  reconciliation: string | null;
+  linkedPurchaseItemId: string | null;
+  linkedPurchaseItem: { purchaseOrder: { status: string } } | null;
+}): string | null {
+  if (
+    r.reconciliation === 'VINCULADO' &&
+    r.linkedPurchaseItemId !== null &&
+    !(ACTIVE_PO as readonly string[]).includes(r.linkedPurchaseItem?.purchaseOrder.status ?? '')
+  )
+    return null;
+  return r.reconciliation;
+}
+const osMaterialKeyPrefix = (lineId: string) => `os_material:${lineId}:`;
+
+/**
+ * Reformulação, Fase 1 — custo informado nos materiais da OS → livro de custos imutável.
+ *
+ * Realizado de uma linha = custo informado, só com "comprado" marcado (removida = 0). O livro
+ * recebe a DIFERENÇA entre o realizado e o que já foi lançado para a linha (lançamento
+ * compensatório; nada é reescrito). A chave é determinística (`os_material:<linha>:<n>`): duas
+ * sincronizações concorrentes calculam a mesma chave e a segunda é descartada pelo índice único,
+ * então o mesmo valor nunca entra duas vezes. Custo não informado não gera linha (nunca vira zero):
+ * aparece como "sem preço" no resumo da OS.
+ */
+export async function syncOsMaterialCosts(tx: Tx, actor: ActorContext, serviceOrderId: string) {
+  const lines = await tx.serviceOrderMaterial.findMany({
+    where: { serviceOrderId },
+    select: {
+      id: true,
+      description: true,
+      purchased: true,
+      costCents: true,
+      removedAt: true,
+      quantity: true,
+      ...reconciliationSelect,
+    },
+  });
+  if (!lines.length) return 0;
+  const posted = await tx.serviceOrderCost.findMany({
+    where: { serviceOrderId, source: OS_MATERIAL_SOURCE },
+    select: { sourceKey: true, amountCents: true },
+  });
+  const now = new Date();
+  const data = [];
+  for (const l of lines) {
+    const prefix = osMaterialKeyPrefix(l.id);
+    const mine = posted.filter((p) => p.sourceKey.startsWith(prefix));
+    const already = mine.reduce((a, p) => a + p.amountCents, 0);
+    const reconciliation = effectiveReconciliation(l);
+    const target = realizedOsMaterialCost({
+      purchased: l.purchased,
+      costCents: l.costCents,
+      removed: l.removedAt !== null,
+      reconciliation,
+    });
+    if (target === already) continue;
+    data.push({
+      serviceOrderId,
+      category: 'MATERIAL',
+      source: OS_MATERIAL_SOURCE,
+      sourceKey: `${prefix}${mine.length + 1}`,
+      description: l.description.slice(0, 200),
+      quantity: l.quantity === null ? null : Number(l.quantity),
+      unitCostCents: null,
+      amountCents: target - already,
+      priced: true,
+      occurredAt: now,
+      note:
+        l.removedAt !== null
+          ? 'Material removido da OS (estorno do custo informado).'
+          : reconciliation === 'VINCULADO'
+            ? 'Vinculado ao custo formal da OS (estorno do custo informado: o formal é a fonte).'
+            : already === 0 && mine.length > 0
+              ? 'Custo informado volta a contar (vínculo desfeito ou registro formal cancelado).'
+              : already === 0
+                ? 'Custo informado no material da OS.'
+                : 'Correção do custo informado no material da OS.',
+      actorId: actor.userId,
+    });
+  }
+  if (!data.length) return 0;
+  const created = await tx.serviceOrderCost.createMany({ data, skipDuplicates: true });
+  if (created.count)
+    await financeEvent(tx, actor, {
+      entityType: 'service_order',
+      entityId: serviceOrderId,
+      kind: 'CUSTOS_ATUALIZADOS',
+      note: `${created.count} lançamento(s) de custo informado na OS`,
+      type: EVENT_TYPES.FINANCE_COST_UPDATED,
+    });
+  return created.count;
+}
+
+async function syncFormalMaterialCosts(tx: Tx, actor: ActorContext, serviceOrderId: string) {
   const entries: Entry[] = [];
   const lines = await tx.materialReceiptLine.findMany({
     where: {
@@ -220,8 +399,14 @@ export async function syncAllMaterialCosts(tx: Tx, actor: ActorContext) {
       select: { fromServiceOrderId: true, toServiceOrderId: true },
     }),
   ]);
+  // Fase 1: OS com materiais da lista simples (custo informado).
+  const informed = await tx.serviceOrderMaterial.findMany({
+    select: { serviceOrderId: true },
+    distinct: ['serviceOrderId'],
+  });
   const ids = new Set<string>();
-  for (const r of [...exclusive, ...movements]) if (r.serviceOrderId) ids.add(r.serviceOrderId);
+  for (const r of [...exclusive, ...movements, ...informed])
+    if (r.serviceOrderId) ids.add(r.serviceOrderId);
   for (const t of transfers) {
     if (t.fromServiceOrderId) ids.add(t.fromServiceOrderId);
     ids.add(t.toServiceOrderId);
@@ -320,13 +505,77 @@ export async function materialSummary(
     where: { serviceOrderId, category: 'MATERIAL' },
     orderBy: { occurredAt: 'asc' },
   });
+  // Fase 1: lista simples. A previsão soma todo custo informado (comprado ou não); o realizado já
+  // está no livro (MATERIAL_OS). Linha comprada sem custo = sem preço (nunca zero silencioso).
+  // Linhas vinculadas a um registro formal ficam fora (o custo delas é o formal).
+  const osLines = (
+    await db.serviceOrderMaterial.findMany({
+      where: { serviceOrderId, removedAt: null },
+      select: { purchased: true, costCents: true, ...reconciliationSelect },
+    })
+  ).map((l) => ({ ...l, reconciliation: effectiveReconciliation(l) }));
+  const informed = osMaterialCostTotals(osLines);
+  // Conciliação: com custo formal na OS, cada linha com custo informado e sem decisão fica
+  // pendente — continua contando, e o valor realizado dela é mostrado como risco de duplicidade.
+  const hasFormal =
+    exclusive.length > 0 || ledger.some((l) => FORMAL_LINKABLE_SOURCES.includes(l.source));
+  const pending = osLines.filter(
+    (l) =>
+      osMaterialReconciliationStatus(
+        { costCents: l.costCents, removed: false, reconciliation: l.reconciliation },
+        hasFormal,
+      ) === 'PENDENTE',
+  );
+  const pendingCents = pending.reduce(
+    (a, l) => a + realizedOsMaterialCost({ ...l, removed: false }),
+    0,
+  );
+  // Vínculo com registro formal que depois teve ESTORNO de recebimento: nada muda sozinho (o estorno
+  // pode ser parcial e o vínculo continuar certo), mas o resultado pede revisão ao financeiro.
+  const linked = osLines.filter((l) => l.reconciliation === 'VINCULADO');
+  let linkedReversed = 0;
+  if (linked.length) {
+    // Linha de recebimento por trás de cada vínculo com lançamento (`receipt_line:<id>`).
+    const costLine = new Map(
+      ledger.map((c) => [c.id, /^receipt_line:(.+)$/.exec(c.sourceKey)?.[1] ?? null]),
+    );
+    const receiptLineIds = linked
+      .map((l) => (l.linkedCostId ? costLine.get(l.linkedCostId) : null))
+      .filter((x): x is string => !!x);
+    const itemIds = linked.map((l) => l.linkedPurchaseItemId).filter((x): x is string => !!x);
+    const reversed = await db.materialReceiptReversal.findMany({
+      where: {
+        OR: [
+          { receiptLineId: { in: receiptLineIds } },
+          { line: { purchaseOrderItemId: { in: itemIds } } },
+        ],
+      },
+      select: { receiptLineId: true, line: { select: { purchaseOrderItemId: true } } },
+    });
+    const hitLines = new Set(reversed.map((r) => r.receiptLineId));
+    const hitItems = new Set(reversed.map((r) => r.line.purchaseOrderItemId));
+    linkedReversed = linked.filter(
+      (l) =>
+        (l.linkedPurchaseItemId !== null && hitItems.has(l.linkedPurchaseItemId)) ||
+        (l.linkedCostId !== null && hitLines.has(costLine.get(l.linkedCostId) ?? '')),
+    ).length;
+  }
+  const informedRealized = ledger
+    .filter((l) => l.source === OS_MATERIAL_SOURCE)
+    .reduce((a, l) => a + l.amountCents, 0);
   return {
-    forecastCents,
-    forecastUnpriced,
+    forecastCents: forecastCents + informed.forecastCents,
+    forecastUnpriced: forecastUnpriced + informed.forecastUnpriced,
     purchasedCents,
     reservedCents,
     consumedCents: ledger.reduce((a, l) => a + l.amountCents, 0),
-    unpricedLines: ledger.filter((l) => !l.priced).length,
+    unpricedLines: ledger.filter((l) => !l.priced).length + informed.realizedUnpriced,
+    informedCents: informedRealized,
+    informedUnpriced: informed.realizedUnpriced,
+    mixedSources: pending.length > 0,
+    pendingReconciliationLines: pending.length,
+    pendingReconciliationCents: pendingCents,
+    linkedReversedLines: linkedReversed,
     activeReservations: reservations.length,
     lines: ledger.map((l) => ({
       id: l.id,

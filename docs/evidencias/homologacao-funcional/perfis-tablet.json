@@ -1,0 +1,30 @@
+[
+  {
+    "perfil": "ajudante",
+    "criado": 201,
+    "temPainel": false,
+    "url": "/entrar",
+    "mensagem": "Painel do gestor e tablets da oficina sincronizados em tempo real."
+  },
+  {
+    "perfil": "cabeceiras_qualidade",
+    "criado": 201,
+    "temPainel": false,
+    "url": "/entrar",
+    "mensagem": "Painel do gestor e tablets da oficina sincronizados em tempo real."
+  },
+  {
+    "perfil": "logistica_terceirizada",
+    "criado": 201,
+    "temPainel": false,
+    "url": "/entrar",
+    "mensagem": "Painel do gestor e tablets da oficina sincronizados em tempo real."
+  },
+  {
+    "perfil": "tapeceiro",
+    "criado": 201,
+    "temPainel": false,
+    "url": "/entrar",
+    "mensagem": "Painel do gestor e tablets da oficina sincronizados em tempo real."
+  }
+]

@@ -19,10 +19,11 @@ Uso:
   operar.py catalogo
   operar.py op <operacao> [chave=valor ...] [--timeout S] [--descricao TXT]
   operar.py resultado <jti>
-  operar.py verificar                      # status + version (canal de ponta a ponta)
+  operar.py verificar                      # status + version (canal de ponta a ponta; prod: gate_status + version)
   operar.py teste-seguranca                # replay, adulteração, kid forjado, envelope com script, operação inexistente
   operar.py vm-status | vm-reiniciar | vm-ligar | vm-desligar
   operar.py imagens <sha>                  # existência das imagens api/web no Artifact Registry
+  operar.py promover <sha> <dig-api> <dig-web>   # produção: pede a promoção por digest ao gatilho e confere
   operar.py build-iniciar <sha>            # envia a fonte do commit e pede o build ao gatilho (conta cenario-build)
   operar.py build-status <id> | build-acompanhar <id|sha>
   operar.py testes-locais <suite> [--versao SHA]   # suites: api web shared e2e lint typecheck format
@@ -388,7 +389,10 @@ def testes_locais(suite: str, versao: str | None) -> int:
 # ============================================================================ verificação e segurança
 def cmd_verificar() -> int:
     falhas = 0
-    for op in ("status", "version"):
+    # Produção antes do primeiro deploy não tem pilha nem /run/cenario/env (só o deploy os gera, com o portão
+    # aberto); lá "status" (compose ps) falharia por desenho. O canal se prova com operações que não dependem
+    # da pilha. Homologação: inalterado.
+    for op in ("gate_status", "version") if PRD else ("status", "version"):
         res = executar(op, descricao="verificação do canal", esperar_s=240)
         mostrar(res)
         falhas += res["status"] != "concluido"
@@ -438,6 +442,54 @@ def cmd_teste_seguranca() -> int:
     return 0 if falhas == 0 else 1
 
 
+TOPICO_PROMOCAO = os.environ.get("CENARIO_TOPICO_PROMOCAO", f"projects/{PROJETO}/topics/cenario-prod-promocao")
+RE_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def digest_em_producao(img: str, sha: str) -> str | None:
+    nome = f"projects/{PROJETO}/locations/{REGIAO}/repositories/{REPO_AR}/packages/{img}/tags/{sha}"
+    st, corpo = http("GET", f"{URL['ar']}/{nome}")
+    if st != 200:
+        return None
+    return json.loads(corpo).get("version", "").rsplit("/", 1)[-1] or None
+
+
+def promover(sha: str, dig_api: str, dig_web: str, espera_s: int = 1500) -> int:
+    """Produção: pede ao gatilho cenario-prod-promocao (conta cenario-promocao, passos fixos) a cópia por
+    digest das imagens HOMOLOGADAS e espera as duas aparecerem em cenario-prod com exatamente esses digests.
+    O operador só publica o pedido; não lê nem grava a homologação."""
+    if not PRD:
+        erro("promover só existe em produção (CENARIO_AMBIENTE=prod)")
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        erro("SHA completo (40 hex) obrigatório")
+    for d in (dig_api, dig_web):
+        if not RE_DIGEST.match(d):
+            erro(f"digest inválido: {d!r} (sha256:<64 hex>)")
+    esperado = {"api": dig_api, "web": dig_web}
+    atual = {k: digest_em_producao(k, sha) for k in esperado}
+    for k, v in atual.items():
+        if v and v != esperado[k]:
+            erro(f"{k}:{sha} já existe em produção com OUTRO digest ({v}): nada pedido", 1)
+    if all(atual[k] == esperado[k] for k in esperado):
+        print(json.dumps({"promocao": "ja_promovida", **atual}, ensure_ascii=False))
+        return 0
+    r = api_ok("POST", f"{URL['pubsub']}/{TOPICO_PROMOCAO}:publish", {"messages": [{
+        "data": base64.b64encode(b"promover").decode(),
+        "attributes": {"tag": sha, "api": dig_api, "web": dig_web}}]})
+    print(json.dumps({"pedido": r["messageIds"][0], "topico": TOPICO_PROMOCAO, "tag": sha}, ensure_ascii=False), flush=True)
+    fim = time.time() + espera_s
+    while time.time() < fim:
+        atual = {k: digest_em_producao(k, sha) for k in esperado}
+        if all(atual[k] == esperado[k] for k in esperado):
+            print(json.dumps({"promocao": "concluida", **atual}, ensure_ascii=False))
+            return 0
+        if any(atual[k] and atual[k] != esperado[k] for k in esperado):
+            erro(f"digest divergente em produção: {atual}", 1)
+        time.sleep(20)
+    erro(f"promoção não concluída em {espera_s // 60} min (veja a build do gatilho cenario-prod-promocao)", 124)
+    return 124
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=f"Operações nomeadas — ambiente {AMBIENTE} ({OPERADOR.split('@')[0]})")
     s = p.add_subparsers(dest="cmd", required=True)
@@ -453,6 +505,10 @@ def main() -> int:
         s.add_parser(n)
     for n in ("imagens", "build-iniciar"):
         s.add_parser(n).add_argument("sha")
+    pr = s.add_parser("promover")
+    pr.add_argument("sha")
+    pr.add_argument("digest_api")
+    pr.add_argument("digest_web")
     for n in ("build-status", "build-acompanhar"):
         s.add_parser(n).add_argument("id")
     t = s.add_parser("testes-locais")
@@ -487,6 +543,8 @@ def main() -> int:
         return vm_acao({"vm-reiniciar": "reset", "vm-ligar": "start", "vm-desligar": "stop"}[a.cmd])
     if a.cmd == "imagens":
         return imagens(a.sha)
+    if a.cmd == "promover":
+        return promover(a.sha, a.digest_api, a.digest_web)
     if a.cmd == "build-iniciar":
         return build_iniciar(a.sha)
     if a.cmd == "build-status":

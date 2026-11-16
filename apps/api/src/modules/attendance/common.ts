@@ -357,7 +357,11 @@ export const myDayDto = (d: Awaited<ReturnType<typeof dayDto>>): MyAttendanceDay
   availability: d.availability,
   arrivedAt: d.arrivedAt,
   departedAt: d.departedAt,
-  note: d.note,
+  // F7-06 (decisão do proprietário, Rodada 3): o tablet só recebe a observação inequivocamente
+  // operacional, o local/descrição do trabalho externo. Nas ausências, folgas e férias a nota é a
+  // justificativa livre do gestor, que pode trazer conteúdo administrativo, disciplinar ou de saúde;
+  // o modelo não distingue o que é operacional ali, então ela não vai para o tablet.
+  note: d.situation === 'TRABALHO_EXTERNO' ? d.note : null,
   runningTask: d.runningTask,
   nextTask: d.nextTask,
 });

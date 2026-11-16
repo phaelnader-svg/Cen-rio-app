@@ -37,6 +37,7 @@ import {
   readiness,
   receive,
   staples,
+  grantConference,
 } from './purchasing-helpers';
 import { PINS, decideInspection, finish, post, prepareCompany, setClock } from './audit-helpers';
 import { coverLabor } from './labor-helpers';
@@ -209,7 +210,9 @@ describe('Fluxo completo de produção (32 passos)', () => {
       'compra',
     );
     const confirmed = ok2(await confirmPurchase(admin, po as never), 'confirmar compra');
-    // 10. Funcionário (Thiago, no tablet) confirma a chegada do material.
+    // 10. Funcionário (Thiago, no tablet) confirma a chegada do material. O pedido inclui material
+    // exclusivo da OS: quem confere precisa da capacidade de conferência técnica (Rodada 1, F3-17).
+    await grantConference('Thiago');
     const thiago = await tabletOf(app, admin, 'Thiago', PINS.Thiago!);
     ok2(
       await receive(
@@ -399,25 +402,13 @@ describe('Fluxo completo de produção (32 passos)', () => {
     await decideInspection(tablets.Thiago!, sofa.id);
     await decideInspection(tablets.Thiago!, poltronas.id);
     expect(await db().qualityInspection.count({ where: { serviceOrderItemId: sofa.id } })).toBe(2);
-    // 28. Embalagem concluída (João).
-    const expedicao = (await db().itemLocation.findUniqueOrThrow({ where: { key: 'EXPEDICAO' } }))
-      .id;
-    for (const item of [sofa.id, poltronas.id]) {
-      const p = await db().packagingRecord.findFirstOrThrow({
-        where: { serviceOrderItemId: item },
-        orderBy: { createdAt: 'desc' },
-      });
-      const packer = p.assigneeUserId === ids.thiago ? tablets.Thiago! : tablets['João']!;
-      ok2(
-        await post(packer, `/api/v1/packaging/${p.id}/complete`, {
-          protection: 'PLASTICO_BOLHA',
-          locationId: expedicao,
-          notes: 'Embalado',
-          version: p.version,
-        }),
-        'embalar',
-      );
-    }
+    // 28. Reformulação S1: sem embalagem — aprovada, a peça fica pronta para entrega direto.
+    expect(
+      await db().packagingRecord.count({
+        where: { serviceOrderItemId: { in: [sofa.id, poltronas.id] } },
+      }),
+    ).toBe(0);
+    expect(await db().productionTask.count({ where: { activity: 'EMBALAGEM' } })).toBe(0);
     const stages = await db().serviceOrderItem.findMany({ where: { serviceOrderId: so.id } });
     expect(stages.map((s) => s.fulfillmentStage)).toEqual(['PRONTA_ENTREGA', 'PRONTA_ENTREGA']);
     // 29. Gestor agenda a entrega (definitiva: todas as peças prontas).

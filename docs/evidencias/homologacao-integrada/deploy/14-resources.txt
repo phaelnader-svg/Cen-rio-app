@@ -1,0 +1,20 @@
+• resources {} → job 85bcea5a-b492-43d1-8c0f-01394d16517b (mensagem 22599167708824531)
+$ free -m
+               total        used        free      shared  buff/cache   available
+Mem:            1976         939          76          59        1203        1036
+Swap:           2047         160        1887
+$ swapon --show
+NAME      TYPE SIZE   USED PRIO
+/swapfile file   2G 160.5M   -2
+$ df -h /
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        30G   19G  9.8G  66% /
+$ uptime
+ 17:45:46 up 34 days,  9:13,  0 user,  load average: 1.59, 1.75, 0.96
+$ docker stats --no-stream --format table {{.Name}}	{{.MemUsage}}	{{.CPUPerc}}
+NAME                         MEM USAGE / LIMIT   CPU %
+cenario-homolog-web-1        163MiB / 448MiB     0.00%
+cenario-homolog-api-1        120.7MiB / 512MiB   0.20%
+cenario-homolog-caddy-1      30.52MiB / 192MiB   0.00%
+cenario-homolog-backup-1     3.574MiB / 256MiB   0.00%
+cenario-homolog-postgres-1   89.54MiB / 448MiB   0.04%

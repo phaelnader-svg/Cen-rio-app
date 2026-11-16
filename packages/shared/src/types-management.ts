@@ -19,26 +19,73 @@ export interface OverviewDto {
       production: number;
       quality: number;
       rework: number;
-      packaging: number;
       blocked: number;
       ready: number;
       scheduled: number;
       inTransit: number;
     };
+    /**
+     * Rodada 3 (F10-04/F10-21k): OS ativas antes da produção, pela etapa do pipeline da
+     * Produção (a mesma fonte da tela "A planejar"; contagem por OS, não por peça).
+     */
+    preProduction: {
+      toPlan: number;
+      plannedDraft: number;
+      plannedPublished: number;
+      awaitingCondition: number;
+    };
+    /**
+     * Rodada 3 (F10-21l): tarefas de produção BLOQUEADAS por impedimento real (não a espera da
+     * etapa anterior) em OS abertas — bloqueio de PRODUÇÃO.
+     * (`pieces.blocked` continua sendo o bloqueio de EXPEDIÇÃO da peça.)
+     */
+    blockedTasks: number;
   } | null;
   deliveries: {
     /** Entregas agendadas de hoje até daqui a 2 dias. */
     upcoming: number;
     /** Tentativas frustradas aguardando reagendamento. */
     frustrated: number;
+    /**
+     * Rodada 2 (F10-21m): PEÇAS entregues hoje (dia da oficina, o mesmo "hoje" das entregas
+     * próximas) pela regra canônica da Fase 8 — registrada como entregue (ou com divergência)
+     * numa entrega CONCLUÍDA, contada no dia da conclusão. Frustrada, não entregue, removida,
+     * agendada ou só em trânsito não contam; parcial conta só as peças entregues.
+     */
+    deliveredToday: number;
+    /**
+     * Rodada 3 (F10-05/F10-06): retiradas agendadas/em execução de hoje até daqui a 2 dias e
+     * retiradas já feitas aguardando a chegada na oficina. `null` sem permissão de retiradas.
+     */
+    pickups: { upcoming: number; awaitingArrival: number } | null;
   } | null;
   finance: {
     receivables: { openCents: number; overdueCents: number; overdueCount: number };
-    payables: { openCents: number; overdueCents: number };
+    /**
+     * Contas a pagar abertas (todas). Rodada 3 (F10-21r): `logistics*` é a PARTE dessas contas
+     * que nasceu de custo logístico (viagem/frete) — subconjunto, não soma à parte.
+     */
+    payables: {
+      openCents: number;
+      overdueCents: number;
+      logisticsOpenCents: number;
+      logisticsOverdueCents: number;
+    };
     /** Mão de obra liberada e ainda não paga (ProductionPayable). */
     laborDueCents: number;
+    /**
+     * Rodada 2 (F10-21s): pago aos profissionais (tapeçaria + logística) na semana corrente do
+     * fechamento — o mesmo "Pago na semana" do Fechamento semanal (`buildClosingItems`), já
+     * líquido de estornos. Não inclui previsto, devido não pago nem valores do cliente.
+     */
+    paid: { weekStart: string; paidInWeekCents: number };
     decisions: { valueRequests: number; laborReviews: number; paymentReports: number };
   } | null;
+  /**
+   * Rodada 3 (F10-21i): pendências da Central de Atenção — o mesmo cálculo e o mesmo recorte
+   * de permissões da Central (fonte única). `null` sem acesso à Central.
+   */
+  attention: { total: number; critical: number; action: number } | null;
 }
 
 export type TimelineDomain =

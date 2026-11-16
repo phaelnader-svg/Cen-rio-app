@@ -100,7 +100,8 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     await expect(page.getByTestId('readiness')).toContainText('Programação · Pendente'); // Fase 5: sem planejamento publicado;
 
     // 6. Alteração técnica com histórico
-    await page.getByRole('tab', { name: /Peças e especificações/ }).click();
+    // Fase 2 (OS unificada): "Peças e especificações" virou "Peças e fotos".
+    await page.getByRole('tab', { name: /Peças e fotos/ }).click();
     await page.getByRole('button', { name: 'Editar especificações' }).first().click();
     await page.getByRole('dialog').getByLabel('Tecido escolhido').fill('Veludo');
     await page

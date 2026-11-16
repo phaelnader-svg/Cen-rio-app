@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { MY_EARNINGS_SITUATION_LABEL, type MyEarningsDto } from '@cenario/shared';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { EVENT_TYPES, MY_EARNINGS_SITUATION_LABEL, type MyEarningsDto } from '@cenario/shared';
 import { Alert, Badge, Card } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
 import { money } from '@/lib/finance';
+import { useRealtime } from '@/lib/realtime';
 import { RequestChange, RequestStatus, WeekConfirmation } from './earnings-actions';
 
 type Unlock = { token: string; expiresAt: number };
@@ -70,6 +71,29 @@ export function MyValues() {
       setBusy(false);
     }
   };
+
+  // Rodada 2 (F8-15b): "seus ganhos mudaram" (só para esta pessoa, sem valores) — com a consulta
+  // desbloqueada, recarrega a semana aberta pela API (que continua exigindo o token do PIN). Um
+  // evento perdido numa queda de conexão chega no reenvio da reconexão.
+  const { subscribe } = useRealtime();
+  const live = useRef<{ unlock: Unlock | null; week: string | null; load: typeof load }>({
+    unlock: null,
+    week: null,
+    load,
+  });
+  useEffect(() => {
+    live.current = { unlock, week: data?.weekStart ?? null, load };
+  });
+  useEffect(
+    () =>
+      subscribe((event) => {
+        const { unlock: u, week, load: reload } = live.current;
+        if (event.type !== EVENT_TYPES.FINANCE_OWN_CHANGED || !u || u.expiresAt <= Date.now())
+          return;
+        void reload(u, week ?? undefined);
+      }),
+    [subscribe],
+  );
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -200,6 +224,29 @@ export function MyValues() {
         token={unlock.token}
         onDone={() => load(unlock, data.weekStart)}
       />
+      {/* F8-06: trabalho próprio já feito, ainda sem valor lançado — só o estado, nunca R$. */}
+      {(data.pendingWork ?? []).length > 0 && (
+        <Card className="space-y-2 p-5" data-testid="my-values-pending-work">
+          <p className="text-lg font-semibold">Trabalho concluído, valor ainda não disponível</p>
+          <ul className="space-y-1">
+            {data.pendingWork.map((w) => (
+              <li
+                key={w.piece}
+                className="flex flex-wrap items-center gap-3 text-base"
+                data-testid={`my-pending-${w.piece}`}
+              >
+                <span className="font-medium">
+                  {w.piece} — {w.description}
+                </span>
+                <Badge tone={w.state === 'EM_REVISAO' ? 'warn' : 'neutral'}>{w.label}</Badge>
+              </li>
+            ))}
+          </ul>
+          <p className="text-base text-ink-muted">
+            O valor aparece aqui quando o gestor lançar. Nada disso entra nos totais.
+          </p>
+        </Card>
+      )}
       {!data.items.length ? (
         <p className="text-lg text-ink-muted">Nenhum ganho nesta semana.</p>
       ) : (
@@ -226,12 +273,24 @@ export function MyValues() {
                     </Badge>
                   </span>
                 </div>
-                <p className="text-base text-ink-muted">
+                <p className="text-base text-ink-muted" data-testid={`my-value-terms-${i.code}`}>
                   Combinado {money(i.agreedCents)}
-                  {i.adjustmentsCents ? ` · ajustes ${money(i.adjustmentsCents)}` : ''} · devido{' '}
-                  {money(i.totalDueCents)}
-                  {i.bucket !== 'FORECAST' ? ` · a receber ${money(i.currentOpenCents)}` : ''}
+                  {i.adjustmentsCents ? ` · ajustes ${money(i.adjustmentsCents)}` : ''}
+                  {/* F8-11: só o que já entrou no fechamento é devido; o resto ainda é previsão. */}
+                  {i.bucket === 'FORECAST'
+                    ? ` · previsto ${money(i.totalDueCents)} (ainda não é devido)`
+                    : ` · devido ${money(i.totalDueCents)} · a receber ${money(i.currentOpenCents)}`}
                 </p>
+                {/* F8-03 (decisão C): o previsto não tem semana financeira; o planejamento é só
+                    informação operacional e pode mudar com a reprogramação. */}
+                {i.bucket === 'FORECAST' && (
+                  <p className="text-base text-ink-muted" data-testid={`my-value-week-${i.code}`}>
+                    Sem semana definida
+                    {i.plannedFor
+                      ? ` · Planejado para: ${i.plannedFor.date ? br(i.plannedFor.date) : `semana de ${br(i.plannedFor.weekStart)}`} (informação do planejamento)`
+                      : ''}
+                  </p>
+                )}
                 {i.adjustments.length > 0 && (
                   <ul className="text-base text-ink-muted" data-testid={`my-value-adj-${i.code}`}>
                     {i.adjustments.map((a, n) => (

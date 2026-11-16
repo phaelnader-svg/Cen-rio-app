@@ -49,6 +49,7 @@ import {
 import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useCustomerAddresses, useCustomerLookup, useNewServiceDefaults } from '@/lib/commercial';
+import { useModules } from '@/lib/hooks';
 import { AddressFields, addressLines, emptyAddress, type AddressState } from './address-form';
 
 /**
@@ -146,7 +147,11 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const [technicalNotes, setTechnicalNotes] = useState('');
 
   // ── Retirada (opcional: o cliente pode entregar as peças na tapeçaria)
-  const [delivery, setDelivery] = useState<'RETIRADA' | 'CLIENTE_ENTREGA'>('RETIRADA');
+  const [deliveryChoice, setDelivery] = useState<'RETIRADA' | 'CLIENTE_ENTREGA'>('RETIRADA');
+  // Reformulação, Fase 1: com a logística desligada não há retirada agendada (o servidor também
+  // recusa); as peças chegam pelo cliente.
+  const logisticsOn = useModules().logistica;
+  const delivery = logisticsOn ? deliveryChoice : 'CLIENTE_ENTREGA';
   const withPickup = delivery === 'RETIRADA';
   const [date, setDate] = useState('');
   const [arrival, setArrival] = useState('');
@@ -155,13 +160,21 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const [participants, setParticipants] = useState<string[]>([]);
   const [amount, setAmount] = useState<number | null>(d.suggestedPickupCostCents);
   const [amountOk, setAmountOk] = useState(true);
+  // Rodada 3 (F2-18): custo OPERACIONAL da retirada pela equipe própria (custeio; sem pagamento).
+  const [ownCost, setOwnCost] = useState<number | null>(null);
+  const [ownCostOk, setOwnCostOk] = useState(true);
   const [instructions, setInstructions] = useState('');
   const [pickupNotes, setPickupNotes] = useState('');
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<NewServiceResultDto | null>(null);
+  // Uma chave por intenção de registrar ESTE serviço. Só muda depois do sucesso (tela nova) ou
+  // quando a pessoa decide registrar outro serviço: um erro de rede deixa o resultado desconhecido
+  // e a nova tentativa precisa reaproveitar a chave (o servidor devolve o serviço já criado). Erros
+  // respondidos pelo servidor liberam a chave lá (plugins/idempotency.ts), então mantê-la é seguro.
   const idem = useRef(newIdempotencyKey());
+  const [keyConflict, setKeyConflict] = useState(false);
 
   const people = d.people[team];
   // Ao trocar de equipe, aplica o responsável padrão daquela equipe (nunca um qualquer).
@@ -253,7 +266,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
             team,
             logisticsUserId: responsible || null,
             participantUserIds: participants,
-            amountCents: outsourced && d?.canSetTripCost && amount ? amount : null,
+            amountCents: !d?.canSetTripCost ? null : outsourced ? amount || null : ownCost || null,
             instructions: blank(instructions),
             notes: blank(pickupNotes),
           }
@@ -292,6 +305,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
     responsible,
     participants,
     amount,
+    ownCost,
     instructions,
     pickupNotes,
   ]);
@@ -306,7 +320,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
       if (piecesWithValue && pieces.reduce((a, p) => a + (p.valueCents ?? 0), 0) !== value)
         throw new Error('A soma dos valores das peças precisa ser igual ao valor fechado.');
       if (pieces.some((p) => !p.laborOk)) throw new Error('Mão de obra prevista inválida.');
-      if (!amountOk) throw new Error('Valor da logística inválido.');
+      if (!amountOk || !ownCostOk) throw new Error('Valor da logística inválido.');
       if (mode === 'EXISTENTE' && !customer) throw new Error('Selecione o cliente.');
       const parsed = newServiceSchema.safeParse(payload);
       if (!parsed.success) {
@@ -329,7 +343,15 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
       window.scrollTo({ top: 0 });
     },
     onError: (e) => {
-      idem.current = newIdempotencyKey();
+      if (e instanceof ApiError && e.code === 'NETWORK_ERROR') {
+        setError(LOST_SERVICE_MESSAGE);
+        return;
+      }
+      if (e instanceof ApiError && e.code === 'IDEMPOTENCY_CONFLICT') {
+        setKeyConflict(true);
+        setError(KEY_CONFLICT_MESSAGE);
+        return;
+      }
       if (e instanceof ApiError && e.code === 'POSSIBLE_DUPLICATE') {
         setCandidates(
           ((e.details as { candidates?: DuplicateCandidateDto[] })?.candidates ?? []).slice(0, 5),
@@ -1047,6 +1069,20 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
                   data-testid="ns-amount"
                 />
               )}
+              {team === 'EQUIPE_PROPRIA' && d.canSetTripCost && (
+                <MoneyField
+                  label="Custo operacional da retirada (opcional)"
+                  cols={6}
+                  cents={ownCost}
+                  hint="Só para o custeio da viagem. Não gera pagamento nem conta a pagar ao funcionário."
+                  onCents={(v, ok) => {
+                    setOwnCost(v);
+                    setOwnCostOk(ok);
+                  }}
+                  error={!ownCostOk ? 'Valor inválido.' : err('pickup.amountCents')}
+                  data-testid="ns-own-cost"
+                />
+              )}
             </FormGrid>
             {people.filter((p) => p.userId !== responsible).length > 0 && (
               <fieldset className="mt-4">
@@ -1097,8 +1133,9 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
           <SummaryRow
             label="Cliente"
             value={mode === 'NOVO' ? name || '—' : (customer?.name ?? '—')}
+            text
           />
-          <SummaryRow label="Serviço" value={`${contractedText} · ${totalPieces} peça(s)`} />
+          <SummaryRow label="Serviço" value={`${contractedText} · ${totalPieces} peça(s)`} text />
           <SummaryRow
             label="Peças"
             value={pieces
@@ -1108,6 +1145,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
               )
               .join(' · ')}
             testId="ns-sum-pieces"
+            text
           />
           {d.canSetValues && (
             <SummaryRow label="Valor fechado" value={brl(value)} testId="ns-sum-value" />
@@ -1138,6 +1176,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
                   : 'Aguardando agendamento'
             }
             testId="ns-sum-pickup"
+            text
           />
           {withPickup && (
             <SummaryRow
@@ -1153,11 +1192,37 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
               testId="ns-sum-amount"
             />
           )}
+          {withPickup && team === 'EQUIPE_PROPRIA' && d.canSetTripCost && ownCost ? (
+            <SummaryRow
+              label="Custo operacional da retirada"
+              value={brl(ownCost)}
+              hint="Custeio da viagem — não é pagamento ao funcionário."
+              testId="ns-sum-own-cost"
+            />
+          ) : null}
         </dl>
         {error && (
-          <Alert tone="danger" className="mt-4">
-            {error}
-          </Alert>
+          <div className="mt-4" data-testid="ns-error">
+            <Alert tone="danger">
+              {error}
+              {keyConflict && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="mt-3"
+                  onClick={() => {
+                    idem.current = newIdempotencyKey();
+                    setKeyConflict(false);
+                    setError(null);
+                  }}
+                  data-testid="ns-new-attempt"
+                >
+                  Registrar como outro serviço
+                </Button>
+              )}
+            </Alert>
+          </div>
         )}
         <FormActions className="mt-5">
           <Button
@@ -1173,6 +1238,13 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
     </form>
   );
 }
+
+/** Resposta perdida: o serviço pode ter sido salvo. Repetir sem mudar nada é seguro (mesma chave). */
+export const LOST_SERVICE_MESSAGE =
+  'Não foi possível confirmar se o serviço foi salvo. Toque em salvar de novo sem alterar nada: se ele já foi registrado, o sistema mostra o mesmo serviço e não cria outro.';
+/** Mesma intenção com dados alterados depois de uma resposta perdida: nada é criado sem decisão. */
+export const KEY_CONFLICT_MESSAGE =
+  'O envio anterior pode já ter sido registrado com os dados de antes. Confira em Pedidos antes de continuar. Se for mesmo outro serviço, use "Registrar como outro serviço".';
 
 function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: () => void }) {
   const router = useRouter();
@@ -1196,11 +1268,12 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
           <SummaryRow
             label="Cliente"
             value={`${result.customer.name}${result.customer.created ? ' (novo)' : ''}`}
+            text
           />
           <SummaryRow label="Pedido" value={result.order.code} testId="ns-done-order" />
           {p ? (
             <>
-              <SummaryRow label="Retirada" value={p.code} />
+              <SummaryRow label="Retirada" value={p.code} text />
               <SummaryRow
                 label="Data e horário de chegada"
                 value={
@@ -1209,11 +1282,13 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
                     : 'Aguardando agendamento'
                 }
                 testId="ns-done-when"
+                text
               />
               <SummaryRow
                 label="Equipe responsável"
                 value={`${PICKUP_TEAM_LABEL[p.team]} · ${p.responsible ?? 'sem responsável'}${p.participants.length ? ` + ${p.participants.join(', ')}` : ''}`}
                 testId="ns-done-team"
+                text
               />
             </>
           ) : (
@@ -1221,6 +1296,7 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
               label="Retirada"
               value="Sem retirada — o cliente entrega as peças na tapeçaria"
               testId="ns-done-dropoff"
+              text
             />
           )}
           {result.tripCost && (

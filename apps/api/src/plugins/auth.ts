@@ -1,4 +1,4 @@
-import type { Permission } from '@cenario/shared';
+import { scopePermissions, type Permission } from '@cenario/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { Errors } from '../lib/errors';
@@ -56,6 +56,27 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
   app.addHook('onRequest', async (request, reply) => {
     const access = request.routeOptions.config?.access;
     if (!access) return; // 404 e rotas fora de /api
+
+    if ('public' in access && access.serverToServer) return;
+
+    // 0. Acesso delegado de aplicativo (Authorization: Bearer). Sem cookies: não há CSRF;
+    // a origem não se aplica. Rotas de login/sessão e a própria autorização nunca aceitam token.
+    const authz = request.headers.authorization;
+    if (authz?.startsWith('Bearer ')) {
+      if (
+        request.headers.upgrade ||
+        request.url.startsWith('/api/auth/') ||
+        request.url.startsWith('/api/oauth/') ||
+        request.url.startsWith('/api/sessions')
+      ) {
+        throw Errors.forbidden('Este acesso não está disponível para aplicativos conectados.');
+      }
+      await resolveBearer(request, authz.slice(7).trim());
+      if (!request.auth)
+        throw Errors.unauthenticated('Autorização do aplicativo inválida, expirada ou revogada.');
+      enforce(request, access);
+      return;
+    }
 
     // 1. Origem (CSRF / WebSocket cross-site)
     const isUpgrade = request.headers.upgrade?.toLowerCase() === 'websocket';
@@ -154,6 +175,67 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     };
   }
 
+  async function resolveBearer(request: FastifyRequest, token: string) {
+    if (!token || token.length > 200) return;
+    const row = await prisma.oAuthAccessToken.findUnique({
+      where: { tokenHash: hashToken(token) },
+      include: {
+        grant: {
+          include: {
+            client: { select: { name: true, active: true } },
+            session: true,
+            user: { include: { employee: { select: { id: true, active: true } } } },
+          },
+        },
+      },
+    });
+    const now = new Date();
+    const g = row?.grant;
+    if (
+      !row ||
+      !g ||
+      row.expiresAt <= now ||
+      g.revokedAt ||
+      !g.client.active ||
+      g.session.revokedAt ||
+      !g.user.active ||
+      g.user.employee?.active === false
+    ) {
+      return;
+    }
+    const userPerms = await loadUserPermissions(prisma, g.userId);
+    const allowed = scopePermissions(g.scopes);
+    const permissions = new Set([...userPerms].filter((p) => allowed.has(p)));
+    if (!g.lastUsedAt || now.getTime() - g.lastUsedAt.getTime() > TOUCH_INTERVAL_MS) {
+      await prisma.oAuthGrant.update({ where: { id: g.id }, data: { lastUsedAt: now } });
+    }
+    const actorHeader = request.headers['x-app-actor'];
+    const onBehalfOf =
+      typeof actorHeader === 'string'
+        ? safeDecode(actorHeader)
+            .replace(/[\r\n]/g, ' ')
+            .slice(0, 120) || null
+        : null;
+    request.auth = {
+      sessionId: g.sessionId,
+      kind: 'WEB',
+      userId: g.userId,
+      displayName: g.user.displayName,
+      email: g.user.email,
+      employeeId: g.user.employee?.id ?? null,
+      deviceId: null,
+      permissions,
+      expiresAt: row.expiresAt,
+      app: {
+        grantId: g.id,
+        clientName: g.client.name,
+        externalLabel: g.externalLabel,
+        scopes: g.scopes,
+        onBehalfOf,
+      },
+    };
+  }
+
   function enforce(request: FastifyRequest, access: AccessRule) {
     if ('public' in access) return;
     if ('device' in access) {
@@ -187,3 +269,11 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     }
   }
 });
+
+function safeDecode(v: string): string {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}

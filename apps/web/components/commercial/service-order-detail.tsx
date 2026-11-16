@@ -29,7 +29,7 @@ import {
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Ban, CheckCircle2, Circle, Clock3, Pencil, Plus, Ruler, Trash2 } from 'lucide-react';
+import { Ban, CheckCircle2, Circle, Clock3, Info, Pencil, Plus, Ruler, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,11 @@ import { Field, Input, Select, Textarea } from '@/components/ui/field';
 import { Alert, Avatar, Badge, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
+import { OsDirectDelivery } from '@/components/commercial/os-direct-delivery';
+import { OsMaterialList } from '@/components/commercial/os-material-list';
+import { OsStateHeader } from '@/components/commercial/os-state';
+import { useOsMaterialList } from '@/lib/simple-materials';
+import { useTabParam } from '@/lib/tab-param';
 import { ApiError, api, errorMessage } from '@/lib/api';
 import { formatDay, useServiceOrder, useServiceOrderRevisions } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
@@ -84,6 +89,7 @@ const READY_LABEL: Record<ReadinessState, string> = {
   OK: 'Concluído',
   PENDENTE: 'Pendente',
   FASE_FUTURA: 'Fase futura',
+  INFORMATIVO: 'Não impede o início',
 };
 
 function ReadinessRow({
@@ -95,7 +101,14 @@ function ReadinessRow({
   state: ReadinessState;
   hint: string;
 }) {
-  const Icon = state === 'OK' ? CheckCircle2 : state === 'PENDENTE' ? Circle : Clock3;
+  const Icon =
+    state === 'OK'
+      ? CheckCircle2
+      : state === 'PENDENTE'
+        ? Circle
+        : state === 'INFORMATIVO'
+          ? Info
+          : Clock3;
   return (
     <li className="flex items-start gap-3 py-2">
       <Icon
@@ -119,11 +132,25 @@ function ReadinessRow({
   );
 }
 
+/**
+ * Reformulação, Fase 2 — OS unificada: de 10 para 6 abas. Abas antigas viram seções de outras
+ * (nada some) e os links antigos continuam funcionando pelos apelidos abaixo.
+ */
+const OS_TABS = ['resumo', 'pecas', 'materiais', 'producao', 'qualidade', 'historico'] as const;
+const OS_TAB_ALIASES = {
+  fotos: 'pecas',
+  'linha-do-tempo': 'historico',
+  entrega: 'qualidade',
+  'mao-de-obra': 'resumo',
+} as const;
+
 export function ServiceOrderDetail({ id }: { id: string }) {
   const can = useCan();
   const so = useServiceOrder(id);
   const revisions = useServiceOrderRevisions(id);
-  const [tab, setTab] = useState('resumo');
+  const [tab, setTab] = useTabParam('resumo', OS_TABS, OS_TAB_ALIASES);
+  // P3 (Fase 1): o contador da aba soma a lista simples e as necessidades formais.
+  const simpleMaterials = useOsMaterialList(id);
   const [editing, setEditing] = useState(false);
   const [editItem, setEditItem] = useState<ServiceOrderItemDto | null>(null);
   const [measureItem, setMeasureItem] = useState<ServiceOrderItemDto | null>(null);
@@ -141,6 +168,8 @@ export function ServiceOrderDetail({ id }: { id: string }) {
   const canQuality = ['qualidade.gerenciar', 'entregas.ver', 'entregas.gerenciar'].some((p) =>
     can(p as Permission),
   );
+  // Reformulação, Fase 1: entrega confirmada direto na OS (com ou sem a logística ligada).
+  const canDelivery = can('os.ver') || can('entregas.ver');
   const canRequestMeasurement = can('medicoes.gerenciar') && open;
   // Evolução Fase 5: valores de mão de obra só para quem vê o financeiro.
   const canLabor = can('financeiro.ver');
@@ -185,7 +214,9 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         }
       />
       <div className="mb-6 flex flex-wrap items-center gap-2">
-        <ServiceOrderStatusBadge status={s.status} />
+        {/* Fase 3: "Aberta" ficava ao lado de "Entregue" (a OS continua aberta no banco depois da
+            entrega). A situação geral fica no quadro abaixo; aqui só o cancelamento. */}
+        {s.status === 'CANCELADA' && <ServiceOrderStatusBadge status={s.status} />}
         <PriorityBadge priority={s.priority} />
         {s.promisedDate && (
           <span className="text-sm text-ink-muted">
@@ -194,6 +225,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         )}
         <DeadlineBadge deadline={s.deadline} withReasons />
       </div>
+      {can('os.ver') && <OsStateHeader serviceOrderId={s.id} onGo={setTab} />}
       {!open && (
         <Alert tone="warn" className="mb-6" title={`Cancelada em ${formatDateTime(s.cancelledAt)}`}>
           {s.cancelReason}
@@ -205,23 +237,31 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         onChange={setTab}
         tabs={[
           { key: 'resumo', label: 'Resumo' },
-          { key: 'pecas', label: 'Peças e especificações', count: s.items.length },
+          { key: 'pecas', label: 'Peças e fotos', count: s.items.length },
           {
             key: 'materiais',
             label: 'Materiais',
-            count: s.materials.filter((m) => m.status === 'ATIVA').length,
+            count:
+              (simpleMaterials.data?.summary.total ?? 0) +
+              s.materials.filter((m) => m.status === 'ATIVA').length,
           },
-          { key: 'fotos', label: 'Fotografias' },
-          { key: 'historico', label: 'Histórico', count: revisions.data?.length },
-          { key: 'linha-do-tempo', label: 'Linha do tempo' },
           ...(canProduction ? [{ key: 'producao', label: 'Produção' }] : []),
-          ...(canQuality ? [{ key: 'qualidade', label: 'Qualidade e entrega' }] : []),
-          ...(canLabor ? [{ key: 'mao-de-obra', label: 'Mão de obra' }] : []),
+          ...(canQuality || canDelivery
+            ? [{ key: 'qualidade', label: 'Qualidade e entrega' }]
+            : []),
+          { key: 'historico', label: 'Histórico', count: revisions.data?.length },
         ]}
       >
-        {tab === 'mao-de-obra' && canLabor && <OsLabor serviceOrderId={s.id} />}
-        {tab === 'linha-do-tempo' && <ServiceTimeline serviceOrderId={s.id} />}
-        {tab === 'qualidade' && canQuality && <OsQualityDelivery serviceOrderId={s.id} />}
+        {tab === 'qualidade' && (canQuality || canDelivery) && (
+          <div className="space-y-6">
+            {canDelivery && <OsDirectDelivery serviceOrderId={s.id} />}
+            {canQuality && (
+              <Section title="Peças na qualidade e entrega" bodyClassName="p-0">
+                <OsQualityDelivery serviceOrderId={s.id} />
+              </Section>
+            )}
+          </div>
+        )}
         {tab === 'producao' && canProduction && <OsProduction serviceOrderId={s.id} />}
         {tab === 'resumo' && (
           <div className="grid gap-6 lg:grid-cols-5">
@@ -269,7 +309,11 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 <ReadinessRow
                   label="Medições"
                   state={s.readiness.measurements}
-                  hint="Gestor às sextas; extraordinárias por tapeceiro autorizado."
+                  hint={
+                    s.readiness.materialsGate
+                      ? 'Gestor às sextas; extraordinárias por tapeceiro autorizado.'
+                      : 'Opcional: alimenta as compras formais, mas não impede o início da produção.'
+                  }
                 />
                 <ReadinessRow
                   label="Responsável técnico"
@@ -279,7 +323,13 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 <ReadinessRow
                   label="Materiais"
                   state={s.readiness.materials}
-                  hint={`${MATERIAL_READINESS_LABEL[s.readiness.materialsState]} — compras, recebimentos e reservas. Material completo não antecipa a produção.`}
+                  hint={
+                    s.readiness.materialsGate
+                      ? `${MATERIAL_READINESS_LABEL[s.readiness.materialsState]} — compras, recebimentos e reservas. Material completo não antecipa a produção.`
+                      : s.readiness.simpleMaterialsPending > 0
+                        ? `Aviso: ${s.readiness.simpleMaterialsPending} material(is) da lista ainda não está(ão) na oficina. Não impede o início.`
+                        : 'Materiais informados na aba Materiais. Não impedem o início da produção.'
+                  }
                 />
                 <ReadinessRow
                   label="Programação"
@@ -288,15 +338,27 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 />
               </ul>
               <p className="mt-3 rounded-lg bg-subtle px-3 py-2 text-xs text-ink-soft">
-                A produção só começa quando programação, materiais, responsável e dependências
-                permitirem.
+                {s.readiness.materialsGate
+                  ? 'A produção só começa quando programação, materiais, responsável e dependências permitirem.'
+                  : 'A produção começa quando programação, responsável e dependências permitirem. Materiais pendentes aparecem só como aviso.'}
               </p>
             </Section>
+            {canLabor && (
+              <div className="lg:col-span-5" data-testid="os-labor-section">
+                <h2 className="mb-3 text-base font-semibold">Mão de obra</h2>
+                <OsLabor serviceOrderId={s.id} />
+              </div>
+            )}
           </div>
         )}
 
         {tab === 'pecas' && (
           <ul className="space-y-4">
+            <li>
+              <Section title="Fotos gerais da OS">
+                <PhotoGallery entityType="SERVICE_ORDER" entityId={s.id} canManage={manage} />
+              </Section>
+            </li>
             {s.items.map((i) => (
               <li key={i.id}>
                 <Section
@@ -329,7 +391,26 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                   <dl className="grid gap-4 sm:grid-cols-3" data-testid={`so-item-${i.code}`}>
                     <Detail label="Peça">{`${i.quantity}× ${PIECE_TYPE_LABEL[i.pieceType]}`}</Detail>
                     <Detail label="Tipo de serviço">{SERVICE_TYPE_LABEL[i.serviceType]}</Detail>
-                    <Detail label="Localização na oficina">{i.locations.join(', ')}</Detail>
+                    {/* Fase 2: a localização registrada (mapa) vale sobre o texto do recebimento. */}
+                    <Detail label="Localização na oficina">
+                      {i.currentLocation ? (
+                        <span data-testid={`so-item-location-${i.code}`}>
+                          <Link
+                            href="/painel/producao/mapa"
+                            className="text-brand-700 hover:underline"
+                          >
+                            {i.currentLocation.label}
+                          </Link>
+                          {i.locations.length > 0 && (
+                            <span className="block text-xs text-ink-muted">
+                              No recebimento: {i.locations.join(', ')}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        i.locations.join(', ')
+                      )}
+                    </Detail>
                     <Detail label="Tecido">{i.fabricName}</Detail>
                     <Detail label="Cor / referência">
                       {[i.fabricColor, i.fabricReference].filter(Boolean).join(' · ')}
@@ -376,6 +457,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
 
         {tab === 'materiais' && (
           <div className="space-y-8">
+            <OsMaterialList serviceOrderId={s.id} open={open} />
             {(can('os.ver') || can('estoque.ver') || can('compras.ver')) && (
               <OsMaterialsOverview serviceOrderId={s.id} />
             )}
@@ -383,44 +465,41 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           </div>
         )}
 
-        {tab === 'fotos' && (
-          <Section title="Fotografias da OS">
-            <PhotoGallery entityType="SERVICE_ORDER" entityId={s.id} canManage={manage} />
-          </Section>
-        )}
-
         {tab === 'historico' && (
-          <Section title="Histórico técnico" bodyClassName="p-0">
-            {revisions.isPending ? (
-              <Spinner className="p-5" />
-            ) : (
-              <ol className="divide-y divide-line" data-testid="revisions">
-                {revisions.data?.map((r) => (
-                  <li key={r.id} className="px-5 py-3.5">
-                    <p className="text-sm font-medium">
-                      Revisão {r.revision} ·{' '}
-                      {
+          <div className="space-y-6">
+            <ServiceTimeline serviceOrderId={s.id} />
+            <Section title="Histórico técnico (revisões da OS)" bodyClassName="p-0">
+              {revisions.isPending ? (
+                <Spinner className="p-5" />
+              ) : (
+                <ol className="divide-y divide-line" data-testid="revisions">
+                  {revisions.data?.map((r) => (
+                    <li key={r.id} className="px-5 py-3.5">
+                      <p className="text-sm font-medium">
+                        Revisão {r.revision} ·{' '}
                         {
-                          CRIACAO: 'Criação',
-                          OS: 'Dados gerais',
-                          ITEM: 'Especificações',
-                          MEDICAO: 'Medição',
-                          MATERIAL: 'Materiais',
-                          CANCELAMENTO: 'Cancelamento',
-                        }[r.scope]
-                      }
-                      {r.itemCode ? ` · ${r.itemCode}` : ''}
-                    </p>
-                    {r.reason && <p className="text-sm text-ink-soft">Motivo: {r.reason}</p>}
-                    <ChangeList changes={r.changes} />
-                    <p className="text-xs text-ink-muted">
-                      {formatDateTime(r.createdAt)} · {r.changedBy ?? 'Sistema'}
-                    </p>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </Section>
+                          {
+                            CRIACAO: 'Criação',
+                            OS: 'Dados gerais',
+                            ITEM: 'Especificações',
+                            MEDICAO: 'Medição',
+                            MATERIAL: 'Materiais',
+                            CANCELAMENTO: 'Cancelamento',
+                          }[r.scope]
+                        }
+                        {r.itemCode ? ` · ${r.itemCode}` : ''}
+                      </p>
+                      {r.reason && <p className="text-sm text-ink-soft">Motivo: {r.reason}</p>}
+                      <ChangeList changes={r.changes} />
+                      <p className="text-xs text-ink-muted">
+                        {formatDateTime(r.createdAt)} · {r.changedBy ?? 'Sistema'}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </Section>
+          </div>
         )}
       </Tabs>
 
@@ -1140,7 +1219,7 @@ function CancelDialog({ so, onClose }: { so: ServiceOrderDto; onClose: () => voi
   );
 }
 
-/** Fase 12: situação de cada peça da OS na qualidade, embalagem e entrega (Fase 10). */
+/** Fase 12: situação de cada peça da OS na qualidade e entrega (Fase 10; S1: sem embalagem). */
 function OsQualityDelivery({ serviceOrderId }: { serviceOrderId: string }) {
   const q = usePieces({ serviceOrderId });
   if (q.isPending) return <Spinner />;
@@ -1168,7 +1247,6 @@ function OsQualityDelivery({ serviceOrderId }: { serviceOrderId: string }) {
               {p.inspection.code} (rodada {p.inspection.round})
             </Link>
           )}
-          {p.packaging && <span className="text-ink-muted">{p.packaging.code}</span>}
           {p.delivery && (
             <Link
               className="text-brand-700 hover:underline"

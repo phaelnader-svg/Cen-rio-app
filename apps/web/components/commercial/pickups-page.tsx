@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/field';
 import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { addDays, formatDay, todayIso, usePickups, weekStart, arrivalText } from '@/lib/commercial';
 import { PickupStatusBadge } from './badges';
+import { useFocusParam } from '@/lib/focus-param';
 import { PickupDetailDialog } from './pickup-detail';
 
 const OPEN = 'AGUARDANDO_AGENDAMENTO,AGENDADA,EM_EXECUCAO,RETIRADA_REALIZADA,COM_OCORRENCIA';
@@ -46,7 +47,9 @@ export function PickupsPage() {
   const [view, setView] = useState<'agenda' | 'lista'>('agenda');
   const [status, setStatus] = useState(OPEN);
   const [week, setWeek] = useState(() => weekStart(todayIso()));
-  const [open, setOpen] = useState<string | null>(null);
+  // Rodada 3 (F10-06): link da Central abre o detalhe da retirada (`?foco=<id>`).
+  const focus = useFocusParam();
+  const [open, setOpen] = useState<string | null>(focus);
   const weekEnd = addDays(week, 6);
   const agenda = usePickups({ from: week, to: weekEnd }, view === 'agenda');
   const unscheduled = usePickups({ status: 'AGUARDANDO_AGENDAMENTO' }, view === 'agenda');

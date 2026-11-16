@@ -21,6 +21,12 @@ export async function setPin(page: Page, employee: string, pin: string) {
   await page.getByTestId(`employee-${employee}`).getByRole('button', { name: 'PIN' }).click();
   await page.getByLabel('Novo PIN').fill(pin);
   await page.getByRole('button', { name: 'Salvar PIN' }).click();
+  // Espera a GRAVAÇÃO terminar: a janela fecha e o aviso de sucesso aparece. O texto "PIN do tablet
+  // definido" sozinho não basta — ele já aparece quando o funcionário tinha um PIN anterior (de
+  // outro spec), e navegar em seguida abortava o PUT ainda em andamento: o tablet tentava o PIN
+  // novo com o antigo ainda valendo (instabilidade do team-issues na suíte completa).
+  await expect(page.getByLabel('Novo PIN')).toHaveCount(0);
+  await expect(page.getByText('PIN atualizado.', { exact: false }).first()).toBeVisible();
   await expect(
     page.getByTestId(`employee-${employee}`).getByText('PIN do tablet definido'),
   ).toBeVisible();
@@ -68,4 +74,26 @@ export async function openTablet(
 
 export async function typePin(page: Page, pin: string) {
   for (const d of pin) await page.getByRole('button', { name: d, exact: true }).click();
+}
+
+/**
+ * Etapa E1: as travas de materiais vêm DESLIGADAS por padrão. Os specs que provam o controle formal
+ * (tarefa esperando material) ligam a trava no começo e restauram o padrão (desligada) no fim, para
+ * não alterar o estado dos specs seguintes (o banco E2E é compartilhado).
+ */
+export async function setMaterialsGate(page: Page, enabled: boolean) {
+  const origin = `http://localhost:${E2E.webPort}`;
+  const headers = () => ({ origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') });
+  const r = await page.request.fetch('/api/company/modules', { headers: headers() });
+  expect(r.ok(), `GET /api/company/modules: ${await r.text()}`).toBe(true);
+  const m = ((await r.json()) as { key: string; version: number; enabled: boolean }[]).find(
+    (x) => x.key === 'materiais',
+  )!;
+  if (m.enabled === enabled) return;
+  const w = await page.request.fetch('/api/company/modules/materiais', {
+    method: 'PUT',
+    data: { enabled, version: m.version },
+    headers: headers(),
+  });
+  expect(w.ok(), `PUT /api/company/modules/materiais: ${await w.text()}`).toBe(true);
 }

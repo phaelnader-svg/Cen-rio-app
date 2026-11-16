@@ -11,7 +11,8 @@ BASE="${SOURCE%/*}"
 RESTORE_DB="cenario_restore_check_test"
 RESTORE_URL="$BASE/$RESTORE_DB"
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"; psql "$BASE/postgres" -qc "DROP DATABASE IF EXISTS $RESTORE_DB" >/dev/null 2>&1 || true' EXIT
+API_PID=""
+trap '[[ -n "$API_PID" ]] && kill "$API_PID" 2>/dev/null; rm -rf "$WORK"; psql "$BASE/postgres" -qc "DROP DATABASE IF EXISTS $RESTORE_DB" >/dev/null 2>&1 || true' EXIT
 
 counts() {
   psql "$1" -At -c "SELECT string_agg(t || '=' || n, ',' ORDER BY t) FROM (
@@ -409,4 +410,30 @@ fi
 if psql "$RESTORE_URL" -qc "DELETE FROM audit_logs" > /dev/null 2>&1; then
   echo "✖ Trigger de imutabilidade ausente no banco restaurado" >&2; exit 1
 fi
+# Rodada 4 (recuperação completa): BACKUP → RESTORE → MIGRATION CHECK → APP BOOT → HEALTH.
+# Por último: o login grava sessão e auditoria no banco restaurado (as comparações já passaram).
+# A API sobe sobre o banco restaurado (sem migrar nada na partida), responde saúde e prontidão
+# (consulta ao banco) e aceita o login real do administrador que só existe nos dados restaurados.
+API_PORT_CHECK=4199
+DATABASE_URL="$RESTORE_URL" API_PORT="$API_PORT_CHECK" API_HOST=127.0.0.1 APP_ENV=test NODE_ENV=test \
+  ALLOWED_ORIGINS=http://localhost:3000 LOG_LEVEL=warn DISABLE_BACKGROUND_JOBS=true \
+  TOKEN_HASH_SECRET="${TOKEN_HASH_SECRET:-backup-restore-check-only-secret-0123456789}" \
+  STORAGE_DIR="$WORK/restored-storage" bash -c 'cd apps/api && exec node --import tsx src/server.ts' \
+  > "$WORK/api.log" 2>&1 &
+API_PID=$!
+API="http://127.0.0.1:$API_PORT_CHECK"
+for _ in $(seq 1 60); do curl -fsS "$API/api/health" > /dev/null 2>&1 && break; sleep 1; done
+curl -fsS "$API/api/health" | grep -q '"status":"ok"' \
+  || { cat "$WORK/api.log" >&2; echo "✖ A aplicação não subiu sobre o banco restaurado" >&2; exit 1; }
+curl -fsS "$API/api/ready" | grep -q '"status":"ready"' \
+  || { echo "✖ Prontidão (banco) falhou na aplicação restaurada" >&2; exit 1; }
+LOGIN_STATUS="$(curl -s -o /dev/null -w '%{http_code}' -H 'content-type: application/json' \
+  -H 'origin: http://localhost:3000' -c "$WORK/cookies" \
+  -d '{"email":"backup@teste.local","password":"SenhaBackup123"}' "$API/api/auth/login")"
+[[ "$LOGIN_STATUS" == "200" ]] || { echo "✖ Login no banco restaurado: HTTP $LOGIN_STATUS" >&2; exit 1; }
+ORDERS_STATUS="$(curl -s -o "$WORK/so.json" -w '%{http_code}' -b "$WORK/cookies" "$API/api/v1/service-orders")"
+[[ "$ORDERS_STATUS" == "200" ]] && grep -q 'OS-' "$WORK/so.json" \
+  || { echo "✖ Leitura das OS restauradas pela API: HTTP $ORDERS_STATUS" >&2; exit 1; }
+kill "$API_PID"; wait "$API_PID" 2>/dev/null || true; API_PID=""
+echo "✔ Aplicação subiu sobre o banco restaurado: saúde, prontidão, login e leitura de OS."
 echo "✔ Backup e restauração verificados."

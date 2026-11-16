@@ -28,7 +28,8 @@ export const MANAGE_PERMISSIONS: Record<AttachmentEntity, Permission[]> = {
   PRODUCTION_TASK: ['producao.planejar'],
   PRODUCTION_ISSUE: ['ocorrencias.gerenciar'],
   QUALITY_INSPECTION: ['qualidade.gerenciar'],
-  PACKAGING: ['qualidade.gerenciar'],
+  // Reformulação S1: fotos de embalagem antigas só para consulta (ninguém envia nem remove).
+  PACKAGING: [],
   DELIVERY: ['entregas.gerenciar'],
   LOGISTICS_OCCURRENCE: ['entregas.gerenciar'],
   FINANCE_PAYABLE: ['financeiro.gerenciar'],
@@ -154,7 +155,7 @@ export async function uploadableAsTaskAssignee(
 /**
  * Fase 10: participação direta (null = não é um tipo da Fase 10).
  * - inspeção: o inspetor designado (envio só com a inspeção aberta);
- * - embalagem: quem embala (envio enquanto não concluída);
+ * - embalagem (só histórico, S1): quem embalou vê; ninguém envia;
  * - entrega e ocorrência logística: o responsável pela entrega (e quem registrou a ocorrência).
  */
 async function viewableAsQualityParticipant(
@@ -176,15 +177,8 @@ async function viewableAsQualityParticipant(
         })) > 0
       );
     case 'PACKAGING':
-      return (
-        (await db.packagingRecord.count({
-          where: {
-            id,
-            assigneeUserId: userId,
-            ...(upload ? { status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } } : {}),
-          },
-        })) > 0
-      );
+      if (upload) return false;
+      return (await db.packagingRecord.count({ where: { id, assigneeUserId: userId } })) > 0;
     case 'DELIVERY':
       return (
         (await db.delivery.count({

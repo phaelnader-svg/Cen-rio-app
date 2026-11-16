@@ -111,9 +111,15 @@ export interface AttentionItemDto {
 
 export interface AttentionDto {
   generatedAt: string;
+  /** F10-15: contagem sobre TODOS os itens (com os filtros), nunca sobre a lista limitada. */
   counts: Record<AttentionCategory, number>;
+  /** Total de itens (com os filtros); a lista abaixo pode trazer menos (ATTENTION_LIST_LIMIT). */
+  total: number;
   items: AttentionItemDto[];
 }
+
+/** F10-15: quantos itens a Central devolve (os mais urgentes primeiro); a contagem não é limitada. */
+export const ATTENTION_LIST_LIMIT = 300;
 
 export interface ManualHelpCheckDto {
   candidates: CandidateEvaluation[];

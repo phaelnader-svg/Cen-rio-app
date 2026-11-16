@@ -18,6 +18,8 @@ export const ERROR_CODES = {
   UNSUPPORTED_MEDIA_TYPE: 'UNSUPPORTED_MEDIA_TYPE',
   BUSINESS_RULE: 'BUSINESS_RULE',
   POSSIBLE_DUPLICATE: 'POSSIBLE_DUPLICATE',
+  /** Reformulação, Fase 0: a funcionalidade está desligada nas configurações da empresa. */
+  MODULE_DISABLED: 'MODULE_DISABLED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 

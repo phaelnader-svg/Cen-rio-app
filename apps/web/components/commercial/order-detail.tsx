@@ -41,6 +41,7 @@ import {
   ServiceOrderStatusBadge,
   ServiceStateBadge,
 } from './badges';
+import { OsStateBadge } from './os-state';
 import { OrderForecasts } from '@/components/purchasing/order-forecasts';
 import { OrderFinance } from '@/components/finance/revenue';
 import { localToday, money, parseMoney, useFinOrder } from '@/lib/finance';
@@ -377,7 +378,11 @@ export function OrderDetail({ id }: { id: string }) {
                     >
                       {s.code}
                     </Link>
-                    <ServiceOrderStatusBadge status={s.status} />
+                    {s.operationalState ? (
+                      <OsStateBadge state={s.operationalState} />
+                    ) : (
+                      <ServiceOrderStatusBadge status={s.status} />
+                    )}
                     <span className="text-ink-muted">{s.pieceCount} peça(s)</span>
                   </li>
                 ))}

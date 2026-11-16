@@ -37,6 +37,8 @@ const SOURCE_LABEL: Record<string, string> = {
   SOBRA_SAIDA: 'Sobra transferida (saída)',
   SOBRA_ENTRADA: 'Sobra recebida',
   AJUSTE_MANUAL: 'Lançamento manual',
+  // Reformulação, Fase 1: custo informado na lista "Materiais necessários" da OS.
+  MATERIAL_OS: 'Informado na OS (materiais necessários)',
 };
 const pct = (v: number | null) => (v === null ? '—' : `${v.toLocaleString('pt-BR')}%`);
 

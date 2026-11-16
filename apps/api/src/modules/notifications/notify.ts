@@ -24,7 +24,8 @@ export interface NotificationInput {
  * Grava notificações persistentes na mesma transação da mudança que as originou
  * e publica `notification.created` só para o destinatário (o tablet atualiza a
  * caixa em tempo real; após reconexão, o evento é reenviado ou a lista recarregada).
- * Quem fez a ação não é notificado sobre a própria ação.
+ * Quem fez a ação não é notificado sobre a própria ação. Repetir um fato já resolvido reativa o
+ * aviso (a condição voltou).
  */
 export async function notify(tx: Tx, actor: ActorContext, items: NotificationInput[]) {
   for (const n of items) {
@@ -43,7 +44,21 @@ export async function notify(tx: Tx, actor: ActorContext, items: NotificationInp
       ],
       skipDuplicates: true,
     });
-    if (created.count === 0) continue;
+    // F10-19: o mesmo fato voltou a acontecer depois de resolvido (ex.: peça "não entregue" volta a
+    // ficar pronta) — o aviso volta a ficar ativo e não lido; um aviso ainda ativo não é tocado.
+    const reopened = created.count
+      ? 0
+      : (
+          await tx.notification.updateMany({
+            where: {
+              userId: n.userId,
+              dedupeKey: n.dedupeKey.slice(0, 160),
+              resolvedAt: { not: null },
+            },
+            data: { resolvedAt: null, readAt: null, body: n.body.slice(0, 300) },
+          })
+        ).count;
+    if (created.count === 0 && reopened === 0) continue;
     await appendEvent(tx, actor, {
       type: EVENT_TYPES.NOTIFICATION_CREATED,
       aggregateType: 'notification',
@@ -52,6 +67,53 @@ export async function notify(tx: Tx, actor: ActorContext, items: NotificationInp
       audience: `user:${n.userId}`,
     });
   }
+}
+
+/**
+ * Rodada 2 (F10-19) — marca como RESOLVIDAS as notificações persistidas que pediam uma ação
+ * sobre um assunto, chamada pela própria ação que resolve a condição (decisão, encerramento…),
+ * na mesma transação. `subjects` são os prefixos da chave de deduplicação do assunto (ex.:
+ * `VALOR:<id>` cobre `VALOR:<id>:<usuário>`), sempre junto com o tipo — avisos informativos do
+ * mesmo assunto não são tocados. Idempotente e seguro sob concorrência: o UPDATE só alcança
+ * linhas ainda ativas (a segunda chamada não muda nada nem publica evento). Nada é apagado; o
+ * aviso continua no histórico ("resolvidas"). Cada destinatário recebe `notification.resolved`
+ * (só para ele) para a caixa sair da lista ativa em tempo real.
+ */
+export async function resolveNotifications(
+  tx: Tx,
+  actor: ActorContext,
+  kinds: NotificationKind | readonly NotificationKind[],
+  subjects: readonly string[],
+) {
+  const list = (Array.isArray(kinds) ? kinds : [kinds]) as string[];
+  if (!subjects.length || !list.length) return 0;
+  const patterns = subjects.map((s) => `${s.replace(/[\\%_]/g, '\\$&')}:%`);
+  const rows = await tx.$queryRaw<{ user_id: string }[]>`
+    UPDATE notifications SET resolved_at = ${new Date()}
+     WHERE resolved_at IS NULL
+       AND kind = ANY(${list}::text[])
+       AND (dedupe_key = ANY(${[...subjects]}::text[]) OR dedupe_key LIKE ANY(${patterns}::text[]))
+    RETURNING user_id`;
+  const users = [...new Set(rows.map((r) => r.user_id))];
+  for (const userId of users)
+    await appendEvent(tx, actor, {
+      type: EVENT_TYPES.NOTIFICATION_RESOLVED,
+      aggregateType: 'notification',
+      aggregateId: userId,
+      payload: { count: rows.filter((r) => r.user_id === userId).length },
+      audience: `user:${userId}`,
+    });
+  return rows.length;
+}
+
+/**
+ * Rodada 3 (F10-19) — atribuição de retirada (`ENTREGA_ATRIBUIDA`, assunto `RETIRADA_ATRIBUIDA:<id>`):
+ * deixa de pedir ação quando a retirada é feita (retirada realizada / recebida na oficina), é
+ * cancelada ou passa a outra pessoa (o aviso do responsável anterior).
+ */
+export const PICKUP_ASSIGNMENT_DONE = ['RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA', 'CANCELADA'];
+export function resolvePickupAssignment(tx: Tx, actor: ActorContext, pickupId: string) {
+  return resolveNotifications(tx, actor, 'ENTREGA_ATRIBUIDA', [`RETIRADA_ATRIBUIDA:${pickupId}`]);
 }
 
 type TaskLike = {

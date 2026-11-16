@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/misc';
 import { api, newIdempotencyKey } from '@/lib/api';
 import { useMyIssues } from '@/lib/issues';
+import { uploadPhoto } from '@/lib/photos';
 import { useOnline } from './tasks';
 
 /**
@@ -228,11 +229,7 @@ function ProblemForm({
           idempotencyKey: key,
         });
         if (photo) {
-          const fd = new FormData();
-          fd.append('entityType', 'PRODUCTION_ISSUE');
-          fd.append('entityId', issue.id);
-          fd.append('file', photo);
-          await api('/api/v1/attachments', { method: 'POST', body: fd });
+          await uploadPhoto({ entityType: 'PRODUCTION_ISSUE', entityId: issue.id, file: photo });
         }
         return issue;
       },

@@ -1,7 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { panelUserWith } from './commercial-helpers';
-import { createTestApp, db, idemKey, loginAdmin, resetDatabase, setupTablet } from './helpers';
+import {
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  resetDatabaseWithMaterialsGate,
+  setupTablet,
+} from './helpers';
 import {
   createMeasurement,
   fabric,
@@ -22,6 +29,7 @@ import {
   readiness,
   receive,
   staples,
+  grantConference,
 } from './purchasing-helpers';
 
 let app: App;
@@ -30,7 +38,7 @@ beforeAll(async () => {
   await app.app.ready();
 });
 afterAll(() => app.close());
-beforeEach(resetDatabase);
+beforeEach(resetDatabaseWithMaterialsGate);
 
 describe('Compras a partir de solicitações aprovadas', () => {
   it('tecido exclusivo da OS: central de compras → pedido → confirmação pelo gestor', async () => {
@@ -268,6 +276,8 @@ describe('Compras a partir de solicitações aprovadas', () => {
     const tablet = (
       await setupTablet(app, admin, { name: 'Tablet Thiago', employee: 'Thiago', pin: '505050' })
     ).tablet;
+    // F3-17: o pedido inclui tecido exclusivo de OS → quem recebe aqui precisa da conferência.
+    await grantConference('Thiago');
     const rec = await receive(
       tablet,
       c.body.id,
@@ -326,6 +336,11 @@ describe('Recebimento de materiais', () => {
       pin: '121212',
     });
 
+    // F3-17: sem a capacidade de conferência técnica, o tecido da OS não é aceito por aqui.
+    const denied = await receive(tablet, po.id, [ok(item.id, 5)]);
+    expect(denied.status).toBe(403);
+    expect(await db().materialReceipt.count()).toBe(0);
+    await grantConference('João');
     // Conferência obrigatória.
     const unchecked = await receive(tablet, po.id, [
       { purchaseOrderItemId: item.id, acceptedQuantity: 5, specConfirmed: false },
@@ -920,6 +935,9 @@ describe('Prontidão, integridade com a Fase 3 e permissões', () => {
       items: [{ remaining: 12, description: 'Linho' }],
     });
     expect(JSON.stringify(pending.body)).not.toMatch(/Price|Cents|total/i);
+    // F3-17: receber fisicamente não dá direito à conferência técnica do tecido da OS.
+    expect((await receive(tablet, confirmed.id, [ok(confirmed.items[0].id, 12)])).status).toBe(403);
+    await grantConference('Ricardo');
     const rec = await receive(tablet, confirmed.id, [ok(confirmed.items[0].id, 12)]);
     expect(rec.status).toBe(201);
     expect(JSON.stringify(rec.body)).not.toMatch(/Price|Cents/i);

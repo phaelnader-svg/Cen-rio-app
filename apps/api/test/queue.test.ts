@@ -4,7 +4,14 @@ import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import { releaseDueTasks } from '../src/modules/production/common';
 import type { Client } from './helpers';
-import { WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  WsClient,
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  resetDatabaseWithMaterialsGate,
+} from './helpers';
 import { openServiceOrder } from './measurement-helpers';
 import {
   act,
@@ -45,7 +52,7 @@ afterAll(async () => {
   await app.close();
 });
 beforeEach(async () => {
-  await resetDatabase();
+  await resetDatabaseWithMaterialsGate();
   (app.ctx.hub as unknown as { feed: { lastSeq: bigint } }).feed.lastSeq = 0n;
   await db().companySettings.update({
     where: { id: 1 },

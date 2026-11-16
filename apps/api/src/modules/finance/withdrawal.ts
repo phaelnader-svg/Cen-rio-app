@@ -73,6 +73,7 @@ export async function settleLaborOfWithdrawal(
         entityType: 'production_payable',
         entityId: cur.id,
         summary: `${code}: valor previsto cancelado — ${reason}.`,
+        changes: { status: { from: cur.status, to: 'CANCELADO' }, reason },
       });
       cancelled.push(cur.id);
     } else {

@@ -96,8 +96,42 @@ export const ATTENTION_TYPES = [
   'COBRANCA',
   'FINANCEIRO',
   'MATERIAL',
+  'PLANEJAMENTO',
+  'RECEBIMENTO',
 ] as const;
 export type AttentionType = (typeof ATTENTION_TYPES)[number];
+/**
+ * Rodada 3 (F10-18): permissão do PRÓPRIO domínio exigida por tipo de item da Central, além do
+ * acesso à Central (`ocorrencias.ver`/`ocorrencias.gerenciar`). Basta uma da lista. Ocorrência é o
+ * domínio da própria Central; COBRANCA, FINANCEIRO e MATERIAL têm regra própria na origem (mais
+ * fina, por cartão) e ficam aqui só como piso.
+ */
+export const ATTENTION_TYPE_PERMISSIONS: Record<AttentionType, readonly string[]> = {
+  OCORRENCIA: ['ocorrencias.ver', 'ocorrencias.gerenciar'],
+  AJUDA: ['producao.planejar'],
+  PROPOSTA: ['producao.planejar'],
+  PRESENCA: ['presenca.ver', 'presenca.gerenciar'],
+  IMPEDIMENTO: ['producao.ver', 'producao.planejar'],
+  PRAZO: ['producao.ver', 'producao.planejar'],
+  QUALIDADE: ['qualidade.gerenciar', 'qualidade.inspecionar'],
+  LOGISTICA: ['entregas.ver', 'entregas.gerenciar', 'retiradas.ver', 'retiradas.gerenciar'],
+  RASCUNHO_ANTIGO: ['producao.planejar'],
+  PRAZO_OS: ['os.ver', 'producao.ver', 'producao.planejar'],
+  PRAZO_PEDIDO: ['pedidos.ver', 'recebimentos.registrar', 'retiradas.ver'],
+  COBRANCA: ['financeiro.ver'],
+  FINANCEIRO: ['financeiro.ver'],
+  MATERIAL: [
+    'compras.ver',
+    'compras.gerenciar',
+    'compras.aprovar',
+    'materiais.aprovar',
+    'estoque.ver',
+    'estoque.gerenciar',
+    'estoque.conferir',
+  ],
+  PLANEJAMENTO: ['producao.planejar', 'producao.ver'],
+  RECEBIMENTO: ['pedidos.ver', 'recebimentos.registrar', 'os.ver'],
+};
 export const ATTENTION_TYPE_LABEL: Record<AttentionType, string> = {
   OCORRENCIA: 'Ocorrência',
   AJUDA: 'Pedido de ajuda',
@@ -105,7 +139,7 @@ export const ATTENTION_TYPE_LABEL: Record<AttentionType, string> = {
   PRESENCA: 'Presença',
   IMPEDIMENTO: 'Pausa por impedimento',
   PRAZO: 'Prazo interno da tarefa',
-  QUALIDADE: 'Qualidade e embalagem',
+  QUALIDADE: 'Qualidade',
   LOGISTICA: 'Entregas e logística',
   RASCUNHO_ANTIGO: 'Rascunho de semana passada',
   PRAZO_OS: 'Prazo da OS',
@@ -113,6 +147,8 @@ export const ATTENTION_TYPE_LABEL: Record<AttentionType, string> = {
   COBRANCA: 'Cobrança do cliente',
   FINANCEIRO: 'Decisão financeira (negociação/revisão)',
   MATERIAL: 'Materiais e compras',
+  PLANEJAMENTO: 'Serviços a planejar',
+  RECEBIMENTO: 'Divergência no recebimento de peças',
 };
 
 /**

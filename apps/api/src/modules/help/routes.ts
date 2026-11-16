@@ -12,6 +12,7 @@ import {
   cancelHelpRequestSchema,
   compareTasks,
   createHelpRequestSchema,
+  HELP_LIST_PAGE,
   helpListQuerySchema,
   helpRequestCode,
   localParts,
@@ -50,7 +51,7 @@ import { cancelHelp, lockHelpRequest, manualAssign, processHelpQueue, tryAssign 
 import { evaluateCandidates, notifyPlanners } from './engine';
 import { decideProposal } from './reschedule';
 import { requestProlongedSupport, requestTransfer } from './approvals';
-import { minimizeCustomerForDevices } from '../../core/device-privacy';
+import { assertModuleEnabled } from '../../core/modules';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -193,7 +194,6 @@ const proposalInclude = {
 
 export async function helpRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
-  minimizeCustomerForDevices(app);
   /** Mudanças de disponibilidade reavaliam a fila (depois da transação principal). */
   const requeue = () =>
     processHelpQueue(prisma).catch((err: unknown) =>
@@ -209,6 +209,7 @@ export async function helpRoutes(app: FastifyInstance) {
     '/api/v1/help-requests',
     { config: { access: REQUEST, idempotent: true } },
     async (request, reply) => {
+      await assertModuleEnabled(prisma, 'ajuda');
       const input = createHelpRequestSchema.parse(request.body);
       const actor = actorFrom(request);
       const me = request.auth!.userId;
@@ -336,6 +337,7 @@ export async function helpRoutes(app: FastifyInstance) {
     '/api/v1/help-requests/prolonged',
     { config: { access: REQUEST, idempotent: true } },
     async (request, reply) => {
+      await assertModuleEnabled(prisma, 'ajuda');
       const input = prolongedSupportSchema.parse(request.body);
       const actor = actorFrom(request);
       const id = await prisma.$transaction((tx) =>
@@ -378,11 +380,16 @@ export async function helpRoutes(app: FastifyInstance) {
 
   app.get('/api/v1/help-requests', { config: { access: VIEW } }, async (request) => {
     const q = helpListQuerySchema.parse(request.query);
+    // Rodada 4 (F7-14): com `before`, a página seguinte (mais antigos, por data de criação) — o
+    // histórico deixa de sumir depois de 200 pedidos. Sem ele, a primeira página de sempre.
     const rows = await prisma.helpRequest.findMany({
-      where: q.status ? { status: q.status } : {},
+      where: {
+        ...(q.status ? { status: q.status } : {}),
+        ...(q.before ? { createdAt: { lt: new Date(q.before) } } : {}),
+      },
       include: helpInclude,
-      orderBy: [{ urgent: 'desc' }, { createdAt: 'desc' }],
-      take: 200,
+      orderBy: q.before ? [{ createdAt: 'desc' }] : [{ urgent: 'desc' }, { createdAt: 'desc' }],
+      take: HELP_LIST_PAGE,
     });
     return rows.map((r) => helpDto(r));
   });
@@ -453,6 +460,7 @@ export async function helpRoutes(app: FastifyInstance) {
     '/api/v1/help-requests/:id/assign',
     { config: { access: PLAN, idempotent: true } },
     async (request) => {
+      await assertModuleEnabled(prisma, 'ajuda');
       const { id } = idParams.parse(request.params);
       const input = manualHelpAssignSchema.parse(request.body);
       const actor = actorFrom(request);
@@ -466,7 +474,10 @@ export async function helpRoutes(app: FastifyInstance) {
   app.post(
     '/api/v1/help-requests/process',
     { config: { access: PLAN, idempotent: true } },
-    async () => ({ assigned: await processHelpQueue(prisma) }),
+    async () => {
+      await assertModuleEnabled(prisma, 'ajuda');
+      return { assigned: await processHelpQueue(prisma) };
+    },
   );
 
   // ─────────────────────────── Competências ───────────────────────────

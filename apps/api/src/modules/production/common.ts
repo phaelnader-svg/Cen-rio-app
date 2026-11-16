@@ -21,6 +21,7 @@ import type { FastifyRequest } from 'fastify';
 import { audit } from '../../core/audit';
 import { now as clockNow } from '../../core/clock';
 import { appendEvent } from '../../core/events/append';
+import { moduleEnabled } from '../../core/modules';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { dateOnly, parseDateOnly, serviceOrderCode } from '../commercial/common';
@@ -117,7 +118,6 @@ export const taskInclude = {
       },
     },
   },
-  packagingRecord: { select: { id: true } },
 } as const;
 export type TaskRow = Prisma.ProductionTaskGetPayload<{ include: typeof taskInclude }>;
 
@@ -228,14 +228,13 @@ export function toTaskDto(t: TaskRow, timeZone: string): ProductionTaskDto {
         }
       : null,
     qualityFor:
-      t.inspection && (t.activity === 'CORRECAO' || t.activity === 'EMBALAGEM')
+      t.inspection && t.activity === 'CORRECAO'
         ? {
             inspectionId: t.inspection.id,
             code: inspectionCode(t.inspection.number),
-            kind: t.activity,
-            note: t.activity === 'CORRECAO' ? t.inspection.decisionNote : null,
-            defects: t.activity === 'CORRECAO' ? t.inspection.items : [],
-            packagingId: t.packagingRecord?.id ?? null,
+            kind: 'CORRECAO' as const,
+            note: t.inspection.decisionNote,
+            defects: t.inspection.items,
           }
         : null,
     version: t.version,
@@ -320,10 +319,30 @@ export async function domainTaskEvent(
 type Readiness = Awaited<ReturnType<typeof readinessOf>>;
 
 /**
+ * Reformulação, Fase 1: travas de materiais ligadas? (interruptor "materiais"; padrão DESLIGADO
+ * desde a etapa E1: só travam se o gestor ligar). Memorizado por cache de prontidão: uma reavaliação lê a configuração
+ * uma vez só, e todas as tarefas daquela passada usam a mesma decisão.
+ */
+const gateMemo = new WeakMap<Map<string, Readiness>, Promise<boolean>>();
+export function materialsGateOn(db: Tx | PrismaClient, cache?: Map<string, Readiness>) {
+  if (!cache) return moduleEnabled(db, 'materiais');
+  let p = gateMemo.get(cache);
+  if (!p) {
+    p = moduleEnabled(db, 'materiais');
+    gateMemo.set(cache, p);
+  }
+  return p;
+}
+
+/**
  * Materiais de uma tarefa. Sem vínculos, vale a prontidão da OS inteira
  * (comportamento conservador da Fase 5). Com vínculos, bastam os materiais
  * vinculados estarem cobertos (recebidos/reservados) — desde que não haja
  * medição ou solicitação pendente na OS (que poderia criar novas necessidades).
+ *
+ * Fase 1: com as travas de materiais DESLIGADAS, materiais nunca seguram a tarefa (a
+ * disponibilidade vira só informação de planejamento). Dependências, responsável, bloqueios
+ * manuais, ocorrências e horário continuam valendo como antes.
  */
 export async function taskMaterialsReady(
   db: Tx | PrismaClient,
@@ -331,6 +350,7 @@ export async function taskMaterialsReady(
   cache = new Map<string, Readiness>(),
 ): Promise<boolean> {
   if (!task.requiresMaterials) return true;
+  if (!(await materialsGateOn(db, cache))) return true;
   let r = cache.get(task.serviceOrderId);
   if (!r) {
     r = await readinessOf(db, task.serviceOrderId);
@@ -575,7 +595,18 @@ export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
         take: 500,
       })
     : [];
-  const ids = [...new Set([...byTime, ...byStart].map((t) => t.id))].sort();
+  // Etapa E1: com as travas de materiais desligadas (padrão), tarefas que continuam gravadas como
+  // bloqueadas por MATERIAIS (de antes da mudança do padrão, ou de quando a trava estava ligada)
+  // são reavaliadas aqui e liberadas, sem depender de alguém mexer nelas. Idempotente.
+  const byMaterials = (await materialsGateOn(prisma))
+    ? []
+    : await prisma.productionTask.findMany({
+        where: { status: { in: [...TASK_WAITING] }, blockers: { has: 'MATERIAIS' } },
+        select: { id: true },
+        orderBy: { id: 'asc' },
+        take: 500,
+      });
+  const ids = [...new Set([...byTime, ...byStart, ...byMaterials].map((t) => t.id))].sort();
   if (!ids.length) return 0;
   const system: ActorContext = { userId: null, sessionId: null, ip: null, requestId: null };
   return prisma.$transaction(async (tx) => {
@@ -584,7 +615,7 @@ export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
       await audit(tx, system, {
         action: 'production.release_tick',
         entityType: 'production_task',
-        summary: `${changed} tarefa(s) reavaliada(s) pelo horário programado ou data de início.`,
+        summary: `${changed} tarefa(s) reavaliada(s) pelo horário programado, data de início ou travas de materiais desligadas.`,
       });
     return changed;
   });

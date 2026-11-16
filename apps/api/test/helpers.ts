@@ -14,6 +14,16 @@ export function db(): PrismaClient {
 }
 
 /** Limpa todas as tabelas (exceto o controle de migrations) e recria os dados base. */
+/**
+ * Etapa E1: as travas de materiais vêm DESLIGADAS por padrão. As suítes que provam o controle
+ * formal de materiais (a produção esperando compra recebida ou reserva) usam este reset, que grava
+ * a trava LIGADA — o estado de uma instalação que escolheu esse controle em Empresa → Funcionalidades.
+ */
+export async function resetDatabaseWithMaterialsGate() {
+  await resetDatabase();
+  await db().moduleSetting.create({ data: { key: 'materiais', enabled: true } });
+}
+
 export async function resetDatabase() {
   const prisma = db();
   const tables = await prisma.$queryRaw<{ tablename: string }[]>`
@@ -69,7 +79,7 @@ export class Client {
   }
 
   async req(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     url: string,
     body?: unknown,
     headers: Record<string, string> = {},
@@ -156,6 +166,24 @@ export async function setupTablet(
 }
 
 /** Conexão WebSocket de teste que acumula mensagens recebidas. */
+/**
+ * Rodada 2 (F8-15b): tira das mensagens do tempo real o aviso próprio "seus ganhos mudaram"
+ * (`finance.own_changed`), que só pode chegar ao próprio dono e sem nenhum valor — falha se
+ * chegar a outra pessoa ou carregar números. O restante segue para as asserções de privacidade.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function withoutOwnChanged(messages: any[], userId: string) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const own = (m: any) => m?.event?.type === 'finance.own_changed';
+  for (const m of messages.filter(own)) {
+    if (m.event.aggregateId !== userId)
+      throw new Error(`finance.own_changed de outra pessoa: ${JSON.stringify(m.event)}`);
+    if (/Cents|\d{3,}/.test(JSON.stringify(m.event.payload)))
+      throw new Error(`finance.own_changed com valores: ${JSON.stringify(m.event.payload)}`);
+  }
+  return messages.filter((m) => !own(m));
+}
+
 export class WsClient {
   messages: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
   ws!: WebSocket;

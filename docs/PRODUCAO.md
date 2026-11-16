@@ -176,6 +176,19 @@ bash infra/prod/gcp/provisionar.sh tudo         # infraestrutura → promover �
 Cada etapa pede uma frase de confirmação e só cria o que falta (idempotente). Registros sem segredos
 ficam em `~/cenario-prod-relatorios/`.
 
+Teste do canal do operador (`operador` o executa ao final; `canal` o repete sozinho, sem criar, publicar ou
+instalar nada):
+
+- O dono não tem `iam.serviceAccounts.signJwt` (o papel Owner não inclui essa permissão). Por isso o teste
+  concede a ele `cenarioProdAssinaJwt` sobre `claude-operador-prod` só durante o teste e remove no final.
+- Enquanto essa permissão propaga, o `signJwt` responde 403 e o `operar.py` sai com 126, sem publicar
+  nada. Só esse caso é repetido: até 32 tentativas a cada 15 s.
+- Qualquer outra falha já passou pela fila e pelo runner. Ela não é repetida, para não reenviar jobs.
+- Em produção, o `operar.py verificar` usa `gate_status` + `version`. Antes do primeiro deploy não existe
+  `/run/cenario/env`: ele é gerado só pelo `stack_bootstrap`, com o portão aberto. Por isso `status`
+  falharia por desenho.
+- Canal e isolamento são contados separadamente. A etapa só termina com `ETAPA OPERADOR: OK`.
+
 ## 8. DNS e HTTPS
 
 - `provisionar.sh dns` mostra os registros atuais em 8.8.8.8 e 1.1.1.1.
@@ -267,3 +280,11 @@ São Paulo são ~1,5× os de us-east1.
 | `infra/prod/gcp/testes/test_runner_prod.py`                                                                                | runner no perfil prod: identidade, audiência, VM, unidades, banco, pacote só `infra/prod`, primeira publicação, partida incoerente recusada, ferramentas compartilhadas idênticas                          |
 | `infra/prod/gcp/testes/ensaio-primeiro-deploy.sh`                                                                          | pilha REAL de produção com as imagens de 9fb1786: banco novo → ponto (vazio) → preflight → 31 migrations → ativar → bootstrap mínimo → acesso → login do gestor → restauração idêntica → rollback ao ponto |
 | Suítes da homologação (`test_runner.py`, `test_bootstrap.sh`, `test_vm_sh.sh`, `test_homolog_sh.sh`, `test_ssh_agente.sh`) | sem regressão                                                                                                                                                                                              |
+
+## Anexo — página comercial (`/conheca`)
+
+- Ligada pelo Compose (`SITE_COMERCIAL: '1'` no serviço `web`). A página só abre se também não houver
+  pendência em `apps/web/components/site/config.ts` (preço, WhatsApp, telas); caso contrário, 404.
+- Para desligar sem nova imagem: `SITE_COMERCIAL: '0'` e recriar só o `web`.
+- Indexação: o Caddy mantém `X-Robots-Tag: noindex, nofollow` em tudo, exceto `/conheca` e `/site/*`
+  (teste `apps/api/test/proxy-caddy-prod.test.ts`). Painel, tablet e API continuam fora dos buscadores.

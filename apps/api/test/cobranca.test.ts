@@ -430,6 +430,12 @@ describe('Retirada com cartão, instrução de pagamento e registro da equipe (A
     expect(reports).toHaveLength(1);
     const att2 = ok<{ items: { key: string }[] }>(await admin.get('/api/v1/attention'));
     expect(att2.items.some((i) => i.key === `COBRANCA:INFORMADO:${reports[0]!.id}`)).toBe(true);
+    // Rodada 4 (F10-21t): o Início conta o registro da equipe pendente (mesma fonte da Central).
+    const decisions = async () =>
+      ok<{ finance: { decisions: { paymentReports: number } } }>(
+        await admin.get('/api/v1/management/overview'),
+      ).finance.decisions.paymentReports;
+    expect(await decisions()).toBe(1);
     const confirmBody = {
       amountCents: 400000,
       receivedAt: today(),
@@ -443,6 +449,7 @@ describe('Retirada com cartão, instrução de pagamento e registro da equipe (A
     ]);
     expect([c1.status, c2.status].sort()).toEqual([200, 409]);
     expect(await db().customerPayment.count()).toBe(1);
+    expect(await decisions()).toBe(0);
     const paid = await rec(admin, r!.id);
     expect(paid).toMatchObject({ status: 'RECEBIDO', overdue: false });
     expect(paid.payments[0]).toMatchObject({ installments: 10, method: 'CARTAO_CREDITO' });

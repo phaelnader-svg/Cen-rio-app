@@ -4,7 +4,7 @@ import type { ActorContext } from '../src/core/types';
 import { reevaluateTasks, waitingTaskIds } from '../src/modules/production/common';
 import { registerReceipt } from '../src/modules/receipts/service';
 import type { Client } from './helpers';
-import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import { createTestApp, db, idemKey, loginAdmin, resetDatabaseWithMaterialsGate } from './helpers';
 import { createCustomer, createOrder, receiptBody } from './commercial-helpers';
 import { today, userIdOf } from './production-helpers';
 
@@ -20,7 +20,7 @@ beforeAll(async () => {
   app = await createTestApp();
 });
 afterAll(() => app.close());
-beforeEach(() => resetDatabase());
+beforeEach(() => resetDatabaseWithMaterialsGate());
 
 const SYSTEM: ActorContext = { userId: null, sessionId: null, ip: null, requestId: null };
 const post = (c: Client, url: string, body: unknown, key = idemKey()) =>

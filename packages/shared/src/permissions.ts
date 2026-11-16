@@ -219,6 +219,13 @@ export const PERMISSIONS = {
       'Cadastrar materiais, reservar para OS, liberar, dar saída, ajustar e registrar sobras.',
     critical: true,
   },
+  'estoque.conferir': {
+    group: 'compras',
+    label: 'Conferência técnica de material',
+    description:
+      'Conferir e liberar material que exige validação de especificação (tecido, espuma, densidade, espessura, medida, quantidade, avaria e material exclusivo da OS). Receber a chegada física não exige esta permissão.',
+    critical: true,
+  },
   'estoque.autorizar': {
     group: 'compras',
     label: 'Autorizar estornos e transferências',
@@ -276,9 +283,9 @@ export const PERMISSIONS = {
   },
   'qualidade.gerenciar': {
     group: 'qualidade',
-    label: 'Gerenciar qualidade e embalagem',
+    label: 'Gerenciar qualidade',
     description:
-      'Consultar todas as inspeções, aprovar diretamente, designar substitutos, autorizar o executor, acompanhar correções, configurar checklists e localizações e distribuir embalagens (gestor).',
+      'Consultar todas as inspeções, aprovar diretamente, designar substitutos, autorizar o executor, acompanhar correções, configurar checklists e localizações (gestor).',
     critical: true,
   },
   'entregas.ver': {
@@ -350,7 +357,7 @@ export const PERMISSIONS = {
     group: 'financeiro',
     label: 'Ver os próprios ganhos',
     description:
-      'No tablet, com PIN: o tapeceiro (valores por peça) e a logística (valores de viagem) veem só os próprios ganhos, pagamentos e ajustes. Nunca valores de outras pessoas, dos clientes, margens ou salário. Não dá acesso ao financeiro.',
+      'No tablet, com PIN: o tapeceiro (valores por peça) e a logística (valores de viagem) veem só os próprios ganhos, pagamentos e ajustes. Nunca valores de outras pessoas, dos clientes, margens ou custos da equipe fixa. Não dá acesso ao financeiro.',
   },
   'auditoria.ver': {
     group: 'sistema',

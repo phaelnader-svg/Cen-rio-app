@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
-import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice, setMaterialsGate, setPin } from './helpers';
 
 /**
  * Simplificação Fase 4 — pré-planejamento no navegador (dados fictícios):
@@ -103,6 +103,8 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
     test.setTimeout(300_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAdmin(page);
+    // Etapa E1: este spec prova o controle formal de materiais — liga a trava (o padrão é desligada).
+    await setMaterialsGate(page, true);
     let planId = '';
     try {
       const one = await receivedService(page, 'Helena Planejamento Fictícia', ['Sofá retrátil']);
@@ -228,6 +230,7 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
         await shot(page, `09-producao-${w}`);
       }
     } finally {
+      await setMaterialsGate(page, false).catch(() => undefined);
       // Limpeza: tarefas da semana futura canceladas (com motivo) — não afetam outros testes.
       if (planId) {
         const plan = await call(page, 'GET', `/api/v1/production-plans/${planId}`);

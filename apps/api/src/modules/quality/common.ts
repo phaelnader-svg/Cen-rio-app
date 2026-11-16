@@ -13,7 +13,6 @@ import {
   type FulfillmentStage,
   type InspectionStatus,
   type NotificationKind,
-  type PackagingStatus,
   type Permission,
   type PieceRefDto,
   type SubstituteReason,
@@ -26,8 +25,9 @@ import { Errors } from '../../lib/errors';
 import { attendanceConfig, clock, dbDate } from '../attendance/common';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { skillsByEmployee } from '../help/engine';
-import { notify } from '../notifications/notify';
+import { notify, resolveNotifications } from '../notifications/notify';
 import { refreshLaborOf } from '../finance/labor';
+import { laborOwners, notifyOwnChanged } from '../finance/own-changed';
 
 // ─────────────────────────── Acesso ───────────────────────────
 
@@ -329,6 +329,17 @@ const OPEN_TASK: Prisma.EnumTaskStatusFilter<'ProductionTask'> = {
   notIn: ['CONCLUIDA', 'CANCELADA'],
 };
 
+/**
+ * Regra canônica de entrega física real (Fase 8): a peça registrada como entregue (ou entregue
+ * com divergência) numa entrega CONCLUÍDA. Marcada no destino, antes da conclusão, a peça
+ * continua em transporte (ainda pode ser corrigida para "não entregue"); frustrada volta a
+ * PENDENTE. Usada pela etapa da peça e pelo indicador "entregues" do Início (Rodada 2).
+ */
+export const DELIVERED_ITEM = {
+  status: { in: ['ENTREGUE', 'DIVERGENTE'] },
+  delivery: { status: 'CONCLUIDA' },
+} satisfies Prisma.DeliveryItemWhereInput;
+
 /** Situação completa da peça no fluxo (base da etapa e do "pronto para entrega"). */
 export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
   const item = await db.serviceOrderItem.findUniqueOrThrow({
@@ -347,7 +358,6 @@ export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
   const inspection = await db.qualityInspection.findFirst({
     where: { serviceOrderItemId: itemId, status: { not: 'CANCELADA' } },
     orderBy: { round: 'desc' },
-    include: { packaging: true },
   });
   const openCorrections = await db.productionTask.count({
     where: { activity: 'CORRECAO', inspection: { serviceOrderItemId: itemId }, status: OPEN_TASK },
@@ -370,14 +380,8 @@ export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
     where: { serviceOrderItemId: itemId, active: true },
     include: { delivery: true },
   });
-  // Entregue = registrada como entregue numa entrega CONCLUÍDA. Marcada no destino, antes da
-  // conclusão, a peça continua em transporte (ainda pode ser corrigida para "não entregue").
   const delivered = await db.deliveryItem.count({
-    where: {
-      serviceOrderItemId: itemId,
-      status: { in: ['ENTREGUE', 'DIVERGENTE'] },
-      delivery: { status: 'CONCLUIDA' },
-    },
+    where: { serviceOrderItemId: itemId, ...DELIVERED_ITEM },
   });
   return {
     item,
@@ -388,9 +392,7 @@ export async function stageInputs(db: Tx | PrismaClient, itemId: string) {
       requiredTasksDone,
       inspection: (inspection?.status ?? null) as InspectionStatus | null,
       openCorrections,
-      packaging: (inspection?.status === 'APROVADA'
-        ? (inspection.packaging?.status ?? null)
-        : null) as PackagingStatus | null,
+      // Reformulação S1: a embalagem não entra mais na prontidão (nem a antiga, só histórico).
       shippingBlock,
       cancelled: item.serviceOrder.status === 'CANCELADA',
       returned: item.fulfillmentStage === 'DEVOLVIDA',
@@ -410,7 +412,7 @@ export async function readinessOfItem(db: Tx | PrismaClient, itemId: string) {
 
 /**
  * Recalcula a etapa da peça (determinística, a partir do banco). Ao chegar em "Pronta para
- * entrega", avisa o gestor uma única vez por embalagem — nunca agenda nada sozinho.
+ * entrega", avisa o gestor uma única vez por aprovação — nunca agenda nada sozinho.
  */
 export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: string) {
   const s = await readinessOfItem(tx, itemId);
@@ -442,7 +444,18 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
   // Evolução Fase 5: a liberação da mão de obra acompanha o evento (aprovação, entrega…),
   // na mesma transação — não depende de alguém abrir a tela do financeiro.
   await refreshLaborOf(tx, actor, { serviceOrderId: updated.serviceOrderId });
-  if (s.stage === 'PRONTA_ENTREGA' && s.inspection?.packaging) {
+  // F8-15b: a etapa muda a situação mostrada no Meus Ganhos (ex.: "aguardando qualidade") mesmo
+  // quando a obrigação não muda de status — os profissionais da peça recarregam (sem valores).
+  await notifyOwnChanged(
+    tx,
+    actor,
+    await laborOwners(tx, updated.serviceOrderId),
+    'service_order_item',
+  );
+  await resolveStageNotices(tx, actor, itemId, before, s.stage);
+  // Uma vez por aprovação (S1: sem embalagem).
+  const readyKey = s.inspection?.id;
+  if (s.stage === 'PRONTA_ENTREGA' && readyKey) {
     const siblings = await tx.serviceOrderItem.findMany({
       where: { serviceOrderId: updated.serviceOrderId },
       select: { fulfillmentStage: true },
@@ -455,12 +468,76 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
       actor,
       'entregas.gerenciar',
       'PRONTO_ENTREGA',
-      `PRONTO_ENTREGA:${itemId}:${s.inspection.packaging.id}`,
+      `PRONTO_ENTREGA:${itemId}:${readyKey}`,
       `${pieceCode(updated)} · ${updated.description} (${updated.serviceOrder.customer.name}) está pronta para entrega — ${ready} de ${siblings.length} peça(s) da OS. Agende quando quiser.`,
       updated.serviceOrderId,
     );
   }
   return s.stage;
+}
+
+const INSPECTION_STAGES: readonly string[] = ['AGUARDANDO_INSPECAO', 'EM_INSPECAO'];
+const PACKAGING_STAGES: readonly string[] = ['AGUARDANDO_EMBALAGEM', 'EM_EMBALAGEM'];
+
+/**
+ * F10-19: a peça saiu da etapa que o aviso pedia — inspeção (pendente/atribuída), correção,
+ * embalagem ou "pronta para entrega" — então esses avisos ficam resolvidos (a mesma etapa
+ * canônica que move a peça; nada de rotina periódica).
+ */
+async function resolveStageNotices(
+  tx: Tx,
+  actor: ActorContext,
+  itemId: string,
+  before: string,
+  after: string,
+) {
+  const left = (stages: readonly string[]) => stages.includes(before) && !stages.includes(after);
+  if (left(INSPECTION_STAGES)) {
+    const ids = (
+      await tx.qualityInspection.findMany({
+        where: { serviceOrderItemId: itemId },
+        select: { id: true },
+      })
+    ).map((i) => i.id);
+    await resolveNotifications(
+      tx,
+      actor,
+      ['INSPECAO_ATRIBUIDA', 'NOVA_INSPECAO'],
+      ids.map((id) => `INSPECAO:${id}`),
+    );
+    await resolveNotifications(
+      tx,
+      actor,
+      'INSPECAO_PENDENTE',
+      ids.map((id) => `INSPECAO_PENDENTE:${id}`),
+    );
+  }
+  if (before === 'EM_CORRECAO' && after !== 'EM_CORRECAO') {
+    const tasks = await tx.productionTask.findMany({
+      where: { serviceOrderItemId: itemId },
+      select: { id: true },
+    });
+    await resolveNotifications(
+      tx,
+      actor,
+      'CORRECAO_ATRIBUIDA',
+      tasks.map((t) => `CORRECAO_ATRIBUIDA:${t.id}`),
+    );
+  }
+  if (left(PACKAGING_STAGES)) {
+    const records = await tx.packagingRecord.findMany({
+      where: { serviceOrderItemId: itemId },
+      select: { id: true },
+    });
+    await resolveNotifications(
+      tx,
+      actor,
+      'EMBALAGEM_LIBERADA',
+      records.map((r) => `EMBALAGEM_LIBERADA:${r.id}`),
+    );
+  }
+  if (before === 'PRONTA_ENTREGA' && after !== 'PRONTA_ENTREGA')
+    await resolveNotifications(tx, actor, 'PRONTO_ENTREGA', [`PRONTO_ENTREGA:${itemId}`]);
 }
 
 export async function refreshStagesOfOrder(tx: Tx, actor: ActorContext, serviceOrderId: string) {

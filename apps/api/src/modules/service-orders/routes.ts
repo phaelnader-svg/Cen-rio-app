@@ -29,6 +29,7 @@ import { Errors } from '../../lib/errors';
 import { notify } from '../notifications/notify';
 import { protectCancelledServiceOrder } from '../production/cancellation';
 import { readinessOf } from '../purchasing/common';
+import { moduleEnabled } from '../../core/modules';
 import { idParams, toEmployeeSummary } from '../presenters';
 import {
   can,
@@ -43,6 +44,7 @@ import { itemAllocations } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { orderRevenue } from '../finance/revenue';
 import { loadTeam, upholsterersOf } from '../production/distribution';
+import { loadOperationalState, loadOperationalStates } from './operational';
 import { createServiceOrder } from './service';
 
 const VIEW = { session: 'any', permissions: ['os.ver'] } as const;
@@ -60,6 +62,7 @@ const fullInclude = {
     include: {
       measuredBy: { select: { displayName: true } },
       orderItem: { include: { receiptLines: { select: { location: true } } } },
+      currentLocation: { select: { id: true, label: true } },
     },
     orderBy: { position: 'asc' as const },
   },
@@ -78,6 +81,12 @@ export async function loadServiceOrderDto(
   if (!so) throw Errors.notFound('Ordem de serviço');
   const measuredCount = so.items.filter((i) => measurementsOf(i.measurements).length > 0).length;
   const materialsState = (await readinessOf(db, id)).state;
+  // Etapa E1: com as travas de materiais desligadas (padrão), materiais e medições não impedem o
+  // início da produção; a prontidão só informa (a lista simples da OS dá o aviso).
+  const materialsGate = await moduleEnabled(db, 'materiais');
+  const simpleMaterialsPending = await db.serviceOrderMaterial.count({
+    where: { serviceOrderId: id, removedAt: null, available: false },
+  });
   // Fase 5: programada quando há tarefa ativa em planejamento publicado.
   const scheduled = await db.productionTask.count({
     where: {
@@ -122,6 +131,7 @@ export async function loadServiceOrderDto(
       measuredBy: i.measuredBy?.displayName ?? null,
       measurementKind: i.measurementKind,
       locations: [...new Set(i.orderItem.receiptLines.map((l) => l.location))],
+      currentLocation: i.currentLocation,
       version: i.version,
     })),
     materials: so.materials.map((m) => ({
@@ -144,11 +154,19 @@ export async function loadServiceOrderDto(
     // Prontidão para produção: apenas informativa. O início é decidido tarefa a
     // tarefa pelo motor de liberação (Fase 5), nunca pela OS como um todo.
     readiness: {
-      measurements: so.items.length > 0 && measuredCount === so.items.length ? 'OK' : 'PENDENTE',
+      measurements:
+        so.items.length > 0 && measuredCount === so.items.length
+          ? 'OK'
+          : materialsGate
+            ? 'PENDENTE'
+            : 'INFORMATIVO',
       technicalLead: so.technicalLeadId ? 'OK' : 'PENDENTE',
-      // Fase 4: calculada a partir de solicitações, compras, recebimentos e reservas.
-      materials: materialsState === 'COMPLETO' ? 'OK' : 'PENDENTE',
+      // Fase 4: calculada a partir de solicitações, compras, recebimentos e reservas. Etapa E1: com
+      // as travas desligadas, só informa (nunca "pendente" como impedimento).
+      materials: !materialsGate ? 'INFORMATIVO' : materialsState === 'COMPLETO' ? 'OK' : 'PENDENTE',
       materialsState,
+      materialsGate,
+      simpleMaterialsPending,
       scheduling: scheduled > 0 ? 'OK' : 'PENDENTE',
       canStartProduction: false,
     },
@@ -346,6 +364,10 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       }),
     ]);
     const deadlines = await serviceDeadlines(prisma, { id: { in: rows.map((r) => r.id) } });
+    const states = await loadOperationalStates(
+      prisma,
+      rows.map((r) => r.id),
+    );
     return {
       total,
       items: rows.map(
@@ -363,6 +385,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
           itemCount: so.items.length,
           pieceCount: so.items.reduce((a, i) => a + i.quantity, 0),
           createdAt: so.createdAt.toISOString(),
+          operationalState: states.get(so.id)?.state,
         }),
       ),
     } satisfies PageDto<ServiceOrderSummaryDto>;
@@ -431,6 +454,21 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     const { id } = idParams.parse(request.params);
     return loadServiceOrderDto(prisma, id);
   });
+
+  /**
+   * Reformulação, Fase 0: estado operacional derivado (somente leitura; nenhum contrato existente
+   * muda). Só no painel: a base técnica dos estados que as próximas fases vão exibir.
+   */
+  app.get(
+    '/api/v1/service-orders/:id/operational-state',
+    { config: { access: { session: 'WEB', permissions: ['os.ver'] } } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const state = await loadOperationalState(prisma, id);
+      if (!state) throw Errors.notFound('Ordem de serviço');
+      return state;
+    },
+  );
 
   app.get('/api/v1/service-orders/:id/revisions', { config: { access: VIEW } }, async (request) => {
     const { id } = idParams.parse(request.params);

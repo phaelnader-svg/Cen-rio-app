@@ -19,6 +19,7 @@ import { audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { serviceOrderCode } from '../commercial/common';
+import { resolveNotifications } from '../notifications/notify';
 import { workers } from '../production/plans';
 import { checkVersion, dateOnly, financeEvent, historyOf, lockRow, parseDate } from './common';
 
@@ -425,6 +426,10 @@ export async function adjustLabor(
     entityType: 'production_payable',
     entityId: id,
     summary: `${productionPayableCode(p.number)}: ajuste de ${(input.amountCents / 100).toFixed(2)} — ${input.reason}`,
+    changes: {
+      adjustmentsCents: { from: p.adjustmentsCents, to: next },
+      reason: input.reason,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'production_payable',
@@ -434,6 +439,10 @@ export async function adjustLabor(
     data: { amountCents: input.amountCents },
     type: EVENT_TYPES.FINANCE_COST_UPDATED,
   });
+  // F10-19 (Rodada 3): o ajuste justificado é a conclusão canônica da revisão que mudou o valor
+  // da peça devolvida — o aviso "revisar o valor" deixa de pedir ação (fica no histórico; uma
+  // nova devolução o reativa pela mesma chave).
+  await resolveNotifications(tx, actor, 'REVISAO_DEVOLUCAO', [`labor-review:${id}`]);
   return refreshLabor(tx, actor, id);
 }
 
@@ -505,6 +514,16 @@ export async function payLabor(
     entityType: 'production_payable',
     entityId: id,
     summary: `${productionPayableCode(p.number)}: pagamento de ${(input.amountCents / 100).toFixed(2)} a ${p.professional.displayName}${eligible ? '' : ` (antecipado: ${input.earlyReason})`} — ${coverage.kind === 'PROFISSIONAL' ? 'confirmação' : 'exceção administrativa'} ${coverage.code}.`,
+    // F10-20b: estado anterior e posterior da obrigação (o ledger financeiro segue a fonte).
+    changes: {
+      paidCents: { from: p.paidCents, to: paid },
+      status: {
+        from: p.status,
+        to: laborStatus({ ...p, paidCents: paid, eligible, cancelled: false }),
+      },
+      coverage: coverage.code,
+      earlyReason: eligible ? null : input.earlyReason,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'production_payable',
@@ -519,10 +538,12 @@ export async function payLabor(
     },
     type: EVENT_TYPES.FINANCE_PAYABLE_PAID,
   });
-  return {
-    ...(await tx.productionPayable.findUniqueOrThrow({ where: { id } })),
-    paymentId: pay.id,
-  };
+  const after = await tx.productionPayable.findUniqueOrThrow({ where: { id } });
+  // F10-19 (Rodada 3): quitada pelo valor mantido, a obrigação não admite mais ajuste — a revisão
+  // da peça devolvida terminou sem ajuste pendente e o aviso deixa de pedir ação.
+  if (after.status === 'PAGO')
+    await resolveNotifications(tx, actor, 'REVISAO_DEVOLUCAO', [`labor-review:${id}`]);
+  return { ...after, paymentId: pay.id };
 }
 
 /**
@@ -568,6 +589,14 @@ export async function reverseLaborPayment(
     entityType: 'production_payable',
     entityId: p.id,
     summary: `${productionPayableCode(p.number)}: estorno de ${(pay.amountCents / 100).toFixed(2)} — ${input.reason}`,
+    changes: {
+      paidCents: { from: p.paidCents, to: paid },
+      status: {
+        from: p.status,
+        to: laborStatus({ ...p, paidCents: paid, eligible, cancelled: false }),
+      },
+      reason: input.reason,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'production_payable',
@@ -606,11 +635,14 @@ export async function cancelLabor(
     where: { id },
     data: { status: 'CANCELADO', cancelReason: input.reason, version: { increment: 1 } },
   });
+  // F10-19: obrigação cancelada — o aviso "revisar o valor desta peça devolvida" perde o objeto.
+  await resolveNotifications(tx, actor, 'REVISAO_DEVOLUCAO', [`labor-review:${id}`]);
   await audit(tx, actor, {
     action: 'finance.labor_cancelled',
     entityType: 'production_payable',
     entityId: id,
     summary: `${productionPayableCode(p.number)} cancelada: ${input.reason}`,
+    changes: { status: { from: p.status, to: 'CANCELADO' }, reason: input.reason },
   });
   await financeEvent(tx, actor, {
     entityType: 'production_payable',

@@ -11,6 +11,7 @@ import {
   loginAdmin,
   resetDatabase,
   setupTablet,
+  withoutOwnChanged,
 } from './helpers';
 import {
   createCustomer,
@@ -855,7 +856,10 @@ describe('Recebedor ausente, segurança e semana (C2, CA6-13, CA6-15)', () => {
     for (const path of [`/api/v1/pickups/${pickup.id}`, '/api/v1/logistics/jobs'])
       expect(moneyKeys((await plain.get(path)).body), path).toEqual([]);
     expect(moneyKeys(wsA.messages)).toEqual([]);
-    expect(JSON.stringify(wsA.messages)).not.toMatch(/finance\.|10000/);
+    // Só o aviso próprio sem valores (F8-15b): André é o recebedor; nenhum outro evento financeiro.
+    expect(JSON.stringify(withoutOwnChanged(wsA.messages, ids.andre))).not.toMatch(
+      /finance\.|10000/,
+    );
   });
 
   it('14. semana do fato gerador (realização) no fuso da oficina; agendamento em outra semana não conta', async () => {
@@ -991,19 +995,10 @@ describe('Entrega completa (CA6-02, 05, 07 pela entrega)', () => {
       (await post(thiago, `/api/v1/quality/inspections/${i.id}/approve`, { version: i.version }))
         .status,
     ).toBe(200);
-    const pack = await db().packagingRecord.findFirstOrThrow({
-      where: { serviceOrderItemId: so.items[0].id },
-    });
-    const loc = (await db().itemLocation.findUniqueOrThrow({ where: { key: 'EXPEDICAO' } })).id;
+    // Reformulação S1: sem embalagem — a aprovação já deixa a peça pronta para entrega.
     expect(
-      (
-        await post(joao, `/api/v1/packaging/${pack.id}/complete`, {
-          protection: 'PLASTICO_BOLHA',
-          locationId: loc,
-          version: pack.version,
-        })
-      ).status,
-    ).toBe(200);
+      await db().packagingRecord.count({ where: { serviceOrderItemId: so.items[0].id } }),
+    ).toBe(0);
     const customerId = (await db().serviceOrder.findUniqueOrThrow({ where: { id: so.id } }))
       .customerId;
     const d = await post(admin, '/api/v1/deliveries', {

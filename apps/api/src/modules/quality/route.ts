@@ -48,7 +48,8 @@ async function collect(db: Tx | PrismaClient, date: string): Promise<Stop[]> {
   const day = parseDateOnly(date)!;
   const [deliveries, pickups] = await Promise.all([
     db.delivery.findMany({
-      where: { scheduledDate: day, status: { not: 'CANCELADA' } },
+      // Fase 1: entrega direta pela OS não é parada de roteiro (não houve viagem).
+      where: { scheduledDate: day, status: { not: 'CANCELADA' }, origin: 'LOGISTICA' },
       include: deliveryInclude,
     }),
     db.pickupRequest.findMany({

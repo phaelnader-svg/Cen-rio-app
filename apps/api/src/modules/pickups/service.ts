@@ -83,6 +83,8 @@ export async function pickupExecutorProblem(tx: Tx, userId: string): Promise<str
  * Simplificação Fase 2: custo de viagem (Fase 6) é o valor TOTAL combinado com a logística
  * terceirizada e vira obrigação do recebedor configurado (André). Equipe própria não gera esse
  * custo — nunca credita o recebedor terceirizado por uma viagem feita pela própria equipe.
+ * Rodada 3 (F2-18): na RETIRADA da equipe própria o custo é aceito como custo OPERACIONAL
+ * (custeio, sem obrigação — ver `upsertTripCost`); esta regra vale só para as entregas.
  */
 export function tripCostTeamProblem(team: PickupTeam, hasTripCost: boolean): string | null {
   if (hasTripCost && team === 'EQUIPE_PROPRIA')
@@ -130,9 +132,6 @@ export async function createPickup(
 ): Promise<PickupRequest> {
   if (input.tripCost && !perms.has('financeiro.gerenciar'))
     throw Errors.forbidden('Informar o custo da viagem exige permissão do financeiro.');
-  const teamProblem = tripCostTeamProblem(input.team, Boolean(input.tripCost));
-  if (teamProblem)
-    throw Errors.validation([{ path: 'tripCost', message: teamProblem }], teamProblem);
   if (!(await lockOrder(tx, input.orderId))) throw Errors.notFound('Pedido');
   await lockOrderItems(tx, input.orderId);
   const order = await tx.commercialOrder.findUniqueOrThrow({ where: { id: input.orderId } });

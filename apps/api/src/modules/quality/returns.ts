@@ -321,10 +321,6 @@ async function withdrawItem(tx: Tx, actor: ActorContext, itemId: string, reason:
     where: { serviceOrderItemId: itemId, status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } },
     data: { status: 'CANCELADA', invalidatedAt: new Date(), invalidReason: reason.slice(0, 500) },
   });
-  await tx.packagingRecord.updateMany({
-    where: { serviceOrderItemId: itemId, status: { in: ['PENDENTE', 'EM_ANDAMENTO'] } },
-    data: { status: 'CANCELADA', invalidReason: reason.slice(0, 500) },
-  });
   const deliveryItems = await tx.deliveryItem.findMany({
     where: { serviceOrderItemId: itemId, active: true },
     include: { delivery: true },
@@ -589,7 +585,7 @@ export async function correctReceiptLine(
   return { correction, orderId: line.receipt.orderId };
 }
 
-/** OS cancelada: inspeções e embalagens abertas são canceladas; a peça sai das entregas. */
+/** OS cancelada: inspeções abertas são canceladas; a peça sai das entregas (S1: sem embalagem). */
 onServiceOrderCancelled(async (tx, actor, serviceOrderId, reason) => {
   const items = await tx.serviceOrderItem.findMany({ where: { serviceOrderId } });
   for (const i of items) {

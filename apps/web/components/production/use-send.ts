@@ -42,10 +42,9 @@ export const PRODUCTION_KEYS = [
   'my-issues',
   'issue-impacts',
   'help-candidates',
-  // Fase 10 — qualidade, embalagem e entregas
+  // Fase 10 — qualidade e entregas
   'inspections',
   'inspection',
-  'packaging',
   'pieces',
   'piece',
   'deliveries',

@@ -9,7 +9,8 @@
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "perf": "vitest run -c vitest.perf.config.ts"
+    "perf": "vitest run -c vitest.perf.config.ts",
+    "app-client": "tsx --env-file-if-exists=../../.env src/cli/app-client.ts"
   },
   "dependencies": {
     "@cenario/db": "workspace:*",
@@ -24,6 +25,7 @@
     "fastify": "5.12.5",
     "fastify-plugin": "5.1.0",
     "pg": "8.23.1",
+    "sharp": "0.35.5",
     "zod": "4.1.13"
   },
   "devDependencies": {

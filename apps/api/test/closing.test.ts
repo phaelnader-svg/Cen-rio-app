@@ -11,6 +11,7 @@ import {
   loginAdmin,
   resetDatabase,
   setupTablet,
+  withoutOwnChanged,
 } from './helpers';
 import {
   createCustomer,
@@ -699,8 +700,14 @@ describe('Segurança (CA7-14)', () => {
     await allowAll(admin, WEEK, [ids.andre]);
     expect((await post(admin, F(`/weekly-closings/${WEEK}/payments`), payBody)).status).toBe(201);
     await new Promise((r) => setTimeout(r, 400));
-    for (const ws of [wsR, wsA])
-      expect(JSON.stringify(ws.messages)).not.toMatch(/weekly_closing|finance\.|Cents/);
+    // Só o aviso próprio sem valores (F8-15b) ao dono; nenhum outro evento do fechamento.
+    for (const [ws, owner] of [
+      [wsR, ids.ricardo],
+      [wsA, ids.andre],
+    ] as const)
+      expect(JSON.stringify(withoutOwnChanged(ws.messages, owner))).not.toMatch(
+        /weekly_closing|finance\.|Cents/,
+      );
     // Ricardo: só os próprios valores, com PIN.
     const mine = await post(ricardo, F('/my-production/unlock'), { pin: '482915' });
     expect(mine.status).toBe(200);

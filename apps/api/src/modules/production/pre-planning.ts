@@ -53,6 +53,7 @@ import {
   lockTasks,
   reevaluateTasks,
   taskEvent,
+  materialsGateOn,
 } from './common';
 import { distributeServiceOrder } from './distribution';
 import { placeServiceInQueue } from './queue-placement';
@@ -328,7 +329,9 @@ export async function publicationPreview(
       `${unassigned} tarefa(s) sem responsável: ficarão bloqueadas até o gestor definir.`,
     );
   const materialsBlocked: PublicationPreviewDto['materialsBlocked'] = [];
-  for (const id of soIds) {
+  // Fase 1: com as travas de materiais desligadas, nenhuma tarefa fica bloqueada por material.
+  const gateOn = await materialsGateOn(db);
+  for (const id of gateOn ? soIds : []) {
     const r = await readinessOf(db, id);
     if (
       r.state !== 'COMPLETO' &&

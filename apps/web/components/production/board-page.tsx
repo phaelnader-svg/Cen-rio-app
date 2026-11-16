@@ -10,6 +10,7 @@ import {
 } from '@cenario/shared';
 import { Factory } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { PriorityBadge } from '@/components/commercial/badges';
 import { Input, Select } from '@/components/ui/field';
@@ -52,7 +53,11 @@ export function ProductionBoardPage() {
   const [from, setFrom] = useState(() => mondayOf(today));
   const [to, setTo] = useState(() => addDays(mondayOf(today), 6));
   const [assignee, setAssignee] = useState('');
-  const [status, setStatus] = useState('');
+  // Rodada 3 (F10-09): `?status=BLOQUEADA` abre o quadro já filtrado (link do Início).
+  const initialStatus = useSearchParams().get('status') ?? '';
+  const [status, setStatus] = useState(() =>
+    (TASK_STATUSES as readonly string[]).includes(initialStatus) ? initialStatus : '',
+  );
   const [activity, setActivity] = useState('');
   const [os, setOs] = useState('');
   const [by, setBy] = useState<GroupBy>('funcionario');

@@ -2,7 +2,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import { releaseDueTasks } from '../src/modules/production/common';
-import { Client, WsClient, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  Client,
+  WsClient,
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  resetDatabaseWithMaterialsGate,
+} from './helpers';
 import { createCustomer, createOrder, panelUserWith, receiptBody } from './commercial-helpers';
 import { compareQueue, mondayOf } from '@cenario/shared';
 import {
@@ -30,7 +38,7 @@ beforeAll(async () => {
 });
 afterAll(() => app.close());
 beforeEach(async () => {
-  await resetDatabase();
+  await resetDatabaseWithMaterialsGate();
   setClock();
   (app.ctx.hub as unknown as { feed: { lastSeq: bigint } }).feed.lastSeq = 0n;
 });

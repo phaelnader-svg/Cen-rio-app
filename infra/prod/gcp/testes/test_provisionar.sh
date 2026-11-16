@@ -7,7 +7,9 @@
 #   D. "verificar" aprova o isolamento limpo e REPROVA uma ligação cruzada (operador da homologação
 #      com acesso a segredo de produção);
 #   E. promover-imagens.sh: recusa digest diferente do homologado, copia pelo digest, é idempotente e
-#      nunca sobrescreve uma etiqueta de produção existente com outro digest.
+#      nunca sobrescreve uma etiqueta de produção existente com outro digest;
+#   F. "canal": só o 403 de propagação (código 126) é repetido; uma falha do runner não reenvia jobs; a
+#      permissão temporária é sempre removida; o isolamento não herda a falha do canal.
 # Executar: bash infra/prod/gcp/testes/test_provisionar.sh
 set -euo pipefail
 AQUI="$(cd "$(dirname "$0")" && pwd)"
@@ -118,6 +120,62 @@ igual "$rc" 1 "etiqueta de produção com outro digest (código de saída)"
 afirma "$TMP/e4.out" "nunca sobrescrito"
 rc=0; promo 9fb1786 "$A" "$W" > /dev/null 2>&1 || rc=$?
 igual "$rc" 2 "SHA abreviado recusado"
+
+echo "F. canal (permissão temporária) e isolamento contados separadamente"
+PY_REAL="$(command -v python3)"
+mkdir -p "$TMP/bin3"
+# operar.py falso: cada chamada "verificar" sai com o próximo código de FALSO_VERIFICAR (o último se repete).
+cat > "$TMP/bin3/python3" <<EOF2
+#!/bin/bash
+if [[ "\${2:-}" == *operar.py ]]; then
+  echo "operar \$3 ambiente=\${CENARIO_AMBIENTE:-} token=\${CLOUDSDK_AUTH_ACCESS_TOKEN-ausente}" >> "\$FALSO_OPERAR_LOG"
+  [[ "\$3" == verificar ]] || exit 0
+  read -ra cod <<< "\$FALSO_VERIFICAR"; n=\$(grep -c ' verificar ' "\$FALSO_OPERAR_LOG")
+  (( n <= \${#cod[@]} )) && exit "\${cod[\$((n - 1))]}" || exit "\${cod[-1]}"
+fi
+exec "$PY_REAL" "\$@"
+EOF2
+chmod +x "$TMP/bin3/python3"
+canal() { # canal <nome> <códigos do verificar…>
+  novo "$1"; local nome="$1"; shift
+  echo "PROVISIONAR PRODUCAO" | prov infraestrutura > /dev/null 2>&1
+  PATH="$TMP/bin:$PATH" gcloud iam service-accounts create claude-operador-prod --project=cenariogestao
+  export FALSO_OPERAR_LOG="$TMP/$nome.operar" FALSO_VERIFICAR="$*"; : > "$FALSO_OPERAR_LOG"; : > "$GCLOUD_LOG"
+  rc=0; PATH="$TMP/bin3:$PATH" CENARIO_CANAL_ESPERA_S=0 CLOUDSDK_AUTH_ACCESS_TOKEN=marcador prov canal > "$TMP/$nome.out" 2>&1 || rc=$?
+}
+SA_OP="iam service-accounts (add|remove)-iam-policy-binding claude-operador-prod@cenariogestao.iam.gserviceaccount.com --member=user:dono@exemplo.com --role=projects/cenariogestao/roles/cenarioProdAssinaJwt"
+# F1: signJwt 403 (código 126) enquanto a permissão temporária propaga, depois o canal responde.
+canal f1 126 126 0
+igual "$rc" 0 "canal após a propagação (código de saída)"
+igual "$(grep -c ' verificar ' "$FALSO_OPERAR_LOG")" 3 "tentativas do verificar (só o 126 é repetido)"
+afirma "$FALSO_OPERAR_LOG" "operar verificar ambiente=prod token=ausente"
+afirma "$FALSO_OPERAR_LOG" "operar teste-seguranca ambiente=prod"
+afirma "$GCLOUD_LOG" "${SA_OP/(add|remove)/add}"
+afirma "$GCLOUD_LOG" "${SA_OP/(add|remove)/remove}"
+afirma "$TMP/f1.out" "permissão temporária de dono@exemplo.com removida"
+afirma "$TMP/f1.out" "ISOLAMENTO: OK"
+afirma "$TMP/f1.out" "ETAPA OPERADOR: OK"
+grep -E "$MUTA" "$GCLOUD_LOG" | grep -vE "$SA_OP" > "$TMP/f1.muta" || true
+igual "$(grep -c . "$TMP/f1.muta")" 0 "outras mudanças no GCP além da permissão temporária"
+# F2: o runner respondeu, mas a verificação falhou (código 1): NÃO repete (não reenvia jobs) e o
+# isolamento NÃO herda a falha do canal.
+canal f2 1
+igual "$rc" 1 "canal com falha (código de saída)"
+igual "$(grep -c ' verificar ' "$FALSO_OPERAR_LOG")" 1 "tentativas do verificar (sem repetição)"
+nega "$FALSO_OPERAR_LOG" "teste-seguranca"
+afirma "$TMP/f2.out" "canal: o runner respondeu, mas a verificação falhou \(código 1"
+afirma "$TMP/f2.out" "ISOLAMENTO: OK"
+nega "$TMP/f2.out" "ISOLAMENTO com"
+afirma "$TMP/f2.out" "ETAPA OPERADOR incompleta: canal FALHOU · isolamento OK"
+afirma "$GCLOUD_LOG" "${SA_OP/(add|remove)/remove}"
+# F3: a assinatura nunca propaga: 32 tentativas, falha clara, permissão temporária removida.
+canal f3 126
+igual "$rc" 1 "assinatura sempre recusada (código de saída)"
+igual "$(grep -c ' verificar ' "$FALSO_OPERAR_LOG")" 32 "tentativas do verificar"
+afirma "$TMP/f3.out" "assinatura ainda recusada após 32 tentativas"
+afirma "$TMP/f3.out" "ISOLAMENTO: OK"
+afirma "$GCLOUD_LOG" "${SA_OP/(add|remove)/remove}"
+unset FALSO_OPERAR_LOG FALSO_VERIFICAR
 
 echo
 if (( FALHAS == 0 )); then echo "PROVISIONAMENTO (testes locais): OK"; else echo "PROVISIONAMENTO (testes locais): $FALHAS falha(s)"; exit 1; fi

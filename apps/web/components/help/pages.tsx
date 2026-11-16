@@ -1,6 +1,7 @@
 'use client';
 
 import type { HelpStatus, ProposalAlternative, RescheduleProposalDto } from '@cenario/shared';
+import { useFocusParam } from '@/lib/focus-param';
 import {
   CANDIDATE_REASONS,
   HELP_KIND_LABEL,
@@ -30,11 +31,12 @@ import { useHelpCandidates } from '@/lib/issues';
 import {
   useHelpRequest,
   useHelpRequests,
+  useHelpRequestsByStatus,
   usePlanningActions,
   useProposals,
   useSkills,
 } from '@/lib/help';
-import { useCan } from '@/lib/hooks';
+import { useCan, useModules } from '@/lib/hooks';
 import { useWorkers } from '@/lib/production';
 
 const STATUS_TONE: Record<HelpStatus, 'warn' | 'ok' | 'info' | 'neutral' | 'danger' | 'brand'> = {
@@ -58,20 +60,29 @@ const TAB_LABEL: Record<HelpStatus, string> = {
 
 /** Pedidos de ajuda por status, com a avaliação dos candidatos de cada atribuição. */
 export function HelpRequestsPage() {
+  const focus = useFocusParam();
   const can = useCan();
+  const helpOn = useModules().ajuda;
   const q = useHelpRequests();
-  const [tab, setTab] = useState<HelpStatus>('PENDENTE');
+  const [chosenTab, setTab] = useState<HelpStatus | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const { m, error } = useSend();
+  // Rodada 4 (F10-14): o link `?foco=<id>` abre a aba do status do pedido (não sempre Pendentes),
+  // até a pessoa escolher outra aba.
+  const focused = useHelpRequest(focus);
+  const tab: HelpStatus = chosenTab ?? focused.data?.status ?? 'PENDENTE';
+  // Rodada 4 (F7-14): a aba ativa vem paginada pelo próprio status (histórico sem limite fixo).
+  const paged = useHelpRequestsByStatus(tab);
   const list = q.data ?? [];
   const count = (s: HelpStatus) => list.filter((r) => r.status === s).length;
-  const rows = list.filter((r) => r.status === tab);
+  const rows = paged.data?.pages.flat() ?? [];
   return (
     <>
       <PageHeader
         title="Pedidos de ajuda"
         description="Atribuição automática de ajudantes por regras fixas (competência, presença, ocupação, agenda e menor impacto). Cada escolha registra os candidatos avaliados e os motivos."
         actions={
+          helpOn &&
           can('producao.planejar') && (
             <Button
               variant="secondary"
@@ -94,13 +105,21 @@ export function HelpRequestsPage() {
           )
         }
       />
+      {!helpOn && (
+        <div data-testid="help-disabled">
+          <Alert tone="info" title="Pedidos de ajuda desativados">
+            Os tablets não pedem mais ajuda e nada aqui gera pendência. O histórico abaixo continua
+            disponível para consulta; para voltar a usar, religue em Empresa → Funcionalidades.
+          </Alert>
+        </div>
+      )}
       {error && <Alert tone="danger">{error}</Alert>}
       <Tabs
         tabs={HELP_STATUSES.map((s) => ({ key: s, label: TAB_LABEL[s], count: count(s) }))}
         active={tab}
         onChange={(k) => setTab(k as HelpStatus)}
       >
-        {q.isPending ? (
+        {paged.isPending ? (
           <Spinner />
         ) : rows.length === 0 ? (
           <EmptyState
@@ -127,6 +146,7 @@ export function HelpRequestsPage() {
                     key={r.id}
                     className="border-t border-line"
                     data-testid={`help-row-${r.code}`}
+                    data-focus-id={r.id}
                   >
                     <td>
                       <span className="font-mono font-semibold">{r.code}</span>
@@ -169,6 +189,18 @@ export function HelpRequestsPage() {
               </tbody>
             </table>
           </Card>
+        )}
+        {paged.hasNextPage && (
+          <div className="mt-4 flex justify-center">
+            <Button
+              variant="secondary"
+              loading={paged.isFetchingNextPage}
+              onClick={() => void paged.fetchNextPage()}
+              data-testid="help-load-more"
+            >
+              Carregar mais antigos
+            </Button>
+          </div>
         )}
       </Tabs>
       {open && <HelpDetailDialog id={open} onClose={() => setOpen(null)} />}
@@ -287,6 +319,7 @@ function HelpDetailDialog({ id, onClose }: { id: string; onClose: () => void }) 
 
 /** Propostas que exigem decisão do gestor e histórico de alterações (automáticas e aprovadas). */
 export function ReschedulePage() {
+  useFocusParam();
   const [tab, setTab] = useState<'pending' | 'decided' | 'history'>('pending');
   const pending = useProposals('PENDENTE');
   const all = useProposals();
@@ -335,7 +368,7 @@ function ProposalCard({ p }: { p: RescheduleProposalDto }) {
   const { m, error } = useSend();
   const alt = p.alternatives.find((a) => a.id === choice);
   return (
-    <Card className="p-5" data-testid={`proposal-${p.code}`}>
+    <Card className="p-5" data-testid={`proposal-${p.code}`} data-focus-id={p.id}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono font-semibold">{p.code}</span>
         <Badge tone="info">{PROPOSAL_KIND_LABEL[p.kind]}</Badge>
@@ -781,14 +814,13 @@ function SkillsCard({
 export function HelpAndRescheduleBanner() {
   const can = useCan();
   const proposals = useProposals('PENDENTE');
-  const help = useHelpRequests();
+  // Reformulação, Fase 0: com os pedidos de ajuda desligados, o aviso mostra só as reprogramações.
+  const helpOn = useModules().ajuda;
+  const help = useHelpRequests(undefined, helpOn);
   if (!can('producao.ver') && !can('producao.planejar')) return null;
-  const waiting = (help.data ?? []).filter(
-    (r) => r.status === 'PENDENTE' || r.status === 'ESCALADA',
-  );
-  const active = (help.data ?? []).filter(
-    (r) => r.status === 'ATRIBUIDA' || r.status === 'EM_EXECUCAO',
-  );
+  const helps = helpOn ? (help.data ?? []) : [];
+  const waiting = helps.filter((r) => r.status === 'PENDENTE' || r.status === 'ESCALADA');
+  const active = helps.filter((r) => r.status === 'ATRIBUIDA' || r.status === 'EM_EXECUCAO');
   const pending = proposals.data?.length ?? 0;
   if (!pending && !waiting.length && !active.length) return null;
   return (

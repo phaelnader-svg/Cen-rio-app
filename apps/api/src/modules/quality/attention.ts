@@ -6,7 +6,6 @@ import {
   deliveryCode,
   inspectionCode,
   logisticsCode,
-  packagingCode,
   taskCode,
   type AttentionItemDto,
   type LogisticsKind,
@@ -15,6 +14,7 @@ import {
 import type { PrismaClient } from '@cenario/db';
 import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { serviceDeadlines } from '../deadlines/service';
+import { moduleEnabled } from '../../core/modules';
 import { pieceCode, pieceInclude } from './common';
 
 const base = {
@@ -32,7 +32,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
     where: { status: { in: ['PENDENTE', 'EM_ANDAMENTO'] }, inspectorUserId: null },
     include: { serviceOrderItem: { include: pieceInclude } },
     orderBy: { createdAt: 'asc' },
-    take: 100,
   });
   for (const i of waiting) {
     const p = i.serviceOrderItem;
@@ -68,7 +67,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
         include: { assignee: { select: { id: true, displayName: true } } },
       },
     },
-    take: 100,
   });
   // Fase 10: atraso pela regra ÚNICA de prazos (dias úteis, ATRASADO) — nunca uma comparação
   // própria com a data prometida.
@@ -98,33 +96,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
     });
   }
 
-  // Embalagens aprovadas sem responsável.
-  const unassigned = await prisma.packagingRecord.findMany({
-    where: { status: 'PENDENTE', assigneeUserId: null },
-    include: { serviceOrderItem: { include: pieceInclude } },
-    take: 100,
-  });
-  for (const r of unassigned) {
-    const p = r.serviceOrderItem;
-    items.push({
-      ...base,
-      key: `QUALIDADE:embalagem:${r.id}`,
-      type: 'QUALIDADE',
-      category: 'ACAO',
-      title: `${packagingCode(r.number)} · ${pieceCode(p)} · ${p.description}`,
-      description: 'Aprovada pela qualidade, sem ninguém disponível para embalar.',
-      serviceOrder: { id: p.serviceOrder.id, code: serviceOrderCode(p.serviceOrder.number) },
-      employee: null,
-      priority: p.serviceOrder.priority,
-      status: r.status,
-      statusLabel: 'Aguardando responsável',
-      at: r.createdAt.toISOString(),
-      deadline: dateOnly(p.serviceOrder.promisedDate),
-      nextActions: ['Designar quem embala (tapeceiro só com autorização)'],
-      link: '/painel/qualidade',
-    });
-  }
-
   // Peças prontas para entrega ainda sem agendamento (informativo; nunca agenda sozinho). A peça
   // que voltou de uma entrega frustrada já está no item da frustrada (reagendar): não repete.
   const ready = await prisma.serviceOrderItem.findMany({
@@ -133,12 +104,13 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       deliveryItems: { none: { active: true, delivery: { status: 'FRUSTRADA' } } },
     },
     include: pieceInclude,
-    take: 100,
   });
   const readyLate = await lateServiceOrders(
     prisma,
     ready.map((p) => p.serviceOrderId),
   );
+  // Fase 1: com a logística desligada, a entrega é confirmada direto na OS (sem agendamento).
+  const logisticsOn = await moduleEnabled(prisma, 'logistica');
   for (const p of ready) {
     const promised = dateOnly(p.serviceOrder.promisedDate);
     items.push({
@@ -155,8 +127,14 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       statusLabel: 'Pronta para entrega',
       at: p.updatedAt.toISOString(),
       deadline: promised,
-      nextActions: ['Agendar a entrega com o cliente'],
-      link: '/painel/entregas?tab=ready',
+      nextActions: [
+        logisticsOn
+          ? 'Agendar a entrega com o cliente'
+          : 'Entregar ao cliente e marcar como entregue na OS',
+      ],
+      link: logisticsOn
+        ? `/painel/entregas?tab=ready&foco=${p.id}`
+        : `/painel/os/${p.serviceOrder.id}?tab=entrega`,
     });
   }
 
@@ -172,7 +150,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       responsible: { select: { id: true, displayName: true } },
       reportedBy: { select: { id: true, displayName: true } },
     },
-    take: 100,
   });
   for (const o of occurrences) {
     items.push({
@@ -213,7 +190,6 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
         take: 1,
       },
     },
-    take: 100,
   });
   for (const d of frustrated) {
     items.push({

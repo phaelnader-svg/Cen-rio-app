@@ -1,6 +1,6 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test';
 import { E2E } from '../env';
-import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice, setMaterialsGate, setPin } from './helpers';
 import { openServiceOrder } from './os-helpers';
 
 /**
@@ -48,6 +48,8 @@ test.describe.serial('Fase 6 — interface operacional dos tablets', () => {
     test.setTimeout(180_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAdmin(page);
+    // Etapa E1: este spec prova o controle formal de materiais — liga a trava (o padrão é desligada).
+    await setMaterialsGate(page, true);
     await call(page, 'POST', '/api/test/clock', { now: FIXED_NOW });
     try {
       const so = await openServiceOrder(page, 'Cliente Tablets E2E');
@@ -160,6 +162,11 @@ test.describe.serial('Fase 6 — interface operacional dos tablets', () => {
       await expect(jt.getByTestId('task-pieces')).toContainText('Sofá 3 lugares');
       await expect(detail).toContainText('Ao concluir, libera');
       await expect(detail).toContainText('Revestimento do encosto');
+      // Fase 2: o essencial fica à vista; dependências, etapas e históricos em "Mais detalhes".
+      const more = jt.getByTestId('task-more');
+      await expect(jt.getByTestId('os-steps')).toBeHidden();
+      await more.getByText('Mais detalhes').click();
+      await expect(jt.getByTestId('os-steps')).toBeVisible();
       await jt.getByRole('button', { name: 'Registrar andamento' }).click();
       await jt.getByLabel('Etapa atual').fill('Estrutura limpa');
       await jt.getByLabel('Próximo passo').fill('Trocar percintas do assento');
@@ -252,6 +259,7 @@ test.describe.serial('Fase 6 — interface operacional dos tablets', () => {
       await joao.context.close();
       await marcio.context.close();
     } finally {
+      await setMaterialsGate(page, false).catch(() => undefined);
       await call(page, 'POST', '/api/test/clock', { now: null });
     }
   });

@@ -16,6 +16,7 @@ import { actorFrom, actorOf, audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { appendEvent } from '../../core/events/append';
 import { Errors } from '../../lib/errors';
+import { assertModuleEnabled } from '../../core/modules';
 import { idParams } from '../presenters';
 import {
   activeAddress,
@@ -30,6 +31,7 @@ import {
   toCustomerSummary,
 } from '../commercial/common';
 import { refreshOrderStatus } from '../commercial/status';
+import { PICKUP_ASSIGNMENT_DONE, resolvePickupAssignment } from '../notifications/notify';
 import { emitOrderEvent } from '../orders/routes';
 import { syncTripCost } from '../finance/trip-costs';
 import { createPickup, setTripParticipants, validatePickupItems } from './service';
@@ -159,6 +161,8 @@ export async function pickupRoutes(app: FastifyInstance) {
     { config: { access: MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createPickupSchema.parse(request.body);
+      // Fase 1: com a logística desligada não há retirada agendada (o cliente traz as peças).
+      await assertModuleEnabled(prisma, 'logistica');
       const id = await prisma.$transaction(
         async (tx) =>
           (await createPickup(tx, actorFrom(request), request.auth!.permissions, input)).id,
@@ -186,14 +190,22 @@ export async function pickupRoutes(app: FastifyInstance) {
       await validatePickupItems(tx, before.orderId, input.items, id);
       // Simplificação Fase 2: viagem com custo de terceirização não vira "equipe própria" sem
       // antes tratar o custo (senão o recebedor terceirizado seria credor de viagem própria).
-      if (
-        input.team === 'EQUIPE_PROPRIA' &&
-        before.team !== 'EQUIPE_PROPRIA' &&
-        (await tx.logisticsCost.count({ where: { pickupId: id, status: { not: 'CANCELADO' } } }))
-      )
-        throw Errors.business(
-          'Esta retirada tem custo de logística terceirizada. Ajuste o custo no financeiro antes de mudar para equipe própria.',
-        );
+      // Rodada 3 (F2-18): nem o inverso — o custo operacional da equipe própria não vira
+      // obrigação do recebedor terceirizado por troca de equipe.
+      if (input.team !== before.team) {
+        const live = await tx.logisticsCost.findFirst({
+          where: { pickupId: id, kind: 'RETIRADA', cancelledAt: null },
+          select: { status: true },
+        });
+        if (live && input.team === 'EQUIPE_PROPRIA' && live.status !== 'OPERACIONAL')
+          throw Errors.business(
+            'Esta retirada tem custo de logística terceirizada. Ajuste o custo no financeiro antes de mudar para equipe própria.',
+          );
+        if (live && input.team !== 'EQUIPE_PROPRIA' && live.status === 'OPERACIONAL')
+          throw Errors.business(
+            'Esta retirada tem custo operacional da equipe própria. Cancele-o no financeiro antes de mudar para logística terceirizada.',
+          );
+      }
       const order = await tx.commercialOrder.findUniqueOrThrow({ where: { id: before.orderId } });
       const address =
         input.addressId && input.addressId !== before.addressId
@@ -344,6 +356,8 @@ export async function pickupRoutes(app: FastifyInstance) {
         },
       });
       await refreshOrderStatus(tx, before.orderId);
+      if (PICKUP_ASSIGNMENT_DONE.includes(input.toStatus))
+        await resolvePickupAssignment(tx, actor, id);
       await audit(tx, actor, {
         action: 'pickup.status_changed',
         entityType: 'pickup_request',

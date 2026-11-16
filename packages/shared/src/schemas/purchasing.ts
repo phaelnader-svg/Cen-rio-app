@@ -346,6 +346,7 @@ export const leftoverDiscardSchema = z.object({ reason: reason() });
 
 /** Unidade FÍSICA do que chegou (o que se conta na porta), diferente da unidade de controle. */
 export const PHYSICAL_UNITS = ['ROLO', 'VOLUME', 'PECA', 'PLACA', 'PACOTE', 'UNIDADE'] as const;
+export type PhysicalUnit = (typeof PHYSICAL_UNITS)[number];
 export const PHYSICAL_UNIT_LABEL: Record<(typeof PHYSICAL_UNITS)[number], string> = {
   ROLO: 'rolo(s)',
   VOLUME: 'volume(s)',

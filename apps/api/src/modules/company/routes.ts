@@ -1,11 +1,27 @@
-import { EVENT_TYPES, companySettingsSchema, type CompanySettingsDto } from '@cenario/shared';
-import type { CompanySettings } from '@cenario/db';
+import {
+  EVENT_TYPES,
+  MODULES,
+  MODULE_KEYS,
+  companySettingsSchema,
+  isModuleKey,
+  resolveModules,
+  updateModuleSchema,
+  type CompanySettingsDto,
+  type ModuleSettingDto,
+  DELIVERY_ACTIVE,
+  deliveryCode,
+} from '@cenario/shared';
+import type { CompanySettings, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { lockRow } from '../../core/locking';
+import { moduleState } from '../../core/modules';
 import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
+import { pickupCode } from '../commercial/common';
+import { reevaluateTasks, waitingTaskIds } from '../production/common';
 
 function toDto(c: CompanySettings): CompanySettingsDto {
   return {
@@ -29,8 +45,145 @@ function toDto(c: CompanySettings): CompanySettingsDto {
   };
 }
 
+/** Reformulação, Fase 0: catálogo de funcionalidades com o estado efetivo e quem alterou. */
+async function moduleSettings(prisma: PrismaClient): Promise<ModuleSettingDto[]> {
+  const rows = await prisma.moduleSetting.findMany({
+    include: { updatedBy: { select: { id: true, displayName: true } } },
+  });
+  const state = resolveModules(rows);
+  return MODULE_KEYS.map((key) => {
+    const row = rows.find((r) => r.key === key);
+    return {
+      key,
+      label: MODULES[key].label,
+      description: MODULES[key].description,
+      enabled: state[key],
+      defaultEnabled: MODULES[key].defaultEnabled,
+      configurable: MODULES[key].configurable,
+      version: row?.version ?? 0,
+      updatedAt: row?.updatedAt.toISOString() ?? null,
+      updatedBy: row?.updatedBy ?? null,
+    };
+  });
+}
+
+const moduleParams = z.object({ key: z.string().max(40) });
+
+/** Situações de retirada ainda em andamento (as finais são RECEBIDA_NA_OFICINA e CANCELADA). */
+const PICKUP_IN_FLIGHT = [
+  'AGUARDANDO_AGENDAMENTO',
+  'AGENDADA',
+  'EM_EXECUCAO',
+  'RETIRADA_REALIZADA',
+  'COM_OCORRENCIA',
+] as const;
+
+/**
+ * Fase 1: recusa desligar a logística enquanto houver entrega ou retirada em andamento, citando
+ * quais (o gestor conclui ou cancela antes). Assim nenhuma peça fica presa num roteiro escondido.
+ */
+async function assertNoLogisticsInFlight(tx: Tx) {
+  const [deliveries, pickups] = await Promise.all([
+    tx.delivery.findMany({
+      where: { status: { in: [...DELIVERY_ACTIVE] } },
+      select: { number: true },
+      orderBy: { number: 'asc' },
+    }),
+    tx.pickupRequest.findMany({
+      where: { status: { in: [...PICKUP_IN_FLIGHT] } },
+      select: { number: true },
+      orderBy: { number: 'asc' },
+    }),
+  ]);
+  if (!deliveries.length && !pickups.length) return;
+  const list = [
+    ...deliveries.map((d) => deliveryCode(d.number)),
+    ...pickups.map((p) => pickupCode(p.number)),
+  ];
+  throw Errors.business(
+    `Conclua ou cancele as entregas e retiradas em andamento antes de desligar a logística: ${list.slice(0, 10).join(', ')}${list.length > 10 ? ` e mais ${list.length - 10}` : ''}.`,
+    { deliveries: deliveries.length, pickups: pickups.length },
+  );
+}
+
 export async function companyRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
+
+  /**
+   * Estado efetivo das funcionalidades (só booleanos, nenhum dado pessoal ou financeiro). Qualquer
+   * sessão válida — painel ou tablet — precisa saber o que mostrar; quem decide continua sendo o
+   * servidor em cada rota.
+   */
+  app.get('/api/v1/modules', { config: { access: { session: 'any' } } }, async () =>
+    moduleState(prisma),
+  );
+
+  app.get(
+    '/api/company/modules',
+    { config: { access: { session: 'WEB', permissions: ['empresa.ver'] } } },
+    async () => moduleSettings(prisma),
+  );
+
+  /**
+   * Liga/desliga uma funcionalidade. Mesma proteção da configuração da empresa: só o gestor com
+   * `empresa.configurar`, versão conferida sob bloqueio (a linha da empresa serializa as
+   * alterações, inclusive a primeira, quando ainda não existe registro), auditoria e evento na
+   * mesma transação. Repetir o mesmo estado não grava nada.
+   */
+  app.put(
+    '/api/company/modules/:key',
+    {
+      config: { access: { session: 'WEB', permissions: ['empresa.configurar'] }, idempotent: true },
+    },
+    async (request) => {
+      const { key } = moduleParams.parse(request.params);
+      if (!isModuleKey(key)) throw Errors.notFound('Funcionalidade');
+      const input = updateModuleSchema.parse(request.body);
+      if (!MODULES[key].configurable)
+        throw Errors.business(
+          `${MODULES[key].label} ainda não pode ser alterada: depende de uma fase posterior da reformulação.`,
+        );
+      const actor = actorFrom(request);
+      await prisma.$transaction(async (tx) => {
+        if (!(await lockRow(tx, 'company_settings', 1)))
+          throw Errors.notFound('Configuração da empresa');
+        const before = await tx.moduleSetting.findUnique({ where: { key } });
+        const currentVersion = before?.version ?? 0;
+        if (input.version !== currentVersion) throw Errors.versionConflict(currentVersion);
+        const wasEnabled = before?.enabled ?? MODULES[key].defaultEnabled;
+        if (wasEnabled === input.enabled) return;
+        // Fase 1: a logística só desliga sem operação em andamento (nada fica pela metade); a
+        // entrega passa a ser confirmada direto na OS. Religar não tem pré-condição.
+        if (key === 'logistica' && !input.enabled) await assertNoLogisticsInFlight(tx);
+        if (before)
+          await tx.moduleSetting.update({
+            where: { key },
+            data: { enabled: input.enabled, updatedById: actor.userId, version: { increment: 1 } },
+          });
+        else
+          await tx.moduleSetting.create({
+            data: { key, enabled: input.enabled, updatedById: actor.userId },
+          });
+        await audit(tx, actor, {
+          action: 'company.module_updated',
+          entityType: 'module_setting',
+          entityId: key,
+          summary: `${MODULES[key].label}: ${input.enabled ? 'ativada' : 'desativada'}.`,
+          changes: { enabled: { from: wasEnabled, to: input.enabled } },
+        });
+        // Fase 1: as travas de materiais valem na hora para as tarefas que aguardam início.
+        if (key === 'materiais')
+          await reevaluateTasks(tx, actor, await waitingTaskIds(tx, { requiresMaterials: true }));
+        await appendEvent(tx, actor, {
+          type: EVENT_TYPES.COMPANY_MODULE_UPDATED,
+          aggregateType: 'module_setting',
+          aggregateId: key,
+          payload: { key, enabled: input.enabled },
+        });
+      });
+      return (await moduleSettings(prisma)).find((m) => m.key === key)!;
+    },
+  );
 
   app.get(
     '/api/company/settings',

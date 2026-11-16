@@ -7,7 +7,6 @@ import {
   INSPECTION_STATUSES,
   LOGISTICS_KINDS,
   LOGISTICS_STATUSES,
-  PROTECTIONS,
 } from '../quality-domain';
 import { customerAddressSchema } from './commercial';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
@@ -43,6 +42,15 @@ export const checkInspectionItemSchema = z
 export const approveInspectionSchema = z.object({
   note: optionalText(1000),
   version: versionSchema,
+  /** Reformulação Fase 3: "Tudo conforme" — marca os itens não conferidos como conformes. */
+  allConform: z.boolean().optional(),
+  /** Reformulação Fase 3 (D4): obrigatória quando o gestor aprova a própria execução. */
+  selfApprovalReason: z
+    .string()
+    .trim()
+    .min(10, 'Justifique a aprovação da própria execução (mínimo de 10 caracteres).')
+    .max(500)
+    .optional(),
 });
 
 export const rejectInspectionSchema = z.object({
@@ -98,21 +106,7 @@ export const qualityTemplateSchema = z.object({
 });
 export type QualityTemplateInput = z.input<typeof qualityTemplateSchema>;
 
-// ─────────────────────────── Embalagem e localização ───────────────────────────
-
-export const assignPackagingSchema = z.object({
-  assigneeUserId: idSchema,
-  /** O tapeceiro responsável só embala com autorização do gestor. */
-  authorizeTapeceiro: z.boolean().default(false),
-  version: versionSchema,
-});
-
-export const completePackagingSchema = z.object({
-  protection: z.enum(PROTECTIONS, { message: 'Escolha o tipo de proteção.' }),
-  locationId: idSchema,
-  notes: optionalText(500),
-  version: versionSchema,
-});
+// ─────────────────────────── Localização (S1: sem embalagem) ───────────────────────────
 
 export const locationSchema = z.object({
   label: trimmed(2, 80, 'Nome da localização'),

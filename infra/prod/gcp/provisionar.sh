@@ -13,6 +13,8 @@
 #                                                     # com o PORTÃO FECHADO (nada é iniciado)
 #   bash infra/prod/gcp/provisionar.sh operador       # claude-operador-prod, fila, buckets, runner (perfil prod),
 #                                                     # teste do canal e isolamento
+#   bash infra/prod/gcp/provisionar.sh canal          # SÓ o teste do canal (permissão temporária) + isolamento,
+#                                                     # sem criar, publicar ou instalar nada
 #   bash infra/prod/gcp/provisionar.sh dns            # mostra o DNS atual, os registros a criar na Hostinger e
 #                                                     # espera a propagação (nunca altera DNS)
 #   bash infra/prod/gcp/provisionar.sh verificar      # SÓ LEITURA: isolamento homologação × produção
@@ -87,7 +89,7 @@ PROIBIDOS='^roles/(owner|editor|iam\..*[Aa]dmin.*|resourcemanager\..*|secretmana
 PORTAO=/etc/cenario/publicacao-autorizada
 
 RELDIR="${CENARIO_RELATORIOS:-$HOME/cenario-prod-relatorios}"
-OKS=0; AVISOS=0; FALHAS=0
+OKS=0; AVISOS=0; FALHAS=0; CANAL_OK=0
 ok() { echo "✔ $*"; OKS=$((OKS + 1)); }
 aviso() { echo "⚠ $*"; AVISOS=$((AVISOS + 1)); }
 falha() { echo "✘ $*"; FALHAS=$((FALHAS + 1)); }
@@ -445,7 +447,13 @@ sudo CENARIO_RUNNER_PROJETO=$PROJECT CENARIO_RUNNER_VM=$VM CENARIO_RUNNER_ASSINA
   CENARIO_RUNNER_AUD=$AUD bash \"\$D/instalar.sh\" \"\$D\"
 rm -rf \"\$D\"" < /dev/null
   teste_canal
-  verificar
+  concluir_operador
+}
+concluir_operador() { # canal e isolamento contados SEPARADAMENTE; a etapa só passa com os dois
+  local iso=0; verificar || iso=1
+  (( CANAL_OK == 1 && iso == 0 )) && { ok "ETAPA OPERADOR: OK"; return 0; }
+  echo "✘ ETAPA OPERADOR incompleta: canal $( ((CANAL_OK == 1)) && echo OK || echo FALHOU ) · isolamento $( ((iso == 0)) && echo OK || echo 'com problema' )"
+  return 1
 }
 
 teste_canal() {
@@ -454,15 +462,22 @@ teste_canal() {
   remover_temp() { g iam service-accounts remove-iam-policy-binding "$OP" --member="user:$CONTA" --role="projects/$PROJECT/roles/$PAPEL_JWT" --quiet --format=none >/dev/null 2>&1 \
     && ok "permissão temporária de $CONTA removida" || falha "remova manualmente a permissão temporária de $CONTA sobre $OP"; }
   trap 'remover_temp; rm -rf "$T"' EXIT
-  local rc=1 n
-  for n in $(seq 1 12); do  # propagação do IAM: até ~2 min
-    if env -u CLOUDSDK_AUTH_ACCESS_TOKEN CENARIO_AMBIENTE=prod "${OPERAR[@]}" verificar; then rc=0; break; fi
-    echo "  (tentativa $n: aguardando a propagação do IAM…)"; sleep 15
+  # Só o código 126 do operar.py (API do Google recusou, p.ex. signJwt 403 enquanto a permissão temporária
+  # propaga; o Google documenta até ~7 min) é repetido. Qualquer outro resultado já passou pela fila e pelo
+  # runner: repetir só reenviaria jobs.
+  local rc=126 n espera="${CENARIO_CANAL_ESPERA_S:-15}"
+  CANAL_OK=0
+  for n in $(seq 1 32); do
+    rc=0; env -u CLOUDSDK_AUTH_ACCESS_TOKEN CENARIO_AMBIENTE=prod "${OPERAR[@]}" verificar || rc=$?
+    (( rc == 126 )) || break
+    echo "  (tentativa $n: assinatura/API ainda recusada — propagação do IAM; nova tentativa em ${espera} s)"; sleep "$espera"
   done
-  (( rc == 0 )) && ok "canal de ponta a ponta: assinatura → fila → runner (prod) → resultado no bucket" || falha "canal não respondeu"
   if (( rc == 0 )); then
-    env -u CLOUDSDK_AUTH_ACCESS_TOKEN CENARIO_AMBIENTE=prod "${OPERAR[@]}" teste-seguranca && ok "testes de segurança do runner" || falha "testes de segurança"
-  fi
+    ok "canal de ponta a ponta: assinatura → fila → runner (prod) → resultado no bucket"
+    if env -u CLOUDSDK_AUTH_ACCESS_TOKEN CENARIO_AMBIENTE=prod "${OPERAR[@]}" teste-seguranca; then ok "testes de segurança do runner"; CANAL_OK=1
+    else falha "testes de segurança"; fi
+  elif (( rc == 126 )); then falha "assinatura ainda recusada após 32 tentativas (propagação do IAM): rode de novo 'provisionar.sh canal'"
+  else falha "canal: o runner respondeu, mas a verificação falhou (código $rc; veja as operações acima)"; fi
   remover_temp
   trap 'rm -rf "$T"' EXIT
 }
@@ -481,7 +496,7 @@ sem_membro() { # sem_membro <descrição> <arquivo-política> <membro…>
 verificar() {
   [[ -n "${CONTA:-}" ]] || requisitos
   secao "Isolamento homologação × produção (só leitura)"
-  local s b
+  local s b antes=$FALHAS  # conta só os problemas DESTA verificação (não os de etapas anteriores)
   for s in "${SECRETS[@]}"; do
     g secrets get-iam-policy "$s" --format=json > "$T/p.json" 2>/dev/null || { falha "segredo $s ilegível"; continue; }
     sem_membro "segredo $s" "$T/p.json" "serviceAccount:$H_VM_SA" "serviceAccount:$H_OP" "serviceAccount:$OP"
@@ -537,8 +552,9 @@ verificar() {
   local linhas; linhas="$(wc -l < "$T/fw.txt")"
   if grep -qvE "^($FW_WEB|$FW_IAP)[[:space:]]" "$T/fw.txt"; then falha "regras de firewall inesperadas em $VPC: $(cat "$T/fw.txt")"
   else ok "firewall de $VPC: só $FW_WEB (80/443) e $FW_IAP (22 do IAP) — $linhas regra(s)"; fi
-  (( FALHAS == 0 )) && ok "ISOLAMENTO: OK" || echo "✘ ISOLAMENTO com $FALHAS problema(s)"
-  (( FALHAS == 0 ))
+  local problemas=$((FALHAS - antes))
+  (( problemas == 0 )) && ok "ISOLAMENTO: OK" || echo "✘ ISOLAMENTO com $problemas problema(s)"
+  (( problemas == 0 ))
 }
 
 # ======================================================================== DNS (nunca alterado aqui)
@@ -617,6 +633,8 @@ case "${1:-}" in
   promover) promover ;;
   preparar-vm) preparar_vm ;;
   operador) operador ;;
+  canal) requisitos; existe sa "$OP" || { echo "✘ $OP ausente: rode 'operador'"; exit 1; }
+         teste_canal; concluir_operador ;;
   dns) dns ;;
   verificar) verificar ;;
   credencial) credencial ;;

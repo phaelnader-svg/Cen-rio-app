@@ -446,6 +446,8 @@ export async function buildClosingItems(db: Db, weekStart: string): Promise<Buil
   const deliveries = await db.delivery.findMany({
     where: {
       status: 'CONCLUIDA',
+      // Fase 1: entrega direta pela OS não é viagem — não tem custo de frete a informar.
+      origin: 'LOGISTICA',
       completedAt: { gte: startAt, lt: endAt },
       logisticsCosts: { none: { kind: 'ENTREGA', cancelledAt: null } },
     },
@@ -808,6 +810,14 @@ export async function confirmClosing(
     entityType: 'weekly_closing',
     entityId: row?.id ?? '00000000-0000-0000-0000-000000000000',
     summary: `Fechamento da semana ${weekStart} conferido (devido ${(totals.dueCents / 100).toFixed(2)}).`,
+    changes: {
+      status: { from: row?.status ?? null, to: 'CONFERIDO' },
+      totals: {
+        dueCents: totals.dueCents,
+        paidInWeekCents: totals.paidInWeekCents,
+        openAtEndCents: totals.openAtEndCents,
+      },
+    },
   });
 }
 
@@ -834,6 +844,7 @@ export async function reopenClosing(
     entityType: 'weekly_closing',
     entityId: row.id,
     summary: `Fechamento da semana ${weekStart} reaberto: ${input.reason}`,
+    changes: { status: { from: 'CONFERIDO', to: 'REABERTO' }, reason: input.reason },
   });
 }
 
@@ -975,6 +986,11 @@ export async function registerClosingPayment(
     entityType: 'closing_payment',
     entityId: header.id,
     summary: `${code}: pagamento externo de ${(input.amountCents / 100).toFixed(2)} a ${user.displayName} (${input.method}) baixado em ${parts.length} obrigação(ões).`,
+    // F10-20b: o lote e o antes/depois de cada obrigação baixada (detalhe em cada baixa).
+    changes: {
+      weekStart,
+      parts: parts.map((p) => ({ code: p.item.code, amountCents: p.amountCents })),
+    },
   });
   return header.id;
 }
@@ -1016,6 +1032,7 @@ export async function reverseClosingPayment(
     entityType: 'closing_payment',
     entityId: id,
     summary: `${closingPaymentCode(h.number)} estornado: ${input.reason}`,
+    changes: { status: { from: 'PAGO', to: 'ESTORNADO' }, reason: input.reason },
   });
 }
 

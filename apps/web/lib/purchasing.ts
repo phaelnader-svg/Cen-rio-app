@@ -10,6 +10,7 @@ import type {
   PurchaseOrderSummaryDto,
   PurchaseShortageDto,
   ReadinessSummaryDto,
+  ReceivingRowDto,
   StockItemDto,
   StockMovementDto,
   StockReservationDto,
@@ -45,6 +46,14 @@ export const usePurchaseOrders = (f: { status?: string; q?: string; serviceOrder
   useQuery({
     queryKey: ['purchase-orders', f],
     queryFn: () => api<PurchaseOrderSummaryDto[]>(`/api/v1/purchase-orders${qs(f)}`),
+    placeholderData: keepPreviousData,
+  });
+
+/** Rodada 3 (F6-03): fila "Recebimentos" (situação derivada do pedido e das chegadas). */
+export const useReceiving = (situation: string) =>
+  useQuery({
+    queryKey: ['purchase-orders', 'receiving', situation],
+    queryFn: () => api<ReceivingRowDto[]>(`/api/v1/purchasing/receiving${qs({ situation })}`),
     placeholderData: keepPreviousData,
   });
 

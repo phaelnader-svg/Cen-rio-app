@@ -15,6 +15,7 @@ import { lockOrder, lockOrderItems, orderCode, receiptCode } from '../commercial
 import { refreshOrderStatus } from '../commercial/status';
 import { syncTripCost } from '../finance/trip-costs';
 import { emitOrderEvent } from '../orders/routes';
+import { resolvePickupAssignment } from '../notifications/notify';
 import { emitPickupEvent } from '../pickups/routes';
 import { reevaluateTasks, waitingTaskIds } from '../production/common';
 import { autoServiceOrderForReceipt } from '../service-orders/auto';
@@ -178,6 +179,8 @@ export async function registerReceipt(
       },
     });
     await syncTripCost(tx, actor, { pickupId: pickup.id });
+    // F10-19: a coleta aconteceu — a atribuição da retirada deixa de pedir ação.
+    await resolvePickupAssignment(tx, actor, pickup.id);
   }
   const status = await refreshOrderStatus(tx, order.id);
   // Simplificação Fase 2 (D1): pedido do Novo serviço → a OS das peças que chegaram nasce aqui,

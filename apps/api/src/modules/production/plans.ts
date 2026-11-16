@@ -27,7 +27,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
-import { loadUserPermissions } from '../../core/permissions';
+import { loadUsersPermissions } from '../../core/permissions';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { now as clockNow } from '../../core/clock';
@@ -50,7 +50,6 @@ import {
   toTaskDto,
 } from './common';
 import { placeServiceInQueue } from './queue-placement';
-import { minimizeCustomerForDevices } from '../../core/device-privacy';
 
 // ─────────────────────────── Pessoas ───────────────────────────
 
@@ -62,10 +61,13 @@ export async function workers(db: Tx | PrismaClient): Promise<WorkerDto[]> {
     orderBy: { displayName: 'asc' },
   });
   const out: WorkerDto[] = [];
+  const permsOf = await loadUsersPermissions(
+    db,
+    users.filter((u) => u.employee?.active).map((u) => u.id),
+  );
   for (const u of users) {
     if (!u.employee?.active) continue;
-    const perms = await loadUserPermissions(db, u.id);
-    if (!perms.has('producao.executar')) continue;
+    if (!permsOf.get(u.id)?.has('producao.executar')) continue;
     out.push({
       userId: u.id,
       displayName: u.displayName,
@@ -569,7 +571,6 @@ async function publishDrafts(
 
 export async function productionPlanRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
-  minimizeCustomerForDevices(app);
 
   // Modelos
   const templateInclude = {

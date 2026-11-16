@@ -335,23 +335,6 @@ describe('Contraprovas — entrega', () => {
   });
 });
 
-describe('Contraprova — embalagem pelo gestor', () => {
-  it('QE. embalagem sem responsável (ninguém disponível) pode ser concluída pelo gestor', async () => {
-    const s = await k.scenario();
-    await k.finish(s.tablets.Ricardo!, s.sofaTask.id);
-    await k.approveOpen(s, s.sofa.id);
-    const p = (await db().packagingRecord.findFirstOrThrow({
-      where: { serviceOrderItemId: s.sofa.id },
-    }))!;
-    const task = await db().productionTask.findUniqueOrThrow({ where: { id: p.taskId! } });
-    expect(task.assigneeUserId).toBeNull(); // ninguém marcou chegada: aguarda o gestor
-    await k.pack(s, s.sofa.id); // gestor conclui
-    const done = await db().productionTask.findUniqueOrThrow({ where: { id: p.taskId! } });
-    expect(done).toMatchObject({ status: 'CONCLUIDA', assigneeUserId: s.ids.gestor });
-    expect(await k.stage(s.sofa.id)).toBe('PRONTA_ENTREGA');
-  });
-});
-
 // ─────────────────────────── Aceites ───────────────────────────
 
 const moneyKeys = (o: unknown): string[] => {
@@ -419,9 +402,9 @@ describe('Aceites — qualidade (1–17)', () => {
     const r2 = await db().qualityInspection.findUniqueOrThrow({ where: { id: round2.id } });
     expect(r2).toMatchObject({ status: 'APROVADA', decidedById: s.ids.gestor });
     expect(r2.osRevision).not.toBeNull();
-    expect(await k.stage(s.sofa.id)).toBe('AGUARDANDO_EMBALAGEM');
-    await k.pack(s, s.sofa.id);
+    // Reformulação S1: sem embalagem — aprovada, a peça fica pronta para entrega.
     expect(await k.stage(s.sofa.id)).toBe('PRONTA_ENTREGA');
+    await k.pack(s, s.sofa.id); // confere que nenhuma embalagem foi criada
   });
 
   it('10–15. retrabalho preserva a execução anterior, não gera pagamento, impede entrega e volta à qualidade', async () => {
@@ -472,7 +455,8 @@ describe('Aceites — qualidade (1–17)', () => {
       post(s.admin, `/api/v1/quality/inspections/${i.id}/approve`, { version: i.version }),
     ]);
     expect([a.status, b.status].sort()).toEqual([200, 409]);
-    expect(await db().packagingRecord.count({ where: { serviceOrderItemId: s.sofa.id } })).toBe(1);
+    expect(await db().packagingRecord.count({ where: { serviceOrderItemId: s.sofa.id } })).toBe(0); // S1
+    expect(await db().qualityEvent.count({ where: { kind: 'APROVADA' } })).toBe(1);
     // aprovar × reprovar na poltrona
     await k.finish(s.tablets.Márcio!, s.poltronaTask.id);
     const p = await k.checkAll(s.tablets.Thiago!, (await k.openOf(s.poltronas.id))!.id, 'Risco');
@@ -688,7 +672,6 @@ describe('Aceites — integrações (35–48)', () => {
           { type: { startsWith: 'quality.' } },
           { type: { startsWith: 'delivery.' } },
           { type: { startsWith: 'item.' } },
-          { type: { startsWith: 'packaging.' } },
         ],
       },
     });

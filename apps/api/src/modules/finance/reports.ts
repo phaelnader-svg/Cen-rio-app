@@ -306,7 +306,7 @@ export async function buildReport(
           csvMoney(r.paidCents),
           LABOR_STATUS_LABEL[r.status as LaborStatus] ?? r.status,
         ]),
-        notes: ['Valores por produção (tapeceiros). Salários da equipe fixa não entram aqui.'],
+        notes: ['Valores por produção (tapeceiros). Custos da equipe fixa não entram aqui.'],
       };
     }
     case 'despesas': {

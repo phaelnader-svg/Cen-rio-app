@@ -37,6 +37,7 @@ export function OpenShiftsSection({
             key={s.attendanceId}
             className="flex flex-wrap items-center gap-3 px-5 py-3 text-sm"
             data-testid={`open-shift-${s.employee.displayName}`}
+            data-focus-id={s.attendanceId}
           >
             <Moon className="size-4 text-warn-600" aria-hidden />
             <span className="font-medium">{s.employee.displayName}</span>

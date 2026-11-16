@@ -31,6 +31,7 @@ import { burnVerification, verifySecret } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
 import { serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
+import { resolveNotifications } from '../notifications/notify';
 import { workers } from '../production/plans';
 import {
   FIN_ADJUST,
@@ -414,6 +415,12 @@ export async function resolveLaborReview(
       version: { increment: 1 },
     },
   });
+  // F10-19: a revisão foi resolvida — o aviso de devolução da OS inteira deixa de pedir ação; as
+  // obrigações zeradas na resolução também encerram o aviso por peça.
+  await resolveNotifications(tx, actor, 'REVISAO_DEVOLUCAO', [
+    `labor-review:${id}`,
+    ...payables.map((p) => `labor-review:${p.id}`),
+  ]);
   await audit(tx, actor, {
     action: 'finance.labor_review_resolved',
     entityType: 'labor_review',

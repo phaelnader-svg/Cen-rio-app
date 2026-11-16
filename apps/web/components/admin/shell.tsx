@@ -5,23 +5,25 @@ import clsx from 'clsx';
 import { KeyRound, Lock, LogOut, Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrandMark } from '@/components/brand';
 import { ConnectionIndicator } from '@/components/connection-indicator';
 import { PanelNotifications } from './panel-notifications';
 import { Button } from '@/components/ui/button';
 import { Alert, Avatar, Spinner } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
-import { useMe } from '@/lib/hooks';
+import { useMe, useModules } from '@/lib/hooks';
 import { RealtimeProvider } from '@/lib/realtime';
-import { NAV, NAV_GROUPS, UPCOMING, navGroupOf } from './nav';
+import { UPCOMING, visibleNav } from './nav';
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const qc = useQueryClient();
   const me = useMe();
+  const modules = useModules(me.isSuccess);
   const pathname = usePathname();
   const [drawer, setDrawer] = useState(false);
+  const saindo = useRef(false);
 
   useEffect(() => setDrawer(false), [pathname]);
 
@@ -65,11 +67,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const items = NAV.filter((i) => !i.anyOf || i.anyOf.some((p) => perms.has(p)))
-    .map((i, n) => ({ ...i, group: navGroupOf(i.href), n }))
-    .sort((a, b) => NAV_GROUPS.indexOf(a.group) - NAV_GROUPS.indexOf(b.group) || a.n - b.n);
+  const items = visibleNav(perms, modules);
 
   async function logout() {
+    // B4: a saída encerra a sessão, e o tempo real avisa "sessão encerrada" — que aqui é esperado.
+    saindo.current = true;
     try {
       await api('/api/auth/logout', { method: 'POST' });
     } finally {
@@ -175,7 +177,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <RealtimeProvider onSessionEnded={() => router.replace('/entrar?motivo=sessao-encerrada')}>
+    <RealtimeProvider
+      onSessionEnded={() => {
+        if (!saindo.current) router.replace('/entrar?motivo=sessao-encerrada');
+      }}
+    >
       <div className="min-h-dvh lg:grid lg:grid-cols-[272px_1fr]">
         <aside className="sticky top-0 hidden h-dvh overflow-y-auto border-r border-line bg-surface lg:block">
           {sidebar}

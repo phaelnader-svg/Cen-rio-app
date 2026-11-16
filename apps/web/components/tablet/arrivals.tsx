@@ -151,7 +151,7 @@ export function ArrivalsCenter() {
                   lines={m.items.map((i) =>
                     i.mode === 'FISICA'
                       ? `${i.description} — conferência em ${i.unitLabel} depois`
-                      : `${fmt(i.pending)} ${i.unitLabel} · ${i.description}`,
+                      : `${fmt(i.pending)} ${i.unitLabel} · ${i.description}${i.conference ? ' — conferência depois' : ''}`,
                   )}
                   note={
                     m.awaitingConference
@@ -633,6 +633,11 @@ function MaterialConfirm({
                 onChange={(n) => setQty((s) => ({ ...s, [i.purchaseOrderItemId]: n }))}
               />
               <p className="text-sm text-ink-muted">Aguardando: {fmt(i.pending)}</p>
+              {i.conference && (
+                <p className="text-sm text-ink-muted" data-testid="arrival-line-conference">
+                  Compra exclusiva da OS: só fica disponível depois da conferência no painel.
+                </p>
+              )}
             </div>
           ),
         )}

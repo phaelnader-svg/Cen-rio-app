@@ -1,3 +1,4 @@
+import type { OperationalState } from './operational-state';
 import type { OrderDeadlineState, ServiceDeadline } from './deadline-domain';
 import type { MaterialReadiness } from './purchasing-domain';
 import type {
@@ -239,8 +240,13 @@ export interface ServiceOrderItemDto {
   measuredAt: string | null;
   measuredBy: string | null;
   measurementKind: MeasurementKind | null;
-  /** Onde a peça foi guardada no recebimento. */
+  /** Onde a peça foi guardada no recebimento (texto livre do recebimento). */
   locations: string[];
+  /**
+   * Reformulação, Fase 2: localização ATUAL registrada (mapa da oficina); null = ainda não
+   * movida desde o recebimento (vale o texto de `locations`).
+   */
+  currentLocation: { id: string; label: string } | null;
   version: number;
 }
 
@@ -264,7 +270,8 @@ export interface MaterialRequirementDto {
   thicknessCm: number | null;
 }
 
-export type ReadinessState = 'OK' | 'PENDENTE' | 'FASE_FUTURA';
+/** INFORMATIVO (etapa E1): mostrado só como aviso; não impede o início da produção. */
+export type ReadinessState = 'OK' | 'PENDENTE' | 'FASE_FUTURA' | 'INFORMATIVO';
 
 export interface ServiceOrderReadinessDto {
   measurements: ReadinessState;
@@ -272,6 +279,10 @@ export interface ServiceOrderReadinessDto {
   materials: ReadinessState;
   /** Prontidão detalhada de materiais (Fase 4). */
   materialsState: MaterialReadiness;
+  /** Etapa E1: travas de materiais ligadas? Desligadas (padrão), materiais e medições só informam. */
+  materialsGate: boolean;
+  /** Etapa E1: linhas da lista simples da OS ainda não disponíveis na oficina (só aviso). */
+  simpleMaterialsPending: number;
   scheduling: ReadinessState;
   /** Sempre false nesta fase: a produção só começa pela programação (fases futuras). */
   canStartProduction: false;
@@ -292,6 +303,11 @@ export interface ServiceOrderSummaryDto {
   itemCount: number;
   pieceCount: number;
   createdAt: string;
+  /**
+   * Reformulação Fase 3: estado geral (o mesmo do cabeçalho da OS, regra da Fase 0). Só na
+   * lista; o detalhe usa a rota própria.
+   */
+  operationalState?: OperationalState;
 }
 
 export interface ServiceOrderDto extends ServiceOrderSummaryDto {
@@ -323,6 +339,11 @@ export interface AttachmentDto {
   entityType: AttachmentEntity;
   entityId: string;
   url: string;
+  /** Reformulação, Fase 2: miniatura (gerada no envio; para fotos antigas, na leitura). */
+  thumbUrl: string;
+  /** Dimensões da foto tratada (null nas fotos anteriores à Fase 2). */
+  width: number | null;
+  height: number | null;
   caption: string | null;
   mimeType: string;
   createdBy: string | null;
@@ -435,6 +456,11 @@ export interface MaterialArrivalDueDto {
     pending: number;
     /** CONTAGEM = conta-se na porta (peças, placas); FISICA = controle em metros (rolos etc.). */
     mode: 'CONTAGEM' | 'FISICA';
+    /**
+     * Remediação F3-17: só fica disponível depois da conferência técnica no painel (metros/m² ou
+     * compra exclusiva de OS). Na porta registra-se apenas a chegada física.
+     */
+    conference: boolean;
   }[];
   /** Chegadas físicas aguardando conferência técnica neste pedido. */
   awaitingConference: number;

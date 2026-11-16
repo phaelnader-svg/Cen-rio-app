@@ -13,7 +13,7 @@ import {
   employeeByName,
   idemKey,
   loginAdmin,
-  resetDatabase,
+  resetDatabaseWithMaterialsGate,
 } from './helpers';
 import {
   act,
@@ -51,7 +51,7 @@ afterAll(async () => {
   await app.close();
 });
 beforeEach(async () => {
-  await resetDatabase();
+  await resetDatabaseWithMaterialsGate();
   (app.ctx.hub as unknown as { feed: { lastSeq: bigint } }).feed.lastSeq = 0n;
   await db().companySettings.update({
     where: { id: 1 },

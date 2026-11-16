@@ -1,0 +1,21 @@
+• smoke_test {} → job 73335a12-2123-44ff-bf3a-8e1c0d577f79 (mensagem 22599062388004451)
+$ /bin/bash /opt/cenario/infra/homolog/gcp/vm.sh saude
+✔ contêiner postgres: running healthy
+✔ contêiner api: running healthy
+✔ contêiner web: running healthy
+✔ contêiner caddy: running 
+✔ contêiner backup: running 
+✔ proxy exige autenticação (sem credencial: 401)
+✔ HTTPS + API + banco: {"status":"ready"}
+✔ web (tela de entrada): 200
+✔ sem credencial: 401 com pedido de senha (Basic)
+✔ sem anúncio de HTTP/3 (só TCP)
+✔ senha do proxy («HOMOLOG_BASIC_USER-mascarado») aceita: 307 e cookie do proxy gravado
+✔ com o cookie do proxy: /entrar 200 (tela de entrada do sistema)
+✔ JavaScript da tela carrega com o cookie (/_next/static/chunks/webpack-17b29680f0b4dc5c.js: 200)
+✔ certificado válido por mais 55 dias (até Jan  7 16:14:09 2027 GMT)
+✔ último backup há 0 h (cenario-staging-20261112T173748Z)
+✔ migrations: 37 aplicadas, nenhuma pendente/com falha
+✔ disco em 58%
+✔ memória disponível 1040 MB
+Saúde: OK

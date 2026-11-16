@@ -278,6 +278,57 @@ describe('Banco de dados e migrations', () => {
     expect(await granted()).toEqual(['ajudante', 'cabeceiras_qualidade', 'gestor', 'tapeceiro']);
     await db().role.delete({ where: { id: custom.id } });
   });
+  it('Rodada 3 (F1-08): instalação existente passa a ter financeiro.producao_propria no tapeceiro e na logística (20270126), sem tocar outras funções', async () => {
+    const DB = resolve(__dirname, '../../../packages/db');
+    const NAME = '20270126000000_meus_ganhos_permissao';
+    const up = readFileSync(resolve(DB, `prisma/migrations/${NAME}/migration.sql`), 'utf8');
+    const KEYS = ['tapeceiro', 'logistica_terceirizada'];
+    const granted = async () =>
+      (
+        await db().rolePermission.findMany({
+          where: { permission: 'financeiro.producao_propria' },
+          include: { role: { select: { key: true } } },
+        })
+      )
+        .map((p) => p.role.key)
+        .sort();
+    // Instalação existente: as funções já existiam (o seed não completa funções preenchidas) e
+    // ainda não tinham a permissão; uma função personalizada e as demais permissões não mudam.
+    const roles = await db().role.findMany({ where: { key: { in: KEYS } } });
+    expect(roles).toHaveLength(2);
+    await db().rolePermission.deleteMany({
+      where: { permission: 'financeiro.producao_propria', roleId: { in: roles.map((r) => r.id) } },
+    });
+    const custom = await db().role.create({
+      data: { key: 'funcao_r3', name: 'Personalizada R3', description: 'teste', system: false },
+    });
+    const before = await granted();
+    expect(before).not.toContain('tapeceiro');
+    expect(before).not.toContain('logistica_terceirizada');
+    const others = await db().rolePermission.count({
+      where: { permission: { not: 'financeiro.producao_propria' } },
+    });
+    await db().$executeRawUnsafe(up);
+    await db().$executeRawUnsafe(up);
+    expect(await granted()).toEqual([...before, ...KEYS].sort());
+    expect(await db().rolePermission.count({ where: { roleId: custom.id } })).toBe(0);
+    expect(
+      await db().rolePermission.count({
+        where: { permission: { not: 'financeiro.producao_propria' } },
+      }),
+    ).toBe(others);
+    // Nenhuma permissão financeira geral é concedida pela migration.
+    for (const role of roles)
+      expect(
+        await db().rolePermission.count({
+          where: {
+            roleId: role.id,
+            permission: { in: ['financeiro.ver', 'financeiro.gerenciar', 'financeiro.ajustes'] },
+          },
+        }),
+      ).toBe(0);
+    await db().role.delete({ where: { id: custom.id } });
+  });
   it('estabilização da Fase 2: pedido "cliente entrega" (migration aditiva e reversão condicionada)', async () => {
     const DB = resolve(__dirname, '../../../packages/db');
     const NAME = '20261227000000_servico_sem_retirada';

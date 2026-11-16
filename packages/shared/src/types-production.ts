@@ -59,6 +59,11 @@ export interface TaskRefDto {
 
 export interface ProductionTaskDto {
   id: string;
+  /**
+   * Etapa E1: só em "Minhas tarefas" (tablet) e só com as travas de materiais desligadas — a OS
+   * tem material da lista simples ainda não disponível na oficina. Aviso; nunca impede iniciar.
+   */
+  osMaterialsMissing?: boolean;
   number: number;
   code: string;
   plan: { id: string; weekStart: string; status: PlanStatus; mode: PlanMode } | null;
@@ -120,17 +125,13 @@ export interface ProductionTaskDto {
     description: string;
     reporter: string;
   } | null;
-  /**
-   * Fase 10: correção (defeitos da inspeção reprovada) ou embalagem (após a aprovação).
-   * Embalagem conclui pela tela própria (proteção e localização), não pelo "Concluir".
-   */
+  /** Fase 10: correção (defeitos da inspeção reprovada). S1: não há mais tarefa de embalagem. */
   qualityFor?: {
     inspectionId: string;
     code: string;
-    kind: 'CORRECAO' | 'EMBALAGEM';
+    kind: 'CORRECAO';
     note: string | null;
     defects: { label: string; note: string | null }[];
-    packagingId: string | null;
   } | null;
   version: number;
 }
@@ -175,6 +176,16 @@ export interface ProductionTaskDetailDto extends ProductionTaskDto {
   materialIds: string[];
   /** Fase 6: situação dos materiais desta tarefa. */
   taskMaterials: 'NAO_EXIGE' | 'DISPONIVEIS' | 'FALTANDO';
+  /**
+   * Reformulação, Fase 1: lista simples de materiais da OS para a oficina (sem custos nem dados
+   * financeiros). Só informativo: nunca impede iniciar a tarefa.
+   */
+  osMaterials: {
+    description: string;
+    quantity: number | null;
+    unit: string | null;
+    available: boolean;
+  }[];
   /** Fase 6: histórico técnico da OS (campos alterados, sem valores comerciais). */
   technicalHistory: {
     revision: number;
@@ -302,6 +313,11 @@ export interface NotificationDto {
   serviceOrderId: string | null;
   createdAt: string;
   readAt: string | null;
+  /**
+   * Rodada 2 (F10-19): quando a condição que o aviso pedia foi resolvida (pela própria ação que a
+   * resolve). Nulo = ativa — inclusive notificações anteriores à coluna (nada é inventado).
+   */
+  resolvedAt: string | null;
 }
 
 // ─────────────────────────── Evolução Fase 3: distribuição ───────────────────────────

@@ -87,8 +87,12 @@ describe('Matriz de acesso: todas as rotas', () => {
     for (const r of all) expect(r.access, `${r.method} ${r.url}`).toBeTruthy();
     const open = all.filter((r) => 'public' in r.access).map((r) => `${r.method} ${r.url}`);
     // Só login, saúde, prontidão e o estado de vinculação do tablet são públicos.
+    // Também públicas: troca/revogação de token OAuth (servidor a servidor, autenticam o aplicativo
+    // pelo segredo dele).
     expect(open.sort()).toEqual(
       [
+        'POST /api/oauth/token',
+        'POST /api/oauth/revoke',
         'GET /api/health',
         'GET /api/ready',
         'GET /api/tablet/status',
@@ -126,6 +130,12 @@ describe('Matriz de acesso: todas as rotas', () => {
     const leaks: string[] = [];
     for (const r of routes()) {
       if (r.method === 'GET') continue;
+      // Token OAuth (servidor a servidor): não usa cookie; sem o segredo do aplicativo → 401.
+      if ('public' in r.access && r.access.serverToServer) {
+        const res = await foreign.req(r.method as 'POST', r.url, {});
+        if (res.status !== 401) leaks.push(`${r.method} ${r.url} → ${res.status}`);
+        continue;
+      }
       const res = await foreign.req(
         r.method as 'POST',
         concrete(r.url),

@@ -719,6 +719,188 @@ describe('Portão de pagamento D13 (35–55)', () => {
   });
 });
 
+describe('F9-03/F9-06 + D13 (decisão do proprietário): confirmação vale inteira ou não vale', () => {
+  const closingOf = async (admin: Client) =>
+    (await admin.get(F(`/weekly-closings/${WEEK}`))).body as { version: number };
+  const apVersion = async (id: string) =>
+    (await db().accountPayable.findUniqueOrThrow({ where: { id } })).version;
+  const payAp = async (admin: Client, id: string, amountCents: number, extra = {}) =>
+    post(admin, F(`/payables/${id}/payments`), {
+      amountCents,
+      paidAt: today(),
+      method: 'PIX',
+      version: await apVersion(id),
+      ...extra,
+    });
+
+  it('confirma; nada muda → vale; um item muda → a confirmação INTEIRA cai (direto, parcial e lote bloqueados, inclusive o item que não mudou); nova confirmação volta a liberar; a antiga fica no histórico como inválida', async () => {
+    const { s } = await base();
+    const a = await andreTrip(12000);
+    const b = await andreTrip(8000);
+    const tab = await tabletOf(app, s.admin, 'André', PINS['André']!);
+    const t = await tok(tab, PINS['André']!);
+    const v1 = await confirmOwn(tab, t);
+    const first = await db().weeklyClosingConfirmation.findFirstOrThrow();
+    let e = await earnings(tab, t);
+    expect(e.confirmation.state).toBe('CONFIRMADA');
+    expect(e.confirmation.history).toEqual([
+      expect.objectContaining({
+        code: v1.code,
+        kind: 'PROFISSIONAL',
+        hash: e.confirmation.currentHash,
+        status: 'VIGENTE',
+        changed: [],
+        closingVersion: null,
+        invalidatedAt: null,
+      }),
+    ]);
+    // Nada mudou: pagamento parcial passa e não invalida.
+    expect((await payAp(s.admin, a.payable.id, 2000)).status).toBe(200);
+    expect((await earnings(tab, t)).confirmation.state).toBe('CONFIRMADA');
+    // A viagem B muda de valor (negociação aprovada pelo fluxo existente).
+    const r = await ask(tab, t, {
+      targetKind: 'LOGISTICA',
+      targetId: b.cost.id,
+      requestedCents: 9000,
+      reason: 'Pedágio',
+    });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    expect((await decide(s.admin, r.body.id, 'approve')).status).toBe(200);
+    // A viagem A NÃO mudou — e mesmo assim não é paga: direto, parcial e lote bloqueados.
+    expect((await payAp(s.admin, a.payable.id, 10000)).status).toBe(422);
+    expect((await payAp(s.admin, a.payable.id, 1000)).status).toBe(422);
+    expect((await payLot(s.admin, a.andre, 1000, 'LOGISTICA')).status).toBe(422);
+    expect((await payAp(s.admin, b.payable.id, 1000)).status).toBe(422);
+    e = await earnings(tab, t);
+    expect(e.confirmation.state).toBe('DESATUALIZADA');
+    expect(e.confirmation.history).toHaveLength(1);
+    expect(e.confirmation.history[0]).toMatchObject({ code: v1.code, status: 'INVALIDA' });
+    expect(e.confirmation.history[0].changed).toHaveLength(1);
+    // A tela antiga não confirma o estado novo; nada é simulado.
+    expect((await confirm(tab, t, first.hash)).status).toBe(409);
+    expect(await db().weeklyClosingConfirmation.count()).toBe(1);
+    // Nova confirmação do estado atualizado: volta a liberar pelo D13.
+    const v2 = await confirmOwn(tab, t);
+    e = await earnings(tab, t);
+    expect(e.confirmation.state).toBe('CONFIRMADA');
+    expect(e.confirmation.history.map((h: { code: string }) => h.code)).toEqual([v2.code, v1.code]);
+    expect(e.confirmation.history[0]).toMatchObject({
+      status: 'VIGENTE',
+      hash: e.confirmation.currentHash,
+    });
+    expect(e.confirmation.history[1]).toMatchObject({
+      code: v1.code,
+      status: 'INVALIDA',
+      invalidatedBy: v2.code,
+    });
+    expect(e.confirmation.history[1].invalidatedAt).toBeTruthy();
+    // A antiga continua intacta no histórico.
+    const again = await db().weeklyClosingConfirmation.findUniqueOrThrow({
+      where: { id: first.id },
+    });
+    expect([again.hash, again.items, again.totalCents]).toEqual([
+      first.hash,
+      first.items,
+      first.totalCents,
+    ]);
+    expect(
+      await db().financialEvent.count({ where: { entityId: first.id, kind: 'INVALIDADA' } }),
+    ).toBe(1);
+    expect((await payAp(s.admin, a.payable.id, 1000)).status).toBe(200);
+    expect((await payLot(s.admin, a.andre, 1000, 'LOGISTICA')).status).toBe(201);
+    const pay = await db().financialEvent.findFirstOrThrow({
+      where: { entityId: a.payable.id, kind: { in: ['PAGAMENTO', 'PAGAMENTO_PARCIAL'] } },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect((pay.data as { coverage?: { code?: string } }).coverage?.code).toBe(v2.code);
+  });
+
+  it('item novo no fechamento da semana também invalida a confirmação inteira', async () => {
+    const { s } = await base();
+    const a = await andreTrip(12000);
+    const tab = await tabletOf(app, s.admin, 'André', PINS['André']!);
+    const t = await tok(tab, PINS['André']!);
+    await confirmOwn(tab, t);
+    await andreTrip(5000);
+    expect((await payAp(s.admin, a.payable.id, 1000)).status).toBe(422);
+    const e = await earnings(tab, t);
+    expect(e.confirmation.state).toBe('DESATUALIZADA');
+    expect(e.confirmation.history[0]).toMatchObject({ status: 'INVALIDA' });
+    expect(e.confirmation.history[0].changed).toHaveLength(1);
+  });
+
+  it('Ricardo: ajuste invalida; a confirmação antiga não libera nem o mesmo item depois de outro ajuste voltar ao valor', async () => {
+    const { s, ric } = await base();
+    const R = s.tablets.Ricardo!;
+    const t = await tok(R, PINS.Ricardo!);
+    const v1 = await confirmOwn(R, t);
+    expect((await adjust(s.admin, ric.id, 5000, 'Mudou depois')).status).toBe(200);
+    expect((await payDirect(s.admin, ric.id, 1000)).status).toBe(422);
+    expect((await payLot(s.admin, s.ids.ricardo, 1000)).status).toBe(422);
+    const v2 = await confirmOwn(R, t);
+    expect((await payDirect(s.admin, ric.id, 1000)).status).toBe(200);
+    const h = (await earnings(R, t)).confirmation.history;
+    expect(h.map((x: { code: string; status: string }) => [x.code, x.status])).toEqual([
+      [v2.code, 'VIGENTE'],
+      [v1.code, 'INVALIDA'],
+    ]);
+  });
+
+  it('versão do fechamento do gestor fica gravada; exceção administrativa continua funcionando', async () => {
+    const { s, ric } = await base();
+    const before = await closingOf(s.admin);
+    const conf = await post(s.admin, F(`/weekly-closings/${WEEK}/confirm`), {
+      version: before.version ?? 0,
+    });
+    expect(conf.status, JSON.stringify(conf.body)).toBe(200);
+    const closing = await db().weeklyClosing.findFirstOrThrow();
+    const ex = await allowWeek(s.admin, s.ids.ricardo, WEEK);
+    const R = s.tablets.Ricardo!;
+    const t = await tok(R, PINS.Ricardo!);
+    const e = await earnings(R, t);
+    expect(e.confirmation.state).toBe('LIBERADA_POR_EXCECAO');
+    expect(e.confirmation.history[0]).toMatchObject({
+      code: ex.code,
+      kind: 'EXCECAO_ADMINISTRATIVA',
+      status: 'VIGENTE',
+      closingVersion: closing.version,
+    });
+    expect(JSON.stringify(e.confirmation.history)).not.toContain('Teste: liberação administrativa');
+    expect((await payDirect(s.admin, ric.id, 5000)).status).toBe(200);
+  });
+
+  it('antecipação respeita o D13 com a versão exata do item', async () => {
+    const { s, mar } = await base();
+    const early = { earlyReason: 'Adiantamento combinado' };
+    expect((await payDirect(s.admin, mar.id, 10000, early)).status).toBe(422);
+    await allowWeek(s.admin, s.ids.marcio, WEEK, [mar.id]);
+    expect((await payDirect(s.admin, mar.id, 10000, early)).status).toBe(200);
+    // Mudou o valor previsto: a exceção antiga não cobre a nova versão do item.
+    expect((await adjust(s.admin, mar.id, 2000, 'Mudou o previsto')).status).toBe(200);
+    expect((await payDirect(s.admin, mar.id, 1000, early)).status).toBe(422);
+  });
+
+  it('confirmação × alteração simultâneas: nunca libera um estado que não foi conferido', async () => {
+    const { s, ric } = await base();
+    const R = s.tablets.Ricardo!;
+    const t = await tok(R, PINS.Ricardo!);
+    for (let n = 0; n < 3; n++) {
+      const e = await earnings(R, t);
+      const [c, a] = await Promise.all([
+        confirm(R, t, e.confirmation.currentHash),
+        adjust(s.admin, ric.id, 1000, `Concorrente ${n}`),
+      ]);
+      expect([200, 409]).toContain(c.status);
+      expect([200, 409, 422]).toContain(a.status);
+      const cur = (await earnings(R, t)).confirmation;
+      const vigente = cur.history.some((h: { status: string }) => h.status === 'VIGENTE');
+      const p = await payDirect(s.admin, ric.id, 100);
+      // Paga só se alguma confirmação tem exatamente o estado atual do item.
+      expect(p.status).toBe(vigente ? 200 : 422);
+    }
+  });
+});
+
 describe('Privacidade e notificações (26–29 do roteiro)', () => {
   it('confirmações e pedidos só do próprio; WS e notificações sem valores', async () => {
     const { s, ric } = await base();
@@ -750,5 +932,48 @@ describe('Privacidade e notificações (26–29 do roteiro)', () => {
     await new Promise((x) => setTimeout(x, 300));
     expect(moneyKeys(ws.messages)).toEqual([]);
     expect(JSON.stringify(ws.messages)).not.toMatch(/123456/);
+  });
+});
+
+describe('F10-13q (decisão do proprietário: §2 Exceções = gestão por exceção na Central)', () => {
+  type Item = {
+    key: string;
+    type: string;
+    title: string;
+    statusLabel: string;
+    employee: { userId: string } | null;
+  };
+  const central = async (admin: Client) =>
+    ((await admin.get('/api/v1/attention')).body as { items: Item[] }).items;
+  const of = (items: Item[], userId: string) =>
+    items.filter((i) => i.employee?.userId === userId || i.key.includes(userId));
+
+  it('normal não aparece; pendência aparece; resolvida some; exceção D13 sem outra pendência não cria item próprio', async () => {
+    const { s, ric } = await base();
+    // 1. Operação normal: Márcio (tarefa em andamento, valor só previsto) não aparece.
+    let items = await central(s.admin);
+    expect(of(items, s.ids.marcio)).toEqual([]);
+    // 2. Pendência excepcional: Ricardo com valor devido e sem conferência → tipo canônico.
+    expect(of(items, s.ids.ricardo).map((i) => i.key)).toEqual([
+      `FINANCEIRO:confirmacao:${s.ids.ricardo}`,
+    ]);
+    // 4. Exceção administrativa D13 registrada: a pendência de confirmação sai; só resta o
+    //    pagamento liberado (tipo canônico). Nenhum item próprio de "exceção administrativa".
+    await allowWeek(s.admin, s.ids.ricardo, WEEK);
+    items = await central(s.admin);
+    expect(of(items, s.ids.ricardo).map((i) => i.key)).toEqual([
+      `FINANCEIRO:pagamento:${s.ids.ricardo}`,
+    ]);
+    expect(
+      items.filter((i) => /exce[cç][aã]o/i.test(`${i.key} ${i.title} ${i.statusLabel}`)),
+    ).toEqual([]);
+    // 3. Resolvida (pago integralmente): desaparece. A exceção e a auditoria continuam registradas.
+    expect((await payDirect(s.admin, ric.id, 100000)).status).toBe(200);
+    items = await central(s.admin);
+    expect(of(items, s.ids.ricardo)).toEqual([]);
+    expect(
+      await db().weeklyClosingConfirmation.count({ where: { kind: 'EXCECAO_ADMINISTRATIVA' } }),
+    ).toBe(1);
+    expect(await db().auditLog.count({ where: { action: 'finance.week_exception' } })).toBe(1);
   });
 });

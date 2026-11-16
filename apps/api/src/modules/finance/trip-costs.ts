@@ -50,6 +50,7 @@ import { Errors } from '../../lib/errors';
 import { pickupCode, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
 import { notifyUsersWith } from '../quality/common';
+import { notifyOwnChanged } from './own-changed';
 import {
   FIN_ADJUST,
   FIN_MANAGE,
@@ -76,7 +77,11 @@ export const tripCostInclude = {
   delivery: { select: { id: true, number: true } },
   pickup: { select: { id: true, number: true } },
   payable: { select: { id: true, number: true, status: true, paidCents: true, amountCents: true } },
-  allocations: { include: { serviceOrder: { select: { number: true } } } },
+  // Ordem estável (número da OS): sem ela a leitura devolvia o rateio na ordem física das linhas.
+  allocations: {
+    include: { serviceOrder: { select: { number: true } } },
+    orderBy: { serviceOrder: { number: 'asc' } },
+  },
   payee: { select: { id: true, displayName: true } },
   participants: { include: { user: { select: { id: true, displayName: true } } } },
   adjustments: {
@@ -227,6 +232,15 @@ export async function setLogisticsDefaults(
       version: { increment: 1 },
     },
   });
+  // F8-15b: o previsto da logística aparece para o recebedor configurado — o antigo e o novo
+  // recebedor veem o Meus Ganhos mudar.
+  if (before.logisticsPayeeUserId !== (input.logisticsPayeeUserId ?? null))
+    await notifyOwnChanged(
+      tx,
+      actor,
+      [before.logisticsPayeeUserId, input.logisticsPayeeUserId],
+      'logistics_payee',
+    );
   await audit(tx, actor, {
     action: 'finance.logistics_defaults',
     entityType: 'company_settings',
@@ -259,6 +273,10 @@ type Trip = {
   done: boolean;
   cancelled: boolean;
   frustrated: boolean;
+  /** Rodada 3 (F2-18): a viagem é da equipe própria (custo só operacional, nunca obrigação). */
+  ownTeam: boolean;
+  /** Reformulação, Fase 1: entrega confirmada direto na OS (sem viagem, sem custo de frete). */
+  direct?: boolean;
 };
 
 async function loadTrip(db: Db, ref: TripRef, lock = false): Promise<Trip> {
@@ -276,6 +294,7 @@ async function loadTrip(db: Db, ref: TripRef, lock = false): Promise<Trip> {
       done: PICKUP_DONE.includes(p.status),
       cancelled: p.status === 'CANCELADA',
       frustrated: PICKUP_FRUSTRATED.includes(p.status),
+      ownTeam: p.team === 'EQUIPE_PROPRIA',
     };
   }
   if (!ref.deliveryId) throw Errors.business('Informe a retirada ou a entrega.');
@@ -292,6 +311,8 @@ async function loadTrip(db: Db, ref: TripRef, lock = false): Promise<Trip> {
     done: d.status === 'CONCLUIDA',
     cancelled: d.status === 'CANCELADA',
     frustrated: DELIVERY_FRUSTRATED.includes(d.status),
+    ownTeam: d.team === 'EQUIPE_PROPRIA',
+    direct: d.origin === 'DIRETA',
   };
 }
 
@@ -434,10 +455,20 @@ export async function upsertTripCost(
 ) {
   const trip = await loadTrip(tx, input, true);
   if (trip.cancelled) throw Errors.business(`${trip.code} cancelada: não recebe custo.`);
+  // Fase 1: entrega confirmada direto na OS não foi uma viagem — não recebe custo de frete.
+  if (trip.direct)
+    throw Errors.business(
+      `${trip.code} foi confirmada direto na OS (sem viagem): não recebe custo.`,
+    );
   const existing = await liveTripCost(tx, trip);
   if (!existing && (await tx.logisticsFreeTrip.count({ where: tripWhere(trip) })))
     throw Errors.business(`${trip.code} foi confirmada como gratuita: não recebe custo.`);
   const mode = input.serviceOrderIds?.length ? 'ESCOLHIDA' : 'AUTO';
+  // Rodada 3 (F2-18, decisão do proprietário): viagem da equipe própria pode ter custo
+  // OPERACIONAL (custeio da viagem, rateado às OS). Não é dívida com funcionário: nunca vira
+  // devido, nunca gera conta a pagar nem obrigação, não tem recebedor e não entra no fechamento
+  // nem em Meus Ganhos. Remuneração de logística, se houver, nasce pelo fluxo canônico próprio.
+  const operational = trip.ownTeam;
   if (!existing) {
     const c = await tx.logisticsCost.create({
       data: {
@@ -448,7 +479,7 @@ export async function upsertTripCost(
         ...tripWhere(trip),
         splitMethod: 'IGUAL',
         splitNote: mode === 'ESCOLHIDA' ? 'OS escolhidas pelo gestor' : 'OS da viagem',
-        status: 'PREVISTO',
+        status: operational ? 'OPERACIONAL' : 'PREVISTO',
         allocationMode: mode,
         allocationRevision: 0,
         createdById: actor.userId,
@@ -464,17 +495,25 @@ export async function upsertTripCost(
       trip,
     );
     await audit(tx, actor, {
-      action: 'finance.trip_cost_agreed',
+      action: operational ? 'finance.trip_cost_operational' : 'finance.trip_cost_agreed',
       entityType: 'logistics_cost',
       entityId: c.id,
-      summary: `${logisticsCostCode(c.number)}: custo total de ${trip.code} combinado (${(input.amountCents / 100).toFixed(2)}).`,
-      changes: { amountCents: input.amountCents, participants: input.participantUserIds },
+      summary: operational
+        ? `${logisticsCostCode(c.number)}: custo operacional de ${trip.code} (equipe própria) registrado (${(input.amountCents / 100).toFixed(2)}) — sem obrigação financeira.`
+        : `${logisticsCostCode(c.number)}: custo total de ${trip.code} combinado (${(input.amountCents / 100).toFixed(2)}).`,
+      changes: {
+        amountCents: input.amountCents,
+        participants: input.participantUserIds,
+        ...(operational ? { status: 'OPERACIONAL' } : {}),
+      },
     });
     await financeEvent(tx, actor, {
       entityType: 'logistics_cost',
       entityId: c.id,
-      kind: 'COMBINADO',
-      note: `Agendamento de ${trip.code}`,
+      kind: operational ? 'CUSTO_OPERACIONAL' : 'COMBINADO',
+      note: operational
+        ? `Custo operacional da equipe própria em ${trip.code} (não é obrigação)`
+        : `Agendamento de ${trip.code}`,
       data: { amountCents: input.amountCents },
       type: EVENT_TYPES.FINANCE_COST_UPDATED,
     });
@@ -489,7 +528,7 @@ export async function upsertTripCost(
       [{ path: 'reason', message: 'Informe o motivo da alteração.' }],
       'Informe o motivo da alteração.',
     );
-  if (existing.status !== 'PREVISTO')
+  if (existing.status !== 'PREVISTO' && existing.status !== 'OPERACIONAL')
     throw Errors.business(
       'O valor já é devido: corrija com um ajuste justificado (o combinado fica como histórico).',
     );
@@ -633,6 +672,7 @@ export async function constituteTripCost(tx: Tx, actor: ActorContext, costId: st
     entityType: 'logistics_cost',
     entityId: costId,
     summary: `${logisticsCostCode(c.number)}: ${trip.code} realizada — valor devido constituído.`,
+    changes: { status: { from: c.status, to: u.status } },
   });
   await createObligation(tx, actor, u);
 }
@@ -647,7 +687,7 @@ export async function syncTripCost(tx: Tx, actor: ActorContext, ref: TripRef, re
   const c = await liveTripCost(tx, trip);
   if (!c) return;
   if (trip.done) return constituteTripCost(tx, actor, c.id);
-  if (trip.cancelled && c.status === 'PREVISTO') {
+  if (trip.cancelled && (c.status === 'PREVISTO' || c.status === 'OPERACIONAL')) {
     await lockRow(tx, 'logistics_costs', c.id, 'Custo de logística');
     await tx.logisticsCost.update({
       where: { id: c.id },
@@ -747,6 +787,7 @@ export async function addTripFee(
     entityType: 'logistics_cost',
     entityId: c.id,
     summary: `${logisticsCostCode(c.number)}: taxa de tentativa frustrada de ${trip.code} autorizada (${(input.amountCents / 100).toFixed(2)}). Justificativa: ${input.reason}`,
+    changes: { feeCents: input.amountCents, reason: input.reason },
   });
   await financeEvent(tx, actor, {
     entityType: 'logistics_cost',
@@ -868,6 +909,11 @@ export async function reversePayablePayment(
     entityType: 'account_payable',
     entityId: p.id,
     summary: `${payableCode(p.number)}: estorno de ${(pay.amountCents / 100).toFixed(2)} — ${input.reason}`,
+    changes: {
+      paidCents: { from: p.paidCents, to: paid },
+      status: { from: p.status, to: status },
+      reason: input.reason,
+    },
   });
   await financeEvent(tx, actor, {
     entityType: 'account_payable',

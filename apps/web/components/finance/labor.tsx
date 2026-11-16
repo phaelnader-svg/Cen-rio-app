@@ -51,7 +51,7 @@ export function LaborTab() {
           <h2 className="mb-3 text-lg font-semibold">Revisões financeiras pendentes</h2>
           <ul className="space-y-2">
             {reviews.data.map((r) => (
-              <li key={r.id}>
+              <li key={r.id} data-focus-id={r.id}>
                 <Alert
                   tone="warn"
                   title={`${r.code} — ${r.serviceOrder.code}${r.piece ? ` · ${r.piece.code}` : ' · OS inteira'}`}
@@ -163,9 +163,9 @@ export function LaborTab() {
           )}
         </div>
         <p className="mb-3 text-sm text-ink-muted">
-          Custo mensal da equipe fixa (salário e encargos informados pelo gestor). Não é pagamento
-          por produção e não sofre descontos automáticos por atraso, ausência ou produtividade. A
-          alocação por OS é uma estimativa proporcional ao tempo de execução registrado.
+          Custo mensal da equipe fixa (valores informados pelo gestor). Não é pagamento por produção
+          e não sofre descontos automáticos por atraso, ausência ou produtividade. A alocação por OS
+          é uma estimativa proporcional ao tempo de execução registrado.
         </p>
         {team.data && (
           <Table testId="fin-team" head={['Mês', 'Funcionário', 'Custo mensal', 'Observação']}>

@@ -8,7 +8,6 @@ import type {
   LogisticsOccurrenceDto,
   LogisticsRouteChangeDto,
   LogisticsRouteDto,
-  PackagingDto,
   PieceReturnDto,
   PieceStatusDto,
   QualityTemplateDto,
@@ -16,7 +15,7 @@ import type {
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { api } from './api';
 
-/** Fase 10 — qualidade, embalagem, expedição, entregas, logística e devoluções. */
+/** Fase 10 — qualidade, expedição, entregas, logística e devoluções (S1: sem embalagem). */
 const qs = (filters: Record<string, string | undefined>) => {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
@@ -60,20 +59,6 @@ export const useQualityTemplates = () =>
   useQuery({
     queryKey: ['quality-templates'],
     queryFn: () => api<QualityTemplateDto[]>('/api/v1/quality/templates'),
-  });
-
-export const usePackaging = (scope: 'open' | 'all' | 'mine' = 'open', enabled = true) =>
-  useQuery({
-    queryKey: ['packaging', scope],
-    queryFn: () => api<PackagingDto[]>(`/api/v1/packaging?scope=${scope}`),
-    enabled,
-  });
-
-export const usePackagingRecord = (id: string | null) =>
-  useQuery({
-    queryKey: ['packaging', 'one', id],
-    queryFn: () => api<PackagingDto>(`/api/v1/packaging/${id}`),
-    enabled: Boolean(id),
   });
 
 export const useLocations = (enabled = true) =>
