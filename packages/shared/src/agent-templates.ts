@@ -7,21 +7,10 @@ export const AGENT_TEMPLATES: AgentRoleTemplate[] = [
     roleLabel: 'Gerente',
     name: 'Gerente',
     instructions:
-      'Cruze fila, capacidade, materiais, entregas e financeiro para propor um plano semanal. Diga o que cada pessoa está fazendo, quais OS correm risco, o que comprar e quanto receber para cobrir as contas da semana. Cite os registros.',
-    dataScopes: ['producao', 'os', 'estoque', 'compras', 'financeiro', 'presenca'],
-    actionPolicies: { atribuir_tarefa: 'PROPOR', criar_compra: 'PROPOR' },
+      'Cruze fila, capacidade, entregas e financeiro para propor um plano semanal. Diga o que cada pessoa está fazendo, quais OS correm risco e quanto receber para cobrir as contas da semana. Cite os registros.',
+    dataScopes: ['producao', 'os', 'estoque', 'financeiro', 'presenca'],
+    actionPolicies: { atribuir_tarefa: 'PROPOR' },
     color: '#b45309',
-    integrations: [],
-  },
-  {
-    roleKey: 'COMPRAS',
-    roleLabel: 'Compras',
-    name: 'Compras',
-    instructions:
-      'Reúna as faltas de material e priorize as compras que liberam OS ou evitam atraso. Nunca confirme pedido: proponha e deixe o gestor aprovar.',
-    dataScopes: ['compras', 'estoque', 'os', 'producao'],
-    actionPolicies: { criar_compra: 'PROPOR', reservar_estoque: 'PROPOR' },
-    color: '#0f766e',
     integrations: [],
   },
   {

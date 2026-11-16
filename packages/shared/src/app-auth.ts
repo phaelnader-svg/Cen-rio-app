@@ -8,7 +8,9 @@
  * da oficina. JOGO: sincroniza a planta (oficina e escritório), as estações e quem trabalha em
  * cada uma; não altera OS, estoque nem financeiro. OPERAÇÃO: o dono planeja e mexe na produção
  * pelo jogo (OS, etapas, quem faz o quê, estoque e reservas) pelas mesmas regras do painel; iniciar
- * e concluir a execução continuam só no tablet do funcionário.
+ * e concluir a execução continuam só no tablet do funcionário. ESCRITÓRIO: o dono conduz o
+ * escritório pelo jogo (caixa, cobranças, contratos, notas, atendimento, postagens e anúncios) e
+ * os agentes de IA que trabalham nele; cada ação externa segue a política de cada agente.
  */
 import type { Permission } from './permissions';
 
@@ -51,6 +53,28 @@ export const APP_SCOPES = {
       'ocorrencias.ver',
       'retiradas.ver',
       'qualidade.inspecionar',
+    ],
+  },
+  escritorio: {
+    label: 'Escritório e agentes',
+    description:
+      'Conduzir o escritório pelo jogo: caixa, cobranças, contratos, notas fiscais, atendimento, postagens, anúncios, conexões e os agentes de IA. Nada sai para fora sem passar pelas regras de cada agente.',
+    permissions: [
+      'painel.acessar',
+      'jogo.acessar',
+      'empresa.ver',
+      'financeiro.ver',
+      'financeiro.gerenciar',
+      'pedidos.ver',
+      'pedidos.gerenciar',
+      'clientes.ver',
+      'atendimento.ver',
+      'atendimento.responder',
+      'marketing.publicar',
+      'anuncios.gerenciar',
+      'conexoes.gerenciar',
+      'agentes.usar',
+      'agentes.gerenciar',
     ],
   },
 } as const satisfies Record<string, AppScopeDef>;

@@ -92,7 +92,10 @@ type TrackRows = { agentId: string; kind: string; status: string; _count: { _all
 async function trackRecords(db: PrismaClient, agentIds: string[]) {
   const rows = (await db.aiAgentProposal.groupBy({
     by: ['agentId', 'kind', 'status'],
-    where: { agentId: { in: agentIds }, status: { in: ['APROVADA', 'REJEITADA', 'OBSOLETA'] } },
+    where: {
+      agentId: { in: agentIds },
+      status: { in: ['APROVADA', 'EXECUTADA_TESTE', 'REJEITADA', 'OBSOLETA'] },
+    },
     _count: { _all: true },
   })) as unknown as TrackRows;
   const out = new Map<string, Record<string, AgentTrackRecord>>();
@@ -104,7 +107,7 @@ async function trackRecords(db: PrismaClient, agentIds: string[]) {
       desatualizadas: 0,
       taxaAcerto: null,
     });
-    if (r.status === 'APROVADA') t.aprovadas += r._count._all;
+    if (r.status === 'APROVADA' || r.status === 'EXECUTADA_TESTE') t.aprovadas += r._count._all;
     else if (r.status === 'REJEITADA') t.recusadas += r._count._all;
     else t.desatualizadas += r._count._all;
     const decided = t.aprovadas + t.recusadas;
