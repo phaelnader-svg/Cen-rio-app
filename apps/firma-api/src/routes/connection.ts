@@ -83,13 +83,21 @@ export async function connectionRoutes(app: FastifyInstance) {
           error: z.string().max(60).optional(),
         })
         .parse(request.query);
-      const back = (result: string, message?: string) =>
-        reply.redirect(
-          `${env.FIRMA_WEB_URL}/jogo?central=CENARIO&conexao=${result}${message ? `&mensagem=${encodeURIComponent(message)}` : ''}`,
-        );
       const found = await db.oAuthState.findUnique({ where: { stateHash: hash(q.state) } });
       if (found?.purpose === 'ENTRAR') return finishCenarioLogin(app, request, reply, found, q);
-      if (!request.user) return reply.redirect(`${env.FIRMA_WEB_URL}/entrar?motivo=encerrada`);
+      // AUTO: conexão feita sozinha logo depois da entrada pelo Cenário (sem Central de Conexões).
+      const auto = found?.purpose === 'AUTO';
+      const back = (result: string, message?: string) =>
+        auto
+          ? reply.redirect(
+              result === 'ok'
+                ? `${env.FIRMA_WEB_URL}/jogo`
+                : `${env.FIRMA_WEB_URL}/acesso?erro=${encodeURIComponent(message ?? 'Não foi possível ligar a empresa ao ambiente interativo.')}`,
+            )
+          : reply.redirect(
+              `${env.FIRMA_WEB_URL}/jogo?central=CENARIO&conexao=${result}${message ? `&mensagem=${encodeURIComponent(message)}` : ''}`,
+            );
+      if (!request.user) return reply.redirect(`${env.FIRMA_WEB_URL}/api/entrar/cenario`);
       if (
         !found ||
         found.usedAt ||
@@ -100,11 +108,12 @@ export async function connectionRoutes(app: FastifyInstance) {
         return back('erro', 'Pedido de conexão inválido ou expirado. Tente conectar de novo.');
       const st = { ...found, orgId: found.orgId, userId: request.user.id };
       await db.oAuthState.update({ where: { id: st.id }, data: { usedAt: new Date() } });
-      // A pessoa precisa continuar sendo ADMIN/DONO desta organização.
+      // A pessoa precisa continuar sendo ADMIN/DONO desta organização (na conexão automática,
+      // basta ser membro: ela só religa a empresa que já é dela pelo Cenário).
       const m = await db.membership.findUnique({
         where: { orgId_userId: { orgId: st.orgId, userId: st.userId } },
       });
-      if (!m || !['DONO', 'ADMIN'].includes(m.role))
+      if (!m || (!auto && !['DONO', 'ADMIN'].includes(m.role)))
         return back('erro', 'Sem permissão para conectar.');
       if (q.error || !q.code)
         return back('cancelada', 'Conexão cancelada na tela do Cenário Gestão.');

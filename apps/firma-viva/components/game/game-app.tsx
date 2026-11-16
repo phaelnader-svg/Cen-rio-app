@@ -3,7 +3,6 @@
  * Firma Viva: o jogo abre na organização da sessão. Funciona sem o Cenário Gestão (planta,
  * mesas, agentes); com ele conectado, o mapa mostra e opera a empresa real.
  */
-import { useRouter } from 'next/navigation';
 import { useCallback, useEffect } from 'react';
 import { Alert, Spinner } from '@/components/ui/misc';
 import { ApiError } from '@/lib/api';
@@ -13,15 +12,13 @@ import { GameWorld } from './game-world';
 
 export function GameApp() {
   const me = useMe();
-  const router = useRouter();
   const unauthenticated = me.error instanceof ApiError && me.error.status === 401;
   useEffect(() => {
-    if (unauthenticated) {
-      const back = `${window.location.pathname}${window.location.search}`;
-      router.replace(`/entrar?proximo=${encodeURIComponent(back)}`);
-    }
-  }, [unauthenticated, router]);
-  const ended = useCallback(() => router.replace('/entrar?motivo=encerrada'), [router]);
+    // Complemento do Cenário Gestão: sem sessão, entra de novo pela conta do Cenário (sem tela
+    // de login do Firma Viva). Quem usa conta própria continua tendo /entrar.
+    if (unauthenticated) window.location.assign('/api/entrar/cenario');
+  }, [unauthenticated]);
+  const ended = useCallback(() => window.location.assign('/api/entrar/cenario'), []);
   if (me.isPending || unauthenticated)
     return (
       <div className="grid min-h-dvh place-items-center">

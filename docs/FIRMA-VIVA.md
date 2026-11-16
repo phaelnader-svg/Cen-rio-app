@@ -58,20 +58,28 @@ Tudo é configurado por ambiente (`FIRMA_WEB_URL`, `CENARIO_API_URL`, `CENARIO_W
 
 ## Entrar pelo Cenário Gestão (botão "Acessar ambiente interativo")
 
-O painel do Cenário tem um botão verde ao lado do sininho que abre, em nova guia,
-`<Cenário>/ambiente-interativo` → `<FIRMA_WEB_URL do Cenário, padrão https://firmaviva.com.br>/api/entrar/cenario`.
+O Firma Viva funciona como **complemento do Cenário Gestão**: quem vem do painel não vê tela de
+login nem etapa de conectar. No Cenário, o botão verde ao lado do sininho (funcionalidade
+"Ambiente interativo", hoje ligada para todos) abre em nova guia `<Cenário>/ambiente-interativo` →
+`<FIRMA_WEB_URL do Cenário, padrão https://firmaviva.com.br>/api/entrar/cenario`.
 
 1. O Firma Viva cria um pedido de entrada (state + PKCE), preso ao navegador por um cookie
-   `fv_entrar` (10 min), e manda para `/autorizar` do Cenário com `prompt=none`, **sem** `org_ref`.
-2. O Cenário só dispensa a confirmação quando a empresa já tem uma concessão ativa do Firma Viva com
-   as mesmas permissões (a conexão da Central de Conexões). Sem sessão no Cenário, pede o login dele.
-3. O código volta ao retorno de sempre (`/api/conexoes/cenario/retorno`, nenhum cadastro novo no
-   Cenário). O Firma Viva troca o código, lê quem é a pessoa e **revoga o acesso na hora**: a
-   entrada não guarda tokens; quem fala com o Cenário continua sendo a conexão da organização.
-4. Conta aberta: a já ligada a essa pessoa do Cenário (`cenario_logins`); senão a conta com o mesmo
-   e-mail que já é membro da organização conectada; senão uma conta nova, **Membro (acompanha)**
-   (o dono promove se quiser). Conta de outra organização com o mesmo e-mail nunca é aberta.
-5. Empresa ainda não conectada ao Firma Viva → volta para `/entrar` com a explicação.
+   `fv_entrar` (10 min), e manda para `/autorizar` do Cenário com `prompt=none` (sem tela de
+   confirmação; a pessoa precisa estar logada no Cenário).
+2. O código volta ao retorno de sempre (`/api/conexoes/cenario/retorno`; nenhum cadastro novo no
+   Cenário). O Firma Viva troca o código, lê a pessoa e as permissões e **revoga esse acesso na
+   hora**.
+3. Organização da empresa: a já ligada a ela ou, no primeiro clique, uma nova com o nome da empresa.
+4. Conta: a ligada a essa pessoa do Cenário (`cenario_logins`); senão a conta com o mesmo e-mail que
+   já é da organização; senão uma conta nova — **Dono** se for a primeira pessoa, **Gestor** se o
+   Cenário dá a ela alguma permissão de alteração, senão **Membro**. Uma conta de outra organização
+   com o mesmo e-mail nunca é aberta por aqui (a pessoa ganha uma conta própria).
+5. Sem conexão ativa (primeiro clique, revogada ou expirada): o navegador passa de novo, sozinho,
+   por `/autorizar` com `prompt=none` e `org_ref` (pedido `AUTO`), e a conexão é gravada como na
+   Central de Conexões. Depois, `/jogo`.
+6. Sessão do jogo expirada: o jogo volta sozinho para `/api/entrar/cenario`. Problemas aparecem em
+   `/acesso` (motivo + "Tentar de novo" e "Voltar ao Cenário Gestão"). `/entrar` continua existindo
+   para contas próprias do Firma Viva.
 
 ## Organizações, papéis e isolamento
 

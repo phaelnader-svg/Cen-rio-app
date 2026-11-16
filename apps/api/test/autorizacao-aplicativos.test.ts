@@ -245,36 +245,16 @@ describe('autorização delegada de aplicativos', () => {
     expect(log?.summary).toMatch(/via Firma Viva · Cenário Estofados · Rafa \(Firma Viva\)/);
   });
 
-  it('entrada direta (prompt=none): só dispensa a confirmação se a empresa já autorizou o app', async () => {
+  it('entrada direta (prompt=none): sem tela de confirmação, ainda exigindo o login do Cenário', async () => {
     const admin = await loginAdmin(app);
-    const direct = (extra: Record<string, string> = {}) =>
-      new URLSearchParams(
-        authorizeParams(pkce().challenge, { prompt: 'none', org_ref: '', ...extra }),
-      ).toString();
-    // Antes de qualquer conexão da empresa: a tela de confirmação aparece normalmente.
-    const before = await admin.get(`/api/oauth/authorize/info?${direct()}`);
-    expect(before.status).toBe(200);
-    expect(before.body.skipConsent).toBe(false);
-
-    // A empresa conecta o aplicativo (concessão ativa com 'consulta').
-    const { t } = await connect(admin);
-    expect(t.status).toBe(200);
-
-    const after = await admin.get(`/api/oauth/authorize/info?${direct()}`);
-    expect(after.body.skipConsent).toBe(true);
-    // Sem prompt=none, continua pedindo confirmação.
+    const q = new URLSearchParams(
+      authorizeParams(pkce().challenge, { prompt: 'none', org_ref: '' }),
+    ).toString();
+    const info = await admin.get(`/api/oauth/authorize/info?${q}`);
+    expect(info.status).toBe(200);
+    expect(info.body.skipConsent).toBe(true);
     const normal = new URLSearchParams(authorizeParams(pkce().challenge)).toString();
     expect((await admin.get(`/api/oauth/authorize/info?${normal}`)).body.skipConsent).toBe(false);
-    // Sem sessão no Cenário, nada feito (o app nunca entra sem login do Cenário).
-    expect((await new Client(app).get(`/api/oauth/authorize/info?${direct()}`)).status).toBe(401);
-
-    // Revogada a conexão da empresa, a confirmação volta a ser exigida.
-    const server = new Client(app, null);
-    await server.post('/api/oauth/revoke', {
-      token: t.body.refresh_token,
-      client_id: 'firma-viva',
-      client_secret: SECRET,
-    });
-    expect((await admin.get(`/api/oauth/authorize/info?${direct()}`)).body.skipConsent).toBe(false);
+    expect((await new Client(app).get(`/api/oauth/authorize/info?${q}`)).status).toBe(401);
   });
 });

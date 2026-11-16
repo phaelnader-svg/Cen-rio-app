@@ -35,7 +35,7 @@ export function OrgPage() {
   const [lastLink, setLastLink] = useState<string | null>(null);
   const unauth = me.error instanceof ApiError && me.error.status === 401;
   useEffect(() => {
-    if (unauth) router.replace('/entrar?proximo=/organizacao');
+    if (unauth) window.location.assign('/api/entrar/cenario');
   }, [unauth, router]);
   const members = useQuery({
     queryKey: ['org-members', me.data?.organization?.id],

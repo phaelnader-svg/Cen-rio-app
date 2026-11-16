@@ -334,76 +334,75 @@ describe('Firma Viva', () => {
     ).toBe(403);
   });
 
-  it('entrar com a conta do Cenário (botão do painel): sem senha, sem confirmação, conta ligada', async () => {
-    await createOrg('Cenário Estofados', 'dono@firma.test', PW);
-    const gestor = await loginAdmin(cenario);
-    const cenarioEmail = String((await gestor.get('/api/auth/me')).body.user?.email ?? '');
-
-    /** Navegador novo: botão do Cenário → Firma Viva → tela oficial → retorno. */
-    async function enter(expectSkip: boolean) {
-      const b = new Browser(firma);
-      const start = await b.get('/api/entrar/cenario');
-      expect(start.status).toBe(302);
-      const url = new URL(String(start.headers.location));
-      expect(url.origin + url.pathname).toBe('http://localhost:3000/autorizar');
-      expect(url.searchParams.get('prompt')).toBe('none');
-      const info = await gestor.get(`/api/oauth/authorize/info?${url.searchParams.toString()}`);
-      expect(info.status).toBe(200);
-      expect(info.body.skipConsent).toBe(expectSkip);
-      const params = Object.fromEntries(url.searchParams);
-      const auth = await gestor.post('/api/oauth/authorize', { ...params, decision: 'allow' });
-      const back = new URL(auth.body.redirect as string);
-      return { b, path: `${back.pathname}${back.search}` };
+  /** Navegador novo (ou o dado): botão do Cenário → Firma Viva → telas oficiais → jogo. */
+  async function enterFromCenario(
+    gestor: Awaited<ReturnType<typeof loginAdmin>>,
+    b = new Browser(firma),
+  ) {
+    let res = await b.get('/api/entrar/cenario');
+    const hops: string[] = [];
+    // Segue os redirecionamentos; nas telas do Cenário, a decisão é automática (prompt=none).
+    for (let i = 0; i < 6 && res.status === 302; i++) {
+      const loc = new URL(String(res.headers.location));
+      hops.push(loc.pathname);
+      if (loc.origin === 'http://localhost:3000' && loc.pathname === '/autorizar') {
+        expect(loc.searchParams.get('prompt')).toBe('none');
+        const info = await gestor.get(`/api/oauth/authorize/info?${loc.searchParams.toString()}`);
+        expect(info.status).toBe(200);
+        expect(info.body.skipConsent).toBe(true);
+        const auth = await gestor.post('/api/oauth/authorize', {
+          ...Object.fromEntries(loc.searchParams),
+          decision: 'allow',
+        });
+        const back = new URL(auth.body.redirect as string);
+        res = await b.get(`${back.pathname}${back.search}`);
+      } else if (loc.origin === 'http://localhost:3100' && loc.pathname.startsWith('/api/')) {
+        res = await b.get(`${loc.pathname}${loc.search}`);
+      } else break;
     }
+    return { b, res, hops, location: String(res.headers.location) };
+  }
 
-    // Antes de a empresa conectar o Firma Viva: a tela de confirmação aparece e a entrada é recusada.
-    const early = await enter(false);
-    const r0 = await early.b.get(early.path);
-    expect(String(r0.headers.location)).toContain('/entrar?erro=');
-    expect(decodeURIComponent(String(r0.headers.location))).toContain('ainda não está conectada');
-
-    const dono = await login(firma, 'dono@firma.test', PW);
-    await connect(dono);
-
-    // Outro navegador não consegue usar o retorno (preso ao navegador que começou).
-    const stolen = await enter(true);
-    const other = new Browser(firma);
-    const r1 = await other.get(stolen.path);
-    expect(String(r1.headers.location)).toContain('/entrar?erro=');
-    expect((await other.get('/api/auth/me')).status).toBe(401);
-
-    // Entrada direta: sessão aberta na organização conectada, já no jogo.
-    const ok = await enter(true);
-    const r2 = await ok.b.get(ok.path);
-    expect(r2.status).toBe(302);
-    expect(String(r2.headers.location)).toBe('http://localhost:3100/jogo');
-    const me = await ok.b.get('/api/auth/me');
+  it('botão do Cenário: sem login nem etapa de conectar, cria a empresa no jogo e já conecta', async () => {
+    const gestor = await loginAdmin(cenario);
+    const first = await enterFromCenario(gestor);
+    // Entrada → (organização nova, sem conexão) → conexão automática → jogo.
+    expect(first.hops).toEqual(['/autorizar', '/autorizar', '/jogo']);
+    expect(first.location).toBe('http://localhost:3100/jogo');
+    const me = await first.b.get('/api/auth/me');
     expect(me.status).toBe(200);
-    expect(me.body.organization).toMatchObject({ name: 'Cenário Estofados' });
-    const role = me.body.organization.role as string;
-    if (cenarioEmail.toLowerCase() === 'dono@firma.test') expect(role).toBe('DONO');
-    else expect(role).toBe('MEMBRO');
-
-    // A entrada não deixa acesso guardado no Cenário: só a conexão da organização segue ativa.
+    expect(me.body.organization).toMatchObject({
+      role: 'DONO',
+      cenario: { status: 'CONECTADA' },
+    });
+    const company = (await cenarioDb().companySettings.findUnique({ where: { id: 1 } }))?.tradeName;
+    expect(me.body.organization.name).toBe(company);
+    // No Cenário fica só a conexão da organização (a da entrada foi revogada na hora).
     const active = await cenarioDb().oAuthGrant.findMany({ where: { revokedAt: null } });
     expect(active).toHaveLength(1);
-    expect(active[0]!.externalRef).toBeTruthy();
+    expect(active[0]!.externalRef).toBe(me.body.organization.id);
 
-    // Segunda entrada usa a mesma conta (sem duplicar) e o navegador já logado vai direto ao jogo.
-    const again = await enter(true);
-    await again.b.get(again.path);
+    // Próximas entradas: direto ao jogo, mesma conta, nada duplicado.
+    const again = await enterFromCenario(gestor);
+    expect(again.hops).toEqual(['/autorizar', '/jogo']);
     expect((await again.b.get('/api/auth/me')).body.user.id).toBe(me.body.user.id);
+    expect(await fdb().organization.count()).toBe(1);
     expect(await fdb().cenarioLogin.count()).toBe(1);
+    expect(await cenarioDb().oAuthGrant.count({ where: { revokedAt: null } })).toBe(1);
+    // Navegador já com sessão vai direto ao jogo.
     const direct = await again.b.get('/api/entrar/cenario');
     expect(String(direct.headers.location)).toBe('http://localhost:3100/jogo');
+
+    // Conexão revogada no Cenário: o próximo clique religa sozinho.
+    await cenarioDb().oAuthGrant.updateMany({ data: { revokedAt: new Date() } });
+    await fdb().cenarioConnection.updateMany({ data: { status: 'REVOGADA' } });
+    const back = await enterFromCenario(gestor);
+    expect(back.hops).toEqual(['/autorizar', '/autorizar', '/jogo']);
+    expect((await back.b.get('/api/auth/me')).body.organization.cenario.status).toBe('CONECTADA');
   });
 
-  it('entrar com a conta do Cenário abre a conta do mesmo e-mail que já é da organização', async () => {
+  it('retorno da entrada usado em outro navegador é recusado (vai para a página de acesso)', async () => {
     const gestor = await loginAdmin(cenario);
-    const email = String((await gestor.get('/api/auth/me')).body.user?.email ?? '');
-    expect(email).toContain('@');
-    await createOrg('Cenário Estofados', email, PW);
-    await connect(await login(firma, email, PW));
     const b = new Browser(firma);
     const url = new URL(String((await b.get('/api/entrar/cenario')).headers.location));
     const auth = await gestor.post('/api/oauth/authorize', {
@@ -411,9 +410,24 @@ describe('Firma Viva', () => {
       decision: 'allow',
     });
     const back = new URL(auth.body.redirect as string);
-    await b.get(`${back.pathname}${back.search}`);
-    const me = await b.get('/api/auth/me');
+    const other = new Browser(firma);
+    const r = await other.get(`${back.pathname}${back.search}`);
+    expect(String(r.headers.location)).toContain('http://localhost:3100/acesso?erro=');
+    expect((await other.get('/api/auth/me')).status).toBe(401);
+    expect(await fdb().organization.count()).toBe(0);
+  });
+
+  it('organização já conectada: abre a conta do mesmo e-mail que já é dela', async () => {
+    const gestor = await loginAdmin(cenario);
+    const email = String((await gestor.get('/api/auth/me')).body.user?.email ?? '');
+    expect(email).toContain('@');
+    await createOrg('Cenário Estofados', email, PW);
+    await connect(await login(firma, email, PW));
+    const r = await enterFromCenario(gestor);
+    expect(r.hops).toEqual(['/autorizar', '/jogo']);
+    const me = await r.b.get('/api/auth/me');
     expect(me.body.user.email).toBe(email.toLowerCase());
     expect(me.body.organization.role).toBe('DONO');
+    expect(await fdb().organization.count()).toBe(1);
   });
 });
