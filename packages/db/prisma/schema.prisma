@@ -3921,6 +3921,8 @@ model ServiceOrderMaterial {
 
   @@index([serviceOrderId])
   @@index([sourceModelMaterialId])
+  @@index([linkedPurchaseItemId])
+  @@index([linkedCostId])
   @@map("service_order_materials")
 }
 
