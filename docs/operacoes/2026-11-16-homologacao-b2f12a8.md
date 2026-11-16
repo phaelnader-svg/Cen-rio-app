@@ -12,22 +12,22 @@ Produção não tocada.
 - Migration: `20270406000000_retirada_mostruario_maquininha`, aditiva (3 colunas novas em `pickup_requests`, com padrão). Reversão: `packages/db/rollback/20270406000000_retirada_mostruario_maquininha.down.sql`.
 - Ponto de recuperação: `cenario-staging-20261116T201331Z` (versão `180d120`, impressão `d9b187c862dea30e3ba681a798b2151d`). Restauração de teste IDÊNTICA, cópia enviada ao bucket; `backup_validate`: SHA256SUMS conferido.
 
-| Hora (UTC) | Operação | Resultado |
-| --- | --- | --- |
-| 20:05 | verificar, version, health, gate_status, disk_status | canal OK; ativa `180d120`; saudável; portão fechado; disco 59% |
-| 20:05–20:11 | imagens (ausentes) → build-iniciar / build-acompanhar | SUCCESS |
-| 20:11:45 | gate_open | aberto |
-| 20:11:49 | prepare_version | OK; digests acima; imagem: 39 migrations, banco: 38 |
-| 20:13:05 | migration_precheck | exatamente 1 pendente: `20270406000000_retirada_mostruario_maquininha`; esquema compatível |
-| 20:13 | database_fingerprint (antes) | registrada |
-| 20:13:22 | maintenance_on | API e web paradas (20:13:25) |
-| 20:13:28 | recovery_point_create | `cenario-staging-20261116T201331Z` |
-| 20:14:38 | backup_validate | SHA256SUMS conferido |
-| 20:14:44 | migrate | 1 aplicada em 12 s |
-| 20:15:07 | migration_verify | 39/39, nenhuma pendente |
-| 20:15:14 | activate_version | Saúde OK (disco 67%, memória 1069 MB) |
-| 20:16:29 | gate_close | fechado |
-| 20:16+ | version, smoke_test, websocket_test, run_homologation_tests `completo`, database_fingerprint, logs | todos OK; WebSocket 401 sem sessão (esperado); suítes saude, acesso e websocket ✔; api e web com 0 respostas 5xx e 0 erros |
+| Hora (UTC)  | Operação                                                                                           | Resultado                                                                                                                   |
+| ----------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 20:05       | verificar, version, health, gate_status, disk_status                                               | canal OK; ativa `180d120`; saudável; portão fechado; disco 59%                                                              |
+| 20:05–20:11 | imagens (ausentes) → build-iniciar / build-acompanhar                                              | SUCCESS                                                                                                                     |
+| 20:11:45    | gate_open                                                                                          | aberto                                                                                                                      |
+| 20:11:49    | prepare_version                                                                                    | OK; digests acima; imagem: 39 migrations, banco: 38                                                                         |
+| 20:13:05    | migration_precheck                                                                                 | exatamente 1 pendente: `20270406000000_retirada_mostruario_maquininha`; esquema compatível                                  |
+| 20:13       | database_fingerprint (antes)                                                                       | registrada                                                                                                                  |
+| 20:13:22    | maintenance_on                                                                                     | API e web paradas (20:13:25)                                                                                                |
+| 20:13:28    | recovery_point_create                                                                              | `cenario-staging-20261116T201331Z`                                                                                          |
+| 20:14:38    | backup_validate                                                                                    | SHA256SUMS conferido                                                                                                        |
+| 20:14:44    | migrate                                                                                            | 1 aplicada em 12 s                                                                                                          |
+| 20:15:07    | migration_verify                                                                                   | 39/39, nenhuma pendente                                                                                                     |
+| 20:15:14    | activate_version                                                                                   | Saúde OK (disco 67%, memória 1069 MB)                                                                                       |
+| 20:16:29    | gate_close                                                                                         | fechado                                                                                                                     |
+| 20:16+      | version, smoke_test, websocket_test, run_homologation_tests `completo`, database_fingerprint, logs | todos OK; WebSocket 401 sem sessão (esperado); suítes saude, acesso e websocket ✔; api e web com 0 respostas 5xx e 0 erros |
 
 Impressão digital antes/depois: só `pickup_requests` ganhou as 3 colunas (`bring_samples`,
 `samples_description`, `bring_card_machine`) e os 2 padrões `false`, com as mesmas 3 linhas.
