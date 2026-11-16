@@ -26,6 +26,8 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const reason = params.get('motivo');
+  // Entrada pelo Cenário Gestão que não deu certo (mensagem do servidor do Firma Viva).
+  const fromCenario = params.get('erro')?.slice(0, 300) ?? null;
   const next = params.get('proximo');
   const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : '/jogo';
 
@@ -48,6 +50,11 @@ export function LoginForm() {
       title="Entrar no Firma Viva"
       subtitle="Use o e-mail e a senha da sua conta Firma Viva."
     >
+      {fromCenario ? (
+        <Alert tone="danger" className="mb-4">
+          {fromCenario}
+        </Alert>
+      ) : null}
       {reason && REASONS[reason] ? (
         <Alert tone="info" className="mb-4">
           {REASONS[reason]}

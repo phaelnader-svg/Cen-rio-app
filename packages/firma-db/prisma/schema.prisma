@@ -24,9 +24,10 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  sessions    Session[]
-  memberships Membership[]
-  resets      PasswordReset[]
+  sessions      Session[]
+  memberships   Membership[]
+  resets        PasswordReset[]
+  cenarioLogins CenarioLogin[]
 
   @@map("users")
 }
@@ -181,28 +182,28 @@ model OrgSetting {
 /// Conexão da organização com o Cenário Gestão (uma por organização). Tokens SELADOS
 /// (AES-256-GCM com chave do servidor); nunca saem do servidor do Firma Viva.
 model CenarioConnection {
-  id              String    @id @default(uuid()) @db.Uuid
-  orgId           String    @unique @map("org_id") @db.Uuid
+  id               String    @id @default(uuid()) @db.Uuid
+  orgId            String    @unique @map("org_id") @db.Uuid
   /// CONECTADA | EXPIRADA | REVOGADA | DESCONECTADA
-  status          String    @db.VarChar(15)
+  status           String    @db.VarChar(15)
   /// Identidade da empresa no Cenário (endereço + documento/nome): uma organização por empresa.
-  companyKey      String    @map("company_key") @db.VarChar(300)
-  companyName     String    @map("company_name") @db.VarChar(160)
-  companyDocument String?   @map("company_document") @db.VarChar(20)
-  cenarioUserName String?   @map("cenario_user_name") @db.VarChar(120)
-  cenarioUserEmail String?  @map("cenario_user_email") @db.VarChar(254)
-  scopes          String[]
-  permissions     String[]
-  grantId         String?   @map("grant_id") @db.VarChar(64)
-  accessEnc       String?   @map("access_enc")
-  refreshEnc      String?   @map("refresh_enc")
-  accessExpiresAt DateTime? @map("access_expires_at") @db.Timestamptz(3)
-  connectedById   String?   @map("connected_by_id") @db.Uuid
-  connectedAt     DateTime? @map("connected_at") @db.Timestamptz(3)
-  lastSyncAt      DateTime? @map("last_sync_at") @db.Timestamptz(3)
-  lastError       String?   @map("last_error") @db.VarChar(300)
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  companyKey       String    @map("company_key") @db.VarChar(300)
+  companyName      String    @map("company_name") @db.VarChar(160)
+  companyDocument  String?   @map("company_document") @db.VarChar(20)
+  cenarioUserName  String?   @map("cenario_user_name") @db.VarChar(120)
+  cenarioUserEmail String?   @map("cenario_user_email") @db.VarChar(254)
+  scopes           String[]
+  permissions      String[]
+  grantId          String?   @map("grant_id") @db.VarChar(64)
+  accessEnc        String?   @map("access_enc")
+  refreshEnc       String?   @map("refresh_enc")
+  accessExpiresAt  DateTime? @map("access_expires_at") @db.Timestamptz(3)
+  connectedById    String?   @map("connected_by_id") @db.Uuid
+  connectedAt      DateTime? @map("connected_at") @db.Timestamptz(3)
+  lastSyncAt       DateTime? @map("last_sync_at") @db.Timestamptz(3)
+  lastError        String?   @map("last_error") @db.VarChar(300)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
@@ -211,17 +212,39 @@ model CenarioConnection {
 }
 
 /// Estado temporário do fluxo de autorização (state + verificador PKCE selado).
+/// CONEXAO: conectar a organização (pessoa e organização conhecidas).
+/// ENTRAR: entrar no jogo com a conta do Cenário (sem sessão ainda; preso ao navegador).
 model OAuthState {
   id          String    @id @default(uuid()) @db.Uuid
   stateHash   String    @unique @map("state_hash") @db.Char(64)
-  orgId       String    @map("org_id") @db.Uuid
-  userId      String    @map("user_id") @db.Uuid
+  purpose     String    @default("CONEXAO") @db.VarChar(10)
+  orgId       String?   @map("org_id") @db.Uuid
+  userId      String?   @map("user_id") @db.Uuid
+  /// ENTRAR: hash do cookie do navegador que começou o pedido (impede entrada forçada).
+  browserHash String?   @map("browser_hash") @db.Char(64)
   verifierEnc String    @map("verifier_enc")
   expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
   usedAt      DateTime? @map("used_at") @db.Timestamptz(3)
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@map("oauth_states")
+}
+
+/// Pessoa do Cenário Gestão ligada a uma conta do Firma Viva (entrada direta pelo botão
+/// "Acessar ambiente interativo"). Uma pessoa do Cenário por empresa → uma conta.
+model CenarioLogin {
+  id            String   @id @default(uuid()) @db.Uuid
+  companyKey    String   @map("company_key") @db.VarChar(300)
+  cenarioUserId String   @map("cenario_user_id") @db.VarChar(64)
+  userId        String   @map("user_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastLoginAt   DateTime @default(now()) @map("last_login_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([companyKey, cenarioUserId])
+  @@index([userId])
+  @@map("cenario_logins")
 }
 
 /// Quem fez o quê, em qual organização e em qual empresa conectada.

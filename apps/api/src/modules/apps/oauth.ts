@@ -37,6 +37,11 @@ const authorizeQuery = z.object({
   /** Organização do aplicativo que vai receber o vínculo (só exibição/registro). */
   org_ref: z.string().max(80).optional(),
   org_label: z.string().max(120).optional(),
+  /**
+   * `none`: entrar no aplicativo sem a tela de confirmação, quando a empresa JÁ autorizou este
+   * aplicativo (há concessão ativa com essas permissões). Sem isso, a tela aparece normalmente.
+   */
+  prompt: z.enum(['none', 'consent']).optional(),
 });
 
 class OAuthError extends Error {
@@ -114,6 +119,22 @@ export async function oauthRoutes(app: FastifyInstance) {
     };
   }
 
+  /**
+   * Entrada direta (botão "Acessar ambiente interativo"): dispensa a confirmação só quando o
+   * aplicativo pede `prompt=none` e a empresa já tem uma concessão ativa dele cobrindo as
+   * permissões pedidas. A pessoa continua precisando estar logada no Cenário, e o aplicativo
+   * nunca recebe mais do que ela pode fazer (usuário ∩ escopo).
+   */
+  async function canSkipConsent(clientDbId: string, scopes: string[], prompt?: string) {
+    if (prompt !== 'none') return false;
+    const grants = await prisma.oAuthGrant.findMany({
+      where: { clientId: clientDbId, revokedAt: null, session: { revokedAt: null } },
+      select: { scopes: true },
+      take: 50,
+    });
+    return grants.some((g) => scopes.every((s) => g.scopes.includes(s)));
+  }
+
   /** Dados da tela de consentimento (empresa, pessoa, permissões pedidas). */
   app.get(
     '/api/oauth/authorize/info',
@@ -140,6 +161,7 @@ export async function oauthRoutes(app: FastifyInstance) {
           };
         }),
         redirectHost: new URL(q.redirect_uri).host,
+        skipConsent: await canSkipConsent(client.id, scopes, q.prompt),
       };
     },
   );
@@ -175,7 +197,7 @@ export async function oauthRoutes(app: FastifyInstance) {
         entityType: 'oauth_client',
         entityId: client.id,
         summary: `${auth.displayName} autorizou o aplicativo ${client.name}${body.org_label ? ` para ${body.org_label}` : ''}.`,
-        changes: { scopes },
+        changes: { scopes, ...(body.prompt === 'none' ? { entradaDireta: true } : {}) },
       });
     });
     target.searchParams.set('code', code);

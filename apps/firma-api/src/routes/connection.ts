@@ -7,10 +7,11 @@ import type { CenarioConnection } from '@firma/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../lib/audit';
-import { cenarioJson, isActive, isReadOnly, tokenRequest } from '../lib/cenario';
+import { cenarioCompanyKey, cenarioJson, isActive, isReadOnly, tokenRequest } from '../lib/cenario';
 import { pkceChallenge, randomToken } from '../lib/crypto';
 import { E } from '../lib/errors';
 import { syncOnConnect } from '../lib/sync';
+import { finishCenarioLogin } from './entrar';
 
 export function connectionView(c: CenarioConnection | null) {
   return {
@@ -43,6 +44,7 @@ export async function connectionRoutes(app: FastifyInstance) {
       await db.oAuthState.create({
         data: {
           stateHash: hash(state),
+          purpose: 'CONEXAO',
           orgId: request.org!.id,
           userId: request.user!.id,
           verifierEnc: seal(verifier),
@@ -66,10 +68,13 @@ export async function connectionRoutes(app: FastifyInstance) {
     },
   );
 
-  /** Retorno do Cenário (navegador). Sempre volta ao jogo com o resultado. */
+  /**
+   * Retorno do Cenário (navegador). Serve aos dois pedidos: conectar a organização (exige sessão
+   * do Firma Viva) e entrar com a conta do Cenário (sem sessão; ver routes/entrar.ts).
+   */
   app.get(
     '/api/conexoes/cenario/retorno',
-    { config: { rule: { user: true } } },
+    { config: { rule: { public: true } } },
     async (request, reply) => {
       const q = z
         .object({
@@ -82,9 +87,18 @@ export async function connectionRoutes(app: FastifyInstance) {
         reply.redirect(
           `${env.FIRMA_WEB_URL}/jogo?central=CENARIO&conexao=${result}${message ? `&mensagem=${encodeURIComponent(message)}` : ''}`,
         );
-      const st = await db.oAuthState.findUnique({ where: { stateHash: hash(q.state) } });
-      if (!st || st.usedAt || st.expiresAt <= new Date() || st.userId !== request.user!.id)
+      const found = await db.oAuthState.findUnique({ where: { stateHash: hash(q.state) } });
+      if (found?.purpose === 'ENTRAR') return finishCenarioLogin(app, request, reply, found, q);
+      if (!request.user) return reply.redirect(`${env.FIRMA_WEB_URL}/entrar?motivo=encerrada`);
+      if (
+        !found ||
+        found.usedAt ||
+        found.expiresAt <= new Date() ||
+        !found.orgId ||
+        found.userId !== request.user.id
+      )
         return back('erro', 'Pedido de conexão inválido ou expirado. Tente conectar de novo.');
+      const st = { ...found, orgId: found.orgId, userId: request.user.id };
       await db.oAuthState.update({ where: { id: st.id }, data: { usedAt: new Date() } });
       // A pessoa precisa continuar sendo ADMIN/DONO desta organização.
       const m = await db.membership.findUnique({
@@ -108,7 +122,7 @@ export async function connectionRoutes(app: FastifyInstance) {
         );
       const company = t.data.company as { name: string; document: string | null };
       const user = t.data.user as { name: string; email: string | null };
-      const companyKey = `${env.CENARIO_API_URL}#${company.document || company.name}`.toLowerCase();
+      const companyKey = cenarioCompanyKey(env.CENARIO_API_URL, company);
       const org = await db.organization.findUniqueOrThrow({ where: { id: st.orgId } });
 
       // Uma empresa só pode estar vinculada a uma organização.
@@ -231,7 +245,7 @@ export async function connectionRoutes(app: FastifyInstance) {
   );
 }
 
-async function revokeAtCenario(app: FastifyInstance, refreshToken: string) {
+export async function revokeAtCenario(app: FastifyInstance, refreshToken: string) {
   const { env } = app.firma;
   try {
     await app.cenarioFetch(`${env.CENARIO_API_URL}/api/oauth/revoke`, {

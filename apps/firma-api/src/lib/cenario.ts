@@ -25,6 +25,12 @@ export function isActive(c: CenarioConnection | null): c is CenarioConnection {
   return Boolean(c && c.status === 'CONECTADA' && c.accessEnc && c.refreshEnc);
 }
 
+/** Identidade da empresa no Cenário (endereço + documento/nome): uma organização por empresa. */
+export const cenarioCompanyKey = (
+  apiUrl: string,
+  company: { name: string; document: string | null },
+) => `${apiUrl}#${company.document || company.name}`.toLowerCase();
+
 export async function tokenRequest(app: FastifyInstance, body: Record<string, string>) {
   const { env } = app.firma;
   const res = await app.cenarioFetch(`${env.CENARIO_API_URL}/api/oauth/token`, {

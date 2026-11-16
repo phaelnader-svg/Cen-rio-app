@@ -333,4 +333,87 @@ describe('Firma Viva', () => {
       ).status,
     ).toBe(403);
   });
+
+  it('entrar com a conta do Cenário (botão do painel): sem senha, sem confirmação, conta ligada', async () => {
+    await createOrg('Cenário Estofados', 'dono@firma.test', PW);
+    const gestor = await loginAdmin(cenario);
+    const cenarioEmail = String((await gestor.get('/api/auth/me')).body.user?.email ?? '');
+
+    /** Navegador novo: botão do Cenário → Firma Viva → tela oficial → retorno. */
+    async function enter(expectSkip: boolean) {
+      const b = new Browser(firma);
+      const start = await b.get('/api/entrar/cenario');
+      expect(start.status).toBe(302);
+      const url = new URL(String(start.headers.location));
+      expect(url.origin + url.pathname).toBe('http://localhost:3000/autorizar');
+      expect(url.searchParams.get('prompt')).toBe('none');
+      const info = await gestor.get(`/api/oauth/authorize/info?${url.searchParams.toString()}`);
+      expect(info.status).toBe(200);
+      expect(info.body.skipConsent).toBe(expectSkip);
+      const params = Object.fromEntries(url.searchParams);
+      const auth = await gestor.post('/api/oauth/authorize', { ...params, decision: 'allow' });
+      const back = new URL(auth.body.redirect as string);
+      return { b, path: `${back.pathname}${back.search}` };
+    }
+
+    // Antes de a empresa conectar o Firma Viva: a tela de confirmação aparece e a entrada é recusada.
+    const early = await enter(false);
+    const r0 = await early.b.get(early.path);
+    expect(String(r0.headers.location)).toContain('/entrar?erro=');
+    expect(decodeURIComponent(String(r0.headers.location))).toContain('ainda não está conectada');
+
+    const dono = await login(firma, 'dono@firma.test', PW);
+    await connect(dono);
+
+    // Outro navegador não consegue usar o retorno (preso ao navegador que começou).
+    const stolen = await enter(true);
+    const other = new Browser(firma);
+    const r1 = await other.get(stolen.path);
+    expect(String(r1.headers.location)).toContain('/entrar?erro=');
+    expect((await other.get('/api/auth/me')).status).toBe(401);
+
+    // Entrada direta: sessão aberta na organização conectada, já no jogo.
+    const ok = await enter(true);
+    const r2 = await ok.b.get(ok.path);
+    expect(r2.status).toBe(302);
+    expect(String(r2.headers.location)).toBe('http://localhost:3100/jogo');
+    const me = await ok.b.get('/api/auth/me');
+    expect(me.status).toBe(200);
+    expect(me.body.organization).toMatchObject({ name: 'Cenário Estofados' });
+    const role = me.body.organization.role as string;
+    if (cenarioEmail.toLowerCase() === 'dono@firma.test') expect(role).toBe('DONO');
+    else expect(role).toBe('MEMBRO');
+
+    // A entrada não deixa acesso guardado no Cenário: só a conexão da organização segue ativa.
+    const active = await cenarioDb().oAuthGrant.findMany({ where: { revokedAt: null } });
+    expect(active).toHaveLength(1);
+    expect(active[0]!.externalRef).toBeTruthy();
+
+    // Segunda entrada usa a mesma conta (sem duplicar) e o navegador já logado vai direto ao jogo.
+    const again = await enter(true);
+    await again.b.get(again.path);
+    expect((await again.b.get('/api/auth/me')).body.user.id).toBe(me.body.user.id);
+    expect(await fdb().cenarioLogin.count()).toBe(1);
+    const direct = await again.b.get('/api/entrar/cenario');
+    expect(String(direct.headers.location)).toBe('http://localhost:3100/jogo');
+  });
+
+  it('entrar com a conta do Cenário abre a conta do mesmo e-mail que já é da organização', async () => {
+    const gestor = await loginAdmin(cenario);
+    const email = String((await gestor.get('/api/auth/me')).body.user?.email ?? '');
+    expect(email).toContain('@');
+    await createOrg('Cenário Estofados', email, PW);
+    await connect(await login(firma, email, PW));
+    const b = new Browser(firma);
+    const url = new URL(String((await b.get('/api/entrar/cenario')).headers.location));
+    const auth = await gestor.post('/api/oauth/authorize', {
+      ...Object.fromEntries(url.searchParams),
+      decision: 'allow',
+    });
+    const back = new URL(auth.body.redirect as string);
+    await b.get(`${back.pathname}${back.search}`);
+    const me = await b.get('/api/auth/me');
+    expect(me.body.user.email).toBe(email.toLowerCase());
+    expect(me.body.organization.role).toBe('DONO');
+  });
 });

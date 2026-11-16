@@ -7,6 +7,7 @@ import { audit } from '../lib/audit';
 import { hashPassword, randomToken, verifyPassword } from '../lib/crypto';
 import { E } from '../lib/errors';
 import { sendMail } from '../lib/mail';
+import { openSession } from '../lib/session';
 
 const email = z.string().trim().toLowerCase().email('Informe um e-mail válido.').max(254);
 export const passwordSchema = z
@@ -60,38 +61,12 @@ export function effectivePermissions(role: Role, c: CenarioConnection | null): s
 export async function authRoutes(app: FastifyInstance) {
   const { db, env, hash } = app.firma;
 
-  async function startSession(
+  const startSession = (
     request: FastifyRequest,
     reply: FastifyReply,
     userId: string,
     orgId: string | null,
-  ) {
-    const token = randomToken();
-    const expiresAt = new Date(Date.now() + env.FIRMA_SESSION_DAYS * 86_400_000);
-    const firstOrg =
-      orgId ??
-      (await db.membership.findFirst({ where: { userId }, orderBy: { createdAt: 'asc' } }))
-        ?.orgId ??
-      null;
-    await db.session.create({
-      data: {
-        tokenHash: hash(token),
-        userId,
-        orgId: firstOrg,
-        expiresAt,
-        ipAddress: request.ip?.slice(0, 64) ?? null,
-        userAgent: request.headers['user-agent']?.slice(0, 300) ?? null,
-      },
-    });
-    await db.user.update({ where: { id: userId }, data: { lastLoginAt: new Date() } });
-    void reply.setCookie(SESSION_COOKIE, token, {
-      httpOnly: true,
-      secure: env.FIRMA_COOKIE_SECURE,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: env.FIRMA_SESSION_DAYS * 86_400,
-    });
-  }
+  ) => openSession(app, request, reply, userId, orgId);
 
   async function me(userId: string, sessionOrgId: string | null) {
     const user = await db.user.findUniqueOrThrow({ where: { id: userId } });

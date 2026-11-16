@@ -56,6 +56,23 @@ Tudo é configurado por ambiente (`FIRMA_WEB_URL`, `CENARIO_API_URL`, `CENARIO_W
   `[via Firma Viva · <organização> · <pessoa>]`; no Firma Viva com pessoa, organização e empresa.
 - Uma empresa só pode estar vinculada a **uma** organização do Firma Viva.
 
+## Entrar pelo Cenário Gestão (botão "Acessar ambiente interativo")
+
+O painel do Cenário tem um botão verde ao lado do sininho que abre, em nova guia,
+`<Cenário>/ambiente-interativo` → `<FIRMA_WEB_URL do Cenário, padrão https://firmaviva.com.br>/api/entrar/cenario`.
+
+1. O Firma Viva cria um pedido de entrada (state + PKCE), preso ao navegador por um cookie
+   `fv_entrar` (10 min), e manda para `/autorizar` do Cenário com `prompt=none`, **sem** `org_ref`.
+2. O Cenário só dispensa a confirmação quando a empresa já tem uma concessão ativa do Firma Viva com
+   as mesmas permissões (a conexão da Central de Conexões). Sem sessão no Cenário, pede o login dele.
+3. O código volta ao retorno de sempre (`/api/conexoes/cenario/retorno`, nenhum cadastro novo no
+   Cenário). O Firma Viva troca o código, lê quem é a pessoa e **revoga o acesso na hora**: a
+   entrada não guarda tokens; quem fala com o Cenário continua sendo a conexão da organização.
+4. Conta aberta: a já ligada a essa pessoa do Cenário (`cenario_logins`); senão a conta com o mesmo
+   e-mail que já é membro da organização conectada; senão uma conta nova, **Membro (acompanha)**
+   (o dono promove se quiser). Conta de outra organização com o mesmo e-mail nunca é aberta.
+5. Empresa ainda não conectada ao Firma Viva → volta para `/entrar` com a explicação.
+
 ## Organizações, papéis e isolamento
 
 - Acesso só por convite (sem cadastro aberto). Papéis: **Dono**, **Administrador** (convida,

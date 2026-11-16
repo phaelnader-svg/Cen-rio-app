@@ -10,6 +10,7 @@ import { createHasher, createSealer } from './lib/crypto';
 import { E, FirmaError } from './lib/errors';
 import { authRoutes } from './routes/auth';
 import { connectionRoutes } from './routes/connection';
+import { entrarRoutes } from './routes/entrar';
 import { gameRoutes } from './routes/game';
 import { orgRoutes } from './routes/org';
 
@@ -145,6 +146,7 @@ export async function buildApp(opts: {
   await app.register(authRoutes);
   await app.register(orgRoutes);
   await app.register(connectionRoutes);
+  await app.register(entrarRoutes);
   await app.register(gameRoutes);
   await app.ready();
   return {
