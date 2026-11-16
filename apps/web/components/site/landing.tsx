@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ImageOff, MessageCircle } from 'lucide-react';
+import { ImageOff, LogIn, MessageCircle } from 'lucide-react';
 import { BrandMark } from '@/components/brand';
 import { Alert, Badge, Card } from '@/components/ui/misc';
 import {
@@ -236,9 +236,20 @@ export function Landing({ preview }: { preview: boolean }) {
 
       <header className={clsx(WRAP, 'flex items-center justify-between gap-4 py-5')}>
         <BrandMark />
-        <ContactLink variant="secondary" size="sm">
-          Quero conhecer
-        </ContactLink>
+        <div className="flex items-center gap-2">
+          {/* No celular o botão de contato já aparece logo abaixo, na abertura; o topo fica só com Entrar. */}
+          <ContactLink variant="secondary" size="sm" className="max-sm:hidden">
+            Quero conhecer
+          </ContactLink>
+          <a
+            href="/entrar"
+            className={clsx(BUTTON_BASE, BUTTON_VARIANTS.primary, BUTTON_SIZES.sm)}
+            data-testid="site-entrar"
+          >
+            <LogIn className="size-4" aria-hidden />
+            Entrar
+          </a>
+        </div>
       </header>
 
       <main>
