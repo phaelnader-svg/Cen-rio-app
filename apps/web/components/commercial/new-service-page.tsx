@@ -51,6 +51,12 @@ import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useCustomerAddresses, useCustomerLookup, useNewServiceDefaults } from '@/lib/commercial';
 import { useModules } from '@/lib/hooks';
 import { AddressFields, addressLines, emptyAddress, type AddressState } from './address-form';
+import {
+  PickupTakeFields,
+  emptyPickupTake,
+  pickupTakeBody,
+  type PickupTake,
+} from './pickup-take-fields';
 
 /**
  * Simplificação Fase 2 — "Novo serviço": cliente, serviço fechado e retirada em UM formulário e
@@ -165,6 +171,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const [ownCostOk, setOwnCostOk] = useState(true);
   const [instructions, setInstructions] = useState('');
   const [pickupNotes, setPickupNotes] = useState('');
+  const [take, setTake] = useState<PickupTake>(emptyPickupTake);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -269,6 +276,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
             amountCents: !d?.canSetTripCost ? null : outsourced ? amount || null : ownCost || null,
             instructions: blank(instructions),
             notes: blank(pickupNotes),
+            ...pickupTakeBody(take),
           }
         : null,
     };
@@ -308,6 +316,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
     ownCost,
     instructions,
     pickupNotes,
+    take,
   ]);
 
   const save = useMutation({
@@ -1123,6 +1132,13 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
                 onChange={(e) => setPickupNotes(e.target.value)}
               />
             </FormGrid>
+            <div className="mt-5">
+              <PickupTakeFields
+                value={take}
+                onChange={setTake}
+                error={err('pickup.samplesDescription')}
+              />
+            </div>
           </>
         )}
       </FormSection>
