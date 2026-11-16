@@ -30,10 +30,14 @@
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		# Sistema interno da oficina: não deve aparecer em buscadores.
-		X-Robots-Tag "noindex, nofollow"
 		-Server
 	}
+
+	# Sistema interno da oficina: não deve aparecer em buscadores. Única exceção: a página
+	# comercial pública (/conheca) e as imagens dela (/site/*), que o próprio Next.js só libera
+	# para indexação quando está publicada (SITE_COMERCIAL=1 e sem pendências).
+	@privado not path /conheca /site/*
+	header @privado X-Robots-Tag "noindex, nofollow"
 
 	request_body {
 		max_size 10MB
