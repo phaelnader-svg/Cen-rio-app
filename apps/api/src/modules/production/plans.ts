@@ -722,7 +722,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
       const id = await prisma.$transaction(async (tx) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'plan:' + weekStart}))`;
         if (
-          await tx.productionPlan.findUnique({ where: { weekStart: parseDateOnly(weekStart)! } })
+          await tx.productionPlan.findFirst({ where: { weekStart: parseDateOnly(weekStart)! } })
         ) {
           throw Errors.conflict('Já existe um planejamento para esta semana.');
         }

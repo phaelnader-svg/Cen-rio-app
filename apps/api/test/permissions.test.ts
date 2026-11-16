@@ -140,7 +140,7 @@ describe('Permissões administrativas', () => {
 
   it('a função Gestor é protegida e o último gestor não pode ser removido', async () => {
     const admin = await loginAdmin(app);
-    const gestor = await db().role.findUniqueOrThrow({ where: { key: 'gestor' } });
+    const gestor = await db().role.findFirstOrThrow({ where: { key: 'gestor' } });
     const r = await admin.put(`/api/roles/${gestor.id}`, {
       name: 'Gestor',
       permissions: ['painel.acessar'],
@@ -152,7 +152,7 @@ describe('Permissões administrativas', () => {
     const me = await db().employee.findFirstOrThrow({
       where: { user: { email: 'gestor@teste.local' } },
     });
-    const tapeceiro = await db().role.findUniqueOrThrow({ where: { key: 'tapeceiro' } });
+    const tapeceiro = await db().role.findFirstOrThrow({ where: { key: 'tapeceiro' } });
     const demote = await admin.put(`/api/employees/${me.id}`, {
       fullName: me.fullName,
       displayName: me.displayName,
@@ -201,7 +201,7 @@ describe('Permissões operacionais (tablet)', () => {
       restrict: false,
     });
     expect((await tablet.get('/api/sync/status')).status).toBe(200);
-    const tapeceiro = await db().role.findUniqueOrThrow({ where: { key: 'tapeceiro' } });
+    const tapeceiro = await db().role.findFirstOrThrow({ where: { key: 'tapeceiro' } });
     const upd = await admin.put(`/api/roles/${tapeceiro.id}`, {
       name: tapeceiro.name,
       permissions: [],

@@ -522,7 +522,7 @@ export async function qualityRoutes(app: FastifyInstance) {
       .replace(/^_|_$/g, '')
       .slice(0, 30);
     const l = await prisma.$transaction(async (tx) => {
-      if (await tx.itemLocation.findUnique({ where: { key } }))
+      if (await tx.itemLocation.findFirst({ where: { key } }))
         throw Errors.conflict('Já existe uma localização com esse nome.');
       const created = await tx.itemLocation.create({ data: { key, ...input } });
       await audit(tx, actorFrom(request), {

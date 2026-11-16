@@ -722,7 +722,7 @@ describe('Seed dos modelos simplificados (responsável inicial da preparação)'
     expect(absent.join('\n')).toMatch(/nenhum funcionário ativo chamado João/);
     // Repetido: dois funcionários ativos chamados Thiago.
     await resetToMigrated(CABECEIRA);
-    const role = await db().role.findUniqueOrThrow({ where: { key: 'cabeceiras_qualidade' } });
+    const role = await db().role.findFirstOrThrow({ where: { key: 'cabeceiras_qualidade' } });
     await db().user.create({
       data: {
         displayName: 'Thiago',

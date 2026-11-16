@@ -85,7 +85,7 @@ async function advisory(tx: Tx, keys: string[]) {
 
 /** Plano da semana em fila semanal: encontra ou cria (rascunho). Plano por horário = recusa. */
 async function weekPlan(tx: Tx, actor: ActorContext, weekStart: string) {
-  let plan = await tx.productionPlan.findUnique({
+  let plan = await tx.productionPlan.findFirst({
     where: { weekStart: parseDateOnly(weekStart)! },
   });
   if (!plan) {

@@ -591,7 +591,7 @@ export async function weeklyClosing(
   filters: z.output<typeof closingQuerySchema> = { format: 'json' },
 ): Promise<WeeklyClosingDto> {
   const built = await buildClosingItems(db, weekStart);
-  const row = await db.weeklyClosing.findUnique({
+  const row = await db.weeklyClosing.findFirst({
     where: { weekStart: new Date(`${weekStart}T00:00:00Z`) },
     include: { checkedBy: { select: { displayName: true } } },
   });
@@ -761,7 +761,7 @@ export async function confirmClosing(
 ) {
   // Uma conferência por vez por semana (bloqueio consultivo pela semana).
   await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `closing:${weekStart}`);
-  const row = await tx.weeklyClosing.findUnique({
+  const row = await tx.weeklyClosing.findFirst({
     where: { weekStart: new Date(`${weekStart}T00:00:00Z`) },
   });
   if ((row?.version ?? 0) !== input.version) throw Errors.versionConflict(row?.version ?? 0);
@@ -828,7 +828,7 @@ export async function reopenClosing(
   input: z.output<typeof reopenClosingSchema>,
 ) {
   await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `closing:${weekStart}`);
-  const row = await tx.weeklyClosing.findUnique({
+  const row = await tx.weeklyClosing.findFirst({
     where: { weekStart: new Date(`${weekStart}T00:00:00Z`) },
   });
   if (!row) throw Errors.business('Semana ainda não conferida.');

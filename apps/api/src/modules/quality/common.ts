@@ -551,7 +551,7 @@ export async function refreshStagesOfOrder(tx: Tx, actor: ActorContext, serviceO
 // ─────────────────────────── Localização ───────────────────────────
 
 export async function locationByKey(db: Tx | PrismaClient, key: string) {
-  return db.itemLocation.findUnique({ where: { key } });
+  return db.itemLocation.findFirst({ where: { key } });
 }
 
 /** Registra a movimentação (sem exigir cada pequeno deslocamento: só quando informada). */

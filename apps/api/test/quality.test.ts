@@ -229,7 +229,7 @@ async function approvedSofa(s: S) {
   return r.body as Insp;
 }
 const locationId = async (key: string) =>
-  (await db().itemLocation.findUniqueOrThrow({ where: { key } })).id;
+  (await db().itemLocation.findFirstOrThrow({ where: { key } })).id;
 
 /** Sofá aprovado → pronto para entrega (S1: sem embalagem; a peça vai para a expedição). */
 async function readySofa(s: S) {

@@ -181,7 +181,7 @@ async function packOnTablet(c: Client, itemId: string) {
     }),
   ).toBe(0);
   expect(await stage(itemId)).toBe('PRONTA_ENTREGA');
-  const loc = await db().itemLocation.findUniqueOrThrow({ where: { key: 'EXPEDICAO' } });
+  const loc = await db().itemLocation.findFirstOrThrow({ where: { key: 'EXPEDICAO' } });
   const r = await post(c, `/api/v1/pieces/${itemId}/move`, { locationId: loc.id, note: 'Pronta' });
   expect(r.status, JSON.stringify(r.body)).toBe(200);
 }

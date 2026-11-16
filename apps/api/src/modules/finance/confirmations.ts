@@ -249,7 +249,7 @@ async function historyOf(
  * conferida pelo gestor). Gravada no evento financeiro da própria conferência.
  */
 async function closingStamp(tx: Tx, weekStart: string) {
-  const c = await tx.weeklyClosing.findUnique({
+  const c = await tx.weeklyClosing.findFirst({
     where: { weekStart: weekDate(weekStart) },
     select: { version: true, status: true },
   });

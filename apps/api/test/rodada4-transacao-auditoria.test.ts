@@ -77,11 +77,16 @@ async function clearFailures() {
 const failAudit = (action: string) =>
   failOn('audit_logs', { when: `NEW.action = '${action.replace(/'/g, "''")}'` });
 
-/** Contagem de TODAS as tabelas do banco (exceto o controle de migrations). */
+/**
+ * Contagem de TODAS as tabelas do banco (exceto o controle de migrations e os contadores de
+ * numeração por empresa: a primeira gravação de cada tipo cria a linha do contador e as seguintes
+ * só a atualizam, então a contagem dependeria de qual teste gravou primeiro).
+ */
 async function allCounts(): Promise<Record<string, number>> {
   const tables = (
     await db().$queryRaw<{ tablename: string }[]>`
-      SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'
+      SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+         AND tablename NOT IN ('_prisma_migrations', 'company_counters')
       ORDER BY tablename`
   ).map((t) => t.tablename);
   const rows = await db().$queryRawUnsafe<{ t: string; n: number }[]>(

@@ -72,14 +72,29 @@ const LOGISTICS = [
   { fullName: 'Izaías', displayName: 'Izaías', color: '#BE185D' },
 ] as const;
 
+/** Empresa da instalação: a Cenário Estofados (multi-empresa, etapa 2). */
+export const SEED_COMPANY_ID = 1;
+
 export async function runSeed(options: { withTeam?: boolean; log?: (m: string) => void } = {}) {
   const log = options.log ?? ((m: string) => console.log(m));
   const prisma = createPrismaClient();
   try {
+    // 0. A empresa da instalação (multi-empresa: empresa nº 1). Vem antes de tudo, porque toda
+    // tabela de empresa aponta para ela.
+    await prisma.companySettings.upsert({
+      where: { id: SEED_COMPANY_ID },
+      create: { id: SEED_COMPANY_ID, tradeName: 'Cenário Estofados' },
+      update: {},
+    });
+    // O id foi gravado explicitamente: a sequência precisa andar até ele (senão a próxima empresa
+    // criada tentaria usar o mesmo número).
+    await prisma.$executeRaw`SELECT setval('company_settings_id_seq', GREATEST((SELECT MAX(id) FROM company_settings), 1))`;
+    log('✔ Configurações da empresa presentes.');
+
     // 1. Funções padrão e permissões
     for (const def of DEFAULT_ROLES) {
       const role = await prisma.role.upsert({
-        where: { key: def.key },
+        where: { companyId_key: { companyId: SEED_COMPANY_ID, key: def.key } },
         create: { key: def.key, name: def.name, description: def.description, system: def.system },
         update: {},
       });
@@ -101,14 +116,6 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
     }
     log('✔ Funções padrão sincronizadas.');
 
-    // 2. Configurações da empresa
-    await prisma.companySettings.upsert({
-      where: { id: 1 },
-      create: { id: 1, tradeName: 'Cenário Estofados' },
-      update: {},
-    });
-    log('✔ Configurações da empresa presentes.');
-
     // 3. Gestor
     const email = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase();
     const password = process.env.SEED_ADMIN_PASSWORD;
@@ -122,7 +129,9 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
       if (existing) {
         log(`• Gestor ${email} já existe — mantido sem alterações.`);
       } else {
-        const gestorRole = await prisma.role.findUniqueOrThrow({ where: { key: GESTOR_ROLE_KEY } });
+        const gestorRole = await prisma.role.findUniqueOrThrow({
+          where: { companyId_key: { companyId: SEED_COMPANY_ID, key: GESTOR_ROLE_KEY } },
+        });
         await prisma.$transaction(async (tx) => {
           const user = await tx.user.create({
             data: {
@@ -166,7 +175,9 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
           where: { displayName: member.displayName },
         });
         if (exists) continue;
-        const role = await prisma.role.findUniqueOrThrow({ where: { key: member.roleKey } });
+        const role = await prisma.role.findUniqueOrThrow({
+          where: { companyId_key: { companyId: SEED_COMPANY_ID, key: member.roleKey } },
+        });
         await prisma.$transaction(async (tx) => {
           const user = await tx.user.create({
             data: { displayName: member.displayName, roles: { create: { roleId: role.id } } },
@@ -188,7 +199,9 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
 
     // Fase 10: André e Izaías (logística terceirizada), sem PIN.
     if (options.withTeam ?? process.env.SEED_TEAM !== 'false') {
-      const role = await prisma.role.findUniqueOrThrow({ where: { key: LOGISTICS_ROLE_KEY } });
+      const role = await prisma.role.findUniqueOrThrow({
+        where: { companyId_key: { companyId: SEED_COMPANY_ID, key: LOGISTICS_ROLE_KEY } },
+      });
       for (const member of LOGISTICS) {
         if (await prisma.employee.findFirst({ where: { displayName: member.displayName } }))
           continue;

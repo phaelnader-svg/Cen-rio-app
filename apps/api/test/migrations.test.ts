@@ -159,9 +159,13 @@ describe('Banco de dados e migrations', () => {
     ).rejects.toThrow(/somente inserção/);
   });
 
-  it('restrições de integridade: configuração única, e-mail minúsculo, credencial de dispositivo', async () => {
+  it('restrições de integridade: e-mail minúsculo, credencial de dispositivo, horários', async () => {
+    // Multi-empresa (etapa 2): outras empresas são permitidas; o que não pode é um dado apontar
+    // para uma empresa que não existe.
     await expect(
-      db().companySettings.create({ data: { id: 2, tradeName: 'Outra' } }),
+      db().customer.create({
+        data: { companyId: 999, kind: 'PF', name: 'Sem empresa', searchText: 'x' },
+      }),
     ).rejects.toThrow();
     await expect(
       db().user.create({ data: { displayName: 'X', email: 'Maiuscula@Teste.local' } }),

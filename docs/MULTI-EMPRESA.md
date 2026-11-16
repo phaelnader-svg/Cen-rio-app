@@ -70,3 +70,48 @@ precisa achar zero; as rotas com `/:id` também passam a ser testadas com ids da
 - Painel simples do dono da plataforma: lista de empresas, bloquear/liberar (etapa 4).
 - Todos os clientes usam cenariogestao.com.br, sem subdomínio por empresa.
 - Passagem para produção fora do expediente da fábrica (data a combinar na etapa 6).
+
+## Etapa 2 — banco com empresa
+
+Migration `20270420000000_multi_empresa_etapa2` (reversão em
+`packages/db/rollback/20270420000000_multi_empresa_etapa2.down.sql`). Só acrescenta.
+
+- `company_settings` vira a tabela de empresas: sai a trava `company_settings_singleton`
+  (id = 1), o id passa a vir de `company_settings_id_seq`. A migration garante a empresa 1
+  ("Cenário Estofados") antes das chaves estrangeiras.
+- `app_company_id()`: empresa da transação (`set_config('app.company_id', …, true)`); sem
+  definição, devolve 1. **Etapa 3 troca o 1 de reserva por erro.**
+- 126 tabelas (empresa + acesso + `company_counters`) com `company_id INTEGER NOT NULL DEFAULT
+app_company_id()` e FK para `company_settings`. O `DEFAULT 1` constante usado no `ADD COLUMN`
+  não reescreve as tabelas.
+- 28 numerações: sem sequência global; gatilho `assign_company_number` preenche `number` a partir
+  de `company_counters` (uma linha por empresa e tabela). A empresa 1 continua do maior número já
+  usado (ou do ponto da sequência antiga, o que for maior). No Prisma: `@default(dbgenerated())`.
+- Unicidades por empresa: as 8 de `perCompanyUnique` + `customers.document` (CPF/CNPJ),
+  `inventory_categories lower(name)`, `fabric_rolls lower(code)` (índices criados em SQL).
+- Código: buscas por chave que deixou de ser única (`weekStart`, `key`, `date`) usam `findFirst`;
+  na etapa 3 a trava do banco garante que só a empresa da requisição aparece. O seed cria a
+  empresa 1 primeiro e usa `companyId_key`.
+- Testes: `apps/api/test/multi-empresa-banco.test.ts` confere no Postgres o `company_id`
+  obrigatório/FK em todas as tabelas, que nenhuma unicidade vale no sistema todo sem motivo, e que
+  a numeração e os nomes recomeçam numa segunda empresa.
+
+Pendências anotadas para a etapa 3: travas consultivas (`pg_advisory_xact_lock`) por semana
+precisam incluir a empresa na chave; `companySettings.findUnique({ where: { id: 1 } })` passa a
+usar a empresa da requisição.
+
+### Ensaio local (2026-11-16)
+
+Banco com todas as migrations até `20270406000000` e os dados do fluxo completo
+(`full-flow.test.ts`): 57 tabelas com dados, 756 linhas.
+
+| Verificação                                   | Resultado                                                           |
+| --------------------------------------------- | ------------------------------------------------------------------- |
+| Tempo da migration                            | 0,25 s                                                              |
+| Contagem por tabela antes × depois            | idêntica (só surgiu `company_counters`)                             |
+| Linhas com `company_id` diferente de 1        | 0                                                                   |
+| Contadores da empresa 1                       | iguais ao maior número de cada tabela (ex.: 17 tarefas de produção) |
+| Reversão: contagens                           | idênticas às de antes                                               |
+| Reversão: estrutura (`pg_dump --schema-only`) | idêntica à de antes                                                 |
+
+Falta o ensaio com uma cópia do banco de produção, no ambiente de homologação.

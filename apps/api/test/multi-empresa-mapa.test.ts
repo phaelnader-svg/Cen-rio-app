@@ -37,31 +37,49 @@ describe('Multi-empresa: mapa das tabelas', () => {
     expect(problemas).toEqual([]);
   });
 
-  it('cada unicidade marcada "por empresa" existe hoje como única no sistema inteiro', () => {
+  it('cada unicidade marcada "por empresa" é única junto com a empresa (e não sozinha)', () => {
     const problemas: string[] = [];
     for (const [name, entry] of Object.entries(TENANCY)) {
+      const m = byName.get(name)!;
       for (const campo of entry.perCompanyUnique ?? []) {
-        const f = byName.get(name)!.fields.find((x) => x.name === campo);
+        const f = m.fields.find((x) => x.name === campo);
         if (!f) problemas.push(`${name}.${campo} não existe`);
-        else if (!f.isUnique) problemas.push(`${name}.${campo} não é única hoje`);
+        else if (f.isUnique) problemas.push(`${name}.${campo} ainda é única no sistema inteiro`);
+        else if (!m.uniqueFields.some((u) => u.join() === `companyId,${campo}`))
+          problemas.push(`${name}: falta @@unique([companyId, ${campo}])`);
       }
     }
     expect(problemas).toEqual([]);
   });
 
-  it('toda numeração automática (pedido nº, OS nº…) está marcada para recomeçar por empresa', () => {
-    const faltando: string[] = [];
+  it('toda tabela de empresa e de acesso tem companyId; as de sistema não têm', () => {
+    const problemas: string[] = [];
+    for (const [name, entry] of Object.entries(TENANCY)) {
+      const tem = byName.get(name)!.fields.some((f) => f.name === 'companyId');
+      const deve = entry.class === 'empresa' || entry.class === 'acesso';
+      if (tem !== deve)
+        problemas.push(`${name} (${entry.class}): companyId ${tem ? 'sobrando' : 'faltando'}`);
+    }
+    expect(problemas).toEqual([]);
+  });
+
+  it('nenhuma numeração automática global sobrou (pedido nº, OS nº… são por empresa)', () => {
+    const problemas: string[] = [];
     for (const m of models) {
       for (const f of m.fields) {
-        const auto = (f.default as { name?: string } | undefined)?.name === 'autoincrement';
-        if (!auto || f.isId) continue;
-        const entry = TENANCY[m.name]!;
+        const def = (f.default as { name?: string } | undefined)?.name;
         // A sequência da fila de eventos é técnica e continua global.
-        if (m.name === 'DomainEvent' && f.name === 'seq') continue;
-        if (!entry.perCompanyUnique?.includes(f.name)) faltando.push(`${m.name}.${f.name}`);
+        if (def === 'autoincrement' && !f.isId && !(m.name === 'DomainEvent' && f.name === 'seq'))
+          problemas.push(`${m.name}.${f.name} ainda usa sequência global`);
+        if (
+          f.name === 'number' &&
+          def === 'dbgenerated' &&
+          !TENANCY[m.name]!.perCompanyUnique?.includes('number')
+        )
+          problemas.push(`${m.name}.number sem unicidade por empresa`);
       }
     }
-    expect(faltando).toEqual([]);
+    expect(problemas).toEqual([]);
   });
 
   it('o retrato do mapa (para acompanhar as próximas etapas)', () => {
@@ -72,6 +90,6 @@ describe('Multi-empresa: mapa das tabelas', () => {
       acesso: conta('acesso'),
       sistema: conta('sistema'),
       raiz: conta('empresa-raiz'),
-    }).toEqual({ total: 129, empresa: 119, acesso: 6, sistema: 3, raiz: 1 });
+    }).toEqual({ total: 130, empresa: 120, acesso: 6, sistema: 3, raiz: 1 });
   });
 });

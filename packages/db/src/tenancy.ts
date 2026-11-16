@@ -26,11 +26,19 @@ export interface TenancyEntry {
   perCompanyUnique?: string[];
   /** Conteúdo inicial que cada empresa nova recebe ao ser criada (etapa 4). */
   seededPerCompany?: boolean;
+  /**
+   * Módulo removido do sistema em 2026-11-16 (Recebimentos, Medições, Compras, Recebimento de
+   * materiais, Pedidos de ajuda). A tabela fica no banco sem uso pelas telas, mas guarda dados
+   * reais da Cenário Estofados: recebe company_id e a trava como as demais.
+   */
+  legacy?: boolean;
   note?: string;
 }
 
 const E: TenancyEntry = { class: 'empresa' };
 const numbered: TenancyEntry = { class: 'empresa', perCompanyUnique: ['number'] };
+const L: TenancyEntry = { class: 'empresa', legacy: true };
+const legacyNumbered: TenancyEntry = { ...numbered, legacy: true };
 
 export const TENANCY: Record<string, TenancyEntry> = {
   // ── Empresa e acesso ────────────────────────────────────────────────────────────────
@@ -61,6 +69,10 @@ export const TENANCY: Record<string, TenancyEntry> = {
   AuthThrottle: {
     class: 'sistema',
     note: 'Contador de tentativas por IP/e-mail; sem dados de empresa.',
+  },
+  CompanyCounter: {
+    class: 'empresa',
+    note: 'Numeração de cada empresa (pedido nº, OS nº…), preenchida por gatilho no banco.',
   },
   EventConsumer: { class: 'sistema', note: 'Posição de cada processador de eventos.' },
 
@@ -101,9 +113,9 @@ export const TENANCY: Record<string, TenancyEntry> = {
   PickupRequest: numbered,
   PickupRequestItem: E,
   PickupEvent: E,
-  Receipt: numbered,
-  ReceiptLine: E,
-  ReceiptCorrection: E,
+  Receipt: legacyNumbered,
+  ReceiptLine: L,
+  ReceiptCorrection: L,
   PieceReturn: numbered,
   PieceReturnLine: E,
 
@@ -112,30 +124,30 @@ export const TENANCY: Record<string, TenancyEntry> = {
   ServiceOrderItem: E,
   ServiceOrderRevision: E,
   ServiceOrderItemOwnerChange: E,
-  Measurement: numbered,
-  MeasurementPiece: E,
-  MeasurementRevision: E,
+  Measurement: legacyNumbered,
+  MeasurementPiece: L,
+  MeasurementRevision: L,
   ServiceModelMaterial: E,
   ServiceOrderMaterial: E,
 
   // ── Materiais, compras e estoque ────────────────────────────────────────────────────
-  MaterialRequirement: E,
-  MaterialRequest: E,
-  MaterialRequestItem: E,
-  Supplier: E,
-  StockItem: { class: 'empresa', perCompanyUnique: ['number', 'specKey'] },
-  StockMovement: E,
-  StockReservation: E,
-  PurchaseOrder: numbered,
-  PurchaseOrderItem: E,
-  PurchaseAllocation: E,
-  PurchaseOrderHistory: E,
-  MaterialReceipt: numbered,
-  MaterialReceiptLine: E,
-  MaterialReceiptReversal: E,
-  MaterialArrival: numbered,
-  MaterialLeftover: E,
-  MaterialLeftoverTransfer: E,
+  MaterialRequirement: L,
+  MaterialRequest: L,
+  MaterialRequestItem: L,
+  Supplier: L,
+  StockItem: { class: 'empresa', perCompanyUnique: ['number', 'specKey'], legacy: true },
+  StockMovement: L,
+  StockReservation: L,
+  PurchaseOrder: legacyNumbered,
+  PurchaseOrderItem: L,
+  PurchaseAllocation: L,
+  PurchaseOrderHistory: L,
+  MaterialReceipt: legacyNumbered,
+  MaterialReceiptLine: L,
+  MaterialReceiptReversal: L,
+  MaterialArrival: legacyNumbered,
+  MaterialLeftover: L,
+  MaterialLeftoverTransfer: L,
   InventoryCategory: E,
   InventoryItem: E,
   FabricRoll: E,
@@ -153,8 +165,8 @@ export const TENANCY: Record<string, TenancyEntry> = {
   ProductionTaskMaterial: E,
   PlanningAction: E,
   RescheduleProposal: numbered,
-  HelpRequest: numbered,
-  HelpRequestEvent: E,
+  HelpRequest: legacyNumbered,
+  HelpRequestEvent: L,
   ProductionIssue: numbered,
   ProductionIssueEvent: E,
   LaborReview: numbered,

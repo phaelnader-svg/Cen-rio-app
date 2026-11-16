@@ -230,7 +230,7 @@ export async function calendarRoutes(app: FastifyInstance) {
       const input = createHolidaySchema.parse(request.body);
       const actor = actorFrom(request);
       const row = await tx(async (t) => {
-        const same = await t.companyHoliday.findUnique({ where: { date: dbDate(input.date) } });
+        const same = await t.companyHoliday.findFirst({ where: { date: dbDate(input.date) } });
         if (same)
           throw Errors.conflict(
             `${brDate(input.date)} já está no calendário (${same.name}${same.active ? '' : ', inativo'}): edite o registro existente.`,

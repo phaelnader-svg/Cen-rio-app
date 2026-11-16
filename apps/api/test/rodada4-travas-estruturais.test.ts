@@ -1704,6 +1704,8 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
     'Não é comando: "ON UPDATE CASCADE" da chave estrangeira nova de quem desfez a entrega direta ' +
     '(deliveries.reverted_by_id; padrão do Prisma). Nenhuma linha é alterada.',
 };
+/** Migration da etapa 2 do multi-empresa: conferida à parte (ver o teste F1-13). */
+const MULTI_EMPRESA_ETAPA2 = '20270420000000_multi_empresa_etapa2';
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
   '20270309000000_materiais_estoque_entrega: UPDATE CASCADE': 16,
@@ -1764,16 +1766,49 @@ describe('F1-13 — só as telas de remoção aprovada saíram, nenhum dado excl
     const destructive =
       /\b(DROP|DELETE\s+FROM|TRUNCATE|UPDATE)\s+((?:IF\s+EXISTS\s+)?(?:TABLE|COLUMN|SCHEMA|INDEX|CONSTRAINT|TYPE|VIEW|TRIGGER|FUNCTION)?\s*"?[\w.]+"?)/gi;
     const found: string[] = [];
+    const multiEmpresa: string[] = [];
     for (const name of newer) {
       const sql = readFileSync(join(dir, name, 'migration.sql'), 'utf8').replace(/--.*$/gm, '');
       for (const m of sql.matchAll(destructive)) {
         const cmd = `${m[1]!.toUpperCase()} ${m[2]}`.replace(/\s+/g, ' ').trim();
+        if (name === MULTI_EMPRESA_ETAPA2) {
+          multiEmpresa.push(cmd);
+          continue;
+        }
         found.push(`${name}: ${cmd}`);
         // Toda regra derrubada precisa ser recriada na mesma migration.
         const c = /DROP CONSTRAINT ("?[\w]+"?)/i.exec(cmd);
         if (c) expect(sql, `${name} recria ${c[1]}`).toContain(`ADD CONSTRAINT ${c[1]}`);
       }
     }
+    // Multi-empresa (etapa 2): nenhuma linha é apagada; cada comando é de um tipo justificado.
+    const etapa2 = readFileSync(join(dir, MULTI_EMPRESA_ETAPA2, 'migration.sql'), 'utf8');
+    // Índices únicos recriados com company_id na frente (nome igual, ou o nome do Prisma para
+    // (company_id, coluna)), normalizados para o nome do índice que saiu.
+    const recriadosComEmpresa = new Set(
+      [...etapa2.matchAll(/CREATE UNIQUE INDEX "(\w+)" ON "\w+"\("company_id"/g)].map((m) =>
+        m[1]!.replace('_company_id_', '_'),
+      ),
+    );
+    const naoJustificados = multiEmpresa.filter((cmd) => {
+      // "ON UPDATE CASCADE" das chaves estrangeiras novas (company_id) e o "DO UPDATE SET" do
+      // contador de numeração: não alteram linhas existentes.
+      if (cmd === 'UPDATE CASCADE' || cmd === 'UPDATE SET') return false;
+      // Numeração por empresa: o padrão nextval e a sequência global saem; o contador da empresa 1
+      // começa do maior número já usado (testado em multi-empresa-banco.test.ts).
+      if (cmd === 'DROP DEFAULT' || cmd === 'DROP SEQUENCE') return false;
+      // A trava "só existe a empresa 1" sai: é exatamente o que a etapa 2 muda.
+      if (cmd === 'DROP CONSTRAINT "company_settings_singleton"') return false;
+      // Unicidade global trocada pela mesma unicidade dentro da empresa, com o mesmo nome ou com
+      // o nome do Prisma para (company_id, coluna).
+      const idx = /^DROP INDEX "(\w+)"$/.exec(cmd)?.[1];
+      if (idx) return !recriadosComEmpresa.has(idx);
+      return true;
+    });
+    expect(naoJustificados).toEqual([]);
+    expect(multiEmpresa.filter((c) => c.startsWith('DROP INDEX')).length).toBe(39);
+    expect(etapa2).not.toMatch(/\b(DELETE\s+FROM|TRUNCATE|DROP\s+(TABLE|COLUMN))\b/i);
+
     expect(found.sort()).toEqual(
       Object.keys(ALLOWED_DESTRUCTIVE)
         .flatMap((k) => Array<string>(ALLOWED_DESTRUCTIVE_TIMES[k] ?? 1).fill(k))

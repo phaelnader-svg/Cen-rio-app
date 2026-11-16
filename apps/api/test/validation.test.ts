@@ -23,7 +23,7 @@ afterAll(() => app.close());
 beforeEach(resetDatabase);
 
 async function roleId(key: string) {
-  return (await db().role.findUniqueOrThrow({ where: { key } })).id;
+  return (await db().role.findFirstOrThrow({ where: { key } })).id;
 }
 
 describe('Validação de dados', () => {
