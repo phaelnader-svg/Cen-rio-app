@@ -138,7 +138,7 @@ ALTER TABLE "logistics_occurrences" ALTER COLUMN "number" SET DEFAULT nextval('"
 CREATE UNIQUE INDEX "logistics_occurrences_number_key" ON "logistics_occurrences"("number");
 DROP TRIGGER "quotes_company_number" ON "quotes";
 DROP INDEX "quotes_company_id_number_key";
-CREATE SEQUENCE "quotes_number_seq" AS INTEGER OWNED BY "quotes"."number";
+CREATE SEQUENCE "quotes_number_seq" AS INTEGER START WITH 10200 OWNED BY "quotes"."number";
 SELECT setval('"quotes_number_seq"', COALESCE((SELECT last_value FROM company_counters WHERE company_id = 1 AND key = 'quotes'), 0) + 1, false);
 ALTER TABLE "quotes" ALTER COLUMN "number" SET DEFAULT nextval('"quotes_number_seq"');
 CREATE UNIQUE INDEX "quotes_number_key" ON "quotes"("number");

@@ -114,4 +114,12 @@ Banco com todas as migrations até `20270406000000` e os dados do fluxo completo
 | Reversão: contagens                           | idênticas às de antes                                               |
 | Reversão: estrutura (`pg_dump --schema-only`) | idêntica à de antes                                                 |
 
+Segundo ensaio (2026-11-16, sobre `e43bc99`, já com Orçamentos): migration em 0,33 s,
+contagens idênticas, `company_id` = 1 em tudo, contador de orçamentos da empresa 1 em 10199
+(o próximo é o 10200, como antes), reversão com contagens e estrutura idênticas.
+
+Orçamentos: `quote_settings` passa a ter uma linha por empresa (id automático + UNIQUE
+`company_id`); `quote_catalog_items` é conteúdo inicial por empresa; `quotes.number` entra na
+numeração por empresa (o seed grava o ponto de partida 10199 da empresa 1).
+
 Falta o ensaio com uma cópia do banco de produção, no ambiente de homologação.
