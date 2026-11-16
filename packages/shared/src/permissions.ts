@@ -479,3 +479,24 @@ export function resolvePermissions(
   for (const p of directGrants) if (isPermission(p)) set.add(p);
   return ALL_PERMISSIONS.filter((p) => set.has(p));
 }
+
+/**
+ * Função das contas criadas pela tela de entrar (decisão do proprietário, 16/11/2026: entram
+ * direto, sem aprovação, só para consulta). Painel + todas as permissões de "ver"; nada que
+ * altere dados, contas, senhas, funções ou dispositivos. Criada pela API no primeiro cadastro se
+ * ainda não existir; o gestor pode ajustar as permissões dela em Funções.
+ */
+export const SIGNUP_ROLE: DefaultRoleDefinition = {
+  key: 'consulta_site',
+  name: 'Consulta (conta do site)',
+  description: 'Contas criadas pela tela de entrar: veem o painel, sem alterar nada.',
+  system: true,
+  permissions: [
+    'painel.acessar',
+    // Sessões, auditoria e dispositivos ficam de fora: mostram IPs e acessos de outras pessoas.
+    ...(Object.keys(PERMISSIONS) as Permission[]).filter(
+      (p) =>
+        p.endsWith('.ver') && !['sessoes.ver', 'auditoria.ver', 'dispositivos.ver'].includes(p),
+    ),
+  ],
+};
