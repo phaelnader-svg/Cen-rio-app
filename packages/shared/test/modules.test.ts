@@ -13,7 +13,7 @@ describe('módulos configuráveis', () => {
   it('sem nenhum registro, tudo fica no padrão: logística, ajuda e embalagem ligadas; travas de materiais desligadas (etapa E1)', () => {
     const state = resolveModules([]);
     expect(Object.keys(state).sort()).toEqual([...MODULE_KEYS].sort());
-    const expected = { logistica: true, ajuda: true, materiais: false };
+    const expected = { logistica: true, ajuda: true, materiais: false, ambiente_interativo: true };
     for (const k of MODULE_KEYS) {
       expect(MODULES[k].defaultEnabled).toBe(expected[k]);
       expect(state[k]).toBe(expected[k]);
@@ -25,6 +25,7 @@ describe('módulos configuráveis', () => {
       'logistica',
       'ajuda',
       'materiais',
+      'ambiente_interativo',
     ]);
     const state = resolveModules([
       { key: 'logistica', enabled: false },
@@ -32,13 +33,19 @@ describe('módulos configuráveis', () => {
       { key: 'ajuda', enabled: false },
       { key: 'materiais', enabled: false },
     ]);
-    expect(state).toEqual({ logistica: false, ajuda: false, materiais: false });
+    expect(state).toEqual({
+      logistica: false,
+      ajuda: false,
+      materiais: false,
+      ambiente_interativo: true,
+    });
     // Sem registro: logística e ajuda ligadas (comportamento anterior); etapa E1: as travas de
     // materiais vêm desligadas (a produção não depende do processo formal de compras).
     expect(resolveModules([])).toEqual({
       logistica: true,
       ajuda: true,
       materiais: false,
+      ambiente_interativo: true,
     });
   });
 

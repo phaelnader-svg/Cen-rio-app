@@ -122,6 +122,8 @@ describe('Interruptores de funcionalidade', () => {
       // Etapa E1 (decisão do proprietário): travas de materiais desligadas por padrão.
       // Reformulação S1: a embalagem deixou de existir (sem interruptor).
       materiais: false,
+      // Complemento "Ambiente interativo": liberado por enquanto (decisão do dono, 16/11/2026).
+      ambiente_interativo: true,
     });
     const list = (await admin.get('/api/company/modules')).body as {
       key: string;
@@ -130,14 +132,24 @@ describe('Interruptores de funcionalidade', () => {
       version: number;
       updatedBy: unknown;
     }[];
-    expect(list.map((m) => m.key)).toEqual(['logistica', 'ajuda', 'materiais']);
+    expect(list.map((m) => m.key)).toEqual([
+      'logistica',
+      'ajuda',
+      'materiais',
+      'ambiente_interativo',
+    ]);
     expect(list.every((m) => m.version === 0 && m.updatedBy === null)).toBe(true);
-    expect(list.filter((m) => m.enabled).map((m) => m.key)).toEqual(['logistica', 'ajuda']);
+    expect(list.filter((m) => m.enabled).map((m) => m.key)).toEqual([
+      'logistica',
+      'ajuda',
+      'ambiente_interativo',
+    ]);
     // Fase 1: logística e travas de materiais passaram a ser configuráveis.
     expect(list.filter((m) => m.configurable).map((m) => m.key)).toEqual([
       'logistica',
       'ajuda',
       'materiais',
+      'ambiente_interativo',
     ]);
     expect(await db().moduleSetting.count()).toBe(0);
   });
@@ -154,6 +166,8 @@ describe('Interruptores de funcionalidade', () => {
       logistica: true,
       ajuda: true,
       materiais: false,
+      // Complemento "Ambiente interativo": liberado por enquanto (decisão do dono, 16/11/2026).
+      ambiente_interativo: true,
     });
     // Fase 1: a logística passou a ser configurável — o registro gravado agora vale.
     await db().moduleSetting.create({ data: { key: 'logistica', enabled: false } });
@@ -161,6 +175,8 @@ describe('Interruptores de funcionalidade', () => {
       logistica: false,
       ajuda: true,
       materiais: false,
+      // Complemento "Ambiente interativo": liberado por enquanto (decisão do dono, 16/11/2026).
+      ambiente_interativo: true,
     });
     // A linha antiga da embalagem continua gravada (histórico), sem efeito.
     expect(await db().moduleSetting.count({ where: { key: 'embalagem' } })).toBe(1);

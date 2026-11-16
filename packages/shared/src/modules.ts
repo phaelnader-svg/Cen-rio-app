@@ -19,7 +19,7 @@ import { z } from 'zod';
  * Reformulação S1: "embalagem" deixou de existir (a embalagem não é mais etapa). Um registro antigo
  * com essa chave em `module_settings` é ignorado por `resolveModules` (chave desconhecida).
  */
-export const MODULE_KEYS = ['logistica', 'ajuda', 'materiais'] as const;
+export const MODULE_KEYS = ['logistica', 'ajuda', 'materiais', 'ambiente_interativo'] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
 export interface ModuleDefinition {
@@ -49,6 +49,13 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
     description:
       'Ligada, as etapas que exigem material só são liberadas com compra recebida ou reserva. Desligada (padrão), a produção começa mesmo com materiais pendentes: a disponibilidade vira só aviso, e compras, reservas e estoque formais continuam disponíveis para quem quiser usar.',
     defaultEnabled: false,
+    configurable: true,
+  },
+  ambiente_interativo: {
+    label: 'Ambiente interativo',
+    description:
+      'Complemento do plano (por enquanto liberado para todos): mostra o botão "Acessar ambiente interativo" no painel, que abre o Firma Viva em outra guia já com a empresa e sem pedir login. Desligado, o botão some e o Firma Viva não consegue entrar pelo Cenário.',
+    defaultEnabled: true,
     configurable: true,
   },
 };
@@ -83,6 +90,7 @@ export const MODULE_NOTIFICATION_KINDS: Record<ModuleKey, readonly string[]> = {
     'AJUDA_CONCLUIDA',
   ],
   materiais: [],
+  ambiente_interativo: [],
 };
 
 /** Tipos de notificação a esconder no estado atual (vazio = nenhum). */

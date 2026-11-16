@@ -21,6 +21,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
+import { moduleEnabled } from '../../core/modules';
 import { loadUserPermissions } from '../../core/permissions';
 import { createSession, revokeSessions } from '../../core/sessions';
 import type { ActorContext } from '../../core/types';
@@ -120,19 +121,18 @@ export async function oauthRoutes(app: FastifyInstance) {
   }
 
   /**
-   * Entrada direta (botão "Acessar ambiente interativo"): dispensa a confirmação só quando o
-   * aplicativo pede `prompt=none` e a empresa já tem uma concessão ativa dele cobrindo as
-   * permissões pedidas. A pessoa continua precisando estar logada no Cenário, e o aplicativo
-   * nunca recebe mais do que ela pode fazer (usuário ∩ escopo).
+   * Entrada direta (botão "Acessar ambiente interativo"): com `prompt=none`, a confirmação é
+   * dispensada quando a empresa tem o complemento "Ambiente interativo" ligado (a contratação é a
+   * autorização da empresa). Desligado, a entrada direta é recusada. A pessoa continua precisando
+   * estar logada no Cenário, e o aplicativo nunca recebe mais do que ela pode fazer.
    */
-  async function canSkipConsent(clientDbId: string, scopes: string[], prompt?: string) {
+  async function directEntry(prompt?: string) {
     if (prompt !== 'none') return false;
-    const grants = await prisma.oAuthGrant.findMany({
-      where: { clientId: clientDbId, revokedAt: null, session: { revokedAt: null } },
-      select: { scopes: true },
-      take: 50,
-    });
-    return grants.some((g) => scopes.every((s) => g.scopes.includes(s)));
+    if (!(await moduleEnabled(prisma, 'ambiente_interativo')))
+      throw Errors.business(
+        'O Ambiente interativo não está ativo para esta empresa. Fale com o Cenário Gestão para contratar o complemento.',
+      );
+    return true;
   }
 
   /** Dados da tela de consentimento (empresa, pessoa, permissões pedidas). */
@@ -161,7 +161,7 @@ export async function oauthRoutes(app: FastifyInstance) {
           };
         }),
         redirectHost: new URL(q.redirect_uri).host,
-        skipConsent: await canSkipConsent(client.id, scopes, q.prompt),
+        skipConsent: await directEntry(q.prompt),
       };
     },
   );
@@ -170,6 +170,7 @@ export async function oauthRoutes(app: FastifyInstance) {
   app.post('/api/oauth/authorize', { config: { access: { session: 'WEB' } } }, async (request) => {
     const body = authorizeQuery.extend({ decision: z.enum(['allow', 'deny']) }).parse(request.body);
     const { client, scopes } = await validateRequest(body);
+    await directEntry(body.prompt);
     const target = new URL(body.redirect_uri);
     target.searchParams.set('state', body.state);
     if (body.decision === 'deny') {

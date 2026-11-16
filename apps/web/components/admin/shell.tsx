@@ -223,19 +223,21 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             </button>
             <p className="truncate text-sm font-medium text-ink-muted">{data.company.tradeName}</p>
             <div className="ml-auto flex items-center gap-2">
-              {/* Firma Viva já conectado à conta do Cenário, sempre em outra guia. */}
-              <a
-                href={AMBIENTE_INTERATIVO_PATH}
-                target="_blank"
-                rel="noopener noreferrer"
-                data-testid="ambiente-interativo"
-                aria-label="Acessar ambiente interativo (abre em nova guia)"
-                className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl bg-ok-600 px-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 focus-visible:ring-4 focus-visible:ring-ok-50"
-              >
-                <Gamepad2 className="size-4" aria-hidden />
-                <span className="sm:hidden">Interativo</span>
-                <span className="hidden sm:inline">Acessar ambiente interativo</span>
-              </a>
+              {/* Complemento "Ambiente interativo": Firma Viva já com a empresa, em outra guia. */}
+              {modules.ambiente_interativo && (
+                <a
+                  href={AMBIENTE_INTERATIVO_PATH}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="ambiente-interativo"
+                  aria-label="Acessar ambiente interativo (abre em nova guia)"
+                  className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl bg-ok-600 px-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 focus-visible:ring-4 focus-visible:ring-ok-50"
+                >
+                  <Gamepad2 className="size-4" aria-hidden />
+                  <span className="sm:hidden">Interativo</span>
+                  <span className="hidden sm:inline">Acessar ambiente interativo</span>
+                </a>
+              )}
               <PanelNotifications />
               <ConnectionIndicator compact />
             </div>
