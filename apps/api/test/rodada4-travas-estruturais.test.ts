@@ -1503,7 +1503,9 @@ const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
 const ALLOWED_ACCESS_CHANGES: Record<string, AccessRule> = {};
 /** Acréscimos da função que ainda existem no catálogo (estoque.conferir saiu com a S4). */
 const adicoes = (key: string) =>
-  (ALLOWED_ROLE_ADDITIONS[key] ?? []).filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p));
+  (ALLOWED_ROLE_ADDITIONS[key] ?? [])
+    .filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p))
+    .sort();
 
 describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9fb1786)', () => {
   it('o catálogo de permissões é o de 9fb1786 menos as removidas por etapa; acréscimo só estoque.conferir', () => {
@@ -1527,16 +1529,10 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
         `${key} perdeu`,
       ).toEqual([]);
       const base = new Set(perms);
-<<<<<<< HEAD
-      expect([...cur].filter((p) => !base.has(p)).sort(), `${key} ganhou`).toEqual(
-        [...ALLOWED_ROLE_ADDITIONS[key]!].sort(),
-      );
-=======
       expect(
-        [...cur].filter((p) => !base.has(p)),
+        [...cur].filter((p) => !base.has(p)).sort(),
         `${key} ganhou`,
       ).toEqual(adicoes(key));
->>>>>>> origin/claude/project-thread-dr7pqa
     }
   });
 
@@ -1556,15 +1552,11 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
       expect(
         [...cur].filter((p) => !base.includes(p)).sort(),
         `${role.key} ganhou no banco`,
-<<<<<<< HEAD
-      ).toEqual([...ALLOWED_ROLE_ADDITIONS[role.key!]!].sort());
-=======
       ).toEqual(adicoes(role.key!));
       expect(
         [...cur].filter((p) => PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)),
         `${role.key} ainda tem permissão removida no banco`,
       ).toEqual([]);
->>>>>>> origin/claude/project-thread-dr7pqa
     }
     // Permissões efetivas de quem entra como gestor (o que o servidor realmente checa).
     const gestor = await db().user.findUniqueOrThrow({ where: { email: ADMIN.email } });
