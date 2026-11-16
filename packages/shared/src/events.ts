@@ -154,6 +154,12 @@ export const EVENT_TYPES = {
   FINANCE_OWN_CHANGED: 'finance.own_changed',
   /** Jogo de gestão: a planta (oficina ou escritório) foi salva; o Firma Viva recarrega. */
   GAME_LAYOUT_SAVED: 'game.layout_saved',
+  GAME_AGENT_CHANGED: 'game.agent_changed',
+  GAME_PROPOSAL_CHANGED: 'game.proposal_changed',
+  /** Escritório do jogo: conexões externas, caixa de entrada e mudanças do escritório (só ids). */
+  CONNECTION_CHANGED: 'connection.changed',
+  INBOX_MESSAGE: 'inbox.message',
+  OFFICE_CHANGED: 'office.changed',
 } as const;
 
 export type EventType = (typeof EVENT_TYPES)[keyof typeof EVENT_TYPES];

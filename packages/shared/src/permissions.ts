@@ -317,6 +317,37 @@ export const PERMISSIONS = {
       'Criar, configurar, pausar e desativar agentes; definir dados consultados e ações que podem propor ou executar; aprovar propostas.',
     critical: true,
   },
+  'conexoes.gerenciar': {
+    group: 'jogo',
+    label: 'Gerenciar conexões externas',
+    description:
+      'Conectar, testar, reconectar e desconectar WhatsApp, Instagram, Messenger, anúncios, assinatura, emissão fiscal, cobranças e banco. Tokens ficam só no servidor.',
+    critical: true,
+  },
+  'atendimento.ver': {
+    group: 'jogo',
+    label: 'Ver caixa de entrada',
+    description: 'Ler conversas de WhatsApp, Instagram e Messenger e os rascunhos dos agentes.',
+  },
+  'atendimento.responder': {
+    group: 'jogo',
+    label: 'Responder clientes',
+    description:
+      'Enviar mensagens pela caixa de entrada, aprovar rascunhos dos agentes e vincular conversas a clientes e OS.',
+    critical: true,
+  },
+  'marketing.publicar': {
+    group: 'jogo',
+    label: 'Publicar conteúdo',
+    description: 'Aprovar e publicar posts preparados pelo agente de Marketing.',
+    critical: true,
+  },
+  'anuncios.gerenciar': {
+    group: 'jogo',
+    label: 'Gerenciar anúncios',
+    description: 'Ver campanhas e aprovar mudanças de orçamento propostas pelo agente de Tráfego.',
+    critical: true,
+  },
   'auditoria.ver': {
     group: 'sistema',
     label: 'Ver auditoria',

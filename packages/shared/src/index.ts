@@ -51,3 +51,4 @@ export * from './types-game';
 export * from './game-command';
 export * from './game-workflow';
 export * from './agent-templates';
+export * from './cash-board';

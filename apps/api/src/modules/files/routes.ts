@@ -17,6 +17,13 @@ const READ_POLICIES: Record<
 > = {
   // Fotos de identificação: visíveis a qualquer sessão autenticada (painel e tablets).
   'employee-photo': (request) => request.auth !== null,
+  // Documentos do escritório do jogo (contratos, notas, comprovantes): financeiro ou pedidos.
+  'office-document': (request) =>
+    Boolean(
+      request.auth &&
+        (request.auth.permissions.has('financeiro.ver') ||
+          request.auth.permissions.has('pedidos.ver')),
+    ),
   // Fotos do fluxo: mesma permissão de leitura do registro ao qual pertencem.
   attachment: async (request, file, prisma) => {
     const a = await prisma.attachment.findUnique({ where: { fileId: file.id } });

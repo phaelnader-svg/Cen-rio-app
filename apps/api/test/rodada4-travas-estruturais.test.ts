@@ -1490,7 +1490,17 @@ afterAll(() => app.close());
 /** Acréscimos permitidos desde 9fb1786 (Rodada 1, decisão do proprietário — F3-17). */
 // Ambiente interativo, etapa 1 (aprovada pelo proprietário em 16/11): permissões NOVAS do jogo, que
 // nenhuma função padrão recebe; só o gestor (catálogo completo) e quem o gestor liberar.
-const GAME_PERMISSIONS = ['jogo.acessar', 'jogo.construir', 'agentes.usar', 'agentes.gerenciar'];
+const GAME_PERMISSIONS = [
+  'jogo.acessar',
+  'jogo.construir',
+  'agentes.usar',
+  'agentes.gerenciar',
+  'conexoes.gerenciar',
+  'atendimento.ver',
+  'atendimento.responder',
+  'marketing.publicar',
+  'anuncios.gerenciar',
+];
 const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir', ...GAME_PERMISSIONS];
 const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
   gestor: ['estoque.conferir', ...GAME_PERMISSIONS], // o gestor sempre recebe o catálogo completo

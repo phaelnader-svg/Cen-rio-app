@@ -276,10 +276,10 @@ export async function ensureDefaultSpaces(prisma: PrismaClient) {
           snapshot: c as unknown as Prisma.InputJsonValue,
         },
       });
-      // Gerente e Compras começam nas duas primeiras mesas do escritório sugerido.
+      // Gerente e Financeiro começam nas duas primeiras mesas do escritório sugerido (Compras saiu do Cenário).
       if (key === 'ESCRITORIO' && !(await tx.aiAgent.count())) {
         const desks = c.stations.filter((st) => st.kind === 'MESA_ESCRITORIO');
-        for (const [i, roleKey] of ['GERENTE', 'COMPRAS'].entries()) {
+        for (const [i, roleKey] of ['GERENTE', 'FINANCEIRO'].entries()) {
           const t = AGENT_TEMPLATES.find((x) => x.roleKey === roleKey)!;
           await tx.aiAgent.create({
             data: {
