@@ -24,6 +24,7 @@ export function AdminLogin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,6 +37,7 @@ export function AdminLogin() {
     setMode(next);
     setErrors({});
     setFormError(null);
+    setNotice(null);
     setPassword('');
     setPasswordConfirm('');
   }
@@ -54,16 +56,14 @@ export function AdminLogin() {
     setLoading(true);
     try {
       await api('/api/auth/signup', { method: 'POST', body: parsed.data });
-      // Conta criada já entra direto (função de consulta).
-      const me = await api('/api/auth/login', {
-        method: 'POST',
-        body: { email: parsed.data.email, password: parsed.data.password },
-      });
-      qc.setQueryData(['me'], me);
-      router.replace('/painel');
-      return;
+      switchMode('login');
+      setEmail(parsed.data.email);
+      setNotice(
+        'Conta criada. Ela aguarda a liberação do gestor: você poderá entrar assim que ela for liberada.',
+      );
     } catch (err) {
       setFormError(errorMessage(err));
+    } finally {
       setLoading(false);
     }
   }
@@ -121,12 +121,17 @@ export function AdminLogin() {
           <p className="mt-1 text-[15px] text-ink-muted">
             {mode === 'login'
               ? 'Use seu e-mail e senha de gestor.'
-              : 'Crie sua conta com e-mail e senha para entrar no sistema.'}
+              : 'A conta só entra no painel depois que o gestor liberar o acesso.'}
           </p>
 
           {mode === 'login' && reason && REASONS[reason] && (
             <Alert tone="info" className="mt-6">
               {REASONS[reason]}
+            </Alert>
+          )}
+          {notice && (
+            <Alert tone="ok" className="mt-6">
+              {notice}
             </Alert>
           )}
           {formError && (

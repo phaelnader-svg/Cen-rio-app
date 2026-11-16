@@ -1,11 +1,4 @@
-import {
-  EVENT_TYPES,
-  SIGNUP_ROLE,
-  adminLoginSchema,
-  changePasswordSchema,
-  signupSchema,
-} from '@cenario/shared';
-import { appendEvent } from '../../core/events/append';
+import { adminLoginSchema, changePasswordSchema, signupSchema } from '@cenario/shared';
 import { isUniqueViolation } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
@@ -15,7 +8,7 @@ import { AuthThrottle, POLICIES, clientIpKey } from '../../core/throttle';
 import { burnVerification, hashSecret, verifySecret } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
 import { cookieOptions } from '../../plugins/auth';
-import { buildMe, employeeEventPayload } from '../presenters';
+import { buildMe } from '../presenters';
 
 export async function authRoutes(app: FastifyInstance) {
   const { prisma, env, hashToken, cookies } = app.ctx;
@@ -90,9 +83,9 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   /**
-   * Criar conta (tela /entrar). Decisão do proprietário (16/11/2026): a conta entra direto, sem
-   * aprovação, com a função de consulta (SIGNUP_ROLE: vê o painel, não altera nada). Vira um
-   * funcionário "Conta do site", que o gestor pode desativar em Funcionários.
+   * Criar conta (tela /entrar). A conta nasce sem funções nem permissões: não entra no painel
+   * até o gestor liberar (Funcionários → Contas aguardando liberação). A resposta é a mesma
+   * quando o e-mail já existe, para não revelar quais e-mails têm conta.
    */
   app.post('/api/auth/signup', { config: { access: { public: true } } }, async (request, reply) => {
     const input = signupSchema.parse(request.body);
@@ -102,61 +95,24 @@ export async function authRoutes(app: FastifyInstance) {
     await throttle.registerFailure('signup:global', POLICIES.signupGlobal);
 
     const passwordHash = await hashSecret(input.password);
-    const displayName = (input.email.split('@')[0] || 'Conta do site').slice(0, 40).padEnd(2, '_');
+    const displayName = (input.email.split('@')[0] || 'Conta nova').slice(0, 60);
     try {
       await prisma.$transaction(async (tx) => {
-        const role =
-          (await tx.role.findUnique({ where: { key: SIGNUP_ROLE.key } })) ??
-          (await tx.role.create({
-            data: {
-              key: SIGNUP_ROLE.key,
-              name: SIGNUP_ROLE.name,
-              description: SIGNUP_ROLE.description,
-              system: SIGNUP_ROLE.system,
-              permissions: {
-                create: SIGNUP_ROLE.permissions.map((permission) => ({ permission })),
-              },
-            },
-          }));
         const user = await tx.user.create({
-          data: {
-            email: input.email,
-            passwordHash,
-            displayName,
-            credentialsChangedAt: new Date(),
-            roles: { create: { roleId: role.id } },
-          },
+          data: { email: input.email, passwordHash, displayName, credentialsChangedAt: new Date() },
         });
-        const employee = await tx.employee.create({
-          data: {
-            userId: user.id,
-            fullName: input.email.slice(0, 120),
-            displayName,
-            jobTitle: 'Conta do site',
-            color: '#5C6B6A',
-          },
-        });
-        const actor = { ...actorFrom(request), userId: user.id };
-        await audit(tx, actor, {
+        await audit(tx, actorFrom(request), {
           action: 'auth.signup',
-          entityType: 'employee',
-          entityId: employee.id,
-          summary: `Conta criada pela tela de entrar (${input.email}), com a função ${role.name}.`,
-        });
-        await appendEvent(tx, actor, {
-          type: EVENT_TYPES.EMPLOYEE_CREATED,
-          aggregateType: 'employee',
-          aggregateId: employee.id,
-          payload: employeeEventPayload(employee),
+          entityType: 'user',
+          entityId: user.id,
+          summary: `Conta criada pela tela de entrar (${input.email}); aguarda liberação do gestor.`,
         });
       });
     } catch (error) {
-      if (isUniqueViolation(error, 'email')) {
-        throw Errors.conflict('Já existe uma conta com este e-mail. Entre com a sua senha.');
-      }
-      throw error;
+      if (!isUniqueViolation(error, 'email')) throw error;
+      request.log.info({ event: 'auth.signup_existing' }, 'Criar conta com e-mail já cadastrado');
     }
-    return reply.status(201).send({ status: 'created' });
+    return reply.status(202).send({ status: 'pending' });
   });
 
   /** Encerra a sessão atual (painel ou tablet). No tablet, o dispositivo continua vinculado. */
