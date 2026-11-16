@@ -16,7 +16,7 @@ import {
   pieceWorkflow,
   rectOfArea,
 } from '@cenario/shared';
-import { FURNITURE_SIZE } from './models';
+import { FURNITURE_SIZE, OFFICE_SEAT } from './models';
 import type { PersonVisual, PieceVisual } from './engine';
 
 const ATTENDANCE_AWAY = [
@@ -210,7 +210,8 @@ export function peopleOnMap(
     if (a.status === 'DESATIVADO') continue;
     const desk = l.stations.find((s) => s.id === a.deskStationId);
     if (!desk) continue;
-    const fr = frontRect(desk, 50);
+    // Ponto do assento da cadeira da mesa (mesma medida do modelo 3D): o agente senta nela.
+    const fr = frontRect(desk, OFFICE_SEAT.depth * 200);
     out.push({
       id: a.id,
       kind: 'agent',

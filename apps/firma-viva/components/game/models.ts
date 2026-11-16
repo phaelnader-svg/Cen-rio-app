@@ -287,11 +287,18 @@ export function stationModel(kind: string, w: number, d: number, accent = PALETT
         box(0.46, 0.27, 0.01, mat('#1f3a5f', { emissive: '#2c5ea8' }), 0, 0.825, -d / 2 + 0.145),
       );
       g.add(box(0.06, 0.06, 0.06, mat(PALETTE.ink), 0, 0.75, -d / 2 + 0.12));
-      g.add(box(0.4, 0.02, 0.14, mat('#e8e4dc'), 0, 0.75, 0.05));
-      // Cadeira na frente (lado sul).
-      g.add(box(0.48, 0.08, 0.48, mat(PALETTE.ink), 0, 0.42, d / 2 + 0.35));
-      g.add(box(0.48, 0.5, 0.06, mat(PALETTE.ink), 0, 0.5, d / 2 + 0.58));
-      g.add(cyl(0.03, 0.42, PALETTE.metal, 0, 0, d / 2 + 0.35, 6));
+      g.add(box(0.4, 0.02, 0.14, mat('#e8e4dc'), 0, 0.75, Math.max(0.05, d / 2 - 0.14)));
+      // Cadeira giratória na frente (lado sul). O assento fica em OFFICE_SEAT (altura e distância da
+      // borda da mesa), o mesmo ponto onde o motor senta o agente.
+      {
+        const cz = d / 2 + OFFICE_SEAT.depth;
+        const top = OFFICE_SEAT.height;
+        g.add(box(0.46, 0.07, 0.44, mat('#2f3a40'), 0, top - 0.07, cz));
+        g.add(box(0.44, 0.46, 0.06, mat('#2f3a40'), 0, top - 0.02, cz + 0.22));
+        g.add(cyl(0.03, top - 0.12, PALETTE.metal, 0, 0.05, cz, 6));
+        g.add(box(0.5, 0.04, 0.05, mat(PALETTE.metal), 0, 0.02, cz));
+        g.add(box(0.05, 0.04, 0.5, mat(PALETTE.metal), 0, 0.02, cz));
+      }
       break;
     case 'QUADRO_METAS': {
       // Quadro em cavalete: moldura, fundo claro e trilho da barra (preenchida pelo motor).
@@ -547,42 +554,114 @@ export function decorModel(kind: string, w: number, d: number) {
 
 export type AvatarStyle = 'PESSOA' | 'JOGADOR' | 'AGENTE' | 'MESTRE';
 
+/** Assento da cadeira da mesa de escritório: altura do assento (m) e distância da borda da mesa (m). */
+export const OFFICE_SEAT = { height: 0.42, depth: 0.42 };
+/** Altura do quadril do personagem em pé (m). As pernas giram a partir daqui. */
+export const HIP_HEIGHT = 0.45;
+/** Metade da espessura da coxa: sentado, o quadril fica isso acima do assento. */
+export const THIGH_HALF = 0.07;
+
+const HAIR = ['#3a2a20', '#1f1a17', '#6b4423', '#2b2235', '#8a5a2b'];
+
+/**
+ * Personagem em blocos. Pernas e braços são articulados (quadril, joelho, ombro), então o mesmo
+ * modelo anda, senta e digita. Os nomes legL/legR/kneeL/kneeR/armL/armR são usados pelo motor.
+ * Nenhuma peça encosta face com face em outra (evita o "piscar" de superfícies sobrepostas).
+ */
 export function avatar(color: string, style: AvatarStyle = 'PESSOA', skinIndex = 0) {
   const g = new THREE.Group();
   const skin = PALETTE.skin[skinIndex % PALETTE.skin.length]!;
+  const hair = HAIR[skinIndex % HAIR.length]!;
   const shirt = style === 'MESTRE' ? '#e76f1a' : color;
   const pants = style === 'AGENTE' ? '#3b2f63' : '#2d3b45';
-  const legL = box(0.12, 0.45, 0.14, pants, -0.08, 0, 0);
-  const legR = box(0.12, 0.45, 0.14, pants, 0.08, 0, 0);
-  legL.name = 'legL';
-  legR.name = 'legR';
-  g.add(legL, legR);
+  const shoes = '#1d2523';
+  for (const [side, sx] of [
+    ['L', -0.08],
+    ['R', 0.08],
+  ] as const) {
+    const leg = new THREE.Group();
+    leg.name = `leg${side}`;
+    leg.position.set(sx, HIP_HEIGHT, 0);
+    leg.add(box(0.12, 0.22, 0.14, pants, 0, -0.22, 0));
+    const knee = new THREE.Group();
+    knee.name = `knee${side}`;
+    knee.position.set(0, -0.22, 0);
+    knee.add(box(0.115, 0.185, 0.135, pants, 0, -0.18, 0));
+    knee.add(box(0.13, 0.05, 0.19, shoes, 0, -0.23, 0.025));
+    leg.add(knee);
+    g.add(leg);
+  }
   g.add(box(0.34, 0.42, 0.2, shirt, 0, 0.45, 0));
-  const armL = box(0.08, 0.38, 0.1, shirt, -0.21, 0.48, 0);
-  const armR = box(0.08, 0.38, 0.1, shirt, 0.21, 0.48, 0);
-  armL.name = 'armL';
-  armR.name = 'armR';
-  g.add(armL, armR);
-  g.add(box(0.26, 0.26, 0.24, skin, 0, 0.9, 0));
-  g.add(box(0.28, 0.08, 0.26, style === 'AGENTE' ? '#d9d2f5' : '#3a2a20', 0, 1.13, -0.01));
-  // Olhos (frente = +z).
-  g.add(box(0.04, 0.04, 0.01, PALETTE.ink, -0.06, 1.0, 0.125));
-  g.add(box(0.04, 0.04, 0.01, PALETTE.ink, 0.06, 1.0, 0.125));
+  g.add(box(0.352, 0.045, 0.212, '#24302f', 0, 0.46, 0)); // cinto
+  g.add(box(0.2, 0.03, 0.05, shirt, 0, 0.87, 0.06)); // gola
+  for (const [side, sx] of [
+    ['L', -0.215],
+    ['R', 0.215],
+  ] as const) {
+    const arm = new THREE.Group();
+    arm.name = `arm${side}`;
+    arm.position.set(sx, 0.85, 0);
+    arm.add(box(0.085, 0.3, 0.105, shirt, 0, -0.3, 0));
+    arm.add(box(0.07, 0.075, 0.085, skin, 0, -0.375, 0)); // mão
+    g.add(arm);
+  }
+  g.add(box(0.11, 0.05, 0.1, skin, 0, 0.865, 0)); // pescoço
+  g.add(box(0.26, 0.26, 0.24, skin, 0, 0.905, 0));
+  // Cabelo: topo + nuca (sem faces coincidentes com a cabeça).
+  g.add(box(0.28, 0.075, 0.26, hair, 0, 1.12, -0.005));
+  g.add(box(0.28, 0.16, 0.05, hair, 0, 0.99, -0.115));
+  // Rosto (frente = +z).
+  g.add(box(0.045, 0.05, 0.012, PALETTE.ink, -0.06, 1.0, 0.124));
+  g.add(box(0.045, 0.05, 0.012, PALETTE.ink, 0.06, 1.0, 0.124));
+  g.add(box(0.09, 0.018, 0.012, '#8a4b3c', 0, 0.945, 0.124));
   if (style === 'MESTRE') {
-    g.add(box(0.32, 0.08, 0.3, '#f4c430', 0, 1.15, 0));
-    g.add(box(0.36, 0.02, 0.36, '#f4c430', 0, 1.14, 0.03));
-    g.add(box(0.35, 0.06, 0.21, '#fdd835', 0, 0.62, 0));
+    g.add(box(0.32, 0.08, 0.3, '#f4c430', 0, 1.17, 0));
+    g.add(box(0.37, 0.02, 0.37, '#f4c430', 0, 1.155, 0.03));
+    g.add(box(0.352, 0.06, 0.212, '#fdd835', 0, 0.62, 0));
   }
   if (style === 'AGENTE') {
-    g.add(box(0.3, 0.03, 0.03, '#7c3aed', 0, 1.18, 0));
-    g.add(box(0.03, 0.08, 0.06, '#7c3aed', -0.15, 0.98, 0));
-    g.add(box(0.05, 0.05, 0.05, mat('#c4b5fd', { emissive: '#a78bfa' }), -0.15, 0.93, 0.06));
+    // Headset: arco por cima do cabelo, hastes, conchas nas duas orelhas e microfone com luz.
+    const band = '#4c1d95';
+    g.add(box(0.36, 0.035, 0.07, band, 0, 1.2, 0));
+    for (const s of [-1, 1]) {
+      g.add(box(0.03, 0.22, 0.05, band, s * 0.165, 0.99, 0));
+      g.add(box(0.05, 0.11, 0.1, '#7c3aed', s * 0.17, 0.92, 0));
+      g.add(box(0.012, 0.07, 0.07, mat('#c4b5fd', { emissive: '#a78bfa' }), s * 0.2, 0.94, 0));
+    }
+    g.add(box(0.022, 0.022, 0.15, band, -0.175, 0.93, 0.1));
+    g.add(box(0.045, 0.04, 0.04, mat('#c4b5fd', { emissive: '#a78bfa' }), -0.16, 0.92, 0.185));
+    // Crachá de agente no peito.
+    g.add(box(0.08, 0.08, 0.012, mat('#ede9fe', { emissive: '#8b5cf6' }), 0.08, 0.7, 0.106));
   }
-  if (style === 'JOGADOR') g.add(box(0.36, 0.06, 0.22, PALETTE.bronze, 0, 0.82, 0));
+  if (style === 'JOGADOR') g.add(box(0.36, 0.06, 0.22, PALETTE.bronze, 0, 0.8, 0));
   g.traverse((o) => {
     if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
   });
   return g;
+}
+
+/**
+ * Pose de sentado (s = 0 em pé … 1 sentado), com transição suave. Coxas para a frente, canelas para
+ * baixo, corpo apoiado no assento e, sentado, mãos no teclado digitando.
+ */
+export function seatPose(g: THREE.Object3D, s: number, t: number) {
+  const e = s * s * (3 - 2 * s);
+  const legL = g.getObjectByName('legL');
+  const legR = g.getObjectByName('legR');
+  const kneeL = g.getObjectByName('kneeL');
+  const kneeR = g.getObjectByName('kneeR');
+  const armL = g.getObjectByName('armL');
+  const armR = g.getObjectByName('armR');
+  if (legL && legR) legL.rotation.x = legR.rotation.x = (-Math.PI / 2) * e;
+  if (kneeL && kneeR) kneeL.rotation.x = kneeR.rotation.x = (Math.PI / 2) * e;
+  if (armL && armR) {
+    const typing = s > 0.98 ? Math.sin(t * 9) * 0.05 : 0;
+    armL.rotation.x = -1.3 * e + typing;
+    armR.rotation.x = -1.3 * e - typing;
+    armL.rotation.z = 0.12 * e;
+    armR.rotation.z = -0.12 * e;
+  }
+  return OFFICE_SEAT.height + THIGH_HALF - HIP_HEIGHT;
 }
 
 /** Etiqueta com texto (sprite em canvas). */

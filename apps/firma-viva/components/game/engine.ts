@@ -26,6 +26,7 @@ import {
   FURNITURE_SIZE,
   PALETTE,
   avatar,
+  seatPose,
   decorModel,
   fabricColor,
   floorText,
@@ -163,7 +164,15 @@ export class GameEngine {
   >();
   private people = new Map<
     string,
-    { g: THREE.Group; path: THREE.Vector3[]; face: number; key: string; seated: boolean }
+    {
+      g: THREE.Group;
+      path: THREE.Vector3[];
+      face: number;
+      key: string;
+      seated: boolean;
+      /** 0 em pé … 1 sentado (transição animada). */
+      sit: number;
+    }
   >();
   private player: { g: THREE.Group; path: THREE.Vector3[]; tag: string | null } | null = null;
   private mestre: THREE.Group | null = null;
@@ -1145,7 +1154,11 @@ export class GameEngine {
         this.peopleGroup.add(g);
         this.pickables = this.pickables.filter((x) => x !== old?.g);
         this.register(g, { kind: p.kind === 'agent' ? 'agent' : 'employee', id: p.id });
-        e = { g, path: [], face: p.face, key, seated: Boolean(p.seated) };
+        const startSeated = Boolean(p.seated) && (!old || old.sit > 0.5);
+        if (old) g.rotation.y = old.g.rotation.y;
+        else if (startSeated) g.rotation.y = p.face;
+        e = { g, path: [], face: p.face, key, seated: Boolean(p.seated), sit: startSeated ? 1 : 0 };
+        if (old) e.path = old.path;
         this.people.set(p.id, e);
       }
       e.face = p.face;
@@ -1415,11 +1428,24 @@ export class GameEngine {
         (beam as THREE.Mesh).scale.x = (beam as THREE.Mesh).scale.z = 1 + Math.sin(t * 4) * 0.3;
     }
     for (const e of this.people.values()) {
+      // Levanta da cadeira antes de sair andando.
+      if (e.path.length && e.sit > 0) {
+        e.sit = Math.max(0, e.sit - dt * 2.4);
+        e.g.position.y = seatPose(e.g, e.sit, t) * e.sit;
+        continue;
+      }
       const moving = this.walkStep(e.g, e.path, 1.6, dt, t);
       if (!moving) {
-        e.g.rotation.y += (e.face - e.g.rotation.y) * Math.min(1, dt * 6);
-        e.g.position.y = e.seated ? -0.18 : 0;
-      }
+        const turn = Math.atan2(
+          Math.sin(e.face - e.g.rotation.y),
+          Math.cos(e.face - e.g.rotation.y),
+        );
+        e.g.rotation.y += turn * Math.min(1, dt * 6);
+        // Senta só depois de virar para a mesa; levanta se deixou de estar sentado.
+        if (e.seated && Math.abs(turn) < 0.35) e.sit = Math.min(1, e.sit + dt * 2);
+        else if (!e.seated) e.sit = Math.max(0, e.sit - dt * 2.4);
+        e.g.position.y = seatPose(e.g, e.sit, t) * e.sit;
+      } else e.g.position.y = 0;
     }
     if (this.player) {
       const was = this.player.path.length > 0;
