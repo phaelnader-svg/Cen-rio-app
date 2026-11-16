@@ -6,11 +6,11 @@ Base: `696e3e9` (versão hoje em produção). Escopo autorizado: **somente a E1*
 
 Branch `claude/reformulacao-e1-materiais` (separada; sem PR, sem merge):
 
-| Commit | Conteúdo |
-|---|---|
-| `9b45868` | E1: produção sem trava de materiais por padrão (regra, API, Resumo da OS, testes) |
+| Commit    | Conteúdo                                                                                                                  |
+| --------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `9b45868` | E1: produção sem trava de materiais por padrão (regra, API, Resumo da OS, testes)                                         |
 | `41183cb` | E1: aviso de material no cartão do tablet; specs que exercitam o controle formal ligam a trava explicitamente; evidências |
-| (este) | Relatório |
+| (este)    | Relatório                                                                                                                 |
 
 ## 2. Arquivos modificados
 
@@ -29,12 +29,12 @@ Testes (25 arquivos): novo `apps/api/test/e1-materiais-sem-trava.test.ts`, novo 
 
 ## 3. Regras antigas removidas ou alteradas
 
-| Regra | Antes | Agora |
-|---|---|---|
-| Padrão do interruptor "Travas de materiais" | Ligado | **Desligado** (empresa nova e empresa sem configuração gravada) |
-| Etapa com "exige materiais" sem prontidão formal | Bloqueio `MATERIAIS` | Liberada (o bloqueio só existe se a trava for ligada) |
-| Resumo da OS — Materiais / Medições | "Pendente" (impedimento) | "Não impede o início" + aviso de itens que não estão na oficina |
-| Tarefas já gravadas como bloqueadas por `MATERIAIS` | Ficavam bloqueadas | O ciclo periódico (30 s) as reavalia e libera, se nada mais as prende |
+| Regra                                               | Antes                    | Agora                                                                 |
+| --------------------------------------------------- | ------------------------ | --------------------------------------------------------------------- |
+| Padrão do interruptor "Travas de materiais"         | Ligado                   | **Desligado** (empresa nova e empresa sem configuração gravada)       |
+| Etapa com "exige materiais" sem prontidão formal    | Bloqueio `MATERIAIS`     | Liberada (o bloqueio só existe se a trava for ligada)                 |
+| Resumo da OS — Materiais / Medições                 | "Pendente" (impedimento) | "Não impede o início" + aviso de itens que não estão na oficina       |
+| Tarefas já gravadas como bloqueadas por `MATERIAIS` | Ficavam bloqueadas       | O ciclo periódico (30 s) as reavalia e libera, se nada mais as prende |
 
 Não removido: o controle formal inteiro (solicitação, aprovação, compra, recebimento, reserva, medição) continua existindo e volta a bloquear se o gestor ligar a trava. Os modelos padrão continuam marcando etapas como "exige materiais" — com a trava desligada isso **não** gera bloqueio indireto (verificado no teste A e no E2E: `requiresMaterials: true` e `LIBERADA`).
 
@@ -45,26 +45,26 @@ Não removido: o controle formal inteiro (solicitação, aprovação, compra, re
 
 ## 5. Evidências dos oito cenários
 
-| Cenário | Teste automatizado | Pela tela |
-|---|---|---|
-| A — OS sem materiais: iniciar/pausar/retomar/concluir | API `A — OS sem materiais…` | E2E: iniciar, pausar, retomar, concluir (`03-tablet-em-execucao.png`) |
-| B — tecido não comprado | API `B — tecido cadastrado na OS e NÃO comprado…` | E2E (tecido `purchased:false`) |
-| C — material indisponível, aviso mantido | API `C — material indisponível…` (OS e `/mine`) | `01-os-resumo-prontidao.png`, `02-tablet-cartao-liberado-com-aviso.png` |
-| D — sem compra formal | API `D — sem pedido de compra, fornecedor…` | E2E: prontidão formal ≠ `COMPLETO` e a etapa concluída |
-| E — sem medição | API `E — sem medição formal…` | E2E: "Medições · Não impede o início" |
-| F — segurança | API `F — segurança: dependências, responsável, plano não publicado, tarefa concluída e execução simultânea continuam valendo` | — |
-| G — padrão de empresa nova | API `G — empresa nova…` | `00-empresa-funcionalidades-padrao.png` (interruptor desligado) |
-| H — compatibilidade | API: 3 testes `H — …` (históricos íntegros; ligar a trava restaura o bloqueio; tarefas antigas liberadas pelo ciclo) | specs antigas do controle formal passam com a trava ligada |
+| Cenário                                               | Teste automatizado                                                                                                            | Pela tela                                                               |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| A — OS sem materiais: iniciar/pausar/retomar/concluir | API `A — OS sem materiais…`                                                                                                   | E2E: iniciar, pausar, retomar, concluir (`03-tablet-em-execucao.png`)   |
+| B — tecido não comprado                               | API `B — tecido cadastrado na OS e NÃO comprado…`                                                                             | E2E (tecido `purchased:false`)                                          |
+| C — material indisponível, aviso mantido              | API `C — material indisponível…` (OS e `/mine`)                                                                               | `01-os-resumo-prontidao.png`, `02-tablet-cartao-liberado-com-aviso.png` |
+| D — sem compra formal                                 | API `D — sem pedido de compra, fornecedor…`                                                                                   | E2E: prontidão formal ≠ `COMPLETO` e a etapa concluída                  |
+| E — sem medição                                       | API `E — sem medição formal…`                                                                                                 | E2E: "Medições · Não impede o início"                                   |
+| F — segurança                                         | API `F — segurança: dependências, responsável, plano não publicado, tarefa concluída e execução simultânea continuam valendo` | —                                                                       |
+| G — padrão de empresa nova                            | API `G — empresa nova…`                                                                                                       | `00-empresa-funcionalidades-padrao.png` (interruptor desligado)         |
+| H — compatibilidade                                   | API: 3 testes `H — …` (históricos íntegros; ligar a trava restaura o bloqueio; tarefas antigas liberadas pelo ciclo)          | specs antigas do controle formal passam com a trava ligada              |
 
 ## 6. Testes executados e resultados (rodada final completa)
 
-| Suíte | Resultado |
-|---|---|
-| API (vitest) | **1026 passaram**, 1 falhou, 13 ignorados |
-| shared | 151/151 |
-| web | 26/26 |
-| E2E Playwright (build de produção do web) | **80/80** (27,5 min) |
-| typecheck / lint / prettier | OK |
+| Suíte                                     | Resultado                                 |
+| ----------------------------------------- | ----------------------------------------- |
+| API (vitest)                              | **1026 passaram**, 1 falhou, 13 ignorados |
+| shared                                    | 151/151                                   |
+| web                                       | 26/26                                     |
+| E2E Playwright (build de produção do web) | **80/80** (27,5 min)                      |
+| typecheck / lint / prettier               | OK                                        |
 
 A única falha da API é `rodada4-travas-estruturais › F10-01`, **pré-existente na 696e3e9** (falha igual na linha de base antes da E1; corrigida em `29dc333`, fora desta versão). Não tem relação com materiais.
 

@@ -48,7 +48,8 @@ DOWNS=(20261230000000_modelos_simplificados 20261228000000_titular_mao_de_obra_p
 # Última migration da Evolução (recorte das etapas 3–4).
 EVOLUTION_LAST=20261230000000_modelos_simplificados
 # Posteriores à Evolução com reversão própria (a mais recente primeiro). Sem dados novos.
-LATE_DOWNS=(20270323000000_reformulacao_fase_3 20270316000000_reformulacao_fase_2 20270309000000_materiais_estoque_entrega 20270302000000_modulos_configuraveis 20270223000000_custo_operacional_equipe_propria 20270216000000_notificacoes_resolvidas
+LATE_DOWNS=(20270406000000_retirada_mostruario_maquininha 20270330000000_autorizacao_aplicativos
+  20270323000000_reformulacao_fase_3 20270316000000_reformulacao_fase_2 20270309000000_materiais_estoque_entrega 20270302000000_modulos_configuraveis 20270223000000_custo_operacional_equipe_propria 20270216000000_notificacoes_resolvidas
   20270209000000_presenca_apoio_simplificados 20270202000000_negociacao_confirmacao_semanal
   20270126000000_meus_ganhos_permissao 20270119000000_cobranca_cliente
   20270112000000_compra_antes_da_chegada 20270105000000_necessidade_substituicao)
@@ -85,7 +86,9 @@ columns() {
   q "SELECT table_name || '|' || string_agg(column_name, ',' ORDER BY ordinal_position)
      FROM information_schema.columns WHERE table_schema = 'public' GROUP BY table_name ORDER BY 1"
 }
-schema_dump() { pg_dump -s "$URL" | grep -v '^\\restrict\|^\\unrestrict\|^$'; }
+# A imagem postgres do CI expõe `pg_attver` (versão interna da coluna) como opção de
+# coluna no pg_dump; muda a cada recriação de tabela e não é estrutura: fica fora da comparação.
+schema_dump() { pg_dump -s "$URL" | grep -v '^\\restrict\|^\\unrestrict\|^$\|SET (pg_attver=[0-9]*);$'; }
 indexes() { q "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY 1"; }
 
 step "1. Código legado ($LEGACY_REF) e banco gerado por ele"

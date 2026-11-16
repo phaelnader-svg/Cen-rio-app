@@ -228,6 +228,10 @@ const pickupFields = {
   instructions: optionalText(1000),
   /** Referência externa (ex.: protocolo da logística) — preparado para integração. */
   externalReference: optionalText(80),
+  /** Agenda de Retiradas: o que levar ao cliente (ausente = mantém o que está). */
+  bringSamples: z.boolean().optional(),
+  samplesDescription: optionalText(200),
+  bringCardMachine: z.boolean().optional(),
   items: z
     .array(z.object({ orderItemId: idSchema, quantity: z.number().int().min(1).max(200) }))
     .min(1, { message: 'Selecione as peças a retirar.' })
@@ -535,6 +539,10 @@ export const newServicePickupSchema = z
     amountCents: z.number().int().min(1).max(10_000_000).nullable().optional(),
     instructions: optionalText(1000),
     notes: optionalText(200),
+    /** Agenda de Retiradas: o que levar ao cliente (ausente = mantém o que está). */
+    bringSamples: z.boolean().optional(),
+    samplesDescription: optionalText(200),
+    bringCardMachine: z.boolean().optional(),
   })
   .superRefine((v, ctx) => {
     refineWindow(v, ctx);
