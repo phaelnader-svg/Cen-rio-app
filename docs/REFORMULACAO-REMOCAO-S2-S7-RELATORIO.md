@@ -13,7 +13,7 @@ Recebimento de materiais**, com tudo o que pertence a eles. Plano aprovado com a
 - **D1:** a OS nasce no **fechamento do serviço** ("Novo serviço"); a chegada das peças vira uma
   marca opcional.
 
-Branch: `claude/project-thread-dr7pqa` (base `5873917`). Sem migration, sem deploy, sem PR e sem
+Branch: `claude/project-thread-dr7pqa` (base `5873917`, com merge da linha de produção em `7898dab`). Sem migration, sem deploy, sem PR e sem
 alteração de dados reais. Testes só em bancos locais descartáveis.
 `tests/remocao/etapas-concluidas.json` = `["S1","S2","S3","S4","S5","S7"]`.
 
@@ -84,13 +84,13 @@ outros arquivos). Os que dependiam deles foram convertidos à regra nova, entre 
 
 ### 3.1 Resultado dos testes (bancos locais descartáveis)
 
-| Verificação                         | Resultado                                                                                                                                                                                                                                                                                                                                    |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/shared`                   | 21 arquivos, 130 aprovados                                                                                                                                                                                                                                                                                                                   |
-| `apps/web`                          | 5 arquivos, 54 aprovados, 3 falhas esperadas (Grupo B das etapas S6 e S8, ainda não feitas)                                                                                                                                                                                                                                                  |
-| `apps/api` (suíte completa, 1642 s) | 75 arquivos aprovados (7 pulados, opcionais), 790 testes aprovados, 3 falhas esperadas, 13 pulados. As 3 falhas da rodada foram corrigidas e os arquivos passam isolados: `production` e `fase2-mapa-oficina` (expectativas da regra antiga) e `integrated-evolution` cenário 7, a instabilidade conhecida de tempo real já registrada na S1 |
-| Grupo B S2, S3, S4, S5 e S7         | **obrigatórios e aprovados** (`etapas-concluidas.json`)                                                                                                                                                                                                                                                                                      |
-| Typecheck (api, web, shared) e lint | ok                                                                                                                                                                                                                                                                                                                                           |
+| Verificação                                 | Resultado                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared`                           | 21 arquivos, 130 aprovados                                                                                                                                                                                                                                                                                    |
+| `apps/web`                                  | 5 arquivos, 54 aprovados, 3 falhas esperadas (Grupo B das etapas S6 e S8, ainda não feitas)                                                                                                                                                                                                                   |
+| `apps/api` (suíte completa, commit 8af9b05) | 78 arquivos aprovados (7 pulados, opcionais), 793 testes aprovados, 3 falhas esperadas (Grupo B de S6 e S8), 13 pulados. Depois do merge de 7898dab (agenda de Retiradas): os 9 arquivos afetados (retiradas, novo serviço, custos de viagem, tempo real, central, travas, migrations e Grupos A/B) aprovados |
+| Grupo B S2, S3, S4, S5 e S7                 | **obrigatórios e aprovados** (`etapas-concluidas.json`)                                                                                                                                                                                                                                                       |
+| Typecheck (api, web, shared) e lint         | ok                                                                                                                                                                                                                                                                                                            |
 
 ## 4. Riscos e pendências
 
