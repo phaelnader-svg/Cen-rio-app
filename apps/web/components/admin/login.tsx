@@ -1,8 +1,8 @@
 'use client';
 
-import { adminLoginSchema } from '@cenario/shared';
+import { SIGNUP_PASSWORD_MIN, adminLoginSchema, signupSchema } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { LogIn } from 'lucide-react';
+import { LogIn, UserPlus } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { BrandMark } from '@/components/brand';
@@ -20,8 +20,11 @@ export function AdminLogin() {
   const router = useRouter();
   const params = useSearchParams();
   const qc = useQueryClient();
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -29,6 +32,41 @@ export function AdminLogin() {
   // Retorno seguro depois do login (ex.: tela oficial de autorização de um aplicativo).
   const next = params.get('proximo');
   const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : null;
+
+  function switchMode(next: 'login' | 'signup') {
+    setMode(next);
+    setErrors({});
+    setFormError(null);
+    setNotice(null);
+    setPassword('');
+    setPasswordConfirm('');
+  }
+
+  async function onSignup(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    const parsed = signupSchema.safeParse({ email, password, passwordConfirm });
+    if (!parsed.success) {
+      const map: Record<string, string> = {};
+      for (const i of parsed.error.issues) map[String(i.path[0])] ??= i.message;
+      setErrors(map);
+      return;
+    }
+    setErrors({});
+    setLoading(true);
+    try {
+      await api('/api/auth/signup', { method: 'POST', body: parsed.data });
+      switchMode('login');
+      setEmail(parsed.data.email);
+      setNotice(
+        'Conta criada. Ela aguarda a liberação do gestor: você poderá entrar assim que ela for liberada.',
+      );
+    } catch (err) {
+      setFormError(errorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -77,12 +115,23 @@ export function AdminLogin() {
       <section className="flex items-center justify-center px-5 py-12">
         <div className="w-full max-w-sm">
           <BrandMark className="mb-10 lg:hidden" />
-          <h1 className="text-2xl font-semibold tracking-tight">Entrar no painel</h1>
-          <p className="mt-1 text-[15px] text-ink-muted">Use seu e-mail e senha de gestor.</p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {mode === 'login' ? 'Entrar no painel' : 'Criar conta'}
+          </h1>
+          <p className="mt-1 text-[15px] text-ink-muted">
+            {mode === 'login'
+              ? 'Use seu e-mail e senha de gestor.'
+              : 'A conta só entra no painel depois que o gestor liberar o acesso.'}
+          </p>
 
-          {reason && REASONS[reason] && (
+          {mode === 'login' && reason && REASONS[reason] && (
             <Alert tone="info" className="mt-6">
               {REASONS[reason]}
+            </Alert>
+          )}
+          {notice && (
+            <Alert tone="ok" className="mt-6">
+              {notice}
             </Alert>
           )}
           {formError && (
@@ -91,41 +140,115 @@ export function AdminLogin() {
             </Alert>
           )}
 
-          <form onSubmit={onSubmit} noValidate className="mt-6 space-y-4">
-            <Field label="E-mail" error={errors.email}>
-              {(p) => (
-                <Input
-                  {...p}
-                  type="email"
-                  autoComplete="username"
-                  inputMode="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoFocus
-                />
-              )}
-            </Field>
-            <Field label="Senha" error={errors.password}>
-              {(p) => (
-                <Input
-                  {...p}
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              )}
-            </Field>
-            <Button
-              type="submit"
-              size="lg"
-              className="w-full"
-              loading={loading}
-              icon={<LogIn className="size-4" aria-hidden />}
-            >
-              Entrar
-            </Button>
-          </form>
+          {mode === 'login' ? (
+            <form onSubmit={onSubmit} noValidate className="mt-6 space-y-4">
+              <Field label="E-mail" error={errors.email}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    type="email"
+                    autoComplete="username"
+                    inputMode="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoFocus
+                  />
+                )}
+              </Field>
+              <Field label="Senha" error={errors.password}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full"
+                loading={loading}
+                icon={<LogIn className="size-4" aria-hidden />}
+              >
+                Entrar
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                className="w-full"
+                icon={<UserPlus className="size-4" aria-hidden />}
+                onClick={() => switchMode('signup')}
+                data-testid="criar-conta"
+              >
+                Criar conta
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={onSignup} noValidate className="mt-6 space-y-4">
+              <Field label="E-mail" error={errors.email}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    type="email"
+                    autoComplete="email"
+                    inputMode="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    autoFocus
+                  />
+                )}
+              </Field>
+              <Field
+                label="Senha"
+                error={errors.password}
+                hint={`Mínimo de ${SIGNUP_PASSWORD_MIN} caracteres.`}
+              >
+                {(p) => (
+                  <Input
+                    {...p}
+                    type="password"
+                    autoComplete="new-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Field label="Confirmar senha" error={errors.passwordConfirm}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    type="password"
+                    autoComplete="new-password"
+                    value={passwordConfirm}
+                    onChange={(e) => setPasswordConfirm(e.target.value)}
+                  />
+                )}
+              </Field>
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full"
+                loading={loading}
+                icon={<UserPlus className="size-4" aria-hidden />}
+              >
+                Criar conta
+              </Button>
+              <p className="text-center text-sm text-ink-muted">
+                Já tem conta?{' '}
+                <button
+                  type="button"
+                  className="font-medium text-brand-700 underline-offset-4 hover:underline"
+                  onClick={() => switchMode('login')}
+                >
+                  Entrar
+                </button>
+              </p>
+            </form>
+          )}
           <p className="mt-8 text-center text-sm text-ink-muted">
             Tablet da oficina?{' '}
             <a

@@ -1,8 +1,8 @@
 'use client';
 
-import type { EmployeeDto } from '@cenario/shared';
+import type { AccountRequestDto, EmployeeDto } from '@cenario/shared';
 import { pinSchema, setAdminCredentialsSchema } from '@cenario/shared';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Camera,
   KeyRound,
@@ -11,7 +11,9 @@ import {
   Plus,
   Power,
   Trash2,
+  UserCheck,
   UserPlus,
+  UserX,
   Users,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -32,7 +34,9 @@ type Action =
   | { kind: 'pin'; employee: EmployeeDto }
   | { kind: 'panel'; employee: EmployeeDto }
   | { kind: 'photo'; employee: EmployeeDto }
-  | { kind: 'status'; employee: EmployeeDto };
+  | { kind: 'status'; employee: EmployeeDto }
+  | { kind: 'approve'; request: AccountRequestDto }
+  | { kind: 'reject'; request: AccountRequestDto };
 
 export function EmployeesPage() {
   const can = useCan();
@@ -58,6 +62,8 @@ export function EmployeesPage() {
           )
         }
       />
+
+      {manage && <AccountRequests onAction={setAction} />}
 
       {employees.isPending ? (
         <Spinner />
@@ -168,6 +174,8 @@ export function EmployeesPage() {
       {action?.kind === 'panel' && <PanelAccessDialog employee={action.employee} onClose={close} />}
       {action?.kind === 'photo' && <PhotoDialog employee={action.employee} onClose={close} />}
       {action?.kind === 'status' && <StatusDialog employee={action.employee} onClose={close} />}
+      {action?.kind === 'approve' && <EmployeeForm open onClose={close} request={action.request} />}
+      {action?.kind === 'reject' && <RejectDialog request={action.request} onClose={close} />}
     </>
   );
 }
@@ -489,6 +497,88 @@ function StatusDialog({ employee, onClose }: { employee: EmployeeDto; onClose: (
           ? 'A pessoa perde o acesso imediatamente: todas as sessões abertas no painel e nos tablets são encerradas. O histórico é preservado.'
           : 'O cadastro volta a ficar disponível. As credenciais existentes voltam a funcionar.'}
       </p>
+    </Dialog>
+  );
+}
+
+/** Contas criadas pela tela de entrar, sem acesso até o gestor liberar. */
+function AccountRequests({ onAction }: { onAction: (a: Action) => void }) {
+  const requests = useQuery({
+    queryKey: ['account-requests'],
+    queryFn: () => api<AccountRequestDto[]>('/api/account-requests'),
+  });
+  if (!requests.data || requests.data.length === 0) return null;
+  return (
+    <Card className="mb-6 p-5" data-testid="contas-aguardando">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-semibold">Contas aguardando liberação</h2>
+        <Badge tone="warn">{requests.data.length}</Badge>
+      </div>
+      <p className="mt-1 text-sm text-ink-muted">
+        Criadas pela tela de entrar. Só entram no painel depois que você liberar e escolher as
+        funções. Libere apenas quem você conhece.
+      </p>
+      <ul className="mt-4 divide-y divide-line border-y border-line">
+        {requests.data.map((r) => (
+          <li key={r.userId} className="flex flex-wrap items-center gap-3 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-medium">{r.email}</p>
+              <p className="text-sm text-ink-muted">
+                Criada em {new Date(r.createdAt).toLocaleString('pt-BR')}
+              </p>
+            </div>
+            <Button
+              size="sm"
+              icon={<UserCheck className="size-3.5" aria-hidden />}
+              onClick={() => onAction({ kind: 'approve', request: r })}
+            >
+              Liberar
+            </Button>
+            <Button
+              size="sm"
+              variant="outline-danger"
+              icon={<UserX className="size-3.5" aria-hidden />}
+              onClick={() => onAction({ kind: 'reject', request: r })}
+            >
+              Recusar
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function RejectDialog({ request, onClose }: { request: AccountRequestDto; onClose: () => void }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const m = useMutation({
+    mutationFn: () => api(`/api/account-requests/${request.userId}/reject`, { method: 'POST' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['account-requests'] });
+      toast('ok', `Conta ${request.email} recusada.`);
+      onClose();
+    },
+  });
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      size="sm"
+      title="Recusar conta"
+      description={`A conta ${request.email} será apagada. A pessoa pode criar outra depois.`}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="danger" loading={m.isPending} onClick={() => m.mutate()}>
+            Recusar e apagar
+          </Button>
+        </>
+      }
+    >
+      {m.isError && <Alert tone="danger">{errorMessage(m.error)}</Alert>}
     </Dialog>
   );
 }
