@@ -95,42 +95,42 @@ ALTER TABLE "quotes" ADD CONSTRAINT "quotes_total_check" CHECK ("total_cents" >=
 ALTER SEQUENCE "quotes_number_seq" START WITH 10200 RESTART WITH 10200;
 
 -- Conteúdo inicial: a base de dados do modelo do dono (preços vazios = "a cadastrar").
-INSERT INTO "quote_settings" ("id", "updated_at") VALUES (1, CURRENT_TIMESTAMP);
+INSERT INTO "quote_settings" ("id", "updated_at") VALUES (1, TIMESTAMPTZ '2027-04-13 00:00:00+00');
 
-INSERT INTO "quote_catalog_items" ("id","kind","category","name","price_cents","unit","position","updated_at") VALUES
-  (gen_random_uuid(),'MATERIAL','Tecidos','Suede',2200,'m',1,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Tecidos','Linho',3500,'m',2,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Tecidos','Corvin',4000,'m',3,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Tecidos','Aquablock',3500,'m',4,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Espumas','D33',138000,'m³',5,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Espumas','D28',110000,'m³',6,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Insumos','Cola',NULL,'un',7,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Insumos','Grampo',NULL,'un',8,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Insumos','Percinta',NULL,'m',9,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Insumos','Cordone',NULL,'m',10,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Insumos','Linha',NULL,'un',11,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Madeiramento','Sarrafo 5 cm',NULL,'m',12,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Madeiramento','Compensado',NULL,'un',13,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MATERIAL','Madeiramento','MDF',NULL,'un',14,CURRENT_TIMESTAMP);
+INSERT INTO "quote_catalog_items" ("id","kind","category","name","price_cents","unit","position","created_at","updated_at") VALUES
+  (md5('orcamento:MATERIAL:1')::uuid,'MATERIAL','Tecidos','Suede',2200,'m',1,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:2')::uuid,'MATERIAL','Tecidos','Linho',3500,'m',2,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:3')::uuid,'MATERIAL','Tecidos','Corvin',4000,'m',3,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:4')::uuid,'MATERIAL','Tecidos','Aquablock',3500,'m',4,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:5')::uuid,'MATERIAL','Espumas','D33',138000,'m³',5,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:6')::uuid,'MATERIAL','Espumas','D28',110000,'m³',6,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:7')::uuid,'MATERIAL','Insumos','Cola',NULL,'un',7,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:8')::uuid,'MATERIAL','Insumos','Grampo',NULL,'un',8,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:9')::uuid,'MATERIAL','Insumos','Percinta',NULL,'m',9,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:10')::uuid,'MATERIAL','Insumos','Cordone',NULL,'m',10,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:11')::uuid,'MATERIAL','Insumos','Linha',NULL,'un',11,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:12')::uuid,'MATERIAL','Madeiramento','Sarrafo 5 cm',NULL,'m',12,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:13')::uuid,'MATERIAL','Madeiramento','Compensado',NULL,'un',13,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MATERIAL:14')::uuid,'MATERIAL','Madeiramento','MDF',NULL,'un',14,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00');
 
-INSERT INTO "quote_catalog_items" ("id","kind","name","price_cents","km","position","updated_at") VALUES
-  (gen_random_uuid(),'LOGISTICA','São José dos Campos',NULL,20,1,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'LOGISTICA','Jacareí',NULL,30,2,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'LOGISTICA','Caçapava',NULL,30,3,CURRENT_TIMESTAMP);
+INSERT INTO "quote_catalog_items" ("id","kind","name","price_cents","km","position","created_at","updated_at") VALUES
+  (md5('orcamento:LOGISTICA:1')::uuid,'LOGISTICA','São José dos Campos',NULL,20,1,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:LOGISTICA:2')::uuid,'LOGISTICA','Jacareí',NULL,30,2,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:LOGISTICA:3')::uuid,'LOGISTICA','Caçapava',NULL,30,3,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00');
 
-INSERT INTO "quote_catalog_items" ("id","kind","name","price_cents","position","updated_at") VALUES
-  (gen_random_uuid(),'MAO_TAPECEIRO','Sofá reto - 2 lugares',35000,1,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MAO_TAPECEIRO','Sofá reto - 3 lugares',40000,2,CURRENT_TIMESTAMP),
-  (gen_random_uuid(),'MAO_TAPECEIRO','Sofá retrátil - 2 lugares',40000,3,CURRENT_TIMESTAMP);
+INSERT INTO "quote_catalog_items" ("id","kind","name","price_cents","position","created_at","updated_at") VALUES
+  (md5('orcamento:MAO_TAPECEIRO:1')::uuid,'MAO_TAPECEIRO','Sofá reto - 2 lugares',35000,1,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MAO_TAPECEIRO:2')::uuid,'MAO_TAPECEIRO','Sofá reto - 3 lugares',40000,2,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'),
+  (md5('orcamento:MAO_TAPECEIRO:3')::uuid,'MAO_TAPECEIRO','Sofá retrátil - 2 lugares',40000,3,TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00');
 
 -- Cada serviço do tapeceiro tem o serviço do ajudante correspondente (mesmo nome, preço próprio).
-INSERT INTO "quote_catalog_items" ("id","kind","name","price_cents","linked_item_id","position","updated_at")
-SELECT gen_random_uuid(),'MAO_AJUDANTE',t."name",NULL,t."id",t."position",CURRENT_TIMESTAMP
+INSERT INTO "quote_catalog_items" ("id","kind","name","price_cents","linked_item_id","position","created_at","updated_at")
+SELECT md5('orcamento:MAO_AJUDANTE:' || t."position")::uuid,'MAO_AJUDANTE',t."name",NULL,t."id",t."position",TIMESTAMPTZ '2027-04-13 00:00:00+00',TIMESTAMPTZ '2027-04-13 00:00:00+00'
 FROM "quote_catalog_items" t WHERE t."kind" = 'MAO_TAPECEIRO';
 
-INSERT INTO "quote_catalog_items" ("id","kind","name","rate_bps","position","updated_at")
-SELECT gen_random_uuid(),'TAXA_MAQUINA',
+INSERT INTO "quote_catalog_items" ("id","kind","name","rate_bps","position","created_at","updated_at")
+SELECT md5('orcamento:TAXA_MAQUINA:' || n)::uuid,'TAXA_MAQUINA',
        CASE WHEN n = 1 THEN 'À vista' ELSE n || 'X' END,
        CASE WHEN n <= 3 THEN n * 100 ELSE NULL END,
-       n, CURRENT_TIMESTAMP
+       n, TIMESTAMPTZ '2027-04-13 00:00:00+00', TIMESTAMPTZ '2027-04-13 00:00:00+00'
 FROM generate_series(1, 12) AS n;
