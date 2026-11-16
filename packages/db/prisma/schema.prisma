@@ -3921,6 +3921,10 @@ model ServiceOrderMaterial {
 
   @@index([serviceOrderId])
   @@index([sourceModelMaterialId])
+  // Criados pela migration 20270309000000_materiais_estoque_entrega e nunca declarados aqui (o
+  // `prisma migrate diff` do CI acusava a divergência). Declarar não muda o banco.
+  @@index([linkedPurchaseItemId])
+  @@index([linkedCostId])
   @@map("service_order_materials")
 }
 
