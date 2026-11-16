@@ -1,7 +1,7 @@
 'use client';
 
 import type { PickupDto, PickupStatus } from '@cenario/shared';
-import { PICKUP_STATUS_LABEL, PICKUP_TEAM_LABEL, formatPhone } from '@cenario/shared';
+import { PICKUP_STATUS_LABEL, PICKUP_TEAM_LABEL, formatMoney, formatPhone } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil } from 'lucide-react';
 import Link from 'next/link';
@@ -118,6 +118,25 @@ export function PickupDetailDialog({ id, onClose }: { id: string; onClose: () =>
                 : 'Aguardando agendamento'}
             </Detail>
             <Detail label="Equipe">{`${PICKUP_TEAM_LABEL[p.team]}${p.teamNotes ? ` · ${p.teamNotes}` : ''}`}</Detail>
+            <Detail label="Quem vai retirar">
+              {[p.executor?.displayName, ...p.participants.map((x) => x.displayName)]
+                .filter(Boolean)
+                .filter((n, i, all) => all.indexOf(n) === i)
+                .join(', ') || 'A definir'}
+            </Detail>
+            <Detail label="Levar ao cliente">
+              {[
+                p.bringSamples
+                  ? `Mostruário${p.samplesDescription ? `: ${p.samplesDescription}` : ''}`
+                  : null,
+                p.bringCardMachine ? 'Maquininha' : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || 'Nada a levar'}
+            </Detail>
+            {p.order.agreedValueCents !== undefined && p.order.agreedValueCents !== null && (
+              <Detail label="Valor do serviço">{formatMoney(p.order.agreedValueCents)}</Detail>
+            )}
             <Detail label="Endereço">
               {p.address
                 ? `${p.address.label}\n${addressLines(p.address)}${p.address.reference ? `\nRef.: ${p.address.reference}` : ''}`
