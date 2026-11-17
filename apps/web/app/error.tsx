@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect } from 'react';
 import { LogoMark } from '@/components/brand';
 import { buttonClass } from '@/components/ui/button-styles';
@@ -26,9 +27,9 @@ export default function ErrorPage({
         <button type="button" onClick={reset} className={buttonClass('primary', 'md')}>
           Tentar de novo
         </button>
-        <a href="/" className={buttonClass('secondary', 'md')}>
+        <Link href="/" className={buttonClass('secondary', 'md')}>
           Voltar para o início
-        </a>
+        </Link>
       </div>
       {error.digest && <p className="mt-6 text-xs text-ink-muted">Código: {error.digest}</p>}
     </main>
