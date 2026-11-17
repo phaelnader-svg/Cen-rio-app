@@ -34,6 +34,14 @@ model User {
   credentialsChangedAt DateTime?       @map("credentials_changed_at") @db.Timestamptz(3)
   /// Confirmação do e-mail pelo link enviado (Criar conta) ou por uma redefinição de senha.
   emailConfirmedAt     DateTime?       @map("email_confirmed_at") @db.Timestamptz(3)
+  /// Melhoria 98: segredo da verificação em duas etapas (cifrado com a chave do servidor).
+  totpSecret           String?         @map("totp_secret") @db.VarChar(200)
+  /// Melhoria 98: verificação em duas etapas ligada desde.
+  totpEnabledAt        DateTime?       @map("totp_enabled_at") @db.Timestamptz(3)
+  /// Melhoria 98: códigos de recuperação (hash; cada um vale uma vez).
+  totpRecoveryHashes   String[]        @default([]) @map("totp_recovery_hashes")
+  /// Melhoria 114: usuário temporário do suporte do Cenário (criado quando a empresa libera).
+  supportAgent         Boolean         @default(false) @map("support_agent")
   version              Int             @default(1)
   createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -195,6 +203,7 @@ model User {
   cashGoals             CashGoal[]             @relation("CashGoalCreatedBy")
   // Módulo Orçamentos.
   quotesCreated         Quote[]                @relation("QuoteCreatedBy")
+  feedbackReports       FeedbackReport[]       @relation("FeedbackReportUser")
   quotesDeleted         Quote[]                @relation("QuoteDeletedBy")
 
   @@map("users")
@@ -509,6 +518,16 @@ model CompanySettings {
   paidUntil           DateTime? @map("paid_until") @db.Timestamptz(3)
   asaasCustomerId     String?   @map("asaas_customer_id") @db.VarChar(60)
   asaasSubscriptionId String?   @map("asaas_subscription_id") @db.VarChar(60)
+  /// Melhoria 113: cancelamento pedido pela própria empresa (o acesso vai até o fim do período pago).
+  canceledAt          DateTime? @map("canceled_at") @db.Timestamptz(3)
+  /// Melhoria 113: motivo informado ao cancelar ou pausar.
+  cancelReason        String?   @map("cancel_reason") @db.VarChar(500)
+  /// Melhoria 113: assinatura pausada (sem cobrança) até esta data.
+  pausedUntil         DateTime? @map("paused_until") @db.Timestamptz(3)
+  /// Melhoria 114: acesso de suporte liberado pelo dono da empresa até esta data.
+  supportAccessUntil  DateTime? @map("support_access_until") @db.Timestamptz(3)
+  /// Melhoria 128: empresa de demonstração (fica fora dos números do negócio).
+  isDemo              Boolean   @default(false) @map("is_demo")
 
   /// Fase 10: inspetor principal da qualidade (vazio = quem tem a competência de inspeção).
   qualityInspectorUserId    String? @map("quality_inspector_user_id") @db.Uuid
@@ -637,6 +656,7 @@ model CompanySettings {
   empresaQuoteCatalogItem            QuoteCatalogItem[]            @relation("EmpresaDeQuoteCatalogItem")
   empresaQuoteSettings               QuoteSettings[]               @relation("EmpresaDeQuoteSettings")
   empresaQuote                       Quote[]                       @relation("EmpresaDeQuote")
+  empresaFeedbackReport              FeedbackReport[]              @relation("EmpresaDeFeedbackReport")
   empresaCustomerReceivable          CustomerReceivable[]          @relation("EmpresaDeCustomerReceivable")
   empresaCustomerPayment             CustomerPayment[]             @relation("EmpresaDeCustomerPayment")
   empresaCustomerPaymentReport       CustomerPaymentReport[]       @relation("EmpresaDeCustomerPaymentReport")
@@ -1075,32 +1095,34 @@ enum PickupTeam {
 
 /// Solicitação de retirada (preparada para integração futura com a logística terceirizada).
 model PickupRequest {
-  id                 String          @id @default(uuid()) @db.Uuid
-  companyId          Int             @default(dbgenerated("app_company_id()")) @map("company_id")
-  company            CompanySettings @relation("EmpresaDePickupRequest", fields: [companyId], references: [id])
-  number             Int             @default(dbgenerated())
-  orderId            String          @map("order_id") @db.Uuid
-  addressId          String?         @map("address_id") @db.Uuid
-  addressSnapshot    Json?           @map("address_snapshot")
-  scheduledDate      DateTime?       @map("scheduled_date") @db.Date
-  windowStart        String?         @map("window_start") @db.Char(5)
-  windowEnd          String?         @map("window_end") @db.Char(5)
+  id                  String          @id @default(uuid()) @db.Uuid
+  companyId           Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company             CompanySettings @relation("EmpresaDePickupRequest", fields: [companyId], references: [id])
+  number              Int             @default(dbgenerated())
+  orderId             String          @map("order_id") @db.Uuid
+  addressId           String?         @map("address_id") @db.Uuid
+  addressSnapshot     Json?           @map("address_snapshot")
+  scheduledDate       DateTime?       @map("scheduled_date") @db.Date
+  windowStart         String?         @map("window_start") @db.Char(5)
+  windowEnd           String?         @map("window_end") @db.Char(5)
+  /// Melhoria 130: dia e turno escolhidos pelo próprio cliente no link.
+  customerScheduledAt DateTime?       @map("customer_scheduled_at") @db.Timestamptz(3)
   /// Correção global: posição no roteiro do dia (null = ainda não ordenada; vai ao fim).
-  routeSequence      Int?            @map("route_sequence")
-  team               PickupTeam      @default(LOGISTICA_TERCEIRIZADA)
-  teamNotes          String?         @map("team_notes") @db.VarChar(200)
-  instructions       String?         @db.VarChar(1000)
+  routeSequence       Int?            @map("route_sequence")
+  team                PickupTeam      @default(LOGISTICA_TERCEIRIZADA)
+  teamNotes           String?         @map("team_notes") @db.VarChar(200)
+  instructions        String?         @db.VarChar(1000)
   /// Protocolo/identificador no sistema da logística (integração futura).
-  externalReference  String?         @map("external_reference") @db.VarChar(80)
-  status             PickupStatus    @default(AGUARDANDO_AGENDAMENTO)
+  externalReference   String?         @map("external_reference") @db.VarChar(80)
+  status              PickupStatus    @default(AGUARDANDO_AGENDAMENTO)
   /// Agenda de Retiradas: levar mostruário ao cliente (e qual) e levar a maquininha de cartão.
-  bringSamples       Boolean         @default(false) @map("bring_samples")
-  samplesDescription String?         @map("samples_description") @db.VarChar(200)
-  bringCardMachine   Boolean         @default(false) @map("bring_card_machine")
-  version            Int             @default(1)
-  createdById        String?         @map("created_by_id") @db.Uuid
-  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  bringSamples        Boolean         @default(false) @map("bring_samples")
+  samplesDescription  String?         @map("samples_description") @db.VarChar(200)
+  bringCardMachine    Boolean         @default(false) @map("bring_card_machine")
+  version             Int             @default(1)
+  createdById         String?         @map("created_by_id") @db.Uuid
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   order            CommercialOrder            @relation(fields: [orderId], references: [id], onDelete: Restrict)
   address          CustomerAddress?           @relation(fields: [addressId], references: [id], onDelete: Restrict)
@@ -5475,29 +5497,44 @@ model QuoteSettings {
 
 /// Orçamento salvo: cópia completa da proposta (nunca recalculada) e a O.S. do orçamento.
 model Quote {
-  id           String          @id @default(uuid()) @db.Uuid
-  companyId    Int             @default(dbgenerated("app_company_id()")) @map("company_id")
-  company      CompanySettings @relation("EmpresaDeQuote", fields: [companyId], references: [id])
+  id              String          @id @default(uuid()) @db.Uuid
+  companyId       Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company         CompanySettings @relation("EmpresaDeQuote", fields: [companyId], references: [id])
   /// Numeração própria dos orçamentos (começa em 10200).
-  number       Int             @default(dbgenerated())
-  customerName String          @map("customer_name") @db.VarChar(160)
-  phone        String?         @db.VarChar(20)
-  service      String          @db.VarChar(120)
-  totalCents   Int             @map("total_cents")
-  snapshot     Json
-  workOrder    Json?           @map("work_order")
-  version      Int             @default(1)
-  createdById  String?         @map("created_by_id") @db.Uuid
-  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
-  deletedAt    DateTime?       @map("deleted_at") @db.Timestamptz(3)
-  deletedById  String?         @map("deleted_by_id") @db.Uuid
+  number          Int             @default(dbgenerated())
+  customerName    String          @map("customer_name") @db.VarChar(160)
+  phone           String?         @db.VarChar(20)
+  service         String          @db.VarChar(120)
+  totalCents      Int             @map("total_cents")
+  snapshot        Json
+  workOrder       Json?           @map("work_order")
+  /// Melhoria 77: ENVIADO | APROVADO | RECUSADO | SEM_RESPOSTA.
+  status          String          @default("ENVIADO") @db.VarChar(16)
+  statusChangedAt DateTime?       @map("status_changed_at") @db.Timestamptz(3)
+  /// Melhoria 77: quando cobrar o cliente (lembrete).
+  followUpAt      DateTime?       @map("follow_up_at") @db.Timestamptz(3)
+  /// Melhoria 77/81: motivo da recusa (funil de vendas).
+  lostReason      String?         @map("lost_reason") @db.VarChar(300)
+  /// Melhoria 79: aceite registrado (pelo link do cliente ou pelo painel).
+  approvedAt      DateTime?       @map("approved_at") @db.Timestamptz(3)
+  approvedVia     String?         @map("approved_via") @db.VarChar(10)
+  /// Melhoria 79: primeira vez que o cliente abriu o link.
+  linkViewedAt    DateTime?       @map("link_viewed_at") @db.Timestamptz(3)
+  /// Melhoria 78: pedido criado a partir deste orçamento.
+  orderId         String?         @map("order_id") @db.Uuid
+  version         Int             @default(1)
+  createdById     String?         @map("created_by_id") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime?       @map("deleted_at") @db.Timestamptz(3)
+  deletedById     String?         @map("deleted_by_id") @db.Uuid
 
   createdBy User? @relation("QuoteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull, onUpdate: NoAction)
   deletedBy User? @relation("QuoteDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([companyId, number])
   @@index([deletedAt, createdAt])
+  @@index([status, followUpAt])
   @@map("quotes")
 }
 
@@ -5511,4 +5548,53 @@ model CompanyCounter {
 
   @@id([companyId, key])
   @@map("company_counters")
+}
+
+/// Melhoria 112: sugestão ou problema enviado de dentro do sistema (chega na tela Empresas).
+model FeedbackReport {
+  id         String          @id @default(uuid()) @db.Uuid
+  companyId  Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company    CompanySettings @relation("EmpresaDeFeedbackReport", fields: [companyId], references: [id])
+  userId     String?         @map("user_id") @db.Uuid
+  /// SUGESTAO | PROBLEMA
+  kind       String          @db.VarChar(10)
+  message    String          @db.VarChar(4000)
+  pageUrl    String?         @map("page_url") @db.VarChar(500)
+  userAgent  String?         @map("user_agent") @db.VarChar(300)
+  /// Print da tela (JPEG reduzido, em data URL).
+  screenshot String?
+  /// NOVO | VISTO | RESOLVIDO
+  status     String          @default("NOVO") @db.VarChar(10)
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User? @relation("FeedbackReportUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("feedback_reports")
+}
+
+/// Melhoria 131: aviso de manutenção mostrado no topo do sistema de todas as empresas.
+model SystemNotice {
+  id        String   @id @default(uuid()) @db.Uuid
+  message   String   @db.VarChar(300)
+  /// Começa a aparecer em.
+  showFrom  DateTime @map("show_from") @db.Timestamptz(3)
+  /// Some depois de.
+  showUntil DateTime @map("show_until") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([showUntil])
+  @@map("system_notices")
+}
+
+/// Melhoria 100: amostras da situação do sistema (página de status), uma a cada 5 minutos.
+model StatusSample {
+  id        BigInt   @id @default(autoincrement())
+  checkedAt DateTime @default(now()) @map("checked_at") @db.Timestamptz(3)
+  dbOk      Boolean  @map("db_ok")
+  latencyMs Int      @map("latency_ms")
+
+  @@index([checkedAt])
+  @@map("status_samples")
 }

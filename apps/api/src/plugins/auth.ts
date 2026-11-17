@@ -172,7 +172,9 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
         user: {
           include: {
             employee: { select: { id: true, active: true } },
-            company: { select: { blockedAt: true, ...COMPANY_BILLING_SELECT } },
+            company: {
+              select: { blockedAt: true, supportAccessUntil: true, ...COMPANY_BILLING_SELECT },
+            },
           },
         },
       },
@@ -182,6 +184,10 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
       session &&
       // Empresa bloqueada pelo dono da plataforma: ninguém dela entra.
       !session.user.company.blockedAt &&
+      // Melhoria 114: o suporte só entra enquanto a empresa mantém o acesso liberado.
+      (!session.user.supportAgent ||
+        (session.user.company.supportAccessUntil !== null &&
+          session.user.company.supportAccessUntil > now)) &&
       !session.revokedAt &&
       session.expiresAt > now &&
       session.user.active &&
