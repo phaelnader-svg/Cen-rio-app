@@ -196,6 +196,42 @@ describe('Orçamentos', () => {
     expect(after.some((x) => x.id === seedId)).toBe(false);
   });
 
+  it('a empresa escolhe o número do próximo orçamento (nunca abaixo de um já usado)', async () => {
+    const admin = await loginAdmin(app);
+    const c = await baseCatalog(admin);
+    let s = ok(await admin.get('/api/v1/quotes/settings'));
+    expect(s.nextNumber).toBe(10200);
+    s = ok(
+      await admin.req('PATCH', '/api/v1/quotes/settings', {
+        version: s.version,
+        taxRateBps: 600,
+        nextNumber: 8937,
+      }),
+    );
+    expect(s.nextNumber).toBe(8937);
+    const linhoDraft = draft({
+      items: [{ id: 'a', catalogItemId: c.linho.id, qty: 1, heightCm: 0, widthCm: 0, lengthCm: 0 }],
+    });
+    expect(ok(await post(admin, '/api/v1/quotes', linhoDraft), 201).number).toBe(8937);
+    expect(ok(await post(admin, '/api/v1/quotes', linhoDraft), 201).number).toBe(8938);
+    s = ok(await admin.get('/api/v1/quotes/settings'));
+    expect(s.nextNumber).toBe(8939);
+
+    // Não pode voltar para um número já usado (o número é único na empresa).
+    const r = await admin.req('PATCH', '/api/v1/quotes/settings', {
+      version: s.version,
+      nextNumber: 8938,
+    });
+    expect(r.status).toBe(422);
+    expect(r.body.error.message).toContain('8938');
+
+    // Adiantar continua possível.
+    s = ok(
+      await admin.req('PATCH', '/api/v1/quotes/settings', { version: s.version, nextNumber: 9500 }),
+    );
+    expect(ok(await post(admin, '/api/v1/quotes', linhoDraft), 201).number).toBe(9500);
+  });
+
   it('O.S. exige tapeceiro responsável; excluir esconde o orçamento', async () => {
     const admin = await loginAdmin(app);
     const c = await baseCatalog(admin);

@@ -165,6 +165,8 @@ export interface QuoteSettingsDto {
   companyName: string;
   companyNameOverride: string | null;
   logoDataUrl: string | null;
+  /** Número que o próximo orçamento salvo vai receber (a empresa pode adiantar a numeração). */
+  nextNumber: number;
   version: number;
 }
 
@@ -418,6 +420,12 @@ export const quoteSettingsUpdateSchema = z.object({
   version: z.number().int().min(1),
   taxRateBps: bps.nullable().optional(),
   companyNameOverride: z.string().trim().max(90).nullable().optional(),
+  nextNumber: z
+    .number({ message: 'Informe o número do próximo orçamento.' })
+    .int({ message: 'Informe um número inteiro.' })
+    .min(1, { message: 'Informe um número a partir de 1.' })
+    .max(999_999_999, { message: 'Número muito grande.' })
+    .optional(),
   logoDataUrl: z
     .string()
     .max(1_500_000, { message: 'Logotipo muito grande. Use um arquivo menor.' })

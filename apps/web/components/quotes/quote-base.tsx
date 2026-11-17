@@ -98,7 +98,7 @@ export function QuoteBase({
   const [tab, setTab] = useState<BaseTab>('Tecidos');
   return (
     <div className="space-y-6">
-      <CompanyCard settings={settings} />
+      <CompanyCard key={settings.nextNumber} settings={settings} />
       <FormSection
         title="Base de dados"
         description="Alterações de preços passam a valer na hora nos cálculos dos orçamentos. Os orçamentos já salvos guardam os valores da época e não mudam."
@@ -148,6 +148,8 @@ function CompanyCard({ settings }: { settings: QuoteSettingsDto }) {
   const act = useCatalogAction();
   const toast = useToast();
   const [name, setName] = useState(settings.companyNameOverride ?? '');
+  const [nextText, setNextText] = useState(String(settings.nextNumber));
+  const next = /^\d{1,9}$/.test(nextText.trim()) ? Number(nextText.trim()) : NaN;
   const [logoNote, setLogoNote] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const patch = (body: Record<string, unknown>, ok: string) =>
@@ -162,7 +164,7 @@ function CompanyCard({ settings }: { settings: QuoteSettingsDto }) {
   return (
     <FormSection
       title="Dados da empresa na proposta"
-      description="Nome e logotipo que aparecem na proposta, no contrato e na O.S. do orçamento."
+      description="Nome, logotipo e numeração que aparecem na proposta, no contrato e na O.S. do orçamento."
     >
       <FormGrid>
         <TextField
@@ -187,6 +189,33 @@ function CompanyCard({ settings }: { settings: QuoteSettingsDto }) {
             }
           >
             Salvar nome da empresa
+          </Button>
+        </FieldAction>
+      </FormGrid>
+      <FormGrid className="mt-4">
+        <TextField
+          label="Número do próximo orçamento"
+          inputMode="numeric"
+          cols={8}
+          value={nextText}
+          onChange={(e) => setNextText(e.target.value.replace(/\D/g, ''))}
+          error={Number.isNaN(next) || next < 1 ? 'Informe um número inteiro.' : undefined}
+          hint={`O próximo orçamento salvo recebe o nº ${settings.nextNumber}. Os seguintes continuam a partir dele.`}
+        />
+        <FieldAction cols={4}>
+          <Button
+            className="w-full"
+            variant="secondary"
+            loading={act.isPending}
+            disabled={Number.isNaN(next) || next < 1 || next === settings.nextNumber}
+            onClick={() =>
+              patch(
+                { nextNumber: next },
+                `Numeração ajustada. O próximo orçamento será o nº ${next}.`,
+              )
+            }
+          >
+            Salvar numeração
           </Button>
         </FieldAction>
       </FormGrid>

@@ -211,12 +211,9 @@ function SavedList({ manage, onOpen }: { manage: boolean; onOpen: (m: Mode) => v
         <Card className="overflow-hidden">
           <ul className="divide-y divide-line">
             {filtered.map((q) => (
-              <li
-                key={q.id}
-                data-focus-id={q.id}
-                className="flex flex-wrap items-center gap-3 px-5 py-4"
-              >
-                <div className="min-w-0 flex-1">
+              <li key={q.id} data-focus-id={q.id} className="flex flex-col gap-3 px-5 py-4">
+                {/* Dados na horizontal, ocupando a largura, acima da linha de botões. */}
+                <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
                   <p className="font-semibold">
                     {q.customerName || 'Cliente não informado'} <QuoteStatusBadges q={q} />
                     {q.hasWorkOrder && (
