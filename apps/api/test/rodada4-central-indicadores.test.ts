@@ -99,7 +99,7 @@ describe('F10-13k2 — Presença: ausência com impacto na Central', () => {
       category: 'ACAO',
       status: 'AUSENCIA_CONFIRMADA',
       employee: { userId: s.ids.marcio, displayName: 'Márcio' },
-      description: `${open.length} impacto(s) em tarefas a encaminhar.`,
+      description: `${open.length} ${open.length === 1 ? 'impacto' : 'impactos'} em tarefas a encaminhar.`,
       link: `/painel/presenca?foco=${att.id}`,
     });
     expect(item(a, `PRESENCA:${att.id}`)!.impacts.join(' ')).toContain(s.marcioTask.code);

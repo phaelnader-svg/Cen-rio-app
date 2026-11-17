@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import {
   ADJUSTMENT_KIND_LABEL,
   DUE_TRIGGER_LABEL,
@@ -150,7 +151,8 @@ export function RevenueTab() {
                   </Badge>
                   {o.returnedPieces > 0 && (
                     <p className="mt-1 text-xs text-warn-600" data-testid="fin-order-returned">
-                      {o.returnedPieces} peça(s) devolvida(s): o valor negociado só muda com ajuste.
+                      {plural(o.returnedPieces, 'peça devolvida', 'peças devolvidas')}: o valor
+                      negociado só muda com ajuste.
                     </p>
                   )}
                 </td>
@@ -262,7 +264,7 @@ function ReceivablesTable({
             {dueText(r)}
             {r.overdue && (
               <p className="text-xs" data-testid={`overdue-${r.code}`}>
-                {r.daysOverdue ? `${r.daysOverdue} dia(s) em atraso` : 'Vencida'}
+                {r.daysOverdue ? `${plural(r.daysOverdue, 'dia', 'dias')} em atraso` : 'Vencida'}
               </p>
             )}
           </td>
@@ -699,7 +701,7 @@ function ReceivableDialog({ id, onClose }: { id: string; onClose: () => void }) 
             </p>
             <p>
               Vencimento: {dueText(r)}
-              {r.overdue ? ` · ${r.daysOverdue} dia(s) em atraso` : ''}
+              {r.overdue ? ` · ${plural(r.daysOverdue, 'dia', 'dias')} em atraso` : ''}
             </p>
             <p>Forma prevista: {methodText(r.expectedMethod, r.installments)}</p>
             <p>

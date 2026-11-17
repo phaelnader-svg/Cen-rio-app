@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { DeliveryDto, PickupTeam, PieceStatusDto } from '@cenario/shared';
 import { useFocusParam } from '@/lib/focus-param';
 import {
@@ -97,7 +98,8 @@ export function DeliveriesPage() {
     <>
       <PageHeader
         title="Expedição e entregas"
-        description="Peças prontas (inspeção aprovada, correções encerradas e sem bloqueio), agenda de entregas e ocorrências. Só o gestor agenda e confirma; nada é agendado sozinho."
+        description="Peças prontas e agenda de entregas."
+        help="Peças prontas (inspeção aprovada, correções encerradas e sem bloqueio), agenda de entregas e ocorrências. Só o gestor agenda e confirma; nada é agendado sozinho."
       />
       <Tabs
         tabs={[
@@ -176,7 +178,7 @@ function Agenda() {
                         <span className="w-24 font-mono font-semibold">{d.code}</span>
                         <div className="min-w-0 flex-1">
                           <p className="font-medium">
-                            {d.customer.name} · {d.items.length} peça(s)
+                            {d.customer.name} · {plural(d.items.length, 'peça', 'peças')}
                             {d.requiresInstallation ? ' · com instalação' : ''}
                           </p>
                           <p className="text-ink-muted">
@@ -188,7 +190,9 @@ function Agenda() {
                           </p>
                         </div>
                         {d.openOccurrences > 0 && (
-                          <Badge tone="danger">{d.openOccurrences} ocorrência(s)</Badge>
+                          <Badge tone="danger">
+                            {plural(d.openOccurrences, 'ocorrência', 'ocorrências')}
+                          </Badge>
                         )}
                         {d.origin === 'DIRETA' && <Badge tone="info">Confirmada na OS</Badge>}
                         <DeliveryBadge status={d.status} />
@@ -638,7 +642,7 @@ export function ScheduleDialog({
       {provisional && (
         <Alert tone="warn" className="mb-3" title="Provisório">
           {unready.length
-            ? `${unready.map((p) => p.code).join(', ')} ainda não está(ão) pronta(s) para entrega.`
+            ? `${unready.map((p) => p.code).join(', ')} ${unready.length === 1 ? 'ainda não está pronta' : 'ainda não estão prontas'} para entrega.`
             : 'Pré-agendamento ainda não confirmado.'}{' '}
           A confirmação definitiva só é possível com todas as peças liberadas.
         </Alert>
@@ -860,7 +864,11 @@ export function DeliveryDetailPage({ id }: { id: string }) {
             {PICKUP_TEAM_LABEL[d.team]} · {d.responsible?.displayName ?? 'sem responsável'}
           </span>
         )}
-        {d.attempts > 0 && <Badge tone="danger">{d.attempts} tentativa(s) frustrada(s)</Badge>}
+        {d.attempts > 0 && (
+          <Badge tone="danger">
+            {plural(d.attempts, 'tentativa frustrada', 'tentativas frustradas')}
+          </Badge>
+        )}
       </div>
       <div className="mb-6 space-y-4">
         <BalanceWarning

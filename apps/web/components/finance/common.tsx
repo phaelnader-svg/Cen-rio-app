@@ -77,7 +77,7 @@ export function Stat({
 }) {
   return (
     <Card className="p-4">
-      <p className="text-xs font-semibold tracking-wide text-ink-muted uppercase">{label}</p>
+      <p className="text-sm font-medium text-ink-muted">{label}</p>
       <p
         data-testid={testId}
         className={clsx(

@@ -109,6 +109,9 @@ async function settingsDto(db: Tx | PrismaClient): Promise<QuoteSettingsDto> {
     companyName: s.companyNameOverride || company?.tradeName || 'Empresa',
     companyNameOverride: s.companyNameOverride,
     logoDataUrl: s.logoDataUrl,
+    proposalTitle: s.proposalTitle,
+    proposalIntro: s.proposalIntro,
+    proposalThanks: s.proposalThanks,
     nextNumber: numbers.next,
     version: s.version,
   };
@@ -423,6 +426,15 @@ export async function quoteRoutes(app: FastifyInstance) {
               ? { companyNameOverride: input.companyNameOverride || null }
               : {}),
             ...(input.logoDataUrl !== undefined ? { logoDataUrl: input.logoDataUrl } : {}),
+            ...(input.proposalTitle !== undefined
+              ? { proposalTitle: input.proposalTitle || null }
+              : {}),
+            ...(input.proposalIntro !== undefined
+              ? { proposalIntro: input.proposalIntro || null }
+              : {}),
+            ...(input.proposalThanks !== undefined
+              ? { proposalThanks: input.proposalThanks || null }
+              : {}),
             version: { increment: 1 },
           },
         });
@@ -432,7 +444,7 @@ export async function quoteRoutes(app: FastifyInstance) {
           entityId: '1',
           summary: numberChange
             ? `Orçamento — numeração: o próximo orçamento passa a ser o nº ${numberChange.to}.`
-            : 'Orçamento — configuração alterada (alíquota, nome ou logotipo da proposta).',
+            : 'Orçamento — configuração alterada (alíquota, nome, logotipo ou textos da proposta).',
           changes: {
             ...(numberChange ? { nextNumber: numberChange } : {}),
             ...(input.taxRateBps !== undefined
@@ -443,6 +455,11 @@ export async function quoteRoutes(app: FastifyInstance) {
               : {}),
             ...(input.logoDataUrl !== undefined
               ? { logo: input.logoDataUrl ? 'alterado' : 'removido' }
+              : {}),
+            ...(input.proposalTitle !== undefined ||
+            input.proposalIntro !== undefined ||
+            input.proposalThanks !== undefined
+              ? { textosDaProposta: 'alterados' }
               : {}),
           },
         });
@@ -568,7 +585,7 @@ export async function quoteRoutes(app: FastifyInstance) {
             ? previous.responsibleName
             : undefined);
         if (!responsibleName)
-          throw Errors.business('Selecione o tapeceiro responsável antes de salvar a O.S.');
+          throw Errors.business('Selecione o tapeceiro responsável antes de salvar a OS.');
         const wo: QuoteWorkOrder = { ...input.workOrder, responsibleName };
         await tx.quote.update({
           where: { id },
@@ -578,7 +595,7 @@ export async function quoteRoutes(app: FastifyInstance) {
           action: previous ? 'quotes.work_order_updated' : 'quotes.work_order_created',
           entityType: 'quote',
           entityId: id,
-          summary: `O.S. do orçamento nº ${q.number} ${previous ? 'alterada' : 'gerada'}.`,
+          summary: `OS do orçamento nº ${q.number} ${previous ? 'alterada' : 'gerada'}.`,
         });
       });
       return loadQuote(prisma, id);

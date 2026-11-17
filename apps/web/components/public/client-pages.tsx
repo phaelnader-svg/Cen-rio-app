@@ -70,6 +70,7 @@ function proposalSnapshot(p: PublicQuoteDto): QuoteSnapshot {
   return {
     companyName: p.companyName,
     logoDataUrl: p.logoDataUrl,
+    texts: p.texts ?? undefined,
     issuedAt: p.issuedAt,
     customerName: p.customerName,
     phone: p.customerPhone,

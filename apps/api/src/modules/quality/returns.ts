@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   anyPermissionAudience,
@@ -189,7 +190,7 @@ async function validateLines(tx: Tx, orderId: string, lines: Line[], currentId?:
       oi.receivedQuantity - oi.returnedQuantity - alloc.inServiceOrders(oi.id) - pendingLoose;
     if (loose > availableLoose)
       throw Errors.business(
-        `"${oi.description}": só ${Math.max(availableLoose, 0)} peça(s) recebida(s) fora de OS para devolver; escolha as peças de OS a devolver.`,
+        `"${oi.description}": só ${plural(Math.max(availableLoose, 0), 'peça recebida', 'peças recebidas')} fora de OS para devolver; escolha as peças de OS a devolver.`,
       );
   }
 }
@@ -234,7 +235,11 @@ export async function createReturn(
     action: 'return.registered',
     entityType: 'piece_return',
     entityId: r.id,
-    summary: `Devolução ${returnCode(r.number)} registrada: ${input.lines.reduce((a, l) => a + l.quantity, 0)} peça(s). Motivo: ${input.reason}`,
+    summary: `Devolução ${returnCode(r.number)} registrada: ${plural(
+      input.lines.reduce((a, l) => a + l.quantity, 0),
+      'peça',
+      'peças',
+    )}. Motivo: ${input.reason}`,
   });
   await returnEvent(tx, actor, r);
   return r;

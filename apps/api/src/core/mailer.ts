@@ -178,12 +178,28 @@ export function simpleEmail(opts: {
     '',
     opts.footer ?? 'Cenário Gestão',
   ].join('\n');
-  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f5f5f4;font-family:Arial,Helvetica,sans-serif;color:#1c1917">
-<div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:28px">
-<h1 style="font-size:20px;margin:0 0 16px">${esc(opts.title)}</h1>
-${opts.paragraphs.map((p) => `<p style="font-size:15px;line-height:1.5;margin:0 0 12px">${esc(p)}</p>`).join('\n')}
-${opts.button ? `<p style="margin:24px 0"><a href="${esc(opts.button.url)}" style="background:#1d4a45;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:bold;display:inline-block">${esc(opts.button.label)}</a></p><p style="font-size:12px;color:#78716c;word-break:break-all">Se o botão não abrir, copie este endereço: ${esc(opts.button.url)}</p>` : ''}
-<p style="font-size:12px;color:#78716c;margin-top:24px">${esc(opts.footer ?? 'Cenário Gestão')}</p>
+  // Melhoria 142: e-mail com a cara do sistema (logo do sofá, verde da marca, fundo do painel).
+  // A logo vem do próprio site (o mesmo endereço do botão); sem botão, só o nome.
+  let logo = '';
+  try {
+    if (opts.button) logo = `${new URL(opts.button.url).origin}/icon-192.png`;
+  } catch {
+    logo = '';
+  }
+  const brand = `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 20px"><tr>${
+    logo
+      ? `<td style="padding-right:10px"><img src="${esc(logo)}" width="36" height="36" alt="" style="display:block;border-radius:9px"></td>`
+      : ''
+  }<td style="font-size:15px;font-weight:600;color:#064a4b">Cenário Gestão</td></tr></table>`;
+  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f5f2;font-family:Inter,'Segoe UI',Roboto,Arial,sans-serif;color:#1d2523">
+<div style="max-width:520px;margin:0 auto">
+${brand}
+<div style="background:#fff;border:1px solid #e4e1da;border-radius:14px;padding:28px">
+<h1 style="font-size:20px;line-height:1.3;margin:0 0 16px;color:#1d2523">${esc(opts.title)}</h1>
+${opts.paragraphs.map((p) => `<p style="font-size:15px;line-height:1.55;margin:0 0 12px;color:#4a5552">${esc(p)}</p>`).join('\n')}
+${opts.button ? `<p style="margin:24px 0"><a href="${esc(opts.button.url)}" style="background:#064a4b;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:600;display:inline-block">${esc(opts.button.label)}</a></p><p style="font-size:12px;color:#7a8481;word-break:break-all">Se o botão não abrir, copie este endereço: ${esc(opts.button.url)}</p>` : ''}
+</div>
+<p style="font-size:12px;color:#7a8481;margin:16px 4px 0">${esc(opts.footer ?? 'Cenário Gestão')}</p>
 </div></body></html>`;
   return { text, html };
 }

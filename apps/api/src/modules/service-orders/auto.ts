@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import type { ServiceOrder, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
@@ -130,7 +131,7 @@ export async function autoServiceOrderForOrder(
       action: 'service_order.planned_intent_not_applied',
       entityType: 'service_order',
       entityId: so.id,
-      summary: `OS ${serviceOrderCode(so.number)}: intenção do fechamento não aplicada em ${skipped.length} peça(s).`,
+      summary: `OS ${serviceOrderCode(so.number)}: intenção do fechamento não aplicada em ${plural(skipped.length, 'peça', 'peças')}.`,
       changes: { skipped: skipped.map((x) => ({ description: x.description, what: x.what })) },
     });
   return so;

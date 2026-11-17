@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EXPENSE_CATEGORY_LABEL,
   LABOR_STATUS_LABEL,
@@ -259,7 +260,7 @@ export async function buildReport(
           'Compra de estoque comum não é custo de OS até sair para a OS.',
           ...(unpriced
             ? [
-                `${unpriced} lançamento(s) de material sem preço no período: valor 0 até o gestor ajustar (custo subestimado).`,
+                `${plural(unpriced, 'lançamento', 'lançamentos')} de material sem preço no período: valor 0 até o gestor ajustar (custo subestimado).`,
               ]
             : []),
         ],
@@ -280,7 +281,7 @@ export async function buildReport(
         title: 'Pagamentos por produção',
         header: [
           'Código',
-          'Profissional',
+          'Funcionário',
           'OS',
           'Peça',
           'Serviço',

@@ -121,6 +121,7 @@ export async function publicRoutes(app: FastifyInstance) {
       status: isQuoteStatus(q.status) ? q.status : 'ENVIADO',
       approvedAt: q.approvedAt?.toISOString() ?? null,
       companyPhone: q.company.phone,
+      texts: s.texts ?? null,
     };
   }
 

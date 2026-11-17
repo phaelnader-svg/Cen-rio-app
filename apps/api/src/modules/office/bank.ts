@@ -6,6 +6,7 @@
  *   (conciliação) ou o provedor confirmar — nunca pelo clique de preparar.
  * - Maquininha: bruto, taxa, líquido e previsão de depósito.
  */
+import { plural } from '@cenario/shared';
 import { createHash } from 'node:crypto';
 import type { Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
@@ -315,7 +316,7 @@ export async function bankRoutes(app: FastifyInstance) {
           action: 'office.statement_imported',
           entityType: 'bank_account',
           entityId: id,
-          summary: `Extrato importado: ${res.count} novo(s), ${lines.length - res.count} já existente(s).`,
+          summary: `Extrato importado: ${plural(res.count, 'novo', 'novos')}, ${plural(lines.length - res.count, 'já existente', 'já existentes')}.`,
         });
         await officeEvent(tx, actorFrom(request), 'bank_account', id);
       });

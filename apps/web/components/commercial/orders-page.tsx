@@ -20,8 +20,8 @@ export function OrdersPage() {
   return (
     <>
       <PageHeader
-        title="Pedidos comerciais"
-        description="Serviços aprovados pelo cliente: organizam a retirada e preservam o que foi vendido."
+        title="Pedidos"
+        description="Serviços aprovados pelo cliente."
         actions={
           <>
             <ExportLink href="/api/v1/export/pedidos.csv" testId="export-pedidos" />
@@ -77,19 +77,24 @@ export function OrdersPage() {
               <li key={o.id}>
                 <Link
                   href={`/painel/pedidos/${o.id}`}
-                  className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5 hover:bg-subtle/70"
+                  // Melhoria 160: no celular, cartão com o cliente em cima e os selos embaixo.
+                  className="flex flex-col gap-1.5 px-5 py-3.5 hover:bg-subtle/70 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1"
                   data-testid={`order-${o.code}`}
                 >
-                  <span className="w-24 font-mono text-sm font-semibold">{o.code}</span>
-                  <div className="min-w-0 flex-1">
+                  <span className="font-mono text-xs font-semibold text-ink-muted sm:w-24 sm:text-sm sm:text-ink">
+                    {o.code}
+                  </span>
+                  <div className="min-w-0 sm:flex-1">
                     <p className="truncate font-medium">{o.customer.name}</p>
                     <p className="truncate text-sm text-ink-muted">{o.contractedService}</p>
                   </div>
-                  <span className="text-sm text-ink-muted tabular-nums">
-                    {o.receivedPieces}/{o.totalPieces} peças na oficina
-                  </span>
-                  <OrderStatusBadge status={o.status} customerDropOff={o.customerDropOff} />{' '}
-                  <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />
+                  <div className="flex flex-wrap items-center gap-2 sm:contents">
+                    <span className="text-sm text-ink-muted tabular-nums">
+                      {o.receivedPieces}/{o.totalPieces} peças na oficina
+                    </span>
+                    <OrderStatusBadge status={o.status} customerDropOff={o.customerDropOff} />
+                    <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />
+                  </div>
                   <span className="hidden w-32 text-right text-xs text-ink-muted md:block">
                     {formatDateTime(o.createdAt)}
                   </span>

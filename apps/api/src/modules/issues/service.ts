@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   ISSUE_IMPACT_LABEL,
@@ -194,7 +195,7 @@ export async function proposeBlock(tx: Tx, actor: ActorContext, issue: IssueRow)
   if (reschedule.length) {
     alternatives.push({
       id: 'ADIAR',
-      title: `Reprogramar ${reschedule.length} tarefa(s) para ${br(nextDay)} às ${cfg.workdayStart}`,
+      title: `Reprogramar ${plural(reschedule.length, 'tarefa', 'tarefas')} para ${br(nextDay)} às ${cfg.workdayStart}`,
       actions: reschedule.map((r) => ({
         type: 'RESCHEDULE' as const,
         taskId: r.id,
@@ -220,7 +221,7 @@ export async function proposeBlock(tx: Tx, actor: ActorContext, issue: IssueRow)
         0,
         500,
       ),
-    problem: `${impact.task.code} está impedida${impact.dependents.length ? ` e ${impact.dependents.length} tarefa(s) dependem dela` : ''}${impact.deadlineRisk ? ' — prazo em risco' : ''}.`,
+    problem: `${impact.task.code} está impedida${impact.dependents.length ? ` e ${plural(impact.dependents.length, 'tarefa', 'tarefas')} dependem dela` : ''}${impact.deadlineRisk ? ' — prazo em risco' : ''}.`,
     affectedTaskIds: [issue.taskId, ...impact.dependents.map((d) => d.id)],
     alternatives,
     proposedAlternativeId: recommended.id,
@@ -275,7 +276,7 @@ onTaskBlocked(async (tx, actor, blocked) => {
           toTime: cfg.workdayStart,
         })),
         impacts: [
-          `${impact.task.code} e ${waitingDeps.length} dependente(s) vão para ${br(nextDay)}.`,
+          `${impact.task.code} e ${plural(waitingDeps.length, 'dependente', 'dependentes')} vão para ${br(nextDay)}.`,
         ],
         critical: true,
         recommended: true,

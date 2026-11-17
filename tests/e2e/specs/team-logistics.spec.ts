@@ -55,7 +55,7 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
 
     // ── Padrões e recebedor (aba Custos do financeiro) ──
     await page.goto('/painel/financeiro');
-    await page.getByRole('tab', { name: 'Custos e resultado por OS' }).click();
+    await page.getByRole('tab', { name: 'Por OS' }).click();
     const panel = page.getByTestId('logistics-defaults');
     await panel.getByTestId('logistics-defaults-edit').click();
     const dlg = page.getByRole('dialog');
@@ -136,7 +136,7 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
 
     // ── Contas a pagar: parcial, estorno, quitação ──
     await page.goto('/painel/financeiro');
-    await page.getByRole('tab', { name: 'Contas a pagar' }).click();
+    await page.getByRole('tab', { name: 'A pagar' }).click();
     const row = page.getByTestId(`payable-${payableCode}`);
     await expect(row).toContainText(ANDRE.displayName);
     await expect(row).toContainText('R$ 100,00');

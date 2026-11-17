@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   DIRECT_DELIVERY_REVERT_DAYS,
   DIRECT_DELIVERY_REVERT_PERMISSIONS,
@@ -356,7 +357,7 @@ export async function revertDirectDelivery(
     action: 'delivery.direct_reverted',
     entityType: 'delivery',
     entityId: a.d.id,
-    summary: `EXCEÇÃO: ${code} (entrega direta da OS ${serviceOrderCode(a.so.number)}) desfeita — ${pieceIds.length} peça(s). Justificativa: ${reason}`,
+    summary: `EXCEÇÃO: ${code} (entrega direta da OS ${serviceOrderCode(a.so.number)}) desfeita — ${plural(pieceIds.length, 'peça', 'peças')}. Justificativa: ${reason}`,
     changes: {
       serviceOrderId,
       deliveredAt: a.d.completedAt!.toISOString(),

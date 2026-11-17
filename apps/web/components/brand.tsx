@@ -11,7 +11,13 @@ export const LOGO_GREEN = '#064a4b';
 export function LogoMark({ className, inverted }: { className?: string; inverted?: boolean }) {
   return (
     <svg viewBox="0 0 368 368" className={clsx('shrink-0', className)} aria-hidden>
-      <rect width="368" height="368" rx="100" fill={inverted ? '#ffffff' : LOGO_GREEN} />
+      <rect
+        width="368"
+        height="368"
+        rx="100"
+        fill={inverted ? '#ffffff' : LOGO_GREEN}
+        className={inverted ? undefined : 'logo-mark-bg'}
+      />
       <path fill={inverted ? LOGO_GREEN : '#ffffff'} fillRule="evenodd" d={LOGO_SOFA_PATH} />
     </svg>
   );

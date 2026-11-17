@@ -165,7 +165,7 @@ describe('Estado do prazo da OS na Central, na lista e no detalhe (fonte única)
       status: 'ATRASADO',
       impacts: [],
     });
-    expect(items[0]!.title).toContain('ATRASADO');
+    expect(items[0]!.title).toContain('atrasado');
     expect(items[0]!.nextActions[0]).toMatch(/Renegociar o prazo/);
     // Lista de OS: mesmo estado do detalhe e da Central.
     const list = (await admin.get('/api/v1/service-orders?limit=100')).body.items as {
@@ -390,7 +390,7 @@ describe('Atenção do pedido: peças ainda não recebidas na oficina', () => {
       status: 'PRAZO_PROXIMO',
       serviceOrder: null,
     });
-    expect(items[0]!.title).toContain('PRAZO PRÓXIMO');
+    expect(items[0]!.title).toContain('prazo próximo');
     expect(items[0]!.description).toContain('Peça ainda não recebida');
     expect((await admin.get(`/api/v1/orders/${near}`)).body.deadline).toBe('PRAZO_PROXIMO');
     const order = await db().commercialOrder.findUniqueOrThrow({

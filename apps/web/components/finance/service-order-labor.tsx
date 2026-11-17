@@ -244,7 +244,7 @@ export function ResolveReviewDialog({
       size="lg"
       onClose={onClose}
       title={`Resolver ${review.code}`}
-      description="Defina o valor devido a cada profissional. Valores já pagos são preservados; quem já tinha valor precisa constar."
+      description="Defina o valor devido a cada funcionário. Valores já pagos são preservados; quem já tinha valor precisa constar."
       footer={
         <Button loading={m.isPending} onClick={submit} data-testid="resolve-submit">
           Resolver revisão

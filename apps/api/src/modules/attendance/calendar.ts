@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   LEAVE_KIND_LABEL,
@@ -346,7 +347,7 @@ export async function calendarRoutes(app: FastifyInstance) {
           action: 'attendance.leave_created',
           entityType: 'attendance_leave',
           entityId: l.id,
-          summary: `${leaveCode(l.number)}: ${LEAVE_KIND_LABEL[input.kind]} de ${e.displayName}, ${brDate(input.startDate)} a ${brDate(input.endDate)} (${days(input.startDate, input.endDate)} dia(s)) — ${input.reason}`,
+          summary: `${leaveCode(l.number)}: ${LEAVE_KIND_LABEL[input.kind]} de ${e.displayName}, ${brDate(input.startDate)} a ${brDate(input.endDate)} (${plural(days(input.startDate, input.endDate), 'dia', 'dias')}) — ${input.reason}`,
         });
         await leaveNotice(t, actor, l, 'registrada');
         await applyToday(t, actor, l);

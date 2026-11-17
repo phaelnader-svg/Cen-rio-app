@@ -145,7 +145,7 @@ export function WeeklyClosingTab() {
           )}
         </Field>
         {d && (
-          <Field label="Profissional" className="w-48">
+          <Field label="Funcionário" className="w-48">
             {(f) => (
               <Select
                 {...f}
@@ -284,7 +284,7 @@ export function WeeklyClosingTab() {
               <Table
                 testId="closing-rows"
                 head={[
-                  'Profissional',
+                  'Funcionário',
                   'Tipo',
                   'Itens',
                   'Previsto',
@@ -517,7 +517,7 @@ export function WeeklyClosingTab() {
       {exception && exception.beneficiary.userId && (
         <FormDialog
           title={`Exceção administrativa — ${exception.beneficiary.displayName}`}
-          description="Libera o pagamento SEM a confirmação do profissional, só para os valores devidos desta semana como estão agora. Fica registrado com seu nome e o motivo; se os valores mudarem, é preciso nova confirmação ou nova exceção."
+          description="Libera o pagamento SEM a confirmação do funcionário, só para os valores devidos desta semana como estão agora. Fica registrado com seu nome e o motivo; se os valores mudarem, é preciso nova confirmação ou nova exceção."
           submitLabel="Liberar por exceção"
           okMessage="Pagamento liberado por exceção administrativa."
           onClose={() => setException(null)}
@@ -525,7 +525,7 @@ export function WeeklyClosingTab() {
             { name: 'reason', label: 'Motivo (interno)', type: 'textarea', required: true },
             {
               name: 'publicNote',
-              label: 'Mensagem ao profissional (opcional, neutra)',
+              label: 'Mensagem ao funcionário (opcional, neutra)',
               type: 'textarea',
             },
           ]}
@@ -784,7 +784,7 @@ function ValueRequestsPanel() {
       <Table
         head={[
           'Pedido',
-          'Profissional',
+          'Funcionário',
           'Semana',
           'Item',
           'Valor',
@@ -846,7 +846,7 @@ function ValueRequestsPanel() {
           description={
             decide.approve
               ? 'O novo valor entra pelo valor combinado (antes da liberação e de pagamento) ou por um ajuste justificado. Se o item mudou, nada é aplicado.'
-              : 'Nenhum valor muda. O profissional vê a recusa e o motivo.'
+              : 'Nenhum valor muda. O funcionário vê a recusa e o motivo.'
           }
           submitLabel={decide.approve ? 'Aprovar' : 'Recusar'}
           okMessage={decide.approve ? 'Pedido aprovado.' : 'Pedido recusado.'}

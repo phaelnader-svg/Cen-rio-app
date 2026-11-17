@@ -240,7 +240,7 @@ describe('Avisos (notificações)', () => {
     const afterPublish = await notices(joao);
     expect(afterPublish.map((n) => n.kind).sort()).toEqual(['TAREFA_ATRIBUIDA', 'TAREFA_LIBERADA']);
     expect(afterPublish.find((n) => n.kind === 'TAREFA_ATRIBUIDA')!.body).toMatch(
-      /2 tarefa\(s\) para você, 1 liberada/,
+      /2 tarefas para você, 1 liberada/,
     );
     const m = await notices(marcio);
     expect(m.filter((n) => n.kind === 'TAREFA_ATRIBUIDA')).toHaveLength(1);
@@ -341,7 +341,7 @@ describe('Avisos (notificações)', () => {
     const added = (await notices(marcio)).slice(before);
     expect(added).toHaveLength(1);
     expect(added[0]).toMatchObject({ kind: 'TAREFA_ATRIBUIDA' });
-    expect(added[0]!.body).toMatch(/incluída na programação da semana: \d+ tarefa\(s\) para você/);
+    expect(added[0]!.body).toMatch(/incluída na programação da semana: \d+ tarefas? para você/);
   });
 
   it('tempo real e reconexão: avisos chegam só ao destinatário e são recuperados', async () => {

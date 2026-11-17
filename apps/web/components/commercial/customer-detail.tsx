@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import {
   CUSTOMER_KIND_LABEL,
   SERVICE_ORDER_STATUS_LABEL,
@@ -220,7 +221,7 @@ export function CustomerDetail({ id }: { id: string }) {
             <Spinner />
           ) : (
             <div className="grid gap-6 lg:grid-cols-2">
-              <Section title="Pedidos comerciais">
+              <Section title="Pedidos">
                 {!can('pedidos.ver') ? (
                   <p className="text-sm text-ink-muted">Sem permissão para ver pedidos.</p>
                 ) : history.data?.orders.length ? (
@@ -263,7 +264,7 @@ export function CustomerDetail({ id }: { id: string }) {
                           {s.operationalState
                             ? ''
                             : `${SERVICE_ORDER_STATUS_LABEL[s.status as 'ABERTA']} · `}
-                          {s.pieceCount} peça(s) · {formatDateTime(s.createdAt)}
+                          {plural(s.pieceCount, 'peça', 'peças')} · {formatDateTime(s.createdAt)}
                         </span>
                       </li>
                     ))}

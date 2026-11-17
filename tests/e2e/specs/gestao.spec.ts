@@ -133,7 +133,7 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
     // Removidos (16/11/2026): Materiais aprovados, Compras e Recebimentos saem do menu.
     await page.goto('/painel');
     const nav = page.getByRole('navigation');
-    await expect(nav.getByRole('link', { name: 'Pedidos comerciais' }).first()).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Pedidos', exact: true }).first()).toBeVisible();
     for (const gone of ['Materiais aprovados', 'Compras', 'Recebimentos'])
       await expect(nav.getByRole('link', { name: gone, exact: true })).toHaveCount(0);
   });

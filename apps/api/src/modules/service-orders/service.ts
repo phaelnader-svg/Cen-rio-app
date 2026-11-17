@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import { EVENT_TYPES, type createServiceOrderSchema } from '@cenario/shared';
 import type { ServiceOrder, Tx } from '@cenario/db';
 import type { z } from 'zod';
@@ -62,7 +63,7 @@ export async function createServiceOrder(
       throw Errors.business(
         available <= 0
           ? `"${item.description}" já está em outra OS.`
-          : `"${item.description}": apenas ${available} peça(s) disponível(is) para OS.`,
+          : `"${item.description}": apenas ${plural(available, 'peça disponível', 'peças disponíveis')} para OS.`,
       );
     }
   }

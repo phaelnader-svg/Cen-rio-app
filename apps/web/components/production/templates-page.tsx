@@ -280,7 +280,7 @@ function TemplateEditor({
         <p className="mb-2 rounded-lg bg-subtle px-3 py-2 text-sm text-ink-soft">
           Em <strong>Para concluir</strong>, escolha <strong>Foto da tarefa concluída</strong> nas
           etapas em que a foto é obrigatória (por exemplo, acabamento e embalagem): o tablet só
-          conclui a etapa com a foto, e ela entra no álbum da O.S. que vai para o cliente.
+          conclui a etapa com a foto, e ela entra no álbum da OS que vai para o cliente.
         </p>
         <div className="overflow-x-auto">
           <table className="data-table min-w-[1240px]">

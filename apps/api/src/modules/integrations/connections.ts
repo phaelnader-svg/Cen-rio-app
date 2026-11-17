@@ -3,6 +3,7 @@
  * escolha da conta da Cenário, teste, reconexão, desconexão e modo de teste local.
  * Segredos ficam cifrados no servidor; o navegador só recebe estado e rótulos.
  */
+import { plural } from '@cenario/shared';
 import { PLATFORM_COMPANY_ID, requireCompanyId } from '../../core/tenant';
 import { EVENT_TYPES, anyPermissionAudience } from '@cenario/shared';
 import type { IntegrationConnection, Prisma, PrismaClient, Tx } from '@cenario/db';
@@ -332,7 +333,7 @@ export async function connectionRoutes(app: FastifyInstance) {
         status: 'CONECTADA',
         mode: 'IMPORTACAO',
         realIntegration: 'sim',
-        accountLabel: `Pacote mensal manual · ${docs} documento(s) registrados`,
+        accountLabel: `Pacote mensal manual · ${plural(docs, 'documento', 'documentos')} registrados`,
       },
     };
     return PROVIDERS.map((p) => {

@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import {
   PIECE_TYPES,
   PIECE_TYPE_LABEL,
@@ -58,7 +59,8 @@ export function ServiceModelsPage() {
     <>
       <PageHeader
         title="Modelos de serviço"
-        description="Para cada tipo de peça e de serviço: as etapas de produção, o checklist de qualidade e os materiais que costumam ser usados. Os modelos só sugerem — em cada OS o gestor revisa e altera."
+        description="Etapas, checklist e materiais de cada tipo de serviço."
+        help="Para cada tipo de peça e de serviço: as etapas de produção, o checklist de qualidade e os materiais que costumam ser usados. Os modelos só sugerem — em cada OS o gestor revisa e altera."
       />
       <Tabs
         tabs={[
@@ -161,7 +163,7 @@ function ByService({
                 <span className="block text-ink-soft">
                   Checklist:{' '}
                   {r.qualityTemplate
-                    ? `${r.qualityTemplate.name} · ${r.qualityTemplate.items} item(ns)`
+                    ? `${r.qualityTemplate.name} · ${plural(r.qualityTemplate.items, 'item', 'itens')}`
                     : 'checklist mínimo'}
                 </span>
               )}
@@ -214,7 +216,7 @@ function ByService({
                 {c.quality && (
                   <td className="px-3 py-2.5">
                     {r.qualityTemplate ? (
-                      `${r.qualityTemplate.name} · ${r.qualityTemplate.items} item(ns)`
+                      `${r.qualityTemplate.name} · ${plural(r.qualityTemplate.items, 'item', 'itens')}`
                     ) : (
                       <Badge tone="neutral">checklist mínimo</Badge>
                     )}
@@ -222,7 +224,7 @@ function ByService({
                 )}
                 <td className="px-3 py-2.5">
                   {r.materials ? (
-                    `${r.materials} material(is)`
+                    `${plural(r.materials, 'material', 'materiais')}`
                   ) : (
                     <span className="text-ink-muted">—</span>
                   )}

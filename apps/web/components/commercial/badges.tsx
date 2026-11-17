@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   DEADLINE_REASON_LABEL,
   DEADLINE_STATE_LABEL,
@@ -64,9 +65,13 @@ export const PickupStatusBadge = ({ status }: { status: PickupStatus }) => (
     {PICKUP_STATUS_LABEL[status]}
   </Badge>
 );
-export const PriorityBadge = ({ priority }: { priority: Priority }) => (
-  <Badge tone={PRIORITY_TONE[priority]}>Prioridade {PRIORITY_LABEL[priority].toLowerCase()}</Badge>
-);
+/** Melhoria 161: nas listas, a prioridade só aparece quando foge do normal (alta ou urgente). */
+export const PriorityBadge = ({ priority, always }: { priority: Priority; always?: boolean }) =>
+  always || priority === 'ALTA' || priority === 'URGENTE' ? (
+    <Badge tone={PRIORITY_TONE[priority]}>
+      Prioridade {PRIORITY_LABEL[priority].toLowerCase()}
+    </Badge>
+  ) : null;
 export const ServiceOrderStatusBadge = ({ status }: { status: ServiceOrderStatus }) => (
   <Badge tone={status === 'ABERTA' ? 'ok' : 'neutral'} dot>
     {SERVICE_ORDER_STATUS_LABEL[status]}
@@ -94,7 +99,9 @@ export const ServiceStateBadge = ({
       }
     >
       {ORDER_SERVICE_STATE_LABEL[state]}
-      {returned > 0 && state === 'SERVICO_CONCLUIDO' ? ` · ${returned} devolvida(s)` : ''}
+      {returned > 0 && state === 'SERVICO_CONCLUIDO'
+        ? ` · ${plural(returned, 'devolvida', 'devolvidas')}`
+        : ''}
     </Badge>
   );
 

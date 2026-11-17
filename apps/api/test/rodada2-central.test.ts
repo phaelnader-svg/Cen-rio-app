@@ -214,7 +214,7 @@ describe('F10-12 — pagamentos disponíveis', () => {
       status: 'DISPONIVEL',
       link: `/painel/financeiro?tab=fechamento&semana=${WEEK}&profissional=${s.ids.ricardo}`,
     });
-    expect(it!.title).toMatch(/1 pagamento\(s\)/);
+    expect(it!.title).toMatch(/1 pagamento liberado/);
     expect(moneyKeys(it)).toEqual([]);
     // Pagamento parcial: continua disponível pelo saldo.
     expect((await payDirect(s.admin, ric.id, 40000)).status).toBe(200);

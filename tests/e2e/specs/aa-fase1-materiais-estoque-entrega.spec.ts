@@ -43,7 +43,7 @@ test('materiais necessários: lista inline, flags independentes, custo e aviso',
   await row.getByTestId('os-material-purchased').check();
   await expect(row.getByTestId('os-material-purchased')).toBeChecked();
   await expect(row.getByTestId('os-material-available')).not.toBeChecked();
-  await expect(page.getByTestId('os-material-summary')).toContainText('1 comprado(s)');
+  await expect(page.getByTestId('os-material-summary')).toContainText('1 comprado');
   await expect(page.getByTestId('os-material-notice')).toBeVisible();
   await row.getByTestId('os-material-available').check();
   await expect(page.getByTestId('os-material-notice')).toHaveCount(0);

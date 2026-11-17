@@ -13,7 +13,9 @@ import {
   Trash2,
   UserPlus,
   Users,
+  MoreHorizontal,
 } from 'lucide-react';
+import clsx from 'clsx';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -46,7 +48,7 @@ export function EmployeesPage() {
     <>
       <PageHeader
         title="Funcionários"
-        description="Equipe da oficina e do escritório, com funções, permissões e formas de acesso."
+        description="Equipe da oficina e do escritório."
         actions={
           manage && (
             <Button
@@ -128,32 +130,54 @@ export function EmployeesPage() {
                     >
                       PIN
                     </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      icon={<MonitorCog className="size-3.5" aria-hidden />}
-                      onClick={() => setAction({ kind: 'panel', employee: e })}
-                    >
-                      Painel
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      icon={<Camera className="size-3.5" aria-hidden />}
-                      onClick={() => setAction({ kind: 'photo', employee: e })}
-                    >
-                      Foto
-                    </Button>
-                    {e.userId !== me.data?.user.id && (
-                      <Button
-                        size="sm"
-                        variant={e.active ? 'outline-danger' : 'secondary'}
-                        icon={<Power className="size-3.5" aria-hidden />}
-                        onClick={() => setAction({ kind: 'status', employee: e })}
+                    {/* Melhoria 165: o resto vai num menu, sem o vermelho repetido em todo cartão. */}
+                    <details className="relative">
+                      <summary
+                        className="inline-flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-line-strong bg-surface px-3 text-sm font-semibold text-ink hover:bg-subtle"
+                        aria-label={`Mais opções de ${e.displayName}`}
                       >
-                        {e.active ? 'Desativar' : 'Reativar'}
-                      </Button>
-                    )}
+                        <MoreHorizontal className="size-4" aria-hidden /> Mais
+                      </summary>
+                      <div className="absolute left-0 z-20 mt-1 grid min-w-44 gap-0.5 rounded-xl border border-line bg-surface p-1 shadow-[var(--shadow-pop)]">
+                        {[
+                          {
+                            kind: 'panel' as const,
+                            label: 'Acesso ao painel',
+                            icon: <MonitorCog className="size-4" aria-hidden />,
+                          },
+                          {
+                            kind: 'photo' as const,
+                            label: 'Foto',
+                            icon: <Camera className="size-4" aria-hidden />,
+                          },
+                          ...(e.userId !== me.data?.user.id
+                            ? [
+                                {
+                                  kind: 'status' as const,
+                                  label: e.active ? 'Desativar' : 'Reativar',
+                                  icon: <Power className="size-4" aria-hidden />,
+                                },
+                              ]
+                            : []),
+                        ].map((o) => (
+                          <button
+                            key={o.kind}
+                            type="button"
+                            className={clsx(
+                              'flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-subtle',
+                              o.kind === 'status' && e.active ? 'text-danger-600' : 'text-ink',
+                            )}
+                            onClick={(ev) => {
+                              ev.currentTarget.closest('details')?.removeAttribute('open');
+                              setAction({ kind: o.kind, employee: e });
+                            }}
+                          >
+                            {o.icon}
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </details>
                   </div>
                 )}
               </Card>

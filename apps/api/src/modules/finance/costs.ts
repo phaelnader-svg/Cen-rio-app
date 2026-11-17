@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   osMaterialCostTotals,
@@ -250,7 +251,7 @@ export async function syncOsMaterialCosts(tx: Tx, actor: ActorContext, serviceOr
       entityType: 'service_order',
       entityId: serviceOrderId,
       kind: 'CUSTOS_ATUALIZADOS',
-      note: `${created.count} lançamento(s) de custo informado na OS`,
+      note: `${plural(created.count, 'lançamento', 'lançamentos')} de custo informado na OS`,
       type: EVENT_TYPES.FINANCE_COST_UPDATED,
     });
   return created.count;
@@ -372,7 +373,7 @@ async function syncFormalMaterialCosts(tx: Tx, actor: ActorContext, serviceOrder
     entityType: 'service_order',
     entityId: serviceOrderId,
     kind: 'CUSTOS_ATUALIZADOS',
-    note: `${fresh.length} lançamento(s) de material`,
+    note: `${plural(fresh.length, 'lançamento', 'lançamentos')} de material`,
     type: EVENT_TYPES.FINANCE_COST_UPDATED,
   });
   return fresh.length;

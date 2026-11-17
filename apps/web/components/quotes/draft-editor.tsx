@@ -1,5 +1,6 @@
 'use client';
 
+import { pluralWord } from '@cenario/shared';
 import {
   QUOTE_DELIVERY_DAYS,
   QUOTE_MATERIAL_CATEGORIES,
@@ -162,13 +163,12 @@ export function QuoteEditor({
             guardado neste navegador até ser salvo.
           </p>
         </div>
-        <Button
-          variant="outline-danger"
-          onClick={onClear}
-          icon={<X className="size-4" aria-hidden />}
-        >
-          {api.editing ? 'Cancelar edição' : 'Limpar orçamento'}
-        </Button>
+        {/* Melhoria 168: nada destrutivo antes do primeiro campo; "Limpar" fica no fim. */}
+        {api.editing && (
+          <Button variant="secondary" onClick={onClear} icon={<X className="size-4" aria-hidden />}>
+            Cancelar edição
+          </Button>
+        )}
       </div>
       {api.editing && (
         <Alert tone="info">
@@ -528,6 +528,18 @@ export function QuoteEditor({
             Visualizar proposta comercial
           </Button>
         </FormActions>
+        {!api.editing && (
+          <div className="mt-6 border-t border-line pt-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClear}
+              icon={<X className="size-4" aria-hidden />}
+            >
+              Limpar orçamento
+            </Button>
+          </div>
+        )}
       </FormSection>
     </div>
   );
@@ -687,7 +699,7 @@ function MaterialsSection({ api, catalog }: { api: DraftApi; catalog: QuoteCatal
                     <p className="text-sm text-ink-muted">
                       {qtyText(i.qty)}{' '}
                       {foam
-                        ? `peça(s) — ${qtyText(i.heightCm)} × ${qtyText(i.widthCm)} × ${qtyText(i.lengthCm)} cm • ${qtyText(foamVolumeM3(i.heightCm, i.widthCm, i.lengthCm, i.qty), 6)} m³`
+                        ? `${pluralWord(i.qty, 'peça', 'peças')} — ${qtyText(i.heightCm)} × ${qtyText(i.widthCm)} × ${qtyText(i.lengthCm)} cm • ${qtyText(foamVolumeM3(i.heightCm, i.widthCm, i.lengthCm, i.qty), 6)} m³`
                         : (m?.unit ?? 'un')}
                     </p>
                   </div>

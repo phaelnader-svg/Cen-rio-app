@@ -20,8 +20,9 @@ export function NewOrderPage() {
     <>
       <BackLink href="/painel/pedidos" label="Pedidos comerciais" />
       <PageHeader
-        title="Novo pedido comercial"
-        description="Registre o serviço aprovado pelo cliente. A OS técnica será criada após a chegada da peça à oficina."
+        title="Novo pedido"
+        description="Registre o serviço aprovado pelo cliente."
+        help="Registre o serviço aprovado pelo cliente. A OS técnica será criada após a chegada da peça à oficina."
       />
       <OrderForm
         initialCustomer={

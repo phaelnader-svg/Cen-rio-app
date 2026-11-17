@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type {
   AttachmentEntity,
   CheckResult,
@@ -370,7 +371,7 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
       <section className="flex flex-wrap items-center gap-4">
         {i.can.check && <PhotoButton entityType="QUALITY_INSPECTION" entityId={i.id} />}
         <span className="text-base text-ink-muted" data-testid="inspection-photos">
-          {i.photos} foto(s)
+          {plural(i.photos, 'foto', 'fotos')}
         </span>
       </section>
 
@@ -452,8 +453,8 @@ export function InspectionDetail({ id, onDone }: { id: string; onDone: () => voi
               </div>
               {unchecked > 0 && (
                 <p className="text-base text-ink-muted">
-                  Faltam {unchecked} item(ns) obrigatório(s) — confira um a um ou use “Tudo
-                  conforme”.
+                  Faltam {plural(unchecked, 'item obrigatório', 'itens obrigatórios')} — confira um
+                  a um ou use “Tudo conforme”.
                 </p>
               )}
               {defects.length === 0 && (

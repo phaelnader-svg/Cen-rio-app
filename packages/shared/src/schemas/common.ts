@@ -1,3 +1,4 @@
+import { plural } from '../text';
 import { z } from 'zod';
 
 export const idSchema = z.guid({ message: 'Identificador inválido.' });
@@ -11,7 +12,7 @@ export const trimmed = (min: number, max: number, label: string) =>
   z
     .string({ message: `${label} é obrigatório.` })
     .trim()
-    .min(min, { message: `${label} deve ter ao menos ${min} caractere(s).` })
+    .min(min, { message: `${label} deve ter ao menos ${plural(min, 'caractere', 'caracteres')}.` })
     .max(max, { message: `${label} deve ter no máximo ${max} caracteres.` });
 
 export const optionalText = (max: number) =>

@@ -77,7 +77,7 @@ async function staleReason(db: Db, r: Row): Promise<string | null> {
     const p = r.payable;
     if (p.status === 'CANCELADO') return 'O valor foi cancelado.';
     if (p.professionalUserId !== r.beneficiaryUserId)
-      return 'O valor não é mais deste profissional.';
+      return 'O valor não é mais deste funcionário.';
     if (p.item?.upholstererUserId && p.item.upholstererUserId !== r.beneficiaryUserId)
       return 'O titular da peça mudou.';
     const review = await openReviewOf(db, p);
@@ -342,7 +342,7 @@ export async function createRequest(
     'financeiro.ajustes',
     'VALOR_SOLICITADO',
     `VALOR:${r.id}`,
-    `${code}: um profissional pediu alteração de valor. Analise em Financeiro → Fechamento semanal.`,
+    `${code}: um funcionário pediu alteração de valor. Analise em Financeiro → Fechamento semanal.`,
   );
   return r;
 }

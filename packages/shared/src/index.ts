@@ -58,3 +58,4 @@ export * from './billing';
 export * from './schemas/account';
 export * from './melhorias';
 export * from './holidays';
+export * from './text';

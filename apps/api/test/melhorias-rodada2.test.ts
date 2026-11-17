@@ -130,6 +130,8 @@ describe('Orçamento: situação, lembrete, funil e link do cliente', () => {
     // O link mostra a mesma proposta do painel: telefone do cliente e opção a prazo, nada de custo.
     expect(pub).toHaveProperty('customerPhone');
     expect(pub).toHaveProperty('paymentOptionName');
+    // Melhoria 141: os textos da proposta gravados no orçamento chegam ao link do cliente.
+    expect(pub.texts).toMatchObject({ title: expect.any(String), intro: expect.any(String) });
     expect(JSON.stringify(pub)).not.toContain('costCents');
     expect(JSON.stringify(pub)).not.toContain('rateBps');
     expect(JSON.stringify(pub)).not.toContain('profitCents');

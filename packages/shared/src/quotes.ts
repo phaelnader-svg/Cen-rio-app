@@ -166,6 +166,10 @@ export interface QuoteSettingsDto {
   companyName: string;
   companyNameOverride: string | null;
   logoDataUrl: string | null;
+  /** Melhoria 141: textos da proposta como a empresa escreveu (nulo = padrão do sistema). */
+  proposalTitle: string | null;
+  proposalIntro: string | null;
+  proposalThanks: string | null;
   /** Número que o próximo orçamento salvo vai receber (a empresa pode adiantar a numeração). */
   nextNumber: number;
   version: number;
@@ -286,6 +290,8 @@ export interface PublicQuoteDto {
   approvedAt: string | null;
   /** Telefone de contato da empresa (WhatsApp), quando cadastrado. */
   companyPhone: string | null;
+  /** Melhoria 141: textos da proposta gravados no orçamento (nulo nos antigos = padrões). */
+  texts: ProposalTexts | null;
 }
 
 export interface QuoteSnapshotLine {
@@ -300,10 +306,34 @@ export interface QuoteSnapshotLine {
   costCents: number;
 }
 
+/**
+ * Melhoria 141: textos fixos da proposta, mais diretos (a empresa pode trocar na Base de dados).
+ * `{nome}` no texto de abertura vira o primeiro nome do cliente.
+ */
+export const DEFAULT_PROPOSAL_TEXTS = {
+  title: 'Proposta para o seu estofado',
+  intro: 'Olá, {nome}! Segue o orçamento do serviço que conversamos, com o valor e as condições.',
+  thanks:
+    'Obrigado pela preferência. Qualquer dúvida sobre o serviço, o tecido ou o prazo, é só chamar.',
+} as const;
+export type ProposalTexts = { title: string; intro: string; thanks: string };
+
+export function proposalTexts(
+  s: Partial<Pick<QuoteSettingsDto, 'proposalTitle' | 'proposalIntro' | 'proposalThanks'>>,
+): ProposalTexts {
+  return {
+    title: s.proposalTitle || DEFAULT_PROPOSAL_TEXTS.title,
+    intro: s.proposalIntro || DEFAULT_PROPOSAL_TEXTS.intro,
+    thanks: s.proposalThanks || DEFAULT_PROPOSAL_TEXTS.thanks,
+  };
+}
+
 /** Cópia completa do orçamento no momento em que foi salvo (a proposta nunca muda depois). */
 export interface QuoteSnapshot {
   companyName: string;
   logoDataUrl: string | null;
+  /** Textos da proposta no momento em que foi salva (ausente nos orçamentos antigos). */
+  texts?: ProposalTexts;
   issuedAt: string;
   customerName: string;
   phone: string;
@@ -425,6 +455,9 @@ export const quoteSettingsUpdateSchema = z.object({
   version: z.number().int().min(1),
   taxRateBps: bps.nullable().optional(),
   companyNameOverride: z.string().trim().max(90).nullable().optional(),
+  proposalTitle: z.string().trim().max(120).nullable().optional(),
+  proposalIntro: z.string().trim().max(400).nullable().optional(),
+  proposalThanks: z.string().trim().max(600).nullable().optional(),
   nextNumber: z
     .number({ message: 'Informe o número do próximo orçamento.' })
     .int({ message: 'Informe um número inteiro.' })
@@ -648,7 +681,8 @@ const toCents = (reais: number) => Math.round(reais * 100);
 export function buildQuoteSnapshot(
   d: QuoteDraft,
   catalog: readonly QuoteCatalogItemDto[],
-  settings: Pick<QuoteSettingsDto, 'taxRateBps' | 'companyName' | 'logoDataUrl'>,
+  settings: Pick<QuoteSettingsDto, 'taxRateBps' | 'companyName' | 'logoDataUrl'> &
+    Partial<Pick<QuoteSettingsDto, 'proposalTitle' | 'proposalIntro' | 'proposalThanks'>>,
   issuedAt: Date,
 ): QuoteSnapshot {
   const t = calcQuote(d, catalog, settings.taxRateBps);
@@ -679,6 +713,7 @@ export function buildQuoteSnapshot(
   return {
     companyName: settings.companyName,
     logoDataUrl: settings.logoDataUrl,
+    texts: proposalTexts(settings),
     issuedAt: issuedAt.toISOString(),
     customerName: d.customerName.trim(),
     phone: d.phone.trim(),

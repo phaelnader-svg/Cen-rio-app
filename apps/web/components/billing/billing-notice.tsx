@@ -2,7 +2,7 @@
 
 import type { MeDto } from '@cenario/shared';
 import { useMutation } from '@tanstack/react-query';
-import { CreditCard, Lock, MailCheck } from 'lucide-react';
+import { CreditCard, Lock } from 'lucide-react';
 import Link from 'next/link';
 import { Alert } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
@@ -23,49 +23,56 @@ export function BillingNotices({ me, canManage }: { me: MeDto; canManage: boolea
     onError: (e) => toast('danger', errorMessage(e)),
   });
   const sub = me.company.subscription;
-  const notices: React.ReactNode[] = [];
+  // Melhoria 140: um aviso só no topo, com uma linha por assunto. Fica laranja quando urgente
+  // (mensalidade em aberto ou teste grátis com 2 dias ou menos).
+  const lines: React.ReactNode[] = [];
+  let urgent = false;
 
   if (canManage && sub.billingEnabled && sub.status === 'TESTE' && sub.blocksAt) {
     const d = daysUntil(sub.blocksAt);
-    notices.push(
-      <Alert key="teste" tone="info">
+    if (d <= 2) urgent = true;
+    lines.push(
+      <p key="teste">
         Teste grátis: {d === 0 ? 'termina hoje' : `faltam ${d} ${d === 1 ? 'dia' : 'dias'}`}.{' '}
         <Link href={SUBSCRIPTION_PATH} className="font-semibold underline underline-offset-4">
           Escolher o plano
         </Link>
-      </Alert>,
+      </p>,
     );
   }
   if (canManage && sub.billingEnabled && sub.status === 'ATRASADA') {
-    notices.push(
-      <Alert key="atrasada" tone="warn">
+    urgent = true;
+    lines.push(
+      <p key="atrasada">
         A mensalidade está em aberto. O sistema bloqueia em {formatDay(sub.blocksAt)}.{' '}
         <Link href={SUBSCRIPTION_PATH} className="font-semibold underline underline-offset-4">
           Pagar agora
         </Link>
-      </Alert>,
+      </p>,
     );
   }
   if (me.user.email && !me.user.emailConfirmed) {
-    notices.push(
-      <Alert key="email" tone="info">
-        <span className="inline-flex flex-wrap items-center gap-x-1">
-          <MailCheck className="size-4" aria-hidden /> Confirme o seu e-mail pelo link que mandamos
-          para {me.user.email}. É por ele que você recupera a senha.{' '}
-          <button
-            type="button"
-            className="font-semibold underline underline-offset-4"
-            disabled={resend.isPending}
-            onClick={() => resend.mutate()}
-          >
-            Mandar de novo
-          </button>
-        </span>
-      </Alert>,
+    lines.push(
+      <p key="email">
+        Confirme o seu e-mail pelo link que mandamos para {me.user.email}. É por ele que você
+        recupera a senha.{' '}
+        <button
+          type="button"
+          className="font-semibold underline underline-offset-4"
+          disabled={resend.isPending}
+          onClick={() => resend.mutate()}
+        >
+          Mandar de novo
+        </button>
+      </p>,
     );
   }
-  if (notices.length === 0) return null;
-  return <div className="mb-6 space-y-2">{notices}</div>;
+  if (lines.length === 0) return null;
+  return (
+    <Alert tone={urgent ? 'warn' : 'info'} className="mb-6">
+      <div className="space-y-1">{lines}</div>
+    </Alert>
+  );
 }
 
 /** Assinatura vencida: no lugar da tela, o aviso com o caminho para pagar. */

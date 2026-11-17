@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { EligibilityRule, Priority, ServiceOrderDto, ServiceType } from '@cenario/shared';
 import {
   ELIGIBILITY_LABEL,
@@ -71,10 +72,7 @@ export function NewServiceOrderPage() {
   if (!orderId)
     return (
       <>
-        <PageHeader
-          title="Nova OS técnica"
-          description="A OS técnica nasce de um pedido com peças já recebidas na oficina."
-        />
+        <PageHeader title="Nova OS técnica" description="Crie a OS das peças que já chegaram." />
         <Alert tone="info">
           Abra um pedido com peças recebidas e use “Criar OS técnica”.{' '}
           <Link href="/painel/pedidos" className="font-semibold text-brand-700 hover:underline">
@@ -335,7 +333,7 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
                   >
                     {usable.map((i) => (
                       <option key={i.orderItemId} value={i.orderItemId}>
-                        {i.description} ({i.available} disponível(is))
+                        {i.description} ({plural(i.available, 'disponível', 'disponíveis')})
                       </option>
                     ))}
                   </SelectField>
@@ -487,13 +485,13 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
                 <SummaryRow
                   key={s.code}
                   label={`${s.code} (já criada)`}
-                  hint={`${s.pieces} peça(s)`}
+                  hint={`${plural(s.pieces, 'peça', 'peças')}`}
                   value={money(s.revenueCents)}
                 />
               ))}
               <SummaryRow
                 label="Esta OS (estimativa)"
-                hint={`${pieces} peça(s) — proporcional às peças do pedido`}
+                hint={`${plural(pieces, 'peça', 'peças')} — proporcional às peças do pedido`}
                 value={projected === null ? '—' : money(projected)}
                 strong
                 testId="so-projected"
@@ -542,7 +540,7 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
         step={5}
         title="Mão de obra"
         id="os-mao-de-obra"
-        description="Valor combinado com o tapeceiro titular, por peça (uma obrigação por profissional por peça). Nada é pago agora: a obrigação só fica devida pela regra de liberação."
+        description="Valor combinado com o tapeceiro titular, por peça (uma obrigação por funcionário por peça). Nada é pago agora: a obrigação só fica devida pela regra de liberação."
       >
         {!perms.labor ? (
           <Alert tone="info">

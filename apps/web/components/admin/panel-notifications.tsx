@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { NotificationDto } from '@cenario/shared';
 import clsx from 'clsx';
 import { Bell, CheckCheck, MessageCircle } from 'lucide-react';
@@ -44,7 +45,7 @@ export function PanelNotifications() {
         type="button"
         onClick={() => setOpen(true)}
         data-testid="panel-notifications"
-        aria-label={`Avisos: ${unread} não lido(s)`}
+        aria-label={`Avisos: ${plural(unread, 'não lido', 'não lidos')}`}
         className="relative rounded-lg p-2 text-ink-soft hover:bg-subtle"
       >
         <Bell className="size-5" aria-hidden />

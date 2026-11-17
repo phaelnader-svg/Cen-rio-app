@@ -1,5 +1,6 @@
 'use client';
 
+import { plural, pluralWord } from '@cenario/shared';
 import type { Permission } from '@cenario/shared';
 
 import {
@@ -13,7 +14,6 @@ import {
   ArrowRight,
   CheckCircle,
   MonitorSmartphone,
-  RadioTower,
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -24,7 +24,6 @@ import { todayIso, useOrders, usePickups } from '@/lib/commercial';
 import { useAttention } from '@/lib/issues';
 import { money } from '@/lib/finance';
 import { useDevices, useEmployees, useOverview, useRecentAudit, useSessions } from '@/lib/queries';
-import { useRealtime } from '@/lib/realtime';
 import { TodayPanel } from './today-panel';
 
 function greeting(timeZone: string) {
@@ -71,7 +70,6 @@ function Stat({
 export function Dashboard() {
   const me = useMe();
   const can = useCan();
-  const realtime = useRealtime();
   const employees = useEmployees(can('funcionarios.ver'));
   const devices = useDevices(can('dispositivos.ver'));
   const sessions = useSessions(can('sessoes.ver'));
@@ -79,7 +77,6 @@ export function Dashboard() {
   const today = todayIso(me.data?.company.timezone);
   const pickupsToday = usePickups({ from: today, to: today }, can('retiradas.ver'));
   const awaiting = useOrders({ status: 'AGUARDANDO_RETIRADA' }, can('pedidos.ver'));
-  const partial = useOrders({ status: 'RECEBIDO_PARCIAL' }, can('pedidos.ver'));
   // Fase 10: visão do gestor pelas fontes canônicas (seção sem permissão = null, nunca zero).
   const overview = useOverview(
     can('os.ver') || can('entregas.ver') || can('entregas.gerenciar') || can('financeiro.ver'),
@@ -142,63 +139,41 @@ export function Dashboard() {
         </div>
       </div>
 
-      <TodayPanel />
-
-      {overview.data?.attention && (
-        <Link
-          href="/painel/atencao"
-          className="block rounded-2xl"
-          data-testid="dashboard-attention"
-        >
-          <Card className="flex flex-wrap items-center gap-x-6 gap-y-1 p-5 transition-shadow hover:shadow-[var(--shadow-pop)]">
-            <span className="flex items-center gap-2 text-sm font-medium text-ink-muted">
-              <AlarmClock className="size-4" aria-hidden />
-              Central de atenção
-            </span>
-            {/* F10-21i: o mesmo total da Central (mesma fonte, mesmo recorte de permissões). */}
-            <span className="text-lg font-semibold tabular-nums">
-              <span data-testid="dashboard-attention-total">{overview.data.attention.total}</span>{' '}
-              pendência(s) ·{' '}
-              <span data-testid="dashboard-attention-critical">
-                {overview.data.attention.critical}
-              </span>{' '}
-              crítica(s) · {overview.data.attention.action} pedem ação
-            </span>
-          </Card>
-        </Link>
-      )}
-
-      {deadlinesVisible && (
-        <Link
-          href="/painel/atencao?type=PRAZO_OS"
-          className="block rounded-2xl"
-          data-testid="dashboard-deadlines"
-        >
-          <Card className="flex flex-wrap items-center gap-x-6 gap-y-1 p-5 transition-shadow hover:shadow-[var(--shadow-pop)]">
-            <span className="flex items-center gap-2 text-sm font-medium text-ink-muted">
-              <span className="rounded-lg bg-brand-50 p-1.5 text-brand-700">
-                <AlarmClock className="size-4" aria-hidden />
-              </span>
-              Prazos
-            </span>
-            <span className="text-lg font-semibold tabular-nums">
-              <span data-testid="dashboard-deadlines-late">
+      {/* Melhoria 138: Central de atenção e Prazos entram no cartão Pendências do "Hoje",
+          em vez de faixas que repetiam o mesmo número. */}
+      <TodayPanel
+        deadlines={
+          deadlinesVisible ? (
+            <Link
+              href="/painel/atencao?type=PRAZO_OS"
+              className="block text-sm text-ink-soft hover:underline"
+              data-testid="dashboard-deadlines"
+            >
+              Prazos de OS:{' '}
+              <span
+                className="font-semibold text-ink tabular-nums"
+                data-testid="dashboard-deadlines-late"
+              >
                 {osDeadlines.data?.counts.CRITICO ?? '—'}
               </span>{' '}
-              atrasado(s) ·{' '}
-              <span data-testid="dashboard-deadlines-risk">
+              {pluralWord(osDeadlines.data?.counts.CRITICO ?? 0, 'atrasada', 'atrasadas')} ·{' '}
+              <span
+                className="font-semibold text-ink tabular-nums"
+                data-testid="dashboard-deadlines-risk"
+              >
                 {osDeadlines.data?.counts.ACAO ?? '—'}
               </span>{' '}
               em risco
-            </span>
-            {(orderDeadlines.data?.items.length ?? 0) > 0 && (
-              <span className="text-sm text-ink-muted" data-testid="dashboard-deadlines-orders">
-                {orderDeadlines.data!.items.length} pedido(s) com peça ainda não recebida
-              </span>
-            )}
-          </Card>
-        </Link>
-      )}
+              {(orderDeadlines.data?.items.length ?? 0) > 0 && (
+                <span className="block text-ink-muted" data-testid="dashboard-deadlines-orders">
+                  {plural(orderDeadlines.data!.items.length, 'pedido', 'pedidos')} com peça ainda
+                  não recebida
+                </span>
+              )}
+            </Link>
+          ) : null
+        }
+      />
 
       {(can('retiradas.ver') || can('pedidos.ver') || can('os.ver')) && (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="flow-stats">
@@ -227,13 +202,6 @@ export function Dashboard() {
                 label="Aguardando retirada"
                 value={awaiting.data?.total ?? '—'}
                 detail="pedidos sem retirada agendada"
-              />
-              <Stat
-                href="/painel/pedidos"
-                icon={<PackageCheck className="size-4" aria-hidden />}
-                label="Recebidos parcialmente"
-                value={partial.data?.total ?? '—'}
-                detail="pedidos com peças pendentes"
               />
             </>
           )}
@@ -279,14 +247,14 @@ export function Dashboard() {
               icon={<ClipboardList className="size-4" aria-hidden />}
               label="A planejar"
               value={<span data-testid="ops-to-plan">{ops.preProduction.toPlan}</span>}
-              detail={`${ops.preProduction.plannedDraft} em rascunho · ${ops.preProduction.plannedPublished} publicada(s) · ${ops.preProduction.awaitingCondition} aguardando condição`}
+              detail={`${ops.preProduction.plannedDraft} em rascunho · ${plural(ops.preProduction.plannedPublished, 'publicada', 'publicadas')} · ${ops.preProduction.awaitingCondition} aguardando condição`}
             />
             <Stat
               href="/painel/producao?status=BLOQUEADA"
               icon={<AlarmClock className="size-4" aria-hidden />}
               label="Bloqueios"
               value={<span data-testid="ops-blocked-tasks">{ops.blockedTasks}</span>}
-              detail={`tarefa(s) de produção bloqueada(s) · ${ops.pieces.blocked} peça(s) com expedição bloqueada · ${ops.pieces.inTransit} em trânsito`}
+              detail={`${pluralWord(ops.blockedTasks, 'tarefa bloqueada', 'tarefas bloqueadas')} · ${plural(ops.pieces.blocked, 'peça', 'peças')} com expedição bloqueada · ${ops.pieces.inTransit} em trânsito`}
             />
             <Stat
               href="/painel/entregas?tab=ready"
@@ -295,8 +263,8 @@ export function Dashboard() {
               value={<span data-testid="ops-ready">{ops.pieces.ready}</span>}
               detail={
                 dl
-                  ? `${dl.upcoming} entrega(s) nos próximos 2 dias${dl.frustrated ? ` · ${dl.frustrated} frustrada(s)` : ''}`
-                  : `${ops.pieces.scheduled} agendada(s)`
+                  ? `${plural(dl.upcoming, 'entrega', 'entregas')} nos próximos 2 dias${dl.frustrated ? ` · ${plural(dl.frustrated, 'frustrada', 'frustradas')}` : ''}`
+                  : `${plural(ops.pieces.scheduled, 'agendada', 'agendadas')}`
               }
             />
           </div>
@@ -314,7 +282,7 @@ export function Dashboard() {
               value={
                 <span data-testid="dl-upcoming">{dl.upcoming + (dl.pickups?.upcoming ?? 0)}</span>
               }
-              detail={`${dl.upcoming} entrega(s)${dl.pickups ? ` · ${dl.pickups.upcoming} retirada(s)` : ''}`}
+              detail={`${plural(dl.upcoming, 'entrega', 'entregas')}${dl.pickups ? ` · ${plural(dl.pickups.upcoming, 'retirada', 'retiradas')}` : ''}`}
             />
             {dl.pickups && (
               <Stat
@@ -345,7 +313,7 @@ export function Dashboard() {
               icon={<FileSignature className="size-4" aria-hidden />}
               label="A receber"
               value={<span data-testid="fin-open">{money(fin.receivables.openCents)}</span>}
-              detail={`${money(fin.receivables.overdueCents)} vencido (${fin.receivables.overdueCount} cobrança(s))`}
+              detail={`${money(fin.receivables.overdueCents)} vencido (${plural(fin.receivables.overdueCount, 'cobrança', 'cobranças')})`}
             />
             <Stat
               href="/painel/financeiro?tab=pagar"
@@ -366,7 +334,7 @@ export function Dashboard() {
               icon={<CheckCircle className="size-4" aria-hidden />}
               label="Pago na semana"
               value={<span data-testid="fin-paid">{money(fin.paid.paidInWeekCents)}</span>}
-              detail="aos profissionais (tapeçaria e logística), estornos descontados"
+              detail="aos funcionários (tapeçaria e logística), estornos descontados"
             />
             {/* F10-14: cada contagem leva à tela onde ESSES itens aparecem. */}
             <Stat
@@ -378,7 +346,7 @@ export function Dashboard() {
                   {fin.decisions.valueRequests + fin.decisions.laborReviews}
                 </span>
               }
-              detail={`${fin.decisions.valueRequests} negociação(ões) · ${fin.decisions.laborReviews} revisão(ões)`}
+              detail={`${plural(fin.decisions.valueRequests, 'negociação', 'negociações')} · ${plural(fin.decisions.laborReviews, 'revisão', 'revisões')}`}
             />
             <Stat
               href="/painel/financeiro?tab=receitas"
@@ -416,7 +384,9 @@ export function Dashboard() {
             icon={<MonitorSmartphone className="size-4" aria-hidden />}
             label="Tablets vinculados"
             value={devices.data ? activeDevices.length : '—'}
-            detail={devices.data ? `${online} conectado(s) agora` : 'Carregando…'}
+            detail={
+              devices.data ? `${plural(online, 'conectado', 'conectados')} agora` : 'Carregando…'
+            }
           />
         )}
         {can('sessoes.ver') && (
@@ -428,19 +398,6 @@ export function Dashboard() {
             detail={sessions.data ? `${tabletSessions} em tablets · ${webSessions} no painel` : ''}
           />
         )}
-        <Stat
-          href={can('sincronizacao.diagnosticar') ? '/painel/sincronizacao' : undefined}
-          icon={<RadioTower className="size-4" aria-hidden />}
-          label="Tempo real"
-          value={
-            realtime.status === 'online' ? (
-              <span className="text-ok-600">Ativo</span>
-            ) : (
-              <span className="text-warn-600">Reconectando</span>
-            )
-          }
-          detail={`Último evento nº ${realtime.lastSeq ?? '—'}`}
-        />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-5">

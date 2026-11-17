@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   ARRIVAL_KIND_LABEL,
   ATTENDANCE_ACTION_LABEL,
@@ -385,7 +386,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
           action: 'attendance.departed',
           entityType: 'attendance',
           entityId: row.id,
-          summary: `${e.displayName} encerrou o expediente às ${cfg.now}${early ? ' (saída antecipada)' : ''}; ${running.length} tarefa(s) pausada(s), ${pending.length} sem andamento.`,
+          summary: `${e.displayName} encerrou o expediente às ${cfg.now}${early ? ' (saída antecipada)' : ''}; ${plural(running.length, 'tarefa pausada', 'tarefas pausadas')}, ${pending.length} sem andamento.`,
         });
         await attendanceEvent(tx, actor, {
           type: EVENT_TYPES.ATTENDANCE_DEPARTED,
@@ -405,7 +406,7 @@ export async function attendanceRoutes(app: FastifyInstance) {
             userId,
             kind: 'EXPEDIENTE_ENCERRADO',
             dedupeKey: `SAIDA:${row.id}`,
-            body: `Expediente encerrado às ${cfg.now}${running.length ? `; ${running.length} tarefa(s) pausada(s) com o andamento preservado` : ''}.`,
+            body: `Expediente encerrado às ${cfg.now}${running.length ? `; ${plural(running.length, 'tarefa pausada', 'tarefas pausadas')} com o andamento preservado` : ''}.`,
             includeActor: true,
           },
         ]);

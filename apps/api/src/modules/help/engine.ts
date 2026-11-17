@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   CANDIDATE_REASONS,
   EVENT_TYPES,
@@ -209,8 +210,10 @@ export async function evaluateCandidates(
       notes: [
         ...notes,
         ...(specialty ? ['Especialidade preservada (cabeceiras/reparos/inspeção)'] : []),
-        ...(released.length ? [`${released.length} tarefa(s) liberada(s) aguardando`] : []),
-        ...(paused ? [`${paused} tarefa(s) pausada(s)`] : []),
+        ...(released.length
+          ? [`${plural(released.length, 'tarefa liberada', 'tarefas liberadas')} aguardando`]
+          : []),
+        ...(paused ? [`${plural(paused, 'tarefa pausada', 'tarefas pausadas')}`] : []),
       ],
     });
   }

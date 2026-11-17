@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { PickupDto } from '@cenario/shared';
 import { PICKUP_STATUSES, PICKUP_STATUS_LABEL } from '@cenario/shared';
 import clsx from 'clsx';
@@ -85,7 +86,12 @@ function PickupLine({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
           {p.address
             ? `${p.address.street}, ${p.address.number} · ${p.address.city}`
             : 'Sem endereço'}{' '}
-          · {p.items.reduce((a, i) => a + i.quantity, 0)} peça(s)
+          ·{' '}
+          {plural(
+            p.items.reduce((a, i) => a + i.quantity, 0),
+            'peça',
+            'peças',
+          )}
         </p>
       </div>
       <span className="text-sm text-ink-soft">
@@ -120,7 +126,8 @@ export function PickupsPage() {
     <>
       <PageHeader
         title="Retiradas"
-        description="Solicitações e agenda de retiradas. As confirmações da logística são registradas manualmente nesta fase."
+        description="Agenda de retiradas na casa do cliente."
+        help="Solicitações e agenda de retiradas. As confirmações da logística são registradas manualmente nesta fase."
         actions={
           <div
             className="inline-flex rounded-xl border border-line-strong bg-surface p-1"
@@ -149,7 +156,7 @@ export function PickupsPage() {
         }
       />
       <p className="mb-4 text-sm text-ink-muted">
-        Para solicitar uma retirada, abra o pedido comercial e use “Solicitar retirada”.
+        Para solicitar uma retirada, abra o pedido e use “Solicitar retirada”.
       </p>
 
       {view === 'agenda' ? (

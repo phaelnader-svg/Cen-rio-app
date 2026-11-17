@@ -662,7 +662,7 @@ export function reviewResolutionProblem(
   lines: readonly { professionalUserId: string; amountCents: number }[],
   existing: readonly { professionalUserId: string; dueCents: number; paidCents: number }[],
 ): string | null {
-  if (!lines.length) return 'Informe o valor devido a cada profissional.';
+  if (!lines.length) return 'Informe o valor devido a cada funcionário.';
   const seen = new Set<string>();
   for (const l of lines) {
     if (seen.has(l.professionalUserId)) return 'Cada profissional aparece uma única vez.';
@@ -672,13 +672,13 @@ export function reviewResolutionProblem(
   }
   for (const e of existing) {
     const l = lines.find((x) => x.professionalUserId === e.professionalUserId);
-    if (!l) return 'Inclua todos os profissionais que já têm valor combinado nesta peça/OS.';
+    if (!l) return 'Inclua todos os funcionários que já têm valor combinado nesta peça/OS.';
     if (l.amountCents < e.paidCents)
       return `O valor devido não pode ficar abaixo do já pago (${formatCents(e.paidCents)}).`;
   }
   for (const l of lines)
     if (!existing.some((e) => e.professionalUserId === l.professionalUserId) && l.amountCents === 0)
-      return 'Novo profissional só com valor maior que zero.';
+      return 'Novo funcionário só com valor maior que zero.';
   return null;
 }
 

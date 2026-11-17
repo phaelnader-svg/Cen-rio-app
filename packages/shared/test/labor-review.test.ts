@@ -71,7 +71,7 @@ describe('Evolução Fase 5 — resolução da revisão financeira', () => {
         ],
         existing,
       ),
-    ).toMatch(/Novo profissional/);
+    ).toMatch(/Novo funcionário/);
     expect(reviewResolutionProblem([], existing)).toMatch(/Informe/);
   });
 });

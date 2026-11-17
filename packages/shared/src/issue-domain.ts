@@ -72,13 +72,14 @@ export function initialIssuePriority(
 
 // ─────────────────────────── Central de atenção ───────────────────────────
 
-export const ATTENTION_CATEGORIES = ['CRITICO', 'ATENCAO', 'ACAO', 'INFO'] as const;
+// Melhoria 162: na ordem da urgência (vermelho, laranja, cinza).
+export const ATTENTION_CATEGORIES = ['CRITICO', 'ACAO', 'ATENCAO', 'INFO'] as const;
 export type AttentionCategory = (typeof ATTENTION_CATEGORIES)[number];
 export const ATTENTION_CATEGORY_LABEL: Record<AttentionCategory, string> = {
-  CRITICO: 'Crítico',
-  ATENCAO: 'Atenção',
-  ACAO: 'Ação necessária',
-  INFO: 'Informativo',
+  CRITICO: 'Urgente',
+  ATENCAO: 'Acompanhar',
+  ACAO: 'Precisa de ação',
+  INFO: 'Para saber',
 };
 
 export const ATTENTION_TYPES = [

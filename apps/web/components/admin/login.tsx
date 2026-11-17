@@ -12,6 +12,7 @@ import { Field, Input } from '@/components/ui/field';
 import { Alert } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
 import { Honeypot, Turnstile, useSignupConfig } from '@/components/account/turnstile';
+import { trialOffer } from '@/components/site/config';
 
 const REASONS: Record<string, string> = {
   'sessao-encerrada': 'Sua sessão foi encerrada. Entre novamente para continuar.',
@@ -148,22 +149,26 @@ export function AdminLogin() {
     <main className="grid min-h-dvh lg:grid-cols-[1.05fr_1fr]">
       <section className="relative hidden overflow-hidden bg-brand-800 p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <BrandMark inverted />
+        {/* Melhoria 149: a mesma voz da landing e um print do sistema no lugar do enfeite. */}
         <div className="max-w-md">
-          <p className="text-sm font-semibold tracking-[0.18em] text-bronze-100/80 uppercase">
-            Tapeçaria premium
-          </p>
-          <h2 className="mt-3 text-4xl leading-tight font-semibold tracking-tight">
-            Da aprovação à entrega, cada estofado sob controle.
+          <h2 className="text-4xl leading-tight font-semibold tracking-tight text-balance">
+            Feito dentro de uma tapeçaria, para tapeçarias.
           </h2>
-          <p className="mt-4 text-white/70">
-            Painel do gestor e tablets da oficina sincronizados em tempo real.
+          <p className="mt-4 text-white/75">
+            O tapeceiro vê o dia dele no tablet. O escritório acompanha cada serviço, do orçamento à
+            entrega.
           </p>
         </div>
-        <p className="text-xs text-white/50">Cada empresa vê só os próprios dados.</p>
-        <div
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/site/inicio.webp"
+          alt=""
           aria-hidden
-          className="pointer-events-none absolute -right-24 -bottom-24 size-96 rounded-full border-[48px] border-white/5"
+          width={1440}
+          height={900}
+          className="w-full max-w-lg rounded-xl border border-white/10 shadow-2xl"
         />
+        <p className="text-xs text-white/50">Cada empresa vê só os próprios dados.</p>
       </section>
 
       <section className="flex items-center justify-center px-5 py-12">
@@ -342,6 +347,12 @@ export function AdminLogin() {
               </Field>
               <Honeypot value={website} onChange={setWebsite} />
               <Turnstile onToken={setCaptcha} />
+              {/* Melhoria 151: a mesma promessa da landing, logo antes do botão. */}
+              {trialOffer() && (
+                <p className="text-sm font-medium text-brand-700" data-testid="signup-trial">
+                  {trialOffer()}
+                </p>
+              )}
               <Button
                 type="submit"
                 size="lg"
@@ -363,13 +374,12 @@ export function AdminLogin() {
               </p>
             </form>
           )}
-          <p className="mt-8 text-center text-sm text-ink-muted">
-            Tablet da oficina?{' '}
+          <p className="mt-8 text-center text-sm">
             <a
               href="/tablet"
               className="font-medium text-brand-700 underline-offset-4 hover:underline"
             >
-              Abrir interface de produção
+              Abrir o tablet da oficina
             </a>
           </p>
           <p className="mt-3 text-center text-sm">

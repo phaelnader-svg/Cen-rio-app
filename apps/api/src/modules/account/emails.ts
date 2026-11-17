@@ -48,7 +48,7 @@ export async function sendConfirmationEmail(
   const body = simpleEmail({
     title: 'Confirme o seu e-mail',
     paragraphs: [
-      'Bem-vindo ao Cenário Gestão! Falta só confirmar que este e-mail é seu.',
+      'Boas-vindas ao Cenário Gestão! Falta só confirmar que este e-mail é seu.',
       'É por ele que você recupera a senha e recebe os avisos da assinatura.',
     ],
     button: { label: 'Confirmar e-mail', url },

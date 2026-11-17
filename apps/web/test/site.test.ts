@@ -110,9 +110,7 @@ describe('isolamento e promessas', () => {
   });
 
   it('o plano anual é calculado a partir da mensalidade e do desconto', () => {
-    expect(annualOffer()).toBe(
-      'No plano anual, 15% de desconto: R$ 339,15 por mês, ou R$ 4.069,80 no ano.',
-    );
+    expect(annualOffer()).toBe('No anual, R$ 339,15 por mês (R$ 718,20 a menos no ano).');
     expect(annualOffer({ ...SITE, annualDiscountPct: null })).toBeNull();
     expect(annualOffer({ ...SITE, monthlyPrice: null })).toBeNull();
   });

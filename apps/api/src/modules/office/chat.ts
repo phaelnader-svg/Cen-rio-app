@@ -2,6 +2,7 @@
  * "Falar com a Cenário" — pedidos financeiros. Consultas respondem na hora; o que envia, cobra,
  * emite ou paga só PREPARA e abre a ficha/painel para revisão (nada sai sem a sua confirmação).
  */
+import { plural } from '@cenario/shared';
 import type { CommandEffect } from '@cenario/shared';
 import { registerOfficeHook } from '../game/command';
 import { orderRevenue } from '../finance/revenue';
@@ -109,7 +110,7 @@ registerOfficeHook(async (ctx, intent) => {
         effect: { kind: 'ABRIR_PAINEL', panel: 'FINANCEIRO', filter: `ENTREGAS:${date}` },
       };
     return {
-      reply: `${out.length} entrega(s) em ${br(date)}${/saldo/.test(t) ? ' com saldo a receber' : ''}.`,
+      reply: `${plural(out.length, 'entrega', 'entregas')} em ${br(date)}${/saldo/.test(t) ? ' com saldo a receber' : ''}.`,
       effect: { kind: 'LISTA', title: `Entregas de ${br(date)}`, rows: out },
     };
   }
@@ -152,7 +153,7 @@ registerOfficeHook(async (ctx, intent) => {
         effect: { kind: 'ABRIR_PAINEL', panel: 'FINANCEIRO', filter: 'PAGAR' },
       };
     return {
-      reply: `${rows.length} conta(s)${sup ? ` de "${sup}"` : ''}${until ? ` até ${br(until)}` : ''}: ${brl(total)}. ${/\bprepar|pagamento|pagar\b/.test(t) ? 'Toque numa conta para preparar o pagamento — você confere favorecido, valor, vencimento e conta de origem antes de confirmar; a autorização final é no app do banco.' : 'Toque para abrir.'}`,
+      reply: `${plural(rows.length, 'conta', 'contas')}${sup ? ` de "${sup}"` : ''}${until ? ` até ${br(until)}` : ''}: ${brl(total)}. ${/\bprepar|pagamento|pagar\b/.test(t) ? 'Toque numa conta para preparar o pagamento — você confere favorecido, valor, vencimento e conta de origem antes de confirmar; a autorização final é no app do banco.' : 'Toque para abrir.'}`,
       effect: {
         kind: 'LISTA',
         title: 'Contas a pagar',

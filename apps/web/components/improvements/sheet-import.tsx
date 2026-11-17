@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileSpreadsheet, Upload } from 'lucide-react';
 import { useState } from 'react';
@@ -194,8 +195,8 @@ function ImportDialog({
       ) : (
         <div className="space-y-4">
           <p className="text-sm text-ink-soft">
-            {body.length} linha(s) encontrada(s). Confira qual coluna da planilha corresponde a cada
-            campo.
+            {plural(body.length, 'linha encontrada', 'linhas encontradas')}. Confira qual coluna da
+            planilha corresponde a cada campo.
           </p>
           <div className="grid gap-3 sm:grid-cols-3">
             {fields.map((f) => (
@@ -269,7 +270,7 @@ function ImportDialog({
               disabled={missing.length > 0 || !body.length}
               onClick={() => send.mutate()}
             >
-              Importar {body.length} linha(s)
+              Importar {plural(body.length, 'linha', 'linhas')}
             </Button>
           </div>
         </div>

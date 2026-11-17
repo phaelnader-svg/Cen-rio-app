@@ -330,15 +330,15 @@ function describeChange(before: LayoutContent, after: LayoutContent) {
     parts.push(
       `medidas ${before.widthCm}×${before.depthCm} → ${after.widthCm}×${after.depthCm} cm`,
     );
-  const diff = (label: string, a: { id: string }[], b: { id: string }[]) => {
+  const diff = ([one, many]: [string, string], a: { id: string }[], b: { id: string }[]) => {
     const add = b.filter((x) => !a.some((y) => y.id === x.id)).length;
     const del = a.filter((x) => !b.some((y) => y.id === x.id)).length;
-    if (add) parts.push(`+${add} ${label}`);
-    if (del) parts.push(`−${del} ${label}`);
+    if (add) parts.push(`+${add} ${add === 1 ? one : many}`);
+    if (del) parts.push(`−${del} ${del === 1 ? one : many}`);
   };
-  diff('área(s)', before.areas, after.areas);
-  diff('estação(ões)', before.stations, after.stations);
-  diff('móvel(is) de estoque', before.storageUnits, after.storageUnits);
+  diff(['área', 'áreas'], before.areas, after.areas);
+  diff(['estação', 'estações'], before.stations, after.stations);
+  diff(['móvel de estoque', 'móveis de estoque'], before.storageUnits, after.storageUnits);
   if (before.doc.doors.length !== after.doc.doors.length)
     parts.push(`portas ${before.doc.doors.length} → ${after.doc.doors.length}`);
   return parts.join(', ') || 'ajustes de posição e nomes';

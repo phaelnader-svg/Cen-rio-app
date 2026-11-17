@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import { EXPENSE_CATEGORY_LABEL, SERVICE_TYPE_LABEL, type ServiceType } from '@cenario/shared';
 import { useFocusParam } from '@/lib/focus-param';
 import { Download } from 'lucide-react';
@@ -27,13 +28,13 @@ import { RevenueTab } from './revenue';
 import { WeeklyClosingTab } from './weekly-closing';
 
 const TABS = [
-  { key: 'painel', label: 'Painel' },
-  { key: 'receitas', label: 'Receitas e recebimentos' },
-  { key: 'fechamento', label: 'Fechamento semanal' },
-  { key: 'pagar', label: 'Contas a pagar' },
-  { key: 'producao', label: 'Produção e equipe' },
-  { key: 'custos', label: 'Custos e resultado por OS' },
-  { key: 'despesas', label: 'Despesas' },
+  { key: 'painel', label: 'Resumo' },
+  { key: 'receitas', label: 'A receber' },
+  { key: 'fechamento', label: 'Semana da equipe' },
+  { key: 'pagar', label: 'A pagar' },
+  { key: 'producao', label: 'Mão de obra' },
+  { key: 'custos', label: 'Por OS' },
+  { key: 'despesas', label: 'Gastos fixos' },
   { key: 'produtividade', label: 'Produtividade' },
   { key: 'relatorios', label: 'Relatórios' },
 ];
@@ -54,7 +55,8 @@ export function FinancePage() {
     <>
       <PageHeader
         title="Financeiro"
-        description="Receita por OS, recebimentos, contas a pagar, custos, mão de obra por produção, margens e indicadores. Valores apenas registrados: nenhuma transferência bancária é feita pelo sistema."
+        description="Quanto entrou, quanto saiu e quanto sobrou."
+        help="Receita por OS, recebimentos, contas a pagar, custos, mão de obra por produção, margens e indicadores. Valores apenas registrados: nenhuma transferência bancária é feita pelo sistema."
       />
       <Tabs tabs={TABS} active={tab} onChange={setTab}>
         <div className="pt-5">
@@ -83,32 +85,30 @@ function Dashboard({ period }: { period: Period }) {
   return (
     <div className="space-y-6" data-testid="finance-dashboard">
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-ink-soft">
-          Competência (o que foi vendido e realizado)
-        </h2>
+        <h2 className="mb-2 text-sm font-semibold text-ink-soft">O que foi vendido no período</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat
-            label="Faturamento contratado"
+            label="Vendido"
             value={money(d.accrual.contractedCents)}
-            hint={`${d.accrual.contractedOrders} pedido(s) no período`}
+            hint={`${plural(d.accrual.contractedOrders, 'pedido', 'pedidos')} no período`}
             testId="fin-contracted"
           />
           <Stat
-            label="Margem de contribuição"
+            label="Sobrou dos serviços"
             value={money(d.accrual.contributionMarginCents)}
-            hint={`${d.accrual.completedOrders} OS concluída(s) · receita ${money(d.accrual.revenueCompletedCents)}`}
+            hint={`${plural(d.accrual.completedOrders, 'OS concluída', 'OS concluídas')} · receita ${money(d.accrual.revenueCompletedCents)}`}
             tone={tone(d.accrual.contributionMarginCents)}
             testId="fin-margin"
           />
           <Stat
-            label="Despesas operacionais"
+            label="Gastos fixos"
             value={money(d.accrual.operationalExpensesCents)}
             hint={`Equipe fixa: ${money(d.accrual.fixedTeamCents)}`}
           />
           <Stat
-            label="Resultado gerencial estimado"
+            label="Sobrou no período"
             value={money(d.accrual.managementResultCents)}
-            hint="Margem − despesas − equipe fixa (estimativa, não é lucro contábil)"
+            hint="Sobrou dos serviços menos gastos fixos e equipe fixa. É uma estimativa, não o lucro do contador."
             tone={tone(d.accrual.managementResultCents)}
             testId="fin-result"
           />
@@ -116,7 +116,7 @@ function Dashboard({ period }: { period: Period }) {
       </section>
       <section>
         <h2 className="mb-2 text-sm font-semibold text-ink-soft">
-          Caixa (o que entrou e saiu no período)
+          Dinheiro que entrou e saiu no período
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Stat label="Recebido" value={money(d.cash.receivedCents)} testId="fin-received" />
@@ -216,7 +216,7 @@ const REPORTS: { key: string; label: string }[] = [
   { key: 'receita', label: 'Receita por período (recebida)' },
   { key: 'custos', label: 'Custos por categoria' },
   { key: 'producao', label: 'Pagamentos por produção' },
-  { key: 'despesas', label: 'Despesas' },
+  { key: 'despesas', label: 'Gastos fixos' },
   { key: 'margens', label: 'Margens' },
   { key: 'produtividade', label: 'Produtividade' },
   { key: 'retrabalhos', label: 'Retrabalhos' },

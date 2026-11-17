@@ -1,5 +1,6 @@
 'use client';
 
+import { pluralWord } from '@cenario/shared';
 import type { MeDto } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -71,8 +72,10 @@ export function TabletHome({ me }: { me: MeDto }) {
   const [leaving, setLeaving] = useState(false);
   const modules = useModules();
   const clock = useClock(me.company.timezone);
-  const color = me.employee?.color ?? '#1d4a45';
-  const canSync = me.permissions.includes('sincronizacao.diagnosticar');
+  const color = me.employee?.color ?? '#064a4b';
+  // Melhoria 157: o teste de sincronização é ferramenta do suporte, não do tapeceiro.
+  const canSync =
+    me.company.platformCompany && me.permissions.includes('sincronizacao.diagnosticar');
   // Fase 11: só os próprios valores de produção, se o gestor autorizar.
   const canSeeValues = me.permissions.includes('financeiro.producao_propria');
   const canExecute = me.permissions.includes('producao.executar');
@@ -200,7 +203,8 @@ export function TabletHome({ me }: { me: MeDto }) {
               {canExecute ? (weekly ? 'Minha semana' : 'Meu dia') : 'Início'}
               {canExecute && !weekly && todayCount !== undefined && (
                 <span className="ml-3 align-middle text-base font-normal text-ink-muted">
-                  <span data-testid="tasks-count">{todayCount}</span> tarefa(s) para hoje
+                  <span data-testid="tasks-count">{todayCount}</span>{' '}
+                  {pluralWord(todayCount, 'tarefa', 'tarefas')} para hoje
                 </span>
               )}
             </h1>
@@ -239,7 +243,7 @@ export function TabletHome({ me }: { me: MeDto }) {
                     text="Conferir peças prontas, aprovar ou reprovar."
                     count={inspectionCount}
                     countTestId="inspections-count"
-                    countLabel="inspeção(ões) aguardando"
+                    countLabel={`${pluralWord(inspectionCount ?? 0, 'inspeção aguardando', 'inspeções aguardando')}`}
                   />
                 </li>
               )}

@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { PieceReturnDto } from '@cenario/shared';
 import {
   FULFILLMENT_STAGE_LABEL,
@@ -42,7 +43,8 @@ export function ReturnsPage() {
     <>
       <PageHeader
         title="Devoluções"
-        description="Peças devolvidas ao cliente sem serviço (desistência, cancelamento) — de OS ou avulsas. O registro é confirmado quando o cliente recebe as peças."
+        description="Peças devolvidas ao cliente sem serviço."
+        help="Peças devolvidas ao cliente sem serviço (desistência, cancelamento) — de OS ou avulsas. O registro é confirmado quando o cliente recebe as peças."
         actions={
           manage && (
             <Button icon={<Plus className="size-4" />} onClick={() => setCreate(true)}>
@@ -446,8 +448,8 @@ function ReturnDetailDialog({ r, onClose }: { r: PieceReturnDto; onClose: () => 
             <ul className="list-disc space-y-0.5 pl-4">
               {r.review.laborToReview > 0 && (
                 <li>
-                  {r.review.laborToReview} valor(es) de produção com trabalho executado ou valor
-                  devido — revise em Financeiro → Produção e equipe.
+                  {plural(r.review.laborToReview, 'valor', 'valores')} de produção com trabalho
+                  executado ou valor devido — revise em Financeiro → Produção e equipe.
                 </li>
               )}
             </ul>

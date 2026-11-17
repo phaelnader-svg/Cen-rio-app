@@ -117,7 +117,7 @@ export function QrLabelButton({
         open={open}
         onClose={() => setOpen(false)}
         title="Etiquetas QR das peças"
-        description="Imprima e cole na peça. No tablet, o botão Ler etiqueta abre a tarefa da peça; no celular, a câmera abre esta O.S."
+        description="Imprima e cole na peça. No tablet, o botão Ler etiqueta abre a tarefa da peça; no celular, a câmera abre esta OS"
         size="lg"
         footer={
           <>

@@ -6,6 +6,7 @@
  * redimensionamento) e marcações no mapa (local sugerido, caminho livre, gargalos).
  * Nada é salvo aqui: o editor aplica a prévia ao rascunho, a pessoa ajusta e salva.
  */
+import { plural } from './text';
 import {
   AREA_FUNCTION_COLOR,
   AREA_FUNCTION_LABEL,
@@ -341,7 +342,7 @@ function newUpholsterer(l: LayoutContent): MestreReply {
       'O caminho do portão até a expedição continua passando sofá de frente.',
       'Depois de aplicar, vincule a bancada ao novo tapeceiro (cadastro em Funcionários).',
       spots.length > 1
-        ? `Tenho mais ${spots.length - 1} opção(ões) marcada(s) em tracejado.`
+        ? `Tenho mais ${plural(spots.length - 1, 'opção marcada', 'opções marcadas')} em tracejado.`
         : 'Só achei essa. A oficina está cheia de boas ideias.',
     ],
     suggestion: {
@@ -527,7 +528,7 @@ function moreDesks(l: LayoutContent, text: string): MestreReply {
     `Cada mesa pede uns ${(perDesk / 10000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} m² contando cadeira e corredor.`,
     resize
       ? `Na sala atual (${m(l.widthCm)} × ${m(l.depthCm)}) não cabem ${n}. Com ${m(resize.widthCm)} × ${m(resize.depthCm)} cabem — e ninguém senta no colo de ninguém.`
-      : `Cabem ${placed.length} mesa(s) na sala atual, com 90 cm para a cadeira.`,
+      : `Cabem ${plural(placed.length, 'mesa', 'mesas')} na sala atual, com 90 cm para a cadeira.`,
     'Uma mesa pode ficar vazia; depois é só colocar um agente ou uma pessoa nela.',
   ];
   if (placed.length < n)
@@ -535,7 +536,7 @@ function moreDesks(l: LayoutContent, text: string): MestreReply {
   return {
     lines,
     suggestion: {
-      title: `Encaixar ${placed.length} mesa(s)${resize ? ' em sala maior' : ''}`,
+      title: `Encaixar ${plural(placed.length, 'mesa', 'mesas')}${resize ? ' em sala maior' : ''}`,
       patch: {
         addStations: placed,
         ...(resize
@@ -718,7 +719,7 @@ function checkPassages(l: LayoutContent): MestreReply {
   const warns = problems.length - errors;
   const lines = [
     problems.length
-      ? `Achei ${errors} problema(s) sério(s) e ${warns} aperto(s). Marquei tudo no mapa.`
+      ? `Achei ${plural(errors, 'problema sério', 'problemas sérios')} e ${plural(warns, 'aperto', 'apertos')}. Marquei tudo no mapa.`
       : 'Planta sem apertos. Pode até passar um sofá de canto dançando.',
   ];
   if (l.kind === 'OFICINA')

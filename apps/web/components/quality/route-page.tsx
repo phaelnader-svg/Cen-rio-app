@@ -107,7 +107,8 @@ export function LogisticsRoutePage() {
     <>
       <PageHeader
         title="Roteiro do dia"
-        description="Retiradas e entregas do dia na ordem de execução. A ordem é operacional: mudá-la não altera o horário de chegada combinado com o cliente."
+        description="Retiradas e entregas do dia, na ordem da rota."
+        help="Retiradas e entregas do dia na ordem de execução. A ordem é operacional: mudá-la não altera o horário de chegada combinado com o cliente."
       />
       <Card className="mb-5 p-4 sm:p-5">
         <FormGrid>

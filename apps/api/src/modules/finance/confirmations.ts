@@ -13,6 +13,7 @@
  * (motivo + gestor + linhas exatas; cobertura linha a linha, inalterada). Pagamentos da própria
  * semana não fazem parte da linha: pagar em parte não invalida a confirmação.
  */
+import { plural } from '@cenario/shared';
 import { createHash } from 'node:crypto';
 import {
   closingWeekStart,
@@ -339,7 +340,7 @@ export async function assertPaymentCovered(
   const hit = coveringRow(rows, payHash, line);
   if (!hit)
     throw Errors.business(
-      `Esta semana ainda não foi confirmada pelo profissional (${item.code}). Peça a conferência no tablet ou use a exceção administrativa (com motivo).`,
+      `Esta semana ainda não foi confirmada pelo funcionário (${item.code}). Peça a conferência no tablet ou use a exceção administrativa (com motivo).`,
     );
   return {
     id: hit.id,
@@ -458,7 +459,7 @@ export async function confirmWeek(
     action: 'finance.week_confirmed',
     entityType: 'weekly_closing_confirmation',
     entityId: row.id,
-    summary: `${code}: semana ${input.weekStart} conferida pelo profissional (${lines.length} item(ns)).`,
+    summary: `${code}: semana ${input.weekStart} conferida pelo funcionário (${plural(lines.length, 'item', 'itens')}).`,
     changes: {
       before: prior,
       after: { kind: 'PROFISSIONAL', code, items: lines.map((l) => l.code), hash },

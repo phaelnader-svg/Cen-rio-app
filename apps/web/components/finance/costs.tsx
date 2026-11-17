@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import {
   LABOR_STATUS_LABEL,
   ALL_LOGISTICS_COST_KIND_LABEL,
@@ -247,7 +248,7 @@ function Columns({ title, c }: { title: string; c: ResultColumns }) {
       {row('Logística', c.logisticsCents)}
       {row('Tributos estimados', c.taxCents)}
       {row('Outros variáveis', c.otherVariableCents)}
-      {row('Margem de contribuição', c.marginCents, true)}
+      {row('Sobrou do serviço', c.marginCents, true)}
       <p className="text-right text-xs text-ink-muted">{pct(c.marginPct)} da receita</p>
     </Card>
   );
@@ -297,7 +298,8 @@ function ResultDialog({ id, onClose }: { id: string; onClose: () => void }) {
               {r.materials.unpricedLines > 0 && (
                 <span className="text-warn-600" data-testid="result-unpriced">
                   {' '}
-                  (+ {r.materials.unpricedLines} lançamento(s) sem preço, fora do valor)
+                  (+ {plural(r.materials.unpricedLines, 'lançamento', 'lançamentos')} sem preço,
+                  fora do valor)
                 </span>
               )}
             </p>

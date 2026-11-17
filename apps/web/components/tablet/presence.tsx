@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { AttendanceDayDto, MyAttendanceDto } from '@cenario/shared';
 import { ATTENDANCE_SITUATION_LABEL, AVAILABILITY_LABEL, PRIORITY_LABEL } from '@cenario/shared';
 import clsx from 'clsx';
@@ -22,9 +23,7 @@ export const availabilityTone = (a: AttendanceDayDto['availability']) =>
       ? 'bg-bronze-100 text-bronze-600'
       : a === 'EM_PAUSA' || a === 'EXTERNO'
         ? 'bg-warn-50 text-warn-600'
-        : a === 'AUSENCIA_PRESUMIDA'
-          ? 'bg-danger-50 text-danger-600'
-          : 'bg-subtle text-ink-soft';
+        : 'bg-subtle text-ink-soft';
 
 /**
  * Presença no "Meu dia": "Cheguei" em destaque no início do expediente (um toque, horário
@@ -60,7 +59,7 @@ export function PresenceCard({ onDepart }: { onDepart: () => void }) {
         data-testid="presence-card"
         data-state="pending"
       >
-        <p className="text-sm font-semibold tracking-wide text-brand-700 uppercase">
+        <p className="text-base font-semibold text-brand-700">
           Início previsto às {config.workdayStart}
         </p>
         {config.holiday && (
@@ -284,8 +283,8 @@ export function DepartScreen({ data, onDone }: { data: MyAttendanceDto; onDone: 
       {missing.length > 0 && data.openTasks.length > 0 && (
         <p className="flex items-center gap-2 text-base text-warn-600">
           <TimerReset className="size-5" aria-hidden />
-          {missing.length} tarefa(s) sem andamento: você pode sair mesmo assim — o gestor será
-          avisado para acompanhar.
+          {plural(missing.length, 'tarefa', 'tarefas')} sem andamento: você pode sair mesmo assim —
+          o gestor será avisado para acompanhar.
         </p>
       )}
       <div className="grid gap-3 sm:grid-cols-2">

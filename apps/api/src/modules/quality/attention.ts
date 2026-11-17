@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   DELIVERY_STATUS_LABEL,
   INSPECTION_STATUS_LABEL,
@@ -198,7 +199,7 @@ export async function qualityAttention(prisma: PrismaClient): Promise<AttentionI
       type: 'LOGISTICA',
       category: 'ACAO',
       title: `${deliveryCode(d.number)} · ${d.customer.name}`,
-      description: `Tentativa frustrada (${d.attempts} tentativa(s))${d.occurrences[0] ? `: ${LOGISTICS_KIND_LABEL[d.occurrences[0].kind as LogisticsKind]} — ${d.occurrences[0].description}` : ''}.`,
+      description: `Tentativa frustrada (${plural(d.attempts, 'tentativa', 'tentativas')})${d.occurrences[0] ? `: ${LOGISTICS_KIND_LABEL[d.occurrences[0].kind as LogisticsKind]} — ${d.occurrences[0].description}` : ''}.`,
       serviceOrder: null,
       employee: null,
       priority: 'ALTA',

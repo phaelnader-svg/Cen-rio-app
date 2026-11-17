@@ -3,6 +3,7 @@
  * Gerente sobre quem espera orçamento. Só leitura: envios, publicações e mudanças de orçamento
  * continuam passando pela caixa de entrada / propostas com aprovação.
  */
+import { plural } from '@cenario/shared';
 import type { AiAgent, PrismaClient } from '@cenario/db';
 import { requireConnection } from '../integrations/connections';
 import { campaigns } from '../integrations/meta';
@@ -51,11 +52,11 @@ async function conversations(prisma: PrismaClient, question: string, perms: Read
           ...waiting.map(
             (c) => `• ${c.contactName ?? c.contactHandle} (${CH[c.channel]}): ${c.summary ?? ''}`,
           ),
-          unread ? `${unread} conversa(s) com mensagem não lida.` : '',
+          unread ? `${plural(unread, 'conversa', 'conversas')} com mensagem não lida.` : '',
         ]
           .filter(Boolean)
           .join('\n')
-      : `Ninguém esperando orçamento${where}.${unread ? ` ${unread} conversa(s) com mensagem não lida.` : ''}`,
+      : `Ninguém esperando orçamento${where}.${unread ? ` ${plural(unread, 'conversa', 'conversas')} com mensagem não lida.` : ''}`,
     references: waiting.map((c) => ({
       type: 'CONVERSA' as const,
       id: c.id,
@@ -106,7 +107,7 @@ export async function channelAgentAnswer(
           ? null
           : 'O WhatsApp da empresa ainda não está conectado, então não leio as conversas. Os avisos aos clientes funcionam assim mesmo: ao aprovar, o WhatsApp abre com o texto pronto.',
         notices.length
-          ? `Preparei ${notices.length} aviso(s) de peça pronta para você aprovar.`
+          ? `Preparei ${plural(notices.length, 'aviso', 'avisos')} de peça pronta para você aprovar.`
           : null,
       ]
         .filter(Boolean)
@@ -140,9 +141,9 @@ export async function channelAgentAnswer(
     ]);
     return {
       content: [
-        `Tenho ${photos} foto(s) de OS dos últimos 30 dias para usar em posts.`,
+        `Tenho ${plural(photos, 'foto', 'fotos')} de OS dos últimos 30 dias para usar em posts.`,
         drafts
-          ? `${drafts} post(s) esperando sua aprovação em Publicações.`
+          ? `${plural(drafts, 'post', 'posts')} esperando sua aprovação em Publicações.`
           : 'Nenhum post esperando aprovação: peça um em Publicações.',
         published.length
           ? `Últimos publicados: ${published.map((p) => p.caption.split('\n')[0]!.slice(0, 50)).join(' | ')}`
@@ -152,7 +153,13 @@ export async function channelAgentAnswer(
       references: [],
       proposals: [],
       tasks: drafts
-        ? [{ label: 'Aprovar posts', detail: `${drafts} rascunho(s)`, tone: 'atencao' }]
+        ? [
+            {
+              label: 'Aprovar posts',
+              detail: `${plural(drafts, 'rascunho', 'rascunhos')}`,
+              tone: 'atencao',
+            },
+          ]
         : [],
     };
   }

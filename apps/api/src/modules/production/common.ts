@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   inspectionCode,
   EVENT_TYPES,
@@ -538,7 +539,7 @@ export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
       await audit(tx, system, {
         action: 'production.release_tick',
         entityType: 'production_task',
-        summary: `${changed} tarefa(s) reavaliada(s) pelo horário programado, data de início ou bloqueios antigos removidos.`,
+        summary: `${plural(changed, 'tarefa reavaliada', 'tarefas reavaliadas')} pelo horário programado, data de início ou bloqueios antigos removidos.`,
       });
     return changed;
   });

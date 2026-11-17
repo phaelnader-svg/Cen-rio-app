@@ -235,8 +235,8 @@ export type WeekConfirmationState =
   | 'DESATUALIZADA';
 export const WEEK_CONFIRMATION_LABEL: Record<WeekConfirmationState, string> = {
   SEM_ITENS: 'Nada a conferir',
-  SEM_CONFIRMACAO: 'Aguardando confirmação do profissional',
-  CONFIRMADA: 'Confirmada pelo profissional',
+  SEM_CONFIRMACAO: 'Aguardando confirmação do funcionário',
+  CONFIRMADA: 'Confirmada pelo funcionário',
   LIBERADA_POR_EXCECAO: 'Liberada administrativamente',
   DESATUALIZADA: 'Valores mudaram depois da confirmação',
 };

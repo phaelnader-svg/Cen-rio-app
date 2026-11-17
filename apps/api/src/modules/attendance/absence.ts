@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import { EVENT_TYPES, PLANNED_ABSENCES, pastAbsenceLimit } from '@cenario/shared';
 import type { PrismaClient } from '@cenario/db';
 import { audit } from '../../core/audit';
@@ -112,7 +113,7 @@ export async function detectAbsences(prisma: PrismaClient, now = clock()) {
         `AUSENCIA_PRESUMIDA:${row.id}`,
         `${e.displayName} não confirmou chegada até ${cfg.arrivalAlertAt}. ${
           impact.own + impact.dependents
-            ? `${impact.own} tarefa(s) dele(a) e ${impact.dependents} dependente(s) afetada(s) — verificar reprogramação.`
+            ? `${plural(impact.own, 'tarefa', 'tarefas')} da pessoa e ${plural(impact.dependents, 'dependente afetada', 'dependentes afetadas')} — verificar reprogramação.`
             : 'Nenhuma tarefa programada afetada.'
         }`,
       );

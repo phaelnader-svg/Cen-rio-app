@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { OrderDto, PaymentMethod } from '@cenario/shared';
 import {
   PAYMENT_METHODS,
@@ -129,8 +130,10 @@ export function OrderDetail({ id }: { id: string }) {
           <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />
         </span>
         <span className="text-sm text-ink-muted">
-          {o.receivedPieces} de {o.totalPieces} peça(s) na oficina
-          {o.returnedPieces > 0 ? ` · ${o.returnedPieces} devolvida(s) ao cliente` : ''}
+          {o.receivedPieces} de {plural(o.totalPieces, 'peça', 'peças')} na oficina
+          {o.returnedPieces > 0
+            ? ` · ${plural(o.returnedPieces, 'devolvida', 'devolvidas')} ao cliente`
+            : ''}
         </span>
       </div>
       {o.status === 'CANCELADO' && (
@@ -329,7 +332,7 @@ export function OrderDetail({ id }: { id: string }) {
                     ) : (
                       <ServiceOrderStatusBadge status={s.status} />
                     )}
-                    <span className="text-ink-muted">{s.pieceCount} peça(s)</span>
+                    <span className="text-ink-muted">{plural(s.pieceCount, 'peça', 'peças')}</span>
                   </li>
                 ))}
               </ul>

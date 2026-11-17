@@ -175,7 +175,7 @@ function PaletteDialog({
         <input
           autoFocus
           className="h-11 w-full rounded-xl border border-line-strong bg-surface pr-3 pl-9 text-[15px] outline-none focus:border-brand-500"
-          placeholder="Cliente, telefone, nº do pedido, O.S., orçamento ou tela"
+          placeholder="Cliente, telefone, nº do pedido, OS, orçamento ou tela"
           value={q}
           aria-label="Buscar"
           onChange={(e) => {

@@ -91,7 +91,8 @@ export function ProductionBoardPage() {
     <>
       <PageHeader
         title="Quadro de produção"
-        description="Tarefas publicadas no planejamento semanal. Atualiza em tempo real conforme os funcionários iniciam, pausam e concluem."
+        description="Quem está fazendo o quê, atualizado na hora."
+        help="Tarefas publicadas no planejamento semanal. Atualiza em tempo real conforme os funcionários iniciam, pausam e concluem."
         actions={
           can('producao.planejar') ? (
             <Link

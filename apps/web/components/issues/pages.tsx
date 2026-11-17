@@ -38,13 +38,13 @@ import { useWorkers } from '@/lib/production';
 const CATEGORY_TONE: Record<AttentionCategory, 'danger' | 'warn' | 'info' | 'neutral'> = {
   CRITICO: 'danger',
   ACAO: 'warn',
-  ATENCAO: 'info',
+  ATENCAO: 'neutral',
   INFO: 'neutral',
 };
 const CATEGORY_CARD: Record<AttentionCategory, string> = {
   CRITICO: 'border-danger-600/40 bg-danger-50',
   ACAO: 'border-warn-600/40 bg-warn-50',
-  ATENCAO: 'border-info-600/30 bg-info-50',
+  ATENCAO: 'border-line-strong bg-subtle',
   INFO: 'border-line bg-surface',
 };
 
@@ -71,7 +71,8 @@ export function AttentionPage() {
     <>
       <PageHeader
         title="Central de atenção"
-        description="Só o que pede atenção: ocorrências, reprogramações aguardando decisão, ausências com impacto, pausas por impedimento, prazos vencidos e OS atrasadas ou em risco. A operação normal não aparece aqui."
+        description="Só o que precisa de você agora."
+        help="Só o que pede atenção: ocorrências, reprogramações aguardando decisão, ausências com impacto, pausas por impedimento, prazos vencidos e OS atrasadas ou em risco. A operação normal não aparece aqui."
       />
       <div className="mb-4 grid gap-3 sm:grid-cols-4" data-testid="attention-counts">
         {ATTENTION_CATEGORIES.map((c) => (

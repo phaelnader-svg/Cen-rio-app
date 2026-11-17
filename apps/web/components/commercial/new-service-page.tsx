@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type {
   CustomerAddressDto,
   CustomerSummaryDto,
@@ -126,7 +127,8 @@ export function NewServicePage() {
 function quoteNotes(q: QuoteDto): string {
   const s = q.snapshot;
   const parts = [`Orçamento nº ${q.number}.`];
-  if (s.fabrics.length) parts.push(`Tecido(s): ${s.fabrics.join(', ')}.`);
+  if (s.fabrics.length)
+    parts.push(`${s.fabrics.length === 1 ? 'Tecido' : 'Tecidos'}: ${s.fabrics.join(', ')}.`);
   parts.push(`Troca de espuma: ${s.foamChange ? 'sim' : 'não'}.`);
   parts.push(`Troca de tecido: ${s.fabricChange ? 'sim' : 'não'}.`);
   if (s.notes.trim()) parts.push(s.notes.trim());
@@ -1186,7 +1188,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
             )}
             <FormGrid className="mt-5">
               <SelectField
-                label="Profissional responsável"
+                label="Funcionário responsável"
                 cols={6}
                 value={responsible}
                 onChange={(e) => setResponsible(e.target.value)}
@@ -1289,7 +1291,11 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
             value={mode === 'NOVO' ? name || '—' : (customer?.name ?? '—')}
             text
           />
-          <SummaryRow label="Serviço" value={`${contractedText} · ${totalPieces} peça(s)`} text />
+          <SummaryRow
+            label="Serviço"
+            value={`${contractedText} · ${plural(totalPieces, 'peça', 'peças')}`}
+            text
+          />
           <SummaryRow
             label="Peças"
             value={pieces

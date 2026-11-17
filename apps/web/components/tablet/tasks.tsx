@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type {
   MyQueueDto,
   NotificationDto,
@@ -97,7 +98,7 @@ export function NotificationsButton({ onClick }: { onClick: () => void }) {
       size="lg"
       onClick={onClick}
       data-testid="notifications-button"
-      aria-label={`Avisos: ${unread} não lido(s)`}
+      aria-label={`Avisos: ${plural(unread, 'não lido', 'não lidos')}`}
       icon={<Bell className="size-5" aria-hidden />}
     >
       Avisos
@@ -147,7 +148,7 @@ export function MyDay({
           label="Em execução"
           empty={
             paused.length
-              ? `${paused.length} tarefa(s) pausada(s) — retome quando puder.`
+              ? `${plural(paused.length, 'tarefa pausada', 'tarefas pausadas')} — retome quando puder.`
               : 'Nenhuma tarefa em execução agora.'
           }
           task={current ?? paused[0]}
@@ -232,7 +233,7 @@ function QueueSection({ queue, onOpen }: { queue: MyQueueDto; onOpen: (id: strin
       <p className="mb-3 text-base text-ink-muted">
         Siga a ordem: conclua uma e toque em Iniciar na próxima.
         {queue.blockedAhead > 0 &&
-          ` ${queue.blockedAhead} tarefa(s) à frente aguardando desbloqueio (mantêm o lugar).`}
+          ` ${plural(queue.blockedAhead, 'tarefa', 'tarefas')} à frente aguardando desbloqueio (mantêm o lugar).`}
       </p>
       <ol className="grid gap-4 lg:grid-cols-2">
         {queue.items.map((e) => {
@@ -272,7 +273,7 @@ function Highlight({
 }) {
   return (
     <div data-testid={testId}>
-      <p className="mb-2 text-sm font-semibold tracking-wide text-ink-muted uppercase">{label}</p>
+      <p className="mb-2 text-base font-semibold text-ink-soft">{label}</p>
       {task ? (
         <TaskCard t={task} onOpen={onOpen} highlight />
       ) : (
@@ -350,6 +351,8 @@ export function TaskCard({
   highlight?: boolean;
 }) {
   const why = waitingText(t);
+  const me = useMe();
+  const mine = !!t.assignee && t.assignee.userId === me.data?.user.id;
   return (
     <div
       data-testid={`my-task-${t.code}`}
@@ -367,10 +370,9 @@ export function TaskCard({
         className="flex flex-1 items-start gap-4 p-5 text-left active:scale-[0.99]"
       >
         <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-center gap-2 text-sm text-ink-muted">
-            <span className="font-mono font-semibold text-ink-soft">{t.serviceOrder.code}</span>
-            {t.serviceOrderItem && <span>· {t.serviceOrderItem.code}</span>}
-            <span>· {t.code}</span>
+          {/* Melhoria 171: um código só, pequeno (o da peça); o resto fica na ficha da tarefa. */}
+          <span className="font-mono text-xs font-semibold text-ink-muted" title={t.code}>
+            {t.serviceOrderItem?.code ?? t.serviceOrder.code}
           </span>
           {/* Título gerado pelo modelo ("Etapa — OS-xxxxx/n"): mostra etapa e peça; título
               próprio dado pelo gestor vira o destaque, com a etapa abaixo. */}
@@ -379,6 +381,7 @@ export function TaskCard({
               ? `${PRODUCTION_ACTIVITY_LABEL[t.activity]}${t.serviceOrderItem ? ` — ${t.serviceOrderItem.description}` : ''}`
               : t.title}
           </span>
+          <span className="mt-0.5 block truncate text-base text-ink-soft">{t.customerName}</span>
           {!generatedTitle(t) && (
             <span className="mt-0.5 block truncate text-base text-ink-muted">
               {PRODUCTION_ACTIVITY_LABEL[t.activity]}
@@ -387,18 +390,18 @@ export function TaskCard({
           )}
           <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
             <TaskStatusBadge status={t.status} />
-            <span
-              className={clsx(
-                'rounded-full px-3 py-1 font-semibold',
-                t.priority === 'URGENTE'
-                  ? 'bg-danger-600 text-white'
-                  : t.priority === 'ALTA'
-                    ? 'bg-danger-50 text-danger-600'
-                    : 'bg-subtle text-ink-soft',
-              )}
-            >
-              {PRIORITY_LABEL[t.priority]}
-            </span>
+            {(t.priority === 'URGENTE' || t.priority === 'ALTA') && (
+              <span
+                className={clsx(
+                  'rounded-full px-3 py-1 font-semibold',
+                  t.priority === 'URGENTE'
+                    ? 'bg-danger-600 text-white'
+                    : 'bg-danger-50 text-danger-600',
+                )}
+              >
+                {PRIORITY_LABEL[t.priority]}
+              </span>
+            )}
             {t.dueDate && (
               <span className="inline-flex items-center gap-1 text-ink-muted">
                 <CalendarClock className="size-4" aria-hidden /> Prazo {formatDay(t.dueDate)}
@@ -409,7 +412,9 @@ export function TaskCard({
                 {formatDay(t.scheduledDate)} {t.scheduledTime}
               </span>
             )}
-            <span className="text-ink-muted">{t.assignee?.displayName ?? 'Sem responsável'}</span>
+            {!mine && (
+              <span className="text-ink-muted">{t.assignee?.displayName ?? 'Sem responsável'}</span>
+            )}
             <MaterialsIndicator state={materialsOf(t)} />
           </span>
           {why && (
@@ -443,6 +448,8 @@ export function PieceOwnerInfo({ t }: { t: ProductionTaskDto }) {
   const owner = t.serviceOrderItem?.upholsterer;
   if (!owner) return null;
   const mine = t.assignee?.userId === owner.userId;
+  // Melhoria 171: quem executa é o próprio titular — não repete o nome dele no cartão.
+  if (mine && t.stepClass !== 'TAPECARIA') return null;
   return (
     <span className="mt-2 block text-sm text-ink-soft" data-testid="piece-owner">
       {mine && t.stepClass === 'TAPECARIA'
@@ -1018,7 +1025,7 @@ function PhotoPicker({
       </Button>
       {count > 0 && (
         <span className="text-base font-semibold text-ok-600" data-testid="photos-attached">
-          {count} foto(s) anexada(s)
+          {plural(count, 'foto anexada', 'fotos anexadas')}
         </span>
       )}
     </div>
@@ -1290,7 +1297,8 @@ export function NotificationsInbox({ onOpenTask }: { onOpenTask: (id: string) =>
       {error && <Alert tone="danger">{error}</Alert>}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-base text-ink-muted">
-          {q.data.unread} não lido(s) · {q.data.items.length} aviso(s) recente(s)
+          {plural(q.data.unread, 'não lido', 'não lidos')} ·{' '}
+          {plural(q.data.items.length, 'aviso recente', 'avisos recentes')}
         </p>
         <Button
           size="lg"

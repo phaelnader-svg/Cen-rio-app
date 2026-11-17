@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import { formatCents, type FormalCostRecordDto, type OsMaterialDto } from '@cenario/shared';
 import clsx from 'clsx';
 import { Check, Pencil, Plus, Trash2, X } from 'lucide-react';
@@ -56,9 +57,9 @@ export function OsMaterialList({
         <h3 className="text-base font-semibold">Materiais necessários</h3>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex flex-wrap gap-2 text-xs" data-testid="os-material-summary">
-            <Badge tone="neutral">{summary.total} material(is)</Badge>
+            <Badge tone="neutral">{plural(summary.total, 'material', 'materiais')}</Badge>
             <Badge tone={summary.purchased === summary.total ? 'ok' : 'neutral'}>
-              {summary.purchased} comprado(s)
+              {plural(summary.purchased, 'comprado', 'comprados')}
             </Badge>
             <Badge tone={summary.available === summary.total ? 'ok' : 'neutral'}>
               {summary.available} na oficina
@@ -80,9 +81,10 @@ export function OsMaterialList({
           className="border-b border-line bg-warn-50 px-4 py-2 text-sm text-warn-600"
           data-testid="os-material-reconcile-notice"
         >
-          Conciliação pendente: {pendingReconciliation.lines} material(is) com custo informado e a
-          OS também tem custo formal ({formatCents(pendingReconciliation.realizedCents)} no
-          realizado). O valor continua contando até o financeiro indicar se é o mesmo material.
+          Conciliação pendente: {plural(pendingReconciliation.lines, 'material', 'materiais')} com
+          custo informado e a OS também tem custo formal (
+          {formatCents(pendingReconciliation.realizedCents)} no realizado). O valor continua
+          contando até o financeiro indicar se é o mesmo material.
         </p>
       )}
       {act.error && (

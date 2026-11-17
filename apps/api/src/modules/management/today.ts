@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   DEADLINE_REASON_LABEL,
   MATERIAL_ALERT_DAYS,
@@ -169,7 +170,7 @@ export async function refreshOperationalAlerts(prisma: PrismaClient) {
           'entregas.gerenciar',
           'PECA_PRONTA_SEM_ENTREGA',
           `${subject}:${r.since?.toISOString().slice(0, 10) ?? '-'}`,
-          `${formatServiceOrderItemCode(r.serviceOrder.number, r.position)} · ${r.description} (${r.serviceOrder.customer.name}) está pronta há ${r.days} dia(s) sem entrega.`,
+          `${formatServiceOrderItemCode(r.serviceOrder.number, r.position)} · ${r.description} (${r.serviceOrder.customer.name}) está pronta há ${plural(r.days, 'dia', 'dias')} sem entrega.`,
           r.serviceOrderId,
         );
       }
@@ -352,7 +353,7 @@ export async function loadToday(
       if (toPlan)
         suggestions.push({
           key: 'planejar',
-          title: `Planejar ${toPlan} serviço(s) recebido(s)`,
+          title: `Planejar ${plural(toPlan, 'serviço recebido', 'serviços recebidos')}`,
           why: 'Estão na oficina sem tapeceiro ou data de início: a produção não começa sem programação publicada.',
           link: '/painel/producao/programacao',
           priority: 'NORMAL',
@@ -371,7 +372,7 @@ export async function loadToday(
   if (oldReady.length && can(perms, 'entregas.gerenciar'))
     suggestions.push({
       key: 'entregar',
-      title: `Combinar a entrega de ${oldReady.length} peça(s) pronta(s) há ${READY_WITHOUT_DELIVERY_DAYS}+ dias`,
+      title: `Combinar a entrega de ${plural(oldReady.length, 'peça pronta', 'peças prontas')} há ${READY_WITHOUT_DELIVERY_DAYS}+ dias`,
       why: 'Peça pronta parada ocupa espaço e atrasa o recebimento do cliente. Agende ou marque como entregue na OS.',
       link: `/painel/os/${oldReady[0]!.serviceOrderId}?tab=qualidade`,
       priority: 'NORMAL',
@@ -387,7 +388,7 @@ export async function loadToday(
   if (pendencies?.critical)
     suggestions.push({
       key: 'central',
-      title: `Resolver ${pendencies.critical} pendência(s) crítica(s) na Central de atenção`,
+      title: `Resolver ${plural(pendencies.critical, 'pendência crítica', 'pendências críticas')} na Central de atenção`,
       why: 'São ocorrências ou bloqueios que param a produção ou a entrega.',
       link: '/painel/atencao',
       priority: 'ALTA',
