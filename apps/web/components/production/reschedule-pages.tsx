@@ -39,7 +39,8 @@ export function ReschedulePage() {
     <>
       <PageHeader
         title="Reprogramação"
-        description="Mudanças críticas (tarefa importante, prazo, cliente, tapeceiro principal, conflito ou prioridade) só acontecem com a sua aprovação. Mudanças simples automáticas ficam registradas no histórico."
+        description="Mudanças de programação que esperam a sua decisão."
+        help="Mudanças críticas (tarefa importante, prazo, cliente, tapeceiro principal, conflito ou prioridade) só acontecem com a sua aprovação. Mudanças simples automáticas ficam registradas no histórico."
       />
       <Tabs
         tabs={[
@@ -439,7 +440,8 @@ export function SkillsPage() {
     <>
       <PageHeader
         title="Competências da equipe"
-        description="Ninguém é escolhido para um apoio sem a competência marcada aqui. Cabeceiras, reparos e inspeção são especialidades preservadas: em condições iguais, o apoio geral vai para quem não as tem."
+        description="O que cada funcionário sabe fazer."
+        help="Ninguém é escolhido para um apoio sem a competência marcada aqui. Cabeceiras, reparos e inspeção são especialidades preservadas: em condições iguais, o apoio geral vai para quem não as tem."
       />
       {q.isPending ? (
         <Spinner />

@@ -74,7 +74,8 @@ export function ProductionPlanningPage({ embedded = false }: { embedded?: boolea
       {!embedded && (
         <PageHeader
           title="Planejamento de produção"
-          description="Selecione as OS da semana, defina responsáveis, dias e dependências e publique. Material disponível não inicia a produção: só a programação publicada libera as tarefas."
+          description="Monte a semana e publique para liberar as tarefas."
+          help="Selecione as OS da semana, defina responsáveis, dias e dependências e publique. Material disponível não inicia a produção: só a programação publicada libera as tarefas."
           actions={
             <Link
               href="/painel/producao"

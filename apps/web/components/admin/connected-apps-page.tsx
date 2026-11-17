@@ -50,7 +50,8 @@ export function ConnectedAppsPage() {
     <>
       <PageHeader
         title="Aplicativos conectados"
-        description="Aplicativos que você autorizou na tela oficial do Cenário Gestão. Eles agem com no máximo as suas permissões e podem ser revogados a qualquer momento."
+        description="Aplicativos que você autorizou."
+        help="Aplicativos que você autorizou na tela oficial do Cenário Gestão. Eles agem com no máximo as suas permissões e podem ser revogados a qualquer momento."
       />
       {grants.isLoading ? <Spinner /> : null}
       {can('empresa.configurar') ? <ClientsAdmin /> : null}

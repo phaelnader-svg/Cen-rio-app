@@ -55,7 +55,8 @@ export function FinancePage() {
     <>
       <PageHeader
         title="Financeiro"
-        description="Receita por OS, recebimentos, contas a pagar, custos, mão de obra por produção, margens e indicadores. Valores apenas registrados: nenhuma transferência bancária é feita pelo sistema."
+        description="Quanto entrou, quanto saiu e quanto sobrou."
+        help="Receita por OS, recebimentos, contas a pagar, custos, mão de obra por produção, margens e indicadores. Valores apenas registrados: nenhuma transferência bancária é feita pelo sistema."
       />
       <Tabs tabs={TABS} active={tab} onChange={setTab}>
         <div className="pt-5">

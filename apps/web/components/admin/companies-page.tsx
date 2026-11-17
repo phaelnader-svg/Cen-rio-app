@@ -95,7 +95,8 @@ export function CompaniesPage() {
     <>
       <PageHeader
         title="Empresas"
-        description="Empresas que usam o Cenário Gestão, com plano, situação do pagamento e uso. Cada conta criada na tela de entrar é uma empresa nova, com dados separados das outras."
+        description="Empresas que usam o Cenário Gestão."
+        help="Empresas que usam o Cenário Gestão, com plano, situação do pagamento e uso. Cada conta criada na tela de entrar é uma empresa nova, com dados separados das outras."
       />
       <BusinessNumbersCard />
       <FeedbackInbox />

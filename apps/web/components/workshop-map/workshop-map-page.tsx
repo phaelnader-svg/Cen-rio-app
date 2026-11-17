@@ -52,7 +52,8 @@ export function WorkshopMapPage() {
     <>
       <PageHeader
         title="Mapa da oficina"
-        description={`Onde cada peça está agora (${plural(total, 'peça', 'peças')} na oficina). As áreas são as localizações cadastradas em Qualidade › Inspetor e localizações.`}
+        description={`Onde cada peça está agora (${plural(total, 'peça', 'peças')} na oficina).`}
+        help="As áreas são as localizações cadastradas em Qualidade › Inspetor e localizações."
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <label className="relative w-full max-w-md">

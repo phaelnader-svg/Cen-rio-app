@@ -75,7 +75,8 @@ export function DevicesPage() {
     <>
       <PageHeader
         title="Dispositivos e sessões"
-        description="Tablets da oficina com sessão permanente. Revogue a qualquer momento: o acesso é encerrado na hora."
+        description="Tablets da oficina ligados ao sistema."
+        help="Tablets da oficina com sessão permanente. Revogue a qualquer momento: o acesso é encerrado na hora."
         actions={
           manage && (
             <Button

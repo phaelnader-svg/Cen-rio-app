@@ -134,6 +134,8 @@ export const NAV: NavItem[] = [
     label: 'Aplicativos conectados',
     icon: PlugZap,
     anyOf: ['empresa.configurar', 'sessoes.ver'],
+    // Melhoria 157: tela técnica, só para o suporte da plataforma.
+    platformOnly: true,
   },
   { href: '/painel/clientes', label: 'Clientes', icon: Contact, anyOf: ['clientes.ver'] },
   // Módulo Orçamentos: proposta comercial com materiais automáticos, contrato e O.S. do orçamento.
@@ -256,6 +258,7 @@ export const NAV: NavItem[] = [
     label: 'Sincronização',
     icon: RadioTower,
     anyOf: ['sincronizacao.diagnosticar'],
+    platformOnly: true,
   },
 ];
 

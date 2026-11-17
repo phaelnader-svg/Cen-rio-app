@@ -72,10 +72,7 @@ export function NewServiceOrderPage() {
   if (!orderId)
     return (
       <>
-        <PageHeader
-          title="Nova OS técnica"
-          description="A OS técnica nasce de um pedido com peças já recebidas na oficina."
-        />
+        <PageHeader title="Nova OS técnica" description="Crie a OS das peças que já chegaram." />
         <Alert tone="info">
           Abra um pedido com peças recebidas e use “Criar OS técnica”.{' '}
           <Link href="/painel/pedidos" className="font-semibold text-brand-700 hover:underline">

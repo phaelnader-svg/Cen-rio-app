@@ -5,9 +5,9 @@ import { useRealtime, type ConnectionStatus } from '@/lib/realtime';
 
 const LABELS: Record<ConnectionStatus, string> = {
   connecting: 'Conectando…',
-  online: 'Tempo real ativo',
-  reconnecting: 'Reconectando…',
-  offline: 'Sem conexão',
+  online: 'Conectado',
+  reconnecting: 'Sem conexão, tentando de novo',
+  offline: 'Sem conexão, tentando de novo',
   ended: 'Sessão encerrada',
 };
 
@@ -19,12 +19,14 @@ export function ConnectionIndicator({
   className?: string;
 }) {
   const { status } = useRealtime();
-  const color =
-    status === 'online'
-      ? 'bg-ok-600'
-      : status === 'connecting' || status === 'reconnecting'
-        ? 'bg-warn-600 animate-pulse'
-        : 'bg-danger-600';
+  // Melhoria 139: conectado é o normal e não precisa de aviso; o selo só aparece quando cai.
+  if (status === 'online' || status === 'connecting')
+    return (
+      <span role="status" data-testid="connection-status" data-status={status} className="sr-only">
+        {LABELS[status]}
+      </span>
+    );
+  const color = status === 'ended' ? 'bg-danger-600' : 'bg-warn-600 animate-pulse';
   return (
     <span
       role="status"

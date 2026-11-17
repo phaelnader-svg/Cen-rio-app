@@ -15,7 +15,8 @@ export function SyncPage() {
     <>
       <PageHeader
         title="Sincronização"
-        description="Verifique, a qualquer momento, se painel e tablets estão recebendo as atualizações em tempo real — inclusive depois de quedas de conexão."
+        description="Confira se painel e tablets recebem as atualizações."
+        help="Verifique, a qualquer momento, se painel e tablets estão recebendo as atualizações em tempo real — inclusive depois de quedas de conexão."
       />
       {can('sincronizacao.diagnosticar') ? (
         <SyncPanel />

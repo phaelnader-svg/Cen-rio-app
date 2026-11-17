@@ -35,7 +35,7 @@ export function CustomersPage() {
     <>
       <PageHeader
         title="Clientes"
-        description="Pessoas e empresas atendidas, com endereços, contatos e histórico de serviços."
+        description="Pessoas e empresas atendidas."
         actions={
           <>
             <ExportLink href="/api/v1/export/clientes.csv" testId="export-clientes" />

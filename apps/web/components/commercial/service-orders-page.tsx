@@ -27,7 +27,8 @@ export function ServiceOrdersPage() {
     <>
       <PageHeader
         title="Ordens de serviço"
-        description="OS técnicas: nascem no fechamento do serviço (Novo serviço) ou pelo pedido, com as peças ainda sem OS."
+        description="Todas as OS da oficina."
+        help="OS técnicas: nascem no fechamento do serviço (Novo serviço) ou pelo pedido, com as peças ainda sem OS."
         actions={<ExportLink href="/api/v1/export/os.csv" testId="export-os" />}
       />
       <Card className="mb-4 grid gap-3 p-4 sm:grid-cols-[1fr_220px]">

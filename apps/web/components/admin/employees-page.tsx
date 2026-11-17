@@ -46,7 +46,7 @@ export function EmployeesPage() {
     <>
       <PageHeader
         title="Funcionários"
-        description="Equipe da oficina e do escritório, com funções, permissões e formas de acesso."
+        description="Equipe da oficina e do escritório."
         actions={
           manage && (
             <Button

@@ -63,7 +63,8 @@ export function TeamAttendancePage() {
     <>
       <PageHeader
         title="Presença da equipe"
-        description="Presença operacional para organizar a produção — não é registro de ponto, não calcula jornada nem gera falta ou desconto. Ausência presumida é só um alerta para o gestor confirmar ou corrigir."
+        description="Quem chegou hoje, para organizar a produção."
+        help="Presença operacional para organizar a produção — não é registro de ponto, não calcula jornada nem gera falta ou desconto. Ausência presumida é só um alerta para o gestor confirmar ou corrigir."
       />
       <Card className="mb-6 flex flex-wrap items-end gap-4 p-4">
         <label className="field">

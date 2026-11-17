@@ -42,7 +42,8 @@ function Schedule({ initial }: { initial: Tab }) {
     <>
       <PageHeader
         title="Programação semanal"
-        description="Escolha o tapeceiro e a data de início de cada serviço, ajuste responsáveis, dias e dependências e publique a semana — tudo aqui. Material disponível não inicia a produção: só a programação publicada libera as tarefas."
+        description="Monte a semana e publique para liberar as tarefas."
+        help="Escolha o tapeceiro e a data de início de cada serviço, ajuste responsáveis, dias e dependências e publique a semana — tudo aqui. Material disponível não inicia a produção: só a programação publicada libera as tarefas."
         actions={
           <span className="flex flex-wrap gap-3 text-sm font-medium">
             <Link href="/painel/producao" className="text-brand-700 hover:underline">

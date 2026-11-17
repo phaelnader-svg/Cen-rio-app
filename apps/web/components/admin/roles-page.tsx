@@ -27,7 +27,7 @@ export function RolesPage() {
     <>
       <PageHeader
         title="Funções e permissões"
-        description="Funções agrupam permissões. Toda permissão é verificada no servidor, em cada operação."
+        description="O que cada função pode ver e fazer."
         actions={
           manage && (
             <Button

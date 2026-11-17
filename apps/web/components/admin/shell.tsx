@@ -294,12 +294,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   target="_blank"
                   rel="noopener noreferrer"
                   data-testid="ambiente-interativo"
-                  aria-label="Acessar ambiente interativo (abre em nova guia)"
-                  className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl bg-ok-600 px-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 focus-visible:ring-4 focus-visible:ring-ok-50"
+                  aria-label="Abrir o Firma Viva (abre em nova guia)"
+                  // Melhoria 159: nome do produto e o verde da marca; curto para caber no celular.
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-brand-700 px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-800 focus-visible:ring-4 focus-visible:ring-brand-100"
                 >
                   <Gamepad2 className="size-4" aria-hidden />
-                  <span className="sm:hidden">Interativo</span>
-                  <span className="hidden sm:inline">Acessar ambiente interativo</span>
+                  <span className="hidden sm:inline">Firma Viva</span>
                 </a>
               )}
               {/* No celular, Novidades e Tema ficam no menu lateral (o topo não cabe em 390 px). */}

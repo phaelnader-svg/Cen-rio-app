@@ -47,7 +47,8 @@ export function InventoryPage() {
     <>
       <PageHeader
         title="Estoque da oficina"
-        description="Controle simples do que há na oficina: categorias próprias, materiais e rolos de tecido. Não é baixado pelas OS — a quantidade muda só por ajuste, com histórico."
+        description="O que há na oficina: materiais e rolos de tecido."
+        help="Controle simples do que há na oficina: categorias próprias, materiais e rolos de tecido. Não é baixado pelas OS — a quantidade muda só por ajuste, com histórico."
       />
       <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
         <div className="space-y-4">

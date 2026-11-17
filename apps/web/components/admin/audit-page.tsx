@@ -56,7 +56,7 @@ export function AuditPage() {
     <>
       <PageHeader
         title="Auditoria"
-        description="Registro imutável das ações críticas: quem fez, o quê, quando e de onde."
+        description="Quem fez o quê, e quando."
         actions={
           <Select
             aria-label="Filtrar por tipo"
@@ -97,11 +97,13 @@ export function AuditPage() {
                     : 'px-5 py-4'
                 }
                 data-highlighted={isHighlighted(a.action) || undefined}
+                data-action={a.action}
+                // Melhoria 157: o código técnico (em inglês) fica só para o suporte, ao parar o mouse.
+                title={a.action}
               >
                 <div className="flex flex-wrap items-center gap-2">
                   {isHighlighted(a.action) && <Badge tone="warn">Exceção destacada</Badge>}
                   <Badge tone="neutral">{ENTITY_LABELS[a.entityType] ?? a.entityType}</Badge>
-                  <code className="text-xs text-ink-muted">{a.action}</code>
                 </div>
                 <p className="mt-1.5 text-[15px] text-ink">{a.summary}</p>
                 <p className="mt-0.5 text-xs text-ink-muted">

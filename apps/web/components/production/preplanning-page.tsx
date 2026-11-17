@@ -60,7 +60,8 @@ export function PreplanningPage({ embedded = false }: { embedded?: boolean } = {
       {!embedded && (
         <PageHeader
           title="Produção — A planejar"
-          description="Serviços recebidos que ainda precisam entrar na programação. Escolha o tapeceiro e a data de início: o sistema prepara as tarefas e você publica a semana quando estiver pronta."
+          description="Serviços que ainda não entraram na programação."
+          help="Serviços recebidos que ainda precisam entrar na programação. Escolha o tapeceiro e a data de início: o sistema prepara as tarefas e você publica a semana quando estiver pronta."
           actions={
             <Link
               href="/painel/producao/planejamento"

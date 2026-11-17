@@ -21,7 +21,7 @@ export function OrdersPage() {
     <>
       <PageHeader
         title="Pedidos comerciais"
-        description="Serviços aprovados pelo cliente: organizam a retirada e preservam o que foi vendido."
+        description="Serviços aprovados pelo cliente."
         actions={
           <>
             <ExportLink href="/api/v1/export/pedidos.csv" testId="export-pedidos" />

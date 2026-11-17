@@ -43,7 +43,8 @@ export function ReturnsPage() {
     <>
       <PageHeader
         title="Devoluções"
-        description="Peças devolvidas ao cliente sem serviço (desistência, cancelamento) — de OS ou avulsas. O registro é confirmado quando o cliente recebe as peças."
+        description="Peças devolvidas ao cliente sem serviço."
+        help="Peças devolvidas ao cliente sem serviço (desistência, cancelamento) — de OS ou avulsas. O registro é confirmado quando o cliente recebe as peças."
         actions={
           manage && (
             <Button icon={<Plus className="size-4" />} onClick={() => setCreate(true)}>

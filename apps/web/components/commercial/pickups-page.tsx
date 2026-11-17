@@ -126,7 +126,8 @@ export function PickupsPage() {
     <>
       <PageHeader
         title="Retiradas"
-        description="Solicitações e agenda de retiradas. As confirmações da logística são registradas manualmente nesta fase."
+        description="Agenda de retiradas na casa do cliente."
+        help="Solicitações e agenda de retiradas. As confirmações da logística são registradas manualmente nesta fase."
         actions={
           <div
             className="inline-flex rounded-xl border border-line-strong bg-surface p-1"

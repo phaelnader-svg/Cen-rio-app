@@ -16,6 +16,18 @@ import { useCompany } from '@/lib/queries';
 import { useOwnTeamSettings } from '@/lib/commercial';
 import { ExportDataCard, SupportAccessCard } from '@/components/improvements/company-extras';
 
+const TIMEZONES = [
+  { value: 'America/Sao_Paulo', label: 'Horário de Brasília' },
+  { value: 'America/Bahia', label: 'Bahia' },
+  { value: 'America/Fortaleza', label: 'Nordeste (Fortaleza, Recife)' },
+  { value: 'America/Belem', label: 'Pará e Amapá' },
+  { value: 'America/Manaus', label: 'Amazonas (Manaus)' },
+  { value: 'America/Cuiaba', label: 'Mato Grosso e Mato Grosso do Sul' },
+  { value: 'America/Porto_Velho', label: 'Rondônia' },
+  { value: 'America/Rio_Branco', label: 'Acre' },
+  { value: 'America/Noronha', label: 'Fernando de Noronha' },
+];
+
 type Form = Omit<
   CompanySettingsDto,
   'updatedAt' | 'legalName' | 'document' | 'phone' | 'email' | 'address'
@@ -115,7 +127,7 @@ export function CompanyPage() {
     <>
       <PageHeader
         title="Empresa"
-        description="Dados da empresa e parâmetros operacionais usados pelos próximos módulos."
+        description="Dados da empresa e horários da oficina."
         actions={
           editable && (
             <Button
@@ -235,25 +247,30 @@ export function CompanyPage() {
                 </Select>
               )}
             </Field>
-            <Field label="Dia habitual de medição" hint="Tecidos e espumas.">
+          </div>
+          <div className="mt-5">
+            {/* Melhoria 166: fuso com nome de gente, não o código técnico. */}
+            <Field label="Fuso horário">
               {(p) => (
                 <Select
                   {...p}
                   disabled={!editable}
-                  value={form.measurementWeekday}
-                  onChange={(e) => set('measurementWeekday', Number(e.target.value))}
+                  value={form.timezone}
+                  onChange={(e) => set('timezone', e.target.value)}
                 >
-                  {WEEKDAYS.map((d) => (
-                    <option key={d.value} value={d.value}>
-                      {d.label}
+                  {[
+                    ...TIMEZONES,
+                    ...(TIMEZONES.some((t) => t.value === form.timezone)
+                      ? []
+                      : [{ value: form.timezone, label: form.timezone }]),
+                  ].map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
                     </option>
                   ))}
                 </Select>
               )}
             </Field>
-          </div>
-          <div className="mt-5">
-            {text('timezone', 'Fuso horário', { hint: 'Padrão: America/Sao_Paulo' })}
           </div>
         </Card>
       </div>

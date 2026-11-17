@@ -158,10 +158,13 @@ export function EmptyState({
 export function PageHeader({
   title,
   description,
+  help,
   actions,
 }: {
   title: string;
   description?: string;
+  /** Melhoria 158: a explicação longa da tela fica fechada em "Como usar". */
+  help?: string;
   actions?: React.ReactNode;
 }) {
   return (
@@ -169,6 +172,14 @@ export function PageHeader({
       <div className="min-w-0">
         <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
         {description && <p className="mt-1 max-w-2xl text-[15px] text-ink-muted">{description}</p>}
+        {help && (
+          <details className="group mt-1 max-w-2xl text-sm text-ink-muted">
+            <summary className="w-fit cursor-pointer list-none font-medium text-brand-700 hover:underline">
+              Como usar
+            </summary>
+            <p className="mt-1">{help}</p>
+          </details>
+        )}
       </div>
       {/* Sem shrink-0: com muitos botões (ex.: pedido no tablet), a linha quebra em vez de vazar. */}
       {actions && <div className="flex flex-wrap gap-2 sm:justify-end">{actions}</div>}
