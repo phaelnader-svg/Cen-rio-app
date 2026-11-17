@@ -274,8 +274,27 @@ ligar_cenario() {
     cookie="cenario_homolog=$gate"
   fi
   say "Ligando o Firma Viva ($DOMAIN) ao Cenário Gestão de $rotulo ($cen): jogo, operação e escritório"
-  read -rs -p "Cole o segredo do aplicativo firma-viva gerado nesse Cenário (não aparece na tela): " seg
-  echo
+  if [[ "$rotulo" == produção ]]; then
+    # Produção: ninguém vê nem digita segredo. Uma chave nova é sorteada aqui, gravada (só o hash)
+    # no cadastro do aplicativo firma-viva do Cenário de produção, pela VM cenario-prod, e no .env
+    # do Firma Viva. Ela só existe em memória neste terminal e trafega pela entrada padrão do SSH.
+    seg="$(openssl rand -hex 32)"
+    echo "  • cadastrando o Firma Viva no Cenário de produção (chave nova, sem aparecer na tela)"
+    gcloud --project="$PROJECT" --quiet compute ssh "${CENARIO_PROD_VM:-cenario-prod}" \
+      --zone="${CENARIO_PROD_ZONE:-southamerica-east1-b}" --tunnel-through-iap --command='sudo bash -s' <<PROD \
+      || die "Não consegui cadastrar o Firma Viva no Cenário de produção (veja a mensagem acima). Nada mudou no jogo."
+set -eu
+export FIRMA_SEG='$seg'
+cd /opt/cenario
+docker compose -f infra/prod/docker-compose.prod.yml --env-file /run/cenario/env exec -T -e FIRMA_SEG api \
+  pnpm --silent --filter @cenario/api app-client -- --id firma-viva --name "Firma Viva" \
+  --scopes jogo,operacao,escritorio --secret-env FIRMA_SEG \
+  --redirect "https://$DOMAIN/api/conexoes/cenario/retorno" </dev/null
+PROD
+  else
+    read -rs -p "Cole o segredo do aplicativo firma-viva gerado nesse Cenário (não aparece na tela): " seg
+    echo
+  fi
   [[ ${#seg} -ge 32 && "$seg" =~ ^[A-Za-z0-9_-]+$ ]] || die "Segredo inválido (copie de novo do Cenário)."
   run_vm <<FIM || die "A ligação parou no meio (veja a mensagem acima). Nada foi trocado no Cenário; rode o mesmo comando de novo."
 set -eu
