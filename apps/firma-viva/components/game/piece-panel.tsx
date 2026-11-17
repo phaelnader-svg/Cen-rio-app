@@ -66,8 +66,8 @@ const PRIORITY_LABEL: Record<string, string> = {
 /** Lista simples de materiais da OS: só informativa, nunca segura a produção. */
 function lineTone(l: OsMaterialDto): { tone: 'FALTA' | 'DISPONIVEL' | 'A_CONFERIR'; text: string } {
   if (l.available) return { tone: 'DISPONIVEL', text: 'Disponível na oficina' };
-  if (l.purchased) return { tone: 'A_CONFERIR', text: 'Comprado, ainda não chegou' };
-  return { tone: 'FALTA', text: 'Ainda não disponível' };
+  if (l.purchased) return { tone: 'A_CONFERIR', text: 'Comprado, a caminho' };
+  return { tone: 'FALTA', text: 'A comprar' };
 }
 
 export function PiecePanel({
@@ -202,6 +202,25 @@ export function PiecePanel({
     p.mimeType.startsWith('image/'),
   );
   const lines = materials.data?.materials ?? [];
+  /** Marca comprado / na oficina pela rota oficial da lista da OS (quem gerencia OS). */
+  const markLine = async (
+    l: OsMaterialDto,
+    patch: { purchased?: boolean; available?: boolean },
+  ) => {
+    try {
+      await api(`/api/v1/service-orders/${piece.serviceOrderId}/material-list/${l.id}`, {
+        method: 'PATCH',
+        idempotencyKey: newIdempotencyKey(),
+        body: { ...patch, version: l.version },
+      });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['game-os-materials', piece.serviceOrderId] }),
+        qc.invalidateQueries({ queryKey: ['game-snapshot'] }),
+      ]);
+    } catch (e) {
+      toast('danger', e instanceof ApiError ? e.message : 'Não foi possível marcar.');
+    }
+  };
   const missing = lines.filter((l) => !l.available);
   const wf = pieceWorkflow(piece);
   const [tab, setTab] = useState<'MATERIAIS' | 'ATRIBUICAO' | 'SERVICO' | 'HISTORICO'>('MATERIAIS');
@@ -397,7 +416,7 @@ export function PiecePanel({
       <div className="mb-2 flex flex-wrap gap-1" role="tablist">
         {(
           [
-            ['MATERIAIS', `Materiais${missing.length ? ` (${missing.length} ⛔)` : ''}`],
+            ['MATERIAIS', `Materiais${missing.length ? ` (${missing.length} pendente(s))` : ''}`],
             ['ATRIBUICAO', 'Atribuição e fila'],
             ['SERVICO', 'Serviço e fotos'],
             ['HISTORICO', 'Histórico'],
@@ -523,6 +542,24 @@ export function PiecePanel({
                       {l.notes ? <p className="mt-1 text-xs text-ink-soft">{l.notes}</p> : null}
                       {!l.available ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
+                          {snapshot.canPlan && !l.purchased ? (
+                            <button
+                              className="rounded-lg border border-line-strong px-2 py-1 text-xs font-semibold"
+                              onClick={() => void markLine(l, { purchased: true })}
+                              data-testid="material-mark-purchased"
+                            >
+                              Marcar comprado
+                            </button>
+                          ) : null}
+                          {snapshot.canPlan ? (
+                            <button
+                              className="rounded-lg border border-line-strong px-2 py-1 text-xs font-semibold"
+                              onClick={() => void markLine(l, { available: true })}
+                              data-testid="material-mark-available"
+                            >
+                              Chegou na oficina
+                            </button>
+                          ) : null}
                           <button
                             className="rounded-lg border border-line-strong px-2 py-1 text-xs font-semibold"
                             onClick={() => onLocateMaterial(l.description)}
@@ -538,8 +575,9 @@ export function PiecePanel({
             )}
             {missing.length ? (
               <p className="mt-2 text-xs text-ink-soft">
-                {missing.length} material(is) ainda não disponível(is). A produção não espera por
-                eles; marque a chegada na OS do Cenário.
+                {missing.length} material(is) ainda não chegou(aram). A produção não espera por
+                eles. O agente de Compras, no escritório, prepara o pedido de cada fornecedor pelo
+                WhatsApp.
               </p>
             ) : null}
           </Section>

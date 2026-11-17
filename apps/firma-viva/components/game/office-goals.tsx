@@ -245,7 +245,7 @@ export function GoalsPanel({
   return (
     <Panel
       title="Quadro de Metas"
-      subtitle="Caixa da Cenário · semanas de segunda a domingo (São Paulo)"
+      subtitle="Caixa da empresa · semanas de segunda a domingo"
       icon="🎯"
       onClose={onClose}
       testId="goals-panel"
@@ -255,6 +255,7 @@ export function GoalsPanel({
         <p className="text-xs">Carregando…</p>
       ) : (
         <>
+          {!b.goals.length ? <FirstGoal canManage={canManage} /> : null}
           <div
             className="mb-2 rounded-xl border-2 border-bronze-500/40 bg-white p-2.5 text-xs"
             data-testid="goals-summary"
@@ -1388,5 +1389,72 @@ export function MovesPanel({
         ))}
       </ul>
     </Panel>
+  );
+}
+
+/**
+ * Primeiro acesso: a empresa nova não tem meta (nada de "0% de R$ 100 mil"). O dono diz quanto
+ * quer ter em caixa e, se quiser, até quando.
+ */
+function FirstGoal({ canManage }: { canManage: boolean }) {
+  const act = useAct();
+  const [target, setTarget] = useState('');
+  const [deadline, setDeadline] = useState('');
+  if (!canManage)
+    return (
+      <p className="mb-2 rounded-xl bg-subtle p-2 text-xs" data-testid="goals-first">
+        Ainda não há meta de caixa. Quem gerencia a empresa define a primeira aqui.
+      </p>
+    );
+  const cents = Math.round(Number(target.replace(/\./g, '').replace(',', '.')) * 100);
+  return (
+    <div
+      className="mb-2 space-y-1.5 rounded-xl border-2 border-brand-600/40 bg-brand-50 p-2.5 text-xs"
+      data-testid="goals-first"
+    >
+      <div className="font-bold">Qual é a sua meta de caixa?</div>
+      <p className="text-ink-soft">
+        Diga quanto quer ter em caixa. O quadro mostra quanto falta, o ritmo da semana e a
+        comemoração quando bater.
+      </p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span>R$</span>
+        <input
+          className="w-28 rounded border px-1.5 py-0.5"
+          inputMode="decimal"
+          placeholder="50.000"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+          data-testid="goals-first-target"
+        />
+        <input
+          type="date"
+          className="rounded border px-1.5 py-0.5"
+          value={deadline}
+          onChange={(e) => setDeadline(e.target.value)}
+          aria-label="Até quando (opcional)"
+        />
+        <GBtn
+          className="!px-2 !py-0.5 text-xs"
+          tone="primary"
+          disabled={!(cents > 0)}
+          testId="goals-first-save"
+          onClick={() =>
+            void act(
+              '/api/v1/office/cash/goals',
+              {
+                name: `Meta · ${brlCents(cents)}`,
+                targetCents: cents,
+                deadline: deadline || null,
+                accountIds: [],
+              },
+              'Meta definida.',
+            )
+          }
+        >
+          Definir meta
+        </GBtn>
+      </div>
+    </div>
   );
 }

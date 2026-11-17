@@ -252,7 +252,7 @@ function ContractTab({ orderId, canDocs }: { orderId: string; canDocs: boolean }
       {!cur ? (
         <>
           <p>
-            Nenhum contrato vigente. O agente Documentos preenche o modelo da Cenário com cliente,
+            Nenhum contrato vigente. O agente Documentos preenche o modelo da empresa com cliente,
             serviço, tecido, valor, parcelas, prazo, retirada e entrega.
           </p>
           <GBtn
