@@ -5487,6 +5487,10 @@ model QuoteSettings {
   companyNameOverride String?         @map("company_name_override") @db.VarChar(90)
   /// Logotipo da proposta (PNG/JPEG reduzido, em data URL).
   logoDataUrl         String?         @map("logo_data_url")
+  /// Melhoria 141: textos fixos da proposta (vazio = texto padrão do sistema).
+  proposalTitle       String?         @map("proposal_title") @db.VarChar(120)
+  proposalIntro       String?         @map("proposal_intro") @db.VarChar(400)
+  proposalThanks      String?         @map("proposal_thanks") @db.VarChar(600)
   version             Int             @default(1)
   updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 

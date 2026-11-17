@@ -11,6 +11,7 @@ import {
   type QuoteCatalogKind,
   type QuoteMaterialCategory,
   type QuoteSettingsDto,
+  DEFAULT_PROPOSAL_TEXTS,
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Download, ImagePlus, Plus, Save, Trash2, Upload } from 'lucide-react';
@@ -25,6 +26,7 @@ import {
   FormSection,
   MoneyField,
   SelectField,
+  TextAreaField,
   TextField,
 } from '@/components/ui/form';
 import { Alert } from '@/components/ui/misc';
@@ -100,6 +102,7 @@ export function QuoteBase({
   return (
     <div className="space-y-6">
       <CompanyCard key={settings.nextNumber} settings={settings} />
+      <ProposalTextsCard key={`textos-${settings.version}`} settings={settings} />
       <FormSection
         title="Base de dados"
         description="Alterações de preços passam a valer na hora nos cálculos dos orçamentos. Os orçamentos já salvos guardam os valores da época e não mudam."
@@ -142,6 +145,76 @@ export function QuoteBase({
         </Tabs>
       </FormSection>
     </div>
+  );
+}
+
+/** Melhoria 141: textos fixos da proposta, do jeito da empresa. Vazio = texto padrão. */
+function ProposalTextsCard({ settings }: { settings: QuoteSettingsDto }) {
+  const act = useCatalogAction();
+  const toast = useToast();
+  const [title, setTitle] = useState(settings.proposalTitle ?? '');
+  const [intro, setIntro] = useState(settings.proposalIntro ?? '');
+  const [thanks, setThanks] = useState(settings.proposalThanks ?? '');
+  return (
+    <FormSection
+      title="Textos da proposta"
+      description="O título, a abertura e o agradecimento que o cliente lê. Deixe vazio para usar o texto padrão."
+    >
+      <FormGrid>
+        <TextField
+          label="Título"
+          placeholder={DEFAULT_PROPOSAL_TEXTS.title}
+          maxLength={120}
+          cols={12}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <TextAreaField
+          label="Abertura"
+          placeholder={DEFAULT_PROPOSAL_TEXTS.intro}
+          maxLength={400}
+          rows={3}
+          cols={12}
+          value={intro}
+          onChange={(e) => setIntro(e.target.value)}
+          hint="{nome} vira o primeiro nome do cliente."
+        />
+        <TextAreaField
+          label="Agradecimento"
+          placeholder={DEFAULT_PROPOSAL_TEXTS.thanks}
+          maxLength={600}
+          rows={3}
+          cols={12}
+          value={thanks}
+          onChange={(e) => setThanks(e.target.value)}
+        />
+        <FieldAction cols={12}>
+          <Button
+            variant="secondary"
+            loading={act.isPending}
+            onClick={() =>
+              act.mutate(
+                {
+                  path: '/api/v1/quotes/settings',
+                  method: 'PATCH',
+                  body: {
+                    version: settings.version,
+                    proposalTitle: title.trim() || null,
+                    proposalIntro: intro.trim() || null,
+                    proposalThanks: thanks.trim() || null,
+                  },
+                },
+                {
+                  onSuccess: () => toast('ok', 'Textos salvos. Valem para as próximas propostas.'),
+                },
+              )
+            }
+          >
+            Salvar textos
+          </Button>
+        </FieldAction>
+      </FormGrid>
+    </FormSection>
   );
 }
 

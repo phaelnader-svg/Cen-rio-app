@@ -1,6 +1,6 @@
 'use client';
 
-import { pluralWord } from '@cenario/shared';
+import { pluralWord, proposalTexts } from '@cenario/shared';
 import {
   QUOTE_CONTRACT_CLAUSES,
   formatCents,
@@ -86,14 +86,16 @@ export function ProposalDocument({
   const firstName = s.customerName.trim().split(/\s+/)[0];
   const fee = s.fee;
   const installments = fee && fee.installments > 1 ? fee.installments : 0;
+  // Melhoria 141: textos da proposta (os da empresa, gravados no orçamento, ou os padrões).
+  const texts = s.texts ?? proposalTexts({});
+  const intro = texts.intro.replace(/\{nome\}/g, firstName || 'tudo bem');
   return (
     <article className="print-page print-flat overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-card)]">
       <DocHeader
         company={s.companyName}
         logo={s.logoDataUrl}
-        kicker="Proposta de serviços • Tapeçaria"
-        title="Uma nova vida para o seu estofado."
-        description="Preparamos esta proposta com cuidado, pensando no conforto, na beleza e na renovação do seu ambiente."
+        kicker="Proposta de serviço"
+        title={texts.title}
       />
       <div className="space-y-5 px-6 py-6 sm:px-8 print:space-y-2.5 print:py-3">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -113,18 +115,12 @@ export function ProposalDocument({
           </div>
         </div>
 
-        <div className="text-[15px] text-ink-soft print:text-sm">
-          <p className="font-medium text-ink">{firstName ? `Olá, ${firstName}!` : 'Olá!'}</p>
-          <p className="mt-1">
-            Será um prazer cuidar do seu estofado. Abaixo, você encontra os detalhes do serviço e as
-            condições que preparamos para você.
-          </p>
-        </div>
+        <p className="text-[15px] whitespace-pre-line text-ink-soft print:text-sm">{intro}</p>
 
         {/* Na folha impressa, serviço e valor ficam lado a lado para a proposta caber numa folha só. */}
         <div className="space-y-5 print:grid print:grid-cols-2 print:gap-3 print:space-y-0">
           <section className="rounded-xl border border-line p-5 print:p-4">
-            <Eyebrow>O que vamos realizar</Eyebrow>
+            <Eyebrow>Serviço</Eyebrow>
             <p className="mt-1 text-lg font-semibold">{s.service || '—'}</p>
             <div className="mt-3 flex flex-wrap gap-2 text-sm">
               {(
@@ -152,36 +148,41 @@ export function ProposalDocument({
           </section>
 
           <section className="rounded-xl bg-brand-50 p-5 ring-1 ring-brand-100 ring-inset print:p-4">
-            <Eyebrow>Investimento para o seu projeto</Eyebrow>
+            <Eyebrow>Valor</Eyebrow>
             <p className="mt-2 text-sm text-ink-soft">Valor à vista</p>
             <p className="money text-3xl font-semibold text-brand-700 print:text-2xl">
               {formatCents(t.totalCents)}
             </p>
             {fee && t.installmentTotalCents !== null && (
               <div className="mt-3 rounded-lg bg-surface px-4 py-3 ring-1 ring-line ring-inset">
-                <p className="text-xs text-ink-muted">Opção de pagamento</p>
-                <p className="font-semibold">
-                  {fee.name}: <span className="money">{formatCents(t.installmentTotalCents)}</span>
-                  {installments > 0 && (
+                <p className="text-xs text-ink-muted">Ou parcelado</p>
+                {/* "3X: R$ 2.419,59" vira "3 vezes de R$ 806,53" (total entre parênteses). */}
+                {installments > 0 ? (
+                  <p className="font-semibold">
+                    {installments} vezes de{' '}
+                    <span className="money">
+                      {formatCents(Math.round(t.installmentTotalCents / installments))}
+                    </span>
                     <span className="money font-normal text-ink-soft">
                       {' '}
-                      ({installments}x de{' '}
-                      {formatCents(Math.round(t.installmentTotalCents / installments))})
+                      (total {formatCents(t.installmentTotalCents)})
                     </span>
-                  )}
-                </p>
+                  </p>
+                ) : (
+                  <p className="font-semibold">
+                    {fee.name}:{' '}
+                    <span className="money">{formatCents(t.installmentTotalCents)}</span>
+                  </p>
+                )}
               </div>
             )}
-            <p className="mt-3 text-xs text-ink-muted">
-              Os valores apresentados contemplam o serviço descrito nesta proposta.
-            </p>
+            <p className="mt-3 text-xs text-ink-muted">Valor do serviço descrito nesta proposta.</p>
           </section>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 print:grid-cols-[2fr_3fr] print:gap-3">
           <section className="rounded-xl border border-line p-5 print:p-4">
-            <Eyebrow>Condições comerciais</Eyebrow>
-            <p className="mt-1 font-semibold print:text-sm">Como funciona o pagamento</p>
+            <Eyebrow>Pagamento</Eyebrow>
             <p className="mt-2 text-sm whitespace-pre-line text-ink-soft print:text-xs">
               {s.paymentTerms || '—'}
             </p>
@@ -194,8 +195,7 @@ export function ProposalDocument({
             </p>
           </section>
           <section className="rounded-xl border border-line p-5 print:p-4">
-            <Eyebrow>Informações importantes</Eyebrow>
-            <p className="mt-1 font-semibold print:text-sm">Observações</p>
+            <Eyebrow>Observações</Eyebrow>
             <p className="mt-2 text-sm whitespace-pre-line text-ink-soft print:text-xs">
               {s.notes || '—'}
             </p>
@@ -203,14 +203,7 @@ export function ProposalDocument({
         </div>
 
         <section className="print-keep border-l-4 border-bronze-500 pl-4 print:text-xs">
-          <p className="font-semibold">Obrigado pela confiança!</p>
-          <p className="mt-1 text-sm text-ink-soft print:mt-0.5 print:text-xs">
-            Queremos que cada detalhe do resultado faça a diferença no seu dia a dia. Ficamos à
-            disposição para esclarecer dúvidas e conversar sobre os próximos passos.
-          </p>
-          <p className="mt-2 text-sm font-semibold print:mt-0.5 print:text-xs">
-            Será um prazer realizar esse projeto para você.
-          </p>
+          <p className="text-sm whitespace-pre-line text-ink-soft print:text-xs">{texts.thanks}</p>
         </section>
 
         {pendingWarning && (
@@ -220,7 +213,7 @@ export function ProposalDocument({
         )}
         <div className="flex flex-wrap justify-between gap-2 border-t border-line pt-4 text-xs text-ink-muted print:hidden">
           <span>{s.companyName}</span>
-          <span>Proposta comercial • Preparada especialmente para você</span>
+          <span>Proposta de serviço</span>
         </div>
       </div>
     </article>

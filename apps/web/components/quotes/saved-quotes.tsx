@@ -1,5 +1,6 @@
 'use client';
 
+import { plural, pluralWord } from '@cenario/shared';
 import {
   QUOTE_STATUSES,
   QUOTE_STATUS_LABEL,
@@ -185,7 +186,8 @@ function SavedList({
         </FormGrid>
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm text-ink-muted" aria-live="polite">
-            {filtered.length} de {list.data?.length ?? 0} orçamento(s) encontrado(s)
+            {filtered.length} de{' '}
+            {plural(list.data?.length ?? 0, 'orçamento encontrado', 'orçamentos encontrados')}
           </span>
           <Button
             size="sm"
@@ -234,7 +236,7 @@ function SavedList({
                     {q.customerName || 'Cliente não informado'} <QuoteStatusBadges q={q} />
                     {q.hasWorkOrder && (
                       <Badge tone="brand" className="ml-1 align-middle">
-                        O.S. gerada
+                        OS gerada
                       </Badge>
                     )}
                   </p>
@@ -302,7 +304,7 @@ function SavedList({
                         icon={<ClipboardList className="size-4" aria-hidden />}
                         onClick={() => onOpen({ kind: 'os', id: q.id })}
                       >
-                        {q.hasWorkOrder ? 'Editar O.S.' : 'Gerar O.S.'}
+                        {q.hasWorkOrder ? 'Editar OS' : 'Gerar OS'}
                       </Button>
                       <Button
                         size="sm"
@@ -345,8 +347,8 @@ function SavedList({
         }
       >
         <p className="text-sm text-ink-soft">
-          O orçamento e a O.S. dele deixam de aparecer na lista. O registro fica guardado no
-          histórico do sistema.
+          O orçamento e a OS dele deixam de aparecer na lista. O registro fica guardado no histórico
+          do sistema.
         </p>
         {del.error && (
           <Alert tone="danger" className="mt-3">
@@ -462,7 +464,7 @@ function WorkOrderForm({
     <div className="space-y-6">
       <FormSection
         title="Ordem de Serviço • Custos reais"
-        description="Confira os materiais previstos e informe os valores e quantidades efetivamente utilizados. Esta O.S. é um documento interno."
+        description="Confira os materiais previstos e informe os valores e quantidades efetivamente utilizados. Esta OS é um documento interno."
         actions={
           <Button
             variant="secondary"
@@ -479,7 +481,7 @@ function WorkOrderForm({
         </p>
         <FormGrid>
           <DateField
-            label="Data da O.S."
+            label="Data da OS"
             cols={4}
             value={wo.date}
             onChange={(e) => set({ date: e.target.value })}
@@ -574,7 +576,7 @@ function WorkOrderForm({
             )}
           </div>
           <p className="mt-1.5 text-xs text-ink-muted">
-            A foto aparece ao lado das informações na primeira página da O.S.
+            A foto aparece ao lado das informações na primeira página da OS.
           </p>
         </div>
 
@@ -624,7 +626,8 @@ function WorkOrderForm({
                           {foam && (
                             <p className="text-xs text-ink-muted">
                               Medidas orçadas: {qtyText(it.heightCm)} × {qtyText(it.widthCm)} ×{' '}
-                              {qtyText(it.lengthCm)} cm • {qtyText(it.qty)} peça(s)
+                              {qtyText(it.lengthCm)} cm • {qtyText(it.qty)}{' '}
+                              {pluralWord(it.qty, 'peça', 'peças')}
                             </p>
                           )}
                           {fabric && (
@@ -698,11 +701,11 @@ function WorkOrderForm({
             loading={save.isPending}
             onClick={() => {
               if (!wo.responsibleId)
-                return setError('Selecione o tapeceiro responsável antes de salvar a O.S.');
+                return setError('Selecione o tapeceiro responsável antes de salvar a OS.');
               save.mutate();
             }}
           >
-            Salvar O.S.
+            Salvar OS
           </Button>
         </FormActions>
       </FormSection>
