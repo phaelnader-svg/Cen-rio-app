@@ -223,10 +223,7 @@ describe('consulta longa dos eventos (Firma Viva sem perguntar a cada 3 s)', () 
     const t1 = Date.now();
     const waiting = admin.get(`/api/sync/events?since=${idle.nextSince}&wait=20`);
     await new Promise((r) => setTimeout(r, 300));
-    ok(
-      await send(admin, 'POST', '/api/v1/game/suppliers', { name: 'Fornecedor Eventos' }),
-      201,
-    );
+    ok(await send(admin, 'POST', '/api/v1/game/suppliers', { name: 'Fornecedor Eventos' }), 201);
     const got = ok(await waiting);
     expect(got.events.length).toBeGreaterThan(0);
     expect(Date.now() - t1).toBeLessThan(15_000);
