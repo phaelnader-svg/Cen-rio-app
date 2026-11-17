@@ -279,3 +279,30 @@ export interface AgentRoleTemplate {
   channelPolicies?: Record<string, string>;
   autoSendRules?: string[];
 }
+
+export interface SupplierDto {
+  id: string;
+  name: string;
+  contactName: string | null;
+  phone: string | null;
+  email: string | null;
+  categories: ('TECIDO' | 'ESPUMA' | 'OUTRO')[];
+  notes: string | null;
+  active: boolean;
+  version: number;
+}
+
+/** Material da lista da OS ainda não comprado, como o agente de Compras o vê. */
+export interface PurchaseNeedDto {
+  materialId: string;
+  serviceOrderId: string;
+  osCode: string;
+  customerName: string | null;
+  promisedDate: string | null;
+  description: string;
+  quantity: string | null;
+  category: 'TECIDO' | 'ESPUMA' | 'OUTRO';
+  available: boolean;
+  supplierId: string | null;
+  supplierName: string | null;
+}

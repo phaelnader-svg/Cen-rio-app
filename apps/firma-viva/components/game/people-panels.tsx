@@ -19,7 +19,9 @@ import { Send } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
-import { useAgentTemplates, useConversation, useIntegrations } from './game-api';
+import { useAgentTemplates, useConversation, useIntegrations, useSuppliers } from './game-api';
+import { SuppliersSection, WhatsAppProposal } from './agent-whatsapp';
+import { cenarioUrl } from '@/lib/links';
 import { AgentActions } from './office-panels';
 import { GBtn, KV, Panel, Section, TASK_STATUS_LABEL, Tone, fmtDateTime } from './ui';
 
@@ -176,13 +178,14 @@ const SCOPE_LABEL: Record<string, string> = {
   producao: 'Produção e filas',
   os: 'Ordens de serviço',
   estoque: 'Estoque',
-  compras: 'Compras',
+  compras: 'Materiais a comprar',
   financeiro: 'Financeiro',
   presenca: 'Presença',
   clientes: 'Clientes',
   whatsapp: 'WhatsApp',
   instagram: 'Instagram',
   fiscal: 'Fiscal',
+  orcamentos: 'Orçamentos',
 };
 const ACTION_LABEL: Record<string, string> = {
   atribuir_tarefa: 'Planejar/atribuir tarefas',
@@ -193,6 +196,8 @@ const ACTION_LABEL: Record<string, string> = {
   registrar_pagamento: 'Registrar pagamento',
   emitir_nota: 'Emitir nota fiscal',
   preparar_orcamento: 'Preparar orçamento',
+  pedir_fornecedor: 'Pedir ao fornecedor (WhatsApp)',
+  cobrar_cliente: 'Cobrar cliente (WhatsApp)',
 };
 const POLICY_LABEL: Record<string, string> = {
   NUNCA: 'Nunca',
@@ -218,6 +223,7 @@ export function AgentPanel({
   onOpenPanel?: (p: 'inbox' | 'ads' | 'marketing' | 'central') => void;
 }) {
   const conv = useConversation(agent.id);
+  const suppliers = useSuppliers(agent.roleKey === 'COMPRAS');
   const qc = useQueryClient();
   const toast = useToast();
   const [text, setText] = useState('');
@@ -246,27 +252,50 @@ export function AgentPanel({
       setSending(false);
     }
   };
-  const decide = async (id: string, decision: 'APROVAR' | 'REJEITAR', href?: string) => {
+  /** Links do agente: telas do painel abrem no Cenário Gestão (nunca no endereço do jogo). */
+  const linkOf = (href?: string | null) =>
+    href ? (href.startsWith('/painel') ? cenarioUrl(href) : href) : undefined;
+  const decide = async (
+    id: string,
+    decision: 'APROVAR' | 'REJEITAR',
+    href?: string,
+    edits?: { text?: string; supplierId?: string },
+  ) => {
+    // Abre a aba já no clique (bloqueador de pop-up) e só leva ao destino se a aprovação passar.
+    const win = decision === 'APROVAR' && href ? window.open('', '_blank') : null;
     try {
-      await api(`/api/v1/game/proposals/${id}/decide`, {
-        method: 'POST',
-        idempotencyKey: newIdempotencyKey(),
-        body: { decision },
-      });
+      const r = await api<{ payload: Record<string, unknown> }>(
+        `/api/v1/game/proposals/${id}/decide`,
+        {
+          method: 'POST',
+          idempotencyKey: newIdempotencyKey(),
+          body: { decision, ...(edits ? { edits } : {}) },
+        },
+      );
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['game-agent', agent.id] }),
         qc.invalidateQueries({ queryKey: ['game-agents'] }),
       ]);
-      if (decision === 'APROVAR' && href) window.open(href, '_blank', 'noopener');
+      const sent = r.payload?.sent === true;
+      const target = linkOf(String(r.payload?.href ?? href ?? ''));
+      if (win) {
+        if (target && !sent) win.location.href = target;
+        else win.close();
+      }
       toast(
         'ok',
         decision === 'APROVAR'
-          ? href
-            ? 'Aprovado. O fluxo oficial abriu para você concluir.'
-            : 'Aprovado e executado (veja o histórico do agente).'
+          ? sent
+            ? 'Aprovado e enviado pelo WhatsApp da empresa.'
+            : r.payload?.channel === 'WHATSAPP'
+              ? 'Aprovado. O WhatsApp abriu com a mensagem pronta: é só enviar.'
+              : href
+                ? 'Aprovado. O fluxo oficial abriu para você concluir.'
+                : 'Aprovado e executado (veja o histórico do agente).'
           : 'Proposta rejeitada.',
       );
     } catch (e) {
+      win?.close();
       toast('danger', e instanceof ApiError ? e.message : 'Não foi possível decidir.');
       // Proposta desatualizada: recarrega para mostrar o motivo e a situação atual.
       await qc.invalidateQueries({ queryKey: ['game-agent', agent.id] });
@@ -281,14 +310,18 @@ export function AgentPanel({
           'Quanto preciso receber para cobrir as contas da semana?',
         ]
       : agent.roleKey === 'COMPRAS'
-        ? ['O que preciso comprar?', 'Quais compras liberam OS?']
-        : agent.roleKey === 'ATENDIMENTO'
-          ? ['Quem está esperando orçamento?', 'Quem está esperando no WhatsApp?']
-          : agent.roleKey === 'MARKETING'
-            ? ['O que tenho para postar?']
-            : agent.roleKey === 'TRAFEGO'
-              ? ['Como estão as campanhas?']
-              : ['O que falta configurar?'];
+        ? ['O que preciso comprar?', 'Prepare os pedidos dos fornecedores']
+        : agent.roleKey === 'FINANCEIRO'
+          ? ['Como está o financeiro?', 'Quem preciso cobrar?', 'Quais contas vencem na semana?']
+          : agent.roleKey === 'ORCAMENTOS'
+            ? ['Quais orçamentos esperam resposta?', 'Quem pediu orçamento?']
+            : agent.roleKey === 'ATENDIMENTO' || agent.roleKey === 'WHATSAPP'
+              ? ['Quem está esperando orçamento?', 'Quais clientes avisar hoje?']
+              : agent.roleKey === 'MARKETING' || agent.roleKey === 'INSTAGRAM'
+                ? ['O que tenho para postar?']
+                : agent.roleKey === 'TRAFEGO'
+                  ? ['Como estão as campanhas?']
+                  : ['O que você consegue ver?', 'O que eu faço hoje?'];
   const panelOf: Record<string, 'inbox' | 'ads' | 'marketing'> = {
     ATENDIMENTO: 'inbox',
     TRAFEGO: 'ads',
@@ -308,7 +341,7 @@ export function AgentPanel({
           ) : agent.engine === 'AGUARDANDO_INTEGRACAO' ? (
             <Tone tone="atencao">aguardando integração</Tone>
           ) : (
-            <Tone tone="info">só instruções</Tone>
+            <Tone tone="info">suas instruções</Tone>
           )}
           {agent.status !== 'ATIVO' ? (
             <Tone tone="atencao">{agent.status.toLowerCase()}</Tone>
@@ -337,6 +370,7 @@ export function AgentPanel({
       }
     >
       <AgentActions agentId={agent.id} />
+      {agent.roleKey === 'COMPRAS' ? <SuppliersSection canManage={canManage} /> : null}
       <Section title="Tarefas e pendências">
         {d?.tasks.length ? (
           <ul className="space-y-1">
@@ -362,46 +396,61 @@ export function AgentPanel({
           <ul className="space-y-2" data-testid="agent-proposals">
             {d.proposals
               .filter((p) => p.status === 'PENDENTE')
-              .map((p) => (
-                <li key={p.id} className="rounded-lg border border-line bg-white p-2 text-xs">
-                  <div className="font-semibold">{p.title}</div>
-                  <div className="text-ink-soft">{p.detail}</div>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {p.evidence.map((r) => (
-                      <a
-                        key={r.id}
-                        href={r.href}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded bg-subtle px-1.5 py-0.5 underline"
-                      >
-                        {r.label}
-                      </a>
-                    ))}
-                  </div>
-                  {canManage ? (
-                    <div className="mt-1.5 flex gap-1.5">
-                      <GBtn
-                        tone="primary"
-                        className="!px-2 !py-1 text-xs"
-                        onClick={() => decide(p.id, 'APROVAR', String(p.payload.href ?? ''))}
-                        testId="proposal-approve"
-                      >
-                        {p.payload.href ? 'Aprovar e abrir fluxo' : 'Aprovar e executar'}
-                      </GBtn>
-                      <GBtn
-                        tone="ghost"
-                        className="!px-2 !py-1 text-xs"
-                        onClick={() => decide(p.id, 'REJEITAR')}
-                      >
-                        Rejeitar
-                      </GBtn>
+              .map((p) =>
+                p.payload.channel === 'WHATSAPP' ? (
+                  <WhatsAppProposal
+                    key={p.id}
+                    proposal={p}
+                    canManage={canManage}
+                    suppliers={suppliers.data ?? []}
+                    linkOf={linkOf}
+                    onDecide={(decision, edits) =>
+                      decide(p.id, decision, String(p.payload.href ?? ''), edits)
+                    }
+                  />
+                ) : (
+                  <li key={p.id} className="rounded-lg border border-line bg-white p-2 text-xs">
+                    <div className="font-semibold">{p.title}</div>
+                    <div className="text-ink-soft">{p.detail}</div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {p.evidence.map((r) => (
+                        <a
+                          key={r.id}
+                          href={linkOf(r.href)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded bg-subtle px-1.5 py-0.5 underline"
+                        >
+                          {r.label}
+                        </a>
+                      ))}
                     </div>
-                  ) : (
-                    <p className="mt-1 text-ink-muted">Aprovação exige agentes.gerenciar.</p>
-                  )}
-                </li>
-              ))}
+                    {canManage ? (
+                      <div className="mt-1.5 flex gap-1.5">
+                        <GBtn
+                          tone="primary"
+                          className="!px-2 !py-1 text-xs"
+                          onClick={() =>
+                            decide(p.id, 'APROVAR', linkOf(String(p.payload.href ?? '')))
+                          }
+                          testId="proposal-approve"
+                        >
+                          {p.payload.href ? 'Aprovar e abrir fluxo' : 'Aprovar e executar'}
+                        </GBtn>
+                        <GBtn
+                          tone="ghost"
+                          className="!px-2 !py-1 text-xs"
+                          onClick={() => decide(p.id, 'REJEITAR')}
+                        >
+                          Rejeitar
+                        </GBtn>
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-ink-muted">Aprovação exige agentes.gerenciar.</p>
+                    )}
+                  </li>
+                ),
+              )}
           </ul>
         ) : (
           <p className="text-xs text-ink-muted">
@@ -444,7 +493,7 @@ export function AgentPanel({
                   {m.references.slice(0, 16).map((r) => (
                     <a
                       key={`${r.type}${r.id}`}
-                      href={r.href}
+                      href={linkOf(r.href)}
                       onClick={(ev) => {
                         if (r.type === 'CONVERSA' && onOpenConversation) {
                           ev.preventDefault();

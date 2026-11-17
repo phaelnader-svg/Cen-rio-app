@@ -13,6 +13,7 @@ import type {
   GameSnapshotDto,
   GameSpaceDto,
   IntegrationDto,
+  SupplierDto,
 } from '@cenario/shared';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
@@ -126,4 +127,13 @@ export const usePhotos = (entityType: string, id: string | null) =>
     queryFn: () =>
       api<AttachmentDto[]>(`/api/v1/attachments?entityType=${entityType}&entityId=${id}`),
     enabled: Boolean(id),
+  });
+
+/** Fornecedores do escritório (agente de Compras). */
+export const useSuppliers = (enabled = true) =>
+  useQuery({
+    queryKey: ['game-suppliers'],
+    queryFn: () => api<SupplierDto[]>('/api/v1/game/suppliers'),
+    enabled,
+    staleTime: 60_000,
   });

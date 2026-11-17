@@ -1,8 +1,9 @@
 'use client';
 /**
- * Atualizações do Cenário Gestão no Firma Viva: consulta periódica dos eventos oficiais
- * (/api/sync/events, repassado pela API do jogo com a autorização da organização). Mesma
- * interface do provedor de tempo real que o jogo já usa.
+ * Atualizações do Cenário Gestão no Firma Viva: consulta LONGA dos eventos oficiais
+ * (/api/sync/events?wait=25, repassado pela API do jogo com a autorização da organização). A
+ * requisição fica aberta no Cenário até algo mudar na empresa (ou 25 s), então o jogo recebe o
+ * aviso na hora sem perguntar a cada poucos segundos. Mesma interface do provedor de tempo real.
  */
 import type { RealtimeEvent } from '@cenario/shared';
 import {
@@ -25,7 +26,9 @@ interface RealtimeState {
   reconnectNow(): void;
 }
 const Ctx = createContext<RealtimeState | null>(null);
-const POLL_MS = 3000;
+/** Espera máxima de cada consulta no Cenário (segundos) e pausa depois de uma falha. */
+const WAIT_S = 25;
+const RETRY_MS = 3000;
 
 export function RealtimeProvider({
   children,
@@ -55,7 +58,7 @@ export function RealtimeProvider({
           let more = true;
           while (more && !stop) {
             const r: { events: RealtimeEvent[]; hasMore: boolean; nextSince: string } = await api(
-              `/api/sync/events?since=${since.current}&limit=200`,
+              `/api/sync/events?since=${since.current}&limit=200&wait=${WAIT_S}`,
             );
             for (const e of r.events) for (const l of listeners.current) l(e, false);
             since.current = r.nextSince;
@@ -70,8 +73,11 @@ export function RealtimeProvider({
           return;
         }
         if (!stop) setStatus('reconnecting');
+        if (!stop) timer = setTimeout(() => void tick(), RETRY_MS);
+        return;
       }
-      if (!stop) timer = setTimeout(() => void tick(), POLL_MS);
+      // A própria consulta já esperou pela novidade: a próxima começa logo (pausa mínima).
+      if (!stop) timer = setTimeout(() => void tick(), 250);
     };
     void tick();
     return () => {
