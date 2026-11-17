@@ -11,3 +11,11 @@
 - **Aviso no fim do script:** o contêiner `api` (Cenário de TESTE dentro da VM, empresa fictícia) ficou reiniciando, então a etapa final `registrar_app` não rodou. Esse Cenário de teste não é usado enquanto o jogo está ligado à produção; fica como pendência investigar pelos logs (`docker compose ... logs api`).
 - **Indisponibilidade:** a troca dos contêineres do jogo (alguns segundos).
 - **Para voltar:** o mesmo comando com a branch `claude/project-thread-p5lymm-firma-viva`.
+
+## Segunda atualização: ícones, seta do tutorial e paredes (acd5444)
+
+- **Quando:** 2026-11-17, publicada às 07:17 UTC (04:17 em Brasília), com o OK do dono depois de ver os prints.
+- **Como:** o mesmo `firma-teste.sh atualizar`, na branch `claude/project-thread-6ob1t1` (acd5444). A primeira tentativa caiu por queda do túnel IAP (`Broken pipe`) logo depois de enviar o código e antes de montar as imagens; o site seguiu na versão anterior. A segunda tentativa concluiu.
+- **Versão:** antes 740b9bd; depois acd5444.
+- **Verificações (de fora, 07:18 UTC):** `/api/health` → 200; `/jogo` serve o pacote novo (com a seta do tutorial); `/api/entrar/cenario` → 302 para `cenariogestao.com.br/autorizar` com `prompt=none`.
+- **Indisponibilidade:** a troca dos contêineres do jogo (alguns segundos).
