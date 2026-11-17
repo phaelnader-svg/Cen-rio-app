@@ -5,6 +5,7 @@
  * documento JSON para paredes, portas e decoração. Remover algo nunca apaga: o objeto é
  * desativado (os vínculos históricos continuam resolvíveis).
  */
+import { requireCompanyId } from '../../core/tenant';
 import {
   type AreaDef,
   type GameSpaceDto,
@@ -133,7 +134,10 @@ export function toSpaceDto(s: SpaceRow, updatedBy: string | null = null): GameSp
 }
 
 export async function loadSpace(db: Db, key: string) {
-  const s = await db.gameSpace.findUnique({ where: { key }, include: spaceInclude });
+  const s = await db.gameSpace.findUnique({
+    where: { companyId_key: { companyId: requireCompanyId(), key } },
+    include: spaceInclude,
+  });
   if (!s) return null;
   const by = s.updatedById
     ? await db.user.findUnique({ where: { id: s.updatedById }, select: { displayName: true } })
@@ -246,7 +250,7 @@ export async function ensureDefaultSpaces(prisma: PrismaClient) {
   if (await prisma.gameSpace.count()) return;
   const team = await teamHints(prisma);
   await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended('game:init', 0))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`game:init:${requireCompanyId()}`}, 0))`;
     if (await tx.gameSpace.count()) return;
     const defs: [string, LayoutContent, number][] = [
       ['TAPECARIA', suggestedWorkshop(team), 0],

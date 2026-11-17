@@ -4,6 +4,7 @@
  * (item_location_events). Funcionários com a tarefa iniciada e a fila oficial (loadQueue).
  * Nada aqui decide regra: só lê os registros do Cenário Gestão.
  */
+import { requireCompanyId } from '../../core/tenant';
 import {
   type GameEmployeeDto,
   type GamePieceDto,
@@ -192,7 +193,7 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
         },
         orderBy: [{ status: 'asc' }, { startedAt: 'desc' }],
       });
-      const s = await prisma.companySettings.findUnique({ where: { id: 1 } });
+      const s = await prisma.companySettings.findUnique({ where: { id: requireCompanyId() } });
       const today = new Intl.DateTimeFormat('en-CA', {
         timeZone: s?.timezone ?? 'America/Sao_Paulo',
       }).format(clockNow());

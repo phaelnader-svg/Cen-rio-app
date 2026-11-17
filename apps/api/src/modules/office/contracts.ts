@@ -3,6 +3,7 @@
  * aprovado; revisão do gestor; envio para assinatura (Clicksign) só com aprovação; retorno do
  * provedor atualiza o status e arquiva o PDF assinado na OS. Revisões preservam as anteriores.
  */
+import { requireCompanyId } from '../../core/tenant';
 import type { PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -107,7 +108,7 @@ const docFmt = (d: string | null) =>
 
 /** Preenche o modelo; devolve o texto e a lista do que falta para assinar. */
 export async function fillContract(db: Tx | PrismaClient, order: OrderFull, template: string) {
-  const company = await db.companySettings.findUnique({ where: { id: 1 } });
+  const company = await db.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const c = order.customer;
   const missing: string[] = [];
   const val = <T>(v: T | null | undefined, label: string) => {
@@ -251,7 +252,7 @@ export async function prepareContract(
   const last = await tx.contract.findFirst({ where: { orderId }, orderBy: { revision: 'desc' } });
   const template = await currentTemplate(tx, actor.userId);
   const { body, missing } = await fillContract(tx, order, template.body);
-  const company = await tx.companySettings.findUnique({ where: { id: 1 } });
+  const company = await tx.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const signers: Signer[] = [
     {
       name: order.customer.name,

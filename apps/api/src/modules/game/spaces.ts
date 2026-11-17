@@ -2,6 +2,7 @@
  * Plantas do jogo: listar, abrir, salvar (com versão e impacto de remoções), criar ambientes,
  * recomeçar do zero ou da sugestão, histórico de versões.
  */
+import { requireCompanyId } from '../../core/tenant';
 import {
   EVENT_TYPES,
   type GameLayoutRevisionDto,
@@ -365,7 +366,9 @@ export async function gameSpaceRoutes(app: FastifyInstance) {
     { config: { access: GAME_ACCESS } },
     async (request) => {
       const { key } = keyParams.parse(request.params);
-      const space = await prisma.gameSpace.findUnique({ where: { key } });
+      const space = await prisma.gameSpace.findUnique({
+        where: { companyId_key: { companyId: requireCompanyId(), key } },
+      });
       if (!space) throw Errors.notFound('Ambiente');
       const rows = await prisma.gameLayoutRevision.findMany({
         where: { spaceId: space.id },
@@ -550,7 +553,13 @@ export async function gameSpaceRoutes(app: FastifyInstance) {
       const actor = actorFrom(request);
       const out = await prisma.$transaction(async (tx) => {
         let key = slugKey(input.name);
-        for (let i = 2; await tx.gameSpace.findUnique({ where: { key } }); i++)
+        for (
+          let i = 2;
+          await tx.gameSpace.findUnique({
+            where: { companyId_key: { companyId: requireCompanyId(), key } },
+          });
+          i++
+        )
           key = `${slugKey(input.name).slice(0, 26)}_${i}`;
         const content =
           input.start === 'SUGERIDA'

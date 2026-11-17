@@ -5,6 +5,7 @@ import { Errors } from '../lib/errors';
 import { loadUserPermissions } from '../core/permissions';
 import { sessionExpiry } from '../core/sessions';
 import type { AccessRule } from '../core/types';
+import { PLATFORM_COMPANY_ID } from '../core/tenant';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 /** Intervalo mínimo entre atualizações de "último acesso" (reduz escritas no banco). */
@@ -61,7 +62,12 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
 
     // Webhooks de provedores (Meta, Asaas, Clicksign): sem cookie e sem Origin. A autenticação é a
     // assinatura/token do provedor, verificada no handler (falha fechada se não configurada).
-    if ('webhook' in access) return;
+    // Multi-empresa: as chaves e os webhooks do servidor são da Cenário Estofados (empresa nº 1),
+    // a única que pode ligar conexões externas por enquanto.
+    if ('webhook' in access) {
+      if (request.tenant) request.tenant.companyId = PLATFORM_COMPANY_ID;
+      return;
+    }
     if ('public' in access && access.serverToServer) return;
 
     // 0. Acesso delegado de aplicativo (Authorization: Bearer). Sem cookies: não há CSRF;

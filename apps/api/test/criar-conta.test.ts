@@ -125,6 +125,26 @@ describe('Criar conta (empresa nova)', () => {
     expect(daNova.find((x) => x.key === m.key)!.version).toBe(1);
   });
 
+  it('jogo: cada empresa ganha os próprios ambientes, com as mesmas chaves', async () => {
+    const admin = await loginAdmin(app);
+    const { c } = await criarConta();
+    const daCenario = await admin.get('/api/v1/game/spaces');
+    const daNova = await c.get('/api/v1/game/spaces');
+    expect(daCenario.status).toBe(200);
+    expect(daNova.status).toBe(200);
+    const ids = (r: { body: unknown }) => (r.body as { id: string }[]).map((x) => x.id);
+    const chaves = (r: { body: unknown }) => (r.body as { key: string }[]).map((x) => x.key);
+    expect(chaves(daNova).sort()).toEqual(chaves(daCenario).sort());
+    for (const id of ids(daNova)) expect(ids(daCenario)).not.toContain(id);
+  });
+
+  it('conexões externas (chaves do servidor) ficam só na Cenário Estofados por enquanto', async () => {
+    const { c } = await criarConta();
+    const r = await c.post('/api/v1/connections/ASAAS/connect', { apiKey: 'chave-qualquer-123' });
+    expect(r.status).toBe(422);
+    expect(await db().integrationConnection.count({ where: { companyId: { not: 1 } } })).toBe(0);
+  });
+
   it('valida senha de no mínimo 8 caracteres e a confirmação', async () => {
     const curta = await criarConta({ ...NOVA, password: 'abc1234', passwordConfirm: 'abc1234' });
     expect(curta.r.status).toBe(400);

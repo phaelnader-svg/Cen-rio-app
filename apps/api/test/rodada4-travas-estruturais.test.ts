@@ -1701,10 +1701,10 @@ describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava 
  * Chave: "<pasta da migration>: <comando normalizado>".
  */
 const ALLOWED_DESTRUCTIVE: Record<string, string> = {
-  '20270504000000_multi_empresa_etapa4: DROP CONSTRAINT "module_settings_pkey"':
+  '20270715000000_multi_empresa_etapa4: DROP CONSTRAINT "module_settings_pkey"':
     'Chave primária recriada na mesma migration com a empresa junto (company_id, key): cada ' +
     'empresa liga e desliga os próprios módulos. Nenhuma linha é apagada nem alterada.',
-  '20270427000000_multi_empresa_etapa3: UPDATE ON':
+  '20270708000000_multi_empresa_etapa3: UPDATE ON':
     'Não é comando: é o privilégio "UPDATE ON" concedido ao papel cenario_app (GRANT nas tabelas e ' +
     'sequências, e o padrão para as novas). Nenhuma linha é alterada.',
   '20270223000000_custo_operacional_equipe_propria: DROP CONSTRAINT "logistics_costs_phase6"':
@@ -1743,10 +1743,10 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
     'caixa e os lançamentos do Quadro de Metas (tabelas novas).',
 };
 /** Migration da etapa 2 do multi-empresa: conferida à parte (ver o teste F1-13). */
-const MULTI_EMPRESA_ETAPA2 = '20270420000000_multi_empresa_etapa2';
+const MULTI_EMPRESA_ETAPA2 = '20270701000000_multi_empresa_etapa2';
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
-  '20270427000000_multi_empresa_etapa3: UPDATE ON': 2,
+  '20270708000000_multi_empresa_etapa3: UPDATE ON': 2,
   '20270622000000_jogo_quadro_metas: UPDATE OR': 2,
   '20270309000000_materiais_estoque_entrega: UPDATE CASCADE': 16,
   '20270316000000_reformulacao_fase_2: UPDATE CASCADE': 5,
@@ -1846,7 +1846,7 @@ describe('F1-13 — só as telas de remoção aprovada saíram, nenhum dado excl
       return true;
     });
     expect(naoJustificados).toEqual([]);
-    expect(multiEmpresa.filter((c) => c.startsWith('DROP INDEX')).length).toBe(40);
+    expect(multiEmpresa.filter((c) => c.startsWith('DROP INDEX')).length).toBe(50);
     expect(etapa2).not.toMatch(/\b(DELETE\s+FROM|TRUNCATE|DROP\s+(TABLE|COLUMN))\b/i);
 
     expect(found.sort()).toEqual(

@@ -4,6 +4,7 @@
  * - Tráfego lê campanhas e propõe mudança de orçamento (campanha, valor atual → novo, motivo);
  *   a alteração só é executada quando o gestor aprova (anuncios.gerenciar).
  */
+import { requireCompanyId } from '../../core/tenant';
 import { EVENT_TYPES } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -180,7 +181,7 @@ export async function marketingRoutes(app: FastifyInstance) {
     const c = await requireConnection(prisma, 'META_ADS');
     const list = await campaigns(asConn(c));
     await prisma.integrationConnection.update({
-      where: { providerKey: 'META_ADS' },
+      where: { companyId_providerKey: { companyId: requireCompanyId(), providerKey: 'META_ADS' } },
       data: { lastSyncAt: new Date() },
     });
     return { account: c.accountLabel, test: c.mode === 'TESTE_LOCAL', campaigns: list };

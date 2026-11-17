@@ -2,14 +2,14 @@
 --
 -- * company_settings vira a tabela de empresas (id passa a ser automático). A empresa 1 é a
 --   Cenário Estofados e recebe TODOS os dados existentes.
--- * 125 tabelas ganham company_id (NOT NULL, FK para company_settings). O valor padrão vem de
+-- * 159 tabelas ganham company_id (NOT NULL, FK para company_settings). O valor padrão vem de
 --   app_company_id(): a empresa definida na transação (SET LOCAL app.company_id), ou 1 enquanto a
 --   etapa 3 não liga essa definição em cada requisição.
 -- * Numerações (pedido nº, OS nº…) passam a ser por empresa: company_counters + gatilho.
 -- * Unicidades de nomes/códigos/datas passam a valer por empresa.
 --
 -- Só acrescenta: nenhum registro é removido ou alterado além de ganhar company_id = 1.
--- Reversão: packages/db/rollback/20270420000000_multi_empresa_etapa2.down.sql
+-- Reversão: packages/db/rollback/20270701000000_multi_empresa_etapa2.down.sql
 
 -- 1. A empresa nº 1 existe antes de qualquer chave estrangeira apontar para ela.
 INSERT INTO "company_settings" ("id", "trade_name", "updated_at")
@@ -442,6 +442,108 @@ ALTER TABLE "closing_payment_parts" ADD CONSTRAINT "closing_payment_parts_compan
 ALTER TABLE "closing_payment_reversals" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE "closing_payment_reversals" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
 ALTER TABLE "closing_payment_reversals" ADD CONSTRAINT "closing_payment_reversals_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_spaces" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "game_spaces" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "game_spaces" ADD CONSTRAINT "game_spaces_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_areas" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "game_areas" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "game_areas" ADD CONSTRAINT "game_areas_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_stations" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "game_stations" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "game_stations" ADD CONSTRAINT "game_stations_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_station_assignees" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "game_station_assignees" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "game_station_assignees" ADD CONSTRAINT "game_station_assignees_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_storage_units" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "game_storage_units" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "game_storage_units" ADD CONSTRAINT "game_storage_units_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_storage_slots" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "game_storage_slots" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "game_storage_slots" ADD CONSTRAINT "game_storage_slots_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_slot_materials" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "game_slot_materials" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "game_slot_materials" ADD CONSTRAINT "game_slot_materials_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "game_layout_revisions" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "game_layout_revisions" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "game_layout_revisions" ADD CONSTRAINT "game_layout_revisions_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "ai_agents" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "ai_agents" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "ai_agents" ADD CONSTRAINT "ai_agents_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "ai_agent_messages" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "ai_agent_messages" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "ai_agent_messages" ADD CONSTRAINT "ai_agent_messages_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "ai_agent_proposals" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "ai_agent_proposals" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "ai_agent_proposals" ADD CONSTRAINT "ai_agent_proposals_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "agent_actions" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "agent_actions" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "agent_actions" ADD CONSTRAINT "agent_actions_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "integration_connections" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "integration_connections" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "integration_connections" ADD CONSTRAINT "integration_connections_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "integration_oauth_states" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "integration_oauth_states" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "integration_oauth_states" ADD CONSTRAINT "integration_oauth_states_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "integration_webhook_events" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "integration_webhook_events" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "integration_webhook_events" ADD CONSTRAINT "integration_webhook_events_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "inbox_conversations" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "inbox_conversations" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "inbox_conversations" ADD CONSTRAINT "inbox_conversations_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "inbox_messages" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "inbox_messages" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "inbox_messages" ADD CONSTRAINT "inbox_messages_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "marketing_posts" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "marketing_posts" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "marketing_posts" ADD CONSTRAINT "marketing_posts_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "contract_templates" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "contract_templates" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "contract_templates" ADD CONSTRAINT "contract_templates_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "contracts" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "contracts" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "contracts" ADD CONSTRAINT "contracts_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "payment_charges" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "payment_charges" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "payment_charges" ADD CONSTRAINT "payment_charges_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "fiscal_profiles" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "fiscal_profiles" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "fiscal_profiles" ADD CONSTRAINT "fiscal_profiles_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "fiscal_documents" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "fiscal_documents" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "fiscal_documents" ADD CONSTRAINT "fiscal_documents_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "bank_accounts" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "bank_accounts" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "bank_accounts" ADD CONSTRAINT "bank_accounts_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "bank_transactions" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "bank_transactions" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "bank_transactions" ADD CONSTRAINT "bank_transactions_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "payment_orders" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "payment_orders" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "payment_orders" ADD CONSTRAINT "payment_orders_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "card_settlements" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "card_settlements" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "card_settlements" ADD CONSTRAINT "card_settlements_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "purchase_quotes" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "purchase_quotes" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "purchase_quotes" ADD CONSTRAINT "purchase_quotes_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "accounting_documents" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "accounting_documents" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "accounting_documents" ADD CONSTRAINT "accounting_documents_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "cash_snapshots" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "cash_snapshots" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "cash_snapshots" ADD CONSTRAINT "cash_snapshots_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "cash_entries" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "cash_entries" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "cash_entries" ADD CONSTRAINT "cash_entries_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "cash_goals" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "cash_goals" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "cash_goals" ADD CONSTRAINT "cash_goals_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "cash_goal_achievements" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "cash_goal_achievements" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "cash_goal_achievements" ADD CONSTRAINT "cash_goal_achievements_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "cash_week_closings" ADD COLUMN "company_id" INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "cash_week_closings" ALTER COLUMN "company_id" SET DEFAULT app_company_id();
+ALTER TABLE "cash_week_closings" ADD CONSTRAINT "cash_week_closings_company_id_fkey" FOREIGN KEY ("company_id") REFERENCES "company_settings"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- 5. Numerações: o contador da empresa 1 continua de onde a sequência global parou.
 INSERT INTO "company_counters" ("company_id", "key", "last_value")
@@ -734,6 +836,16 @@ DROP INDEX "closing_payments_number_key";
 CREATE UNIQUE INDEX "closing_payments_company_id_number_key" ON "closing_payments"("company_id", "number");
 CREATE TRIGGER "closing_payments_company_number" BEFORE INSERT ON "closing_payments"
   FOR EACH ROW EXECUTE FUNCTION assign_company_number();
+INSERT INTO "company_counters" ("company_id", "key", "last_value")
+SELECT 1, 'contracts', GREATEST(
+  COALESCE((SELECT MAX("number") FROM "contracts"), 0),
+  (SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END FROM "contracts_number_seq"));
+ALTER TABLE "contracts" ALTER COLUMN "number" DROP DEFAULT;
+DROP SEQUENCE "contracts_number_seq";
+DROP INDEX "contracts_number_key";
+CREATE UNIQUE INDEX "contracts_company_id_number_key" ON "contracts"("company_id", "number");
+CREATE TRIGGER "contracts_company_number" BEFORE INSERT ON "contracts"
+  FOR EACH ROW EXECUTE FUNCTION assign_company_number();
 
 -- 6. Outras unicidades que passam a valer por empresa.
 DROP INDEX "devices_name_key";
@@ -752,6 +864,12 @@ DROP INDEX "item_locations_key_key";
 CREATE UNIQUE INDEX "item_locations_company_id_key_key" ON "item_locations"("company_id", "key");
 DROP INDEX "weekly_closings_week_start_key";
 CREATE UNIQUE INDEX "weekly_closings_company_id_week_start_key" ON "weekly_closings"("company_id", "week_start");
+DROP INDEX "game_spaces_key_key";
+CREATE UNIQUE INDEX "game_spaces_company_id_key_key" ON "game_spaces"("company_id", "key");
+DROP INDEX "integration_connections_provider_key_key";
+CREATE UNIQUE INDEX "integration_connections_company_id_provider_key_key" ON "integration_connections"("company_id", "provider_key");
+DROP INDEX "cash_week_closings_week_start_key";
+CREATE UNIQUE INDEX "cash_week_closings_company_id_week_start_key" ON "cash_week_closings"("company_id", "week_start");
 -- Orçamentos: uma configuração por empresa (o id deixa de ser fixo em 1).
 CREATE SEQUENCE "quote_settings_id_seq" AS INTEGER OWNED BY "quote_settings"."id";
 SELECT setval('"quote_settings_id_seq"', GREATEST((SELECT MAX("id") FROM "quote_settings"), 1));
@@ -763,3 +881,16 @@ DROP INDEX "inventory_categories_name_key";
 CREATE UNIQUE INDEX "inventory_categories_name_key" ON "inventory_categories"("company_id", lower("name"::text));
 DROP INDEX "fabric_rolls_code_key";
 CREATE UNIQUE INDEX "fabric_rolls_code_key" ON "fabric_rolls"("company_id", lower("code"::text));
+-- Jogo, escritório e conexões (64c238f): unicidades compostas e parciais por empresa.
+DROP INDEX "integration_webhook_events_provider_key_event_id_key";
+CREATE UNIQUE INDEX "integration_webhook_events_company_id_provider_key_event_id_key" ON "integration_webhook_events"("company_id", "provider_key", "event_id");
+DROP INDEX "inbox_conversations_channel_external_thread_id_key";
+CREATE UNIQUE INDEX "inbox_conversations_company_id_channel_external_thread_id_key" ON "inbox_conversations"("company_id", "channel", "external_thread_id");
+DROP INDEX "contract_templates_key_version_key";
+CREATE UNIQUE INDEX "contract_templates_company_id_key_version_key" ON "contract_templates"("company_id", "key", "version");
+DROP INDEX "card_settlements_provider_external_id_key";
+CREATE UNIQUE INDEX "card_settlements_company_id_provider_external_id_key" ON "card_settlements"("company_id", "provider", "external_id");
+DROP INDEX "contract_templates_one_current";
+CREATE UNIQUE INDEX "contract_templates_one_current" ON "contract_templates"("company_id", "key") WHERE "current";
+DROP INDEX "bank_accounts_one_cash_default";
+CREATE UNIQUE INDEX "bank_accounts_one_cash_default" ON "bank_accounts"("company_id", "cash_default") WHERE "cash_default";

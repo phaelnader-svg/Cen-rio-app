@@ -16,5 +16,5 @@ ALTER TABLE "company_settings" DROP COLUMN "created_at";
 ALTER TABLE "module_settings" DROP CONSTRAINT "module_settings_pkey";
 ALTER TABLE "module_settings" ADD CONSTRAINT "module_settings_pkey" PRIMARY KEY ("key");
 
-DELETE FROM "_prisma_migrations" WHERE migration_name = '20270504000000_multi_empresa_etapa4';
+DELETE FROM "_prisma_migrations" WHERE migration_name = '20270715000000_multi_empresa_etapa4';
 COMMIT;

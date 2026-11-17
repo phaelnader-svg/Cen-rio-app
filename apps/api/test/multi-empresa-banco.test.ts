@@ -41,6 +41,12 @@ const UNICAS_NO_SISTEMA = new Set([
   'company_counters_pkey',
   'domain_events_seq_key', // posição técnica na fila de eventos
   'quote_settings_pkey', // id automático (uma linha por empresa, UNIQUE company_id)
+  'integration_oauth_states_pkey', // "state" aleatório da autorização OAuth
+  // Ids gerados pelo provedor externo (assinatura, cobrança, nota, pagamento): únicos no mundo.
+  'contracts_provider_envelope_id_key',
+  'payment_charges_provider_charge_id_key',
+  'fiscal_documents_provider_ref_key',
+  'payment_orders_provider_ref_key',
 ]);
 
 /** Roda `fn` como se a requisição fosse da empresa `companyId` (o que a etapa 3 fará sozinha). */
@@ -75,7 +81,7 @@ describe('Multi-empresa: banco', () => {
       if (!comFk.has(t)) problemas.push(`${t}: sem FK para company_settings`);
     }
     expect(problemas).toEqual([]);
-    expect(tabelasComEmpresa.length).toBe(129);
+    expect(tabelasComEmpresa.length).toBe(163);
   });
 
   it('nenhuma unicidade de tabela de empresa vale no sistema inteiro sem motivo', async () => {

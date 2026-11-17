@@ -4,8 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
 import { Errors } from '../../lib/errors';
 
-/** A empresa da instalação (Cenário Estofados) é a dona da plataforma. */
-export const PLATFORM_COMPANY_ID = 1;
+import { PLATFORM_COMPANY_ID } from '../../core/tenant';
 
 const blockSchema = z.object({ reason: z.string().trim().max(200).optional() });
 

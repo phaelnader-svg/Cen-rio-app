@@ -19,6 +19,9 @@ import { scopedPrismaClient, type PrismaClient } from '@cenario/db';
  * usuário pelo e-mail no login, a fila de eventos, os testes). Usá-lo é sempre uma decisão
  * explícita no código.
  */
+/** A empresa da instalação (Cenário Estofados): dona da plataforma e das chaves do servidor. */
+export const PLATFORM_COMPANY_ID = 1;
+
 export interface TenantStore {
   companyId: number | null;
 }

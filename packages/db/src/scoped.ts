@@ -5,7 +5,7 @@ import type { Prisma, PrismaClient } from '@prisma/client';
  *
  * Cada operação roda numa transação que começa trocando o papel para `cenario_app` (sem
  * superusuário, sem BYPASSRLS) e gravando `app.company_id` / `app.bypass_rls`. Ver
- * apps/api/src/core/tenant.ts e a migration 20270427000000_multi_empresa_etapa3.
+ * apps/api/src/core/tenant.ts e a migration 20270708000000_multi_empresa_etapa3.
  */
 /** Papel do banco com RLS aplicada (criado pela migration da etapa 3). */
 export const APP_DB_ROLE = 'cenario_app';

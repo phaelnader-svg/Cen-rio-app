@@ -414,7 +414,7 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
     // anterior trataria a funcionalidade como ligada sem aviso). O interruptor "ajuda" saiu com a
     // remoção S7; a linha antiga fica no banco.
     await db().moduleSetting.upsert({
-      where: { key: 'ajuda' },
+      where: { companyId_key: { companyId: 1, key: 'ajuda' } },
       create: { key: 'ajuda', enabled: false },
       update: { enabled: false },
     });

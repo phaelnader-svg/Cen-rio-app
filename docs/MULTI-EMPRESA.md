@@ -73,8 +73,8 @@ precisa achar zero; as rotas com `/:id` também passam a ser testadas com ids da
 
 ## Etapa 2 — banco com empresa
 
-Migration `20270420000000_multi_empresa_etapa2` (reversão em
-`packages/db/rollback/20270420000000_multi_empresa_etapa2.down.sql`). Só acrescenta.
+Migration `20270701000000_multi_empresa_etapa2` (reversão em
+`packages/db/rollback/20270701000000_multi_empresa_etapa2.down.sql`). Só acrescenta.
 
 - `company_settings` vira a tabela de empresas: sai a trava `company_settings_singleton`
   (id = 1), o id passa a vir de `company_settings_id_seq`. A migration garante a empresa 1
@@ -126,8 +126,8 @@ Falta o ensaio com uma cópia do banco de produção, no ambiente de homologaç�
 
 ## Etapa 3 — isolamento ligado
 
-Migration `20270427000000_multi_empresa_etapa3` (reversão em
-`packages/db/rollback/20270427000000_multi_empresa_etapa3.down.sql`). Não mexe em dados.
+Migration `20270708000000_multi_empresa_etapa3` (reversão em
+`packages/db/rollback/20270708000000_multi_empresa_etapa3.down.sql`). Não mexe em dados.
 
 - **Papel `cenario_app`** (NOLOGIN, sem superusuário, sem BYPASSRLS). A API continua conectando
   com o usuário de sempre, mas toda consulta roda numa transação curta que começa com
@@ -165,8 +165,8 @@ Riscos conhecidos, sem efeito no isolamento:
 
 ## Etapa 4 — Criar conta e painel do dono
 
-Migration `20270504000000_multi_empresa_etapa4` (reversão em
-`packages/db/rollback/20270504000000_multi_empresa_etapa4.down.sql`, que recusa se houver mais de
+Migration `20270715000000_multi_empresa_etapa4` (reversão em
+`packages/db/rollback/20270715000000_multi_empresa_etapa4.down.sql`, que recusa se houver mais de
 uma empresa). Só acrescenta.
 
 - **Criar conta** (`POST /api/auth/signup`, tela `/entrar`): e-mail, senha (mínimo 8) e
@@ -195,3 +195,27 @@ uma empresa). Só acrescenta.
 - O teste de vazamento cria a empresa B pelo "Criar conta" de verdade.
 
 Testes: `apps/api/test/criar-conta.test.ts`.
+
+## Sobre a versão 64c238f (jogo, escritório e conexões)
+
+A branch foi juntada com `64c238f` (a próxima versão de produção) para que o multi-empresa não
+apague o que ela publica. Por isso as migrations do multi-empresa passaram a vir **depois** das do
+jogo: `20270701000000_multi_empresa_etapa2`, `20270708000000_multi_empresa_etapa3` e
+`20270715000000_multi_empresa_etapa4` (antes 20270420/20270427/20270504; nunca foram aplicadas
+em homologação nem em produção).
+
+- As 34 tabelas novas (jogo, agentes, conexões, conversas, contratos, cobranças, notas, banco,
+  Quadro de Metas…) entram no mapa como `empresa`: `company_id`, FK e RLS como as demais
+  (163 tabelas com trava). Unicidades por empresa: `game_spaces.key`,
+  `integration_connections.provider_key`, `cash_week_closings.week_start`, `contracts.number`
+  (numeração por empresa), `(provedor, evento)` dos webhooks, `(canal, conversa)` da caixa de
+  entrada, `(chave, versão)` dos modelos de contrato, `(provedor, id externo)` das maquininhas e os
+  índices parciais "um modelo de contrato atual" e "uma conta padrão do caixa". Ids gerados pelos
+  provedores externos continuam únicos no sistema.
+- **Conexões externas ficam só na empresa nº 1 por enquanto.** As chaves e os webhooks (Meta,
+  Asaas, Clicksign) são do servidor, isto é, da Cenário Estofados: os webhooks são gravados na
+  empresa 1 e as outras empresas recebem "ainda não disponível" ao tentar conectar, testar ou
+  simular. Ligar as contas de cada empresa exige webhook separado por empresa (projeto futuro).
+- O jogo cria os ambientes padrão de cada empresa na primeira entrada (trava por empresa).
+- `tsc` da API precisa de mais memória com o schema maior:
+  `NODE_OPTIONS=--max-old-space-size=6144`.

@@ -7,6 +7,7 @@
  * com as mesmas permissões das telas e devolve um EFEITO. Nada é alterado aqui: mudanças na planta
  * voltam como prévia e atribuições como dados para confirmar — a execução usa as rotas oficiais.
  */
+import { requireCompanyId } from '../../core/tenant';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   formatNumber,
@@ -149,7 +150,7 @@ async function serviceOrdersMatching(ctx: Ctx, intent: CommandIntent) {
     },
   };
   if (intent.osNumero) {
-    const so = await ctx.prisma.serviceOrder.findUnique({
+    const so = await ctx.prisma.serviceOrder.findFirst({
       where: { number: intent.osNumero },
       include,
     });
@@ -632,7 +633,7 @@ export async function gameCommandRoutes(app: FastifyInstance) {
     async (request: FastifyRequest): Promise<CommandResultDto> => {
       const input = commandRequestSchema.parse(request.body);
       await ensureDefaultSpaces(prisma);
-      const s = await prisma.companySettings.findUnique({ where: { id: 1 } });
+      const s = await prisma.companySettings.findUnique({ where: { id: requireCompanyId() } });
       const today = new Intl.DateTimeFormat('en-CA', {
         timeZone: s?.timezone ?? 'America/Sao_Paulo',
       }).format(clockNow());

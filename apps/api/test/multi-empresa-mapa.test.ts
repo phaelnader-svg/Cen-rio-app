@@ -90,6 +90,6 @@ describe('Multi-empresa: mapa das tabelas', () => {
       acesso: conta('acesso'),
       sistema: conta('sistema'),
       raiz: conta('empresa-raiz'),
-    }).toEqual({ total: 133, empresa: 123, acesso: 6, sistema: 3, raiz: 1 });
+    }).toEqual({ total: 167, empresa: 157, acesso: 6, sistema: 3, raiz: 1 });
   });
 });

@@ -6,6 +6,7 @@
  *
  * Nenhuma ação é executada aqui: o agente devolve PROPOSTAS (pendentes de aprovação).
  */
+import { requireCompanyId } from '../../core/tenant';
 import {
   type AgentReference,
   DEADLINE_REASON_LABEL,
@@ -249,7 +250,7 @@ export async function managerAnswer(ctx: AgentContext, question: string): Promis
   if (!can(ctx, 'producao', 'producao.ver', 'producao.planejar'))
     return blocked('Gerente', 'produção');
   const { prisma } = ctx;
-  const settings = await prisma.companySettings.findUnique({ where: { id: 1 } });
+  const settings = await prisma.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const week = weekRange(settings?.timezone ?? 'America/Sao_Paulo');
   const refs: AgentReference[] = [];
   const tasks: AgentAnswer['tasks'] = [];

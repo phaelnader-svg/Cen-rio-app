@@ -7,6 +7,7 @@
  * Instagram/Messenger recusam. O agente de Atendimento prepara rascunhos; envio automático só
  * nos casos liberados pelo gestor e nunca com a conversa assumida por uma pessoa.
  */
+import { requireCompanyId } from '../../core/tenant';
 import { EVENT_TYPES, anyPermissionAudience } from '@cenario/shared';
 import type { InboxConversation, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
@@ -17,7 +18,7 @@ import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { registerOfficeHook } from '../game/command';
 import { idParams } from '../presenters';
-import { connectionOf, requireConnection } from './connections';
+import { assertPlatformConnections, connectionOf, requireConnection } from './connections';
 import {
   type InboundMessage,
   parseWebhook,
@@ -104,7 +105,13 @@ async function emit(tx: Tx, actor: ActorContext, id: string) {
 export async function ingest(prisma: PrismaClient, m: InboundMessage) {
   return prisma.$transaction(async (tx) => {
     const dup = await tx.integrationWebhookEvent.findUnique({
-      where: { providerKey_eventId: { providerKey: `META_${m.channel}`, eventId: m.externalId } },
+      where: {
+        companyId_providerKey_eventId: {
+          companyId: requireCompanyId(),
+          providerKey: `META_${m.channel}`,
+          eventId: m.externalId,
+        },
+      },
     });
     if (dup) return { duplicate: true, conversationId: null as string | null };
     await tx.integrationWebhookEvent.create({
@@ -117,7 +124,13 @@ export async function ingest(prisma: PrismaClient, m: InboundMessage) {
       },
     });
     const conv = await tx.inboxConversation.upsert({
-      where: { channel_externalThreadId: { channel: m.channel, externalThreadId: m.threadId } },
+      where: {
+        companyId_channel_externalThreadId: {
+          companyId: requireCompanyId(),
+          channel: m.channel,
+          externalThreadId: m.threadId,
+        },
+      },
       create: {
         channel: m.channel,
         externalThreadId: m.threadId,
@@ -407,6 +420,7 @@ export async function inboxRoutes(app: FastifyInstance) {
     '/api/v1/connections/:key/simulate',
     { config: { access: { session: 'WEB', permissions: ['jogo.acessar', 'conexoes.gerenciar'] } } },
     async (request) => {
+      assertPlatformConnections();
       const { key } = z
         .object({ key: z.enum(['WHATSAPP', 'INSTAGRAM', 'MESSENGER']) })
         .parse(request.params);

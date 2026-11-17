@@ -5,6 +5,7 @@
  * validados pela contabilidade. Sem provedor configurado, nada é emitido: a tela diz o que falta.
  * Em TESTE_LOCAL a autorização é simulada (número "TESTE-…"), para validar o fluxo.
  */
+import { requireCompanyId } from '../../core/tenant';
 import type { Prisma, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -82,7 +83,7 @@ async function missingFor(db: Db, doc: { profileId: string; customerData: unknow
     email: string | null;
   };
   const conn = await connectionOf(db, 'FISCAL');
-  const company = await db.companySettings.findUnique({ where: { id: 1 } });
+  const company = await db.companySettings.findUnique({ where: { id: requireCompanyId() } });
   return [
     ...profileMissing(p),
     ...(c.document ? [] : ['CPF/CNPJ do cliente']),

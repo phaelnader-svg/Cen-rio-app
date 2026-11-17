@@ -6,7 +6,7 @@
 -- transação. O cliente "do sistema" (login, fila de eventos, testes) liga app.bypass_rls.
 -- Conexões sem esse prelúdio (migrations, backup, psql do operador) seguem como antes.
 --
--- Não altera nenhuma linha. Reversão: packages/db/rollback/20270427000000_multi_empresa_etapa3.down.sql
+-- Não altera nenhuma linha. Reversão: packages/db/rollback/20270708000000_multi_empresa_etapa3.down.sql
 
 DO $$
 BEGIN
@@ -49,6 +49,31 @@ ALTER TABLE "account_payables" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "empresa" ON "account_payables"
   USING ("company_id" = app_company_id() OR app_rls_bypass())
   WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "accounting_documents" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "accounting_documents" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "accounting_documents"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "agent_actions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "agent_actions" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "agent_actions"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "ai_agent_messages" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "ai_agent_messages" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "ai_agent_messages"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "ai_agent_proposals" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "ai_agent_proposals" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "ai_agent_proposals"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "ai_agents" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "ai_agents" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "ai_agents"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
 ALTER TABLE "attachments" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "attachments" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "empresa" ON "attachments"
@@ -77,6 +102,46 @@ CREATE POLICY "empresa" ON "attendance_leaves"
 ALTER TABLE "audit_logs" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "audit_logs" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "empresa" ON "audit_logs"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "bank_accounts" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "bank_accounts" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "bank_accounts"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "bank_transactions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "bank_transactions" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "bank_transactions"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "card_settlements" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "card_settlements" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "card_settlements"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "cash_entries" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "cash_entries" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "cash_entries"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "cash_goal_achievements" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "cash_goal_achievements" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "cash_goal_achievements"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "cash_goals" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "cash_goals" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "cash_goals"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "cash_snapshots" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "cash_snapshots" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "cash_snapshots"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "cash_week_closings" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "cash_week_closings" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "cash_week_closings"
   USING ("company_id" = app_company_id() OR app_rls_bypass())
   WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
 ALTER TABLE "closing_payment_parts" ENABLE ROW LEVEL SECURITY;
@@ -117,6 +182,16 @@ CREATE POLICY "empresa" ON "company_counters"
 ALTER TABLE "company_holidays" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "company_holidays" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "empresa" ON "company_holidays"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "contract_templates" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "contract_templates" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "contract_templates"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "contracts" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "contracts" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "contracts"
   USING ("company_id" = app_company_id() OR app_rls_bypass())
   WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
 ALTER TABLE "customer_addresses" ENABLE ROW LEVEL SECURITY;
@@ -194,6 +269,56 @@ ALTER TABLE "financial_events" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "empresa" ON "financial_events"
   USING ("company_id" = app_company_id() OR app_rls_bypass())
   WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "fiscal_documents" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "fiscal_documents" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "fiscal_documents"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "fiscal_profiles" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "fiscal_profiles" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "fiscal_profiles"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "game_areas" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "game_areas" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "game_areas"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "game_layout_revisions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "game_layout_revisions" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "game_layout_revisions"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "game_slot_materials" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "game_slot_materials" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "game_slot_materials"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "game_spaces" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "game_spaces" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "game_spaces"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "game_station_assignees" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "game_station_assignees" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "game_station_assignees"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "game_stations" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "game_stations" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "game_stations"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "game_storage_slots" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "game_storage_slots" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "game_storage_slots"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "game_storage_units" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "game_storage_units" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "game_storage_units"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
 ALTER TABLE "help_request_events" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "help_request_events" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "empresa" ON "help_request_events"
@@ -207,6 +332,31 @@ CREATE POLICY "empresa" ON "help_requests"
 ALTER TABLE "idempotency_keys" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "idempotency_keys" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "empresa" ON "idempotency_keys"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "inbox_conversations" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "inbox_conversations" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "inbox_conversations"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "inbox_messages" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "inbox_messages" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "inbox_messages"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "integration_connections" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "integration_connections" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "integration_connections"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "integration_oauth_states" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "integration_oauth_states" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "integration_oauth_states"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "integration_webhook_events" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "integration_webhook_events" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "integration_webhook_events"
   USING ("company_id" = app_company_id() OR app_rls_bypass())
   WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
 ALTER TABLE "inventory_adjustments" ENABLE ROW LEVEL SECURITY;
@@ -277,6 +427,11 @@ CREATE POLICY "empresa" ON "logistics_occurrences"
 ALTER TABLE "logistics_trip_participants" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "logistics_trip_participants" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "empresa" ON "logistics_trip_participants"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "marketing_posts" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "marketing_posts" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "marketing_posts"
   USING ("company_id" = app_company_id() OR app_rls_bypass())
   WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
 ALTER TABLE "material_arrivals" ENABLE ROW LEVEL SECURITY;
@@ -387,6 +542,16 @@ CREATE POLICY "empresa" ON "payable_payment_reversals"
 ALTER TABLE "payable_payments" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "payable_payments" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "empresa" ON "payable_payments"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "payment_charges" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "payment_charges" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "payment_charges"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "payment_orders" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "payment_orders" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "payment_orders"
   USING ("company_id" = app_company_id() OR app_rls_bypass())
   WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
 ALTER TABLE "pickup_events" ENABLE ROW LEVEL SECURITY;
@@ -507,6 +672,11 @@ CREATE POLICY "empresa" ON "purchase_order_items"
 ALTER TABLE "purchase_orders" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "purchase_orders" FORCE ROW LEVEL SECURITY;
 CREATE POLICY "empresa" ON "purchase_orders"
+  USING ("company_id" = app_company_id() OR app_rls_bypass())
+  WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
+ALTER TABLE "purchase_quotes" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "purchase_quotes" FORCE ROW LEVEL SECURITY;
+CREATE POLICY "empresa" ON "purchase_quotes"
   USING ("company_id" = app_company_id() OR app_rls_bypass())
   WITH CHECK ("company_id" = app_company_id() OR app_rls_bypass());
 ALTER TABLE "quality_events" ENABLE ROW LEVEL SECURITY;

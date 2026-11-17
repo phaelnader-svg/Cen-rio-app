@@ -3,6 +3,7 @@
  * escolha da conta da Cenário, teste, reconexão, desconexão e modo de teste local.
  * Segredos ficam cifrados no servidor; o navegador só recebe estado e rótulos.
  */
+import { PLATFORM_COMPANY_ID, requireCompanyId } from '../../core/tenant';
 import { EVENT_TYPES, anyPermissionAudience } from '@cenario/shared';
 import type { IntegrationConnection, Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
@@ -37,8 +38,22 @@ export const CONN_MANAGE = {
 const AUDIENCE = anyPermissionAudience('conexoes.gerenciar', 'jogo.acessar');
 const keyParams = z.object({ key: z.string().regex(/^[A-Z_]{2,40}$/) });
 
+/**
+ * Multi-empresa: as conexões externas usam chaves e webhooks do servidor, que são da Cenário
+ * Estofados (empresa nº 1). Até cada empresa poder ligar as próprias contas (com o webhook
+ * separado por empresa), só a empresa 1 conecta, testa ou desconecta.
+ */
+export function assertPlatformConnections() {
+  if (requireCompanyId() !== PLATFORM_COMPANY_ID)
+    throw Errors.business(
+      'As conexões externas (WhatsApp, Instagram, cobrança, assinatura e notas) ainda não estão disponíveis para a sua empresa.',
+    );
+}
+
 export async function connectionOf(db: Tx | PrismaClient, key: string) {
-  const c = await db.integrationConnection.findUnique({ where: { providerKey: key } });
+  const c = await db.integrationConnection.findUnique({
+    where: { companyId_providerKey: { companyId: requireCompanyId(), providerKey: key } },
+  });
   if (!c) return null;
   return {
     ...c,
@@ -77,7 +92,7 @@ async function upsert(
     connectedById: actor.userId,
   };
   const row = await tx.integrationConnection.upsert({
-    where: { providerKey: key },
+    where: { companyId_providerKey: { companyId: requireCompanyId(), providerKey: key } },
     create: {
       providerKey: key,
       ...payload,
@@ -274,10 +289,13 @@ function card(
 
 export async function connectionRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
+  app.addHook('preHandler', async (request) => {
+    if (request.routeOptions.config?.access === CONN_MANAGE) assertPlatformConnections();
+  });
 
   app.get('/api/v1/connections', { config: { access: CONN_VIEW } }, async (request) => {
     const rows = await prisma.integrationConnection.findMany();
-    const company = await prisma.companySettings.findUnique({ where: { id: 1 } });
+    const company = await prisma.companySettings.findUnique({ where: { id: requireCompanyId() } });
     const me = await prisma.user.findUnique({
       where: { id: request.auth!.userId! },
       select: { displayName: true, email: true },
@@ -530,7 +548,7 @@ export async function connectionRoutes(app: FastifyInstance) {
         result = { ok: false, detail: (e as Error).message };
       }
       await prisma.integrationConnection.update({
-        where: { providerKey: key },
+        where: { companyId_providerKey: { companyId: requireCompanyId(), providerKey: key } },
         data: {
           lastSyncAt: new Date(),
           lastError: result.ok ? null : result.detail.slice(0, 900),
