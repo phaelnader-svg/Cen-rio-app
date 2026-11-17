@@ -290,6 +290,8 @@ export interface PublicQuoteDto {
   approvedAt: string | null;
   /** Telefone de contato da empresa (WhatsApp), quando cadastrado. */
   companyPhone: string | null;
+  /** Melhoria 141: textos da proposta gravados no orçamento (nulo nos antigos = padrões). */
+  texts: ProposalTexts | null;
 }
 
 export interface QuoteSnapshotLine {
