@@ -19,14 +19,14 @@ Plano aprovado (2026-11-16): https://claude.ai/artifact/Jykp8EMfom3S9WErKwYRkn
 
 ## Etapas
 
-| Etapa | O que                                                                                                                 | Estado    |
-| ----- | --------------------------------------------------------------------------------------------------------------------- | --------- |
-| 1     | Mapa das tabelas + detector de vazamento                                                                              | **feito** |
-| 2     | `company_id` em todas as tabelas, empresa 1, unicidades/numerações por empresa, ensaio com cópia do banco de produção | pendente  |
-| 3     | Empresa em cada requisição, RLS ligada, SQL direto, arquivos, tempo real, tablets                                     | pendente  |
-| 4     | Criar conta (reaproveita 0f96eba/9375a30) criando a empresa e o conteúdo inicial                                      | pendente  |
-| 5     | Teste do dono em homologação                                                                                          | pendente  |
-| 6     | Produção (com aprovação, ponto de recuperação, backup validado)                                                       | pendente  |
+| Etapa | O que                                                                                                                 | Estado                                         |
+| ----- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 1     | Mapa das tabelas + detector de vazamento                                                                              | **feito**                                      |
+| 2     | `company_id` em todas as tabelas, empresa 1, unicidades/numerações por empresa, ensaio com cópia do banco de produção | **feito** (falta ensaio com cópia de produção) |
+| 3     | Empresa em cada requisição, RLS ligada, SQL direto, arquivos, tempo real, tablets                                     | **feito**                                      |
+| 4     | Criar conta (reaproveita 0f96eba/9375a30) criando a empresa e o conteúdo inicial                                      | pendente                                       |
+| 5     | Teste do dono em homologação                                                                                          | pendente                                       |
+| 6     | Produção (com aprovação, ponto de recuperação, backup validado)                                                       | pendente                                       |
 
 ## Etapa 1 — o mapa
 
@@ -123,3 +123,42 @@ Orçamentos: `quote_settings` passa a ter uma linha por empresa (id automático 
 numeração por empresa (o seed grava o ponto de partida 10199 da empresa 1).
 
 Falta o ensaio com uma cópia do banco de produção, no ambiente de homologação.
+
+## Etapa 3 — isolamento ligado
+
+Migration `20270427000000_multi_empresa_etapa3` (reversão em
+`packages/db/rollback/20270427000000_multi_empresa_etapa3.down.sql`). Não mexe em dados.
+
+- **Papel `cenario_app`** (NOLOGIN, sem superusuário, sem BYPASSRLS). A API continua conectando
+  com o usuário de sempre, mas toda consulta roda numa transação curta que começa com
+  `set_config('role','cenario_app',true)`, `app.company_id` e `app.bypass_rls`
+  (`packages/db/src/scoped.ts`). Assim a RLS vale mesmo quando a conexão é de superusuário, como em
+  homologação e produção.
+- `ensureAppDbRole` roda na inicialização da API: cria o papel se faltar e refaz os GRANTs
+  (os backups usam `--no-privileges`; depois de uma restauração a API se conserta sozinha).
+- `app_company_id()` não tem mais reserva: sem empresa definida devolve vazio, nenhuma linha
+  aparece e nenhuma gravação passa (company_id obrigatório).
+- **RLS** com `ENABLE` + `FORCE` em `company_settings` e nas 129 tabelas de empresa/acesso. Política
+  única: `company_id = app_company_id() OR app_rls_bypass()`.
+- **Código** (`apps/api/src/core/tenant.ts`): cada requisição roda num `AsyncLocalStorage`; a
+  autenticação (sessão, tablet, token de aplicativo, login) preenche a empresa do usuário.
+  `ctx.prisma` é o cliente da empresa; `ctx.system` (com bypass) só para achar sessão/usuário/token
+  antes de saber a empresa, a fila de eventos, o tempo real e a manutenção.
+- **Tarefas automáticas** (alertas, liberação da fila, faltas, turnos, riscos de chamados) rodam
+  uma vez por empresa (`forEachCompany`). Eventos são processados como a empresa do evento.
+- **Tempo real:** cada conexão só recebe eventos da própria empresa (inclusive no replay).
+- `companySettings` e `quoteSettings` leem a empresa da requisição (não mais `id: 1`).
+
+Testes: `multi-empresa-banco.test.ts` (sem empresa nada aparece; empresa 2 não vê, não altera, não
+apaga e não grava na empresa 1, nem por SQL direto; a API usa `cenario_app`; privilégios refeitos
+na inicialização) e `multi-empresa-vazamento.test.ts` (logado na empresa B, as rotas de lista e as
+rotas `/:id` não mostram nenhum id da empresa A; controle positivo: a empresa A acha os próprios
+dados pelas mesmas rotas).
+
+Riscos conhecidos, sem efeito no isolamento:
+
+- Travas consultivas por semana (`pg_advisory_xact_lock`) ainda usam chaves globais: duas empresas
+  fechando a mesma semana ao mesmo tempo esperam uma pela outra (lentidão, não mistura).
+- Arquivos em `STORAGE_DIR` não têm prefixo por empresa; o acesso passa sempre pelo registro no
+  banco, que está isolado.
+- Cada operação virou uma transação curta (mais ~3 comandos por consulta). Medir em homologação.

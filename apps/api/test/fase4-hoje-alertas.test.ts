@@ -226,10 +226,10 @@ describe('Fase 4 — produtividade operacional', () => {
       return { client, n: () => n };
     };
     const a = counted();
-    const ra = await productivity(a.client as never, q);
+    const ra = await naEmpresa1(() => productivity(a.client as never, q));
     for (let i = 0; i < 6; i++) await panelUserWith(app, s.admin, `extra${i}`, ['producao.ver']);
     const b = counted();
-    const rb = await productivity(b.client as never, q);
+    const rb = await naEmpresa1(() => productivity(b.client as never, q));
     expect(rb.rows.length).toBeGreaterThanOrEqual(ra.rows.length);
     // Antes: ~7 consultas por pessoa. Agora: número fixo, independente da equipe.
     expect(b.n()).toBe(a.n());

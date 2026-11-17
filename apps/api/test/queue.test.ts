@@ -11,6 +11,7 @@ import {
   idemKey,
   loginAdmin,
   resetDatabaseWithMaterialsGate,
+  naEmpresa1,
 } from './helpers';
 import { openServiceOrder } from './measurement-helpers';
 import {
@@ -173,7 +174,7 @@ describe('LEGADO preservado (CA2-01)', () => {
     expect((await act(tablet, past.id, 'start')).status).toBe(200);
     // Relógio de teste chega à liberação (defeito corrigido): 10:01 libera a de 10:00.
     clockAt(0, '10:01');
-    expect(await releaseDueTasks(db())).toBeGreaterThan(0);
+    expect(await naEmpresa1(() => releaseDueTasks(db()))).toBeGreaterThan(0);
     expect((await db().productionTask.findUniqueOrThrow({ where: { id: future.id } })).status).toBe(
       'LIBERADA',
     );
@@ -248,7 +249,7 @@ describe('FILA_SEMANAL', () => {
       [1, '08:00'],
     ] as const) {
       clockAt(wd, hhmm);
-      await releaseDueTasks(db());
+      await naEmpresa1(() => releaseDueTasks(db()));
     }
     const after = await db().productionTask.findMany({
       where: { assigneeUserId: joao },
@@ -553,7 +554,7 @@ describe('FILA_SEMANAL', () => {
     );
     // Sábado: pendências visíveis ao gestor; nada muda sozinho.
     clockAt(5, '09:00');
-    await releaseDueTasks(db());
+    await naEmpresa1(() => releaseDueTasks(db()));
     const p = (await admin.get(`/api/v1/production-plans/${plan.id}`)).body;
     expect(p).toMatchObject({ weekEnded: true, pendingCount: 3 });
     expect(await db().productionTask.count({ where: { planId: plan.id } })).toBe(5);

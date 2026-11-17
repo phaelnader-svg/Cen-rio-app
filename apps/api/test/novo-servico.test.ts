@@ -12,6 +12,7 @@ import {
   resetDatabase,
   setupTablet,
   ownerDb,
+  naEmpresa1,
 } from './helpers';
 import { address, createCustomer, createOrder, panelUserWith } from './commercial-helpers';
 import { day, userIdOf } from './production-helpers';
@@ -442,7 +443,7 @@ describe('B. Equipes: própria (Thiago, configurável) e terceirizada (André + 
       labor: await db().productionPayable.count(),
     }).toEqual(before);
     const { myEarnings } = await import('../src/modules/finance/my-earnings');
-    const mine = await myEarnings(db(), thiago);
+    const mine = await naEmpresa1(() => myEarnings(db(), thiago));
     expect(mine.items.some((i) => i.id === cost.id)).toBe(false);
     expect(JSON.stringify(mine)).not.toContain('4321');
     // Troca para terceirizada não transforma o custo operacional em obrigação do recebedor.

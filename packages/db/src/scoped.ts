@@ -44,7 +44,7 @@ const RAW_METHODS = new Set(['$queryRaw', '$executeRaw', '$queryRawUnsafe', '$ex
 function prelude(client: PrismaClient | Prisma.TransactionClient, scope: Scope) {
   const { companyId, bypass, owner } = scope();
   return client.$executeRaw`SELECT set_config('role', ${owner ? 'none' : APP_DB_ROLE}, true),
-    set_config('app.company_id', ${companyId == null ? '' : String(companyId)}, true),
+    set_config('app.company_id', ${companyId === null ? '' : String(companyId)}, true),
     set_config('app.bypass_rls', ${bypass ? 'on' : 'off'}, true)`;
 }
 

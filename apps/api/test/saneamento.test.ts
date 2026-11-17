@@ -15,7 +15,15 @@ import { setClock as setCoreClock } from '../src/core/clock';
 import { detectAbsences } from '../src/modules/attendance/absence';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
-import { createTestApp, db, employeeByName, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  createTestApp,
+  db,
+  employeeByName,
+  idemKey,
+  loginAdmin,
+  resetDatabase,
+  naEmpresa1,
+} from './helpers';
 import {
   createCustomer,
   createOrder,
@@ -412,7 +420,7 @@ describe('B. Ausência: só o trabalho do dia (modo fila)', () => {
   it('profissional presente: nada é analisado nem alterado', async () => {
     const s = await queueScenario(['Ricardo', 'Márcio', 'João', 'Thiago']);
     clock('09:31');
-    await detectAbsences(db());
+    await naEmpresa1(() => detectAbsences(db()));
     expect(await proposals(s.admin)).toEqual([]);
     expect(await db().planningAction.count()).toBe(0);
   });
@@ -562,8 +570,8 @@ describe('B. Ausência: só o trabalho do dia (modo fila)', () => {
     expect(await db().planningAction.count()).toBe(0);
     // João não chegou: ausência presumida às 9h30 só sugere; nunca altera a fila.
     clock('09:31');
-    await detectAbsences(db());
-    await detectAbsences(db());
+    await naEmpresa1(() => detectAbsences(db()));
+    await naEmpresa1(() => detectAbsences(db()));
     const list = await proposals(s.admin);
     expect(list.length).toBeLessThanOrEqual(1);
     for (const p of list) expect(p.affectedTasks.length).toBeLessThanOrEqual(1);

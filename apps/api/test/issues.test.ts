@@ -12,6 +12,7 @@ import {
   idemKey,
   loginAdmin,
   resetDatabaseWithMaterialsGate,
+  naEmpresa1,
 } from './helpers';
 import {
   act,
@@ -506,7 +507,7 @@ describe('Impactos, propostas e reprogramação', () => {
     const proposals = await db().rescheduleProposal.findMany({ where: { kind: 'BLOQUEIO' } });
     expect(proposals).toHaveLength(1);
     expect(proposals[0]).toMatchObject({ issueId: r.body.id, status: 'PENDENTE' });
-    await processIssueRisks(db());
+    await naEmpresa1(() => processIssueRisks(db()));
     expect(await db().rescheduleProposal.count({ where: { kind: 'BLOQUEIO' } })).toBe(1);
     // Dependentes continuam bloqueadas (não liberadas indevidamente).
     expect((await s.reload(s.t('PREPARACAO').id)).status).toBe('BLOQUEADA');
@@ -587,8 +588,8 @@ describe('Central de atenção', () => {
     ).toHaveLength(1);
     // Prazo de resolução vencido: crítico e um único aviso.
     setClock('12:00');
-    await processIssueRisks(db());
-    await processIssueRisks(db());
+    await naEmpresa1(() => processIssueRisks(db()));
+    await naEmpresa1(() => processIssueRisks(db()));
     expect(await notices(await gestorId(s.admin), 'OCORRENCIA_PRAZO_RISCO')).toHaveLength(1);
     expect(await notices(s.ids.thiago, 'OCORRENCIA_PRAZO_RISCO')).toHaveLength(1);
     c = (await s.admin.get('/api/v1/attention?type=OCORRENCIA')).body;

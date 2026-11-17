@@ -262,7 +262,7 @@ export async function oauthRoutes(app: FastifyInstance) {
         )?.companyId ??
         null;
     }
-    if (companyId != null && request.tenant) request.tenant.companyId = companyId;
+    if (companyId !== null && request.tenant) request.tenant.companyId = companyId;
   }
 
   /** Troca o código (com PKCE) ou o token de renovação por tokens novos. Servidor a servidor. */

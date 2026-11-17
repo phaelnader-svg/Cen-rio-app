@@ -32,7 +32,7 @@ export function currentCompanyId(): number | null {
 /** Empresa obrigatória: sem ela é erro de programação (nunca cair em outra empresa). */
 export function requireCompanyId(): number {
   const id = currentCompanyId();
-  if (id == null) throw new Error('Operação sem empresa definida.');
+  if (id === null) throw new Error('Operação sem empresa definida.');
   return id;
 }
 
