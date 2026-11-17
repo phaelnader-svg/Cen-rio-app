@@ -50,7 +50,7 @@ function allows(
   kind: 'WEB' | 'DEVICE',
   perms: ReadonlySet<Permission>,
 ): boolean {
-  if ('public' in access || 'device' in access) return true;
+  if ('public' in access || 'device' in access || 'webhook' in access) return true;
   if (access.session !== 'any' && access.session !== kind) return false;
   const surface: Permission = kind === 'WEB' ? 'painel.acessar' : 'producao.acessar';
   const required = [...(access.surfaceExempt ? [] : [surface]), ...(access.permissions ?? [])];
@@ -132,6 +132,12 @@ describe('Matriz de acesso: todas as rotas', () => {
       if (r.method === 'GET') continue;
       // Token OAuth (servidor a servidor): não usa cookie; sem o segredo do aplicativo → 401.
       if ('public' in r.access && r.access.serverToServer) {
+        const res = await foreign.req(r.method as 'POST', r.url, {});
+        if (res.status !== 401) leaks.push(`${r.method} ${r.url} → ${res.status}`);
+        continue;
+      }
+      // Webhooks (Meta, Asaas, Clicksign): não usam cookie; sem a assinatura do provedor → 401.
+      if ('webhook' in r.access) {
         const res = await foreign.req(r.method as 'POST', r.url, {});
         if (res.status !== 401) leaks.push(`${r.method} ${r.url} → ${res.status}`);
         continue;

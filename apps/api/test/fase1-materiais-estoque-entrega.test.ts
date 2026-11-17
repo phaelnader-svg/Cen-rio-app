@@ -582,8 +582,12 @@ describe('Logística desligável e reversível', () => {
 
   it('padrão: instalação existente continua com a logística ligada (nada muda sem decisão do gestor)', async () => {
     const admin = await loginAdmin(app);
-    // S1 tirou "embalagem"; a remoção dos módulos tirou "ajuda" e "materiais".
-    expect(ok(await admin.get('/api/v1/modules'))).toEqual({ logistica: true });
+    // S1 tirou "embalagem"; a remoção dos módulos tirou "ajuda" e "materiais"; o ambiente
+    // interativo entra ligado (decisão do proprietário: botão liberado por enquanto).
+    expect(ok(await admin.get('/api/v1/modules'))).toEqual({
+      logistica: true,
+      ambiente_interativo: true,
+    });
     expect(await db().moduleSetting.count()).toBe(0);
   });
 });

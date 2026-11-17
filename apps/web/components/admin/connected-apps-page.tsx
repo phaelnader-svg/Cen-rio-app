@@ -1,6 +1,7 @@
 'use client';
 
 /** Aplicativos com acesso delegado ao Cenário Gestão (ex.: Firma Viva): ver e revogar. */
+import { APP_SCOPES, APP_SCOPE_KEYS, type AppScope } from '@cenario/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, KeyRound, PlugZap, Unplug } from 'lucide-react';
 import { useState } from 'react';
@@ -133,6 +134,8 @@ function ClientsAdmin() {
     name: 'Firma Viva',
     redirect: 'https://firmaviva.com.br/api/conexoes/cenario/retorno',
   });
+  // O Firma Viva (ambiente interativo) usa planta, operação e escritório.
+  const [scopes, setScopes] = useState<AppScope[]>(['jogo', 'operacao', 'escritorio']);
   const [secret, setSecret] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: () =>
@@ -145,7 +148,7 @@ function ClientsAdmin() {
             .split(/[\s,]+/)
             .map((r) => r.trim())
             .filter(Boolean),
-          scopes: ['consulta'],
+          scopes,
         },
       }),
     onSuccess: (r) => {
@@ -161,7 +164,8 @@ function ClientsAdmin() {
         <p className="font-semibold text-ink">Aplicativos cadastrados</p>
         <p className="text-sm text-ink-muted">
           Só aplicativos cadastrados aqui podem pedir autorização, e só para os endereços de retorno
-          informados (comparação exata). Permissão concedida: consulta (somente leitura).
+          informados (comparação exata). O aplicativo recebe só as permissões marcadas, e nunca mais
+          do que a pessoa que autorizar já tem.
         </p>
       </div>
       {clients.data?.map((c) => (
@@ -175,6 +179,12 @@ function ClientsAdmin() {
             <Badge tone={c.active ? 'ok' : 'neutral'}>{c.active ? 'ativo' : 'desativado'}</Badge>
           </p>
           <p className="break-all text-ink-muted">Retorno: {c.redirectUris.join(' · ')}</p>
+          <p className="text-ink-muted">
+            Permissões:{' '}
+            {c.scopes
+              .map((k) => (APP_SCOPES as Record<string, { label: string }>)[k]?.label ?? k)
+              .join(' · ')}
+          </p>
           <p className="text-ink-muted">Atualizado em {formatDateTime(c.updatedAt)}</p>
         </div>
       ))}
@@ -208,7 +218,28 @@ function ClientsAdmin() {
           )}
         </Field>
       </div>
+      <fieldset className="space-y-2" data-testid="app-client-scopes">
+        <legend className="text-sm font-medium text-ink">Permissões do aplicativo</legend>
+        {APP_SCOPE_KEYS.map((k) => (
+          <label key={k} className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="mt-0.5 size-4"
+              checked={scopes.includes(k)}
+              onChange={(e) =>
+                setScopes(e.target.checked ? [...scopes, k] : scopes.filter((x) => x !== k))
+              }
+              data-testid={`app-client-scope-${k}`}
+            />
+            <span>
+              <span className="font-semibold">{APP_SCOPES[k].label}</span>
+              <span className="block text-ink-muted">{APP_SCOPES[k].description}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
       <Button
+        disabled={!scopes.length}
         icon={<KeyRound className="size-4" aria-hidden />}
         loading={save.isPending}
         onClick={() => save.mutate()}

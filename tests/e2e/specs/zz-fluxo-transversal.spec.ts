@@ -9,9 +9,8 @@ import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
  * do produto; nenhuma transição gravada direto no banco — o banco só é LIDO, para provar o que
  * NÃO foi gravado):
  *
- *   cliente → Novo serviço → pedido → retirada (celular do André) → coleta → recebimento físico
- *   (tablet do João) → OS automática → medição → necessidade → compra → recebimento do material
- *   com conferência técnica (tablet do Thiago) → material liberado → A planejar → publicação →
+ *   cliente → Novo serviço → pedido + OS (D1) → retirada (celular do André) → coleta → recebida
+ *   na oficina → A planejar → publicação →
  *   tablets → início → execução das tarefas do modelo simplificado (João prepara; o titular faz
  *   corte/costura e montagem) → qualidade (Thiago) → pronto para entrega (S1: sem embalagem) →
  *   entrega real (André) → obrigação financeira (DEVIDO) → Meus Ganhos (PIN, D12) → confirmação
@@ -52,7 +51,6 @@ const RUN = Date.now().toString(36).slice(-5);
 const NAME_A = `Tapeceiro A ${RUN}`;
 const NAME_B = `Tapeceiro B ${RUN}`;
 const CUSTOMER = `Cliente Transversal ${RUN}`;
-const SUPPLIER = `Tecidos Transversal ${RUN}`;
 const PIN_A = '615243';
 const PIN_B = '624351';
 const LABOR = 45000; // R$ 450,00 — mão de obra prevista no Novo serviço
@@ -88,23 +86,6 @@ async function setDays(page: Page, days: number[]) {
     arrivalAlertAt: '09:30',
     workdayEnd: '18:00',
     lateAlertMinutes: 15,
-  });
-}
-
-/** Concede uma permissão individual pelo cadastro do funcionário (fluxo existente). */
-async function grant(page: Page, displayName: string, permission: string) {
-  const list = await call(page, 'GET', '/api/employees');
-  const summary = list.find((e: { displayName: string }) => e.displayName === displayName);
-  const e = await call(page, 'GET', `/api/employees/${summary.id}`);
-  if (e.extraPermissions.includes(permission)) return;
-  await call(page, 'PUT', `/api/employees/${e.id}`, {
-    fullName: e.fullName,
-    displayName: e.displayName,
-    jobTitle: e.jobTitle,
-    color: e.color,
-    roleIds: e.roles.map((r: { id: string }) => r.id),
-    extraPermissions: [...e.extraPermissions, permission],
-    version: e.version,
   });
 }
 
@@ -205,7 +186,11 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       await page.getByTestId('ns-arrival').fill('10:00');
       await expect(page.getByTestId('ns-responsible')).toHaveValue(ANDRE.userId);
       await page.getByTestId('ns-submit').click();
-      await expect(page.getByTestId('ns-confirmation')).toContainText('Aguardando retirada');
+      const confirmation = page.getByTestId('ns-confirmation');
+      await expect(confirmation).toContainText('Aguardando retirada');
+      // D1: a OS nasce no fechamento do serviço, com as peças, sem esperar a chegada.
+      await expect(confirmation).toContainText(/OS OS-\d{5} criada/);
+      const osCode = (await confirmation.textContent())!.match(/OS-\d{5}/)![0];
       await page.getByTestId('ns-open-order').click();
       await expect(page).toHaveURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
       const orderId = page.url().split('/').pop()!;
@@ -228,21 +213,23 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       await pjob.getByRole('button', { name: 'Peças retiradas' }).click();
       await expect(pjob.getByTestId('job-status')).not.toHaveText('Em execução');
 
-      // ───── TRANSIÇÃO 1 (coleta → recebimento): chegada física confirmada no tablet do João ─────
+      // ───── TRANSIÇÃO 1 (coleta → oficina): a retirada termina com "Recebida na oficina" ─────
+      // Recebimentos saíram (D1): a OS já nasceu no fechamento do Novo serviço e a chegada das
+      // peças é a última transição da própria retirada, confirmada pelo gestor.
+      const collected = (await call(page, 'GET', `/api/v1/pickups/${pickup.id}`)) as {
+        version: number;
+        status: string;
+      };
+      expect(collected.status).toBe('RETIRADA_REALIZADA');
+      const received = await call(page, 'POST', `/api/v1/pickups/${pickup.id}/transition`, {
+        toStatus: 'RECEBIDA_NA_OFICINA',
+        note: null,
+        version: collected.version,
+      });
+      expect(received.status).toBe('RECEBIDA_NA_OFICINA');
       const joao = await openDevice(page, browser, 'João', '591837', `Tablet João ${RUN}`);
-      await joao.page.getByTestId('tile-arrivals').click();
-      const arrival = joao.page.getByTestId(`arrival-piece-${pickup.code}`);
-      await expect(arrival).toBeVisible();
-      await arrival.getByRole('button', { name: 'Confirmar chegada' }).click();
-      await joao.page.getByTestId('arrival-submit').click();
-      const arrivalDone = joao.page.getByTestId('arrival-done');
-      await expect(arrivalDone.getByTestId('arrival-done-os')).toContainText(/OS-\d{5}/);
-      const osCode = (await arrivalDone.getByTestId('arrival-done-os').textContent())!.match(
-        /OS-\d{5}/,
-      )![0];
-      await joao.page.getByRole('button', { name: 'Voltar ao Aguardando chegada' }).click();
 
-      // OS automática: titular e mão de obra prevista viraram titular e mão de obra combinada.
+      // OS do fechamento: titular e mão de obra prevista viraram titular e mão de obra combinada.
       const sos = await call(page, 'GET', `/api/v1/service-orders?orderId=${orderId}`);
       const soId = ((sos.items ?? sos) as { id: string; code: string }[]).find(
         (s) => s.code === osCode,
@@ -261,68 +248,9 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       expect(labor[0]!.professional.userId).toBe(userA);
       const laborCode = labor[0]!.code;
 
-      // ───── TRANSIÇÃO 2 (OS automática → medição): medição pela tela da OS ─────
-      await page.goto(`/painel/os/${soId}`);
-      await page.getByRole('button', { name: 'Solicitar medição' }).click();
-      await page.getByRole('dialog').getByRole('button', { name: 'Atribuir medição' }).click();
-      await page.getByRole('button', { name: 'Medir agora' }).click();
-      await page.getByRole('button', { name: 'Próximo' }).click();
-      await page.getByRole('button', { name: 'Adicionar tecido' }).click();
-      await page.getByLabel('Tecido (nome ou referência)').fill('Veludo');
-      await page.getByLabel('Cor').fill('Grafite');
-      await page.getByLabel('Metragem (m)').fill('8');
-      await page.getByRole('button', { name: 'Adicionar', exact: true }).click();
-      await page.getByRole('button', { name: 'Próximo' }).click();
-      await page.getByRole('button', { name: 'Próximo' }).click();
-      await page.getByRole('button', { name: 'Próximo' }).click();
-      await page.getByRole('button', { name: 'Enviar medição' }).click();
-      await expect(page.getByTestId('measurement-badges')).toContainText('Materiais: enviada');
-      // Necessidade: revisão e aprovação para compra.
-      await page.getByRole('button', { name: 'Iniciar revisão' }).click();
-      await page.getByRole('button', { name: 'Aprovar para compra' }).click();
-      await page.getByRole('dialog').getByRole('button', { name: 'Aprovar' }).click();
-      await expect(page.getByText('Quantidades conferidas e aprovadas para compra')).toBeVisible();
-
-      // Compra: fornecedor + pedido de compra a partir da necessidade.
-      await page.goto('/painel/fornecedores');
-      await page.getByRole('button', { name: 'Novo fornecedor' }).click();
-      await page.getByRole('dialog').getByLabel('Nome ou razão social').fill(SUPPLIER);
-      await page.getByRole('dialog').getByRole('button', { name: 'Salvar' }).click();
-      await expect(page.getByTestId(`supplier-${SUPPLIER}`)).toBeVisible();
-      await page.goto('/painel/compras');
-      await page.getByLabel(`Selecionar Veludo da ${osCode}`).check();
-      await page.getByRole('button', { name: /Criar pedido de compra \(1\)/ }).click();
-      await page.getByLabel('Fornecedor').selectOption({ label: SUPPLIER });
-      await page.getByTestId('po-line-1').getByLabel('Preço unitário').fill('52,00');
-      await page.getByRole('button', { name: 'Salvar rascunho' }).click();
-      await expect(
-        page.getByRole('heading', { name: /^Pedido de compra CP-\d{5}$/ }),
-      ).toBeVisible();
-      await page.getByRole('button', { name: 'Confirmar pedido' }).click();
-      await page.getByRole('dialog').getByRole('button', { name: 'Confirmar' }).click();
-      await expect(page.getByTestId('po-status')).toContainText('Confirmado');
-
-      // ───── TRANSIÇÃO 3 (material recebido/conferido → liberação): tablet do Thiago ─────
-      await grant(page, 'Thiago', 'estoque.conferir');
+      // Medição, compras e recebimento de material saíram do Cenário: a produção não espera
+      // material. O Thiago entra só para a qualidade.
       const thiago = await openDevice(page, browser, 'Thiago', '271828', `Tablet Thiago ${RUN}`);
-      await thiago.page.getByTestId('tile-arrivals').click();
-      await thiago.page.getByTestId('arrivals-section-conferencia').click();
-      const receivable = thiago.page
-        .getByTestId('pending-receipts')
-        .getByRole('button')
-        .filter({ hasText: SUPPLIER });
-      await receivable.first().click();
-      await expect(thiago.page.getByText(/R\$/)).toHaveCount(0);
-      const veludo = thiago.page.getByTestId('receive-item-Veludo');
-      await veludo.getByLabel('Recebido em ordem').fill('8');
-      await veludo.getByLabel('Conferi referência, cor e especificação').check();
-      await thiago.page.getByRole('button', { name: 'Confirmar recebimento' }).click();
-      await expect(thiago.page.getByTestId('material-receipt-done')).toContainText(
-        /Recebimento RM-\d{5} registrado/,
-      );
-      await page.goto(`/painel/os/${soId}`);
-      await page.getByRole('tab', { name: /Materiais/ }).click();
-      await expect(page.getByTestId('os-readiness-state')).toHaveText('Completo');
 
       // ───────────── Planejamento: A planejar → data própria → publicação ─────────────
       // Relógio de teste no dia próprio (+105) antes de planejar: a liberação das tarefas é
@@ -618,7 +546,11 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
         .poll(() => eventsIn(a.frames).filter((e) => e.type === 'finance.own_changed').length)
         .toBeGreaterThan(0);
       for (const e of eventsIn(a.frames).filter((x) => x.type === 'finance.own_changed')) {
-        expect(e.raw).not.toMatch(/[Cc]ents|R\$|45000|50000|5000\b/);
+        // Ids (UUID) e o número de sequência podem conter "5000" por acaso: ficam de fora.
+        const semIds = e.raw
+          .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<id>')
+          .replace(/"seq":"\d+"/, '"seq":"<n>"');
+        expect(semIds).not.toMatch(/[Cc]ents|R\$|45000|50000|5000\b/);
         expect(Object.keys((e.payload as object) ?? {})).toEqual(['reason']);
       }
       expect(eventsIn(b.frames).filter((e) => e.type === 'finance.own_changed').length).toBe(

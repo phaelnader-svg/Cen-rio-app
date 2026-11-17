@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
 import { loginAdmin } from './helpers';
+import { markArrived } from './os-helpers';
 
 /**
  * Correção global de interface — auditoria de GEOMETRIA dos formulários, em todas as telas do
@@ -141,9 +142,7 @@ test.describe.serial('Interface — geometria dos formulários', () => {
       cliente: first(await get(page, '/api/v1/customers?limit=1')),
       pedido: first(await get(page, '/api/v1/orders?limit=1')),
       os: first(await get(page, '/api/v1/service-orders?limit=1')),
-      compra: first(await get(page, '/api/v1/purchase-orders')),
       entrega: first(await get(page, '/api/v1/deliveries')),
-      medicao: first(await get(page, '/api/v1/measurements')),
       retirada: first(await get(page, '/api/v1/pickups')),
     };
     // Dados fictícios próprios: pedido sem recebimento (diálogo de retirada), pedido recebido
@@ -182,18 +181,8 @@ test.describe.serial('Interface — geometria dos formulários', () => {
         paymentTerms: 'À vista',
         items,
       });
-    const receber = (o: { id: string; items: { id: string; quantity: number }[] }) =>
-      send('/api/v1/receipts', {
-        orderId: o.id,
-        pickupId: null,
-        origin: 'ENTREGUE_PELO_CLIENTE',
-        lines: o.items.map((i) => ({
-          orderItemId: i.id,
-          quantity: i.quantity,
-          condition: 'BOA',
-          location: 'Área de recebimento',
-        })),
-      });
+    // Remoção S5: a chegada é a marca "Peças na oficina" do pedido.
+    const receber = (o: { id: string; version: number }) => markArrived(page, o);
     const semRecebimento = await pedido([
       { pieceType: 'SOFA', description: 'Sofá geometria', quantity: 1 },
     ]);
@@ -245,30 +234,15 @@ test.describe.serial('Interface — geometria dos formulários', () => {
       ['/painel/retiradas', null, null],
       ['/painel/roteiro', null, null],
       [`/painel/roteiro?data=${hoje}`, null, null],
-      ['/painel/recebimentos', null, null],
-      ['/painel/recebimentos/novo', null, null],
       ['/painel/os', null, null],
       [`/painel/os/nova?pedido=${recebido.id}`, null, null],
       [ids.os && `/painel/os/${ids.os}`, null, null],
-      ['/painel/medicoes', null, null],
-      [ids.medicao && `/painel/medicoes/${ids.medicao}`, null, null],
-      ['/painel/materiais', null, null],
-      ['/painel/compras', null, null],
-      ['/painel/compras/novo', null, null],
-      [ids.compra && `/painel/compras/${ids.compra}`, null, null],
-      ['/painel/fornecedores', null, 'Novo fornecedor'],
-      ['/painel/recebimento-materiais', null, null],
-      ['/painel/estoque', null, null],
-      ['/painel/estoque', null, 'Novo material'],
-      ['/painel/prontidao', null, null],
-      ['/painel/planejamento', null, null],
       ['/painel/producao/a-planejar', null, null],
       ['/painel/producao/planejamento', null, null],
       ['/painel/producao', null, null],
       ['/painel/producao/modelos', null, null],
       ['/painel/producao/modelos', 'Etapas de produção', 'Novo modelo'],
       ['/painel/producao/modelos', 'Materiais padrão', null],
-      ['/painel/ajuda', null, null],
       ['/painel/reprogramacao', null, null],
       ['/painel/qualidade', null, null],
       ['/painel/qualidade', 'Checklists', 'Novo checklist'],

@@ -14,18 +14,22 @@ describe('módulos configuráveis', () => {
     const state = resolveModules([]);
     expect(Object.keys(state).sort()).toEqual([...MODULE_KEYS].sort());
     expect(MODULES.logistica.defaultEnabled).toBe(true);
-    expect(state).toEqual({ logistica: true });
+    expect(MODULES.ambiente_interativo.defaultEnabled).toBe(true);
+    expect(state).toEqual({ logistica: true, ambiente_interativo: true });
   });
 
-  it('S1 e remoção dos módulos: só a logística é configurável; registros antigos de "embalagem", "ajuda" e "materiais" são ignorados', () => {
-    expect(MODULE_KEYS.filter((k) => MODULES[k].configurable)).toEqual(['logistica']);
+  it('S1 e remoção dos módulos: logística e ambiente interativo são configuráveis; registros antigos de "embalagem", "ajuda" e "materiais" são ignorados', () => {
+    expect(MODULE_KEYS.filter((k) => MODULES[k].configurable)).toEqual([
+      'logistica',
+      'ambiente_interativo',
+    ]);
     const state = resolveModules([
       { key: 'logistica', enabled: false },
       { key: 'embalagem', enabled: false },
       { key: 'ajuda', enabled: true },
       { key: 'materiais', enabled: true },
     ]);
-    expect(state).toEqual({ logistica: false });
+    expect(state).toEqual({ logistica: false, ambiente_interativo: true });
   });
 
   it('chave desconhecida (gravada por versão futura) é ignorada sem erro', () => {

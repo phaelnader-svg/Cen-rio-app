@@ -15,8 +15,8 @@ async function createCustomer(page: Page, name: string, phone = '(11) 90000-1234
   await dialog.getByLabel('Cidade').fill('Cidade Teste');
 }
 
-test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento → OS', () => {
-  test('fluxo completo, com bloqueio da OS antes do recebimento e histórico técnico', async ({
+test.describe.serial('Fase 2 — cliente → pedido → retirada → chegada → OS', () => {
+  test('fluxo completo: OS sem esperar a chegada, chegada pela retirada e histórico técnico', async ({
     page,
   }) => {
     await loginAdmin(page);
@@ -47,14 +47,17 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     await page.getByLabel('Descrição', { exact: true }).nth(1).fill('Cadeiras de jantar');
     await page.getByLabel('Quantidade').nth(1).fill('6');
     await page.getByRole('button', { name: 'Criar pedido' }).click();
-    await expect(page.getByRole('heading', { name: /^Pedido PC-\d{5}$/ })).toBeVisible();
+    // No CI, a troca de rota pode deixar a página nova oculta (streaming) por mais de 10 s:
+    // espera o endereço do pedido e dá mais tempo para a página aparecer.
+    await page.waitForURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole('heading', { name: /^Pedido PC-\d{5}$/ })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByTestId('order-value')).toHaveText(/3\.800,00/);
     const orderUrl = page.url();
 
-    // A OS ainda não pode ser criada (sem recebimento).
-    await expect(page.getByRole('link', { name: 'Criar OS técnica' })).toHaveCount(0);
-    await page.goto(`/painel/os/nova?pedido=${orderUrl.split('/').pop()}`);
-    await expect(page.getByText('Aguardando a chegada das peças')).toBeVisible();
+    // D1 (remoção S5): a OS não espera a chegada das peças.
+    await expect(page.getByRole('link', { name: 'Criar OS técnica' })).toBeVisible();
 
     // 3. Retirada agendada (todas as peças)
     await page.goto(orderUrl);
@@ -74,25 +77,15 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
     await expect(page.getByTestId('pickup-timeline')).toContainText('Retirada realizada');
 
-    // 4. Recebimento parcial (4 das 6 cadeiras + sofá)
-    await detail.getByRole('link', { name: 'Registrar recebimento na oficina' }).click();
-    await page
-      .getByTestId('receipt-line-Cadeiras de jantar')
-      .getByLabel('Recebidas agora')
-      .fill('4');
-    await page
-      .getByTestId('receipt-line-Cadeiras de jantar')
-      .getByLabel('Localização inicial na oficina')
-      .fill('Bancada 2');
-    await page
-      .getByLabel('Divergências em relação ao pedido')
-      .fill('Duas cadeiras ficaram com o cliente');
-    await page.getByRole('button', { name: 'Confirmar recebimento' }).click();
-    await expect(page.getByTestId('receipt-done')).toContainText(/Recebimento RC-\d{5} registrado/);
+    // 4. Chegada pela própria retirada: "Recebida na oficina" marca as peças do pedido.
+    await detail.getByRole('button', { name: 'Peças chegaram na oficina' }).click();
+    await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
+    await expect(detail).toContainText('Recebida na oficina');
 
-    // 5. OS técnica com as peças recebidas
+    // 5. OS técnica com as peças do pedido
+    await page.goto(orderUrl);
     await page.getByRole('link', { name: 'Criar OS técnica' }).click();
-    await expect(page.getByLabel('Quantidade').nth(1)).toHaveValue('4');
+    await expect(page.getByLabel('Quantidade').nth(1)).toHaveValue('6');
     await page.getByLabel('Tecido escolhido').first().fill('Linho');
     await page.getByLabel('Cor').first().fill('Areia');
     await page.getByRole('button', { name: 'Criar OS' }).click();
@@ -114,9 +107,9 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     await expect(page.getByTestId('revisions')).toContainText('Linho → Veludo');
     await expect(page.getByTestId('revisions')).toContainText('Motivo: Cliente trocou o tecido');
 
-    // 7. Pedido reflete o recebimento parcial
+    // 7. Pedido reflete a chegada
     await page.goto(orderUrl);
-    await expect(page.getByTestId('order-status')).toContainText('Recebido parcialmente');
+    await expect(page.getByTestId('order-status')).toContainText('Recebido na oficina');
   });
 
   test('outra sessão do painel vê o novo pedido em tempo real', async ({ page, browser }) => {

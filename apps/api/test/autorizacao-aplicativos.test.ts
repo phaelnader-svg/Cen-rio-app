@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { createTokenHasher } from '../src/lib/crypto';
+import { panelUserWith } from './commercial-helpers';
 import { Client, createTestApp, db, loginAdmin, resetDatabase } from './helpers';
 
 /**
@@ -290,5 +291,53 @@ describe('autorização delegada de aplicativos', () => {
       authorization: `Bearer ${t.body.access_token}`,
     });
     expect(me.status).toBe(401);
+  });
+
+  it('entrada direta (prompt=none): só com o complemento Ambiente interativo ligado, sem confirmação', async () => {
+    const admin = await loginAdmin(app);
+    const { verifier, challenge } = pkce();
+    const p = authorizeParams(challenge, { prompt: 'none', org_ref: '', org_label: '' });
+    const q = new URLSearchParams(p).toString();
+    // Complemento desligado: a entrada direta é recusada, na tela e na decisão.
+    await db().moduleSetting.create({ data: { key: 'ambiente_interativo', enabled: false } });
+    const off = await admin.get(`/api/oauth/authorize/info?${q}`);
+    expect(off.status).toBe(422);
+    expect(off.body.error.message).toContain('Ambiente interativo');
+    expect((await admin.post('/api/oauth/authorize', { ...p, decision: 'allow' })).status).toBe(
+      422,
+    );
+    // Sem prompt=none, a autorização normal (com confirmação) continua igual.
+    const normal = new URLSearchParams(authorizeParams(pkce().challenge)).toString();
+    expect((await admin.get(`/api/oauth/authorize/info?${normal}`)).body.skipConsent).toBe(false);
+
+    // Ligado (padrão por enquanto): entra sem confirmação.
+    await db().moduleSetting.deleteMany({ where: { key: 'ambiente_interativo' } });
+    const on = await admin.get(`/api/oauth/authorize/info?${q}`);
+    expect(on.status).toBe(200);
+    expect(on.body.skipConsent).toBe(true);
+    // Sem sessão no Cenário, nada feito (o app nunca entra sem login do Cenário).
+    expect((await new Client(app).get(`/api/oauth/authorize/info?${q}`)).status).toBe(401);
+    // Só o dono (quem configura a empresa) entra; o resto da equipe é recusado.
+    const equipe = await panelUserWith(app, admin, 'equipe', ['os.ver', 'producao.ver']);
+    expect((await equipe.get(`/api/oauth/authorize/info?${q}`)).status).toBe(403);
+    expect((await equipe.post('/api/oauth/authorize', { ...p, decision: 'allow' })).status).toBe(
+      403,
+    );
+
+    const r = await admin.post('/api/oauth/authorize', { ...p, decision: 'allow' });
+    expect(r.status).toBe(200);
+    const code = new URL(r.body.redirect as string).searchParams.get('code')!;
+    const t = await new Client(app, null).post('/api/oauth/token', {
+      grant_type: 'authorization_code',
+      code,
+      code_verifier: verifier,
+      redirect_uri: REDIRECT,
+      client_id: 'firma-viva',
+      client_secret: SECRET,
+    });
+    expect(t.status).toBe(200);
+    expect(t.body.user.id).toBeTruthy();
+    const log = await db().auditLog.findFirst({ where: { action: 'app.authorized' } });
+    expect(log?.changes).toMatchObject({ entradaDireta: true });
   });
 });

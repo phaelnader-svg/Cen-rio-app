@@ -21,6 +21,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
+import { moduleEnabled } from '../../core/modules';
 import { loadUserPermissions } from '../../core/permissions';
 import { createSession, revokeSessions } from '../../core/sessions';
 import type { ActorContext } from '../../core/types';
@@ -37,6 +38,11 @@ const authorizeQuery = z.object({
   /** Organização do aplicativo que vai receber o vínculo (só exibição/registro). */
   org_ref: z.string().max(80).optional(),
   org_label: z.string().max(120).optional(),
+  /**
+   * `none`: entrar no aplicativo sem a tela de confirmação, quando a empresa JÁ autorizou este
+   * aplicativo (há concessão ativa com essas permissões). Sem isso, a tela aparece normalmente.
+   */
+  prompt: z.enum(['none', 'consent']).optional(),
 });
 
 class OAuthError extends Error {
@@ -114,6 +120,25 @@ export async function oauthRoutes(app: FastifyInstance) {
     };
   }
 
+  /**
+   * Entrada direta (botão "Acessar ambiente interativo"): com `prompt=none`, a confirmação é
+   * dispensada quando a empresa tem o complemento "Ambiente interativo" ligado (a contratação é a
+   * autorização da empresa). Desligado, a entrada direta é recusada; e só o dono (permissão
+   * empresa.configurar) entra. A pessoa continua precisando
+   * estar logada no Cenário, e o aplicativo nunca recebe mais do que ela pode fazer.
+   */
+  async function directEntry(prompt: string | undefined, userId: string) {
+    if (prompt !== 'none') return false;
+    if (!(await moduleEnabled(prisma, 'ambiente_interativo')))
+      throw Errors.business(
+        'O Ambiente interativo não está ativo para esta empresa. Fale com o Cenário Gestão para contratar o complemento.',
+      );
+    // Só o dono (quem configura a empresa) usa o ambiente interativo.
+    if (!(await loadUserPermissions(prisma, userId)).has('empresa.configurar'))
+      throw Errors.forbidden('O ambiente interativo é só para quem administra a empresa.');
+    return true;
+  }
+
   /** Dados da tela de consentimento (empresa, pessoa, permissões pedidas). */
   app.get(
     '/api/oauth/authorize/info',
@@ -140,6 +165,7 @@ export async function oauthRoutes(app: FastifyInstance) {
           };
         }),
         redirectHost: new URL(q.redirect_uri).host,
+        skipConsent: await directEntry(q.prompt, request.auth!.userId),
       };
     },
   );
@@ -148,6 +174,7 @@ export async function oauthRoutes(app: FastifyInstance) {
   app.post('/api/oauth/authorize', { config: { access: { session: 'WEB' } } }, async (request) => {
     const body = authorizeQuery.extend({ decision: z.enum(['allow', 'deny']) }).parse(request.body);
     const { client, scopes } = await validateRequest(body);
+    await directEntry(body.prompt, request.auth!.userId);
     const target = new URL(body.redirect_uri);
     target.searchParams.set('state', body.state);
     if (body.decision === 'deny') {
@@ -175,7 +202,7 @@ export async function oauthRoutes(app: FastifyInstance) {
         entityType: 'oauth_client',
         entityId: client.id,
         summary: `${auth.displayName} autorizou o aplicativo ${client.name}${body.org_label ? ` para ${body.org_label}` : ''}.`,
-        changes: { scopes },
+        changes: { scopes, ...(body.prompt === 'none' ? { entradaDireta: true } : {}) },
       });
     });
     target.searchParams.set('code', code);

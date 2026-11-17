@@ -38,6 +38,14 @@ const envSchema = z
     RATE_LIMIT_ANON_PER_MIN: z.coerce.number().int().min(1).default(120),
     RATE_LIMIT_UNKNOWN_ANON_PER_MIN: z.coerce.number().int().min(1).default(1200),
     COOKIE_SECURE: bool.default(false),
+    /**
+     * Endereço do jogo Firma Viva (aplicativo conectado). Usado para voltar ao jogo depois de
+     * conectar um canal (Meta) e nos links "abrir no jogo". Vazio = links relativos.
+     */
+    GAME_WEB_URL: z
+      .string()
+      .default('')
+      .transform((v) => v.replace(/\/$/, '')),
     TOKEN_HASH_SECRET: z
       .string()
       .min(32, { message: 'TOKEN_HASH_SECRET deve ter ao menos 32 caracteres.' }),

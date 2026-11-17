@@ -21,7 +21,7 @@ import { z } from 'zod';
  * existir. Registros antigos com essas chaves em `module_settings` são ignorados por
  * `resolveModules` (chave desconhecida).
  */
-export const MODULE_KEYS = ['logistica'] as const;
+export const MODULE_KEYS = ['logistica', 'ambiente_interativo'] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
 export interface ModuleDefinition {
@@ -36,6 +36,13 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
     label: 'Logística',
     description:
       'Retiradas, entregas agendadas, roteiro e custos de viagem. Desligada, a entrega é confirmada direto na OS ("Marcar como entregue"); o histórico de viagens fica só para consulta. Só pode ser desligada sem entregas e retiradas em andamento.',
+    defaultEnabled: true,
+    configurable: true,
+  },
+  ambiente_interativo: {
+    label: 'Ambiente interativo',
+    description:
+      'Complemento do plano (por enquanto liberado para todos): mostra o botão "Acessar ambiente interativo" no painel, que abre o Firma Viva em outra guia já com a empresa e sem pedir login. Desligado, o botão some e o Firma Viva não consegue entrar pelo Cenário.',
     defaultEnabled: true,
     configurable: true,
   },
@@ -63,6 +70,7 @@ export function resolveModules(rows: readonly { key: string; enabled: boolean }[
 /** Avisos de tablet/painel que pertencem a um módulo (escondidos quando ele está desligado). */
 export const MODULE_NOTIFICATION_KINDS: Record<ModuleKey, readonly string[]> = {
   logistica: ['ENTREGA_ATRIBUIDA', 'ENTREGA_AGENDADA', 'ENTREGA_CONCLUIDA'],
+  ambiente_interativo: [],
 };
 
 /**

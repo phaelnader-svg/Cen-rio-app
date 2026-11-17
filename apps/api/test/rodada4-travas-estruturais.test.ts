@@ -1452,7 +1452,7 @@ const split = (key: string) => {
 
 /** O que a regra permite para uma sessão de painel (mesma lógica do plugin de autenticação). */
 function webAllows(access: BaselineAccess, perms: ReadonlySet<string>): boolean {
-  if ('public' in access || 'device' in access) return true;
+  if ('public' in access || 'device' in access || 'webhook' in access) return true;
   if (access.session !== 'any' && access.session !== 'WEB') return false;
   const required = [
     ...(access.surfaceExempt ? [] : ['painel.acessar']),
@@ -1488,10 +1488,28 @@ afterAll(() => app.close());
 // ─────────────────────────────────────── F1-07b ───────────────────────────────────────
 
 /**
- * Acréscimos permitidos desde 9fb1786 (em ordem alfabética): estoque.conferir (Rodada 1, decisão do
- * proprietário — F3-17) e as duas do módulo Orçamentos (pedido do proprietário, 2026-11-16).
+ * Acréscimos permitidos desde 9fb1786: estoque.conferir (Rodada 1, decisão do proprietário —
+ * F3-17), as duas do módulo Orçamentos (pedido do proprietário, 2026-11-16) e as do ambiente
+ * interativo (etapas 1 a 3, aprovadas pelo proprietário em 16/11), que nenhuma função padrão
+ * recebe; só o gestor (catálogo completo) e quem o gestor liberar.
  */
-const ALLOWED_NEW_PERMISSIONS = ['estoque.conferir', 'orcamentos.gerenciar', 'orcamentos.ver'];
+const GAME_PERMISSIONS = [
+  'jogo.acessar',
+  'jogo.construir',
+  'agentes.usar',
+  'agentes.gerenciar',
+  'conexoes.gerenciar',
+  'atendimento.ver',
+  'atendimento.responder',
+  'marketing.publicar',
+  'anuncios.gerenciar',
+];
+const ALLOWED_NEW_PERMISSIONS = [
+  'estoque.conferir',
+  'orcamentos.gerenciar',
+  'orcamentos.ver',
+  ...GAME_PERMISSIONS,
+];
 const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
   gestor: ALLOWED_NEW_PERMISSIONS, // o gestor sempre recebe o catálogo completo
   tapeceiro: [],
@@ -1503,7 +1521,9 @@ const ALLOWED_ROLE_ADDITIONS: Record<string, string[]> = {
 const ALLOWED_ACCESS_CHANGES: Record<string, AccessRule> = {};
 /** Acréscimos da função que ainda existem no catálogo (estoque.conferir saiu com a S4). */
 const adicoes = (key: string) =>
-  (ALLOWED_ROLE_ADDITIONS[key] ?? []).filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p));
+  (ALLOWED_ROLE_ADDITIONS[key] ?? [])
+    .filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p))
+    .sort();
 
 describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9fb1786)', () => {
   it('o catálogo de permissões é o de 9fb1786 menos as removidas por etapa; acréscimos só os listados', () => {
@@ -1513,7 +1533,7 @@ describe('F1-07b — nenhuma permissão existente enfraquecida (linha de base 9f
     );
     const base = new Set<string>(BASELINE_PERMISSIONS);
     expect(ALL_PERMISSIONS.filter((p) => !base.has(p)).sort()).toEqual(
-      ALLOWED_NEW_PERMISSIONS.filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)),
+      ALLOWED_NEW_PERMISSIONS.filter((p) => !PERMISSOES_REMOVIDAS_AUTORIZADAS.has(p)).sort(),
     );
   });
 
@@ -1703,9 +1723,22 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270323000000_reformulacao_fase_3: UPDATE CASCADE':
     'Não é comando: "ON UPDATE CASCADE" da chave estrangeira nova de quem desfez a entrega direta ' +
     '(deliveries.reverted_by_id; padrão do Prisma). Nenhuma linha é alterada.',
+  '20270601000000_jogo_gestao: UPDATE OR':
+    'Não é comando: "BEFORE UPDATE OR DELETE" do gatilho que torna IMUTÁVEIS o histórico de ' +
+    'plantas e as conversas com os agentes (tabelas novas). Protege dados em vez de alterá-los.',
+  '20270608000000_conexoes_escritorio: UPDATE OR':
+    'Não é comando: "BEFORE UPDATE OR DELETE" do gatilho que torna IMUTÁVEL o histórico das ' +
+    'ações dos agentes (tabela nova). Protege dados em vez de alterá-los.',
+  '20270615000000_jogo_propostas_obsoletas: DROP CONSTRAINT "ai_agent_proposals_status"':
+    'Regra CHECK recriada na mesma migration com a mesma condição e um status a mais (OBSOLETA): ' +
+    'amplia o aceito, nenhuma linha é apagada nem alterada.',
+  '20270622000000_jogo_quadro_metas: UPDATE OR':
+    'Não é comando: "BEFORE UPDATE OR DELETE" dos gatilhos que tornam IMUTÁVEIS os retratos do ' +
+    'caixa e os lançamentos do Quadro de Metas (tabelas novas).',
 };
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
+  '20270622000000_jogo_quadro_metas: UPDATE OR': 2,
   '20270309000000_materiais_estoque_entrega: UPDATE CASCADE': 16,
   '20270316000000_reformulacao_fase_2: UPDATE CASCADE': 5,
 };

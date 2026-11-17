@@ -24,6 +24,7 @@ export const PERMISSION_GROUPS = {
   presenca: 'Presença operacional',
   qualidade: 'Qualidade e expedição',
   financeiro: 'Financeiro operacional',
+  jogo: 'Jogo de gestão',
   sistema: 'Sistema',
 } as const;
 
@@ -302,6 +303,63 @@ export const PERMISSIONS = {
     label: 'Ver os próprios ganhos',
     description:
       'No tablet, com PIN: o tapeceiro (valores por peça) e a logística (valores de viagem) veem só os próprios ganhos, pagamentos e ajustes. Nunca valores de outras pessoas, dos clientes, margens ou custos da equipe fixa. Não dá acesso ao financeiro.',
+  },
+  'jogo.acessar': {
+    group: 'jogo',
+    label: 'Entrar no jogo de gestão',
+    description:
+      'Abrir a empresa virtual (Tapeçaria e Escritório) no modo Gestão. As ações feitas pelo mapa continuam exigindo as permissões de cada fluxo (produção, estoque).',
+  },
+  'jogo.construir': {
+    group: 'jogo',
+    label: 'Editar a planta do jogo',
+    description:
+      'Modo Construção: paredes, portas, áreas, bancadas, estações, estantes e mesas. Vincular estações a funcionários.',
+    critical: true,
+  },
+  'agentes.usar': {
+    group: 'jogo',
+    label: 'Conversar com os agentes',
+    description:
+      'Abrir a conversa com os agentes do escritório e ver propostas. Os agentes só leem os dados que a função deles permite.',
+  },
+  'agentes.gerenciar': {
+    group: 'jogo',
+    label: 'Configurar agentes',
+    description:
+      'Criar, configurar, pausar e desativar agentes; definir dados consultados e ações que podem propor ou executar; aprovar propostas.',
+    critical: true,
+  },
+  'conexoes.gerenciar': {
+    group: 'jogo',
+    label: 'Gerenciar conexões externas',
+    description:
+      'Conectar, testar, reconectar e desconectar WhatsApp, Instagram, Messenger, anúncios, assinatura, emissão fiscal, cobranças e banco. Tokens ficam só no servidor.',
+    critical: true,
+  },
+  'atendimento.ver': {
+    group: 'jogo',
+    label: 'Ver caixa de entrada',
+    description: 'Ler conversas de WhatsApp, Instagram e Messenger e os rascunhos dos agentes.',
+  },
+  'atendimento.responder': {
+    group: 'jogo',
+    label: 'Responder clientes',
+    description:
+      'Enviar mensagens pela caixa de entrada, aprovar rascunhos dos agentes e vincular conversas a clientes e OS.',
+    critical: true,
+  },
+  'marketing.publicar': {
+    group: 'jogo',
+    label: 'Publicar conteúdo',
+    description: 'Aprovar e publicar posts preparados pelo agente de Marketing.',
+    critical: true,
+  },
+  'anuncios.gerenciar': {
+    group: 'jogo',
+    label: 'Gerenciar anúncios',
+    description: 'Ver campanhas e aprovar mudanças de orçamento propostas pelo agente de Tráfego.',
+    critical: true,
   },
   'auditoria.ver': {
     group: 'sistema',
