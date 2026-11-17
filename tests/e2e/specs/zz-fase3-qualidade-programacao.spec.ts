@@ -176,10 +176,7 @@ test('programação semanal numa tela só; endereços antigos e menu enxuto', as
   await expect(
     page.getByRole('heading', { name: 'Competências da equipe', level: 1 }),
   ).toBeVisible();
-  await page.goto('/painel/planejamento');
-  await expect(
-    page.getByRole('heading', { name: 'Planejamento de sexta', level: 1 }),
-  ).toBeVisible();
+  // Remoção S3: o Planejamento de sexta saiu (tela e endereço).
 });
 
 test('desfazer a entrega direta: prévia, justificativa e histórico preservado', async ({
