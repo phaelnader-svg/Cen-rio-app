@@ -52,16 +52,8 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
         ],
       },
     });
-    const order = await call(page, 'GET', `/api/v1/orders/${svc.order.id}`);
-    const rec = await call(page, 'POST', '/api/v1/receipts', {
-      orderId: order.id,
-      pickupId: null,
-      origin: 'ENTREGUE_PELO_CLIENTE',
-      lines: [
-        { orderItemId: order.items[0].id, quantity: 1, condition: 'BOA', location: 'Recepção' },
-      ],
-    });
-    const soId = rec.generatedServiceOrder.id as string;
+    // D1 (remoção S5): a OS nasce no fechamento do Novo serviço.
+    const soId = svc.serviceOrder.id as string;
     const overview = await call(page, 'GET', '/api/v1/management/overview');
 
     // 1. Início: grupos do menu e indicadores das fontes canônicas.
@@ -135,15 +127,10 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
     );
     await page.getByTestId('ops-blocked-tasks').click();
     await expect(page).toHaveURL(/\/painel\/producao\?status=BLOQUEADA$/);
-    // Menu: "Materiais aprovados" no grupo Compras.
+    // Remoção S3/S4: sem a área Compras no menu (nem "Materiais aprovados").
     await page.goto('/painel');
-    await page.getByRole('navigation').getByRole('link', { name: 'Materiais aprovados' }).click();
-    await expect(page).toHaveURL(/\/painel\/materiais$/);
-    // Compras → Recebimentos: filtro por situação.
-    await page.goto('/painel/compras');
-    await page.getByRole('tab', { name: 'Recebimentos' }).click();
-    await expect(page.getByTestId('receiving-situation')).toBeVisible();
-    await page.getByTestId('receiving-situation').selectOption('CANCELADO');
-    await expect(page.getByTestId('receiving-situation')).toHaveValue('CANCELADO');
+    await expect(
+      page.getByRole('navigation').getByRole('link', { name: 'Materiais aprovados' }),
+    ).toHaveCount(0);
   });
 });

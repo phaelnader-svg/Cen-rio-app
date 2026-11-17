@@ -53,18 +53,11 @@ test('E1 — sem compra, sem medição e com material pendente, o tablet inicia 
   await page.setViewportSize({ width: 1440, height: 900 });
   await loginAdmin(page);
 
-  // G. Padrão: trava de materiais desligada, sem ninguém ter mexido.
-  const modules = (await call(page, 'GET', '/api/company/modules')) as {
-    key: string;
-    enabled: boolean;
-    defaultEnabled: boolean;
-  }[];
-  expect(modules.find((m) => m.key === 'materiais')).toMatchObject({
-    enabled: false,
-    defaultEnabled: false,
-  });
+  // G. Remoção S2: a trava de materiais e o interruptor "materiais" não existem mais.
+  const modules = (await call(page, 'GET', '/api/company/modules')) as { key: string }[];
+  expect(modules.find((m) => m.key === 'materiais')).toBeUndefined();
   await page.goto('/painel/empresa');
-  await expect(page.getByTestId('module-materiais-toggle')).not.toBeChecked();
+  await expect(page.getByTestId('module-materiais-toggle')).toHaveCount(0);
   await evidence(page, '00-empresa-funcionalidades-padrao');
 
   // OS aberta, sem medição e sem nenhum pedido de compra.
@@ -83,7 +76,7 @@ test('E1 — sem compra, sem medição e com material pendente, o tablet inicia 
   await page.goto(`/painel/os/${so.id}`);
   const readiness = page.getByTestId('readiness');
   await expect(readiness).toContainText('Materiais · Não impede o início');
-  await expect(readiness).toContainText('Medições · Não impede o início');
+  await expect(readiness).toContainText('Medidas · Não impede o início');
   await expect(readiness).toContainText('ainda não está(ão) na oficina');
   await expect(page.getByText('Materiais pendentes aparecem só como aviso.')).toBeVisible();
   await evidence(page, '01-os-resumo-prontidao');
@@ -178,12 +171,5 @@ test('E1 — sem compra, sem medição e com material pendente, o tablet inicia 
   await tcall('complete', { note: 'Corte feito sem compra formal' });
   const done = await call(page, 'GET', `/api/v1/production-tasks/${cut0.id}`);
   expect(done.status).toBe('CONCLUIDA');
-  // Nenhum processo formal foi criado para isso acontecer.
-  const readinessApi = await call(
-    page,
-    'GET',
-    `/api/v1/service-orders/${so.id}/material-readiness`,
-  );
-  expect(readinessApi.state).not.toBe('COMPLETO');
   await tablet.context.close();
 });
