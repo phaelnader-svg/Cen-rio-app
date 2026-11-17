@@ -9,15 +9,18 @@ const isProd = process.env.NODE_ENV === 'production';
 
 /**
  * Política de segurança de conteúdo. 'unsafe-inline' em scripts é exigido pelo
- * runtime do Next.js sem nonce; nenhuma origem externa é permitida.
+ * runtime do Next.js sem nonce. A única origem externa é o anti-robô do Criar conta
+ * (Cloudflare Turnstile: script e quadro de challenges.cloudflare.com).
  */
+const TURNSTILE = 'https://challenges.cloudflare.com';
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isProd ? '' : " 'unsafe-eval'"}`,
+  `script-src 'self' 'unsafe-inline'${isProd ? '' : " 'unsafe-eval'"} ${TURNSTILE}`,
+  `frame-src ${TURNSTILE}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self'",
-  "connect-src 'self' ws: wss:",
+  `connect-src 'self' ws: wss: ${TURNSTILE}`,
   "manifest-src 'self'",
   "worker-src 'self'",
   "frame-ancestors 'none'",

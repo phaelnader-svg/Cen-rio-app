@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/field';
 import { Alert } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
+import { Honeypot, Turnstile } from '@/components/account/turnstile';
 
 const REASONS: Record<string, string> = {
   'sessao-encerrada': 'Sua sessão foi encerrada. Entre novamente para continuar.',
@@ -27,6 +28,9 @@ export function AdminLogin() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Anti-robô do Criar conta (melhoria 5).
+  const [captcha, setCaptcha] = useState<string | undefined>();
+  const [website, setWebsite] = useState('');
   const reason = params.get('motivo');
   // Retorno seguro depois do login (ex.: tela oficial de autorização de um aplicativo).
   const next = params.get('proximo');
@@ -54,7 +58,10 @@ export function AdminLogin() {
     setLoading(true);
     try {
       // A conta nova é uma empresa nova, e já entra direto como gestor dela.
-      const me = await api('/api/auth/signup', { method: 'POST', body: parsed.data });
+      const me = await api('/api/auth/signup', {
+        method: 'POST',
+        body: { ...parsed.data, captcha, ...(website ? { website } : {}) },
+      });
       qc.setQueryData(['me'], me);
       router.replace('/painel');
       return;
@@ -157,6 +164,14 @@ export function AdminLogin() {
                   />
                 )}
               </Field>
+              <p className="-mt-1 text-right text-sm">
+                <a
+                  href="/entrar/esqueci"
+                  className="font-medium text-brand-700 underline-offset-4 hover:underline"
+                >
+                  Esqueci minha senha
+                </a>
+              </p>
               <Button
                 type="submit"
                 size="lg"
@@ -219,6 +234,8 @@ export function AdminLogin() {
                   />
                 )}
               </Field>
+              <Honeypot value={website} onChange={setWebsite} />
+              <Turnstile onToken={setCaptcha} />
               <Button
                 type="submit"
                 size="lg"

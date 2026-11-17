@@ -16,12 +16,19 @@ import { AMBIENTE_INTERATIVO_PATH } from '@/lib/ambiente-interativo';
 import { useMe, useModules } from '@/lib/hooks';
 import { RealtimeProvider } from '@/lib/realtime';
 import { UPCOMING, visibleNav } from './nav';
+import {
+  BillingLocked,
+  BillingNotices,
+  SUBSCRIPTION_PATH,
+} from '@/components/billing/billing-notice';
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const qc = useQueryClient();
   const me = useMe();
-  const modules = useModules(me.isSuccess);
+  const locked = me.data?.company.subscription?.locked ?? false;
+  // Assinatura vencida: as rotas respondem 402; nada além do que a tela de assinatura precisa.
+  const modules = useModules(me.isSuccess && !locked);
   const pathname = usePathname();
   const [drawer, setDrawer] = useState(false);
   const saindo = useRef(false);
@@ -238,12 +245,17 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   <span className="hidden sm:inline">Acessar ambiente interativo</span>
                 </a>
               )}
-              <PanelNotifications />
+              {!locked && <PanelNotifications />}
               <ConnectionIndicator compact />
             </div>
           </header>
           <main id="conteudo" className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-10">
-            {children}
+            <BillingNotices me={data} canManage={perms.has('empresa.configurar')} />
+            {locked && !pathname.startsWith(SUBSCRIPTION_PATH) ? (
+              <BillingLocked canManage={perms.has('empresa.ver')} />
+            ) : (
+              children
+            )}
           </main>
         </div>
       </div>
