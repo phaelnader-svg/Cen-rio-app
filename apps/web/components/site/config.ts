@@ -147,7 +147,8 @@ export function annualOffer(
   const monthlyCents = Math.round(Number(monthly.replace(/\./g, '').replace(',', '.')) * 100);
   if (!Number.isFinite(monthlyCents) || monthlyCents <= 0) return null;
   const discounted = Math.round((monthlyCents * (100 - site.annualDiscountPct)) / 100);
-  return `No plano anual, ${site.annualDiscountPct}% de desconto: R$ ${brl(discounted)} por mês, ou R$ ${brl(discounted * 12)} no ano.`;
+  // Melhoria 145: uma linha curta, com quanto se economiza no ano.
+  return `No anual, R$ ${brl(discounted)} por mês (R$ ${brl((monthlyCents - discounted) * 12)} a menos no ano).`;
 }
 
 export function whatsappUrl(site: typeof SITE = SITE): string | null {

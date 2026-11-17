@@ -25,7 +25,17 @@ import {
  * existe no código (conferido em out/2026); o que depende de decisão comercial vem de config.ts.
  */
 
-const CTA_LABEL = 'Quero conhecer o Cenário Gestão';
+// Melhoria 148: o botão diz o que acontece ao tocar.
+const CTA_LABEL = 'Chamar no WhatsApp';
+
+/** Melhoria 145: "399,00" vira "399"; centavos diferentes de zero continuam. */
+const shortPrice = (v: string) => v.replace(/,00$/, '');
+
+/** 5512996520615 → (12) 99652-0615. */
+function formatPhone(n: string | null): string {
+  const d = (n ?? '').replace(/^55/, '');
+  return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d;
+}
 
 function Pending({ children }: { children: React.ReactNode }) {
   return (
@@ -94,8 +104,11 @@ function Screen({
   slot,
   priority,
   preview,
+  mobileCrop,
 }: {
   slot: ScreenSlot;
+  /** Melhoria 143: no celular, mostra um recorte ampliado (o print inteiro fica ilegível). */
+  mobileCrop?: boolean;
   priority?: boolean;
   preview: boolean;
 }) {
@@ -105,14 +118,30 @@ function Screen({
         {slot.src ? (
           // Arquivo estático local (CSP: img-src 'self'); sem o otimizador de imagens.
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={slot.src}
-            alt={slot.title}
-            width={slot.width}
-            height={slot.height}
-            loading={priority ? 'eager' : 'lazy'}
-            className="block h-auto w-full"
-          />
+          <>
+            {mobileCrop && (
+              <div className="aspect-[4/3] overflow-hidden sm:hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={slot.src}
+                  alt=""
+                  aria-hidden
+                  width={slot.width}
+                  height={slot.height}
+                  loading={priority ? 'eager' : 'lazy'}
+                  className="block h-auto w-[230%] max-w-none"
+                />
+              </div>
+            )}
+            <img
+              src={slot.src}
+              alt={slot.title}
+              width={slot.width}
+              height={slot.height}
+              loading={priority ? 'eager' : 'lazy'}
+              className={clsx('block h-auto w-full', mobileCrop && 'max-sm:hidden')}
+            />
+          </>
         ) : (
           <div
             className="flex flex-col items-center justify-center gap-2 bg-subtle/60 p-6 text-center"
@@ -129,11 +158,7 @@ function Screen({
           </div>
         )}
       </Card>
-      {slot.src && (
-        <figcaption className="mt-3 text-sm text-ink-muted">
-          {slot.title}. Dados de exemplo.
-        </figcaption>
-      )}
+      {slot.src && <figcaption className="mt-3 text-sm text-ink-muted">{slot.title}.</figcaption>}
     </figure>
   );
 }
@@ -282,9 +307,7 @@ export function Landing({ preview }: { preview: boolean }) {
         <BrandMark subtitle="Cenário Estofados" />
         <div className="flex items-center gap-2">
           {/* No celular o botão de contato já aparece logo abaixo, na abertura; o topo fica só com Entrar. */}
-          <ContactLink variant="secondary" size="sm" className="max-sm:hidden">
-            Quero conhecer
-          </ContactLink>
+          <ContactLink variant="secondary" size="sm" className="max-sm:hidden" />
           <a
             href="/entrar"
             className={clsx(BUTTON_BASE, BUTTON_VARIANTS.primary, BUTTON_SIZES.sm)}
@@ -322,10 +345,11 @@ export function Landing({ preview }: { preview: boolean }) {
               )}
             </div>
             <p className="mt-6 text-sm text-ink-muted">
-              Criado a partir da operação real da Cenário Estofados.
+              Criado a partir da operação real da Cenário Estofados. As telas desta página usam
+              dados de exemplo.
             </p>
           </div>
-          <Screen slot={SCREENS.inicio} priority preview={preview} />
+          <Screen slot={SCREENS.inicio} priority preview={preview} mobileCrop />
         </section>
 
         {/* As perguntas do dia: conteúdo em linhas, não cartões */}
@@ -439,7 +463,7 @@ export function Landing({ preview }: { preview: boolean }) {
                   </p>
                   <p className="mt-4 flex items-baseline gap-2" data-testid="site-price">
                     <span className="text-4xl font-semibold tracking-tight tabular-nums">
-                      R$ {price ?? '[VALOR]'}
+                      R$ {price ? shortPrice(price) : '[VALOR]'}
                     </span>
                     <span className="text-ink-muted">/ mês</span>
                   </p>
@@ -451,6 +475,16 @@ export function Landing({ preview }: { preview: boolean }) {
                 </div>
                 {SITE.gameMonthlyPrice && (
                   <div className="rounded-2xl border border-brand-200 bg-brand-50/50 p-5">
+                    {/* Melhoria 146: a oficina em 3D aparece no cartão do plano. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src="/site/firma-viva.webp"
+                      alt="A oficina no Firma Viva, em 3D, com as peças e a equipe do sistema"
+                      width={960}
+                      height={643}
+                      loading="lazy"
+                      className="mb-4 block h-auto w-full rounded-xl border border-brand-200"
+                    />
                     <p className="font-semibold">Cenário Gestão + Firma Viva</p>
                     <p className="mt-1 text-sm text-ink-muted">
                       Tudo do Cenário Gestão e a oficina e o escritório em 3D, com os dados do seu
@@ -458,7 +492,7 @@ export function Landing({ preview }: { preview: boolean }) {
                     </p>
                     <p className="mt-4 flex items-baseline gap-2" data-testid="site-price-game">
                       <span className="text-4xl font-semibold tracking-tight tabular-nums">
-                        R$ {SITE.gameMonthlyPrice}
+                        R$ {shortPrice(SITE.gameMonthlyPrice)}
                       </span>
                       <span className="text-ink-muted">/ mês</span>
                     </p>
@@ -532,14 +566,37 @@ export function Landing({ preview }: { preview: boolean }) {
         </section>
       </main>
 
-      <footer
-        className={clsx(
-          WRAP,
-          'flex flex-col gap-3 py-8 text-sm text-ink-muted sm:flex-row sm:items-center sm:justify-between',
-        )}
-      >
-        <BrandMark subtitle="Cenário Estofados" />
-        <p>O Cenário Gestão é feito pela Cenário Estofados.</p>
+      {/* Melhoria 147: rodapé com os caminhos de contato e de acesso. */}
+      <footer className="border-t border-line">
+        <div
+          className={clsx(
+            WRAP,
+            'flex flex-col gap-5 py-8 text-sm text-ink-muted sm:flex-row sm:items-center sm:justify-between',
+          )}
+        >
+          <div>
+            <BrandMark subtitle="Cenário Estofados" />
+            <p className="mt-3">O Cenário Gestão é feito pela Cenário Estofados.</p>
+          </div>
+          <nav aria-label="Rodapé" className="flex flex-wrap gap-x-5 gap-y-2 font-medium">
+            {whatsappUrl() && (
+              <a
+                href={whatsappUrl()!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-ink-soft hover:text-ink hover:underline"
+              >
+                WhatsApp {formatPhone(SITE.whatsappNumber)}
+              </a>
+            )}
+            <a href="/entrar" className="text-ink-soft hover:text-ink hover:underline">
+              Entrar
+            </a>
+            <a href={SIGNUP_PATH} className="text-ink-soft hover:text-ink hover:underline">
+              Criar conta
+            </a>
+          </nav>
+        </div>
       </footer>
     </div>
   );
