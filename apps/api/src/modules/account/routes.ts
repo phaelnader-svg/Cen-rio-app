@@ -20,6 +20,8 @@ export async function accountRoutes(app: FastifyInstance) {
   /** Chave pública do anti-robô (Turnstile); vazia = desligado. */
   app.get('/api/auth/signup-config', { config: { access: { public: true } } }, async () => ({
     captchaSiteKey: app.ctx.captcha ? env.TURNSTILE_SITE_KEY || null : null,
+    // Sem envio de e-mail, a tela de entrar não oferece "Esqueci minha senha".
+    emailEnabled: app.ctx.mailer.configured,
   }));
 
   /**

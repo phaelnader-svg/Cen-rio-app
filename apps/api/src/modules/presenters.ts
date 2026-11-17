@@ -1,4 +1,10 @@
-import { billingEnvironment, billingLocked, blocksAt, statusOf } from '../core/billing';
+import {
+  billingEnvironment,
+  billingLocked,
+  blocksAt,
+  emailDeliveryEnabled,
+  statusOf,
+} from '../core/billing';
 import type { EmployeeDto, EmployeeSummaryDto, MeDto, Permission } from '@cenario/shared';
 import { isPermission } from '@cenario/shared';
 import type { Employee, PrismaClient, Tx } from '@cenario/db';
@@ -96,7 +102,8 @@ export async function buildMe(
       id: user.id,
       email: user.email,
       displayName: user.displayName,
-      emailConfirmed: user.emailConfirmedAt !== null,
+      // Sem envio de e-mail configurado não há como confirmar: nada é cobrado da pessoa.
+      emailConfirmed: user.emailConfirmedAt !== null || !emailDeliveryEnabled(),
     },
     employee: user.employee ? toEmployeeSummary(user.employee) : null,
     session: {

@@ -103,7 +103,7 @@ describe('F10-01 — menu por áreas', () => {
     const shell = readFileSync(resolve(__dirname, '../components/admin/shell.tsx'), 'utf8');
     // Homologação funcional (B1): filtro, ordenação e allOf ficam em visibleNav (nav.ts).
     expect(shell).toContain(
-      'const items = visibleNav(perms, modules, data.company.platformOwner);',
+      'const items = visibleNav(perms, modules, data.company.platformOwner, billingOn);',
     );
     expect(shell).toContain('const header = idx === 0 || items[idx - 1]!.group !== item.group;');
     expect(shell).toContain("{header && item.group !== 'Início' && (");

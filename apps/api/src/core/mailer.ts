@@ -32,6 +32,7 @@ export async function enqueueEmail(tx: Tx | PrismaClient, msg: EmailMessage) {
 
 const RETRY_MINUTES = [1, 5, 15, 60, 180, 360, 720, 1440];
 export const MAX_EMAIL_ATTEMPTS = RETRY_MINUTES.length;
+const STALE_MS = 24 * 3_600_000;
 
 export type EmailTransport = (msg: {
   from: string;
@@ -96,6 +97,19 @@ export class EmailSender {
     try {
       do {
         this.again = false;
+        // E-mail que ficou na fila mais de um dia sem nenhuma tentativa (por exemplo, gravado antes
+        // de existir a chave do Resend) não sai mais: o link dele já venceu ou perdeu o sentido.
+        await this.system.outboundEmail.updateMany({
+          where: {
+            sentAt: null,
+            attempts: 0,
+            createdAt: { lt: new Date(now.getTime() - STALE_MS) },
+          },
+          data: {
+            attempts: MAX_EMAIL_ATTEMPTS,
+            lastError: 'Descartado: ficou mais de um dia na fila sem envio.',
+          },
+        });
         const batch = await this.system.outboundEmail.findMany({
           where: { sentAt: null, nextTryAt: { lte: now }, attempts: { lt: MAX_EMAIL_ATTEMPTS } },
           orderBy: { createdAt: 'asc' },

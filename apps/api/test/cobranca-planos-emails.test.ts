@@ -155,8 +155,18 @@ describe('Conta nova: teste grátis, jogo desligado e e-mail de confirmação', 
     expect(dias).toBeGreaterThan(6.9);
     expect(dias).toBeLessThan(7.1);
 
-    const me = await c.get('/api/auth/me');
-    expect(me.body.user.emailConfirmed).toBe(false);
+    // Com envio de e-mail configurado (aqui um falso que segura tudo na fila), pede confirmação.
+    app.ctx.mailer.useTransport(async () => {
+      throw new Error('segura na fila');
+    });
+    let me;
+    try {
+      me = await c.get('/api/auth/me');
+      expect(me.body.user.emailConfirmed).toBe(false);
+      expect((await c.get('/api/auth/signup-config')).body.emailEnabled).toBe(true);
+    } finally {
+      app.ctx.mailer.useTransport(null);
+    }
     expect(me.body.company.subscription).toMatchObject({ status: 'TESTE', locked: false });
 
     // Jogo: desligado e o gestor não consegue ligar sozinho.
@@ -430,6 +440,38 @@ describe('Fila de e-mails (Resend)', () => {
       expect(await app.ctx.mailer.drain(new Date(Date.now() + 2 * 60_000))).toBe(1);
       expect(enviados).toEqual(['nova@tapecaria.local|Confirme o seu e-mail — Cenário Gestão']);
       expect((await db().outboundEmail.findFirstOrThrow()).sentAt).not.toBeNull();
+    } finally {
+      app.ctx.mailer.useTransport(null);
+    }
+  });
+});
+
+describe('Sem as chaves (Resend, Turnstile): publica desligado sem quebrar nada', () => {
+  it('cria conta e entra sem confirmar e-mail, sem anti-robô e sem link de esqueci a senha', async () => {
+    const cfg = await new Client(app).get('/api/auth/signup-config');
+    expect(cfg.body).toEqual({ captchaSiteKey: null, emailEnabled: false });
+    const { c } = await criarConta();
+    const me = await c.get('/api/auth/me');
+    expect(me.status).toBe(200);
+    // Sem como mandar o e-mail, ninguém fica com aviso para confirmar.
+    expect(me.body.user.emailConfirmed).toBe(true);
+  });
+
+  it('e-mail parado na fila há mais de um dia é descartado quando o envio é ligado', async () => {
+    await criarConta();
+    await db().outboundEmail.updateMany({
+      data: { createdAt: new Date(Date.now() - 2 * 86_400_000) },
+    });
+    const enviados: string[] = [];
+    app.ctx.mailer.useTransport(async (m) => {
+      enviados.push(m.to);
+    });
+    try {
+      expect(await app.ctx.mailer.drain()).toBe(0);
+      expect(enviados).toEqual([]);
+      const m = await db().outboundEmail.findFirstOrThrow();
+      expect(m.sentAt).toBeNull();
+      expect(m.lastError).toContain('Descartado');
     } finally {
       app.ctx.mailer.useTransport(null);
     }

@@ -176,7 +176,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
     fetch: (...args) => globalThis.fetch(...args),
   };
   app.decorate('ctx', ctx);
-  setBillingEnvironment(env);
+  setBillingEnvironment(env, () => ctx.mailer.configured);
   // Cada requisição ganha o seu "de qual empresa" (preenchido pela autenticação).
   app.decorateRequest('tenant', null);
   app.addHook('onRequest', (request, _reply, done) => {

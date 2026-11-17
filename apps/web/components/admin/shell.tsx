@@ -75,7 +75,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const items = visibleNav(perms, modules, data.company.platformOwner);
+  // Cobrança desligada: o item Assinatura não aparece.
+  const billingOn = data.company.subscription.billingEnabled;
+  const items = visibleNav(perms, modules, data.company.platformOwner, billingOn);
 
   async function logout() {
     // B4: a saída encerra a sessão, e o tempo real avisa "sessão encerrada" — que aqui é esperado.
