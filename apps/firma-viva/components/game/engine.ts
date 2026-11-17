@@ -84,6 +84,8 @@ export interface LogisticsView {
     id: string;
     kind: 'ENTREGA' | 'RETIRADA';
     customer: string;
+    /** Nome inteiro do cliente (para textos fora do mapa). */
+    fullName?: string;
     /** AGENDADA (ainda na oficina), NA_RUA (saiu), FEITA ou PROBLEMA. */
     status: 'AGENDADA' | 'NA_RUA' | 'FEITA' | 'PROBLEMA';
   }[];

@@ -73,18 +73,15 @@ export function CenariaChat({
     <section
       className="pointer-events-auto flex w-[min(440px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border-2 border-brand-600/50 bg-[#fffaf2]/97 shadow-pop"
       data-testid="cenaria-chat"
-      aria-label="Falar com a Firma"
+      aria-label="Falar com o Gerente"
     >
       <button
         className="flex items-center gap-2 border-b border-brand-600/20 bg-brand-700 px-3 py-2 text-left text-sm font-bold text-[#f5ebdf]"
         onClick={() => setOpen((o) => !o)}
       >
-        <MessageCircle className="size-4" /> Falar com a Firma
-        <span className="ml-auto text-[10px] font-semibold opacity-80">
-          {config.data?.provider === 'anthropic'
-            ? `IA: ${config.data.model}`
-            : 'sem IA: regras e sugestões'}
-        </span>
+        <MessageCircle className="size-4" /> Falar com o Gerente
+        {/* Melhoria 173: sem o aviso "sem IA" fixo no topo; o chat só fala o que sabe. */}
+        <span className="ml-auto" />
         {open ? <ChevronDown className="size-4" /> : <ChevronUp className="size-4" />}
       </button>
       {open ? (
@@ -183,7 +180,7 @@ export function CenariaChat({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onFocus={() => setOpen(true)}
-          aria-label="Falar com a Firma"
+          aria-label="Falar com o Gerente"
           data-testid="cenaria-input"
         />
         <button

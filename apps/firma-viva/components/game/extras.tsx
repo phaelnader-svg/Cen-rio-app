@@ -13,6 +13,7 @@ import type { GamePieceDto, GameSnapshotDto } from '@cenario/shared';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
+  CheckCircle2,
   Download,
   FlaskConical,
   type LucideIcon,
@@ -226,8 +227,9 @@ export interface TodayLogistics {
 
 const firstName = (n: string) => n.trim().split(/\s+/)[0] ?? n;
 /** Nome do cliente curto para o mapa (empresa fica inteira: "Hotel Vista Alegre"). */
+const cleanName = (n: string) => n.replace(/^\[[^\]]*\]\s*/, '').trim();
 const shortName = (n: string) => {
-  const t = n.replace(/^\[[^\]]*\]\s*/, '').trim();
+  const t = cleanName(n);
   return t.length > 24 ? `${t.slice(0, 23)}…` : t;
 };
 
@@ -260,6 +262,7 @@ export function logisticsView(l: TodayLogistics | undefined): LogisticsView | nu
       id: d.id,
       kind: 'ENTREGA',
       customer: shortName(d.customer.name),
+      fullName: cleanName(d.customer.name),
       status:
         d.status === 'EM_TRANSPORTE' || d.status === 'NO_DESTINO'
           ? 'NA_RUA'
@@ -276,6 +279,7 @@ export function logisticsView(l: TodayLogistics | undefined): LogisticsView | nu
       id: p.id,
       kind: 'RETIRADA',
       customer: shortName(p.customer.name),
+      fullName: cleanName(p.customer.name),
       status:
         p.status === 'EM_EXECUCAO'
           ? 'NA_RUA'
@@ -412,6 +416,25 @@ export interface MorningItem {
   action?: { label: string; run: () => void };
 }
 
+/** "A, B e C" com os nomes inteiros. */
+const joinNames = (names: string[]) =>
+  names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} e ${names.at(-1)}`;
+
+/** Entregas e retiradas agrupadas: "Entregas: A e B · Retirada: C" (até 4 nomes no total). */
+function tripsDetail(trips: LogisticsView['trips']) {
+  const shown = trips.slice(0, 4);
+  const extra = trips.length - shown.length;
+  const group = (kind: 'ENTREGA' | 'RETIRADA', one: string, many: string) => {
+    const names = shown.filter((t) => t.kind === kind).map((t) => t.fullName ?? t.customer);
+    return names.length ? `${names.length === 1 ? one : many}: ${joinNames(names)}` : '';
+  };
+  return (
+    [group('ENTREGA', 'Entrega', 'Entregas'), group('RETIRADA', 'Retirada', 'Retiradas')]
+      .filter(Boolean)
+      .join(' · ') + (extra > 0 ? ` e mais ${extra}` : '')
+  );
+}
+
 const greeting = (h = new Date().getHours()) =>
   h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite';
 
@@ -447,7 +470,7 @@ export function morningItems(
   return [
     {
       key: 'atrasos',
-      icon: TriangleAlert,
+      icon: late.length || due.length ? TriangleAlert : CheckCircle2,
       title: late.length
         ? `${late.length} ${late.length === 1 ? 'peça atrasada' : 'peças atrasadas'}`
         : due.length
@@ -474,12 +497,7 @@ export function morningItems(
               .filter(Boolean)
               .join(' e ') + ' hoje'
           : 'Sem entregas nem retiradas hoje',
-      detail: trips.length
-        ? trips
-            .slice(0, 3)
-            .map((t) => `${t.kind === 'ENTREGA' ? 'Entrega' : 'Retirada'}: ${t.customer}`)
-            .join(' · ')
-        : 'O furgão fica no pátio.',
+      detail: trips.length ? tripsDetail(trips) : 'O furgão fica no pátio.',
       tone: trips.length ? 'warn' : 'ok',
       ...(trips.length ? { action: { label: 'Ver roteiro', run: actions.trips } } : {}),
     },
