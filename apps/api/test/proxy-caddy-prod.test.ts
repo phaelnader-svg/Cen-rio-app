@@ -70,8 +70,8 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
     expect(original).toContain('reverse_proxy api:4000');
     expect(original).toContain('reverse_proxy web:3000');
     const adapted = original
-      .replace('reverse_proxy api:4000', `reverse_proxy 127.0.0.1:${backendPort}`)
-      .replace('reverse_proxy web:3000', `reverse_proxy 127.0.0.1:${backendPort}`)
+      .replaceAll('reverse_proxy api:4000', `reverse_proxy 127.0.0.1:${backendPort}`)
+      .replaceAll('reverse_proxy web:3000', `reverse_proxy 127.0.0.1:${backendPort}`)
       .replace(/^\{\n/m, '{\n\tadmin off\n');
     const file = join(dir, 'Caddyfile');
     writeFileSync(file, adapted);
