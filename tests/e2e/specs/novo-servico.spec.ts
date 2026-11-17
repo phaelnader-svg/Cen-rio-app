@@ -9,7 +9,7 @@ import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
  *  2. Possível duplicidade: o cadastro encontrado é oferecido e reutilizado.
  *  3. Equipe própria sugere Thiago (configuração da Empresa).
  *  4. André no celular vê a retirada no roteiro, com horário de chegada e sem valores.
- *  5. D1 (remoção S5): a OS nasce no fechamento com todas as peças; a chegada é opcional.
+ *  5. Chegada parcial pelo painel: a OS nasce automaticamente só com as peças recebidas.
  */
 const origin = `http://localhost:${E2E.webPort}`;
 const evidence = (page: Page, name: string) =>
@@ -111,9 +111,11 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
       `${ANDRE.displayName} + ${IZAIAS.displayName}`,
     );
     await expect(page.getByTestId('ns-done-cost')).toHaveText('R$ 100,00');
-    await expect(page.getByTestId('ns-done-os')).toHaveText(/OS-\d{5}/);
     await evidence(page, '02-novo-servico-confirmacao');
     const orderCode = (await page.getByTestId('ns-done-order').textContent())!.trim();
+    // A OS nasce no fechamento do serviço (recebimentos removidos em 16/11/2026).
+    await expect(page.getByTestId('ns-done-os')).toHaveText(/OS-\d{5}/);
+    const osCode = (await page.getByTestId('ns-done-os').textContent())!.trim();
     await page.getByTestId('ns-open-order').click();
     await page.waitForURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
     const orderId = page.url().split('/').pop()!;
@@ -156,14 +158,12 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await evidence(andre.page, '04-celular-andre-roteiro');
     await andre.context.close();
 
-    // ── 5. D1: a OS nasceu no fechamento com todas as peças, sem esperar a chegada.
+    // ── 5. A OS do fechamento tem todas as peças do serviço, com o tipo de cada uma.
     const order = await call(page, 'GET', `/api/v1/orders/${orderId}`);
     const list = await call(page, 'GET', `/api/v1/service-orders?orderId=${orderId}`);
-    const sos = Array.isArray(list) ? list : list.items;
-    expect(sos).toHaveLength(1);
-    await page.goto(`/painel/os/${sos[0].id}`);
-    await evidence(page, '05-os-no-fechamento');
-    const so = await call(page, 'GET', `/api/v1/service-orders/${sos[0].id}`);
+    const found = (Array.isArray(list) ? list : list.items) as { id: string; code: string }[];
+    expect(found.map((x) => x.code)).toEqual([osCode]);
+    const so = await call(page, 'GET', `/api/v1/service-orders/${found[0]!.id}`);
     expect(
       so.items.map((i: { description: string; quantity: number; serviceType: string }) => [
         i.description,
@@ -178,7 +178,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     expect(order.code).toBe(orderCode);
   });
 
-  test('cliente entrega na tapeçaria: sem retirada; OS no fechamento e "Peças na oficina" no pedido', async ({
+  test('cliente entrega na tapeçaria: sem retirada; OS no fechamento e peças marcadas na oficina', async ({
     page,
   }) => {
     await loginAdmin(page);
@@ -197,20 +197,21 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     const done = page.getByTestId('ns-confirmation');
     await expect(done).toContainText('Aguardando entrega do cliente');
     await expect(page.getByTestId('ns-done-dropoff')).toBeVisible();
-    await expect(page.getByTestId('ns-done-os')).toHaveText(/OS-\d{5}/);
     await page.getByTestId('ns-open-order').click();
     await page.waitForURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
     await expect(page.getByText('Aguardando entrega do cliente').first()).toBeVisible();
     const orderId = page.url().split('/').pop()!;
     const pickups = await call(page, 'GET', `/api/v1/pickups?orderId=${orderId}`);
     expect(Array.isArray(pickups) ? pickups : pickups.items).toHaveLength(0);
-    // O cliente chega com a peça: a marca opcional "Peças na oficina" no pedido.
+    // O cliente chega com a peça: "Peças na oficina" no pedido (a OS já nasceu no fechamento).
     await page.getByTestId('order-mark-arrived').click();
-    await expect(page.getByText(/Peças do pedido PC-\d{5} marcadas como na oficina/)).toBeVisible();
+    await expect(page.getByTestId('order-mark-arrived')).toHaveCount(0);
     const sos = await call(page, 'GET', `/api/v1/service-orders?orderId=${orderId}`);
     expect(Array.isArray(sos) ? sos : sos.items).toHaveLength(1);
   });
-  test('titular e mão de obra previstos no fechamento; a OS nasce com eles', async ({ page }) => {
+  test('titular e mão de obra previstos no fechamento; OS nasce com eles; alteração no pedido não muda a OS', async ({
+    page,
+  }) => {
     await loginAdmin(page);
     await page.goto('/painel/servicos/novo');
     await page.getByTestId('ns-mode-new').click();
@@ -227,9 +228,29 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     );
     await page.getByTestId('ns-submit').click();
     await expect(page.getByTestId('ns-confirmation')).toBeVisible();
-    // D1: a OS nasce no fechamento com o titular e a mão de obra combinada (prevista, não paga).
-    await page.getByTestId('ns-open-os').click();
-    await page.waitForURL(/\/painel\/os\/[0-9a-f-]{36}$/);
+    await page.getByTestId('ns-open-order').click();
+    await page.waitForURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
+    const orderId = page.url().split('/').pop()!;
+    const owner = page.getByTestId('order-item-owner-0');
+    await expect(owner).toContainText('Titular previsto: Ricardo');
+    await expect(owner).toContainText(/mão de obra prevista R\$\s250,00\/un\./);
+    // A OS nasce no fechamento, já com o titular e a mão de obra prevista.
+    const sos = await call(page, 'GET', `/api/v1/service-orders?orderId=${orderId}`);
+    const found = (Array.isArray(sos) ? sos : sos.items) as { id: string }[];
+    expect(found).toHaveLength(1);
+
+    // Alteração antes da chegada: Márcio, R$ 280,00 por unidade.
+    await page.getByTestId('order-planned-edit').click();
+    const dlg = page.getByRole('dialog');
+    await dlg.getByTestId('planned-owner-0').selectOption({ label: 'Márcio' });
+    await dlg.getByTestId('planned-labor-0').fill('280,00');
+    await dlg.getByTestId('planned-save').click();
+    await expect(dlg).toHaveCount(0);
+    await expect(owner).toContainText('Titular previsto: Márcio');
+    await expect(owner).toContainText(/R\$\s280,00\/un\./);
+
+    // A OS já gerada não muda com a alteração do pedido (a troca na OS é feita na própria OS).
+    await page.goto(`/painel/os/${found[0]!.id}`);
     // Fase 2 (OS unificada): a mão de obra fica no "Resumo" (aba inicial da OS).
     await page.getByRole('tab', { name: 'Resumo' }).click();
     const labor = page.getByTestId('os-labor');

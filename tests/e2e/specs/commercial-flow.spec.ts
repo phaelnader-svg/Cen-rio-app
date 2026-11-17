@@ -15,8 +15,8 @@ async function createCustomer(page: Page, name: string, phone = '(11) 90000-1234
   await dialog.getByLabel('Cidade').fill('Cidade Teste');
 }
 
-test.describe.serial('Fase 2 — cliente → pedido → retirada → chegada → OS', () => {
-  test('fluxo completo: OS sem esperar a chegada, chegada pela retirada e histórico técnico', async ({
+test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento → OS', () => {
+  test('fluxo completo: retirada, chegada na oficina, OS técnica e histórico técnico', async ({
     page,
   }) => {
     await loginAdmin(page);
@@ -51,7 +51,7 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → chegada →
     await expect(page.getByTestId('order-value')).toHaveText(/3\.800,00/);
     const orderUrl = page.url();
 
-    // D1 (remoção S5): a OS não espera a chegada das peças.
+    // Recebimentos removidos (16/11/2026): a OS não depende da chegada das peças.
     await expect(page.getByRole('link', { name: 'Criar OS técnica' })).toBeVisible();
 
     // 3. Retirada agendada (todas as peças)
@@ -72,13 +72,13 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → chegada →
     await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
     await expect(page.getByTestId('pickup-timeline')).toContainText('Retirada realizada');
 
-    // 4. Chegada pela própria retirada: "Recebida na oficina" marca as peças do pedido.
+    // 4. Chegada na oficina: só uma marca na retirada (sem conferência de quantidades).
     await detail.getByRole('button', { name: 'Peças chegaram na oficina' }).click();
     await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
     await expect(detail).toContainText('Recebida na oficina');
-
-    // 5. OS técnica com as peças do pedido
     await page.goto(orderUrl);
+
+    // 5. OS técnica com as peças recebidas
     await page.getByRole('link', { name: 'Criar OS técnica' }).click();
     await expect(page.getByLabel('Quantidade').nth(1)).toHaveValue('6');
     await page.getByLabel('Tecido escolhido').first().fill('Linho');
@@ -101,10 +101,6 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → chegada →
     await page.getByRole('tab', { name: /Histórico/ }).click();
     await expect(page.getByTestId('revisions')).toContainText('Linho → Veludo');
     await expect(page.getByTestId('revisions')).toContainText('Motivo: Cliente trocou o tecido');
-
-    // 7. Pedido reflete a chegada
-    await page.goto(orderUrl);
-    await expect(page.getByTestId('order-status')).toContainText('Recebido na oficina');
   });
 
   test('outra sessão do painel vê o novo pedido em tempo real', async ({ page, browser }) => {

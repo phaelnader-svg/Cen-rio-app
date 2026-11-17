@@ -52,8 +52,11 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
         ],
       },
     });
-    // D1 (remoção S5): a OS nasce no fechamento do Novo serviço.
-    const soId = svc.serviceOrder.id as string;
+    const order = await call(page, 'GET', `/api/v1/orders/${svc.order.id}`);
+    // Recebimentos removidos: a OS nasce no fechamento do Novo serviço; a chegada é só uma marca.
+    await call(page, 'POST', `/api/v1/orders/${order.id}/arrived`, { version: order.version });
+    const rec = { generatedServiceOrder: svc.serviceOrder as { id: string; code: string } };
+    const soId = rec.generatedServiceOrder.id as string;
     const overview = await call(page, 'GET', '/api/v1/management/overview');
 
     // 1. Início: grupos do menu e indicadores das fontes canônicas.
@@ -108,7 +111,7 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
    * bloqueios pela mesma fonte da API; o menu leva a "Materiais aprovados"; a aba Recebimentos
    * de Compras lista por situação; "Bloqueios" abre o quadro já filtrado.
    */
-  test('Início: total da Central, a planejar e bloqueios; menu e Recebimentos', async ({
+  test('Início: total da Central, a planejar e bloqueios; menu sem os módulos removidos', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -127,10 +130,11 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
     );
     await page.getByTestId('ops-blocked-tasks').click();
     await expect(page).toHaveURL(/\/painel\/producao\?status=BLOQUEADA$/);
-    // Remoção S3/S4: sem a área Compras no menu (nem "Materiais aprovados").
+    // Removidos (16/11/2026): Materiais aprovados, Compras e Recebimentos saem do menu.
     await page.goto('/painel');
-    await expect(
-      page.getByRole('navigation').getByRole('link', { name: 'Materiais aprovados' }),
-    ).toHaveCount(0);
+    const nav = page.getByRole('navigation');
+    await expect(nav.getByRole('link', { name: 'Pedidos comerciais' }).first()).toBeVisible();
+    for (const gone of ['Materiais aprovados', 'Compras', 'Recebimentos'])
+      await expect(nav.getByRole('link', { name: gone, exact: true })).toHaveCount(0);
   });
 });

@@ -3,8 +3,8 @@ import { loginAdmin } from './helpers';
 import { openServiceOrder } from './os-helpers';
 
 /**
- * Reformulação, Fase 2 — mapa interno da oficina (painel) e "Aguardando chegada" unificada
- * (tablet). Dados fictícios.
+ * Reformulação, Fase 2 — mapa interno da oficina (painel). O "Aguardando chegada" do tablet saiu
+ * com Recebimentos (16/11/2026). Dados fictícios.
  */
 test('mapa da oficina: peça sem localização, mover pela tela, busca e localização na OS', async ({
   page,

@@ -112,6 +112,7 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
       '/api/health',
       '/conheca-x',
       '/x',
+      '/robots.txt.bak',
     ]) {
       const r = await get(port, path);
       expect(r.headers['x-robots-tag'], path).toBe('noindex, nofollow');
@@ -119,8 +120,8 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
     }
   });
 
-  it('a página comercial e as imagens dela não recebem o noindex do proxy', async () => {
-    for (const path of ['/', '/conheca', '/site/inicio.webp']) {
+  it('a página comercial, as imagens dela, robots.txt e sitemap.xml não recebem o noindex do proxy', async () => {
+    for (const path of ['/', '/conheca', '/site/inicio.webp', '/robots.txt', '/sitemap.xml']) {
       const r = await get(port, path);
       expect(r.statusCode, path).toBe(200);
       expect(r.headers['x-robots-tag'], path).toBeUndefined();

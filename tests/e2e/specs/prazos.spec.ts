@@ -54,9 +54,11 @@ test.describe.serial('Prazos e serviços em risco', () => {
       },
     });
     const order = await call(page, 'GET', `/api/v1/orders/${svc.order.id}`);
-    // D1 (remoção S5): a OS nasce no fechamento do Novo serviço.
-    const soId = svc.serviceOrder.id as string;
-    const soCode = svc.serviceOrder.code as string;
+    // Recebimentos removidos: a OS nasce no fechamento do Novo serviço; a chegada é só uma marca.
+    await call(page, 'POST', `/api/v1/orders/${order.id}/arrived`, { version: order.version });
+    const rec = { generatedServiceOrder: svc.serviceOrder as { id: string; code: string } };
+    const soId = rec.generatedServiceOrder.id as string;
+    const soCode = rec.generatedServiceOrder.code as string;
 
     // 1. Início: mesmas contagens da Central (tipo Prazo da OS).
     const before = (await call(page, 'GET', '/api/v1/attention?type=PRAZO_OS')) as Attention;

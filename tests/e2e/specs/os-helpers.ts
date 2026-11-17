@@ -14,15 +14,15 @@ export async function post(page: Page, path: string, data: unknown) {
 }
 
 /**
- * Remoção S5: sem Recebimentos. A chegada das peças é a marca opcional "Peças na oficina" do
- * pedido (`POST /api/v1/orders/:id/arrived`), que marca o restante de uma vez.
+ * Recebimentos removidos: "Peças na oficina" marca as peças do pedido como chegadas (opcional; a
+ * OS não depende disso, mas mantém o pedido no estado em que os testes o esperam).
  */
-export async function markArrived(page: Page, order: { id: string; version: number }) {
-  const r = await page.request.post(`/api/v1/orders/${order.id}/arrived`, {
-    data: { version: order.version },
+export async function markArrived(page: Page, orderId: string, version: number) {
+  const r = await page.request.post(`/api/v1/orders/${orderId}/arrived`, {
+    data: { version },
     headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
   });
-  expect(r.status(), `arrived: ${await r.text()}`).toBe(200);
+  expect(r.ok(), `/api/v1/orders/${orderId}/arrived: ${await r.text()}`).toBe(true);
   return r.json();
 }
 
@@ -56,7 +56,7 @@ export async function openServiceOrder(page: Page, name: string) {
       { pieceType: 'POLTRONA', description: 'Poltronas', quantity: 2 },
     ],
   });
-  await markArrived(page, order);
+  await markArrived(page, order.id, order.version);
   return post(page, '/api/v1/service-orders', {
     orderId: order.id,
     items: [

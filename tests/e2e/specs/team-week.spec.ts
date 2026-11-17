@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
-import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice, setMaterialsGate, setPin } from './helpers';
 import { openServiceOrder } from './os-helpers';
 
 /**
@@ -53,6 +53,8 @@ test.describe.serial('Evolução Fase 4 — Minha semana', () => {
     test.setTimeout(300_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAdmin(page);
+    // Etapa E1: este spec prova o controle formal de materiais — liga a trava (o padrão é desligada).
+    await setMaterialsGate(page, true);
     const setClock = (iso: string | null) => call(page, 'POST', '/api/test/clock', { now: iso });
     let planId = '';
     try {
@@ -124,15 +126,14 @@ test.describe.serial('Evolução Fase 4 — Minha semana', () => {
       await expect(jt.getByTestId('queue-all-1')).toContainText(`${so.code}/1`);
       await jt.getByRole('button', { name: 'Voltar à minha semana' }).click();
 
-      // Ricardo: o Corte de tecido não tem dependência e, sem a trava de materiais (remoção S2),
-      // já é a tarefa em destaque.
+      // Ricardo: a trava formal de materiais saiu (16/11/2026) — o corte de tecido não espera
+      // compra; ele vê a própria fila como titular da peça.
       const rt = ricardo.page;
-      await expect(rt.getByTestId('week-highlight')).toContainText('Corte de tecido');
-      await expect(rt.getByTestId('week-highlight')).toContainText(`${so.code}/1`);
+      await expect(rt.getByTestId('my-week')).toContainText(`${so.code}/1`);
       await expect(rt.getByTestId('piece-owner').first()).toHaveText(
         'Você é o tapeceiro titular desta peça.',
       );
-      await shot(rt, '02-ricardo-corte');
+      await shot(rt, '02-ricardo-titular');
       // Márcio só vê as poltronas; Thiago (sem fila) mantém a tela anterior e as inspeções.
       await expect(marcio.page.getByTestId('my-week')).toContainText(`${so.code}/2`);
       await expect(marcio.page.getByTestId('my-week')).not.toContainText(`${so.code}/1`);
@@ -199,6 +200,7 @@ test.describe.serial('Evolução Fase 4 — Minha semana', () => {
       await shot(jt, '04-fila-completa');
       for (const c of [joao, ricardo, marcio, thiago]) await c.context.close();
     } finally {
+      await setMaterialsGate(page, false).catch(() => undefined);
       if (planId) {
         const p = await call(page, 'GET', `/api/v1/production-plans/${planId}`);
         for (const t of p.tasks as { id: string; status: string }[])

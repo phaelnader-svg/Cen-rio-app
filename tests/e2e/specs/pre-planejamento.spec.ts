@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
-import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice, setMaterialsGate, setPin } from './helpers';
 
 /**
  * Simplificação Fase 4 — pré-planejamento no navegador (dados fictícios):
@@ -80,7 +80,15 @@ async function receivedService(page: Page, name: string, pieces: string[]) {
     },
     pickup: { scheduledDate: today(), windowStart: '23:30', team: 'EQUIPE_PROPRIA' },
   });
-  // D1 (remoção S5): a OS nasce no fechamento do Novo serviço, sem esperar a chegada.
+  // Recebimentos removidos (16/11/2026): a OS nasce no fechamento; a chegada é a transição
+  // "Peças chegaram na oficina" da retirada.
+  for (const toStatus of ['EM_EXECUCAO', 'RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA']) {
+    const pk = await call(page, 'GET', `/api/v1/pickups/${svc.pickup.id}`);
+    await call(page, 'POST', `/api/v1/pickups/${svc.pickup.id}/transition`, {
+      toStatus,
+      version: pk.version,
+    });
+  }
   expect(svc.serviceOrder?.code).toMatch(/OS-\d{5}/);
   return svc.serviceOrder as { id: string; code: string };
 }
@@ -100,6 +108,8 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
     test.setTimeout(300_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAdmin(page);
+    // Etapa E1: este spec prova o controle formal de materiais — liga a trava (o padrão é desligada).
+    await setMaterialsGate(page, true);
     let planId = '';
     try {
       const one = await receivedService(page, 'Helena Planejamento Fictícia', ['Sofá retrátil']);
@@ -180,11 +190,14 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       await shot(page, '05-revisar-e-publicar');
       await page.getByTestId('publish-confirm').click();
       await expect(prev).toHaveCount(0);
-      // Remoção S2: material não impede; publicado com início futuro fica em "Planejados",
-      // aguardando só a data de início.
+      // A trava de materiais saiu (16/11/2026): publicado, o serviço fica em "Planejados"
+      // até a data de início (nada liberado antes dela).
       await page.getByRole('tab', { name: /Planejados/ }).click();
       for (const so of [one, two])
-        await expect(page.getByTestId(`planned-${so.code}`)).toBeVisible();
+        await expect(
+          page.getByTestId(`week-${WEEK}`).getByTestId(`planned-${so.code}`),
+        ).toBeVisible();
+      await expect(page.getByTestId(`week-${WEEK}`)).not.toContainText('Rascunho');
       await shot(page, '06-planejados-publicados');
 
       // ── Tablets: cada um vê as suas; nada liberado antes da data de início.
@@ -223,6 +236,7 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
         await shot(page, `09-producao-${w}`);
       }
     } finally {
+      await setMaterialsGate(page, false).catch(() => undefined);
       // Limpeza: tarefas da semana futura canceladas (com motivo) — não afetam outros testes.
       if (planId) {
         const plan = await call(page, 'GET', `/api/v1/production-plans/${planId}`);

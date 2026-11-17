@@ -555,11 +555,12 @@ test('permissões corrigidas: menu e telas por perfil (B1, B2, B5, B6)', async (
 
   // B2
   const leitura = await perfil('HML-SoOs', ['os.ver']);
+  // Recebimento de materiais removido (16/11/2026): fora do menu para qualquer perfil.
   anota(
     F,
-    'B2 (remoção S4)',
-    'sem "Recebimento de materiais" no menu',
-    leitura.menu.includes('/painel/recebimento-materiais') ? 'no menu' : 'fora do menu',
+    'B2 sem estoque/compras',
+    'sem "Recebimento de materiais" no menu (tela removida)',
+    leitura.menu.includes('/painel/recebimento-materiais') ? 'no menu' : 'fora',
     !leitura.menu.includes('/painel/recebimento-materiais'),
   );
   // B5
@@ -583,6 +584,15 @@ test('permissões corrigidas: menu e telas por perfil (B1, B2, B5, B6)', async (
     !leitura.menu.includes('/painel/devolucoes'),
   );
   await leitura.fechar();
+  const estoque = await perfil('HML-Estoque', ['estoque.ver']);
+  anota(
+    F,
+    'B2 com estoque.ver',
+    'sem "Recebimento de materiais" no menu (tela removida)',
+    estoque.menu.includes('/painel/recebimento-materiais') ? 'no menu' : 'fora',
+    !estoque.menu.includes('/painel/recebimento-materiais'),
+  );
+  await estoque.fechar();
   // B6 — permitido só para consultar
   const consulta = await perfil('HML-PedidosVer', ['pedidos.ver']);
   const dv = await consulta.abrir('/painel/devolucoes');

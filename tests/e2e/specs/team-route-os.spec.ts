@@ -76,7 +76,7 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
       { pieceType: 'SOFA', description: 'Sofá 3 lugares', quantity: 1 },
       { pieceType: 'POLTRONA', description: 'Poltronas', quantity: 2 },
     ]);
-    await markArrived(page, order);
+    await markArrived(page, order.id, order.version);
     await page.goto(`/painel/os/nova?pedido=${order.id}`);
     const form = page.getByTestId('new-service-order');
     for (const s of [

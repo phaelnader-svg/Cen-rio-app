@@ -2,7 +2,6 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
 import { loginAdmin } from './helpers';
-import { markArrived } from './os-helpers';
 
 /**
  * Correção global de interface — auditoria de GEOMETRIA dos formulários, em todas as telas do
@@ -142,7 +141,9 @@ test.describe.serial('Interface — geometria dos formulários', () => {
       cliente: first(await get(page, '/api/v1/customers?limit=1')),
       pedido: first(await get(page, '/api/v1/orders?limit=1')),
       os: first(await get(page, '/api/v1/service-orders?limit=1')),
+      compra: first(await get(page, '/api/v1/purchase-orders')),
       entrega: first(await get(page, '/api/v1/deliveries')),
+      medicao: first(await get(page, '/api/v1/measurements')),
       retirada: first(await get(page, '/api/v1/pickups')),
     };
     // Dados fictícios próprios: pedido sem recebimento (diálogo de retirada), pedido recebido
@@ -181,8 +182,14 @@ test.describe.serial('Interface — geometria dos formulários', () => {
         paymentTerms: 'À vista',
         items,
       });
-    // Remoção S5: a chegada é a marca "Peças na oficina" do pedido.
-    const receber = (o: { id: string; version: number }) => markArrived(page, o);
+    // Recebimentos removidos (16/11/2026): a chegada é a marca "Peças na oficina" do pedido.
+    const receber = async (o: { id: string; version: number }) => {
+      const r = await page.request.post(`/api/v1/orders/${o.id}/arrived`, {
+        data: { version: o.version },
+        headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
+      });
+      expect(r.ok(), `arrived: ${await r.text()}`).toBe(true);
+    };
     const semRecebimento = await pedido([
       { pieceType: 'SOFA', description: 'Sofá geometria', quantity: 1 },
     ]);
@@ -237,6 +244,7 @@ test.describe.serial('Interface — geometria dos formulários', () => {
       ['/painel/os', null, null],
       [`/painel/os/nova?pedido=${recebido.id}`, null, null],
       [ids.os && `/painel/os/${ids.os}`, null, null],
+      ['/painel/estoque-oficina', null, null],
       ['/painel/producao/a-planejar', null, null],
       ['/painel/producao/planejamento', null, null],
       ['/painel/producao', null, null],

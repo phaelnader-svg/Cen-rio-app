@@ -131,6 +131,7 @@ test.describe.serial('Fase 12 — auditoria visual', () => {
       ['/painel/os', 'os-lista'],
       ['/painel/os/nova', 'os-nova'],
       [ids.os && `/painel/os/${ids.os}`, 'os'],
+      ['/painel/estoque-oficina', 'estoque-oficina'],
       ['/painel/producao/a-planejar', 'a-planejar'],
       ['/painel/producao/planejamento', 'planejamento-producao'],
       ['/painel/producao', 'quadro'],
