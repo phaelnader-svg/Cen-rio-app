@@ -91,10 +91,17 @@ let currentBillingEnv: Pick<Env, 'BILLING_ENABLED' | 'BILLING_GRACE_DAYS'> = {
   BILLING_ENABLED: false,
   BILLING_GRACE_DAYS: 5,
 };
-export function setBillingEnvironment(env: Pick<Env, 'BILLING_ENABLED' | 'BILLING_GRACE_DAYS'>) {
+export function setBillingEnvironment(
+  env: Pick<Env, 'BILLING_ENABLED' | 'BILLING_GRACE_DAYS'>,
+  hasEmailDelivery: () => boolean = () => false,
+) {
   currentBillingEnv = {
     BILLING_ENABLED: env.BILLING_ENABLED,
     BILLING_GRACE_DAYS: env.BILLING_GRACE_DAYS,
   };
+  emailDelivery = hasEmailDelivery;
 }
+let emailDelivery: () => boolean = () => false;
+/** Há envio de e-mail configurado (Resend)? Sem ele, nada pede confirmação nem oferece link. */
+export const emailDeliveryEnabled = () => emailDelivery();
 export const billingEnvironment = () => currentBillingEnv;

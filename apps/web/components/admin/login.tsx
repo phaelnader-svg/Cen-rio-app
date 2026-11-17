@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/field';
 import { Alert } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
-import { Honeypot, Turnstile } from '@/components/account/turnstile';
+import { Honeypot, Turnstile, useSignupConfig } from '@/components/account/turnstile';
 
 const REASONS: Record<string, string> = {
   'sessao-encerrada': 'Sua sessão foi encerrada. Entre novamente para continuar.',
@@ -36,6 +36,7 @@ function RevealButton({ shown, onToggle }: { shown: boolean; onToggle: () => voi
 
 export function AdminLogin() {
   const router = useRouter();
+  const signupConfig = useSignupConfig();
   const params = useSearchParams();
   const qc = useQueryClient();
   // ?criar=1 (botões da landing e anúncios) abre direto no Criar conta.
@@ -192,14 +193,16 @@ export function AdminLogin() {
                   </div>
                 )}
               </Field>
-              <p className="-mt-1 text-right text-sm">
-                <a
-                  href="/entrar/esqueci"
-                  className="font-medium text-brand-700 underline-offset-4 hover:underline"
-                >
-                  Esqueci minha senha
-                </a>
-              </p>
+              {signupConfig.data?.emailEnabled ? (
+                <p className="-mt-1 text-right text-sm">
+                  <a
+                    href="/entrar/esqueci"
+                    className="font-medium text-brand-700 underline-offset-4 hover:underline"
+                  >
+                    Esqueci minha senha
+                  </a>
+                </p>
+              ) : null}
               <Button
                 type="submit"
                 size="lg"

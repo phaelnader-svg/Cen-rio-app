@@ -224,7 +224,12 @@ echo "migrations aplicadas: $(q 'SELECT count(*) FROM _prisma_migrations WHERE f
 # Reversão e reaplicação das posteriores que têm .down.sql (sem dados novos).
 # Multi-empresa (etapa 4): company_settings.created_at é a data em que a coluna nasce (a da própria
 # migration); ao reaplicar ganha a data nova, por desenho. Fica fora só nesta comparação.
-late_columns() { columns | sed -E 's/^(company_settings\|.*),created_at(,|$)/\1\2/'; }
+# Cobrança (20270722): users.email_confirmed_at (contas existentes confirmadas na data da migration)
+# e company_settings.trial_ends_at (teste grátis contado dela) seguem a mesma regra.
+late_columns() {
+  columns | sed -E -e 's/^(company_settings\|.*),created_at(,|$)/\1\2/' \
+    -e 's/^(company_settings\|.*),trial_ends_at(,|$)/\1\2/' -e 's/^(users\|.*),email_confirmed_at(,|$)/\1\2/'
+}
 FULL_SCHEMA="$(schema_dump)"; FULL_DATA="$(snapshot "$(late_columns)")"
 # Rodada 4: fotografia das colunas legadas logo antes de reverter (o `read` acima já gravou sessão
 # e auditoria do login — dados legítimos que a reversão também não pode tocar).

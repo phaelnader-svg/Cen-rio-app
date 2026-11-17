@@ -77,7 +77,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const items = visibleNav(perms, modules, data.company.platformOwner);
+  // Cobrança desligada: o item Assinatura não aparece.
+  const billingOn = data.company.subscription.billingEnabled;
+  const items = visibleNav(perms, modules, data.company.platformOwner, billingOn);
   // Suporte do Cenário para as empresas clientes (a Cenário Estofados é a própria dona).
   const help = data.company.platformOwner ? null : supportUrl(data.company.tradeName);
 

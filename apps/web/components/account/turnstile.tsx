@@ -21,12 +21,17 @@ const SCRIPT = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=exp
  * vem do servidor (/api/auth/signup-config); sem chave, não aparece nada e o formulário segue.
  * `onToken` recebe o token a mandar junto do formulário.
  */
-export function Turnstile({ onToken }: { onToken: (token: string | undefined) => void }) {
-  const cfg = useQuery({
+export function useSignupConfig() {
+  return useQuery({
     queryKey: ['signup-config'],
-    queryFn: () => api<{ captchaSiteKey: string | null }>('/api/auth/signup-config'),
+    queryFn: () =>
+      api<{ captchaSiteKey: string | null; emailEnabled: boolean }>('/api/auth/signup-config'),
     staleTime: Infinity,
   });
+}
+
+export function Turnstile({ onToken }: { onToken: (token: string | undefined) => void }) {
+  const cfg = useSignupConfig();
   const box = useRef<HTMLDivElement>(null);
   const cb = useRef(onToken);
   useEffect(() => {
