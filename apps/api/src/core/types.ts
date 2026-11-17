@@ -1,3 +1,5 @@
+import type { EmailSender } from './mailer';
+import type { CaptchaVerifier } from './captcha';
 import type { Permission, SessionKind } from '@cenario/shared';
 import type { PrismaClient } from '@cenario/db';
 import type { FastifyBaseLogger } from 'fastify';
@@ -20,6 +22,8 @@ export interface AuthContext {
   deviceId: string | null;
   permissions: ReadonlySet<Permission>;
   expiresAt: Date;
+  /** A assinatura da empresa venceu (passou a tolerância): só a tela de assinatura abre. */
+  billingLocked?: boolean;
   /**
    * Acesso delegado por aplicativo autorizado (OAuth). Permissões já reduzidas aos escopos.
    * `onBehalfOf`: pessoa do aplicativo que acionou (cabeçalho X-App-Actor), só para auditoria.
@@ -39,6 +43,8 @@ export interface DeviceContext {
   name: string;
   assignedEmployeeId: string | null;
   restrictToAssigned: boolean;
+  /** A assinatura da empresa venceu (passou a tolerância). */
+  billingLocked?: boolean;
 }
 
 /** Regra de acesso declarada em toda rota (verificada globalmente; ausência = erro na inicialização). */
@@ -65,6 +71,11 @@ export type AccessRule =
        * que precisam funcionar para qualquer sessão válida (ex.: /auth/me, logout).
        */
       surfaceExempt?: boolean;
+      /**
+       * Continua funcionando com a assinatura vencida (cobrança): tela e pagamento da assinatura.
+       * Rotas `surfaceExempt` (/auth/me, logout) também continuam.
+       */
+      billingExempt?: boolean;
     };
 
 export interface AppContext {
@@ -80,6 +91,12 @@ export interface AppContext {
   cookies: { session: string; device: string };
   /** Proxy confiável e avisos de configuração do IP real (core/client-ip.ts). */
   clientIp: ClientIpConfig;
+  /** Fila de e-mails (core/mailer.ts). */
+  mailer: EmailSender;
+  /** Anti-robô (core/captcha.ts); null = desligado. Trocável nos testes. */
+  captcha: CaptchaVerifier | null;
+  /** fetch para provedores externos (Asaas). Trocável nos testes. */
+  fetch: typeof fetch;
 }
 
 /** Metadados do autor de uma alteração (auditoria e eventos). */

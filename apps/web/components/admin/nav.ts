@@ -20,6 +20,7 @@ import {
   Truck,
   Undo2,
   Wallet,
+  CreditCard,
   BadgeCheck,
   UserCheck,
   Users,
@@ -239,6 +240,8 @@ export const NAV: NavItem[] = [
     anyOf: ['presenca.ver', 'presenca.gerenciar'],
   },
   { href: '/painel/empresa', label: 'Empresa', icon: Building2, anyOf: ['empresa.ver'] },
+  // Cobrança: plano, situação e pagamento da assinatura do Cenário Gestão.
+  { href: '/painel/assinatura', label: 'Assinatura', icon: CreditCard, anyOf: ['empresa.ver'] },
   { href: '/painel/auditoria', label: 'Auditoria', icon: ScrollText, anyOf: ['auditoria.ver'] },
   {
     href: '/painel/sincronizacao',

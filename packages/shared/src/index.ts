@@ -54,3 +54,5 @@ export * from './agent-templates';
 export * from './cash-board';
 export * from './quotes';
 export * from './whatsapp';
+export * from './billing';
+export * from './schemas/account';

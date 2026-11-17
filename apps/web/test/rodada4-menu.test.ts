@@ -83,6 +83,7 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
   '/painel/financeiro': { group: 'Financeiro', anyOf: ['financeiro.ver'] },
   '/painel/presenca': { group: 'Produção', anyOf: ['presenca.ver', 'presenca.gerenciar'] },
   '/painel/empresa': { group: 'Administração', anyOf: ['empresa.ver'] },
+  '/painel/assinatura': { group: 'Administração', anyOf: ['empresa.ver'] },
   '/painel/auditoria': { group: 'Administração', anyOf: ['auditoria.ver'] },
   '/painel/sincronizacao': { group: 'Administração', anyOf: ['sincronizacao.diagnosticar'] },
 };

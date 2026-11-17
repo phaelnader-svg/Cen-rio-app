@@ -47,6 +47,9 @@ const UNICAS_NO_SISTEMA = new Set([
   'payment_charges_provider_charge_id_key',
   'fiscal_documents_provider_ref_key',
   'payment_orders_provider_ref_key',
+  // Cobrança e e-mails (2026-11-17): id da cobrança no Asaas e hash do link enviado por e-mail.
+  'subscription_invoices_external_id_key',
+  'email_tokens_token_hash_key',
 ]);
 
 /** Roda `fn` como se a requisição fosse da empresa `companyId` (o que a etapa 3 fará sozinha). */
@@ -81,7 +84,7 @@ describe('Multi-empresa: banco', () => {
       if (!comFk.has(t)) problemas.push(`${t}: sem FK para company_settings`);
     }
     expect(problemas).toEqual([]);
-    expect(tabelasComEmpresa.length).toBe(163);
+    expect(tabelasComEmpresa.length).toBe(166);
   });
 
   it('nenhuma unicidade de tabela de empresa vale no sistema inteiro sem motivo', async () => {

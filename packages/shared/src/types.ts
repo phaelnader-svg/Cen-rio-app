@@ -7,6 +7,8 @@ export interface MeDto {
     id: string;
     email: string | null;
     displayName: string;
+    /** Confirmou o e-mail pelo link (melhoria 3). */
+    emailConfirmed: boolean;
   };
   employee: EmployeeSummaryDto | null;
   session: {
@@ -28,6 +30,16 @@ export interface MeDto {
     platformOwner: boolean;
     /** Empresa recém-criada pelo Criar conta, ainda com o nome provisório: mostra as boas-vindas. */
     needsWelcome: boolean;
+    /** Assinatura (cobrança): situação para o aviso do painel e o bloqueio. */
+    subscription: {
+      plan: string;
+      status: 'CORTESIA' | 'TESTE' | 'ATIVA' | 'ATRASADA' | 'VENCIDA';
+      /** Quando o sistema bloqueia sem pagamento (null = não vence). */
+      blocksAt: string | null;
+      /** Bloqueada agora: só a tela de assinatura abre. */
+      locked: boolean;
+      billingEnabled: boolean;
+    };
   };
 }
 

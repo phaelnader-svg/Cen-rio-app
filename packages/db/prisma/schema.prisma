@@ -32,11 +32,14 @@ model User {
   active               Boolean         @default(true)
   lastLoginAt          DateTime?       @map("last_login_at") @db.Timestamptz(3)
   credentialsChangedAt DateTime?       @map("credentials_changed_at") @db.Timestamptz(3)
+  /// Confirmação do e-mail pelo link enviado (Criar conta) ou por uma redefinição de senha.
+  emailConfirmedAt     DateTime?       @map("email_confirmed_at") @db.Timestamptz(3)
   version              Int             @default(1)
   createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   employee             Employee?
+  emailTokens          EmailToken[]
   /// Simplificação Fase 5: etapas de modelo em que é o responsável padrão.
   templateStepDefaults ProductionTemplateStep[] @relation("TemplateStepDefaultAssignee")
   roles                UserRole[]
@@ -395,6 +398,71 @@ model AuthThrottle {
   @@map("auth_throttle")
 }
 
+/// Link enviado por e-mail (confirmar o e-mail, redefinir a senha). Só o hash fica guardado.
+model EmailToken {
+  id        String          @id @default(uuid()) @db.Uuid
+  companyId Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company   CompanySettings @relation("EmpresaDeEmailToken", fields: [companyId], references: [id])
+  userId    String          @map("user_id") @db.Uuid
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// 'CONFIRMAR_EMAIL' ou 'REDEFINIR_SENHA'.
+  purpose   String          @db.VarChar(20)
+  tokenHash String          @unique @map("token_hash") @db.VarChar(128)
+  expiresAt DateTime        @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime?       @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([userId, purpose])
+  @@map("email_tokens")
+}
+
+/// Fila de e-mails do sistema (enviados em segundo plano, com novas tentativas).
+model OutboundEmail {
+  id        String          @id @default(uuid()) @db.Uuid
+  companyId Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company   CompanySettings @relation("EmpresaDeOutboundEmail", fields: [companyId], references: [id])
+  to        String          @db.VarChar(254)
+  subject   String          @db.VarChar(200)
+  text      String
+  html      String?
+  /// Tipo (confirmar-email, redefinir-senha, assinatura…), para relatórios e testes.
+  kind      String          @db.VarChar(40)
+  attempts  Int             @default(0)
+  lastError String?         @map("last_error") @db.VarChar(500)
+  nextTryAt DateTime        @default(now()) @map("next_try_at") @db.Timestamptz(3)
+  sentAt    DateTime?       @map("sent_at") @db.Timestamptz(3)
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([sentAt, nextTryAt])
+  @@map("outbound_emails")
+}
+
+/// Cobrança da assinatura do Cenário Gestão (gerada no Asaas; a confirmação chega pelo webhook).
+model SubscriptionInvoice {
+  id          String          @id @default(uuid()) @db.Uuid
+  companyId   Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company     CompanySettings @relation("EmpresaDeSubscriptionInvoice", fields: [companyId], references: [id])
+  /// 'ASAAS' ou 'MANUAL' (pagamento registrado pelo dono da plataforma).
+  provider    String          @db.VarChar(20)
+  /// Id da cobrança no provedor (único no sistema).
+  externalId  String?         @unique @map("external_id") @db.VarChar(80)
+  plan        String          @db.VarChar(20)
+  cycle       String          @db.VarChar(10)
+  amountCents Int             @map("amount_cents")
+  dueDate     DateTime        @map("due_date") @db.Date
+  /// PENDENTE, PAGA, VENCIDA, CANCELADA.
+  status      String          @default("PENDENTE") @db.VarChar(12)
+  paymentUrl  String?         @map("payment_url") @db.VarChar(500)
+  paidAt      DateTime?       @map("paid_at") @db.Timestamptz(3)
+  /// Até quando o pagamento libera o sistema (preenchido ao pagar).
+  periodEnd   DateTime?       @map("period_end") @db.Timestamptz(3)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([companyId, dueDate])
+  @@map("subscription_invoices")
+}
+
 // ─────────────────────────────── Empresa ───────────────────────────────
 
 /// Configurações da empresa (registro único, id = 1).
@@ -429,6 +497,18 @@ model CompanySettings {
   blockedAt          DateTime? @map("blocked_at") @db.Timestamptz(3)
   blockedReason      String?   @map("blocked_reason") @db.VarChar(200)
   updatedById        String?   @map("updated_by_id") @db.Uuid
+
+  // Cobrança e planos (2026-11-17). A situação é calculada pelas datas (packages/shared/billing.ts).
+  /// Plano contratado: 'gestao' (R$ 399) ou 'gestao_jogo' (R$ 599, com o Firma Viva).
+  plan                String    @default("gestao") @db.VarChar(20)
+  /// 'MENSAL' ou 'ANUAL'.
+  billingCycle        String    @default("MENSAL") @map("billing_cycle") @db.VarChar(10)
+  /// Cortesia: nunca vence (Cenário Estofados e empresas liberadas pelo dono).
+  billingCourtesy     Boolean   @default(false) @map("billing_courtesy")
+  trialEndsAt         DateTime? @map("trial_ends_at") @db.Timestamptz(3)
+  paidUntil           DateTime? @map("paid_until") @db.Timestamptz(3)
+  asaasCustomerId     String?   @map("asaas_customer_id") @db.VarChar(60)
+  asaasSubscriptionId String?   @map("asaas_subscription_id") @db.VarChar(60)
 
   /// Fase 10: inspetor principal da qualidade (vazio = quem tem a competência de inspeção).
   qualityInspectorUserId    String? @map("quality_inspector_user_id") @db.Uuid
@@ -617,6 +697,9 @@ model CompanySettings {
   empresaCashGoal                    CashGoal[]                    @relation("EmpresaDeCashGoal")
   empresaCashGoalAchievement         CashGoalAchievement[]         @relation("EmpresaDeCashGoalAchievement")
   empresaCashWeekClosing             CashWeekClosing[]             @relation("EmpresaDeCashWeekClosing")
+  empresaSubscriptionInvoice         SubscriptionInvoice[]         @relation("EmpresaDeSubscriptionInvoice")
+  empresaEmailToken                  EmailToken[]                  @relation("EmpresaDeEmailToken")
+  empresaOutboundEmail               OutboundEmail[]               @relation("EmpresaDeOutboundEmail")
 
   @@map("company_settings")
 }

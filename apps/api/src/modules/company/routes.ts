@@ -6,7 +6,6 @@ import {
   companyWelcomeSchema,
   PROVISIONAL_TRADE_NAME,
   isModuleKey,
-  resolveModules,
   updateModuleSchema,
   type CompanySettingsDto,
   type ModuleSettingDto,
@@ -53,7 +52,7 @@ async function moduleSettings(prisma: PrismaClient): Promise<ModuleSettingDto[]>
   const rows = await prisma.moduleSetting.findMany({
     include: { updatedBy: { select: { id: true, displayName: true } } },
   });
-  const state = resolveModules(rows);
+  const state = await moduleState(prisma);
   return MODULE_KEYS.map((key) => {
     const row = rows.find((r) => r.key === key);
     return {
@@ -144,7 +143,9 @@ export async function companyRoutes(app: FastifyInstance) {
       const input = updateModuleSchema.parse(request.body);
       if (!MODULES[key].configurable)
         throw Errors.business(
-          `${MODULES[key].label} ainda não pode ser alterada: depende de uma fase posterior da reformulação.`,
+          key === 'ambiente_interativo'
+            ? 'O ambiente interativo vem com o plano Cenário Gestão + Firma Viva. Para ligar, mude o plano em Assinatura.'
+            : `${MODULES[key].label} ainda não pode ser alterada.`,
         );
       const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {

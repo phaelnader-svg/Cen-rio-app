@@ -75,6 +75,18 @@ export const TENANCY: Record<string, TenancyEntry> = {
     note: 'Numeração de cada empresa (pedido nº, OS nº…), preenchida por gatilho no banco.',
   },
   EventConsumer: { class: 'sistema', note: 'Posição de cada processador de eventos.' },
+  EmailToken: {
+    class: 'acesso',
+    note: 'Link de confirmar e-mail / redefinir senha: achado pelo hash antes de saber a empresa.',
+  },
+  OutboundEmail: {
+    class: 'acesso',
+    note: 'Fila de e-mails; enviada em segundo plano pelo banco do sistema.',
+  },
+  SubscriptionInvoice: {
+    class: 'empresa',
+    note: 'Cobrança da assinatura; o webhook do Asaas acha pelo id externo (único no sistema).',
+  },
 
   // ── Pessoas, funções e permissões ────────────────────────────────────────────────────
   Employee: E,
