@@ -23,7 +23,7 @@ function RevealButton({ shown, onToggle }: { shown: boolean; onToggle: () => voi
     <button
       type="button"
       onClick={onToggle}
-      aria-label={shown ? 'Esconder senha' : 'Mostrar senha'}
+      aria-label={shown ? 'Esconder caracteres digitados' : 'Mostrar caracteres digitados'}
       aria-pressed={shown}
       data-testid="mostrar-senha"
       className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-lg text-ink-muted hover:bg-subtle hover:text-ink"
