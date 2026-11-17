@@ -396,6 +396,9 @@ describe('Firma Viva', () => {
     // Conexão revogada no Cenário: o próximo clique religa sozinho.
     await cenarioDb().oAuthGrant.updateMany({ data: { revokedAt: new Date() } });
     await fdb().cenarioConnection.updateMany({ data: { status: 'REVOGADA' } });
+    // Sessão aberta numa organização sem conexão ativa: não fica presa, passa pela entrada.
+    const stale = await again.b.get('/api/entrar/cenario');
+    expect(String(stale.headers.location)).toContain('/autorizar');
     const back = await enterFromCenario(gestor);
     expect(back.hops).toEqual(['/autorizar', '/autorizar', '/jogo']);
     expect((await back.b.get('/api/auth/me')).body.organization.cenario.status).toBe('CONECTADA');

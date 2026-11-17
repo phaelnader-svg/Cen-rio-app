@@ -35,8 +35,15 @@ export async function entrarRoutes(app: FastifyInstance) {
 
   /** Início (navegador, vindo do Cenário em nova guia): manda para a tela oficial do Cenário. */
   app.get('/api/entrar/cenario', { config: { rule: { public: true } } }, async (request, reply) => {
-    // Já com sessão aberta no Firma Viva: vai direto para o jogo.
-    if (request.user) return reply.redirect(`${env.FIRMA_WEB_URL}/jogo`);
+    // Já com sessão aberta numa organização ligada ao Cenário: vai direto para o jogo. Sessão
+    // antiga numa organização sem conexão ativa (ex.: dados de teste) passa pela entrada de novo.
+    if (request.user && request.org) {
+      const ligada = await db.cenarioConnection.findFirst({
+        where: { orgId: request.org.id, status: 'CONECTADA' },
+        select: { id: true },
+      });
+      if (ligada) return reply.redirect(`${env.FIRMA_WEB_URL}/jogo`);
+    }
     const state = randomToken();
     const verifier = randomToken(48);
     const browser = randomToken();
