@@ -1,5 +1,6 @@
 'use client';
 
+import { PhotoGallery } from '@/components/commercial/photo-gallery';
 import type { CompletionRequirement, Priority, ProductionTaskDetailDto } from '@cenario/shared';
 import {
   COMPLETION_REQUIREMENTS,
@@ -165,6 +166,9 @@ export function TaskAdminDetail({ id }: { id: string }) {
                 </div>
               )}
             </dl>
+          </Section>
+          <Section title="Fotos e recados por áudio">
+            <PhotoGallery entityType="PRODUCTION_TASK" entityId={t.id} canManage={false} />
           </Section>
           <Section title="Histórico">
             <TaskHistory events={t.events} />

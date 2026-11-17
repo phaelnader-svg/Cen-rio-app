@@ -369,6 +369,31 @@ export async function serviceRoutes(app: FastifyInstance) {
               })
             : null;
         }
+        // Melhoria 78: o orçamento aprovado fica ligado ao pedido (e não vira pedido duas vezes).
+        if (input.quoteId) {
+          const quote = await tx.quote.findFirst({ where: { id: input.quoteId, deletedAt: null } });
+          if (!quote) throw Errors.notFound('Orçamento');
+          if (quote.orderId)
+            throw Errors.business(`O orçamento nº ${quote.number} já virou um pedido.`);
+          await tx.quote.update({
+            where: { id: quote.id },
+            data: {
+              orderId: order.id,
+              status: 'APROVADO',
+              followUpAt: null,
+              lostReason: null,
+              ...(quote.status !== 'APROVADO' ? { statusChangedAt: new Date() } : {}),
+              ...(quote.approvedAt ? {} : { approvedAt: new Date(), approvedVia: 'PAINEL' }),
+              version: { increment: 1 },
+            },
+          });
+          await audit(tx, actor, {
+            action: 'quotes.converted',
+            entityType: 'quote',
+            entityId: quote.id,
+            summary: `Orçamento nº ${quote.number} virou o pedido ${orderCode(order.number)}.`,
+          });
+        }
         // Remoção de Recebimentos (D1): a OS nasce aqui, no fechamento do serviço.
         const serviceOrder = await autoServiceOrderForOrder(tx, actor, order.id);
         await audit(tx, actor, {

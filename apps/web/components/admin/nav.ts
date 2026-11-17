@@ -89,6 +89,12 @@ export const NAV: NavItem[] = [
   { href: '/painel', label: 'Início', icon: LayoutDashboard },
   // Simplificação Fase 2: entrada principal do gestor (cliente + serviço + retirada).
   {
+    href: '/painel/orcamentos',
+    label: 'Orçamentos',
+    icon: Calculator,
+    anyOf: ['orcamentos.ver', 'orcamentos.gerenciar'],
+  },
+  {
     href: '/painel/servicos/novo',
     label: 'Novo serviço',
     icon: ClipboardPlus,
@@ -131,12 +137,6 @@ export const NAV: NavItem[] = [
   },
   { href: '/painel/clientes', label: 'Clientes', icon: Contact, anyOf: ['clientes.ver'] },
   // Módulo Orçamentos: proposta comercial com materiais automáticos, contrato e O.S. do orçamento.
-  {
-    href: '/painel/orcamentos',
-    label: 'Orçamentos',
-    icon: Calculator,
-    anyOf: ['orcamentos.ver', 'orcamentos.gerenciar'],
-  },
   {
     href: '/painel/pedidos',
     label: 'Pedidos comerciais',

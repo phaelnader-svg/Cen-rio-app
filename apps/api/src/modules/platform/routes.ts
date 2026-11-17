@@ -1,4 +1,8 @@
 import { GESTOR_ROLE_KEY } from '@cenario/shared';
+import { createCompanyContent, isUniqueViolation } from '@cenario/db';
+import { randomBytes } from 'node:crypto';
+import { hashSecret } from '../../lib/crypto';
+import { searchTextFor } from '../customers/service';
 import { z } from 'zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
@@ -37,6 +41,11 @@ export async function platformRoutes(app: FastifyInstance) {
         createdAt: true,
         blockedAt: true,
         blockedReason: true,
+        isDemo: true,
+        supportAccessUntil: true,
+        canceledAt: true,
+        pausedUntil: true,
+        cancelReason: true,
       },
     });
     const users = await system.user.groupBy({ by: ['companyId'], _count: { _all: true } });
@@ -94,6 +103,90 @@ export async function platformRoutes(app: FastifyInstance) {
         }),
       ),
     };
+  });
+
+  /**
+   * Melhoria 128: conta de demonstração separada (para mostrar o sistema a quem quer conhecer),
+   * no lugar dos dados "[Exemplo]" dentro da Cenário Estofados. Fica fora dos números do negócio
+   * e não é cobrada. A senha aparece uma vez, só para quem criou.
+   */
+  app.post('/api/v1/platform/demo-company', { config: { access } }, async (request) => {
+    assertPlatformOwner(request);
+    const { email } = z
+      .object({ email: z.string().trim().toLowerCase().email({ message: 'E-mail inválido.' }) })
+      .parse(request.body);
+    const password = randomBytes(9).toString('base64url');
+    const passwordHash = await hashSecret(password);
+    const actor = actorFrom(request);
+    try {
+      const companyId = await system.$transaction(async (tx) => {
+        const company = await tx.companySettings.create({
+          data: {
+            tradeName: 'Tapeçaria Demonstração',
+            email,
+            plan: 'gestao_jogo',
+            billingCourtesy: true,
+            isDemo: true,
+          },
+        });
+        await tx.$executeRaw`SELECT set_config('app.company_id', ${String(company.id)}, true),
+          set_config('app.bypass_rls', 'off', true)`;
+        const roles = await createCompanyContent(tx);
+        const user = await tx.user.create({
+          data: {
+            email,
+            passwordHash,
+            displayName: 'Demonstração',
+            credentialsChangedAt: new Date(),
+            emailConfirmedAt: new Date(),
+            roles: { create: { roleId: roles.get(GESTOR_ROLE_KEY)! } },
+          },
+        });
+        await tx.employee.create({
+          data: {
+            userId: user.id,
+            fullName: 'Gestor da demonstração',
+            displayName: 'Demonstração',
+            jobTitle: 'Gestor',
+            color: '#1D4ED8',
+          },
+        });
+        for (const c of DEMO_CUSTOMERS)
+          await tx.customer.create({
+            data: {
+              kind: 'PF',
+              name: c.name,
+              phone: c.phone,
+              whatsapp: c.phone,
+              searchText: searchTextFor({ name: c.name, phone: c.phone, whatsapp: c.phone }),
+              createdById: user.id,
+              addresses: {
+                create: {
+                  label: 'Principal',
+                  street: c.street,
+                  number: c.number,
+                  district: c.district,
+                  city: 'São José dos Campos',
+                  state: 'SP',
+                  isPrimary: true,
+                },
+              },
+            },
+          });
+        return company.id;
+      });
+      await audit(system, actor, {
+        action: 'platform.demo_created',
+        entityType: 'company',
+        entityId: String(companyId),
+        summary: `Conta de demonstração criada (${email}): empresa nº ${companyId}.`,
+      });
+      return { companyId, email, password };
+    } catch (error) {
+      if (isUniqueViolation(error, 'email'))
+        throw Errors.conflict('Já existe uma conta com este e-mail. Use outro.');
+      throw error;
+    }
   });
 
   app.post('/api/v1/platform/companies/:id/block', { config: { access } }, async (request) => {
@@ -194,3 +287,42 @@ export async function platformRoutes(app: FastifyInstance) {
     });
   }
 }
+
+/** Clientes fictícios da conta de demonstração (nomes e telefones inventados). */
+const DEMO_CUSTOMERS = [
+  {
+    name: 'Ana Paula Ribeiro',
+    phone: '12999990001',
+    street: 'Rua das Acácias',
+    number: '120',
+    district: 'Jardim Aquarius',
+  },
+  {
+    name: 'Carlos Henrique Souza',
+    phone: '12999990002',
+    street: 'Av. Andrômeda',
+    number: '845',
+    district: 'Bosque dos Eucaliptos',
+  },
+  {
+    name: 'Fernanda Lima',
+    phone: '12999990003',
+    street: 'Rua Ipê Amarelo',
+    number: '33',
+    district: 'Urbanova',
+  },
+  {
+    name: 'Roberto Almeida',
+    phone: '12999990004',
+    street: 'Rua Paraíba',
+    number: '510',
+    district: 'Vila Adyana',
+  },
+  {
+    name: 'Juliana Martins',
+    phone: '12999990005',
+    street: 'Rua Euclides Miragaia',
+    number: '77',
+    district: 'Centro',
+  },
+];

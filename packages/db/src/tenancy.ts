@@ -301,6 +301,19 @@ export const TENANCY: Record<string, TenancyEntry> = {
   CashGoal: E,
   CashGoalAchievement: E,
   CashWeekClosing: { class: 'empresa', perCompanyUnique: ['weekStart'] },
+  // ── Melhorias da segunda rodada (2026-11-17) ───────────────────────────────────────
+  FeedbackReport: {
+    class: 'empresa',
+    note: 'Sugestão ou problema enviado pela empresa; o dono da plataforma lê pela tela Empresas (banco do sistema).',
+  },
+  SystemNotice: {
+    class: 'sistema',
+    note: 'Aviso de manutenção do sistema inteiro (só texto e horário; sem dados de empresa).',
+  },
+  StatusSample: {
+    class: 'sistema',
+    note: 'Amostra da página de status (banco respondendo e tempo de resposta).',
+  },
 };
 
 export function tenancyOf(model: string): TenancyEntry | undefined {

@@ -1,6 +1,7 @@
 'use client';
 
 import type { PickupDto, PickupStatus } from '@cenario/shared';
+import { PickupScheduleLink } from '@/components/improvements/pickup-link';
 import { PICKUP_STATUS_LABEL, PICKUP_TEAM_LABEL, formatMoney, formatPhone } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil } from 'lucide-react';
@@ -99,6 +100,14 @@ export function PickupDetailDialog({ id, onClose }: { id: string; onClose: () =>
                 </Button>
               ))}
             </div>
+          )}
+          {manage && ['AGUARDANDO_AGENDAMENTO', 'AGENDADA'].includes(p.status) && (
+            <PickupScheduleLink
+              pickupId={p.id}
+              code={p.code}
+              customerName={p.customer.name}
+              phone={p.customer.whatsapp ?? p.customer.phone}
+            />
           )}
           <dl className="grid gap-4 sm:grid-cols-2">
             <Detail label="Data e janela">

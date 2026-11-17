@@ -58,6 +58,9 @@ export function AdminLogin() {
   const next = params.get('proximo');
   const safeNext = next && next.startsWith('/') && !next.startsWith('//') ? next : null;
 
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState('');
+
   function switchMode(next: 'login' | 'signup') {
     setMode(next);
     setErrors({});
@@ -93,6 +96,23 @@ export function AdminLogin() {
     }
   }
 
+  async function onSecondStep(e: React.FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    setLoading(true);
+    try {
+      const me = await api('/api/auth/login/2fa', {
+        method: 'POST',
+        body: { challenge, code: code.trim().toUpperCase() },
+      });
+      qc.setQueryData(['me'], me);
+      router.replace(safeNext ?? '/painel');
+    } catch (err) {
+      setFormError(errorMessage(err));
+      setLoading(false);
+    }
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
@@ -106,7 +126,16 @@ export function AdminLogin() {
     setErrors({});
     setLoading(true);
     try {
-      const me = await api('/api/auth/login', { method: 'POST', body: parsed.data });
+      const me = await api<{ twoFactorRequired?: boolean; challenge?: string }>('/api/auth/login', {
+        method: 'POST',
+        body: parsed.data,
+      });
+      // Melhoria 98: conta com verificação em duas etapas pede o código do aplicativo.
+      if (me.twoFactorRequired && me.challenge) {
+        setChallenge(me.challenge);
+        setLoading(false);
+        return;
+      }
       qc.setQueryData(['me'], me);
       router.replace(safeNext ?? '/painel');
     } catch (err) {
@@ -160,7 +189,50 @@ export function AdminLogin() {
             </Alert>
           )}
 
-          {mode === 'login' ? (
+          {mode === 'login' && challenge ? (
+            <form onSubmit={onSecondStep} noValidate className="mt-6 space-y-4">
+              <Field label="Código do aplicativo autenticador">
+                {(p) => (
+                  <Input
+                    {...p}
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    maxLength={9}
+                    placeholder="000000"
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    autoFocus
+                  />
+                )}
+              </Field>
+              <p className="-mt-2 text-sm text-ink-muted">
+                Abra o aplicativo (Google Authenticator, Microsoft Authenticator ou outro) e digite
+                os 6 números. Sem o celular, use um dos códigos de recuperação.
+              </p>
+              <Button
+                type="submit"
+                size="lg"
+                className="w-full"
+                loading={loading}
+                icon={<LogIn className="size-4" aria-hidden />}
+              >
+                Confirmar
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                className="w-full"
+                onClick={() => {
+                  setChallenge(null);
+                  setCode('');
+                  setFormError(null);
+                }}
+              >
+                Voltar
+              </Button>
+            </form>
+          ) : mode === 'login' ? (
             <form onSubmit={onSubmit} noValidate className="mt-6 space-y-4">
               <Field label="E-mail" error={errors.email}>
                 {(p) => (

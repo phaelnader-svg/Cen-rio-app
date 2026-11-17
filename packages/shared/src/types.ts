@@ -9,6 +9,10 @@ export interface MeDto {
     displayName: string;
     /** Confirmou o e-mail pelo link (melhoria 3). */
     emailConfirmed: boolean;
+    /** Melhoria 98: verificação em duas etapas ligada. */
+    twoFactor: boolean;
+    /** Melhoria 114: sessão do suporte do Cenário dentro da empresa. */
+    supportAgent: boolean;
   };
   employee: EmployeeSummaryDto | null;
   session: {
@@ -30,6 +34,10 @@ export interface MeDto {
     platformOwner: boolean;
     /** Empresa recém-criada pelo Criar conta, ainda com o nome provisório: mostra as boas-vindas. */
     needsWelcome: boolean;
+    /** Melhoria 114: acesso de suporte liberado até (null = não liberado). */
+    supportAccessUntil: string | null;
+    /** Melhoria 128: empresa de demonstração. */
+    isDemo: boolean;
     /** Assinatura (cobrança): situação para o aviso do painel e o bloqueio. */
     subscription: {
       plan: string;

@@ -90,6 +90,7 @@ describe('Multi-empresa: mapa das tabelas', () => {
       acesso: conta('acesso'),
       sistema: conta('sistema'),
       raiz: conta('empresa-raiz'),
-    }).toEqual({ total: 170, empresa: 158, acesso: 8, sistema: 3, raiz: 1 });
+      // Rodada 2: + feedback_reports (empresa), system_notices e status_samples (sistema).
+    }).toEqual({ total: 173, empresa: 159, acesso: 8, sistema: 5, raiz: 1 });
   });
 });

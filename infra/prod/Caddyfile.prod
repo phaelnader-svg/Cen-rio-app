@@ -4,7 +4,8 @@
 #
 # - /api/* (inclusive o WebSocket /api/realtime) vai direto à API; o resto ao Next.js.
 # - HTTP → HTTPS: automático do Caddy (porta 80 só redireciona e atende o desafio ACME).
-# - Variáveis (não secretas, da VM): PROD_DOMAIN (canônico) e PROD_DOMAIN_WWW (redireciona).
+# - Variáveis (não secretas, da VM): PROD_DOMAIN (canônico), PROD_DOMAIN_WWW (redireciona) e,
+#   opcional, PROD_STATUS_DOMAIN (página de status).
 
 # Só HTTP/1.1 e HTTP/2 (TCP): UDP 443 não é publicado nem liberado no firewall (ver homologação).
 {
@@ -85,5 +86,39 @@
 	log {
 		output stdout
 		format json
+	}
+}
+
+# Melhoria 100: página de status pública (ex.: status.cenariogestao.com.br). Só liga quando
+# PROD_STATUS_DOMAIN for definido na VM (depois de criar o registro DNS); sem ele, o endereço
+# padrão http://status.localhost não pede certificado nem responde para fora.
+{$PROD_STATUS_DOMAIN:http://status.localhost} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	@dados path /api/public/status /api/public/aviso
+	handle @dados {
+		reverse_proxy api:4000 {
+			import cabecalhos_cliente
+		}
+	}
+	@raiz path /
+	handle @raiz {
+		rewrite * /status
+		reverse_proxy web:3000 {
+			import cabecalhos_cliente
+		}
+	}
+	@pagina path /status /_next/* /favicon.ico /icon.svg /icon-32.png
+	handle @pagina {
+		reverse_proxy web:3000 {
+			import cabecalhos_cliente
+		}
+	}
+	handle {
+		redir * / temporary
 	}
 }

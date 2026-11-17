@@ -2,14 +2,23 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Gamepad2, KeyRound, LifeBuoy, Lock, LogOut, Menu, X } from 'lucide-react';
+import { Gamepad2, KeyRound, LifeBuoy, Lock, LogOut, Menu, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { BrandMark } from '@/components/brand';
 import { ConnectionIndicator } from '@/components/connection-indicator';
 import { PanelNotifications } from './panel-notifications';
+import {
+  ClientErrorReporter,
+  CommandPalette,
+  FeedbackButton,
+  MaintenanceBanner,
+  ThemeToggle,
+  WhatsNew,
+} from '@/components/improvements/panel-tools';
 import { WelcomeDialog } from './welcome-dialog';
+import { useThemeScope } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
 import { Alert, Avatar, Spinner } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
@@ -34,6 +43,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [drawer, setDrawer] = useState(false);
   const saindo = useRef(false);
+  useThemeScope();
 
   useEffect(() => setDrawer(false), [pathname]);
 
@@ -156,6 +166,17 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </>
       )}
       <div className="mt-auto border-t border-line p-4">
+        <div className="mb-1 flex items-center gap-1 sm:hidden">
+          <WhatsNew />
+          <ThemeToggle />
+        </div>
+        {!data.user.supportAgent && <FeedbackButton className="mb-1" />}
+        <Link
+          href="/painel/lixeira"
+          className="mb-1 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-ink-soft hover:bg-subtle"
+        >
+          <Trash2 className="size-4" aria-hidden /> Lixeira
+        </Link>
         {help && (
           <a
             href={help}
@@ -207,6 +228,14 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         if (!saindo.current) router.replace('/entrar?motivo=sessao-encerrada');
       }}
     >
+      <ClientErrorReporter />
+      <MaintenanceBanner />
+      {data.user.supportAgent && (
+        <div className="bg-info-50 px-4 py-2 text-center text-sm font-medium text-info-600">
+          Você está no acesso de suporte autorizado por {data.company.tradeName}. Tudo o que for
+          feito aqui fica registrado na Auditoria da empresa.
+        </div>
+      )}
       <div className="min-h-dvh lg:grid lg:grid-cols-[272px_1fr]">
         <aside className="sticky top-0 hidden h-dvh overflow-y-auto border-r border-line bg-surface lg:block">
           {sidebar}
@@ -246,7 +275,18 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               <Menu className="size-5" aria-hidden />
             </button>
             <p className="truncate text-sm font-medium text-ink-muted">{data.company.tradeName}</p>
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+              {!locked && (
+                <CommandPalette
+                  nav={[
+                    ...items.map((i) => ({ href: i.href, label: i.label, group: i.group })),
+                    { href: '/painel/resumo', label: 'Resumo da semana', group: 'Início' },
+                    { href: '/painel/lixeira', label: 'Lixeira', group: 'Administração' },
+                    { href: '/painel/conta', label: 'Minha conta', group: 'Administração' },
+                  ]}
+                  canNewService={perms.has('pedidos.gerenciar') && perms.has('retiradas.gerenciar')}
+                />
+              )}
               {/* Complemento "Ambiente interativo" (só o dono, quem configura a empresa): Firma Viva em outra guia. */}
               {modules.ambiente_interativo && perms.has('empresa.configurar') && (
                 <a
@@ -262,6 +302,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   <span className="hidden sm:inline">Acessar ambiente interativo</span>
                 </a>
               )}
+              {/* No celular, Novidades e Tema ficam no menu lateral (o topo não cabe em 390 px). */}
+              <div className="hidden items-center gap-2 sm:flex">
+                <WhatsNew />
+                <ThemeToggle />
+              </div>
               {!locked && <PanelNotifications />}
               <ConnectionIndicator compact />
             </div>

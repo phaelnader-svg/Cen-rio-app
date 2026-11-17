@@ -1,6 +1,7 @@
 'use client';
 
 import type { LogisticsJobDto, LogisticsKind, PaymentMethod } from '@cenario/shared';
+import { MapsLinks } from '@/components/improvements/maps-links';
 import { addDays, arrivalText, todayIso } from '@/lib/commercial';
 import {
   DELIVERY_ITEM_STATUS_LABEL,
@@ -289,6 +290,11 @@ function JobCard({ j }: { j: LogisticsJobDto }) {
             {a.reference ? ` · ${a.reference}` : ''}
           </span>
         </p>
+      )}
+      {a && (
+        <div className="mt-3">
+          <MapsLinks address={a} large />
+        </div>
       )}
       {(j.contactName || j.contactPhone) && (
         <p className="mt-1 flex items-center gap-2 text-lg">

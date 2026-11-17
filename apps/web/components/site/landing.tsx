@@ -9,7 +9,15 @@ import {
   type ButtonSize,
   type ButtonVariant,
 } from '@/components/ui/button-styles';
-import { SCREENS, SIGNUP_PATH, SITE, annualOffer, whatsappUrl, type ScreenSlot } from './config';
+import {
+  SCREENS,
+  SIGNUP_PATH,
+  SITE,
+  annualOffer,
+  trialOffer,
+  whatsappUrl,
+  type ScreenSlot,
+} from './config';
 
 /**
  * Landing comercial (/conheca). Renderizada no servidor, sem sessão e sem chamadas à API: usa só
@@ -258,6 +266,8 @@ function Lines({ items }: { items: string[] }) {
 export function Landing({ preview }: { preview: boolean }) {
   const price = SITE.monthlyPrice;
   const annual = annualOffer();
+  const gameAnnual = annualOffer(SITE, SITE.gameMonthlyPrice);
+  const trial = trialOffer();
   return (
     <div className="min-h-dvh bg-canvas text-ink">
       {!preview && SITE.analyticsId && <Analytics id={SITE.analyticsId} />}
@@ -402,7 +412,7 @@ export function Landing({ preview }: { preview: boolean }) {
           </div>
         </section>
 
-        {/* Mensalidade: um preço, sem tabela de planos */}
+        {/* Mensalidade: os dois planos (melhoria 70), com o período de teste */}
         <section className="border-t border-line bg-surface" aria-labelledby="mensalidade">
           <div
             className={clsx(
@@ -412,7 +422,7 @@ export function Landing({ preview }: { preview: boolean }) {
           >
             <div>
               <SectionTitle className="scroll-mt-8">
-                <span id="mensalidade">Um sistema, uma mensalidade</span>
+                <span id="mensalidade">Uma mensalidade, sem surpresa</span>
               </SectionTitle>
               <p className="mt-4 text-[15px] leading-7 text-ink-soft sm:text-base">
                 Inclui o sistema inteiro, com tudo o que aparece nesta página: orçamentos, serviços,
@@ -421,15 +431,46 @@ export function Landing({ preview }: { preview: boolean }) {
               </p>
             </div>
             <div className="border-y border-line py-6">
-              <p className="flex items-baseline gap-2" data-testid="site-price">
-                <span className="text-4xl font-semibold tracking-tight tabular-nums">
-                  R$ {price ?? '[VALOR]'}
-                </span>
-                <span className="text-ink-muted">/ mês</span>
-              </p>
-              {annual && (
-                <p className="mt-2 text-[15px] leading-7 text-ink-soft" data-testid="site-annual">
-                  {annual}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl border border-line p-5">
+                  <p className="font-semibold">Cenário Gestão</p>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    O sistema completo: painel, tablets da oficina e orçamentos.
+                  </p>
+                  <p className="mt-4 flex items-baseline gap-2" data-testid="site-price">
+                    <span className="text-4xl font-semibold tracking-tight tabular-nums">
+                      R$ {price ?? '[VALOR]'}
+                    </span>
+                    <span className="text-ink-muted">/ mês</span>
+                  </p>
+                  {annual && (
+                    <p className="mt-2 text-sm leading-6 text-ink-soft" data-testid="site-annual">
+                      {annual}
+                    </p>
+                  )}
+                </div>
+                {SITE.gameMonthlyPrice && (
+                  <div className="rounded-2xl border border-brand-200 bg-brand-50/50 p-5">
+                    <p className="font-semibold">Cenário Gestão + Firma Viva</p>
+                    <p className="mt-1 text-sm text-ink-muted">
+                      Tudo do Cenário Gestão e a oficina e o escritório em 3D, com os dados do seu
+                      sistema.
+                    </p>
+                    <p className="mt-4 flex items-baseline gap-2" data-testid="site-price-game">
+                      <span className="text-4xl font-semibold tracking-tight tabular-nums">
+                        R$ {SITE.gameMonthlyPrice}
+                      </span>
+                      <span className="text-ink-muted">/ mês</span>
+                    </p>
+                    {gameAnnual && (
+                      <p className="mt-2 text-sm leading-6 text-ink-soft">{gameAnnual}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              {trial && (
+                <p className="mt-4 font-medium text-brand-700" data-testid="site-trial">
+                  {trial}
                 </p>
               )}
               {SITE.onboarding ? (

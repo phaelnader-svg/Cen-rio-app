@@ -104,6 +104,8 @@ export async function buildMe(
       displayName: user.displayName,
       // Sem envio de e-mail configurado não há como confirmar: nada é cobrado da pessoa.
       emailConfirmed: user.emailConfirmedAt !== null || !emailDeliveryEnabled(),
+      twoFactor: user.totpEnabledAt !== null,
+      supportAgent: user.supportAgent,
     },
     employee: user.employee ? toEmployeeSummary(user.employee) : null,
     session: {
@@ -123,7 +125,14 @@ export async function buildMe(
       arrivalWindowStart: company?.arrivalWindowStart ?? '07:00',
       platformOwner: company?.id === 1 && permissions.includes('empresa.configurar'),
       needsWelcome:
-        company?.tradeName === PROVISIONAL_TRADE_NAME && permissions.includes('empresa.configurar'),
+        company?.tradeName === PROVISIONAL_TRADE_NAME &&
+        permissions.includes('empresa.configurar') &&
+        !user.supportAgent,
+      supportAccessUntil:
+        company?.supportAccessUntil && company.supportAccessUntil > new Date()
+          ? company.supportAccessUntil.toISOString()
+          : null,
+      isDemo: company?.isDemo ?? false,
       subscription: company
         ? {
             plan: company.plan,

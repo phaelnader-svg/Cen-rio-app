@@ -1,6 +1,8 @@
 'use client';
 
 import {
+  QUOTE_STATUSES,
+  QUOTE_STATUS_LABEL,
   WORK_ORDER_CHOICES,
   WORK_ORDER_REPAIR_CHOICES,
   defaultWorkOrder,
@@ -12,9 +14,21 @@ import {
   type QuoteWorkOrder,
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ClipboardList, Eye, FileText, Printer, Save, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  ClipboardList,
+  ClipboardPlus,
+  Eye,
+  FileText,
+  Flag,
+  Printer,
+  Save,
+  Trash2,
+} from 'lucide-react';
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { buttonClass } from '@/components/ui/button-styles';
 import { Dialog } from '@/components/ui/dialog';
 import {
   DateField,
@@ -38,7 +52,16 @@ import {
   useSavedQuote,
   useSavedQuotes,
 } from '@/lib/quotes';
+import { useFocusParam } from '@/lib/focus-param';
+import { useCan } from '@/lib/hooks';
 import { ContractDocument, ProposalDocument, WorkOrderDocument } from './documents';
+import {
+  QuoteFunnel,
+  QuoteLinkButtons,
+  QuoteStatusBadges,
+  QuoteStatusDialog,
+  quoteStatusLine,
+} from './quote-tracking';
 
 type Mode = { kind: 'list' } | { kind: 'view'; id: string } | { kind: 'os'; id: string };
 
@@ -59,6 +82,11 @@ function SavedList({ manage, onOpen }: { manage: boolean; onOpen: (m: Mode) => v
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [removing, setRemoving] = useState<QuoteSummaryDto | null>(null);
+  const [statusOf, setStatusOf] = useState<QuoteSummaryDto | null>(null);
+  const [situation, setSituation] = useState('');
+  const can = useCan();
+  const canCloseService = can('pedidos.gerenciar') && can('retiradas.gerenciar');
+  const focus = useFocusParam();
   const del = useMutation({
     mutationFn: (id: string) =>
       api(`/api/v1/quotes/${id}/delete`, {
@@ -82,16 +110,20 @@ function SavedList({ manage, onOpen }: { manage: boolean; onOpen: (m: Mode) => v
         : (list.data ?? []).filter((q) => {
             const day = localDay(q.createdAt);
             return (
+              (q.id === focus ||
+                !situation ||
+                (situation === 'COBRAR' ? q.followUpDue : q.status === situation)) &&
               (!digits || (q.phone ?? '').replace(/\D/g, '').includes(digits)) &&
               (!from || day >= from) &&
               (!to || day <= to)
             );
           }),
-    [list.data, digits, from, to, badDates],
+    [list.data, digits, from, to, badDates, situation, focus],
   );
 
   return (
     <div className="space-y-4">
+      <QuoteFunnel />
       <Card className="p-5">
         <h2 className="font-semibold">Orçamentos salvos</h2>
         <p className="text-sm text-ink-muted">
@@ -104,19 +136,33 @@ function SavedList({ manage, onOpen }: { manage: boolean; onOpen: (m: Mode) => v
             type="tel"
             inputMode="numeric"
             maxLength={15}
-            cols={4}
+            cols={3}
             value={phone}
             onChange={(e) => setPhone(formatPhoneBr(e.target.value))}
           />
+          <SelectField
+            label="Situação"
+            cols={3}
+            value={situation}
+            onChange={(e) => setSituation(e.target.value)}
+          >
+            <option value="">Todas</option>
+            <option value="COBRAR">Para cobrar hoje</option>
+            {QUOTE_STATUSES.map((st) => (
+              <option key={st} value={st}>
+                {QUOTE_STATUS_LABEL[st]}
+              </option>
+            ))}
+          </SelectField>
           <DateField
             label="Data de início"
-            cols={4}
+            cols={3}
             value={from}
             onChange={(e) => setFrom(e.target.value)}
           />
           <DateField
             label="Data de término"
-            cols={4}
+            cols={3}
             value={to}
             onChange={(e) => setTo(e.target.value)}
           />
@@ -132,6 +178,7 @@ function SavedList({ manage, onOpen }: { manage: boolean; onOpen: (m: Mode) => v
               setPhone('');
               setFrom('');
               setTo('');
+              setSituation('');
             }}
           >
             Limpar filtros
@@ -164,10 +211,14 @@ function SavedList({ manage, onOpen }: { manage: boolean; onOpen: (m: Mode) => v
         <Card className="overflow-hidden">
           <ul className="divide-y divide-line">
             {filtered.map((q) => (
-              <li key={q.id} className="flex flex-wrap items-center gap-3 px-5 py-4">
+              <li
+                key={q.id}
+                data-focus-id={q.id}
+                className="flex flex-wrap items-center gap-3 px-5 py-4"
+              >
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold">
-                    {q.customerName || 'Cliente não informado'}{' '}
+                    {q.customerName || 'Cliente não informado'} <QuoteStatusBadges q={q} />
                     {q.hasWorkOrder && (
                       <Badge tone="brand" className="ml-1 align-middle">
                         O.S. gerada
@@ -179,6 +230,9 @@ function SavedList({ manage, onOpen }: { manage: boolean; onOpen: (m: Mode) => v
                     {q.phone || 'Telefone não informado'} • {q.service || 'Serviço não informado'} •{' '}
                     <span className="money">{formatCents(q.totalCents)}</span>
                   </p>
+                  {quoteStatusLine(q) && (
+                    <p className="text-xs text-ink-muted">{quoteStatusLine(q)}</p>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -189,10 +243,39 @@ function SavedList({ manage, onOpen }: { manage: boolean; onOpen: (m: Mode) => v
                   >
                     Visualizar
                   </Button>
+                  <QuoteLinkButtons q={q} />
                   {manage && (
                     <>
                       <Button
                         size="sm"
+                        variant="secondary"
+                        icon={<Flag className="size-4" aria-hidden />}
+                        onClick={() => setStatusOf(q)}
+                      >
+                        Situação
+                      </Button>
+                      {q.orderId ? (
+                        <Link
+                          href={`/painel/pedidos/${q.orderId}`}
+                          className={buttonClass('secondary', 'sm')}
+                        >
+                          Ver pedido
+                        </Link>
+                      ) : (
+                        canCloseService &&
+                        q.status !== 'RECUSADO' && (
+                          <Link
+                            href={`/painel/servicos/novo?orcamento=${q.id}`}
+                            className={buttonClass('primary', 'sm')}
+                          >
+                            <ClipboardPlus className="size-4" aria-hidden />
+                            Fechar serviço
+                          </Link>
+                        )
+                      )}
+                      <Button
+                        size="sm"
+                        variant="secondary"
                         icon={<ClipboardList className="size-4" aria-hidden />}
                         onClick={() => onOpen({ kind: 'os', id: q.id })}
                       >
@@ -214,6 +297,8 @@ function SavedList({ manage, onOpen }: { manage: boolean; onOpen: (m: Mode) => v
           </ul>
         </Card>
       )}
+
+      <QuoteStatusDialog summary={statusOf} onClose={() => setStatusOf(null)} />
 
       <Dialog
         open={Boolean(removing)}

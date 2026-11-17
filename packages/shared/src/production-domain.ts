@@ -185,6 +185,9 @@ export const NOTIFICATION_KINDS = [
   'PRAZO_EM_RISCO',
   'PECA_PRONTA_SEM_ENTREGA',
   'MATERIAL_FALTANTE',
+  // Melhorias da segunda rodada (2026-11-17): respostas do cliente pelos links públicos.
+  'ORCAMENTO_APROVADO',
+  'RETIRADA_ESCOLHIDA_CLIENTE',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -246,6 +249,8 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   PRAZO_EM_RISCO: 'Prazo em risco',
   PECA_PRONTA_SEM_ENTREGA: 'Peça pronta sem entrega',
   MATERIAL_FALTANTE: 'Material faltando para a produção',
+  ORCAMENTO_APROVADO: 'Orçamento aprovado pelo cliente',
+  RETIRADA_ESCOLHIDA_CLIENTE: 'Cliente escolheu o dia da retirada',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

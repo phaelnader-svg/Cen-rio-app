@@ -9,6 +9,7 @@ import { Alert, Card, PageHeader } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { api, errorMessage } from '@/lib/api';
 import { useMe } from '@/lib/hooks';
+import { TwoFactorCard } from '@/components/improvements/two-factor';
 
 export function AccountPage() {
   const me = useMe();
@@ -91,6 +92,7 @@ export function AccountPage() {
           </Button>
         </form>
       </Card>
+      {!me.data?.user.supportAgent && <TwoFactorCard />}
     </>
   );
 }

@@ -28,6 +28,7 @@ export function PhotoGallery({
   const [caption, setCaption] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<number | null>(null);
+  const images = (photos.data ?? []).filter((p) => !isAudio(p));
   // U1: remover pede confirmação (antes: removia no primeiro clique).
   const [removing, setRemoving] = useState<AttachmentDto | null>(null);
   const refresh = () =>
@@ -71,47 +72,83 @@ export function PhotoGallery({
       ) : photos.data.length === 0 ? (
         <EmptyState icon={<Camera className="size-5" aria-hidden />} title="Nenhuma foto" />
       ) : (
-        <ul
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
-          data-testid="photo-list"
-        >
-          {photos.data.map((p, i) => (
-            <li
-              key={p.id}
-              className="group relative overflow-hidden rounded-xl border border-line bg-subtle"
-            >
-              <button
-                type="button"
-                className="block w-full"
-                aria-label={`Ampliar ${p.caption ?? 'foto'}`}
-                onClick={() => setViewing(i)}
-              >
-                {/* Fase 2: a grade carrega só a miniatura; a foto inteira abre no visualizador. */}
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={p.thumbUrl}
-                  alt={p.caption ?? 'Foto'}
-                  loading="lazy"
-                  decoding="async"
-                  className="aspect-square w-full object-cover"
-                />
-              </button>
-              <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-ink-muted">
-                <span className="min-w-0 flex-1 truncate">{p.caption ?? p.createdBy ?? ''}</span>
-                {canManage && (
+        <>
+          {/* Melhoria 117: recados por áudio gravados no tablet. */}
+          {photos.data.some(isAudio) && (
+            <ul className="mb-3 space-y-2" data-testid="audio-list">
+              {photos.data.filter(isAudio).map((a) => (
+                <li
+                  key={a.id}
+                  className="flex flex-wrap items-center gap-3 rounded-xl border border-line p-2.5"
+                >
+                  <audio controls preload="none" src={a.url} className="h-10 min-w-0 flex-1" />
+                  <span className="text-xs text-ink-muted">
+                    {a.createdBy ?? ''} ·{' '}
+                    {new Date(a.createdAt).toLocaleString('pt-BR', {
+                      dateStyle: 'short',
+                      timeStyle: 'short',
+                    })}
+                  </span>
+                  {canManage && (
+                    <button
+                      type="button"
+                      aria-label="Remover áudio"
+                      className="rounded p-1 text-ink-muted hover:bg-line hover:text-danger-600"
+                      onClick={() => setRemoving(a)}
+                    >
+                      <Trash2 className="size-3.5" aria-hidden />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <ul
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
+            data-testid="photo-list"
+          >
+            {photos.data
+              .filter((p) => !isAudio(p))
+              .map((p, i) => (
+                <li
+                  key={p.id}
+                  className="group relative overflow-hidden rounded-xl border border-line bg-subtle"
+                >
                   <button
                     type="button"
-                    aria-label="Remover foto"
-                    className="rounded p-1 hover:bg-line hover:text-danger-600"
-                    onClick={() => setRemoving(p)}
+                    className="block w-full"
+                    aria-label={`Ampliar ${p.caption ?? 'foto'}`}
+                    onClick={() => setViewing(i)}
                   >
-                    <Trash2 className="size-3.5" aria-hidden />
+                    {/* Fase 2: a grade carrega só a miniatura; a foto inteira abre no visualizador. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.thumbUrl}
+                      alt={p.caption ?? 'Foto'}
+                      loading="lazy"
+                      decoding="async"
+                      className="aspect-square w-full object-cover"
+                    />
                   </button>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
+                  <div className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-ink-muted">
+                    <span className="min-w-0 flex-1 truncate">
+                      {p.caption ?? p.createdBy ?? ''}
+                    </span>
+                    {canManage && (
+                      <button
+                        type="button"
+                        aria-label="Remover foto"
+                        className="rounded p-1 hover:bg-line hover:text-danger-600"
+                        onClick={() => setRemoving(p)}
+                      >
+                        <Trash2 className="size-3.5" aria-hidden />
+                      </button>
+                    )}
+                  </div>
+                </li>
+              ))}
+          </ul>
+        </>
       )}
       <Dialog
         open={removing !== null}
@@ -144,9 +181,9 @@ export function PhotoGallery({
           />
         )}
       </Dialog>
-      {viewing !== null && photos.data && photos.data[viewing] && (
+      {viewing !== null && images[viewing] && (
         <PhotoViewer
-          photos={photos.data}
+          photos={images}
           index={viewing}
           onIndex={setViewing}
           onClose={() => setViewing(null)}
@@ -303,3 +340,5 @@ export function PhotoViewer({
     </div>
   );
 }
+
+const isAudio = (p: { mimeType: string }) => p.mimeType.startsWith('audio/');

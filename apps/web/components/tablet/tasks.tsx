@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { PhotoGallery } from '@/components/commercial/photo-gallery';
+import { AudioNote } from './audio-note';
 import { TaskStatusBadge } from '@/components/production/badges';
 import { TaskHistory, TaskRefs } from '@/components/production/task-history';
 import { useSend } from '@/components/production/use-send';
@@ -821,7 +822,11 @@ export function MyTaskDetail({
             </ul>
           </Block>
 
-          <Block title="Fotos desta tarefa">
+          <Block title="Recado por áudio">
+            <AudioNote entityType="PRODUCTION_TASK" entityId={t.id} />
+          </Block>
+
+          <Block title="Fotos e recados desta tarefa">
             <PhotoGallery entityType="PRODUCTION_TASK" entityId={t.id} canManage={false} />
           </Block>
 

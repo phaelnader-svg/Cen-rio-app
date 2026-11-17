@@ -1,5 +1,7 @@
 'use client';
 
+import type { Permission } from '@cenario/shared';
+
 import {
   AlarmClock,
   ClipboardPlus,
@@ -115,16 +117,29 @@ export function Dashboard() {
             {greeting(tz)}, {me.data?.user.displayName}.
           </h1>
         </div>
-        {can('pedidos.gerenciar') && can('retiradas.gerenciar') && (
-          <Link
-            href="/painel/servicos/novo"
-            className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand-700 px-4 text-[15px] font-medium text-white shadow-sm hover:bg-brand-800"
-            data-testid="dashboard-new-service"
-          >
-            <ClipboardPlus className="size-4" aria-hidden />
-            Novo serviço
-          </Link>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {['os.ver', 'entregas.ver', 'financeiro.ver', 'pedidos.ver'].some((p) =>
+            can(p as Permission),
+          ) && (
+            <Link
+              href="/painel/resumo"
+              className="inline-flex h-11 items-center gap-2 rounded-xl border border-line-strong bg-surface px-4 text-[15px] font-medium hover:bg-subtle"
+              data-testid="dashboard-week"
+            >
+              Resumo da semana
+            </Link>
+          )}
+          {can('pedidos.gerenciar') && can('retiradas.gerenciar') && (
+            <Link
+              href="/painel/servicos/novo"
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-brand-700 px-4 text-[15px] font-medium text-white shadow-sm hover:bg-brand-800"
+              data-testid="dashboard-new-service"
+            >
+              <ClipboardPlus className="size-4" aria-hidden />
+              Novo serviço
+            </Link>
+          )}
+        </div>
       </div>
 
       <TodayPanel />

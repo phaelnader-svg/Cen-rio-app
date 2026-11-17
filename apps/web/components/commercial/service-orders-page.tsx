@@ -8,6 +8,8 @@ import { Input, Select } from '@/components/ui/field';
 import { Alert, Avatar, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { ExportLink } from '@/components/ui/export-link';
 import { formatDay, useServiceOrders } from '@/lib/commercial';
+import { useCan } from '@/lib/hooks';
+import { OsBulkBar } from '@/components/improvements/os-bulk';
 import { DeadlineBadge, PriorityBadge, ServiceOrderStatusBadge } from './badges';
 import { OsStateBadge } from './os-state';
 
@@ -15,6 +17,11 @@ export function ServiceOrdersPage() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('ABERTA');
   const list = useServiceOrders({ q: useDeferredValue(q), status });
+  const can = useCan();
+  const bulk = can('os.gerenciar');
+  const [selected, setSelected] = useState<string[]>([]);
+  const toggle = (id: string) =>
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   return (
     <>
       <PageHeader
@@ -57,47 +64,61 @@ export function ServiceOrdersPage() {
           />
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <ul className="divide-y divide-line">
-            {list.data.items.map((s) => (
-              <li key={s.id}>
-                <Link
-                  href={`/painel/os/${s.id}`}
-                  className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5 hover:bg-subtle/70"
-                  data-testid={`so-${s.code}`}
-                >
-                  <span className="w-24 font-mono text-sm font-semibold">{s.code}</span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{s.customer.name}</p>
-                    <p className="text-sm text-ink-muted">
-                      Pedido {s.order.code} · {s.pieceCount} peça(s) em {s.itemCount} item(ns)
-                      {s.promisedDate ? ` · prazo ${formatDay(s.promisedDate, true)}` : ''}
-                    </p>
-                  </div>
-                  <DeadlineBadge deadline={s.deadline} />
-                  {s.technicalLead && (
-                    <span className="flex items-center gap-1.5 text-sm text-ink-soft">
-                      <Avatar
-                        name={s.technicalLead.displayName}
-                        color={s.technicalLead.color}
-                        photoUrl={s.technicalLead.photoUrl}
-                        size={22}
+        <>
+          {bulk && <OsBulkBar ids={selected} onDone={() => setSelected([])} />}
+          <Card className="overflow-hidden">
+            <ul className="divide-y divide-line">
+              {list.data.items.map((s) => (
+                <li key={s.id} className="flex items-center">
+                  {bulk && s.status === 'ABERTA' && (
+                    <label className="flex self-stretch items-center pl-4">
+                      <span className="sr-only">Selecionar {s.code}</span>
+                      <input
+                        type="checkbox"
+                        className="size-4"
+                        checked={selected.includes(s.id)}
+                        onChange={() => toggle(s.id)}
                       />
-                      {s.technicalLead.displayName}
-                    </span>
+                    </label>
                   )}
-                  <PriorityBadge priority={s.priority} />
-                  {/* Fase 3: o estado geral (mesmo do cabeçalho da OS) no lugar de "Aberta". */}
-                  {s.operationalState ? (
-                    <OsStateBadge state={s.operationalState} />
-                  ) : (
-                    <ServiceOrderStatusBadge status={s.status} />
-                  )}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </Card>
+                  <Link
+                    href={`/painel/os/${s.id}`}
+                    className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5 hover:bg-subtle/70"
+                    data-testid={`so-${s.code}`}
+                  >
+                    <span className="w-24 font-mono text-sm font-semibold">{s.code}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{s.customer.name}</p>
+                      <p className="text-sm text-ink-muted">
+                        Pedido {s.order.code} · {s.pieceCount} peça(s) em {s.itemCount} item(ns)
+                        {s.promisedDate ? ` · prazo ${formatDay(s.promisedDate, true)}` : ''}
+                      </p>
+                    </div>
+                    <DeadlineBadge deadline={s.deadline} />
+                    {s.technicalLead && (
+                      <span className="flex items-center gap-1.5 text-sm text-ink-soft">
+                        <Avatar
+                          name={s.technicalLead.displayName}
+                          color={s.technicalLead.color}
+                          photoUrl={s.technicalLead.photoUrl}
+                          size={22}
+                        />
+                        {s.technicalLead.displayName}
+                      </span>
+                    )}
+                    <PriorityBadge priority={s.priority} />
+                    {/* Fase 3: o estado geral (mesmo do cabeçalho da OS) no lugar de "Aberta". */}
+                    {s.operationalState ? (
+                      <OsStateBadge state={s.operationalState} />
+                    ) : (
+                      <ServiceOrderStatusBadge status={s.status} />
+                    )}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </>
       )}
     </>
   );

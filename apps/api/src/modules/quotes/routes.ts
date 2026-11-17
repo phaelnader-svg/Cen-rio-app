@@ -1,6 +1,11 @@
 import {
   QUOTE_CATALOG_KINDS,
+  QUOTE_FOLLOW_UP_DAYS,
+  QUOTE_STATUSES,
+  QUOTE_STATUS_LABEL,
   buildQuoteSnapshot,
+  isQuoteStatus,
+  quoteStatusSchema,
   calcQuote,
   quoteBackupSchema,
   quoteCatalogCreateSchema,
@@ -13,6 +18,8 @@ import {
   type QuoteCatalogItemDto,
   type QuoteCatalogKind,
   type QuoteDto,
+  type QuoteFunnelDto,
+  type QuoteStatus,
   type QuoteMaterialCategory,
   type QuoteSettingsDto,
   type QuoteSnapshot,
@@ -26,6 +33,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { Errors } from '../../lib/errors';
 import { idParams } from '../presenters';
 import { requireCompanyId } from '../../core/tenant';
+import { publicLink } from '../../core/public-links';
 
 /**
  * Módulo Orçamentos — proposta comercial com materiais automáticos.
@@ -100,9 +108,24 @@ const summarySelect = {
   service: true,
   totalCents: true,
   workOrder: true,
+  status: true,
+  statusChangedAt: true,
+  followUpAt: true,
+  lostReason: true,
+  approvedAt: true,
+  approvedVia: true,
+  linkViewedAt: true,
+  orderId: true,
 } satisfies Prisma.QuoteSelect;
 
-function summaryDto(r: Prisma.QuoteGetPayload<{ select: typeof summarySelect }>): QuoteSummaryDto {
+const quoteStatusOf = (v: string): QuoteStatus => (isQuoteStatus(v) ? v : 'ENVIADO');
+
+function summaryDto(
+  r: Prisma.QuoteGetPayload<{ select: typeof summarySelect }>,
+  now = new Date(),
+): QuoteSummaryDto {
+  const status = quoteStatusOf(r.status);
+  const followUpAt = status === 'ENVIADO' ? r.followUpAt : null;
   return {
     id: r.id,
     number: r.number,
@@ -112,8 +135,21 @@ function summaryDto(r: Prisma.QuoteGetPayload<{ select: typeof summarySelect }>)
     service: r.service,
     totalCents: r.totalCents,
     hasWorkOrder: r.workOrder !== null,
+    status,
+    statusChangedAt: r.statusChangedAt?.toISOString() ?? null,
+    followUpAt: followUpAt?.toISOString() ?? null,
+    followUpDue: Boolean(followUpAt && followUpAt <= now),
+    lostReason: r.lostReason,
+    approvedAt: r.approvedAt?.toISOString() ?? null,
+    approvedVia: r.approvedVia === 'LINK' || r.approvedVia === 'PAINEL' ? r.approvedVia : null,
+    linkViewedAt: r.linkViewedAt?.toISOString() ?? null,
+    orderId: r.orderId,
   };
 }
+
+/** Data AAAA-MM-DD → meio-dia em São Paulo (lembrete aparece no dia, sem depender do fuso). */
+const followUpFromDate = (iso: string) => new Date(`${iso}T15:00:00.000Z`);
+const DAY_MS = 86_400_000;
 
 async function loadQuote(db: Tx | PrismaClient, id: string): Promise<QuoteDto> {
   const r = await db.quote.findFirst({ where: { id, deletedAt: null } });
@@ -386,7 +422,7 @@ export async function quoteRoutes(app: FastifyInstance) {
       select: summarySelect,
       orderBy: [{ number: 'desc' }],
     });
-    return rows.map(summaryDto);
+    return rows.map((r) => summaryDto(r));
   });
 
   app.get('/api/v1/quotes/:id', { config: { access: VIEW } }, async (request) => {
@@ -415,6 +451,9 @@ export async function quoteRoutes(app: FastifyInstance) {
             totalCents: snapshot.totals.totalCents,
             snapshot: snapshot as unknown as Prisma.InputJsonValue,
             createdById: actor.userId,
+            status: 'ENVIADO',
+            statusChangedAt: new Date(),
+            followUpAt: new Date(Date.now() + QUOTE_FOLLOW_UP_DAYS * DAY_MS),
           },
         });
         await audit(tx, actor, {
@@ -468,6 +507,135 @@ export async function quoteRoutes(app: FastifyInstance) {
       return loadQuote(prisma, id);
     },
   );
+
+  /** Melhoria 77: situação do orçamento e lembrete de cobrar o cliente. */
+  app.post('/api/v1/quotes/:id/status', { config: { access: MANAGE } }, async (request) => {
+    const { id } = idParams.parse(request.params);
+    const input = quoteStatusSchema.parse(request.body);
+    const actor = actorFrom(request);
+    await prisma.$transaction(async (tx) => {
+      const q = await tx.quote.findFirst({ where: { id, deletedAt: null } });
+      if (!q) throw Errors.notFound('Orçamento');
+      if (q.version !== input.version) throw Errors.versionConflict(q.version);
+      const before = quoteStatusOf(q.status);
+      if (before === 'APROVADO' && q.orderId && input.status !== 'APROVADO')
+        throw Errors.business(
+          'Este orçamento já virou pedido. Para desfazer, cancele o pedido em Pedidos comerciais.',
+        );
+      const changed = before !== input.status;
+      const followUpAt =
+        input.status !== 'ENVIADO'
+          ? null
+          : input.followUpDate !== undefined
+            ? input.followUpDate
+              ? followUpFromDate(input.followUpDate)
+              : null
+            : changed
+              ? new Date(Date.now() + QUOTE_FOLLOW_UP_DAYS * DAY_MS)
+              : q.followUpAt;
+      await tx.quote.update({
+        where: { id },
+        data: {
+          status: input.status,
+          ...(changed ? { statusChangedAt: new Date() } : {}),
+          followUpAt,
+          lostReason: input.status === 'RECUSADO' ? (input.lostReason ?? null) : null,
+          ...(input.status === 'APROVADO' && !q.approvedAt
+            ? { approvedAt: new Date(), approvedVia: 'PAINEL' }
+            : {}),
+          ...(input.status !== 'APROVADO' ? { approvedAt: null, approvedVia: null } : {}),
+          version: { increment: 1 },
+        },
+      });
+      await audit(tx, actor, {
+        action: 'quotes.status_changed',
+        entityType: 'quote',
+        entityId: id,
+        summary: changed
+          ? `Orçamento nº ${q.number}: ${QUOTE_STATUS_LABEL[before]} → ${QUOTE_STATUS_LABEL[input.status]}${input.status === 'RECUSADO' && input.lostReason ? ` (${input.lostReason})` : ''}.`
+          : `Orçamento nº ${q.number}: lembrete alterado.`,
+        changes: {
+          status: { from: before, to: input.status },
+          followUpAt: {
+            from: q.followUpAt?.toISOString() ?? null,
+            to: followUpAt?.toISOString() ?? null,
+          },
+        },
+      });
+    });
+    return loadQuote(prisma, id);
+  });
+
+  /** Melhoria 79: link da proposta para o cliente abrir no celular e aprovar. */
+  app.get('/api/v1/quotes/:id/link', { config: { access: VIEW } }, async (request) => {
+    const { id } = idParams.parse(request.params);
+    const q = await prisma.quote.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true },
+    });
+    if (!q) throw Errors.notFound('Orçamento');
+    return { url: publicLink(app.ctx.env, app.ctx.hashToken, 'proposta', q.id) };
+  });
+
+  /** Melhoria 81: funil de vendas do período (pela data em que o orçamento foi salvo). */
+  app.get('/api/v1/quotes/funnel', { config: { access: VIEW } }, async (request) => {
+    const q = z
+      .object({
+        from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      })
+      .parse(request.query);
+    const from = new Date(`${q.from}T03:00:00.000Z`);
+    const to = new Date(new Date(`${q.to}T03:00:00.000Z`).getTime() + DAY_MS);
+    const rows = await prisma.quote.findMany({
+      where: { deletedAt: null, createdAt: { gte: from, lt: to } },
+      select: { status: true, totalCents: true, lostReason: true, orderId: true, followUpAt: true },
+    });
+    const zero = () => ({ count: 0, cents: 0 });
+    const byStatus = Object.fromEntries(
+      QUOTE_STATUSES.map((s) => [s, zero()]),
+    ) as QuoteFunnelDto['byStatus'];
+    const total = zero();
+    const converted = zero();
+    const reasons = new Map<string, { count: number; cents: number }>();
+    const now = new Date();
+    let followUpDue = 0;
+    for (const r of rows) {
+      const s = quoteStatusOf(r.status);
+      byStatus[s].count++;
+      byStatus[s].cents += r.totalCents;
+      total.count++;
+      total.cents += r.totalCents;
+      if (r.orderId) {
+        converted.count++;
+        converted.cents += r.totalCents;
+      }
+      if (s === 'RECUSADO' || s === 'SEM_RESPOSTA') {
+        const reason =
+          s === 'SEM_RESPOSTA' ? 'Sem retorno do cliente' : r.lostReason || 'Sem motivo informado';
+        const cur = reasons.get(reason) ?? zero();
+        cur.count++;
+        cur.cents += r.totalCents;
+        reasons.set(reason, cur);
+      }
+      if (s === 'ENVIADO' && r.followUpAt && r.followUpAt <= now) followUpDue++;
+    }
+    const answered =
+      byStatus.APROVADO.count + byStatus.RECUSADO.count + byStatus.SEM_RESPOSTA.count;
+    const funnel: QuoteFunnelDto = {
+      from: q.from,
+      to: q.to,
+      total,
+      byStatus,
+      converted,
+      approvalRateBps: answered ? Math.round((byStatus.APROVADO.count * 10_000) / answered) : null,
+      lostReasons: [...reasons.entries()]
+        .map(([reason, v]) => ({ reason, ...v }))
+        .sort((a, b) => b.cents - a.cents),
+      followUpDue,
+    };
+    return funnel;
+  });
 
   app.post('/api/v1/quotes/:id/delete', { config: { access: MANAGE } }, async (request) => {
     const { id } = idParams.parse(request.params);

@@ -14,6 +14,7 @@ import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { useCompany } from '@/lib/queries';
 import { useOwnTeamSettings } from '@/lib/commercial';
+import { ExportDataCard, SupportAccessCard } from '@/components/improvements/company-extras';
 
 type Form = Omit<
   CompanySettingsDto,
@@ -258,6 +259,12 @@ export function CompanyPage() {
       </div>
       <OwnTeamCard />
       <ModulesCard />
+      {can('empresa.configurar') && (
+        <>
+          <SupportAccessCard />
+          <ExportDataCard />
+        </>
+      )}
       <p className="mt-4 text-xs text-ink-muted">
         Última alteração: {formatDateTime(company.data.updatedAt)} · versão {company.data.version}
       </p>

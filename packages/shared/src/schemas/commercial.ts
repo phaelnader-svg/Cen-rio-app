@@ -596,6 +596,8 @@ export const newServiceSchema = z
      * nenhuma retirada, responsável, custo de logística ou agenda é criado (estabilização da Fase 2).
      */
     pickup: newServicePickupSchema.nullable().optional(),
+    /** Melhoria 78: orçamento aprovado que virou este serviço (fica ligado ao pedido). */
+    quoteId: z.string().uuid().nullable().optional(),
   })
   .superRefine((v, ctx) => {
     refinePlannedIntent(v.service.items, ctx, ['service', 'items']);

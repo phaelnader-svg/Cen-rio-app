@@ -177,6 +177,108 @@ export interface QuoteSummaryDto {
   service: string;
   totalCents: number;
   hasWorkOrder: boolean;
+  /** Melhoria 77: situação do orçamento. */
+  status: QuoteStatus;
+  statusChangedAt: string | null;
+  /** Quando cobrar o cliente (só para orçamentos enviados). */
+  followUpAt: string | null;
+  /** O lembrete já venceu: hora de cobrar o cliente. */
+  followUpDue: boolean;
+  lostReason: string | null;
+  /** Melhoria 79: aceite (pelo link do cliente ou marcado no painel). */
+  approvedAt: string | null;
+  approvedVia: 'LINK' | 'PAINEL' | null;
+  /** O cliente já abriu o link da proposta. */
+  linkViewedAt: string | null;
+  /** Melhoria 78: pedido criado a partir do orçamento. */
+  orderId: string | null;
+}
+
+// ─────────────────────────── Situação e funil (melhorias 77 a 81) ───────────────────────────
+
+export const QUOTE_STATUSES = ['ENVIADO', 'APROVADO', 'RECUSADO', 'SEM_RESPOSTA'] as const;
+export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
+export const QUOTE_STATUS_LABEL: Record<QuoteStatus, string> = {
+  ENVIADO: 'Enviado',
+  APROVADO: 'Aprovado',
+  RECUSADO: 'Recusado',
+  SEM_RESPOSTA: 'Sem resposta',
+};
+export const isQuoteStatus = (v: string): v is QuoteStatus =>
+  (QUOTE_STATUSES as readonly string[]).includes(v);
+
+/** Dias até o lembrete de cobrar o cliente, contados de quando o orçamento é salvo. */
+export const QUOTE_FOLLOW_UP_DAYS = 3;
+
+/** Motivos de recusa mais comuns (a tela oferece estes e aceita texto livre). */
+export const QUOTE_LOST_REASONS = [
+  'Preço',
+  'Prazo',
+  'Fechou com outra tapeçaria',
+  'Desistiu do serviço',
+  'Sem retorno do cliente',
+] as const;
+
+export const quoteStatusSchema = z
+  .object({
+    version: z.number().int().min(1),
+    status: z.enum(QUOTE_STATUSES),
+    lostReason: z.string().trim().max(300).nullable().optional(),
+    /** Nova data do lembrete (AAAA-MM-DD); vazio = sem lembrete. */
+    followUpDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Data inválida.' })
+      .nullable()
+      .optional(),
+  })
+  .refine((v) => v.status !== 'RECUSADO' || Boolean(v.lostReason), {
+    message: 'Informe o motivo da recusa.',
+    path: ['lostReason'],
+  });
+export type QuoteStatusInput = z.infer<typeof quoteStatusSchema>;
+
+/** Funil de vendas do período (melhoria 81). */
+export interface QuoteFunnelDto {
+  from: string;
+  to: string;
+  total: { count: number; cents: number };
+  byStatus: Record<QuoteStatus, { count: number; cents: number }>;
+  /** Orçamentos aprovados que já viraram pedido (serviço fechado). */
+  converted: { count: number; cents: number };
+  /** Percentual aprovado sobre os já respondidos (aprovado + recusado + sem resposta). */
+  approvalRateBps: number | null;
+  lostReasons: { reason: string; count: number; cents: number }[];
+  /** Orçamentos enviados com o lembrete vencido (cobrar o cliente). */
+  followUpDue: number;
+}
+
+/** Proposta vista pelo cliente no link (melhoria 79). Só o que está na proposta impressa. */
+export interface PublicQuoteDto {
+  number: number;
+  companyName: string;
+  logoDataUrl: string | null;
+  issuedAt: string;
+  customerName: string;
+  city: string;
+  service: string;
+  fabrics: string[];
+  foamChange: boolean;
+  fabricChange: boolean;
+  sofaCount: number;
+  totalCents: number;
+  installmentTotalCents: number | null;
+  installments: number | null;
+  deliveryDays: number | null;
+  validityDays: number | null;
+  /** Fim da validade (AAAA-MM-DD) ou nulo. */
+  validUntil: string | null;
+  expired: boolean;
+  paymentTerms: string;
+  notes: string;
+  status: QuoteStatus;
+  approvedAt: string | null;
+  /** Telefone de contato da empresa (WhatsApp), quando cadastrado. */
+  companyPhone: string | null;
 }
 
 export interface QuoteSnapshotLine {

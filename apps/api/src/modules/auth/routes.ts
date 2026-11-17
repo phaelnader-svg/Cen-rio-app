@@ -9,12 +9,14 @@ import {
 } from '@cenario/shared';
 import { createCompanyContent, isUniqueViolation } from '@cenario/db';
 import { appendEvent } from '../../core/events/append';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { loginSecondStepSchema, type Permission } from '@cenario/shared';
+import { normalizeRecovery, openSecret, verifyTotp } from '../../lib/totp';
 import { actorFrom, audit } from '../../core/audit';
 import { loadUserPermissions } from '../../core/permissions';
 import { createSession, revokeSessions } from '../../core/sessions';
 import { AuthThrottle, POLICIES, clientIpKey } from '../../core/throttle';
-import { burnVerification, hashSecret, verifySecret } from '../../lib/crypto';
+import { burnVerification, hashSecret, safeEqual, verifySecret } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
 import { cookieOptions } from '../../plugins/auth';
 import { buildMe, employeeEventPayload } from '../presenters';
@@ -64,6 +66,32 @@ export async function authRoutes(app: FastifyInstance) {
     }
     await throttle.reset(accountKey);
 
+    // Melhoria 98: com a verificação em duas etapas ligada, a senha certa só devolve um desafio;
+    // a sessão nasce no segundo passo, com o código do celular.
+    if (user.totpEnabledAt && user.totpSecret)
+      return { twoFactorRequired: true, challenge: loginChallenge(user.id) };
+    return startWebSession(request, reply, user, permissions, 'auth.login');
+  });
+
+  const CHALLENGE_MS = 5 * 60_000;
+  function loginChallenge(userId: string) {
+    const exp = Date.now() + CHALLENGE_MS;
+    return `${userId}.${exp}.${hashToken(`desafio-2fa:${userId}:${exp}`).slice(0, 32)}`;
+  }
+  function challengeUser(challenge: string): string | null {
+    const [userId, exp, sig] = challenge.split('.');
+    if (!userId || !exp || !sig || Number(exp) < Date.now()) return null;
+    const want = hashToken(`desafio-2fa:${userId}:${exp}`).slice(0, 32);
+    return want.length === sig.length && safeEqual(want, sig) ? userId : null;
+  }
+
+  async function startWebSession(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    user: { id: string; displayName: string },
+    permissions: Set<Permission>,
+    action: string,
+  ) {
     const actor = { ...actorFrom(request), userId: user.id };
     const { session, token } = await prisma.$transaction(async (tx) => {
       const created = await createSession(tx, env, hashToken, {
@@ -78,10 +106,10 @@ export async function authRoutes(app: FastifyInstance) {
         tx,
         { ...actor, sessionId: created.session.id },
         {
-          action: 'auth.login',
+          action,
           entityType: 'session',
           entityId: created.session.id,
-          summary: `${user.displayName} entrou no painel administrativo.`,
+          summary: `${user.displayName} entrou no painel administrativo${action === 'auth.login_2fa' ? ' (com verificação em duas etapas)' : ''}.`,
         },
       );
       return created;
@@ -97,7 +125,57 @@ export async function authRoutes(app: FastifyInstance) {
       expiresAt: session.expiresAt,
       permissions,
     });
-  });
+  }
+
+  /** Melhoria 98: segundo passo do login (código do aplicativo ou um código de recuperação). */
+  app.post(
+    '/api/auth/login/2fa',
+    { config: { access: { public: true } } },
+    async (request, reply) => {
+      const input = loginSecondStepSchema.parse(request.body);
+      const userId = challengeUser(input.challenge);
+      if (!userId) throw Errors.business('O tempo para digitar o código acabou. Entre de novo.');
+      const key = `2fa:${userId}`;
+      const ipKey = clientIpKey(request, 'ip');
+      await throttle.assertAllowed([key, ipKey]);
+      const user = await system.user.findUnique({
+        where: { id: userId },
+        include: {
+          employee: { select: { active: true } },
+          company: { select: { blockedAt: true } },
+        },
+      });
+      if (!user || !user.active || user.employee?.active === false || !user.totpSecret)
+        throw Errors.invalidCredentials('Entre de novo.');
+      if (user.company.blockedAt)
+        throw Errors.forbidden(
+          'O acesso desta empresa está bloqueado. Fale com o suporte do Cenário.',
+        );
+      if (request.tenant) request.tenant.companyId = user.companyId;
+      const secret = openSecret(env.TOKEN_HASH_SECRET, user.totpSecret);
+      let ok = verifyTotp(secret, input.code);
+      if (!ok && input.code.includes('-')) {
+        const hash = hashToken(`recuperacao:${normalizeRecovery(input.code)}`);
+        if (user.totpRecoveryHashes.includes(hash)) {
+          ok = true;
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { totpRecoveryHashes: user.totpRecoveryHashes.filter((h) => h !== hash) },
+          });
+        }
+      }
+      if (!ok) {
+        await throttle.registerFailure(key, POLICIES.account);
+        await throttle.registerFailure(ipKey, POLICIES.ip);
+        throw Errors.invalidCredentials('Código incorreto. Confira o aplicativo do celular.');
+      }
+      await throttle.reset(key);
+      const permissions = await loadUserPermissions(prisma, user.id);
+      if (!permissions.has('painel.acessar'))
+        throw Errors.forbidden('Seu usuário não tem acesso ao painel administrativo.');
+      return startWebSession(request, reply, user, permissions, 'auth.login_2fa');
+    },
+  );
 
   /**
    * Criar conta (tela /entrar). Multi-empresa, etapa 4 (decisão do dono, 16/11/2026): cada conta

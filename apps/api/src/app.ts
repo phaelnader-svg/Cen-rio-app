@@ -26,6 +26,11 @@ import type { AppContext } from './core/types';
 import { createTokenHasher } from './lib/crypto';
 import { LOG_REDACT_PATHS } from './lib/log-redaction';
 import { auditRoutes } from './modules/audit/routes';
+import { publicRoutes, recordStatusSample } from './modules/public/routes';
+import { improvementRoutes } from './modules/improvements/routes';
+import { twoFactorRoutes } from './modules/account/two-factor';
+import { companyExportRoutes } from './modules/exports/company-export';
+import { importRoutes } from './modules/customers/import';
 import { managementRoutes } from './modules/management/routes';
 import { refreshOperationalAlerts, todayRoutes } from './modules/management/today';
 import { attachmentRoutes } from './modules/attachments/routes';
@@ -222,6 +227,11 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   deviceCustomerPrivacy(app);
 
   await app.register(healthRoutes);
+  await app.register(publicRoutes);
+  await app.register(improvementRoutes);
+  await app.register(twoFactorRoutes);
+  await app.register(companyExportRoutes);
+  await app.register(importRoutes);
   await app.register(authRoutes);
   await app.register(tabletRoutes);
   await app.register(employeeRoutes);
@@ -323,6 +333,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   let absenceTimer: NodeJS.Timeout | null = null;
   let issueTimer: NodeJS.Timeout | null = null;
   let emailTimer: NodeJS.Timeout | null = null;
+  let statusTimer: NodeJS.Timeout | null = null;
   let started = false;
 
   return {
@@ -389,6 +400,14 @@ export async function buildApp(options: BuildOptions): Promise<App> {
         emailTimer = setInterval(() => ctx.mailer.kick(), 60_000);
         emailTimer.unref();
         ctx.mailer.kick();
+        // Melhoria 100: amostra da página de status a cada 5 minutos (falta de amostra = fora do ar).
+        const sample = () =>
+          void recordStatusSample(system).catch((err: unknown) =>
+            app.log.warn({ err }, 'Falha ao gravar a amostra da página de status'),
+          );
+        statusTimer = setInterval(sample, 5 * 60_000);
+        statusTimer.unref();
+        sample();
       }
     },
     async close() {
@@ -398,6 +417,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       if (absenceTimer) clearInterval(absenceTimer);
       if (issueTimer) clearInterval(issueTimer);
       if (emailTimer) clearInterval(emailTimer);
+      if (statusTimer) clearInterval(statusTimer);
       processor.stop();
       hub.stop();
       await feed.stop();

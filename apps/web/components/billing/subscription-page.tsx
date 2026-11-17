@@ -17,6 +17,7 @@ import { useToast } from '@/components/ui/toast';
 import { api, errorMessage } from '@/lib/api';
 import { formatCents, formatDay } from '@/lib/billing';
 import { useMe } from '@/lib/hooks';
+import { CancelSubscriptionCard } from '@/components/improvements/company-extras';
 
 const STATUS_TONE = {
   CORTESIA: 'info',
@@ -280,6 +281,7 @@ export function SubscriptionPage() {
           </Card>
         </section>
       )}
+      {canManage && <CancelSubscriptionCard />}
     </>
   );
 }

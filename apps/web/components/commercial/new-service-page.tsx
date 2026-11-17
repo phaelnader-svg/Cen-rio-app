@@ -7,6 +7,7 @@ import type {
   NewServiceDefaultsDto,
   NewServiceResultDto,
   PickupTeam,
+  QuoteDto,
   PieceType,
   ServiceType,
 } from '@cenario/shared';
@@ -28,7 +29,7 @@ import {
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Plus, Search, Trash2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Input } from '@/components/ui/field';
@@ -50,6 +51,7 @@ import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useCustomerAddresses, useCustomerLookup, useNewServiceDefaults } from '@/lib/commercial';
 import { useModules } from '@/lib/hooks';
+import { useSavedQuote } from '@/lib/quotes';
 import { AddressFields, addressLines, emptyAddress, type AddressState } from './address-form';
 import {
   PickupTakeFields,
@@ -108,40 +110,66 @@ const blank = (v: string) => (v.trim() === '' ? null : v.trim());
 
 export function NewServicePage() {
   const defaults = useNewServiceDefaults();
-  if (defaults.isPending) return <Spinner />;
+  // Melhoria 78: "Fechar serviço" a partir de um orçamento aprovado (?orcamento=<id>).
+  const quoteId = useSearchParams().get('orcamento');
+  const quote = useSavedQuote(quoteId);
+  if (defaults.isPending || (quoteId && quote.isPending)) return <Spinner />;
   if (defaults.isError || !defaults.data)
     return <Alert tone="danger">Não foi possível carregar os dados do formulário.</Alert>;
   // Monta o formulário só com os padrões em mãos (responsável e valor sugeridos já no início).
-  return <NewServiceForm d={defaults.data} />;
+  return <NewServiceForm d={defaults.data} quote={quote.data ?? null} />;
 }
 
-function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
+/** Texto das observações técnicas montado a partir do orçamento (o que o cliente aprovou). */
+function quoteNotes(q: QuoteDto): string {
+  const s = q.snapshot;
+  const parts = [`Orçamento nº ${q.number}.`];
+  if (s.fabrics.length) parts.push(`Tecido(s): ${s.fabrics.join(', ')}.`);
+  parts.push(`Troca de espuma: ${s.foamChange ? 'sim' : 'não'}.`);
+  parts.push(`Troca de tecido: ${s.fabricChange ? 'sim' : 'não'}.`);
+  if (s.notes.trim()) parts.push(s.notes.trim());
+  return parts.join(' ').slice(0, 2000);
+}
+
+function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDto | null }) {
   const qc = useQueryClient();
+  const fromQuote = quote && !quote.orderId ? quote : null;
 
   // ── Cliente
   const [mode, setMode] = useState<'EXISTENTE' | 'NOVO'>('EXISTENTE');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(fromQuote?.customerName ?? '');
   const [customer, setCustomer] = useState<CustomerSummaryDto | null>(null);
   const lookup = useCustomerLookup(useDeferredValue(search), mode === 'EXISTENTE' && !customer);
   const addresses = useCustomerAddresses(mode === 'EXISTENTE' ? (customer?.id ?? null) : null);
   const [addressId, setAddressId] = useState('');
   const [useNewAddress, setUseNewAddress] = useState(false);
   const [kind, setKind] = useState<(typeof CUSTOMER_KINDS)[number]>('PF');
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [name, setName] = useState(fromQuote?.customerName ?? '');
+  const [phone, setPhone] = useState(fromQuote?.phone ?? '');
   const [email, setEmail] = useState('');
   const [document, setDocument] = useState('');
   const [customerNotes, setCustomerNotes] = useState('');
-  const [address, setAddress] = useState<AddressState>(emptyAddress('Retirada'));
+  const [address, setAddress] = useState<AddressState>(() => ({
+    ...emptyAddress('Retirada'),
+    city: fromQuote?.snapshot.city ?? '',
+  }));
   const [allowSimilar, setAllowSimilar] = useState(false);
   const [candidates, setCandidates] = useState<DuplicateCandidateDto[] | null>(null);
 
   // ── Serviço fechado
-  const [contracted, setContracted] = useState('');
-  const [pieces, setPieces] = useState<PieceRow[]>([newPiece()]);
-  const [value, setValue] = useState<number | null>(null);
+  const [contracted, setContracted] = useState(fromQuote?.service ?? '');
+  const [pieces, setPieces] = useState<PieceRow[]>(() => [
+    {
+      ...newPiece(),
+      quantity: String(Math.max(1, fromQuote?.snapshot.sofaCount ?? 1)),
+      fabricName: fromQuote?.snapshot.fabrics[0] ?? '',
+    },
+  ]);
+  const [value, setValue] = useState<number | null>(
+    d.canSetValues && fromQuote ? fromQuote.totalCents : null,
+  );
   const [valueOk, setValueOk] = useState(true);
-  const [terms, setTerms] = useState('');
+  const [terms, setTerms] = useState(fromQuote?.snapshot.paymentTerms.slice(0, 500) ?? '');
   // Cobrança (AM-1): condição estruturada — gera as cobranças junto com o pedido.
   const [payModel, setPayModel] = useState<PaymentModel>('ENTRADA_ENTREGA');
   const [entry, setEntry] = useState<number | null>(null);
@@ -150,7 +178,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
   const [balanceMethod, setBalanceMethod] = useState<PaymentMethod>('PIX');
   const [installments, setInstallments] = useState('1');
   const [promised, setPromised] = useState('');
-  const [technicalNotes, setTechnicalNotes] = useState('');
+  const [technicalNotes, setTechnicalNotes] = useState(fromQuote ? quoteNotes(fromQuote) : '');
 
   // ── Retirada (opcional: o cliente pode entregar as peças na tapeçaria)
   const [deliveryChoice, setDelivery] = useState<'RETIRADA' | 'CLIENTE_ENTREGA'>('RETIRADA');
@@ -233,6 +261,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
     const outsourced = team === 'LOGISTICA_TERCEIRIZADA';
     return {
       customer: customerPart,
+      quoteId: fromQuote?.id ?? null,
       service: {
         contractedService: contractedText,
         agreedValueCents: d?.canSetValues ? value : null,
@@ -317,6 +346,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
     instructions,
     pickupNotes,
     take,
+    fromQuote,
   ]);
 
   const save = useMutation({
@@ -349,6 +379,7 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
       void qc.invalidateQueries({ queryKey: ['orders'] });
       void qc.invalidateQueries({ queryKey: ['pickups'] });
       void qc.invalidateQueries({ queryKey: ['logistics-route'] });
+      void qc.invalidateQueries({ queryKey: ['quotes'] });
       window.scrollTo({ top: 0 });
     },
     onError: (e) => {
@@ -405,6 +436,17 @@ function NewServiceForm({ d }: { d: NewServiceDefaultsDto }) {
         title="Novo serviço"
         description="Cliente, serviço fechado e retirada em um só formulário. A OS é criada junto, ao registrar."
       />
+      {fromQuote && (
+        <Alert tone="info">
+          Preenchido com o orçamento nº {fromQuote.number} ({fromQuote.customerName}). Confira os
+          dados; ao registrar, o orçamento fica marcado como aprovado e ligado a este pedido.
+        </Alert>
+      )}
+      {quote?.orderId && (
+        <Alert tone="warn">
+          O orçamento nº {quote.number} já virou um pedido. Este formulário começa em branco.
+        </Alert>
+      )}
 
       {/* 1. Cliente */}
       <FormSection

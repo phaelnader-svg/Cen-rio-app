@@ -1701,6 +1701,15 @@ describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava 
  * Chave: "<pasta da migration>: <comando normalizado>".
  */
 const ALLOWED_DESTRUCTIVE: Record<string, string> = {
+  '20270729000000_melhorias_rodada2: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras da tabela NOVA de sugestões e ' +
+    'problemas enviados pelos clientes (padrão do Prisma). Nenhuma linha é alterada.',
+  '20270729000000_melhorias_rodada2: UPDATE ON':
+    'Não é comando: é o privilégio "UPDATE ON" da sequência da tabela NOVA de amostras da página ' +
+    'de status, concedido ao papel cenario_app. Nenhuma linha é alterada.',
+  '20270729000000_melhorias_rodada2: UPDATE "quotes"':
+    'Preenche só as colunas NOVAS dos orçamentos já salvos (data da situação e lembrete de cobrar ' +
+    '3 dias depois do orçamento). Nenhum dado existente muda.',
   '20270722000000_cobranca_planos_emails: UPDATE CASCADE':
     'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS (links de e-mail, ' +
     'fila de e-mails, cobranças da assinatura). Nenhuma linha existente é alterada.',
@@ -1755,6 +1764,7 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
 const MULTI_EMPRESA_ETAPA2 = '20270701000000_multi_empresa_etapa2';
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
+  '20270729000000_melhorias_rodada2: UPDATE CASCADE': 2,
   '20270722000000_cobranca_planos_emails: UPDATE CASCADE': 4,
   '20270722000000_cobranca_planos_emails: UPDATE "company_settings"': 2,
   '20270708000000_multi_empresa_etapa3: UPDATE ON': 2,

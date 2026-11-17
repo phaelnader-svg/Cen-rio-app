@@ -33,6 +33,7 @@ import { OsMaterialList } from '@/components/commercial/os-material-list';
 import { CustomerWhatsApp } from '@/components/commercial/customer-whatsapp';
 import { OsStateHeader } from '@/components/commercial/os-state';
 import { useOsMaterialList } from '@/lib/simple-materials';
+import { OsAlbumPanel, QrLabelButton } from '@/components/improvements/os-extras';
 import { useTabParam } from '@/lib/tab-param';
 import { ApiError, api, errorMessage } from '@/lib/api';
 import { formatDay, useServiceOrder, useServiceOrderRevisions } from '@/lib/commercial';
@@ -123,7 +124,15 @@ function ReadinessRow({
  * Reformulação, Fase 2 — OS unificada: de 10 para 6 abas. Abas antigas viram seções de outras
  * (nada some) e os links antigos continuam funcionando pelos apelidos abaixo.
  */
-const OS_TABS = ['resumo', 'pecas', 'materiais', 'producao', 'qualidade', 'historico'] as const;
+const OS_TABS = [
+  'resumo',
+  'pecas',
+  'materiais',
+  'producao',
+  'qualidade',
+  'album',
+  'historico',
+] as const;
 const OS_TAB_ALIASES = {
   fotos: 'pecas',
   'linha-do-tempo': 'historico',
@@ -167,6 +176,19 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         description={`${s.customer.name} · pedido ${s.order.code} · criada em ${formatDateTime(s.createdAt)}${s.createdBy ? ` por ${s.createdBy}` : ''}`}
         actions={
           <>
+            {s.status !== 'CANCELADA' && (
+              <QrLabelButton
+                serviceOrderId={s.id}
+                code={s.code}
+                customerName={s.customer.name}
+                pieces={s.items.flatMap((it) =>
+                  Array.from({ length: Math.max(1, it.quantity) }, (_, n) => ({
+                    code: it.quantity > 1 ? `${it.code} (${n + 1}/${it.quantity})` : it.code,
+                    description: it.description,
+                  })),
+                )}
+              />
+            )}
             {s.status !== 'CANCELADA' && can('clientes.ver') && (
               <CustomerWhatsApp
                 customerId={s.customer.id}
@@ -241,6 +263,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           ...(canQuality || canDelivery
             ? [{ key: 'qualidade', label: 'Qualidade e entrega' }]
             : []),
+          { key: 'album', label: 'Álbum de fotos' },
           { key: 'historico', label: 'Histórico', count: revisions.data?.length },
         ]}
       >
@@ -255,6 +278,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
           </div>
         )}
         {tab === 'producao' && canProduction && <OsProduction serviceOrderId={s.id} />}
+        {tab === 'album' && <OsAlbumPanel serviceOrderId={s.id} />}
         {tab === 'resumo' && (
           <div className="grid gap-6 lg:grid-cols-5">
             <Section title="Dados gerais" className="lg:col-span-3">

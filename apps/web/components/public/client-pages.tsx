@@ -1,0 +1,514 @@
+'use client';
+
+import {
+  PICKUP_SHIFTS,
+  PICKUP_SHIFT_LABEL,
+  formatCents,
+  whatsappLink,
+  type OsAlbumDto,
+  type OsAlbumPhoto,
+  type PickupShift,
+  type PublicPickupDto,
+  type PublicQuoteDto,
+  type PublicStatusDto,
+} from '@cenario/shared';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import clsx from 'clsx';
+import { CheckCircle2, MessageCircle } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
+import { useState } from 'react';
+import { LogoMark } from '@/components/brand';
+import { Button } from '@/components/ui/button';
+import { buttonClass } from '@/components/ui/button-styles';
+import { Alert, Card, Spinner } from '@/components/ui/misc';
+import { api, errorMessage } from '@/lib/api';
+
+const brDay = (d: string) => d.slice(0, 10).split('-').reverse().join('/');
+const weekday = (d: string) =>
+  new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'long' });
+
+function CompanyHeader({ name, logo }: { name: string; logo?: string | null }) {
+  return (
+    <div className="mb-6 flex items-center gap-3">
+      {logo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={logo} alt="" className="size-12 rounded-xl object-contain" />
+      ) : null}
+      <p className="text-lg font-semibold">{name}</p>
+    </div>
+  );
+}
+
+function NotFound({ what }: { what: string }) {
+  return (
+    <Card className="p-6">
+      <h1 className="text-lg font-semibold">{what} não encontrado</h1>
+      <p className="mt-1 text-sm text-ink-muted">
+        O link pode estar incompleto. Peça um novo link para a tapeçaria.
+      </p>
+    </Card>
+  );
+}
+
+function Footer() {
+  return (
+    <p className="mt-10 flex items-center justify-center gap-2 text-xs text-ink-muted">
+      <LogoMark className="size-4" /> Enviado pelo Cenário Gestão
+    </p>
+  );
+}
+
+// ─────────────────────────── Proposta (79) ───────────────────────────
+
+export function ProposalPage({ id }: { id: string }) {
+  const t = useSearchParams().get('t') ?? '';
+  const qc = useQueryClient();
+  const key = ['proposta', id, t];
+  const q = useQuery({
+    queryKey: key,
+    queryFn: () => api<PublicQuoteDto>(`/api/public/proposta/${id}?t=${encodeURIComponent(t)}`),
+    retry: false,
+  });
+  const [confirm, setConfirm] = useState(false);
+  const approve = useMutation({
+    mutationFn: () =>
+      api<PublicQuoteDto>(`/api/public/proposta/${id}/aprovar`, { method: 'POST', body: { t } }),
+    onSuccess: (dto) => {
+      qc.setQueryData(key, dto);
+      setConfirm(false);
+    },
+  });
+  if (q.isPending) return <Spinner />;
+  if (q.isError) return <NotFound what="Proposta" />;
+  const p = q.data;
+  const approved = p.status === 'APROVADO';
+  const wa = p.companyPhone
+    ? whatsappLink(p.companyPhone, `Olá! Sobre a proposta nº ${p.number} (${p.customerName}): `)
+    : null;
+  return (
+    <>
+      <CompanyHeader name={p.companyName} logo={p.logoDataUrl} />
+      <Card className="p-5 sm:p-6">
+        <p className="text-sm text-ink-muted">
+          Proposta nº {p.number} • {brDay(p.issuedAt)}
+        </p>
+        <h1 className="mt-1 text-xl font-semibold">{p.service}</h1>
+        <p className="text-sm text-ink-soft">
+          Para {p.customerName}
+          {p.city ? ` • ${p.city}` : ''}
+        </p>
+
+        <dl className="mt-5 divide-y divide-line rounded-xl border border-line text-sm">
+          {[
+            ['Peças', `${p.sofaCount}`],
+            ['Troca de espuma', p.foamChange ? 'Sim' : 'Não'],
+            ['Troca de tecido', p.fabricChange ? 'Sim' : 'Não'],
+            ...(p.fabrics.length ? [['Tecido', p.fabrics.join(', ')]] : []),
+            ...(p.deliveryDays ? [['Prazo de entrega', `${p.deliveryDays} dias`]] : []),
+            ...(p.validUntil ? [['Proposta válida até', brDay(p.validUntil)]] : []),
+          ].map(([k, v]) => (
+            <div key={k} className="flex justify-between gap-4 px-4 py-2.5">
+              <dt className="text-ink-muted">{k}</dt>
+              <dd className="text-right font-medium">{v}</dd>
+            </div>
+          ))}
+        </dl>
+
+        <div className="mt-5 rounded-xl bg-brand-50 p-4">
+          <p className="text-sm text-brand-700">Valor total</p>
+          <p className="money text-3xl font-semibold text-brand-700">{formatCents(p.totalCents)}</p>
+          {p.installments && p.installmentTotalCents ? (
+            <p className="text-sm text-brand-700">
+              ou {p.installments}x de{' '}
+              {formatCents(Math.round(p.installmentTotalCents / p.installments))} no cartão (
+              {formatCents(p.installmentTotalCents)})
+            </p>
+          ) : null}
+        </div>
+        {p.paymentTerms && (
+          <p className="mt-4 text-sm whitespace-pre-line text-ink-soft">
+            <strong className="text-ink">Pagamento:</strong> {p.paymentTerms}
+          </p>
+        )}
+        {p.notes && (
+          <p className="mt-2 text-sm whitespace-pre-line text-ink-soft">
+            <strong className="text-ink">Observações:</strong> {p.notes}
+          </p>
+        )}
+
+        <div className="mt-6">
+          {approved ? (
+            <Alert tone="ok" title="Proposta aprovada">
+              {p.approvedAt
+                ? `Aprovada em ${new Date(p.approvedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}. `
+                : ''}
+              A tapeçaria já foi avisada e vai combinar a retirada com você.
+            </Alert>
+          ) : p.status === 'RECUSADO' ? (
+            <Alert tone="warn">Esta proposta foi encerrada. Fale com a tapeçaria.</Alert>
+          ) : p.expired ? (
+            <Alert tone="warn">
+              Esta proposta passou da validade. Fale com a tapeçaria para receber uma nova.
+            </Alert>
+          ) : confirm ? (
+            <div className="rounded-xl border border-line p-4">
+              <p className="font-medium">
+                Confirmar a aprovação da proposta nº {p.number} no valor de{' '}
+                {formatCents(p.totalCents)}?
+              </p>
+              {approve.error && (
+                <Alert tone="danger" className="mt-3">
+                  {errorMessage(approve.error)}
+                </Alert>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button loading={approve.isPending} onClick={() => approve.mutate()}>
+                  Sim, aprovar
+                </Button>
+                <Button variant="secondary" onClick={() => setConfirm(false)}>
+                  Voltar
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              size="lg"
+              className="w-full"
+              icon={<CheckCircle2 className="size-5" aria-hidden />}
+              onClick={() => setConfirm(true)}
+            >
+              Aprovar proposta
+            </Button>
+          )}
+          {wa && (
+            <a
+              href={wa}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={clsx(buttonClass('secondary', 'lg'), 'mt-3 w-full')}
+            >
+              <MessageCircle className="size-5" aria-hidden /> Tirar dúvida no WhatsApp
+            </a>
+          )}
+        </div>
+      </Card>
+      <Footer />
+    </>
+  );
+}
+
+// ─────────────────────────── Álbum (82) ───────────────────────────
+
+export function AlbumPage({ id }: { id: string }) {
+  const t = useSearchParams().get('t') ?? '';
+  const q = useQuery({
+    queryKey: ['album-publico', id, t],
+    queryFn: () => api<OsAlbumDto>(`/api/public/album/${id}?t=${encodeURIComponent(t)}`),
+    retry: false,
+  });
+  if (q.isPending) return <Spinner />;
+  if (q.isError) return <NotFound what="Álbum" />;
+  const a = q.data;
+  return (
+    <>
+      <CompanyHeader name={a.companyName} />
+      <h1 className="text-xl font-semibold">Fotos do seu serviço</h1>
+      <p className="text-sm text-ink-muted">
+        {a.customerName} • {a.code}
+        {a.pieces.length ? ` • ${a.pieces.join(', ')}` : ''}
+      </p>
+      <AlbumSections album={a} />
+      <Footer />
+    </>
+  );
+}
+
+/** Seções antes / durante / depois (usada também na O.S. dentro do painel). */
+export function AlbumSections({ album }: { album: OsAlbumDto }) {
+  const [zoom, setZoom] = useState<OsAlbumPhoto | null>(null);
+  const sections = [
+    ['Antes', album.before],
+    ['Durante a reforma', album.during],
+    ['Pronto', album.after],
+  ] as const;
+  const empty = sections.every(([, list]) => !list.length);
+  return (
+    <div className="mt-5 space-y-6">
+      {empty && <p className="text-sm text-ink-muted">Ainda não há fotos deste serviço.</p>}
+      {sections.map(([title, list]) =>
+        list.length ? (
+          <section key={title}>
+            <h2 className="mb-2 font-semibold">{title}</h2>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {list.map((p) => (
+                <button
+                  key={p.fileId}
+                  type="button"
+                  onClick={() => setZoom(p)}
+                  className="overflow-hidden rounded-xl border border-line bg-subtle"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={p.thumbUrl}
+                    alt={p.caption ?? title}
+                    loading="lazy"
+                    className="aspect-square w-full object-cover"
+                  />
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null,
+      )}
+      {zoom && (
+        <button
+          type="button"
+          className="fixed inset-0 z-50 grid place-items-center bg-black/85 p-4"
+          onClick={() => setZoom(null)}
+          aria-label="Fechar foto"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={zoom.url}
+            alt={zoom.caption ?? 'Foto do serviço'}
+            className="max-h-full max-w-full rounded-lg"
+          />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────── Retirada (130) ───────────────────────────
+
+export function PickupChoicePage({ id }: { id: string }) {
+  const t = useSearchParams().get('t') ?? '';
+  const qc = useQueryClient();
+  const key = ['agendar', id, t];
+  const q = useQuery({
+    queryKey: key,
+    queryFn: () => api<PublicPickupDto>(`/api/public/agendar/${id}?t=${encodeURIComponent(t)}`),
+    retry: false,
+  });
+  const [date, setDate] = useState('');
+  const [shift, setShift] = useState<PickupShift | ''>('');
+  const [changing, setChanging] = useState(false);
+  const save = useMutation({
+    mutationFn: () =>
+      api<PublicPickupDto>(`/api/public/agendar/${id}`, {
+        method: 'POST',
+        body: { t, date, shift },
+      }),
+    onSuccess: (dto) => {
+      qc.setQueryData(key, dto);
+      setChanging(false);
+    },
+  });
+  if (q.isPending) return <Spinner />;
+  if (q.isError) return <NotFound what="Retirada" />;
+  const p = q.data;
+  const chosen = p.scheduledDate && p.shift;
+  return (
+    <>
+      <CompanyHeader name={p.companyName} />
+      <Card className="p-5 sm:p-6">
+        <h1 className="text-xl font-semibold">Retirada das suas peças</h1>
+        <p className="text-sm text-ink-muted">
+          {p.customerName} • {p.code}
+        </p>
+        {p.address && <p className="mt-2 text-sm text-ink-soft">Endereço: {p.address}</p>}
+        {p.pieces.length > 0 && (
+          <p className="text-sm text-ink-soft">Peças: {p.pieces.join(', ')}</p>
+        )}
+
+        {chosen && !changing ? (
+          <div className="mt-5">
+            <Alert tone="ok" title="Retirada agendada">
+              {weekday(p.scheduledDate!)}, {brDay(p.scheduledDate!)},{' '}
+              {PICKUP_SHIFT_LABEL[p.shift!].toLowerCase()}. A equipe avisa quando estiver a caminho.
+            </Alert>
+            {p.canChoose && (
+              <Button variant="secondary" className="mt-3" onClick={() => setChanging(true)}>
+                Trocar o dia
+              </Button>
+            )}
+          </div>
+        ) : !p.canChoose ? (
+          <Alert tone="info" className="mt-5">
+            A retirada já está a caminho ou foi feita. Para mudar algo, fale com a tapeçaria.
+          </Alert>
+        ) : (
+          <form
+            className="mt-5 space-y-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save.mutate();
+            }}
+          >
+            <fieldset>
+              <legend className="label">Escolha o dia</legend>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {p.days.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    aria-pressed={date === d}
+                    onClick={() => setDate(d)}
+                    className={clsx(
+                      'rounded-xl border px-3 py-2.5 text-left text-sm',
+                      date === d
+                        ? 'border-brand-600 bg-brand-50 text-brand-700'
+                        : 'border-line hover:bg-subtle',
+                    )}
+                  >
+                    <span className="block font-semibold capitalize">{weekday(d)}</span>
+                    <span className="text-ink-muted">{brDay(d)}</span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend className="label">Escolha o turno</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {PICKUP_SHIFTS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    aria-pressed={shift === s}
+                    onClick={() => setShift(s)}
+                    className={clsx(
+                      'rounded-xl border px-3 py-3 text-sm font-medium',
+                      shift === s
+                        ? 'border-brand-600 bg-brand-50 text-brand-700'
+                        : 'border-line hover:bg-subtle',
+                    )}
+                  >
+                    {PICKUP_SHIFT_LABEL[s]}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            {save.error && <Alert tone="danger">{errorMessage(save.error)}</Alert>}
+            <Button
+              type="submit"
+              size="lg"
+              className="w-full"
+              disabled={!date || !shift}
+              loading={save.isPending}
+            >
+              Confirmar retirada
+            </Button>
+          </form>
+        )}
+      </Card>
+      <Footer />
+    </>
+  );
+}
+
+// ─────────────────────────── Status (100) ───────────────────────────
+
+export function StatusPage() {
+  const q = useQuery({
+    queryKey: ['status-publico'],
+    queryFn: () => api<PublicStatusDto>('/api/public/status'),
+    refetchInterval: 60_000,
+    retry: false,
+  });
+  const down = q.isError || (q.data && !q.data.ok);
+  const days = q.data?.days ?? [];
+  const measured = days.filter((d) => d.uptimeBps !== null);
+  const avg = measured.length
+    ? measured.reduce((a, d) => a + (d.uptimeBps ?? 0), 0) / measured.length / 100
+    : null;
+  return (
+    <>
+      <div className="mb-6 flex items-center gap-3">
+        <LogoMark className="size-10" />
+        <div>
+          <p className="font-semibold">Cenário Gestão</p>
+          <p className="text-sm text-ink-muted">Status do sistema</p>
+        </div>
+      </div>
+      {q.isPending ? (
+        <Spinner />
+      ) : (
+        <Card className="p-5 sm:p-6">
+          <div className="flex items-center gap-3">
+            <span
+              className={clsx('size-3 rounded-full', down ? 'bg-danger-600' : 'bg-ok-600')}
+              aria-hidden
+            />
+            <h1 className="text-lg font-semibold">
+              {down ? 'Sistema com problema' : 'Sistema funcionando normalmente'}
+            </h1>
+          </div>
+          {q.data?.notice && (
+            <Alert tone="warn" className="mt-4">
+              {q.data.notice.message} (de{' '}
+              {new Date(q.data.notice.showFrom).toLocaleString('pt-BR', {
+                dateStyle: 'short',
+                timeStyle: 'short',
+              })}{' '}
+              até{' '}
+              {new Date(q.data.notice.showUntil).toLocaleString('pt-BR', {
+                dateStyle: 'short',
+                timeStyle: 'short',
+              })}
+              )
+            </Alert>
+          )}
+          {down && (
+            <p className="mt-2 text-sm text-ink-soft">
+              A equipe já foi avisada e está trabalhando para normalizar.
+            </p>
+          )}
+          {days.length > 0 && (
+            <div className="mt-6">
+              <div className="flex items-baseline justify-between text-sm">
+                <span className="font-medium">Últimos {days.length} dias</span>
+                {avg !== null && (
+                  <span className="text-ink-muted">
+                    {avg.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% no ar
+                  </span>
+                )}
+              </div>
+              <div className="mt-2 flex h-8 gap-[2px]">
+                {days.map((d) => (
+                  <span
+                    key={d.day}
+                    title={`${brDay(d.day)}: ${d.uptimeBps === null ? 'sem medição' : `${(d.uptimeBps / 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}% no ar`}`}
+                    className={clsx(
+                      'flex-1 rounded-sm',
+                      d.uptimeBps === null
+                        ? 'bg-line'
+                        : d.uptimeBps >= 9990
+                          ? 'bg-ok-600'
+                          : d.uptimeBps >= 9800
+                            ? 'bg-warn-600'
+                            : 'bg-danger-600',
+                    )}
+                  />
+                ))}
+              </div>
+              <div className="mt-1 flex justify-between text-xs text-ink-muted">
+                <span>{brDay(days[0]!.day)}</span>
+                <span>Hoje</span>
+              </div>
+            </div>
+          )}
+          {q.data && (
+            <p className="mt-4 text-xs text-ink-muted">
+              Verificado às{' '}
+              {new Date(q.data.checkedAt).toLocaleTimeString('pt-BR', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+              {q.data.latencyMs !== null ? ` • resposta em ${q.data.latencyMs} ms` : ''}
+            </p>
+          )}
+        </Card>
+      )}
+    </>
+  );
+}
