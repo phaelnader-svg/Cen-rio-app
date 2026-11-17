@@ -13,7 +13,20 @@ export async function post(page: Page, path: string, data: unknown) {
   return r.json();
 }
 
-/** Cliente → pedido → recebimento → OS aberta (sofá + poltronas). */
+/**
+ * Recebimentos removidos: "Peças na oficina" marca as peças do pedido como chegadas (opcional; a
+ * OS não depende disso, mas mantém o pedido no estado em que os testes o esperam).
+ */
+export async function markArrived(page: Page, orderId: string, version: number) {
+  const r = await page.request.post(`/api/v1/orders/${orderId}/arrived`, {
+    data: { version },
+    headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
+  });
+  expect(r.ok(), `/api/v1/orders/${orderId}/arrived: ${await r.text()}`).toBe(true);
+  return r.json();
+}
+
+/** Cliente → pedido → peças na oficina → OS aberta (sofá + poltronas). */
 export async function openServiceOrder(page: Page, name: string) {
   const customer = await post(page, '/api/v1/customers', {
     kind: 'PF',
@@ -43,17 +56,7 @@ export async function openServiceOrder(page: Page, name: string) {
       { pieceType: 'POLTRONA', description: 'Poltronas', quantity: 2 },
     ],
   });
-  await post(page, '/api/v1/receipts', {
-    orderId: order.id,
-    pickupId: null,
-    origin: 'ENTREGUE_PELO_CLIENTE',
-    lines: order.items.map((i: { id: string; quantity: number }) => ({
-      orderItemId: i.id,
-      quantity: i.quantity,
-      condition: 'BOA',
-      location: 'Área de recebimento',
-    })),
-  });
+  await markArrived(page, order.id, order.version);
   return post(page, '/api/v1/service-orders', {
     orderId: order.id,
     items: [

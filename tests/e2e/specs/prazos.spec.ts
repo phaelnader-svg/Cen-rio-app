@@ -54,14 +54,9 @@ test.describe.serial('Prazos e serviços em risco', () => {
       },
     });
     const order = await call(page, 'GET', `/api/v1/orders/${svc.order.id}`);
-    const rec = await call(page, 'POST', '/api/v1/receipts', {
-      orderId: order.id,
-      pickupId: null,
-      origin: 'ENTREGUE_PELO_CLIENTE',
-      lines: [
-        { orderItemId: order.items[0].id, quantity: 1, condition: 'BOA', location: 'Recepção' },
-      ],
-    });
+    // Recebimentos removidos: a OS nasce no fechamento do Novo serviço; a chegada é só uma marca.
+    await call(page, 'POST', `/api/v1/orders/${order.id}/arrived`, { version: order.version });
+    const rec = { generatedServiceOrder: svc.serviceOrder as { id: string; code: string } };
     const soId = rec.generatedServiceOrder.id as string;
     const soCode = rec.generatedServiceOrder.code as string;
 
