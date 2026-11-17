@@ -564,9 +564,7 @@ describe('Portão de pagamento D13 (35–55)', () => {
     for (const amount of [100000, 1000]) {
       const r = await payDirect(s.admin, ric.id, amount);
       expect(r.status).toBe(422);
-      expect(r.body.error.message).toMatch(
-        /Esta semana ainda não foi confirmada pelo profissional/,
-      );
+      expect(r.body.error.message).toMatch(/Esta semana ainda não foi confirmada pelo funcionário/);
     }
     const lot = await payLot(s.admin, s.ids.ricardo, 1000);
     expect(lot.status).toBe(422);

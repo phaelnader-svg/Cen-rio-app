@@ -390,7 +390,7 @@ describe('Atenção do pedido: peças ainda não recebidas na oficina', () => {
       status: 'PRAZO_PROXIMO',
       serviceOrder: null,
     });
-    expect(items[0]!.title).toContain('PRAZO PRÓXIMO');
+    expect(items[0]!.title).toContain('prazo próximo');
     expect(items[0]!.description).toContain('Peça ainda não recebida');
     expect((await admin.get(`/api/v1/orders/${near}`)).body.deadline).toBe('PRAZO_PROXIMO');
     const order = await db().commercialOrder.findUniqueOrThrow({

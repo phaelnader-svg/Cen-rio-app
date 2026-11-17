@@ -758,7 +758,9 @@ describe('F. Estabilização (auditoria): liberação por OS e rascunhos antigos
     expect(ticks.length).toBe(ticksBefore + 1);
     // Só a(s) tarefa(s) da OS de terça entram na contagem do registro.
     const releasedEarly = earlyTasks.filter((t) => t.status === 'LIBERADA').length;
-    expect(ticks.at(-1)!.summary).toContain(`${releasedEarly} tarefa(s)`);
+    expect(ticks.at(-1)!.summary).toContain(
+      `${releasedEarly} ${releasedEarly === 1 ? 'tarefa' : 'tarefas'}`,
+    );
 
     // Novos ciclos no mesmo dia: nada muda → nenhum registro de auditoria novo.
     for (let i = 0; i < 3; i++) await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
@@ -1026,7 +1028,7 @@ describe('G. Rascunhos de semanas passadas — aviso na Central de atenção (de
       expect.objectContaining({
         key: `RASCUNHO_ANTIGO:${planId}`,
         category: 'ACAO',
-        title: `Semana de ${mondayOf(start).split('-').reverse().join('/')}: 2 serviço(s) ainda em rascunho`,
+        title: `Semana de ${mondayOf(start).split('-').reverse().join('/')}: 2 serviços ainda em rascunho`,
         link: '/painel/producao/a-planejar',
       }),
     ]);
