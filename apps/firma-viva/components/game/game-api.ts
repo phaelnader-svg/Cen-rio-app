@@ -1,7 +1,7 @@
 'use client';
 import type {
   AttachmentDto,
-  MaterialReadinessDto,
+  OsMaterialsDto,
   ServiceOrderDto,
   AgentConversationDto,
   AgentDto,
@@ -106,17 +106,18 @@ export const useRevisions = (key: string | null) =>
     enabled: Boolean(key),
   });
 
-/** Ficha da OS, prontidão de materiais e fotos: rotas oficiais do Cenário Gestão. */
+/** Ficha da OS, materiais e fotos: rotas oficiais do Cenário Gestão. */
 export const useServiceOrder = (id: string | null) =>
   useQuery({
     queryKey: ['service-order', id],
     queryFn: () => api<ServiceOrderDto>(`/api/v1/service-orders/${id}`),
     enabled: Boolean(id),
   });
-export const useReadiness = (id: string | null) =>
+/** Lista simples de materiais da OS (informativa; Compras e prontidão saíram do Cenário). */
+export const useOsMaterials = (id: string | null) =>
   useQuery({
-    queryKey: ['game-readiness', id],
-    queryFn: () => api<MaterialReadinessDto>(`/api/v1/service-orders/${id}/material-readiness`),
+    queryKey: ['game-os-materials', id],
+    queryFn: () => api<OsMaterialsDto>(`/api/v1/service-orders/${id}/material-list`),
     enabled: Boolean(id),
   });
 export const usePhotos = (entityType: string, id: string | null) =>

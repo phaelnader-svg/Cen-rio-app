@@ -75,9 +75,9 @@ export async function ensureLocalSpaces(db: PrismaClient, orgId: string) {
         },
       });
     }
-    // Gerente e Compras começam nas duas primeiras mesas do escritório.
+    // Gerente e Financeiro começam nas duas primeiras mesas do escritório (como no Cenário).
     const desks = defs[1]![1].stations.filter((st) => st.kind === 'MESA_ESCRITORIO');
-    const agents = ['GERENTE', 'COMPRAS'].map((roleKey, i) => {
+    const agents = ['GERENTE', 'FINANCEIRO'].map((roleKey, i) => {
       const t = AGENT_TEMPLATES.find((x) => x.roleKey === roleKey)!;
       return localAgent({
         name: t.name,

@@ -1,6 +1,6 @@
 'use client';
 /**
- * Ficha da OS ao clicar no móvel. Tudo vem das rotas oficiais (OS, prontidão, fotos, tarefas) e
+ * Ficha da OS ao clicar no móvel. Tudo vem das rotas oficiais (OS, materiais, fotos, tarefas) e
  * as ações usam os mesmos fluxos do painel: planejar serviço (titular + data), publicar a semana
  * (a tarefa vai para a fila do tablet), trocar o responsável de uma etapa com motivo e versão.
  * O início continua sendo confirmado pelo funcionário no tablet.
@@ -13,16 +13,15 @@ import {
   type GameSnapshotDto,
   type ProductionPlanDto,
   type ProductionTaskDetailDto,
-  type PurchaseShortageDto,
-  type ReadinessLineDto,
+  type OsMaterialDto,
   pieceWorkflow,
 } from '@cenario/shared';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, MapPin, ShoppingCart } from 'lucide-react';
+import { ExternalLink, MapPin } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
-import { type GamePerson, usePhotos, useReadiness, useServiceOrder } from './game-api';
+import { type GamePerson, useOsMaterials, usePhotos, useServiceOrder } from './game-api';
 import {
   GBtn,
   KV,
@@ -30,7 +29,6 @@ import {
   Section,
   TASK_STATUS_LABEL,
   Tone,
-  UNIT_LABEL,
   fmtDate,
   fmtDateTime,
   fmtQty,
@@ -65,18 +63,11 @@ const PRIORITY_LABEL: Record<string, string> = {
   URGENTE: 'Urgente',
 };
 
-function lineTone(l: ReadinessLineDto): {
-  tone: 'FALTA' | 'DISPONIVEL' | 'A_CONFERIR';
-  text: string;
-} {
-  if (l.forecast) return { tone: 'A_CONFERIR', text: 'Previsão (a conferir)' };
-  if (l.covered >= l.need - 1e-9) return { tone: 'DISPONIVEL', text: 'Disponível para a OS' };
-  if (l.awaiting > 0 && l.covered + l.awaiting >= l.need - 1e-9)
-    return { tone: 'FALTA', text: 'Comprado, aguardando chegada' };
-  return {
-    tone: 'FALTA',
-    text: `Falta ${fmtQty(Math.max(0, l.need - l.covered - l.awaiting))} ${UNIT_LABEL[l.unit] ?? l.unit}`,
-  };
+/** Lista simples de materiais da OS: só informativa, nunca segura a produção. */
+function lineTone(l: OsMaterialDto): { tone: 'FALTA' | 'DISPONIVEL' | 'A_CONFERIR'; text: string } {
+  if (l.available) return { tone: 'DISPONIVEL', text: 'Disponível na oficina' };
+  if (l.purchased) return { tone: 'A_CONFERIR', text: 'Comprado, ainda não chegou' };
+  return { tone: 'FALTA', text: 'Ainda não disponível' };
 }
 
 export function PiecePanel({
@@ -98,7 +89,7 @@ export function PiecePanel({
   onOpenFicha?: () => void;
 }) {
   const so = useServiceOrder(piece.serviceOrderId);
-  const readiness = useReadiness(piece.serviceOrderId);
+  const materials = useOsMaterials(piece.serviceOrderId);
   const photosOs = usePhotos('SERVICE_ORDER', piece.serviceOrderId);
   const photosItem = usePhotos('SERVICE_ORDER_ITEM', piece.id);
   const qc = useQueryClient();
@@ -140,7 +131,7 @@ export function PiecePanel({
     await Promise.all([
       qc.invalidateQueries({ queryKey: ['game-snapshot'] }),
       qc.invalidateQueries({ queryKey: ['service-order', piece.serviceOrderId] }),
-      qc.invalidateQueries({ queryKey: ['game-readiness', piece.serviceOrderId] }),
+      qc.invalidateQueries({ queryKey: ['game-os-materials', piece.serviceOrderId] }),
       // Estoque livre e compras de estoque (mesma fonte da central de compras).
       qc.invalidateQueries({ queryKey: ['needs'] }),
     ]);
@@ -210,85 +201,16 @@ export function PiecePanel({
   const allPhotos = [...(photosOs.data ?? []), ...(photosItem.data ?? [])].filter((p) =>
     p.mimeType.startsWith('image/'),
   );
-  const lines = (readiness.data?.lines ?? []).filter(
-    (l) => !l.itemCode || l.itemCode === piece.itemCode || siblings.length > 1,
-  );
-  const missing = lines.filter((l) => l.covered < l.need - 1e-9 && !l.forecast);
+  const lines = materials.data?.materials ?? [];
+  const missing = lines.filter((l) => !l.available);
   const wf = pieceWorkflow(piece);
   const [tab, setTab] = useState<'MATERIAIS' | 'ATRIBUICAO' | 'SERVICO' | 'HISTORICO'>('MATERIAIS');
-  // Mesma fonte da central de compras: estoque livre e compra de estoque sem destino.
-  const shortages = useQuery({
-    queryKey: ['needs', 'shortages'],
-    queryFn: () => api<PurchaseShortageDto[]>('/api/v1/purchasing/shortages'),
-    retry: false,
-    staleTime: 10_000,
-  });
-  const explain = (l: ReadinessLineDto) => {
-    const g = shortages.data?.find((x) => x.rows.some((r) => r.requirementId === l.requirementId));
-    const stockLine = l.sourcing === 'ESTOQUE';
-    const free = stockLine ? Math.max(0, g?.freeStock ?? 0) : 0;
-    const pending = stockLine ? Math.max(0, g?.freePending ?? 0) : 0;
-    const toReserve = stockLine ? Math.min(l.shortfall, free) : 0;
-    const toBuy = Math.max(0, Math.round((l.shortfall - free - pending) * 1000) / 1000);
-    return {
-      free,
-      pending,
-      toReserve,
-      toBuy,
-      stockItemId: g?.stockItem?.id ?? null,
-      known: Boolean(g) || !stockLine,
-    };
-  };
-  const reserve = (l: ReadinessLineDto, qty: number, stockItemId: string) =>
-    run(
-      `Reservado ${fmtQty(qty)} ${UNIT_LABEL[l.unit] ?? l.unit} de ${l.description} para ${piece.osCode}.`,
-      async () => {
-        await api('/api/v1/stock-reservations', {
-          method: 'POST',
-          idempotencyKey: newIdempotencyKey(),
-          body: {
-            stockItemId,
-            serviceOrderId: piece.serviceOrderId,
-            materialRequirementId: l.requirementId,
-            quantity: qty,
-          },
-        });
-        await qc.invalidateQueries({ queryKey: ['needs'] });
-      },
-    );
-  const fabricLine = lines.find((l) => l.kind === 'TECIDO');
-  const fabricText = piece.fabric
-    ? piece.fabric
-    : fabricLine
-      ? `${fabricLine.description}${fabricLine.color ? ` · ${fabricLine.color}` : ''} — da lista de materiais aprovada (o campo "tecido" da OS está vazio)`
-      : 'Não informado';
+  const fabricText = piece.fabric ? piece.fabric : 'Não informado';
   let action: { label: string; run: () => void } | null = null;
   let actionNote: string | null = null;
-  const firstMissing = missing.find((l) => l.shortfall > 0) ?? missing[0];
-  if (firstMissing) {
-    const ex = explain(firstMissing);
-    const u = UNIT_LABEL[firstMissing.unit] ?? firstMissing.unit;
-    if (ex.toReserve > 0 && ex.stockItemId && snapshot.canExecuteStock)
-      action = {
-        label: `Reservar ${fmtQty(ex.toReserve)} ${u} de ${firstMissing.description} do estoque`,
-        run: () => reserve(firstMissing, ex.toReserve, ex.stockItemId!),
-      };
-    else if (ex.toBuy > 0)
-      action = {
-        label: `Comprar ${fmtQty(ex.toBuy)} ${u} de ${firstMissing.description}`,
-        run: () =>
-          window.open(
-            cenarioUrl(`/painel/compras/novo?req=${firstMissing.requirementId}`),
-            '_blank',
-            'noopener',
-          ),
-      };
-    else if (firstMissing.awaiting > 0)
-      action = {
-        label: `Registrar chegada de ${firstMissing.description}`,
-        run: () => window.open(cenarioUrl('/painel/recebimento-materiais'), '_blank', 'noopener'),
-      };
-    else actionNote = `${firstMissing.description}: aguardando compra em aberto ou reserva.`;
+  const firstMissing = missing[0];
+  if (wf.phase === 'AGUARDANDO_PLANEJAMENTO' && firstMissing && !snapshot.canPlan) {
+    actionNote = `${firstMissing.description}: ainda não disponível na oficina (não segura a produção).`;
   } else if (wf.phase === 'AGUARDANDO_PLANEJAMENTO')
     action = snapshot.canPlan ? { label: 'Planejar a OS', run: () => setTab('ATRIBUICAO') } : null;
   else if (wf.phase === 'AGUARDANDO_PUBLICACAO' && snapshot.canPlan)
@@ -576,134 +498,37 @@ export function PiecePanel({
       {tab === 'MATERIAIS' ? (
         <>
           <Section title="Materiais">
-            {readiness.isPending ? (
+            {materials.isPending ? (
               <p className="text-xs text-ink-muted">Carregando…</p>
             ) : !lines.length ? (
-              <Tone tone="A_CONFERIR">
-                ❔ A conferir: ainda sem levantamento de materiais aprovado
-              </Tone>
+              <Tone tone="A_CONFERIR">❔ Nenhum material listado nesta OS</Tone>
             ) : (
               <ul className="space-y-2" data-testid="piece-materials">
                 {lines.map((l) => {
                   const t = lineTone(l);
                   return (
-                    <li
-                      key={l.requirementId}
-                      className="rounded-lg border border-line bg-white p-2"
-                    >
+                    <li key={l.id} className="rounded-lg border border-line bg-white p-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="font-medium">
                           {l.description}
-                          {l.color ? ` · ${l.color}` : ''}
-                          {l.foamDensity ? ` · ${l.foamDensity}` : ''}
+                          {l.quantity !== null
+                            ? ` · ${fmtQty(l.quantity)}${l.unit ? ` ${l.unit}` : ''}`
+                            : ''}
                         </div>
                         <Tone tone={t.tone}>
                           {t.tone === 'DISPONIVEL' ? '✅' : t.tone === 'FALTA' ? '⛔' : '❔'}{' '}
                           {t.text}
                         </Tone>
                       </div>
-                      {(() => {
-                        const ex = explain(l);
-                        const u = UNIT_LABEL[l.unit] ?? l.unit;
-                        return (
-                          <div
-                            className="mt-1 grid grid-cols-2 gap-x-3 text-xs text-ink-soft"
-                            data-testid="material-numbers"
-                          >
-                            <span>
-                              Necessária:{' '}
-                              <b>
-                                {fmtQty(l.need)} {u}
-                              </b>
-                            </span>
-                            <span>
-                              {l.sourcing === 'EXCLUSIVO_OS'
-                                ? 'Compra exclusiva da OS'
-                                : 'Do estoque'}
-                            </span>
-                            {l.sourcing === 'ESTOQUE' ? (
-                              <span>
-                                Reservada p/ esta OS: <b>{fmtQty(l.reserved)}</b>
-                              </span>
-                            ) : (
-                              <span>
-                                Recebida: <b>{fmtQty(l.received)}</b>
-                              </span>
-                            )}
-                            <span>
-                              Comprada a caminho: <b>{fmtQty(l.awaiting)}</b>
-                            </span>
-                            {l.sourcing === 'ESTOQUE' ? (
-                              <span>
-                                Livre p/ reservar: <b>{ex.known ? fmtQty(ex.free) : '—'}</b>
-                              </span>
-                            ) : null}
-                            {l.inDraft > 0 ? (
-                              <span>
-                                Em rascunho de compra: <b>{fmtQty(l.inDraft)}</b>
-                              </span>
-                            ) : null}
-                            {l.covered < l.need - 1e-9 ? (
-                              <span className="col-span-2 text-danger-700">
-                                Restante a comprar:{' '}
-                                <b>
-                                  {fmtQty(ex.toBuy)} {u}
-                                </b>
-                                {ex.pending > 0
-                                  ? ` (já descontada compra de estoque em aberto: ${fmtQty(ex.pending)})`
-                                  : ''}
-                              </span>
-                            ) : null}
-                          </div>
-                        );
-                      })()}
-                      {l.covered < l.need - 1e-9 ? (
+                      {l.notes ? <p className="mt-1 text-xs text-ink-soft">{l.notes}</p> : null}
+                      {!l.available ? (
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          {(() => {
-                            const ex = explain(l);
-                            return ex.toReserve > 0 &&
-                              ex.stockItemId &&
-                              snapshot.canExecuteStock ? (
-                              <button
-                                className="rounded-lg bg-brand-600 px-2 py-1 text-xs font-semibold text-white"
-                                disabled={busy}
-                                data-testid="material-reserve"
-                                onClick={() => reserve(l, ex.toReserve, ex.stockItemId!)}
-                              >
-                                Reservar {fmtQty(ex.toReserve)} do estoque
-                              </button>
-                            ) : null;
-                          })()}
-                          {explain(l).toBuy > 0 ? (
-                            <a
-                              data-testid="material-buy"
-                              className="inline-flex items-center gap-1 rounded-lg bg-bronze-500 px-2 py-1 text-xs font-semibold text-white"
-                              href={cenarioUrl(`/painel/compras/novo?req=${l.requirementId}`)}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <ShoppingCart className="size-3.5" /> Comprar{' '}
-                              {fmtQty(explain(l).toBuy)}
-                            </a>
-                          ) : null}
-                          {l.sourcing === 'ESTOQUE' ? (
-                            <button
-                              className="rounded-lg border border-line-strong px-2 py-1 text-xs font-semibold"
-                              onClick={() => onLocateMaterial(l.description)}
-                            >
-                              Procurar no estoque do mapa
-                            </button>
-                          ) : null}
-                          {l.awaiting > 0 ? (
-                            <a
-                              className="rounded-lg border border-line-strong px-2 py-1 text-xs font-semibold"
-                              href={cenarioUrl('/painel/recebimento-materiais')}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Registrar chegada
-                            </a>
-                          ) : null}
+                          <button
+                            className="rounded-lg border border-line-strong px-2 py-1 text-xs font-semibold"
+                            onClick={() => onLocateMaterial(l.description)}
+                          >
+                            Procurar no estoque do mapa
+                          </button>
                         </div>
                       ) : null}
                     </li>
@@ -712,8 +537,9 @@ export function PiecePanel({
               </ul>
             )}
             {missing.length ? (
-              <p className="mt-2 text-xs text-danger-700">
-                ⛔ {missing.length} material(is) pendente(s) segura(m) as etapas que dependem deles.
+              <p className="mt-2 text-xs text-ink-soft">
+                {missing.length} material(is) ainda não disponível(is). A produção não espera por
+                eles; marque a chegada na OS do Cenário.
               </p>
             ) : null}
           </Section>

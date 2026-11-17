@@ -90,7 +90,7 @@ describe('Firma Viva', () => {
     expect(saved.body.version).toBe(2);
     expect((await b.get('/api/v1/game/agents')).body.map((a: { name: string }) => a.name)).toEqual([
       'Gerente',
-      'Compras',
+      'Financeiro',
     ]);
     // Mapa abre sem empresa; dados da empresa pedem a conexão.
     const snap = await b.get('/api/v1/game/snapshot');
