@@ -117,7 +117,6 @@ function Screen({
       <Card className="overflow-hidden p-0">
         {slot.src ? (
           // Arquivo estático local (CSP: img-src 'self'); sem o otimizador de imagens.
-          // eslint-disable-next-line @next/next/no-img-element
           <>
             {mobileCrop && (
               <div className="aspect-[4/3] overflow-hidden sm:hidden">
@@ -133,6 +132,7 @@ function Screen({
                 />
               </div>
             )}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={slot.src}
               alt={slot.title}

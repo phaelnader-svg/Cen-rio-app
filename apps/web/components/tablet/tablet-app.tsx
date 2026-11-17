@@ -17,6 +17,7 @@ type Status =
   | {
       paired: true;
       device: { id: string; name: string };
+      company?: { tradeName: string | null };
       employees: EmployeeSummaryDto[];
       authenticated: boolean;
     };
@@ -73,7 +74,14 @@ export function TabletApp() {
   const data = status.data;
   if (!data.paired) return <PairingScreen notice={notice} />;
   if (!authenticated) {
-    return <TabletLogin deviceName={data.device.name} employees={data.employees} notice={notice} />;
+    return (
+      <TabletLogin
+        deviceName={data.device.name}
+        companyName={data.company?.tradeName ?? null}
+        employees={data.employees}
+        notice={notice}
+      />
+    );
   }
   if (!meData) {
     return (

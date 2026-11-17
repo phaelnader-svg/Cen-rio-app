@@ -59,7 +59,7 @@ export function PresenceCard({ onDepart }: { onDepart: () => void }) {
         data-testid="presence-card"
         data-state="pending"
       >
-        <p className="text-sm font-semibold tracking-wide text-brand-700 uppercase">
+        <p className="text-base font-semibold text-brand-700">
           Início previsto às {config.workdayStart}
         </p>
         {config.holiday && (

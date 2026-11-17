@@ -159,5 +159,6 @@ export interface PairingCodeDto {
 
 export interface TabletLoginOptionDto {
   device: { id: string; name: string };
+  company?: { tradeName: string | null };
   employees: EmployeeSummaryDto[];
 }

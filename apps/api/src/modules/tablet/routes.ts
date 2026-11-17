@@ -39,9 +39,15 @@ export async function tabletRoutes(app: FastifyInstance) {
       const perms = await loadUserPermissions(prisma, e.user.id);
       if (perms.has('producao.acessar')) allowed.push(toEmployeeSummary(e));
     }
+    // Melhoria 172: a tela de entrar do tablet mostra o nome da tapeçaria.
+    const company = await prisma.companySettings.findUnique({
+      where: { id: device.companyId },
+      select: { tradeName: true },
+    });
     return {
       paired: true as const,
       device: { id: device.id, name: device.name },
+      company: { tradeName: company?.tradeName ?? null },
       employees: allowed,
       authenticated: request.auth?.kind === 'DEVICE',
     };
