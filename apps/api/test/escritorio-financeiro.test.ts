@@ -453,12 +453,13 @@ describe('banco: extrato, pagamento preparado e conciliação', () => {
     ).toBe(409);
     expect(await db().payablePayment.count({ where: { payableId } })).toBe(1);
 
-    // Maquininha: bruto, taxa, líquido; previsão da semana.
+    // Maquininha: bruto, taxa, líquido; previsão da semana (daqui a 2 dias, para não vencer).
+    const ahead = new Date(Date.now() + 2 * 86_400_000);
+    const prev = `${String(ahead.getUTCDate()).padStart(2, '0')}/${String(ahead.getUTCMonth() + 1).padStart(2, '0')}/${ahead.getUTCFullYear()}`;
     const card = (
       await post(admin, '/api/v1/office/card/import', {
         provider: 'Stone',
-        content:
-          'data;bruto;taxa;liquido;parcelas;previsao\n15/11/2026;1.000,00;-31,90;968,10;1;16/11/2026\n',
+        content: `data;bruto;taxa;liquido;parcelas;previsao\n15/11/2026;1.000,00;-31,90;968,10;1;${prev}\n`,
       })
     ).body as { imported: number };
     expect(card.imported).toBe(1);

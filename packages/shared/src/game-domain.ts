@@ -1038,6 +1038,17 @@ export function materialTone(readiness: string | null | undefined): MaterialTone
     return 'A_CONFERIR';
   return 'FALTA';
 }
+/**
+ * Situação do material a partir da lista simples da OS (o que o gestor marcou como comprado e
+ * como já na oficina). Sem lista: "sem levantamento" (a conferir), nunca "falta".
+ */
+export function listReadiness(lines: { purchased: boolean; available: boolean }[]): string {
+  if (!lines.length) return 'SEM_LEVANTAMENTO';
+  const here = lines.filter((l) => l.available).length;
+  if (here === lines.length) return 'COMPLETO';
+  if (here > 0) return 'PARCIALMENTE_DISPONIVEL';
+  return lines.every((l) => l.purchased) ? 'AGUARDANDO_RECEBIMENTO' : 'AGUARDANDO_COMPRA';
+}
 export const MATERIAL_TONE_LABEL: Record<MaterialTone, string> = {
   FALTA: 'Material faltante',
   DISPONIVEL: 'Material disponível',

@@ -1,5 +1,6 @@
 import { EVENT_TYPES, audienceAllows, eventsSinceSchema, syncSignalSchema } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
+import type { AuthContext } from '../../core/types';
 import { actorFrom } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { toRealtimeEvent } from '../../core/realtime/serialize';
@@ -79,6 +80,17 @@ export async function syncRoutes(app: FastifyInstance) {
   app.get('/api/sync/events', { config: { access: { session: 'any' } } }, async (request) => {
     const q = eventsSinceSchema.parse(request.query);
     const auth = request.auth!;
+    const result = await readEvents(q, auth);
+    if (result.events.length || result.hasMore || !q.wait) return result;
+    // Consulta longa: nada novo agora → espera o próximo evento da empresa (ou o tempo acabar).
+    const abort = new AbortController();
+    request.raw.once('close', () => abort.abort());
+    const woke = await hub.waitForCompanyEvent(auth.companyId, q.wait * 1000, abort.signal);
+    if (!woke || abort.signal.aborted) return result;
+    return readEvents({ ...q, since: result.nextSince }, auth);
+  });
+
+  async function readEvents(q: { since: string; limit: number }, auth: AuthContext) {
     const page: Awaited<ReturnType<typeof prisma.domainEvent.findMany>> = [];
     let next = BigInt(q.since);
     let scanned = 0;
@@ -110,5 +122,5 @@ export async function syncRoutes(app: FastifyInstance) {
       hasMore: !exhausted,
       nextSince: next.toString(),
     };
-  });
+  }
 }

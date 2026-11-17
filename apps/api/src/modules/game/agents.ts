@@ -28,12 +28,14 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { Errors } from '../../lib/errors';
 import { idParams } from '../presenters';
+import { type AgentAnswer, integrationPendingAnswer, managerAnswer } from './agent-engines';
 import {
-  type AgentAnswer,
-  integrationPendingAnswer,
-  managerAnswer,
+  approveWhatsApp,
+  customAnswer,
+  financeAnswer,
   purchasingAnswer,
-} from './agent-engines';
+  quotesAnswer,
+} from './agent-office';
 import { requireConnection } from '../integrations/connections';
 import { updateDailyBudget } from '../integrations/meta';
 import { PROVIDERS, missingEnv } from '../integrations/registry';
@@ -80,11 +82,7 @@ async function integrations(prisma: PrismaClient): Promise<IntegrationDto[]> {
 }
 
 const engineOf = (a: AiAgent): AgentDto['engine'] =>
-  ['GERENTE', 'COMPRAS', 'ATENDIMENTO', 'MARKETING', 'TRAFEGO', 'DOCUMENTOS'].includes(a.roleKey)
-    ? 'DADOS_CENARIO'
-    : a.roleKey === 'PERSONALIZADA'
-      ? 'INSTRUCOES'
-      : 'AGUARDANDO_INTEGRACAO';
+  a.roleKey === 'PERSONALIZADA' ? 'INSTRUCOES' : 'DADOS_CENARIO';
 
 type TrackRows = { agentId: string; kind: string; status: string; _count: { _all: number } }[];
 
@@ -212,6 +210,26 @@ async function answer(
   if (channel) return channel;
   if (agent.roleKey === 'GERENTE') return managerAnswer(ctx, question);
   if (agent.roleKey === 'COMPRAS') return purchasingAnswer(ctx, question);
+  if (agent.roleKey === 'FINANCEIRO') return financeAnswer(ctx, question);
+  if (agent.roleKey === 'ORCAMENTOS') return quotesAnswer(ctx, question);
+  if (agent.roleKey === 'PERSONALIZADA')
+    return customAnswer(ctx, agent, question, async (scope) => {
+      // Os mesmos textos que os agentes de cada área leem (com as permissões de quem pergunta).
+      if (scope === 'producao') return (await managerAnswer(ctx, '')).content;
+      if (scope === 'financeiro') return (await financeAnswer(ctx, '')).content;
+      if (scope === 'compras') return (await purchasingAnswer(ctx, '')).content;
+      if (scope === 'orcamentos') return (await quotesAnswer(ctx, '')).content;
+      if (scope === 'whatsapp' || scope === 'instagram') {
+        const c = await channelAgentAnswer(
+          prisma,
+          { ...agent, roleKey: 'ATENDIMENTO' },
+          permissions,
+          scope,
+        );
+        return c?.content ?? null;
+      }
+      return null;
+    });
   const t = AGENT_TEMPLATES.find((x) => x.roleKey === agent.roleKey);
   const pending = (await integrations(prisma)).filter(
     (i) => t?.integrations.includes(i.key) && i.status === 'PRECISA_CONFIGURAR',
@@ -544,9 +562,21 @@ export async function gameAgentRoutes(app: FastifyInstance) {
             },
           });
         }
+        // Mensagens pelo WhatsApp: com a empresa conectada, saem pelo número dela; senão o dono
+        // envia pelo link com o texto pronto (que volta na resposta).
+        let payload: Prisma.InputJsonValue | undefined;
+        if (
+          input.decision !== 'REJEITAR' &&
+          (p.payload as Record<string, unknown> | null)?.channel === 'WHATSAPP'
+        ) {
+          const r = await approveWhatsApp(tx, request.auth!.permissions, actor, p, input.edits);
+          status = r.status;
+          payload = r.payload as Prisma.InputJsonValue;
+        }
         const u = await tx.aiAgentProposal.update({
           where: { id },
           data: {
+            ...(payload ? { payload } : {}),
             status,
             decidedById: actor.userId,
             decidedAt: new Date(),

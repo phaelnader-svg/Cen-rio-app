@@ -12,6 +12,7 @@ import {
   type GameTaskRef,
   formatServiceOrderItemCode,
   furnitureModel,
+  listReadiness,
   materialTone,
   placePiece,
 } from '@cenario/shared';
@@ -66,6 +67,10 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
             },
           },
           productionPlanItems: { select: { id: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+          simpleMaterials: {
+            where: { removedAt: null },
+            select: { purchased: true, available: true },
+          },
         },
         orderBy: [{ priority: 'desc' }, { number: 'asc' }],
         take: 300,
@@ -158,8 +163,9 @@ export async function gameSnapshotRoutes(app: FastifyInstance) {
             priority: so.priority,
             promisedDate: so.promisedDate?.toISOString().slice(0, 10) ?? null,
             stage: item.fulfillmentStage,
-            readiness: so.materialsReadiness,
-            tone: materialTone(so.materialsReadiness),
+            // Lista simples de materiais da OS (comprado / na oficina), não o processo antigo.
+            readiness: listReadiness(so.simpleMaterials),
+            tone: materialTone(listReadiness(so.simpleMaterials)),
             upholstererUserId: item.upholstererUserId,
             upholstererName: item.upholsterer?.displayName ?? null,
             planned: so.productionPlanItems.length > 0,

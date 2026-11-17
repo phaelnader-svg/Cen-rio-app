@@ -175,6 +175,7 @@ export const AGENT_DATA_SCOPES = [
   'whatsapp',
   'instagram',
   'fiscal',
+  'orcamentos',
 ] as const;
 export const AGENT_ACTIONS = [
   'atribuir_tarefa',
@@ -185,6 +186,8 @@ export const AGENT_ACTIONS = [
   'registrar_pagamento',
   'emitir_nota',
   'preparar_orcamento',
+  'pedir_fornecedor',
+  'cobrar_cliente',
 ] as const;
 export const AGENT_POLICY = ['NUNCA', 'PROPOR', 'EXECUTAR_APROVADO'] as const;
 
@@ -213,10 +216,35 @@ export const agentMessageSchema = z.object({ content: z.string().trim().min(1).m
 export const decideProposalSchema = z.object({
   decision: z.enum(['APROVAR', 'REJEITAR']),
   note: z.string().trim().max(500).optional(),
+  /** Ajustes do dono antes de aprovar uma mensagem (pedido ao fornecedor, cobrança, aviso). */
+  edits: z
+    .object({
+      text: z.string().trim().min(1).max(4000).optional(),
+      supplierId: idSchema.optional(),
+    })
+    .optional(),
 });
 
 export const stockMoveSchema = z.object({
   fromSlotId: idSchema.nullable(),
   toSlotId: idSchema,
   stockItemId: idSchema,
+});
+
+/** Fornecedor (cadastro do escritório do jogo, usado pelo agente de Compras). */
+export const supplierSchema = z.object({
+  name: name(160),
+  contactName: z.string().trim().max(120).nullable().optional(),
+  /** WhatsApp do fornecedor. */
+  phone: z.string().trim().max(30).nullable().optional(),
+  email: z.string().trim().max(160).nullable().optional(),
+  categories: z
+    .array(z.enum(['TECIDO', 'ESPUMA', 'OUTRO']))
+    .max(3)
+    .default([]),
+  notes: z.string().trim().max(1000).nullable().optional(),
+});
+export const updateSupplierSchema = supplierSchema.partial().extend({
+  version: versionSchema,
+  active: z.boolean().optional(),
 });
