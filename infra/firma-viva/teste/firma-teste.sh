@@ -283,7 +283,7 @@ cd $DIR
 umask 077
 echo "  • gravando o endereço do Cenário de $rotulo"
 sed -i '/^FIRMA_CENARIO_API_URL=/d; /^FIRMA_CENARIO_WEB_URL=/d; /^FIRMA_CENARIO_SCOPES=/d; /^FIRMA_CENARIO_SEGREDO_PRODUCAO=/d; /^FIRMA_CENARIO_COOKIE=/d' .env
-printf '%s\n' "FIRMA_CENARIO_API_URL=$cen" "FIRMA_CENARIO_WEB_URL=$cen" "FIRMA_CENARIO_SCOPES=${FIRMA_CENARIO_SCOPES:-jogo operacao escritorio}" "FIRMA_CENARIO_SEGREDO_PRODUCAO=$seg" "FIRMA_CENARIO_COOKIE=$cookie" >> .env
+printf '%s\n' "FIRMA_CENARIO_API_URL=$cen" "FIRMA_CENARIO_WEB_URL=$cen" "FIRMA_CENARIO_SCOPES=${FIRMA_CENARIO_SCOPES:-jogo,operacao,escritorio}" "FIRMA_CENARIO_SEGREDO_PRODUCAO=$seg" "FIRMA_CENARIO_COOKIE=$cookie" >> .env
 # Conexões antigas apontavam para outro Cenário: ficam desconectadas (tokens apagados).
 $DC exec -T postgres psql -U app -d firma_viva -qc "UPDATE cenario_connections SET status='DESCONECTADA', access_enc=NULL, refresh_enc=NULL, access_expires_at=NULL, last_error='Trocado para o Cenário Gestão de $rotulo: conecte de novo.' WHERE status <> 'DESCONECTADA'" </dev/null
 echo "  • reconstruindo o Firma Viva para o novo endereço (~3 min)"
