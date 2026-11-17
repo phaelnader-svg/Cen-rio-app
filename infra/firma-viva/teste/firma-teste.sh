@@ -286,10 +286,18 @@ ligar_cenario() {
 set -eu
 export FIRMA_SEG='$seg'
 cd /opt/cenario
-docker compose -f infra/prod/docker-compose.prod.yml --env-file /run/cenario/env exec -T -e FIRMA_SEG api \
-  pnpm --silent --filter @cenario/api app-client -- --id firma-viva --name "Firma Viva" \
-  --scopes jogo,operacao,escritorio --secret-env FIRMA_SEG \
-  --redirect "https://$DOMAIN/api/conexoes/cenario/retorno" </dev/null
+# Só node:crypto (instantâneo) e psql: nada é compilado no servidor de produção.
+echo "  • calculando a chave no servidor do Cenário"
+h="\$(timeout 90 docker compose -f infra/prod/docker-compose.prod.yml --env-file /run/cenario/env exec -T -e FIRMA_SEG api \
+  node -e 'process.stdout.write(require("crypto").createHmac("sha256",process.env.TOKEN_HASH_SECRET).update(process.env.FIRMA_SEG).digest("hex"))' </dev/null)"
+[ "\${#h}" -eq 64 ] || { echo "Não consegui calcular a chave no servidor do Cenário." >&2; exit 1; }
+echo "  • gravando o cadastro do aplicativo"
+timeout 90 docker compose -f infra/prod/docker-compose.prod.yml --env-file /run/cenario/env exec -T postgres \
+  psql -q -U cenario -d cenario_prod -v ON_ERROR_STOP=1 -c "INSERT INTO oauth_clients (id, client_id, name, secret_hash, redirect_uris, allowed_scopes, active, created_at, updated_at)
+  VALUES (gen_random_uuid(), 'firma-viva', 'Firma Viva', '\$h', ARRAY['https://$DOMAIN/api/conexoes/cenario/retorno'], ARRAY['jogo','operacao','escritorio'], true, now(), now())
+  ON CONFLICT (client_id) DO UPDATE SET name = EXCLUDED.name, secret_hash = EXCLUDED.secret_hash, redirect_uris = EXCLUDED.redirect_uris,
+  allowed_scopes = EXCLUDED.allowed_scopes, active = true, updated_at = now();" </dev/null
+echo "  • Firma Viva cadastrado no Cenário de produção"
 PROD
   else
     read -rs -p "Cole o segredo do aplicativo firma-viva gerado nesse Cenário (não aparece na tela): " seg
