@@ -30,9 +30,10 @@ async function freePort(): Promise<number> {
   });
 }
 
-function get(port: number, path: string): Promise<http.IncomingMessage> {
+function get(port: number, path: string, host?: string): Promise<http.IncomingMessage> {
   return new Promise((ok, fail) => {
-    const req = http.request({ host: '127.0.0.1', port, path }, (res) => {
+    const headers = host ? { host } : undefined;
+    const req = http.request({ host: '127.0.0.1', port, path, headers }, (res) => {
       res.resume();
       res.on('end', () => ok(res));
     });
@@ -50,6 +51,8 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
     ...process.env,
     PROD_DOMAIN: `http://127.0.0.1:${port}`,
     PROD_DOMAIN_WWW: `http://www.localhost:${port}`,
+    // Página de status (melhoria 100) na mesma porta, por nome; o padrão (porta 80) não abre aqui.
+    PROD_STATUS_DOMAIN: `http://status.localhost:${port}`,
     XDG_DATA_HOME: dir,
     XDG_CONFIG_HOME: dir,
     ...extra,
@@ -128,6 +131,21 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
       // Os demais cabeçalhos de segurança continuam.
       expect(r.headers['x-content-type-options'], path).toBe('nosniff');
       expect(r.headers['referrer-policy'], path).toBe('strict-origin-when-cross-origin');
+    }
+  });
+
+  it('o endereço da página de status só mostra a página de status', async () => {
+    const host = `status.localhost:${port}`;
+    for (const path of ['/', '/status', '/api/public/status', '/api/public/aviso', '/_next/x.js']) {
+      const r = await get(port, path, host);
+      expect(r.statusCode, path).toBe(200);
+      expect(r.headers['x-robots-tag'], path).toBe('noindex, nofollow');
+      expect(r.headers['x-content-type-options'], path).toBe('nosniff');
+    }
+    for (const path of ['/painel', '/api/health', '/api/v1/me', '/entrar']) {
+      const r = await get(port, path, host);
+      expect(r.statusCode, path).toBe(302);
+      expect(r.headers.location, path).toBe('/');
     }
   });
 });
