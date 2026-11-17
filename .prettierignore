@@ -14,3 +14,5 @@ storage-e2e
 # Medições de geometria geradas pelo E2E (tests/e2e/specs/zz-geometria.spec.ts grava com
 # JSON.stringify): artefato de evidência, não código-fonte. Só este nome de arquivo, só aqui.
 docs/evidencias/**/geometria.json
+packages/firma-db/prisma/migrations
+packages/firma-db/generated
