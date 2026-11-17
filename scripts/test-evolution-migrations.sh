@@ -48,7 +48,7 @@ DOWNS=(20261230000000_modelos_simplificados 20261228000000_titular_mao_de_obra_p
 # Última migration da Evolução (recorte das etapas 3–4).
 EVOLUTION_LAST=20261230000000_modelos_simplificados
 # Posteriores à Evolução com reversão própria (a mais recente primeiro). Sem dados novos.
-LATE_DOWNS=(20270622000000_jogo_quadro_metas 20270615000000_jogo_propostas_obsoletas 20270608000000_conexoes_escritorio 20270601000000_jogo_gestao 20270413000000_orcamentos 20270406000000_retirada_mostruario_maquininha 20270330000000_autorizacao_aplicativos
+LATE_DOWNS=(20270715000000_multi_empresa_etapa4 20270708000000_multi_empresa_etapa3 20270701000000_multi_empresa_etapa2 20270622000000_jogo_quadro_metas 20270615000000_jogo_propostas_obsoletas 20270608000000_conexoes_escritorio 20270601000000_jogo_gestao 20270413000000_orcamentos 20270406000000_retirada_mostruario_maquininha 20270330000000_autorizacao_aplicativos
   20270323000000_reformulacao_fase_3 20270316000000_reformulacao_fase_2 20270309000000_materiais_estoque_entrega 20270302000000_modulos_configuraveis 20270223000000_custo_operacional_equipe_propria 20270216000000_notificacoes_resolvidas
   20270209000000_presenca_apoio_simplificados 20270202000000_negociacao_confirmacao_semanal
   20270126000000_meus_ganhos_permissao 20270119000000_cobranca_cliente
@@ -88,8 +88,12 @@ columns() {
 }
 # A imagem postgres do CI expõe `pg_attver` (versão interna da coluna) como opção de
 # coluna no pg_dump; muda a cada recriação de tabela e não é estrutura: fica fora da comparação.
-schema_dump() { pg_dump -s "$URL" | grep -v '^\\restrict\|^\\unrestrict\|^$\|SET (pg_attver=[0-9]*);$'; }
+# Multi-empresa: a API cria e autoriza o papel `cenario_app` ao subir (etapa `read`); concessões não
+# são estrutura do schema e ficam fora (--no-privileges).
+schema_dump() { pg_dump -s --no-privileges "$URL" | grep -v '^\\restrict\|^\\unrestrict\|^$\|SET (pg_attver=[0-9]*);$'; }
 indexes() { q "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' ORDER BY 1"; }
+# Definição do índice sem o nome (para achar o substituto equivalente com outro nome).
+index_defs() { q "SELECT indexname || '|' || regexp_replace(indexdef, ' INDEX \\S+ ON ', ' INDEX ON ') FROM pg_indexes WHERE schemaname = 'public' ORDER BY 1"; }
 
 step "1. Código legado ($LEGACY_REF) e banco gerado por ele"
 git -C "$ROOT" worktree add -f "$LEGACY" "$LEGACY_REF" > /dev/null
@@ -131,7 +135,7 @@ tpl_rows() {
 }
 TPL_BEFORE="$(tpl_rows)"
 BEFORE="$(snapshot "$COLS_RP")"
-IDX_BEFORE="$(indexes)"
+IDX_BEFORE="$(indexes)"; IDX_DEFS_BEFORE="$(index_defs)"
 SCHEMA_BEFORE="$(schema_dump)"
 echo "tabelas fotografadas: $(echo "$BEFORE" | wc -l)"
 
@@ -197,12 +201,31 @@ echo "✔ schema idêntico ao legado (pg_dump -s) e dados idênticos"
 step "5. Cadeia completa (todas as migrations) sobre o legado"
 ( cd "$ROOT/packages/db" && DATABASE_URL="$URL" pnpm exec prisma migrate deploy 2>&1 | grep -E 'Applying|applied|Error' )
 check_legacy_preserved "cadeia completa"
-check_indexes
+# Multi-empresa (20270701000000_multi_empresa_etapa2): cada regra única legada passa a valer POR
+# EMPRESA. O índice legado só pode sumir se existir o substituto com a MESMA definição (mesma tabela,
+# mesmas colunas e mesmo filtro), com `company_id` como primeira coluna.
+check_indexes_multi_empresa() {
+  local missing name def want now_defs bad=""
+  missing="$(comm -23 <(echo "$IDX_BEFORE") <(indexes) | comm -23 - <(echo "$REPLACED" | sort))"
+  now_defs="$(index_defs | cut -d'|' -f2-)"
+  while IFS= read -r name; do
+    [[ -z "$name" ]] && continue
+    def="$(awk -F'|' -v n="$name" '$1 == n' <<< "$IDX_DEFS_BEFORE" | cut -d'|' -f2-)"
+    want="${def/USING btree (/USING btree (company_id, }"
+    grep -qxF "$want" <<< "$now_defs" || bad+="$name "
+  done <<< "$missing"
+  [[ -z "$bad" ]] || { echo "✖ Índices legados removidos sem substituição documentada: $bad" >&2; exit 1; }
+  echo "✔ índices legados preservados ou substituídos pelo equivalente por empresa ($(echo "$missing" | grep -c . || true) por empresa); novos: $(comm -13 <(echo "$IDX_BEFORE") <(indexes) | wc -l)"
+}
+check_indexes_multi_empresa
 echo "migrations aplicadas: $(q 'SELECT count(*) FROM _prisma_migrations WHERE finished_at IS NOT NULL')"
 ( cd "$ROOT/apps/api" && MIGRATION_CHECK_STEP=read TEST_DATABASE_URL="$URL" DATABASE_URL="$URL" \
     CHECKPOINT_DISABLE=1 npx vitest run --config vitest.migration.config.ts 2>&1 | grep -E 'MIGRACAO|✓|×|Tests|Error' )
 # Reversão e reaplicação das posteriores que têm .down.sql (sem dados novos).
-FULL_SCHEMA="$(schema_dump)"; FULL_DATA="$(snapshot "$(columns)")"
+# Multi-empresa (etapa 4): company_settings.created_at é a data em que a coluna nasce (a da própria
+# migration); ao reaplicar ganha a data nova, por desenho. Fica fora só nesta comparação.
+late_columns() { columns | sed -E 's/^(company_settings\|.*),created_at(,|$)/\1\2/'; }
+FULL_SCHEMA="$(schema_dump)"; FULL_DATA="$(snapshot "$(late_columns)")"
 # Rodada 4: fotografia das colunas legadas logo antes de reverter (o `read` acima já gravou sessão
 # e auditoria do login — dados legítimos que a reversão também não pode tocar).
 PRE_LATE="$(snapshot "$COLS_RP")"; PRE_LATE_TPL="$(tpl_rows)"
@@ -227,8 +250,9 @@ echo "✔ posteriores revertidas: schema idêntico ao da Evolução ($(q 'SELECT
 ( cd "$ROOT/packages/db" && DATABASE_URL="$URL" pnpm exec prisma migrate deploy > /dev/null 2>&1 )
 diff <(echo "$FULL_SCHEMA") <(schema_dump) > "$WORK/late.diff" \
   || { cat "$WORK/late.diff" >&2; echo "✖ Schema difere após reverter e reaplicar as posteriores" >&2; exit 1; }
-[[ "$(snapshot "$(columns)" | grep -v '^_prisma_migrations|')" == "$(echo "$FULL_DATA" | grep -v '^_prisma_migrations|')" ]] \
-  || { echo "✖ Dados diferem após reverter e reaplicar as posteriores" >&2; exit 1; }
+REAPPLIED="$(snapshot "$(late_columns)" | grep -v '^_prisma_migrations|')"
+[[ "$REAPPLIED" == "$(echo "$FULL_DATA" | grep -v '^_prisma_migrations|')" ]] \
+  || { diff <(echo "$FULL_DATA" | grep -v '^_prisma_migrations|') <(echo "$REAPPLIED") >&2 || true; echo "✖ Dados diferem após reverter e reaplicar as posteriores" >&2; exit 1; }
 echo "✔ posteriores revertidas e reaplicadas: schema e dados idênticos"
 
 step "6. Cria dados novos e prova a RECUSA de cada rollback (Evolução e posteriores)"
