@@ -277,17 +277,19 @@ ligar_cenario() {
   read -rs -p "Cole o segredo do aplicativo firma-viva gerado nesse Cenário (não aparece na tela): " seg
   echo
   [[ ${#seg} -ge 32 && "$seg" =~ ^[A-Za-z0-9_-]+$ ]] || die "Segredo inválido (copie de novo do Cenário)."
-  run_vm <<FIM
+  run_vm <<FIM || die "A ligação parou no meio (veja a mensagem acima). Nada foi trocado no Cenário; rode o mesmo comando de novo."
 set -eu
 cd $DIR
 umask 077
+echo "  • gravando o endereço do Cenário de $rotulo"
 sed -i '/^FIRMA_CENARIO_API_URL=/d; /^FIRMA_CENARIO_WEB_URL=/d; /^FIRMA_CENARIO_SCOPES=/d; /^FIRMA_CENARIO_SEGREDO_PRODUCAO=/d; /^FIRMA_CENARIO_COOKIE=/d' .env
 printf '%s\n' "FIRMA_CENARIO_API_URL=$cen" "FIRMA_CENARIO_WEB_URL=$cen" "FIRMA_CENARIO_SCOPES=${FIRMA_CENARIO_SCOPES:-jogo operacao escritorio}" "FIRMA_CENARIO_SEGREDO_PRODUCAO=$seg" "FIRMA_CENARIO_COOKIE=$cookie" >> .env
 # Conexões antigas apontavam para outro Cenário: ficam desconectadas (tokens apagados).
 $DC exec -T postgres psql -U app -d firma_viva -qc "UPDATE cenario_connections SET status='DESCONECTADA', access_enc=NULL, refresh_enc=NULL, access_expires_at=NULL, last_error='Trocado para o Cenário Gestão de $rotulo: conecte de novo.' WHERE status <> 'DESCONECTADA'"
+echo "  • reconstruindo o Firma Viva para o novo endereço (~3 min)"
 $DC build firma-web
 $DC up -d firma-api firma-web
-sleep 8
+for i in \$(seq 1 30); do $DC exec -T firma-api node -e "fetch('http://127.0.0.1:4100/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1 && break; sleep 2; done
 # Prova sem efeito: o Cenário reconhece o aplicativo e o segredo (concessão desconhecida → 400;
 # segredo errado seria 401). Nada é criado no Cenário.
 $DC exec -T firma-api node -e "fetch(process.env.CENARIO_API_URL+'/api/oauth/token',{method:'POST',headers:Object.assign({'content-type':'application/json'},process.env.FIRMA_CENARIO_COOKIE?{cookie:process.env.FIRMA_CENARIO_COOKIE}:{}),body:JSON.stringify({grant_type:'conferencia',client_id:process.env.FIRMA_CENARIO_CLIENT_ID,client_secret:process.env.FIRMA_CENARIO_CLIENT_SECRET})}).then(async r=>{const b=await r.json().catch(()=>({}));if(r.status===400&&b.error==='unsupported_grant_type'){console.log('  ✔ o Cenário reconhece o aplicativo e o segredo');process.exit(0)}console.log('  ✖ Cenário respondeu '+r.status+' '+(b.error||'')+': confira o cadastro e o segredo');process.exit(1)}).catch(e=>{console.log('  ✖ sem acesso ao Cenário: '+e.message);process.exit(1)})"
