@@ -74,6 +74,9 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     await expect(page.getByLabel(`Responsável de ${prep}`)).not.toHaveValue('');
     await page.getByLabel(`Hora de ${prep}`).fill('00:00');
     await expect(page.getByLabel(`Hora de ${prep}`)).toHaveValue('00:00');
+    // Hora fixa no início do dia: com a hora padrão, de madrugada o corte ficaria "Programada".
+    await page.getByLabel(`Hora de Corte de tecido — ${sofa}`).fill('00:00');
+    await expect(page.getByLabel(`Hora de Corte de tecido — ${sofa}`)).toHaveValue('00:00');
 
     await page.getByLabel('Incluir etapa').first().selectOption({ label: 'Revestimento' });
     await page.getByRole('button', { name: 'Incluir', exact: true }).first().click();
