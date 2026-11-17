@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import { CANCEL_REASONS, SUPPORT_ACCESS_HOURS } from '@cenario/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, LifeBuoy, PauseCircle } from 'lucide-react';
@@ -61,7 +62,7 @@ export function SupportAccessCard() {
           >
             {SUPPORT_ACCESS_HOURS.map((h) => (
               <option key={h} value={h}>
-                {h < 24 ? `${h} horas` : `${h / 24} dia(s)`}
+                {h < 24 ? `${h} horas` : `${plural(h / 24, 'dia', 'dias')}`}
               </option>
             ))}
           </SelectField>

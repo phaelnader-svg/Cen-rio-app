@@ -130,7 +130,7 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       const entry1 = page.getByTestId(`plan-entry-${one.code}`);
       await entry1.getByTestId('plan-start').fill(START);
       await entry1.locator('select').first().selectOption({ label: 'Ricardo' });
-      await expect(page.getByTestId('plan-summary')).toContainText('Ricardo: 1 peça(s)');
+      await expect(page.getByTestId('plan-summary')).toContainText('Ricardo: 1 peça');
       await shot(page, '02-planejar-servico');
       await page.getByTestId('plan-submit').click();
       await expect(row1).toHaveCount(0); // saiu de "A planejar"
@@ -143,7 +143,7 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       const owners = entry2.locator('select');
       await owners.nth(0).selectOption({ label: 'Ricardo' });
       await owners.nth(1).selectOption({ label: 'Márcio' });
-      await expect(page.getByTestId('plan-summary')).toContainText('Márcio: 1 peça(s)');
+      await expect(page.getByTestId('plan-summary')).toContainText('Márcio: 1 peça');
       await shot(page, '03-planejar-lote-dois-sofas');
       await page.getByTestId('plan-submit').click();
       await expect(row2).toHaveCount(0);

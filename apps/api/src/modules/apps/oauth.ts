@@ -7,6 +7,7 @@
  * (com o verificador PKCE e o segredo do cliente) por um token de acesso curto e um token de
  * renovação. Aqui guardamos apenas hashes. Revogar encerra a concessão e a sessão ligada a ela.
  */
+import { plural } from '@cenario/shared';
 import {
   APP_ACCESS_TTL_SECONDS,
   APP_CODE_TTL_SECONDS,
@@ -610,7 +611,7 @@ export async function oauthRoutes(app: FastifyInstance) {
           action: 'app.client_deactivated',
           entityType: 'oauth_client',
           entityId: c.id,
-          summary: `Aplicativo ${c.name} desativado; ${grants.length} autorização(ões) revogada(s).`,
+          summary: `Aplicativo ${c.name} desativado; ${plural(grants.length, 'autorização revogada', 'autorizações revogadas')}.`,
         });
       });
       return { ok: true };

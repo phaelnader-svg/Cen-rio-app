@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type {
   MyQueueDto,
   NotificationDto,
@@ -97,7 +98,7 @@ export function NotificationsButton({ onClick }: { onClick: () => void }) {
       size="lg"
       onClick={onClick}
       data-testid="notifications-button"
-      aria-label={`Avisos: ${unread} não lido(s)`}
+      aria-label={`Avisos: ${plural(unread, 'não lido', 'não lidos')}`}
       icon={<Bell className="size-5" aria-hidden />}
     >
       Avisos
@@ -147,7 +148,7 @@ export function MyDay({
           label="Em execução"
           empty={
             paused.length
-              ? `${paused.length} tarefa(s) pausada(s) — retome quando puder.`
+              ? `${plural(paused.length, 'tarefa pausada', 'tarefas pausadas')} — retome quando puder.`
               : 'Nenhuma tarefa em execução agora.'
           }
           task={current ?? paused[0]}
@@ -232,7 +233,7 @@ function QueueSection({ queue, onOpen }: { queue: MyQueueDto; onOpen: (id: strin
       <p className="mb-3 text-base text-ink-muted">
         Siga a ordem: conclua uma e toque em Iniciar na próxima.
         {queue.blockedAhead > 0 &&
-          ` ${queue.blockedAhead} tarefa(s) à frente aguardando desbloqueio (mantêm o lugar).`}
+          ` ${plural(queue.blockedAhead, 'tarefa', 'tarefas')} à frente aguardando desbloqueio (mantêm o lugar).`}
       </p>
       <ol className="grid gap-4 lg:grid-cols-2">
         {queue.items.map((e) => {
@@ -1018,7 +1019,7 @@ function PhotoPicker({
       </Button>
       {count > 0 && (
         <span className="text-base font-semibold text-ok-600" data-testid="photos-attached">
-          {count} foto(s) anexada(s)
+          {plural(count, 'foto anexada', 'fotos anexadas')}
         </span>
       )}
     </div>
@@ -1290,7 +1291,8 @@ export function NotificationsInbox({ onOpenTask }: { onOpenTask: (id: string) =>
       {error && <Alert tone="danger">{error}</Alert>}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-base text-ink-muted">
-          {q.data.unread} não lido(s) · {q.data.items.length} aviso(s) recente(s)
+          {plural(q.data.unread, 'não lido', 'não lidos')} ·{' '}
+          {plural(q.data.items.length, 'aviso recente', 'avisos recentes')}
         </p>
         <Button
           size="lg"

@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { FabricRollDto, InventoryCategoryDto, InventoryItemDto } from '@cenario/shared';
 import { formatCents } from '@cenario/shared';
 import { Archive, ArchiveRestore, History, Plus, Trash2 } from 'lucide-react';
@@ -392,7 +393,8 @@ function ItemRow({ item: i, manage }: { item: InventoryItemDto; manage: boolean 
           <span className="text-lg font-semibold">{qty(i.quantity)}</span> {i.unit}
           {i.rollMeters !== null && (
             <span className="ml-2 text-xs text-ink-muted">
-              ({qty(i.rollMeters)} m em {i.rolls.filter((r) => !r.archived).length} rolo(s))
+              ({qty(i.rollMeters)} m em{' '}
+              {plural(i.rolls.filter((r) => !r.archived).length, 'rolo', 'rolos')})
             </span>
           )}
         </p>

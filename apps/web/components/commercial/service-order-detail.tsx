@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type {
   Permission,
   Priority,
@@ -311,7 +312,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                     'A definir'
                   )}
                 </Detail>
-                <Detail label="Peças">{`${s.pieceCount} peça(s) em ${s.itemCount} item(ns)`}</Detail>
+                <Detail label="Peças">{`${plural(s.pieceCount, 'peça', 'peças')} em ${plural(s.itemCount, 'item', 'itens')}`}</Detail>
                 <div className="sm:col-span-2">
                   <Detail label="Instruções técnicas">{s.technicalInstructions}</Detail>
                 </div>
@@ -337,7 +338,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                   state={s.readiness.simpleMaterialsPending > 0 ? 'INFORMATIVO' : 'OK'}
                   hint={
                     s.readiness.simpleMaterialsPending > 0
-                      ? `Aviso: ${s.readiness.simpleMaterialsPending} material(is) da lista ainda não está(ão) na oficina. Não impede o início.`
+                      ? `Aviso: ${plural(s.readiness.simpleMaterialsPending, 'material da lista ainda não está', 'materiais da lista ainda não estão')} na oficina. Não impede o início.`
                       : 'Materiais informados na aba Materiais. Não impedem o início da produção.'
                   }
                 />

@@ -6,6 +6,7 @@
  *
  * Nenhuma ação é executada aqui: o agente devolve PROPOSTAS (pendentes de aprovação).
  */
+import { plural } from '@cenario/shared';
 import { requireCompanyId } from '../../core/tenant';
 import {
   type AgentReference,
@@ -110,7 +111,7 @@ export async function managerAnswer(ctx: AgentContext, question: string): Promis
     const waiting = mine.filter((t) => ['PROGRAMADA', 'BLOQUEADA'].includes(t.status)).length;
     const minutes = mine.reduce((s, t) => s + (t.estimatedMinutes ?? 0), 0);
     out.push(
-      `• ${p.displayName}: ${run ? `${run.status === 'PAUSADA' ? 'pausado em' : 'fazendo'} ${run.title} (${serviceOrderCode(run.serviceOrder.number)}${run.serviceOrderItem ? `/${run.serviceOrderItem.position}` : ''})` : 'sem tarefa iniciada'}; fila: ${ready} pronta(s), ${waiting} aguardando${minutes ? `, ~${Math.round(minutes / 60)} h estimadas` : ''}.`,
+      `• ${p.displayName}: ${run ? `${run.status === 'PAUSADA' ? 'pausado em' : 'fazendo'} ${run.title} (${serviceOrderCode(run.serviceOrder.number)}${run.serviceOrderItem ? `/${run.serviceOrderItem.position}` : ''})` : 'sem tarefa iniciada'}; fila: ${plural(ready, 'pronta', 'prontas')}, ${waiting} aguardando${minutes ? `, ~${Math.round(minutes / 60)} h estimadas` : ''}.`,
     );
     if (run)
       refs.push({
@@ -144,7 +145,7 @@ export async function managerAnswer(ctx: AgentContext, question: string): Promis
     out.push(
       `• ${code}${ctx.permissions.has('os.ver') ? ` (${s.customer.name})` : ''}: ${DEADLINE_STATE_LABEL[d.state]}` +
         `${d.promisedDate ? `, prazo ${d.promisedDate.split('-').reverse().join('/')}` : ''}` +
-        `${d.workingDays !== null ? ` (${d.workingDays} dia(s) útil(eis))` : ''}` +
+        `${d.workingDays !== null ? ` (${plural(d.workingDays, 'dia', 'dias')} útil(eis))` : ''}` +
         `${d.reasons.length ? ` — ${d.reasons.map((r) => DEADLINE_REASON_LABEL[r]).join(', ')}` : ''}.`,
     );
     refs.push({ type: 'OS', id, label: code, href: `/painel/os/${id}` });
@@ -230,7 +231,7 @@ export async function managerAnswer(ctx: AgentContext, question: string): Promis
       '• Saldo bancário inicial: não cadastrado — o cálculo abaixo é a diferença entre contas e recebimentos previstos, não o caixa real.',
     );
     out.push(
-      `• A pagar: ${money(toPay)} em ${payables.length} conta(s)${overduePay.length ? `, das quais ${money(overduePay.reduce((s, p) => s + p.amountCents - p.paidCents, 0))} já vencidas` : ''}${labor ? ` + ${money(labor)} de produção devida (fechamento semanal)` : ''}.`,
+      `• A pagar: ${money(toPay)} em ${plural(payables.length, 'conta', 'contas')}${overduePay.length ? `, das quais ${money(overduePay.reduce((s, p) => s + p.amountCents - p.paidCents, 0))} já vencidas` : ''}${labor ? ` + ${money(labor)} de produção devida (fechamento semanal)` : ''}.`,
     );
     out.push(`• A receber vencido (cobrar já): ${money(sum(overdue))} (${overdue.length}).`);
     out.push(

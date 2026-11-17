@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { PipelineServiceDto, PipelineStage, WorkerDto } from '@cenario/shared';
 import {
   PIECE_TYPE_LABEL,
@@ -366,7 +367,7 @@ function PlannedList({
                           <p>
                             Início: <strong>{day(i.plan!.startDate)}</strong>
                           </p>
-                          <p>{i.tasks.total} tarefa(s)</p>
+                          <p>{plural(i.tasks.total, 'tarefa', 'tarefas')}</p>
                           {i.plan!.plannedBy && (
                             <p className="text-ink-muted">por {i.plan!.plannedBy}</p>
                           )}
@@ -429,7 +430,7 @@ function SimpleList({
                 </p>
               )}
               <p>
-                {i.tasks.done}/{i.tasks.total} tarefa(s) concluída(s)
+                {i.tasks.done}/{plural(i.tasks.total, 'tarefa concluída', 'tarefas concluídas')}
               </p>
               {showBlockers && i.blockers.length > 0 && (
                 <ul className="mt-1 space-y-0.5 text-warn-600" data-testid="blockers">
@@ -689,12 +690,17 @@ function PlanDialog({
       <div className="mt-5 rounded-xl bg-subtle p-4 text-sm" data-testid="plan-summary">
         <p className="font-semibold">Resumo</p>
         <p>
-          {services.length} serviço(s) · {services.reduce((n, s) => n + s.pieces.length, 0)} peça(s)
+          {plural(services.length, 'serviço', 'serviços')} ·{' '}
+          {plural(
+            services.reduce((n, s) => n + s.pieces.length, 0),
+            'peça',
+            'peças',
+          )}
           · preparação com o responsável padrão da etapa
         </p>
         {[...byOwner].map(([id, n]) => (
           <p key={id}>
-            {name(id)}: {n} peça(s) de tapeçaria
+            {name(id)}: {plural(n, 'peça', 'peças')} de tapeçaria
           </p>
         ))}
         {missing.length > 0 && (

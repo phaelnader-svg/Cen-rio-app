@@ -1,3 +1,4 @@
+import { plural } from './text';
 /**
  * Jogo de gestão (empresa virtual da Cenário Estofados) — regras puras.
  *
@@ -1408,12 +1409,13 @@ export function removalImpacts(
     if (keptAreas.has(a.id)) continue;
     const links: string[] = [];
     const st = after.stations.filter((s) => s.areaId === a.id);
-    if (st.length) links.push(`${st.length} estação(ões) nesta área`);
+    if (st.length) links.push(`${plural(st.length, 'estação', 'estações')} nesta área`);
     const un = after.storageUnits.filter((u) => u.areaId === a.id);
-    if (un.length) links.push(`${un.length} móvel(is) de estoque`);
+    if (un.length) links.push(`${plural(un.length, 'móvel', 'móveis')} de estoque`);
     if (a.itemLocationId) links.push('Localização física das peças (registro de onde a peça está)');
     const pieces = live.pieceCountByArea?.[a.id] ?? 0;
-    if (pieces) links.push(`${pieces} peça(s) de OS representada(s) aqui`);
+    if (pieces)
+      links.push(`${plural(pieces, 'peça de OS representada', 'peças de OS representadas')} aqui`);
     if (links.length)
       out.push({
         kind: 'AREA',
@@ -1427,7 +1429,9 @@ export function removalImpacts(
     if (keptStations.has(s.id)) continue;
     const links: string[] = [];
     if (s.assigneeUserIds.length)
-      links.push(`${s.assigneeUserIds.length} funcionário(s) vinculado(s)`);
+      links.push(
+        `${plural(s.assigneeUserIds.length, 'funcionário vinculado', 'funcionários vinculados')}`,
+      );
     if (live.agentByDesk?.[s.id]) links.push(`Agente ${live.agentByDesk[s.id]} nesta mesa`);
     if (links.length)
       out.push({
@@ -1447,7 +1451,9 @@ export function removalImpacts(
         kind: 'POSICAO',
         id: sl.id,
         name: `${u.label} → ${sl.label}`,
-        links: [`${sl.stockItemIds.length} material(is) endereçado(s)`],
+        links: [
+          `${plural(sl.stockItemIds.length, 'material endereçado', 'materiais endereçados')}`,
+        ],
         targets: slotTargets,
       });
     }

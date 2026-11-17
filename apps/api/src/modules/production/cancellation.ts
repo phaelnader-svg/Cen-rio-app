@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import { EVENT_TYPES } from '@cenario/shared';
 import type { Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
@@ -67,7 +68,7 @@ export async function protectCancelledServiceOrder(
       action: 'service_order.cancel_protection',
       entityType: 'service_order',
       entityId: serviceOrderId,
-      summary: `OS cancelada: ${tasks.length} tarefa(s) cancelada(s).`,
+      summary: `OS cancelada: ${plural(tasks.length, 'tarefa cancelada', 'tarefas canceladas')}.`,
     });
   }
   for (const l of cancelListeners) await l(tx, actor, serviceOrderId, reason);

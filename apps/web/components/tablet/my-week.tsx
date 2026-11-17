@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { MyQueueDto, ProductionTaskDto } from '@cenario/shared';
 import { WEEK_WAIT_REASON_LABEL, pageOf, summarizeWeek } from '@cenario/shared';
 import clsx from 'clsx';
@@ -154,8 +155,8 @@ function WeekHeader({ q }: { q: MyQueueDto }) {
       </ul>
       {q.fromPreviousWeeks > 0 && (
         <p className="mt-3 text-base text-warn-600" data-testid="week-previous">
-          {q.fromPreviousWeeks} tarefa(s) de semanas anteriores continuam na sua fila (o gestor
-          decide se transfere).
+          {plural(q.fromPreviousWeeks, 'tarefa', 'tarefas')} de semanas anteriores continuam na sua
+          fila (o gestor decide se transfere).
         </p>
       )}
     </section>
@@ -250,8 +251,8 @@ export function MyQueueAll({ onOpen }: { onOpen: (id: string) => void }) {
   return (
     <div className="space-y-4" data-testid="queue-all">
       <p className="text-base text-ink-muted">
-        {q.total} tarefa(s) na ordem definida pelo gestor. A posição não muda quando uma tarefa fica
-        bloqueada.
+        {plural(q.total, 'tarefa', 'tarefas')} na ordem definida pelo gestor. A posição não muda
+        quando uma tarefa fica bloqueada.
       </p>
       {q.total === 0 ? (
         <p className="text-lg">Nenhuma tarefa na sua fila.</p>

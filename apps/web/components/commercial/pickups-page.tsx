@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { PickupDto } from '@cenario/shared';
 import { PICKUP_STATUSES, PICKUP_STATUS_LABEL } from '@cenario/shared';
 import clsx from 'clsx';
@@ -85,7 +86,12 @@ function PickupLine({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
           {p.address
             ? `${p.address.street}, ${p.address.number} · ${p.address.city}`
             : 'Sem endereço'}{' '}
-          · {p.items.reduce((a, i) => a + i.quantity, 0)} peça(s)
+          ·{' '}
+          {plural(
+            p.items.reduce((a, i) => a + i.quantity, 0),
+            'peça',
+            'peças',
+          )}
         </p>
       </div>
       <span className="text-sm text-ink-soft">

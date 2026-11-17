@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import {
   LABOR_STATUS_LABEL,
   ALL_LOGISTICS_COST_KIND_LABEL,
@@ -297,7 +298,8 @@ function ResultDialog({ id, onClose }: { id: string; onClose: () => void }) {
               {r.materials.unpricedLines > 0 && (
                 <span className="text-warn-600" data-testid="result-unpriced">
                   {' '}
-                  (+ {r.materials.unpricedLines} lançamento(s) sem preço, fora do valor)
+                  (+ {plural(r.materials.unpricedLines, 'lançamento', 'lançamentos')} sem preço,
+                  fora do valor)
                 </span>
               )}
             </p>

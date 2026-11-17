@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { PublicationPreviewDto } from '@cenario/shared';
 import { Send } from 'lucide-react';
 import { useState } from 'react';
@@ -88,7 +89,7 @@ export function PublishWeekDialog({ planId, onClose }: { planId: string; onClose
               <ul className="mt-1 space-y-0.5">
                 {p.byAssignee.map((b) => (
                   <li key={b.userId ?? '-'}>
-                    {b.displayName}: {b.tasks} tarefa(s)
+                    {b.displayName}: {plural(b.tasks, 'tarefa', 'tarefas')}
                   </li>
                 ))}
               </ul>

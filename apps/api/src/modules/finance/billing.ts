@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   PAYMENT_METHOD_LABEL,
   confirmPaymentReportSchema,
@@ -331,7 +332,7 @@ export async function billingAttention(db: PrismaClient): Promise<AttentionItemD
       type: 'COBRANCA',
       category: delivered ? 'CRITICO' : 'ATENCAO',
       title: `${code} · ${r.customer.name} — ${delivered ? (r.dueTrigger === 'ENTREGA' ? 'ENTREGUE COM SALDO' : 'RETIRADO COM SALDO') : 'COBRANÇA VENCIDA'}`,
-      description: `${receivableCode(r.number)} ${r.description}: saldo ${formatCents(d.openCents)}${d.daysOverdue ? ` · ${d.daysOverdue} dia(s) em atraso` : ''}.`,
+      description: `${receivableCode(r.number)} ${r.description}: saldo ${formatCents(d.openCents)}${d.daysOverdue ? ` · ${plural(d.daysOverdue, 'dia', 'dias')} em atraso` : ''}.`,
       serviceOrder: r.serviceOrder
         ? { id: r.serviceOrder.id, code: serviceOrderCode(r.serviceOrder.number) }
         : null,

@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   addPlanItemSchema,
@@ -223,7 +224,7 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
   if (noAssignee.length)
     conflicts.push({
       kind: 'SEM_RESPONSAVEL',
-      message: `${noAssignee.length} tarefa(s) sem responsável.`,
+      message: `${plural(noAssignee.length, 'tarefa', 'tarefas')} sem responsável.`,
       taskIds: noAssignee.map((t) => t.id),
     });
   // Fila semanal: sem horário por desenho — nenhum aviso baseado em horário.
@@ -232,7 +233,7 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
   if (noTime.length)
     conflicts.push({
       kind: 'SEM_HORARIO',
-      message: `${noTime.length} tarefa(s) sem data/horário.`,
+      message: `${plural(noTime.length, 'tarefa', 'tarefas')} sem data/horário.`,
       taskIds: noTime.map((t) => t.id),
     });
   const slots = new Map<string, string[]>();
@@ -437,7 +438,7 @@ export async function announceAssignments(
           userId,
           kind: 'TAREFA_ATRIBUIDA',
           dedupeKey: `${summary.key}:${userId}`,
-          body: `${summary.lead}: ${list.length} tarefa(s) para você${released ? `, ${released} liberada(s) para começar` : ''}.`,
+          body: `${summary.lead}: ${plural(list.length, 'tarefa', 'tarefas')} para você${released ? `, ${plural(released, 'liberada', 'liberadas')} para começar` : ''}.`,
           taskId: list.find((t) => t.status === 'LIBERADA')?.id ?? list[0]!.id,
           serviceOrderId: list[0]!.serviceOrderId,
         },
@@ -500,7 +501,7 @@ async function publishDrafts(
   const revision = plan.revision + 1;
   const reason =
     notes ??
-    `Publicação de ${new Set(tasks.map((t) => t.serviceOrderId)).size} serviço(s) pré-planejado(s)`;
+    `Publicação de ${plural(new Set(tasks.map((t) => t.serviceOrderId)).size, 'serviço pré-planejado', 'serviços pré-planejados')}`;
   await tx.productionPlanRevision.create({
     data: {
       planId: plan.id,
@@ -519,7 +520,7 @@ async function publishDrafts(
     action: 'production.plan_published',
     entityType: 'production_plan',
     entityId: plan.id,
-    summary: `Programação da semana ${dateOnly(plan.weekStart)} publicada (revisão ${revision}) com ${tasks.length} tarefa(s) pré-planejada(s).`,
+    summary: `Programação da semana ${dateOnly(plan.weekStart)} publicada (revisão ${revision}) com ${plural(tasks.length, 'tarefa pré-planejada', 'tarefas pré-planejadas')}.`,
   });
   await appendEvent(tx, actor, {
     type: EVENT_TYPES.PRODUCTION_PLAN_REVISED,
@@ -883,7 +884,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           action: 'production.plan_item_added',
           entityType: 'production_plan',
           entityId: id,
-          summary: `${serviceOrderCode(so.number)} incluída na semana ${dateOnly(plan.weekStart)} (${created.length} tarefa(s)).`,
+          summary: `${serviceOrderCode(so.number)} incluída na semana ${dateOnly(plan.weekStart)} (${plural(created.length, 'tarefa', 'tarefas')}).`,
         });
         if (plan.status === 'PUBLICADO') {
           // Programação já publicada: as novas tarefas entram valendo, com revisão.
@@ -1093,7 +1094,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           action: 'production.plan_published',
           entityType: 'production_plan',
           entityId: id,
-          summary: `Programação da semana ${dateOnly(plan.weekStart)} publicada com ${tasks.length} tarefa(s).`,
+          summary: `Programação da semana ${dateOnly(plan.weekStart)} publicada com ${plural(tasks.length, 'tarefa', 'tarefas')}.`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.PRODUCTION_PLAN_PUBLISHED,

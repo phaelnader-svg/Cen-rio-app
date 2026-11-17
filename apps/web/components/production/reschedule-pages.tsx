@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { ProposalAlternative, RescheduleProposalDto } from '@cenario/shared';
 import { useFocusParam } from '@/lib/focus-param';
 import {
@@ -530,8 +531,8 @@ export function RescheduleBanner() {
         href="/painel/reprogramacao"
         className="inline-flex items-center gap-2 font-semibold text-danger-600"
       >
-        <CalendarClock className="size-4" aria-hidden /> {pending} reprogramação(ões) aguardando sua
-        decisão
+        <CalendarClock className="size-4" aria-hidden />{' '}
+        {plural(pending, 'reprogramação aguardando', 'reprogramações aguardando')} sua decisão
       </Link>
     </Card>
   );

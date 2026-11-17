@@ -14,6 +14,7 @@
  *   nem concluída e não mexe em valores: só sinaliza revisão financeira.
  * Planos LEGADO continuam usando a geração anterior (plans.ts `generateTasks`), sem mudança.
  */
+import { plural } from '@cenario/shared';
 import {
   DISTRIBUTION_PENDENCY_LABEL,
   EVENT_TYPES,
@@ -719,7 +720,7 @@ export async function setUpholsterer(
       kind === 'DEFINICAO' ? 'production.piece_owner_defined' : 'production.piece_owner_replaced',
     entityType: 'service_order_item',
     entityId: item.id,
-    summary: `${code}: titular ${kind === 'DEFINICAO' ? 'definido' : 'substituído'} (${team.get(input.userId)?.displayName}); ${toMove.length} tarefa(s) pendente(s) acompanharam${reason ? `. Motivo: ${reason}` : ''}${financial ? '. Revisão financeira aberta: liberação e pagamento travados até o gestor definir os valores; nenhum valor foi alterado.' : ''}`,
+    summary: `${code}: titular ${kind === 'DEFINICAO' ? 'definido' : 'substituído'} (${team.get(input.userId)?.displayName}); ${plural(toMove.length, 'tarefa pendente', 'tarefas pendentes')} acompanharam${reason ? `. Motivo: ${reason}` : ''}${financial ? '. Revisão financeira aberta: liberação e pagamento travados até o gestor definir os valores; nenhum valor foi alterado.' : ''}`,
   });
   await appendEvent(tx, actor, {
     type: EVENT_TYPES.PRODUCTION_PIECE_OWNER_CHANGED,
@@ -812,7 +813,7 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
           action: 'production.distribution_processed',
           entityType: 'production_plan',
           entityId: id,
-          summary: `Distribuição reprocessada: ${r.created.length} tarefa(s) criada(s), ${r.assigned.length} atribuída(s).`,
+          summary: `Distribuição reprocessada: ${plural(r.created.length, 'tarefa criada', 'tarefas criadas')}, ${plural(r.assigned.length, 'atribuída', 'atribuídas')}.`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.PRODUCTION_DISTRIBUTION_UPDATED,

@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import { SERVICE_ORDER_STATUSES, SERVICE_ORDER_STATUS_LABEL } from '@cenario/shared';
 import { ClipboardList, Search } from 'lucide-react';
 import Link from 'next/link';
@@ -90,7 +91,8 @@ export function ServiceOrdersPage() {
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-medium">{s.customer.name}</p>
                       <p className="text-sm text-ink-muted">
-                        Pedido {s.order.code} · {s.pieceCount} peça(s) em {s.itemCount} item(ns)
+                        Pedido {s.order.code} · {plural(s.pieceCount, 'peça', 'peças')} em{' '}
+                        {plural(s.itemCount, 'item', 'itens')}
                         {s.promisedDate ? ` · prazo ${formatDay(s.promisedDate, true)}` : ''}
                       </p>
                     </div>

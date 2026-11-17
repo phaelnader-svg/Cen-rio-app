@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type {
   PlanCandidateDto,
   PlanItemDto,
@@ -206,8 +207,8 @@ function PlanEditor({ planId }: { planId: string }) {
           <Badge tone={fila ? 'info' : undefined}>{PLAN_MODE_LABEL[plan.mode]}</Badge>
         </span>
         <span className="text-sm text-ink-muted">
-          {plan.items.length} OS · {plan.tasks.filter((t) => t.status !== 'CANCELADA').length}{' '}
-          tarefa(s)
+          {plan.items.length} OS ·{' '}
+          {plural(plan.tasks.filter((t) => t.status !== 'CANCELADA').length, 'tarefa', 'tarefas')}
           {plan.publishedAt ? ` · publicado em ${formatDateTime(plan.publishedAt)}` : ''}
         </span>
         <span className="flex-1" />
@@ -249,7 +250,10 @@ function PlanEditor({ planId }: { planId: string }) {
       )}
 
       {fila && published && plan.weekEnded && plan.pendingCount > 0 && (
-        <Alert tone="warn" title={`Semana encerrada com ${plan.pendingCount} pendência(s)`}>
+        <Alert
+          tone="warn"
+          title={`Semana encerrada com ${plural(plan.pendingCount, 'pendência', 'pendências')}`}
+        >
           <p className="mt-1">
             As pendências continuam nesta semana até você decidir. Nada é transferido
             automaticamente.
@@ -294,7 +298,7 @@ function PlanEditor({ planId }: { planId: string }) {
                   </Badge>
                 )}
                 <span className="block text-ink-muted">
-                  {r.reason} · {r.taskCount} tarefa(s)
+                  {r.reason} · {plural(r.taskCount, 'tarefa', 'tarefas')}
                 </span>
               </li>
             ))}
@@ -837,7 +841,10 @@ function QueuesSection({
     );
   };
   return (
-    <Section title={`Filas da semana · ${done} de ${total} concluída(s)`} bodyClassName="p-0">
+    <Section
+      title={`Filas da semana · ${done} de ${plural(total, 'concluída', 'concluídas')}`}
+      bodyClassName="p-0"
+    >
       {queues.length === 0 ? (
         <p className="px-5 py-4 text-sm text-ink-muted">
           Nenhuma tarefa com responsável. Defina os responsáveis nas OS abaixo.
@@ -1003,7 +1010,7 @@ function DistributionSection({
     });
   return (
     <Section
-      title={`Distribuição por peça · ${q.data.pendencyCount} pendência(s)`}
+      title={`Distribuição por peça · ${plural(q.data.pendencyCount, 'pendência', 'pendências')}`}
       bodyClassName="p-0"
       actions={plan.items.map((it) => (
         <Button

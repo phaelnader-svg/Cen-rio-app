@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   anyPermissionAudience,
@@ -221,10 +222,11 @@ function analyze(stops: Stop[]): string[] {
   const pending = stops.filter((s) => !s.confirmed).length;
   if (pending)
     warnings.push(
-      `${pending} parada(s) não confirmada(s) (pré-agendamento ou retirada só solicitada): não são compromisso com o cliente.`,
+      `${plural(pending, 'parada não confirmada', 'paradas não confirmadas')} (pré-agendamento ou retirada só solicitada): não são compromisso com o cliente.`,
     );
   const noOwner = stops.filter((s) => s.confirmed && !s.responsible).length;
-  if (noOwner) warnings.push(`${noOwner} parada(s) sem responsável pela execução.`);
+  if (noOwner)
+    warnings.push(`${plural(noOwner, 'parada', 'paradas')} sem responsável pela execução.`);
   return warnings;
 }
 

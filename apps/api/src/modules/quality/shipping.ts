@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   DELIVERY_ACTIVE,
   DELIVERY_STATUS_LABEL,
@@ -484,7 +485,7 @@ export async function createDelivery(
 async function announceScheduled(tx: Tx, actor: ActorContext, id: string) {
   const d = await tx.delivery.findUniqueOrThrow({ where: { id }, include: deliveryInclude });
   const when = `${dateOnly(d.scheduledDate)!.split('-').reverse().join('/')}${d.windowStart ? ` ${d.windowStart}${d.windowEnd ? `–${d.windowEnd}` : ''}` : ''}`;
-  const body = `${deliveryCode(d.number)} · ${d.customer.name} · ${when} · ${d.items.filter((i) => i.active).length} peça(s).`;
+  const body = `${deliveryCode(d.number)} · ${d.customer.name} · ${when} · ${plural(d.items.filter((i) => i.active).length, 'peça', 'peças')}.`;
   await notify(tx, actor, [
     ...(d.responsibleUserId
       ? [
@@ -1066,7 +1067,7 @@ export async function completeDelivery(
     action: 'delivery.completed',
     entityType: 'delivery',
     entityId: id,
-    summary: `${deliveryCode(d.number)} concluída (${d.customer.name}): ${active.length - notDelivered.length} entregue(s)${notDelivered.length ? `, ${notDelivered.length} não entregue(s)` : ''}.`,
+    summary: `${deliveryCode(d.number)} concluída (${d.customer.name}): ${plural(active.length - notDelivered.length, 'entregue', 'entregues')}${notDelivered.length ? `, ${plural(notDelivered.length, 'não entregue', 'não entregues')}` : ''}.`,
   });
   await notifyUsersWith(
     tx,
@@ -1074,7 +1075,7 @@ export async function completeDelivery(
     'entregas.gerenciar',
     'ENTREGA_CONCLUIDA',
     `ENTREGA_CONCLUIDA:${id}`,
-    `${deliveryCode(d.number)} · ${d.customer.name}: ${active.length - notDelivered.length} peça(s) entregue(s)${d.requiresInstallation ? (d.installedAt ? ', instalação concluída' : ', instalação incompleta') : ''}.`,
+    `${deliveryCode(d.number)} · ${d.customer.name}: ${plural(active.length - notDelivered.length, 'peça entregue', 'peças entregues')}${d.requiresInstallation ? (d.installedAt ? ', instalação concluída' : ', instalação incompleta') : ''}.`,
   );
   await syncTripCost(tx, actor, { deliveryId: id });
   return u;

@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import { PRICE_IMPORT_FIELDS, SheetImportButton } from '@/components/improvements/sheet-import';
 import {
   QUOTE_UNITS,
@@ -111,7 +112,7 @@ export function QuoteBase({
               endpoint="/api/v1/quotes/catalog/import-prices"
               invalidate={['quotes']}
               resultText={(r) =>
-                `${r.created} material(is) novo(s) e ${r.updated ?? 0} preço(s) atualizado(s).${r.problems.length ? ` ${r.problems.length} linha(s) com problema.` : ''}`
+                `${plural(r.created, 'material novo', 'materiais novos')} e ${plural(r.updated ?? 0, 'preço atualizado', 'preços atualizados')}.${r.problems.length ? ` ${plural(r.problems.length, 'linha', 'linhas')} com problema.` : ''}`
               }
             />
             <BackupButtons />

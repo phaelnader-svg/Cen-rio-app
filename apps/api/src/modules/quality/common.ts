@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   FULFILLMENT_STAGE_LABEL,
@@ -470,7 +471,7 @@ export async function refreshItemStage(tx: Tx, actor: ActorContext, itemId: stri
       'entregas.gerenciar',
       'PRONTO_ENTREGA',
       `PRONTO_ENTREGA:${itemId}:${readyKey}`,
-      `${pieceCode(updated)} · ${updated.description} (${updated.serviceOrder.customer.name}) está pronta para entrega — ${ready} de ${siblings.length} peça(s) da OS. Agende quando quiser.`,
+      `${pieceCode(updated)} · ${updated.description} (${updated.serviceOrder.customer.name}) está pronta para entrega — ${ready} de ${plural(siblings.length, 'peça', 'peças')} da OS. Agende quando quiser.`,
       updated.serviceOrderId,
     );
   }

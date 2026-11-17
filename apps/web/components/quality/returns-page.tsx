@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { PieceReturnDto } from '@cenario/shared';
 import {
   FULFILLMENT_STAGE_LABEL,
@@ -446,8 +447,8 @@ function ReturnDetailDialog({ r, onClose }: { r: PieceReturnDto; onClose: () => 
             <ul className="list-disc space-y-0.5 pl-4">
               {r.review.laborToReview > 0 && (
                 <li>
-                  {r.review.laborToReview} valor(es) de produção com trabalho executado ou valor
-                  devido — revise em Financeiro → Produção e equipe.
+                  {plural(r.review.laborToReview, 'valor', 'valores')} de produção com trabalho
+                  executado ou valor devido — revise em Financeiro → Produção e equipe.
                 </li>
               )}
             </ul>

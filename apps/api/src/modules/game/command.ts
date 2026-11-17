@@ -7,6 +7,7 @@
  * com as mesmas permissões das telas e devolve um EFEITO. Nada é alterado aqui: mudanças na planta
  * voltam como prévia e atribuições como dados para confirmar — a execução usa as rotas oficiais.
  */
+import { plural } from '@cenario/shared';
 import { requireCompanyId } from '../../core/tenant';
 import Anthropic from '@anthropic-ai/sdk';
 import {
@@ -48,8 +49,8 @@ const GONE = ['ENTREGUE', 'DEVOLVIDA', 'CANCELADA'];
 const UNIT: Record<string, string> = {
   METRO: 'm',
   METRO_QUADRADO: 'm²',
-  PLACA: 'placa(s)',
-  PECA: 'peça(s)',
+  PLACA: 'pl.',
+  PECA: 'pç',
   UNIDADE: 'un.',
   EMBALAGEM: 'emb.',
 };
@@ -179,7 +180,7 @@ function effectForOs(
   if (pick)
     return {
       effect: { kind: 'ABRIR_PECA', pieceId: pick.id, serviceOrderId: so.id },
-      reply: `${formatServiceOrderItemCode(so.number, pick.position)} · ${pick.description} de ${so.customer.name}. Levei a câmera até o móvel e abri a ficha.${onMap.length > 1 ? ` A OS tem mais ${onMap.length - 1} peça(s) no mapa.` : ''}`,
+      reply: `${formatServiceOrderItemCode(so.number, pick.position)} · ${pick.description} de ${so.customer.name}. Levei a câmera até o móvel e abri a ficha.${onMap.length > 1 ? ` A OS tem mais ${plural(onMap.length - 1, 'peça', 'peças')} no mapa.` : ''}`,
     };
   const why =
     so.status === 'CANCELADA'

@@ -8,6 +8,7 @@
  * do WhatsApp com o texto pronto (o dono aperta "enviar") ou, com o WhatsApp conectado na Central,
  * saem pelo número da empresa depois da aprovação.
  */
+import { plural } from '@cenario/shared';
 import Anthropic from '@anthropic-ai/sdk';
 import {
   type AgentReference,
@@ -146,7 +147,9 @@ export async function purchasingAnswer(ctx: AgentContext, question: string): Pro
       'Para eu acompanhar uma OS, cadastre os materiais dela na aba Materiais da OS (no painel ou na ficha da peça aqui no jogo).',
     );
   } else {
-    lines.push(`Faltam comprar ${needs.length} material(is) das listas das OS:`);
+    lines.push(
+      `Faltam comprar ${plural(needs.length, 'material', 'materiais')} das listas das OS:`,
+    );
     for (const n of needs.slice(0, 15))
       lines.push(
         `• ${n.description}${n.quantity ? ` — ${n.quantity}` : ''} para ${n.osCode}` +
@@ -188,7 +191,7 @@ export async function purchasingAnswer(ctx: AgentContext, question: string): Pro
       });
       tasks.push({
         label: `Pedir a ${s.name}`,
-        detail: `${items.length} material(is)${phone ? '' : ' · cadastre o WhatsApp do fornecedor'}`,
+        detail: `${plural(items.length, 'material', 'materiais')}${phone ? '' : ' · cadastre o WhatsApp do fornecedor'}`,
         tone: items.some((i) => i.promisedDate && i.promisedDate <= weekAhead())
           ? 'risco'
           : 'atencao',
@@ -293,7 +296,7 @@ export async function financeAnswer(ctx: AgentContext, question: string): Promis
       `• A receber na entrega ou retirada: ${brl(sum(onDelivery))} (${onDelivery.length}).`,
     );
     lines.push(
-      `• A pagar nos próximos 7 dias: ${brl(sum(payables))} (${payables.length})${overduePay.length ? `, ${overduePay.length} já vencida(s)` : ''}.`,
+      `• A pagar nos próximos 7 dias: ${brl(sum(payables))} (${payables.length})${overduePay.length ? `, ${plural(overduePay.length, 'já vencida', 'já vencidas')}` : ''}.`,
     );
     const net = sum(overdue) + sum(week) - sum(payables);
     lines.push(
@@ -398,7 +401,7 @@ export async function quotesAnswer(ctx: AgentContext, question: string): Promise
   const lines: string[] = [];
   lines.push(
     quotes.length
-      ? `Últimos 45 dias: ${quotes.length} orçamento(s), ${closed} virou(aram) ordem de serviço e ${pending.length} aguarda(m) resposta.`
+      ? `Últimos 45 dias: ${plural(quotes.length, 'orçamento', 'orçamentos')}, ${closed} ${closed === 1 ? 'virou' : 'viraram'} OS e ${pending.length} ${pending.length === 1 ? 'aguarda' : 'aguardam'} resposta.`
       : 'Nenhum orçamento nos últimos 45 dias. Faça um em Orçamentos, no painel.',
   );
   if (quotes.length)
@@ -410,7 +413,7 @@ export async function quotesAnswer(ctx: AgentContext, question: string): Promise
     lines.push('', 'Vale dar retorno (enviados há 2 dias ou mais):');
     for (const q of followUp.slice(0, 10))
       lines.push(
-        `• Nº ${q.number} — ${q.customerName}, ${q.service}, ${brl(q.totalCents)} (há ${days(q.createdAt)} dia(s)).`,
+        `• Nº ${q.number} — ${q.customerName}, ${q.service}, ${brl(q.totalCents)} (há ${plural(days(q.createdAt), 'dia', 'dias')}).`,
       );
   }
   if (waiting.length) {

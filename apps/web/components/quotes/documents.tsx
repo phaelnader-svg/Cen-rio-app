@@ -1,5 +1,6 @@
 'use client';
 
+import { pluralWord } from '@cenario/shared';
 import {
   QUOTE_CONTRACT_CLAUSES,
   formatCents,
@@ -476,7 +477,8 @@ export function WorkOrderDocument({
                         )}
                       </td>
                       <td className="num">
-                        {qtyText(x.realQty)} {x.category === 'Espumas' ? 'peça(s)' : x.unit}
+                        {qtyText(x.realQty)}{' '}
+                        {x.category === 'Espumas' ? pluralWord(x.realQty, 'peça', 'peças') : x.unit}
                       </td>
                       <td className="num">{formatCents(x.costCents)}</td>
                     </tr>

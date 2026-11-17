@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { EligibilityRule, Priority, ServiceOrderDto, ServiceType } from '@cenario/shared';
 import {
   ELIGIBILITY_LABEL,
@@ -335,7 +336,7 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
                   >
                     {usable.map((i) => (
                       <option key={i.orderItemId} value={i.orderItemId}>
-                        {i.description} ({i.available} disponível(is))
+                        {i.description} ({plural(i.available, 'disponível', 'disponíveis')})
                       </option>
                     ))}
                   </SelectField>
@@ -487,13 +488,13 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
                 <SummaryRow
                   key={s.code}
                   label={`${s.code} (já criada)`}
-                  hint={`${s.pieces} peça(s)`}
+                  hint={`${plural(s.pieces, 'peça', 'peças')}`}
                   value={money(s.revenueCents)}
                 />
               ))}
               <SummaryRow
                 label="Esta OS (estimativa)"
-                hint={`${pieces} peça(s) — proporcional às peças do pedido`}
+                hint={`${plural(pieces, 'peça', 'peças')} — proporcional às peças do pedido`}
                 value={projected === null ? '—' : money(projected)}
                 strong
                 testId="so-projected"

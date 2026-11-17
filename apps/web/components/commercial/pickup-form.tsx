@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { OrderDto, PickupDto } from '@cenario/shared';
 import {
   PICKUP_TEAMS,
@@ -274,7 +275,7 @@ export function PickupForm({
                 <span className="min-w-0 flex-1 text-sm">
                   {i.description}
                   <span className="block text-xs text-ink-muted">
-                    até {Math.max(0, available(i.id))} disponível(is)
+                    até {plural(Math.max(0, available(i.id)), 'disponível', 'disponíveis')}
                   </span>
                 </span>
                 <input

@@ -8,6 +8,7 @@
  * Conferência = retrato versionado (`weekly_closings`); Pix em lote = baixas nas obrigações
  * originais (`closing_payments` só agrupa e rastreia). Regras de competência: closing-domain.ts.
  */
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   allocateClosingPayment,
@@ -774,7 +775,7 @@ export async function confirmClosing(
   const blocking = built.pendencies.filter((p) => p.blocking);
   if (blocking.length)
     throw Errors.business(
-      `Há ${blocking.length} pendência(s) que precisam de resolução explícita: ${blocking
+      `Há ${plural(blocking.length, 'pendência', 'pendências')} que precisam de resolução explícita: ${blocking
         .slice(0, 5)
         .map((p) => p.message)
         .join(' | ')}`,
@@ -987,7 +988,7 @@ export async function registerClosingPayment(
     action: 'finance.closing_payment',
     entityType: 'closing_payment',
     entityId: header.id,
-    summary: `${code}: pagamento externo de ${(input.amountCents / 100).toFixed(2)} a ${user.displayName} (${input.method}) baixado em ${parts.length} obrigação(ões).`,
+    summary: `${code}: pagamento externo de ${(input.amountCents / 100).toFixed(2)} a ${user.displayName} (${input.method}) baixado em ${plural(parts.length, 'obrigação', 'obrigações')}.`,
     // F10-20b: o lote e o antes/depois de cada obrigação baixada (detalhe em cada baixa).
     changes: {
       weekStart,

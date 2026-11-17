@@ -1,5 +1,6 @@
 'use client';
 
+import { plural, pluralWord } from '@cenario/shared';
 import type { Permission } from '@cenario/shared';
 
 import {
@@ -193,7 +194,8 @@ export function Dashboard() {
             </span>
             {(orderDeadlines.data?.items.length ?? 0) > 0 && (
               <span className="text-sm text-ink-muted" data-testid="dashboard-deadlines-orders">
-                {orderDeadlines.data!.items.length} pedido(s) com peça ainda não recebida
+                {plural(orderDeadlines.data!.items.length, 'pedido', 'pedidos')} com peça ainda não
+                recebida
               </span>
             )}
           </Card>
@@ -279,14 +281,14 @@ export function Dashboard() {
               icon={<ClipboardList className="size-4" aria-hidden />}
               label="A planejar"
               value={<span data-testid="ops-to-plan">{ops.preProduction.toPlan}</span>}
-              detail={`${ops.preProduction.plannedDraft} em rascunho · ${ops.preProduction.plannedPublished} publicada(s) · ${ops.preProduction.awaitingCondition} aguardando condição`}
+              detail={`${ops.preProduction.plannedDraft} em rascunho · ${plural(ops.preProduction.plannedPublished, 'publicada', 'publicadas')} · ${ops.preProduction.awaitingCondition} aguardando condição`}
             />
             <Stat
               href="/painel/producao?status=BLOQUEADA"
               icon={<AlarmClock className="size-4" aria-hidden />}
               label="Bloqueios"
               value={<span data-testid="ops-blocked-tasks">{ops.blockedTasks}</span>}
-              detail={`tarefa(s) de produção bloqueada(s) · ${ops.pieces.blocked} peça(s) com expedição bloqueada · ${ops.pieces.inTransit} em trânsito`}
+              detail={`${pluralWord(ops.blockedTasks, 'tarefa bloqueada', 'tarefas bloqueadas')} · ${plural(ops.pieces.blocked, 'peça', 'peças')} com expedição bloqueada · ${ops.pieces.inTransit} em trânsito`}
             />
             <Stat
               href="/painel/entregas?tab=ready"
@@ -295,8 +297,8 @@ export function Dashboard() {
               value={<span data-testid="ops-ready">{ops.pieces.ready}</span>}
               detail={
                 dl
-                  ? `${dl.upcoming} entrega(s) nos próximos 2 dias${dl.frustrated ? ` · ${dl.frustrated} frustrada(s)` : ''}`
-                  : `${ops.pieces.scheduled} agendada(s)`
+                  ? `${plural(dl.upcoming, 'entrega', 'entregas')} nos próximos 2 dias${dl.frustrated ? ` · ${plural(dl.frustrated, 'frustrada', 'frustradas')}` : ''}`
+                  : `${plural(ops.pieces.scheduled, 'agendada', 'agendadas')}`
               }
             />
           </div>
@@ -314,7 +316,7 @@ export function Dashboard() {
               value={
                 <span data-testid="dl-upcoming">{dl.upcoming + (dl.pickups?.upcoming ?? 0)}</span>
               }
-              detail={`${dl.upcoming} entrega(s)${dl.pickups ? ` · ${dl.pickups.upcoming} retirada(s)` : ''}`}
+              detail={`${plural(dl.upcoming, 'entrega', 'entregas')}${dl.pickups ? ` · ${plural(dl.pickups.upcoming, 'retirada', 'retiradas')}` : ''}`}
             />
             {dl.pickups && (
               <Stat
@@ -345,7 +347,7 @@ export function Dashboard() {
               icon={<FileSignature className="size-4" aria-hidden />}
               label="A receber"
               value={<span data-testid="fin-open">{money(fin.receivables.openCents)}</span>}
-              detail={`${money(fin.receivables.overdueCents)} vencido (${fin.receivables.overdueCount} cobrança(s))`}
+              detail={`${money(fin.receivables.overdueCents)} vencido (${plural(fin.receivables.overdueCount, 'cobrança', 'cobranças')})`}
             />
             <Stat
               href="/painel/financeiro?tab=pagar"
@@ -378,7 +380,7 @@ export function Dashboard() {
                   {fin.decisions.valueRequests + fin.decisions.laborReviews}
                 </span>
               }
-              detail={`${fin.decisions.valueRequests} negociação(ões) · ${fin.decisions.laborReviews} revisão(ões)`}
+              detail={`${plural(fin.decisions.valueRequests, 'negociação', 'negociações')} · ${plural(fin.decisions.laborReviews, 'revisão', 'revisões')}`}
             />
             <Stat
               href="/painel/financeiro?tab=receitas"
@@ -416,7 +418,9 @@ export function Dashboard() {
             icon={<MonitorSmartphone className="size-4" aria-hidden />}
             label="Tablets vinculados"
             value={devices.data ? activeDevices.length : '—'}
-            detail={devices.data ? `${online} conectado(s) agora` : 'Carregando…'}
+            detail={
+              devices.data ? `${plural(online, 'conectado', 'conectados')} agora` : 'Carregando…'
+            }
           />
         )}
         {can('sessoes.ver') && (

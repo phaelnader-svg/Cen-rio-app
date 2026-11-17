@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   PRINCIPAL_ACTIVITIES,
@@ -488,12 +489,14 @@ export async function analyzeAbsence(
   if (reassign.length) {
     alternatives.push({
       id: 'REDISTRIBUIR',
-      title: `Redistribuir ${reassign.length} tarefa(s) para quem está presente e capacitado`,
+      title: `Redistribuir ${plural(reassign.length, 'tarefa', 'tarefas')} para quem está presente e capacitado`,
       actions: reassign,
       impacts: [
         ...reassignImpacts,
         ...(principal.length
-          ? [`${principal.length} tarefa(s) do tapeceiro principal continuam aguardando.`]
+          ? [
+              `${plural(principal.length, 'tarefa', 'tarefas')} do tapeceiro principal continuam aguardando.`,
+            ]
           : []),
       ],
       critical: support.some((t) => isImportant(t.priority)),
@@ -519,7 +522,7 @@ export async function analyzeAbsence(
           fromUserId: userId,
         })),
         impacts: [
-          `${principal.length} tarefa(s) de tapeceiro passam para ${other.name}, que já tem a própria programação.`,
+          `${plural(principal.length, 'tarefa', 'tarefas')} de tapeceiro passam para ${other.name}, que já tem a própria programação.`,
           'Troca de tapeceiro principal: decisão crítica.',
         ],
         critical: true,
@@ -541,12 +544,14 @@ export async function analyzeAbsence(
       toTime: cfg.workdayStart,
     })),
     impacts: [
-      `${remaining.length} tarefa(s) de ${name} vão para ${brDate(tomorrow)}.`,
+      `${plural(remaining.length, 'tarefa', 'tarefas')} de ${name} vão para ${brDate(tomorrow)}.`,
       ...(late.length
         ? [`Prazo interno comprometido: ${late.map((t) => taskCode(t.number)).join(', ')}.`]
         : []),
       ...(promised.length ? ['Afeta OS com entrega prometida ao cliente até esse dia.'] : []),
-      ...(impacts.length ? [`${impacts.length} tarefa(s) dependente(s) também atrasam.`] : []),
+      ...(impacts.length
+        ? [`${plural(impacts.length, 'tarefa dependente', 'tarefas dependentes')} também atrasam.`]
+        : []),
     ],
     critical: late.length > 0 || promised.length > 0,
     recommended: mode === 'CONFIRMADA' && !reassign.length,
@@ -556,7 +561,7 @@ export async function analyzeAbsence(
     title: mode === 'PRESUMIDA' ? 'Aguardar a chegada (nada muda agora)' : 'Manter como está',
     actions: [],
     impacts: [
-      `${remaining.length} tarefa(s) seguem com ${name}; dependentes continuam aguardando.`,
+      `${plural(remaining.length, 'tarefa', 'tarefas')} seguem com ${name}; dependentes continuam aguardando.`,
     ],
     critical: false,
     recommended: mode === 'PRESUMIDA',
@@ -571,7 +576,7 @@ export async function analyzeAbsence(
       promised.length > 0 ||
       remaining.some((t) => isImportant(t.priority)),
     situation: `${name}: ausência ${mode === 'PRESUMIDA' ? 'presumida (sem confirmação de chegada)' : 'confirmada pelo gestor'} em ${brDate(cfg.today)}.`,
-    problem: `${remaining.length} tarefa(s) de ${name} e ${impacts.length} dependente(s) afetada(s) hoje.`,
+    problem: `${plural(remaining.length, 'tarefa', 'tarefas')} de ${name} e ${plural(impacts.length, 'dependente afetada', 'dependentes afetadas')} hoje.`,
     affectedTaskIds: [...remaining.map((t) => t.id), ...impacts.map((i) => i.taskId)],
     alternatives,
     proposedAlternativeId: recommended.id,

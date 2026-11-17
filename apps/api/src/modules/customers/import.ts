@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import { QUOTE_UNITS, createCustomerSchema, type QuoteMaterialCategory } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -175,7 +176,7 @@ export async function importRoutes(app: FastifyInstance) {
         await audit(prisma, actor, {
           action: 'customer.imported',
           entityType: 'customer',
-          summary: `${created.length} cliente(s) importado(s) de planilha${problems.length ? ` (${problems.length} linha(s) com problema)` : ''}.`,
+          summary: `${plural(created.length, 'cliente importado', 'clientes importados')} de planilha${problems.length ? ` (${plural(problems.length, 'linha', 'linhas')} com problema)` : ''}.`,
         });
       return { created: created.length, problems };
     },
@@ -240,7 +241,7 @@ export async function importRoutes(app: FastifyInstance) {
         await audit(tx, actor, {
           action: 'quotes.prices_imported',
           entityType: 'quote_catalog_item',
-          summary: `Orçamento — preços importados de planilha: ${created} material(is) novo(s), ${updated} preço(s) atualizado(s).`,
+          summary: `Orçamento — preços importados de planilha: ${plural(created, 'material novo', 'materiais novos')}, ${plural(updated, 'preço atualizado', 'preços atualizados')}.`,
         });
       });
       return { created, updated, problems };

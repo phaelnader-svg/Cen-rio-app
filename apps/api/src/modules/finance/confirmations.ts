@@ -13,6 +13,7 @@
  * (motivo + gestor + linhas exatas; cobertura linha a linha, inalterada). Pagamentos da própria
  * semana não fazem parte da linha: pagar em parte não invalida a confirmação.
  */
+import { plural } from '@cenario/shared';
 import { createHash } from 'node:crypto';
 import {
   closingWeekStart,
@@ -458,7 +459,7 @@ export async function confirmWeek(
     action: 'finance.week_confirmed',
     entityType: 'weekly_closing_confirmation',
     entityId: row.id,
-    summary: `${code}: semana ${input.weekStart} conferida pelo profissional (${lines.length} item(ns)).`,
+    summary: `${code}: semana ${input.weekStart} conferida pelo profissional (${plural(lines.length, 'item', 'itens')}).`,
     changes: {
       before: prior,
       after: { kind: 'PROFISSIONAL', code, items: lines.map((l) => l.code), hash },

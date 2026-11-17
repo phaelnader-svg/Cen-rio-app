@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import { PRIORITIES, PRIORITY_LABEL, type Priority, type ServiceOrderDto } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -28,7 +29,9 @@ export function OsBulkBar({ ids, onDone }: { ids: string[]; onDone: () => void }
   if (!ids.length) return null;
   return (
     <div className="sticky top-16 z-20 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-4 py-2.5 text-sm">
-      <span className="flex-1 font-medium text-brand-700">{ids.length} OS selecionada(s)</span>
+      <span className="flex-1 font-medium text-brand-700">
+        {plural(ids.length, 'OS selecionada', 'OS selecionadas')}
+      </span>
       {(Object.keys(TITLE) as Action[]).map((a) => (
         <Button key={a} size="sm" variant="secondary" onClick={() => setAction(a)}>
           {TITLE[a]}
@@ -105,7 +108,7 @@ function BulkDialog({
     await qc.invalidateQueries({ queryKey: ['service-order'] });
     if (failed.length) setFailures(failed);
     else {
-      toast('ok', `${ok} OS alterada(s).`);
+      toast('ok', `${plural(ok, 'OS alterada', 'OS alteradas')}.`);
       onDone();
     }
   }

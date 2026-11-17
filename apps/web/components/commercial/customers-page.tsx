@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import { CUSTOMER_KIND_LABEL, formatPhone } from '@cenario/shared';
 import { Contact, Plus, Search } from 'lucide-react';
 import Link from 'next/link';
@@ -46,7 +47,7 @@ export function CustomersPage() {
                 endpoint="/api/v1/customers/import"
                 invalidate={['customers']}
                 resultText={(r) =>
-                  `${r.created} cliente(s) importado(s).${r.problems.length ? ` ${r.problems.length} linha(s) não entraram.` : ''}`
+                  `${plural(r.created, 'cliente importado', 'clientes importados')}.${r.problems.length ? ` ${plural(r.problems.length, 'linha', 'linhas')} não entraram.` : ''}`
                 }
               />
             )}
@@ -114,7 +115,7 @@ export function CustomersPage() {
       ) : (
         <Card className="overflow-hidden">
           <p className="border-b border-line px-5 py-2.5 text-sm text-ink-muted">
-            {customers.data.total} cliente(s)
+            {plural(customers.data.total, 'cliente', 'clientes')}
           </p>
           <ul className="divide-y divide-line">
             {customers.data.items.map((c) => {
@@ -137,7 +138,7 @@ export function CustomersPage() {
                       </p>
                     </div>
                     <span className="text-sm text-ink-muted">
-                      {c.orderCount} pedido(s) · {c.serviceOrderCount} OS
+                      {plural(c.orderCount, 'pedido', 'pedidos')} · {c.serviceOrderCount} OS
                     </span>
                   </Link>
                 </li>

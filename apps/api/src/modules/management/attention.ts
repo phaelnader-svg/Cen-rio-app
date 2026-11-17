@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import { closingWeekStart, valueChangeCode, type AttentionItemDto } from '@cenario/shared';
 import type { PrismaClient } from '@cenario/db';
 import { brDate, type AttendanceConfig, openShifts } from '../attendance/common';
@@ -143,7 +144,7 @@ export async function managementAttention(
         key: `FINANCEIRO:pagamento:${userId}`,
         type: 'FINANCEIRO',
         category: 'ACAO',
-        title: `${p.name} · ${p.ids.size} pagamento(s) liberado(s) para pagar`,
+        title: `${p.name} · ${plural(p.ids.size, 'pagamento liberado', 'pagamentos liberados')} para pagar`,
         description:
           'Valores devidos, confirmados pelo profissional (ou liberados por exceção administrativa) e ainda com saldo.',
         employee: { userId, displayName: p.name },
@@ -187,7 +188,7 @@ export async function managementAttention(
         key: 'PLANEJAMENTO:a-planejar',
         type: 'PLANEJAMENTO',
         category: 'ACAO',
-        title: `${toPlan.length} serviço(s) aguardando planejamento`,
+        title: `${plural(toPlan.length, 'serviço', 'serviços')} aguardando planejamento`,
         description: 'Serviços fechados, sem semana nem tarefas planejadas.',
         impacts: toPlan.slice(0, 5).map((i) => `${i.serviceOrder.code} · ${i.customerName}`),
         priority: 'NORMAL',
@@ -226,7 +227,7 @@ export async function managementAttention(
         key: 'LOGISTICA:proximas',
         type: 'LOGISTICA',
         category: 'INFO',
-        title: `Próximos 3 dias: ${pickups} retirada(s) e ${deliveries} entrega(s)`,
+        title: `Próximos 3 dias: ${plural(pickups, 'retirada', 'retiradas')} e ${plural(deliveries, 'entrega', 'entregas')}`,
         description: 'Agendadas de hoje até depois de amanhã.',
         priority: 'NORMAL',
         status: 'AGENDADA',

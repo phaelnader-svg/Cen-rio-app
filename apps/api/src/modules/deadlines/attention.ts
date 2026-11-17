@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   DEADLINE_REASON_LABEL,
   DEADLINE_STATE_LABEL,
@@ -31,9 +32,9 @@ const ACTION: Partial<Record<DeadlineReason, string>> = {
 
 const timing = (d: ServiceDeadline) => {
   const n = d.workingDays ?? 0;
-  if (n < 0) return `${-n} dia(s) útil(eis) de atraso`;
+  if (n < 0) return `${plural(-n, 'dia útil', 'dias úteis')} de atraso`;
   if (n === 0) return d.state === 'ATRASADO' ? 'vencido' : 'vence hoje';
-  return `faltam ${n} dia(s) útil(eis)`;
+  return `faltam ${plural(n, 'dia útil', 'dias úteis')}`;
 };
 
 /**

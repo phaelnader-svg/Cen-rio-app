@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { AttendanceDayDto, MyAttendanceDto } from '@cenario/shared';
 import { ATTENDANCE_SITUATION_LABEL, AVAILABILITY_LABEL, PRIORITY_LABEL } from '@cenario/shared';
 import clsx from 'clsx';
@@ -284,8 +285,8 @@ export function DepartScreen({ data, onDone }: { data: MyAttendanceDto; onDone: 
       {missing.length > 0 && data.openTasks.length > 0 && (
         <p className="flex items-center gap-2 text-base text-warn-600">
           <TimerReset className="size-5" aria-hidden />
-          {missing.length} tarefa(s) sem andamento: você pode sair mesmo assim — o gestor será
-          avisado para acompanhar.
+          {plural(missing.length, 'tarefa', 'tarefas')} sem andamento: você pode sair mesmo assim —
+          o gestor será avisado para acompanhar.
         </p>
       )}
       <div className="grid gap-3 sm:grid-cols-2">

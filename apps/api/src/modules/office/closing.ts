@@ -2,6 +2,7 @@
  * Fechamento mensal (contabilidade), entregas com saldo e contas a pagar por período. Tudo
  * leitura dos registros oficiais. (As cotações de compra saíram junto com o processo de compras.)
  */
+import { plural } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
@@ -72,7 +73,12 @@ export async function monthClosing(prisma: FastifyInstance['ctx']['prisma'], mon
       ? []
       : [{ kind: 'EXTRATO', label: 'Extrato bancário do mês não importado' }]),
     ...(unreconciled
-      ? [{ kind: 'CONCILIACAO', label: `${unreconciled} lançamento(s) do extrato sem conciliação` }]
+      ? [
+          {
+            kind: 'CONCILIACAO',
+            label: `${plural(unreconciled, 'lançamento', 'lançamentos')} do extrato sem conciliação`,
+          },
+        ]
       : []),
   ];
   return {
@@ -150,7 +156,7 @@ export async function closingRoutes(app: FastifyInstance) {
           action: 'office.accounting_package',
           entityType: 'accounting_month',
           entityId: null,
-          summary: `Pacote contábil de ${month} baixado (${files.length - 1} arquivo(s)).`,
+          summary: `Pacote contábil de ${month} baixado (${plural(files.length - 1, 'arquivo', 'arquivos')}).`,
         }),
       );
       return reply

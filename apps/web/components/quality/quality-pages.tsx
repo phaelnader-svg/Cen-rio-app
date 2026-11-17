@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import type { InspectionDto, QualityTemplateDto } from '@cenario/shared';
 import { useFocusParam } from '@/lib/focus-param';
 import { useTabParam } from '@/lib/tab-param';
@@ -407,7 +408,7 @@ function Settings() {
             <li key={l.id} className="flex items-center justify-between py-2">
               <span className={l.active ? '' : 'text-ink-muted line-through'}>{l.label}</span>
               <span className="flex items-center gap-3">
-                <span className="text-ink-muted">{l.pieces} peça(s)</span>
+                <span className="text-ink-muted">{plural(l.pieces, 'peça', 'peças')}</span>
                 <Button
                   size="sm"
                   variant="ghost"

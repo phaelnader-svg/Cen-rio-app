@@ -15,6 +15,7 @@
  * Onde cada OS está (A planejar, Planejado, Aguardando condição, Em produção, Concluído) é
  * calculado dos vínculos reais (item de plano e tarefas) — nunca de uma marcação visual.
  */
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   PIPELINE_STAGE_LABEL,
@@ -220,7 +221,8 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
     const unassigned = tasks.filter(
       (t) => !t.assigneeUserId && !['CONCLUIDA'].includes(t.status),
     ).length;
-    if (unassigned) pendencies.push(`${unassigned} tarefa(s) sem responsável elegível.`);
+    if (unassigned)
+      pendencies.push(`${plural(unassigned, 'tarefa', 'tarefas')} sem responsável elegível.`);
     if (planItem && !tasks.length) pendencies.push('Nenhuma tarefa gerada para esta OS.');
     items.push({
       serviceOrder: {
@@ -302,7 +304,7 @@ export async function publicationPreview(
   const unassigned = drafts.filter((t) => !t.assigneeUserId).length;
   if (unassigned)
     pendencies.push(
-      `${unassigned} tarefa(s) sem responsável: ficarão bloqueadas até o gestor definir.`,
+      `${plural(unassigned, 'tarefa', 'tarefas')} sem responsável: ficarão bloqueadas até o gestor definir.`,
     );
   const today = await todayIn(db);
   const startDates = soIds.map((id) => {
@@ -449,7 +451,7 @@ export async function preplanningRoutes(app: FastifyInstance) {
             action: 'production.service_planned',
             entityType: 'service_order',
             entityId: so.id,
-            summary: `${code} planejada para ${entry.startDate.split('-').reverse().join('/')} (semana de ${weekStart.split('-').reverse().join('/')}, rascunho): ${created.length} tarefa(s).`,
+            summary: `${code} planejada para ${entry.startDate.split('-').reverse().join('/')} (semana de ${weekStart.split('-').reverse().join('/')}, rascunho): ${plural(created.length, 'tarefa', 'tarefas')}.`,
             changes: {
               planId: plan.id,
               startDate: entry.startDate,

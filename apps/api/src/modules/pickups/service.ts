@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   type PickupStatus,
@@ -61,7 +62,7 @@ export async function validatePickupItems(
     const available = oi.quantity - oi.receivedQuantity - reservedElsewhere;
     if (it.quantity > available) {
       throw Errors.business(
-        `"${oi.description}": ${available} peça(s) disponível(is) para retirada (já recebidas ou em outra retirada).`,
+        `"${oi.description}": ${plural(available, 'peça disponível', 'peças disponíveis')} para retirada (já recebidas ou em outra retirada).`,
       );
     }
   }

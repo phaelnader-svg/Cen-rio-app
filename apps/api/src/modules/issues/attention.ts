@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   ATTENDANCE_SITUATION_LABEL,
   ATTENTION_CATEGORIES,
@@ -168,7 +169,7 @@ export async function loadAttention(
       type: 'PRESENCA',
       category: 'ACAO',
       title: `${att.employee.displayName} · ${ATTENDANCE_SITUATION_LABEL[att.situation]}`,
-      description: `${list.length} impacto(s) em tarefas a encaminhar.`,
+      description: `${plural(list.length, 'impacto', 'impactos')} em tarefas a encaminhar.`,
       serviceOrder: null,
       task: null,
       employee: { userId: att.employee.userId, displayName: att.employee.displayName },
@@ -350,7 +351,7 @@ export async function pastWeekDrafts(
       key: `RASCUNHO_ANTIGO:${planId}`,
       type: 'RASCUNHO_ANTIGO',
       category: 'ACAO',
-      title: `Semana de ${week}: ${n} serviço(s) ainda em rascunho`,
+      title: `Semana de ${week}: ${plural(n, 'serviço', 'serviços')} ainda em rascunho`,
       description: `A semana já passou e ${n === 1 ? 'este serviço continua' : 'estes serviços continuam'} em rascunho: nada foi liberado, transferido ou alterado automaticamente.`,
       serviceOrder: null,
       task: null,

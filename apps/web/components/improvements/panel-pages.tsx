@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import { TRASH_DAYS, TRASH_KIND_LABEL, formatCents, type TrashItemDto } from '@cenario/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RotateCcw, Trash2 } from 'lucide-react';
@@ -65,8 +66,8 @@ export function TrashPage() {
                   <p className="text-sm text-ink-muted">
                     {i.detail ? `${i.detail} • ` : ''}Apagado em{' '}
                     {new Date(i.deletedAt).toLocaleDateString('pt-BR')}
-                    {i.deletedBy ? ` por ${i.deletedBy}` : ''} • sai da lixeira em {i.daysLeft}{' '}
-                    dia(s)
+                    {i.deletedBy ? ` por ${i.deletedBy}` : ''} • sai da lixeira em{' '}
+                    {plural(i.daysLeft, 'dia', 'dias')}
                   </p>
                 </div>
                 <Button
@@ -163,7 +164,7 @@ export function WeekSummaryPage() {
             value={String(w.delivered.pieces)}
             hint={
               w.delivered.scheduledRest
-                ? `${w.delivered.scheduledRest} entrega(s) ainda agendada(s) nesta semana`
+                ? `${plural(w.delivered.scheduledRest, 'entrega ainda agendada', 'entregas ainda agendadas')} nesta semana`
                 : 'Nenhuma outra entrega agendada nesta semana'
             }
             href="/painel/entregas"

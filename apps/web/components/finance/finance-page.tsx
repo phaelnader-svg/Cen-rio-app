@@ -1,5 +1,6 @@
 'use client';
 
+import { plural } from '@cenario/shared';
 import { EXPENSE_CATEGORY_LABEL, SERVICE_TYPE_LABEL, type ServiceType } from '@cenario/shared';
 import { useFocusParam } from '@/lib/focus-param';
 import { Download } from 'lucide-react';
@@ -90,13 +91,13 @@ function Dashboard({ period }: { period: Period }) {
           <Stat
             label="Faturamento contratado"
             value={money(d.accrual.contractedCents)}
-            hint={`${d.accrual.contractedOrders} pedido(s) no período`}
+            hint={`${plural(d.accrual.contractedOrders, 'pedido', 'pedidos')} no período`}
             testId="fin-contracted"
           />
           <Stat
             label="Margem de contribuição"
             value={money(d.accrual.contributionMarginCents)}
-            hint={`${d.accrual.completedOrders} OS concluída(s) · receita ${money(d.accrual.revenueCompletedCents)}`}
+            hint={`${plural(d.accrual.completedOrders, 'OS concluída', 'OS concluídas')} · receita ${money(d.accrual.revenueCompletedCents)}`}
             tone={tone(d.accrual.contributionMarginCents)}
             testId="fin-margin"
           />

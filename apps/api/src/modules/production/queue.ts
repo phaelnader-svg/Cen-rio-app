@@ -11,6 +11,7 @@
  * - o gestor reordena (com versão/CAS e, se publicada, motivo e revisão) e, terminada a
  *   semana, transfere pendências para outra semana publicada (ação explícita e idempotente).
  */
+import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
   carryOverSchema,
@@ -336,7 +337,7 @@ export async function productionQueueRoutes(app: FastifyInstance) {
           action: 'production.tasks_carried',
           entityType: 'production_plan',
           entityId: from.id,
-          summary: `${todo.length} pendência(s) da semana ${dateOnly(from.weekStart)} transferida(s) para ${dateOnly(to.weekStart)}: ${codes}. Motivo: ${input.reason}`,
+          summary: `${plural(todo.length, 'pendência', 'pendências')} da semana ${dateOnly(from.weekStart)} ${todo.length === 1 ? 'transferida' : 'transferidas'} para ${dateOnly(to.weekStart)}: ${codes}. Motivo: ${input.reason}`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.PRODUCTION_TASKS_CARRIED,

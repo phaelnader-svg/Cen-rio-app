@@ -3,6 +3,7 @@
  * números e abre os lançamentos que a justificam; projeções mostram as premissas, separando
  * confirmado, vencido e o que depende de entrega.
  */
+import { plural } from '@cenario/shared';
 import { addDaysIso, brlCents, signedBrl, signedPct, weekStartOf } from '@cenario/shared';
 import type { AgentReference, CommandEffect } from '@cenario/shared';
 import { type Db } from './common';
@@ -145,7 +146,7 @@ export async function goalsAnswer(db: Db, text: string): Promise<GoalsAnswer> {
   // 1. Quanto falta para a meta.
   if (goal)
     return {
-      reply: `${goal.name}: saldo ${brlCents(goal.balanceCents)} de ${brlCents(goal.targetCents)} (${goal.pctOfGoal.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% da meta) — faltam ${brlCents(goal.missingCents)}${goal.daysLeft !== null ? `, ${goal.daysLeft >= 0 ? `${goal.daysLeft} dia(s) até ${br(goal.deadline!)}` : 'prazo vencido'}` : ''}.${goal.achieved ? ` Conquistada em ${br(goal.achieved.at.slice(0, 10))}${goal.belowAfterAchieved ? `, mas o saldo caiu abaixo do patamar` : ''}.` : ''} Abri os lançamentos que formam o saldo.`,
+      reply: `${goal.name}: saldo ${brlCents(goal.balanceCents)} de ${brlCents(goal.targetCents)} (${goal.pctOfGoal.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% da meta) — faltam ${brlCents(goal.missingCents)}${goal.daysLeft !== null ? `, ${goal.daysLeft >= 0 ? `${plural(goal.daysLeft, 'dia', 'dias')} até ${br(goal.deadline!)}` : 'prazo vencido'}` : ''}.${goal.achieved ? ` Conquistada em ${br(goal.achieved.at.slice(0, 10))}${goal.belowAfterAchieved ? `, mas o saldo caiu abaixo do patamar` : ''}.` : ''} Abri os lançamentos que formam o saldo.`,
       effect: open(`MOVES:goalId=${goal.id}|Saldo da meta "${goal.name}"`),
       references: [],
     };

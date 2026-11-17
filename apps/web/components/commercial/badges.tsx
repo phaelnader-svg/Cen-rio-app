@@ -1,3 +1,4 @@
+import { plural } from '@cenario/shared';
 import {
   DEADLINE_REASON_LABEL,
   DEADLINE_STATE_LABEL,
@@ -94,7 +95,9 @@ export const ServiceStateBadge = ({
       }
     >
       {ORDER_SERVICE_STATE_LABEL[state]}
-      {returned > 0 && state === 'SERVICO_CONCLUIDO' ? ` · ${returned} devolvida(s)` : ''}
+      {returned > 0 && state === 'SERVICO_CONCLUIDO'
+        ? ` · ${plural(returned, 'devolvida', 'devolvidas')}`
+        : ''}
     </Badge>
   );
 
