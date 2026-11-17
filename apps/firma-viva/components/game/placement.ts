@@ -16,8 +16,67 @@ import {
   pieceWorkflow,
   rectOfArea,
 } from '@cenario/shared';
-import { FURNITURE_SIZE, OFFICE_SEAT } from './models';
+import { type BuildStage, FURNITURE_SIZE, OFFICE_SEAT, fabricColorFor } from './models';
 import type { PersonVisual, PieceVisual } from './engine';
+
+const TONE_COLOR = {
+  ok: '#1f7a46',
+  atencao: '#a15c07',
+  risco: '#b42323',
+  info: '#2c5ea8',
+} as const;
+
+const ACT_LEVEL: Record<string, number> = {
+  DESMONTAGEM: 1,
+  PREPARACAO: 2,
+  PREPARACAO_MDF: 2,
+  CORTE: 2,
+  CORTE_TECIDO: 2,
+  CORTE_ESPUMA: 3,
+  COSTURA: 3,
+  REVESTIMENTO: 4,
+  MONTAGEM: 4,
+  ACABAMENTO: 4,
+  CORRECAO: 4,
+  EMBALAGEM: 5,
+};
+const LEVEL_STAGE: BuildStage[] = [
+  'ANTIGA',
+  'DESMONTADA',
+  'ESTRUTURA',
+  'ESPUMA',
+  'CAPA',
+  'EMBALADA',
+];
+
+/**
+ * Aparência da peça pela etapa real: chega usada (reforma) ou só na estrutura (fabricação), é
+ * desmontada, ganha espuma, capa nova e sai embalada. Usa a etapa mais avançada já iniciada ou
+ * concluída; inspeção mostra a capa pronta; expedição, embalada.
+ */
+export function buildStageOf(p: Pick<GamePieceDto, 'stage' | 'tasks' | 'serviceType'>): BuildStage {
+  if (
+    [
+      'AGUARDANDO_EMBALAGEM',
+      'EM_EMBALAGEM',
+      'PRONTA_ENTREGA',
+      'ENTREGA_AGENDADA',
+      'EM_TRANSPORTE',
+      'BLOQUEIO_EXPEDICAO',
+      'ENTREGUE',
+    ].includes(p.stage)
+  )
+    return 'EMBALADA';
+  if (['AGUARDANDO_INSPECAO', 'EM_INSPECAO', 'EM_CORRECAO'].includes(p.stage)) return 'CAPA';
+  let level = /REFORMA|RESTAUR/i.test(p.serviceType ?? '') ? 0 : 2;
+  for (const t of p.tasks) {
+    const l = ACT_LEVEL[t.activity];
+    if (l === undefined) continue;
+    if (t.status === 'CONCLUIDA') level = Math.max(level, l === 1 ? 2 : Math.min(4, l));
+    else if (t.status === 'EM_EXECUCAO' || t.status === 'PAUSADA') level = Math.max(level, l);
+  }
+  return LEVEL_STAGE[Math.min(5, level)]!;
+}
 
 const ATTENDANCE_AWAY = [
   'AUSENCIA_PRESUMIDA',
@@ -137,14 +196,21 @@ export function piecesOnMap(
       id: p.id,
       model: p.model,
       osCode: p.itemCode,
-      tone: p.tone,
+      color: fabricColorFor(p.fabric, p.itemCode),
+      stage: buildStageOf(p),
       x: rect.x + rect.w / 2,
       y: rect.y + rect.d / 2,
       rot,
-      label: p.placement.label,
-      phase: (() => {
+      // A etapa já aparece em `phase`: tira a repetição do começo ("Em execução · …").
+      label: p.placement.label.replace(/^(Em execução|Pausada|Parada|Aguardando[^·]*) · /, ''),
+      ...(() => {
         const w = pieceWorkflow(p);
-        return `${w.icon} ${w.phaseLabel.replace(' (rascunho, não publicada)', '').replace('Parada (bloqueada)', 'Parada')}`;
+        const late = isLate(p);
+        return {
+          phase: `${w.icon} ${w.phaseLabel.replace(' (rascunho, não publicada)', '').replace('Parada (bloqueada)', 'Parada')}${late ? ' · ⚠ atrasada' : ''}`,
+          icon: late && w.phase !== 'PRONTA_ENTREGA' ? '⚠' : w.icon,
+          tone: late && w.phase !== 'PRONTA_ENTREGA' ? TONE_COLOR.risco : TONE_COLOR[w.tone],
+        };
       })(),
       dimmed: matches ? !matches(p) : false,
       highlight: p.id === highlightId,
@@ -152,6 +218,15 @@ export function piecesOnMap(
     });
   }
   return out;
+}
+
+/** Prazo prometido já passou (dia de hoje em São Paulo). */
+export function isLate(p: Pick<GamePieceDto, 'promisedDate' | 'stage'>, now = new Date()) {
+  if (!p.promisedDate) return false;
+  if (['PRONTA_ENTREGA', 'ENTREGA_AGENDADA', 'EM_TRANSPORTE', 'ENTREGUE'].includes(p.stage))
+    return false;
+  const today = now.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  return p.promisedDate.slice(0, 10) < today;
 }
 
 function rank(p: GamePieceDto) {
@@ -163,6 +238,8 @@ export function peopleOnMap(
   spaceKind: string,
   employees: GameEmployeeDto[],
   agents: AgentDto[],
+  pieces: GamePieceDto[] = [],
+  now = Date.now(),
 ): PersonVisual[] {
   const out: PersonVisual[] = [];
   if (spaceKind !== 'ESCRITORIO') {
@@ -185,24 +262,29 @@ export function peopleOnMap(
         face = Math.PI - (st.rotation * Math.PI) / 180;
       }
       const away = e.attendance && ATTENDANCE_AWAY.includes(e.attendance);
+      const cur = e.currentTask;
+      const working = cur && cur.status !== 'PAUSADA';
       out.push({
         id: e.userId,
         kind: 'employee',
         name: e.name,
         color: e.color,
+        roles: e.roles,
         x,
         y,
         face,
-        status: e.currentTask
-          ? e.currentTask.status === 'PAUSADA'
+        status: cur
+          ? cur.status === 'PAUSADA'
             ? 'pausado'
-            : 'trabalhando'
+            : undefined
           : away
             ? 'ausente'
             : e.queue.length
               ? `${e.queue.length} na fila`
               : 'livre',
         dim: Boolean(away),
+        activity: working ? cur.activity : null,
+        bubble: bubbleOf(e, pieces, now),
       });
     }
   }
@@ -231,4 +313,34 @@ export function peopleOnMap(
     });
   }
   return out;
+}
+
+/** Balão sobre o funcionário: parado por falta de algo, terminou agora, ou trabalhando em peça atrasada. */
+export function bubbleOf(
+  e: GameEmployeeDto,
+  pieces: GamePieceDto[],
+  now = Date.now(),
+): PersonVisual['bubble'] {
+  const cur = e.currentTask;
+  if (cur?.status === 'PAUSADA') {
+    const why = cur.blockers[0];
+    return { text: `⏸ ${why ? short(why) : 'pausado'}`, tone: 'warn' };
+  }
+  if (cur) {
+    const piece = pieces.find((p) => p.tasks.some((t) => t.id === cur.id));
+    if (piece && isLate(piece)) return { text: '⚠ atrasado', tone: 'danger' };
+    return null;
+  }
+  // Terminou uma etapa nos últimos 10 minutos.
+  const done = pieces
+    .flatMap((p) => p.tasks)
+    .filter((t) => t.assigneeUserId === e.userId && t.status === 'CONCLUIDA' && t.completedAt)
+    .some((t) => now - new Date(t.completedAt!).getTime() < 10 * 60_000);
+  if (done) return { text: '✓ terminei', tone: 'ok' };
+  return null;
+}
+
+function short(s: string) {
+  const t = s.replace(/^Falta de /i, 'falta ').replace(/\.$/, '');
+  return t.length > 22 ? `${t.slice(0, 21)}…` : t.charAt(0).toLowerCase() + t.slice(1);
 }

@@ -8,13 +8,12 @@
 import {
   type ClearanceProblem,
   type CommandEffect,
+  type GamePieceDto,
   type GameSpaceDto,
   type LayoutContent,
   type MestreReply,
-  type QuickFilter,
   type RemovalImpact,
   QUICK_FILTERS,
-  QUICK_FILTER_LABEL,
   brlCents,
   signedBrl,
   signedPct,
@@ -30,15 +29,25 @@ import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
   Building2,
+  ChevronDown,
+  ChevronUp,
   Eye,
   Hammer,
   Map as MapIcon,
+  MessageCircle,
   Minus,
+  MoreHorizontal,
   Plus,
   Redo2,
+  RotateCcw,
+  RotateCw,
   Save,
   Search,
+  Settings2,
   Undo2,
+  Volume2,
+  VolumeX,
+  X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -71,7 +80,22 @@ import {
   useLayoutDraft,
 } from './editor';
 import { CenariaChat } from './cenaria-chat';
-import { GameEngine, type Overlays, type PickTarget } from './engine';
+import { GameEngine, type Overlays, type PickTarget, type Quality } from './engine';
+import {
+  FirmaLogo,
+  LoadingScreen,
+  MissionsPanel,
+  ReplayBar,
+  SettingsMenu,
+  ShortcutsDialog,
+  useIsMobile,
+  useMuted,
+  useRemembered,
+} from './game-hud';
+import { type Mission, type Progress, progressOf, updateProgress } from './progress';
+import { replayRange, snapshotAt } from './replay';
+import { sound } from './sound';
+import { TUTORIAL_KEY, Tutorial, type TutorialEvent, buildSteps, tutorialSeen } from './tutorial';
 import {
   useAgents,
   useIntegrations,
@@ -85,10 +109,11 @@ import { type Drill, GoalsPanel, nextGoalOf, useCash } from './office-goals';
 import { AdsPanel, ConnectionsPanel, InboxPanel, MarketingPanel, useInbox } from './office-panels';
 import { AgentConfigPanel, AgentPanel, EmployeePanel } from './people-panels';
 import { PiecePanel } from './piece-panel';
-import { peopleOnMap, piecesOnMap } from './placement';
+import { isLate, peopleOnMap, piecesOnMap } from './placement';
 import { MaterialPanel, StoragePanel } from './storage-panel';
 import { GBtn, KV, Panel, Tone, fmtClock, fmtDate } from './ui';
 import { useServiceOrder } from './game-api';
+import { ACTIVITY_LABEL_GAME } from '@cenario/shared';
 import { cenarioUrl } from '@/lib/links';
 
 type Side =
@@ -109,10 +134,26 @@ type Side =
   | { t: 'marketing' }
   | { t: 'ficha'; so: string; focus: string | null }
   | { t: 'finance'; filter: string | null }
-  | { t: 'quick'; f: QuickFilter }
+  | { t: 'quick'; f: MapFilter }
   | { t: 'goals'; tab: string | null; drill: Drill | null }
   | { t: 'os'; id: string }
+  | { t: 'missions' }
   | null;
+
+/** Filtros rápidos do mapa (situação da etapa; o material fica na ficha da peça). */
+type MapFilter = 'EM_EXECUCAO' | 'PARADOS' | 'ATRASADAS' | 'PRONTOS';
+const MAP_FILTER_LABEL: Record<MapFilter, string> = {
+  EM_EXECUCAO: '▶️ Em execução',
+  PARADOS: '⏸️ Parados',
+  ATRASADAS: '⚠️ Atrasadas',
+  PRONTOS: '🚚 Prontas',
+};
+const MAP_FILTERS: Record<MapFilter, (p: GamePieceDto) => boolean> = {
+  EM_EXECUCAO: QUICK_FILTERS.EM_EXECUCAO,
+  PARADOS: QUICK_FILTERS.PARADOS,
+  ATRASADAS: (p) => isLate(p),
+  PRONTOS: QUICK_FILTERS.PRONTOS,
+};
 
 const SNAPSHOT_EVENTS = [
   'production.',
@@ -161,7 +202,42 @@ export function GameWorld() {
   const [overlays, setOverlays] = useState<Overlays>({});
   const [tip, setTip] = useState<string | null>(null);
   const [highlight, setHighlight] = useState<string | null>(null);
-  const [quick, setQuick] = useState<QuickFilter | null>(null);
+  const [quick, setQuick] = useState<MapFilter | null>(null);
+  const isMobile = useIsMobile();
+  const muted = useMuted();
+  const [legendOpen, setLegendOpen] = useRemembered<boolean>(
+    isMobile ? 'firma-resumo-aberto-cel' : 'firma-resumo-aberto',
+    !isMobile, // no celular começa recolhido para sobrar tela para a oficina
+  );
+  const [chatOpenMobile, setChatOpenMobile] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [mobileSearch, setMobileSearch] = useState(false);
+  const [quality, setQualityState] = useState<{ quality: Quality; auto: boolean }>({
+    quality: 'alta',
+    auto: true,
+  });
+  const [hour, setHour] = useState<number | null>(null);
+  const [dismissed, setDismissed] = useRemembered<string>('firma-avisos-lidos', '');
+  const [ready, setReady] = useState(false);
+  const [fade, setFade] = useState(false);
+  const [progress, setProgress] = useState<{
+    progress: Progress;
+    missions: Mission[];
+    week: { total: number; people: { id: string; name: string; n: number }[] };
+  } | null>(null);
+  const [replay, setReplay] = useState<{
+    at: number;
+    from: number;
+    to: number;
+    playing: boolean;
+    speed: number;
+  } | null>(null);
+  const [tutorial, setTutorial] = useState(false);
+  const [tutEvents, setTutEvents] = useState<Set<TutorialEvent>>(new Set());
+  const tutEvent = useCallback((e: TutorialEvent) => {
+    setTutEvents((s) => (s.has(e) ? s : new Set([...s, e])));
+  }, []);
   const [mestre, setMestre] = useState<{
     history: { who: 'eu' | 'mestre'; text: string }[];
     pending: MestreReply | null;
@@ -200,6 +276,7 @@ export function GameWorld() {
     () => {},
   );
   const arriveRef = useRef<(tag: string) => void>(() => {});
+  const assignDropRef = useRef<(pieceId: string, userId: string) => void>(() => {});
 
   const space: GameSpaceDto | undefined =
     spaces.data?.find((s) => s.key === spaceKey) ?? spaces.data?.[0];
@@ -213,8 +290,19 @@ export function GameWorld() {
       onPick: (t, p) => pickRef.current(t, p),
       onDrag: (t, x, y, ph) => dragRef.current(t, x, y, ph),
       onArrive: (tag) => arriveRef.current(tag),
+      onAssignDrop: (pieceId, userId) => assignDropRef.current(pieceId, userId),
+      onQuality: () => setQualityState(e.getQuality()),
+      onReady: () => window.setTimeout(() => setReady(true), 350),
+      onStep: () => sound().play('step'),
     });
     engine.current = e;
+    setQualityState(e.getQuality());
+    // ?hora=21 mostra a luz de outra hora (prévia); sem parâmetro, hora real.
+    const h = new URLSearchParams(window.location.search).get('hora');
+    if (h !== null && !Number.isNaN(Number(h))) {
+      e.setHour(Number(h));
+      setHour(Number(h));
+    }
     // Apoio a testes automatizados em desenvolvimento (nunca em produção).
     if (process.env.NODE_ENV !== 'production')
       (window as unknown as { __cenarioGame?: GameEngine }).__cenarioGame = e;
@@ -412,35 +500,158 @@ export function GameWorld() {
       editable: canBuild,
       snapCm: 10,
       agentDesks,
+      canAssign: Boolean(snapshot.data?.canPlan) && !replay,
+      rewards: progress?.progress.rewards ?? [],
     });
-  }, [layout, mode, preview, sel, side, snapshot.data?.slotAlerts, canBuild, agentDesks, building]);
+  }, [
+    layout,
+    mode,
+    preview,
+    sel,
+    side,
+    snapshot.data?.slotAlerts,
+    snapshot.data?.canPlan,
+    canBuild,
+    agentDesks,
+    building,
+    replay,
+    progress?.progress.rewards,
+  ]);
 
-  // Peças e pessoas (dinâmico).
+  // Destaque da seleção: o que está aberto no painel fica em evidência, o resto escurece.
+  useEffect(() => {
+    const id =
+      building || !side
+        ? null
+        : side.t === 'piece' || side.t === 'employee' || side.t === 'agent' || side.t === 'station'
+          ? side.id
+          : side.t === 'storage'
+            ? side.unitId
+            : null;
+    engine.current?.setFocus(id);
+  }, [side, building]);
+
+  // Peças e pessoas (dinâmico). No replay, o retrato é reconstruído no instante escolhido.
+  const replayMinute = replay ? Math.floor(replay.at / 60_000) : null;
   useEffect(() => {
     const e = engine.current;
     if (!e || !layout || !space) return;
     const workshop = space.key === 'TAPECARIA';
+    const snap =
+      replay && snapshot.data && workshop
+        ? snapshotAt(layout, snapshot.data, replay.at)
+        : snapshot.data;
     const pieces =
-      workshop && snapshot.data
-        ? piecesOnMap(
-            layout,
-            snapshot.data.pieces,
-            highlight,
-            quick ? QUICK_FILTERS[quick] : undefined,
-          )
+      workshop && snap
+        ? piecesOnMap(layout, snap.pieces, highlight, quick ? MAP_FILTERS[quick] : undefined)
         : [];
     e.setPieces(pieces);
     e.setPeople(
       peopleOnMap(
         layout,
         space.kind,
-        workshop ? (snapshot.data?.employees ?? []) : [],
+        workshop ? (snap?.employees ?? []) : [],
         space.kind === 'ESCRITORIO' || !workshop
           ? (agents.data ?? []).filter((a) => layout.stations.some((s) => s.id === a.deskStationId))
           : [],
+        snap?.pieces ?? [],
+        replay?.at ?? Date.now(),
       ),
     );
-  }, [snapshot.data, agents.data, layout, space, highlight, building, preview, quick]);
+    // Ambiente de som acompanha quanta gente está trabalhando.
+    sound().setActivity(
+      (snap?.employees ?? []).filter((x) => x.currentTask && x.currentTask.status !== 'PAUSADA')
+        .length,
+    );
+    // `replay` entra só pelo minuto (replayMinute), para não redesenhar a cada quadro.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    snapshot.data,
+    agents.data,
+    layout,
+    space,
+    highlight,
+    building,
+    preview,
+    quick,
+    replayMinute,
+  ]);
+
+  // Replay: avança o relógio (1× = 1 hora por segundo).
+  useEffect(() => {
+    if (!replay?.playing) return;
+    const id = window.setInterval(() => {
+      setReplay((r) => {
+        if (!r || !r.playing) return r;
+        const at = Math.min(r.to, r.at + r.speed * 3600_000 * 0.1);
+        return { ...r, at, playing: at < r.to };
+      });
+    }, 100);
+    return () => window.clearInterval(id);
+  }, [replay?.playing]);
+
+  // Novidades do retrato: etapa iniciada, peça pronta, atraso novo, etapa concluída.
+  const prevSnap = useRef<typeof snapshot.data | null>(null);
+  useEffect(() => {
+    const cur = snapshot.data;
+    const prev = prevSnap.current;
+    prevSnap.current = cur ?? null;
+    const e = engine.current;
+    if (!cur || !prev || !e || replay || spaceKey !== 'TAPECARIA') return;
+    const prevTasks = new Map(prev.pieces.flatMap((p) => p.tasks.map((t) => [t.id, t.status])));
+    let started = false;
+    for (const p of cur.pieces) {
+      for (const t of p.tasks) {
+        const before = prevTasks.get(t.id);
+        if (
+          t.status === 'EM_EXECUCAO' &&
+          before &&
+          before !== 'EM_EXECUCAO' &&
+          before !== 'PAUSADA'
+        )
+          started = true;
+        if (t.status === 'CONCLUIDA' && before && before !== 'CONCLUIDA' && t.assigneeUserId)
+          e.celebrateAt(
+            t.assigneeUserId,
+            `✓ ${ACTIVITY_LABEL_GAME[t.activity] ?? 'Etapa'} concluída`,
+          );
+      }
+      const old = prev.pieces.find((x) => x.id === p.id);
+      const readyNow = ['PRONTA_ENTREGA', 'ENTREGA_AGENDADA', 'EM_TRANSPORTE'];
+      if (old && !readyNow.includes(old.stage) && readyNow.includes(p.stage)) {
+        e.celebrateAt(p.id, p.stage === 'EM_TRANSPORTE' ? '🚚 Saiu para entrega!' : '🎉 Pronta!');
+        sound().play('celebrate');
+      }
+      if (old && !isLate(old) && isLate(p)) sound().play('late');
+    }
+    if (started) sound().play('task');
+  }, [snapshot.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Missões, nível e placar (a partir do trabalho real).
+  const orgId = me.data?.organization?.id ?? null;
+  useEffect(() => {
+    if (!orgId || !snapshot.data || replay) return;
+    const r = updateProgress(orgId, snapshot.data);
+    setProgress({ progress: r.progress, missions: r.missions, week: r.week });
+    for (const m of r.freshMissions) {
+      toast('ok', `🎯 Missão cumprida: ${m.title} (+${m.xp} XP)`);
+      engine.current?.celebrate();
+      sound().play('celebrate');
+    }
+    if (r.leveledUp) {
+      toast('ok', `⭐ A oficina subiu para o nível ${r.progress.level}: ${r.progress.levelName}!`);
+      sound().play('celebrate');
+    }
+  }, [orgId, snapshot.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  const prog = progress?.progress ?? progressOf(0);
+
+  // Tutorial no primeiro acesso (depois de carregar).
+  useEffect(() => {
+    if (ready && !tutorialSeen()) {
+      const t = window.setTimeout(() => setTutorial(true), 600);
+      return () => window.clearTimeout(t);
+    }
+  }, [ready]);
 
   useEffect(() => {
     engine.current?.setOverlays(overlays);
@@ -482,7 +693,14 @@ export function GameWorld() {
       !window.confirm('Há mudanças não salvas. Trocar de ambiente e descartar?')
     )
       return;
+    if (key === spaceKey) return;
     const from = spaceKey;
+    // Transição suave: escurece, troca e clareia.
+    setFade(true);
+    sound().play('whoosh');
+    window.setTimeout(() => setFade(false), 380);
+    if (key === 'ESCRITORIO') tutEvent('office');
+    if (replay) setReplay(null);
     setSpaceKey(key);
     setSide(null);
     setSel(null);
@@ -536,8 +754,10 @@ export function GameWorld() {
       return;
     }
     const walkNear = (x: number, y: number, tag: string | null = null) => e.walkTo(x, y, tag);
+    if (t.kind !== 'area' && t.kind !== 'door') sound().play('open');
     switch (t.kind) {
       case 'piece': {
+        tutEvent('piece');
         setSide({ t: 'piece', id: t.id });
         setHighlight(t.id);
         if (p) walkNear(p.x, p.y);
@@ -548,6 +768,7 @@ export function GameWorld() {
         if (p) walkNear(p.x, p.y);
         break;
       case 'agent':
+        tutEvent('agent');
         setSide(canUseAgents ? { t: 'agent', id: t.id } : null);
         if (!canUseAgents) toast('danger', 'Sua conta não conversa com agentes (agentes.usar).');
         break;
@@ -558,8 +779,10 @@ export function GameWorld() {
         );
         if (st?.kind === 'QUADRO_METAS' && canFinView)
           setSide({ t: 'goals', tab: null, drill: null });
-        else if (agent && canUseAgents) setSide({ t: 'agent', id: agent.id });
-        else if (st && catalogOf(st.kind).desk) setSide({ t: 'desk', id: t.id });
+        else if (agent && canUseAgents) {
+          tutEvent('agent');
+          setSide({ t: 'agent', id: agent.id });
+        } else if (st && catalogOf(st.kind).desk) setSide({ t: 'desk', id: t.id });
         else setSide({ t: 'station', id: t.id });
         if (p) walkNear(p.x, p.y);
         break;
@@ -589,6 +812,64 @@ export function GameWorld() {
   };
   arriveRef.current = (tag) => {
     if (tag.startsWith('door:')) switchSpace(tag.slice(5));
+  };
+
+  // ───────────── Arrastar peça até funcionário (atribuir etapa) ─────────────
+  assignDropRef.current = (pieceId, userId) => {
+    const p = snapshot.data?.pieces.find((x) => x.id === pieceId);
+    const emp = snapshot.data?.employees.find((x) => x.userId === userId);
+    if (!p || !emp) return;
+    tutEvent('assign');
+    const task =
+      p.nextTask ??
+      p.tasks.find(
+        (t) => !['CONCLUIDA', 'CANCELADA', 'EM_EXECUCAO', 'PAUSADA'].includes(t.status),
+      ) ??
+      null;
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+    if (p.currentTask && !task) {
+      sound().play('error');
+      toast(
+        'danger',
+        `${p.itemCode} já está em execução com ${p.currentTask.assigneeName ?? 'alguém'}. A troca acontece no tablet.`,
+      );
+      return;
+    }
+    sound().play('click');
+    setAssignPrev(
+      task
+        ? {
+            kind: 'ATRIBUIR_PREVIA',
+            mode: 'TROCAR_RESPONSAVEL',
+            serviceOrderId: p.serviceOrderId,
+            osCode: p.osCode,
+            pieceLabel: `${p.itemCode} · ${p.description}`,
+            etapa: ACTIVITY_LABEL_GAME[task.activity] ?? task.title,
+            funcionario: emp.name,
+            userId,
+            data: task.scheduledAt?.slice(0, 10) ?? today,
+            taskId: task.id,
+            taskVersion: task.version,
+            published: task.status !== 'RASCUNHO',
+            pieces: [],
+          }
+        : {
+            kind: 'ATRIBUIR_PREVIA',
+            mode: 'PLANEJAR',
+            serviceOrderId: p.serviceOrderId,
+            osCode: p.osCode,
+            pieceLabel: `${p.itemCode} · ${p.description}`,
+            etapa: 'Planejar o serviço',
+            funcionario: emp.name,
+            userId,
+            data: today,
+            taskId: null,
+            taskVersion: null,
+            published: false,
+            pieces: [{ serviceOrderItemId: p.id, upholstererUserId: userId }],
+          },
+    );
+    if (isMobile) setChatOpenMobile(true);
   };
 
   // ───────────── Arraste (Construção) ─────────────
@@ -668,13 +949,14 @@ export function GameWorld() {
         setSel(null);
         setSide(null);
         setOverlays({});
+        setShortcutsOpen(false);
+        setSettingsOpen(false);
       }
       if (k === '+' || k === '=') engine.current?.zoomBy(1 / 1.15);
       if (k === '-') engine.current?.zoomBy(1.15);
-      if (k === 'arrowleft') engine.current?.panBy(-0.5, 0.5);
-      if (k === 'arrowright') engine.current?.panBy(0.5, -0.5);
-      if (k === 'arrowup') engine.current?.panBy(-0.5, -0.5);
-      if (k === 'arrowdown') engine.current?.panBy(0.5, 0.5);
+      if (k === '?' || (k === '/' && e.shiftKey)) setShortcutsOpen((v) => !v);
+      if (k === 'c' && !e.ctrlKey && !e.metaKey) engine.current?.overview();
+      if (k === 'm' && !e.ctrlKey && !e.metaKey) sound().setMuted(!sound().isMuted());
       if (mode !== 'CONSTRUCAO' || preview) return;
       if ((e.ctrlKey || e.metaKey) && k === 'z') {
         e.preventDefault();
@@ -1026,6 +1308,7 @@ export function GameWorld() {
     if (!building && spaceKey !== 'ESCRITORIO') setSpaceKey('ESCRITORIO');
   };
   const handleEffect = (effect: CommandEffect) => {
+    tutEvent('chat');
     switch (effect.kind) {
       case 'ABRIR_PECA':
         setSel(null);
@@ -1401,34 +1684,292 @@ export function GameWorld() {
         : 'ok';
   const counts = useMemo(() => {
     const ps = snapshot.data?.pieces ?? [];
-    return {
-      falta: ps.filter((p) => p.tone === 'FALTA').length,
-      ok: ps.filter((p) => p.tone === 'DISPONIVEL').length,
-      conferir: ps.filter((p) => p.tone === 'A_CONFERIR').length,
-    };
+    return Object.fromEntries(
+      (Object.keys(MAP_FILTERS) as MapFilter[]).map((f) => [f, ps.filter(MAP_FILTERS[f]).length]),
+    ) as Record<MapFilter, number>;
   }, [snapshot.data]);
+
+  // Espaço ocupado pela interface (para enquadrar a oficina sem nada por cima).
+  const topBar = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const e = engine.current;
+    if (!e) return;
+    const top = (topBar.current?.getBoundingClientRect().bottom ?? 60) + 8;
+    // No celular o resumo aberto ocupa a largura toda: a oficina fica abaixo dele.
+    const legend = isMobile && legendOpen ? document.querySelector('[data-testid="legend"]') : null;
+    e.setInsets({
+      top: legend ? legend.getBoundingClientRect().bottom + 8 : top,
+      left: 0,
+      right: !isMobile && side ? 430 : 0,
+      // No celular o painel abre de baixo (até 64% da tela): o que está em foco fica acima dele.
+      bottom: isMobile ? (side ? window.innerHeight * 0.64 + 8 : 64) : 24,
+    });
+  }, [isMobile, side, legendOpen, space?.key, building, ready]);
+  const firstOverview = useRef(false);
+  useEffect(() => {
+    if (ready && !firstOverview.current) {
+      firstOverview.current = true;
+      engine.current?.overview(false);
+    }
+  }, [ready]);
+
+  const illustrativeKey = space ? `ilustrativa:${space.key}` : '';
+  const showIllustrative =
+    !building && Boolean(space?.illustrative) && !dismissed.split('|').includes(illustrativeKey);
+  const workshopView = !building && space?.key === 'TAPECARIA';
+  const panelOpen = Boolean(
+    (building && (sel || side?.t === 'room' || side?.t === 'mestre')) || (!building && side),
+  );
+  const chatVisible = !isMobile || (chatOpenMobile && !panelOpen) || Boolean(chatCard);
+  const loadingSteps = [
+    { label: 'Abrindo a empresa', done: Boolean(me.data) },
+    { label: 'Montando a planta', done: Boolean(spaces.data) || spaces.isError },
+    {
+      label: 'Trazendo a produção do Cenário',
+      done: !canSeeProduction || Boolean(snapshot.data) || snapshot.isError,
+    },
+    { label: 'Chamando a equipe e os agentes', done: !agents.isPending },
+    { label: 'Acendendo as luzes', done: ready },
+  ];
+  const tutorialSteps = useMemo(
+    () =>
+      buildSteps({
+        pieceId:
+          (
+            snapshot.data?.pieces.find((p) => p.placement.kind === 'ESTACAO') ??
+            snapshot.data?.pieces[0]
+          )?.id ?? null,
+        employeeName: snapshot.data?.employees[0]?.name ?? null,
+        hasOffice: Boolean(spaces.data?.some((s) => s.key === 'ESCRITORIO')),
+        gerenteId: agents.data?.find((a) => a.roleKey === 'GERENTE' && a.deskStationId)?.id ?? null,
+        canAssign: Boolean(snapshot.data?.canPlan),
+      }),
+    [tutorial], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const locateForTutorial = useCallback(
+    (id: string) => engine.current?.screenOf(id, 1.2) ?? null,
+    [],
+  );
+  const closeTutorial = useCallback(() => {
+    try {
+      window.localStorage.setItem(TUTORIAL_KEY, 'visto');
+    } catch {
+      /* sem armazenamento */
+    }
+    setTutorial(false);
+  }, []);
+  const startReplay = () => {
+    const r = snapshot.data ? replayRange(snapshot.data) : null;
+    if (!r) return toast('danger', 'Ainda não há etapas registradas nesta semana para o replay.');
+    if (spaceKey !== 'TAPECARIA') switchSpace('TAPECARIA');
+    setSide(null);
+    setQuick(null);
+    setReplay({ at: r.from, from: r.from, to: r.to, playing: true, speed: 4 });
+    window.setTimeout(() => engine.current?.overview(), 50);
+  };
+  const mapBtn = 'grid size-9 place-items-center rounded-xl hover:bg-subtle';
+
+  const settings = settingsOpen ? (
+    <SettingsMenu
+      quality={quality.quality}
+      auto={quality.auto}
+      onQuality={(q) => {
+        engine.current?.setQuality(q);
+        setQualityState(engine.current?.getQuality() ?? quality);
+      }}
+      hour={hour}
+      onHour={(h) => {
+        setHour(h);
+        engine.current?.setHour(h);
+      }}
+      onShortcuts={() => {
+        setSettingsOpen(false);
+        setShortcutsOpen(true);
+      }}
+      onTutorial={() => {
+        setSettingsOpen(false);
+        setTutEvents(new Set());
+        setTutorial(true);
+      }}
+      onClose={() => setSettingsOpen(false)}
+      extra={
+        isMobile ? (
+          <div className="mb-3 flex flex-wrap gap-1.5 border-b border-line pb-3">
+            <GBtn
+              tone={building ? 'bronze' : 'ghost'}
+              disabled={!canBuild}
+              onClick={() => {
+                setSettingsOpen(false);
+                if (building) leaveBuild();
+                else enterBuild();
+              }}
+            >
+              <Hammer className="size-4" /> {building ? 'Sair da Construção' : 'Construção'}
+            </GBtn>
+            <Link
+              href="/organizacao"
+              className="rounded-xl border border-line px-2.5 py-1.5 font-semibold"
+            >
+              Organização
+            </Link>
+          </div>
+        ) : null
+      }
+    />
+  ) : null;
+
+  const searchBox = (
+    <div className="pointer-events-auto relative min-w-0 flex-1 sm:max-w-xs">
+      <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-ink-muted" />
+      <input
+        value={q}
+        autoFocus={mobileSearch}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setSearchOpen(true);
+        }}
+        onFocus={() => setSearchOpen(true)}
+        onBlur={() => window.setTimeout(() => setSearchOpen(false), 200)}
+        placeholder="Buscar OS, cliente, material, pessoa…"
+        className="w-full rounded-2xl border border-line bg-white/95 py-2 pr-3 pl-9 text-sm shadow-card"
+        aria-label="Buscar no mapa"
+        data-testid="game-search"
+      />
+      {searchOpen && results.length ? (
+        <ul
+          className="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-2xl border border-line bg-white p-1 shadow-pop"
+          data-testid="search-results"
+        >
+          {results.map((r) => (
+            <li key={r.key}>
+              <button
+                className="flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-subtle"
+                onClick={() => {
+                  r.go();
+                  setMobileSearch(false);
+                }}
+              >
+                <span>{r.icon}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold">{r.label}</span>
+                  <span className="block truncate text-xs text-ink-muted">{r.sub}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+
+  const syncDot = (
+    <span
+      data-testid="sync-status"
+      data-status={sync}
+      className={clsx(
+        'flex items-center gap-1.5 rounded-xl px-2 py-1 text-xs font-semibold',
+        sync === 'ok'
+          ? 'text-ok-600'
+          : sync === 'sync'
+            ? 'text-info-600'
+            : 'bg-danger-50 text-danger-700',
+      )}
+      title={
+        snapshot.dataUpdatedAt
+          ? `Última atualização: ${fmtClock(snapshot.dataUpdatedAt)}`
+          : undefined
+      }
+    >
+      <span
+        className={clsx(
+          'size-2 shrink-0 rounded-full',
+          sync === 'ok'
+            ? 'bg-ok-600'
+            : sync === 'sync'
+              ? 'animate-pulse bg-info-600'
+              : 'animate-pulse bg-danger-600',
+        )}
+      />
+      <span className={clsx(isMobile && sync === 'ok' && 'sr-only')}>
+        {sync === 'ok'
+          ? `Ao vivo ${snapshot.dataUpdatedAt ? fmtClock(snapshot.dataUpdatedAt) : ''}`
+          : sync === 'sync'
+            ? 'Atualizando…'
+            : sync === 'offline'
+              ? `Sem conexão${snapshot.dataUpdatedAt ? ` (dados de ${fmtClock(snapshot.dataUpdatedAt)})` : ''}`
+              : 'Falha ao atualizar'}
+      </span>
+    </span>
+  );
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#cfe1dc] select-none">
       <div ref={host} className="absolute inset-0" data-testid="game-canvas" />
+      {/* Transição entre ambientes */}
+      <div
+        className={clsx(
+          'pointer-events-none absolute inset-0 z-30 bg-[#12302d] transition-opacity duration-300',
+          fade ? 'opacity-70' : 'opacity-0',
+        )}
+        aria-hidden
+      />
 
       {/* Barra superior */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start gap-2 p-2 sm:p-3">
-        <div className="pointer-events-auto flex items-center gap-2 rounded-2xl border-2 border-bronze-500/60 bg-[#fffaf2]/95 px-3 py-1.5 shadow-pop">
-          <span className="grid size-8 place-items-center rounded-xl bg-brand-700 text-sm font-black text-[#f5ebdf]">
-            F
-          </span>
-          <div className="leading-tight">
-            <div className="text-sm font-black text-brand-800" data-testid="org-name">
-              {me.data?.organization?.name ?? 'Firma Viva'}
-            </div>
-            <div className="text-[10px] font-semibold tracking-wide text-bronze-600 uppercase">
-              Firma Viva
+      <div
+        ref={topBar}
+        className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-1.5 p-2 sm:flex-row sm:flex-wrap sm:items-start sm:gap-2 sm:p-3"
+      >
+        <div className="flex items-center gap-1.5 sm:contents">
+          <div
+            data-hud
+            className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-2xl border-2 border-bronze-500/60 bg-[#fffaf2]/95 py-1 pr-3 pl-1 shadow-pop sm:py-1.5 sm:pl-1.5"
+          >
+            <FirmaLogo className="size-8 shrink-0 sm:size-9" />
+            <div className="min-w-0 leading-tight">
+              <div className="truncate text-sm font-black text-brand-800" data-testid="org-name">
+                {me.data?.organization?.name ?? 'Firma Viva'}
+              </div>
+              <div className="text-[10px] font-semibold tracking-wide text-bronze-600 uppercase">
+                Firma Viva
+              </div>
             </div>
           </div>
+          {isMobile ? (
+            <div
+              data-hud
+              className="pointer-events-auto relative ml-auto flex items-center gap-0.5 rounded-2xl border border-line bg-white/95 p-1 shadow-card"
+            >
+              {syncDot}
+              <button
+                className={mapBtn}
+                onClick={() => setMobileSearch((v) => !v)}
+                aria-label="Buscar"
+              >
+                <Search className="size-4" />
+              </button>
+              <button
+                className={mapBtn}
+                onClick={() => sound().setMuted(!muted)}
+                aria-label={muted ? 'Ligar som' : 'Desligar som'}
+              >
+                {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+              </button>
+              <button
+                className={mapBtn}
+                onClick={() => setSettingsOpen((v) => !v)}
+                aria-label="Mais opções"
+                data-testid="menu-button"
+              >
+                <MoreHorizontal className="size-4" />
+              </button>
+              {settings}
+            </div>
+          ) : null}
         </div>
+        {isMobile && mobileSearch ? <div className="flex">{searchBox}</div> : null}
         {cenarioStatus !== 'CONECTADA' ? (
           <button
+            data-hud
             className={clsx(
               'pointer-events-auto rounded-2xl border px-3 py-2 text-xs font-bold shadow-card',
               cenarioStatus === 'EXPIRADA' || cenarioStatus === 'REVOGADA'
@@ -1448,6 +1989,7 @@ export function GameWorld() {
         ) : null}
         {snapshot.data?.mode === 'CONSULTA' ? (
           <span
+            data-hud
             className="pointer-events-auto rounded-2xl border border-info-600/20 bg-info-50 px-3 py-2 text-xs font-bold text-info-600 shadow-card"
             title="Conexão em modo consulta: o Firma Viva só lê as OS e a posição das peças no Cenário Gestão. Nada é alterado daqui."
             data-testid="consulta-chip"
@@ -1455,237 +1997,309 @@ export function GameWorld() {
             👁️ Modo consulta · somente leitura
           </span>
         ) : null}
-        <nav
-          className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-line bg-white/95 p-1 shadow-card"
-          aria-label="Ambientes"
-        >
-          {spaces.data?.map((s) => (
+        <div className="flex items-center gap-1.5 sm:contents">
+          <nav
+            data-hud
+            className="pointer-events-auto flex min-w-0 items-center gap-1 overflow-x-auto rounded-2xl border border-line bg-white/95 p-1 shadow-card"
+            aria-label="Ambientes"
+          >
+            {spaces.data?.map((s) => (
+              <button
+                key={s.key}
+                onClick={() => switchSpace(s.key)}
+                data-testid={`space-${s.key}`}
+                className={clsx(
+                  'shrink-0 rounded-xl px-2.5 py-1.5 text-sm font-semibold whitespace-nowrap sm:px-3',
+                  s.key === spaceKey ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-subtle',
+                )}
+              >
+                {s.kind === 'ESCRITORIO' ? '🏢' : s.kind === 'OFICINA' ? '🪡' : '📦'} {s.name}
+              </button>
+            ))}
+            {building && canBuild ? (
+              <button
+                onClick={createSpace}
+                className="shrink-0 rounded-xl px-2 py-1.5 text-sm font-semibold text-bronze-600 hover:bg-bronze-100"
+                title="Adicionar ambiente"
+              >
+                + Ambiente
+              </button>
+            ) : null}
+          </nav>
+          {!building ? (
             <button
-              key={s.key}
-              onClick={() => switchSpace(s.key)}
-              data-testid={`space-${s.key}`}
-              className={clsx(
-                'rounded-xl px-3 py-1.5 text-sm font-semibold',
-                s.key === spaceKey ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-subtle',
-              )}
+              data-hud
+              className="pointer-events-auto flex shrink-0 items-center gap-1.5 rounded-2xl border border-bronze-500/40 bg-[#fffaf2]/95 px-2.5 py-2 text-xs font-bold text-bronze-600 shadow-card sm:px-3"
+              onClick={() => {
+                tutEvent('missions');
+                setSide(side?.t === 'missions' ? null : { t: 'missions' });
+              }}
+              data-testid="missions-chip"
+              title="Missões do dia e nível da oficina"
             >
-              {s.kind === 'ESCRITORIO' ? '🏢' : s.kind === 'OFICINA' ? '🪡' : '📦'} {s.name}
-            </button>
-          ))}
-          {building && canBuild ? (
-            <button
-              onClick={createSpace}
-              className="rounded-xl px-2 py-1.5 text-sm font-semibold text-bronze-600 hover:bg-bronze-100"
-              title="Adicionar ambiente"
-            >
-              + Ambiente
+              🎯 <span className="max-sm:hidden">Missões ·</span> Nv {prog.level}
+              {progress ? (
+                <span className="rounded-full bg-bronze-500 px-1.5 text-[10px] text-white">
+                  {progress.missions.filter((m) => m.done).length}/{progress.missions.length}
+                </span>
+              ) : null}
             </button>
           ) : null}
-        </nav>
-        <div
-          className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-line bg-white/95 p-1 shadow-card"
-          role="group"
-          aria-label="Modo"
-        >
-          <button
-            onClick={() => (building ? leaveBuild() : undefined)}
-            data-testid="mode-gestao"
-            className={clsx(
-              'flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-semibold',
-              !building ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-subtle',
-            )}
-          >
-            <Building2 className="size-4" /> Gestão
-          </button>
-          <button
-            onClick={() => (!building && canBuild ? enterBuild() : undefined)}
-            disabled={!canBuild}
-            title={canBuild ? 'Editar a planta' : 'Exige jogo.construir'}
-            data-testid="mode-construcao"
-            className={clsx(
-              'flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40',
-              building ? 'bg-bronze-500 text-white' : 'text-ink-soft hover:bg-subtle',
-            )}
-          >
-            <Hammer className="size-4" /> Construção
-          </button>
         </div>
-        <div className="pointer-events-auto relative min-w-56 flex-1 sm:max-w-sm">
-          <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-ink-muted" />
-          <input
-            value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setSearchOpen(true);
-            }}
-            onFocus={() => setSearchOpen(true)}
-            placeholder="Buscar OS, cliente, material, pessoa…"
-            className="w-full rounded-2xl border border-line bg-white/95 py-2 pr-3 pl-9 text-sm shadow-card"
-            aria-label="Buscar no mapa"
-            data-testid="game-search"
-          />
-          {searchOpen && results.length ? (
-            <ul
-              className="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-2xl border border-line bg-white p-1 shadow-pop"
-              data-testid="search-results"
+        {!isMobile ? (
+          <>
+            <div
+              data-hud
+              className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-line bg-white/95 p-1 shadow-card"
+              role="group"
+              aria-label="Modo"
             >
-              {results.map((r) => (
-                <li key={r.key}>
-                  <button
-                    className="flex w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left hover:bg-subtle"
-                    onClick={r.go}
-                  >
-                    <span>{r.icon}</span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold">{r.label}</span>
-                      <span className="block truncate text-xs text-ink-muted">{r.sub}</span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-        <div className="pointer-events-auto ml-auto flex items-center gap-1 rounded-2xl border border-line bg-white/95 p-1 shadow-card">
-          <span
-            data-testid="sync-status"
-            data-status={sync}
-            className={clsx(
-              'mr-1 flex items-center gap-1.5 rounded-xl px-2 py-1 text-xs font-semibold',
-              sync === 'ok'
-                ? 'text-ok-600'
-                : sync === 'sync'
-                  ? 'text-info-600'
-                  : 'bg-danger-50 text-danger-700',
-            )}
-            title={
-              snapshot.dataUpdatedAt
-                ? `Última atualização: ${fmtClock(snapshot.dataUpdatedAt)}`
-                : undefined
-            }
-          >
-            <span
-              className={clsx(
-                'size-2 rounded-full',
-                sync === 'ok'
-                  ? 'bg-ok-600'
-                  : sync === 'sync'
-                    ? 'animate-pulse bg-info-600'
-                    : 'animate-pulse bg-danger-600',
-              )}
-            />
-            {sync === 'ok'
-              ? `Sincronizado ${snapshot.dataUpdatedAt ? fmtClock(snapshot.dataUpdatedAt) : ''}`
-              : sync === 'sync'
-                ? 'Atualizando…'
-                : sync === 'offline'
-                  ? `Mapa pendente de atualização${snapshot.dataUpdatedAt ? ` (dados de ${fmtClock(snapshot.dataUpdatedAt)})` : ''} — atualiza ao reconectar`
-                  : 'Falha ao atualizar — tentando de novo'}
-          </span>
-          <button
-            className="rounded-xl p-2 hover:bg-subtle"
-            onClick={() => engine.current?.zoomBy(1 / 1.2)}
-            aria-label="Aproximar"
-          >
-            <Plus className="size-4" />
-          </button>
-          <button
-            className="rounded-xl p-2 hover:bg-subtle"
-            onClick={() => engine.current?.zoomBy(1.2)}
-            aria-label="Afastar"
-          >
-            <Minus className="size-4" />
-          </button>
-          <button
-            className="rounded-xl p-2 hover:bg-subtle"
-            onClick={() => engine.current?.overview()}
-            aria-label="Visão geral"
-            title="Visão geral"
-            data-testid="overview"
-          >
-            <MapIcon className="size-4" />
-          </button>
-          <Link
-            href="/organizacao"
-            className="rounded-xl px-2 py-1.5 text-xs font-semibold text-ink-soft hover:bg-subtle"
-          >
-            Organização
-          </Link>
-        </div>
+              <button
+                onClick={() => (building ? leaveBuild() : undefined)}
+                data-testid="mode-gestao"
+                className={clsx(
+                  'flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-semibold',
+                  !building ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-subtle',
+                )}
+              >
+                <Building2 className="size-4" /> Gestão
+              </button>
+              <button
+                onClick={() => (!building && canBuild ? enterBuild() : undefined)}
+                disabled={!canBuild}
+                title={canBuild ? 'Editar a planta' : 'Exige jogo.construir'}
+                data-testid="mode-construcao"
+                className={clsx(
+                  'flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40',
+                  building ? 'bg-bronze-500 text-white' : 'text-ink-soft hover:bg-subtle',
+                )}
+              >
+                <Hammer className="size-4" /> Construção
+              </button>
+            </div>
+            <div data-hud className="contents">
+              {searchBox}
+            </div>
+            <div
+              data-hud
+              className="pointer-events-auto relative ml-auto flex items-center gap-0.5 rounded-2xl border border-line bg-white/95 p-1 shadow-card"
+            >
+              {syncDot}
+              <button
+                className={mapBtn}
+                onClick={() => sound().setMuted(!muted)}
+                aria-label={muted ? 'Ligar som' : 'Desligar som'}
+                title={muted ? 'Ligar som (M)' : 'Desligar som (M)'}
+                data-testid="sound-toggle"
+              >
+                {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+              </button>
+              <button
+                className={mapBtn}
+                onClick={() => setShortcutsOpen(true)}
+                aria-label="Atalhos"
+                title="Atalhos (?)"
+              >
+                <span className="text-sm font-black">?</span>
+              </button>
+              <button
+                className={mapBtn}
+                onClick={() => setSettingsOpen((v) => !v)}
+                aria-label="Ajustes"
+                title="Som, qualidade gráfica e luz"
+                data-testid="settings-button"
+              >
+                <Settings2 className="size-4" />
+              </button>
+              <Link
+                href="/organizacao"
+                className="rounded-xl px-2 py-1.5 text-xs font-semibold text-ink-soft hover:bg-subtle"
+              >
+                Organização
+              </Link>
+              {settings}
+            </div>
+          </>
+        ) : null}
       </div>
 
-      {/* Legenda (Gestão) */}
-      {!building && space?.key === 'TAPECARIA' ? (
-        <div
-          className="pointer-events-auto absolute top-[7.5rem] left-3 flex max-w-sm flex-wrap gap-1.5 rounded-2xl border border-line bg-white/95 p-2 text-xs shadow-card sm:top-20"
-          data-testid="legend"
+      {/* Controles do mapa (zoom, girar, centralizar) */}
+      <div
+        data-hud
+        className={clsx(
+          'pointer-events-auto absolute z-10 flex flex-col gap-0.5 rounded-2xl border border-line bg-white/95 p-1 shadow-card',
+          isMobile ? 'right-2 bottom-20' : 'top-1/2 right-3 -translate-y-1/2',
+          !isMobile && panelOpen && 'hidden',
+          isMobile && panelOpen && 'hidden',
+        )}
+        data-testid="map-controls"
+      >
+        <button
+          className={mapBtn}
+          onClick={() => engine.current?.zoomBy(1 / 1.25)}
+          aria-label="Aproximar"
+          title="Aproximar (+)"
         >
-          <Tone tone="FALTA">⛔ Falta material · {counts.falta}</Tone>
-          <Tone tone="DISPONIVEL">✅ Material disponível · {counts.ok}</Tone>
-          <Tone tone="A_CONFERIR">❔ A conferir · {counts.conferir}</Tone>
-          <span className="flex items-center gap-1 text-info-600">
-            📍 posição física confirmada
-          </span>
-          {canFinView && goal ? (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 border-t border-line pt-1.5 text-left"
-              onClick={() => setSide({ t: 'goals', tab: null, drill: null })}
-              data-testid="goals-compact"
-              title="Quadro de Metas (barra = saldo ÷ meta)"
-            >
-              <span>🎯</span>
-              <span className="h-2 flex-1 overflow-hidden rounded-full bg-subtle">
-                <span
-                  className={`block h-full ${goal.belowAfterAchieved ? 'bg-danger-600' : 'bg-ok-600'}`}
-                  style={{ width: `${Math.min(100, Math.max(0, goal.pctOfGoal))}%` }}
-                />
-              </span>
-              <span className="font-semibold">
-                {brlCents(goal.balanceCents)} de {brlCents(goal.targetCents)} · faltam{' '}
-                {brlCents(goal.missingCents)}
-              </span>
-            </button>
-          ) : null}
+          <Plus className="size-4" />
+        </button>
+        <button
+          className={mapBtn}
+          onClick={() => engine.current?.zoomBy(1.25)}
+          aria-label="Afastar"
+          title="Afastar (−)"
+        >
+          <Minus className="size-4" />
+        </button>
+        <button
+          className={mapBtn}
+          onClick={() => engine.current?.rotate(-1)}
+          aria-label="Girar para a esquerda"
+          title="Girar (Q)"
+        >
+          <RotateCcw className="size-4" />
+        </button>
+        <button
+          className={mapBtn}
+          onClick={() => engine.current?.rotate(1)}
+          aria-label="Girar para a direita"
+          title="Girar (E)"
+        >
+          <RotateCw className="size-4" />
+        </button>
+        <button
+          className={mapBtn}
+          onClick={() => engine.current?.overview()}
+          aria-label="Centralizar"
+          title="Centralizar: visão geral (C)"
+          data-testid="overview"
+        >
+          <MapIcon className="size-4" />
+        </button>
+      </div>
+
+      {/* Resumo da oficina (recolhível) */}
+      {workshopView && !replay ? (
+        legendOpen && !(isMobile && panelOpen) ? (
           <div
-            className="flex w-full flex-wrap gap-1 border-t border-line pt-1.5"
-            data-testid="quick-filters"
+            data-hud
+            className={clsx(
+              'animate-pop-in pointer-events-auto absolute z-10 flex flex-col gap-1.5 rounded-2xl border border-line bg-white/95 p-2 text-xs shadow-card',
+              isMobile ? 'inset-x-2' : 'left-3 w-[19rem]',
+            )}
+            style={{ top: (topBar.current?.getBoundingClientRect().bottom ?? 64) + 6 }}
+            data-testid="legend"
           >
-            {(Object.keys(QUICK_FILTERS) as QuickFilter[]).map((f) => {
-              const n = (snapshot.data?.pieces ?? []).filter(QUICK_FILTERS[f]).length;
-              return (
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-ink">Resumo da oficina</span>
+              <button
+                className="rounded-lg p-1 text-ink-muted hover:bg-subtle"
+                onClick={() => setLegendOpen(false)}
+                aria-label="Recolher resumo"
+                data-testid="legend-collapse"
+              >
+                <ChevronUp className="size-4" />
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1" data-testid="quick-filters">
+              {(Object.keys(MAP_FILTERS) as MapFilter[]).map((f) => (
                 <button
                   key={f}
                   data-testid={`quick-${f}`}
                   onClick={() => {
                     const on = quick === f ? null : f;
                     setQuick(on);
-                    setSide(on ? { t: 'quick', f: on } : null);
+                    setSide(on ? { t: 'quick', f: on as MapFilter } : null);
+                    sound().play('click');
                   }}
-                  className={`rounded-full border px-2 py-0.5 font-semibold ${quick === f ? 'border-brand-600 bg-brand-600 text-white' : 'border-line bg-white'}`}
+                  className={clsx(
+                    'rounded-full border px-2 py-0.5 font-semibold',
+                    quick === f
+                      ? 'border-brand-600 bg-brand-600 text-white'
+                      : f === 'ATRASADAS' && counts[f]
+                        ? 'border-danger-600/30 bg-danger-50 text-danger-700'
+                        : 'border-line bg-white',
+                  )}
                 >
-                  {QUICK_FILTER_LABEL[f]} · {n}
+                  {MAP_FILTER_LABEL[f]} · {counts[f]}
                 </button>
-              );
-            })}
+              ))}
+            </div>
+            {canFinView && goal ? (
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 border-t border-line pt-1.5 text-left"
+                onClick={() => setSide({ t: 'goals', tab: null, drill: null })}
+                data-testid="goals-compact"
+                title="Quadro de Metas (barra = saldo ÷ meta)"
+              >
+                <span>🎯</span>
+                <span className="h-2 flex-1 overflow-hidden rounded-full bg-subtle">
+                  <span
+                    className={`block h-full ${goal.belowAfterAchieved ? 'bg-danger-600' : 'bg-ok-600'}`}
+                    style={{ width: `${Math.min(100, Math.max(0, goal.pctOfGoal))}%` }}
+                  />
+                </span>
+                <span className="font-semibold">
+                  {brlCents(goal.balanceCents)} de {brlCents(goal.targetCents)}
+                </span>
+              </button>
+            ) : null}
+            {!canSeeProduction ? (
+              <span className="text-danger-700">
+                {cenarioStatus === 'CONECTADA'
+                  ? 'Sem permissão de ver a produção.'
+                  : 'Conecte o Cenário Gestão para ver as OS e a produção da empresa.'}
+              </span>
+            ) : null}
           </div>
-          {!canSeeProduction ? (
-            <span className="text-danger-700">
-              {cenarioStatus === 'CONECTADA'
-                ? 'Sem permissão de ver a produção.'
-                : 'Conecte o Cenário Gestão para ver as OS e a produção da empresa.'}
-            </span>
-          ) : null}
-        </div>
+        ) : !(isMobile && panelOpen) ? (
+          <button
+            data-hud
+            className="pointer-events-auto absolute left-2 z-10 flex items-center gap-1.5 rounded-full border border-line bg-white/95 px-3 py-1.5 text-xs font-bold shadow-card sm:left-3"
+            style={{ top: (topBar.current?.getBoundingClientRect().bottom ?? 64) + 6 }}
+            onClick={() => setLegendOpen(true)}
+            data-testid="legend-expand"
+          >
+            📋 Resumo · ▶️ {counts.EM_EXECUCAO} · ⏸️ {counts.PARADOS}
+            {counts.ATRASADAS ? (
+              <span className="text-danger-700">· ⚠️ {counts.ATRASADAS}</span>
+            ) : null}
+            <ChevronDown className="size-3.5" />
+          </button>
+        ) : null
       ) : null}
-      {!building && space?.illustrative ? (
-        <div className="pointer-events-none absolute top-[4.5rem] left-1/2 -translate-x-1/2 rounded-full bg-warn-600/90 px-3 py-1 text-xs font-semibold text-white shadow-card">
-          Planta com medidas ilustrativas — ajuste no modo Construção
+
+      {/* Aviso da planta ilustrativa: some depois de lido */}
+      {showIllustrative && !replay ? (
+        <div
+          data-hud
+          className="animate-pop-in pointer-events-auto absolute left-1/2 z-10 flex w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 items-center gap-2 rounded-2xl border border-warn-600/30 bg-warn-50/97 py-1.5 pr-1.5 pl-3 text-xs text-warn-600 shadow-card"
+          style={{ bottom: isMobile ? 76 : 16 }}
+          data-testid="illustrative-notice"
+        >
+          <span>📐 Planta com medidas ilustrativas.</span>
+          {canBuild && !isMobile ? (
+            <button className="font-bold underline" onClick={enterBuild}>
+              Ajustar no modo Construção
+            </button>
+          ) : null}
+          <button
+            className="rounded-lg p-1 hover:bg-warn-600/10"
+            aria-label="Entendi"
+            onClick={() => setDismissed([dismissed, illustrativeKey].filter(Boolean).join('|'))}
+            data-testid="illustrative-dismiss"
+          >
+            <X className="size-3.5" />
+          </button>
         </div>
       ) : null}
 
-      {!building && space?.kind === 'ESCRITORIO' ? (
-        <div className="pointer-events-auto absolute top-[7.5rem] left-3 flex flex-col items-start gap-1.5 sm:top-20">
+      {!building && space?.kind === 'ESCRITORIO' && !(isMobile && panelOpen) ? (
+        <div
+          data-hud
+          className="pointer-events-auto absolute left-2 z-10 flex flex-wrap items-start gap-1.5 max-sm:right-2 sm:left-3 sm:flex-col"
+          style={{ top: (topBar.current?.getBoundingClientRect().bottom ?? 64) + 6 }}
+        >
           <button
             className="flex items-center gap-2 rounded-2xl border border-line bg-white/95 px-3 py-2 text-xs font-semibold shadow-card"
             onClick={() => setSide({ t: 'central' })}
@@ -1820,12 +2434,66 @@ export function GameWorld() {
         </>
       ) : null}
 
-      {/* Painel lateral */}
-      <div className="pointer-events-none absolute bottom-3 left-3 z-10">
-        <CenariaChat spaceKey={spaceKey} onEffect={(e) => handleEffect(e)} card={chatCard} />
-      </div>
+      {/* Falar com a Firma (no celular, vira um botão) */}
+      {!replay ? (
+        chatVisible ? (
+          <div
+            data-hud
+            className={clsx(
+              'pointer-events-none absolute z-20',
+              isMobile ? 'inset-x-2 bottom-2' : 'bottom-3 left-3',
+            )}
+          >
+            {isMobile ? (
+              <div className="pointer-events-auto mb-1 flex justify-end">
+                <button
+                  className="rounded-full bg-white/95 p-1.5 shadow-card"
+                  onClick={() => setChatOpenMobile(false)}
+                  aria-label="Fechar conversa"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            ) : null}
+            <CenariaChat spaceKey={spaceKey} onEffect={(e) => handleEffect(e)} card={chatCard} />
+          </div>
+        ) : !panelOpen ? (
+          <button
+            data-hud
+            className="pointer-events-auto absolute bottom-3 left-2 z-20 flex items-center gap-2 rounded-full border-2 border-brand-600/50 bg-brand-700 px-4 py-2.5 text-sm font-bold text-[#f5ebdf] shadow-pop"
+            onClick={() => setChatOpenMobile(true)}
+            data-testid="chat-open"
+          >
+            <MessageCircle className="size-4" /> Falar com a Firma
+          </button>
+        ) : null
+      ) : null}
 
-      <aside className="pointer-events-none absolute top-20 right-3 bottom-3 flex w-[min(420px,calc(100vw-1.5rem))] flex-col">
+      {replay ? (
+        <ReplayBar
+          at={replay.at}
+          from={replay.from}
+          to={replay.to}
+          playing={replay.playing}
+          speed={replay.speed}
+          onSeek={(t) => setReplay((r) => (r ? { ...r, at: t } : r))}
+          onPlay={(p) =>
+            setReplay((r) => (r ? { ...r, playing: p, at: p && r.at >= r.to ? r.from : r.at } : r))
+          }
+          onSpeed={(sp) => setReplay((r) => (r ? { ...r, speed: sp } : r))}
+          onClose={() => setReplay(null)}
+        />
+      ) : null}
+
+      <aside
+        data-hud={panelOpen ? '' : undefined}
+        className={clsx(
+          'pointer-events-none absolute z-20 flex flex-col',
+          isMobile
+            ? 'inset-x-2 bottom-2 max-h-[64dvh]'
+            : 'top-20 right-3 bottom-3 w-[min(420px,calc(100vw-1.5rem))]',
+        )}
+      >
         {building && sel && editor.draft && !preview ? (
           <Properties
             draft={editor.draft}
@@ -2045,7 +2713,7 @@ export function GameWorld() {
           />
         ) : side?.t === 'quick' ? (
           <Panel
-            title={QUICK_FILTER_LABEL[side.f]}
+            title={MAP_FILTER_LABEL[side.f]}
             subtitle="O que pede decisão agora — toque para abrir a ficha"
             icon="🔎"
             onClose={() => {
@@ -2055,7 +2723,7 @@ export function GameWorld() {
             testId="quick-panel"
           >
             <ul className="space-y-1.5 text-xs">
-              {(snapshot.data?.pieces ?? []).filter(QUICK_FILTERS[side.f]).map((p) => {
+              {(snapshot.data?.pieces ?? []).filter(MAP_FILTERS[side.f]).map((p) => {
                 const w = pieceWorkflow(p);
                 return (
                   <li key={p.id}>
@@ -2083,18 +2751,24 @@ export function GameWorld() {
                           Próxima: {w.next.label} · {w.next.assignee ?? 'sem responsável'}
                         </div>
                       ) : null}
-                      {p.tone === 'FALTA' ? (
-                        <div className="text-danger-700">Material: {w.material.label}</div>
-                      ) : null}
                     </button>
                   </li>
                 );
               })}
-              {!(snapshot.data?.pieces ?? []).some(QUICK_FILTERS[side.f]) ? (
+              {!(snapshot.data?.pieces ?? []).some(MAP_FILTERS[side.f]) ? (
                 <li className="text-ink-muted">Nenhuma peça neste filtro.</li>
               ) : null}
             </ul>
           </Panel>
+        ) : side?.t === 'missions' && progress ? (
+          <MissionsPanel
+            missions={progress.missions}
+            progress={progress.progress}
+            week={progress.week}
+            onClose={() => setSide(null)}
+            onReplay={startReplay}
+            canReplay={Boolean(snapshot.data && replayRange(snapshot.data))}
+          />
         ) : side?.t === 'ficha' ? (
           <FichaPanel
             key={`${side.so}${side.focus ?? ''}`}
@@ -2196,10 +2870,15 @@ export function GameWorld() {
           onConfirm={(t) => void save(t)}
         />
       ) : null}
-      {!spaces.data && spaces.isPending ? (
-        <div className="absolute inset-0 grid place-items-center text-sm font-semibold text-brand-800">
-          Abrindo a empresa virtual…
-        </div>
+      <LoadingScreen steps={loadingSteps} hidden={ready || spaces.isError} />
+      {shortcutsOpen ? <ShortcutsDialog onClose={() => setShortcutsOpen(false)} /> : null}
+      {tutorial && ready && !replay ? (
+        <Tutorial
+          steps={tutorialSteps}
+          events={tutEvents}
+          locate={locateForTutorial}
+          onClose={closeTutorial}
+        />
       ) : null}
       {spaces.isError ? (
         <div className="absolute inset-0 grid place-items-center">
