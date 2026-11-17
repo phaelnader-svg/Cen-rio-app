@@ -232,6 +232,43 @@ describe('Orçamentos', () => {
     expect(ok(await post(admin, '/api/v1/quotes', linhoDraft), 201).number).toBe(9500);
   });
 
+  it('editar um orçamento salvo mantém número e link e refaz os valores', async () => {
+    const admin = await loginAdmin(app);
+    const c = await baseCatalog(admin);
+    const s = ok(await admin.get('/api/v1/quotes/settings'));
+    ok(await admin.req('PATCH', '/api/v1/quotes/settings', { version: s.version, taxRateBps: 0 }));
+    const item = (qty: number) => [
+      { id: 'a', catalogItemId: c.linho.id, qty, heightCm: 0, widthCm: 0, lengthCm: 0 },
+    ];
+    const q = ok(
+      await post(admin, '/api/v1/quotes', draft({ fabricChange: true, items: item(2) })),
+      201,
+    );
+    expect(q.totalCents).toBe(7000);
+    const edited = ok(
+      await admin.req('PUT', `/api/v1/quotes/${q.id}`, {
+        version: q.version,
+        draft: draft({ customerName: 'Maria S. Silva', fabricChange: true, items: item(3) }),
+      }),
+    );
+    expect(edited).toMatchObject({
+      id: q.id,
+      number: q.number,
+      customerName: 'Maria S. Silva',
+      totalCents: 10500,
+      status: q.status,
+    });
+    expect(edited.version).toBe(q.version + 1);
+    // Versão antiga: recusa (outra pessoa já alterou).
+    const stale = await admin.req('PUT', `/api/v1/quotes/${q.id}`, {
+      version: q.version,
+      draft: draft({ fabricChange: true, items: item(1) }),
+    });
+    expect(stale.status).toBe(409);
+    const list = ok<J[]>(await admin.get('/api/v1/quotes'));
+    expect(list.filter((x) => x.number === q.number)).toHaveLength(1);
+  });
+
   it('O.S. exige tapeceiro responsável; excluir esconde o orçamento', async () => {
     const admin = await loginAdmin(app);
     const c = await baseCatalog(admin);

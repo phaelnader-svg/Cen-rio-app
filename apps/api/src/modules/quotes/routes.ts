@@ -11,6 +11,7 @@ import {
   quoteCatalogCreateSchema,
   quoteCatalogUpdateSchema,
   quoteDraftSchema,
+  quoteUpdateSchema,
   quoteSaveBlocker,
   quoteSettingsUpdateSchema,
   workOrderSchema,
@@ -502,6 +503,47 @@ export async function quoteRoutes(app: FastifyInstance) {
       return reply.status(201).send(await loadQuote(prisma, id));
     },
   );
+
+  // Editar um orçamento salvo: mesmo número e mesmo link; a proposta é refeita com a base atual.
+  app.put('/api/v1/quotes/:id', { config: { access: MANAGE } }, async (request) => {
+    const { id } = idParams.parse(request.params);
+    const { version, draft } = quoteUpdateSchema.parse(request.body);
+    const actor = actorFrom(request);
+    await prisma.$transaction(async (tx) => {
+      const q = await tx.quote.findFirst({ where: { id, deletedAt: null } });
+      if (!q) throw Errors.notFound('Orçamento');
+      if (q.version !== version) throw Errors.versionConflict(q.version);
+      if (q.orderId)
+        throw Errors.business(
+          `O orçamento nº ${q.number} já virou um pedido. Altere os dados no pedido.`,
+        );
+      const [catalog, settings] = await Promise.all([catalogDtos(tx), settingsDto(tx)]);
+      const totals = calcQuote(draft, catalog, settings.taxRateBps);
+      const blocker = quoteSaveBlocker(draft, totals);
+      if (blocker) throw Errors.business(blocker);
+      const snapshot = buildQuoteSnapshot(draft, catalog, settings, new Date());
+      if (!snapshot.service) throw Errors.business('Informe o serviço antes de salvar.');
+      await tx.quote.update({
+        where: { id },
+        data: {
+          customerName: snapshot.customerName,
+          phone: snapshot.phone || null,
+          service: snapshot.service,
+          totalCents: snapshot.totals.totalCents,
+          snapshot: snapshot as unknown as Prisma.InputJsonValue,
+          version: { increment: 1 },
+        },
+      });
+      await audit(tx, actor, {
+        action: 'quotes.updated',
+        entityType: 'quote',
+        entityId: id,
+        summary: `Orçamento nº ${q.number} alterado (${snapshot.customerName}).`,
+        changes: { totalCents: { from: q.totalCents, to: snapshot.totals.totalCents } },
+      });
+    });
+    return loadQuote(prisma, id);
+  });
 
   app.put(
     '/api/v1/quotes/:id/work-order',

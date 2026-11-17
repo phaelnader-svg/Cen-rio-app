@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { PieceType, ServiceType } from './domain';
 
 /**
  * Módulo Orçamentos — proposta comercial com materiais automáticos.
@@ -762,3 +763,118 @@ export const normalizeQuoteName = (v: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+
+// ─────────────────────────── Editar um orçamento salvo ───────────────────────────
+
+export const quoteUpdateSchema = z.object({
+  version: z.number().int().min(1),
+  draft: quoteDraftSchema,
+});
+export type QuoteUpdateInput = z.infer<typeof quoteUpdateSchema>;
+
+/**
+ * Reabre um orçamento salvo no "Elaborar": a cópia gravada guarda os nomes (não os cadastros),
+ * então cada linha volta a apontar para o cadastro de mesmo nome na base de dados atual.
+ * `missing` lista o que não existe mais na base (fica de fora e a pessoa escolhe de novo).
+ */
+export function quoteDraftFromSnapshot(
+  s: QuoteSnapshot,
+  catalog: readonly QuoteCatalogItemDto[],
+): { draft: QuoteDraft; missing: string[] } {
+  const missing: string[] = [];
+  const norm = (v: string) => v.trim().toLocaleLowerCase('pt-BR');
+  const find = (kind: QuoteCatalogKind, name: string, category?: string | null) =>
+    catalog.find(
+      (c) =>
+        c.kind === kind &&
+        norm(c.name) === norm(name) &&
+        (category === undefined || c.category === category),
+    ) ?? null;
+  const ref = (kind: QuoteCatalogKind, v: { name: string } | null, label: string) => {
+    if (!v) return null;
+    const m = find(kind, v.name);
+    if (!m) missing.push(`${label} "${v.name}"`);
+    return m?.id ?? null;
+  };
+  const items: QuoteDraftItem[] = [];
+  s.lines.forEach((l, i) => {
+    const m = find('MATERIAL', l.name, l.category);
+    if (!m) return void missing.push(`material "${l.name}"`);
+    items.push({
+      id: `e${i}`,
+      catalogItemId: m.id,
+      qty: l.qty,
+      heightCm: l.heightCm,
+      widthCm: l.widthCm,
+      lengthCm: l.lengthCm,
+    });
+  });
+  const known = (QUOTE_SERVICES as readonly string[]).includes(s.service);
+  const draft: QuoteDraft = {
+    customerName: s.customerName,
+    phone: s.phone,
+    city: s.city,
+    service: known ? s.service : QUOTE_OTHER_SERVICE,
+    serviceOther: known ? '' : s.service,
+    fabricChange: s.fabricChange,
+    foamChange: s.foamChange,
+    items,
+    logisticsId: ref('LOGISTICA', s.logistics, 'rota'),
+    upholsteryServiceId: ref('MAO_TAPECEIRO', s.upholstery, 'serviço do tapeceiro'),
+    helperServiceId: ref('MAO_AJUDANTE', s.helper, 'serviço do ajudante'),
+    sofaCount: Math.max(1, s.sofaCount),
+    profitCents: s.totals.profitCents,
+    feeId: ref('TAXA_MAQUINA', s.fee, 'taxa'),
+    deliveryDays: s.deliveryDays,
+    validityDays: s.validityDays,
+    paymentTerms: s.paymentTerms,
+    notes: s.notes,
+  };
+  return { draft, missing };
+}
+
+// ─────────────────────────── Fechar serviço a partir do orçamento ───────────────────────────
+
+/** Peça e tipo de serviço do pedido deduzidos do serviço escolhido no orçamento. */
+export function quoteServiceToPiece(service: string): {
+  pieceType: PieceType;
+  serviceType: ServiceType;
+} {
+  const s = service.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const has = (...w: string[]) => w.some((x) => s.includes(x));
+  const pieceType: PieceType = has('sofa', 'namoradeira', 'chaise', 'diva', 'recamier')
+    ? 'SOFA'
+    : has('poltrona')
+      ? 'POLTRONA'
+      : has('cadeira')
+        ? 'CADEIRA'
+        : has('cabeceira')
+          ? 'CABECEIRA'
+          : has('puff', 'pufe')
+            ? 'PUFE'
+            : has('banco', 'banqueta')
+              ? 'BANCO'
+              : has('colchonete', 'cama box', 'assento', 'almofada')
+                ? 'COLCHAO'
+                : 'OUTRO';
+  const serviceType: ServiceType = has('troca de espuma')
+    ? 'TROCA_DE_ESPUMA'
+    : has('troca de tecido', 'troca de revestimento', 'revestimento de')
+      ? 'TROCA_DE_TECIDO'
+      : has('reparo')
+        ? 'REPARO'
+        : has('fabricacao', 'confeccao', 'estruturacao')
+          ? 'FABRICACAO'
+          : has('reforma')
+            ? 'REFORMA_COMPLETA'
+            : 'OUTRO';
+  return { pieceType, serviceType };
+}
+
+/** Data prometida (AAAA-MM-DD) a partir do prazo do orçamento, contado de hoje. */
+export function quotePromisedDate(deliveryDays: number | null, today: string): string {
+  if (!deliveryDays) return '';
+  const d = new Date(`${today}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + deliveryDays);
+  return d.toISOString().slice(0, 10);
+}
