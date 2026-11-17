@@ -33,3 +33,4 @@ export function isUniqueViolation(error: unknown, field?: string): boolean {
 }
 export * from './tenancy';
 export * from './scoped';
+export * from './company-content';

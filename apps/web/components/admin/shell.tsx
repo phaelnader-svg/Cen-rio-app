@@ -67,7 +67,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const items = visibleNav(perms, modules);
+  const items = visibleNav(perms, modules, data.company.platformOwner);
 
   async function logout() {
     // B4: a saída encerra a sessão, e o tempo real avisa "sessão encerrada" — que aqui é esperado.

@@ -1,4 +1,13 @@
-import { adminLoginSchema, changePasswordSchema } from '@cenario/shared';
+import {
+  DEFAULT_ROLE_SKILLS,
+  EVENT_TYPES,
+  GESTOR_ROLE_KEY,
+  adminLoginSchema,
+  changePasswordSchema,
+  signupSchema,
+} from '@cenario/shared';
+import { createCompanyContent, isUniqueViolation } from '@cenario/db';
+import { appendEvent } from '../../core/events/append';
 import type { FastifyInstance } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
 import { loadUserPermissions } from '../../core/permissions';
@@ -7,7 +16,7 @@ import { AuthThrottle, POLICIES, clientIpKey } from '../../core/throttle';
 import { burnVerification, hashSecret, verifySecret } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
 import { cookieOptions } from '../../plugins/auth';
-import { buildMe } from '../presenters';
+import { buildMe, employeeEventPayload } from '../presenters';
 
 export async function authRoutes(app: FastifyInstance) {
   const { prisma, system, env, hashToken, cookies } = app.ctx;
@@ -23,7 +32,10 @@ export async function authRoutes(app: FastifyInstance) {
     // Multi-empresa: o e-mail é único no sistema todo e diz de qual empresa é o usuário.
     const user = await system.user.findUnique({
       where: { email: input.email },
-      include: { employee: { select: { active: true } } },
+      include: {
+        employee: { select: { active: true } },
+        company: { select: { blockedAt: true } },
+      },
     });
     const ok = user?.passwordHash
       ? await verifySecret(user.passwordHash, input.password)
@@ -36,6 +48,11 @@ export async function authRoutes(app: FastifyInstance) {
       throw Errors.invalidCredentials('E-mail ou senha incorretos.');
     }
 
+    if (user.company.blockedAt) {
+      throw Errors.forbidden(
+        'O acesso desta empresa está bloqueado. Fale com o suporte do Cenário.',
+      );
+    }
     if (request.tenant) request.tenant.companyId = user.companyId;
     const permissions = await loadUserPermissions(prisma, user.id);
     if (!permissions.has('painel.acessar')) {
@@ -76,6 +93,109 @@ export async function authRoutes(app: FastifyInstance) {
       expiresAt: session.expiresAt,
       permissions,
     });
+  });
+
+  /**
+   * Criar conta (tela /entrar). Multi-empresa, etapa 4 (decisão do dono, 16/11/2026): cada conta
+   * criada é uma EMPRESA NOVA, com dados separados de todas as outras, e entra direto, sem
+   * aprovação. Quem cria vira o gestor dessa empresa (todas as permissões dela). Nunca entra numa
+   * empresa que já existe.
+   */
+  app.post('/api/auth/signup', { config: { access: { public: true } } }, async (request, reply) => {
+    const input = signupSchema.parse(request.body);
+    const ipKey = clientIpKey(request, 'signup-ip');
+    await throttle.assertAllowed([ipKey, 'signup:global']);
+    await throttle.registerFailure(ipKey, POLICIES.signup);
+    await throttle.registerFailure('signup:global', POLICIES.signupGlobal);
+
+    const taken = await system.user.findUnique({
+      where: { email: input.email },
+      select: { id: true },
+    });
+    if (taken) throw Errors.conflict('Já existe uma conta com este e-mail. Entre com a sua senha.');
+
+    const passwordHash = await hashSecret(input.password);
+    const displayName = (input.email.split('@')[0] || 'Gestor').slice(0, 40).padEnd(2, '_');
+    let created;
+    try {
+      created = await system.$transaction(async (tx) => {
+        const company = await tx.companySettings.create({
+          data: { tradeName: 'Minha empresa', email: input.email },
+        });
+        // Daqui em diante a transação é da empresa nova, com a trava do banco ligada: tudo o que
+        // for gravado fica nela, e nada de outra empresa aparece.
+        await tx.$executeRaw`SELECT set_config('app.company_id', ${String(company.id)}, true),
+          set_config('app.bypass_rls', 'off', true)`;
+        if (request.tenant) request.tenant.companyId = company.id;
+
+        const roles = await createCompanyContent(tx);
+        const user = await tx.user.create({
+          data: {
+            email: input.email,
+            passwordHash,
+            displayName,
+            credentialsChangedAt: new Date(),
+            roles: { create: { roleId: roles.get(GESTOR_ROLE_KEY)! } },
+          },
+        });
+        const employee = await tx.employee.create({
+          data: {
+            userId: user.id,
+            fullName: displayName,
+            displayName,
+            jobTitle: 'Gestor',
+            color: '#1D4ED8',
+          },
+        });
+        const skills = DEFAULT_ROLE_SKILLS[GESTOR_ROLE_KEY] ?? [];
+        if (skills.length)
+          await tx.employeeSkill.createMany({
+            data: skills.map((skill) => ({ employeeId: employee.id, skill })),
+          });
+        const session = await createSession(tx, env, hashToken, {
+          kind: 'WEB',
+          userId: user.id,
+          deviceId: null,
+          ip: request.ip,
+          userAgent: request.headers['user-agent'] ?? null,
+        });
+        await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+        const actor = { ...actorFrom(request), userId: user.id, sessionId: session.session.id };
+        await audit(tx, actor, {
+          action: 'auth.signup',
+          entityType: 'company',
+          entityId: String(company.id),
+          summary: `Conta criada pela tela de entrar (${input.email}): empresa nova nº ${company.id}.`,
+        });
+        await appendEvent(tx, actor, {
+          type: EVENT_TYPES.EMPLOYEE_CREATED,
+          aggregateType: 'employee',
+          aggregateId: employee.id,
+          payload: employeeEventPayload(employee),
+        });
+        return { ...session, userId: user.id };
+      });
+    } catch (error) {
+      if (request.tenant) request.tenant.companyId = null;
+      if (isUniqueViolation(error, 'email')) {
+        throw Errors.conflict('Já existe uma conta com este e-mail. Entre com a sua senha.');
+      }
+      throw error;
+    }
+
+    const { session, token, userId } = created;
+    const permissions = await loadUserPermissions(prisma, userId);
+    const maxAge = Math.floor((session.expiresAt.getTime() - Date.now()) / 1000);
+    void reply.setCookie(cookies.session, token, cookieOptions(env.COOKIE_SECURE, maxAge));
+    const me = await buildMe(prisma, {
+      sessionId: session.id,
+      kind: 'WEB',
+      userId,
+      deviceId: null,
+      expiresAt: session.expiresAt,
+      permissions,
+    });
+    return reply.status(201).send(me);
   });
 
   /** Encerra a sessão atual (painel ou tablet). No tablet, o dispositivo continua vinculado. */

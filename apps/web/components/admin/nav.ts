@@ -42,6 +42,8 @@ export interface NavItem {
   allOf?: Permission[];
   /** Reformulação, Fase 0: some do menu quando a funcionalidade está desligada. */
   module?: ModuleKey;
+  /** Multi-empresa: só para o dono da plataforma (gestor da Cenário Estofados). */
+  platformOnly?: true;
 }
 
 /**
@@ -108,6 +110,14 @@ export const NAV: NavItem[] = [
     label: 'Dispositivos e sessões',
     icon: TabletSmartphone,
     anyOf: ['dispositivos.ver', 'sessoes.ver'],
+  },
+  // Multi-empresa: empresas que usam o sistema (criadas pelo "Criar conta"); bloquear/liberar.
+  {
+    href: '/painel/empresas',
+    label: 'Empresas',
+    icon: Building2,
+    anyOf: ['empresa.configurar'],
+    platformOnly: true,
   },
   // Aplicativos com acesso delegado (ex.: Firma Viva): cadastrar, ver e revogar autorizações.
   {
@@ -245,8 +255,10 @@ export const UPCOMING: { label: string; icon: LucideIcon }[] = [];
 export function visibleNav(
   perms: ReadonlySet<Permission>,
   modules: Partial<Record<ModuleKey, boolean>>,
+  platformOwner = false,
 ): (NavItem & { group: NavGroup })[] {
-  return NAV.filter((i) => !i.anyOf || i.anyOf.some((p) => perms.has(p)))
+  return NAV.filter((i) => !i.platformOnly || platformOwner)
+    .filter((i) => !i.anyOf || i.anyOf.some((p) => perms.has(p)))
     .filter((i) => !i.allOf || i.allOf.every((p) => perms.has(p)))
     .filter((i) => !i.module || modules[i.module])
     .map((i, n) => ({ ...i, group: navGroupOf(i.href), n }))

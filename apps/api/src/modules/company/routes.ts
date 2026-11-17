@@ -145,9 +145,11 @@ export async function companyRoutes(app: FastifyInstance) {
         );
       const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {
-        if (!(await lockRow(tx, 'company_settings', 1)))
+        if (!(await lockRow(tx, 'company_settings', requireCompanyId())))
           throw Errors.notFound('Configuração da empresa');
-        const before = await tx.moduleSetting.findUnique({ where: { key } });
+        const before = await tx.moduleSetting.findUnique({
+          where: { companyId_key: { companyId: requireCompanyId(), key } },
+        });
         const currentVersion = before?.version ?? 0;
         if (input.version !== currentVersion) throw Errors.versionConflict(currentVersion);
         const wasEnabled = before?.enabled ?? MODULES[key].defaultEnabled;
@@ -157,7 +159,7 @@ export async function companyRoutes(app: FastifyInstance) {
         if (key === 'logistica' && !input.enabled) await assertNoLogisticsInFlight(tx);
         if (before)
           await tx.moduleSetting.update({
-            where: { key },
+            where: { companyId_key: { companyId: requireCompanyId(), key } },
             data: { enabled: input.enabled, updatedById: actor.userId, version: { increment: 1 } },
           });
         else
@@ -200,7 +202,7 @@ export async function companyRoutes(app: FastifyInstance) {
     async (request) => {
       const input = companySettingsSchema.parse(request.body);
       const settings = await prisma.$transaction(async (tx) => {
-        if (!(await lockRow(tx, 'company_settings', 1)))
+        if (!(await lockRow(tx, 'company_settings', requireCompanyId())))
           throw Errors.notFound('Configuração da empresa');
         const before = await tx.companySettings.findUniqueOrThrow({
           where: { id: requireCompanyId() },

@@ -445,7 +445,7 @@ export async function serviceRoutes(app: FastifyInstance) {
   app.put('/api/v1/company/own-team', { config: { access: OWN_TEAM_MANAGE } }, async (request) => {
     const input = ownTeamSettingsSchema.parse(request.body);
     return prisma.$transaction(async (tx) => {
-      if (!(await lockRow(tx, 'company_settings', 1)))
+      if (!(await lockRow(tx, 'company_settings', requireCompanyId())))
         throw Errors.notFound('Configuração da empresa');
       const before = await tx.companySettings.findUniqueOrThrow({
         where: { id: requireCompanyId() },

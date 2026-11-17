@@ -88,6 +88,7 @@ export async function buildMe(
       : null,
     db.companySettings.findUnique({ where: { id: requireCompanyId() } }),
   ]);
+  const permissions = [...auth.permissions];
   return {
     user: { id: user.id, email: user.email, displayName: user.displayName },
     employee: user.employee ? toEmployeeSummary(user.employee) : null,
@@ -98,7 +99,7 @@ export async function buildMe(
       deviceId: auth.deviceId,
     },
     device,
-    permissions: [...auth.permissions],
+    permissions,
     company: {
       tradeName: company?.tradeName ?? 'Cenário Estofados',
       timezone: company?.timezone ?? 'America/Sao_Paulo',
@@ -106,6 +107,7 @@ export async function buildMe(
       arrivalAlertAt: company?.arrivalAlertAt ?? '09:30',
       workdayEnd: company?.workdayEnd ?? '18:00',
       arrivalWindowStart: company?.arrivalWindowStart ?? '07:00',
+      platformOwner: company?.id === 1 && permissions.includes('empresa.configurar'),
     },
   };
 }

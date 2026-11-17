@@ -50,3 +50,27 @@ export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1).max(128),
   newPassword: passwordPolicySchema,
 });
+
+/** Senha de quem cria a própria conta pela tela de entrar (mínimo de 8 caracteres). */
+export const SIGNUP_PASSWORD_MIN = 8;
+
+/**
+ * Criar conta (tela /entrar). Multi-empresa: cada conta criada é uma empresa nova, e quem cria
+ * entra direto como gestor dela.
+ */
+export const signupSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email({ message: 'E-mail inválido.' }).max(EMAIL_MAX),
+    password: z
+      .string()
+      .min(SIGNUP_PASSWORD_MIN, {
+        message: `A senha deve ter ao menos ${SIGNUP_PASSWORD_MIN} caracteres.`,
+      })
+      .max(128, { message: 'A senha deve ter no máximo 128 caracteres.' }),
+    passwordConfirm: z.string().max(128),
+  })
+  .refine((v) => v.password === v.passwordConfirm, {
+    message: 'As senhas não conferem.',
+    path: ['passwordConfirm'],
+  });
+export type SignupInput = z.infer<typeof signupSchema>;

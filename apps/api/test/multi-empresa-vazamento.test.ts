@@ -2,11 +2,8 @@ import { Prisma, TENANCY } from '@cenario/db';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import type { AccessRule } from '../src/core/types';
-import { runAsCompany } from '../src/core/tenant';
-import { hashSecret } from '../src/lib/crypto';
-import { GESTOR_ROLE_KEY } from '@cenario/shared';
 import { createCustomer, createOrder, createPickup } from './commercial-helpers';
-import { type Client, createTestApp, db, loginAdmin, resetDatabase } from './helpers';
+import { Client, createTestApp, db, loginAdmin, resetDatabase } from './helpers';
 
 /**
  * Multi-empresa — detector de vazamento entre empresas.
@@ -17,7 +14,7 @@ import { type Client, createTestApp, db, loginAdmin, resetDatabase } from './hel
  * Primeiro o teste prova que o detector ENXERGA os dados quando eles estão visíveis (o gestor da
  * própria empresa vê os próprios registros) — sem isso, "zero vazamentos" poderia passar só por
  * estar cego. Depois (etapa 3) o mesmo detector roda logado na empresa B contra os ids da empresa
- * A, nas listas e nas rotas com /:id, e precisa achar zero.
+ * A, nas listas e nas rotas com /:id, e precisa achar zero. A empresa B nasce pelo "Criar conta".
  */
 let app: App;
 beforeAll(async () => {
@@ -181,46 +178,17 @@ describe('Multi-empresa: detector de vazamento', () => {
 });
 
 /**
- * Empresa B de teste: empresa 2 com um gestor (mesmas permissões do gestor da empresa 1) e um
- * cliente próprio. Etapa 4 troca isto pelo "Criar conta" de verdade.
+ * Empresa B: criada pelo "Criar conta" de verdade (etapa 4), que já entra logada como gestor da
+ * empresa nova. Ganha um cliente próprio (o detector não pode confundir com os da A).
  */
 async function criarEmpresaB() {
-  await db().companySettings.create({ data: { id: 2, tradeName: 'Tapeçaria B' } });
-  const email = 'gestor@empresa-b.local';
-  const password = 'SenhaDaEmpresaB1';
-  await runAsCompany(2, async () => {
-    const modelo = await db().role.findFirstOrThrow({
-      where: { companyId: 1, key: GESTOR_ROLE_KEY },
-      include: { permissions: true },
-    });
-    const role = await db().role.create({
-      data: {
-        key: GESTOR_ROLE_KEY,
-        name: modelo.name,
-        system: true,
-        permissions: { create: modelo.permissions.map((p) => ({ permission: p.permission })) },
-      },
-    });
-    const user = await db().user.create({
-      data: {
-        displayName: 'Gestor B',
-        email,
-        passwordHash: await hashSecret(password),
-        roles: { create: { roleId: role.id } },
-      },
-    });
-    await db().employee.create({
-      data: {
-        userId: user.id,
-        fullName: 'Gestor B',
-        displayName: 'Gestor B',
-        jobTitle: 'Gestor',
-        color: '#1D4ED8',
-      },
-    });
+  const client = new Client(app);
+  const r = await client.post('/api/auth/signup', {
+    email: 'gestor@empresa-b.local',
+    password: 'SenhaDaEmpresaB1',
+    passwordConfirm: 'SenhaDaEmpresaB1',
   });
-  const client = await loginAdmin(app, { email, password });
-  // A empresa B tem dados próprios (o detector não pode confundir com os da A).
+  if (r.status !== 201) throw new Error(`signup: ${JSON.stringify(r.body)}`);
   await createCustomer(client, { name: 'Cliente da B' });
   return { client };
 }

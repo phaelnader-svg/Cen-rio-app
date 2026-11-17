@@ -67,6 +67,7 @@ import { directDeliveryRoutes } from './modules/quality/direct-delivery';
 import { inventoryRoutes } from './modules/inventory/routes';
 import { quoteRoutes } from './modules/quotes/routes';
 import { companyRoutes } from './modules/company/routes';
+import { platformRoutes } from './modules/platform/routes';
 import { deviceRoutes } from './modules/devices/routes';
 import { employeeRoutes } from './modules/employees/routes';
 import { fileRoutes } from './modules/files/routes';
@@ -200,6 +201,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(deviceRoutes);
   await app.register(sessionRoutes);
   await app.register(companyRoutes);
+  await app.register(platformRoutes);
   await app.register(auditRoutes);
   await app.register(managementRoutes);
   await app.register(todayRoutes);

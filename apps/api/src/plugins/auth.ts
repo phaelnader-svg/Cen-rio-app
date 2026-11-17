@@ -104,7 +104,12 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
   async function resolveDevice(request: FastifyRequest, reply: FastifyReply) {
     const token = request.cookies[cookies.device];
     if (!token) return;
-    const device = await prisma.device.findUnique({ where: { credentialHash: hashToken(token) } });
+    const device = await prisma.device.findUnique({
+      where: { credentialHash: hashToken(token) },
+      include: { company: { select: { blockedAt: true } } },
+    });
+    // Empresa bloqueada: o tablet não entra, mas continua vinculado (volta quando liberar).
+    if (device?.company.blockedAt) return;
     if (!device || device.status !== 'ACTIVE') {
       void reply.clearCookie(cookies.device, { path: '/' });
       return;
@@ -140,11 +145,20 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     if (!token) return;
     const session = await prisma.session.findUnique({
       where: { tokenHash: hashToken(token) },
-      include: { user: { include: { employee: { select: { id: true, active: true } } } } },
+      include: {
+        user: {
+          include: {
+            employee: { select: { id: true, active: true } },
+            company: { select: { blockedAt: true } },
+          },
+        },
+      },
     });
     const now = new Date();
     const valid =
       session &&
+      // Empresa bloqueada pelo dono da plataforma: ninguém dela entra.
+      !session.user.company.blockedAt &&
       !session.revokedAt &&
       session.expiresAt > now &&
       session.user.active &&
@@ -192,7 +206,12 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
           include: {
             client: { select: { name: true, active: true } },
             session: true,
-            user: { include: { employee: { select: { id: true, active: true } } } },
+            user: {
+              include: {
+                employee: { select: { id: true, active: true } },
+                company: { select: { blockedAt: true } },
+              },
+            },
           },
         },
       },
@@ -207,6 +226,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
       !g.client.active ||
       g.session.revokedAt ||
       !g.user.active ||
+      g.user.company.blockedAt ||
       g.user.employee?.active === false
     ) {
       return;

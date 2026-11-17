@@ -333,7 +333,7 @@ export class RealtimeHub {
           id: { in: ids },
           revokedAt: null,
           expiresAt: { gt: new Date() },
-          user: { active: true },
+          user: { active: true, company: { blockedAt: null } },
         },
         select: { id: true },
       });

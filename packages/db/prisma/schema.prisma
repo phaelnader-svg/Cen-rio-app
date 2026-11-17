@@ -390,32 +390,36 @@ model AuthThrottle {
 
 /// Configurações da empresa (registro único, id = 1).
 model CompanySettings {
-  id                 Int      @id @default(autoincrement())
-  tradeName          String   @map("trade_name") @db.VarChar(120)
-  legalName          String?  @map("legal_name") @db.VarChar(160)
-  document           String?  @db.VarChar(20)
-  phone              String?  @db.VarChar(30)
-  email              String?  @db.VarChar(254)
-  address            String?  @db.VarChar(240)
-  timezone           String   @default("America/Sao_Paulo") @db.VarChar(64)
+  id                 Int       @id @default(autoincrement())
+  tradeName          String    @map("trade_name") @db.VarChar(120)
+  legalName          String?   @map("legal_name") @db.VarChar(160)
+  document           String?   @db.VarChar(20)
+  phone              String?   @db.VarChar(30)
+  email              String?   @db.VarChar(254)
+  address            String?   @db.VarChar(240)
+  timezone           String    @default("America/Sao_Paulo") @db.VarChar(64)
   /// Horário a partir do qual o botão "Cheguei" é exibido (HH:MM).
-  workdayStart       String   @default("08:30") @map("workday_start") @db.Char(5)
+  workdayStart       String    @default("08:30") @map("workday_start") @db.Char(5)
   /// Limite para alerta de indisponibilidade operacional presumida (HH:MM).
-  arrivalAlertAt     String   @default("09:30") @map("arrival_alert_at") @db.Char(5)
-  workdayEnd         String   @default("18:00") @map("workday_end") @db.Char(5)
+  arrivalAlertAt     String    @default("09:30") @map("arrival_alert_at") @db.Char(5)
+  workdayEnd         String    @default("18:00") @map("workday_end") @db.Char(5)
   /// Fase 7: início da janela em que o botão "Cheguei" aceita confirmação (HH:MM).
-  arrivalWindowStart String   @default("07:00") @map("arrival_window_start") @db.Char(5)
+  arrivalWindowStart String    @default("07:00") @map("arrival_window_start") @db.Char(5)
   /// Fase 7: atraso (minutos) a partir do qual o gestor é avisado.
-  lateAlertMinutes   Int      @default(15) @map("late_alert_minutes")
+  lateAlertMinutes   Int       @default(15) @map("late_alert_minutes")
   /// Dias úteis (0 = domingo ... 6 = sábado).
-  workingDays        Int[]    @default([1, 2, 3, 4, 5]) @map("working_days")
+  workingDays        Int[]     @default([1, 2, 3, 4, 5]) @map("working_days")
   /// Dia habitual de programação da semana seguinte.
-  planningWeekday    Int      @default(5) @map("planning_weekday")
+  planningWeekday    Int       @default(5) @map("planning_weekday")
   /// Dia habitual de medição de tecidos e espumas.
-  measurementWeekday Int      @default(5) @map("measurement_weekday")
-  version            Int      @default(1)
-  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-  updatedById        String?  @map("updated_by_id") @db.Uuid
+  measurementWeekday Int       @default(5) @map("measurement_weekday")
+  version            Int       @default(1)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  /// Multi-empresa etapa 4: bloqueada pelo dono da plataforma (ninguém da empresa entra).
+  blockedAt          DateTime? @map("blocked_at") @db.Timestamptz(3)
+  blockedReason      String?   @map("blocked_reason") @db.VarChar(200)
+  updatedById        String?   @map("updated_by_id") @db.Uuid
 
   /// Fase 10: inspetor principal da qualidade (vazio = quem tem a competência de inspeção).
   qualityInspectorUserId    String? @map("quality_inspector_user_id") @db.Uuid
@@ -580,13 +584,14 @@ model CompanySettings {
 model ModuleSetting {
   companyId   Int             @default(dbgenerated("app_company_id()")) @map("company_id")
   company     CompanySettings @relation("EmpresaDeModuleSetting", fields: [companyId], references: [id])
-  key         String          @id @db.VarChar(40)
+  key         String          @db.VarChar(40)
   enabled     Boolean
   version     Int             @default(1)
   updatedAt   DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   updatedById String?         @map("updated_by_id") @db.Uuid
   updatedBy   User?           @relation("ModuleSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
+  @@id([companyId, key])
   @@map("module_settings")
 }
 

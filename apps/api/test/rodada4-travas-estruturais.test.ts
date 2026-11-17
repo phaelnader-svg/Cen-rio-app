@@ -1681,6 +1681,9 @@ describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava 
  * Chave: "<pasta da migration>: <comando normalizado>".
  */
 const ALLOWED_DESTRUCTIVE: Record<string, string> = {
+  '20270504000000_multi_empresa_etapa4: DROP CONSTRAINT "module_settings_pkey"':
+    'Chave primária recriada na mesma migration com a empresa junto (company_id, key): cada ' +
+    'empresa liga e desliga os próprios módulos. Nenhuma linha é apagada nem alterada.',
   '20270427000000_multi_empresa_etapa3: UPDATE ON':
     'Não é comando: é o privilégio "UPDATE ON" concedido ao papel cenario_app (GRANT nas tabelas e ' +
     'sequências, e o padrão para as novas). Nenhuma linha é alterada.',

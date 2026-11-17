@@ -40,6 +40,7 @@ const UNICAS_NO_SISTEMA = new Set([
   'reschedule_proposals_dedupe_key_key', // montado com UUIDs
   'company_counters_pkey',
   'domain_events_seq_key', // posição técnica na fila de eventos
+  'quote_settings_pkey', // id automático (uma linha por empresa, UNIQUE company_id)
 ]);
 
 /** Roda `fn` como se a requisição fosse da empresa `companyId` (o que a etapa 3 fará sozinha). */
@@ -88,7 +89,7 @@ describe('Multi-empresa: banco', () => {
     const alvo = new Set(tabelasComEmpresa);
     const problemas: string[] = [];
     for (const i of idx) {
-      if (!alvo.has(i.tablename) || i.indexname.endsWith('_pkey')) continue;
+      if (!alvo.has(i.tablename)) continue;
       if (UNICAS_NO_SISTEMA.has(i.indexname)) continue;
       const colunas = /\((.*)\)/.exec(i.indexdef.split(' USING ')[1] ?? '')?.[1] ?? '';
       if (/\bcompany_id\b/.test(colunas)) continue;

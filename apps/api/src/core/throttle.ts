@@ -27,6 +27,15 @@ export const POLICIES = {
   pairing: { maxFailures: 10, windowSeconds: 900, baseLockSeconds: 300, maxLockSeconds: 3600 },
   /** Vinculação quando o IP real é desconhecido (limite global mais tolerante). */
   pairingGlobal: { maxFailures: 50, windowSeconds: 900, baseLockSeconds: 60, maxLockSeconds: 900 },
+  /** Criar conta pela tela de entrar: cada cadastro conta, por IP. */
+  signup: { maxFailures: 5, windowSeconds: 3600, baseLockSeconds: 3600, maxLockSeconds: 3600 },
+  /** Criar conta: teto global (vale também quando o IP real é desconhecido). */
+  signupGlobal: {
+    maxFailures: 40,
+    windowSeconds: 3600,
+    baseLockSeconds: 900,
+    maxLockSeconds: 3600,
+  },
 } as const satisfies Record<string, ThrottlePolicy>;
 
 /**

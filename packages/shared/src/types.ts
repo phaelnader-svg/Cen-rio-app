@@ -24,6 +24,8 @@ export interface MeDto {
     arrivalAlertAt: string;
     workdayEnd: string;
     arrivalWindowStart: string;
+    /** Multi-empresa: o gestor da empresa da plataforma (nº 1) vê o painel das empresas. */
+    platformOwner: boolean;
   };
 }
 

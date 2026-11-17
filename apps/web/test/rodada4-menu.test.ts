@@ -46,6 +46,7 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
   '/painel/funcoes': { group: 'Administração', anyOf: ['funcoes.ver'] },
   '/painel/dispositivos': { group: 'Administração', anyOf: ['dispositivos.ver', 'sessoes.ver'] },
   // Aplicativos conectados (autorização delegada, ex.: Firma Viva).
+  '/painel/empresas': { group: 'Administração', anyOf: ['empresa.configurar'] },
   '/painel/aplicativos': { group: 'Administração', anyOf: ['empresa.configurar', 'sessoes.ver'] },
   '/painel/clientes': { group: 'Serviços', anyOf: ['clientes.ver'] },
   '/painel/orcamentos': { group: 'Serviços', anyOf: ['orcamentos.ver', 'orcamentos.gerenciar'] },
@@ -100,7 +101,9 @@ describe('F10-01 — menu por áreas', () => {
   it('a barra lateral usa exatamente esta montagem (filtro, ordenação e cabeçalhos)', () => {
     const shell = readFileSync(resolve(__dirname, '../components/admin/shell.tsx'), 'utf8');
     // Homologação funcional (B1): filtro, ordenação e allOf ficam em visibleNav (nav.ts).
-    expect(shell).toContain('const items = visibleNav(perms, modules);');
+    expect(shell).toContain(
+      'const items = visibleNav(perms, modules, data.company.platformOwner);',
+    );
     expect(shell).toContain('const header = idx === 0 || items[idx - 1]!.group !== item.group;');
     expect(shell).toContain("{header && item.group !== 'Início' && (");
   });
@@ -122,7 +125,15 @@ describe('F10-01 — menu por áreas', () => {
       if (x.kind === 'header') current = x.text;
       else expect(navGroupOf(x.href!), x.text).toBe(current);
     }
-    expect(links(e)).toHaveLength(NAV.length);
+    // "Empresas" (multi-empresa) só aparece para o dono da plataforma.
+    expect(links(e)).toHaveLength(NAV.filter((i) => !i.platformOnly).length);
+    expect(links(e)).not.toContain('Empresas');
+    const dono = visibleNav(
+      new Set(ALL_PERMISSIONS) as ReadonlySet<Permission>,
+      ALL_MODULES_ON,
+      true,
+    );
+    expect(dono.map((i) => i.href)).toContain('/painel/empresas');
   });
 
   it('cada item do menu está na área e com as permissões esperadas', () => {
