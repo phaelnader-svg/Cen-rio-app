@@ -47,7 +47,12 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → chegada →
     await page.getByLabel('Descrição', { exact: true }).nth(1).fill('Cadeiras de jantar');
     await page.getByLabel('Quantidade').nth(1).fill('6');
     await page.getByRole('button', { name: 'Criar pedido' }).click();
-    await expect(page.getByRole('heading', { name: /^Pedido PC-\d{5}$/ })).toBeVisible();
+    // No CI, a troca de rota pode deixar a página nova oculta (streaming) por mais de 10 s:
+    // espera o endereço do pedido e dá mais tempo para a página aparecer.
+    await page.waitForURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
+    await expect(page.getByRole('heading', { name: /^Pedido PC-\d{5}$/ })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByTestId('order-value')).toHaveText(/3\.800,00/);
     const orderUrl = page.url();
 
