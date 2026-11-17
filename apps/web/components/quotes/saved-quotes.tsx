@@ -21,6 +21,7 @@ import {
   Eye,
   FileText,
   Flag,
+  Pencil,
   Printer,
   Save,
   Trash2,
@@ -65,16 +66,31 @@ import {
 
 type Mode = { kind: 'list' } | { kind: 'view'; id: string } | { kind: 'os'; id: string };
 
-export function SavedQuotes({ manage }: { manage: boolean }) {
+export function SavedQuotes({
+  manage,
+  onEdit,
+}: {
+  manage: boolean;
+  /** Reabre o orçamento no "Elaborar" para alterar (mesmo número e mesmo link). */
+  onEdit?: (id: string) => void;
+}) {
   const [mode, setMode] = useState<Mode>({ kind: 'list' });
   if (mode.kind === 'view')
     return <SavedQuoteView id={mode.id} onBack={() => setMode({ kind: 'list' })} />;
   if (mode.kind === 'os')
     return <WorkOrderEditor id={mode.id} onBack={() => setMode({ kind: 'list' })} />;
-  return <SavedList manage={manage} onOpen={setMode} />;
+  return <SavedList manage={manage} onOpen={setMode} onEdit={onEdit} />;
 }
 
-function SavedList({ manage, onOpen }: { manage: boolean; onOpen: (m: Mode) => void }) {
+function SavedList({
+  manage,
+  onOpen,
+  onEdit,
+}: {
+  manage: boolean;
+  onOpen: (m: Mode) => void;
+  onEdit?: (id: string) => void;
+}) {
   const list = useSavedQuotes();
   const qc = useQueryClient();
   const toast = useToast();
@@ -243,6 +259,16 @@ function SavedList({ manage, onOpen }: { manage: boolean; onOpen: (m: Mode) => v
                   <QuoteLinkButtons q={q} />
                   {manage && (
                     <>
+                      {onEdit && !q.orderId && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          icon={<Pencil className="size-4" aria-hidden />}
+                          onClick={() => onEdit(q.id)}
+                        >
+                          Editar
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="secondary"

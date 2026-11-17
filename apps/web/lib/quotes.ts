@@ -60,15 +60,39 @@ function readDraft(userId: string): QuoteDraft {
  * Orçamento em elaboração: fica neste navegador (por pessoa) até ser salvo, como no modelo
  * original. Sair da tela ou recarregar não perde nada; "Limpar orçamento" recomeça.
  */
+/** Orçamento salvo reaberto no "Elaborar": ao salvar, ele é atualizado (mesmo número e link). */
+export interface QuoteEditing {
+  id: string;
+  number: number;
+  version: number;
+}
+
+const editingKey = (userId: string) => `cenario.orcamento.editando.v1.${userId}`;
+
+function readEditing(userId: string): QuoteEditing | null {
+  try {
+    const raw = localStorage.getItem(editingKey(userId));
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<QuoteEditing>;
+    return typeof v.id === 'string' && typeof v.number === 'number' && typeof v.version === 'number'
+      ? { id: v.id, number: v.number, version: v.version }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export function useQuoteDraft() {
   const me = useMe();
   const userId = me.data?.user.id ?? null;
-  const [state, setState] = useState<{ uid: string | null; draft: QuoteDraft }>(() => ({
-    uid: null,
-    draft: emptyQuoteDraft(),
-  }));
+  const [state, setState] = useState<{
+    uid: string | null;
+    draft: QuoteDraft;
+    editing: QuoteEditing | null;
+  }>(() => ({ uid: null, draft: emptyQuoteDraft(), editing: null }));
   // Ao conhecer a pessoa, carrega o rascunho dela (ajuste de estado durante a renderização).
-  if (userId && state.uid !== userId) setState({ uid: userId, draft: readDraft(userId) });
+  if (userId && state.uid !== userId)
+    setState({ uid: userId, draft: readDraft(userId), editing: readEditing(userId) });
   const loaded = userId !== null && state.uid === userId;
   const draft = state.draft;
 
@@ -76,6 +100,8 @@ export function useQuoteDraft() {
     if (!state.uid) return;
     try {
       localStorage.setItem(storageKey(state.uid), JSON.stringify(state.draft));
+      if (state.editing) localStorage.setItem(editingKey(state.uid), JSON.stringify(state.editing));
+      else localStorage.removeItem(editingKey(state.uid));
     } catch {
       // Armazenamento indisponível: o orçamento continua na tela, só não sobrevive a recarregar.
     }
@@ -89,8 +115,16 @@ export function useQuoteDraft() {
       })),
     [],
   );
-  const reset = useCallback(() => setState((st) => ({ ...st, draft: emptyQuoteDraft() })), []);
-  return { draft, update, reset, loaded };
+  const reset = useCallback(
+    () => setState((st) => ({ ...st, draft: emptyQuoteDraft(), editing: null })),
+    [],
+  );
+  /** Abre um orçamento salvo para editar (substitui o que estava em elaboração). */
+  const load = useCallback(
+    (d: QuoteDraft, editing: QuoteEditing) => setState((st) => ({ ...st, draft: d, editing })),
+    [],
+  );
+  return { draft, update, reset, load, editing: state.editing, loaded };
 }
 
 /** Valor em reais (já calculado em reais) formatado. */

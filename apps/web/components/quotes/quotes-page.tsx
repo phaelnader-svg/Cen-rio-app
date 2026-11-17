@@ -1,6 +1,12 @@
 'use client';
 
-import { buildQuoteSnapshot, calcQuote, quoteSaveBlocker, type QuoteDto } from '@cenario/shared';
+import {
+  buildQuoteSnapshot,
+  calcQuote,
+  quoteDraftFromSnapshot,
+  quoteSaveBlocker,
+  type QuoteDto,
+} from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Printer, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -36,6 +42,35 @@ export function QuotesPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [savedKey, setSavedKey] = useState(0);
+  const [editAsk, setEditAsk] = useState<QuoteDto | null>(null);
+  const [editNote, setEditNote] = useState<string | null>(null);
+
+  /** Abre o orçamento salvo no "Elaborar" (o que estava em elaboração é substituído). */
+  const openForEdit = (q: QuoteDto) => {
+    if (!catalog.data) return;
+    const { draft, missing } = quoteDraftFromSnapshot(q.snapshot, catalog.data);
+    draftApi.load(draft, { id: q.id, number: q.number, version: q.version });
+    setSaveError(null);
+    setEditNote(
+      missing.length
+        ? `Não estão mais na base de dados e ficaram de fora: ${missing.join(', ')}. Escolha de novo, se precisar.`
+        : null,
+    );
+    setEditAsk(null);
+    setTab('elaborar');
+  };
+  const askEdit = async (id: string) => {
+    const q = await qc.fetchQuery({
+      queryKey: ['quotes', 'detail', id],
+      queryFn: () => api<QuoteDto>(`/api/v1/quotes/${id}`),
+      staleTime: 0,
+    });
+    const d = draftApi.draft;
+    const dirty =
+      !draftApi.editing && (d.customerName.trim() !== '' || d.items.length > 0 || d.service !== '');
+    if (dirty || (draftApi.editing && draftApi.editing.id !== q.id)) setEditAsk(q);
+    else openForEdit(q);
+  };
 
   const totals = useMemo(
     () =>
@@ -54,14 +89,26 @@ export function QuotesPage() {
 
   const save = useMutation({
     mutationFn: () =>
-      api<QuoteDto>('/api/v1/quotes', {
-        method: 'POST',
-        body: draftApi.draft,
-        idempotencyKey: newIdempotencyKey(),
-      }),
+      draftApi.editing
+        ? api<QuoteDto>(`/api/v1/quotes/${draftApi.editing.id}`, {
+            method: 'PUT',
+            body: { version: draftApi.editing.version, draft: draftApi.draft },
+          })
+        : api<QuoteDto>('/api/v1/quotes', {
+            method: 'POST',
+            body: draftApi.draft,
+            idempotencyKey: newIdempotencyKey(),
+          }),
     onSuccess: async (q) => {
       setSaveError(null);
-      toast('ok', `Orçamento nº ${q.number} salvo. Ele já está em Orçamentos salvos.`);
+      toast(
+        'ok',
+        draftApi.editing
+          ? `Orçamento nº ${q.number} atualizado.`
+          : `Orçamento nº ${q.number} salvo. Ele já está em Orçamentos salvos.`,
+      );
+      // Salvo: o "Elaborar" volta a ficar livre para um orçamento novo.
+      if (draftApi.editing) draftApi.reset();
       await qc.invalidateQueries({ queryKey: ['quotes'] });
       setSavedKey((k) => k + 1);
       setTab('salvos');
@@ -114,6 +161,7 @@ export function QuotesPage() {
               saving={save.isPending}
               saveError={saveError}
               onClear={() => setConfirmClear(true)}
+              note={editNote}
             />
           ) : tab === 'proposta' && preview ? (
             <div className="space-y-4">
@@ -150,15 +198,44 @@ export function QuotesPage() {
           ) : tab === 'base' ? (
             <QuoteBase catalog={catalog.data} settings={settings.data} />
           ) : (
-            <SavedQuotes key={savedKey} manage={manage} />
+            <SavedQuotes
+              key={savedKey}
+              manage={manage}
+              onEdit={(id) =>
+                void askEdit(id).catch((e: unknown) => toast('danger', errorMessage(e)))
+              }
+            />
           )}
         </div>
       </Tabs>
 
       <Dialog
+        open={Boolean(editAsk)}
+        onClose={() => setEditAsk(null)}
+        title={editAsk ? `Editar o orçamento nº ${editAsk.number}?` : ''}
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditAsk(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => editAsk && openForEdit(editAsk)}>Editar este orçamento</Button>
+          </>
+        }
+      >
+        <p className="text-sm text-ink-soft">
+          Há outro orçamento em elaboração. Ele será substituído por este para você alterar.
+        </p>
+      </Dialog>
+
+      <Dialog
         open={confirmClear}
         onClose={() => setConfirmClear(false)}
-        title="Limpar o orçamento em elaboração?"
+        title={
+          draftApi.editing
+            ? `Cancelar a edição do orçamento nº ${draftApi.editing.number}?`
+            : 'Limpar o orçamento em elaboração?'
+        }
         size="sm"
         footer={
           <>
@@ -170,18 +247,20 @@ export function QuotesPage() {
               onClick={() => {
                 draftApi.reset();
                 setSaveError(null);
+                setEditNote(null);
                 setConfirmClear(false);
                 setTab('elaborar');
               }}
             >
-              Limpar orçamento
+              {draftApi.editing ? 'Cancelar edição' : 'Limpar orçamento'}
             </Button>
           </>
         }
       >
         <p className="text-sm text-ink-soft">
-          Todos os dados do orçamento em elaboração serão apagados. A base de dados e os orçamentos
-          salvos continuam como estão.
+          {draftApi.editing
+            ? 'As alterações não salvas são descartadas. O orçamento salvo continua como estava.'
+            : 'Todos os dados do orçamento em elaboração serão apagados. A base de dados e os orçamentos salvos continuam como estão.'}
         </p>
       </Dialog>
     </>
