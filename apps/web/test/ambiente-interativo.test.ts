@@ -32,16 +32,17 @@ describe('ambiente interativo', () => {
     expect(r.headers.get('cache-control')).toBe('no-store');
   });
 
-  it('botão verde ao lado do sininho, em nova guia', () => {
+  it('botão Firma Viva ao lado do sininho, em nova guia', () => {
     const shell = readFileSync(resolve(__dirname, '../components/admin/shell.tsx'), 'utf8');
     const header = shell.slice(shell.indexOf('<header'), shell.indexOf('</header>'));
     const button = header.indexOf('data-testid="ambiente-interativo"');
     expect(button).toBeGreaterThan(-1);
     expect(button).toBeLessThan(header.indexOf('<PanelNotifications />'));
-    expect(header).toContain('Acessar ambiente interativo');
+    // Melhoria 159: o botão leva o nome do produto e o verde da marca.
+    expect(header).toContain('Firma Viva');
     expect(header).toContain('target="_blank"');
     expect(header).toContain('rel="noopener noreferrer"');
-    expect(header).toContain('bg-ok-600');
+    expect(header).toContain('bg-brand-700');
     // Complemento "Ambiente interativo": o botão segue a funcionalidade da empresa.
     expect(header).toContain("modules.ambiente_interativo && perms.has('empresa.configurar') && (");
   });
