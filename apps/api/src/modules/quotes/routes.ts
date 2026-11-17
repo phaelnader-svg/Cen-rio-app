@@ -556,7 +556,10 @@ export async function quoteRoutes(app: FastifyInstance) {
           : `Orçamento nº ${q.number}: lembrete alterado.`,
         changes: {
           status: { from: before, to: input.status },
-          followUpAt: { from: q.followUpAt?.toISOString() ?? null, to: followUpAt?.toISOString() ?? null },
+          followUpAt: {
+            from: q.followUpAt?.toISOString() ?? null,
+            to: followUpAt?.toISOString() ?? null,
+          },
         },
       });
     });
@@ -566,7 +569,10 @@ export async function quoteRoutes(app: FastifyInstance) {
   /** Melhoria 79: link da proposta para o cliente abrir no celular e aprovar. */
   app.get('/api/v1/quotes/:id/link', { config: { access: VIEW } }, async (request) => {
     const { id } = idParams.parse(request.params);
-    const q = await prisma.quote.findFirst({ where: { id, deletedAt: null }, select: { id: true } });
+    const q = await prisma.quote.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true },
+    });
     if (!q) throw Errors.notFound('Orçamento');
     return { url: publicLink(app.ctx.env, app.ctx.hashToken, 'proposta', q.id) };
   });
@@ -586,7 +592,9 @@ export async function quoteRoutes(app: FastifyInstance) {
       select: { status: true, totalCents: true, lostReason: true, orderId: true, followUpAt: true },
     });
     const zero = () => ({ count: 0, cents: 0 });
-    const byStatus = Object.fromEntries(QUOTE_STATUSES.map((s) => [s, zero()])) as QuoteFunnelDto['byStatus'];
+    const byStatus = Object.fromEntries(
+      QUOTE_STATUSES.map((s) => [s, zero()]),
+    ) as QuoteFunnelDto['byStatus'];
     const total = zero();
     const converted = zero();
     const reasons = new Map<string, { count: number; cents: number }>();
@@ -603,7 +611,8 @@ export async function quoteRoutes(app: FastifyInstance) {
         converted.cents += r.totalCents;
       }
       if (s === 'RECUSADO' || s === 'SEM_RESPOSTA') {
-        const reason = s === 'SEM_RESPOSTA' ? 'Sem retorno do cliente' : r.lostReason || 'Sem motivo informado';
+        const reason =
+          s === 'SEM_RESPOSTA' ? 'Sem retorno do cliente' : r.lostReason || 'Sem motivo informado';
         const cur = reasons.get(reason) ?? zero();
         cur.count++;
         cur.cents += r.totalCents;
@@ -611,7 +620,8 @@ export async function quoteRoutes(app: FastifyInstance) {
       }
       if (s === 'ENVIADO' && r.followUpAt && r.followUpAt <= now) followUpDue++;
     }
-    const answered = byStatus.APROVADO.count + byStatus.RECUSADO.count + byStatus.SEM_RESPOSTA.count;
+    const answered =
+      byStatus.APROVADO.count + byStatus.RECUSADO.count + byStatus.SEM_RESPOSTA.count;
     const funnel: QuoteFunnelDto = {
       from: q.from,
       to: q.to,

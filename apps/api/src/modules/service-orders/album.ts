@@ -10,7 +10,9 @@ import { serviceOrderCode } from '../commercial/common';
  * - depois: inspeção de qualidade, embalagem antiga e entrega.
  * Fotos de ocorrências ficam fora (são internas).
  */
-const PHASE: Partial<Record<AttachmentEntity, keyof Pick<OsAlbumDto, 'before' | 'during' | 'after'>>> = {
+const PHASE: Partial<
+  Record<AttachmentEntity, keyof Pick<OsAlbumDto, 'before' | 'during' | 'after'>>
+> = {
   COMMERCIAL_ORDER: 'before',
   PICKUP: 'before',
   RECEIPT: 'before',

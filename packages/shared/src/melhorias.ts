@@ -242,7 +242,9 @@ export const totpCodeSchema = z.object({
   code: z
     .string()
     .trim()
-    .regex(/^(\d{6}|[A-Za-z0-9]{4}-[A-Za-z0-9]{4})$/, { message: 'Informe o código de 6 números.' }),
+    .regex(/^(\d{6}|[A-Za-z0-9]{4}-[A-Za-z0-9]{4})$/, {
+      message: 'Informe o código de 6 números.',
+    }),
 });
 
 export const loginSecondStepSchema = z.object({
