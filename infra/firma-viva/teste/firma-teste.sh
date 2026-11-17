@@ -7,8 +7,8 @@
 #   bash infra/firma-viva/teste/firma-teste.sh dns          # registros DNS exatos para firmaviva.com.br
 #   bash infra/firma-viva/teste/firma-teste.sh validar      # depois do DNS: HTTPS, login e jogo no domínio
 #   bash infra/firma-viva/teste/firma-teste.sh atualizar    # publica de novo o código atual
-#   bash infra/firma-viva/teste/firma-teste.sh producao     # liga ao Cenário Gestão de PRODUÇÃO (modo consulta)
-#   bash infra/firma-viva/teste/firma-teste.sh homologacao  # liga à HOMOLOGAÇÃO do Cenário (modo consulta)
+#   bash infra/firma-viva/teste/firma-teste.sh producao     # liga ao Cenário Gestão de PRODUÇÃO (jogo, operação e escritório)
+#   bash infra/firma-viva/teste/firma-teste.sh homologacao  # liga à HOMOLOGAÇÃO do Cenário (jogo, operação e escritório)
 #   bash infra/firma-viva/teste/firma-teste.sh voltar-teste # volta ao Cenário de teste (empresa fictícia)
 #   bash infra/firma-viva/teste/firma-teste.sh status | convite <email> | destruir
 #
@@ -273,7 +273,7 @@ ligar_cenario() {
     [[ "$gate" =~ ^[A-Za-z0-9_-]+$ ]] || die "homolog-gate-token em formato inesperado."
     cookie="cenario_homolog=$gate"
   fi
-  say "Ligando o Firma Viva ($DOMAIN) ao Cenário Gestão de $rotulo ($cen) em modo consulta"
+  say "Ligando o Firma Viva ($DOMAIN) ao Cenário Gestão de $rotulo ($cen): jogo, operação e escritório"
   read -rs -p "Cole o segredo do aplicativo firma-viva gerado nesse Cenário (não aparece na tela): " seg
   echo
   [[ ${#seg} -ge 32 && "$seg" =~ ^[A-Za-z0-9_-]+$ ]] || die "Segredo inválido (copie de novo do Cenário)."
@@ -282,7 +282,7 @@ set -eu
 cd $DIR
 umask 077
 sed -i '/^FIRMA_CENARIO_API_URL=/d; /^FIRMA_CENARIO_WEB_URL=/d; /^FIRMA_CENARIO_SCOPES=/d; /^FIRMA_CENARIO_SEGREDO_PRODUCAO=/d; /^FIRMA_CENARIO_COOKIE=/d' .env
-printf '%s\n' "FIRMA_CENARIO_API_URL=$cen" "FIRMA_CENARIO_WEB_URL=$cen" "FIRMA_CENARIO_SCOPES=consulta" "FIRMA_CENARIO_SEGREDO_PRODUCAO=$seg" "FIRMA_CENARIO_COOKIE=$cookie" >> .env
+printf '%s\n' "FIRMA_CENARIO_API_URL=$cen" "FIRMA_CENARIO_WEB_URL=$cen" "FIRMA_CENARIO_SCOPES=${FIRMA_CENARIO_SCOPES:-jogo operacao escritorio}" "FIRMA_CENARIO_SEGREDO_PRODUCAO=$seg" "FIRMA_CENARIO_COOKIE=$cookie" >> .env
 # Conexões antigas apontavam para outro Cenário: ficam desconectadas (tokens apagados).
 $DC exec -T postgres psql -U app -d firma_viva -qc "UPDATE cenario_connections SET status='DESCONECTADA', access_enc=NULL, refresh_enc=NULL, access_expires_at=NULL, last_error='Trocado para o Cenário Gestão de $rotulo: conecte de novo.' WHERE status <> 'DESCONECTADA'"
 $DC build firma-web
@@ -292,7 +292,7 @@ sleep 8
 # segredo errado seria 401). Nada é criado no Cenário.
 $DC exec -T firma-api node -e "fetch(process.env.CENARIO_API_URL+'/api/oauth/token',{method:'POST',headers:Object.assign({'content-type':'application/json'},process.env.FIRMA_CENARIO_COOKIE?{cookie:process.env.FIRMA_CENARIO_COOKIE}:{}),body:JSON.stringify({grant_type:'conferencia',client_id:process.env.FIRMA_CENARIO_CLIENT_ID,client_secret:process.env.FIRMA_CENARIO_CLIENT_SECRET})}).then(async r=>{const b=await r.json().catch(()=>({}));if(r.status===400&&b.error==='unsupported_grant_type'){console.log('  ✔ o Cenário reconhece o aplicativo e o segredo');process.exit(0)}console.log('  ✖ Cenário respondeu '+r.status+' '+(b.error||'')+': confira o cadastro e o segredo');process.exit(1)}).catch(e=>{console.log('  ✖ sem acesso ao Cenário: '+e.message);process.exit(1)})"
 FIM
-  echo "Pronto. Em https://$DOMAIN: Central de Conexões → Conectar Cenário Gestão."
+  echo "Pronto. No Cenário de $rotulo, entre como dono e clique em \"Acessar ambiente interativo\": o jogo abre já conectado."
 }
 
 # Volta ao Cenário Gestão de TESTE (empresa fictícia) da própria VM.
