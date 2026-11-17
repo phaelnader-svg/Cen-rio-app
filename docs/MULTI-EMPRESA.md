@@ -24,7 +24,7 @@ Plano aprovado (2026-11-16): https://claude.ai/artifact/Jykp8EMfom3S9WErKwYRkn
 | 1     | Mapa das tabelas + detector de vazamento                                                                              | **feito**                                      |
 | 2     | `company_id` em todas as tabelas, empresa 1, unicidades/numerações por empresa, ensaio com cópia do banco de produção | **feito** (falta ensaio com cópia de produção) |
 | 3     | Empresa em cada requisição, RLS ligada, SQL direto, arquivos, tempo real, tablets                                     | **feito**                                      |
-| 4     | Criar conta (reaproveita 0f96eba/9375a30) criando a empresa e o conteúdo inicial                                      | pendente                                       |
+| 4     | Criar conta (reaproveita 0f96eba/9375a30) criando a empresa e o conteúdo inicial                                      | **feito**                                      |
 | 5     | Teste do dono em homologação                                                                                          | pendente                                       |
 | 6     | Produção (com aprovação, ponto de recuperação, backup validado)                                                       | pendente                                       |
 
@@ -162,3 +162,36 @@ Riscos conhecidos, sem efeito no isolamento:
 - Arquivos em `STORAGE_DIR` não têm prefixo por empresa; o acesso passa sempre pelo registro no
   banco, que está isolado.
 - Cada operação virou uma transação curta (mais ~3 comandos por consulta). Medir em homologação.
+
+## Etapa 4 — Criar conta e painel do dono
+
+Migration `20270504000000_multi_empresa_etapa4` (reversão em
+`packages/db/rollback/20270504000000_multi_empresa_etapa4.down.sql`, que recusa se houver mais de
+uma empresa). Só acrescenta.
+
+- **Criar conta** (`POST /api/auth/signup`, tela `/entrar`): e-mail, senha (mínimo 8) e
+  confirmação. Cria uma **empresa nova** ("Minha empresa", o nome se troca em Empresa), o
+  conteúdo inicial dela (`packages/db/src/company-content.ts`: funções e permissões, modelos de
+  produção gerais e simplificados, checklists de qualidade, locais da oficina) e o usuário como
+  **gestor** dessa empresa, e já entra (cookie de sessão na resposta). Tudo numa transação que,
+  depois de criar a empresa, passa a valer como ela com a trava do banco ligada.
+  - A base de preços do orçamento **não** é copiada da Cenário Estofados; módulos e
+    configurações começam nos valores padrão.
+  - E-mail já usado: recusado (409), nada é criado. Limite: 5 contas por hora por IP e 40 por
+    hora no total.
+- **Bloqueio de empresa** (`company_settings.blocked_at`): login recusado, sessões, tablets e
+  tokens de aplicativo da empresa deixam de valer na hora (o tablet continua vinculado e volta
+  quando liberar); o tempo real encerra as conexões na revalidação periódica.
+- **Painel do dono** (`/painel/empresas`, rotas `/api/v1/platform/companies`): só para quem tem
+  `empresa.configurar` **na empresa nº 1**; para as outras empresas as rotas respondem 404 e o
+  item não aparece no menu. Mostra nome, e-mail do gestor, usuários, criação, último acesso e
+  situação; bloquear/liberar fica na auditoria da Cenário Estofados. A empresa 1 não pode ser
+  bloqueada.
+- `module_settings` passou a ter chave `(company_id, key)` (antes só `key`: a segunda empresa
+  não conseguiria ligar/desligar um módulo que a primeira já tivesse mexido). O teste de
+  unicidades agora também confere as chaves primárias.
+- `lockRow('company_settings', 1)` trocado pela empresa da requisição (módulos, configurações,
+  serviços).
+- O teste de vazamento cria a empresa B pelo "Criar conta" de verdade.
+
+Testes: `apps/api/test/criar-conta.test.ts`.

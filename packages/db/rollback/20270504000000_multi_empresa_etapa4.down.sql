@@ -1,6 +1,8 @@
 -- Reversão da etapa 4 do multi-empresa. Recusa se houver mais de uma empresa (a chave antiga de
 -- module_settings não cabe com duas empresas).
 BEGIN;
+-- A contagem precisa ver todas as empresas, mesmo com a trava do banco (RLS) ativa.
+SELECT set_config('app.bypass_rls', 'on', true);
 DO $$
 BEGIN
   IF (SELECT COUNT(*) FROM company_settings) > 1 THEN

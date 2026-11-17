@@ -88,7 +88,8 @@ describe('Matriz de acesso: todas as rotas', () => {
     const open = all.filter((r) => 'public' in r.access).map((r) => `${r.method} ${r.url}`);
     // Só login, saúde, prontidão e o estado de vinculação do tablet são públicos.
     // Também públicas: troca/revogação de token OAuth (servidor a servidor, autenticam o aplicativo
-    // pelo segredo dele).
+    // pelo segredo dele). E o "Criar conta" (multi-empresa, etapa 4): cria uma empresa nova, com
+    // limite por IP e global, e nunca dá acesso a uma empresa que já existe.
     expect(open.sort()).toEqual(
       [
         'POST /api/oauth/token',
@@ -97,6 +98,7 @@ describe('Matriz de acesso: todas as rotas', () => {
         'GET /api/ready',
         'GET /api/tablet/status',
         'POST /api/auth/login',
+        'POST /api/auth/signup',
         'POST /api/tablet/pair',
       ].sort(),
     );
