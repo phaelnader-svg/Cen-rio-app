@@ -214,7 +214,12 @@ test.describe.serial('Fase 7 — presença operacional', () => {
       );
 
       // 6. João inicia a preparação (ocupado) e encerra o expediente sem informar o andamento.
-      await jt.getByTestId('next-task').getByRole('button', { name: 'Iniciar' }).click();
+      // A tarefa certa (pelo código): tarefas abertas de outros specs podem vir antes na fila.
+      await jt
+        .getByTestId(`my-task-${prep.code}`)
+        .first()
+        .getByRole('button', { name: 'Iniciar' })
+        .click();
       await expect(row('João')).toContainText('Presente e ocupado');
       await jt.getByTestId('depart-button').click();
       await expect(jt.getByTestId('depart-screen')).toContainText('Preparação');
