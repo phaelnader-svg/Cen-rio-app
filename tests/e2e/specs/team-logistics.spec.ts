@@ -216,8 +216,9 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
     ])
       expect((await andre.page.request.get(path)).status(), path).toBe(403);
     const jobs = await andre.page.request.get('/api/v1/logistics/jobs');
-    // Valores como números isolados (o CEP fictício 01000000 contém "10000" e não é valor).
-    expect(await jobs.text()).not.toMatch(/Cents|(?<!\d)(9000|10000)(?!\d)/);
+    // Valores como números isolados (o CEP fictício 01000000 contém "10000" e não é valor;
+    // ids aleatórios podem ter um trecho "-9000-", que também não é valor).
+    expect(await jobs.text()).not.toMatch(/Cents|(?<![\w-])(9000|10000)(?![\w-])/);
     await andre.context.close();
   });
 });
