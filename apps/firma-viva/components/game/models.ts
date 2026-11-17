@@ -3,6 +3,7 @@
  * piso de madeira clara, paredes em verde petróleo, detalhes em bronze, peças "de feltro".
  * Unidades em metros; a origem de cada móvel é o canto noroeste do retângulo ocupado no chão.
  */
+import { drawIcon, iconOf, splitIcon } from './icons';
 import * as THREE from 'three';
 import type { FurnitureModel } from '@cenario/shared';
 
@@ -965,15 +966,26 @@ export function seatPose(g: THREE.Object3D, s: number, t: number) {
 /** Etiqueta com texto (sprite em canvas). */
 export function label(
   text: string,
-  opts: { bg?: string; fg?: string; size?: number; icon?: string; border?: string } = {},
+  opts: {
+    bg?: string;
+    fg?: string;
+    size?: number;
+    icon?: string;
+    iconColor?: string;
+    border?: string;
+  } = {},
 ) {
   const size = opts.size ?? 28;
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d')!;
   ctx.font = `600 ${size}px Inter, system-ui, sans-serif`;
-  const full = opts.icon ? `${opts.icon} ${text}` : text;
+  // Emojis viram ícone de linha desenhado (o primeiro) ou somem do texto.
+  const parsed = splitIcon(text);
+  const icon = iconOf(opts.icon) ?? parsed.icon;
+  const full = parsed.text;
+  const iw = icon ? size * 1.05 : 0;
   const tw = Math.ceil(ctx.measureText(full).width);
-  c.width = tw + size;
+  c.width = tw + size + iw;
   c.height = Math.ceil(size * 1.6);
   const r = c.height / 2;
   ctx.fillStyle = opts.bg ?? 'rgba(29,37,35,0.82)';
@@ -985,10 +997,13 @@ export function label(
     ctx.lineWidth = 4;
     ctx.stroke();
   }
+  const fg = opts.fg ?? '#ffffff';
+  if (icon)
+    drawIcon(ctx, icon, size / 2, (c.height - size * 0.85) / 2, size * 0.85, opts.iconColor ?? fg);
   ctx.font = `600 ${size}px Inter, system-ui, sans-serif`;
-  ctx.fillStyle = opts.fg ?? '#ffffff';
+  ctx.fillStyle = fg;
   ctx.textBaseline = 'middle';
-  ctx.fillText(full, size / 2, c.height / 2 + 1);
+  ctx.fillText(full, size / 2 + iw, c.height / 2 + 1);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;

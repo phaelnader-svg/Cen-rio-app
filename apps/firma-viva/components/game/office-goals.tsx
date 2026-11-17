@@ -9,6 +9,7 @@ import clsx from 'clsx';
 import { useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
+import { Ic } from './icons';
 import { GBtn, Panel, Section, Tone, fmtDateTime } from './ui';
 
 /** Agora no horário de São Paulo, no formato do campo datetime-local. */
@@ -291,7 +292,7 @@ export function GoalsPanel({
                 className="mt-1 rounded-lg bg-ok-50 p-1.5 text-ok-600"
                 data-testid="goals-delivery"
               >
-                🚚🎉 Entregue: {d.osCodes.join(', ')} ({d.customer}) em {br(d.completedAt)}
+                <Ic e="🚚" /> Entregue: {d.osCodes.join(', ')} ({d.customer}) em {br(d.completedAt)}
                 {d.openCents > 0 ? (
                   <>
                     {' '}
@@ -591,7 +592,7 @@ function WeekCard({
           onClick={() => onAnimate(w, goal)}
           data-testid="week-animate"
         >
-          ▶ Ver a barra da abertura ao fechamento
+          <Ic e="▶" /> Ver a barra da abertura ao fechamento
         </button>
       ) : null}
     </div>
@@ -665,7 +666,7 @@ function GoalsTab({
               <b>{g.name}</b>
               {g.achieved ? (
                 <Tone tone={g.belowAfterAchieved ? 'atencao' : 'ok'}>
-                  🏆 conquistada em {br(g.achieved.at)}
+                  <Ic e="🏆" /> conquistada em {br(g.achieved.at)}
                   {g.belowAfterAchieved ? ' · abaixo hoje' : ''}
                 </Tone>
               ) : g.id === b.nextGoalId ? (

@@ -10,6 +10,7 @@ import clsx from 'clsx';
 import { useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
+import { Ic } from './icons';
 import { GBtn, Panel, Section, Tone } from './ui';
 
 const brl = (c: number | null | undefined) =>
@@ -1341,7 +1342,7 @@ function BankTab() {
                   )
                 }
               >
-                ✓ {s.label}
+                <Ic e="✓" /> {s.label}
               </button>
             ))}
             <button

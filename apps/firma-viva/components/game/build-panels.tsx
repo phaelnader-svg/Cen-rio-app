@@ -20,6 +20,7 @@ import {
 import { useState } from 'react';
 import { type GamePerson, useItemLocations, useMaterialSearch, useRevisions } from './game-api';
 import type { Selection } from './editor';
+import { Ic } from './icons';
 import { GBtn, Panel, Section, fmtDateTime } from './ui';
 
 export type PaletteItem =
@@ -201,7 +202,7 @@ export function Properties({
         </GBtn>
       ) : null}
       <GBtn tone="danger" onClick={onRemove} title="Remover (Delete)" testId="remove-selected">
-        🗑 Remover
+        <Ic e="🗑" /> Remover
       </GBtn>
     </div>
   );

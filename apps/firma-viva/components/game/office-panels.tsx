@@ -9,6 +9,7 @@ import clsx from 'clsx';
 import { useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
+import { Ic } from './icons';
 import { GBtn, KV, Panel, Section, Tone, fmtDateTime } from './ui';
 import { cenarioUrl } from '@/lib/links';
 
@@ -166,7 +167,7 @@ export function ChannelBadge({ channel }: { channel: string }) {
         c.cls,
       )}
     >
-      {c.icon} {c.label}
+      <Ic e={c.icon} /> {c.label}
     </span>
   );
 }
@@ -458,7 +459,9 @@ function ConnectionItem({
                     Testado de ponta a ponta{c.realIntegration === 'sim' ? '' : ' (modo de teste)'}:
                   </div>
                   {c.verified.tested.map((x) => (
-                    <div key={x}>✓ {x}</div>
+                    <div key={x}>
+                      <Ic e="✓" /> {x}
+                    </div>
                   ))}
                 </>
               ) : null}
@@ -892,7 +895,7 @@ function ConversationPanel({
                 >
                   {m.media?.length ? (
                     <div className="mb-1 text-ink-muted">
-                      📷 {m.media.map((x) => x.caption || x.mime || 'anexo').join(', ')}
+                      <Ic e="📷" /> {m.media.map((x) => x.caption || x.mime || 'anexo').join(', ')}
                     </div>
                   ) : null}
                   <div className="whitespace-pre-wrap">{m.text}</div>
@@ -1116,7 +1119,7 @@ export function MarketingPanel({
                     key={u}
                     className="flex size-16 items-center justify-center rounded bg-subtle p-1 text-center text-[9px] break-all text-ink-muted"
                   >
-                    🖼️ {u.split('/').pop()}
+                    <Ic e="🖼️" /> {u.split('/').pop()}
                   </span>
                 ),
               )}

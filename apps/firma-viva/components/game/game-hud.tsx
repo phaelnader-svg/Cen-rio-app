@@ -11,6 +11,7 @@ import type { Mission, Progress } from './progress';
 import { REWARDS } from './progress';
 import { fmtReplayTime } from './replay';
 import { sound } from './sound';
+import { Ic } from './icons';
 import { GBtn, Panel } from './ui';
 
 /** Tela pequena (celular em pé ou janela estreita). */
@@ -193,10 +194,10 @@ export function SettingsMenu({
       <div className="mb-1 font-bold">Som</div>
       <div className="mb-3 flex gap-1">
         <button className={opt(!muted)} onClick={() => sound().setMuted(false)}>
-          🔊 Ligado
+          <Ic e="🔊" /> Ligado
         </button>
         <button className={opt(muted)} onClick={() => sound().setMuted(true)}>
-          🔇 Mudo
+          <Ic e="🔇" /> Mudo
         </button>
       </div>
       <div className="mb-1 font-bold">Qualidade gráfica</div>
@@ -232,10 +233,10 @@ export function SettingsMenu({
       </div>
       <div className="flex gap-1.5">
         <GBtn tone="ghost" onClick={onShortcuts}>
-          ⌨️ Atalhos
+          <Ic e="⌨️" /> Atalhos
         </GBtn>
         <GBtn tone="ghost" onClick={onTutorial}>
-          🎓 Ver tutorial
+          <Ic e="🎓" /> Ver tutorial
         </GBtn>
       </div>
     </div>
@@ -270,7 +271,7 @@ export function MissionsPanel({
       <div className="mb-3 rounded-xl border border-bronze-500/30 bg-bronze-100/60 p-2.5">
         <div className="flex items-center justify-between text-xs font-bold">
           <span>
-            ⭐ Nível {progress.level} · {progress.levelName}
+            <Ic e="⭐" /> Nível {progress.level} · {progress.levelName}
           </span>
           <span className="text-ink-soft">{progress.xp} XP</span>
         </div>
@@ -294,7 +295,9 @@ export function MissionsPanel({
             data-testid={`mission-${m.id}`}
           >
             <div className="flex items-center gap-2">
-              <span className="text-base">{m.done ? '✅' : m.icon}</span>
+              <span className={m.done ? 'text-ok-600' : 'text-bronze-600'}>
+                <Ic e={m.done ? '✅' : m.icon} className="size-5" />
+              </span>
               <div className="min-w-0 flex-1">
                 <div className="font-bold">{m.title}</div>
                 <div className="text-ink-soft">{m.detail}</div>
@@ -326,7 +329,7 @@ export function MissionsPanel({
                 : 'border-line bg-white text-ink-muted',
             )}
           >
-            {progress.rewards.includes(r.id) ? '✓' : `Nv ${r.level}`} · {r.label}
+            {progress.rewards.includes(r.id) ? <Ic e="✓" /> : `Nv ${r.level}`} · {r.label}
           </span>
         ))}
       </div>
@@ -344,7 +347,9 @@ export function MissionsPanel({
         </label>
       </div>
       <div className="rounded-xl border border-line bg-white p-2 text-xs">
-        <div className="font-bold">🏁 A equipe concluiu {week.total} etapa(s) nesta semana</div>
+        <div className="font-bold">
+          <Ic e="🏁" /> A equipe concluiu {week.total} etapa(s) nesta semana
+        </div>
         {showPeople ? (
           <ul className="mt-1 space-y-0.5">
             {week.people.map((p) => (
@@ -368,7 +373,7 @@ export function MissionsPanel({
         disabled={!canReplay}
         testId="replay-open"
       >
-        ⏪ Replay da semana
+        <Ic e="⏪" /> Replay da semana
       </GBtn>
       <p className="mt-2 text-[11px] text-ink-muted">
         Tudo calculado com o trabalho real registrado no tablet. O progresso fica guardado neste
@@ -414,7 +419,9 @@ export function ReplayBar({
       </button>
       <div className="min-w-0 flex-1">
         <div className="flex justify-between text-[11px] font-semibold">
-          <span>⏪ Replay da semana</span>
+          <span>
+            <Ic e="⏪" /> Replay da semana
+          </span>
           <span className="text-bronze-600">{fmtReplayTime(at)}</span>
         </div>
         <input
