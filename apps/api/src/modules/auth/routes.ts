@@ -17,6 +17,9 @@ import { burnVerification, hashSecret, verifySecret } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
 import { cookieOptions } from '../../plugins/auth';
 import { buildMe, employeeEventPayload } from '../presenters';
+import { captchaFailed } from '../../core/captcha';
+import { sendConfirmationEmail } from '../account/emails';
+import { signupExtrasSchema } from '@cenario/shared';
 
 export async function authRoutes(app: FastifyInstance) {
   const { prisma, system, env, hashToken, cookies } = app.ctx;
@@ -103,10 +106,19 @@ export async function authRoutes(app: FastifyInstance) {
    */
   app.post('/api/auth/signup', { config: { access: { public: true } } }, async (request, reply) => {
     const input = signupSchema.parse(request.body);
+    const extras = signupExtrasSchema.parse(request.body ?? {});
     const ipKey = clientIpKey(request, 'signup-ip');
     await throttle.assertAllowed([ipKey, 'signup:global']);
+    // Anti-robô (melhoria 5): campo-isca invisível (só robô preenche) e o Turnstile, quando
+    // configurado. O robô recebe a mesma recusa e não gasta o limite de quem é de verdade.
+    if (extras.website) throw captchaFailed();
+    if (app.ctx.captcha && !(await app.ctx.captcha(extras.captcha, request.ip)))
+      throw captchaFailed();
     await throttle.registerFailure(ipKey, POLICIES.signup);
-    await throttle.registerFailure('signup:global', POLICIES.signupGlobal);
+    await throttle.registerFailure(
+      'signup:global',
+      app.ctx.captcha ? POLICIES.signupGlobalWithCaptcha : POLICIES.signupGlobal,
+    );
 
     const taken = await system.user.findUnique({
       where: { email: input.email },
@@ -119,8 +131,14 @@ export async function authRoutes(app: FastifyInstance) {
     let created;
     try {
       created = await system.$transaction(async (tx) => {
+        // Cobrança: teste grátis (7 dias, decisão do dono), no plano Cenário Gestão.
         const company = await tx.companySettings.create({
-          data: { tradeName: 'Minha empresa', email: input.email },
+          data: {
+            tradeName: 'Minha empresa',
+            email: input.email,
+            plan: 'gestao',
+            trialEndsAt: new Date(Date.now() + env.BILLING_TRIAL_DAYS * 86_400_000),
+          },
         });
         // Daqui em diante a transação é da empresa nova, com a trava do banco ligada: tudo o que
         // for gravado fica nela, e nada de outra empresa aparece.
@@ -173,6 +191,12 @@ export async function authRoutes(app: FastifyInstance) {
           aggregateId: employee.id,
           payload: employeeEventPayload(employee),
         });
+        // Melhoria 3: link para confirmar o e-mail (a conta já funciona; o painel mostra o aviso).
+        await sendConfirmationEmail(tx, env, hashToken, {
+          id: user.id,
+          companyId: company.id,
+          email: input.email,
+        });
         return { ...session, userId: user.id };
       });
     } catch (error) {
@@ -183,6 +207,7 @@ export async function authRoutes(app: FastifyInstance) {
       throw error;
     }
 
+    app.ctx.mailer.kick();
     const { session, token, userId } = created;
     const permissions = await loadUserPermissions(prisma, userId);
     const maxAge = Math.floor((session.expiresAt.getTime() - Date.now()) / 1000);

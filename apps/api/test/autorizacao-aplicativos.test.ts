@@ -293,13 +293,15 @@ describe('autorização delegada de aplicativos', () => {
     expect(me.status).toBe(401);
   });
 
-  it('entrada direta (prompt=none): só com o complemento Ambiente interativo ligado, sem confirmação', async () => {
+  it('entrada direta (prompt=none): só no plano com o Firma Viva, sem confirmação', async () => {
     const admin = await loginAdmin(app);
     const { verifier, challenge } = pkce();
     const p = authorizeParams(challenge, { prompt: 'none', org_ref: '', org_label: '' });
     const q = new URLSearchParams(p).toString();
-    // Complemento desligado: a entrada direta é recusada, na tela e na decisão.
-    await db().moduleSetting.create({ data: { key: 'ambiente_interativo', enabled: false } });
+    // Plano sem o jogo: a entrada direta é recusada, na tela e na decisão. Ligar o interruptor
+    // antigo não adianta (quem decide é o plano).
+    await db().companySettings.update({ where: { id: 1 }, data: { plan: 'gestao' } });
+    await db().moduleSetting.create({ data: { key: 'ambiente_interativo', enabled: true } });
     const off = await admin.get(`/api/oauth/authorize/info?${q}`);
     expect(off.status).toBe(422);
     expect(off.body.error.message).toContain('Ambiente interativo');
@@ -310,8 +312,8 @@ describe('autorização delegada de aplicativos', () => {
     const normal = new URLSearchParams(authorizeParams(pkce().challenge)).toString();
     expect((await admin.get(`/api/oauth/authorize/info?${normal}`)).body.skipConsent).toBe(false);
 
-    // Ligado (padrão por enquanto): entra sem confirmação.
-    await db().moduleSetting.deleteMany({ where: { key: 'ambiente_interativo' } });
+    // Plano superior (o da Cenário Estofados): entra sem confirmação.
+    await db().companySettings.update({ where: { id: 1 }, data: { plan: 'gestao_jogo' } });
     const on = await admin.get(`/api/oauth/authorize/info?${q}`);
     expect(on.status).toBe(200);
     expect(on.body.skipConsent).toBe(true);

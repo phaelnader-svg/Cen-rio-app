@@ -10,26 +10,23 @@ import {
 
 /** Reformulação, Fase 0 — interruptores de funcionalidades. */
 describe('módulos configuráveis', () => {
-  it('sem nenhum registro, a logística fica ligada (única funcionalidade configurável restante)', () => {
+  it('sem nenhum registro, a logística fica ligada; o ambiente interativo nasce desligado (segue o plano)', () => {
     const state = resolveModules([]);
     expect(Object.keys(state).sort()).toEqual([...MODULE_KEYS].sort());
     expect(MODULES.logistica.defaultEnabled).toBe(true);
-    expect(MODULES.ambiente_interativo.defaultEnabled).toBe(true);
-    expect(state).toEqual({ logistica: true, ambiente_interativo: true });
+    expect(MODULES.ambiente_interativo.defaultEnabled).toBe(false);
+    expect(state).toEqual({ logistica: true, ambiente_interativo: false });
   });
 
-  it('S1 e remoção dos módulos: logística e ambiente interativo são configuráveis; registros antigos de "embalagem", "ajuda" e "materiais" são ignorados', () => {
-    expect(MODULE_KEYS.filter((k) => MODULES[k].configurable)).toEqual([
-      'logistica',
-      'ambiente_interativo',
-    ]);
+  it('S1 e remoção dos módulos: só a logística é configurável (o jogo segue o plano); registros antigos de "embalagem", "ajuda" e "materiais" são ignorados', () => {
+    expect(MODULE_KEYS.filter((k) => MODULES[k].configurable)).toEqual(['logistica']);
     const state = resolveModules([
       { key: 'logistica', enabled: false },
       { key: 'embalagem', enabled: false },
       { key: 'ajuda', enabled: true },
       { key: 'materiais', enabled: true },
     ]);
-    expect(state).toEqual({ logistica: false, ambiente_interativo: true });
+    expect(state).toEqual({ logistica: false, ambiente_interativo: false });
   });
 
   it('chave desconhecida (gravada por versão futura) é ignorada sem erro', () => {

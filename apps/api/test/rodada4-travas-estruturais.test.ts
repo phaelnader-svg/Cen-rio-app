@@ -1701,6 +1701,15 @@ describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava 
  * Chave: "<pasta da migration>: <comando normalizado>".
  */
 const ALLOWED_DESTRUCTIVE: Record<string, string> = {
+  '20270722000000_cobranca_planos_emails: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS (links de e-mail, ' +
+    'fila de e-mails, cobranças da assinatura). Nenhuma linha existente é alterada.',
+  '20270722000000_cobranca_planos_emails: UPDATE "company_settings"':
+    'Preenche os campos NOVOS da cobrança: a empresa 1 ganha cortesia no plano com o jogo (continua ' +
+    'como hoje) e as outras empresas ganham 7 dias de teste. Nenhum dado existente muda.',
+  '20270722000000_cobranca_planos_emails: UPDATE "users"':
+    'Preenche a coluna NOVA email_confirmed_at dos usuários que já existem (cadastrados pelo gestor, ' +
+    'não precisam confirmar). Nenhum dado existente muda.',
   '20270715000000_multi_empresa_etapa4: DROP CONSTRAINT "module_settings_pkey"':
     'Chave primária recriada na mesma migration com a empresa junto (company_id, key): cada ' +
     'empresa liga e desliga os próprios módulos. Nenhuma linha é apagada nem alterada.',
@@ -1746,6 +1755,8 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
 const MULTI_EMPRESA_ETAPA2 = '20270701000000_multi_empresa_etapa2';
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
+  '20270722000000_cobranca_planos_emails: UPDATE CASCADE': 4,
+  '20270722000000_cobranca_planos_emails: UPDATE "company_settings"': 2,
   '20270708000000_multi_empresa_etapa3: UPDATE ON': 2,
   '20270622000000_jogo_quadro_metas: UPDATE OR': 2,
   '20270309000000_materiais_estoque_entrega: UPDATE CASCADE': 16,

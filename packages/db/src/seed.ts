@@ -87,7 +87,13 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
     // tabela de empresa aponta para ela.
     await prisma.companySettings.upsert({
       where: { id: SEED_COMPANY_ID },
-      create: { id: SEED_COMPANY_ID, tradeName: 'Cenário Estofados' },
+      // A empresa da plataforma não paga a assinatura e tem o plano superior (com o jogo).
+      create: {
+        id: SEED_COMPANY_ID,
+        tradeName: 'Cenário Estofados',
+        plan: 'gestao_jogo',
+        billingCourtesy: true,
+      },
       update: {},
     });
     // O id foi gravado explicitamente: a sequência precisa andar até ele (senão a próxima empresa
@@ -147,6 +153,8 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
               displayName: name.slice(0, 60),
               passwordHash: await hash(password, ARGON2_OPTIONS),
               credentialsChangedAt: new Date(),
+              // Informado por quem instala: não precisa confirmar pelo link.
+              emailConfirmedAt: new Date(),
               roles: { create: { roleId: gestorRole.id } },
             },
           });

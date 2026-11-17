@@ -84,6 +84,11 @@ import { inventoryRoutes } from './modules/inventory/routes';
 import { quoteRoutes } from './modules/quotes/routes';
 import { companyRoutes } from './modules/company/routes';
 import { platformRoutes } from './modules/platform/routes';
+import { billingRoutesPlatform } from './modules/billing/routes';
+import { accountRoutes } from './modules/account/routes';
+import { EmailSender } from './core/mailer';
+import { turnstileVerifier } from './core/captcha';
+import { setBillingEnvironment } from './core/billing';
 import { deviceRoutes } from './modules/devices/routes';
 import { employeeRoutes } from './modules/employees/routes';
 import { fileRoutes } from './modules/files/routes';
@@ -166,8 +171,12 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       device: secure ? '__Host-cen_dev' : 'cen_dev',
     },
     clientIp,
+    mailer: new EmailSender(system, env, app.log),
+    captcha: turnstileVerifier(env),
+    fetch: (...args) => globalThis.fetch(...args),
   };
   app.decorate('ctx', ctx);
+  setBillingEnvironment(env, () => ctx.mailer.configured);
   // Cada requisição ganha o seu "de qual empresa" (preenchido pela autenticação).
   app.decorateRequest('tenant', null);
   app.addHook('onRequest', (request, _reply, done) => {
@@ -218,6 +227,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(sessionRoutes);
   await app.register(companyRoutes);
   await app.register(platformRoutes);
+  await app.register(billingRoutesPlatform);
+  await app.register(accountRoutes);
   await app.register(auditRoutes);
   await app.register(managementRoutes);
   await app.register(todayRoutes);
@@ -305,6 +316,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   let releaseTimer: NodeJS.Timeout | null = null;
   let absenceTimer: NodeJS.Timeout | null = null;
   let issueTimer: NodeJS.Timeout | null = null;
+  let emailTimer: NodeJS.Timeout | null = null;
   let started = false;
 
   return {
@@ -367,6 +379,10 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           30_000,
         );
         issueTimer.unref();
+        // Fila de e-mails (confirmação, nova senha, assinatura): novas tentativas.
+        emailTimer = setInterval(() => ctx.mailer.kick(), 60_000);
+        emailTimer.unref();
+        ctx.mailer.kick();
       }
     },
     async close() {
@@ -375,6 +391,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       if (releaseTimer) clearInterval(releaseTimer);
       if (absenceTimer) clearInterval(absenceTimer);
       if (issueTimer) clearInterval(issueTimer);
+      if (emailTimer) clearInterval(emailTimer);
       processor.stop();
       hub.stop();
       await feed.stop();

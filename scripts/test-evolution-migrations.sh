@@ -48,7 +48,7 @@ DOWNS=(20261230000000_modelos_simplificados 20261228000000_titular_mao_de_obra_p
 # Última migration da Evolução (recorte das etapas 3–4).
 EVOLUTION_LAST=20261230000000_modelos_simplificados
 # Posteriores à Evolução com reversão própria (a mais recente primeiro). Sem dados novos.
-LATE_DOWNS=(20270715000000_multi_empresa_etapa4 20270708000000_multi_empresa_etapa3 20270701000000_multi_empresa_etapa2 20270622000000_jogo_quadro_metas 20270615000000_jogo_propostas_obsoletas 20270608000000_conexoes_escritorio 20270601000000_jogo_gestao 20270413000000_orcamentos 20270406000000_retirada_mostruario_maquininha 20270330000000_autorizacao_aplicativos
+LATE_DOWNS=(20270722000000_cobranca_planos_emails 20270715000000_multi_empresa_etapa4 20270708000000_multi_empresa_etapa3 20270701000000_multi_empresa_etapa2 20270622000000_jogo_quadro_metas 20270615000000_jogo_propostas_obsoletas 20270608000000_conexoes_escritorio 20270601000000_jogo_gestao 20270413000000_orcamentos 20270406000000_retirada_mostruario_maquininha 20270330000000_autorizacao_aplicativos
   20270323000000_reformulacao_fase_3 20270316000000_reformulacao_fase_2 20270309000000_materiais_estoque_entrega 20270302000000_modulos_configuraveis 20270223000000_custo_operacional_equipe_propria 20270216000000_notificacoes_resolvidas
   20270209000000_presenca_apoio_simplificados 20270202000000_negociacao_confirmacao_semanal
   20270126000000_meus_ganhos_permissao 20270119000000_cobranca_cliente
@@ -224,7 +224,12 @@ echo "migrations aplicadas: $(q 'SELECT count(*) FROM _prisma_migrations WHERE f
 # Reversão e reaplicação das posteriores que têm .down.sql (sem dados novos).
 # Multi-empresa (etapa 4): company_settings.created_at é a data em que a coluna nasce (a da própria
 # migration); ao reaplicar ganha a data nova, por desenho. Fica fora só nesta comparação.
-late_columns() { columns | sed -E 's/^(company_settings\|.*),created_at(,|$)/\1\2/'; }
+# Cobrança (20270722): users.email_confirmed_at (contas existentes confirmadas na data da migration)
+# e company_settings.trial_ends_at (teste grátis contado dela) seguem a mesma regra.
+late_columns() {
+  columns | sed -E -e 's/^(company_settings\|.*),created_at(,|$)/\1\2/' \
+    -e 's/^(company_settings\|.*),trial_ends_at(,|$)/\1\2/' -e 's/^(users\|.*),email_confirmed_at(,|$)/\1\2/'
+}
 FULL_SCHEMA="$(schema_dump)"; FULL_DATA="$(snapshot "$(late_columns)")"
 # Rodada 4: fotografia das colunas legadas logo antes de reverter (o `read` acima já gravou sessão
 # e auditoria do login — dados legítimos que a reversão também não pode tocar).
