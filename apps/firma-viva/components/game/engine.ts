@@ -49,6 +49,7 @@ import {
   toolModel,
   trophy,
   vanModel,
+  wrappedCargo,
   wallClock,
   wallFabricShelf,
   wallWindow,
@@ -88,6 +89,34 @@ export interface LogisticsView {
   }[];
   /** Cliente que veio buscar a peça na oficina (aparece na entrada por um tempo). */
   visitor: { id: string; name: string } | null;
+}
+
+interface YardWall {
+  origin: THREE.Vector3;
+  out: THREE.Vector3;
+  along: THREE.Vector3;
+  /** Ponto da rua (faixa do furgão) na posição `t` ao longo da parede. */
+  min: number;
+  max: number;
+}
+interface YardSpot {
+  wall: string;
+  /** Centro do portão, na linha da parede. */
+  door: THREE.Vector3;
+  out: THREE.Vector3;
+  /** Onde o furgão para, de ré para o portão. */
+  park: THREE.Vector3;
+  t: number;
+  entryCm: { x: number; y: number };
+}
+interface VanStep {
+  p: THREE.Vector3;
+  /** Último trecho: entra de ré na vaga (frente para a rua). */
+  reverse?: boolean;
+  /** Reaparece aqui (vindo da rua). */
+  teleport?: boolean;
+  /** Some ao chegar (saiu para a rua). */
+  hide?: boolean;
 }
 
 export interface PieceVisual {
@@ -430,20 +459,30 @@ export class GameEngine {
   private playerLook: AvatarLook | null = null;
   /** Pátio do lado de fora do portão (furgão e cliente na entrada). */
   private logisticsGroup = new THREE.Group();
-  private dock: {
-    c: THREE.Vector3;
-    out: THREE.Vector3;
-    along: THREE.Vector3;
-    entryCm: { x: number; y: number };
+  /**
+   * Pátio do lado de fora: o portão de recebimento (onde entram as peças das retiradas) e o de
+   * expedição (onde saem as entregas), cada um com a sua vaga para o furgão.
+   */
+  private yard: {
+    spots: Record<'RECEB' | 'EXPED', YardSpot>;
+    walls: Record<string, YardWall>;
   } | null = null;
   private van: {
     g: THREE.Group;
     tag: THREE.Sprite | null;
-    /** 0 = estacionado; 1 = fora do mapa. */
-    s: number;
-    goal: 0 | 1;
-    leaving: boolean;
+    cargo: THREE.Group;
+    /** Vaga onde está (ou para onde vai); AWAY = na rua, fora do mapa. */
+    at: 'RECEB' | 'EXPED' | 'AWAY';
+    wall: string;
+    path: VanStep[];
+    text: string;
+    loading: boolean;
   } | null = null;
+  /** Retirada que acabou de voltar: o furgão fica descarregando no recebimento por um tempo. */
+  private vanSticky: { text: string; until: number } | null = null;
+  private vanTimer: number | null = null;
+  private yardSig = '';
+  private prevTrips = new Map<string, string>();
   private visitor: THREE.Group | null = null;
   private logistics: LogisticsView | null = null;
   private mestre: THREE.Group | null = null;
@@ -746,8 +785,8 @@ export class GameEngine {
     const d = this.layout.depthCm * CM;
     // Com o pátio (furgão), a visão geral inclui a rua do lado de fora do portão.
     let [x0, z0, x1, z1] = [-0.3, -0.3, w + 0.3, d + 0.3];
-    if (this.dock) {
-      const far = this.dock.c.clone().addScaledVector(this.dock.out, 1.6);
+    for (const sp of this.yard ? Object.values(this.yard.spots) : []) {
+      const far = sp.park.clone().addScaledVector(sp.out, 1.6);
       x0 = Math.min(x0, far.x);
       x1 = Math.max(x1, far.x);
       z0 = Math.min(z0, far.z);
@@ -1930,141 +1969,263 @@ export class GameEngine {
 
   // ───────────────────────────── Pátio: furgão e cliente ─────────────────────────────
 
+  private static readonly LANE = 2.5;
+  private static readonly PARK = 2.25;
+
+  private yawOf(d: THREE.Vector3) {
+    return Math.atan2(-d.z, d.x);
+  }
+  private lane(wall: string, t: number) {
+    const w = this.yard!.walls[wall]!;
+    return w.origin.clone().addScaledVector(w.along, t).addScaledVector(w.out, GameEngine.LANE);
+  }
+  private tOf(wall: string, p: THREE.Vector3) {
+    const w = this.yard!.walls[wall]!;
+    return p.clone().sub(w.origin).dot(w.along);
+  }
+
   /**
-   * Pátio do lado de fora do portão de expedição (ou do primeiro portão para a rua) da oficina,
-   * com o furgão estacionado. Só na oficina, fora do modo Construção.
+   * Rua do lado de fora dos portões para a rua (recebimento e expedição) com o furgão. Só na
+   * oficina, fora do modo Construção.
    */
   private buildDock(layout: LayoutContent, build: boolean) {
+    // A planta é redesenhada a cada seleção: o pátio só refaz se os portões mudaram (senão o
+    // furgão voltaria para a vaga no meio do trajeto).
+    const sig = JSON.stringify([
+      layout.name,
+      layout.kind,
+      build,
+      layout.widthCm,
+      layout.depthCm,
+      layout.doc.doors,
+    ]);
+    if (sig === this.yardSig && this.yard) {
+      if (this.van) this.register(this.van.g, { kind: 'van', id: 'van' });
+      return;
+    }
+    this.yardSig = sig;
     this.clearGroup(this.logisticsGroup);
-    this.dock = null;
+    this.yard = null;
     this.van = null;
     this.visitor = null;
     if (build || layout.kind === 'ESCRITORIO') return;
     const ext = layout.doc.doors.filter(
       (d) => ['N', 'S', 'L', 'O'].includes(d.wall) && !d.toSpaceKey,
     );
-    const door =
-      ext.find((d) => /expedi/i.test(d.label ?? '')) ??
-      ext.find((d) => /receb|port|entrada/i.test(d.label ?? '')) ??
+    const exped =
+      ext.find((d) => /expedi|sa[ií]da|entrega/i.test(d.label ?? '')) ??
+      ext.find((d) => /port|entrada/i.test(d.label ?? '')) ??
       ext[0];
-    if (!door) return;
-    const cc = doorCenter(layout, door);
-    if (!cc) return;
-    const out = {
+    const receb =
+      ext.find((d) => /receb|chegada|retirada/i.test(d.label ?? '')) ??
+      ext.find((d) => d !== exped && /port|entrada/i.test(d.label ?? '')) ??
+      exped;
+    if (!exped || !receb) return;
+    const OUT = {
       N: new THREE.Vector3(0, 0, -1),
       S: new THREE.Vector3(0, 0, 1),
       O: new THREE.Vector3(-1, 0, 0),
       L: new THREE.Vector3(1, 0, 0),
-    }[door.wall as 'N' | 'S' | 'O' | 'L'];
-    // Sentido em que o furgão sai: ao longo da parede, para o lado com mais rua livre.
-    const along = new THREE.Vector3(-out.z, 0, out.x);
-    const c = new THREE.Vector3(cc.x * CM, 0, cc.y * CM);
-    const W = layout.widthCm * CM;
-    const D = layout.depthCm * CM;
-    const room = along.x !== 0 ? (along.x > 0 ? W - c.x : c.x) : along.z > 0 ? D - c.z : c.z;
-    if (room < Math.max(W, D) / 2) along.negate();
-    // Calçada e rua (o piso externo da base vai só até 0,6 m da parede).
-    const len = 12;
-    const depth = 3.6;
-    const road = new THREE.Mesh(
-      new THREE.BoxGeometry(along.x !== 0 ? len : depth, 0.3, along.x !== 0 ? depth : len),
-      mat('#5f6668', { rough: 0.95 }),
-    );
-    road.position
-      .copy(c)
-      .addScaledVector(out, 0.6 + depth / 2)
-      .setY(-0.17);
-    road.receiveShadow = true;
-    this.logisticsGroup.add(road);
-    // Faixa tracejada no meio da rua.
-    for (let i = -5; i <= 5; i += 1.4) {
-      const m = new THREE.Mesh(
-        new THREE.BoxGeometry(along.x !== 0 ? 0.7 : 0.08, 0.01, along.x !== 0 ? 0.08 : 0.7),
-        mat('#e8e2cf'),
-      );
-      m.position
-        .copy(c)
-        .addScaledVector(out, 0.6 + depth * 0.62)
-        .addScaledVector(along, i)
-        .setY(-0.015);
-      this.logisticsGroup.add(m);
+    } as const;
+    const walls: Record<string, YardWall> = {};
+    const spots = {} as Record<'RECEB' | 'EXPED', YardSpot>;
+    for (const [key, door] of [
+      ['RECEB', receb],
+      ['EXPED', exped],
+    ] as const) {
+      const cc = doorCenter(layout, door);
+      if (!cc) return;
+      const out = OUT[door.wall as keyof typeof OUT];
+      const c = new THREE.Vector3(cc.x * CM, 0, cc.y * CM);
+      if (!walls[door.wall])
+        walls[door.wall] = {
+          origin: c.clone(),
+          out,
+          along: new THREE.Vector3(-out.z, 0, out.x),
+          min: 0,
+          max: 0,
+        };
+      const w = walls[door.wall]!;
+      const t = c.clone().sub(w.origin).dot(w.along);
+      w.min = Math.min(w.min, t);
+      w.max = Math.max(w.max, t);
+      const entry = c.clone().addScaledVector(out, -0.9);
+      spots[key] = {
+        wall: door.wall,
+        door: c,
+        out,
+        park: c.clone().addScaledVector(out, GameEngine.PARK),
+        t,
+        entryCm: { x: entry.x / CM, y: entry.z / CM },
+      };
     }
-    const entry = c.clone().addScaledVector(out, -0.9);
-    this.dock = {
-      c: c.clone().addScaledVector(out, 0.6 + 1.25),
-      out,
-      along,
-      entryCm: { x: entry.x / CM, y: entry.z / CM },
-    };
+    this.yard = { spots, walls };
+    // Rua (o piso da base vai só até 0,6 m da parede) com faixa tracejada.
+    const depth = 3.6;
+    for (const w of Object.values(walls)) {
+      w.min -= 6;
+      w.max += 6;
+      const len = w.max - w.min;
+      const mid = w.origin.clone().addScaledVector(w.along, (w.min + w.max) / 2);
+      const xAlong = w.along.x !== 0;
+      const road = new THREE.Mesh(
+        new THREE.BoxGeometry(xAlong ? len : depth, 0.3, xAlong ? depth : len),
+        mat('#5f6668', { rough: 0.95 }),
+      );
+      road.position
+        .copy(mid)
+        .addScaledVector(w.out, 0.6 + depth / 2)
+        .setY(-0.17);
+      road.receiveShadow = true;
+      this.logisticsGroup.add(road);
+      for (let i = w.min + 0.7; i <= w.max - 0.7; i += 1.4) {
+        const m = new THREE.Mesh(
+          new THREE.BoxGeometry(xAlong ? 0.7 : 0.08, 0.01, xAlong ? 0.08 : 0.7),
+          mat('#e8e2cf'),
+        );
+        m.position
+          .copy(w.origin)
+          .addScaledVector(w.along, i)
+          .addScaledVector(w.out, 0.6 + depth * 0.78)
+          .setY(-0.015);
+        this.logisticsGroup.add(m);
+      }
+    }
+    // Faixa de vaga pintada na frente de cada portão.
+    for (const sp of Object.values(spots)) {
+      const xAlong = sp.out.z !== 0;
+      for (const side of [-1, 1]) {
+        const m = new THREE.Mesh(
+          new THREE.BoxGeometry(xAlong ? 0.08 : 3.2, 0.01, xAlong ? 3.2 : 0.08),
+          mat('#e8e2cf'),
+        );
+        m.position
+          .copy(sp.park)
+          .addScaledVector(new THREE.Vector3(-sp.out.z, 0, sp.out.x), side * 1.05)
+          .setY(-0.014);
+        this.logisticsGroup.add(m);
+      }
+    }
     const g = vanModel(PALETTE.bronze);
-    g.rotation.y = Math.atan2(-along.z, along.x);
-    g.position.copy(this.dock.c);
     this.logisticsGroup.add(g);
     this.register(g, { kind: 'van', id: 'van' });
-    this.van = { g, tag: null, s: 0, goal: 0, leaving: false };
-    if (this.logistics) this.applyLogistics(true);
+    const cargo = wrappedCargo();
+    cargo.visible = false;
+    this.logisticsGroup.add(cargo);
+    const start = spots.EXPED;
+    g.position.copy(start.park);
+    g.rotation.y = this.yawOf(start.out);
+    this.van = {
+      g,
+      tag: null,
+      cargo,
+      at: 'EXPED',
+      wall: start.wall,
+      path: [],
+      text: '',
+      loading: false,
+    };
+    this.prevTrips.clear();
+    this.applyLogistics(true);
   }
 
-  /** Retiradas e entregas de hoje: o furgão sai quando alguém está na rua e volta depois. */
+  /** Retiradas e entregas de hoje: o furgão sai, volta e para no portão certo. */
   setLogistics(v: LogisticsView | null) {
-    const before = this.logistics;
+    const first = !this.logistics;
     this.logistics = v;
-    this.applyLogistics(!before);
+    this.applyLogistics(first);
   }
 
   private applyLogistics(instant: boolean) {
     const v = this.logistics;
-    if (!this.van || !this.dock) return;
+    const van = this.van;
+    const yard = this.yard;
+    if (!van || !yard) return;
     const trips = v?.trips ?? [];
+    // Retirada que acabou de voltar: vai descarregar no recebimento.
+    for (const t of trips) {
+      const before = this.prevTrips.get(t.id);
+      if (before === 'NA_RUA' && t.status === 'FEITA' && t.kind === 'RETIRADA')
+        this.vanSticky = {
+          text: `Descarregando: retirada de ${t.customer}`,
+          until: Date.now() + 120_000,
+        };
+    }
+    this.prevTrips = new Map(trips.map((t) => [t.id, t.status]));
+    if (this.vanSticky && Date.now() > this.vanSticky.until) this.vanSticky = null;
     const out = trips.filter((t) => t.status === 'NA_RUA');
-    const goal: 0 | 1 = out.length ? 1 : 0;
-    if (goal !== this.van.goal) {
-      this.van.goal = goal;
-      this.van.leaving = goal === 1;
-      if (instant) this.van.s = goal;
-      else if (goal === 0) this.van.s = 1; // volta entrando pela rua
-    }
-    // Etiqueta: o que o furgão faz hoje (ou para onde foi).
-    if (this.van.tag) {
-      this.van.tag.removeFromParent();
-      const m = this.van.tag.material as THREE.SpriteMaterial;
-      m.map?.dispose();
-      m.dispose();
-      this.van.tag = null;
-    }
+    const nextDelivery = trips.find((t) => t.kind === 'ENTREGA' && t.status === 'AGENDADA');
     const left = trips.filter((t) => t.status === 'AGENDADA');
     const ent = left.filter((t) => t.kind === 'ENTREGA').length;
     const ret = left.filter((t) => t.kind === 'RETIRADA').length;
-    const parts = [
-      ent ? `${ent} ${ent === 1 ? 'entrega' : 'entregas'}` : '',
-      ret ? `${ret} ${ret === 1 ? 'retirada' : 'retiradas'}` : '',
-    ].filter(Boolean);
-    const text = out.length
-      ? `🚚 Na rua: ${out[0]!.kind === 'ENTREGA' ? 'entrega' : 'retirada'} para ${out[0]!.customer}${out.length > 1 ? ` e mais ${out.length - 1}` : ''}`
-      : parts.length
-        ? `🚚 Hoje: ${parts.join(' e ')}`
+    let target: 'RECEB' | 'EXPED' | 'AWAY';
+    let text: string;
+    let loading = false;
+    if (out.length) {
+      target = 'AWAY';
+      const o = out[0]!;
+      text = `Na rua: ${o.kind === 'ENTREGA' ? `entrega para ${o.customer}` : `retirada de ${o.customer}`}${out.length > 1 ? ` e mais ${out.length - 1}` : ''}`;
+    } else if (this.vanSticky) {
+      target = 'RECEB';
+      text = this.vanSticky.text;
+      loading = true;
+    } else if (nextDelivery) {
+      target = 'EXPED';
+      text = `Carregando: entrega para ${nextDelivery.customer}${ent > 1 ? ` (+${ent - 1})` : ''}`;
+      loading = true;
+    } else {
+      // Sem entrega para carregar: espera no recebimento se a próxima saída é uma retirada.
+      target = ret ? 'RECEB' : 'EXPED';
+      const parts = [
+        ent ? `${ent} ${ent === 1 ? 'entrega' : 'entregas'}` : '',
+        ret ? `${ret} ${ret === 1 ? 'retirada' : 'retiradas'}` : '',
+      ].filter(Boolean);
+      text = parts.length
+        ? `Hoje: ${parts.join(' e ')}`
         : trips.length
-          ? '🚚 Roteiro de hoje concluído'
-          : '🚚 Sem saídas hoje';
-    const tag = label(text, {
-      size: 18,
-      bg: out.length ? 'rgba(168,116,63,0.95)' : 'rgba(29,37,35,0.82)',
-    });
-    // Fica no pátio (não anda com o furgão), para continuar visível com ele na rua.
-    tag.position.copy(this.dock.c).setY(2.45);
-    this.logisticsGroup.add(tag);
-    this.tag(tag, 6, 'van');
-    this.van.tag = tag;
-    // Cliente que veio buscar a peça: fica na entrada da oficina.
+          ? 'Roteiro de hoje concluído'
+          : 'Sem saídas hoje';
+    }
+    van.loading = loading;
+    if (van.text !== text) {
+      van.text = text;
+      if (van.tag) {
+        van.tag.removeFromParent();
+        const m = van.tag.material as THREE.SpriteMaterial;
+        m.map?.dispose();
+        m.dispose();
+      }
+      const tag = label(`🚚 ${text}`, {
+        size: 18,
+        bg: target === 'AWAY' ? 'rgba(168,116,63,0.95)' : 'rgba(29,37,35,0.82)',
+      });
+      this.logisticsGroup.add(tag);
+      this.tag(tag, 6, 'van');
+      van.tag = tag;
+    }
+    this.routeVan(target, instant);
+    // Reavalia quando o "descarregando" acaba.
+    if (this.vanTimer !== null) window.clearTimeout(this.vanTimer);
+    this.vanTimer = this.vanSticky
+      ? window.setTimeout(
+          () => {
+            this.vanTimer = null;
+            this.applyLogistics(false);
+          },
+          Math.max(500, this.vanSticky.until - Date.now() + 50),
+        )
+      : null;
+    // Cliente que veio buscar a peça: espera no portão de expedição (por onde ela sai).
     if (this.visitor) {
       this.peopleGroup.remove(this.visitor);
       this.visitor = null;
     }
     if (v?.visitor && this.layout) {
       const g = avatar('#5b6b7a', 'CLIENTE', v.visitor.id, { name: v.visitor.name });
-      const p = this.freeNear(this.dock.entryCm, 80);
+      const sp = yard.spots.EXPED;
+      const p = this.freeNear(sp.entryCm, 80);
       g.position.set(p.x * CM, 0, p.y * CM);
-      g.rotation.y = Math.atan2(-this.dock.out.x, -this.dock.out.z);
+      g.rotation.y = Math.atan2(-sp.out.x, -sp.out.z);
       const t = label(`Cliente: ${v.visitor.name} veio buscar`, {
         size: 18,
         bg: 'rgba(31,122,70,0.95)',
@@ -2079,27 +2240,110 @@ export class GameEngine {
     }
   }
 
-  /** Anda o furgão (sai pela rua ou volta e estaciona). */
-  private stepVan(dt: number) {
-    const v = this.van;
-    const d = this.dock;
-    if (!v || !d) return;
-    const target = v.goal;
-    if (v.s !== target) {
-      const speed = 0.22; // fração do trajeto por segundo (~4,5 s)
-      v.s = target > v.s ? Math.min(target, v.s + dt * speed) : Math.max(target, v.s - dt * speed);
+  /** Monta o trajeto do furgão até a vaga (ou até sumir na rua). */
+  private routeVan(target: 'RECEB' | 'EXPED' | 'AWAY', instant: boolean) {
+    const van = this.van!;
+    const yard = this.yard!;
+    if (van.at === target && (van.path.length || instant || target === 'AWAY')) return;
+    if (van.at === target && !van.path.length) {
+      // Já parado na vaga certa.
+      return;
     }
-    // Saindo: anda para a frente até sumir. Voltando: entra pelo outro lado da rua.
-    const ease = (x: number) => x * x * (3 - 2 * x);
-    const dist = 11;
-    const off = v.leaving ? ease(v.s) * dist : -ease(v.s) * dist;
-    v.g.position.copy(d.c).addScaledVector(d.along, off);
-    v.g.visible = v.s < 0.98;
-    const moving = v.s > 0 && v.s < 1;
-    if (moving)
-      v.g.traverse((o) => {
-        if (o.name === 'wheel') o.rotation.z -= dt * 6;
+    const from = van.at;
+    van.at = target;
+    if (instant) {
+      van.path = [];
+      if (target === 'AWAY') van.g.visible = false;
+      else {
+        const sp = yard.spots[target];
+        van.g.visible = true;
+        van.g.position.copy(sp.park);
+        van.g.rotation.y = this.yawOf(sp.out);
+        van.wall = sp.wall;
+      }
+      return;
+    }
+    const steps: VanStep[] = [];
+    const leave = (wall: string) => {
+      steps.push({ p: this.lane(wall, this.tOf(wall, van.g.position)) });
+      steps.push({ p: this.lane(wall, yard.walls[wall]!.max + 3), hide: true });
+    };
+    const arrive = (sp: YardSpot) => {
+      steps.push({ p: this.lane(sp.wall, yard.walls[sp.wall]!.min - 3), teleport: true });
+      steps.push({ p: this.lane(sp.wall, sp.t) });
+      steps.push({ p: sp.park.clone(), reverse: true });
+    };
+    const hidden = from === 'AWAY' && !van.g.visible;
+    if (target === 'AWAY') {
+      if (!hidden) leave(van.wall);
+    } else {
+      const sp = yard.spots[target];
+      if (hidden) arrive(sp);
+      else if (sp.wall === van.wall) {
+        steps.push({ p: this.lane(van.wall, this.tOf(van.wall, van.g.position)) });
+        steps.push({ p: this.lane(sp.wall, sp.t) });
+        steps.push({ p: sp.park.clone(), reverse: true });
+      } else {
+        leave(van.wall);
+        arrive(sp);
+      }
+    }
+    van.path = steps;
+  }
+
+  /** Anda o furgão pelo trajeto (rodas giram; entra de ré na vaga). */
+  private stepVan(dt: number) {
+    const van = this.van;
+    if (!van || !this.yard) return;
+    const parked = !van.path.length && van.at !== 'AWAY';
+    van.cargo.visible = parked && van.loading && van.g.visible;
+    if (van.cargo.visible) {
+      const sp = this.yard.spots[van.at as 'RECEB' | 'EXPED'];
+      // Ao lado da traseira, para aparecer na visão do alto.
+      van.cargo.position
+        .copy(sp.door)
+        .addScaledVector(sp.out, 0.7)
+        .addScaledVector(new THREE.Vector3(sp.out.z, 0, -sp.out.x), 1.55);
+      van.cargo.rotation.y = this.yawOf(sp.out);
+    }
+    if (van.tag) {
+      const at = van.g.visible ? van.g.position : this.yard.spots.EXPED.park;
+      van.tag.position.set(at.x, 2.45, at.z);
+    }
+    const step = van.path[0];
+    if (!step) return;
+    if (step.teleport) {
+      van.g.position.copy(step.p);
+      van.g.visible = true;
+      const next = van.path[1];
+      if (next) van.g.rotation.y = this.yawOf(next.p.clone().sub(step.p));
+      const wall = Object.entries(this.yard.walls).find(
+        ([, w]) => Math.abs(step.p.clone().sub(w.origin).dot(w.out) - GameEngine.LANE) < 0.01,
+      );
+      if (wall) van.wall = wall[0];
+      van.path.shift();
+      return;
+    }
+    const d = step.p.clone().sub(van.g.position);
+    d.y = 0;
+    const dist = d.length();
+    const speed = step.reverse ? 1.6 : 3.4;
+    const move = Math.min(dist, speed * dt);
+    if (dist > 1e-4) {
+      // De ré na vaga: a frente fica para a rua.
+      const yaw = step.reverse ? this.yawOf(d.clone().negate()) : this.yawOf(d);
+      const diff = Math.atan2(Math.sin(yaw - van.g.rotation.y), Math.cos(yaw - van.g.rotation.y));
+      van.g.rotation.y += diff * Math.min(1, dt * 5);
+      van.g.position.addScaledVector(d.normalize(), move);
+      van.g.traverse((o) => {
+        if (o.name === 'wheel') o.rotation.z += (step.reverse ? 1 : -1) * dt * 8;
       });
+    }
+    if (dist - move < 0.03) {
+      van.g.position.copy(step.p);
+      if (step.hide) van.g.visible = false;
+      van.path.shift();
+    }
   }
 
   /** Aparência escolhida pela pessoa para o "Você"; troca o boneco no mesmo lugar. */

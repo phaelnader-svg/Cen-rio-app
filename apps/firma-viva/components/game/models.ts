@@ -1491,3 +1491,18 @@ export function vanModel(accent: string = PALETTE.bronze) {
   });
   return g;
 }
+
+/** Peça embalada no carrinho, na porta do furgão (carregando ou descarregando). */
+export function wrappedCargo() {
+  const g = new THREE.Group();
+  g.add(box(1.1, 0.06, 0.75, mat('#5a6b6b', { metal: 0.4 }), 0, 0.1, 0));
+  for (const sx of [-1, 1])
+    for (const sz of [-1, 1]) g.add(cyl(0.05, 0.06, '#1d2523', sx * 0.45, 0.03, sz * 0.3, 8));
+  g.add(box(1.0, 0.62, 0.68, mat('#ece7da', { rough: 0.4 }), 0, 0.16, 0)); // plástico
+  g.add(box(1.02, 0.06, 0.7, mat('#a8743f'), 0, 0.5, 0)); // fita
+  g.add(box(0.06, 0.64, 0.7, mat('#a8743f'), 0.25, 0.15, 0));
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
+  });
+  return g;
+}
