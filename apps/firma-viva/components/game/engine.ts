@@ -26,6 +26,7 @@ import {
   rectOfArea,
 } from '@cenario/shared';
 import {
+  type AvatarLook,
   type BuildStage,
   FURNITURE_SIZE,
   PALETTE,
@@ -47,6 +48,7 @@ import {
   storageModel,
   toolModel,
   trophy,
+  vanModel,
   wallClock,
   wallFabricShelf,
   wallWindow,
@@ -64,13 +66,28 @@ export type PickKind =
   | 'wall'
   | 'handle'
   | 'mestre'
-  | 'player';
+  | 'player'
+  | 'van'
+  | 'visitor';
 
 export interface PickTarget {
   kind: PickKind;
   id: string;
   /** Prateleira clicada (nível), quando o alvo é armazenagem. */
   level?: number;
+}
+
+/** Retiradas e entregas de hoje (Cenário Gestão), para o furgão e a recepção da oficina. */
+export interface LogisticsView {
+  trips: {
+    id: string;
+    kind: 'ENTREGA' | 'RETIRADA';
+    customer: string;
+    /** AGENDADA (ainda na oficina), NA_RUA (saiu), FEITA ou PROBLEMA. */
+    status: 'AGENDADA' | 'NA_RUA' | 'FEITA' | 'PROBLEMA';
+  }[];
+  /** Cliente que veio buscar a peça na oficina (aparece na entrada por um tempo). */
+  visitor: { id: string; name: string } | null;
 }
 
 export interface PieceVisual {
@@ -410,6 +427,25 @@ export class GameEngine {
   private pieces = new Map<string, PieceEntry>();
   private people = new Map<string, PersonEntry>();
   private player: { g: THREE.Group; path: THREE.Vector3[]; tag: string | null } | null = null;
+  private playerLook: AvatarLook | null = null;
+  /** Pátio do lado de fora do portão (furgão e cliente na entrada). */
+  private logisticsGroup = new THREE.Group();
+  private dock: {
+    c: THREE.Vector3;
+    out: THREE.Vector3;
+    along: THREE.Vector3;
+    entryCm: { x: number; y: number };
+  } | null = null;
+  private van: {
+    g: THREE.Group;
+    tag: THREE.Sprite | null;
+    /** 0 = estacionado; 1 = fora do mapa. */
+    s: number;
+    goal: 0 | 1;
+    leaving: boolean;
+  } | null = null;
+  private visitor: THREE.Group | null = null;
+  private logistics: LogisticsView | null = null;
   private mestre: THREE.Group | null = null;
   private walkGrid: ReturnType<typeof buildGrid> | null = null;
   private keys = new Set<string>();
@@ -492,6 +528,7 @@ export class GameEngine {
       this.peopleGroup,
       this.overlayGroup,
       this.fxGroup,
+      this.logisticsGroup,
     );
     this.resizeObs = new ResizeObserver(() => this.resize());
     this.resizeObs.observe(container);
@@ -707,7 +744,16 @@ export class GameEngine {
     if (!this.layout) return;
     const w = this.layout.widthCm * CM;
     const d = this.layout.depthCm * CM;
-    const { target, size } = this.fitBox(-0.3, -0.3, w + 0.3, d + 0.3, 1.2);
+    // Com o pátio (furgão), a visão geral inclui a rua do lado de fora do portão.
+    let [x0, z0, x1, z1] = [-0.3, -0.3, w + 0.3, d + 0.3];
+    if (this.dock) {
+      const far = this.dock.c.clone().addScaledVector(this.dock.out, 1.6);
+      x0 = Math.min(x0, far.x);
+      x1 = Math.max(x1, far.x);
+      z0 = Math.min(z0, far.z);
+      z1 = Math.max(z1, far.z);
+    }
+    const { target, size } = this.fitBox(x0, z0, x1, z1, 1.2);
     if (animate) this.animateTo(target, Math.max(4, size));
     else {
       this.camAnim = null;
@@ -1506,6 +1552,8 @@ export class GameEngine {
       this.mestre = g;
     }
 
+    this.buildDock(layout, build);
+
     this.walkGrid = buildGrid(layout, { inflateCm: 22, cell: 25 });
     if (!this.player || spaceChanged) this.spawnPlayer();
     if (firstTime) {
@@ -1880,10 +1928,195 @@ export class GameEngine {
     return nearestFree(g, q) ?? q;
   }
 
+  // ───────────────────────────── Pátio: furgão e cliente ─────────────────────────────
+
+  /**
+   * Pátio do lado de fora do portão de expedição (ou do primeiro portão para a rua) da oficina,
+   * com o furgão estacionado. Só na oficina, fora do modo Construção.
+   */
+  private buildDock(layout: LayoutContent, build: boolean) {
+    this.clearGroup(this.logisticsGroup);
+    this.dock = null;
+    this.van = null;
+    this.visitor = null;
+    if (build || layout.kind === 'ESCRITORIO') return;
+    const ext = layout.doc.doors.filter(
+      (d) => ['N', 'S', 'L', 'O'].includes(d.wall) && !d.toSpaceKey,
+    );
+    const door =
+      ext.find((d) => /expedi/i.test(d.label ?? '')) ??
+      ext.find((d) => /receb|port|entrada/i.test(d.label ?? '')) ??
+      ext[0];
+    if (!door) return;
+    const cc = doorCenter(layout, door);
+    if (!cc) return;
+    const out = {
+      N: new THREE.Vector3(0, 0, -1),
+      S: new THREE.Vector3(0, 0, 1),
+      O: new THREE.Vector3(-1, 0, 0),
+      L: new THREE.Vector3(1, 0, 0),
+    }[door.wall as 'N' | 'S' | 'O' | 'L'];
+    // Sentido em que o furgão sai: ao longo da parede, para o lado com mais rua livre.
+    const along = new THREE.Vector3(-out.z, 0, out.x);
+    const c = new THREE.Vector3(cc.x * CM, 0, cc.y * CM);
+    const W = layout.widthCm * CM;
+    const D = layout.depthCm * CM;
+    const room = along.x !== 0 ? (along.x > 0 ? W - c.x : c.x) : along.z > 0 ? D - c.z : c.z;
+    if (room < Math.max(W, D) / 2) along.negate();
+    // Calçada e rua (o piso externo da base vai só até 0,6 m da parede).
+    const len = 12;
+    const depth = 3.6;
+    const road = new THREE.Mesh(
+      new THREE.BoxGeometry(along.x !== 0 ? len : depth, 0.3, along.x !== 0 ? depth : len),
+      mat('#5f6668', { rough: 0.95 }),
+    );
+    road.position
+      .copy(c)
+      .addScaledVector(out, 0.6 + depth / 2)
+      .setY(-0.17);
+    road.receiveShadow = true;
+    this.logisticsGroup.add(road);
+    // Faixa tracejada no meio da rua.
+    for (let i = -5; i <= 5; i += 1.4) {
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(along.x !== 0 ? 0.7 : 0.08, 0.01, along.x !== 0 ? 0.08 : 0.7),
+        mat('#e8e2cf'),
+      );
+      m.position
+        .copy(c)
+        .addScaledVector(out, 0.6 + depth * 0.62)
+        .addScaledVector(along, i)
+        .setY(-0.015);
+      this.logisticsGroup.add(m);
+    }
+    const entry = c.clone().addScaledVector(out, -0.9);
+    this.dock = {
+      c: c.clone().addScaledVector(out, 0.6 + 1.25),
+      out,
+      along,
+      entryCm: { x: entry.x / CM, y: entry.z / CM },
+    };
+    const g = vanModel(PALETTE.bronze);
+    g.rotation.y = Math.atan2(-along.z, along.x);
+    g.position.copy(this.dock.c);
+    this.logisticsGroup.add(g);
+    this.register(g, { kind: 'van', id: 'van' });
+    this.van = { g, tag: null, s: 0, goal: 0, leaving: false };
+    if (this.logistics) this.applyLogistics(true);
+  }
+
+  /** Retiradas e entregas de hoje: o furgão sai quando alguém está na rua e volta depois. */
+  setLogistics(v: LogisticsView | null) {
+    const before = this.logistics;
+    this.logistics = v;
+    this.applyLogistics(!before);
+  }
+
+  private applyLogistics(instant: boolean) {
+    const v = this.logistics;
+    if (!this.van || !this.dock) return;
+    const trips = v?.trips ?? [];
+    const out = trips.filter((t) => t.status === 'NA_RUA');
+    const goal: 0 | 1 = out.length ? 1 : 0;
+    if (goal !== this.van.goal) {
+      this.van.goal = goal;
+      this.van.leaving = goal === 1;
+      if (instant) this.van.s = goal;
+      else if (goal === 0) this.van.s = 1; // volta entrando pela rua
+    }
+    // Etiqueta: o que o furgão faz hoje (ou para onde foi).
+    if (this.van.tag) {
+      this.van.tag.removeFromParent();
+      const m = this.van.tag.material as THREE.SpriteMaterial;
+      m.map?.dispose();
+      m.dispose();
+      this.van.tag = null;
+    }
+    const left = trips.filter((t) => t.status === 'AGENDADA');
+    const ent = left.filter((t) => t.kind === 'ENTREGA').length;
+    const ret = left.filter((t) => t.kind === 'RETIRADA').length;
+    const parts = [
+      ent ? `${ent} ${ent === 1 ? 'entrega' : 'entregas'}` : '',
+      ret ? `${ret} ${ret === 1 ? 'retirada' : 'retiradas'}` : '',
+    ].filter(Boolean);
+    const text = out.length
+      ? `🚚 Na rua: ${out[0]!.kind === 'ENTREGA' ? 'entrega' : 'retirada'} para ${out[0]!.customer}${out.length > 1 ? ` e mais ${out.length - 1}` : ''}`
+      : parts.length
+        ? `🚚 Hoje: ${parts.join(' e ')}`
+        : trips.length
+          ? '🚚 Roteiro de hoje concluído'
+          : '🚚 Sem saídas hoje';
+    const tag = label(text, {
+      size: 18,
+      bg: out.length ? 'rgba(168,116,63,0.95)' : 'rgba(29,37,35,0.82)',
+    });
+    // Fica no pátio (não anda com o furgão), para continuar visível com ele na rua.
+    tag.position.copy(this.dock.c).setY(2.45);
+    this.logisticsGroup.add(tag);
+    this.tag(tag, 6, 'van');
+    this.van.tag = tag;
+    // Cliente que veio buscar a peça: fica na entrada da oficina.
+    if (this.visitor) {
+      this.peopleGroup.remove(this.visitor);
+      this.visitor = null;
+    }
+    if (v?.visitor && this.layout) {
+      const g = avatar('#5b6b7a', 'CLIENTE', v.visitor.id, { name: v.visitor.name });
+      const p = this.freeNear(this.dock.entryCm, 80);
+      g.position.set(p.x * CM, 0, p.y * CM);
+      g.rotation.y = Math.atan2(-this.dock.out.x, -this.dock.out.z);
+      const t = label(`Cliente: ${v.visitor.name} veio buscar`, {
+        size: 18,
+        bg: 'rgba(31,122,70,0.95)',
+        icon: '🛋️',
+      });
+      t.position.set(0, 1.55, 0);
+      g.add(t);
+      this.tag(t, 7, 'visitor');
+      this.peopleGroup.add(g);
+      this.register(g, { kind: 'visitor', id: 'visitor' });
+      this.visitor = g;
+    }
+  }
+
+  /** Anda o furgão (sai pela rua ou volta e estaciona). */
+  private stepVan(dt: number) {
+    const v = this.van;
+    const d = this.dock;
+    if (!v || !d) return;
+    const target = v.goal;
+    if (v.s !== target) {
+      const speed = 0.22; // fração do trajeto por segundo (~4,5 s)
+      v.s = target > v.s ? Math.min(target, v.s + dt * speed) : Math.max(target, v.s - dt * speed);
+    }
+    // Saindo: anda para a frente até sumir. Voltando: entra pelo outro lado da rua.
+    const ease = (x: number) => x * x * (3 - 2 * x);
+    const dist = 11;
+    const off = v.leaving ? ease(v.s) * dist : -ease(v.s) * dist;
+    v.g.position.copy(d.c).addScaledVector(d.along, off);
+    v.g.visible = v.s < 0.98;
+    const moving = v.s > 0 && v.s < 1;
+    if (moving)
+      v.g.traverse((o) => {
+        if (o.name === 'wheel') o.rotation.z -= dt * 6;
+      });
+  }
+
+  /** Aparência escolhida pela pessoa para o "Você"; troca o boneco no mesmo lugar. */
+  setPlayerLook(look: AvatarLook | null) {
+    const same = JSON.stringify(look) === JSON.stringify(this.playerLook);
+    this.playerLook = look;
+    if (same || !this.player) return;
+    const at = this.playerCm() ?? undefined;
+    const rot = this.player.g.rotation.y;
+    this.spawnPlayer(at);
+    if (this.player) (this.player as { g: THREE.Group }).g.rotation.y = rot;
+  }
+
   private spawnPlayer(at?: { x: number; y: number }) {
     if (!this.layout) return;
     if (this.player) this.peopleGroup.remove(this.player.g);
-    const g = avatar(PALETTE.bronze, 'JOGADOR', 'voce');
+    const g = avatar(PALETTE.bronze, 'JOGADOR', 'voce', { look: this.playerLook });
     const tag = label('Você', { size: 20, bg: 'rgba(168,116,63,0.95)' });
     tag.position.set(0, 1.5, 0);
     g.add(tag);
@@ -2791,6 +3024,7 @@ export class GameEngine {
     const pulse = this.overlayGroup.getObjectByName('pulse');
     if (pulse) pulse.scale.setScalar(1 + ((t * 1.5) % 1) * 0.8);
     if (this.mestre) this.mestre.position.y = Math.abs(Math.sin(t * 2)) * 0.03;
+    this.stepVan(dt);
     if (this.pieceDrag?.ring.visible)
       this.pieceDrag.ring.scale.setScalar(1 + Math.sin(t * 8) * 0.06);
     // Relógio de parede na hora real.

@@ -32,6 +32,7 @@ import {
   ChevronDown,
   ChevronUp,
   Eye,
+  FlaskConical,
   Hammer,
   Map as MapIcon,
   MessageCircle,
@@ -92,13 +93,44 @@ import {
   useMuted,
   useRemembered,
 } from './game-hud';
-import { type Mission, type Progress, progressOf, updateProgress } from './progress';
+import {
+  type Mission,
+  type Progress,
+  type ProgressDelta,
+  type ProgressStore,
+  deltaEmpty,
+  emptyStore,
+  forgetLegacy,
+  legacyStore,
+  mergeStores,
+  progressOf,
+  updateProgress,
+} from './progress';
+import {
+  AvatarPanel,
+  DEFAULT_LOOK,
+  GoalShare,
+  GoodMorning,
+  LogisticsPanel,
+  ShareDialog,
+  type ShareCard,
+  SimulatorPanel,
+  logisticsView,
+  markMorningSeen,
+  morningItems,
+  morningSeenToday,
+  useTabNotifications,
+  useTodayLogistics,
+} from './extras';
+import type { AvatarLook } from './models';
 import { replayRange, snapshotAt } from './replay';
 import { sound } from './sound';
 import { TUTORIAL_KEY, Tutorial, type TutorialEvent, buildSteps, tutorialSeen } from './tutorial';
 import {
   useAgents,
+  useAvatarLook,
   useIntegrations,
+  useProgressStore,
   useMaterialSearch,
   usePeople,
   useSnapshot,
@@ -139,6 +171,9 @@ type Side =
   | { t: 'goals'; tab: string | null; drill: Drill | null }
   | { t: 'os'; id: string }
   | { t: 'missions' }
+  | { t: 'avatar' }
+  | { t: 'logistics' }
+  | { t: 'simulator' }
   | null;
 
 /** Filtros rápidos do mapa (situação da etapa; o material fica na ficha da peça). */
@@ -366,6 +401,8 @@ export function GameWorld() {
     const fresh = b.goals.filter((x) => x.achieved && !seen.includes(x.id));
     if (fresh.length) {
       e.celebrate();
+      // Pronto para mandar no WhatsApp e no Instagram (o valor só aparece se marcar).
+      setGoalShare(fresh[0]!);
       toast(
         'ok',
         `🏆 Meta conquistada: ${fresh.map((x) => `${x.name} em ${x.achieved!.at.slice(0, 10).split('-').reverse().join('/')}`).join(', ')}`,
@@ -631,12 +668,57 @@ export function GameWorld() {
     if (started) sound().play('task');
   }, [snapshot.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Missões, nível e placar (a partir do trabalho real).
+  // Missões, nível e placar (a partir do trabalho real), guardados no servidor por empresa.
   const orgId = me.data?.organization?.id ?? null;
+  const userId = me.data?.user.id ?? null;
+  const progressQ = useProgressStore(Boolean(orgId));
+  const storeRef = useRef<ProgressStore | null>(null);
+  const legacyChecked = useRef(false);
+  const sendProgress = useCallback(
+    (delta: ProgressDelta & { importXp?: number }) =>
+      api<ProgressStore>('/api/v1/game/progress', { method: 'POST', body: delta })
+        .then((srv) => {
+          storeRef.current = mergeStores(srv, storeRef.current ?? srv);
+          qc.setQueryData(['game-progress'], srv);
+          const xp = storeRef.current.xp;
+          setProgress((p) => (p ? { ...p, progress: progressOf(xp) } : p));
+          return true;
+        })
+        .catch(() => false),
+    [qc],
+  );
   useEffect(() => {
-    if (!orgId || !snapshot.data || replay) return;
-    const r = updateProgress(orgId, snapshot.data);
+    if (!orgId) return;
+    if (progressQ.data) {
+      storeRef.current = storeRef.current
+        ? mergeStores(progressQ.data, storeRef.current)
+        : progressQ.data;
+      // Progresso antigo deste navegador: vai para o servidor uma vez e sai daqui.
+      if (!legacyChecked.current) {
+        legacyChecked.current = true;
+        const old = legacyStore(orgId);
+        if (old && !progressQ.data.imported && old.xp > 0) {
+          void sendProgress({
+            importXp: old.xp,
+            tasks: Object.entries(old.tasks).map(([id, [user, day]]) => ({ id, user, day, xp: 0 })),
+            onTime: old.onTime.map((id) => ({ id, xp: 0 })),
+            paid: old.paid.map((key) => ({ key, xp: 0 })),
+          }).then((ok) => ok && forgetLegacy(orgId));
+          storeRef.current = mergeStores(storeRef.current, old);
+        } else if (old) forgetLegacy(orgId);
+      }
+    } else if (progressQ.isError && !storeRef.current) {
+      // Servidor fora: segue com o que o navegador tiver (e tenta mandar depois).
+      storeRef.current = legacyStore(orgId) ?? emptyStore();
+    }
+  }, [orgId, progressQ.data, progressQ.isError, sendProgress]);
+  const storeReady = Boolean(progressQ.data || progressQ.isError);
+  useEffect(() => {
+    if (!orgId || !snapshot.data || replay || !storeRef.current) return;
+    const r = updateProgress(storeRef.current, snapshot.data);
+    storeRef.current = r.store;
     setProgress({ progress: r.progress, missions: r.missions, week: r.week });
+    if (!deltaEmpty(r.delta)) void sendProgress(r.delta);
     for (const m of r.freshMissions) {
       toast('ok', `🎯 Missão cumprida: ${m.title} (+${m.xp} XP)`);
       engine.current?.celebrate();
@@ -646,7 +728,83 @@ export function GameWorld() {
       toast('ok', `⭐ A oficina subiu para o nível ${r.progress.level}: ${r.progress.levelName}!`);
       sound().play('celebrate');
     }
-  }, [orgId, snapshot.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [orgId, snapshot.data, storeReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Boneco "Você": aparência salva na conta; o painel mostra a mudança na hora.
+  const avatarQ = useAvatarLook();
+  const [lookDraft, setLookDraft] = useState<AvatarLook | null>(null);
+  const [lookSaving, setLookSaving] = useState(false);
+  const savedLook = avatarQ.data?.look ?? null;
+  const shownLook = lookDraft ?? savedLook;
+  useEffect(() => {
+    engine.current?.setPlayerLook(shownLook);
+  }, [shownLook, layout]);
+  const saveLook = async () => {
+    if (!lookDraft) return;
+    setLookSaving(true);
+    try {
+      const r = await api<{ look: AvatarLook }>('/api/v1/game/avatar', {
+        method: 'PUT',
+        body: lookDraft,
+      });
+      qc.setQueryData(['game-avatar'], r);
+      setLookDraft(null);
+      toast('ok', 'Boneco salvo. Ele aparece assim em qualquer computador.');
+    } catch (e) {
+      toast('danger', e instanceof ApiError ? e.message : 'Não foi possível salvar o boneco.');
+    } finally {
+      setLookSaving(false);
+    }
+  };
+  const openAvatar = () => {
+    setSettingsOpen(false);
+    setSide({ t: 'avatar' });
+    const p = engine.current?.playerCm();
+    if (p) engine.current?.focus(p.x, p.y, 5);
+  };
+
+  // Furgão e cliente na entrada: entregas e retiradas de hoje (rotas oficiais do Cenário).
+  const logistics = useTodayLogistics(canSeeProduction && cenarioStatus === 'CONECTADA');
+  useEffect(() => {
+    engine.current?.setLogistics(logisticsView(logistics.data));
+  }, [logistics.data, layout]);
+
+  // Imagem para compartilhar (meta batida ou a semana da oficina).
+  const [share, setShare] = useState<ShareCard | null>(null);
+  const [goalShare, setGoalShare] = useState<NonNullable<typeof cash.data>['goals'][number] | null>(
+    null,
+  );
+  const companyName = me.data?.organization?.name ?? '';
+
+  // Aviso do navegador com o jogo em outra aba.
+  useTabNotifications(snapshot.data, unread, (id) => {
+    if (id) {
+      if (spaceKey !== 'TAPECARIA') switchSpace('TAPECARIA');
+      setSide({ t: 'piece', id });
+      setHighlight(id);
+    } else if (canSeeInbox) setSide({ t: 'inbox', conv: null });
+  });
+
+  // Bom dia do Gerente: uma vez por dia, depois de carregar (e fora do tutorial).
+  const [morning, setMorning] = useState(false);
+  useEffect(() => {
+    if (
+      !ready ||
+      tutorial ||
+      !orgId ||
+      !userId ||
+      !snapshot.data ||
+      morningSeenToday(orgId, userId)
+    )
+      return;
+    const t = window.setTimeout(() => setMorning(true), 900);
+    return () => window.clearTimeout(t);
+  }, [ready, tutorial, orgId, userId, snapshot.data]);
+  const closeMorning = () => {
+    setMorning(false);
+    if (orgId && userId) markMorningSeen(orgId, userId);
+  };
+
   const prog = progress?.progress ?? progressOf(0);
 
   // Tutorial no primeiro acesso (depois de carregar).
@@ -809,6 +967,13 @@ export function GameWorld() {
       }
       case 'area':
         if (p) walkNear(p.x, p.y);
+        break;
+      case 'van':
+      case 'visitor':
+        setSide({ t: 'logistics' });
+        break;
+      case 'player':
+        openAvatar();
         break;
       default:
         break;
@@ -1796,6 +1961,15 @@ export function GameWorld() {
         setTutorial(true);
       }}
       onClose={() => setSettingsOpen(false)}
+      onAvatar={openAvatar}
+      onMorning={
+        snapshot.data
+          ? () => {
+              setSettingsOpen(false);
+              setMorning(true);
+            }
+          : undefined
+      }
       extra={
         isMobile ? (
           <div className="mb-3 flex flex-wrap gap-1.5 border-b border-line pb-3">
@@ -2050,6 +2224,17 @@ export function GameWorld() {
                   {progress.missions.filter((m) => m.done).length}/{progress.missions.length}
                 </span>
               ) : null}
+            </button>
+          ) : null}
+          {!building && canSeeProduction && snapshot.data?.mode !== 'CONSULTA' ? (
+            <button
+              data-hud
+              className="pointer-events-auto flex shrink-0 items-center gap-1.5 rounded-2xl border border-line bg-white/95 px-2.5 py-2 text-xs font-bold text-ink-soft shadow-card sm:px-3"
+              onClick={() => setSide(side?.t === 'simulator' ? null : { t: 'simulator' })}
+              data-testid="simulator-chip"
+              title="Simulador: e se contratar, aceitar mais pedidos ou alguém faltar?"
+            >
+              <FlaskConical className="size-4" /> <span className="max-sm:hidden">E se…?</span>
             </button>
           ) : null}
         </div>
@@ -2780,6 +2965,48 @@ export function GameWorld() {
             onClose={() => setSide(null)}
             onReplay={startReplay}
             canReplay={Boolean(snapshot.data && replayRange(snapshot.data))}
+            onShare={() =>
+              setShare({
+                kicker: 'Semana da oficina',
+                title: `Nível ${progress.progress.level}: ${progress.progress.levelName}`,
+                big: `${progress.week.total} ${progress.week.total === 1 ? 'etapa' : 'etapas'}`,
+                lines: [
+                  'concluídas pela equipe nesta semana.',
+                  `${progress.missions.filter((m) => m.done).length} de ${progress.missions.length} missões do dia cumpridas.`,
+                ],
+                company: companyName,
+                file: 'semana-da-oficina',
+              })
+            }
+          />
+        ) : side?.t === 'avatar' ? (
+          <AvatarPanel
+            look={shownLook ?? DEFAULT_LOOK}
+            onChange={setLookDraft}
+            onSave={() => void saveLook()}
+            onReset={() => setLookDraft(DEFAULT_LOOK)}
+            saving={lookSaving}
+            dirty={Boolean(lookDraft) && JSON.stringify(lookDraft) !== JSON.stringify(savedLook)}
+            onClose={() => {
+              setLookDraft(null);
+              setSide(null);
+            }}
+          />
+        ) : side?.t === 'logistics' ? (
+          <LogisticsPanel
+            data={logistics.data}
+            loading={logistics.isLoading}
+            onClose={() => setSide(null)}
+          />
+        ) : side?.t === 'simulator' ? (
+          <SimulatorPanel
+            snap={snapshot.data}
+            store={storeRef.current}
+            onClose={() => setSide(null)}
+            onPiece={(id) => {
+              setSide({ t: 'piece', id });
+              setHighlight(id);
+            }}
           />
         ) : side?.t === 'ficha' ? (
           <FichaPanel
@@ -2884,6 +3111,31 @@ export function GameWorld() {
       ) : null}
       <LoadingScreen steps={loadingSteps} hidden={ready || spaces.isError} />
       {shortcutsOpen ? <ShortcutsDialog onClose={() => setShortcutsOpen(false)} /> : null}
+      {morning && !tutorial && !replay ? (
+        <GoodMorning
+          name={me.data?.user.name ?? ''}
+          items={morningItems(snapshot.data, logistics.data, {
+            late: () => {
+              if (spaceKey !== 'TAPECARIA') switchSpace('TAPECARIA');
+              setQuick('ATRASADAS');
+              setSide({ t: 'quick', f: 'ATRASADAS' });
+            },
+            trips: () => {
+              if (spaceKey !== 'TAPECARIA') switchSpace('TAPECARIA');
+              setSide({ t: 'logistics' });
+            },
+            people: () => {
+              if (spaceKey !== 'TAPECARIA') switchSpace('TAPECARIA');
+              setQuick(null);
+            },
+          })}
+          onClose={closeMorning}
+        />
+      ) : null}
+      {share ? <ShareDialog card={share} onClose={() => setShare(null)} /> : null}
+      {goalShare ? (
+        <GoalShare goal={goalShare} company={companyName} onClose={() => setGoalShare(null)} />
+      ) : null}
       {tutorial && ready && !replay ? (
         <Tutorial
           steps={tutorialSteps}

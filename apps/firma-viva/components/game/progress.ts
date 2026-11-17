@@ -1,7 +1,8 @@
 /**
  * Missões do dia, nível da oficina e placar da semana, calculados SÓ a partir do trabalho real
  * (etapas concluídas no tablet, peças prontas, atrasos). Nada aqui altera o Cenário Gestão: o
- * histórico do progresso fica guardado neste navegador, por empresa.
+ * histórico do progresso fica no servidor do Firma Viva, por empresa (vale em qualquer computador
+ * ou celular), e este módulo só calcula o que é novo.
  */
 import type { GamePieceDto, GameSnapshotDto } from '@cenario/shared';
 import { pieceWorkflow } from '@cenario/shared';
@@ -29,7 +30,7 @@ export interface Progress {
   nextReward: { level: number; label: string } | null;
 }
 
-interface Store {
+export interface ProgressStore {
   /** Etapas concluídas já contadas: id → [usuário, dia]. */
   tasks: Record<string, [string | null, string]>;
   /** Missões do dia já pagas (dia:missão). */
@@ -37,6 +38,15 @@ interface Store {
   /** Peças que ficaram prontas no prazo (já contadas). */
   onTime: string[];
   xp: number;
+  imported?: boolean;
+}
+type Store = ProgressStore;
+
+/** O que é novo desde o último envio (o servidor soma cada chave uma vez só). */
+export interface ProgressDelta {
+  tasks: { id: string; user: string | null; day: string; xp: number }[];
+  onTime: { id: string; xp: number }[];
+  paid: { key: string; xp: number }[];
 }
 
 const LEVELS = [
@@ -68,29 +78,42 @@ function weekStart(d = new Date()) {
   return s.toISOString().slice(0, 10);
 }
 
-function load(orgId: string): Store {
+export const emptyStore = (): Store => ({ tasks: {}, paid: [], onTime: [], xp: 0 });
+
+/**
+ * Progresso antigo, guardado só neste navegador (antes de ir para o servidor). Lido uma vez para
+ * levar o nível para o servidor; depois disso o navegador só guarda uma cópia de apoio.
+ */
+export function legacyStore(orgId: string): Store | null {
   try {
     const raw = window.localStorage.getItem(`firma-progresso:${orgId}`);
-    if (raw)
-      return { tasks: {}, paid: [], onTime: [], xp: 0, ...(JSON.parse(raw) as Partial<Store>) };
+    if (raw) return { ...emptyStore(), ...(JSON.parse(raw) as Partial<Store>) };
   } catch {
     /* sem armazenamento */
   }
-  return { tasks: {}, paid: [], onTime: [], xp: 0 };
+  return null;
+}
+export function forgetLegacy(orgId: string) {
+  try {
+    window.localStorage.removeItem(`firma-progresso:${orgId}`);
+  } catch {
+    /* sem armazenamento */
+  }
 }
 
-function save(orgId: string, s: Store) {
-  try {
-    // Guarda só as últimas 8 semanas.
-    const cut = new Date(Date.now() - 56 * 864e5).toISOString().slice(0, 10);
-    for (const [k, v] of Object.entries(s.tasks)) if (v[1] < cut) delete s.tasks[k];
-    s.paid = s.paid.filter((p) => p.slice(0, 10) >= cut);
-    s.onTime = s.onTime.slice(-500);
-    window.localStorage.setItem(`firma-progresso:${orgId}`, JSON.stringify(s));
-  } catch {
-    /* sem armazenamento */
-  }
+/** Junta duas cópias (servidor e o que este navegador acabou de somar). */
+export function mergeStores(a: Store, b: Store): Store {
+  return {
+    xp: Math.max(a.xp, b.xp),
+    tasks: { ...b.tasks, ...a.tasks },
+    paid: [...new Set([...a.paid, ...b.paid])],
+    onTime: [...new Set([...a.onTime, ...b.onTime])],
+    imported: a.imported || b.imported,
+  };
 }
+
+export const deltaEmpty = (d: ProgressDelta) =>
+  !d.tasks.length && !d.onTime.length && !d.paid.length;
 
 const READY = ['PRONTA_ENTREGA', 'ENTREGA_AGENDADA', 'EM_TRANSPORTE'];
 
@@ -184,17 +207,26 @@ function levelOf(xp: number) {
  * Soma o XP do que aconteceu desde a última visita (etapas concluídas, peças prontas no prazo,
  * missões cumpridas) e devolve o progresso, as missões e o que é novidade (para comemorar).
  */
-export function updateProgress(orgId: string, snap: GameSnapshotDto) {
-  const s = load(orgId);
+export function updateProgress(stored: Store, snap: GameSnapshotDto) {
+  const s: Store = {
+    ...stored,
+    tasks: { ...stored.tasks },
+    paid: [...stored.paid],
+    onTime: [...stored.onTime],
+  };
+  const delta: ProgressDelta = { tasks: [], onTime: [], paid: [] };
   const before = s.xp;
   const beforeLevel = levelOf(before);
   let steps = 0;
   for (const p of snap.pieces)
     for (const t of p.tasks)
       if (t.status === 'CONCLUIDA' && t.completedAt && !s.tasks[t.id]) {
-        s.tasks[t.id] = [t.assigneeUserId, today(new Date(t.completedAt))];
+        const day = today(new Date(t.completedAt));
+        s.tasks[t.id] = [t.assigneeUserId, day];
         // Só conta XP do que terminou nos últimos 7 dias (não premia o histórico antigo de uma vez).
-        if (Date.now() - new Date(t.completedAt).getTime() < 7 * 864e5) {
+        const recent = Date.now() - new Date(t.completedAt).getTime() < 7 * 864e5;
+        delta.tasks.push({ id: t.id, user: t.assigneeUserId, day, xp: recent ? 10 : 0 });
+        if (recent) {
           s.xp += 10;
           steps++;
         }
@@ -203,7 +235,9 @@ export function updateProgress(orgId: string, snap: GameSnapshotDto) {
   for (const p of snap.pieces)
     if (READY.includes(p.stage) && !s.onTime.includes(p.id)) {
       s.onTime.push(p.id);
-      if (!p.promisedDate || p.promisedDate.slice(0, 10) >= today()) {
+      const onTime = !p.promisedDate || p.promisedDate.slice(0, 10) >= today();
+      delta.onTime.push({ id: p.id, xp: onTime ? 30 : 0 });
+      if (onTime) {
         s.xp += 30;
         ready.push(p);
       }
@@ -215,13 +249,15 @@ export function updateProgress(orgId: string, snap: GameSnapshotDto) {
     if (m.done && !s.paid.includes(key)) {
       s.paid.push(key);
       s.xp += m.xp;
+      delta.paid.push({ key, xp: m.xp });
       fresh.push(m);
     }
   }
-  save(orgId, s);
   const lv = levelOf(s.xp);
   const progress = progressOf(s.xp);
   return {
+    store: s,
+    delta,
     progress,
     missions,
     freshMissions: before === 0 && s.paid.length === fresh.length ? [] : fresh,

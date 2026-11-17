@@ -60,6 +60,36 @@ async function connect(b: Browser) {
 }
 
 describe('Firma Viva', () => {
+  it('progresso e boneco ficam no servidor: cada etapa conta uma vez e o XP tem teto', async () => {
+    await createOrg('Cenário Estofados', 'dono@firma.test', PW);
+    const b = await login(firma, 'dono@firma.test', PW);
+    expect((await b.get('/api/v1/game/progress')).body).toMatchObject({ xp: 0, tasks: {} });
+    const delta = {
+      tasks: [{ id: 'etapa-1', user: null, day: '2026-11-17', xp: 999 }],
+      onTime: [{ id: 'peca-1', xp: 30 }],
+      paid: [{ key: '2026-11-17:etapas', xp: 60 }],
+    };
+    const first = await b.post('/api/v1/game/progress', delta);
+    expect(first.status).toBe(200);
+    expect(first.body.xp).toBe(10 + 30 + 60);
+    // O mesmo envio de outro computador não soma de novo.
+    expect((await b.post('/api/v1/game/progress', delta)).body.xp).toBe(100);
+    // Progresso antigo do navegador só entra com o servidor vazio.
+    expect((await b.post('/api/v1/game/progress', { importXp: 500 })).body.xp).toBe(100);
+
+    expect((await b.get('/api/v1/game/avatar')).body).toEqual({ look: null });
+    const look = {
+      skin: 2,
+      hairStyle: 2,
+      hairColor: '#b8875a',
+      shirt: '#1f4e79',
+      pants: '#3a3f4a',
+    };
+    expect((await b.put('/api/v1/game/avatar', look)).status).toBe(200);
+    expect((await b.get('/api/v1/game/avatar')).body).toEqual({ look });
+    expect((await b.put('/api/v1/game/avatar', { ...look, skin: 9 })).status).toBe(400);
+  });
+
   it('antes de conectar: entra, monta a planta e vê o convite para conectar', async () => {
     await createOrg('Cenário Estofados', 'dono@firma.test', PW);
     expect(

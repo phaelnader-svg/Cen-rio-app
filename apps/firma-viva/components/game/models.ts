@@ -686,7 +686,7 @@ export function decorModel(kind: string, w: number, d: number) {
 
 // ───────────────────────────── Personagens ─────────────────────────────
 
-export type AvatarStyle = 'PESSOA' | 'JOGADOR' | 'AGENTE' | 'MESTRE';
+export type AvatarStyle = 'PESSOA' | 'JOGADOR' | 'AGENTE' | 'MESTRE' | 'CLIENTE';
 
 /** Assento da cadeira da mesa de escritório: altura do assento (m) e distância da borda da mesa (m). */
 export const OFFICE_SEAT = { height: 0.42, depth: 0.42 };
@@ -705,7 +705,33 @@ export function hashOf(seed: string | number) {
   return h;
 }
 
+/** Aparência escolhida pela pessoa para o próprio boneco ("Você"). */
+export interface AvatarLook {
+  /** Índice em PALETTE.skin. */
+  skin: number;
+  /** 0 curto, 1 comprido, 2 coque, 3 boné, 4 raspado com barba. */
+  hairStyle: number;
+  hairColor: string;
+  shirt: string;
+  pants: string;
+}
+export const HAIR_STYLES = ['Curto', 'Comprido', 'Coque', 'Boné', 'Raspado com barba'] as const;
+export const HAIR_COLORS = HAIR;
+export const SHIRT_COLORS = [
+  '#a8743f',
+  '#1f4e79',
+  '#2f6b4f',
+  '#7a2e3a',
+  '#4b3f72',
+  '#c25b2a',
+  '#3a3f4a',
+  '#d9d4c7',
+];
+export const PANTS_COLORS = ['#3a3f4a', '#2d3b45', '#4a6688', '#5a4632', '#1d2523', '#6b6f58'];
+
 export interface AvatarOptions {
+  /** Aparência escolhida (substitui a variação automática pelo nome). */
+  look?: AvatarLook | null;
   /** Nome para o crachá (inicial) e para variar rosto e cabelo. */
   name?: string;
   /** Funções do funcionário (cargo): define avental/uniforme. */
@@ -726,14 +752,19 @@ export function avatar(
 ) {
   const g = new THREE.Group();
   const h = hashOf(opts.name ?? seed);
-  const skin = PALETTE.skin[h % PALETTE.skin.length]!;
-  const hair = HAIR[(h >>> 3) % HAIR.length]!;
-  const hairStyle = (h >>> 6) % 5; // 0 curto, 1 comprido, 2 coque, 3 boné, 4 raspado + barba
+  const look = opts.look ?? null;
+  const skin = look
+    ? (PALETTE.skin[look.skin] ?? PALETTE.skin[0]!)
+    : PALETTE.skin[h % PALETTE.skin.length]!;
+  const hair = look ? look.hairColor : HAIR[(h >>> 3) % HAIR.length]!;
+  // 0 curto, 1 comprido, 2 coque, 3 boné, 4 raspado + barba
+  const hairStyle = look ? look.hairStyle % 5 : (h >>> 6) % 5;
   const roles = (opts.roles ?? []).join(' ').toLowerCase();
   const workshop = style === 'PESSOA';
-  const shirt = style === 'MESTRE' ? '#e76f1a' : color;
-  const pants =
-    style === 'AGENTE'
+  const shirt = style === 'MESTRE' ? '#e76f1a' : (look?.shirt ?? color);
+  const pants = look
+    ? look.pants
+    : style === 'AGENTE'
       ? '#3b2f63'
       : style === 'JOGADOR'
         ? '#3a3f4a'
@@ -830,9 +861,10 @@ export function avatar(
   }
   if (hairStyle === 1) head.add(box(0.28, 0.22, 0.05, hair, 0, -0.12, -0.13)); // comprido
   if (hairStyle === 2) head.add(box(0.12, 0.1, 0.1, hair, 0, 0.25, -0.1)); // coque
-  if (hairStyle === 3 && style === 'PESSOA') {
-    head.add(box(0.29, 0.07, 0.27, color, 0, 0.24, 0)); // boné na cor da equipe
-    head.add(box(0.22, 0.02, 0.12, color, 0, 0.245, 0.17));
+  if (hairStyle === 3 && (style === 'PESSOA' || look)) {
+    const cap = look ? look.shirt : color;
+    head.add(box(0.29, 0.07, 0.27, cap, 0, 0.24, 0)); // boné na cor da equipe (ou da roupa)
+    head.add(box(0.22, 0.02, 0.12, cap, 0, 0.245, 0.17));
   }
   // Rosto (frente = +z): olhos com brilho, sobrancelhas, nariz e boca.
   for (const sx of [-0.06, 0.06]) {
@@ -1396,5 +1428,66 @@ export function cart(w: number, d: number) {
   g.add(box(w * 0.8, 0.04, d * 0.8, mat('#5a6b6b', { metal: 0.4 }), 0, 0.06, 0));
   for (const sx of [-1, 1])
     for (const sz of [-1, 1]) g.add(cyl(0.04, 0.05, '#1d2523', sx * w * 0.35, 0, sz * d * 0.35, 8));
+  return g;
+}
+
+/**
+ * Furgão de retirada e entrega (frente = +x). Rodas nomeadas `wheel` (giram quando anda) e
+ * faróis `lamp` (acendem à noite e quando está em movimento).
+ */
+export function vanModel(accent: string = PALETTE.bronze) {
+  const g = new THREE.Group();
+  const body = '#f3f1ec';
+  const glass = mat('#8fb3c4', { metal: 0.3, rough: 0.15 });
+  g.add(box(3.25, 0.22, 1.46, '#2a2f33', 0, 0.26, 0)); // chassi
+  g.add(box(2.15, 1.4, 1.6, body, -0.58, 0.48, 0)); // baú
+  g.add(box(2.17, 0.12, 1.62, accent, -0.58, 1.1, 0)); // faixa da empresa
+  g.add(box(2.17, 0.04, 1.62, '#d8d3c8', -0.58, 1.88, 0)); // teto do baú
+  g.add(box(0.02, 1.2, 0.72, '#e2ddd2', -1.665, 0.58, -0.38)); // portas traseiras
+  g.add(box(0.02, 1.2, 0.72, '#e2ddd2', -1.665, 0.58, 0.38));
+  g.add(box(1.05, 0.95, 1.56, accent, 1.04, 0.48, 0)); // cabine
+  g.add(box(0.62, 0.42, 1.54, accent, 0.82, 1.43, 0)); // teto da cabine
+  const wind = box(0.04, 0.5, 1.38, glass, 1.4, 1.02, 0);
+  wind.rotation.z = 0.5;
+  g.add(wind);
+  for (const s of [-1, 1]) {
+    g.add(box(0.46, 0.36, 0.02, glass, 1.02, 1.06, s * 0.79)); // janelas laterais
+    g.add(box(0.06, 0.1, 0.16, '#1d2523', 1.2, 1.12, s * 0.86)); // retrovisores
+  }
+  g.add(box(0.1, 0.18, 1.6, '#3a3f44', 1.6, 0.36, 0)); // para-choque
+  g.add(box(0.1, 0.16, 1.6, '#3a3f44', -1.66, 0.36, 0));
+  for (const s of [-1, 1]) {
+    const lamp = box(
+      0.03,
+      0.12,
+      0.26,
+      mat('#fff3c8', { emissive: '#fff3c8' }),
+      1.575,
+      0.62,
+      s * 0.56,
+    );
+    lamp.name = 'lamp';
+    g.add(lamp);
+    g.add(box(0.03, 0.16, 0.12, mat('#c0392b', { emissive: '#7a1d14' }), -1.68, 0.62, s * 0.66));
+  }
+  const tire = mat('#1d2523', { rough: 0.9 });
+  const hub = mat('#9aa3a8', { metal: 0.6, rough: 0.4 });
+  for (const x of [-1.05, 1.05])
+    for (const s of [-1, 1]) {
+      const w = new THREE.Group();
+      w.name = 'wheel';
+      w.position.set(x, 0.31, s * 0.72);
+      const t = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.31, 0.22, 16), tire);
+      t.rotation.x = Math.PI / 2;
+      t.castShadow = true;
+      w.add(t);
+      const h = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.23, 10), hub);
+      h.rotation.x = Math.PI / 2;
+      w.add(h);
+      g.add(w);
+    }
+  g.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
+  });
   return g;
 }

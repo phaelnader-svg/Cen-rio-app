@@ -17,6 +17,8 @@ import type {
 } from '@cenario/shared';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import type { AvatarLook } from './models';
+import type { ProgressStore } from './progress';
 
 export interface GamePerson {
   userId: string;
@@ -136,4 +138,22 @@ export const useSuppliers = (enabled = true) =>
     queryFn: () => api<SupplierDto[]>('/api/v1/game/suppliers'),
     enabled,
     staleTime: 60_000,
+  });
+
+/** Progresso do jogo (nível, missões, placar) guardado no servidor, por empresa. */
+export const useProgressStore = (enabled: boolean) =>
+  useQuery({
+    queryKey: ['game-progress'],
+    queryFn: () => api<ProgressStore>('/api/v1/game/progress'),
+    enabled,
+    staleTime: 60_000,
+    retry: 1,
+  });
+
+/** Aparência do boneco "Você" desta pessoa. */
+export const useAvatarLook = () =>
+  useQuery({
+    queryKey: ['game-avatar'],
+    queryFn: () => api<{ look: AvatarLook | null }>('/api/v1/game/avatar'),
+    staleTime: 300_000,
   });

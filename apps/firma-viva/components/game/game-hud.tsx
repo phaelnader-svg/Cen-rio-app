@@ -4,7 +4,8 @@
  * missões do dia com nível da oficina e placar, barra do replay da semana e avisos recolhíveis.
  */
 import clsx from 'clsx';
-import { Pause, Play, X } from 'lucide-react';
+import { Pause, Play, Share2, Sun, UserRound, X } from 'lucide-react';
+import { NotifyToggle } from './extras';
 import { useState, useSyncExternalStore } from 'react';
 import type { Quality } from './engine';
 import type { Mission, Progress } from './progress';
@@ -167,7 +168,11 @@ export function SettingsMenu({
   onTutorial,
   onClose,
   extra,
+  onAvatar,
+  onMorning,
 }: {
+  onAvatar?: () => void;
+  onMorning?: () => void;
   quality: Quality;
   auto: boolean;
   onQuality: (q: Quality | null) => void;
@@ -231,6 +236,21 @@ export function SettingsMenu({
           </button>
         ))}
       </div>
+      <NotifyToggle />
+      {onAvatar || onMorning ? (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {onAvatar ? (
+            <GBtn tone="ghost" onClick={onAvatar} testId="open-avatar">
+              <UserRound className="size-4" /> Seu boneco
+            </GBtn>
+          ) : null}
+          {onMorning ? (
+            <GBtn tone="ghost" onClick={onMorning} testId="open-morning">
+              <Sun className="size-4" /> Resumo do dia
+            </GBtn>
+          ) : null}
+        </div>
+      ) : null}
       <div className="flex gap-1.5">
         <GBtn tone="ghost" onClick={onShortcuts}>
           <Ic e="⌨️" /> Atalhos
@@ -250,7 +270,9 @@ export function MissionsPanel({
   onClose,
   onReplay,
   canReplay,
+  onShare,
 }: {
+  onShare?: () => void;
   missions: Mission[];
   progress: Progress;
   week: { total: number; people: { id: string; name: string; n: number }[] };
@@ -375,9 +397,14 @@ export function MissionsPanel({
       >
         <Ic e="⏪" /> Replay da semana
       </GBtn>
+      {onShare ? (
+        <GBtn className="mt-2 w-full" onClick={onShare} testId="week-share">
+          <Share2 className="size-4" /> Compartilhar a semana
+        </GBtn>
+      ) : null}
       <p className="mt-2 text-[11px] text-ink-muted">
-        Tudo calculado com o trabalho real registrado no tablet. O progresso fica guardado neste
-        navegador.
+        Tudo calculado com o trabalho real registrado no tablet. O progresso fica guardado na
+        empresa: vale em qualquer computador ou celular.
       </p>
     </Panel>
   );

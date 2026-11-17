@@ -9,7 +9,9 @@ import clsx from 'clsx';
 import { useState } from 'react';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
+import { GoalShare } from './extras';
 import { Ic } from './icons';
+import { useMe } from '@/lib/hooks';
 import { GBtn, Panel, Section, Tone, fmtDateTime } from './ui';
 
 /** Agora no horário de São Paulo, no formato do campo datetime-local. */
@@ -645,6 +647,8 @@ function GoalsTab({
   open: (d: Drill) => void;
 }) {
   const act = useAct();
+  const me = useMe();
+  const [sharing, setSharing] = useState<Goal | null>(null);
   const [edit, setEdit] = useState<
     Record<string, { name: string; target: string; deadline: string; accountIds: string[] }>
   >({});
@@ -652,6 +656,13 @@ function GoalsTab({
   const reais = (s: string) => Math.round(Number(s.replace(/\./g, '').replace(',', '.')) * 100);
   return (
     <div className="space-y-1.5 text-xs" data-testid="goals-list">
+      {sharing ? (
+        <GoalShare
+          goal={sharing}
+          company={me.data?.organization?.name ?? ''}
+          onClose={() => setSharing(null)}
+        />
+      ) : null}
       {b.goals.map((g) => {
         const e = edit[g.id];
         return (
@@ -666,10 +677,19 @@ function GoalsTab({
             <div className="flex items-center justify-between gap-1">
               <b>{g.name}</b>
               {g.achieved ? (
-                <Tone tone={g.belowAfterAchieved ? 'atencao' : 'ok'}>
-                  <Ic e="🏆" /> conquistada em {br(g.achieved.at)}
-                  {g.belowAfterAchieved ? ' · abaixo hoje' : ''}
-                </Tone>
+                <span className="flex items-center gap-1">
+                  <Tone tone={g.belowAfterAchieved ? 'atencao' : 'ok'}>
+                    <Ic e="🏆" /> conquistada em {br(g.achieved.at)}
+                    {g.belowAfterAchieved ? ' · abaixo hoje' : ''}
+                  </Tone>
+                  <button
+                    className="rounded-lg px-1.5 py-0.5 font-semibold text-brand-700 hover:bg-subtle"
+                    onClick={() => setSharing(g)}
+                    data-testid="goal-share"
+                  >
+                    Compartilhar
+                  </button>
+                </span>
               ) : g.id === b.nextGoalId ? (
                 <Tone tone="info">próxima</Tone>
               ) : null}
