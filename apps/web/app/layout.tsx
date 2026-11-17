@@ -4,7 +4,7 @@ import { Providers } from '@/components/providers';
 
 export const metadata: Metadata = {
   title: { default: 'Cenário Gestão', template: '%s · Cenário Gestão' },
-  description: 'Gestão de produção da Cenário Estofados',
+  description: 'Gestão de produção para tapeçarias',
   applicationName: 'Cenário Gestão',
   manifest: '/manifest.webmanifest',
   icons: { icon: '/icon.svg', apple: '/icon-192.png' },

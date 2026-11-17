@@ -1,7 +1,7 @@
 'use client';
 
 import type { EmployeeDto, Permission } from '@cenario/shared';
-import { createEmployeeSchema, updateEmployeeSchema } from '@cenario/shared';
+import { PASSWORD_RULE_HINT, createEmployeeSchema, updateEmployeeSchema } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -371,11 +371,7 @@ export function EmployeeForm({
                 />
               )}
             </Field>
-            <Field
-              label="Senha do painel"
-              error={errors.password}
-              hint="Mínimo de 10 caracteres, com letras e números."
-            >
+            <Field label="Senha do painel" error={errors.password} hint={PASSWORD_RULE_HINT}>
               {(p) => (
                 <Input
                   {...p}

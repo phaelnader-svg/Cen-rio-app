@@ -2,6 +2,7 @@ import {
   DEFAULT_ROLE_SKILLS,
   EVENT_TYPES,
   GESTOR_ROLE_KEY,
+  PROVISIONAL_TRADE_NAME,
   adminLoginSchema,
   changePasswordSchema,
   signupSchema,
@@ -120,7 +121,7 @@ export async function authRoutes(app: FastifyInstance) {
     try {
       created = await system.$transaction(async (tx) => {
         const company = await tx.companySettings.create({
-          data: { tradeName: 'Minha empresa', email: input.email },
+          data: { tradeName: PROVISIONAL_TRADE_NAME, email: input.email },
         });
         // Daqui em diante a transação é da empresa nova, com a trava do banco ligada: tudo o que
         // for gravado fica nela, e nada de outra empresa aparece.

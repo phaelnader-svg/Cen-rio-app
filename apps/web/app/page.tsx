@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { Landing } from '@/components/site/landing';
-import { SITE_META, siteMode } from '@/components/site/config';
+import { siteMetadata, siteMode } from '@/components/site/config';
 
 /**
  * Raiz do domínio. Com a landing publicada (SITE_COMERCIAL=1 e sem pendências), quem chega por
@@ -12,11 +12,7 @@ export const dynamic = 'force-dynamic';
 
 export function generateMetadata(): Metadata {
   if (siteMode() !== 'live') return {};
-  return {
-    title: { absolute: SITE_META.title },
-    description: SITE_META.description,
-    robots: { index: true, follow: true },
-  };
+  return siteMetadata(true);
 }
 
 export default function Home() {

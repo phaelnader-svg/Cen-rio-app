@@ -68,7 +68,7 @@ export function QualityPage() {
     <>
       <PageHeader
         title="Qualidade"
-        description="Inspeção final de cada peça (Thiago como inspetor principal) e reprovações com correção e nova inspeção. Aprovada, a peça fica pronta para entrega."
+        description="Inspeção final de cada peça pelo inspetor definido em Inspetor e localizações, e reprovações com correção e nova inspeção. Aprovada, a peça fica pronta para entrega."
       />
       <Tabs
         tabs={[

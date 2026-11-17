@@ -2,13 +2,14 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Gamepad2, KeyRound, Lock, LogOut, Menu, X } from 'lucide-react';
+import { Gamepad2, KeyRound, LifeBuoy, Lock, LogOut, Menu, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { BrandMark } from '@/components/brand';
 import { ConnectionIndicator } from '@/components/connection-indicator';
 import { PanelNotifications } from './panel-notifications';
+import { WelcomeDialog } from './welcome-dialog';
 import { Button } from '@/components/ui/button';
 import { Alert, Avatar, Spinner } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
@@ -16,6 +17,7 @@ import { AMBIENTE_INTERATIVO_PATH } from '@/lib/ambiente-interativo';
 import { useMe, useModules } from '@/lib/hooks';
 import { RealtimeProvider } from '@/lib/realtime';
 import { UPCOMING, visibleNav } from './nav';
+import { supportUrl } from '@/components/site/config';
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -69,6 +71,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }
 
   const items = visibleNav(perms, modules, data.company.platformOwner);
+  // Suporte do Cenário para as empresas clientes (a Cenário Estofados é a própria dona).
+  const help = data.company.platformOwner ? null : supportUrl(data.company.tradeName);
 
   async function logout() {
     // B4: a saída encerra a sessão, e o tempo real avisa "sessão encerrada" — que aqui é esperado.
@@ -84,7 +88,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const sidebar = (
     <nav aria-label="Navegação principal" className="flex h-full flex-col">
       <div className="px-5 pt-5 pb-6">
-        <BrandMark />
+        <BrandMark subtitle={data.company.tradeName} />
       </div>
       <ul className="space-y-0.5 px-3">
         {items.map((item, idx) => {
@@ -143,6 +147,17 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </>
       )}
       <div className="mt-auto border-t border-line p-4">
+        {help && (
+          <a
+            href={help}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="ajuda-suporte"
+            className="mb-3 flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium text-ink-soft hover:bg-subtle"
+          >
+            <LifeBuoy className="size-4" aria-hidden /> Ajuda e suporte (WhatsApp)
+          </a>
+        )}
         <div className="flex items-center gap-3">
           <Avatar
             name={data.user.displayName}
@@ -244,6 +259,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </header>
           <main id="conteudo" className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-10">
             {children}
+            <WelcomeDialog me={data} />
           </main>
         </div>
       </div>

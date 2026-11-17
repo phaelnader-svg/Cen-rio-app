@@ -2,9 +2,13 @@ import { z } from 'zod';
 
 export const EMAIL_MAX = 254;
 
+/** Regra única de senha do painel (Criar conta, Minha conta e funcionários). */
+export const PASSWORD_MIN = 8;
+export const PASSWORD_RULE_HINT = `Mínimo de ${PASSWORD_MIN} caracteres, com letras e números.`;
+
 export const passwordPolicySchema = z
   .string()
-  .min(10, { message: 'A senha deve ter ao menos 10 caracteres.' })
+  .min(PASSWORD_MIN, { message: `A senha deve ter ao menos ${PASSWORD_MIN} caracteres.` })
   .max(128, { message: 'A senha deve ter no máximo 128 caracteres.' })
   .refine((v) => /[A-Za-zÀ-ÿ]/.test(v) && /\d/.test(v), {
     message: 'A senha deve conter letras e números.',
@@ -51,8 +55,8 @@ export const changePasswordSchema = z.object({
   newPassword: passwordPolicySchema,
 });
 
-/** Senha de quem cria a própria conta pela tela de entrar (mínimo de 8 caracteres). */
-export const SIGNUP_PASSWORD_MIN = 8;
+/** Senha de quem cria a própria conta pela tela de entrar: a mesma regra do resto do painel. */
+export const SIGNUP_PASSWORD_MIN = PASSWORD_MIN;
 
 /**
  * Criar conta (tela /entrar). Multi-empresa: cada conta criada é uma empresa nova, e quem cria
@@ -61,12 +65,7 @@ export const SIGNUP_PASSWORD_MIN = 8;
 export const signupSchema = z
   .object({
     email: z.string().trim().toLowerCase().email({ message: 'E-mail inválido.' }).max(EMAIL_MAX),
-    password: z
-      .string()
-      .min(SIGNUP_PASSWORD_MIN, {
-        message: `A senha deve ter ao menos ${SIGNUP_PASSWORD_MIN} caracteres.`,
-      })
-      .max(128, { message: 'A senha deve ter no máximo 128 caracteres.' }),
+    password: passwordPolicySchema,
     passwordConfirm: z.string().max(128),
   })
   .refine((v) => v.password === v.passwordConfirm, {

@@ -8,6 +8,7 @@ import { useDeferredValue, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Input, Select } from '@/components/ui/field';
 import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
+import { ExportLink } from '@/components/ui/export-link';
 import { useCustomers } from '@/lib/commercial';
 import { useCan } from '@/lib/hooks';
 import { CustomerForm } from './customer-form';
@@ -34,14 +35,17 @@ export function CustomersPage() {
         title="Clientes"
         description="Pessoas e empresas atendidas, com endereços, contatos e histórico de serviços."
         actions={
-          can('clientes.gerenciar') && (
-            <Button
-              icon={<Plus className="size-4" aria-hidden />}
-              onClick={() => setCreating(true)}
-            >
-              Novo cliente
-            </Button>
-          )
+          <>
+            <ExportLink href="/api/v1/export/clientes.csv" testId="export-clientes" />
+            {can('clientes.gerenciar') && (
+              <Button
+                icon={<Plus className="size-4" aria-hidden />}
+                onClick={() => setCreating(true)}
+              >
+                Novo cliente
+              </Button>
+            )}
+          </>
         }
       />
       <Card className="mb-4 p-4">

@@ -26,6 +26,8 @@ export interface MeDto {
     arrivalWindowStart: string;
     /** Multi-empresa: o gestor da empresa da plataforma (nº 1) vê o painel das empresas. */
     platformOwner: boolean;
+    /** Empresa recém-criada pelo Criar conta, ainda com o nome provisório: mostra as boas-vindas. */
+    needsWelcome: boolean;
   };
 }
 

@@ -690,7 +690,7 @@ function PlanDialog({
         <p className="font-semibold">Resumo</p>
         <p>
           {services.length} serviço(s) · {services.reduce((n, s) => n + s.pieces.length, 0)} peça(s)
-          · preparação com o responsável padrão (João)
+          · preparação com o responsável padrão da etapa
         </p>
         {[...byOwner].map(([id, n]) => (
           <p key={id}>

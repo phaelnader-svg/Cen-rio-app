@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useDeferredValue, useState } from 'react';
 import { Input, Select } from '@/components/ui/field';
 import { Alert, Avatar, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
+import { ExportLink } from '@/components/ui/export-link';
 import { formatDay, useServiceOrders } from '@/lib/commercial';
 import { DeadlineBadge, PriorityBadge, ServiceOrderStatusBadge } from './badges';
 import { OsStateBadge } from './os-state';
@@ -19,6 +20,7 @@ export function ServiceOrdersPage() {
       <PageHeader
         title="Ordens de serviço"
         description="OS técnicas: nascem no fechamento do serviço (Novo serviço) ou pelo pedido, com as peças ainda sem OS."
+        actions={<ExportLink href="/api/v1/export/os.csv" testId="export-os" />}
       />
       <Card className="mb-4 grid gap-3 p-4 sm:grid-cols-[1fr_220px]">
         <label className="relative">

@@ -1,7 +1,7 @@
 'use client';
 
 import type { EmployeeDto } from '@cenario/shared';
-import { pinSchema, setAdminCredentialsSchema } from '@cenario/shared';
+import { PASSWORD_RULE_HINT, pinSchema, setAdminCredentialsSchema } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Camera,
@@ -341,7 +341,7 @@ function PanelAccessDialog({ employee, onClose }: { employee: EmployeeDto; onClo
         <Field
           label="Nova senha"
           error={errors.password}
-          hint="Mínimo de 10 caracteres, com letras e números. Sessões anteriores no painel serão encerradas."
+          hint={`${PASSWORD_RULE_HINT} Sessões anteriores no painel serão encerradas.`}
         >
           {(p) => (
             <Input

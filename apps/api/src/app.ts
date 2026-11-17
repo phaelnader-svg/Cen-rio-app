@@ -31,6 +31,7 @@ import { refreshOperationalAlerts, todayRoutes } from './modules/management/toda
 import { attachmentRoutes } from './modules/attachments/routes';
 import { authRoutes } from './modules/auth/routes';
 import { customerRoutes } from './modules/customers/routes';
+import { exportRoutes } from './modules/exports/routes';
 import { releaseDueTasks } from './modules/production/common';
 import { productionPlanRoutes } from './modules/production/plans';
 import { productionProductivityRoutes } from './modules/production/productivity';
@@ -226,6 +227,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(realtimeRoutes);
   // Fase 2 — fluxo comercial → oficina (API versionada /api/v1)
   await app.register(customerRoutes);
+  await app.register(exportRoutes);
   await app.register(orderRoutes);
   await app.register(pickupRoutes);
   await app.register(serviceRoutes);

@@ -18,7 +18,16 @@ export function LogoMark({ className, inverted }: { className?: string; inverted
 }
 
 /** Marca do sistema (logo + nome). */
-export function BrandMark({ className, inverted }: { className?: string; inverted?: boolean }) {
+export function BrandMark({
+  className,
+  inverted,
+  subtitle = 'Gestão para tapeçarias',
+}: {
+  className?: string;
+  inverted?: boolean;
+  /** Linha de baixo: o nome da empresa no painel; no site, quem fez o sistema. */
+  subtitle?: string;
+}) {
   return (
     <div className={clsx('flex items-center gap-2.5', className)}>
       <LogoMark inverted={inverted} className="size-9" />
@@ -31,8 +40,13 @@ export function BrandMark({ className, inverted }: { className?: string; inverte
         >
           Cenário Gestão
         </p>
-        <p className={clsx('text-xs', inverted ? 'text-white/70' : 'text-ink-muted')}>
-          Cenário Estofados
+        <p
+          className={clsx(
+            'max-w-44 truncate text-xs',
+            inverted ? 'text-white/70' : 'text-ink-muted',
+          )}
+        >
+          {subtitle}
         </p>
       </div>
     </div>

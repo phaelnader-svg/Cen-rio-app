@@ -3,6 +3,8 @@ import {
   MODULES,
   MODULE_KEYS,
   companySettingsSchema,
+  companyWelcomeSchema,
+  PROVISIONAL_TRADE_NAME,
   isModuleKey,
   resolveModules,
   updateModuleSchema,
@@ -22,6 +24,7 @@ import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
 import { pickupCode } from '../commercial/common';
 import { requireCompanyId } from '../../core/tenant';
+import { employeeEventPayload } from '../presenters';
 
 function toDto(c: CompanySettings): CompanySettingsDto {
   return {
@@ -258,6 +261,79 @@ export async function companyRoutes(app: FastifyInstance) {
         return updated;
       });
       return toDto(settings);
+    },
+  );
+
+  /**
+   * Boas-vindas do primeiro acesso (empresa criada pelo Criar conta): troca o nome provisório
+   * "Minha empresa" pelo nome real e o nome de quem criou a conta (no usuário e na ficha de
+   * funcionário). Só vale enquanto o nome ainda é o provisório; depois, a tela Empresa.
+   */
+  app.post(
+    '/api/company/welcome',
+    { config: { access: { session: 'WEB', permissions: ['empresa.configurar'] } } },
+    async (request) => {
+      const input = companyWelcomeSchema.parse(request.body);
+      const actor = actorFrom(request);
+      await prisma.$transaction(async (tx) => {
+        if (!(await lockRow(tx, 'company_settings', requireCompanyId())))
+          throw Errors.notFound('Configuração da empresa');
+        const before = await tx.companySettings.findUniqueOrThrow({
+          where: { id: requireCompanyId() },
+        });
+        if (before.tradeName !== PROVISIONAL_TRADE_NAME)
+          throw Errors.business('As boas-vindas já foram concluídas. Use a tela Empresa.');
+        const updated = await tx.companySettings.update({
+          where: { id: requireCompanyId() },
+          data: {
+            tradeName: input.tradeName,
+            updatedById: actor.userId,
+            version: { increment: 1 },
+          },
+        });
+        if (actor.userId) {
+          await tx.user.update({
+            where: { id: actor.userId },
+            data: { displayName: input.displayName },
+          });
+          const employee = await tx.employee.findFirst({ where: { userId: actor.userId } });
+          if (employee) {
+            const changed = await tx.employee.update({
+              where: { id: employee.id },
+              data: { displayName: input.displayName, fullName: input.displayName },
+            });
+            await appendEvent(tx, actor, {
+              type: EVENT_TYPES.EMPLOYEE_UPDATED,
+              aggregateType: 'employee',
+              aggregateId: changed.id,
+              payload: employeeEventPayload(changed),
+            });
+          }
+        }
+        await audit(tx, actor, {
+          action: 'company.welcome',
+          entityType: 'company_settings',
+          entityId: String(updated.id),
+          summary: `Boas-vindas concluídas: empresa "${updated.tradeName}".`,
+          changes: { tradeName: { from: before.tradeName, to: updated.tradeName } },
+        });
+        await appendEvent(tx, actor, {
+          type: EVENT_TYPES.COMPANY_SETTINGS_UPDATED,
+          aggregateType: 'company_settings',
+          aggregateId: String(updated.id),
+          payload: {
+            tradeName: updated.tradeName,
+            timezone: updated.timezone,
+            workdayStart: updated.workdayStart,
+            arrivalAlertAt: updated.arrivalAlertAt,
+            workdayEnd: updated.workdayEnd,
+            arrivalWindowStart: updated.arrivalWindowStart,
+            lateAlertMinutes: updated.lateAlertMinutes,
+            version: updated.version,
+          },
+        });
+      });
+      return { ok: true };
     },
   );
 }

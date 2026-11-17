@@ -1,5 +1,5 @@
 import type { EmployeeDto, EmployeeSummaryDto, MeDto, Permission } from '@cenario/shared';
-import { isPermission } from '@cenario/shared';
+import { PROVISIONAL_TRADE_NAME, isPermission } from '@cenario/shared';
 import type { Employee, PrismaClient, Tx } from '@cenario/db';
 import { z } from 'zod';
 import type { AuthContext } from '../core/types';
@@ -108,6 +108,8 @@ export async function buildMe(
       workdayEnd: company?.workdayEnd ?? '18:00',
       arrivalWindowStart: company?.arrivalWindowStart ?? '07:00',
       platformOwner: company?.id === 1 && permissions.includes('empresa.configurar'),
+      needsWelcome:
+        company?.tradeName === PROVISIONAL_TRADE_NAME && permissions.includes('empresa.configurar'),
     },
   };
 }

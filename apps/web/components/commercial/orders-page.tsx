@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useDeferredValue, useState } from 'react';
 import { Input, Select } from '@/components/ui/field';
 import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
+import { ExportLink } from '@/components/ui/export-link';
 import { useOrders } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
@@ -22,14 +23,17 @@ export function OrdersPage() {
         title="Pedidos comerciais"
         description="Serviços aprovados pelo cliente: organizam a retirada e preservam o que foi vendido."
         actions={
-          can('pedidos.gerenciar') && (
-            <Link
-              href="/painel/pedidos/novo"
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-700 px-4 text-[15px] font-semibold text-white hover:bg-brand-800"
-            >
-              <Plus className="size-4" aria-hidden /> Novo pedido
-            </Link>
-          )
+          <>
+            <ExportLink href="/api/v1/export/pedidos.csv" testId="export-pedidos" />
+            {can('pedidos.gerenciar') && (
+              <Link
+                href="/painel/pedidos/novo"
+                className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-700 px-4 text-[15px] font-semibold text-white hover:bg-brand-800"
+              >
+                <Plus className="size-4" aria-hidden /> Novo pedido
+              </Link>
+            )}
+          </>
         }
       />
       <Card className="mb-4 grid gap-3 p-4 sm:grid-cols-[1fr_240px]">

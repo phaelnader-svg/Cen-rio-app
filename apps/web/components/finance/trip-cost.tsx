@@ -252,7 +252,7 @@ export function TripCostCard({ pickupId, deliveryId }: { pickupId?: string; deli
       {edit && (
         <FormDialog
           title={c ? 'Alterar custo da viagem' : 'Combinar custo da viagem'}
-          description="Valor TOTAL da viagem (André e Izaías juntos = um valor só). Recebedor: o configurado. Nada é devido antes da realização."
+          description="Valor TOTAL da viagem (toda a equipe da viagem = um valor só). Recebedor: o configurado. Nada é devido antes da realização."
           onClose={() => setEdit(false)}
           fields={[
             {

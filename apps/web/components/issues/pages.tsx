@@ -515,7 +515,7 @@ function AssignDialog({ i, onClose }: { i: IssueDto; onClose: () => void }) {
               {...f}
               value={instructions}
               maxLength={300}
-              placeholder="Ex.: Verificar a máquina de costura do Márcio"
+              placeholder="Ex.: Verificar a máquina de costura da bancada 2"
               onChange={(e) => setInstructions(e.target.value)}
             />
           )}

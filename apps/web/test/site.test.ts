@@ -7,9 +7,11 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   SCREENS,
+  SIGNUP_PATH,
   SITE,
   annualOffer,
   pendingItems,
+  siteMetadata,
   siteMode,
   whatsappUrl,
 } from '../components/site/config';
@@ -61,10 +63,30 @@ describe('ativação da landing', () => {
   });
 
   it('a indexação só é liberada com a landing publicada', () => {
-    expect(src('app/(site)/layout.tsx')).toMatch(
-      /siteMode\(\) === 'live' \? \{ index: true, follow: true \} : \{ index: false, follow: false \}/,
-    );
+    expect(src('app/(site)/layout.tsx')).toMatch(/siteMetadata\(siteMode\(\) === 'live'\)/);
+    expect(siteMetadata(true).robots).toEqual({ index: true, follow: true });
+    expect(siteMetadata(false).robots).toEqual({ index: false, follow: false });
     expect(src('app/layout.tsx')).toMatch(/robots: \{ index: false, follow: false \}/);
+  });
+});
+
+describe('compartilhamento e Google', () => {
+  it('/ e /conheca apontam para o mesmo endereço principal e têm prévia com imagem', () => {
+    const m = siteMetadata(true);
+    expect(m.alternates.canonical).toBe('/');
+    expect(m.metadataBase.toString()).toBe('https://cenariogestao.com.br/');
+    expect(m.openGraph.images[0]).toMatchObject({ url: '/site/og.png', width: 1200, height: 630 });
+    expect(src('app/page.tsx')).toMatch(/siteMetadata\(true\)/);
+  });
+
+  it('robots.txt e sitemap.xml existem e deixam o painel fora', () => {
+    expect(src('app/robots.ts')).toMatch(/disallow: \['\/painel'/);
+    expect(src('app/sitemap.ts')).toMatch(/SITE_URL/);
+  });
+
+  it('o botão Criar minha conta abre a tela de entrar já no Criar conta', () => {
+    expect(SIGNUP_PATH).toBe('/entrar?criar=1');
+    expect(src('components/admin/login.tsx')).toMatch(/params\.get\('criar'\) === '1'/);
   });
 });
 
