@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
-import { loginAdmin, openTablet, registerDevice, setMaterialsGate, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
 import { openServiceOrder } from './os-helpers';
 
 /**
@@ -66,8 +66,6 @@ test.describe.serial('Fase 7 — presença operacional', () => {
     test.setTimeout(240_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAdmin(page);
-    // Etapa E1: este spec prova o controle formal de materiais — liga a trava (o padrão é desligada).
-    await setMaterialsGate(page, true);
     const setClock = (hhmm: string | null) =>
       call(page, 'POST', '/api/test/clock', { now: hhmm ? atLocal(hhmm) : null });
     try {
@@ -173,7 +171,9 @@ test.describe.serial('Fase 7 — presença operacional', () => {
       await expect(row('João')).toContainText('Ausência presumida');
       const impacts = page.getByTestId('attendance-impacts');
       await expect(
-        impacts.getByTestId('impact-TAREFA_DO_AUSENTE').filter({ hasText: 'Preparação' }),
+        impacts
+          .getByTestId('impact-TAREFA_DO_AUSENTE')
+          .filter({ hasText: `Preparação — ${so.code}` }),
       ).toBeVisible();
       const dep = impacts
         .getByTestId('impact-DEPENDENTE_AFETADA')
@@ -245,7 +245,6 @@ test.describe.serial('Fase 7 — presença operacional', () => {
       await marcio.context.close();
       await joao.context.close();
     } finally {
-      await setMaterialsGate(page, false).catch(() => undefined);
       await setClock(null).catch(() => undefined);
       await setTimes(page, {
         window: '07:00',

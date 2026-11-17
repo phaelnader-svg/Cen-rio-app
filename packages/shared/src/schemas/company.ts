@@ -84,4 +84,18 @@ export const companySettingsSchema = z
     message: 'O fim do expediente deve ser posterior ao limite de alerta de chegada.',
     path: ['workdayEnd'],
   });
+/** Nome provisório de toda empresa criada pelo Criar conta (as boas-vindas pedem o nome real). */
+export const PROVISIONAL_TRADE_NAME = 'Minha empresa';
+
+/** Boas-vindas do primeiro acesso: nome da empresa e de quem criou a conta. */
+export const companyWelcomeSchema = z
+  .object({
+    tradeName: trimmed(2, 120, 'Nome da empresa').refine((v) => v !== PROVISIONAL_TRADE_NAME, {
+      message: 'Escreva o nome da sua empresa.',
+    }),
+    displayName: trimmed(2, 40, 'Seu nome'),
+  })
+  .strict();
+export type CompanyWelcomeInput = z.input<typeof companyWelcomeSchema>;
+
 export type CompanySettingsInput = z.input<typeof companySettingsSchema>;

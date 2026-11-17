@@ -388,7 +388,7 @@ function DeviceDialog({
             {error}
           </Alert>
         )}
-        <Field label="Nome" required hint='Ex.: "Tablet Ricardo"'>
+        <Field label="Nome" required hint='Ex.: "Tablet da costura"'>
           {(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} autoFocus />}
         </Field>
         {!device && (

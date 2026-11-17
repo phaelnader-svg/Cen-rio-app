@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { SITE_META, siteMode } from '@/components/site/config';
+import { siteMetadata, siteMode } from '@/components/site/config';
 
 /**
  * Área pública comercial. Fica fora do painel e do tablet (sem AdminShell, sem sessão, sem API).
@@ -9,12 +9,7 @@ import { SITE_META, siteMode } from '@/components/site/config';
 export const dynamic = 'force-dynamic';
 
 export function generateMetadata(): Metadata {
-  return {
-    title: { absolute: SITE_META.title },
-    description: SITE_META.description,
-    // Só a landing publicada é indexável; o resto do sistema segue com noindex (layout raiz).
-    robots: siteMode() === 'live' ? { index: true, follow: true } : { index: false, follow: false },
-  };
+  return siteMetadata(siteMode() === 'live');
 }
 
 export default function SiteLayout({ children }: { children: React.ReactNode }) {

@@ -1,5 +1,12 @@
+import {
+  billingEnvironment,
+  billingLocked,
+  blocksAt,
+  emailDeliveryEnabled,
+  statusOf,
+} from '../core/billing';
 import type { EmployeeDto, EmployeeSummaryDto, MeDto, Permission } from '@cenario/shared';
-import { isPermission } from '@cenario/shared';
+import { PROVISIONAL_TRADE_NAME, isPermission } from '@cenario/shared';
 import type { Employee, PrismaClient, Tx } from '@cenario/db';
 import { z } from 'zod';
 import type { AuthContext } from '../core/types';
@@ -89,8 +96,15 @@ export async function buildMe(
     db.companySettings.findUnique({ where: { id: requireCompanyId() } }),
   ]);
   const permissions = [...auth.permissions];
+  const billingEnv = billingEnvironment();
   return {
-    user: { id: user.id, email: user.email, displayName: user.displayName },
+    user: {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      // Sem envio de e-mail configurado não há como confirmar: nada é cobrado da pessoa.
+      emailConfirmed: user.emailConfirmedAt !== null || !emailDeliveryEnabled(),
+    },
     employee: user.employee ? toEmployeeSummary(user.employee) : null,
     session: {
       id: auth.sessionId,
@@ -108,6 +122,23 @@ export async function buildMe(
       workdayEnd: company?.workdayEnd ?? '18:00',
       arrivalWindowStart: company?.arrivalWindowStart ?? '07:00',
       platformOwner: company?.id === 1 && permissions.includes('empresa.configurar'),
+      needsWelcome:
+        company?.tradeName === PROVISIONAL_TRADE_NAME && permissions.includes('empresa.configurar'),
+      subscription: company
+        ? {
+            plan: company.plan,
+            status: statusOf(company, billingEnv),
+            blocksAt: blocksAt(company, billingEnv)?.toISOString() ?? null,
+            locked: billingLocked(company, billingEnv),
+            billingEnabled: billingEnv.BILLING_ENABLED,
+          }
+        : {
+            plan: 'gestao',
+            status: 'CORTESIA',
+            blocksAt: null,
+            locked: false,
+            billingEnabled: false,
+          },
     },
   };
 }

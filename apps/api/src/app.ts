@@ -31,6 +31,7 @@ import { refreshOperationalAlerts, todayRoutes } from './modules/management/toda
 import { attachmentRoutes } from './modules/attachments/routes';
 import { authRoutes } from './modules/auth/routes';
 import { customerRoutes } from './modules/customers/routes';
+import { exportRoutes } from './modules/exports/routes';
 import { releaseDueTasks } from './modules/production/common';
 import { productionPlanRoutes } from './modules/production/plans';
 import { productionProductivityRoutes } from './modules/production/productivity';
@@ -39,6 +40,7 @@ import { productionQueueRoutes } from './modules/production/queue';
 import { productionDistributionRoutes } from './modules/production/distribution';
 import { preplanningRoutes } from './modules/production/pre-planning';
 import { notificationRoutes } from './modules/notifications/routes';
+import { notificationSummaryRoutes } from './modules/notifications/daily-summary';
 import { detectAbsences, detectOpenShifts } from './modules/attendance/absence';
 import { attendanceRoutes } from './modules/attendance/routes';
 import { helpRoutes } from './modules/help/routes';
@@ -67,6 +69,7 @@ import { gameSpaceRoutes } from './modules/game/spaces';
 import { gameSnapshotRoutes } from './modules/game/snapshot';
 import { gameAgentRoutes } from './modules/game/agents';
 import { gameCommandRoutes } from './modules/game/command';
+import { gameSupplierRoutes } from './modules/game/suppliers';
 import { connectionRoutes } from './modules/integrations/connections';
 import { inboxRoutes } from './modules/integrations/inbox';
 import { marketingRoutes } from './modules/integrations/marketing';
@@ -84,6 +87,11 @@ import { inventoryRoutes } from './modules/inventory/routes';
 import { quoteRoutes } from './modules/quotes/routes';
 import { companyRoutes } from './modules/company/routes';
 import { platformRoutes } from './modules/platform/routes';
+import { billingRoutesPlatform } from './modules/billing/routes';
+import { accountRoutes } from './modules/account/routes';
+import { EmailSender } from './core/mailer';
+import { turnstileVerifier } from './core/captcha';
+import { setBillingEnvironment } from './core/billing';
 import { deviceRoutes } from './modules/devices/routes';
 import { employeeRoutes } from './modules/employees/routes';
 import { fileRoutes } from './modules/files/routes';
@@ -166,8 +174,12 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       device: secure ? '__Host-cen_dev' : 'cen_dev',
     },
     clientIp,
+    mailer: new EmailSender(system, env, app.log),
+    captcha: turnstileVerifier(env),
+    fetch: (...args) => globalThis.fetch(...args),
   };
   app.decorate('ctx', ctx);
+  setBillingEnvironment(env, () => ctx.mailer.configured);
   // Cada requisição ganha o seu "de qual empresa" (preenchido pela autenticação).
   app.decorateRequest('tenant', null);
   app.addHook('onRequest', (request, _reply, done) => {
@@ -218,6 +230,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(sessionRoutes);
   await app.register(companyRoutes);
   await app.register(platformRoutes);
+  await app.register(billingRoutesPlatform);
+  await app.register(accountRoutes);
   await app.register(auditRoutes);
   await app.register(managementRoutes);
   await app.register(todayRoutes);
@@ -226,6 +240,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(realtimeRoutes);
   // Fase 2 — fluxo comercial → oficina (API versionada /api/v1)
   await app.register(customerRoutes);
+  await app.register(exportRoutes);
   await app.register(orderRoutes);
   await app.register(pickupRoutes);
   await app.register(serviceRoutes);
@@ -237,6 +252,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(gameSnapshotRoutes);
   await app.register(gameAgentRoutes);
   await app.register(gameCommandRoutes);
+  await app.register(gameSupplierRoutes);
   await app.register(connectionRoutes);
   await app.register(inboxRoutes);
   await app.register(marketingRoutes);
@@ -260,6 +276,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(productionDistributionRoutes);
   await app.register(preplanningRoutes);
   await app.register(notificationRoutes);
+  await app.register(notificationSummaryRoutes);
   await app.register(attendanceRoutes);
   await app.register(helpRoutes);
   await app.register(issueRoutes);
@@ -305,6 +322,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   let releaseTimer: NodeJS.Timeout | null = null;
   let absenceTimer: NodeJS.Timeout | null = null;
   let issueTimer: NodeJS.Timeout | null = null;
+  let emailTimer: NodeJS.Timeout | null = null;
   let started = false;
 
   return {
@@ -367,6 +385,10 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           30_000,
         );
         issueTimer.unref();
+        // Fila de e-mails (confirmação, nova senha, assinatura): novas tentativas.
+        emailTimer = setInterval(() => ctx.mailer.kick(), 60_000);
+        emailTimer.unref();
+        ctx.mailer.kick();
       }
     },
     async close() {
@@ -375,6 +397,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       if (releaseTimer) clearInterval(releaseTimer);
       if (absenceTimer) clearInterval(absenceTimer);
       if (issueTimer) clearInterval(issueTimer);
+      if (emailTimer) clearInterval(emailTimer);
       processor.stop();
       hub.stop();
       await feed.stop();

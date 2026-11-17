@@ -1,6 +1,6 @@
 'use client';
 
-import { changePasswordSchema } from '@cenario/shared';
+import { PASSWORD_RULE_HINT, changePasswordSchema } from '@cenario/shared';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -64,11 +64,7 @@ export function AccountPage() {
               />
             )}
           </Field>
-          <Field
-            label="Nova senha"
-            error={errors.newPassword}
-            hint="Mínimo de 10 caracteres, com letras e números."
-          >
+          <Field label="Nova senha" error={errors.newPassword} hint={PASSWORD_RULE_HINT}>
             {(p) => (
               <Input
                 {...p}

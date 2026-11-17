@@ -397,7 +397,7 @@ function ModulesCard() {
         {list.data.map((m) => (
           <div key={m.key} data-testid={`module-${m.key}`}>
             <Checkbox
-              label={`${m.label}${m.configurable ? '' : ' (disponível em fase posterior)'}`}
+              label={`${m.label}${m.configurable ? '' : ' (segue o plano em Assinatura)'}`}
               description={m.description}
               checked={m.enabled}
               disabled={!editable || !m.configurable || save.isPending}

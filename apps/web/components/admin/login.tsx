@@ -1,8 +1,9 @@
 'use client';
 
-import { SIGNUP_PASSWORD_MIN, adminLoginSchema, signupSchema } from '@cenario/shared';
+import { PASSWORD_RULE_HINT, adminLoginSchema, signupSchema } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
-import { LogIn, UserPlus } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, LogIn, UserPlus } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { BrandMark } from '@/components/brand';
@@ -10,23 +11,48 @@ import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/field';
 import { Alert } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
+import { Honeypot, Turnstile, useSignupConfig } from '@/components/account/turnstile';
 
 const REASONS: Record<string, string> = {
   'sessao-encerrada': 'Sua sessão foi encerrada. Entre novamente para continuar.',
   saiu: 'Você saiu do painel com segurança.',
 };
 
+/** Botão de mostrar/esconder a senha, dentro do campo. */
+function RevealButton({ shown, onToggle }: { shown: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={shown ? 'Esconder caracteres digitados' : 'Mostrar caracteres digitados'}
+      aria-pressed={shown}
+      data-testid="mostrar-senha"
+      className="absolute top-1/2 right-2 grid size-8 -translate-y-1/2 place-items-center rounded-lg text-ink-muted hover:bg-subtle hover:text-ink"
+    >
+      {shown ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+    </button>
+  );
+}
+
 export function AdminLogin() {
   const router = useRouter();
+  const signupConfig = useSignupConfig();
   const params = useSearchParams();
   const qc = useQueryClient();
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  // ?criar=1 (botões da landing e anúncios) abre direto no Criar conta.
+  const [mode, setMode] = useState<'login' | 'signup'>(() =>
+    params.get('criar') === '1' ? 'signup' : 'login',
+  );
+  const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // Anti-robô do Criar conta (melhoria 5).
+  const [captcha, setCaptcha] = useState<string | undefined>();
+  const [website, setWebsite] = useState('');
   const reason = params.get('motivo');
   // Retorno seguro depois do login (ex.: tela oficial de autorização de um aplicativo).
   const next = params.get('proximo');
@@ -54,7 +80,10 @@ export function AdminLogin() {
     setLoading(true);
     try {
       // A conta nova é uma empresa nova, e já entra direto como gestor dela.
-      const me = await api('/api/auth/signup', { method: 'POST', body: parsed.data });
+      const me = await api('/api/auth/signup', {
+        method: 'POST',
+        body: { ...parsed.data, captcha, ...(website ? { website } : {}) },
+      });
       qc.setQueryData(['me'], me);
       router.replace('/painel');
       return;
@@ -101,7 +130,7 @@ export function AdminLogin() {
             Painel do gestor e tablets da oficina sincronizados em tempo real.
           </p>
         </div>
-        <p className="text-xs text-white/50">Acesso restrito à equipe da Cenário Estofados.</p>
+        <p className="text-xs text-white/50">Cada empresa vê só os próprios dados.</p>
         <div
           aria-hidden
           className="pointer-events-none absolute -right-24 -bottom-24 size-96 rounded-full border-[48px] border-white/5"
@@ -116,7 +145,7 @@ export function AdminLogin() {
           </h1>
           <p className="mt-1 text-[15px] text-ink-muted">
             {mode === 'login'
-              ? 'Use seu e-mail e senha de gestor.'
+              ? 'Use seu e-mail e senha.'
               : 'Crie a conta da sua empresa. Os dados dela ficam separados de todas as outras.'}
           </p>
 
@@ -148,15 +177,32 @@ export function AdminLogin() {
               </Field>
               <Field label="Senha" error={errors.password}>
                 {(p) => (
-                  <Input
-                    {...p}
-                    type="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
+                  <div className="relative">
+                    <Input
+                      {...p}
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      className="pr-11"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                    <RevealButton
+                      shown={showPassword}
+                      onToggle={() => setShowPassword((v) => !v)}
+                    />
+                  </div>
                 )}
               </Field>
+              {signupConfig.data?.emailEnabled ? (
+                <p className="-mt-1 text-right text-sm">
+                  <a
+                    href="/entrar/esqueci"
+                    className="font-medium text-brand-700 underline-offset-4 hover:underline"
+                  >
+                    Esqueci minha senha
+                  </a>
+                </p>
+              ) : null}
               <Button
                 type="submit"
                 size="lg"
@@ -193,32 +239,37 @@ export function AdminLogin() {
                   />
                 )}
               </Field>
-              <Field
-                label="Senha"
-                error={errors.password}
-                hint={`Mínimo de ${SIGNUP_PASSWORD_MIN} caracteres.`}
-              >
+              <Field label="Senha" error={errors.password} hint={PASSWORD_RULE_HINT}>
                 {(p) => (
-                  <Input
-                    {...p}
-                    type="password"
-                    autoComplete="new-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
+                  <div className="relative">
+                    <Input
+                      {...p}
+                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      className="pr-11"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                    />
+                    <RevealButton
+                      shown={showPassword}
+                      onToggle={() => setShowPassword((v) => !v)}
+                    />
+                  </div>
                 )}
               </Field>
               <Field label="Confirmar senha" error={errors.passwordConfirm}>
                 {(p) => (
                   <Input
                     {...p}
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     autoComplete="new-password"
                     value={passwordConfirm}
                     onChange={(e) => setPasswordConfirm(e.target.value)}
                   />
                 )}
               </Field>
+              <Honeypot value={website} onChange={setWebsite} />
+              <Turnstile onToken={setCaptcha} />
               <Button
                 type="submit"
                 size="lg"
@@ -248,6 +299,15 @@ export function AdminLogin() {
             >
               Abrir interface de produção
             </a>
+          </p>
+          <p className="mt-3 text-center text-sm">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-1 text-ink-muted underline-offset-4 hover:text-ink hover:underline"
+              data-testid="voltar-site"
+            >
+              <ArrowLeft className="size-3.5" aria-hidden /> Voltar ao site
+            </Link>
           </p>
         </div>
       </section>

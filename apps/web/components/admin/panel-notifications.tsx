@@ -2,7 +2,7 @@
 
 import type { NotificationDto } from '@cenario/shared';
 import clsx from 'clsx';
-import { Bell, CheckCheck } from 'lucide-react';
+import { Bell, CheckCheck, MessageCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useSend } from '@/components/production/use-send';
@@ -64,6 +64,23 @@ export function PanelNotifications() {
         description="Alertas que pedem atenção: ausências presumidas, atrasos relevantes e pendências de encerramento."
         footer={
           <>
+            <Button
+              variant="ghost"
+              icon={<MessageCircle className="size-4" aria-hidden />}
+              data-testid="panel-notifications-whatsapp"
+              onClick={() => {
+                // Abre a janela já no clique (bloqueadores de pop-up) e preenche quando o resumo chega.
+                const w = window.open('', '_blank');
+                api<{ href: string }>('/api/v1/notifications/daily-summary')
+                  .then((r) => {
+                    if (w) w.location.href = r.href;
+                    else window.location.href = r.href;
+                  })
+                  .catch(() => w?.close());
+              }}
+            >
+              Resumo do dia no WhatsApp
+            </Button>
             <Button
               variant="ghost"
               onClick={() => setResolved(!resolved)}

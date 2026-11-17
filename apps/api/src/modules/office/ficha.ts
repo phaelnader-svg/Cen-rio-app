@@ -89,7 +89,7 @@ export async function fichaOf(db: Db, serviceOrderId: string) {
           label: 'Contrato',
           state: 'Não preparado',
           tone: final === null ? 'neutro' : 'atencao',
-          detail: 'O agente Documentos prepara pelo modelo da Cenário.',
+          detail: 'O agente Documentos prepara pelo modelo da empresa.',
         }
       : {
           key: 'CONTRATO',

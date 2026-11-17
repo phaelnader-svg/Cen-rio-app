@@ -4,6 +4,7 @@
  * (webhook autenticado) e uma única vez: o evento é gravado uma vez e a cobrança guarda o
  * recebimento oficial gerado (payment_id único) — reenvios e eventos repetidos não duplicam.
  */
+import { companyName } from '../game/agent-office';
 import { PAYMENT_METHODS, type PaymentMethod } from '@cenario/shared';
 import type { Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
@@ -486,7 +487,7 @@ export async function chargeRoutes(app: FastifyInstance) {
       const r = ch.receivable;
       const first = r.customer.name.split(' ')[0];
       const text = [
-        `Olá, ${first}! Segue a cobrança da ${r.description.toLowerCase()} do seu pedido na Cenário Estofados: ${brl(ch.amountCents)}, vencimento ${ch.dueDate.toISOString().slice(0, 10).split('-').reverse().join('/')}.`,
+        `Olá, ${first}! Segue a cobrança da ${r.description.toLowerCase()} do seu pedido na ${await companyName(prisma)}: ${brl(ch.amountCents)}, vencimento ${ch.dueDate.toISOString().slice(0, 10).split('-').reverse().join('/')}.`,
         ch.pixPayload ? `Pix copia e cola:\n${ch.pixPayload}` : null,
         ch.paymentUrl ? `Ou pague pelo link: ${ch.paymentUrl}` : null,
         'Assim que o pagamento cair, a baixa é automática. Obrigado!',

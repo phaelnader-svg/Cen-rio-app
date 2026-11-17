@@ -6,6 +6,9 @@ import {
   type ModuleState,
 } from '@cenario/shared';
 import type { PrismaClient, Tx } from '@cenario/db';
+import { PLANS } from '@cenario/shared';
+import { planOf } from './billing';
+import { currentCompanyId } from './tenant';
 import { AppError } from '../lib/errors';
 
 /**
@@ -16,7 +19,18 @@ import { AppError } from '../lib/errors';
  * assim a mudança vale na hora para todas as instâncias.
  */
 export async function moduleState(db: Tx | PrismaClient): Promise<ModuleState> {
-  return resolveModules(await db.moduleSetting.findMany({ select: { key: true, enabled: true } }));
+  const companyId = currentCompanyId();
+  const [rows, company] = await Promise.all([
+    db.moduleSetting.findMany({ select: { key: true, enabled: true } }),
+    companyId === null
+      ? null
+      : db.companySettings.findUnique({ where: { id: companyId }, select: { plan: true } }),
+  ]);
+  const state = resolveModules(rows);
+  // Cobrança (2026-11-17): o ambiente interativo (jogo) vem do plano contratado, não de um
+  // interruptor que o gestor liga sozinho.
+  state.ambiente_interativo = company ? PLANS[planOf(company)].includesGame : false;
+  return state;
 }
 
 export async function moduleEnabled(db: Tx | PrismaClient, key: ModuleKey): Promise<boolean> {

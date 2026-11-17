@@ -100,6 +100,13 @@ describe('Matriz de acesso: todas as rotas', () => {
         'POST /api/auth/login',
         'POST /api/auth/signup',
         'POST /api/tablet/pair',
+        // Cobrança e conta (2026-11-17): chave pública do anti-robô, "esqueci minha senha" (mesma
+        // resposta exista ou não a conta, com limites), senha nova e confirmação de e-mail pelo
+        // link de uso único (só o hash do token fica guardado).
+        'GET /api/auth/signup-config',
+        'POST /api/auth/password/forgot',
+        'POST /api/auth/password/reset',
+        'POST /api/auth/email/confirm',
       ].sort(),
     );
   });

@@ -83,6 +83,7 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
   '/painel/financeiro': { group: 'Financeiro', anyOf: ['financeiro.ver'] },
   '/painel/presenca': { group: 'Produção', anyOf: ['presenca.ver', 'presenca.gerenciar'] },
   '/painel/empresa': { group: 'Administração', anyOf: ['empresa.ver'] },
+  '/painel/assinatura': { group: 'Administração', anyOf: ['empresa.ver'] },
   '/painel/auditoria': { group: 'Administração', anyOf: ['auditoria.ver'] },
   '/painel/sincronizacao': { group: 'Administração', anyOf: ['sincronizacao.diagnosticar'] },
 };
@@ -102,7 +103,7 @@ describe('F10-01 — menu por áreas', () => {
     const shell = readFileSync(resolve(__dirname, '../components/admin/shell.tsx'), 'utf8');
     // Homologação funcional (B1): filtro, ordenação e allOf ficam em visibleNav (nav.ts).
     expect(shell).toContain(
-      'const items = visibleNav(perms, modules, data.company.platformOwner);',
+      'const items = visibleNav(perms, modules, data.company.platformOwner, billingOn);',
     );
     expect(shell).toContain('const header = idx === 0 || items[idx - 1]!.group !== item.group;');
     expect(shell).toContain("{header && item.group !== 'Início' && (");

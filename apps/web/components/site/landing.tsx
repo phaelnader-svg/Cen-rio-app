@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ImageOff, LogIn, MessageCircle } from 'lucide-react';
+import { ImageOff, LogIn, MessageCircle, UserPlus } from 'lucide-react';
 import { BrandMark } from '@/components/brand';
 import { Alert, Badge, Card } from '@/components/ui/misc';
 import {
@@ -9,7 +9,7 @@ import {
   type ButtonSize,
   type ButtonVariant,
 } from '@/components/ui/button-styles';
-import { SCREENS, SITE, annualOffer, whatsappUrl, type ScreenSlot } from './config';
+import { SCREENS, SIGNUP_PATH, SITE, annualOffer, whatsappUrl, type ScreenSlot } from './config';
 
 /**
  * Landing comercial (/conheca). Renderizada no servidor, sem sessão e sem chamadas à API: usa só
@@ -48,6 +48,35 @@ function ContactLink({
     >
       <MessageCircle className="size-4" aria-hidden />
       {children}
+    </a>
+  );
+}
+
+/** Google Analytics da landing (só com SITE.analyticsId; a CSP dessas rotas libera o Google). */
+function Analytics({ id }: { id: string }) {
+  const safe = id.replace(/[^A-Z0-9-]/gi, '');
+  return (
+    <>
+      <script async src={`https://www.googletagmanager.com/gtag/js?id=${safe}`} />
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${safe}');`,
+        }}
+      />
+    </>
+  );
+}
+
+/** Abre a tela de entrar já no modo Criar conta. */
+function SignupLink({ className }: { className?: string }) {
+  return (
+    <a
+      href={SIGNUP_PATH}
+      className={clsx(BUTTON_BASE, BUTTON_VARIANTS.secondary, BUTTON_SIZES.lg, className)}
+      data-testid="site-criar-conta"
+    >
+      <UserPlus className="size-4" aria-hidden />
+      Criar minha conta
     </a>
   );
 }
@@ -124,7 +153,7 @@ const QUESTIONS: { q: string; a: string }[] = [
   },
   {
     q: 'O tecido desse serviço já chegou?',
-    a: 'Material separado, comprado e pendente, serviço por serviço.',
+    a: 'A lista de materiais de cada serviço mostra o que já está na oficina e o que falta.',
   },
   {
     q: 'Quem está fazendo essa peça?',
@@ -145,6 +174,10 @@ const QUESTIONS: { q: string; a: string }[] = [
 ];
 
 const FLOW: { title: string; text: string }[] = [
+  {
+    title: 'Orçamento',
+    text: 'Materiais, mão de obra, logística, imposto e taxas calculados, com proposta e contrato prontos para imprimir ou mandar em PDF.',
+  },
   { title: 'Pedido', text: 'Cliente, serviço e retirada numa tela só.' },
   {
     title: 'Retirada e chegada',
@@ -172,11 +205,11 @@ const WORKSHOP: string[] = [
   'A próxima tarefa e a fila da semana, na ordem.',
   'Medidas, material e fotos do serviço na mesma tela.',
   'Iniciar, pausar e concluir com um toque.',
-  'Pedir ajudante, pedir ajuda urgente ou avisar que falta material.',
+  'Avisar na hora que falta material para a tarefa.',
 ];
 
 const OFFICE: string[] = [
-  'O que pede atenção hoje: prazos, material a comprar, produção bloqueada e peças prontas para entrega.',
+  'O que pede atenção hoje: prazos, produção bloqueada, ocorrências e peças prontas para entrega.',
   'O valor de cada serviço e o que o cliente já pagou.',
   'Contas a pagar de fornecedores, despesas e frete.',
   'Custo e margem de cada serviço, com relatórios por período.',
@@ -227,6 +260,7 @@ export function Landing({ preview }: { preview: boolean }) {
   const annual = annualOffer();
   return (
     <div className="min-h-dvh bg-canvas text-ink">
+      {!preview && SITE.analyticsId && <Analytics id={SITE.analyticsId} />}
       {preview && (
         <div className="border-b border-warn-600/20 bg-warn-50 px-4 py-2 text-center text-xs font-medium text-warn-600">
           Pré-visualização de desenvolvimento. Em produção esta página só abre com SITE_COMERCIAL=1
@@ -235,7 +269,7 @@ export function Landing({ preview }: { preview: boolean }) {
       )}
 
       <header className={clsx(WRAP, 'flex items-center justify-between gap-4 py-5')}>
-        <BrandMark />
+        <BrandMark subtitle="Cenário Estofados" />
         <div className="flex items-center gap-2">
           {/* No celular o botão de contato já aparece logo abaixo, na abertura; o topo fica só com Entrar. */}
           <ContactLink variant="secondary" size="sm" className="max-sm:hidden">
@@ -265,11 +299,12 @@ export function Landing({ preview }: { preview: boolean }) {
               Feito dentro de uma tapeçaria, para tapeçarias.
             </h1>
             <p className="mt-5 max-w-xl text-lg leading-7 text-pretty text-ink-soft">
-              Serviços, material, produção, prazos e entregas num sistema feito para a rotina de uma
-              tapeçaria.
+              Orçamentos, serviços, produção, prazos e entregas num sistema feito para a rotina de
+              uma tapeçaria.
             </p>
-            <div className="mt-7">
+            <div className="mt-7 flex flex-wrap gap-3">
               <ContactLink />
+              <SignupLink />
               {preview && !SITE.whatsappNumber && (
                 <p className="mt-2">
                   <Pending>WhatsApp [PENDENTE]</Pending>
@@ -380,9 +415,9 @@ export function Landing({ preview }: { preview: boolean }) {
                 <span id="mensalidade">Um sistema, uma mensalidade</span>
               </SectionTitle>
               <p className="mt-4 text-[15px] leading-7 text-ink-soft sm:text-base">
-                Inclui o sistema inteiro, com tudo o que aparece nesta página: serviços, ficha da
-                peça, materiais e estoque, produção, tablets da oficina, qualidade, entregas e
-                financeiro.
+                Inclui o sistema inteiro, com tudo o que aparece nesta página: orçamentos, serviços,
+                ficha da peça, lista de materiais e estoque, produção, tablets da oficina,
+                qualidade, entregas e financeiro.
               </p>
             </div>
             <div className="border-y border-line py-6">
@@ -410,7 +445,10 @@ export function Landing({ preview }: { preview: boolean }) {
                   </Alert>
                 )
               )}
-              <ContactLink className="mt-6" />
+              <div className="mt-6 flex flex-wrap gap-3">
+                <ContactLink />
+                <SignupLink />
+              </div>
             </div>
           </div>
         </section>
@@ -441,10 +479,14 @@ export function Landing({ preview }: { preview: boolean }) {
             <div>
               <SectionTitle>Quer ver o sistema funcionando?</SectionTitle>
               <p className="mt-2 text-[15px] text-ink-soft sm:text-base">
-                Chame no WhatsApp e a gente mostra o Cenário Gestão com calma.
+                Chame no WhatsApp e a gente mostra o Cenário Gestão com calma, ou crie a sua conta e
+                comece agora.
               </p>
             </div>
-            <ContactLink />
+            <div className="flex flex-wrap gap-3">
+              <ContactLink />
+              <SignupLink />
+            </div>
           </div>
         </section>
       </main>
@@ -455,7 +497,7 @@ export function Landing({ preview }: { preview: boolean }) {
           'flex flex-col gap-3 py-8 text-sm text-ink-muted sm:flex-row sm:items-center sm:justify-between',
         )}
       >
-        <BrandMark />
+        <BrandMark subtitle="Cenário Estofados" />
         <p>O Cenário Gestão é feito pela Cenário Estofados.</p>
       </footer>
     </div>

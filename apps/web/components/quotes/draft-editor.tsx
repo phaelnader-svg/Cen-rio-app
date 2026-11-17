@@ -36,7 +36,7 @@ import {
 } from '@/components/ui/form';
 import { Alert } from '@/components/ui/misc';
 import { brl, pct, qtyText, type useQuoteDraft } from '@/lib/quotes';
-import { SP_CITIES } from '@/lib/sp-cities';
+import { BR_CITIES } from '@/lib/br-cities';
 
 type DraftApi = ReturnType<typeof useQuoteDraft>;
 
@@ -191,8 +191,12 @@ export function QuoteEditor({
           <CityField
             value={d.city}
             onChange={(city) => {
+              // A rota de logística é cadastrada só com o nome ("Taubaté"); a busca devolve "Taubaté - SP".
+              const bare = city.replace(/\s+-\s+[A-Z]{2}$/, '');
               const match = routes.find(
-                (r) => normalizeQuoteName(r.name) === normalizeQuoteName(city),
+                (r) =>
+                  normalizeQuoteName(r.name) === normalizeQuoteName(city) ||
+                  normalizeQuoteName(r.name) === normalizeQuoteName(bare),
               );
               update(match ? { city, logisticsId: match.id } : { city });
             }}
@@ -518,7 +522,7 @@ export function QuoteEditor({
   );
 }
 
-/** Cidade com busca nos 645 municípios de SP (teclado: setas, Enter e Esc). */
+/** Cidade com busca nos municípios do Brasil inteiro (teclado: setas, Enter e Esc). */
 function CityField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
@@ -526,7 +530,7 @@ function CityField({ value, onChange }: { value: string; onChange: (v: string) =
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const found = useMemo(() => {
     const q = norm(value.trim());
-    return SP_CITIES.filter((c) => norm(c).includes(q)).slice(0, 30);
+    return q.length < 2 ? [] : BR_CITIES.filter((c) => norm(c).includes(q)).slice(0, 30);
   }, [value]);
   const choose = (c: string) => {
     onChange(c);
@@ -537,7 +541,7 @@ function CityField({ value, onChange }: { value: string; onChange: (v: string) =
     <Field
       label="Cidade"
       className={span(6)}
-      hint={`${SP_CITIES.length} municípios de SP disponíveis. Digite parte do nome para buscar.`}
+      hint="Todos os municípios do Brasil. Digite parte do nome para buscar."
     >
       {(p) => (
         <div className="relative">
@@ -548,7 +552,7 @@ function CityField({ value, onChange }: { value: string; onChange: (v: string) =
             aria-expanded={open}
             aria-controls={listId}
             autoComplete="off"
-            placeholder="Digite para buscar a cidade de SP"
+            placeholder="Digite para buscar a cidade"
             value={value}
             onFocus={() => setOpen(true)}
             onBlur={() => setTimeout(() => setOpen(false), 120)}
@@ -573,7 +577,7 @@ function CityField({ value, onChange }: { value: string; onChange: (v: string) =
               }
             }}
           />
-          {open && (
+          {open && value.trim().length >= 2 && (
             <div
               id={listId}
               role="listbox"

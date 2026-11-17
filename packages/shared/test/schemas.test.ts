@@ -38,11 +38,13 @@ describe('Validação de credenciais', () => {
     }
   });
 
-  it('senha: mínimo 10 caracteres com letras e números', () => {
+  it('senha: mínimo 8 caracteres com letras e números', () => {
     expect(passwordPolicySchema.safeParse('SenhaForte1').success).toBe(true);
     expect(passwordPolicySchema.safeParse('curta1').success).toBe(false);
     expect(passwordPolicySchema.safeParse('somenteletras').success).toBe(false);
     expect(passwordPolicySchema.safeParse('1234567890').success).toBe(false);
+    expect(passwordPolicySchema.safeParse('senha123').success).toBe(true);
+    expect(passwordPolicySchema.safeParse('senha12').success).toBe(false);
   });
 
   it('código de vinculação aceita minúsculas e hífen, rejeita caracteres ambíguos', () => {

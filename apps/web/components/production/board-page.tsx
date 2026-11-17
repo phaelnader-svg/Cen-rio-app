@@ -14,6 +14,7 @@ import { useSearchParams } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { PriorityBadge } from '@/components/commercial/badges';
 import { Input, Select } from '@/components/ui/field';
+import { MobileFilters } from '@/components/ui/mobile-filters';
 import { RescheduleBanner } from '@/components/production/reschedule-pages';
 import { Alert, Avatar, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { addDays, formatDay, todayIso } from '@/lib/commercial';
@@ -103,67 +104,72 @@ export function ProductionBoardPage() {
         }
       />
       <RescheduleBanner />
-      <Card className="mb-6 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="field">
-          <span className="label">De</span>
-          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-        </label>
-        <label className="field">
-          <span className="label">Até</span>
-          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-        </label>
-        <label className="field">
-          <span className="label">Funcionário</span>
-          <Select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
-            <option value="">Todos</option>
-            {workers.data?.map((w) => (
-              <option key={w.userId} value={w.userId}>
-                {w.displayName}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="field">
-          <span className="label">OS ou cliente</span>
-          <Input value={os} placeholder="OS-00001" onChange={(e) => setOs(e.target.value)} />
-        </label>
-        <label className="field">
-          <span className="label">Etapa</span>
-          <Select value={activity} onChange={(e) => setActivity(e.target.value)}>
-            <option value="">Todas</option>
-            {PRODUCTION_ACTIVITIES.map((a) => (
-              <option key={a} value={a}>
-                {PRODUCTION_ACTIVITY_LABEL[a]}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="field">
-          <span className="label">Status</span>
-          <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">Todos</option>
-            {TASK_STATUSES.filter((s) => s !== 'RASCUNHO').map((s) => (
-              <option key={s} value={s}>
-                {TASK_STATUS_LABEL[s]}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="field sm:col-span-2">
-          <span className="label">Agrupar por</span>
-          <Select
-            aria-label="Agrupar por"
-            value={by}
-            onChange={(e) => setBy(e.target.value as GroupBy)}
-          >
-            {(Object.keys(GROUP_LABEL) as GroupBy[]).map((g) => (
-              <option key={g} value={g}>
-                {GROUP_LABEL[g]}
-              </option>
-            ))}
-          </Select>
-        </label>
-      </Card>
+      <MobileFilters
+        className="mb-6"
+        active={[assignee, os, activity, status].filter(Boolean).length}
+      >
+        <Card className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="field">
+            <span className="label">De</span>
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </label>
+          <label className="field">
+            <span className="label">Até</span>
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </label>
+          <label className="field">
+            <span className="label">Funcionário</span>
+            <Select value={assignee} onChange={(e) => setAssignee(e.target.value)}>
+              <option value="">Todos</option>
+              {workers.data?.map((w) => (
+                <option key={w.userId} value={w.userId}>
+                  {w.displayName}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="field">
+            <span className="label">OS ou cliente</span>
+            <Input value={os} placeholder="OS-00001" onChange={(e) => setOs(e.target.value)} />
+          </label>
+          <label className="field">
+            <span className="label">Etapa</span>
+            <Select value={activity} onChange={(e) => setActivity(e.target.value)}>
+              <option value="">Todas</option>
+              {PRODUCTION_ACTIVITIES.map((a) => (
+                <option key={a} value={a}>
+                  {PRODUCTION_ACTIVITY_LABEL[a]}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="field">
+            <span className="label">Status</span>
+            <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">Todos</option>
+              {TASK_STATUSES.filter((s) => s !== 'RASCUNHO').map((s) => (
+                <option key={s} value={s}>
+                  {TASK_STATUS_LABEL[s]}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="field sm:col-span-2">
+            <span className="label">Agrupar por</span>
+            <Select
+              aria-label="Agrupar por"
+              value={by}
+              onChange={(e) => setBy(e.target.value as GroupBy)}
+            >
+              {(Object.keys(GROUP_LABEL) as GroupBy[]).map((g) => (
+                <option key={g} value={g}>
+                  {GROUP_LABEL[g]}
+                </option>
+              ))}
+            </Select>
+          </label>
+        </Card>
+      </MobileFilters>
       {board.isPending ? (
         <Spinner />
       ) : board.isError ? (

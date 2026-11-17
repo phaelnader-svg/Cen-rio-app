@@ -28,8 +28,16 @@ export const SITE = {
   /** Como funciona a implantação. Sem texto definido, o bloco não aparece em produção. */
   onboarding: null as string | null,
   /** Respostas do FAQ que dependem de decisão comercial. */
-  usersAnswer: null as string | null,
-  dataAnswer: null as string | null,
+  usersAnswer:
+    'Sem limite. Cada funcionário tem o próprio acesso, e os tablets da oficina não custam nada a mais.' as
+      | string
+      | null,
+  dataAnswer:
+    'Num servidor do Google Cloud em São Paulo, separados dos dados de qualquer outra empresa, com cópia de segurança todos os dias, guardada por 30 dias.' as
+      | string
+      | null,
+  /** ID do Google Analytics (G-XXXXXXX). Vazio: nenhuma medição e nenhum script externo. */
+  analyticsId: null as string | null,
 };
 
 /** As quatro telas do sistema, capturadas com dados de exemplo (clientes, equipe e valores fictícios). */
@@ -76,6 +84,12 @@ export function pendingItems(
   return out;
 }
 
+/** Tela de entrar já aberta no Criar conta (botões da landing e anúncios). */
+export const SIGNUP_PATH = '/entrar?criar=1';
+
+/** Endereço público principal (as duas rotas da landing apontam para ele). */
+export const SITE_URL = 'https://cenariogestao.com.br';
+
 export type SiteMode = 'off' | 'preview' | 'live';
 
 /** Título e descrição da landing (usados em / e em /conheca). */
@@ -84,6 +98,30 @@ export const SITE_META = {
   description:
     'O Cenário Gestão nasceu dentro da Cenário Estofados para organizar a nossa própria operação. Do pedido à entrega, no escritório e no tablet da oficina.',
 };
+
+/**
+ * Metadados da landing nas duas rotas (/ e /conheca): endereço principal único (evita conteúdo
+ * duplicado no Google) e a prévia com imagem quando o link é compartilhado no WhatsApp.
+ */
+export function siteMetadata(live: boolean) {
+  return {
+    metadataBase: new URL(SITE_URL),
+    title: { absolute: SITE_META.title },
+    description: SITE_META.description,
+    alternates: { canonical: '/' },
+    openGraph: {
+      type: 'website' as const,
+      locale: 'pt_BR',
+      url: '/',
+      siteName: 'Cenário Gestão',
+      title: SITE_META.title,
+      description: SITE_META.description,
+      images: [{ url: '/site/og.png', width: 1200, height: 630, alt: 'Painel do Cenário Gestão' }],
+    },
+    // Só a landing publicada é indexável; o resto do sistema segue com noindex (layout raiz).
+    robots: live ? { index: true, follow: true } : { index: false, follow: false },
+  };
+}
 
 export function siteMode(
   env: Record<string, string | undefined> = process.env,
@@ -110,4 +148,11 @@ export function annualOffer(site: typeof SITE = SITE): string | null {
 export function whatsappUrl(site: typeof SITE = SITE): string | null {
   if (!site.whatsappNumber) return null;
   return `https://wa.me/${site.whatsappNumber}?text=${encodeURIComponent(site.whatsappMessage)}`;
+}
+
+/** WhatsApp do suporte, usado no painel das empresas clientes (botão Ajuda e suporte). */
+export function supportUrl(company: string, site: typeof SITE = SITE): string | null {
+  if (!site.whatsappNumber) return null;
+  const text = `Olá! Preciso de ajuda com o Cenário Gestão (${company}).`;
+  return `https://wa.me/${site.whatsappNumber}?text=${encodeURIComponent(text)}`;
 }

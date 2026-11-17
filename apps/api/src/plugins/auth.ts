@@ -6,6 +6,19 @@ import { loadUserPermissions } from '../core/permissions';
 import { sessionExpiry } from '../core/sessions';
 import type { AccessRule } from '../core/types';
 import { PLATFORM_COMPANY_ID } from '../core/tenant';
+import { COMPANY_BILLING_SELECT, billingLocked } from '../core/billing';
+import { AppError } from '../lib/errors';
+import { ERROR_CODES } from '@cenario/shared';
+
+function subscriptionRequired(tablet: boolean) {
+  return new AppError(
+    402,
+    ERROR_CODES.SUBSCRIPTION_REQUIRED,
+    tablet
+      ? 'A assinatura do Cenário Gestão desta empresa venceu. Peça ao gestor para regularizar no painel.'
+      : 'A assinatura do Cenário Gestão venceu. Regularize em Assinatura para voltar a usar o sistema.',
+  );
+}
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 /** Intervalo mínimo entre atualizações de "último acesso" (reduz escritas no banco). */
@@ -115,7 +128,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     if (!token) return;
     const device = await prisma.device.findUnique({
       where: { credentialHash: hashToken(token) },
-      include: { company: { select: { blockedAt: true } } },
+      include: { company: { select: { blockedAt: true, ...COMPANY_BILLING_SELECT } } },
     });
     // Empresa bloqueada: o tablet não entra, mas continua vinculado (volta quando liberar).
     if (device?.company.blockedAt) return;
@@ -129,6 +142,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
       name: device.name,
       assignedEmployeeId: device.assignedEmployeeId,
       restrictToAssigned: device.restrictToAssigned,
+      billingLocked: billingLocked(device.company, env),
     };
     const now = Date.now();
     if (!device.lastSeenAt || now - device.lastSeenAt.getTime() > TOUCH_INTERVAL_MS) {
@@ -158,7 +172,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
         user: {
           include: {
             employee: { select: { id: true, active: true } },
-            company: { select: { blockedAt: true } },
+            company: { select: { blockedAt: true, ...COMPANY_BILLING_SELECT } },
           },
         },
       },
@@ -203,6 +217,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
       deviceId: session.deviceId,
       permissions,
       expiresAt,
+      billingLocked: billingLocked(session.user.company, env),
     };
   }
 
@@ -218,7 +233,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
             user: {
               include: {
                 employee: { select: { id: true, active: true } },
-                company: { select: { blockedAt: true } },
+                company: { select: { blockedAt: true, ...COMPANY_BILLING_SELECT } },
               },
             },
           },
@@ -264,6 +279,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
       deviceId: null,
       permissions,
       expiresAt: row.expiresAt,
+      billingLocked: billingLocked(g.user.company, env),
       app: {
         grantId: g.id,
         clientName: g.client.name,
@@ -289,10 +305,14 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     if ('public' in access || 'webhook' in access) return;
     if ('device' in access) {
       if (!request.device) throw Errors.deviceRequired();
+      if (request.device.billingLocked) throw subscriptionRequired(true);
       return;
     }
     const auth = request.auth;
     if (!auth) throw Errors.unauthenticated();
+    // Cobrança: assinatura vencida (passada a tolerância). Só a assinatura, /auth/me e sair.
+    if (auth.billingLocked && !access.billingExempt && !access.surfaceExempt)
+      throw subscriptionRequired(auth.kind === 'DEVICE');
     if (access.session !== 'any' && auth.kind !== access.session) {
       throw Errors.forbidden(
         access.session === 'WEB'

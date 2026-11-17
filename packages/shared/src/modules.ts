@@ -10,7 +10,8 @@ import { z } from 'zod';
  * ("materiais") vêm DESLIGADAS — a produção não depende do processo formal de compras, medições,
  * aprovações, recebimentos ou reservas; quem quiser esse controle liga em Empresa → Funcionalidades.
  *
- * `configurable: false` = a chave existe mas ainda não pode ser alterada (nenhuma hoje).
+ * `configurable: false` = a chave existe mas não se altera em Funcionalidades: o ambiente
+ * interativo (jogo) segue o plano contratado (só o plano superior inclui).
  *
  * Fase 1: a logística passou a ser configurável (a entrega direta pela OS substitui a operação de
  * entregas) e "materiais" controla as travas de materiais na liberação da produção.
@@ -42,9 +43,11 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
   ambiente_interativo: {
     label: 'Ambiente interativo',
     description:
-      'Complemento do plano (por enquanto liberado para todos): mostra o botão "Acessar ambiente interativo" no painel, que abre o Firma Viva em outra guia já com a empresa e sem pedir login. Desligado, o botão some e o Firma Viva não consegue entrar pelo Cenário.',
-    defaultEnabled: true,
-    configurable: true,
+      'Incluído no plano Cenário Gestão + Firma Viva: mostra o botão "Acessar ambiente interativo" no painel, que abre o Firma Viva em outra guia já com a empresa e sem pedir login. Para ligar, mude o plano em Assinatura.',
+    // Cobrança (2026-11-17): vem desligado e não se liga em Funcionalidades; quem decide é o
+    // plano da empresa (core/modules.ts no servidor).
+    defaultEnabled: false,
+    configurable: false,
   },
 };
 

@@ -20,6 +20,7 @@ import {
   Truck,
   Undo2,
   Wallet,
+  CreditCard,
   BadgeCheck,
   UserCheck,
   Users,
@@ -42,6 +43,8 @@ export interface NavItem {
   allOf?: Permission[];
   /** Reformulação, Fase 0: some do menu quando a funcionalidade está desligada. */
   module?: ModuleKey;
+  /** Só aparece com a cobrança ligada (BILLING_ENABLED). */
+  billingOnly?: boolean;
   /** Multi-empresa: só para o dono da plataforma (gestor da Cenário Estofados). */
   platformOnly?: true;
 }
@@ -239,6 +242,14 @@ export const NAV: NavItem[] = [
     anyOf: ['presenca.ver', 'presenca.gerenciar'],
   },
   { href: '/painel/empresa', label: 'Empresa', icon: Building2, anyOf: ['empresa.ver'] },
+  // Cobrança: plano, situação e pagamento da assinatura do Cenário Gestão.
+  {
+    href: '/painel/assinatura',
+    label: 'Assinatura',
+    icon: CreditCard,
+    anyOf: ['empresa.ver'],
+    billingOnly: true,
+  },
   { href: '/painel/auditoria', label: 'Auditoria', icon: ScrollText, anyOf: ['auditoria.ver'] },
   {
     href: '/painel/sincronizacao',
@@ -256,8 +267,10 @@ export function visibleNav(
   perms: ReadonlySet<Permission>,
   modules: Partial<Record<ModuleKey, boolean>>,
   platformOwner = false,
+  billingEnabled = true,
 ): (NavItem & { group: NavGroup })[] {
   return NAV.filter((i) => !i.platformOnly || platformOwner)
+    .filter((i) => !i.billingOnly || billingEnabled)
     .filter((i) => !i.anyOf || i.anyOf.some((p) => perms.has(p)))
     .filter((i) => !i.allOf || i.allOf.every((p) => perms.has(p)))
     .filter((i) => !i.module || modules[i.module])

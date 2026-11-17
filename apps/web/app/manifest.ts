@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Cenário Gestão — Produção',
     short_name: 'Cenário',
-    description: 'Interface de produção da Cenário Estofados',
+    description: 'Interface de produção do Cenário Gestão',
     start_url: '/tablet',
     scope: '/',
     display: 'standalone',

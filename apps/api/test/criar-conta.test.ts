@@ -158,8 +158,8 @@ describe('Criar conta (empresa nova)', () => {
     const existente = await db().user.findFirstOrThrow({ where: { email: { not: null } } });
     const { r } = await criarConta({
       email: existente.email!,
-      password: 'outrasenha',
-      passwordConfirm: 'outrasenha',
+      password: 'outrasenha1',
+      passwordConfirm: 'outrasenha1',
     });
     expect(r.status).toBe(409);
     const depois = await db().user.findUniqueOrThrow({ where: { id: existente.id } });
