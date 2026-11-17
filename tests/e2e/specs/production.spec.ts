@@ -102,8 +102,11 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     await expect(page.getByTestId('plan-editor')).toContainText('Publicado');
     await expect(page.getByTestId(`plan-task-${prep}`)).toContainText('Liberada');
     await expect(rev).toContainText('Bloqueada');
-    // Remoção S2: nenhuma tarefa espera material; o corte (sem dependência) já sai liberado.
-    await expect(page.getByTestId(`plan-task-Corte de tecido — ${sofa}`)).toContainText('Liberada');
+    // Remoção S2: nenhuma tarefa espera material; o corte (sem dependência) não fica bloqueado.
+    // Fica "Programada" até o horário sugerido do dia (ex.: execução logo depois da meia-noite).
+    await expect(page.getByTestId(`plan-task-Corte de tecido — ${sofa}`)).toContainText(
+      /Liberada|Programada/,
+    );
     await evidence(page, '02-planejamento-publicado');
 
     // 5. Tablets recebem as tarefas sem recarregar; cada um vê só as suas.
