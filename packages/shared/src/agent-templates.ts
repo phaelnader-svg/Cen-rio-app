@@ -14,11 +14,22 @@ export const AGENT_TEMPLATES: AgentRoleTemplate[] = [
     integrations: [],
   },
   {
+    roleKey: 'COMPRAS',
+    roleLabel: 'Compras',
+    name: 'Compras',
+    instructions:
+      'Olhe a lista de materiais de cada OS aberta e veja o que ainda não foi comprado. Junte os itens por fornecedor, priorize o que tem prazo mais perto e prepare o pedido pelo WhatsApp. Nada sai sem a aprovação do dono.',
+    dataScopes: ['os', 'compras', 'estoque'],
+    actionPolicies: { pedir_fornecedor: 'PROPOR' },
+    color: '#0f766e',
+    integrations: [],
+  },
+  {
     roleKey: 'WHATSAPP',
     roleLabel: 'WhatsApp',
     name: 'Atendimento WhatsApp',
     instructions:
-      'Consulte as conversas autorizadas, organize fotos e medidas enviadas pelos clientes e prepare respostas e seguimentos para aprovação.',
+      'Consulte as conversas autorizadas, organize fotos e medidas enviadas pelos clientes e prepare respostas e avisos (peça pronta, retirada, entrega) para aprovação.',
     dataScopes: ['clientes', 'os', 'whatsapp'],
     actionPolicies: { enviar_mensagem: 'PROPOR' },
     color: '#16a34a',
@@ -29,22 +40,22 @@ export const AGENT_TEMPLATES: AgentRoleTemplate[] = [
     roleLabel: 'Orçamentos, OS e contratos',
     name: 'Orçamentos',
     instructions:
-      'Use o padrão da Cenário para preparar orçamentos e reaproveite o que o cliente aprovou para montar a OS e o contrato.',
-    dataScopes: ['clientes', 'os'],
-    actionPolicies: { preparar_orcamento: 'PROPOR' },
+      'Acompanhe os orçamentos: o que está em rascunho, o que foi enviado e espera resposta e quem pediu orçamento pelas conversas. Prepare o retorno ao cliente pelo WhatsApp para aprovação.',
+    dataScopes: ['clientes', 'os', 'orcamentos', 'whatsapp'],
+    actionPolicies: { preparar_orcamento: 'PROPOR', enviar_mensagem: 'PROPOR' },
     color: '#4338ca',
-    integrations: ['MODELO_ORCAMENTO'],
+    integrations: [],
   },
   {
     roleKey: 'FINANCEIRO',
     roleLabel: 'Financeiro e fiscal',
     name: 'Financeiro',
     instructions:
-      'Acompanhe contas e recebimentos e prepare os dados para emissão de nota pelo sistema fiscal integrado.',
-    dataScopes: ['financeiro', 'os', 'fiscal'],
-    actionPolicies: { registrar_pagamento: 'PROPOR', emitir_nota: 'PROPOR' },
+      'Acompanhe contas a pagar e a receber: o que venceu, o que vence na semana e quem precisa ser cobrado. Prepare a cobrança pelo WhatsApp para aprovação e aponte as entregas que trazem saldo.',
+    dataScopes: ['financeiro', 'os', 'clientes'],
+    actionPolicies: { cobrar_cliente: 'PROPOR', registrar_pagamento: 'PROPOR' },
     color: '#be123c',
-    integrations: ['FISCAL'],
+    integrations: [],
   },
   {
     roleKey: 'INSTAGRAM',
@@ -62,7 +73,7 @@ export const AGENT_TEMPLATES: AgentRoleTemplate[] = [
     roleLabel: 'Atendimento',
     name: 'Atendimento',
     instructions:
-      'Leia as conversas autorizadas, resuma o pedido, identifique fotos e medidas pendentes e prepare respostas no tom da Cenário. Envie sozinho só nos casos liberados; quando o gestor assumir, pare.',
+      'Leia as conversas autorizadas, resuma o pedido, identifique fotos e medidas pendentes e prepare respostas no tom da empresa. Envie sozinho só nos casos liberados; quando o gestor assumir, pare.',
     dataScopes: ['clientes', 'os', 'whatsapp', 'instagram'],
     actionPolicies: { enviar_mensagem: 'PROPOR' },
     color: '#16a34a',
@@ -101,7 +112,7 @@ export const AGENT_TEMPLATES: AgentRoleTemplate[] = [
     roleLabel: 'Documentos e contratos',
     name: 'Documentos',
     instructions:
-      'Ao aprovar um orçamento, prepare o contrato pelo modelo da Cenário com cliente, serviço, tecido, espuma, valor, parcelas, prazo e condições de retirada e entrega. Envio para assinatura só com revisão do gestor.',
+      'Ao aprovar um orçamento, prepare o contrato pelo modelo da empresa com cliente, serviço, tecido, espuma, valor, parcelas, prazo e condições de retirada e entrega. Envio para assinatura só com revisão do gestor.',
     dataScopes: ['clientes', 'os', 'financeiro'],
     actionPolicies: { preparar_orcamento: 'PROPOR' },
     color: '#4338ca',

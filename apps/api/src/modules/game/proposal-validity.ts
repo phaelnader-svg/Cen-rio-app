@@ -72,6 +72,49 @@ export async function obsoleteReason(db: Db, p: AiAgentProposal): Promise<string
   // módulos, 2026-11): propostas antigas de reserva ou compra não têm mais onde ser aplicadas.
   if (p.kind === 'RESERVAR_ESTOQUE' || p.kind === 'CRIAR_COMPRA')
     return 'Compras e necessidades de material não fazem mais parte do Cenário.';
+  // Pedido ao fornecedor: todos os itens já foram comprados, chegaram ou saíram da lista.
+  if (p.kind === 'PEDIR_FORNECEDOR') {
+    const ids = ((pl.materialIds as string[] | undefined) ?? []).filter(Boolean);
+    const left = await db.serviceOrderMaterial.count({
+      where: {
+        id: { in: ids },
+        removedAt: null,
+        purchased: false,
+        available: false,
+        serviceOrder: { status: 'ABERTA' },
+      },
+    });
+    return left
+      ? null
+      : 'Os itens deste pedido já foram comprados ou não estão mais na lista da OS.';
+  }
+  // Cobrança: o recebível foi pago ou cancelado.
+  if (p.kind === 'COBRAR_CLIENTE') {
+    const r = await db.customerReceivable.findUnique({
+      where: { id: String(pl.receivableId ?? '') },
+    });
+    if (!r || !['ABERTO', 'PARCIAL'].includes(r.status))
+      return 'Este valor já foi recebido ou cancelado.';
+    return null;
+  }
+  // Retorno de orçamento: o cliente já fechou (virou OS) ou o orçamento foi apagado.
+  if (p.kind === 'ENVIAR_MENSAGEM' && pl.quoteId) {
+    const q = await db.quote.findUnique({ where: { id: String(pl.quoteId) } });
+    if (!q || q.deletedAt) return 'O orçamento foi apagado.';
+    if (q.workOrder) return `O orçamento nº ${q.number} já virou ordem de serviço.`;
+    return null;
+  }
+  // Aviso de peça pronta: a OS saiu da expedição.
+  if (p.kind === 'ENVIAR_MENSAGEM' && pl.serviceOrderId) {
+    const so = await db.serviceOrder.findUnique({
+      where: { id: String(pl.serviceOrderId) },
+      include: { items: { select: { fulfillmentStage: true } } },
+    });
+    if (!so || so.status !== 'ABERTA') return 'A OS não está mais aberta.';
+    if (!so.items.some((i) => i.fulfillmentStage === 'PRONTA_ENTREGA'))
+      return `${serviceOrderCode(so.number)} ${await currentActionOf(db, so.id)}.`;
+    return null;
+  }
   return null;
 }
 

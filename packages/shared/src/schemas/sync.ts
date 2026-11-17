@@ -11,4 +11,6 @@ export const eventsSinceSchema = z.object({
     .regex(/^\d{1,19}$/)
     .default('0'),
   limit: z.coerce.number().int().min(1).max(500).default(200),
+  /** Segundos que a consulta pode esperar por evento novo quando não há nada (consulta longa). */
+  wait: z.coerce.number().int().min(0).max(25).default(0),
 });

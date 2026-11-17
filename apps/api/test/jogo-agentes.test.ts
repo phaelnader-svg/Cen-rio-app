@@ -48,14 +48,14 @@ describe('jogo — agentes do escritório', () => {
     expect(mine.roleKey).toBe('PERSONALIZADA');
     expect(mine.status).toBe('ATIVO');
     expect(mine.track).toEqual({});
-    // Compras não é mais oferecido como modelo.
+    // Compras volta como modelo (lista de materiais da OS → pedido pelo WhatsApp).
     expect(list.map((a) => a.roleKey)).toEqual(
       expect.arrayContaining(['GERENTE', 'FINANCEIRO', 'PERSONALIZADA']),
     );
     const templates = (await admin.get('/api/v1/game/agent-templates')).body as {
       roleKey: string;
     }[];
-    expect(templates.map((t) => t.roleKey)).not.toContain('COMPRAS');
+    expect(templates.map((t) => t.roleKey)).toContain('COMPRAS');
 
     const viewer = await panelUserWith(app, admin, 'jogo-ver', ['jogo.acessar']);
     const denied = await viewer.req('POST', '/api/v1/game/agents', novoAgente, {

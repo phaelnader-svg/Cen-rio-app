@@ -75,6 +75,7 @@ export const APP_SCOPES = {
       'conexoes.gerenciar',
       'agentes.usar',
       'agentes.gerenciar',
+      'orcamentos.ver',
     ],
   },
 } as const satisfies Record<string, AppScopeDef>;

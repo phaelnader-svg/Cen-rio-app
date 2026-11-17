@@ -7,6 +7,7 @@ import type { AiAgent, PrismaClient } from '@cenario/db';
 import { requireConnection } from '../integrations/connections';
 import { campaigns } from '../integrations/meta';
 import type { AgentAnswer } from './agent-engines';
+import { readyNoticeProposals } from './agent-office';
 
 const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const brl = (c: number) =>
@@ -84,9 +85,44 @@ export async function channelAgentAnswer(
       /whats|zap|direct|instagram|messenger|conversa|mensage|esperando orcamento/.test(t)
       ? conversations(prisma, question, perms)
       : null;
-  if (agent.roleKey === 'ATENDIMENTO')
-    return conversations(prisma, question || 'esperando orçamento', perms);
-  if (agent.roleKey === 'MARKETING') {
+  if (agent.roleKey === 'ATENDIMENTO' || agent.roleKey === 'WHATSAPP') {
+    const base = await conversations(
+      prisma,
+      agent.roleKey === 'WHATSAPP' ? `whatsapp ${question}` : question || 'esperando orçamento',
+      perms,
+    );
+    // Avisos ao cliente (peça pronta) com o texto pronto: funcionam sem a Meta, pelo link.
+    const policy = ((agent.actionPolicies ?? {}) as Record<string, string>).enviar_mensagem;
+    const notices =
+      perms.has('os.ver') && policy !== 'NUNCA' ? await readyNoticeProposals(prisma) : [];
+    const wa = await prisma.integrationConnection.findFirst({
+      where: { providerKey: 'WHATSAPP', status: 'CONECTADA' },
+    });
+    return {
+      ...base,
+      content: [
+        base.content,
+        wa
+          ? null
+          : 'O WhatsApp da empresa ainda não está conectado, então não leio as conversas. Os avisos aos clientes funcionam assim mesmo: ao aprovar, o WhatsApp abre com o texto pronto.',
+        notices.length
+          ? `Preparei ${notices.length} aviso(s) de peça pronta para você aprovar.`
+          : null,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      proposals: [...base.proposals, ...notices],
+      tasks: [
+        ...base.tasks,
+        ...notices.map((n) => ({
+          label: n.title,
+          detail: 'Aviso ao cliente',
+          tone: 'atencao' as const,
+        })),
+      ],
+    };
+  }
+  if (agent.roleKey === 'MARKETING' || agent.roleKey === 'INSTAGRAM') {
     const [drafts, published, photos] = await Promise.all([
       prisma.marketingPost.count({ where: { status: 'RASCUNHO' } }),
       prisma.marketingPost.findMany({

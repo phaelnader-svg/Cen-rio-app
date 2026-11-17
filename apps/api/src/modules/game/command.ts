@@ -14,7 +14,6 @@ import {
   ACTIVITY_LABEL_GAME,
   AREA_FUNCTION_LABEL,
   COMMAND_INTENT_JSON_SCHEMA,
-  COMMAND_SUGGESTIONS,
   COMMAND_SYSTEM_PROMPT,
   type CommandEffect,
   type CommandIntent,
@@ -594,7 +593,7 @@ export async function resolveIntent(
       return officeHook(ctx, intent);
     default:
       return {
-        reply: `Posso encontrar OS, localizar materiais, mover móveis, ajudar com a planta e preparar atribuições. Exemplos: ${COMMAND_SUGGESTIONS.slice(0, 4).join(' · ')}`,
+        reply: `Posso encontrar OS, localizar materiais, mover móveis, ajudar com a planta e preparar atribuições. Exemplos: ${(await realSuggestions(ctx.prisma)).slice(0, 4).join(' · ')}`,
         effect: { kind: 'NADA' },
       };
   }
@@ -621,10 +620,10 @@ export type { Ctx as CommandCtx };
 
 export async function gameCommandRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
-  app.get('/api/v1/game/command/config', { config: { access: GAME_ACCESS } }, () => ({
+  app.get('/api/v1/game/command/config', { config: { access: GAME_ACCESS } }, async () => ({
     provider: aiProvider(),
     model: aiProvider() === 'anthropic' ? process.env.GAME_AI_MODEL || 'claude-opus-5-5' : null,
-    suggestions: COMMAND_SUGGESTIONS,
+    suggestions: await realSuggestions(prisma),
   }));
 
   app.post(
@@ -658,4 +657,49 @@ export async function gameCommandRoutes(app: FastifyInstance) {
       return { interpretedBy: byModel ? 'IA' : 'REGRAS', intent, reply, effect };
     },
   );
+}
+
+/**
+ * Sugestões do chat com os nomes reais da empresa (cliente, OS, material, pessoa e meta). O que
+ * a empresa ainda não tem cai no exemplo genérico, sem nomes de outra empresa.
+ */
+export async function realSuggestions(prisma: PrismaClient): Promise<string[]> {
+  const [so, material, person, goal] = await Promise.all([
+    prisma.serviceOrder.findFirst({
+      where: { status: 'ABERTA' },
+      orderBy: { number: 'desc' },
+      select: {
+        number: true,
+        customer: { select: { name: true } },
+        items: { select: { description: true }, orderBy: { position: 'asc' }, take: 1 },
+      },
+    }),
+    prisma.inventoryItem.findFirst({ select: { name: true }, orderBy: { createdAt: 'asc' } }),
+    prisma.employee.findFirst({
+      where: { active: true, user: { active: true } },
+      select: { displayName: true },
+      orderBy: { displayName: 'asc' },
+    }),
+    prisma.cashGoal.findFirst({
+      where: { active: true },
+      orderBy: { targetCents: 'asc' },
+      select: { targetCents: true },
+    }),
+  ]);
+  const first = (s: string) => s.trim().split(/\s+/)[0] ?? s;
+  const piece = (so?.items[0]?.description ?? 'sofá').toLowerCase().split(/\s+/)[0];
+  const thousand = goal ? Math.round(goal.targetCents / 100_000) : null;
+  return [
+    so ? `Cadê o ${piece} da ${first(so.customer.name)}?` : 'Cadê o sofá do cliente?',
+    so ? `Abre a OS ${so.number}` : 'Abre a última OS',
+    material ? `Onde fica ${material.name}?` : 'Onde fica o tecido?',
+    'Joga a mesa de corte pra perto da costura',
+    so && person
+      ? `Passa a próxima etapa da OS ${so.number} pro ${first(person.displayName)} amanhã`
+      : 'Quem está sem tarefa hoje?',
+    'Coloca mais duas mesas perto da janela',
+    'Cria uma mesa para o agente de compras',
+    thousand ? `Quanto falta pra bater os ${thousand} mil?` : 'Quanto entrou no caixa essa semana?',
+    'Quanto eu cresci essa semana?',
+  ];
 }

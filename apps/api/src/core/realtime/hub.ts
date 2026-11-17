@@ -85,6 +85,35 @@ export class RealtimeHub {
     this.presenceHandler = handler;
   }
 
+  /**
+   * Espera por evento novo da empresa (consulta longa do Firma Viva: em vez de perguntar a cada
+   * poucos segundos, a requisição fica aberta até algo mudar ou o tempo acabar).
+   */
+  waitForCompanyEvent(
+    companyId: number,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (v: boolean) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        off();
+        signal?.removeEventListener('abort', onAbort);
+        resolve(v);
+      };
+      const off = this.feed.onEvents((events) => {
+        if (events.some((e) => e.companyId === companyId)) finish(true);
+      });
+      const timer = setTimeout(() => finish(false), timeoutMs);
+      timer.unref();
+      const onAbort = () => finish(false);
+      signal?.addEventListener('abort', onAbort);
+    });
+  }
+
   get size(): number {
     return this.connections.size;
   }
