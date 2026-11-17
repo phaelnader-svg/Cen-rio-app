@@ -75,7 +75,7 @@ test.describe.serial('Prazos e serviços em risco', () => {
     // 2. O cartão abre a Central filtrada; a OS atrasada aparece com o rótulo.
     await card.click();
     await expect(page).toHaveURL(/\/painel\/atencao\?type=PRAZO_OS$/);
-    await expect(page.getByText(`${soCode} · Cliente Prazo E2E — ATRASADO`)).toBeVisible();
+    await expect(page.getByText(`${soCode} · Cliente Prazo E2E — atrasado`)).toBeVisible();
 
     // Detalhe da OS: rótulo vindo da API.
     await page.goto(`/painel/os/${soId}`);

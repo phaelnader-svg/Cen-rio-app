@@ -248,7 +248,7 @@ function Columns({ title, c }: { title: string; c: ResultColumns }) {
       {row('Logística', c.logisticsCents)}
       {row('Tributos estimados', c.taxCents)}
       {row('Outros variáveis', c.otherVariableCents)}
-      {row('Margem de contribuição', c.marginCents, true)}
+      {row('Sobrou do serviço', c.marginCents, true)}
       <p className="text-right text-xs text-ink-muted">{pct(c.marginPct)} da receita</p>
     </Card>
   );

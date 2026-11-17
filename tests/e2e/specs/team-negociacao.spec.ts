@@ -146,7 +146,7 @@ test.describe.serial('R2 — negociação, confirmação semanal e portão de pa
 
     // ── Gestor: Fechamento semanal → aprovar o pedido; Pix sem confirmação é recusado ──
     await page.goto('/painel/financeiro');
-    await page.getByRole('tab', { name: 'Fechamento semanal' }).click();
+    await page.getByRole('tab', { name: 'Semana da equipe' }).click();
     const requests = page.getByTestId('value-requests');
     const req = requests.locator('tr', { hasText: cost.code });
     await expect(req).toContainText('R$ 120,00');
@@ -191,12 +191,12 @@ test.describe.serial('R2 — negociação, confirmação semanal e portão de pa
 
     // ── Gestor: semana confirmada → pagamento de R$ 120,00 registrado ──
     await page.reload();
-    await page.getByRole('tab', { name: 'Fechamento semanal' }).click();
+    await page.getByRole('tab', { name: 'Semana da equipe' }).click();
     await expect(
       andreRow.getByTestId(`closing-confirmation-${ANDRE.displayName}-LOGISTICA`),
     ).toContainText('Confirmada pelo funcionário');
     // Contas a pagar: o pagamento do item agora passa (R$ 120,00, valor aprovado).
-    await page.getByRole('tab', { name: 'Contas a pagar' }).click();
+    await page.getByRole('tab', { name: 'A pagar' }).click();
     const prow = page.getByTestId(`payable-${cost.payable.code}`);
     await expect(prow).toContainText('R$ 120,00');
     await prow.getByRole('button', { name: 'Abrir' }).click();

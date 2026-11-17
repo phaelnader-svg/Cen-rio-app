@@ -85,11 +85,15 @@ export function ServiceOrdersPage() {
                   )}
                   <Link
                     href={`/painel/os/${s.id}`}
-                    className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5 hover:bg-subtle/70"
+                    // Melhoria 160: no celular cada OS vira um cartão (código pequeno, cliente em cima,
+                    // selos embaixo); no computador continua uma linha.
+                    className="flex min-w-0 flex-1 flex-col gap-1.5 px-5 py-3.5 hover:bg-subtle/70 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1"
                     data-testid={`so-${s.code}`}
                   >
-                    <span className="w-24 font-mono text-sm font-semibold">{s.code}</span>
-                    <div className="min-w-0 flex-1">
+                    <span className="font-mono text-xs font-semibold text-ink-muted sm:w-24 sm:text-sm sm:text-ink">
+                      {s.code}
+                    </span>
+                    <div className="min-w-0 sm:flex-1">
                       <p className="truncate font-medium">{s.customer.name}</p>
                       <p className="text-sm text-ink-muted">
                         Pedido {s.order.code} · {plural(s.pieceCount, 'peça', 'peças')} em{' '}
@@ -97,25 +101,27 @@ export function ServiceOrdersPage() {
                         {s.promisedDate ? ` · prazo ${formatDay(s.promisedDate, true)}` : ''}
                       </p>
                     </div>
-                    <DeadlineBadge deadline={s.deadline} />
-                    {s.technicalLead && (
-                      <span className="flex items-center gap-1.5 text-sm text-ink-soft">
-                        <Avatar
-                          name={s.technicalLead.displayName}
-                          color={s.technicalLead.color}
-                          photoUrl={s.technicalLead.photoUrl}
-                          size={22}
-                        />
-                        {s.technicalLead.displayName}
-                      </span>
-                    )}
-                    <PriorityBadge priority={s.priority} />
-                    {/* Fase 3: o estado geral (mesmo do cabeçalho da OS) no lugar de "Aberta". */}
-                    {s.operationalState ? (
-                      <OsStateBadge state={s.operationalState} />
-                    ) : (
-                      <ServiceOrderStatusBadge status={s.status} />
-                    )}
+                    <div className="flex flex-wrap items-center gap-2 sm:contents">
+                      <DeadlineBadge deadline={s.deadline} />
+                      {s.technicalLead && (
+                        <span className="flex items-center gap-1.5 text-sm text-ink-soft">
+                          <Avatar
+                            name={s.technicalLead.displayName}
+                            color={s.technicalLead.color}
+                            photoUrl={s.technicalLead.photoUrl}
+                            size={22}
+                          />
+                          {s.technicalLead.displayName}
+                        </span>
+                      )}
+                      <PriorityBadge priority={s.priority} />
+                      {/* Fase 3: o estado geral (mesmo do cabeçalho da OS) no lugar de "Aberta". */}
+                      {s.operationalState ? (
+                        <OsStateBadge state={s.operationalState} />
+                      ) : (
+                        <ServiceOrderStatusBadge status={s.status} />
+                      )}
+                    </div>
                   </Link>
                 </li>
               ))}

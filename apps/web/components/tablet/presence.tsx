@@ -23,9 +23,7 @@ export const availabilityTone = (a: AttendanceDayDto['availability']) =>
       ? 'bg-bronze-100 text-bronze-600'
       : a === 'EM_PAUSA' || a === 'EXTERNO'
         ? 'bg-warn-50 text-warn-600'
-        : a === 'AUSENCIA_PRESUMIDA'
-          ? 'bg-danger-50 text-danger-600'
-          : 'bg-subtle text-ink-soft';
+        : 'bg-subtle text-ink-soft';
 
 /**
  * Presença no "Meu dia": "Cheguei" em destaque no início do expediente (um toque, horário

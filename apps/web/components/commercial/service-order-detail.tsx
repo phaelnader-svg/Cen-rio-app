@@ -32,7 +32,7 @@ import { useToast } from '@/components/ui/toast';
 import { OsDirectDelivery } from '@/components/commercial/os-direct-delivery';
 import { OsMaterialList } from '@/components/commercial/os-material-list';
 import { CustomerWhatsApp } from '@/components/commercial/customer-whatsapp';
-import { OsStateHeader } from '@/components/commercial/os-state';
+import { OsStateHeader, useOperationalState } from '@/components/commercial/os-state';
 import { useOsMaterialList } from '@/lib/simple-materials';
 import { OsAlbumPanel, QrLabelButton } from '@/components/improvements/os-extras';
 import { useTabParam } from '@/lib/tab-param';
@@ -152,12 +152,16 @@ export function ServiceOrderDetail({ id }: { id: string }) {
   const [editItem, setEditItem] = useState<ServiceOrderItemDto | null>(null);
   const [measureItem, setMeasureItem] = useState<ServiceOrderItemDto | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const opState = useOperationalState(id, can('os.ver'));
 
   if (so.isPending) return <Spinner />;
   if (so.isError) return <Alert tone="danger">{so.error.message}</Alert>;
   const s = so.data;
   const open = s.status === 'ABERTA';
   const manage = can('os.gerenciar') && open;
+  const productionDone = ['PRONTA_PARA_ENTREGA', 'EM_ENTREGA', 'ENTREGUE', 'DEVOLVIDA'].includes(
+    opState.data?.state ?? '',
+  );
   // Registro direto das medidas das peças: gestão.
   const canMeasure = can('os.gerenciar') && open;
   const canProduction = can('producao.ver') || can('producao.planejar');
@@ -234,7 +238,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         {/* Fase 3: "Aberta" ficava ao lado de "Entregue" (a OS continua aberta no banco depois da
             entrega). A situação geral fica no quadro abaixo; aqui só o cancelamento. */}
         {s.status === 'CANCELADA' && <ServiceOrderStatusBadge status={s.status} />}
-        <PriorityBadge priority={s.priority} />
+        <PriorityBadge priority={s.priority} always />
         {s.promisedDate && (
           <span className="text-sm text-ink-muted">
             Prazo prometido: {formatDay(s.promisedDate, true)}
@@ -321,38 +325,41 @@ export function ServiceOrderDetail({ id }: { id: string }) {
                 </div>
               </dl>
             </Section>
-            <Section title="Prontidão para produção" className="lg:col-span-2">
-              <ul className="divide-y divide-line" data-testid="readiness">
-                <ReadinessRow
-                  label="Medidas"
-                  state={s.readiness.measurements}
-                  hint="Opcional: medidas das peças registradas na aba Peças. Não impedem o início da produção."
-                />
-                <ReadinessRow
-                  label="Responsável técnico"
-                  state={s.readiness.technicalLead}
-                  hint="Tapeceiro principal da peça."
-                />
-                <ReadinessRow
-                  label="Materiais"
-                  state={s.readiness.simpleMaterialsPending > 0 ? 'INFORMATIVO' : 'OK'}
-                  hint={
-                    s.readiness.simpleMaterialsPending > 0
-                      ? `Aviso: ${plural(s.readiness.simpleMaterialsPending, 'material da lista ainda não está', 'materiais da lista ainda não estão')} na oficina. Não impede o início.`
-                      : 'Materiais informados na aba Materiais. Não impedem o início da produção.'
-                  }
-                />
-                <ReadinessRow
-                  label="Programação"
-                  state={s.readiness.scheduling}
-                  hint="Tarefas incluídas em planejamento semanal publicado."
-                />
-              </ul>
-              <p className="mt-3 rounded-lg bg-subtle px-3 py-2 text-xs text-ink-soft">
-                A produção começa quando programação, responsável e dependências permitirem.
-                Materiais pendentes aparecem só como aviso.
-              </p>
-            </Section>
+            {/* Melhoria 167: depois que a produção termina, o quadro de prontidão sai da tela. */}
+            {!productionDone && (
+              <Section title="Prontidão para produção" className="lg:col-span-2">
+                <ul className="divide-y divide-line" data-testid="readiness">
+                  <ReadinessRow
+                    label="Medidas"
+                    state={s.readiness.measurements}
+                    hint="Opcional: medidas das peças registradas na aba Peças. Não impedem o início da produção."
+                  />
+                  <ReadinessRow
+                    label="Responsável técnico"
+                    state={s.readiness.technicalLead}
+                    hint="Tapeceiro principal da peça."
+                  />
+                  <ReadinessRow
+                    label="Materiais"
+                    state={s.readiness.simpleMaterialsPending > 0 ? 'INFORMATIVO' : 'OK'}
+                    hint={
+                      s.readiness.simpleMaterialsPending > 0
+                        ? `Aviso: ${plural(s.readiness.simpleMaterialsPending, 'material da lista ainda não está', 'materiais da lista ainda não estão')} na oficina. Não impede o início.`
+                        : 'Materiais informados na aba Materiais. Não impedem o início da produção.'
+                    }
+                  />
+                  <ReadinessRow
+                    label="Programação"
+                    state={s.readiness.scheduling}
+                    hint="Tarefas incluídas em planejamento semanal publicado."
+                  />
+                </ul>
+                <p className="mt-3 rounded-lg bg-subtle px-3 py-2 text-xs text-ink-soft">
+                  A produção começa quando programação, responsável e dependências permitirem.
+                  Materiais pendentes aparecem só como aviso.
+                </p>
+              </Section>
+            )}
             {canLabor && (
               <div className="lg:col-span-5" data-testid="os-labor-section">
                 <h2 className="mb-3 text-base font-semibold">Mão de obra</h2>

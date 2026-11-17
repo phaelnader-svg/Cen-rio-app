@@ -141,7 +141,7 @@ export const NAV: NavItem[] = [
   // Módulo Orçamentos: proposta comercial com materiais automáticos, contrato e O.S. do orçamento.
   {
     href: '/painel/pedidos',
-    label: 'Pedidos comerciais',
+    label: 'Pedidos',
     icon: FileSignature,
     anyOf: ['pedidos.ver'],
   },

@@ -22,11 +22,14 @@ export function Tabs({
   active,
   onChange,
   children,
+  variant = 'line',
 }: {
   tabs: TabDef[];
   active: string;
   onChange: (key: string) => void;
   children: React.ReactNode;
+  /** Melhoria 170: 'pills' para abas dentro de abas — vira uma fileira de filtros. */
+  variant?: 'line' | 'pills';
 }) {
   const id = useId();
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -58,7 +61,10 @@ export function Tabs({
         <div
           ref={list}
           role="tablist"
-          className="flex gap-1 overflow-x-auto border-b border-line"
+          className={clsx(
+            'flex overflow-x-auto',
+            variant === 'line' ? 'gap-1 border-b border-line' : 'gap-2 py-0.5',
+          )}
           aria-orientation="horizontal"
           onScroll={measure}
           data-overflow={edges.left || edges.right ? 'true' : 'false'}
@@ -90,12 +96,21 @@ export function Tabs({
                   refs.current[tabs.indexOf(next)]?.focus();
                 }}
                 className={clsx(
-                  '-mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap',
-                  selected
-                    ? 'border-brand-700 text-brand-700'
-                    : t.disabledNote
-                      ? 'cursor-not-allowed border-transparent text-ink-muted/70'
-                      : 'border-transparent text-ink-soft hover:text-ink',
+                  variant === 'pills'
+                    ? clsx(
+                        'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-sm font-medium whitespace-nowrap',
+                        selected
+                          ? 'border-brand-700 bg-brand-50 text-brand-700'
+                          : 'border-line-strong bg-surface text-ink-soft hover:text-ink',
+                      )
+                    : '-mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap',
+                  variant === 'pills'
+                    ? null
+                    : selected
+                      ? 'border-brand-700 text-brand-700'
+                      : t.disabledNote
+                        ? 'cursor-not-allowed border-transparent text-ink-muted/70'
+                        : 'border-transparent text-ink-soft hover:text-ink',
                 )}
               >
                 {t.label}

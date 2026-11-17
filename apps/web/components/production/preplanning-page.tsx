@@ -78,6 +78,7 @@ export function PreplanningPage({ embedded = false }: { embedded?: boolean } = {
         <Alert tone="danger">{q.error.message}</Alert>
       ) : (
         <Tabs
+          variant={embedded ? 'pills' : 'line'}
           active={tab}
           onChange={(k) => setTab(k as Tab)}
           tabs={[

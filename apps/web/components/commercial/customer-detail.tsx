@@ -221,7 +221,7 @@ export function CustomerDetail({ id }: { id: string }) {
             <Spinner />
           ) : (
             <div className="grid gap-6 lg:grid-cols-2">
-              <Section title="Pedidos comerciais">
+              <Section title="Pedidos">
                 {!can('pedidos.ver') ? (
                   <p className="text-sm text-ink-muted">Sem permissão para ver pedidos.</p>
                 ) : history.data?.orders.length ? (

@@ -73,7 +73,7 @@ export async function deadlineAttention(prisma: PrismaClient): Promise<Attention
       key: `PRAZO_OS:${so.id}`,
       type: 'PRAZO_OS',
       category: late ? 'CRITICO' : 'ACAO',
-      title: `${code} · ${so.customer.name} — ${DEADLINE_STATE_LABEL[d.state].toUpperCase()}`,
+      title: `${code} · ${so.customer.name} — ${DEADLINE_STATE_LABEL[d.state].toLowerCase()}`,
       description: [
         `Prazo prometido ${brDate(d.promisedDate!)} (${timing(d)}).`,
         ...d.context,
@@ -101,7 +101,7 @@ export async function deadlineAttention(prisma: PrismaClient): Promise<Attention
       key: `PRAZO_PEDIDO:${o.id}`,
       type: 'PRAZO_PEDIDO',
       category: o.state === 'PRAZO_VENCIDO' ? 'CRITICO' : 'ACAO',
-      title: `${code} · ${o.customerName} — ${ORDER_DEADLINE_LABEL[o.state].toUpperCase()}`,
+      title: `${code} · ${o.customerName} — ${ORDER_DEADLINE_LABEL[o.state].toLowerCase()}`,
       description: `Prazo prometido ${brDate(o.promisedDate)}. ${
         pieces.length === 1 ? 'Peça ainda não recebida' : 'Peças ainda não recebidas'
       }: ${pieces.join(', ')}.`,

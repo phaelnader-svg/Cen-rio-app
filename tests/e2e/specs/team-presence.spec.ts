@@ -168,7 +168,7 @@ test.describe.serial('Fase 7 — presença operacional', () => {
       // a mesma que roda a cada minuto).
       await setClock('09:31');
       await call(page, 'POST', '/api/test/attendance/check', {});
-      await expect(row('João')).toContainText('Ausência presumida');
+      await expect(row('João')).toContainText('Não marcou chegada');
       const impacts = page.getByTestId('attendance-impacts');
       await expect(
         impacts

@@ -1,6 +1,6 @@
 'use client';
 
-import type { AttendanceAction, AttendanceDayDto } from '@cenario/shared';
+import { plural, type AttendanceAction, type AttendanceDayDto } from '@cenario/shared';
 import { useFocusParam } from '@/lib/focus-param';
 import {
   ARRIVAL_KIND_LABEL,
@@ -106,6 +106,17 @@ export function TeamAttendancePage() {
         }
       />
 
+      {(counts.get('AUSENCIA_PRESUMIDA') ?? 0) > 0 && (
+        <Alert tone="warn" className="mb-4">
+          {plural(
+            counts.get('AUSENCIA_PRESUMIDA') ?? 0,
+            'pessoa ainda não marcou chegada',
+            'pessoas ainda não marcaram chegada',
+          )}
+          . Confirme quem faltou ou corrija quem esqueceu de tocar em “Cheguei”.
+        </Alert>
+      )}
+
       {q.data && (
         <ul className="mb-6 flex flex-wrap gap-2" aria-label="Resumo da equipe">
           {AVAILABILITIES.filter((a) => counts.get(a)).map((a) => (
@@ -133,7 +144,41 @@ export function TeamAttendancePage() {
         </Card>
       ) : (
         <Card className="mb-8 p-0">
-          <div className="overflow-x-auto">
+          {/* Melhoria 160: no celular, um cartão por pessoa no lugar da tabela larga. */}
+          <ul className="divide-y divide-line md:hidden">
+            {q.data.days.map((d) => (
+              <li key={d.employee.id} className="flex items-start gap-3 px-4 py-3">
+                <Avatar name={d.employee.displayName} color={d.employee.color} size={32} />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{d.employee.displayName}</p>
+                  <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+                    <span
+                      className={clsx(
+                        'rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                        availabilityTone(d.availability),
+                      )}
+                    >
+                      {AVAILABILITY_LABEL[d.availability]}
+                    </span>
+                    {d.arrivedAt && <span>chegou {formatHourMinute(d.arrivedAt)}</span>}
+                  </p>
+                  {d.runningTask && (
+                    <p className="mt-1 truncate text-sm">Fazendo: {d.runningTask.title}</p>
+                  )}
+                </div>
+                {manage && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    aria-label={`Registrar presença de ${d.employee.displayName}`}
+                    icon={<PencilLine className="size-3.5" aria-hidden />}
+                    onClick={() => setActing(d)}
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto md:block">
             <table className="data-table min-w-[980px]" data-testid="team-attendance">
               <thead>
                 <tr>
