@@ -124,6 +124,7 @@ export async function buildMe(
       workdayEnd: company?.workdayEnd ?? '18:00',
       arrivalWindowStart: company?.arrivalWindowStart ?? '07:00',
       platformOwner: company?.id === 1 && permissions.includes('empresa.configurar'),
+      platformCompany: company?.id === 1,
       needsWelcome:
         company?.tradeName === PROVISIONAL_TRADE_NAME &&
         permissions.includes('empresa.configurar') &&

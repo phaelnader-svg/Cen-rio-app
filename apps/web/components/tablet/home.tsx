@@ -74,7 +74,8 @@ export function TabletHome({ me }: { me: MeDto }) {
   const clock = useClock(me.company.timezone);
   const color = me.employee?.color ?? '#064a4b';
   // Melhoria 157: o teste de sincronização é ferramenta do suporte, não do tapeceiro.
-  const canSync = me.company.platformOwner && me.permissions.includes('sincronizacao.diagnosticar');
+  const canSync =
+    me.company.platformCompany && me.permissions.includes('sincronizacao.diagnosticar');
   // Fase 11: só os próprios valores de produção, se o gestor autorizar.
   const canSeeValues = me.permissions.includes('financeiro.producao_propria');
   const canExecute = me.permissions.includes('producao.executar');

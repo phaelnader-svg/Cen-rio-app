@@ -150,7 +150,7 @@ test.describe.serial('Rodada 2 — Central derivada, Meus Ganhos ao vivo e indic
     await at.getByTestId('week-confirm-check').check();
     await at.getByTestId('week-confirm-submit').click();
     await expect(at.getByTestId('week-confirmation-state')).toHaveText(
-      'Confirmada pelo profissional',
+      'Confirmada pelo funcionário',
     );
     await a.context.close();
 
