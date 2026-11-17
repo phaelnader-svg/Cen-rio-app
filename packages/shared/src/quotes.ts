@@ -266,6 +266,8 @@ export interface PublicQuoteDto {
   logoDataUrl: string | null;
   issuedAt: string;
   customerName: string;
+  /** Telefone do próprio cliente, como na proposta impressa. */
+  customerPhone: string;
   city: string;
   service: string;
   fabrics: string[];
@@ -274,6 +276,8 @@ export interface PublicQuoteDto {
   sofaCount: number;
   totalCents: number;
   installmentTotalCents: number | null;
+  /** Nome da opção de pagamento a prazo (ex.: "Cartão de crédito"), como na proposta impressa. */
+  paymentOptionName: string | null;
   installments: number | null;
   deliveryDays: number | null;
   validityDays: number | null;
