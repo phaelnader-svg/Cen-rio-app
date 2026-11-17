@@ -5,7 +5,7 @@
  * sozinho quando a pessoa faz a ação (ou pode ser pulado). Fica guardado como visto neste navegador.
  */
 import clsx from 'clsx';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { GBtn } from './ui';
 
 export type TutorialEvent = 'piece' | 'assign' | 'chat' | 'office' | 'agent' | 'missions';
@@ -112,6 +112,76 @@ function GuideFace() {
   );
 }
 
+/** Altura da seta, em px. */
+const ARROW = 44;
+
+interface Pointer {
+  /** Ponta da seta (px na janela). */
+  x: number;
+  y: number;
+  dir: 'up' | 'down';
+  /** Contorno pulsando em volta do botão alvo. */
+  ring?: { l: number; t: number; w: number; h: number };
+}
+
+/** Onde pôr a seta para o passo atual. */
+function pointerFor(
+  point: TutorialStep['point'],
+  locate: (id: string, heightM?: number) => { x: number; y: number } | null,
+  card: HTMLElement | null,
+): Pointer | null {
+  if (!point) return null;
+  const c = card?.getBoundingClientRect();
+  const hitsCard = (x: number, y0: number, y1: number) =>
+    Boolean(c && x > c.left - 20 && x < c.right + 20 && y1 > c.top && y0 < c.bottom);
+  if ('map' in point) {
+    const top = locate(point.map, 1.4);
+    if (!top) return null;
+    // Acima do objeto, apontando para baixo; se ali estiver o cartão ou a borda, vem por baixo.
+    if (top.y - ARROW > 70 && !hitsCard(top.x, top.y - ARROW, top.y))
+      return { ...top, dir: 'down' };
+    const base = locate(point.map, 0) ?? top;
+    return { x: base.x, y: base.y + 6, dir: 'up' };
+  }
+  const el = [...document.querySelectorAll<HTMLElement>(point.dom)].find(
+    (x) => x.offsetParent !== null,
+  );
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  const ring = { l: r.left, t: r.top, w: r.width, h: r.height };
+  const x = r.left + r.width / 2;
+  const roomAbove = r.top;
+  const roomBelow = window.innerHeight - r.bottom;
+  // Botões do topo: a seta fica embaixo e aponta para cima. Os de baixo: em cima, para baixo.
+  if (roomAbove > ARROW + 70 && roomAbove >= roomBelow && !hitsCard(x, r.top - ARROW - 8, r.top))
+    return { x, y: r.top - 8, dir: 'down', ring };
+  return { x, y: r.bottom + 8, dir: 'up', ring };
+}
+
+/** Seta grossa, no roxo da Gerente, com contorno branco para aparecer em qualquer fundo. */
+function PointerArrow({ dir }: { dir: 'up' | 'down' }) {
+  return (
+    <svg
+      width="36"
+      height={ARROW}
+      viewBox="0 0 36 44"
+      style={{
+        transform: dir === 'up' ? 'rotate(180deg)' : undefined,
+        filter: 'drop-shadow(0 3px 4px rgba(30, 10, 60, 0.35))',
+      }}
+    >
+      <path
+        d="M11 3 h14 a2 2 0 0 1 2 2 v16 h6 a1.5 1.5 0 0 1 1.1 2.5 L19.1 40.4 a1.5 1.5 0 0 1 -2.2 0 L1.9 23.5 A1.5 1.5 0 0 1 3 21 h6 V5 a2 2 0 0 1 2 -2 z"
+        fill="#7c3aed"
+        stroke="#fff"
+        strokeWidth="2.5"
+        strokeLinejoin="round"
+      />
+      <path d="M13 7 h3 v14 h-3 z" fill="#a78bfa" opacity="0.8" />
+    </svg>
+  );
+}
+
 export function Tutorial({
   steps,
   events,
@@ -122,11 +192,12 @@ export function Tutorial({
   /** Eventos que já aconteceram desde o início do tutorial. */
   events: Set<TutorialEvent>;
   /** Posição na tela de um objeto do mapa. */
-  locate: (id: string) => { x: number; y: number } | null;
+  locate: (id: string, heightM?: number) => { x: number; y: number } | null;
   onClose: (finished: boolean) => void;
 }) {
   const [i, setI] = useState(0);
-  const [arrow, setArrow] = useState<{ x: number; y: number } | null>(null);
+  const [arrow, setArrow] = useState<Pointer | null>(null);
+  const card = useRef<HTMLDivElement>(null);
   const step = steps[Math.min(i, steps.length - 1)]!;
   const last = i >= steps.length - 1;
 
@@ -138,44 +209,70 @@ export function Tutorial({
     }
   }, [events, step, last, onClose]);
 
-  // Seta acompanhando o alvo (a câmera pode mexer).
+  // Seta acompanhando o alvo (a câmera pode mexer). Ela fica do lado com espaço livre e aponta
+  // sempre para o alvo: abaixo dele apontando para cima, ou acima apontando para baixo.
   useEffect(() => {
     let raf = 0;
+    let lastKey = '';
     const tick = () => {
       raf = requestAnimationFrame(tick);
-      const p = step.point;
-      if (!p) return setArrow(null);
-      if ('map' in p) setArrow(locate(p.map));
-      else {
-        const el = [...document.querySelectorAll<HTMLElement>(p.dom)].find(
-          (x) => x.offsetParent !== null,
-        );
-        if (!el) return setArrow(null);
-        const r = el.getBoundingClientRect();
-        setArrow({ x: r.left + r.width / 2, y: r.top < 120 ? r.bottom + 46 : r.top });
+      const next = pointerFor(step.point, locate, card.current);
+      const key = next
+        ? `${Math.round(next.x)}|${Math.round(next.y)}|${next.dir}|${next.ring ? Math.round(next.ring.t) : ''}`
+        : '';
+      if (key !== lastKey) {
+        lastKey = key;
+        setArrow(next);
       }
     };
     tick();
     return () => cancelAnimationFrame(raf);
   }, [step, locate]);
 
+  // O cartão desce quando a seta precisa ficar logo abaixo de um botão do topo.
+  const cardTop =
+    arrow && arrow.dir === 'up' && arrow.y < 200 ? Math.round(arrow.y + ARROW + 14) : null;
+
   return (
     <>
+      {arrow?.ring ? (
+        <div
+          className="pointer-events-none fixed z-40 rounded-2xl"
+          style={{
+            left: arrow.ring.l - 5,
+            top: arrow.ring.t - 5,
+            width: arrow.ring.w + 10,
+            height: arrow.ring.h + 10,
+            animation: 'tut-ring 1.4s ease-out infinite',
+          }}
+          aria-hidden
+        />
+      ) : null}
       {arrow ? (
         <div
-          className="pointer-events-none fixed z-40 text-4xl drop-shadow-lg"
+          className="pointer-events-none fixed z-40"
           style={{
             left: arrow.x,
             top: arrow.y,
-            animation: 'point 0.9s ease-in-out infinite',
+            transform: arrow.dir === 'down' ? 'translate(-50%, -100%)' : 'translate(-50%, 0)',
           }}
+          data-testid="tutorial-arrow"
+          data-dir={arrow.dir}
           aria-hidden
         >
-          👇
+          <div
+            style={{
+              animation: `${arrow.dir === 'down' ? 'tut-nudge-down' : 'tut-nudge-up'} 0.9s ease-in-out infinite`,
+            }}
+          >
+            <PointerArrow dir={arrow.dir} />
+          </div>
         </div>
       ) : null}
       <div
+        ref={card}
         className="animate-pop-in pointer-events-auto absolute top-[6.75rem] left-1/2 z-40 w-[min(400px,calc(100vw-1.5rem))] -translate-x-1/2 rounded-2xl border-2 border-[#7c3aed]/50 bg-[#fffaf2] p-3 shadow-pop sm:top-[5rem]"
+        style={cardTop ? { top: cardTop } : undefined}
         data-testid="tutorial"
         data-hud
       >

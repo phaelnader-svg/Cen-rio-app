@@ -111,6 +111,7 @@ import { AgentConfigPanel, AgentPanel, EmployeePanel } from './people-panels';
 import { PiecePanel } from './piece-panel';
 import { isLate, peopleOnMap, piecesOnMap } from './placement';
 import { MaterialPanel, StoragePanel } from './storage-panel';
+import { Ic, iconText } from './icons';
 import { GBtn, KV, Panel, Tone, fmtClock, fmtDate } from './ui';
 import { useServiceOrder } from './game-api';
 import { ACTIVITY_LABEL_GAME } from '@cenario/shared';
@@ -483,7 +484,10 @@ export function GameWorld() {
     [agents.data],
   );
 
-  // Cena estática (planta).
+  // Cena estática (planta). Só reconstrói quando algo dela muda de fato: as recompensas e o replay
+  // entram como valores simples (antes, cada atualização da produção refazia a sala inteira).
+  const rewardsKey = (progress?.progress.rewards ?? []).join(',');
+  const replayOn = Boolean(replay);
   useEffect(() => {
     if (!engine.current || !layout) return;
     engine.current.setLayout(layout, {
@@ -500,8 +504,8 @@ export function GameWorld() {
       editable: canBuild,
       snapCm: 10,
       agentDesks,
-      canAssign: Boolean(snapshot.data?.canPlan) && !replay,
-      rewards: progress?.progress.rewards ?? [],
+      canAssign: Boolean(snapshot.data?.canPlan) && !replayOn,
+      rewards: rewardsKey ? rewardsKey.split(',') : [],
     });
   }, [
     layout,
@@ -514,8 +518,8 @@ export function GameWorld() {
     canBuild,
     agentDesks,
     building,
-    replay,
-    progress?.progress.rewards,
+    replayOn,
+    rewardsKey,
   ]);
 
   // Destaque da seleção: o que está aberto no painel fica em evidência, o resto escurece.
@@ -1581,7 +1585,7 @@ export function GameWorld() {
             </ul>
           ) : (
             <div className="mt-1 text-[11px] text-ok-600">
-              ✅ Posição válida pelas regras do editor.
+              <Ic e="✅" /> Posição válida pelas regras do editor.
             </div>
           )}
           <div className="mt-2 flex gap-1.5">
@@ -1747,7 +1751,7 @@ export function GameWorld() {
     [tutorial], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const locateForTutorial = useCallback(
-    (id: string) => engine.current?.screenOf(id, 1.2) ?? null,
+    (id: string, heightM = 1.2) => engine.current?.screenOf(id, heightM) ?? null,
     [],
   );
   const closeTutorial = useCallback(() => {
@@ -1849,7 +1853,9 @@ export function GameWorld() {
                   setMobileSearch(false);
                 }}
               >
-                <span>{r.icon}</span>
+                <span className="mt-0.5 text-bronze-600">
+                  <Ic e={r.icon} />
+                </span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-semibold">{r.label}</span>
                   <span className="block truncate text-xs text-ink-muted">{r.sub}</span>
@@ -1983,8 +1989,8 @@ export function GameWorld() {
             data-testid="connect-cenario-chip"
           >
             {cenarioStatus === 'EXPIRADA' || cenarioStatus === 'REVOGADA'
-              ? '⚠ Reconectar Cenário Gestão'
-              : '🔌 Conectar Cenário Gestão'}
+              ? iconText('⚠ Reconectar Cenário Gestão')
+              : iconText('🔌 Conectar Cenário Gestão')}
           </button>
         ) : null}
         {snapshot.data?.mode === 'CONSULTA' ? (
@@ -1994,7 +2000,7 @@ export function GameWorld() {
             title="Conexão em modo consulta: o Firma Viva só lê as OS e a posição das peças no Cenário Gestão. Nada é alterado daqui."
             data-testid="consulta-chip"
           >
-            👁️ Modo consulta · somente leitura
+            <Ic e="👁️" /> Modo consulta · somente leitura
           </span>
         ) : null}
         <div className="flex items-center gap-1.5 sm:contents">
@@ -2013,7 +2019,8 @@ export function GameWorld() {
                   s.key === spaceKey ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-subtle',
                 )}
               >
-                {s.kind === 'ESCRITORIO' ? '🏢' : s.kind === 'OFICINA' ? '🪡' : '📦'} {s.name}
+                <Ic e={s.kind === 'ESCRITORIO' ? '🏢' : s.kind === 'OFICINA' ? '🪡' : '📦'} />{' '}
+                {s.name}
               </button>
             ))}
             {building && canBuild ? (
@@ -2037,7 +2044,7 @@ export function GameWorld() {
               data-testid="missions-chip"
               title="Missões do dia e nível da oficina"
             >
-              🎯 <span className="max-sm:hidden">Missões ·</span> Nv {prog.level}
+              <Ic e="🎯" /> <span className="max-sm:hidden">Missões ·</span> Nv {prog.level}
               {progress ? (
                 <span className="rounded-full bg-bronze-500 px-1.5 text-[10px] text-white">
                   {progress.missions.filter((m) => m.done).length}/{progress.missions.length}
@@ -2220,7 +2227,7 @@ export function GameWorld() {
                         : 'border-line bg-white',
                   )}
                 >
-                  {MAP_FILTER_LABEL[f]} · {counts[f]}
+                  {iconText(MAP_FILTER_LABEL[f])} · {counts[f]}
                 </button>
               ))}
             </div>
@@ -2232,7 +2239,7 @@ export function GameWorld() {
                 data-testid="goals-compact"
                 title="Quadro de Metas (barra = saldo ÷ meta)"
               >
-                <span>🎯</span>
+                <Ic e="🎯" className="size-4 text-bronze-600" />
                 <span className="h-2 flex-1 overflow-hidden rounded-full bg-subtle">
                   <span
                     className={`block h-full ${goal.belowAfterAchieved ? 'bg-danger-600' : 'bg-ok-600'}`}
@@ -2260,9 +2267,12 @@ export function GameWorld() {
             onClick={() => setLegendOpen(true)}
             data-testid="legend-expand"
           >
-            📋 Resumo · ▶️ {counts.EM_EXECUCAO} · ⏸️ {counts.PARADOS}
+            <Ic e="📋" /> Resumo · <Ic e="▶" /> {counts.EM_EXECUCAO} · <Ic e="⏸" />{' '}
+            {counts.PARADOS}
             {counts.ATRASADAS ? (
-              <span className="text-danger-700">· ⚠️ {counts.ATRASADAS}</span>
+              <span className="text-danger-700">
+                · <Ic e="⚠" /> {counts.ATRASADAS}
+              </span>
             ) : null}
             <ChevronDown className="size-3.5" />
           </button>
@@ -2277,7 +2287,9 @@ export function GameWorld() {
           style={{ bottom: isMobile ? 76 : 16 }}
           data-testid="illustrative-notice"
         >
-          <span>📐 Planta com medidas ilustrativas.</span>
+          <span>
+            <Ic e="📐" /> Planta com medidas ilustrativas.
+          </span>
           {canBuild && !isMobile ? (
             <button className="font-bold underline" onClick={enterBuild}>
               Ajustar no modo Construção
@@ -2305,7 +2317,7 @@ export function GameWorld() {
             onClick={() => setSide({ t: 'central' })}
             data-testid="central-chip"
           >
-            🔌 Central de Conexões
+            <Ic e="🔌" /> Central de Conexões
             {integrations.data
               ? ` · ${integrations.data.filter((i) => i.status !== 'PRECISA_CONFIGURAR').length} ativa(s)`
               : ''}
@@ -2316,7 +2328,7 @@ export function GameWorld() {
               onClick={() => setSide({ t: 'finance', filter: null })}
               data-testid="finance-chip"
             >
-              💼 Financeiro
+              <Ic e="💼" /> Financeiro
             </button>
           ) : null}
           {canFinView ? (
@@ -2325,7 +2337,7 @@ export function GameWorld() {
               onClick={() => setSide({ t: 'goals', tab: null, drill: null })}
               data-testid="goals-chip"
             >
-              🎯 Quadro de Metas
+              <Ic e="🎯" /> Quadro de Metas
               {goal
                 ? ` · ${goal.pctOfGoal.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%`
                 : ''}
@@ -2337,7 +2349,7 @@ export function GameWorld() {
               onClick={() => setSide({ t: 'inbox', conv: null })}
               data-testid="inbox-chip"
             >
-              📥 Caixa de entrada
+              <Ic e="📥" /> Caixa de entrada
               {unread ? (
                 <span className="rounded-full bg-brand-600 px-1.5 text-[10px] font-bold text-white">
                   {unread}
@@ -2378,7 +2390,7 @@ export function GameWorld() {
                 <Redo2 className="size-4" />
               </GBtn>
               <GBtn tone="ghost" onClick={() => setSide({ t: 'room' })} disabled={preview}>
-                🏠 Ambiente
+                <Ic e="🏠" /> Ambiente
               </GBtn>
               <GBtn
                 tone="ghost"
@@ -2388,7 +2400,7 @@ export function GameWorld() {
                 }}
                 disabled={preview}
               >
-                ✔ Verificar passagens
+                <Ic e="✔" /> Verificar passagens
               </GBtn>
               <GBtn
                 tone={preview ? 'primary' : 'ghost'}
@@ -2401,7 +2413,7 @@ export function GameWorld() {
                 <Eye className="size-4" /> {preview ? 'Voltar a editar' : 'Pré-visualizar'}
               </GBtn>
               <GBtn tone="bronze" onClick={() => setSide({ t: 'mestre' })}>
-                🦺 Mestre de Obras
+                <Ic e="🦺" /> Mestre de Obras
               </GBtn>
               <GBtn
                 tone="primary"
@@ -2419,7 +2431,7 @@ export function GameWorld() {
               className="pointer-events-auto absolute bottom-24 left-1/2 max-w-md -translate-x-1/2 rounded-2xl border border-[#e76f1a]/50 bg-[#fff3e6] px-3 py-2 text-xs shadow-pop"
               data-testid="drag-tip"
             >
-              🦺 <b>Mestre de Obras:</b> {tip}{' '}
+              <Ic e="🦺" /> <b>Mestre de Obras:</b> {tip}{' '}
               <button
                 className="underline"
                 onClick={() => {
@@ -2736,7 +2748,7 @@ export function GameWorld() {
                         <b>
                           {p.itemCode} · {p.description}
                         </b>
-                        <span>{w.icon}</span>
+                        <Ic e={w.icon} />
                       </div>
                       <div className="text-ink-soft">
                         {p.customerName ?? ''} · {w.phaseLabel}
@@ -2744,7 +2756,7 @@ export function GameWorld() {
                       </div>
                       {w.blockedReason || (w.next && !w.next.available && w.next.reason) ? (
                         <div className="text-danger-700">
-                          ⛔ {w.blockedReason ?? w.next?.reason}
+                          <Ic e="⛔" /> {w.blockedReason ?? w.next?.reason}
                         </div>
                       ) : w.next ? (
                         <div className="text-ok-600">
@@ -2934,7 +2946,7 @@ function OsPanel({
           </a>
           {onOpenFicha ? (
             <GBtn tone="bronze" className="mt-2 w-full" onClick={onOpenFicha}>
-              💼 Ficha comercial (contrato, entrada, saldo, nota)
+              <Ic e="💼" /> Ficha comercial (contrato, entrada, saldo, nota)
             </GBtn>
           ) : null}
         </>

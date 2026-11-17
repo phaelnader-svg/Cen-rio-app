@@ -5,6 +5,7 @@
  * (a tarefa vai para a fila do tablet), trocar o responsável de uma etapa com motivo e versão.
  * O início continua sendo confirmado pelo funcionário no tablet.
  */
+import { Ic, iconText } from './icons';
 import {
   ACTIVITY_LABEL_GAME,
   FULFILLMENT_STAGE_LABEL,
@@ -270,7 +271,7 @@ export function PiecePanel({
               className="rounded-lg border border-bronze-500/40 px-2 py-1 text-xs font-semibold text-bronze-600 hover:bg-bronze-100"
               title="Contrato, entrada, saldo e nota"
             >
-              💼 Ficha
+              <Ic e="💼" /> Ficha
             </button>
           ) : null}
           <a
@@ -292,9 +293,11 @@ export function PiecePanel({
           data-testid="shipping-balance"
           className={`mb-2 w-full rounded-xl border px-3 py-2 text-left text-xs font-semibold ${balance.data.balanceCents > 0 ? 'border-warn-600/40 bg-warn-50 text-warn-600' : 'border-ok-600/30 bg-ok-50 text-ok-600'}`}
         >
-          {balance.data.balanceCents > 0
-            ? `💰 Saldo a receber na entrega: ${(balance.data.balanceCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
-            : '💰 Pedido quitado — pode entregar'}
+          {iconText(
+            balance.data.balanceCents > 0
+              ? `💰 Saldo a receber na entrega: ${(balance.data.balanceCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+              : '💰 Pedido quitado — pode entregar',
+          )}
         </button>
       ) : null}
       <div
@@ -304,7 +307,7 @@ export function PiecePanel({
         <div className="flex flex-wrap items-center gap-1.5">
           <Tone tone={wf.tone}>
             <span data-testid="piece-phase">
-              {wf.icon} {wf.phaseLabel}
+              <Ic e={wf.icon} /> {wf.phaseLabel}
             </span>
           </Tone>
           <Tone tone={piece.tone}>
@@ -383,7 +386,7 @@ export function PiecePanel({
             className="rounded-lg border border-danger-600/30 bg-danger-50 p-1.5 text-xs text-danger-700"
             data-testid="piece-error"
           >
-            ⚠️ Não foi feito: {lastError} Os números abaixo já foram atualizados.
+            <Ic e="⚠️" /> Não foi feito: {lastError} Os números abaixo já foram atualizados.
           </div>
         ) : null}
         {wf.blockedReason ? (
@@ -391,7 +394,7 @@ export function PiecePanel({
             className="rounded-lg bg-danger-50 p-1.5 text-xs text-danger-700"
             data-testid="piece-blocked"
           >
-            ⛔ Bloqueio: {wf.blockedReason}
+            <Ic e="⛔" /> Bloqueio: {wf.blockedReason}
           </div>
         ) : null}
         {action ? (
@@ -430,7 +433,7 @@ export function PiecePanel({
             data-testid={`piece-tab-${k}`}
             className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${tab === k ? 'border-brand-600 bg-brand-600 text-white' : 'border-line bg-white'}`}
           >
-            {l}
+            {iconText(l)}
           </button>
         ))}
       </div>
@@ -696,24 +699,28 @@ export function PiecePanel({
                                 : 'text-ink-muted'
                           }
                         >
-                          {t.status === 'CONCLUIDA'
-                            ? '✔'
-                            : t.status === 'EM_EXECUCAO'
-                              ? '▶'
-                              : t.status === 'PAUSADA'
-                                ? '⏸'
-                                : '•'}
+                          {iconText(
+                            t.status === 'CONCLUIDA'
+                              ? '✔'
+                              : t.status === 'EM_EXECUCAO'
+                                ? '▶'
+                                : t.status === 'PAUSADA'
+                                  ? '⏸'
+                                  : '•',
+                          )}
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="font-semibold">
                             {t.title.replace(/\s+—\s+OS-[\d/]+$/, '')}
                           </div>
                           <div className="text-ink-muted">
-                            {(() => {
-                              const st = wf.steps.find((s) => s.taskId === t.id);
-                              if (t.status === 'LIBERADA') return '✅ Disponível no tablet';
-                              return `${TASK_STATUS_LABEL[t.status] ?? t.status}${st?.reason ? ` · ${st.reason}` : ''}`;
-                            })()}
+                            {iconText(
+                              (() => {
+                                const st = wf.steps.find((s) => s.taskId === t.id);
+                                if (t.status === 'LIBERADA') return '✅ Disponível no tablet';
+                                return `${TASK_STATUS_LABEL[t.status] ?? t.status}${st?.reason ? ` · ${st.reason}` : ''}`;
+                              })(),
+                            )}
                           </div>
                         </div>
                         {snapshot.canPlan && !locked ? (

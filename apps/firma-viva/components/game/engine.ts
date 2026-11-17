@@ -5,6 +5,7 @@
  * Construção e marcações do Mestre de Obras.
  * Coordenadas da planta em centímetros (x leste, y sul) ↔ cena em metros (x, z).
  */
+import { drawIcon, splitIcon } from './icons';
 import * as THREE from 'three';
 import {
   type ClearanceProblem,
@@ -1482,6 +1483,8 @@ export class GameEngine {
       if (opts.selectedId === dcor.id) this.selectionBox(f);
     }
     if (!build) this.addAmbience(layout, opts.rewards ?? []);
+    // Paredes já na altura certa: sem isso, toda reconstrução as fazia subir e descer de novo.
+    this.updateWalls(0, true);
 
     // Mestre de Obras (só no modo Construção).
     if (this.mestre) this.peopleGroup.remove(this.mestre);
@@ -2858,11 +2861,13 @@ function bubble(text: string, tone: 'ok' | 'warn' | 'danger' | 'info') {
     info: ['#e8f0fb', '#2c5ea8'],
   }[tone];
   const size = 22;
+  const { icon, text: body } = splitIcon(text);
+  const iw = icon ? size * 1.05 : 0;
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d')!;
   ctx.font = `700 ${size}px Inter, system-ui, sans-serif`;
-  const tw = Math.ceil(ctx.measureText(text).width);
-  c.width = tw + size * 1.2;
+  const tw = Math.ceil(ctx.measureText(body).width);
+  c.width = tw + size * 1.2 + iw;
   c.height = Math.ceil(size * 2.2);
   const bh = size * 1.6;
   ctx.fillStyle = colors[0]!;
@@ -2880,10 +2885,11 @@ function bubble(text: string, tone: 'ok' | 'warn' | 'danger' | 'info') {
   ctx.fill();
   ctx.stroke();
   ctx.fillRect(c.width / 2 - 7, bh - 6, 14, 5);
+  if (icon) drawIcon(ctx, icon, size * 0.6, (bh - size * 0.85) / 2, size * 0.85, colors[1]!);
   ctx.font = `700 ${size}px Inter, system-ui, sans-serif`;
   ctx.fillStyle = colors[1]!;
   ctx.textBaseline = 'middle';
-  ctx.fillText(text, size * 0.6, bh / 2);
+  ctx.fillText(body, size * 0.6 + iw, bh / 2);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   const s = new THREE.Sprite(
