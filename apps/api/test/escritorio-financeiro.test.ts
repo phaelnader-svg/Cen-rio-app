@@ -365,6 +365,8 @@ describe('fiscal: perfis, o que falta e autorização com revisão', () => {
 
 describe('banco: extrato, pagamento preparado e conciliação', () => {
   it('pagamento só vira pago pela conciliação; reimportar o extrato não duplica', async () => {
+    // Datas do extrato e da maquininha são fixas: o "hoje" da previsão é o dia do extrato.
+    setClock(() => new Date('2026-11-15T15:00:00Z'));
     const admin = await loginAdmin(app);
     const pay = await post(admin, '/api/v1/finance/payables', {
       beneficiary: 'Espumas Vale Ltda',
