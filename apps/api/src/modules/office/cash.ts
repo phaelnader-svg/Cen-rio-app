@@ -15,6 +15,7 @@
  *   o recebimento no cartão entra pela data da venda (taxa desconhecida).
  */
 import { randomUUID } from 'node:crypto';
+import { PLATFORM_COMPANY_ID, requireCompanyId } from '../../core/tenant';
 import {
   type CashMoveDto,
   type GoalView,
@@ -593,7 +594,12 @@ const DEFAULT_GOALS = [
   { name: 'Nível 3 · R$ 300 mil', targetCents: 30_000_000 },
 ];
 
+/**
+ * Metas iniciais só para a empresa da plataforma (histórico). Empresa nova começa sem meta: o
+ * jogo pergunta a meta no primeiro acesso, em vez de mostrar 0% de R$ 100 mil.
+ */
 async function ensureGoals(db: Db) {
+  if (requireCompanyId() !== PLATFORM_COMPANY_ID) return;
   if (await db.cashGoal.count()) return;
   await db.cashGoal.createMany({ data: DEFAULT_GOALS });
 }

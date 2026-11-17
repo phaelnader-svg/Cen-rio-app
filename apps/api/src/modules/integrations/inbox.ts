@@ -7,6 +7,7 @@
  * Instagram/Messenger recusam. O agente de Atendimento prepara rascunhos; envio automático só
  * nos casos liberados pelo gestor e nunca com a conversa assumida por uma pessoa.
  */
+import { companyName } from '../game/agent-office';
 import { requireCompanyId } from '../../core/tenant';
 import { EVENT_TYPES, anyPermissionAudience } from '@cenario/shared';
 import type { InboxConversation, PrismaClient, Tx } from '@cenario/db';
@@ -84,11 +85,11 @@ export function summarize(messages: { direction: string; text: string | null; ki
   };
 }
 
-function draftReply(name: string | null, s: ReturnType<typeof summarize>) {
+function draftReply(name: string | null, s: ReturnType<typeof summarize>, company: string) {
   const first = name?.split(' ')[0];
   if (!s.pending.length)
-    return `Olá${first ? `, ${first}` : ''}! Recebemos as fotos e as medidas. Vamos preparar o seu orçamento e te enviamos ainda hoje. Obrigado pela confiança na Cenário Estofados!`;
-  return `Olá${first ? `, ${first}` : ''}! Obrigado pelo contato com a Cenário Estofados. Para preparar o orçamento, pode nos enviar ${s.pending.join(', ')}? Assim já calculamos tecido, espuma e prazo.`;
+    return `Olá${first ? `, ${first}` : ''}! Recebemos as fotos e as medidas. Vamos preparar o seu orçamento e te enviamos ainda hoje. Obrigado pela confiança na ${company}!`;
+  return `Olá${first ? `, ${first}` : ''}! Obrigado pelo contato com a ${company}. Para preparar o orçamento, pode nos enviar ${s.pending.join(', ')}? Assim já calculamos tecido, espuma e prazo.`;
 }
 
 async function emit(tx: Tx, actor: ActorContext, id: string) {
@@ -195,7 +196,7 @@ async function agentDraft(tx: Tx, conversationId: string, fromInbound: boolean) 
     where: { conversationId, status: 'RASCUNHO' },
     data: { status: 'DESCARTADA' },
   });
-  const text = draftReply(conv.contactName, s);
+  const text = draftReply(conv.contactName, s, await companyName(tx));
   const draft = await tx.inboxMessage.create({
     data: {
       conversationId,

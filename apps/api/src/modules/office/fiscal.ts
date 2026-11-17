@@ -5,6 +5,7 @@
  * validados pela contabilidade. Sem provedor configurado, nada é emitido: a tela diz o que falta.
  * Em TESTE_LOCAL a autorização é simulada (número "TESTE-…"), para validar o fluxo.
  */
+import { companyName } from '../game/agent-office';
 import { requireCompanyId } from '../../core/tenant';
 import type { Prisma, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
@@ -345,7 +346,7 @@ export async function fiscalRoutes(app: FastifyInstance) {
         const c = d.customerData as { name: string; document: string; address: string };
         const pdf = textPdf(
           `NFS-e ${number} (HOMOLOGAÇÃO LOCAL — SEM VALOR FISCAL)`,
-          `Prestador: Cenário Estofados\nTomador: ${c.name} — ${c.document}\n${c.address}\n\nDiscriminação: ${d.description}\n\nValor do serviço: ${brl(d.amountCents)}\nPerfil: ${d.profile.name} · código ${d.profile.serviceCode} · ISS ${d.profile.issRatePercent}%`,
+          `Prestador: ${await companyName(tx)}\nTomador: ${c.name} — ${c.document}\n${c.address}\n\nDiscriminação: ${d.description}\n\nValor do serviço: ${brl(d.amountCents)}\nPerfil: ${d.profile.name} · código ${d.profile.serviceCode} · ISS ${d.profile.issRatePercent}%`,
         );
         const xml = Buffer.from(
           `<?xml version="1.0" encoding="UTF-8"?>\n<NFSeTeste numero="${number}" valor="${(d.amountCents / 100).toFixed(2)}" codigo="${d.profile.serviceCode}"><tomador>${c.name}</tomador><discriminacao>${d.description.replace(/[<&]/g, ' ')}</discriminacao></NFSeTeste>\n`,

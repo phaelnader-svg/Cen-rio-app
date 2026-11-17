@@ -4,6 +4,7 @@
  * - Tráfego lê campanhas e propõe mudança de orçamento (campanha, valor atual → novo, motivo);
  *   a alteração só é executada quando o gestor aprova (anuncios.gerenciar).
  */
+import { companyName } from '../game/agent-office';
 import { requireCompanyId } from '../../core/tenant';
 import { EVENT_TYPES } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
@@ -66,7 +67,11 @@ export async function marketingRoutes(app: FastifyInstance) {
         })
       : null;
     const piece = so?.items[0]?.description ?? 'sofá';
-    const caption = `Antes e depois que dá gosto de ver ✨ ${piece} renovado na oficina da Cenário Estofados, com tecido novo e espuma no ponto certo.\n\nQuer um orçamento? Mande fotos e medidas pelo WhatsApp. 📲\n\n#reformadesofa #estofados #saojosedoscampos #tapecaria #cenarioestofados`;
+    const company = await companyName(prisma);
+    const caption = `Antes e depois que dá gosto de ver ✨ ${piece} renovado na oficina da ${company}, com tecido novo e espuma no ponto certo.\n\nQuer um orçamento? Mande fotos e medidas pelo WhatsApp. 📲\n\n#reformadesofa #estofados #tapecaria #${company
+      .normalize('NFD')
+      .replace(/[^A-Za-z0-9]/g, '')
+      .toLowerCase()}`;
     const agent = await prisma.aiAgent.findFirst({
       where: { roleKey: 'MARKETING', status: 'ATIVO' },
     });

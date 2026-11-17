@@ -30,6 +30,7 @@ import { Tabs } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { OsDirectDelivery } from '@/components/commercial/os-direct-delivery';
 import { OsMaterialList } from '@/components/commercial/os-material-list';
+import { CustomerWhatsApp } from '@/components/commercial/customer-whatsapp';
 import { OsStateHeader } from '@/components/commercial/os-state';
 import { useOsMaterialList } from '@/lib/simple-materials';
 import { useTabParam } from '@/lib/tab-param';
@@ -165,28 +166,45 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         title={s.code}
         description={`${s.customer.name} · pedido ${s.order.code} · criada em ${formatDateTime(s.createdAt)}${s.createdBy ? ` por ${s.createdBy}` : ''}`}
         actions={
-          manage && (
-            <>
-              {
-                <>
-                  <Button
-                    variant="secondary"
-                    icon={<Pencil className="size-4" aria-hidden />}
-                    onClick={() => setEditing(true)}
-                  >
-                    Editar dados gerais
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    icon={<Ban className="size-4" aria-hidden />}
-                    onClick={() => setCancelling(true)}
-                  >
-                    Cancelar OS
-                  </Button>
-                </>
-              }
-            </>
-          )
+          <>
+            {s.status !== 'CANCELADA' && can('clientes.ver') && (
+              <CustomerWhatsApp
+                customerId={s.customer.id}
+                customerName={s.customer.name}
+                code={s.code}
+                piece={
+                  s.items.length === 1
+                    ? `o seu ${s.items[0]!.description.toLowerCase()}`
+                    : 'o seu pedido'
+                }
+                date={
+                  s.promisedDate ? s.promisedDate.split('-').reverse().slice(0, 2).join('/') : null
+                }
+              />
+            )}
+            {manage && (
+              <>
+                {
+                  <>
+                    <Button
+                      variant="secondary"
+                      icon={<Pencil className="size-4" aria-hidden />}
+                      onClick={() => setEditing(true)}
+                    >
+                      Editar dados gerais
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      icon={<Ban className="size-4" aria-hidden />}
+                      onClick={() => setCancelling(true)}
+                    >
+                      Cancelar OS
+                    </Button>
+                  </>
+                }
+              </>
+            )}
+          </>
         }
       />
       <div className="mb-6 flex flex-wrap items-center gap-2">

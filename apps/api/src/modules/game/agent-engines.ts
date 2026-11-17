@@ -1,5 +1,5 @@
 /**
- * Motores dos agentes do escritório. Nesta versão, Gerente e Compras raciocinam sobre os dados do
+ * Motores dos agentes do escritório. O Gerente raciocina sobre os dados do
  * Cenário Gestão com regras explícitas (sem modelo de linguagem externo): cada recomendação cita
  * os registros que a justificam (OS, tarefa, material, conta). Os demais papéis informam o que
  * falta configurar e trabalham apenas com as instruções e os dados liberados.
@@ -20,6 +20,7 @@ import { serviceDeadlines } from '../deadlines/service';
 import { buildClosingItems } from '../finance/closing';
 import { dueContext, dueOf } from '../finance/revenue';
 import { num } from './common';
+import { purchaseNeeds } from './agent-office';
 
 export interface AgentContext {
   prisma: PrismaClient;
@@ -45,15 +46,6 @@ export interface AgentAnswer {
 
 const money = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const q = (n: number) => n.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
-const UNIT: Record<string, string> = {
-  METRO: 'm',
-  METRO_QUADRADO: 'm²',
-  PLACA: 'placa(s)',
-  PECA: 'peça(s)',
-  UNIDADE: 'un.',
-  EMBALAGEM: 'emb.',
-};
 
 /** Próximos 7 dias a partir de hoje (no fuso da empresa): "a semana" do plano. */
 function weekRange(timezone: string) {
@@ -65,178 +57,6 @@ function weekRange(timezone: string) {
 
 const can = (ctx: AgentContext, scope: string, ...perms: string[]) =>
   ctx.dataScopes.includes(scope) && perms.some((p) => ctx.permissions.has(p));
-
-/** Falta de material de uma OS, como o agente de Compras a apresenta. */
-export interface Shortage {
-  requirementId: string;
-  serviceOrderId: string;
-  osCode: string;
-  promisedDate: string | null;
-  priority: string;
-  description: string;
-  kind: string;
-  sourcing: string;
-  unit: string;
-  missing: number;
-  awaiting: number;
-  blocksProduction: boolean;
-  stock: { id: string; free: number } | null;
-}
-
-/**
- * Faltas de material das OS abertas. O processo formal de compras e as necessidades de material
- * saíram do Cenário (remoção de módulos, 2026-11), então não há mais falta calculada: o agente de
- * Compras só informa isso, e o Gerente não lista materiais.
- */
-export async function shortages(_prisma: PrismaClient): Promise<Shortage[]> {
-  return [];
-}
-
-/** Compras: prioriza o que libera OS (tarefa bloqueada por material) e evita atraso. */
-export async function purchasingAnswer(ctx: AgentContext, question: string): Promise<AgentAnswer> {
-  if (!can(ctx, 'compras', 'estoque.ver')) return blocked('Compras', 'compras');
-  const all = await shortages(ctx.prisma);
-  // Primeiro o que o estoque já cobre (reservar), depois o que precisa comprar.
-  const free = new Map<string, number>();
-  for (const s of all) if (s.stock) free.set(s.stock.id, Math.max(0, s.stock.free));
-  const reserve: ((typeof all)[number] & { qty: number })[] = [];
-  const toBuy: ((typeof all)[number] & { qty: number })[] = [];
-  const prio = (s: (typeof all)[number]) =>
-    (s.blocksProduction ? 0 : 1000) +
-    (s.priority === 'URGENTE' ? 0 : s.priority === 'ALTA' ? 100 : 300) +
-    (s.promisedDate ? Math.max(0, (Date.parse(s.promisedDate) - Date.now()) / 86_400_000) : 500);
-  for (const s of [...all].filter((x) => x.missing > 0).sort((a, b) => prio(a) - prio(b))) {
-    const avail = s.stock ? (free.get(s.stock.id) ?? 0) : 0;
-    const take = Math.min(avail, s.missing);
-    if (take > 0) {
-      reserve.push({ ...s, qty: take });
-      free.set(s.stock!.id, avail - take);
-    }
-    if (s.missing - take > 1e-9)
-      toBuy.push({ ...s, qty: Math.round((s.missing - take) * 1000) / 1000 });
-  }
-  const refs: AgentReference[] = [];
-  const lines: string[] = [];
-  if (!toBuy.length && !reserve.length) {
-    lines.push(
-      'O Cenário não controla mais compras nem necessidades de material, então não tenho faltas para propor. O estoque continua no painel (Estoque).',
-    );
-  }
-  if (reserve.length) {
-    lines.push('Já tem no estoque (reserve antes de comprar):');
-    for (const s of reserve)
-      lines.push(
-        `• ${s.description}: reservar ${q(s.qty)} ${UNIT[s.unit] ?? s.unit} para ${s.osCode}.`,
-      );
-  }
-  if (toBuy.length) {
-    lines.push(
-      `${reserve.length ? '\n' : ''}Comprar (${toBuy.length}), primeiro o que destrava produção ou vence antes:`,
-    );
-    toBuy.slice(0, 12).forEach((s, i) => {
-      lines.push(
-        `${i + 1}. ${s.description}: ${q(s.qty)} ${UNIT[s.unit] ?? s.unit} para ${s.osCode}` +
-          `${s.promisedDate ? ` (prazo ${s.promisedDate.split('-').reverse().join('/')})` : ''}` +
-          `${s.blocksProduction ? ' — trava uma etapa já planejada' : ''}` +
-          `${s.sourcing === 'EXCLUSIVO_OS' ? ' — compra exclusiva da OS' : ''}.`,
-      );
-    });
-    lines.push(
-      'Ao aprovar uma proposta, abro o pedido de compra oficial já preenchido (rascunho). Confirmar continua com você.',
-    );
-  }
-  const awaiting = all.filter((s) => s.awaiting > 0);
-  if (awaiting.length)
-    lines.push(`A caminho: ${awaiting.map((a) => `${a.description} (${a.osCode})`).join('; ')}.`);
-  for (const s of [...reserve, ...toBuy])
-    refs.push({
-      type: 'OS',
-      id: s.serviceOrderId,
-      label: s.osCode,
-      href: `/painel/os/${s.serviceOrderId}`,
-    });
-  for (const s of reserve)
-    if (s.stock)
-      refs.push({
-        type: 'MATERIAL',
-        id: s.stock.id,
-        label: s.description,
-        href: '/painel/estoque',
-      });
-  void question;
-  const buyPolicy = ctx.policies.criar_compra ?? 'PROPOR';
-  const reservePolicy = ctx.policies.reservar_estoque ?? 'PROPOR';
-  const proposals: ProposalDraft[] = [];
-  if (reservePolicy !== 'NUNCA')
-    for (const s of reserve.slice(0, 5))
-      proposals.push({
-        kind: 'RESERVAR_ESTOQUE',
-        title: `Reservar ${s.description} para ${s.osCode}`,
-        detail: `${q(s.qty)} ${UNIT[s.unit] ?? s.unit} do estoque livre. A reserva é feita pelo fluxo oficial (estante no mapa ou Estoque do painel).`,
-        payload: {
-          requirementId: s.requirementId,
-          stockItemId: s.stock?.id,
-          quantity: s.qty,
-          href: '/painel/estoque',
-        },
-        evidence: [
-          {
-            type: 'OS',
-            id: s.serviceOrderId,
-            label: s.osCode,
-            href: `/painel/os/${s.serviceOrderId}`,
-          },
-        ],
-      });
-  if (buyPolicy !== 'NUNCA')
-    for (const g of groupByOs(toBuy).slice(0, 5))
-      proposals.push({
-        kind: 'CRIAR_COMPRA',
-        title: `Comprar materiais de ${g.osCode}`,
-        detail: g.items
-          .map((s) => `${s.description}: ${q(s.qty)} ${UNIT[s.unit] ?? s.unit}`)
-          .join('; '),
-        payload: {
-          requirementIds: g.items.map((s) => s.requirementId),
-          href: `/painel/compras/novo?req=${g.items.map((s) => s.requirementId).join(',')}`,
-        },
-        evidence: [
-          {
-            type: 'OS',
-            id: g.serviceOrderId,
-            label: g.osCode,
-            href: `/painel/os/${g.serviceOrderId}`,
-          },
-        ],
-      });
-  return {
-    content: lines.join('\n'),
-    references: dedupe(refs),
-    proposals,
-    tasks: [
-      ...reserve.slice(0, 3).map((s) => ({
-        label: `Reservar ${s.description} · ${s.osCode}`,
-        detail: `${q(s.qty)} ${UNIT[s.unit] ?? s.unit} já no estoque`,
-        tone: 'atencao' as const,
-      })),
-      ...toBuy.slice(0, 5).map((s) => ({
-        label: `Comprar ${s.description} · ${s.osCode}`,
-        detail: `${q(s.qty)} ${UNIT[s.unit] ?? s.unit}${s.blocksProduction ? ' (trava produção)' : ''}`,
-        tone: (s.blocksProduction ? 'risco' : 'atencao') as 'risco' | 'atencao',
-      })),
-    ],
-  };
-}
-
-function groupByOs<T extends { serviceOrderId: string; osCode: string }>(rows: T[]) {
-  const out: { serviceOrderId: string; osCode: string; items: T[] }[] = [];
-  for (const r of rows) {
-    const g = out.find((x) => x.serviceOrderId === r.serviceOrderId);
-    if (g) g.items.push(r);
-    else out.push({ serviceOrderId: r.serviceOrderId, osCode: r.osCode, items: [r] });
-  }
-  return out;
-}
 
 const dedupe = (refs: AgentReference[]) =>
   refs.filter((r, i) => refs.findIndex((x) => x.type === r.type && x.id === r.id) === i);
@@ -335,28 +155,28 @@ export async function managerAnswer(ctx: AgentContext, question: string): Promis
     });
   }
 
-  // 3. Compras que destravam a semana.
+  // 3. Materiais das listas das OS que ainda faltam comprar.
   const proposals: ProposalDraft[] = [];
   if (ctx.dataScopes.includes('compras') || ctx.dataScopes.includes('estoque')) {
-    const sh = (await shortages(prisma)).filter((s) => s.missing > 0);
+    const needs = await purchaseNeeds(prisma);
     out.push(
       '',
-      sh.length ? 'Materiais que faltam:' : 'Materiais: nada faltando nas necessidades aprovadas.',
+      needs.length
+        ? `Materiais a comprar (${needs.length}):`
+        : 'Materiais: nada a comprar nas listas das OS abertas.',
     );
-    for (const s of sh.slice(0, 6)) {
-      const fromStock = s.stock ? Math.min(Math.max(0, s.stock.free), s.missing) : 0;
+    for (const n of needs.slice(0, 6)) {
       out.push(
-        `• ${s.description}: ${q(s.missing)} ${UNIT[s.unit] ?? s.unit} para ${s.osCode}` +
-          `${fromStock > 0 ? ` (${q(fromStock)} já no estoque: reservar${fromStock < s.missing ? `; comprar ${q(s.missing - fromStock)}` : ''})` : ' (comprar)'}` +
-          `${s.blocksProduction ? ' — trava produção' : ''}.`,
+        `• ${n.description}${n.quantity ? ` — ${n.quantity}` : ''} para ${n.osCode}${n.promisedDate ? ` (prazo ${n.promisedDate.split('-').reverse().join('/')})` : ''}.`,
       );
       refs.push({
         type: 'OS',
-        id: s.serviceOrderId,
-        label: s.osCode,
-        href: `/painel/os/${s.serviceOrderId}`,
+        id: n.serviceOrderId,
+        label: n.osCode,
+        href: `/painel/os/${n.serviceOrderId}?aba=materiais`,
       });
     }
+    if (needs.length) out.push('O agente de Compras prepara o pedido de cada fornecedor.');
   }
 
   // 4. Dinheiro: contas da semana × recebimentos, separando o que é certo do que depende de algo.
