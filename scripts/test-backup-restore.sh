@@ -9,6 +9,9 @@ if [[ -f .env && -z "${TEST_DATABASE_URL:-}" ]]; then set -a; source .env; set +
 SOURCE="$TEST_DATABASE_URL"
 BASE="${SOURCE%/*}"
 RESTORE_DB="cenario_restore_check_test"
+# Multi-empresa (etapa 3): fora do servidor, `company_id` só é preenchido com a empresa da sessão.
+# Os dados fictícios deste teste são da Cenário Estofados (empresa 1).
+export PGOPTIONS="${PGOPTIONS:-} -c app.company_id=1"
 RESTORE_URL="$BASE/$RESTORE_DB"
 WORK="$(mktemp -d)"
 API_PID=""
