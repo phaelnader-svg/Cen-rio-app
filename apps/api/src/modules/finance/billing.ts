@@ -428,7 +428,7 @@ export async function billingAttention(db: PrismaClient): Promise<AttentionItemD
 export async function billingRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
   const tx = <T>(fn: (t: Tx) => Promise<T>) => prisma.$transaction(fn);
-  const params = z.object({ id: z.string().uuid() });
+  const params = z.object({ id: z.guid() });
 
   app.get('/api/v1/finance/payment-reports', { config: { access: FIN_VIEW } }, async (request) => {
     const q = z

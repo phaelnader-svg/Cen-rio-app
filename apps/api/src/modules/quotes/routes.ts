@@ -11,6 +11,7 @@ import {
   quoteCatalogCreateSchema,
   quoteCatalogUpdateSchema,
   quoteDraftSchema,
+  quoteUpdateSchema,
   quoteSaveBlocker,
   quoteSettingsUpdateSchema,
   workOrderSchema,
@@ -78,8 +79,20 @@ async function catalogDtos(db: Tx | PrismaClient): Promise<QuoteCatalogItemDto[]
   return rows.map(catalogDto).sort((a, b) => (KIND_ORDER[a.kind] ?? 0) - (KIND_ORDER[b.kind] ?? 0));
 }
 
+/** Maior número já usado (inclusive orçamentos excluídos, que continuam no histórico). */
+async function quoteNumbers(db: Tx | PrismaClient) {
+  const [counter, max] = await Promise.all([
+    db.companyCounter.findUnique({
+      where: { companyId_key: { companyId: requireCompanyId(), key: 'quotes' } },
+    }),
+    db.quote.aggregate({ _max: { number: true } }),
+  ]);
+  const used = max._max.number ?? 0;
+  return { used, next: Math.max(counter?.lastValue ?? 0, used) + 1 };
+}
+
 async function settingsDto(db: Tx | PrismaClient): Promise<QuoteSettingsDto> {
-  const [s, company] = await Promise.all([
+  const [s, company, numbers] = await Promise.all([
     db.quoteSettings.upsert({
       where: { companyId: requireCompanyId() },
       create: {},
@@ -89,12 +102,14 @@ async function settingsDto(db: Tx | PrismaClient): Promise<QuoteSettingsDto> {
       where: { id: requireCompanyId() },
       select: { tradeName: true },
     }),
+    quoteNumbers(db),
   ]);
   return {
     taxRateBps: s.taxRateBps,
     companyName: s.companyNameOverride || company?.tradeName || 'Empresa',
     companyNameOverride: s.companyNameOverride,
     logoDataUrl: s.logoDataUrl,
+    nextNumber: numbers.next,
     version: s.version,
   };
 }
@@ -382,6 +397,24 @@ export async function quoteRoutes(app: FastifyInstance) {
           update: {},
         });
         if (before.version !== input.version) throw Errors.versionConflict(before.version);
+        // Numeração: a empresa pode começar de onde já estava (ex.: talão de papel). Nunca abaixo
+        // de um número já usado, porque o número do orçamento é único na empresa.
+        let numberChange: { from: number; to: number } | undefined;
+        if (input.nextNumber !== undefined) {
+          const numbers = await quoteNumbers(tx);
+          if (input.nextNumber !== numbers.next) {
+            if (input.nextNumber <= numbers.used)
+              throw Errors.business(
+                `Já existe o orçamento nº ${numbers.used}. O próximo número precisa ser maior que ${numbers.used}.`,
+              );
+            await tx.companyCounter.upsert({
+              where: { companyId_key: { companyId: requireCompanyId(), key: 'quotes' } },
+              create: { key: 'quotes', lastValue: input.nextNumber - 1 },
+              update: { lastValue: input.nextNumber - 1 },
+            });
+            numberChange = { from: numbers.next, to: input.nextNumber };
+          }
+        }
         await tx.quoteSettings.update({
           where: { companyId: requireCompanyId() },
           data: {
@@ -397,8 +430,11 @@ export async function quoteRoutes(app: FastifyInstance) {
           action: 'quotes.settings_updated',
           entityType: 'quote_settings',
           entityId: '1',
-          summary: 'Orçamento — configuração alterada (alíquota, nome ou logotipo da proposta).',
+          summary: numberChange
+            ? `Orçamento — numeração: o próximo orçamento passa a ser o nº ${numberChange.to}.`
+            : 'Orçamento — configuração alterada (alíquota, nome ou logotipo da proposta).',
           changes: {
+            ...(numberChange ? { nextNumber: numberChange } : {}),
             ...(input.taxRateBps !== undefined
               ? { taxRateBps: { from: before.taxRateBps, to: input.taxRateBps } }
               : {}),
@@ -467,6 +503,47 @@ export async function quoteRoutes(app: FastifyInstance) {
       return reply.status(201).send(await loadQuote(prisma, id));
     },
   );
+
+  // Editar um orçamento salvo: mesmo número e mesmo link; a proposta é refeita com a base atual.
+  app.put('/api/v1/quotes/:id', { config: { access: MANAGE } }, async (request) => {
+    const { id } = idParams.parse(request.params);
+    const { version, draft } = quoteUpdateSchema.parse(request.body);
+    const actor = actorFrom(request);
+    await prisma.$transaction(async (tx) => {
+      const q = await tx.quote.findFirst({ where: { id, deletedAt: null } });
+      if (!q) throw Errors.notFound('Orçamento');
+      if (q.version !== version) throw Errors.versionConflict(q.version);
+      if (q.orderId)
+        throw Errors.business(
+          `O orçamento nº ${q.number} já virou um pedido. Altere os dados no pedido.`,
+        );
+      const [catalog, settings] = await Promise.all([catalogDtos(tx), settingsDto(tx)]);
+      const totals = calcQuote(draft, catalog, settings.taxRateBps);
+      const blocker = quoteSaveBlocker(draft, totals);
+      if (blocker) throw Errors.business(blocker);
+      const snapshot = buildQuoteSnapshot(draft, catalog, settings, new Date());
+      if (!snapshot.service) throw Errors.business('Informe o serviço antes de salvar.');
+      await tx.quote.update({
+        where: { id },
+        data: {
+          customerName: snapshot.customerName,
+          phone: snapshot.phone || null,
+          service: snapshot.service,
+          totalCents: snapshot.totals.totalCents,
+          snapshot: snapshot as unknown as Prisma.InputJsonValue,
+          version: { increment: 1 },
+        },
+      });
+      await audit(tx, actor, {
+        action: 'quotes.updated',
+        entityType: 'quote',
+        entityId: id,
+        summary: `Orçamento nº ${q.number} alterado (${snapshot.customerName}).`,
+        changes: { totalCents: { from: q.totalCents, to: snapshot.totals.totalCents } },
+      });
+    });
+    return loadQuote(prisma, id);
+  });
 
   app.put(
     '/api/v1/quotes/:id/work-order',

@@ -11,6 +11,7 @@ import {
   type PublicPickupDto,
   type PublicQuoteDto,
   type PublicStatusDto,
+  type QuoteSnapshot,
 } from '@cenario/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
@@ -18,6 +19,7 @@ import { CheckCircle2, MessageCircle } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { LogoMark } from '@/components/brand';
+import { ProposalDocument } from '@/components/quotes/documents';
 import { Button } from '@/components/ui/button';
 import { buttonClass } from '@/components/ui/button-styles';
 import { Alert, Card, Spinner } from '@/components/ui/misc';
@@ -60,6 +62,50 @@ function Footer() {
 
 // ─────────────────────────── Proposta (79) ───────────────────────────
 
+/**
+ * A proposta do link no mesmo visual de "Visualizar proposta" do painel. O link só traz o que está
+ * na proposta impressa; custos, lucro e taxas internas ficam zerados aqui e não aparecem.
+ */
+function proposalSnapshot(p: PublicQuoteDto): QuoteSnapshot {
+  return {
+    companyName: p.companyName,
+    logoDataUrl: p.logoDataUrl,
+    issuedAt: p.issuedAt,
+    customerName: p.customerName,
+    phone: p.customerPhone,
+    city: p.city,
+    service: p.service,
+    foamChange: p.foamChange,
+    fabricChange: p.fabricChange,
+    fabrics: p.fabrics,
+    lines: [],
+    logistics: null,
+    upholstery: null,
+    helper: null,
+    sofaCount: p.sofaCount,
+    fee: p.paymentOptionName
+      ? { name: p.paymentOptionName, rateBps: 0, installments: p.installments ?? 1 }
+      : null,
+    totals: {
+      materialsCents: 0,
+      logisticsCents: 0,
+      upholsteryCents: 0,
+      helperCents: 0,
+      laborCents: 0,
+      costCents: 0,
+      profitCents: 0,
+      taxRateBps: 0,
+      taxCents: 0,
+      totalCents: p.totalCents,
+      installmentTotalCents: p.installmentTotalCents,
+    },
+    deliveryDays: p.deliveryDays,
+    validityDays: p.validityDays,
+    paymentTerms: p.paymentTerms,
+    notes: p.notes,
+  };
+}
+
 export function ProposalPage({ id }: { id: string }) {
   const t = useSearchParams().get('t') ?? '';
   const qc = useQueryClient();
@@ -86,57 +132,19 @@ export function ProposalPage({ id }: { id: string }) {
     ? whatsappLink(p.companyPhone, `Olá! Sobre a proposta nº ${p.number} (${p.customerName}): `)
     : null;
   return (
-    <>
-      <CompanyHeader name={p.companyName} logo={p.logoDataUrl} />
-      <Card className="p-5 sm:p-6">
-        <p className="text-sm text-ink-muted">
-          Proposta nº {p.number} • {brDay(p.issuedAt)}
-        </p>
-        <h1 className="mt-1 text-xl font-semibold">{p.service}</h1>
-        <p className="text-sm text-ink-soft">
-          Para {p.customerName}
-          {p.city ? ` • ${p.city}` : ''}
-        </p>
-
-        <dl className="mt-5 divide-y divide-line rounded-xl border border-line text-sm">
-          {[
-            ['Peças', `${p.sofaCount}`],
-            ['Troca de espuma', p.foamChange ? 'Sim' : 'Não'],
-            ['Troca de tecido', p.fabricChange ? 'Sim' : 'Não'],
-            ...(p.fabrics.length ? [['Tecido', p.fabrics.join(', ')]] : []),
-            ...(p.deliveryDays ? [['Prazo de entrega', `${p.deliveryDays} dias`]] : []),
-            ...(p.validUntil ? [['Proposta válida até', brDay(p.validUntil)]] : []),
-          ].map(([k, v]) => (
-            <div key={k} className="flex justify-between gap-4 px-4 py-2.5">
-              <dt className="text-ink-muted">{k}</dt>
-              <dd className="text-right font-medium">{v}</dd>
-            </div>
-          ))}
-        </dl>
-
-        <div className="mt-5 rounded-xl bg-brand-50 p-4">
-          <p className="text-sm text-brand-700">Valor total</p>
-          <p className="money text-3xl font-semibold text-brand-700">{formatCents(p.totalCents)}</p>
-          {p.installments && p.installmentTotalCents ? (
-            <p className="text-sm text-brand-700">
-              ou {p.installments}x de{' '}
-              {formatCents(Math.round(p.installmentTotalCents / p.installments))} no cartão (
-              {formatCents(p.installmentTotalCents)})
+    // Mesma largura da proposta no painel (a página dos links é mais estreita).
+    <div className="relative left-1/2 w-[min(56rem,calc(100vw-2rem))] -translate-x-1/2">
+      <ProposalDocument s={proposalSnapshot(p)} number={p.number} />
+      <Card className="mt-6 p-5 sm:p-6">
+        {!approved && p.status !== 'RECUSADO' && !p.expired && (
+          <div className="mb-4">
+            <p className="text-lg font-semibold">Gostou da proposta?</p>
+            <p className="text-sm text-ink-muted">
+              Aprove por aqui e a tapeçaria é avisada na hora para combinar a retirada com você.
             </p>
-          ) : null}
-        </div>
-        {p.paymentTerms && (
-          <p className="mt-4 text-sm whitespace-pre-line text-ink-soft">
-            <strong className="text-ink">Pagamento:</strong> {p.paymentTerms}
-          </p>
+          </div>
         )}
-        {p.notes && (
-          <p className="mt-2 text-sm whitespace-pre-line text-ink-soft">
-            <strong className="text-ink">Observações:</strong> {p.notes}
-          </p>
-        )}
-
-        <div className="mt-6">
+        <div>
           {approved ? (
             <Alert tone="ok" title="Proposta aprovada">
               {p.approvedAt
@@ -193,7 +201,7 @@ export function ProposalPage({ id }: { id: string }) {
         </div>
       </Card>
       <Footer />
-    </>
+    </div>
   );
 }
 

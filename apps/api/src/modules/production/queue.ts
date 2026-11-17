@@ -144,7 +144,7 @@ export async function productionQueueRoutes(app: FastifyInstance) {
 
   /** Fila de um funcionário, para a gestão. */
   app.get('/api/v1/production-queue/:userId', { config: { access: VIEW } }, (request) =>
-    loadQueue(prisma, z.object({ userId: z.string().uuid() }).parse(request.params).userId),
+    loadQueue(prisma, z.object({ userId: z.guid() }).parse(request.params).userId),
   );
 
   /**

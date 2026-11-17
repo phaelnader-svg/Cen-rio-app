@@ -46,10 +46,10 @@ const canSeeCosts = (request: FastifyRequest) => request.auth!.permissions.has('
 
 const listQuery = z.object({
   archived: z.enum(['true', 'false', 'all']).default('false'),
-  categoryId: z.string().uuid().optional(),
+  categoryId: z.guid().optional(),
 });
 const adjustmentsQuery = z
-  .object({ itemId: z.string().uuid().optional(), rollId: z.string().uuid().optional() })
+  .object({ itemId: z.guid().optional(), rollId: z.guid().optional() })
   .refine((q) => Boolean(q.itemId) !== Boolean(q.rollId), 'Informe o material OU o rolo.');
 
 /** Nome repetido (índice único sem diferenciar maiúsculas) vira mensagem clara. */

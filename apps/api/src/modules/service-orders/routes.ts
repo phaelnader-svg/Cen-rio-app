@@ -48,7 +48,7 @@ import { requireCompanyId } from '../../core/tenant';
 const VIEW = { session: 'any', permissions: ['os.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['os.gerenciar'] } as const;
 const AUDIENCE = anyPermissionAudience('os.ver', 'pedidos.ver');
-const itemParams = z.object({ id: z.string().uuid(), itemId: z.string().uuid() });
+const itemParams = z.object({ id: z.guid(), itemId: z.guid() });
 
 const fullInclude = {
   order: { select: { id: true, number: true } },
@@ -358,7 +358,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
 
   /** Peças recebidas ainda não incluídas em OS (base para criar a OS). */
   app.get('/api/v1/service-orders/available', { config: { access: MANAGE } }, async (request) => {
-    const { orderId } = z.object({ orderId: z.string().uuid() }).parse(request.query);
+    const { orderId } = z.object({ orderId: z.guid() }).parse(request.query);
     const order = await prisma.commercialOrder.findUnique({
       where: { id: orderId },
       include: { customer: true, items: { orderBy: { position: 'asc' } } },

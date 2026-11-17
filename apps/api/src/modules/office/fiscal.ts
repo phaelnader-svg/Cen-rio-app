@@ -282,7 +282,7 @@ export async function fiscalRoutes(app: FastifyInstance) {
         .object({
           description: z.string().trim().min(10).max(2000),
           amountCents: z.number().int().positive(),
-          profileId: z.string().uuid(),
+          profileId: z.guid(),
           version: z.number().int().positive(),
         })
         .parse(request.body);

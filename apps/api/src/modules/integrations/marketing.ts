@@ -46,7 +46,7 @@ export async function marketingRoutes(app: FastifyInstance) {
   app.post('/api/v1/marketing/draft', { config: { access: VIEW } }, async (request) => {
     const b = z
       .object({
-        serviceOrderId: z.string().uuid().optional(),
+        serviceOrderId: z.guid().optional(),
         scheduledFor: z.string().datetime().optional(),
       })
       .parse(request.body ?? {});

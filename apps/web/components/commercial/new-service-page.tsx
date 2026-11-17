@@ -26,11 +26,13 @@ import {
   SERVICE_TYPES,
   SERVICE_TYPE_LABEL,
   newServiceSchema,
+  quotePromisedDate,
+  quoteServiceToPiece,
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Plus, Search, Trash2 } from 'lucide-react';
+import { CheckCircle2, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useDeferredValue, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Input } from '@/components/ui/field';
 import {
@@ -51,7 +53,7 @@ import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useCustomerAddresses, useCustomerLookup, useNewServiceDefaults } from '@/lib/commercial';
 import { useModules } from '@/lib/hooks';
-import { useSavedQuote } from '@/lib/quotes';
+import { localDay, useSavedQuote } from '@/lib/quotes';
 import { AddressFields, addressLines, emptyAddress, type AddressState } from './address-form';
 import {
   PickupTakeFields,
@@ -136,11 +138,29 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const fromQuote = quote && !quote.orderId ? quote : null;
 
   // ── Cliente
-  const [mode, setMode] = useState<'EXISTENTE' | 'NOVO'>('EXISTENTE');
+  // Do orçamento, o cliente normalmente ainda não tem cadastro: começa em "Cliente novo" já
+  // preenchido. Se o telefone do orçamento já for de um cliente, o cadastro dele é usado.
+  const [mode, setMode] = useState<'EXISTENTE' | 'NOVO'>(
+    fromQuote && d.canCreateCustomer ? 'NOVO' : 'EXISTENTE',
+  );
   const [search, setSearch] = useState(fromQuote?.customerName ?? '');
   const [customer, setCustomer] = useState<CustomerSummaryDto | null>(null);
   const lookup = useCustomerLookup(useDeferredValue(search), mode === 'EXISTENTE' && !customer);
   const addresses = useCustomerAddresses(mode === 'EXISTENTE' ? (customer?.id ?? null) : null);
+  // Orçamento com telefone de um cliente já cadastrado: usa esse cadastro (uma vez, ao abrir).
+  const quotePhone = (fromQuote?.phone ?? '').replace(/\D/g, '');
+  const [phoneChecked, setPhoneChecked] = useState(!fromQuote || quotePhone.length < 8);
+  const phoneLookup = useCustomerLookup(quotePhone, !phoneChecked);
+  const [linkedByPhone, setLinkedByPhone] = useState(false);
+  useEffect(() => {
+    if (phoneChecked || !phoneLookup.data) return;
+    setPhoneChecked(true);
+    if (phoneLookup.data.length === 1) {
+      setCustomer(phoneLookup.data[0]!);
+      setMode('EXISTENTE');
+      setLinkedByPhone(true);
+    }
+  }, [phoneChecked, phoneLookup.data]);
   const [addressId, setAddressId] = useState('');
   const [useNewAddress, setUseNewAddress] = useState(false);
   const [kind, setKind] = useState<(typeof CUSTOMER_KINDS)[number]>('PF');
@@ -158,13 +178,22 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
 
   // ── Serviço fechado
   const [contracted, setContracted] = useState(fromQuote?.service ?? '');
-  const [pieces, setPieces] = useState<PieceRow[]>(() => [
-    {
-      ...newPiece(),
-      quantity: String(Math.max(1, fromQuote?.snapshot.sofaCount ?? 1)),
-      fabricName: fromQuote?.snapshot.fabrics[0] ?? '',
-    },
-  ]);
+  const [pieces, setPieces] = useState<PieceRow[]>(() => {
+    if (!fromQuote) return [newPiece()];
+    const s = fromQuote.snapshot;
+    const kind = quoteServiceToPiece(s.service);
+    return [
+      {
+        ...newPiece(kind.serviceType),
+        pieceType: kind.pieceType,
+        description: (s.upholstery?.name || s.service).slice(0, 200),
+        quantity: String(Math.max(1, s.sofaCount)),
+        fabricName: s.fabrics.join(', ').slice(0, 120),
+      },
+    ];
+  });
+  // Vindo do orçamento, o serviço aparece como resumo para conferir; "Alterar" abre os campos.
+  const [editService, setEditService] = useState(!fromQuote);
   const [value, setValue] = useState<number | null>(
     d.canSetValues && fromQuote ? fromQuote.totalCents : null,
   );
@@ -177,7 +206,9 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const [entryMethod, setEntryMethod] = useState<PaymentMethod>('PIX');
   const [balanceMethod, setBalanceMethod] = useState<PaymentMethod>('PIX');
   const [installments, setInstallments] = useState('1');
-  const [promised, setPromised] = useState('');
+  const [promised, setPromised] = useState(() =>
+    fromQuote ? quotePromisedDate(fromQuote.snapshot.deliveryDays, localDay(new Date())) : '',
+  );
   const [technicalNotes, setTechnicalNotes] = useState(fromQuote ? quoteNotes(fromQuote) : '');
 
   // ── Retirada (opcional: o cliente pode entregar as peças na tapeçaria)
@@ -412,6 +443,12 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   });
 
   const err = (k: string) => errors[k];
+  // Erro num campo do serviço que está só no resumo: abre os campos para corrigir.
+  if (
+    !editService &&
+    Object.keys(errors).some((k) => k.startsWith('service.') && k !== 'service.promisedDate')
+  )
+    setEditService(true);
   const ownerName = (id: string) => d.upholsterers.find((u) => u.userId === id)?.displayName ?? '—';
   const setPiece = (key: string, patch: Partial<PieceRow>) =>
     setPieces((list) => list.map((p) => (p.key === key ? { ...p, ...patch } : p)));
@@ -440,6 +477,12 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
         <Alert tone="info">
           Preenchido com o orçamento nº {fromQuote.number} ({fromQuote.customerName}). Confira os
           dados; ao registrar, o orçamento fica marcado como aprovado e ligado a este pedido.
+        </Alert>
+      )}
+      {linkedByPhone && customer && (
+        <Alert tone="info" data-testid="ns-linked-by-phone">
+          O telefone do orçamento já é do cliente {customer.name}: usamos esse cadastro. Se for
+          outra pessoa, clique em Trocar ou escolha Cliente novo.
         </Alert>
       )}
       {quote?.orderId && (
@@ -719,246 +762,297 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
         step={2}
         title="Serviço fechado"
         id="ns-servico"
-        description="Só o que já foi combinado. Detalhes técnicos ficam para quando as peças chegarem."
+        description={
+          fromQuote && !editService
+            ? `Tudo veio do orçamento nº ${fromQuote.number}. Confira e, se precisar, altere.`
+            : 'Só o que já foi combinado. Detalhes técnicos ficam para quando as peças chegarem.'
+        }
+        actions={
+          fromQuote && !editService ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              icon={<Pencil className="size-4" aria-hidden />}
+              onClick={() => setEditService(true)}
+              data-testid="ns-edit-service"
+            >
+              Alterar dados
+            </Button>
+          ) : undefined
+        }
       >
-        <FormGrid>
-          <TextField
-            label="Descrição do serviço"
-            cols={12}
-            placeholder={serviceSummary}
-            hint="O tipo de serviço é escolhido em cada peça."
-            value={contracted}
-            onChange={(e) => setContracted(e.target.value)}
-            error={err('service.contractedService')}
+        {fromQuote && !editService ? (
+          <QuoteServiceSummary
+            pieces={pieces}
+            contracted={contractedText}
+            value={d.canSetValues ? value : null}
+            payment={
+              d.canSetValues && value
+                ? payModel === 'ENTRADA_ENTREGA'
+                  ? `Entrada de ${brl(entry ?? value - Math.floor(value / 2))} (${PAYMENT_METHOD_LABEL[entryMethod]}) e saldo na entrega (${PAYMENT_METHOD_LABEL[balanceMethod]})`
+                  : PAYMENT_MODEL_LABEL[payModel]
+                : null
+            }
+            terms={d.canSetValues ? terms : ''}
+            notes={technicalNotes}
           />
-        </FormGrid>
-        <div className="mt-5 space-y-3" data-testid="ns-pieces">
-          {pieces.map((p, idx) => (
-            <FormGrid key={p.key} data-testid={`ns-piece-${idx}`}>
-              <SelectField
-                label="Peça"
-                cols={3}
-                value={p.pieceType}
-                onChange={(e) => setPiece(p.key, { pieceType: e.target.value as PieceType })}
-              >
-                {PIECE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {PIECE_TYPE_LABEL[t]}
-                  </option>
-                ))}
-              </SelectField>
-              <SelectField
-                label="Tipo de serviço"
-                cols={3}
-                value={p.serviceType}
-                onChange={(e) => setPiece(p.key, { serviceType: e.target.value as ServiceType })}
-                error={err(`service.items.${idx}.serviceType`)}
-                data-testid={`ns-piece-service-${idx}`}
-              >
-                {SERVICE_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {SERVICE_TYPE_LABEL[t]}
-                  </option>
-                ))}
-              </SelectField>
+        ) : (
+          <>
+            <FormGrid>
               <TextField
-                label="Descrição"
-                required
-                cols={4}
-                value={p.description}
-                onChange={(e) => setPiece(p.key, { description: e.target.value })}
-                error={err(`service.items.${idx}.description`)}
-                data-testid={`ns-piece-desc-${idx}`}
+                label="Descrição do serviço"
+                cols={12}
+                placeholder={serviceSummary}
+                hint="O tipo de serviço é escolhido em cada peça."
+                value={contracted}
+                onChange={(e) => setContracted(e.target.value)}
+                error={err('service.contractedService')}
               />
-              <NumberField
-                label="Qtd."
-                cols={2}
-                min={1}
-                max={200}
-                value={p.quantity}
-                onChange={(e) => setPiece(p.key, { quantity: e.target.value })}
-                error={err(`service.items.${idx}.quantity`)}
-                data-testid={`ns-piece-qty-${idx}`}
-              />
-              <TextField
-                label="Tecido"
-                cols={3}
-                placeholder="Se já escolhido"
-                value={p.fabricName}
-                onChange={(e) => setPiece(p.key, { fabricName: e.target.value })}
-              />
-              <FieldAction cols={2} className="sm:!col-span-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  aria-label={`Remover peça ${idx + 1}`}
-                  disabled={pieces.length === 1}
-                  onClick={() => setPieces((list) => list.filter((x) => x.key !== p.key))}
-                  icon={<Trash2 className="size-4" />}
-                />
-              </FieldAction>
-              {d.canPlanUpholsterer && (
-                <SelectField
-                  label="Tapeceiro titular (previsto)"
-                  cols={4}
-                  value={p.upholsterer}
-                  onChange={(e) =>
-                    setPiece(p.key, {
-                      upholsterer: e.target.value,
-                      ...(laborAllowed(d, e.target.value)
-                        ? {}
-                        : { laborCents: null, laborOk: true }),
-                    })
-                  }
-                  error={err(`service.items.${idx}.plannedUpholstererUserId`)}
-                  data-testid={`ns-piece-owner-${idx}`}
-                >
-                  <option value="">Definir no planejamento</option>
-                  {d.upholsterers.map((u) => (
-                    <option key={u.userId} value={u.userId}>
-                      {u.displayName}
-                    </option>
-                  ))}
-                </SelectField>
-              )}
+            </FormGrid>
+            <div className="mt-5 space-y-3" data-testid="ns-pieces">
+              {pieces.map((p, idx) => (
+                <FormGrid key={p.key} data-testid={`ns-piece-${idx}`}>
+                  <SelectField
+                    label="Peça"
+                    cols={3}
+                    value={p.pieceType}
+                    onChange={(e) => setPiece(p.key, { pieceType: e.target.value as PieceType })}
+                  >
+                    {PIECE_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {PIECE_TYPE_LABEL[t]}
+                      </option>
+                    ))}
+                  </SelectField>
+                  <SelectField
+                    label="Tipo de serviço"
+                    cols={3}
+                    value={p.serviceType}
+                    onChange={(e) =>
+                      setPiece(p.key, { serviceType: e.target.value as ServiceType })
+                    }
+                    error={err(`service.items.${idx}.serviceType`)}
+                    data-testid={`ns-piece-service-${idx}`}
+                  >
+                    {SERVICE_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {SERVICE_TYPE_LABEL[t]}
+                      </option>
+                    ))}
+                  </SelectField>
+                  <TextField
+                    label="Descrição"
+                    required
+                    cols={4}
+                    value={p.description}
+                    onChange={(e) => setPiece(p.key, { description: e.target.value })}
+                    error={err(`service.items.${idx}.description`)}
+                    data-testid={`ns-piece-desc-${idx}`}
+                  />
+                  <NumberField
+                    label="Qtd."
+                    cols={2}
+                    min={1}
+                    max={200}
+                    value={p.quantity}
+                    onChange={(e) => setPiece(p.key, { quantity: e.target.value })}
+                    error={err(`service.items.${idx}.quantity`)}
+                    data-testid={`ns-piece-qty-${idx}`}
+                  />
+                  <TextField
+                    label="Tecido"
+                    cols={3}
+                    placeholder="Se já escolhido"
+                    value={p.fabricName}
+                    onChange={(e) => setPiece(p.key, { fabricName: e.target.value })}
+                  />
+                  <FieldAction cols={2} className="sm:!col-span-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      aria-label={`Remover peça ${idx + 1}`}
+                      disabled={pieces.length === 1}
+                      onClick={() => setPieces((list) => list.filter((x) => x.key !== p.key))}
+                      icon={<Trash2 className="size-4" />}
+                    />
+                  </FieldAction>
+                  {/* Do orçamento, o tapeceiro fica para o planejamento/OS (não se decide ao fechar). */}
+                  {d.canPlanUpholsterer && !fromQuote && (
+                    <SelectField
+                      label="Tapeceiro titular (previsto)"
+                      cols={4}
+                      value={p.upholsterer}
+                      onChange={(e) =>
+                        setPiece(p.key, {
+                          upholsterer: e.target.value,
+                          ...(laborAllowed(d, e.target.value)
+                            ? {}
+                            : { laborCents: null, laborOk: true }),
+                        })
+                      }
+                      error={err(`service.items.${idx}.plannedUpholstererUserId`)}
+                      data-testid={`ns-piece-owner-${idx}`}
+                    >
+                      <option value="">Definir no planejamento</option>
+                      {d.upholsterers.map((u) => (
+                        <option key={u.userId} value={u.userId}>
+                          {u.displayName}
+                        </option>
+                      ))}
+                    </SelectField>
+                  )}
+                  {d.canSetValues && (
+                    <MoneyField
+                      label="Valor da peça (opcional)"
+                      cols={3}
+                      cents={p.valueCents}
+                      onCents={(v, ok) => setPiece(p.key, { valueCents: v, valueOk: ok })}
+                      hint="Todas ou nenhuma; a soma é o valor fechado."
+                      error={
+                        !p.valueOk
+                          ? 'Valor inválido.'
+                          : err(`service.items.${idx}.agreedValueCents`)
+                      }
+                      data-testid={`ns-piece-value-${idx}`}
+                    />
+                  )}
+                  {d.canPlanLabor && p.upholsterer && laborAllowed(d, p.upholsterer) && (
+                    <MoneyField
+                      label="Mão de obra prevista (por unidade)"
+                      cols={4}
+                      cents={p.laborCents}
+                      onCents={(v, ok) => setPiece(p.key, { laborCents: v, laborOk: ok })}
+                      hint="Previsão aplicada na OS criada ao registrar."
+                      error={
+                        !p.laborOk
+                          ? 'Valor inválido.'
+                          : err(`service.items.${idx}.plannedLaborUnitCents`)
+                      }
+                      data-testid={`ns-piece-labor-${idx}`}
+                    />
+                  )}
+                </FormGrid>
+              ))}
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                icon={<Plus className="size-4" />}
+                // A peça nova começa com o tipo da última (o mais comum: várias do mesmo serviço).
+                onClick={() => setPieces((l) => [...l, newPiece(l[l.length - 1]?.serviceType)])}
+                data-testid="ns-add-piece"
+              >
+                Adicionar peça
+              </Button>
+            </div>
+          </>
+        )}
+        <FormGrid className="mt-5">
+          {editService && (
+            <>
               {d.canSetValues && (
                 <MoneyField
-                  label="Valor da peça (opcional)"
-                  cols={3}
-                  cents={p.valueCents}
-                  onCents={(v, ok) => setPiece(p.key, { valueCents: v, valueOk: ok })}
-                  hint="Todas ou nenhuma; a soma é o valor fechado."
-                  error={
-                    !p.valueOk ? 'Valor inválido.' : err(`service.items.${idx}.agreedValueCents`)
-                  }
-                  data-testid={`ns-piece-value-${idx}`}
-                />
-              )}
-              {d.canPlanLabor && p.upholsterer && laborAllowed(d, p.upholsterer) && (
-                <MoneyField
-                  label="Mão de obra prevista (por unidade)"
+                  label="Valor total fechado"
                   cols={4}
-                  cents={p.laborCents}
-                  onCents={(v, ok) => setPiece(p.key, { laborCents: v, laborOk: ok })}
-                  hint="Previsão aplicada na OS criada ao registrar."
-                  error={
-                    !p.laborOk
-                      ? 'Valor inválido.'
-                      : err(`service.items.${idx}.plannedLaborUnitCents`)
-                  }
-                  data-testid={`ns-piece-labor-${idx}`}
+                  cents={value}
+                  onCents={(v, ok) => {
+                    setValue(v);
+                    setValueOk(ok);
+                  }}
+                  error={!valueOk ? 'Valor inválido.' : err('service.agreedValueCents')}
+                  data-testid="ns-value"
                 />
               )}
-            </FormGrid>
-          ))}
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            icon={<Plus className="size-4" />}
-            // A peça nova começa com o tipo da última (o mais comum: várias do mesmo serviço).
-            onClick={() => setPieces((l) => [...l, newPiece(l[l.length - 1]?.serviceType)])}
-            data-testid="ns-add-piece"
-          >
-            Adicionar peça
-          </Button>
-        </div>
-        <FormGrid className="mt-5">
-          {d.canSetValues && (
-            <MoneyField
-              label="Valor total fechado"
-              cols={4}
-              cents={value}
-              onCents={(v, ok) => {
-                setValue(v);
-                setValueOk(ok);
-              }}
-              error={!valueOk ? 'Valor inválido.' : err('service.agreedValueCents')}
-              data-testid="ns-value"
-            />
-          )}
-          {d.canSetValues && (
-            <TextField
-              label="Condições de pagamento (observação)"
-              cols={5}
-              value={terms}
-              onChange={(e) => setTerms(e.target.value)}
-            />
-          )}
-          {d.canSetValues && value !== null && value > 0 && (
-            <>
-              <SelectField
-                label="Condição de pagamento"
-                cols={4}
-                value={payModel}
-                onChange={(e) => setPayModel(e.target.value as PaymentModel)}
-                data-testid="ns-pay-model"
-              >
-                {PAYMENT_MODELS.filter((m) => withPickup || m !== 'CARTAO_RETIRADA').map((m) => (
-                  <option key={m} value={m}>
-                    {PAYMENT_MODEL_LABEL[m]}
-                  </option>
-                ))}
-              </SelectField>
-              {payModel === 'ENTRADA_ENTREGA' && (
+              {d.canSetValues && (
+                <TextField
+                  label="Condições de pagamento (observação)"
+                  cols={5}
+                  value={terms}
+                  onChange={(e) => setTerms(e.target.value)}
+                />
+              )}
+              {d.canSetValues && value !== null && value > 0 && (
                 <>
-                  <MoneyField
-                    label="Entrada"
-                    cols={3}
-                    cents={entry}
-                    onCents={(v, ok) => {
-                      setEntry(v);
-                      setEntryOk(ok);
-                    }}
-                    hint={`Vazio = metade (${brl(value - Math.floor(value / 2))}). Saldo vence na entrega.`}
-                    data-testid="ns-pay-entry"
-                  />
                   <SelectField
-                    label="Forma da entrada"
-                    cols={2}
-                    value={entryMethod}
-                    onChange={(e) => setEntryMethod(e.target.value as PaymentMethod)}
+                    label="Condição de pagamento"
+                    cols={4}
+                    value={payModel}
+                    onChange={(e) => setPayModel(e.target.value as PaymentModel)}
+                    data-testid="ns-pay-model"
                   >
-                    {PAYMENT_METHODS.map((m) => (
-                      <option key={m} value={m}>
-                        {PAYMENT_METHOD_LABEL[m]}
-                      </option>
-                    ))}
+                    {PAYMENT_MODELS.filter((m) => withPickup || m !== 'CARTAO_RETIRADA').map(
+                      (m) => (
+                        <option key={m} value={m}>
+                          {PAYMENT_MODEL_LABEL[m]}
+                        </option>
+                      ),
+                    )}
                   </SelectField>
-                  <SelectField
-                    label="Forma do saldo"
-                    cols={3}
-                    value={balanceMethod}
-                    onChange={(e) => setBalanceMethod(e.target.value as PaymentMethod)}
-                  >
-                    {PAYMENT_METHODS.map((m) => (
-                      <option key={m} value={m}>
-                        {PAYMENT_METHOD_LABEL[m]}
-                      </option>
-                    ))}
-                  </SelectField>
+                  {payModel === 'ENTRADA_ENTREGA' && (
+                    <>
+                      <MoneyField
+                        label="Entrada"
+                        cols={3}
+                        cents={entry}
+                        onCents={(v, ok) => {
+                          setEntry(v);
+                          setEntryOk(ok);
+                        }}
+                        hint={`Vazio = metade (${brl(value - Math.floor(value / 2))}). Saldo vence na entrega.`}
+                        data-testid="ns-pay-entry"
+                      />
+                      <SelectField
+                        label="Forma da entrada"
+                        cols={2}
+                        value={entryMethod}
+                        onChange={(e) => setEntryMethod(e.target.value as PaymentMethod)}
+                      >
+                        {PAYMENT_METHODS.map((m) => (
+                          <option key={m} value={m}>
+                            {PAYMENT_METHOD_LABEL[m]}
+                          </option>
+                        ))}
+                      </SelectField>
+                      <SelectField
+                        label="Forma do saldo"
+                        cols={3}
+                        value={balanceMethod}
+                        onChange={(e) => setBalanceMethod(e.target.value as PaymentMethod)}
+                      >
+                        {PAYMENT_METHODS.map((m) => (
+                          <option key={m} value={m}>
+                            {PAYMENT_METHOD_LABEL[m]}
+                          </option>
+                        ))}
+                      </SelectField>
+                    </>
+                  )}
+                  {(payModel === 'CARTAO_100' || payModel === 'CARTAO_RETIRADA') && (
+                    <SelectField
+                      label="Parcelas"
+                      cols={2}
+                      value={installments}
+                      onChange={(e) => setInstallments(e.target.value)}
+                      data-testid="ns-pay-installments"
+                    >
+                      {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((n) => (
+                        <option key={n} value={n}>
+                          {n}×
+                        </option>
+                      ))}
+                    </SelectField>
+                  )}
+                  {pieces.every((p) => p.valueCents === null) && (
+                    <p
+                      className="text-xs text-warn-600 sm:col-span-12"
+                      data-testid="ns-estimated-hint"
+                    >
+                      Sem valor por peça: o Resultado de cada OS usará uma distribuição estimada
+                      (proporcional às peças).
+                    </p>
+                  )}
                 </>
-              )}
-              {(payModel === 'CARTAO_100' || payModel === 'CARTAO_RETIRADA') && (
-                <SelectField
-                  label="Parcelas"
-                  cols={2}
-                  value={installments}
-                  onChange={(e) => setInstallments(e.target.value)}
-                  data-testid="ns-pay-installments"
-                >
-                  {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((n) => (
-                    <option key={n} value={n}>
-                      {n}×
-                    </option>
-                  ))}
-                </SelectField>
-              )}
-              {pieces.every((p) => p.valueCents === null) && (
-                <p className="text-xs text-warn-600 sm:col-span-12" data-testid="ns-estimated-hint">
-                  Sem valor por peça: o Resultado de cada OS usará uma distribuição estimada
-                  (proporcional às peças).
-                </p>
               )}
             </>
           )}
@@ -971,13 +1065,15 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
             error={err('service.promisedDate')}
             data-testid="ns-promised"
           />
-          <TextAreaField
-            label="Observações técnicas"
-            cols={12}
-            rows={2}
-            value={technicalNotes}
-            onChange={(e) => setTechnicalNotes(e.target.value)}
-          />
+          {editService && (
+            <TextAreaField
+              label="Observações técnicas"
+              cols={12}
+              rows={2}
+              value={technicalNotes}
+              onChange={(e) => setTechnicalNotes(e.target.value)}
+            />
+          )}
         </FormGrid>
       </FormSection>
 
@@ -1407,5 +1503,67 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
         </FormActions>
       </Card>
     </div>
+  );
+}
+
+/** Serviço fechado vindo do orçamento: só para conferir (os campos abrem em "Alterar dados"). */
+function QuoteServiceSummary({
+  pieces,
+  contracted,
+  value,
+  payment,
+  terms,
+  notes,
+}: {
+  pieces: PieceRow[];
+  contracted: string;
+  value: number | null;
+  payment: string | null;
+  terms: string;
+  notes: string;
+}) {
+  const rows: [string, React.ReactNode][] = [
+    ['Serviço', contracted || '—'],
+    [
+      'Peças',
+      <ul key="p" className="space-y-0.5">
+        {pieces.map((p) => (
+          <li key={p.key}>
+            {p.quantity}× {PIECE_TYPE_LABEL[p.pieceType]} — {SERVICE_TYPE_LABEL[p.serviceType]}
+            {p.description ? ` — ${p.description}` : ''}
+          </li>
+        ))}
+      </ul>,
+    ],
+    [
+      'Tecido',
+      pieces
+        .map((p) => p.fabricName)
+        .filter(Boolean)
+        .join(', ') || 'Sem troca de tecido',
+    ],
+  ];
+  if (value !== null)
+    rows.push([
+      'Valor fechado',
+      <span key="v" className="money font-semibold">
+        {brl(value)}
+      </span>,
+    ]);
+  if (payment) rows.push(['Pagamento', payment]);
+  if (terms.trim()) rows.push(['Condições', terms]);
+  if (notes.trim()) rows.push(['Observações', notes]);
+  return (
+    <dl
+      className="grid gap-x-6 gap-y-3 rounded-xl border border-line bg-subtle/40 p-4 text-sm sm:grid-cols-[10rem_1fr]"
+      data-testid="ns-quote-summary"
+    >
+      {rows.map(([k, v]) => (
+        <div key={k} className="contents">
+          <dt className="font-medium text-ink-muted">{k}</dt>
+          <dd className="whitespace-pre-line text-ink">{v}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

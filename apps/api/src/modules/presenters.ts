@@ -13,7 +13,7 @@ import type { AuthContext } from '../core/types';
 import { Errors } from '../lib/errors';
 import { requireCompanyId } from '../core/tenant';
 
-export const idParams = z.object({ id: z.string().uuid({ message: 'Identificador inválido.' }) });
+export const idParams = z.object({ id: z.guid({ message: 'Identificador inválido.' }) });
 
 export function photoUrl(fileId: string | null): string | null {
   return fileId ? `/api/files/${fileId}` : null;

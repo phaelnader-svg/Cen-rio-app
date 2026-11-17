@@ -50,7 +50,7 @@ const RECONCILE = {
 /** Quem vê OS recebe a atualização (sem valores no evento). */
 const AUDIENCE = anyPermissionAudience('os.ver', 'os.gerenciar');
 
-const lineParams = z.object({ id: z.string().uuid(), materialId: z.string().uuid() });
+const lineParams = z.object({ id: z.guid(), materialId: z.guid() });
 const num = (d: unknown) => (d === null || d === undefined ? null : Number(d));
 
 const canSeeCosts = (request: FastifyRequest) =>

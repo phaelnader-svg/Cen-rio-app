@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { PieceType, ServiceType } from './domain';
 
 /**
  * Módulo Orçamentos — proposta comercial com materiais automáticos.
@@ -165,6 +166,8 @@ export interface QuoteSettingsDto {
   companyName: string;
   companyNameOverride: string | null;
   logoDataUrl: string | null;
+  /** Número que o próximo orçamento salvo vai receber (a empresa pode adiantar a numeração). */
+  nextNumber: number;
   version: number;
 }
 
@@ -259,6 +262,8 @@ export interface PublicQuoteDto {
   logoDataUrl: string | null;
   issuedAt: string;
   customerName: string;
+  /** Telefone do próprio cliente, como na proposta impressa. */
+  customerPhone: string;
   city: string;
   service: string;
   fabrics: string[];
@@ -267,6 +272,8 @@ export interface PublicQuoteDto {
   sofaCount: number;
   totalCents: number;
   installmentTotalCents: number | null;
+  /** Nome da opção de pagamento a prazo (ex.: "Cartão de crédito"), como na proposta impressa. */
+  paymentOptionName: string | null;
   installments: number | null;
   deliveryDays: number | null;
   validityDays: number | null;
@@ -357,7 +364,7 @@ const photoSchema = z
 export const workOrderSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Data inválida.' }),
   upholsteryCents: z.number().int().min(0).max(10_000_000_000),
-  responsibleId: z.string().uuid({ message: 'Selecione o tapeceiro responsável.' }),
+  responsibleId: z.guid({ message: 'Selecione o tapeceiro responsável.' }),
   responsibleName: z.string().max(120).optional(),
   fabricName: z.string().trim().max(160),
   fabricMeters: z.number().min(0).max(100_000).nullable(),
@@ -418,6 +425,12 @@ export const quoteSettingsUpdateSchema = z.object({
   version: z.number().int().min(1),
   taxRateBps: bps.nullable().optional(),
   companyNameOverride: z.string().trim().max(90).nullable().optional(),
+  nextNumber: z
+    .number({ message: 'Informe o número do próximo orçamento.' })
+    .int({ message: 'Informe um número inteiro.' })
+    .min(1, { message: 'Informe um número a partir de 1.' })
+    .max(999_999_999, { message: 'Número muito grande.' })
+    .optional(),
   logoDataUrl: z
     .string()
     .max(1_500_000, { message: 'Logotipo muito grande. Use um arquivo menor.' })
@@ -450,7 +463,7 @@ export type QuoteBackup = z.infer<typeof quoteBackupSchema>;
 
 export const quoteDraftItemSchema = z.object({
   id: z.string().max(64),
-  catalogItemId: z.string().uuid(),
+  catalogItemId: z.guid(),
   qty: z.number().min(0).max(1_000_000),
   heightCm: z.number().min(0).max(100_000),
   widthCm: z.number().min(0).max(100_000),
@@ -468,12 +481,12 @@ export const quoteDraftSchema = z.object({
   fabricChange: z.boolean(),
   foamChange: z.boolean(),
   items: z.array(quoteDraftItemSchema).max(500),
-  logisticsId: z.string().uuid().nullable(),
-  upholsteryServiceId: z.string().uuid().nullable(),
-  helperServiceId: z.string().uuid().nullable(),
+  logisticsId: z.guid().nullable(),
+  upholsteryServiceId: z.guid().nullable(),
+  helperServiceId: z.guid().nullable(),
   sofaCount: z.number().int().min(1).max(1000),
   profitCents: cents,
-  feeId: z.string().uuid().nullable(),
+  feeId: z.guid().nullable(),
   deliveryDays: z.number().int().min(1).max(365).nullable(),
   validityDays: z.number().int().min(0).max(3650).nullable(),
   paymentTerms: z.string().max(4000),
@@ -754,3 +767,118 @@ export const normalizeQuoteName = (v: string) =>
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
+
+// ─────────────────────────── Editar um orçamento salvo ───────────────────────────
+
+export const quoteUpdateSchema = z.object({
+  version: z.number().int().min(1),
+  draft: quoteDraftSchema,
+});
+export type QuoteUpdateInput = z.infer<typeof quoteUpdateSchema>;
+
+/**
+ * Reabre um orçamento salvo no "Elaborar": a cópia gravada guarda os nomes (não os cadastros),
+ * então cada linha volta a apontar para o cadastro de mesmo nome na base de dados atual.
+ * `missing` lista o que não existe mais na base (fica de fora e a pessoa escolhe de novo).
+ */
+export function quoteDraftFromSnapshot(
+  s: QuoteSnapshot,
+  catalog: readonly QuoteCatalogItemDto[],
+): { draft: QuoteDraft; missing: string[] } {
+  const missing: string[] = [];
+  const norm = (v: string) => v.trim().toLocaleLowerCase('pt-BR');
+  const find = (kind: QuoteCatalogKind, name: string, category?: string | null) =>
+    catalog.find(
+      (c) =>
+        c.kind === kind &&
+        norm(c.name) === norm(name) &&
+        (category === undefined || c.category === category),
+    ) ?? null;
+  const ref = (kind: QuoteCatalogKind, v: { name: string } | null, label: string) => {
+    if (!v) return null;
+    const m = find(kind, v.name);
+    if (!m) missing.push(`${label} "${v.name}"`);
+    return m?.id ?? null;
+  };
+  const items: QuoteDraftItem[] = [];
+  s.lines.forEach((l, i) => {
+    const m = find('MATERIAL', l.name, l.category);
+    if (!m) return void missing.push(`material "${l.name}"`);
+    items.push({
+      id: `e${i}`,
+      catalogItemId: m.id,
+      qty: l.qty,
+      heightCm: l.heightCm,
+      widthCm: l.widthCm,
+      lengthCm: l.lengthCm,
+    });
+  });
+  const known = (QUOTE_SERVICES as readonly string[]).includes(s.service);
+  const draft: QuoteDraft = {
+    customerName: s.customerName,
+    phone: s.phone,
+    city: s.city,
+    service: known ? s.service : QUOTE_OTHER_SERVICE,
+    serviceOther: known ? '' : s.service,
+    fabricChange: s.fabricChange,
+    foamChange: s.foamChange,
+    items,
+    logisticsId: ref('LOGISTICA', s.logistics, 'rota'),
+    upholsteryServiceId: ref('MAO_TAPECEIRO', s.upholstery, 'serviço do tapeceiro'),
+    helperServiceId: ref('MAO_AJUDANTE', s.helper, 'serviço do ajudante'),
+    sofaCount: Math.max(1, s.sofaCount),
+    profitCents: s.totals.profitCents,
+    feeId: ref('TAXA_MAQUINA', s.fee, 'taxa'),
+    deliveryDays: s.deliveryDays,
+    validityDays: s.validityDays,
+    paymentTerms: s.paymentTerms,
+    notes: s.notes,
+  };
+  return { draft, missing };
+}
+
+// ─────────────────────────── Fechar serviço a partir do orçamento ───────────────────────────
+
+/** Peça e tipo de serviço do pedido deduzidos do serviço escolhido no orçamento. */
+export function quoteServiceToPiece(service: string): {
+  pieceType: PieceType;
+  serviceType: ServiceType;
+} {
+  const s = service.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const has = (...w: string[]) => w.some((x) => s.includes(x));
+  const pieceType: PieceType = has('sofa', 'namoradeira', 'chaise', 'diva', 'recamier')
+    ? 'SOFA'
+    : has('poltrona')
+      ? 'POLTRONA'
+      : has('cadeira')
+        ? 'CADEIRA'
+        : has('cabeceira')
+          ? 'CABECEIRA'
+          : has('puff', 'pufe')
+            ? 'PUFE'
+            : has('banco', 'banqueta')
+              ? 'BANCO'
+              : has('colchonete', 'cama box', 'assento', 'almofada')
+                ? 'COLCHAO'
+                : 'OUTRO';
+  const serviceType: ServiceType = has('troca de espuma')
+    ? 'TROCA_DE_ESPUMA'
+    : has('troca de tecido', 'troca de revestimento', 'revestimento de')
+      ? 'TROCA_DE_TECIDO'
+      : has('reparo')
+        ? 'REPARO'
+        : has('fabricacao', 'confeccao', 'estruturacao')
+          ? 'FABRICACAO'
+          : has('reforma')
+            ? 'REFORMA_COMPLETA'
+            : 'OUTRO';
+  return { pieceType, serviceType };
+}
+
+/** Data prometida (AAAA-MM-DD) a partir do prazo do orçamento, contado de hoje. */
+export function quotePromisedDate(deliveryDays: number | null, today: string): string {
+  if (!deliveryDays) return '';
+  const d = new Date(`${today}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + deliveryDays);
+  return d.toISOString().slice(0, 10);
+}

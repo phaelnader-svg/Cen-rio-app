@@ -457,7 +457,7 @@ export async function improvementRoutes(app: FastifyInstance) {
 
   app.post('/api/v1/trash/:kind/:id/restore', { config: { access: ANY_WEB } }, async (request) => {
     const { kind, id } = z
-      .object({ kind: z.enum(TRASH_KINDS), id: z.string().uuid() })
+      .object({ kind: z.enum(TRASH_KINDS), id: z.guid() })
       .parse(request.params);
     const actor = actorFrom(request);
     await prisma.$transaction(async (tx) => {

@@ -597,7 +597,7 @@ export const newServiceSchema = z
      */
     pickup: newServicePickupSchema.nullable().optional(),
     /** Melhoria 78: orçamento aprovado que virou este serviço (fica ligado ao pedido). */
-    quoteId: z.string().uuid().nullable().optional(),
+    quoteId: z.guid().nullable().optional(),
   })
   .superRefine((v, ctx) => {
     refinePlannedIntent(v.service.items, ctx, ['service', 'items']);

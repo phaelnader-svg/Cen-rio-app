@@ -11,7 +11,7 @@ const querySchema = z.object({
     .optional(),
   entityType: z.string().max(60).optional(),
   /** Fase 10: histórico de UMA entidade (ex.: a OS, o pedido, a entrega). */
-  entityId: z.string().uuid().optional(),
+  entityId: z.guid().optional(),
   /** Reformulação Fase 3: só as exceções destacadas (ex.: autoaprovação do gestor). */
   highlighted: z.enum(['1']).optional(),
 });

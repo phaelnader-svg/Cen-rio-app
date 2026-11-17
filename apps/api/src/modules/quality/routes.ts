@@ -146,7 +146,7 @@ const RETURNS_VIEW = {
   anyPermissions: ['devolucoes.gerenciar', 'pedidos.ver'],
 } as const;
 
-const itemParams = z.object({ id: z.string().uuid(), itemId: z.string().uuid() });
+const itemParams = z.object({ id: z.guid(), itemId: z.guid() });
 const device = (r: FastifyRequest) => r.auth?.deviceId ?? null;
 const isManager = (r: FastifyRequest, p: 'qualidade.gerenciar' | 'entregas.gerenciar') =>
   r.auth?.permissions.has(p) ?? false;
@@ -978,7 +978,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     { config: { access: DELIVERY_EXECUTE, idempotent: true } },
     async (request) => {
       const { kind, id } = z
-        .object({ kind: z.enum(['pickups', 'deliveries']), id: z.string().uuid() })
+        .object({ kind: z.enum(['pickups', 'deliveries']), id: z.guid() })
         .parse(request.params);
       const input = paymentReportSchema.parse(request.body);
       const stop = { kind: kind === 'pickups' ? ('RETIRADA' as const) : ('ENTREGA' as const), id };
@@ -1188,7 +1188,7 @@ export async function qualityRoutes(app: FastifyInstance) {
     );
 
   app.get('/api/v1/returns', { config: { access: RETURNS_VIEW } }, async (request) => {
-    const q = z.object({ orderId: z.string().uuid().optional() }).parse(request.query);
+    const q = z.object({ orderId: z.guid().optional() }).parse(request.query);
     const rows = await prisma.pieceReturn.findMany({
       where: q.orderId ? { orderId: q.orderId } : {},
       include: returnInclude,

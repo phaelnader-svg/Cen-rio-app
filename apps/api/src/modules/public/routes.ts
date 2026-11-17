@@ -39,7 +39,7 @@ import { todaySaoPaulo } from '../billing/routes';
  * sistema, como a confirmação de e-mail). O cliente vê só o que já está na proposta impressa,
  * nas fotos do serviço ou na própria retirada — nada de valores internos, custos ou equipe.
  */
-const idParam = z.object({ id: z.string().uuid() });
+const idParam = z.object({ id: z.guid() });
 const tokenQuery = z.object({ t: z.string().max(64).optional() });
 const PUBLIC = { public: true } as const;
 const PICKUP_OPEN = ['AGUARDANDO_AGENDAMENTO', 'AGENDADA'];
@@ -101,6 +101,7 @@ export async function publicRoutes(app: FastifyInstance) {
       logoDataUrl: s.logoDataUrl,
       issuedAt: s.issuedAt,
       customerName: s.customerName,
+      customerPhone: s.phone,
       city: s.city,
       service: s.service,
       fabrics: s.fabrics,
@@ -109,6 +110,7 @@ export async function publicRoutes(app: FastifyInstance) {
       sofaCount: s.sofaCount,
       totalCents: s.totals.totalCents,
       installmentTotalCents: s.totals.installmentTotalCents,
+      paymentOptionName: s.fee?.name ?? null,
       installments: s.fee?.installments ?? null,
       deliveryDays: s.deliveryDays,
       validityDays: s.validityDays,
@@ -220,9 +222,7 @@ export async function publicRoutes(app: FastifyInstance) {
     '/api/public/album/:id/foto/:fileId',
     { config: { access: PUBLIC } },
     async (request, reply) => {
-      const { id, fileId } = z
-        .object({ id: z.string().uuid(), fileId: z.string().uuid() })
-        .parse(request.params);
+      const { id, fileId } = z.object({ id: z.guid(), fileId: z.guid() }).parse(request.params);
       const { t, m } = z
         .object({ t: z.string().max(64).optional(), m: z.string().optional() })
         .parse(request.query);

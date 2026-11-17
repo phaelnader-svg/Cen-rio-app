@@ -88,6 +88,7 @@ export function QuoteEditor({
   saving,
   saveError,
   onClear,
+  note = null,
 }: {
   api: DraftApi;
   catalog: QuoteCatalogItemDto[];
@@ -97,6 +98,8 @@ export function QuoteEditor({
   saving: boolean;
   saveError: string | null;
   onClear: () => void;
+  /** Aviso ao reabrir um orçamento salvo (cadastros que não existem mais na base). */
+  note?: string | null;
 }) {
   const { draft: d, update } = api;
   const t = useMemo(() => calcQuote(d, catalog, settings.taxRateBps), [d, catalog, settings]);
@@ -151,7 +154,7 @@ export function QuoteEditor({
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold tracking-[0.12em] text-ink-muted uppercase">
-            Novo orçamento
+            {api.editing ? `Editando o orçamento nº ${api.editing.number}` : 'Novo orçamento'}
           </p>
           <h2 className="text-lg font-semibold">Elaboração da proposta</h2>
           <p className="text-sm text-ink-muted">
@@ -164,9 +167,17 @@ export function QuoteEditor({
           onClick={onClear}
           icon={<X className="size-4" aria-hidden />}
         >
-          Limpar orçamento
+          {api.editing ? 'Cancelar edição' : 'Limpar orçamento'}
         </Button>
       </div>
+      {api.editing && (
+        <Alert tone="info">
+          Você está alterando o orçamento nº {api.editing.number}. Ao salvar, ele é atualizado com o
+          mesmo número e o mesmo link do cliente; os valores são recalculados com os preços atuais
+          da base de dados.
+        </Alert>
+      )}
+      {api.editing && note && <Alert tone="warn">{note}</Alert>}
 
       <FormSection step={1} title="Dados do cliente">
         <FormGrid>
@@ -511,7 +522,7 @@ export function QuoteEditor({
             loading={saving}
             icon={<Save className="size-4" aria-hidden />}
           >
-            Salvar orçamento
+            {api.editing ? 'Salvar alterações' : 'Salvar orçamento'}
           </Button>
           <Button onClick={onPreview} icon={<Eye className="size-4" aria-hidden />}>
             Visualizar proposta comercial

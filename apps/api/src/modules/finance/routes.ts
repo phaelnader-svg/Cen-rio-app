@@ -98,7 +98,7 @@ import {
 } from './revenue';
 import { requireCompanyId } from '../../core/tenant';
 
-const paymentParams = z.object({ id: z.string().uuid(), paymentId: z.string().uuid() });
+const paymentParams = z.object({ id: z.guid(), paymentId: z.guid() });
 const reportParams = z.object({ kind: z.enum(REPORTS) });
 const payableQuerySchema = periodQuerySchema.extend({
   status: z.string().max(60).optional(),
@@ -257,12 +257,12 @@ export async function financeRoutes(app: FastifyInstance) {
     }
     if (itemIds.length) {
       const sis = await prisma.serviceOrderItem.findMany({
-        where: { id: { in: itemIds.filter((x) => z.string().uuid().safeParse(x).success) } },
+        where: { id: { in: itemIds.filter((x) => z.guid().safeParse(x).success) } },
         select: { serviceOrder: { select: { orderId: true } } },
       });
       for (const s of sis) orderIds.add(s.serviceOrder.orderId);
     }
-    const valid = [...orderIds].filter((x) => z.string().uuid().safeParse(x).success);
+    const valid = [...orderIds].filter((x) => z.guid().safeParse(x).success);
     return orderBalances(prisma, valid);
   });
 

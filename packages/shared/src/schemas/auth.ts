@@ -28,7 +28,7 @@ export const adminLoginSchema = z.object({
 export type AdminLoginInput = z.infer<typeof adminLoginSchema>;
 
 export const tabletLoginSchema = z.object({
-  employeeId: z.string().uuid({ message: 'Selecione um funcionário.' }),
+  employeeId: z.guid({ message: 'Selecione um funcionário.' }),
   pin: z.string().regex(/^\d{6}$/, { message: 'O PIN deve ter 6 dígitos.' }),
 });
 export type TabletLoginInput = z.infer<typeof tabletLoginSchema>;
