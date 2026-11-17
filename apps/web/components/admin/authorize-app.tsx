@@ -26,6 +26,8 @@ interface Info {
     totalPermissions: number;
   }[];
   redirectHost: string;
+  /** Entrada direta: a empresa já autorizou este aplicativo; não precisa confirmar de novo. */
+  skipConsent?: boolean;
 }
 
 const KEYS = [
@@ -37,6 +39,7 @@ const KEYS = [
   'code_challenge_method',
   'org_ref',
   'org_label',
+  'prompt',
 ] as const;
 
 export function AuthorizeApp() {
@@ -62,6 +65,12 @@ export function AuthorizeApp() {
     }
   }, [unauth, qs, router]);
 
+  const skip = info.data?.skipConsent === true;
+  useEffect(() => {
+    if (skip && busy === null && error === null) void decide('allow');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skip]);
+
   async function decide(decision: 'allow' | 'deny') {
     setBusy(decision);
     setError(null);
@@ -83,8 +92,15 @@ export function AuthorizeApp() {
     <main className="flex min-h-dvh items-start justify-center bg-subtle px-4 py-10 sm:items-center">
       <div className="w-full max-w-lg rounded-2xl border border-line bg-surface p-6 shadow-sm sm:p-8">
         <BrandMark className="mb-6" />
-        {info.isLoading || unauth ? (
-          <Spinner />
+        {info.isLoading || unauth || (skip && !error) ? (
+          <div className="space-y-3" data-testid="authorize-direct">
+            <Spinner />
+            {skip && (
+              <p className="text-center text-sm text-ink-muted">
+                Abrindo {info.data?.client.name ?? 'o aplicativo'} com a sua conta…
+              </p>
+            )}
+          </div>
         ) : info.error ? (
           <Alert tone="danger" title="Não foi possível abrir a autorização">
             {errorMessage(info.error)}

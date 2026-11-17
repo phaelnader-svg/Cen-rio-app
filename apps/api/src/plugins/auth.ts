@@ -59,6 +59,9 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     const access = request.routeOptions.config?.access;
     if (!access) return; // 404 e rotas fora de /api
 
+    // Webhooks de provedores (Meta, Asaas, Clicksign): sem cookie e sem Origin. A autenticação é a
+    // assinatura/token do provedor, verificada no handler (falha fechada se não configurada).
+    if ('webhook' in access) return;
     if ('public' in access && access.serverToServer) return;
 
     // 0. Acesso delegado de aplicativo (Authorization: Bearer). Sem cookies: não há CSRF;
@@ -277,7 +280,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
   }
 
   function enforce(request: FastifyRequest, access: AccessRule) {
-    if ('public' in access) return;
+    if ('public' in access || 'webhook' in access) return;
     if ('device' in access) {
       if (!request.device) throw Errors.deviceRequired();
       return;

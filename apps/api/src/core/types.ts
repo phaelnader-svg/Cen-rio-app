@@ -51,6 +51,8 @@ export type AccessRule =
        */
       serverToServer?: true;
     }
+  /** Webhook de provedor externo: sem sessão nem Origin; o handler EXIGE a assinatura/token do provedor. */
+  | { webhook: true }
   | { device: true }
   | {
       session: 'any' | SessionKind;
