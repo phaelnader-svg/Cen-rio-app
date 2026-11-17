@@ -555,13 +555,13 @@ test('permissões corrigidas: menu e telas por perfil (B1, B2, B5, B6)', async (
 
   // B2
   const leitura = await perfil('HML-SoOs', ['os.ver']);
-  const rm = await leitura.abrir('/painel/recebimento-materiais');
+  // Recebimento de materiais removido (16/11/2026): fora do menu para qualquer perfil.
   anota(
     F,
     'B2 sem estoque/compras',
-    'item no menu (qualquer funcionário recebe), tela sem 403 e sem a lista de conferência',
-    `${leitura.menu.includes('/painel/recebimento-materiais') ? 'no menu' : 'fora'} · 403: ${rm.r403.join(', ') || 'nenhum'}`,
-    leitura.menu.includes('/painel/recebimento-materiais') && rm.r403.length === 0,
+    'sem "Recebimento de materiais" no menu (tela removida)',
+    leitura.menu.includes('/painel/recebimento-materiais') ? 'no menu' : 'fora',
+    !leitura.menu.includes('/painel/recebimento-materiais'),
   );
   // B5
   for (const rota of ['/painel/dispositivos', '/painel/sincronizacao']) {
@@ -585,13 +585,12 @@ test('permissões corrigidas: menu e telas por perfil (B1, B2, B5, B6)', async (
   );
   await leitura.fechar();
   const estoque = await perfil('HML-Estoque', ['estoque.ver']);
-  const rmE = await estoque.abrir('/painel/recebimento-materiais');
   anota(
     F,
     'B2 com estoque.ver',
-    'tela sem 403 (lista de conferência permitida)',
-    `403: ${rmE.r403.join(', ') || 'nenhum'}`,
-    rmE.r403.length === 0,
+    'sem "Recebimento de materiais" no menu (tela removida)',
+    estoque.menu.includes('/painel/recebimento-materiais') ? 'no menu' : 'fora',
+    !estoque.menu.includes('/painel/recebimento-materiais'),
   );
   await estoque.fechar();
   // B6 — permitido só para consultar

@@ -170,7 +170,8 @@ export function PageHeader({
         <h1 className="text-2xl font-semibold tracking-tight text-ink">{title}</h1>
         {description && <p className="mt-1 max-w-2xl text-[15px] text-ink-muted">{description}</p>}
       </div>
-      {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
+      {/* Sem shrink-0: com muitos botões (ex.: pedido no tablet), a linha quebra em vez de vazar. */}
+      {actions && <div className="flex flex-wrap gap-2 sm:justify-end">{actions}</div>}
     </div>
   );
 }

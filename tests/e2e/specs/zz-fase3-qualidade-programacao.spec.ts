@@ -176,10 +176,7 @@ test('programação semanal numa tela só; endereços antigos e menu enxuto', as
   await expect(
     page.getByRole('heading', { name: 'Competências da equipe', level: 1 }),
   ).toBeVisible();
-  await page.goto('/painel/planejamento');
-  await expect(
-    page.getByRole('heading', { name: 'Planejamento de sexta', level: 1 }),
-  ).toBeVisible();
+  // O "Planejamento de sexta" saiu com a remoção de módulos (16/11/2026).
 });
 
 test('desfazer a entrega direta: prévia, justificativa e histórico preservado', async ({

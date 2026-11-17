@@ -111,7 +111,7 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
    * bloqueios pela mesma fonte da API; o menu leva a "Materiais aprovados"; a aba Recebimentos
    * de Compras lista por situação; "Bloqueios" abre o quadro já filtrado.
    */
-  test('Início: total da Central, a planejar e bloqueios; menu e Recebimentos', async ({
+  test('Início: total da Central, a planejar e bloqueios; menu sem os módulos removidos', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -130,15 +130,11 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
     );
     await page.getByTestId('ops-blocked-tasks').click();
     await expect(page).toHaveURL(/\/painel\/producao\?status=BLOQUEADA$/);
-    // Menu: "Materiais aprovados" no grupo Compras.
+    // Removidos (16/11/2026): Materiais aprovados, Compras e Recebimentos saem do menu.
     await page.goto('/painel');
-    await page.getByRole('navigation').getByRole('link', { name: 'Materiais aprovados' }).click();
-    await expect(page).toHaveURL(/\/painel\/materiais$/);
-    // Compras → Recebimentos: filtro por situação.
-    await page.goto('/painel/compras');
-    await page.getByRole('tab', { name: 'Recebimentos' }).click();
-    await expect(page.getByTestId('receiving-situation')).toBeVisible();
-    await page.getByTestId('receiving-situation').selectOption('CANCELADO');
-    await expect(page.getByTestId('receiving-situation')).toHaveValue('CANCELADO');
+    const nav = page.getByRole('navigation');
+    await expect(nav.getByRole('link', { name: 'Pedidos comerciais' }).first()).toBeVisible();
+    for (const gone of ['Materiais aprovados', 'Compras', 'Recebimentos'])
+      await expect(nav.getByRole('link', { name: gone, exact: true })).toHaveCount(0);
   });
 });

@@ -88,8 +88,9 @@ export async function setMaterialsGate(page: Page, enabled: boolean) {
   expect(r.ok(), `GET /api/company/modules: ${await r.text()}`).toBe(true);
   const m = ((await r.json()) as { key: string; version: number; enabled: boolean }[]).find(
     (x) => x.key === 'materiais',
-  )!;
-  if (m.enabled === enabled) return;
+  );
+  // Remoção de módulos (16/11/2026): a trava formal de materiais saiu; materiais nunca bloqueiam.
+  if (!m || m.enabled === enabled) return;
   const w = await page.request.fetch('/api/company/modules/materiais', {
     method: 'PUT',
     data: { enabled, version: m.version },

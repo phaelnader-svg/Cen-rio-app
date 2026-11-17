@@ -108,7 +108,8 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     await expect(page.getByTestId('plan-editor')).toContainText('Publicado');
     await expect(page.getByTestId(`plan-task-${prep}`)).toContainText('Liberada');
     await expect(rev).toContainText('Bloqueada');
-    await expect(page.getByTestId(`plan-task-Corte de tecido — ${sofa}`)).toContainText(
+    // A trava formal de materiais saiu (16/11/2026): o corte fica programado, sem bloqueio.
+    await expect(page.getByTestId(`plan-task-Corte de tecido — ${sofa}`)).not.toContainText(
       'Materiais',
     );
     await evidence(page, '02-planejamento-publicado');

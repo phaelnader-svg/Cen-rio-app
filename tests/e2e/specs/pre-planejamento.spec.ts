@@ -80,12 +80,17 @@ async function receivedService(page: Page, name: string, pieces: string[]) {
     },
     pickup: { scheduledDate: today(), windowStart: '23:30', team: 'EQUIPE_PROPRIA' },
   });
-  const pk = await call(page, 'GET', `/api/v1/pickups/${svc.pickup.id}`);
-  const r = await call(page, 'POST', `/api/v1/arrivals/pickups/${svc.pickup.id}/confirm`, {
-    version: pk.version,
-  });
-  expect(r.serviceOrder?.code).toMatch(/OS-\d{5}/);
-  return r.serviceOrder as { id: string; code: string };
+  // Recebimentos removidos (16/11/2026): a OS nasce no fechamento; a chegada é a transição
+  // "Peças chegaram na oficina" da retirada.
+  for (const toStatus of ['EM_EXECUCAO', 'RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA']) {
+    const pk = await call(page, 'GET', `/api/v1/pickups/${svc.pickup.id}`);
+    await call(page, 'POST', `/api/v1/pickups/${svc.pickup.id}/transition`, {
+      toStatus,
+      version: pk.version,
+    });
+  }
+  expect(svc.serviceOrder?.code).toMatch(/OS-\d{5}/);
+  return svc.serviceOrder as { id: string; code: string };
 }
 
 async function noHorizontalScroll(page: Page) {
@@ -116,7 +121,6 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       const row2 = page.getByTestId(`to-plan-${two.code}`);
       await expect(row1).toContainText('Helena Planejamento Fictícia');
       await expect(row1).toContainText('Sofá');
-      await expect(row1).toContainText('Materiais:');
       await expect(row2).toBeVisible();
       await expect(page.getByText(/R\$/)).toHaveCount(0);
       await shot(page, '01-a-planejar');
@@ -186,13 +190,15 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       await shot(page, '05-revisar-e-publicar');
       await page.getByTestId('publish-confirm').click();
       await expect(prev).toHaveCount(0);
-      // Sem levantamento de materiais: planejado ≠ liberado — vai para "Aguardando condição".
-      await page.getByRole('tab', { name: /Aguardando condição/ }).click();
+      // A trava de materiais saiu (16/11/2026): publicado, o serviço fica em "Planejados"
+      // até a data de início (nada liberado antes dela).
+      await page.getByRole('tab', { name: /Planejados/ }).click();
       for (const so of [one, two])
-        await expect(page.getByTestId(`stage-${so.code}`).getByTestId('blockers')).toContainText(
-          /[Mm]ateria/,
-        );
-      await shot(page, '06-aguardando-condicao');
+        await expect(
+          page.getByTestId(`week-${WEEK}`).getByTestId(`planned-${so.code}`),
+        ).toBeVisible();
+      await expect(page.getByTestId(`week-${WEEK}`)).not.toContainText('Rascunho');
+      await shot(page, '06-planejados-publicados');
 
       // ── Tablets: cada um vê as suas; nada liberado antes da data de início.
       const joao = await openTablet(browser, cj, '730561', { width: 768, height: 1024 });
@@ -224,8 +230,8 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       ] as const) {
         await page.setViewportSize({ width: w, height: h });
         await page.goto('/painel/producao/a-planejar');
-        await page.getByRole('tab', { name: /Aguardando condição/ }).click();
-        await expect(page.getByTestId(`stage-${two.code}`)).toBeVisible();
+        await page.getByRole('tab', { name: /Planejados/ }).click();
+        await expect(page.getByTestId(`planned-${two.code}`)).toBeVisible();
         await noHorizontalScroll(page);
         await shot(page, `09-producao-${w}`);
       }

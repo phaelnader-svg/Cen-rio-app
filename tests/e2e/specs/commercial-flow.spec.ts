@@ -16,7 +16,7 @@ async function createCustomer(page: Page, name: string, phone = '(11) 90000-1234
 }
 
 test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento → OS', () => {
-  test('fluxo completo, com bloqueio da OS antes do recebimento e histórico técnico', async ({
+  test('fluxo completo: retirada, chegada na oficina, OS técnica e histórico técnico', async ({
     page,
   }) => {
     await loginAdmin(page);
@@ -51,10 +51,8 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     await expect(page.getByTestId('order-value')).toHaveText(/3\.800,00/);
     const orderUrl = page.url();
 
-    // A OS ainda não pode ser criada (sem recebimento).
-    await expect(page.getByRole('link', { name: 'Criar OS técnica' })).toHaveCount(0);
-    await page.goto(`/painel/os/nova?pedido=${orderUrl.split('/').pop()}`);
-    await expect(page.getByText('Aguardando a chegada das peças')).toBeVisible();
+    // Recebimentos removidos (16/11/2026): a OS não depende da chegada das peças.
+    await expect(page.getByRole('link', { name: 'Criar OS técnica' })).toBeVisible();
 
     // 3. Retirada agendada (todas as peças)
     await page.goto(orderUrl);
@@ -74,25 +72,15 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
     await expect(page.getByTestId('pickup-timeline')).toContainText('Retirada realizada');
 
-    // 4. Recebimento parcial (4 das 6 cadeiras + sofá)
-    await detail.getByRole('link', { name: 'Registrar recebimento na oficina' }).click();
-    await page
-      .getByTestId('receipt-line-Cadeiras de jantar')
-      .getByLabel('Recebidas agora')
-      .fill('4');
-    await page
-      .getByTestId('receipt-line-Cadeiras de jantar')
-      .getByLabel('Localização inicial na oficina')
-      .fill('Bancada 2');
-    await page
-      .getByLabel('Divergências em relação ao pedido')
-      .fill('Duas cadeiras ficaram com o cliente');
-    await page.getByRole('button', { name: 'Confirmar recebimento' }).click();
-    await expect(page.getByTestId('receipt-done')).toContainText(/Recebimento RC-\d{5} registrado/);
+    // 4. Chegada na oficina: só uma marca na retirada (sem conferência de quantidades).
+    await detail.getByRole('button', { name: 'Peças chegaram na oficina' }).click();
+    await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
+    await expect(detail).toContainText('Recebida na oficina');
+    await page.goto(orderUrl);
 
     // 5. OS técnica com as peças recebidas
     await page.getByRole('link', { name: 'Criar OS técnica' }).click();
-    await expect(page.getByLabel('Quantidade').nth(1)).toHaveValue('4');
+    await expect(page.getByLabel('Quantidade').nth(1)).toHaveValue('6');
     await page.getByLabel('Tecido escolhido').first().fill('Linho');
     await page.getByLabel('Cor').first().fill('Areia');
     await page.getByRole('button', { name: 'Criar OS' }).click();
@@ -113,10 +101,6 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     await page.getByRole('tab', { name: /Histórico/ }).click();
     await expect(page.getByTestId('revisions')).toContainText('Linho → Veludo');
     await expect(page.getByTestId('revisions')).toContainText('Motivo: Cliente trocou o tecido');
-
-    // 7. Pedido reflete o recebimento parcial
-    await page.goto(orderUrl);
-    await expect(page.getByTestId('order-status')).toContainText('Recebido parcialmente');
   });
 
   test('outra sessão do painel vê o novo pedido em tempo real', async ({ page, browser }) => {

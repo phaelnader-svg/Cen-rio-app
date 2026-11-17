@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
 import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
-import { post } from './os-helpers';
+import { markArrived, post } from './os-helpers';
 
 /**
  * Correção global — fluxos novos no navegador (dados fictícios; nenhum pagamento real):

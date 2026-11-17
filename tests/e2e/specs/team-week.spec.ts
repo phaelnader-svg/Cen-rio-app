@@ -126,15 +126,14 @@ test.describe.serial('Evolução Fase 4 — Minha semana', () => {
       await expect(jt.getByTestId('queue-all-1')).toContainText(`${so.code}/1`);
       await jt.getByRole('button', { name: 'Voltar à minha semana' }).click();
 
-      // Ricardo: nada executável ainda — motivo explicado, nenhuma ação liberada.
+      // Ricardo: a trava formal de materiais saiu (16/11/2026) — o corte de tecido não espera
+      // compra; ele vê a própria fila como titular da peça.
       const rt = ricardo.page;
-      await expect(rt.getByTestId('week-nothing')).toBeVisible();
-      await expect(rt.getByTestId('week-reasons')).toContainText('aguardando');
-      await expect(rt.getByRole('button', { name: 'Iniciar' })).toHaveCount(0);
+      await expect(rt.getByTestId('my-week')).toContainText(`${so.code}/1`);
       await expect(rt.getByTestId('piece-owner').first()).toHaveText(
         'Você é o tapeceiro titular desta peça.',
       );
-      await shot(rt, '02-ricardo-aguardando');
+      await shot(rt, '02-ricardo-titular');
       // Márcio só vê as poltronas; Thiago (sem fila) mantém a tela anterior e as inspeções.
       await expect(marcio.page.getByTestId('my-week')).toContainText(`${so.code}/2`);
       await expect(marcio.page.getByTestId('my-week')).not.toContainText(`${so.code}/1`);
