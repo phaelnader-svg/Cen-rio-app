@@ -127,7 +127,11 @@ describe('Orçamento: situação, lembrete, funil e link do cliente', () => {
       customerName: 'Maria Proposta',
       status: 'ENVIADO',
     });
+    // O link mostra a mesma proposta do painel: telefone do cliente e opção a prazo, nada de custo.
+    expect(pub).toHaveProperty('customerPhone');
+    expect(pub).toHaveProperty('paymentOptionName');
     expect(JSON.stringify(pub)).not.toContain('costCents');
+    expect(JSON.stringify(pub)).not.toContain('rateBps');
     expect(JSON.stringify(pub)).not.toContain('profitCents');
 
     const aprovado = ok(await anon.post(`/api/public/proposta/${q.id}/aprovar`, { t: query(url) }));
