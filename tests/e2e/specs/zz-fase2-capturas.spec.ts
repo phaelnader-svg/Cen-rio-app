@@ -187,15 +187,7 @@ test('capturas da Fase 2 (painel e tablet) em 1440 e 390 px', async ({ page, bro
     t.page.on('pageerror', (e) => terr.push(e.message));
     try {
       await check(t.page, terr, v.name, 'tablet-inicio');
-      await t.page.getByTestId('tile-arrivals').click();
-      await check(t.page, terr, v.name, 'tablet-aguardando-chegada');
-      await t.page.getByTestId('arrivals-section-conferencia').click();
-      await check(t.page, terr, v.name, 'tablet-conferir-materiais');
-      // Abre a tarefa pelo cartão de "Meu dia".
-      await t.page
-        .getByRole('button', { name: /Voltar/ })
-        .first()
-        .click();
+      // Abre a tarefa pelo cartão de "Meu dia" (a central "Aguardando chegada" saiu na remoção S5).
       const open = t.page.getByRole('button', { name: new RegExp(`Abrir ${task.title}`) });
       await open.first().click();
       await expect(t.page.getByTestId('my-task-detail')).toBeVisible();

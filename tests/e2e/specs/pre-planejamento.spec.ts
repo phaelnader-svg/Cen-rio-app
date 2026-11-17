@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
-import { loginAdmin, openTablet, registerDevice, setMaterialsGate, setPin } from './helpers';
+import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
 
 /**
  * Simplificação Fase 4 — pré-planejamento no navegador (dados fictícios):
@@ -80,12 +80,9 @@ async function receivedService(page: Page, name: string, pieces: string[]) {
     },
     pickup: { scheduledDate: today(), windowStart: '23:30', team: 'EQUIPE_PROPRIA' },
   });
-  const pk = await call(page, 'GET', `/api/v1/pickups/${svc.pickup.id}`);
-  const r = await call(page, 'POST', `/api/v1/arrivals/pickups/${svc.pickup.id}/confirm`, {
-    version: pk.version,
-  });
-  expect(r.serviceOrder?.code).toMatch(/OS-\d{5}/);
-  return r.serviceOrder as { id: string; code: string };
+  // D1 (remoção S5): a OS nasce no fechamento do Novo serviço, sem esperar a chegada.
+  expect(svc.serviceOrder?.code).toMatch(/OS-\d{5}/);
+  return svc.serviceOrder as { id: string; code: string };
 }
 
 async function noHorizontalScroll(page: Page) {
@@ -103,8 +100,6 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
     test.setTimeout(300_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     await loginAdmin(page);
-    // Etapa E1: este spec prova o controle formal de materiais — liga a trava (o padrão é desligada).
-    await setMaterialsGate(page, true);
     let planId = '';
     try {
       const one = await receivedService(page, 'Helena Planejamento Fictícia', ['Sofá retrátil']);
@@ -116,7 +111,6 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       const row2 = page.getByTestId(`to-plan-${two.code}`);
       await expect(row1).toContainText('Helena Planejamento Fictícia');
       await expect(row1).toContainText('Sofá');
-      await expect(row1).toContainText('Materiais:');
       await expect(row2).toBeVisible();
       await expect(page.getByText(/R\$/)).toHaveCount(0);
       await shot(page, '01-a-planejar');
@@ -186,13 +180,12 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       await shot(page, '05-revisar-e-publicar');
       await page.getByTestId('publish-confirm').click();
       await expect(prev).toHaveCount(0);
-      // Sem levantamento de materiais: planejado ≠ liberado — vai para "Aguardando condição".
-      await page.getByRole('tab', { name: /Aguardando condição/ }).click();
+      // Remoção S2: material não impede; publicado com início futuro fica em "Planejados",
+      // aguardando só a data de início.
+      await page.getByRole('tab', { name: /Planejados/ }).click();
       for (const so of [one, two])
-        await expect(page.getByTestId(`stage-${so.code}`).getByTestId('blockers')).toContainText(
-          /[Mm]ateria/,
-        );
-      await shot(page, '06-aguardando-condicao');
+        await expect(page.getByTestId(`planned-${so.code}`)).toBeVisible();
+      await shot(page, '06-planejados-publicados');
 
       // ── Tablets: cada um vê as suas; nada liberado antes da data de início.
       const joao = await openTablet(browser, cj, '730561', { width: 768, height: 1024 });
@@ -224,13 +217,12 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       ] as const) {
         await page.setViewportSize({ width: w, height: h });
         await page.goto('/painel/producao/a-planejar');
-        await page.getByRole('tab', { name: /Aguardando condição/ }).click();
-        await expect(page.getByTestId(`stage-${two.code}`)).toBeVisible();
+        await page.getByRole('tab', { name: /Planejados/ }).click();
+        await expect(page.getByTestId(`planned-${two.code}`)).toBeVisible();
         await noHorizontalScroll(page);
         await shot(page, `09-producao-${w}`);
       }
     } finally {
-      await setMaterialsGate(page, false).catch(() => undefined);
       // Limpeza: tarefas da semana futura canceladas (com motivo) — não afetam outros testes.
       if (planId) {
         const plan = await call(page, 'GET', `/api/v1/production-plans/${planId}`);
