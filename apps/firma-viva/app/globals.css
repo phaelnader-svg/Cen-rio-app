@@ -1,0 +1,221 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+
+  /* Superfícies e texto (tons neutros quentes) */
+  --color-canvas: #f6f5f2;
+  --color-surface: #ffffff;
+  --color-subtle: #f1efea;
+  --color-line: #e4e1da;
+  --color-line-strong: #cfcac0;
+  --color-ink: #1d2523;
+  --color-ink-soft: #4a5552;
+  --color-ink-muted: #7a8481;
+
+  /* Marca: verde petróleo profundo + bronze (couro/estofado) */
+  --color-brand-50: #eef5f4;
+  --color-brand-100: #d6e7e4;
+  --color-brand-200: #aed0ca;
+  --color-brand-500: #2f6f68;
+  --color-brand-600: #245a54;
+  --color-brand-700: #1d4a45;
+  --color-brand-800: #173b37;
+  --color-bronze-100: #f5ebdf;
+  --color-bronze-500: #a8743f;
+  --color-bronze-600: #8d5f31;
+
+  /* Estados */
+  --color-ok-50: #ecf7f0;
+  --color-ok-600: #1f7a46;
+  --color-warn-50: #fdf5e6;
+  --color-warn-600: #a15c07;
+  --color-danger-50: #fdeeee;
+  --color-danger-600: #b42323;
+  --color-danger-700: #911b1b;
+  --color-info-50: #eef3fb;
+  --color-info-600: #2c5ea8;
+
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+  --shadow-card: 0 1px 2px rgb(29 37 35 / 0.04), 0 1px 3px rgb(29 37 35 / 0.06);
+  --shadow-pop: 0 10px 30px rgb(29 37 35 / 0.12), 0 2px 6px rgb(29 37 35 / 0.06);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  /* Fase 12 (auditoria visual): fieldset e itens de grid não podem crescer além da tela por
+     causa de um filho largo (tabela com rolagem própria, selos) — causava rolagem horizontal
+     no celular e no tablet. */
+  fieldset {
+    min-width: 0;
+  }
+  .grid > * {
+    min-width: 0;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-brand-500);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  dialog::backdrop {
+    background: rgb(29 37 35 / 0.45);
+    backdrop-filter: blur(2px);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* ── Design system (correção global de interface) ───────────────────────────────────────
+     Tokens de controle: altura única de 44 px (alvo de toque) para campos de uma linha e
+     botões "md"; 36 px para a variante compacta (tabelas, filtros, quantidades em lista). */
+  .card {
+    @apply rounded-2xl border border-line bg-surface shadow-[var(--shadow-card)];
+  }
+  .label {
+    @apply mb-1.5 block text-sm leading-5 font-medium text-ink-soft;
+  }
+  /* Rótulo do tablet (texto maior, mesma hierarquia). */
+  .label-lg {
+    @apply mb-1.5 block text-base leading-6 font-semibold text-ink;
+  }
+  .input {
+    @apply block w-full rounded-xl border border-line-strong bg-surface px-3.5 text-[15px] leading-5 text-ink placeholder:text-ink-muted transition outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100 disabled:bg-subtle disabled:text-ink-muted aria-[invalid=true]:border-danger-600 aria-[invalid=true]:ring-danger-50;
+  }
+  /* Campos de uma linha: altura FIXA (o tamanho nativo de date/time/select varia por navegador). */
+  input.input,
+  select.input {
+    @apply h-11 py-0;
+  }
+  textarea.input {
+    @apply min-h-20 py-2.5;
+  }
+  select.input {
+    @apply cursor-pointer appearance-none bg-no-repeat pr-10;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%234a5552' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+    background-position: right 0.85rem center;
+    background-size: 1rem;
+  }
+  input.input[type='number'],
+  .input-num {
+    @apply tabular-nums;
+  }
+  /* iOS/Safari: data e hora alinhadas à esquerda e sem encolher quando vazias. */
+  input.input[type='date'],
+  input.input[type='time'],
+  input.input[type='datetime-local'] {
+    @apply appearance-none;
+  }
+  input.input::-webkit-date-and-time-value {
+    text-align: left;
+    min-height: 1.25rem;
+  }
+  /* Variante compacta (mesma família visual; 36 px). */
+  input.input.input-sm,
+  select.input.input-sm {
+    @apply h-9 rounded-lg px-3 text-sm;
+  }
+  /* Variante do tablet (toque com luvas/mãos ocupadas): 56 px, texto grande. */
+  input.input.input-lg,
+  select.input.input-lg {
+    @apply h-14 rounded-xl px-4 text-lg;
+  }
+  textarea.input.input-lg {
+    @apply rounded-xl px-4 text-lg;
+  }
+  select.input.input-sm {
+    @apply pr-9;
+    background-position: right 0.6rem center;
+  }
+
+  /* Campo (rótulo + controle + mensagem). Num grid, os campos lado a lado compartilham as
+     MESMAS trilhas (subgrid): rótulos alinhados pela base, controles na mesma linha e as
+     mensagens (dica/erro) numa trilha própria — um texto longo ou um erro não desloca os
+     vizinhos. Navegadores sem subgrid caem no fluxo normal (rótulo, controle, mensagem). */
+  .field {
+    @apply flex min-w-0 flex-col;
+  }
+  .field-msg:empty {
+    display: none;
+  }
+  @supports (grid-template-rows: subgrid) {
+    .grid > .field {
+      display: grid;
+      grid-row: span 3;
+      grid-template-rows: subgrid;
+      /* Coluna que encolhe: controles nativos (ex.: data) não estouram colunas estreitas. */
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: 0;
+    }
+    .grid > .field > .label {
+      align-self: end;
+    }
+    .grid > .field > .field-msg:empty {
+      display: block;
+    }
+    /* Outros itens do mesmo grid ocupam as três trilhas; ações ficam na base do controle. */
+    .grid:has(> .field) > :not(.field) {
+      grid-row: span 3;
+    }
+    .grid:has(> .field) > .field-action {
+      display: grid;
+      grid-row: span 3;
+      grid-template-rows: subgrid;
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: 0;
+    }
+    .grid:has(> .field) > .field-action > :first-child {
+      grid-row: 2;
+    }
+  }
+  .field-action {
+    @apply flex items-end;
+  }
+
+  /* Tabelas de dados: cabeçalho, células, números à direita com algarismos tabulares. */
+  .data-table {
+    @apply w-full border-collapse text-sm;
+  }
+  .data-table thead th {
+    @apply bg-subtle/60 px-4 py-2.5 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-ink-muted uppercase;
+  }
+  .data-table tbody td {
+    @apply border-t border-line px-4 py-3 align-middle;
+  }
+  .data-table-compact thead th,
+  .data-table-compact tbody td {
+    @apply px-3 py-2;
+  }
+  .data-table tfoot td {
+    @apply border-t border-line-strong px-4 py-2.5 font-semibold;
+  }
+  .data-table .num {
+    @apply text-right tabular-nums whitespace-nowrap;
+  }
+  .data-table .actions {
+    @apply text-right whitespace-nowrap;
+  }
+  .table-wrap {
+    @apply max-w-full overflow-x-auto;
+  }
+
+  /* Valores monetários: algarismos tabulares e sem quebra. */
+  .money {
+    @apply tabular-nums whitespace-nowrap;
+  }
+}

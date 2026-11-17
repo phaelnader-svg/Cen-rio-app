@@ -1,0 +1,37 @@
+# Firma Viva — proxy HTTPS do jogo. Endereço por ambiente:
+#   prévia privada: FIRMA_DOMAIN=<endereço provisório> (ex.: previa.firmaviva.com.br ou
+#                   firma.<IP-da-VM>.sslip.io enquanto o DNS próprio não está pronto)
+#   produção:       FIRMA_DOMAIN=firmaviva.com.br  e  FIRMA_DOMAIN_WWW=www.firmaviva.com.br
+# /api/* vai para a API do Firma Viva; o resto para o Next.js do jogo.
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
+{$FIRMA_DOMAIN_WWW:www.firmaviva.invalid} {
+	redir https://{$FIRMA_DOMAIN}{uri} permanent
+}
+
+{$FIRMA_DOMAIN} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Robots-Tag "noindex, nofollow"
+		-Server
+	}
+	request_body {
+		max_size 12MB
+	}
+	encode zstd gzip
+	@api path /api/*
+	handle @api {
+		reverse_proxy firma-api:4100 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		reverse_proxy firma-web:3100
+	}
+}

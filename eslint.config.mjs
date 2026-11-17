@@ -18,7 +18,11 @@ export default tseslint.config(
       '**/playwright-report/**',
       '**/test-results/**',
       'apps/web/next-env.d.ts',
+      'apps/firma-viva/next-env.d.ts',
+      'packages/firma-db/generated/**',
       'apps/web/public/sw.js',
+      // Roteiros de validação (Playwright em Node) guardados junto das capturas.
+      'docs/evidencias/**/*.cjs',
     ],
   },
   js.configs.recommended,
@@ -44,6 +48,18 @@ export default tseslint.config(
     languageOptions: { globals: { ...globals.browser } },
     plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
     settings: { next: { rootDir: 'apps/web/' } },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      ...nextPlugin.configs.recommended.rules,
+      ...nextPlugin.configs['core-web-vitals'].rules,
+    },
+  },
+  {
+    // Firma Viva (jogo independente): mesmas regras de React/Next do painel.
+    files: ['apps/firma-viva/**/*.{ts,tsx}'],
+    languageOptions: { globals: { ...globals.browser } },
+    plugins: { 'react-hooks': reactHooks, '@next/next': nextPlugin },
+    settings: { next: { rootDir: 'apps/firma-viva/' } },
     rules: {
       ...reactHooks.configs.recommended.rules,
       ...nextPlugin.configs.recommended.rules,

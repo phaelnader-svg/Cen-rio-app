@@ -14,6 +14,8 @@ backups/
 playwright-report/
 test-results/
 apps/web/next-env.d.ts
+apps/firma-viva/next-env.d.ts
+packages/firma-db/generated/
 .DS_Store
 *.log
 .next-e2e/

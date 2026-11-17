@@ -16,3 +16,5 @@ tests/e2e/playwright-report
 infra/homolog/.env.homolog
 **/.next-homolog
 .homolog-local
+**/.env
+packages/firma-db/generated

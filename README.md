@@ -17,6 +17,7 @@ interface de produção para os tablets da oficina, sincronizados em tempo real.
 | Documento                                                                | Conteúdo                                                      |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | [docs/ARQUITETURA.md](docs/ARQUITETURA.md)                               | Arquitetura, decisões técnicas, módulos, eventos e tempo real |
+| [docs/JOGO-GESTAO.md](docs/JOGO-GESTAO.md)                               | Jogo de gestão (empresa virtual): uso, arquitetura e lacunas  |
 | [docs/SEGURANCA.md](docs/SEGURANCA.md)                                   | Autenticação, sessões, permissões, proteções e riscos aceitos |
 | [docs/OPERACAO.md](docs/OPERACAO.md)                                     | Ambientes, variáveis, deploy, backup e restauração            |
 | [docs/HOMOLOGACAO.md](docs/HOMOLOGACAO.md)                               | Ambiente de testes, contas, tablets, iPhone e roteiro         |
@@ -53,6 +54,7 @@ pnpm dev                          # API em :4000 e web em :3000
 ```
 
 - Painel: <http://localhost:3000/painel> (entre com `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`)
+- Jogo de gestão: <http://localhost:3000/jogo> (dados fictícios: `scripts/jogo-dados-sinteticos.mjs`)
 - Tablet: <http://localhost:3000/tablet> — no painel, cadastre o dispositivo em
   **Dispositivos e sessões**, digite o código no tablet e entre com o PIN do funcionário
   (defina o PIN em **Funcionários → PIN**).
