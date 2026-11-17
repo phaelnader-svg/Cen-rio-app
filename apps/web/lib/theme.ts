@@ -38,17 +38,25 @@ export function useThemeScope() {
   }, []);
 }
 
+const THEME_EVENT = 'cenario:tema';
+
 export function useTheme(): [ThemeChoice, (c: ThemeChoice) => void] {
   // Montado só no navegador (o painel aparece depois de carregar a sessão).
   const [choice, setChoice] = useState<ThemeChoice>(read);
+  // Mais de um botão de tema (topo e menu do celular) mostram sempre a mesma escolha.
+  useEffect(() => {
+    const onTheme = (e: Event) => setChoice((e as CustomEvent<ThemeChoice>).detail);
+    window.addEventListener(THEME_EVENT, onTheme);
+    return () => window.removeEventListener(THEME_EVENT, onTheme);
+  }, []);
   const set = useCallback((c: ThemeChoice) => {
     try {
       localStorage.setItem(THEME_KEY, c);
     } catch {
       /* navegador sem armazenamento: vale só nesta visita */
     }
-    setChoice(c);
     applyTheme(c);
+    window.dispatchEvent(new CustomEvent(THEME_EVENT, { detail: c }));
   }, []);
   return [choice, set];
 }

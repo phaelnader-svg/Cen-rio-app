@@ -18,6 +18,7 @@ import {
   WhatsNew,
 } from '@/components/improvements/panel-tools';
 import { WelcomeDialog } from './welcome-dialog';
+import { useThemeScope } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
 import { Alert, Avatar, Spinner } from '@/components/ui/misc';
 import { ApiError, api } from '@/lib/api';
@@ -42,6 +43,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [drawer, setDrawer] = useState(false);
   const saindo = useRef(false);
+  useThemeScope();
 
   useEffect(() => setDrawer(false), [pathname]);
 
@@ -164,6 +166,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </>
       )}
       <div className="mt-auto border-t border-line p-4">
+        <div className="mb-1 flex items-center gap-1 sm:hidden">
+          <WhatsNew />
+          <ThemeToggle />
+        </div>
         {!data.user.supportAgent && <FeedbackButton className="mb-1" />}
         <Link
           href="/painel/lixeira"
@@ -296,8 +302,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   <span className="hidden sm:inline">Acessar ambiente interativo</span>
                 </a>
               )}
-              <WhatsNew />
-              <ThemeToggle />
+              {/* No celular, Novidades e Tema ficam no menu lateral (o topo não cabe em 390 px). */}
+              <div className="hidden items-center gap-2 sm:flex">
+                <WhatsNew />
+                <ThemeToggle />
+              </div>
               {!locked && <PanelNotifications />}
               <ConnectionIndicator compact />
             </div>

@@ -107,6 +107,21 @@ describe('Matriz de acesso: todas as rotas', () => {
         'POST /api/auth/password/forgot',
         'POST /api/auth/password/reset',
         'POST /api/auth/email/confirm',
+        // Melhorias rodada 2 (2026-11-17): segundo passo do login com verificação em duas etapas
+        // (só vale com o desafio assinado do primeiro passo, que expira em minutos).
+        'POST /api/auth/login/2fa',
+        // Links do cliente, sem conta: cada um só abre com o token HMAC do próprio registro (?t=).
+        'GET /api/public/proposta/:id',
+        'POST /api/public/proposta/:id/aprovar',
+        'GET /api/public/album/:id',
+        'GET /api/public/album/:id/foto/:fileId',
+        'GET /api/public/agendar/:id',
+        'POST /api/public/agendar/:id',
+        // Página de status e aviso de manutenção (sem dado de empresa nenhuma) e o registro de
+        // erros do navegador (corpo limitado a 16 KB; vale o limite anônimo por IP de todas as rotas).
+        'GET /api/public/aviso',
+        'GET /api/public/status',
+        'POST /api/public/client-error',
       ].sort(),
     );
   });

@@ -29,7 +29,7 @@ import { Alert, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { api, errorMessage } from '@/lib/api';
 import { NOVIDADES, NOVIDADES_KEY } from '@/lib/novidades';
-import { useTheme, useThemeScope, type ThemeChoice } from '@/lib/theme';
+import { useTheme, type ThemeChoice } from '@/lib/theme';
 
 interface NavLink {
   href: string;
@@ -79,13 +79,13 @@ export function CommandPalette({ nav, canNewService }: { nav: NavLink[]; canNewS
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex h-9 items-center gap-2 rounded-xl border border-line bg-surface px-2.5 text-sm text-ink-muted hover:bg-subtle sm:w-56"
+        className="inline-flex h-9 items-center gap-2 rounded-xl border border-line bg-surface px-2.5 text-sm text-ink-muted hover:bg-subtle lg:w-56"
         aria-label="Buscar (Ctrl+K)"
         data-testid="busca-rapida"
       >
         <Search className="size-4" aria-hidden />
-        <span className="hidden flex-1 text-left sm:inline">Buscar…</span>
-        <kbd className="hidden rounded border border-line px-1.5 text-[11px] font-medium sm:inline">
+        <span className="hidden flex-1 text-left lg:inline">Buscar…</span>
+        <kbd className="hidden rounded border border-line px-1.5 text-[11px] font-medium lg:inline">
           Ctrl K
         </kbd>
       </button>
@@ -239,7 +239,6 @@ const THEME_LABEL: Record<ThemeChoice, string> = {
 
 /** Melhoria 87: alterna claro → escuro → igual ao aparelho. */
 export function ThemeToggle() {
-  useThemeScope();
   const [theme, setTheme] = useTheme();
   const Icon = theme === 'escuro' ? Moon : theme === 'sistema' ? Monitor : Sun;
   return (
