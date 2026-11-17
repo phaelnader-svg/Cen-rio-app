@@ -109,9 +109,10 @@ pnpm --filter @firma/api criar-organizacao -- --organizacao "Cenário Estofados"
 ```
 
 Imprime o **link de convite do dono** (vale 7 dias). Abra, escolha nome e senha e você entra como
-Dono. Depois, em **Organização**, convide as outras pessoas. Enquanto não houver provedor de e-mail,
-os e-mails (convite e "Esqueci minha senha") ficam na caixa de saída (`outbox_mails`); fora de
-produção o link do convite também aparece na tela para quem convidou.
+Dono. Depois, em **Organização**, convide as outras pessoas. Os e-mails (convite e "Esqueci minha
+senha") entram na caixa de saída (`outbox_mails`) e são enviados pelo **Resend** em segundo plano
+(`RESEND_API_KEY`, remetente `FIRMA_EMAIL_FROM`), com até 8 tentativas. Sem a chave, ficam só na
+caixa de saída; fora de produção o link do convite também aparece na tela para quem convidou.
 
 ## Configurar a Cenário Estofados real
 
@@ -201,8 +202,8 @@ A autorização de aplicativos para a produção está na branch `claude/autoriz
 
 ## Pendências conhecidas
 
-- **E-mail**: falta configurar um provedor para enviar convites e recuperação de senha (hoje ficam
-  na caixa de saída `outbox_mails`).
+- **E-mail**: o envio pelo Resend está pronto; falta colocar `RESEND_API_KEY` no `.env` da VM
+  `firma-teste` (mesma chave do Cenário, domínio `cenariogestao.com.br` verificado no Resend).
 - **Tempo real**: o jogo consulta os eventos do Cenário a cada 3 s (sem WebSocket entre domínios).
 - **Planos e cobrança**: não implementados (fora do escopo desta etapa).
 - O bloqueio de tentativas de login é por instância (memória); em várias instâncias, mover para o banco.

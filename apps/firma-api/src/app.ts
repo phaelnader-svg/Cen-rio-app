@@ -8,6 +8,7 @@ import { atLeast, type Access, type Role } from './context';
 import type { Env } from './env';
 import { createHasher, createSealer } from './lib/crypto';
 import { E, FirmaError } from './lib/errors';
+import { kickOutbox } from './lib/mail';
 import { authRoutes } from './routes/auth';
 import { connectionRoutes } from './routes/connection';
 import { entrarRoutes } from './routes/entrar';
@@ -149,10 +150,17 @@ export async function buildApp(opts: {
   await app.register(entrarRoutes);
   await app.register(gameRoutes);
   await app.ready();
+  // Caixa de saída: envia pelo Resend e tenta de novo o que falhou (a cada minuto).
+  const outboxTimer = env.RESEND_API_KEY
+    ? setInterval(() => kickOutbox(db, env, app.log), 60_000)
+    : null;
+  outboxTimer?.unref();
+  if (env.RESEND_API_KEY) kickOutbox(db, env, app.log);
   return {
     app,
     db,
     close: async () => {
+      if (outboxTimer) clearInterval(outboxTimer);
       await app.close();
       if (!opts.db) await db.$disconnect();
     },
