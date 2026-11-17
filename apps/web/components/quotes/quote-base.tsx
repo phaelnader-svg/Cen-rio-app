@@ -165,7 +165,7 @@ function CompanyCard({ settings }: { settings: QuoteSettingsDto }) {
   return (
     <FormSection
       title="Dados da empresa na proposta"
-      description="Nome, logotipo e numeração que aparecem na proposta, no contrato e na O.S. do orçamento."
+      description="Nome, logotipo e numeração que aparecem na proposta, no contrato e na OS do orçamento."
     >
       <FormGrid>
         <TextField
@@ -698,7 +698,7 @@ function Upholsterers({ items }: { items: QuoteCatalogItemDto[] }) {
   return (
     <div className="space-y-5">
       <p className="text-sm text-ink-muted">
-        Cadastre os profissionais que poderão ser selecionados na O.S. do orçamento.
+        Cadastre os funcionários que poderão ser selecionados na OS do orçamento.
       </p>
       <FormGrid>
         <TextField
@@ -781,7 +781,7 @@ function Upholsterers({ items }: { items: QuoteCatalogItemDto[] }) {
           </>
         }
       >
-        <p className="text-sm text-ink-soft">As O.S. já salvas continuam com o nome dele.</p>
+        <p className="text-sm text-ink-soft">As OS já salvas continuam com o nome dele.</p>
       </Dialog>
     </div>
   );

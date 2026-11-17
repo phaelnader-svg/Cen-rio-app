@@ -173,7 +173,7 @@ const QUESTIONS: { q: string; a: string }[] = [
   },
   {
     q: 'Quanto ficou de mão de obra?',
-    a: 'Lançada por peça e fechada por semana, profissional por profissional.',
+    a: 'Lançada por peça e fechada por semana, funcionário por funcionário.',
   },
   {
     q: 'Essa peça já pode ser entregue?',

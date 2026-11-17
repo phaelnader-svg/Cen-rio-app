@@ -368,7 +368,7 @@ export function Dashboard() {
               icon={<CheckCircle className="size-4" aria-hidden />}
               label="Pago na semana"
               value={<span data-testid="fin-paid">{money(fin.paid.paidInWeekCents)}</span>}
-              detail="aos profissionais (tapeçaria e logística), estornos descontados"
+              detail="aos funcionários (tapeçaria e logística), estornos descontados"
             />
             {/* F10-14: cada contagem leva à tela onde ESSES itens aparecem. */}
             <Stat

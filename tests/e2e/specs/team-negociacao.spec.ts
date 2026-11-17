@@ -170,7 +170,7 @@ test.describe.serial('R2 — negociação, confirmação semanal e portão de pa
     const andreRow = page.getByTestId(`closing-row-${ANDRE.displayName}-LOGISTICA`);
     await expect(
       andreRow.getByTestId(`closing-confirmation-${ANDRE.displayName}-LOGISTICA`),
-    ).not.toContainText('Confirmada pelo profissional');
+    ).not.toContainText('Confirmada pelo funcionário');
 
     // ── André confere a semana (valor aprovado) e confirma ──
     await at.reload();
@@ -183,7 +183,7 @@ test.describe.serial('R2 — negociação, confirmação semanal e portão de pa
     await evidence(at, '03-celular-conferir-semana');
     await at.getByTestId('week-confirm-submit').click();
     await expect(at.getByTestId('week-confirmation-state')).toHaveText(
-      'Confirmada pelo profissional',
+      'Confirmada pelo funcionário',
     );
     // O celular do André não lê o fechamento geral.
     expect((await at.request.get(`/api/v1/finance/weekly-closings/${WEEK}`)).status()).toBe(403);
@@ -194,7 +194,7 @@ test.describe.serial('R2 — negociação, confirmação semanal e portão de pa
     await page.getByRole('tab', { name: 'Fechamento semanal' }).click();
     await expect(
       andreRow.getByTestId(`closing-confirmation-${ANDRE.displayName}-LOGISTICA`),
-    ).toContainText('Confirmada pelo profissional');
+    ).toContainText('Confirmada pelo funcionário');
     // Contas a pagar: o pagamento do item agora passa (R$ 120,00, valor aprovado).
     await page.getByRole('tab', { name: 'Contas a pagar' }).click();
     const prow = page.getByTestId(`payable-${cost.payable.code}`);

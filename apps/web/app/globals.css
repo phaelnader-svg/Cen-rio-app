@@ -1,5 +1,28 @@
 @import 'tailwindcss';
 
+/* Melhoria 135: a Inter vem do próprio sistema (sem Google), para todo aparelho mostrar a mesma letra. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/inter-latin-ext-wght-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F,
+    U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @theme {
   --font-sans:
     'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
@@ -15,13 +38,14 @@
   --color-ink-muted: #7a8481;
 
   /* Marca: verde petróleo profundo + bronze (couro/estofado) */
-  --color-brand-50: #eef5f4;
-  --color-brand-100: #d6e7e4;
-  --color-brand-200: #aed0ca;
-  --color-brand-500: #2f6f68;
-  --color-brand-600: #245a54;
-  --color-brand-700: #1d4a45;
-  --color-brand-800: #173b37;
+  /* Melhoria 136: escala montada a partir do verde da logo do sofá (#064a4b = brand-700). */
+  --color-brand-50: #ecf5f5;
+  --color-brand-100: #d2e7e7;
+  --color-brand-200: #a6cfce;
+  --color-brand-500: #1b6e6e;
+  --color-brand-600: #0f5a5b;
+  --color-brand-700: #064a4b;
+  --color-brand-800: #043b3c;
   --color-bronze-100: #f5ebdf;
   --color-bronze-500: #a8743f;
   --color-bronze-600: #8d5f31;
@@ -55,13 +79,13 @@
     --color-ink: #e8ecea;
     --color-ink-soft: #b8c2bf;
     --color-ink-muted: #8a9592;
-    --color-brand-50: #16302c;
-    --color-brand-100: #1d3d39;
-    --color-brand-200: #2a5752;
-    --color-brand-500: #5aaa9f;
-    --color-brand-600: #4a9a90;
-    --color-brand-700: #3a8a80;
-    --color-brand-800: #2f7068;
+    --color-brand-50: #102e2f;
+    --color-brand-100: #163b3c;
+    --color-brand-200: #225758;
+    --color-brand-500: #5eaaa9;
+    --color-brand-600: #4b9b9b;
+    --color-brand-700: #3f8f8f;
+    --color-brand-800: #2f7576;
     --color-bronze-100: #2e2418;
     --color-bronze-500: #c8925a;
     --color-bronze-600: #d6a06a;
@@ -79,6 +103,19 @@
   }
   html[data-tema='escuro'] img {
     color-scheme: light;
+  }
+  /* Melhoria 169: no escuro, o brand-700 claro serve para texto; atrás de letra branca
+     (botão principal, selos cheios) o fundo fica num verde mais fechado, legível. */
+  /* Melhoria 136: logo no modo escuro — o quadrado clareia um pouco para não sumir no fundo. */
+  html[data-tema='escuro'] .logo-mark-bg {
+    fill: #11696a;
+  }
+  html[data-tema='escuro'] .bg-brand-700 {
+    background-color: #146566;
+  }
+  html[data-tema='escuro'] .hover\:bg-brand-800:hover,
+  html[data-tema='escuro'] .active\:bg-brand-800:active {
+    background-color: #0f5354;
   }
 }
 

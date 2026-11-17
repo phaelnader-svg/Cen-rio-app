@@ -281,7 +281,7 @@ export async function buildReport(
         title: 'Pagamentos por produção',
         header: [
           'Código',
-          'Profissional',
+          'Funcionário',
           'OS',
           'Peça',
           'Serviço',

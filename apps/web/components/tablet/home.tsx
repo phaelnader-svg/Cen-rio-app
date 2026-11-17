@@ -72,7 +72,7 @@ export function TabletHome({ me }: { me: MeDto }) {
   const [leaving, setLeaving] = useState(false);
   const modules = useModules();
   const clock = useClock(me.company.timezone);
-  const color = me.employee?.color ?? '#1d4a45';
+  const color = me.employee?.color ?? '#064a4b';
   const canSync = me.permissions.includes('sincronizacao.diagnosticar');
   // Fase 11: só os próprios valores de produção, se o gestor autorizar.
   const canSeeValues = me.permissions.includes('financeiro.producao_propria');

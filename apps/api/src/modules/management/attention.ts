@@ -108,8 +108,8 @@ export async function managementAttention(
         category: 'ATENCAO',
         title: `${p.displayName} · semana de ${brDate(week)} aguardando confirmação`,
         description: stale
-          ? 'A semana mudou depois da conferência do profissional: a confirmação anterior não vale mais.'
-          : 'O profissional ainda não conferiu os valores devidos da semana no tablet.',
+          ? 'A semana mudou depois da conferência do funcionário: a confirmação anterior não vale mais.'
+          : 'O funcionário ainda não conferiu os valores devidos da semana no tablet.',
         employee: { userId: p.userId, displayName: p.displayName },
         priority: 'NORMAL',
         status: p.state,
@@ -146,7 +146,7 @@ export async function managementAttention(
         category: 'ACAO',
         title: `${p.name} · ${plural(p.ids.size, 'pagamento liberado', 'pagamentos liberados')} para pagar`,
         description:
-          'Valores devidos, confirmados pelo profissional (ou liberados por exceção administrativa) e ainda com saldo.',
+          'Valores devidos, confirmados pelo funcionário (ou liberados por exceção administrativa) e ainda com saldo.',
         employee: { userId, displayName: p.name },
         priority: 'NORMAL',
         status: 'DISPONIVEL',

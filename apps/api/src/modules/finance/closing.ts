@@ -911,8 +911,8 @@ export async function registerClosingPayment(
   if (input.amountCents > available)
     throw Errors.business(
       available
-        ? `Esta semana ainda não foi confirmada pelo profissional para todo o valor: há ${(available / 100).toFixed(2)} confirmados. Peça a conferência no tablet ou use a exceção administrativa.`
-        : 'Esta semana ainda não foi confirmada pelo profissional. Peça a conferência no tablet ou use a exceção administrativa.',
+        ? `Esta semana ainda não foi confirmada pelo funcionário para todo o valor: há ${(available / 100).toFixed(2)} confirmados. Peça a conferência no tablet ou use a exceção administrativa.`
+        : 'Esta semana ainda não foi confirmada pelo funcionário. Peça a conferência no tablet ou use a exceção administrativa.',
     );
   const { parts } = allocateClosingPayment(
     input.amountCents,

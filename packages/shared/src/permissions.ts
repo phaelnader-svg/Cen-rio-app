@@ -142,13 +142,13 @@ export const PERMISSIONS = {
     group: 'comercial',
     label: 'Ver orçamentos',
     description:
-      'Consultar os orçamentos salvos, as propostas comerciais, o contrato de garantia e as O.S. dos orçamentos.',
+      'Consultar os orçamentos salvos, as propostas comerciais, o contrato de garantia e as OS dos orçamentos.',
   },
   'orcamentos.gerenciar': {
     group: 'comercial',
     label: 'Elaborar orçamentos',
     description:
-      'Elaborar e salvar orçamentos, gerar a O.S. do orçamento, excluir orçamentos salvos e alterar a base de dados de preços, taxas e alíquota do orçamento.',
+      'Elaborar e salvar orçamentos, gerar a OS do orçamento, excluir orçamentos salvos e alterar a base de dados de preços, taxas e alíquota do orçamento.',
     critical: true,
   },
   'retiradas.ver': {

@@ -543,7 +543,7 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
         step={5}
         title="Mão de obra"
         id="os-mao-de-obra"
-        description="Valor combinado com o tapeceiro titular, por peça (uma obrigação por profissional por peça). Nada é pago agora: a obrigação só fica devida pela regra de liberação."
+        description="Valor combinado com o tapeceiro titular, por peça (uma obrigação por funcionário por peça). Nada é pago agora: a obrigação só fica devida pela regra de liberação."
       >
         {!perms.labor ? (
           <Alert tone="info">

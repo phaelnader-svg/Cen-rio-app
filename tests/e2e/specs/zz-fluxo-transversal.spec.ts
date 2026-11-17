@@ -483,7 +483,7 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       await a.page.getByTestId('week-confirm-check').check();
       await a.page.getByTestId('week-confirm-submit').click();
       await expect(a.page.getByTestId('week-confirmation-state')).toHaveText(
-        'Confirmada pelo profissional',
+        'Confirmada pelo funcionário',
       );
       // Snapshot + hash da semana gravados; evidência do D12 sem PIN, token ou assinatura.
       const conf1 = await db.query(
@@ -509,7 +509,7 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       await page.goto(`/painel/financeiro?tab=fechamento&semana=${WEEK}&profissional=${userA}`);
       const aRow = page.getByTestId(`closing-row-${NAME_A}-TAPECARIA`);
       await expect(aRow.getByTestId(`closing-confirmation-${NAME_A}-TAPECARIA`)).toContainText(
-        'Confirmada pelo profissional',
+        'Confirmada pelo funcionário',
       );
       await aRow.getByTestId('closing-pay').click();
       const pay = page.getByRole('dialog');
@@ -563,7 +563,7 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
 
       await page.reload();
       await expect(aRow.getByTestId(`closing-confirmation-${NAME_A}-TAPECARIA`)).not.toContainText(
-        'Confirmada pelo profissional',
+        'Confirmada pelo funcionário',
       );
       const blocked = await page.request.post(`/api/v1/finance/weekly-closings/${WEEK}/payments`, {
         data: {
@@ -586,7 +586,7 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       await a.page.getByTestId('week-confirm-check').check();
       await a.page.getByTestId('week-confirm-submit').click();
       await expect(a.page.getByTestId('week-confirmation-state')).toHaveText(
-        'Confirmada pelo profissional',
+        'Confirmada pelo funcionário',
       );
       const conf2 = await db.query(
         `SELECT hash FROM weekly_closing_confirmations

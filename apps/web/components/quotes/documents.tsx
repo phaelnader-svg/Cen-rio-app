@@ -343,7 +343,7 @@ export function WorkOrderDocument({
         </p>
       </div>
       <div className="text-right">
-        <Eyebrow>Data da O.S.</Eyebrow>
+        <Eyebrow>Data da OS</Eyebrow>
         <p className="mt-1 font-semibold tabular-nums">{dayBr(wo.date)}</p>
         <p className="text-sm text-ink-muted tabular-nums">Orçamento nº {number}</p>
       </div>
@@ -494,7 +494,7 @@ export function WorkOrderDocument({
             </div>
           </div>
           <p className="text-xs text-ink-muted">
-            Documento interno para compra de materiais. Valores conforme dados registrados na O.S.;
+            Documento interno para compra de materiais. Valores conforme dados registrados na OS;
             conferir quantidades antes da aquisição.
           </p>
         </div>

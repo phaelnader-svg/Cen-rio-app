@@ -191,7 +191,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         <div className="flex items-center gap-3">
           <Avatar
             name={data.user.displayName}
-            color={data.employee?.color ?? '#1d4a45'}
+            color={data.employee?.color ?? '#064a4b'}
             photoUrl={data.employee?.photoUrl}
             size={36}
           />

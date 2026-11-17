@@ -155,7 +155,7 @@ export function PickupsPage() {
         }
       />
       <p className="mb-4 text-sm text-ink-muted">
-        Para solicitar uma retirada, abra o pedido comercial e use “Solicitar retirada”.
+        Para solicitar uma retirada, abra o pedido e use “Solicitar retirada”.
       </p>
 
       {view === 'agenda' ? (
