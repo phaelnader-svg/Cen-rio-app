@@ -54,6 +54,9 @@ const schema = z
     FIRMA_CENARIO_CLIENT_SECRET: z.string().min(32),
     /** Retorno da autorização (cadastrado no Cenário). Padrão: <FIRMA_WEB_URL>/api/conexoes/cenario/retorno. */
     FIRMA_CENARIO_REDIRECT_URI: z.string().url().optional(),
+    /** E-mail pelo Resend (convites e recuperação de senha). Vazio = só a caixa de saída. */
+    RESEND_API_KEY: z.string().default(''),
+    FIRMA_EMAIL_FROM: z.string().default('Firma Viva <nao-responda@cenariogestao.com.br>'),
     FIRMA_LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'silent']).default('info'),
   })
   .superRefine((e, ctx) => {

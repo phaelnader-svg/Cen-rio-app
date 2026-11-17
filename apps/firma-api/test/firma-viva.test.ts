@@ -434,3 +434,34 @@ describe('Firma Viva', () => {
     expect(await fdb().organization.count()).toBe(1);
   });
 });
+
+describe('Caixa de saída pelo Resend', () => {
+  it('envia o e-mail pendente e tenta de novo depois de uma falha', async () => {
+    const { drainOutbox } = await import('../src/lib/mail');
+    await fdb().outboxMail.create({
+      data: {
+        to: 'pessoa@x.local',
+        subject: 'Convite',
+        body: 'Entre no Firma Viva',
+        link: 'https://x/l',
+      },
+    });
+    const log = { warn: () => undefined } as never;
+    const env = { RESEND_API_KEY: 'chave', FIRMA_EMAIL_FROM: 'Firma Viva <a@b.c>' };
+    const calls: unknown[] = [];
+    let ok = false;
+    const fake = (async (_u: string, init: RequestInit) => {
+      calls.push(JSON.parse(String(init.body)));
+      return new Response('{}', { status: ok ? 200 : 500 });
+    }) as unknown as typeof fetch;
+    expect(await drainOutbox(fdb(), env, log, fake)).toBe(0);
+    const falhou = await fdb().outboxMail.findFirstOrThrow({ where: { to: 'pessoa@x.local' } });
+    expect(falhou.attempts).toBe(1);
+    ok = true;
+    expect(await drainOutbox(fdb(), env, log, fake, new Date(Date.now() + 2 * 60_000))).toBe(1);
+    expect(calls.at(-1)).toMatchObject({ to: ['pessoa@x.local'], subject: 'Convite' });
+    expect(
+      (await fdb().outboxMail.findFirstOrThrow({ where: { to: 'pessoa@x.local' } })).sentAt,
+    ).not.toBeNull();
+  });
+});

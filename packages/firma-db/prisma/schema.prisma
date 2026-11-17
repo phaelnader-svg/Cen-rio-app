@@ -123,8 +123,13 @@ model OutboxMail {
   link      String?   @db.VarChar(1000)
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   sentAt    DateTime? @map("sent_at") @db.Timestamptz(3)
+  /// Envio pelo Resend (2026-11-17): tentativas, último erro e quando tentar de novo.
+  attempts  Int       @default(0)
+  lastError String?   @map("last_error") @db.VarChar(500)
+  nextTryAt DateTime  @default(now()) @map("next_try_at") @db.Timestamptz(3)
 
   @@index([to, createdAt])
+  @@index([sentAt, nextTryAt])
   @@map("outbox_mails")
 }
 
