@@ -10,6 +10,8 @@
 #   bash infra/firma-viva/teste/firma-teste.sh producao     # liga ao Cenário Gestão de PRODUÇÃO (jogo, operação e escritório)
 #   bash infra/firma-viva/teste/firma-teste.sh homologacao  # liga à HOMOLOGAÇÃO do Cenário (jogo, operação e escritório)
 #   bash infra/firma-viva/teste/firma-teste.sh voltar-teste # volta ao Cenário de teste (empresa fictícia)
+#   bash infra/firma-viva/teste/firma-teste.sh exemplo         # dados "[Exemplo]" no Cenário de produção (com cópia do banco antes)
+#   bash infra/firma-viva/teste/firma-teste.sh remover-exemplo # tira só os dados "[Exemplo]"
 #   bash infra/firma-viva/teste/firma-teste.sh status | convite <email> | destruir
 #
 # Nada aqui toca a homologação ou a produção do Cenário Gestão (outra VM, outro IP, outro banco).
@@ -337,6 +339,39 @@ FIM
   echo "Firma Viva voltou a usar o Cenário de teste (empresa fictícia)."
 }
 
+# Dados de exemplo ("[Exemplo]") na empresa 1 do Cenário de produção, para ver o jogo cheio.
+# Antes de criar: cópia de segurança do banco no próprio servidor. Ver infra/prod/dados-exemplo.cjs.
+dados_exemplo() {
+  local modo="$1" b64
+  b64="$(base64 -w0 "$(dirname "$0")/../../prod/dados-exemplo.cjs")"
+  echo "▶ Dados de exemplo no Cenário de produção: $modo"
+  gcloud --project="$PROJECT" --quiet compute ssh "${CENARIO_PROD_VM:-cenario-prod}" \
+    --zone="${CENARIO_PROD_ZONE:-southamerica-east1-b}" --tunnel-through-iap --command='sudo bash -s' <<PROD \
+    || die "Parou no meio (veja a mensagem acima). Nada foi gravado: o script grava tudo ou nada."
+set -eu
+cd /opt/cenario
+DCP="docker compose -f infra/prod/docker-compose.prod.yml --env-file /run/cenario/env"
+if [ "$modo" = criar ]; then
+  livre=\$(df -Pm /var/tmp | awk 'NR==2{print \$4}')
+  [ "\$livre" -gt 1024 ] || { echo "Pouco espaço livre no servidor (\${livre} MB) para a cópia de segurança. Nada foi feito." >&2; exit 1; }
+  copia=/var/tmp/cenario-antes-exemplo-\$(date -u +%Y%m%dT%H%M%SZ).dump
+  echo "  • cópia de segurança do banco: \$copia"
+  timeout 600 \$DCP exec -T postgres pg_dump -U cenario -Fc cenario_prod </dev/null > "\$copia"
+  [ -s "\$copia" ] || { echo "A cópia de segurança saiu vazia. Nada foi feito." >&2; exit 1; }
+  echo "    (\$(du -h "\$copia" | cut -f1))"
+fi
+echo '$b64' | base64 -d > /var/tmp/dados-exemplo.cjs
+\$DCP cp /var/tmp/dados-exemplo.cjs api:/tmp/dados-exemplo.cjs
+timeout 180 \$DCP exec -T -w /app/packages/db api node /tmp/dados-exemplo.cjs $modo </dev/null
+PROD
+  if [[ "$modo" == criar ]]; then
+    echo "Pronto. No Cenário, clique em \"Acessar ambiente interativo\": a oficina já mostra o exemplo."
+    echo "Para tirar tudo depois: bash infra/firma-viva/teste/firma-teste.sh remover-exemplo"
+  else
+    echo "Pronto. Os dados de exemplo saíram; os dados reais não foram tocados."
+  fi
+}
+
 case "${1:-}" in
   subir)
     shift; dono=""
@@ -357,6 +392,8 @@ case "${1:-}" in
   producao) ligar_cenario produção "${CENARIO_PRODUCAO:-https://cenariogestao.com.br}" ;;
   homologacao) ligar_cenario homologação https://teste.cenariogestao.com.br ;;
   voltar-teste) voltar_teste ;;
+  exemplo) dados_exemplo criar ;;
+  remover-exemplo) dados_exemplo remover ;;
   convite)
     [[ -n "${2:-}" ]] || die "uso: convite <email>"
     run_vm <<EOF
