@@ -28,7 +28,6 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  Building2,
   ChevronDown,
   ChevronUp,
   Eye,
@@ -44,7 +43,6 @@ import {
   RotateCw,
   Save,
   Search,
-  Settings2,
   Undo2,
   Volume2,
   VolumeX,
@@ -206,6 +204,13 @@ const SNAPSHOT_EVENTS = [
   'service_order.',
   'notification.',
 ];
+
+/** "Atualizado agora" / "Atualizado há 3 min": não parece cronômetro. */
+function updatedAgo(at: number | undefined) {
+  if (!at) return 'Atualizado';
+  const min = Math.floor((Date.now() - at) / 60_000);
+  return min < 1 ? 'Atualizado agora' : `Atualizado há ${min} min`;
+}
 
 export function GameWorld() {
   const can = useCan();
@@ -1667,7 +1672,7 @@ export function GameWorld() {
           body: {
             assigneeUserId: assignPrev.userId,
             version: assignPrev.taskVersion,
-            ...(assignPrev.published ? { reason: 'Atribuído por Falar com a Firma' } : {}),
+            ...(assignPrev.published ? { reason: 'Atribuído por Falar com o Gerente' } : {}),
           },
         });
         setAssignPrev({
@@ -1709,7 +1714,7 @@ export function GameWorld() {
       await api(`/api/v1/production-plans/${assignPrev.planId}/publish`, {
         method: 'POST',
         idempotencyKey: newIdempotencyKey(),
-        body: { version: plan.version, notes: 'Publicado por Falar com a Firma' },
+        body: { version: plan.version, notes: 'Publicado por Falar com o Gerente' },
       });
       setAssignPrev({
         ...assignPrev,
@@ -1971,27 +1976,26 @@ export function GameWorld() {
           : undefined
       }
       extra={
-        isMobile ? (
-          <div className="mb-3 flex flex-wrap gap-1.5 border-b border-line pb-3">
-            <GBtn
-              tone={building ? 'bronze' : 'ghost'}
-              disabled={!canBuild}
-              onClick={() => {
-                setSettingsOpen(false);
-                if (building) leaveBuild();
-                else enterBuild();
-              }}
-            >
-              <Hammer className="size-4" /> {building ? 'Sair da Construção' : 'Construção'}
-            </GBtn>
-            <Link
-              href="/organizacao"
-              className="rounded-xl border border-line px-2.5 py-1.5 font-semibold"
-            >
-              Organização
-            </Link>
-          </div>
-        ) : null
+        <div className="mb-3 flex flex-wrap gap-1.5 border-b border-line pb-3">
+          <GBtn
+            tone={building ? 'bronze' : 'ghost'}
+            disabled={!canBuild}
+            onClick={() => {
+              setSettingsOpen(false);
+              if (building) leaveBuild();
+              else enterBuild();
+            }}
+            testId="mode-construcao"
+          >
+            <Hammer className="size-4" /> {building ? 'Sair da Construção' : 'Construção'}
+          </GBtn>
+          <Link
+            href="/organizacao"
+            className="rounded-xl border border-line px-2.5 py-1.5 font-semibold"
+          >
+            Organização
+          </Link>
+        </div>
       }
     />
   ) : null;
@@ -2072,7 +2076,7 @@ export function GameWorld() {
       />
       <span className={clsx(isMobile && sync === 'ok' && 'sr-only')}>
         {sync === 'ok'
-          ? `Ao vivo ${snapshot.dataUpdatedAt ? fmtClock(snapshot.dataUpdatedAt) : ''}`
+          ? updatedAgo(snapshot.dataUpdatedAt)
           : sync === 'sync'
             ? 'Atualizando…'
             : sync === 'offline'
@@ -2240,35 +2244,16 @@ export function GameWorld() {
         </div>
         {!isMobile ? (
           <>
-            <div
-              data-hud
-              className="pointer-events-auto flex items-center gap-1 rounded-2xl border border-line bg-white/95 p-1 shadow-card"
-              role="group"
-              aria-label="Modo"
-            >
+            {building ? (
               <button
-                onClick={() => (building ? leaveBuild() : undefined)}
+                data-hud
+                onClick={leaveBuild}
                 data-testid="mode-gestao"
-                className={clsx(
-                  'flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-semibold',
-                  !building ? 'bg-brand-600 text-white' : 'text-ink-soft hover:bg-subtle',
-                )}
+                className="pointer-events-auto flex items-center gap-1.5 rounded-2xl border border-bronze-500/50 bg-bronze-500 px-3 py-2 text-sm font-semibold text-white shadow-card"
               >
-                <Building2 className="size-4" /> Gestão
+                <Hammer className="size-4" /> Sair da Construção
               </button>
-              <button
-                onClick={() => (!building && canBuild ? enterBuild() : undefined)}
-                disabled={!canBuild}
-                title={canBuild ? 'Editar a planta' : 'Exige jogo.construir'}
-                data-testid="mode-construcao"
-                className={clsx(
-                  'flex items-center gap-1 rounded-xl px-3 py-1.5 text-sm font-semibold disabled:opacity-40',
-                  building ? 'bg-bronze-500 text-white' : 'text-ink-soft hover:bg-subtle',
-                )}
-              >
-                <Hammer className="size-4" /> Construção
-              </button>
-            </div>
+            ) : null}
             <div data-hud className="contents">
               {searchBox}
             </div>
@@ -2279,36 +2264,13 @@ export function GameWorld() {
               {syncDot}
               <button
                 className={mapBtn}
-                onClick={() => sound().setMuted(!muted)}
-                aria-label={muted ? 'Ligar som' : 'Desligar som'}
-                title={muted ? 'Ligar som (M)' : 'Desligar som (M)'}
-                data-testid="sound-toggle"
-              >
-                {muted ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
-              </button>
-              <button
-                className={mapBtn}
-                onClick={() => setShortcutsOpen(true)}
-                aria-label="Atalhos"
-                title="Atalhos (?)"
-              >
-                <span className="text-sm font-black">?</span>
-              </button>
-              <button
-                className={mapBtn}
                 onClick={() => setSettingsOpen((v) => !v)}
-                aria-label="Ajustes"
-                title="Som, qualidade gráfica e luz"
+                aria-label="Mais opções"
+                title="Construção, Organização, som, atalhos e luz"
                 data-testid="settings-button"
               >
-                <Settings2 className="size-4" />
+                <MoreHorizontal className="size-4" />
               </button>
-              <Link
-                href="/organizacao"
-                className="rounded-xl px-2 py-1.5 text-xs font-semibold text-ink-soft hover:bg-subtle"
-              >
-                Organização
-              </Link>
               {settings}
             </div>
           </>
@@ -2661,7 +2623,7 @@ export function GameWorld() {
             onClick={() => setChatOpenMobile(true)}
             data-testid="chat-open"
           >
-            <MessageCircle className="size-4" /> Falar com a Firma
+            <MessageCircle className="size-4" /> Falar com o Gerente
           </button>
         ) : null
       ) : null}
