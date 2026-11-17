@@ -12,6 +12,7 @@ import { ExportLink } from '@/components/ui/export-link';
 import { useCustomers } from '@/lib/commercial';
 import { useCan } from '@/lib/hooks';
 import { CustomerForm } from './customer-form';
+import { CUSTOMER_IMPORT_FIELDS, SheetImportButton } from '@/components/improvements/sheet-import';
 
 export function CustomersPage() {
   const can = useCan();
@@ -37,6 +38,18 @@ export function CustomersPage() {
         actions={
           <>
             <ExportLink href="/api/v1/export/clientes.csv" testId="export-clientes" />
+            {can('clientes.gerenciar') && (
+              <SheetImportButton
+                title="Importar clientes de uma planilha"
+                description="Cada linha vira um cliente, com as mesmas regras do cadastro manual. Telefone ou documento repetido não entra de novo."
+                fields={CUSTOMER_IMPORT_FIELDS}
+                endpoint="/api/v1/customers/import"
+                invalidate={['customers']}
+                resultText={(r) =>
+                  `${r.created} cliente(s) importado(s).${r.problems.length ? ` ${r.problems.length} linha(s) não entraram.` : ''}`
+                }
+              />
+            )}
             {can('clientes.gerenciar') && (
               <Button
                 icon={<Plus className="size-4" aria-hidden />}

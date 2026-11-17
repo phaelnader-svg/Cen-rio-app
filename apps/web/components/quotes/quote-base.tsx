@@ -1,5 +1,6 @@
 'use client';
 
+import { PRICE_IMPORT_FIELDS, SheetImportButton } from '@/components/improvements/sheet-import';
 import {
   QUOTE_UNITS,
   parseMoneyToCents,
@@ -101,7 +102,21 @@ export function QuoteBase({
       <FormSection
         title="Base de dados"
         description="Alterações de preços passam a valer na hora nos cálculos dos orçamentos. Os orçamentos já salvos guardam os valores da época e não mudam."
-        actions={<BackupButtons />}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <SheetImportButton
+              title="Importar preços de uma planilha"
+              description="Materiais com o mesmo nome têm o preço atualizado; os novos entram na base."
+              fields={PRICE_IMPORT_FIELDS}
+              endpoint="/api/v1/quotes/catalog/import-prices"
+              invalidate={['quotes']}
+              resultText={(r) =>
+                `${r.created} material(is) novo(s) e ${r.updated ?? 0} preço(s) atualizado(s).${r.problems.length ? ` ${r.problems.length} linha(s) com problema.` : ''}`
+              }
+            />
+            <BackupButtons />
+          </div>
+        }
       >
         <Tabs
           tabs={TABS.map(([key, label]) => ({ key, label }))}

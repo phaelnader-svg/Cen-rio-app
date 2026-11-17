@@ -18,8 +18,12 @@ export interface ScreenSlot {
 }
 
 export const SITE = {
-  /** Mensalidade em reais (ex.: '490,00'). Um único plano. */
+  /** Mensalidade em reais (ex.: '490,00') do plano Cenário Gestão. */
   monthlyPrice: '399,00' as string | null,
+  /** Melhoria 70: mensalidade do plano com o Firma Viva (definida pelo proprietário em 2026-11-17). */
+  gameMonthlyPrice: '599,00' as string | null,
+  /** Dias de teste grátis de uma conta nova (definido pelo proprietário em 2026-11-17). */
+  trialDays: 7 as number | null,
   /** Desconto do plano anual, em %, definido pelo proprietário (2026-10-25). */
   annualDiscountPct: 15 as number | null,
   /** WhatsApp só com dígitos, com DDI e DDD (ex.: '5511999999999'). */
@@ -135,11 +139,12 @@ const brl = (cents: number) =>
   (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Frase do plano anual, calculada a partir da mensalidade e do desconto (nunca digitada à mão). */
-export function annualOffer(site: typeof SITE = SITE): string | null {
-  if (!site.monthlyPrice || !site.annualDiscountPct) return null;
-  const monthlyCents = Math.round(
-    Number(site.monthlyPrice.replace(/\./g, '').replace(',', '.')) * 100,
-  );
+export function annualOffer(
+  site: typeof SITE = SITE,
+  monthly: string | null = site.monthlyPrice,
+): string | null {
+  if (!monthly || !site.annualDiscountPct) return null;
+  const monthlyCents = Math.round(Number(monthly.replace(/\./g, '').replace(',', '.')) * 100);
   if (!Number.isFinite(monthlyCents) || monthlyCents <= 0) return null;
   const discounted = Math.round((monthlyCents * (100 - site.annualDiscountPct)) / 100);
   return `No plano anual, ${site.annualDiscountPct}% de desconto: R$ ${brl(discounted)} por mês, ou R$ ${brl(discounted * 12)} no ano.`;
@@ -155,4 +160,11 @@ export function supportUrl(company: string, site: typeof SITE = SITE): string | 
   if (!site.whatsappNumber) return null;
   const text = `Olá! Preciso de ajuda com o Cenário Gestão (${company}).`;
   return `https://wa.me/${site.whatsappNumber}?text=${encodeURIComponent(text)}`;
+}
+
+/** Frase do teste grátis (só com o número de dias definido). */
+export function trialOffer(site: typeof SITE = SITE): string | null {
+  return site.trialDays
+    ? `${site.trialDays} dias grátis para testar, sem cartão. Depois, escolha o plano.`
+    : null;
 }

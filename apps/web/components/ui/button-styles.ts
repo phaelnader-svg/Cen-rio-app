@@ -25,3 +25,7 @@ export const BUTTON_SIZES: Record<ButtonSize, string> = {
   lg: 'h-12 gap-2 rounded-xl px-5 text-base',
   xl: 'h-16 gap-3 rounded-2xl px-7 text-lg',
 };
+
+/** Classes completas de um link com cara de botão. */
+export const buttonClass = (variant: ButtonVariant = 'primary', size: ButtonSize = 'md') =>
+  `${BUTTON_BASE} ${BUTTON_VARIANTS[variant]} ${BUTTON_SIZES[size]}`;

@@ -89,8 +89,9 @@ export async function improvementRoutes(app: FastifyInstance) {
                 id: c.id,
                 title: c.name,
                 subtitle:
-                  [c.whatsapp || c.phone, c.active ? null : 'arquivado'].filter(Boolean).join(' · ') ||
-                  null,
+                  [c.whatsapp || c.phone, c.active ? null : 'arquivado']
+                    .filter(Boolean)
+                    .join(' · ') || null,
                 href: `/painel/clientes/${c.id}`,
               });
           }),
@@ -100,10 +101,7 @@ export async function improvementRoutes(app: FastifyInstance) {
         prisma.serviceOrder
           .findMany({
             where: {
-              OR: [
-                ...(number ? [{ number }] : []),
-                { customer: { name: nameLike } },
-              ],
+              OR: [...(number ? [{ number }] : []), { customer: { name: nameLike } }],
             },
             orderBy: { number: 'desc' },
             take: 6,
@@ -176,7 +174,11 @@ export async function improvementRoutes(app: FastifyInstance) {
           .findMany({
             where: { number },
             take: 2,
-            select: { id: true, number: true, order: { select: { customer: { select: { name: true } } } } },
+            select: {
+              id: true,
+              number: true,
+              order: { select: { customer: { select: { name: true } } } },
+            },
           })
           .then((rows) => {
             for (const p of rows)
@@ -191,7 +193,8 @@ export async function improvementRoutes(app: FastifyInstance) {
       );
     await Promise.all(jobs);
     // Número digitado: o registro com aquele número vem primeiro.
-    const exact = (r: SearchResultDto) => (digits && r.title.includes(digits.padStart(5, '0')) ? 0 : 1);
+    const exact = (r: SearchResultDto) =>
+      digits && r.title.includes(digits.padStart(5, '0')) ? 0 : 1;
     items.sort((a, b) => exact(a) - exact(b));
     return { items: items.slice(0, 16) };
   });
@@ -280,7 +283,9 @@ export async function improvementRoutes(app: FastifyInstance) {
         where: { id },
         select: { screenshot: true },
       });
-      const m = r?.screenshot ? /^data:(image\/(?:png|jpeg));base64,(.+)$/.exec(r.screenshot) : null;
+      const m = r?.screenshot
+        ? /^data:(image\/(?:png|jpeg));base64,(.+)$/.exec(r.screenshot)
+        : null;
       if (!m) throw Errors.notFound('Print');
       const data = Buffer.from(m[2]!, 'base64');
       return reply
@@ -362,7 +367,8 @@ export async function improvementRoutes(app: FastifyInstance) {
   // ───────────────────────── Lixeira (86) ─────────────────────────
   app.get('/api/v1/trash', { config: { access: ANY_WEB } }, async (request) => {
     const since = new Date(Date.now() - TRASH_DAYS * DAY_MS);
-    const left = (d: Date) => Math.max(0, Math.ceil((d.getTime() + TRASH_DAYS * DAY_MS - Date.now()) / DAY_MS));
+    const left = (d: Date) =>
+      Math.max(0, Math.ceil((d.getTime() + TRASH_DAYS * DAY_MS - Date.now()) / DAY_MS));
     const items: TrashItemDto[] = [];
     if (has(request, 'orcamentos.gerenciar')) {
       const rows = await prisma.quote.findMany({
@@ -449,61 +455,59 @@ export async function improvementRoutes(app: FastifyInstance) {
       .send(stream);
   });
 
-  app.post(
-    '/api/v1/trash/:kind/:id/restore',
-    { config: { access: ANY_WEB } },
-    async (request) => {
-      const { kind, id } = z
-        .object({ kind: z.enum(TRASH_KINDS), id: z.string().uuid() })
-        .parse(request.params);
-      const actor = actorFrom(request);
-      await prisma.$transaction(async (tx) => {
-        if (kind === 'ORCAMENTO') {
-          if (!has(request, 'orcamentos.gerenciar')) throw Errors.forbidden();
-          const q = await tx.quote.findFirst({ where: { id, deletedAt: { not: null } } });
-          if (!q) throw Errors.notFound('Orçamento');
-          await tx.quote.update({
-            where: { id },
-            data: { deletedAt: null, deletedById: null, version: { increment: 1 } },
-          });
-          await audit(tx, actor, {
-            action: 'quotes.restored',
-            entityType: 'quote',
-            entityId: id,
-            summary: `Orçamento nº ${q.number} recuperado da lixeira.`,
-          });
-        } else if (kind === 'FOTO') {
-          const a = await tx.attachment.findUnique({ where: { id } });
-          if (!a || !a.deletedAt) throw Errors.notFound('Foto');
-          if (!allowed(request.auth!.permissions, MANAGE_PERMISSIONS[a.entityType as AttachmentEntity]))
-            throw Errors.forbidden();
-          await tx.attachment.update({ where: { id }, data: { deletedAt: null } });
-          await tx.storedFile.update({ where: { id: a.fileId }, data: { deletedAt: null } });
-          await audit(tx, actor, {
-            action: 'attachment.restored',
-            entityType: a.entityType.toLowerCase(),
-            entityId: a.entityId,
-            summary: 'Foto recuperada da lixeira.',
-          });
-        } else {
-          if (!has(request, 'clientes.gerenciar')) throw Errors.forbidden();
-          const c = await tx.customer.findFirst({ where: { id, active: false } });
-          if (!c) throw Errors.notFound('Cliente');
-          await tx.customer.update({
-            where: { id },
-            data: { active: true, version: { increment: 1 } },
-          });
-          await audit(tx, actor, {
-            action: 'customer.reactivated',
-            entityType: 'customer',
-            entityId: id,
-            summary: `Cliente ${c.name} recuperado da lixeira.`,
-          });
-        }
-      });
-      return { ok: true };
-    },
-  );
+  app.post('/api/v1/trash/:kind/:id/restore', { config: { access: ANY_WEB } }, async (request) => {
+    const { kind, id } = z
+      .object({ kind: z.enum(TRASH_KINDS), id: z.string().uuid() })
+      .parse(request.params);
+    const actor = actorFrom(request);
+    await prisma.$transaction(async (tx) => {
+      if (kind === 'ORCAMENTO') {
+        if (!has(request, 'orcamentos.gerenciar')) throw Errors.forbidden();
+        const q = await tx.quote.findFirst({ where: { id, deletedAt: { not: null } } });
+        if (!q) throw Errors.notFound('Orçamento');
+        await tx.quote.update({
+          where: { id },
+          data: { deletedAt: null, deletedById: null, version: { increment: 1 } },
+        });
+        await audit(tx, actor, {
+          action: 'quotes.restored',
+          entityType: 'quote',
+          entityId: id,
+          summary: `Orçamento nº ${q.number} recuperado da lixeira.`,
+        });
+      } else if (kind === 'FOTO') {
+        const a = await tx.attachment.findUnique({ where: { id } });
+        if (!a || !a.deletedAt) throw Errors.notFound('Foto');
+        if (
+          !allowed(request.auth!.permissions, MANAGE_PERMISSIONS[a.entityType as AttachmentEntity])
+        )
+          throw Errors.forbidden();
+        await tx.attachment.update({ where: { id }, data: { deletedAt: null } });
+        await tx.storedFile.update({ where: { id: a.fileId }, data: { deletedAt: null } });
+        await audit(tx, actor, {
+          action: 'attachment.restored',
+          entityType: a.entityType.toLowerCase(),
+          entityId: a.entityId,
+          summary: 'Foto recuperada da lixeira.',
+        });
+      } else {
+        if (!has(request, 'clientes.gerenciar')) throw Errors.forbidden();
+        const c = await tx.customer.findFirst({ where: { id, active: false } });
+        if (!c) throw Errors.notFound('Cliente');
+        await tx.customer.update({
+          where: { id },
+          data: { active: true, version: { increment: 1 } },
+        });
+        await audit(tx, actor, {
+          action: 'customer.reactivated',
+          entityType: 'customer',
+          entityId: id,
+          summary: `Cliente ${c.name} recuperado da lixeira.`,
+        });
+      }
+    });
+    return { ok: true };
+  });
 
   // ───────────────────────── Álbum (82) e links do cliente (79, 130) ─────────────────────────
   app.get(
@@ -766,7 +770,11 @@ export async function improvementRoutes(app: FastifyInstance) {
           );
         });
       const end = new Date(
-        Math.max(company.paidUntil?.getTime() ?? 0, company.trialEndsAt?.getTime() ?? 0, Date.now()),
+        Math.max(
+          company.paidUntil?.getTime() ?? 0,
+          company.trialEndsAt?.getTime() ?? 0,
+          Date.now(),
+        ),
       );
       const reason = [input.reason, input.details].filter(Boolean).join(' — ').slice(0, 500);
       await prisma.$transaction(async (tx) => {
@@ -843,7 +851,12 @@ export async function improvementRoutes(app: FastifyInstance) {
         newServices: { count: number; valueCents: number | null } | null;
         delivered: { pieces: number; scheduledRest: number } | null;
         receivedCents: number | null;
-        quotes: { sent: number; approved: number; approvedCents: number; followUpDue: number } | null;
+        quotes: {
+          sent: number;
+          approved: number;
+          approvedCents: number;
+          followUpDue: number;
+        } | null;
       } = {
         weekStart: monday,
         weekEnd: addDays(monday, 6),
@@ -945,10 +958,24 @@ export async function improvementRoutes(app: FastifyInstance) {
   );
 
   // Planos e motivos ficam disponíveis para as telas (evita duplicar a lista no painel).
-  app.get('/api/v1/subscription/cancel-options', { config: { access: BILLING_MANAGE } }, async () => ({
-    reasons: CANCEL_REASONS,
-    plans: Object.values(PLANS).map((p) => p.label),
-  }));
+  app.get(
+    '/api/v1/subscription/cancel-options',
+    { config: { access: BILLING_MANAGE } },
+    async () => {
+      const c = await prisma.companySettings.findUniqueOrThrow({
+        where: { id: requireCompanyId() },
+        select: { canceledAt: true, pausedUntil: true, cancelReason: true, billingCourtesy: true },
+      });
+      return {
+        reasons: CANCEL_REASONS,
+        plans: Object.values(PLANS).map((p) => p.label),
+        canceledAt: c.canceledAt?.toISOString() ?? null,
+        pausedUntil: c.pausedUntil?.toISOString() ?? null,
+        cancelReason: c.cancelReason,
+        courtesy: c.billingCourtesy || requireCompanyId() === PLATFORM_COMPANY_ID,
+      };
+    },
+  );
 }
 
 const PHOTO_PLACE: Partial<Record<AttachmentEntity, string>> = {

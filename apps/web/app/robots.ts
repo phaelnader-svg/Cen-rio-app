@@ -8,7 +8,18 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: '*',
         allow: ['/$', '/conheca', '/site/'],
-        disallow: ['/painel', '/tablet', '/entrar', '/api/', '/autorizar', '/ambiente-interativo'],
+        // Links dos clientes (proposta, álbum, retirada) também ficam fora.
+        disallow: [
+          '/painel',
+          '/tablet',
+          '/entrar',
+          '/api/',
+          '/autorizar',
+          '/ambiente-interativo',
+          '/proposta/',
+          '/album/',
+          '/agendar/',
+        ],
       },
     ],
     sitemap: `${SITE_URL}/sitemap.xml`,

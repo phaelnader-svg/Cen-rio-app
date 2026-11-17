@@ -43,6 +43,45 @@
   --shadow-pop: 0 10px 30px rgb(29 37 35 / 0.12), 0 2px 6px rgb(29 37 35 / 0.06);
 }
 
+/* Melhoria 87: modo escuro do painel (só na tela; a impressão continua clara). */
+@media screen {
+  html[data-tema='escuro'] {
+    color-scheme: dark;
+    --color-canvas: #121615;
+    --color-surface: #1a1f1e;
+    --color-subtle: #232a28;
+    --color-line: #2e3634;
+    --color-line-strong: #45504d;
+    --color-ink: #e8ecea;
+    --color-ink-soft: #b8c2bf;
+    --color-ink-muted: #8a9592;
+    --color-brand-50: #16302c;
+    --color-brand-100: #1d3d39;
+    --color-brand-200: #2a5752;
+    --color-brand-500: #5aaa9f;
+    --color-brand-600: #4a9a90;
+    --color-brand-700: #3a8a80;
+    --color-brand-800: #2f7068;
+    --color-bronze-100: #2e2418;
+    --color-bronze-500: #c8925a;
+    --color-bronze-600: #d6a06a;
+    --color-ok-50: #12291c;
+    --color-ok-600: #5cc48a;
+    --color-warn-50: #2e2310;
+    --color-warn-600: #e0a54a;
+    --color-danger-50: #331617;
+    --color-danger-600: #e06262;
+    --color-danger-700: #b83c3c;
+    --color-info-50: #152238;
+    --color-info-600: #7aa7e6;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.35);
+    --shadow-pop: 0 10px 30px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.35);
+  }
+  html[data-tema='escuro'] img {
+    color-scheme: light;
+  }
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;

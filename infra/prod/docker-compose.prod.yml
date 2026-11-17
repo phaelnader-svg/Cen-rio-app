@@ -134,6 +134,7 @@ services:
     environment:
       PROD_DOMAIN: ${PROD_DOMAIN}
       PROD_DOMAIN_WWW: ${PROD_DOMAIN_WWW:?defina PROD_DOMAIN_WWW}
+      PROD_STATUS_DOMAIN: ${PROD_STATUS_DOMAIN:-http://status.localhost}
     volumes:
       - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

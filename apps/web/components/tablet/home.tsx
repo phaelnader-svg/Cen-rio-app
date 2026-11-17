@@ -19,6 +19,7 @@ import { DepartScreen, PresenceCard } from './presence';
 import { InspectionDetail, MyInspections, useMyInspectionCount } from './quality';
 import { MyQueueAll, MyWeek } from './my-week';
 import { useMyQueue } from '@/lib/production';
+import { QrScanButton } from './qr-scan';
 import {
   MyTaskDetail,
   NotificationsButton,
@@ -141,6 +142,7 @@ export function TabletHome({ me }: { me: MeDto }) {
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line bg-subtle/60 px-4 py-2.5 sm:px-8">
           <ConnectionIndicator />
           <div className="flex flex-wrap items-center gap-2">
+            {canExecute && <QrScanButton onTask={(id) => openTask(id)} />}
             {(canExecute || logisticsOnly) && (
               <NotificationsButton
                 onClick={() => {

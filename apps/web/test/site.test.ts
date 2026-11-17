@@ -80,7 +80,7 @@ describe('compartilhamento e Google', () => {
   });
 
   it('robots.txt e sitemap.xml existem e deixam o painel fora', () => {
-    expect(src('app/robots.ts')).toMatch(/disallow: \['\/painel'/);
+    expect(src('app/robots.ts')).toMatch(/disallow: \[\s*'\/painel'/);
     expect(src('app/sitemap.ts')).toMatch(/SITE_URL/);
   });
 
@@ -100,8 +100,11 @@ describe('isolamento e promessas', () => {
 
   it('não promete nada que ainda não foi decidido', () => {
     expect(code).not.toMatch(
-      /grátis|gratuit|ilimitad|fidelidade|promoç|plano (básico|profissional|premium)/i,
+      /gratuit|ilimitad|fidelidade|promoç|plano (básico|profissional|premium)/i,
     );
+    // Teste grátis: só o decidido pelo proprietário (7 dias), vindo da configuração.
+    expect(src('components/site/landing.tsx')).not.toMatch(/grátis/i);
+    expect(SITE.trialDays).toBe(7);
     // Desconto só o anual decidido pelo proprietário, calculado da configuração.
     expect(src('components/site/landing.tsx')).not.toMatch(/desconto|anual/i);
   });

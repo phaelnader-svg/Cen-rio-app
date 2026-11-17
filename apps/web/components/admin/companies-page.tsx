@@ -17,6 +17,13 @@ import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/component
 import { useToast } from '@/components/ui/toast';
 import { api, errorMessage } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
+import {
+  BusinessNumbersCard,
+  DemoCompanyCard,
+  FeedbackInbox,
+  NoticesCard,
+  SupportSessionButton,
+} from '@/components/improvements/platform-extras';
 
 interface CompanyRow {
   id: number;
@@ -29,6 +36,11 @@ interface CompanyRow {
   blockedReason: string | null;
   isPlatform: boolean;
   ownerEmailConfirmed: boolean;
+  isDemo: boolean;
+  supportAccessUntil: string | null;
+  canceledAt: string | null;
+  pausedUntil: string | null;
+  cancelReason: string | null;
   orders: number;
   lastOrderAt: string | null;
   subscription: {
@@ -85,6 +97,10 @@ export function CompaniesPage() {
         title="Empresas"
         description="Empresas que usam o Cenário Gestão, com plano, situação do pagamento e uso. Cada conta criada na tela de entrar é uma empresa nova, com dados separados das outras."
       />
+      <BusinessNumbersCard />
+      <FeedbackInbox />
+      <NoticesCard />
+      <DemoCompanyCard />
       {list.isLoading ? <Spinner /> : null}
       {list.isError ? <Alert tone="danger">{errorMessage(list.error)}</Alert> : null}
       {list.isSuccess && outras.length === 0 ? (
@@ -127,6 +143,20 @@ export function CompaniesPage() {
               </p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {c.isPlatform ? <Badge tone="info">Sua empresa</Badge> : null}
+                {c.isDemo ? <Badge tone="bronze">Demonstração</Badge> : null}
+                {c.canceledAt ? (
+                  <Badge tone="danger">
+                    Cancelou em {formatDay(c.canceledAt)}
+                    {c.cancelReason ? ` (${c.cancelReason})` : ''}
+                  </Badge>
+                ) : c.pausedUntil && new Date(c.pausedUntil) > new Date() ? (
+                  <Badge tone="warn">Pausada até {formatDay(c.pausedUntil)}</Badge>
+                ) : null}
+                {c.supportAccessUntil && new Date(c.supportAccessUntil) > new Date() ? (
+                  <Badge tone="info">
+                    Suporte liberado até {formatDateTime(c.supportAccessUntil)}
+                  </Badge>
+                ) : null}
                 <Badge tone={STATUS_TONE[c.subscription.status]}>
                   {SUBSCRIPTION_STATUS_LABEL[c.subscription.status]}
                 </Badge>
@@ -137,6 +167,13 @@ export function CompaniesPage() {
                 )}
               </div>
             </div>
+            {c.isPlatform ? null : (
+              <SupportSessionButton
+                companyId={c.id}
+                tradeName={c.tradeName}
+                until={c.supportAccessUntil}
+              />
+            )}
             {c.isPlatform ? null : (
               <Button
                 variant="secondary"
