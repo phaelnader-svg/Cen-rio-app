@@ -268,6 +268,10 @@
   [data-print-hidden] {
     display: none !important;
   }
+  [data-print-ancestor] {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+  }
   body {
     background: #fff;
   }
@@ -277,6 +281,12 @@
   }
   .print-page:not([data-print-first]) {
     break-before: page;
+  }
+  /* Um cartão, uma cláusula ou o bloco de assinaturas nunca fica cortado entre duas folhas: se não
+     couber no fim da folha, passa inteiro para a próxima. */
+  .print-page section,
+  .print-keep {
+    break-inside: avoid;
   }
   .print-flat {
     border: 0 !important;

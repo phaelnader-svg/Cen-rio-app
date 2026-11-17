@@ -53,7 +53,7 @@ function DocHeader({
   description?: string;
 }) {
   return (
-    <div className="bg-brand-700 px-6 py-6 text-white sm:px-8">
+    <div className="bg-brand-700 px-6 py-6 text-white sm:px-8 print:py-3">
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <p className="truncate text-lg font-semibold">{company}</p>
@@ -61,9 +61,11 @@ function DocHeader({
         </div>
         <Logo src={logo} className="max-h-14 max-w-24 rounded-lg bg-white p-1.5" />
       </div>
-      <div className="mt-5 border-t border-white/20 pt-5">
-        <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-        {description && <p className="mt-1 max-w-xl text-[15px] text-brand-100">{description}</p>}
+      <div className="mt-5 border-t border-white/20 pt-5 print:mt-2 print:pt-2">
+        <h2 className="text-2xl font-semibold tracking-tight print:text-xl">{title}</h2>
+        {description && (
+          <p className="mt-1 max-w-xl text-[15px] text-brand-100 print:text-sm">{description}</p>
+        )}
       </div>
     </div>
   );
@@ -92,7 +94,7 @@ export function ProposalDocument({
         title="Uma nova vida para o seu estofado."
         description="Preparamos esta proposta com cuidado, pensando no conforto, na beleza e na renovação do seu ambiente."
       />
-      <div className="space-y-5 px-6 py-6 sm:px-8 print:space-y-3 print:py-4">
+      <div className="space-y-5 px-6 py-6 sm:px-8 print:space-y-2.5 print:py-3">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <Eyebrow>Proposta preparada para</Eyebrow>
@@ -110,7 +112,7 @@ export function ProposalDocument({
           </div>
         </div>
 
-        <div className="text-[15px] text-ink-soft">
+        <div className="text-[15px] text-ink-soft print:text-sm">
           <p className="font-medium text-ink">{firstName ? `Olá, ${firstName}!` : 'Olá!'}</p>
           <p className="mt-1">
             Será um prazer cuidar do seu estofado. Abaixo, você encontra os detalhes do serviço e as
@@ -118,63 +120,68 @@ export function ProposalDocument({
           </p>
         </div>
 
-        <section className="rounded-xl border border-line p-5">
-          <Eyebrow>O que vamos realizar</Eyebrow>
-          <p className="mt-1 text-lg font-semibold">{s.service || '—'}</p>
-          <div className="mt-3 flex flex-wrap gap-2 text-sm">
-            {(
-              [
-                ['Espuma', s.foamChange],
-                ['Tecido', s.fabricChange],
-              ] as const
-            ).map(([n, v]) => (
-              <span
-                key={n}
-                className="rounded-full bg-subtle px-3 py-1 font-medium text-ink-soft ring-1 ring-line ring-inset"
-              >
-                {n}: {v ? 'troca incluída' : 'sem troca'}
-              </span>
-            ))}
-          </div>
-          {s.fabrics.length > 0 && (
-            <p className="mt-3 text-sm text-ink-soft">
-              <strong className="text-ink">
-                {s.fabrics.length === 1 ? 'Tecido selecionado: ' : 'Tecidos selecionados: '}
-              </strong>
-              {s.fabrics.join(', ')}
-            </p>
-          )}
-        </section>
-
-        <section className="rounded-xl bg-brand-50 p-5 ring-1 ring-brand-100 ring-inset">
-          <Eyebrow>Investimento para o seu projeto</Eyebrow>
-          <p className="mt-2 text-sm text-ink-soft">Valor à vista</p>
-          <p className="money text-3xl font-semibold text-brand-700">{formatCents(t.totalCents)}</p>
-          {fee && t.installmentTotalCents !== null && (
-            <div className="mt-3 rounded-lg bg-surface px-4 py-3 ring-1 ring-line ring-inset">
-              <p className="text-xs text-ink-muted">Opção de pagamento</p>
-              <p className="font-semibold">
-                {fee.name}: <span className="money">{formatCents(t.installmentTotalCents)}</span>
-                {installments > 0 && (
-                  <span className="money font-normal text-ink-soft">
-                    {' '}
-                    ({installments}x de{' '}
-                    {formatCents(Math.round(t.installmentTotalCents / installments))})
-                  </span>
-                )}
-              </p>
+        {/* Na folha impressa, serviço e valor ficam lado a lado para a proposta caber numa folha só. */}
+        <div className="space-y-5 print:grid print:grid-cols-2 print:gap-3 print:space-y-0">
+          <section className="rounded-xl border border-line p-5 print:p-4">
+            <Eyebrow>O que vamos realizar</Eyebrow>
+            <p className="mt-1 text-lg font-semibold">{s.service || '—'}</p>
+            <div className="mt-3 flex flex-wrap gap-2 text-sm">
+              {(
+                [
+                  ['Espuma', s.foamChange],
+                  ['Tecido', s.fabricChange],
+                ] as const
+              ).map(([n, v]) => (
+                <span
+                  key={n}
+                  className="rounded-full bg-subtle px-3 py-1 font-medium text-ink-soft ring-1 ring-line ring-inset"
+                >
+                  {n}: {v ? 'troca incluída' : 'sem troca'}
+                </span>
+              ))}
             </div>
-          )}
-          <p className="mt-3 text-xs text-ink-muted">
-            Os valores apresentados contemplam o serviço descrito nesta proposta.
-          </p>
-        </section>
+            {s.fabrics.length > 0 && (
+              <p className="mt-3 text-sm text-ink-soft">
+                <strong className="text-ink">
+                  {s.fabrics.length === 1 ? 'Tecido selecionado: ' : 'Tecidos selecionados: '}
+                </strong>
+                {s.fabrics.join(', ')}
+              </p>
+            )}
+          </section>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <section className="rounded-xl border border-line p-5">
+          <section className="rounded-xl bg-brand-50 p-5 ring-1 ring-brand-100 ring-inset print:p-4">
+            <Eyebrow>Investimento para o seu projeto</Eyebrow>
+            <p className="mt-2 text-sm text-ink-soft">Valor à vista</p>
+            <p className="money text-3xl font-semibold text-brand-700 print:text-2xl">
+              {formatCents(t.totalCents)}
+            </p>
+            {fee && t.installmentTotalCents !== null && (
+              <div className="mt-3 rounded-lg bg-surface px-4 py-3 ring-1 ring-line ring-inset">
+                <p className="text-xs text-ink-muted">Opção de pagamento</p>
+                <p className="font-semibold">
+                  {fee.name}: <span className="money">{formatCents(t.installmentTotalCents)}</span>
+                  {installments > 0 && (
+                    <span className="money font-normal text-ink-soft">
+                      {' '}
+                      ({installments}x de{' '}
+                      {formatCents(Math.round(t.installmentTotalCents / installments))})
+                    </span>
+                  )}
+                </p>
+              </div>
+            )}
+            <p className="mt-3 text-xs text-ink-muted">
+              Os valores apresentados contemplam o serviço descrito nesta proposta.
+            </p>
+          </section>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 print:grid-cols-[2fr_3fr] print:gap-3">
+          <section className="rounded-xl border border-line p-5 print:p-4">
             <Eyebrow>Condições comerciais</Eyebrow>
-            <p className="mt-1 font-semibold">Como funciona o pagamento</p>
-            <p className="mt-2 text-sm whitespace-pre-line text-ink-soft">
+            <p className="mt-1 font-semibold print:text-sm">Como funciona o pagamento</p>
+            <p className="mt-2 text-sm whitespace-pre-line text-ink-soft print:text-xs">
               {s.paymentTerms || '—'}
             </p>
             <p className="mt-3 text-sm font-medium">
@@ -185,20 +192,22 @@ export function ProposalDocument({
               Validade da proposta: {s.validityDays ?? '—'} dias
             </p>
           </section>
-          <section className="rounded-xl border border-line p-5">
+          <section className="rounded-xl border border-line p-5 print:p-4">
             <Eyebrow>Informações importantes</Eyebrow>
-            <p className="mt-1 font-semibold">Observações</p>
-            <p className="mt-2 text-sm whitespace-pre-line text-ink-soft">{s.notes || '—'}</p>
+            <p className="mt-1 font-semibold print:text-sm">Observações</p>
+            <p className="mt-2 text-sm whitespace-pre-line text-ink-soft print:text-xs">
+              {s.notes || '—'}
+            </p>
           </section>
         </div>
 
-        <section className="border-l-4 border-bronze-500 pl-4">
+        <section className="print-keep border-l-4 border-bronze-500 pl-4 print:text-xs">
           <p className="font-semibold">Obrigado pela confiança!</p>
-          <p className="mt-1 text-sm text-ink-soft">
+          <p className="mt-1 text-sm text-ink-soft print:mt-0.5 print:text-xs">
             Queremos que cada detalhe do resultado faça a diferença no seu dia a dia. Ficamos à
             disposição para esclarecer dúvidas e conversar sobre os próximos passos.
           </p>
-          <p className="mt-2 text-sm font-semibold">
+          <p className="mt-2 text-sm font-semibold print:mt-0.5 print:text-xs">
             Será um prazer realizar esse projeto para você.
           </p>
         </section>
@@ -208,7 +217,7 @@ export function ProposalDocument({
             ATENÇÃO: valores pendentes. Proposta não finalizada.
           </p>
         )}
-        <div className="flex flex-wrap justify-between gap-2 border-t border-line pt-4 text-xs text-ink-muted">
+        <div className="flex flex-wrap justify-between gap-2 border-t border-line pt-4 text-xs text-ink-muted print:hidden">
           <span>{s.companyName}</span>
           <span>Proposta comercial • Preparada especialmente para você</span>
         </div>
@@ -273,15 +282,17 @@ export function ContractDocument({ s, number }: { s: QuoteSnapshot; number: numb
               Por estarem de pleno acordo, firmam o presente documento mediante suas assinaturas.
             </p>
           </section>
-          <p className="pt-4">Local e data: _______________________________________________</p>
-          <div className="grid grid-cols-2 gap-8 pt-10 text-center">
-            <div className="border-t border-ink-soft pt-2">
-              <p className="font-semibold">CONTRATADA</p>
-              <p className="text-ink-soft">{s.companyName}</p>
-            </div>
-            <div className="border-t border-ink-soft pt-2">
-              <p className="font-semibold">CONTRATANTE</p>
-              <p className="text-ink-soft">{s.customerName}</p>
+          <div className="print-keep">
+            <p className="pt-4">Local e data: _______________________________________________</p>
+            <div className="grid grid-cols-2 gap-8 pt-10 text-center">
+              <div className="border-t border-ink-soft pt-2">
+                <p className="font-semibold">CONTRATADA</p>
+                <p className="text-ink-soft">{s.companyName}</p>
+              </div>
+              <div className="border-t border-ink-soft pt-2">
+                <p className="font-semibold">CONTRATANTE</p>
+                <p className="text-ink-soft">{s.customerName}</p>
+              </div>
             </div>
           </div>
         </>,

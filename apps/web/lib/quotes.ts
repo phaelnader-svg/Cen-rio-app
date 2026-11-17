@@ -159,14 +159,23 @@ export function printArea(id: string) {
   const hidden: Element[] = [];
   const first = area.querySelector('.print-page');
   first?.setAttribute('data-print-first', '');
-  for (let el: Element | null = area; el && el !== document.body; el = el.parentElement)
+  // Os contêineres em volta (abas, painel) perdem o respiro de tela na folha: o documento começa
+  // no topo da margem da página.
+  const ancestors: Element[] = [];
+  for (let el: Element | null = area; el && el !== document.body; el = el.parentElement) {
+    if (el !== area) {
+      el.setAttribute('data-print-ancestor', '');
+      ancestors.push(el);
+    }
     for (const sib of Array.from(el.parentElement?.children ?? []))
       if (sib !== el) {
         sib.setAttribute('data-print-hidden', '');
         hidden.push(sib);
       }
+  }
   const done = () => {
     hidden.forEach((h) => h.removeAttribute('data-print-hidden'));
+    ancestors.forEach((a) => a.removeAttribute('data-print-ancestor'));
     first?.removeAttribute('data-print-first');
     window.removeEventListener('afterprint', done);
   };
