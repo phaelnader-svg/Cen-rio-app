@@ -368,7 +368,7 @@ export async function bankRoutes(app: FastifyInstance) {
             'transferencia',
             'ignorar',
           ]),
-          refId: z.string().uuid().optional(),
+          refId: z.guid().optional(),
         })
         .parse(request.body);
       const actor = actorFrom(request);
@@ -471,7 +471,7 @@ export async function bankRoutes(app: FastifyInstance) {
       const { id } = idParams.parse(request.params);
       const b = z
         .object({
-          accountId: z.string().uuid(),
+          accountId: z.guid(),
           method: z.enum(['PIX', 'BOLETO', 'TRANSFERENCIA']),
         })
         .parse(request.body);

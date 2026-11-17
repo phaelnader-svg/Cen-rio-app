@@ -766,9 +766,7 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
     '/api/v1/production-plans/:id/items/:itemId/distribute',
     { config: { access: PLAN, idempotent: true } },
     async (request) => {
-      const { id, itemId } = z
-        .object({ id: z.string().uuid(), itemId: z.string().uuid() })
-        .parse(request.params);
+      const { id, itemId } = z.object({ id: z.guid(), itemId: z.guid() }).parse(request.params);
       const input = distributeSchema.parse(request.body ?? {});
       const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {
@@ -850,7 +848,7 @@ export async function productionDistributionRoutes(app: FastifyInstance) {
     { config: { access: PLAN } },
     async (request) => {
       const input = z
-        .object({ preparationAssigneeUserId: z.string().uuid().nullable() })
+        .object({ preparationAssigneeUserId: z.guid().nullable() })
         .parse(request.body);
       const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {

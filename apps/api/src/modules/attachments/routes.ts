@@ -40,11 +40,11 @@ export function sniffAudio(b: Buffer): string | null {
 
 const listQuery = z.object({
   entityType: z.enum(ATTACHMENT_ENTITIES),
-  entityId: z.string().uuid(),
+  entityId: z.guid(),
 });
 const uploadFields = z.object({
   entityType: z.enum(ATTACHMENT_ENTITIES),
-  entityId: z.string().uuid(),
+  entityId: z.guid(),
   caption: z.string().trim().max(200).optional(),
 });
 

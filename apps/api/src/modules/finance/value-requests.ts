@@ -243,7 +243,7 @@ async function managerDto(db: Db, r: Row, tz: string): Promise<ValueChangeReques
 
 export const createRequestSchema = z.object({
   targetKind: z.enum(['PRODUCAO', 'LOGISTICA']),
-  targetId: z.string().uuid(),
+  targetId: z.guid(),
   requestedCents: z.number().int().positive().max(100_000_000),
   reason: z.string().trim().min(5, 'Explique o motivo do pedido.').max(500),
 });

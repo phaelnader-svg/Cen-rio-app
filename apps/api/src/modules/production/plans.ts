@@ -930,9 +930,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
     '/api/v1/production-plans/:id/items/:itemId',
     { config: { access: PLAN } },
     async (request) => {
-      const { id, itemId } = z
-        .object({ id: z.string().uuid(), itemId: z.string().uuid() })
-        .parse(request.params);
+      const { id, itemId } = z.object({ id: z.guid(), itemId: z.guid() }).parse(request.params);
       const input = updatePlanItemSchema.parse(request.body);
       const actor = actorFrom(request);
       await prisma.$transaction(async (tx) => {
@@ -1129,9 +1127,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
     '/api/v1/production-plans/:id/items/:itemId/remove',
     { config: { access: PLAN } },
     async (request) => {
-      const { id, itemId } = z
-        .object({ id: z.string().uuid(), itemId: z.string().uuid() })
-        .parse(request.params);
+      const { id, itemId } = z.object({ id: z.guid(), itemId: z.guid() }).parse(request.params);
       const { reason } = z
         .object({ reason: z.string().trim().max(500).optional() })
         .parse(request.body ?? {});

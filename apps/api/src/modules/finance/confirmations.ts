@@ -553,12 +553,12 @@ export async function createException(
 }
 
 export const exceptionSchema = z.object({
-  beneficiaryUserId: z.string().uuid(),
+  beneficiaryUserId: z.guid(),
   reason: z.string().trim().min(3, 'Informe o motivo da exceção.').max(500),
   /** Texto que o profissional vê (neutro); padrão: "Pagamento liberado administrativamente." */
   publicNote: z.string().trim().max(300).optional().nullable(),
   /** Itens exatos (antecipação); ausente = tudo o que está devido na semana. */
-  itemIds: z.array(z.string().uuid()).max(200).optional(),
+  itemIds: z.array(z.guid()).max(200).optional(),
 });
 const confirmSchema = z.object({
   week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

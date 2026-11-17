@@ -623,7 +623,7 @@ export async function oauthRoutes(app: FastifyInstance) {
     async (request) => {
       const auth = request.auth!;
       if (auth.app) throw Errors.forbidden();
-      const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+      const { id } = z.object({ id: z.guid() }).parse(request.params);
       const g = await prisma.oAuthGrant.findUnique({ where: { id } });
       if (!g) throw Errors.notFound('Autorização');
       if (g.userId !== auth.userId && !auth.permissions.has('sessoes.revogar')) {

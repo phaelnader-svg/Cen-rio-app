@@ -1206,7 +1206,7 @@ export async function closingRoutes(app: FastifyInstance) {
     { config: { access: FIN_ADJUST, idempotent: true } },
     async (request) => {
       const { id, paymentId } = z
-        .object({ id: z.string().uuid(), paymentId: z.string().uuid() })
+        .object({ id: z.guid(), paymentId: z.guid() })
         .parse(request.params);
       const input = reverseLaborPaymentSchema.parse(request.body);
       await tx(async (t) => {

@@ -626,7 +626,7 @@ export async function inboxRoutes(app: FastifyInstance) {
       const b = z
         .object({
           text: z.string().trim().min(1).max(4096).optional(),
-          draftId: z.string().uuid().optional(),
+          draftId: z.guid().optional(),
           template: z
             .object({ name: z.string().min(1).max(100), language: z.string().min(2).max(10) })
             .optional(),
@@ -742,9 +742,9 @@ export async function inboxRoutes(app: FastifyInstance) {
     const { id } = idParams.parse(request.params);
     const b = z
       .object({
-        customerId: z.string().uuid().nullable().optional(),
-        serviceOrderId: z.string().uuid().nullable().optional(),
-        orderId: z.string().uuid().nullable().optional(),
+        customerId: z.guid().nullable().optional(),
+        serviceOrderId: z.guid().nullable().optional(),
+        orderId: z.guid().nullable().optional(),
         status: z
           .enum(['ABERTA', 'AGUARDANDO_ORCAMENTO', 'EM_ATENDIMENTO', 'ENCERRADA'])
           .optional(),

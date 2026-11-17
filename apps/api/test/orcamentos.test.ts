@@ -2,7 +2,15 @@ import { emptyQuoteDraft, type QuoteCatalogItemDto, type QuoteDraft } from '@cen
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { panelUserWith } from './commercial-helpers';
-import { type Client, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  type Client,
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  rawDb,
+  resetDatabase,
+} from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = any;
@@ -147,6 +155,45 @@ describe('Orçamentos', () => {
     ok(await admin.req('PATCH', `/api/v1/quotes/catalog/${c.linho.id}`, { priceCents: 9900 }));
     const again = ok(await admin.get(`/api/v1/quotes/${q.id}`));
     expect(again.snapshot.totals.totalCents).toBe(234700);
+  });
+
+  // Produção 2026-11-17: os itens que vieram prontos na base (migration 20270413) têm id gerado por
+  // md5(...)::uuid, que não segue o formato de versão do UUID. A validação estrita recusava esses ids
+  // com "Identificador inválido." ao alterar o preço. Os ids precisam ser aceitos em todas as rotas.
+  it('itens que vieram prontos na base (id md5) aceitam alterar preço e entram no orçamento', async () => {
+    const admin = await loginAdmin(app);
+    const c = await baseCatalog(admin);
+    const rows = await rawDb().$queryRaw<{ id: string }[]>`
+      UPDATE quote_catalog_items SET id = md5('orcamento:MATERIAL:11')::uuid
+      WHERE id = ${c.cola.id}::uuid RETURNING id::text`;
+    const seedId = rows[0]!.id;
+    // Fora do formato estrito (variante 8–b no 4º bloco): era exatamente o que a validação recusava.
+    expect(seedId).not.toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab]/);
+
+    const list = ok<QuoteCatalogItemDto[]>(
+      await admin.req('PATCH', `/api/v1/quotes/catalog/${seedId}`, { priceCents: 2000 }),
+    );
+    expect(list.find((x) => x.id === seedId)).toMatchObject({ name: 'Cola', priceCents: 2000 });
+
+    const s = ok(await admin.get('/api/v1/quotes/settings'));
+    ok(
+      await admin.req('PATCH', '/api/v1/quotes/settings', { version: s.version, taxRateBps: 600 }),
+    );
+    const q = ok(
+      await post(
+        admin,
+        '/api/v1/quotes',
+        draft({
+          items: [{ id: 'a', catalogItemId: seedId, qty: 2, heightCm: 0, widthCm: 0, lengthCm: 0 }],
+        }),
+      ),
+      201,
+    );
+    expect(q.snapshot.totals.materialsCents).toBe(4000);
+
+    ok(await post(admin, `/api/v1/quotes/catalog/${seedId}/delete`));
+    const after = ok<QuoteCatalogItemDto[]>(await admin.get('/api/v1/quotes/catalog'));
+    expect(after.some((x) => x.id === seedId)).toBe(false);
   });
 
   it('O.S. exige tapeceiro responsável; excluir esconde o orçamento', async () => {

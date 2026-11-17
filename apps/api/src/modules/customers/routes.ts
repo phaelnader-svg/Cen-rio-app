@@ -44,7 +44,7 @@ const VIEW = { session: 'WEB', permissions: ['clientes.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['clientes.gerenciar'] } as const;
 const AUDIENCE = CUSTOMER_AUDIENCE;
 
-const addressParams = z.object({ id: z.string().uuid(), addressId: z.string().uuid() });
+const addressParams = z.object({ id: z.guid(), addressId: z.guid() });
 
 function toAddressDto(a: CustomerAddress): CustomerAddressDto {
   return { id: a.id, isPrimary: a.isPrimary, ...snapshotAddress(a) };

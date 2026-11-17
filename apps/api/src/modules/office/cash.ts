@@ -1037,9 +1037,9 @@ export async function cashRoutes(app: FastifyInstance) {
           .optional(),
         from: z.string().optional(),
         to: z.string().optional(),
-        accountId: z.string().uuid().optional(),
+        accountId: z.guid().optional(),
         category: z.string().max(60).optional(),
-        goalId: z.string().uuid().optional(),
+        goalId: z.guid().optional(),
       })
       .parse(request.query);
     const goal = q.goalId ? await prisma.cashGoal.findUnique({ where: { id: q.goalId } }) : null;
@@ -1160,7 +1160,7 @@ export async function cashRoutes(app: FastifyInstance) {
     async (request) => {
       const b = z
         .object({
-          accountId: z.string().uuid(),
+          accountId: z.guid(),
           amountCents: z.number().int().min(-1_000_000_000).max(10_000_000_000),
           takenAt: z.string().datetime({ offset: true }).optional(),
           note: z.string().trim().max(300).optional(),
@@ -1221,14 +1221,14 @@ export async function cashRoutes(app: FastifyInstance) {
     async (request) => {
       const b = z
         .object({
-          accountId: z.string().uuid(),
+          accountId: z.guid(),
           kind: kindSchema,
           amountCents: z.number().int().positive().max(10_000_000_000),
           occurredAt: z.string().datetime({ offset: true }).optional(),
           description: z.string().trim().min(2).max(300),
-          serviceOrderId: z.string().uuid().optional(),
-          payableId: z.string().uuid().optional(),
-          toAccountId: z.string().uuid().optional(),
+          serviceOrderId: z.guid().optional(),
+          payableId: z.guid().optional(),
+          toAccountId: z.guid().optional(),
         })
         .refine(
           (v) => v.kind !== 'TRANSFERENCIA' || (v.toAccountId && v.toAccountId !== v.accountId),
@@ -1355,7 +1355,7 @@ export async function cashRoutes(app: FastifyInstance) {
             .regex(/^\d{4}-\d{2}-\d{2}$/)
             .nullable()
             .optional(),
-          accountIds: z.array(z.string().uuid()).max(20).default([]),
+          accountIds: z.array(z.guid()).max(20).default([]),
         })
         .parse(request.body);
       const actor = actorFrom(request);
@@ -1394,7 +1394,7 @@ export async function cashRoutes(app: FastifyInstance) {
             .string()
             .regex(/^\d{4}-\d{2}-\d{2}$/)
             .nullable(),
-          accountIds: z.array(z.string().uuid()).max(20),
+          accountIds: z.array(z.guid()).max(20),
           active: z.boolean().default(true),
           version: z.number().int().positive(),
         })

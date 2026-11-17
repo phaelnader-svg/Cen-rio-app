@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const idSchema = z.string().uuid({ message: 'Identificador inválido.' });
+export const idSchema = z.guid({ message: 'Identificador inválido.' });
 
 export const versionSchema = z
   .number({ message: 'Versão obrigatória para controle de concorrência.' })
