@@ -2,6 +2,7 @@
 import clsx from 'clsx';
 import { X } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { Ic, IconText, iconOf, iconText, stripEmoji } from './icons';
 
 /** Painel flutuante sobre o mapa (cartão "de madeira" com borda bronze). */
 export function Panel({
@@ -34,16 +35,26 @@ export function Panel({
       )}
     >
       <header className="flex items-start gap-3 border-b border-bronze-500/25 bg-gradient-to-r from-[#f5ebdf] to-[#fffaf2] px-4 py-3">
-        {icon ? <div className="mt-0.5 text-xl">{icon}</div> : null}
+        {icon ? (
+          <div className="mt-0.5 text-bronze-600">
+            {typeof icon === 'string' ? (
+              iconOf(icon) ? (
+                <Ic e={icon} className="size-5" />
+              ) : null
+            ) : (
+              icon
+            )}
+          </div>
+        ) : null}
         <div className="min-w-0 flex-1">
           <h2
             className={clsx(
               'text-base font-bold text-ink',
               wrapTitle ? 'leading-snug' : 'truncate',
             )}
-            title={typeof title === 'string' ? title : undefined}
+            title={typeof title === 'string' ? stripEmoji(title) : undefined}
           >
-            {title}
+            {typeof title === 'string' ? iconText(title) : title}
           </h2>
           {subtitle ? <div className="text-xs text-ink-soft">{subtitle}</div> : null}
         </div>
@@ -120,7 +131,7 @@ export function GBtn({
         className,
       )}
     >
-      {children}
+      <IconText>{children}</IconText>
     </button>
   );
 }
@@ -148,7 +159,7 @@ export function Tone({
         map[tone],
       )}
     >
-      {children}
+      <IconText>{children}</IconText>
     </span>
   );
 }
@@ -157,7 +168,9 @@ export function KV({ k, v }: { k: string; v: ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-dashed border-line py-1 last:border-0">
       <span className="text-ink-muted">{k}</span>
-      <span className="text-right font-medium text-ink">{v ?? '—'}</span>
+      <span className="text-right font-medium text-ink">
+        {typeof v === 'string' ? iconText(v) : (v ?? '—')}
+      </span>
     </div>
   );
 }

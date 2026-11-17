@@ -3,6 +3,7 @@
  * piso de madeira clara, paredes em verde petróleo, detalhes em bronze, peças "de feltro".
  * Unidades em metros; a origem de cada móvel é o canto noroeste do retângulo ocupado no chão.
  */
+import { drawIcon, iconOf, splitIcon } from './icons';
 import * as THREE from 'three';
 import type { FurnitureModel } from '@cenario/shared';
 
@@ -116,12 +117,69 @@ export function fabricColor(seed: string) {
   return colors[h % colors.length]!;
 }
 
+/**
+ * Cor do tecido a partir do texto da OS ("Linho cinza", "Veludo azul marinho", "Couro"…).
+ * Sem cor reconhecível, cai na cor estável pelo código.
+ */
+export function fabricColorFor(fabric: string | null | undefined, seed: string) {
+  const t = (fabric ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  const table: [RegExp, string][] = [
+    [/marinho/, '#2f4560'],
+    [/azul/, '#4f6f86'],
+    [/verde|musgo|oliva/, '#5f7f6e'],
+    [/vermelh|vinho|bordo|marsala/, '#8e3b3b'],
+    [/rosa|rose/, '#c98b95'],
+    [/mostarda|amarel|ocre/, '#c99a3a'],
+    [/laranja|terracota|ferrugem/, '#b8643f'],
+    [/roxo|lilas|violeta/, '#6d6a8f'],
+    [/grafite|chumbo/, '#4a4f52'],
+    [/cinza|gelo/, '#8a8f8c'],
+    [/preto|negro/, '#33302e'],
+    [/branco|off|cru/, '#e8e2d6'],
+    [/bege|areia|linho|nude|creme/, '#cbb894'],
+    [/caramelo|conhaque|whisky/, '#a0673a'],
+    [/marrom|cafe|chocolate|tabaco|couro/, '#6b4a33'],
+  ];
+  for (const [re, c] of table) if (re.test(t)) return c;
+  return fabricColor(seed);
+}
+
+/**
+ * Como a peça aparece conforme a etapa da produção: chega usada (ANTIGA), é desmontada, fica só na
+ * estrutura, recebe espuma, ganha a capa nova e sai embalada.
+ */
+export type BuildStage = 'ANTIGA' | 'DESMONTADA' | 'ESTRUTURA' | 'ESPUMA' | 'CAPA' | 'EMBALADA';
+
+const FRAME = '#d6b384';
+const FOAM = '#f2e3a4';
+
 // ───────────────────────────── Móveis em produção (por categoria) ─────────────────────────────
 
-export function furniture(model: FurnitureModel, color: string) {
+export function furniture(model: FurnitureModel, color: string, stage: BuildStage = 'CAPA') {
   const g = new THREE.Group();
-  const fabric = mat(color, { rough: 1 });
-  const cushion = mat(new THREE.Color(color).offsetHSL(0, -0.05, 0.08).getStyle(), { rough: 1 });
+  const old = new THREE.Color(color).lerp(new THREE.Color('#8b8378'), 0.55).getStyle();
+  const base =
+    stage === 'ESTRUTURA' || stage === 'DESMONTADA'
+      ? FRAME
+      : stage === 'ESPUMA'
+        ? FOAM
+        : stage === 'ANTIGA'
+          ? old
+          : color;
+  const fabric = mat(base, { rough: stage === 'ESTRUTURA' || stage === 'DESMONTADA' ? 0.8 : 1 });
+  const cushion = mat(
+    stage === 'ESPUMA'
+      ? '#f7ecbd'
+      : new THREE.Color(stage === 'ANTIGA' || stage === 'DESMONTADA' ? old : base)
+          .offsetHSL(0, -0.05, 0.08)
+          .getStyle(),
+    { rough: 1 },
+  );
+  /** Almofadas soltas: na estrutura não existem; desmontada, ficam no chão ao lado. */
+  const withCushions = stage !== 'ESTRUTURA';
   const add = (
     w: number,
     h: number,
@@ -130,17 +188,46 @@ export function furniture(model: FurnitureModel, color: string) {
     x: number,
     y: number,
     z: number,
-  ) => g.add(box(w, h, d, m, x, y, z));
+  ) => {
+    const isCushion = m === cushion;
+    if (isCushion && !withCushions) return;
+    const b = box(w, h, d, m, x, y, z);
+    if (isCushion) b.userData.cushion = true;
+    g.add(b);
+  };
+  // Estrutura de madeira: travessas vazadas em vez de blocos cheios.
+  const frameBox = (w: number, h: number, d: number, x: number, y: number, z: number) => {
+    if (stage !== 'ESTRUTURA' && stage !== 'DESMONTADA') return add(w, h, d, fabric, x, y, z);
+    const t = 0.05;
+    const m = mat(FRAME, { rough: 0.8 });
+    for (const sy of [y, y + h - t]) {
+      g.add(box(w, t, t, m, x, sy, z - d / 2 + t / 2));
+      g.add(box(w, t, t, m, x, sy, z + d / 2 - t / 2));
+      g.add(box(t, t, d, m, x - w / 2 + t / 2, sy, z));
+      g.add(box(t, t, d, m, x + w / 2 - t / 2, sy, z));
+    }
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1])
+        g.add(box(t, h, t, m, x + sx * (w / 2 - t / 2), y, z + sz * (d / 2 - t / 2)));
+    if (w > 0.6) g.add(box(t, h, t, m, x, y, z - d / 2 + t / 2));
+  };
   const sofa = (w: number, d: number, seats: number) => {
-    add(w, 0.18, d, fabric, 0, 0.08, 0);
+    frameBox(w, 0.18, d, 0, 0.08, 0);
+    if (stage === 'ESTRUTURA' || stage === 'DESMONTADA') {
+      // Percintas (elásticos) no assento.
+      for (let i = 0; i < 5; i++)
+        g.add(
+          box(0.05, 0.01, d - 0.1, mat('#3f4a4f'), -w / 2 + 0.2 + (i * (w - 0.4)) / 4, 0.25, 0),
+        );
+    }
     for (let i = 0; i < seats; i++) {
       const sw = (w - 0.3) / seats;
       add(sw - 0.03, 0.14, d - 0.3, cushion, -w / 2 + 0.15 + sw * (i + 0.5), 0.26, 0.08);
       add(sw - 0.03, 0.42, 0.16, cushion, -w / 2 + 0.15 + sw * (i + 0.5), 0.26, -d / 2 + 0.2);
     }
-    add(0.15, 0.5, d, fabric, -w / 2 + 0.075, 0.08, 0);
-    add(0.15, 0.5, d, fabric, w / 2 - 0.075, 0.08, 0);
-    add(w, 0.6, 0.12, fabric, 0, 0.08, -d / 2 + 0.06);
+    frameBox(0.15, 0.5, d, -w / 2 + 0.075, 0.08, 0);
+    frameBox(0.15, 0.5, d, w / 2 - 0.075, 0.08, 0);
+    frameBox(w, 0.6, 0.12, 0, 0.08, -d / 2 + 0.06);
     for (const sx of [-1, 1])
       for (const sz of [-1, 1])
         g.add(cyl(0.025, 0.08, PALETTE.woodDark, sx * (w / 2 - 0.08), 0, sz * (d / 2 - 0.08), 6));
@@ -158,18 +245,18 @@ export function furniture(model: FurnitureModel, color: string) {
       sofa(2.2, 0.9, 3);
       const chaise = new THREE.Group();
       chaise.add(box(0.9, 0.18, 1.0, fabric, 0, 0.08, 0));
-      chaise.add(box(0.84, 0.14, 0.95, cushion, 0, 0.26, 0));
+      if (withCushions) chaise.add(box(0.84, 0.14, 0.95, cushion, 0, 0.26, 0));
       chaise.add(box(0.15, 0.5, 1.0, fabric, 0.375, 0.08, 0));
       chaise.position.set(0.65, 0, 0.95);
       g.add(chaise);
       break;
     }
     case 'POLTRONA':
-      add(0.85, 0.2, 0.85, fabric, 0, 0.12, 0);
+      frameBox(0.85, 0.2, 0.85, 0, 0.12, 0);
       add(0.55, 0.14, 0.6, cushion, 0, 0.32, 0.08);
-      add(0.15, 0.45, 0.85, fabric, -0.35, 0.12, 0);
-      add(0.15, 0.45, 0.85, fabric, 0.35, 0.12, 0);
-      add(0.85, 0.75, 0.15, fabric, 0, 0.12, -0.35);
+      frameBox(0.15, 0.45, 0.85, -0.35, 0.12, 0);
+      frameBox(0.15, 0.45, 0.85, 0.35, 0.12, 0);
+      frameBox(0.85, 0.75, 0.15, 0, 0.12, -0.35);
       for (const sx of [-1, 1])
         for (const sz of [-1, 1])
           g.add(cyl(0.025, 0.12, PALETTE.woodDark, sx * 0.35, 0, sz * 0.35, 6));
@@ -180,24 +267,71 @@ export function furniture(model: FurnitureModel, color: string) {
       legs(g, 0.48, 0.48, 0.45);
       break;
     case 'CABECEIRA':
-      add(1.6, 1.1, 0.12, fabric, 0, 0.1, 0);
+      frameBox(1.6, 1.1, 0.12, 0, 0.1, 0);
       for (let i = 0; i < 4; i++) add(0.36, 0.95, 0.06, cushion, -0.6 + i * 0.4, 0.17, 0.08);
       add(0.08, 0.12, 0.08, mat(PALETTE.woodDark), -0.7, 0, 0);
       add(0.08, 0.12, 0.08, mat(PALETTE.woodDark), 0.7, 0, 0);
       break;
     case 'PUFE':
-      g.add(cyl(0.3, 0.42, color, 0, 0, 0, 14));
+      if (stage === 'ESTRUTURA' || stage === 'DESMONTADA') frameBox(0.55, 0.42, 0.55, 0, 0, 0);
+      else g.add(cyl(0.3, 0.42, stage === 'ESPUMA' ? FOAM : base, 0, 0, 0, 14));
       break;
     case 'BANCO':
       add(1.4, 0.1, 0.4, cushion, 0, 0.42, 0);
       legs(g, 1.4, 0.4, 0.42);
       break;
     case 'COLCHAO':
-      add(1.4, 0.25, 1.9, cushion, 0, 0.05, 0);
+      add(1.4, 0.25, 1.9, stage === 'ESTRUTURA' ? fabric : cushion, 0, 0.05, 0);
       break;
     default:
       add(0.8, 0.5, 0.6, fabric, 0, 0.05, 0);
       add(0.85, 0.06, 0.65, mat(PALETTE.steel, { opacity: 0.6 }), 0, 0.55, 0);
+  }
+  if (stage === 'DESMONTADA') {
+    // Capa velha arrancada, amontoada no chão, e almofadas encostadas.
+    const [w, d] = FURNITURE_SIZE[model];
+    const heap = mat(old, { rough: 1 });
+    g.add(box(0.5, 0.08, 0.4, heap, w / 2 + 0.25, 0, d / 2 - 0.1));
+    g.add(box(0.36, 0.06, 0.3, heap, w / 2 + 0.3, 0.08, d / 2 - 0.12));
+    const loose = g.children.filter((o) => o.userData.cushion);
+    loose.forEach((c, i) => {
+      if (i >= 2) return void g.remove(c);
+      c.position.set(-w / 2 - 0.25, 0.08 + i * 0.16, -d / 2 + 0.3 + i * 0.05);
+      c.rotation.set(0, 0.3 * i, 0);
+    });
+  }
+  if (stage === 'EMBALADA') {
+    // Plástico bolha, cantoneiras de papelão e fita.
+    const bb = new THREE.Box3().setFromObject(g);
+    const size = bb.getSize(new THREE.Vector3());
+    const c = bb.getCenter(new THREE.Vector3());
+    const wrap = new THREE.Mesh(
+      new THREE.BoxGeometry(size.x + 0.06, size.y + 0.04, size.z + 0.06),
+      new THREE.MeshStandardMaterial({
+        color: '#e9f3f7',
+        transparent: true,
+        opacity: 0.45,
+        roughness: 0.25,
+        metalness: 0.05,
+        depthWrite: false,
+      }),
+    );
+    wrap.position.set(c.x, size.y / 2 + 0.02, c.z);
+    g.add(wrap);
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1])
+        g.add(
+          box(
+            0.12,
+            size.y + 0.05,
+            0.12,
+            mat(PALETTE.cardboard),
+            c.x + sx * (size.x / 2),
+            0,
+            c.z + sz * (size.z / 2),
+          ),
+        );
+    g.add(box(size.x + 0.08, 0.05, size.z + 0.08, mat('#c9a26b'), c.x, size.y * 0.55, c.z));
   }
   return g;
 }
@@ -561,20 +695,52 @@ export const HIP_HEIGHT = 0.45;
 /** Metade da espessura da coxa: sentado, o quadril fica isso acima do assento. */
 export const THIGH_HALF = 0.07;
 
-const HAIR = ['#3a2a20', '#1f1a17', '#6b4423', '#2b2235', '#8a5a2b'];
+const HAIR = ['#3a2a20', '#1f1a17', '#6b4423', '#2b2235', '#8a5a2b', '#b8875a', '#5b5b5b'];
+
+/** Número estável a partir de um texto (nome, id). */
+export function hashOf(seed: string | number) {
+  if (typeof seed === 'number') return Math.abs(Math.floor(seed));
+  let h = 2166136261;
+  for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
+  return h;
+}
+
+export interface AvatarOptions {
+  /** Nome para o crachá (inicial) e para variar rosto e cabelo. */
+  name?: string;
+  /** Funções do funcionário (cargo): define avental/uniforme. */
+  roles?: string[];
+}
 
 /**
  * Personagem em blocos. Pernas e braços são articulados (quadril, joelho, ombro), então o mesmo
- * modelo anda, senta e digita. Os nomes legL/legR/kneeL/kneeR/armL/armR são usados pelo motor.
+ * modelo anda, senta, digita e trabalha. Os nomes legL/legR/kneeL/kneeR/armL/armR/head/toolR são
+ * usados pelo motor. Rosto, cabelo, pele, uniforme e crachá variam por pessoa (estáveis pelo nome).
  * Nenhuma peça encosta face com face em outra (evita o "piscar" de superfícies sobrepostas).
  */
-export function avatar(color: string, style: AvatarStyle = 'PESSOA', skinIndex = 0) {
+export function avatar(
+  color: string,
+  style: AvatarStyle = 'PESSOA',
+  seed: string | number = 0,
+  opts: AvatarOptions = {},
+) {
   const g = new THREE.Group();
-  const skin = PALETTE.skin[skinIndex % PALETTE.skin.length]!;
-  const hair = HAIR[skinIndex % HAIR.length]!;
+  const h = hashOf(opts.name ?? seed);
+  const skin = PALETTE.skin[h % PALETTE.skin.length]!;
+  const hair = HAIR[(h >>> 3) % HAIR.length]!;
+  const hairStyle = (h >>> 6) % 5; // 0 curto, 1 comprido, 2 coque, 3 boné, 4 raspado + barba
+  const roles = (opts.roles ?? []).join(' ').toLowerCase();
+  const workshop = style === 'PESSOA';
   const shirt = style === 'MESTRE' ? '#e76f1a' : color;
-  const pants = style === 'AGENTE' ? '#3b2f63' : '#2d3b45';
-  const shoes = '#1d2523';
+  const pants =
+    style === 'AGENTE'
+      ? '#3b2f63'
+      : style === 'JOGADOR'
+        ? '#3a3f4a'
+        : (h >>> 9) % 2
+          ? '#2d3b45'
+          : '#37475a';
+  const shoes = (h >>> 11) % 3 === 0 ? '#5a3a24' : '#1d2523';
   for (const [side, sx] of [
     ['L', -0.08],
     ['R', 0.08],
@@ -591,9 +757,40 @@ export function avatar(color: string, style: AvatarStyle = 'PESSOA', skinIndex =
     leg.add(knee);
     g.add(leg);
   }
-  g.add(box(0.34, 0.42, 0.2, shirt, 0, 0.45, 0));
-  g.add(box(0.352, 0.045, 0.212, '#24302f', 0, 0.46, 0)); // cinto
-  g.add(box(0.2, 0.03, 0.05, shirt, 0, 0.87, 0.06)); // gola
+  const torso = new THREE.Group();
+  torso.name = 'torso';
+  g.add(torso);
+  torso.add(box(0.34, 0.42, 0.2, shirt, 0, 0.45, 0));
+  torso.add(box(0.352, 0.045, 0.212, '#24302f', 0, 0.46, 0)); // cinto
+  torso.add(box(0.2, 0.03, 0.05, shirt, 0, 0.87, 0.06)); // gola
+  if (workshop) {
+    // Avental de lona (tapeçaria), costura em jeans, qualidade/escritório em jaleco claro.
+    const apron = /qualid|inspe/.test(roles)
+      ? '#eef1ee'
+      : /costur/.test(roles)
+        ? '#4a6688'
+        : /ajud|apoio|log/.test(roles)
+          ? '#5f6b52'
+          : '#b48a5a';
+    torso.add(box(0.3, 0.36, 0.012, apron, 0, 0.47, 0.107));
+    torso.add(box(0.012, 0.18, 0.012, apron, -0.09, 0.8, 0.104)); // alças
+    torso.add(box(0.012, 0.18, 0.012, apron, 0.09, 0.8, 0.104));
+    torso.add(
+      box(
+        0.16,
+        0.08,
+        0.014,
+        new THREE.Color(apron).offsetHSL(0, 0, -0.08).getStyle(),
+        0,
+        0.55,
+        0.115,
+      ),
+    ); // bolso
+    // Crachá com a inicial, na cor do funcionário.
+    const badge = initialBadge(opts.name ?? '', color);
+    badge.position.set(0.09, 0.74, 0.118);
+    torso.add(badge);
+  }
   for (const [side, sx] of [
     ['L', -0.215],
     ['R', 0.215],
@@ -601,42 +798,144 @@ export function avatar(color: string, style: AvatarStyle = 'PESSOA', skinIndex =
     const arm = new THREE.Group();
     arm.name = `arm${side}`;
     arm.position.set(sx, 0.85, 0);
-    arm.add(box(0.085, 0.3, 0.105, shirt, 0, -0.3, 0));
+    arm.add(box(0.085, 0.16, 0.105, shirt, 0, -0.16, 0)); // manga
+    arm.add(box(0.075, 0.15, 0.09, workshop && (h >>> 13) % 2 ? skin : shirt, 0, -0.3, 0));
     arm.add(box(0.07, 0.075, 0.085, skin, 0, -0.375, 0)); // mão
+    if (side === 'R') {
+      const tool = new THREE.Group();
+      tool.name = 'toolR';
+      tool.position.set(0, -0.4, 0.03);
+      arm.add(tool);
+    }
     g.add(arm);
   }
+  const head = new THREE.Group();
+  head.name = 'head';
+  head.position.set(0, 0.905, 0);
+  g.add(head);
   g.add(box(0.11, 0.05, 0.1, skin, 0, 0.865, 0)); // pescoço
-  g.add(box(0.26, 0.26, 0.24, skin, 0, 0.905, 0));
-  // Cabelo: topo + nuca (sem faces coincidentes com a cabeça).
-  g.add(box(0.28, 0.075, 0.26, hair, 0, 1.12, -0.005));
-  g.add(box(0.28, 0.16, 0.05, hair, 0, 0.99, -0.115));
-  // Rosto (frente = +z).
-  g.add(box(0.045, 0.05, 0.012, PALETTE.ink, -0.06, 1.0, 0.124));
-  g.add(box(0.045, 0.05, 0.012, PALETTE.ink, 0.06, 1.0, 0.124));
-  g.add(box(0.09, 0.018, 0.012, '#8a4b3c', 0, 0.945, 0.124));
+  head.add(box(0.26, 0.26, 0.24, skin, 0, 0, 0));
+  // Cabelo (sem faces coincidentes com a cabeça).
+  if (hairStyle !== 4) {
+    head.add(box(0.28, 0.075, 0.26, hair, 0, 0.215, -0.005));
+    head.add(box(0.28, 0.16, 0.05, hair, 0, 0.085, -0.115));
+    head.add(box(0.025, 0.12, 0.2, hair, -0.142, 0.12, -0.02));
+    head.add(box(0.025, 0.12, 0.2, hair, 0.142, 0.12, -0.02));
+    head.add(box(0.2, 0.04, 0.03, hair, -0.03, 0.22, 0.12)); // franja
+  } else {
+    head.add(box(0.27, 0.03, 0.25, hair, 0, 0.255, 0));
+    head.add(box(0.2, 0.06, 0.02, hair, 0, 0.0, 0.122)); // barba
+    head.add(box(0.02, 0.1, 0.12, hair, -0.13, 0.02, 0.06));
+    head.add(box(0.02, 0.1, 0.12, hair, 0.13, 0.02, 0.06));
+  }
+  if (hairStyle === 1) head.add(box(0.28, 0.22, 0.05, hair, 0, -0.12, -0.13)); // comprido
+  if (hairStyle === 2) head.add(box(0.12, 0.1, 0.1, hair, 0, 0.25, -0.1)); // coque
+  if (hairStyle === 3 && style === 'PESSOA') {
+    head.add(box(0.29, 0.07, 0.27, color, 0, 0.24, 0)); // boné na cor da equipe
+    head.add(box(0.22, 0.02, 0.12, color, 0, 0.245, 0.17));
+  }
+  // Rosto (frente = +z): olhos com brilho, sobrancelhas, nariz e boca.
+  for (const sx of [-0.06, 0.06]) {
+    head.add(box(0.05, 0.05, 0.01, '#fbfaf6', sx, 0.07, 0.122));
+    head.add(box(0.028, 0.034, 0.012, PALETTE.ink, sx + 0.006, 0.072, 0.126));
+    head.add(box(0.055, 0.014, 0.012, hair, sx, 0.135, 0.124));
+  }
+  head.add(
+    box(0.04, 0.045, 0.03, new THREE.Color(skin).offsetHSL(0, 0, -0.06).getStyle(), 0, 0.025, 0.13),
+  );
+  head.add(box(0.08, 0.016, 0.012, '#8a4b3c', 0, -0.045, 0.124));
+  for (const sx of [-0.135, 0.135]) head.add(box(0.02, 0.06, 0.05, skin, sx, 0.03, 0)); // orelhas
   if (style === 'MESTRE') {
-    g.add(box(0.32, 0.08, 0.3, '#f4c430', 0, 1.17, 0));
-    g.add(box(0.37, 0.02, 0.37, '#f4c430', 0, 1.155, 0.03));
-    g.add(box(0.352, 0.06, 0.212, '#fdd835', 0, 0.62, 0));
+    head.add(box(0.32, 0.08, 0.3, '#f4c430', 0, 0.265, 0));
+    head.add(box(0.37, 0.02, 0.37, '#f4c430', 0, 0.25, 0.03));
+    torso.add(box(0.352, 0.06, 0.212, '#fdd835', 0, 0.62, 0));
   }
   if (style === 'AGENTE') {
     // Headset: arco por cima do cabelo, hastes, conchas nas duas orelhas e microfone com luz.
     const band = '#4c1d95';
-    g.add(box(0.36, 0.035, 0.07, band, 0, 1.2, 0));
+    head.add(box(0.36, 0.035, 0.07, band, 0, 0.295, 0));
     for (const s of [-1, 1]) {
-      g.add(box(0.03, 0.22, 0.05, band, s * 0.165, 0.99, 0));
-      g.add(box(0.05, 0.11, 0.1, '#7c3aed', s * 0.17, 0.92, 0));
-      g.add(box(0.012, 0.07, 0.07, mat('#c4b5fd', { emissive: '#a78bfa' }), s * 0.2, 0.94, 0));
+      head.add(box(0.03, 0.22, 0.05, band, s * 0.165, 0.085, 0));
+      head.add(box(0.05, 0.11, 0.1, '#7c3aed', s * 0.17, 0.015, 0));
+      head.add(box(0.012, 0.07, 0.07, mat('#c4b5fd', { emissive: '#a78bfa' }), s * 0.2, 0.035, 0));
     }
-    g.add(box(0.022, 0.022, 0.15, band, -0.175, 0.93, 0.1));
-    g.add(box(0.045, 0.04, 0.04, mat('#c4b5fd', { emissive: '#a78bfa' }), -0.16, 0.92, 0.185));
+    head.add(box(0.022, 0.022, 0.15, band, -0.175, 0.025, 0.1));
+    head.add(box(0.045, 0.04, 0.04, mat('#c4b5fd', { emissive: '#a78bfa' }), -0.16, 0.015, 0.185));
     // Crachá de agente no peito.
-    g.add(box(0.08, 0.08, 0.012, mat('#ede9fe', { emissive: '#8b5cf6' }), 0.08, 0.7, 0.106));
+    torso.add(box(0.08, 0.08, 0.012, mat('#ede9fe', { emissive: '#8b5cf6' }), 0.08, 0.7, 0.106));
   }
-  if (style === 'JOGADOR') g.add(box(0.36, 0.06, 0.22, PALETTE.bronze, 0, 0.8, 0));
+  if (style === 'JOGADOR') {
+    torso.add(box(0.36, 0.06, 0.22, PALETTE.bronze, 0, 0.8, 0));
+    torso.add(
+      box(0.1, 0.1, 0.012, mat('#f5ebdf', { emissive: PALETTE.bronze }), 0.08, 0.68, 0.106),
+    );
+  }
   g.traverse((o) => {
     if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).castShadow = true;
   });
+  return g;
+}
+
+/** Crachá pequeno com a inicial do nome (textura em canvas). */
+function initialBadge(name: string, color: string) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, 64, 64);
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, 64, 18);
+  ctx.fillStyle = '#1d2523';
+  ctx.font = '800 38px Inter, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText((name.replace(/^\[[^\]]*\]\s*/, '')[0] ?? '•').toUpperCase(), 32, 42);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.075, 0.075),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }),
+  );
+  return m;
+}
+
+/** Ferramenta na mão direita conforme a etapa (atividade de produção). */
+export function toolModel(activity: string | null) {
+  const g = new THREE.Group();
+  const steel = mat(PALETTE.steel, { metal: 0.6, rough: 0.35 });
+  switch (activity) {
+    case 'CORTE':
+    case 'CORTE_TECIDO':
+    case 'CORTE_ESPUMA': {
+      // Tesoura.
+      g.add(box(0.012, 0.012, 0.16, steel, -0.012, 0, 0.08));
+      g.add(box(0.012, 0.012, 0.16, steel, 0.012, 0, 0.08));
+      g.add(box(0.04, 0.02, 0.04, mat('#b42323'), -0.02, -0.01, -0.01));
+      g.add(box(0.04, 0.02, 0.04, mat('#b42323'), 0.02, -0.01, -0.01));
+      break;
+    }
+    case 'REVESTIMENTO':
+    case 'MONTAGEM':
+    case 'ACABAMENTO':
+    case 'CORRECAO':
+      // Grampeador pneumático.
+      g.add(box(0.05, 0.06, 0.16, mat('#d08a16'), 0, -0.03, 0.06));
+      g.add(box(0.04, 0.08, 0.04, mat('#2f3a40'), 0, -0.09, -0.01));
+      g.add(box(0.03, 0.02, 0.05, steel, 0, -0.04, 0.16));
+      break;
+    case 'DESMONTAGEM':
+    case 'PREPARACAO':
+    case 'PREPARACAO_MDF':
+      // Alicate/saca-grampo.
+      g.add(box(0.025, 0.025, 0.14, steel, 0, 0, 0.07));
+      g.add(box(0.03, 0.03, 0.08, mat('#1f5fa8'), 0, 0, -0.03));
+      break;
+    case 'EMBALAGEM':
+      g.add(cyl(0.04, 0.03, '#c9a26b', 0, -0.02, 0.04, 10));
+      break;
+    default:
+      break;
+  }
   return g;
 }
 
@@ -667,15 +966,26 @@ export function seatPose(g: THREE.Object3D, s: number, t: number) {
 /** Etiqueta com texto (sprite em canvas). */
 export function label(
   text: string,
-  opts: { bg?: string; fg?: string; size?: number; icon?: string; border?: string } = {},
+  opts: {
+    bg?: string;
+    fg?: string;
+    size?: number;
+    icon?: string;
+    iconColor?: string;
+    border?: string;
+  } = {},
 ) {
   const size = opts.size ?? 28;
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d')!;
   ctx.font = `600 ${size}px Inter, system-ui, sans-serif`;
-  const full = opts.icon ? `${opts.icon} ${text}` : text;
+  // Emojis viram ícone de linha desenhado (o primeiro) ou somem do texto.
+  const parsed = splitIcon(text);
+  const icon = iconOf(opts.icon) ?? parsed.icon;
+  const full = parsed.text;
+  const iw = icon ? size * 1.05 : 0;
   const tw = Math.ceil(ctx.measureText(full).width);
-  c.width = tw + size;
+  c.width = tw + size + iw;
   c.height = Math.ceil(size * 1.6);
   const r = c.height / 2;
   ctx.fillStyle = opts.bg ?? 'rgba(29,37,35,0.82)';
@@ -687,10 +997,13 @@ export function label(
     ctx.lineWidth = 4;
     ctx.stroke();
   }
+  const fg = opts.fg ?? '#ffffff';
+  if (icon)
+    drawIcon(ctx, icon, size / 2, (c.height - size * 0.85) / 2, size * 0.85, opts.iconColor ?? fg);
   ctx.font = `600 ${size}px Inter, system-ui, sans-serif`;
-  ctx.fillStyle = opts.fg ?? '#ffffff';
+  ctx.fillStyle = fg;
   ctx.textBaseline = 'middle';
-  ctx.fillText(full, size / 2, c.height / 2 + 1);
+  ctx.fillText(full, size / 2 + iw, c.height / 2 + 1);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -727,4 +1040,361 @@ export function floorText(text: string, color = '#1d2523', maxW = 3) {
   );
   m.rotation.x = -Math.PI / 2;
   return m;
+}
+
+// ───────────────────────────── Ambiente: texturas, objetos de parede, luminárias ─────────────────────────────
+
+const texCache = new Map<string, THREE.Texture>();
+/** Textura procedural do piso: tábuas de madeira (escritório) ou cimento queimado (oficina). */
+export function floorTexture(kind: 'wood' | 'concrete') {
+  const hit = texCache.get(kind);
+  if (hit) return hit;
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  const ctx = c.getContext('2d')!;
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  if (kind === 'wood') {
+    // 2 m × 2 m: tábuas de 20 cm, emendas desencontradas, veios e variação de tom.
+    const rows = 10;
+    const h = 512 / rows;
+    for (let r = 0; r < rows; r++) {
+      let x = -rnd() * 200;
+      while (x < 512) {
+        const len = 140 + rnd() * 160;
+        const l = 78 + rnd() * 10;
+        ctx.fillStyle = `hsl(${32 + rnd() * 6}, ${38 + rnd() * 10}%, ${l}%)`;
+        ctx.fillRect(x, r * h, len, h);
+        ctx.strokeStyle = 'rgba(120,85,50,0.10)';
+        ctx.lineWidth = 1;
+        for (let k = 0; k < 4; k++) {
+          const y = r * h + 4 + rnd() * (h - 8);
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.bezierCurveTo(
+            x + len / 3,
+            y + rnd() * 6 - 3,
+            x + (2 * len) / 3,
+            y + rnd() * 6 - 3,
+            x + len,
+            y,
+          );
+          ctx.stroke();
+        }
+        ctx.fillStyle = 'rgba(110,80,50,0.35)';
+        ctx.fillRect(x, r * h, 2, h);
+        x += len;
+      }
+      ctx.fillStyle = 'rgba(110,80,50,0.28)';
+      ctx.fillRect(0, r * h, 512, 2);
+    }
+  } else {
+    // 4 m × 4 m de cimento queimado claro com juntas a cada 2 m.
+    ctx.fillStyle = '#dcd6cb';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 9000; i++) {
+      const v = 190 + rnd() * 50;
+      ctx.fillStyle = `rgba(${v},${v - 4},${v - 10},${0.15 + rnd() * 0.2})`;
+      ctx.fillRect(rnd() * 512, rnd() * 512, 1 + rnd() * 3, 1 + rnd() * 3);
+    }
+    for (let i = 0; i < 18; i++) {
+      const g = ctx.createRadialGradient(
+        rnd() * 512,
+        rnd() * 512,
+        0,
+        rnd() * 512,
+        rnd() * 512,
+        60 + rnd() * 120,
+      );
+      g.addColorStop(0, 'rgba(160,150,135,0.10)');
+      g.addColorStop(1, 'rgba(160,150,135,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 512, 512);
+    }
+    ctx.fillStyle = 'rgba(120,110,95,0.35)';
+    ctx.fillRect(0, 255, 512, 2);
+    ctx.fillRect(255, 0, 2, 512);
+    ctx.fillRect(0, 0, 512, 1);
+    ctx.fillRect(0, 0, 1, 512);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 8;
+  texCache.set(kind, t);
+  return t;
+}
+
+/** Janela na parede: moldura, travessas e vidro (o motor ajusta o brilho do vidro pela hora). */
+export function wallWindow(len: number, thick: number) {
+  const g = new THREE.Group();
+  const h = 1.1;
+  const y0 = 0.95;
+  const frame = mat('#f3efe6');
+  g.add(box(len, 0.06, thick + 0.06, frame, 0, y0 - 0.06, 0));
+  g.add(box(len, 0.06, thick + 0.06, frame, 0, y0 + h, 0));
+  for (const sx of [-1, 1])
+    g.add(box(0.06, h, thick + 0.06, frame, (sx * (len - 0.06)) / 2, y0, 0));
+  const panes = Math.max(2, Math.round(len / 0.6));
+  for (let i = 1; i < panes; i++)
+    g.add(box(0.03, h, thick + 0.05, frame, -len / 2 + (i * len) / panes, y0, 0));
+  g.add(box(len, 0.03, thick + 0.05, frame, 0, y0 + h / 2, 0));
+  const glass = new THREE.Mesh(
+    new THREE.BoxGeometry(len - 0.08, h, thick + 0.02),
+    new THREE.MeshStandardMaterial({
+      color: '#bfe3f2',
+      transparent: true,
+      opacity: 0.8,
+      emissive: new THREE.Color('#cfeaff'),
+      emissiveIntensity: 0.5,
+      roughness: 0.15,
+    }),
+  );
+  glass.name = 'glass';
+  glass.position.y = y0 + h / 2;
+  g.add(glass);
+  // Peitoril.
+  g.add(box(len + 0.08, 0.04, thick + 0.16, mat('#d8cfc0'), 0, y0 - 0.1, 0));
+  return g;
+}
+
+/** Painel de ferramentas (pegboard) com tesouras, martelo, grampeador, réguas e trenas. */
+export function pegboard(w: number) {
+  const g = new THREE.Group();
+  g.add(box(w, 0.9, 0.03, mat('#c9a77a'), 0, 1.1, 0));
+  const hole = mat('#8d6e4a');
+  for (let x = -w / 2 + 0.08; x < w / 2 - 0.05; x += 0.12)
+    for (let y = 1.16; y < 1.98; y += 0.12) g.add(box(0.015, 0.015, 0.005, hole, x, y, 0.017));
+  const steel = mat(PALETTE.steel, { metal: 0.6, rough: 0.35 });
+  const tools: [number, () => THREE.Object3D][] = [
+    [
+      -0.32,
+      () => {
+        const t = new THREE.Group();
+        t.add(box(0.04, 0.32, 0.03, mat('#7a4a2e'), 0, 1.35, 0.04));
+        t.add(box(0.16, 0.06, 0.04, steel, 0, 1.67, 0.04));
+        return t;
+      },
+    ],
+    [
+      -0.1,
+      () => {
+        const t = new THREE.Group();
+        t.add(box(0.02, 0.2, 0.012, steel, -0.02, 1.5, 0.04));
+        t.add(box(0.02, 0.2, 0.012, steel, 0.02, 1.5, 0.04));
+        t.add(box(0.05, 0.05, 0.02, mat('#b42323'), -0.03, 1.42, 0.04));
+        t.add(box(0.05, 0.05, 0.02, mat('#b42323'), 0.03, 1.42, 0.04));
+        return t;
+      },
+    ],
+    [0.12, () => box(0.08, 0.12, 0.16, mat('#d08a16'), 0, 1.45, 0.08)],
+    [0.32, () => box(0.03, 0.6, 0.012, mat('#e8d27a'), 0, 1.2, 0.03)],
+  ];
+  for (const [x, f] of tools) {
+    if (Math.abs(x) > w / 2 - 0.08) continue;
+    const t = f();
+    t.position.x += x;
+    g.add(t);
+  }
+  return g;
+}
+
+/** Quadro de avisos de cortiça com papéis presos. */
+export function noticeBoard(w: number) {
+  const g = new THREE.Group();
+  g.add(box(w, 0.7, 0.03, mat('#8d5f31'), 0, 1.2, 0));
+  g.add(box(w - 0.06, 0.64, 0.02, mat('#c9a06a'), 0, 1.23, 0.015));
+  const papers = ['#fffaf0', '#fff3b0', '#d8efff', '#ffe0e0', '#fffaf0'];
+  let x = -w / 2 + 0.14;
+  let i = 0;
+  while (x < w / 2 - 0.12) {
+    const ph = 0.16 + ((i * 37) % 7) * 0.02;
+    const p = box(
+      0.15,
+      ph,
+      0.006,
+      mat(papers[i % papers.length]!),
+      x,
+      1.3 + ((i * 13) % 5) * 0.04,
+      0.03,
+    );
+    p.rotation.z = (((i * 29) % 7) - 3) * 0.03;
+    g.add(p);
+    g.add(
+      box(
+        0.02,
+        0.02,
+        0.01,
+        mat(['#b42323', '#1f7a46', '#2c5ea8'][i % 3]!),
+        x,
+        1.3 + ph + ((i * 13) % 5) * 0.04 - 0.03,
+        0.04,
+      ),
+    );
+    x += 0.2;
+    i++;
+  }
+  return g;
+}
+
+/** Relógio de parede com ponteiros (o motor gira hourHand/minHand pela hora real). */
+export function wallClock() {
+  const g = new THREE.Group();
+  const face = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.03, 24), mat('#fbfaf6'));
+  face.rotation.x = Math.PI / 2;
+  face.position.set(0, 2.0, 0.02);
+  g.add(face);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.018, 6, 24), mat(PALETTE.ink));
+  rim.position.set(0, 2.0, 0.035);
+  g.add(rim);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    g.add(
+      box(
+        0.012,
+        0.025,
+        0.008,
+        mat(PALETTE.ink),
+        Math.sin(a) * 0.14,
+        2.0 + Math.cos(a) * 0.14 - 0.0125,
+        0.04,
+      ),
+    );
+  }
+  for (const [name, len, w] of [
+    ['hourHand', 0.08, 0.018],
+    ['minHand', 0.125, 0.012],
+  ] as const) {
+    const pivot = new THREE.Group();
+    pivot.name = name;
+    pivot.position.set(0, 2.0, 0.045);
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(w, len, 0.006), mat(PALETTE.ink));
+    hand.position.y = len / 2;
+    pivot.add(hand);
+    g.add(pivot);
+  }
+  return g;
+}
+
+/** Prateleira alta de parede com rolos de tecido deitados. */
+export function wallFabricShelf(w: number) {
+  const g = new THREE.Group();
+  g.add(box(w, 0.03, 0.32, mat(PALETTE.woodDark), 0, 1.85, 0.16));
+  for (const sx of [-1, 1])
+    g.add(box(0.03, 0.2, 0.28, mat(PALETTE.metal), sx * (w / 2 - 0.1), 1.66, 0.14));
+  const colors = ['#8c5a4a', '#5f7f6e', '#cbb894', '#4f6f86', '#c99a3a', '#6d6a8f'];
+  const n = Math.max(1, Math.floor(w / 0.24));
+  for (let i = 0; i < n; i++) {
+    const r = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.1, 0.1, 0.3, 12),
+      mat(colors[i % colors.length]!, { rough: 1 }),
+    );
+    r.rotation.x = Math.PI / 2;
+    r.position.set(-w / 2 + 0.15 + i * ((w - 0.3) / Math.max(1, n - 1)), 1.98, 0.17);
+    r.castShadow = true;
+    g.add(r);
+  }
+  return g;
+}
+
+/** Luminária pendente (fio, cúpula e lâmpada). A lâmpada se chama "bulb". */
+export function pendantLamp(height = 2.15) {
+  const g = new THREE.Group();
+  g.add(box(0.01, 3.0 - height, 0.01, mat(PALETTE.ink), 0, height + 0.2, 0));
+  const shade = new THREE.Mesh(
+    new THREE.ConeGeometry(0.22, 0.2, 14, 1, true),
+    mat('#1d4a45', { rough: 0.6 }),
+  );
+  (shade.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+  shade.position.y = height + 0.1;
+  g.add(shade);
+  const bulb = new THREE.Mesh(
+    new THREE.SphereGeometry(0.07, 10, 8),
+    new THREE.MeshStandardMaterial({
+      color: '#fff3c4',
+      emissive: new THREE.Color('#ffd27a'),
+      emissiveIntensity: 0.2,
+    }),
+  );
+  bulb.name = 'bulb';
+  bulb.position.y = height + 0.02;
+  g.add(bulb);
+  // Cone de luz (só aparece à noite).
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(0.9, height, 20, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: '#ffe2a0',
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  );
+  cone.name = 'beamcone';
+  cone.position.y = height / 2;
+  g.add(cone);
+  return g;
+}
+
+/** Vaso com planta (variações). */
+export function plant(kind = 0) {
+  const g = new THREE.Group();
+  g.add(cyl(0.16, 0.3, kind % 2 ? '#d9cbb6' : '#a8743f', 0, 0, 0, 10));
+  const leaf = mat(kind % 3 === 2 ? '#3f6b3a' : '#4f7d4a');
+  if (kind % 3 === 1) {
+    for (let i = 0; i < 6; i++) {
+      const l = box(0.05, 0.5, 0.12, leaf, 0, 0.3, 0);
+      l.rotation.set(0.35, (i / 6) * Math.PI * 2, 0.25);
+      g.add(l);
+    }
+  } else {
+    const a = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 0), leaf);
+    a.position.y = 0.7;
+    a.castShadow = true;
+    g.add(a);
+    const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), leaf);
+    b.position.set(0.12, 0.95, 0.05);
+    b.castShadow = true;
+    g.add(b);
+  }
+  return g;
+}
+
+/** Troféu (recompensa de missão). */
+export function trophy(color = '#e0a63a') {
+  const g = new THREE.Group();
+  const gold = mat(color, { metal: 0.7, rough: 0.3, emissive: color });
+  g.add(box(0.14, 0.04, 0.1, mat(PALETTE.woodDark), 0, 0, 0));
+  g.add(box(0.03, 0.08, 0.03, gold, 0, 0.04, 0));
+  const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.035, 0.1, 10), gold);
+  cup.position.y = 0.17;
+  g.add(cup);
+  return g;
+}
+
+/** Tapete retangular. */
+export function rug(w: number, d: number, color = '#a0574f') {
+  const g = new THREE.Group();
+  g.add(box(w, 0.012, d, mat(color, { rough: 1 }), 0, 0.001, 0));
+  g.add(
+    box(
+      w - 0.16,
+      0.014,
+      d - 0.16,
+      mat(new THREE.Color(color).offsetHSL(0, -0.1, 0.12).getStyle(), { rough: 1 }),
+      0,
+      0.002,
+      0,
+    ),
+  );
+  return g;
+}
+
+/** Carrinho de transporte (aparece sob a peça quando ela muda de área). */
+export function cart(w: number, d: number) {
+  const g = new THREE.Group();
+  g.add(box(w * 0.8, 0.04, d * 0.8, mat('#5a6b6b', { metal: 0.4 }), 0, 0.06, 0));
+  for (const sx of [-1, 1])
+    for (const sz of [-1, 1]) g.add(cyl(0.04, 0.05, '#1d2523', sx * w * 0.35, 0, sz * d * 0.35, 8));
+  return g;
 }

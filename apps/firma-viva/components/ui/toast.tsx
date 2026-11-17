@@ -2,6 +2,7 @@
 
 import clsx from 'clsx';
 import { CheckCircle2, XCircle } from 'lucide-react';
+import { stripEmoji } from '@/components/game/icons';
 import { createContext, useCallback, useContext, useState } from 'react';
 
 interface Toast {
@@ -39,7 +40,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             ) : (
               <XCircle className="size-4 text-danger-600" aria-hidden />
             )}
-            {t.message}
+            {stripEmoji(t.message)}
           </div>
         ))}
       </div>

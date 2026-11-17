@@ -9,6 +9,7 @@ import type { GameSlotMaterialDto, StorageUnitDef } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { ShoppingCart } from 'lucide-react';
 import { useState } from 'react';
+import { Ic } from './icons';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useMaterial, useSlot } from './game-api';
@@ -170,7 +171,9 @@ function MaterialCard({
           <div className="text-xs text-ink-muted">
             {m.code} · {KIND_LABEL[m.kind] ?? m.kind} · unidade: {u}
           </div>
-          <div className="text-xs text-bronze-600">📍 {m.address}</div>
+          <div className="text-xs text-bronze-600">
+            <Ic e="📍" /> {m.address}
+          </div>
         </div>
         <Tone tone={tone}>
           {tone === 'FALTA'

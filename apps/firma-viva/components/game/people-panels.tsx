@@ -17,6 +17,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { Send } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { iconText } from './icons';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useAgentTemplates, useConversation, useIntegrations } from './game-api';
@@ -114,7 +115,7 @@ export function EmployeePanel({
             }}
           >
             <div className="text-xs font-semibold text-brand-700">
-              {e.currentTask.status === 'PAUSADA' ? '⏸ Pausada' : '▶ Iniciada'}{' '}
+              {iconText(e.currentTask.status === 'PAUSADA' ? '⏸ Pausada' : '▶ Iniciada')}{' '}
               {e.currentTask.startedAt ? `em ${fmtDateTime(e.currentTask.startedAt)}` : ''}
             </div>
             <div className="font-semibold">{e.currentTask.title}</div>
@@ -150,9 +151,11 @@ export function EmployeePanel({
                     <span className="flex-1">
                       <b>{t.itemCode ?? t.osCode}</b> · {title}
                       <span className={`block ${available ? 'text-ok-600' : 'text-danger-700'}`}>
-                        {available
-                          ? '✅ Disponível para iniciar no tablet'
-                          : `⛔ ${TASK_STATUS_LABEL[t.status] ?? t.status}${step?.reason ? `: ${step.reason}` : ''}`}
+                        {iconText(
+                          available
+                            ? '✅ Disponível para iniciar no tablet'
+                            : `⛔ ${TASK_STATUS_LABEL[t.status] ?? t.status}${step?.reason ? `: ${step.reason}` : ''}`,
+                        )}
                       </span>
                     </span>
                   </button>
