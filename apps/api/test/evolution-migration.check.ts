@@ -25,6 +25,23 @@ beforeAll(async () => {
 afterAll(() => app.close());
 const F = (p: string) => `/api/v1/finance${p}`;
 const post = (p: string, b: unknown = {}) => admin.post(p, b, { 'idempotency-key': idemKey() });
+const arrivedAndOs = async (orderId: string) => {
+  const o = (await admin.get(`/api/v1/orders/${orderId}`)).body;
+  const a = await post(`/api/v1/orders/${orderId}/arrived`, { version: o.version });
+  expect(a.status, JSON.stringify(a.body)).toBe(200);
+  const items = (await admin.get(`/api/v1/orders/${orderId}`)).body.items;
+  const so = await post('/api/v1/service-orders', {
+    orderId,
+    materialPurchased: true,
+    items: items.map((i: { id: string; quantity: number; description: string }) => ({
+      orderItemId: i.id,
+      quantity: i.quantity,
+      description: i.description,
+      serviceType: 'REFORMA_COMPLETA',
+    })),
+  });
+  expect(so.status, JSON.stringify(so.body)).toBe(201);
+};
 const put = (p: string, b: unknown) => admin.req('PUT', p, b, { 'idempotency-key': idemKey() });
 
 describe.runIf(STEP === 'read')('Legado migrado: leitura pelo código atual', () => {
@@ -222,14 +239,15 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
           { pieceType: 'SOFA', description: 'Sofá', quantity: 1, serviceType: 'REFORMA_COMPLETA' },
         ],
       },
-      pickup: { team: 'LOGISTICA_TERCEIRIZADA' },
+      pickup: { team: 'LOGISTICA_TERCEIRIZADA', scheduledDate: day(2), windowStart: '09:00' },
     });
     expect(ns.status, JSON.stringify(ns.body)).toBe(201);
     const nsOrder = await db().commercialOrder.findUniqueOrThrow({
       where: { id: ns.body.order.id },
       include: { items: true },
     });
-    // Com retirada ativa, a chegada é marcada pela própria retirada (não por "Peças na oficina").
+    // Fluxo da OS (2026-11-18): fechar o serviço não gera OS; a peça chega e a OS é gerada no pedido.
+    await arrivedAndOs(nsOrder.id);
     expect(await db().serviceOrder.count({ where: { orderId: nsOrder.id } })).toBe(1);
     // Simplificação Fase 3: participante OPERACIONAL estruturado (equipe própria, sem custo) —
     // bloqueia a reversão de recebimentos_compartilhados.
@@ -245,6 +263,8 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       pickup: {
         team: 'EQUIPE_PROPRIA',
         logisticsUserId: ids.ricardo,
+        scheduledDate: day(2),
+        windowStart: '09:00',
         participantUserIds: [ids.marcio],
       },
     });
@@ -257,6 +277,7 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       where: { id: own.body.order.id },
       include: { items: true },
     });
+    await arrivedAndOs(ownSo.id);
     const autoSo = await db().serviceOrder.findFirstOrThrow({ where: { orderId: ownSo.id } });
     const soItem = await db().serviceOrderItem.findFirstOrThrow({
       where: { serviceOrderId: autoSo.id },
@@ -337,6 +358,8 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
       pickup: {
         team: 'EQUIPE_PROPRIA',
         logisticsUserId: await userIdOf('Ricardo'),
+        scheduledDate: day(2),
+        windowStart: '09:00',
         amountCents: 4000,
       },
     });
@@ -395,7 +418,12 @@ describe.runIf(STEP === 'write')('Dados novos das Fases 2–7 sobre o legado mig
           },
         ],
       },
-      pickup: { team: 'EQUIPE_PROPRIA', logisticsUserId: await userIdOf('Ricardo') },
+      pickup: {
+        team: 'EQUIPE_PROPRIA',
+        logisticsUserId: await userIdOf('Ricardo'),
+        scheduledDate: day(2),
+        windowStart: '09:00',
+      },
     });
     expect(notice.status, JSON.stringify(notice.body)).toBe(201);
     const pk = await db().pickupRequest.findUniqueOrThrow({ where: { id: notice.body.pickup.id } });
