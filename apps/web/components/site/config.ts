@@ -55,7 +55,7 @@ export const SCREENS = {
   },
   producao: {
     key: 'producao',
-    title: 'Quadro de produção por funcionário',
+    title: 'Semana da oficina: o que está em produção e com quem',
     src: '/site/producao.webp',
     width: 1440,
     height: 900,
