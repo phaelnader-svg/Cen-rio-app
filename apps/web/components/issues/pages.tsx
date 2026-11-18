@@ -313,7 +313,7 @@ export function IssueDetailPage({ id }: { id: string }) {
   const c = i.can;
   return (
     <>
-      <BackLink href="/painel/atencao" label="Central de atenção" />
+      <BackLink href="/painel/atencao" label="Avisos e pendências" />
       <PageHeader
         title={`${i.code} · ${ISSUE_KIND_LABEL[i.kind]}`}
         description={i.description}

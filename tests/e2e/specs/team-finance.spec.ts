@@ -49,6 +49,7 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await page.goto('/painel/financeiro');
     await expect(page.getByRole('heading', { name: 'Financeiro' })).toBeVisible();
     await expect(page.getByTestId('finance-dashboard')).toBeVisible();
+    await page.getByRole('tab', { name: 'Receitas', exact: true }).click();
     await page.getByRole('tab', { name: 'A receber' }).click();
     const row = page.getByTestId(`fin-order-${order.code}`);
     await expect(row).toContainText('R$ 1.000,00');
@@ -76,6 +77,7 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await expect(row).toContainText('Recebido em parte');
 
     // ── Produção: valor combinado do sofá com o Ricardo (liberado só na condição) ──
+    await page.getByRole('tab', { name: 'Equipe', exact: true }).click();
     await page.getByRole('tab', { name: 'Mão de obra' }).click();
     await page.getByRole('button', { name: 'Combinar valor' }).click();
     const labor = page.getByRole('dialog', { name: 'Combinar valor de produção' });
@@ -95,6 +97,7 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await evidence(page, '02-producao-combinada');
 
     // ── Despesa operacional e painel (competência × caixa) ──
+    await page.getByRole('tab', { name: 'Despesas', exact: true }).click();
     await page.getByRole('tab', { name: 'Gastos fixos' }).click();
     await page.getByRole('button', { name: 'Nova despesa' }).click();
     const exp = page.getByRole('dialog', { name: 'Nova despesa operacional' });
@@ -111,6 +114,7 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await evidence(page, '03-painel-financeiro');
 
     // ── Custos e resultado por OS (previsto × realizado) ──
+    await page.getByRole('tab', { name: 'Resumo', exact: true }).click();
     await page.getByRole('tab', { name: 'Por OS' }).click();
     const result = page.getByTestId(`result-${so.code}`);
     await expect(result).toContainText('R$ 1.000,00');
@@ -121,6 +125,7 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await page.keyboard.press('Escape');
 
     // ── Relatório com exportação CSV ──
+    await page.getByRole('tab', { name: 'Resumo', exact: true }).click();
     await page.getByRole('tab', { name: 'Relatórios' }).click();
     await expect(page.getByTestId('report-table')).toContainText(so.code);
     const href = await page.getByTestId('report-csv').getAttribute('href');

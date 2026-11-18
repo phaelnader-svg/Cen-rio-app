@@ -33,20 +33,47 @@ import { LaborTab } from './labor';
 import { RevenueTab } from './revenue';
 import { WeeklyClosingTab } from './weekly-closing';
 
-// 2026-11-18 (pedido do dono): Despesas e Receitas logo depois do Resumo; Produtividade virou
-// item do menu. As chaves antigas continuam (endereços salvos seguem abrindo a mesma aba).
-const TABS = [
-  { key: 'painel', label: 'Resumo' },
-  { key: 'saidas', label: 'Despesas' },
-  { key: 'entradas', label: 'Receitas' },
-  { key: 'pagar', label: 'A pagar' },
-  { key: 'receitas', label: 'A receber' },
-  { key: 'producao', label: 'Mão de obra' },
-  { key: 'fechamento', label: 'Semana da equipe' },
-  { key: 'custos', label: 'Por OS' },
-  { key: 'despesas', label: 'Gastos fixos' },
-  { key: 'relatorios', label: 'Relatórios' },
+// 2026-11-18 (pedido do dono): Despesas e Receitas logo depois do Resumo. Revisão geral
+// (2026-11-18, item 9): de 10 abas para 4; as outras viraram vistas dentro delas. As chaves antigas
+// continuam (endereços salvos seguem abrindo a mesma vista).
+const GROUPS: { key: string; label: string; views: { key: string; label: string }[] }[] = [
+  {
+    key: 'painel',
+    label: 'Resumo',
+    views: [
+      { key: 'painel', label: 'Números do mês' },
+      { key: 'custos', label: 'Por OS' },
+      { key: 'relatorios', label: 'Relatórios' },
+    ],
+  },
+  {
+    key: 'saidas',
+    label: 'Despesas',
+    views: [
+      { key: 'saidas', label: 'O que saiu' },
+      { key: 'pagar', label: 'A pagar' },
+      { key: 'despesas', label: 'Gastos fixos' },
+    ],
+  },
+  {
+    key: 'entradas',
+    label: 'Receitas',
+    views: [
+      { key: 'entradas', label: 'O que entrou' },
+      { key: 'receitas', label: 'A receber' },
+    ],
+  },
+  {
+    key: 'producao',
+    label: 'Equipe',
+    views: [
+      { key: 'producao', label: 'Mão de obra' },
+      { key: 'fechamento', label: 'Semana da equipe' },
+    ],
+  },
 ];
+const VIEWS = GROUPS.flatMap((g) => g.views.map((v) => v.key));
+const groupOf = (view: string) => GROUPS.find((g) => g.views.some((v) => v.key === view))!;
 
 /**
  * Fase 11 — financeiro operacional (só o gestor). Registros de recebimentos e pagamentos, sem
@@ -54,34 +81,42 @@ const TABS = [
  */
 export function FinancePage() {
   useFocusParam();
-  const [tab, setTab] = useTabParam(
-    'painel',
-    TABS.map((t) => t.key),
-  );
+  const [view, setView] = useTabParam('painel', VIEWS, { equipe: 'producao' });
   const [period, setPeriod] = useState<Period>(() => ({ from: monthStart(), to: localToday() }));
+  const group = groupOf(view);
   const withPeriod = ['painel', 'saidas', 'entradas', 'custos', 'despesas', 'relatorios'].includes(
-    tab,
+    view,
   );
   return (
     <>
       <PageHeader
         title="Financeiro"
         description="Quanto entrou, quanto saiu e quanto sobrou."
-        help="Receita por OS, recebimentos, contas a pagar, custos, mão de obra por produção, margens e indicadores. Valores apenas registrados: nenhuma transferência bancária é feita pelo sistema."
+        help="Só registro: o sistema não faz transferência, boleto nem nota fiscal."
       />
-      <Tabs tabs={TABS} active={tab} onChange={setTab}>
-        <div className="pt-5">
-          {withPeriod && <PeriodPicker value={period} onChange={setPeriod} />}
-          {tab === 'painel' && <Dashboard period={period} onOpenPayables={() => setTab('pagar')} />}
-          {tab === 'saidas' && <CashLedgerTab kind="out" period={period} />}
-          {tab === 'entradas' && <CashLedgerTab kind="in" period={period} />}
-          {tab === 'receitas' && <RevenueTab />}
-          {tab === 'fechamento' && <WeeklyClosingTab />}
-          {tab === 'pagar' && <PayablesTab />}
-          {tab === 'producao' && <LaborTab />}
-          {tab === 'custos' && <CostsTab period={period} />}
-          {tab === 'despesas' && <ExpensesTab period={period} />}
-          {tab === 'relatorios' && <Reports period={period} />}
+      <Tabs
+        tabs={GROUPS.map((g) => ({ key: g.key, label: g.label }))}
+        active={group.key}
+        onChange={(k) => setView(k)}
+      >
+        <div className="space-y-4 pt-4">
+          <Tabs tabs={group.views} active={view} onChange={setView} variant="pills">
+            <div className="pt-4">
+              {withPeriod && <PeriodPicker value={period} onChange={setPeriod} />}
+              {view === 'painel' && (
+                <Dashboard period={period} onOpenPayables={() => setView('pagar')} />
+              )}
+              {view === 'saidas' && <CashLedgerTab kind="out" period={period} />}
+              {view === 'entradas' && <CashLedgerTab kind="in" period={period} />}
+              {view === 'receitas' && <RevenueTab />}
+              {view === 'fechamento' && <WeeklyClosingTab />}
+              {view === 'pagar' && <PayablesTab />}
+              {view === 'producao' && <LaborTab />}
+              {view === 'custos' && <CostsTab period={period} />}
+              {view === 'despesas' && <ExpensesTab period={period} />}
+              {view === 'relatorios' && <Reports period={period} />}
+            </div>
+          </Tabs>
         </div>
       </Tabs>
     </>
@@ -96,52 +131,36 @@ function Dashboard({ period, onOpenPayables }: { period: Period; onOpenPayables:
   const tone = (v: number): 'danger' | 'ok' => (v < 0 ? 'danger' : 'ok');
   return (
     <div className="space-y-6" data-testid="finance-dashboard">
-      <Bills bills={d.bills} onOpen={onOpenPayables} />
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-ink-soft">O que foi vendido no período</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <h2 className="mb-2 text-sm font-semibold text-ink-soft">No período</h2>
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Stat label="Entrou" value={money(d.cash.receivedCents)} testId="fin-received" />
           <Stat
-            label="Vendido"
-            value={money(d.accrual.contractedCents)}
-            hint={`${plural(d.accrual.contractedOrders, 'pedido', 'pedidos')} no período`}
-            testId="fin-contracted"
+            label="Saiu"
+            value={money(d.cash.receivedCents - d.cash.netCents)}
+            hint={`Contas ${money(d.cash.paidPayablesCents)} · equipe ${money(d.cash.paidLaborCents)}`}
+            testId="fin-out"
           />
           <Stat
-            label="Sobrou dos serviços"
-            value={money(d.accrual.contributionMarginCents)}
-            hint={`${plural(d.accrual.completedOrders, 'OS concluída', 'OS concluídas')} · receita ${money(d.accrual.revenueCompletedCents)}`}
-            tone={tone(d.accrual.contributionMarginCents)}
-            testId="fin-margin"
-          />
-          <Stat
-            label="Gastos fixos"
-            value={money(d.accrual.operationalExpensesCents)}
-            hint={`Equipe fixa: ${money(d.accrual.fixedTeamCents)}`}
-          />
-          <Stat
-            label="Sobrou no período"
-            value={money(d.accrual.managementResultCents)}
-            hint="Sobrou dos serviços menos gastos fixos e equipe fixa. É uma estimativa, não o lucro do contador."
-            tone={tone(d.accrual.managementResultCents)}
-            testId="fin-result"
-          />
-        </div>
-      </section>
-      <section>
-        <h2 className="mb-2 text-sm font-semibold text-ink-soft">
-          Dinheiro que entrou e saiu no período
-        </h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat label="Recebido" value={money(d.cash.receivedCents)} testId="fin-received" />
-          <Stat label="Contas pagas" value={money(d.cash.paidPayablesCents)} />
-          <Stat label="Pago por produção" value={money(d.cash.paidLaborCents)} />
-          <Stat
-            label="Saldo do período"
+            label="Sobrou"
             value={money(d.cash.netCents)}
             tone={tone(d.cash.netCents)}
+            testId="fin-net"
+          />
+          <Stat
+            label="Falta receber"
+            value={money(d.open.receivableCents)}
+            hint={
+              d.open.receivableOverdueCents
+                ? `Atrasado: ${money(d.open.receivableOverdueCents)}`
+                : 'Nada atrasado'
+            }
+            tone={d.open.receivableOverdueCents ? 'warn' : 'neutral'}
+            testId="fin-receivable"
           />
         </div>
       </section>
+      <Bills bills={d.bills} onOpen={onOpenPayables} />
       <section data-testid="fin-reworks">
         <div className="mb-2 flex items-baseline justify-between gap-2">
           <h2 className="text-sm font-semibold text-ink-soft">Retrabalhos no período</h2>
@@ -171,38 +190,9 @@ function Dashboard({ period, onOpenPayables }: { period: Period; onOpenPayables:
           />
         </div>
       </section>
-      <section>
-        <h2 className="mb-2 text-sm font-semibold text-ink-soft">Saldos em aberto (hoje)</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Stat
-            label="A receber"
-            value={money(d.open.receivableCents)}
-            hint={`Vencido: ${money(d.open.receivableOverdueCents)}`}
-            tone={d.open.receivableOverdueCents ? 'warn' : 'neutral'}
-            testId="fin-receivable"
-          />
-          <Stat
-            label="A pagar"
-            value={money(d.open.payableCents)}
-            hint={`Vencido: ${money(d.open.payableOverdueCents)}`}
-            tone={d.open.payableOverdueCents ? 'warn' : 'neutral'}
-          />
-          <Stat label="Produção liberada a pagar" value={money(d.open.laborReleasedCents)} />
-          <Stat
-            label="Produção prevista"
-            value={money(d.open.laborForecastCents)}
-            hint="Aguardando a condição combinada"
-          />
-        </div>
-      </section>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">
-          <h2 className="mb-2 text-sm font-semibold">OS em andamento</h2>
-          <p className="text-sm text-ink-muted">
-            {d.inProgress.orders} OS · receita {money(d.inProgress.revenueCents)} · margem prevista{' '}
-            {money(d.inProgress.estimatedMarginCents)} (estimativa)
-          </p>
-          <h2 className="mt-4 mb-2 text-sm font-semibold">Despesas por categoria</h2>
+          <h2 className="mb-2 text-sm font-semibold">Para onde foi o dinheiro</h2>
           {d.expensesByCategory.length ? (
             <ul className="space-y-1 text-sm">
               {d.expensesByCategory.map((e) => (
@@ -217,7 +207,7 @@ function Dashboard({ period, onOpenPayables }: { period: Period; onOpenPayables:
           )}
         </Card>
         <Card className="p-4">
-          <h2 className="mb-2 text-sm font-semibold">Serviços mais rentáveis (OS concluídas)</h2>
+          <h2 className="mb-2 text-sm font-semibold">Serviços que mais deixaram dinheiro</h2>
           {d.topServices.length ? (
             <ul className="space-y-1 text-sm">
               {d.topServices.map((s) => (
@@ -235,13 +225,6 @@ function Dashboard({ period, onOpenPayables }: { period: Period; onOpenPayables:
           )}
         </Card>
       </div>
-      <Alert tone="info" title="Como ler">
-        <ul className="list-disc space-y-0.5 pl-4">
-          {d.notes.map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-        </ul>
-      </Alert>
     </div>
   );
 }
