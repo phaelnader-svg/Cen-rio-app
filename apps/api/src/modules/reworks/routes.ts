@@ -180,9 +180,7 @@ async function toDtos(db: Db, rows: ReworkRow[], withCost: boolean): Promise<Rew
         quantity: i.quantity,
       })),
       promisedDate: promised,
-      late: Boolean(
-        promised && promised < today && stage !== 'CONCLUIDO' && stage !== 'CANCELADO',
-      ),
+      late: Boolean(promised && promised < today && stage !== 'CONCLUIDO' && stage !== 'CANCELADO'),
       pickup: pickup && {
         id: pickup.id,
         code: pickupCode(pickup.number),
@@ -225,7 +223,11 @@ export async function reworkStats(
       serviceOrders: {
         some: {
           items: {
-            some: { deliveryItems: { some: { status: 'ENTREGUE', deliveredAt: { gte: fromTs, lt: toTs } } } },
+            some: {
+              deliveryItems: {
+                some: { status: 'ENTREGUE', deliveredAt: { gte: fromTs, lt: toTs } },
+              },
+            },
           },
         },
       },
@@ -558,7 +560,9 @@ export async function reworkRoutes(app: FastifyInstance) {
           ...(input.extraCostCents !== undefined
             ? { extraCostCents: input.extraCostCents ?? 0 }
             : {}),
-          ...(input.extraCostNote !== undefined ? { extraCostNote: input.extraCostNote || null } : {}),
+          ...(input.extraCostNote !== undefined
+            ? { extraCostNote: input.extraCostNote || null }
+            : {}),
           version: { increment: 1 },
         },
       });
@@ -627,7 +631,12 @@ export async function reworkRoutes(app: FastifyInstance) {
               recordedById: actor.userId,
             },
           });
-          await syncTripCost(tx, actor, { pickupId: p.id }, `retrabalho cancelado: ${input.reason}`);
+          await syncTripCost(
+            tx,
+            actor,
+            { pickupId: p.id },
+            `retrabalho cancelado: ${input.reason}`,
+          );
           await resolvePickupAssignment(tx, actor, p.id);
         }
       }

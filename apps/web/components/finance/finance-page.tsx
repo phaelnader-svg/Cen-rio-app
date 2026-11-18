@@ -246,7 +246,6 @@ function Dashboard({ period, onOpenPayables }: { period: Period; onOpenPayables:
   );
 }
 
-
 const REPORTS: { key: string; label: string }[] = [
   { key: 'resultado-os', label: 'Resultado por OS' },
   { key: 'receita', label: 'Receita por período (recebida)' },

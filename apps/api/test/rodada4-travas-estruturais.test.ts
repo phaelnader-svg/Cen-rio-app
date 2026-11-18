@@ -1776,6 +1776,7 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
 const MULTI_EMPRESA_ETAPA2 = '20270701000000_multi_empresa_etapa2';
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
+  '20270822000000_retrabalhos_receitas: UPDATE CASCADE': 4,
   '20270729000000_melhorias_rodada2: UPDATE CASCADE': 2,
   '20270722000000_cobranca_planos_emails: UPDATE CASCADE': 4,
   '20270722000000_cobranca_planos_emails: UPDATE "company_settings"': 2,
