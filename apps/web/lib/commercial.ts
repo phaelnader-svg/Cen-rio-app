@@ -180,6 +180,8 @@ export interface AvailableForOs {
     materials: string[];
     responsibleName: string | null;
     upholstererUserId: string | null;
+    /** Funcionário com o nome do responsável do orçamento (responsável técnico da OS). */
+    technicalLeadId: string | null;
     photoDataUrl: string | null;
   } | null;
   customer: CustomerSummaryDto;

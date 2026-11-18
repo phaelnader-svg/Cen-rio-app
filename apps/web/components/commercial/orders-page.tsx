@@ -100,7 +100,7 @@ export function OrdersPage() {
                   <span className="font-mono text-xs font-semibold text-ink-muted sm:w-24 sm:text-sm sm:text-ink">
                     {o.code}
                   </span>
-                  <div className="min-w-0 sm:flex-1">
+                  <div className="min-w-0 sm:min-w-[12rem] sm:flex-1">
                     <p className="truncate font-medium">{o.customer.name}</p>
                     <p className="truncate text-sm text-ink-muted">{o.contractedService}</p>
                   </div>

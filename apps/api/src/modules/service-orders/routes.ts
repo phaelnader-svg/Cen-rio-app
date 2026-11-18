@@ -347,6 +347,18 @@ function quotePrefill(
   };
 }
 
+/** Responsável técnico da OS: o funcionário ativo com o mesmo nome do responsável do orçamento. */
+async function quoteLead(db: Tx | PrismaClient, quote: { workOrder: Prisma.JsonValue }) {
+  const wo = (quote.workOrder ?? null) as Partial<QuoteWorkOrder> | null;
+  const name = wo?.responsibleName ? normalizeQuoteName(wo.responsibleName) : '';
+  if (!name) return null;
+  const employees = await db.employee.findMany({
+    where: { active: true },
+    select: { id: true, displayName: true },
+  });
+  return employees.find((e) => normalizeQuoteName(e.displayName) === name)?.id ?? null;
+}
+
 export async function serviceOrderRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -468,7 +480,9 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         promisedDate: dateOnly(order.promisedDate),
         technicalNotes: order.technicalNotes,
       },
-      quote: quote ? quotePrefill(quote, upholsterers) : null,
+      quote: quote
+        ? { ...quotePrefill(quote, upholsterers), technicalLeadId: await quoteLead(prisma, quote) }
+        : null,
       commercial,
       permissions: { upholsterer: canPlan, labor: canLabor },
       upholsterers,

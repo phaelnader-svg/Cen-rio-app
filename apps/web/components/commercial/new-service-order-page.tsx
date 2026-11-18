@@ -166,7 +166,7 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
   );
   const [priority, setPriority] = useState<Priority>('NORMAL');
   const [promisedDate, setPromisedDate] = useState(data.order.promisedDate ?? '');
-  const [lead, setLead] = useState('');
+  const [lead, setLead] = useState(data.quote?.technicalLeadId ?? '');
   const [instructions, setInstructions] = useState(() => quoteInstructions(data.order, data.quote));
   const [notes, setNotes] = useState('');
   // Fotos da OS: a do orçamento (marcada por padrão) e as que forem escolhidas aqui.

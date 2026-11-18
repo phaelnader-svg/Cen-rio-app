@@ -67,11 +67,13 @@ export function Alert({
   title,
   children,
   className,
+  'data-testid': testId,
 }: {
   tone?: 'info' | 'ok' | 'warn' | 'danger';
   title?: string;
   children?: React.ReactNode;
   className?: string;
+  'data-testid'?: string;
 }) {
   const Icon = { info: Info, ok: CheckCircle2, warn: AlertTriangle, danger: XCircle }[tone];
   const style = {
@@ -83,6 +85,7 @@ export function Alert({
   return (
     <div
       role={tone === 'danger' ? 'alert' : 'status'}
+      data-testid={testId}
       className={clsx('flex gap-3 rounded-xl border px-4 py-3 text-sm', style, className)}
     >
       <Icon className="mt-0.5 size-4 shrink-0" aria-hidden />
