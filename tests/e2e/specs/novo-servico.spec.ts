@@ -23,7 +23,6 @@ const evidence = (page: Page, name: string) =>
 const TZ = 'America/Sao_Paulo';
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
 /** Prazo prometido obrigatório no Novo serviço (30 dias à frente). */
-const promised = () => new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
 
 async function call(page: Page, method: 'POST' | 'PUT' | 'GET', path: string, data?: unknown) {
   const r = await page.request.fetch(path, {
@@ -74,7 +73,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await form.getByLabel('Cidade').fill('Cidade Teste');
     await form.getByLabel('Referência / instruções de acesso').fill('Portaria lateral');
     await page.getByTestId('ns-piece-desc-0').fill('Sofá retrátil');
-    await page.getByTestId('ns-promised').fill(promised());
+    await page.getByTestId('ns-business-days').fill('20');
     await page.getByTestId('ns-add-piece').click();
     await page
       .getByTestId('ns-piece-1')
@@ -131,7 +130,10 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await form.getByLabel('Número').fill('1');
     await form.getByLabel('Cidade').fill('Cidade Teste');
     await page.getByTestId('ns-piece-desc-0').fill('Cadeira');
-    await page.getByTestId('ns-promised').fill(promised());
+    await page.getByTestId('ns-business-days').fill('20');
+    // 2026-11-18: agendar a retirada exige data e horário.
+    await page.getByTestId('ns-date').fill(today());
+    await page.getByTestId('ns-arrival').fill('11:00');
     await page.getByTestId('ns-submit').click();
     const dup = page.getByTestId('ns-dup-candidates');
     await expect(dup).toContainText('Cliente Novo Serviço E2E');
@@ -194,7 +196,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await page.getByTestId('ns-name').fill('Cliente Entrega Fictícia E2E');
     await page.getByTestId('ns-phone').fill('(11) 94444-3322');
     await page.getByTestId('ns-piece-desc-0').fill('Cabeceira entregue');
-    await page.getByTestId('ns-promised').fill(promised());
+    await page.getByTestId('ns-business-days').fill('20');
     await page.getByTestId('ns-delivery-dropoff').click();
     await expect(page.getByTestId('ns-dropoff-info')).toBeVisible();
     await expect(page.getByTestId('ns-date')).toHaveCount(0);
@@ -227,7 +229,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await page.getByTestId('ns-name').fill('Cliente Titular Fictício E2E');
     await page.getByTestId('ns-phone').fill('(11) 94444-5566');
     await page.getByTestId('ns-piece-desc-0').fill('Sofá previsto');
-    await page.getByTestId('ns-promised').fill(promised());
+    await page.getByTestId('ns-business-days').fill('20');
     await page.getByTestId('ns-delivery-dropoff').click();
     // Fechamento: titular + mão de obra prevista por unidade (previsão, não pagamento).
     await page.getByTestId('ns-piece-owner-0').selectOption({ label: 'Ricardo' });
@@ -315,7 +317,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await page.getByTestId('ns-piece-desc-0').fill('Cadeira de jantar');
     await page.getByTestId('ns-add-piece').click();
     await page.getByTestId('ns-piece-desc-1').fill('Banqueta');
-    await page.getByTestId('ns-promised').fill(promised());
+    await page.getByTestId('ns-business-days').fill('20');
     await page.getByTestId('ns-value').fill('900,00');
     await fits('peças e valor');
     await page.getByTestId('ns-date').fill(today());

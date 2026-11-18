@@ -178,9 +178,7 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       await page.getByTestId('ns-piece-service-0').selectOption('REFORMA_COMPLETA');
       await page.getByTestId('ns-piece-owner-0').selectOption(userA);
       await page.getByTestId('ns-piece-labor-0').fill('450,00');
-      await page
-        .getByTestId('ns-promised')
-        .fill(new Date(Date.now() + 150 * 86_400_000).toISOString().slice(0, 10));
+      await page.getByTestId('ns-business-days').fill('100');
       await page.getByTestId('ns-value').fill('3.000,00');
       await page.getByTestId('ns-date').fill(today());
       await page.getByTestId('ns-arrival').fill('10:00');

@@ -177,8 +177,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const calendarDays = (from: string, to: string) =>
   Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / DAY_MS);
 const br = (iso: string) => iso.split('-').reverse().join('/');
-const money = (c: number) =>
-  (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 /**
  * Recalcula os alertas internos (idempotente). Avisa quem já cuida de cada assunto: prazo →
@@ -273,7 +271,8 @@ export async function refreshOperationalAlerts(prisma: PrismaClient) {
           `${orderCode(o.number)} (${o.customer}) ${o.late ? 'passou do prazo de entrega' : 'tem entrega combinada para'} ${br(o.promisedDate)}: ${o.reason.toLowerCase()}.`,
         );
       }
-      // Contas a pagar: um dia antes do vencimento, no dia e depois de vencida.
+      // Contas a pagar: um dia antes do vencimento, no dia e depois de vencida. Sem valor no texto:
+      // o Início não mostra dinheiro (o valor fica no Resumo do financeiro).
       for (const b of [...f.bills.overdue, ...f.bills.upcoming]) {
         const kind = b.days < 0 ? 'CONTA_VENCIDA' : 'CONTA_A_VENCER';
         const subject = `${kind}:${b.id}`;
@@ -284,7 +283,7 @@ export async function refreshOperationalAlerts(prisma: PrismaClient) {
           'financeiro.ver',
           kind,
           `${subject}:${b.dueDate}`,
-          `${b.code} · ${b.beneficiary} (${money(b.openCents)}) ${
+          `${b.code} · ${b.beneficiary} ${
             b.days < 0
               ? `venceu em ${br(b.dueDate)}`
               : b.days === 0

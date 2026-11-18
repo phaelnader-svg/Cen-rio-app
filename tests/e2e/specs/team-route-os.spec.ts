@@ -136,8 +136,8 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
     await page.goto(`/painel/pedidos/${tarde.order.id}`);
     await page.getByRole('button', { name: 'Solicitar retirada' }).click();
     const dlg = page.getByRole('dialog');
-    await dlg.getByLabel('Data do compromisso').fill(day);
-    await expect(dlg.getByRole('button', { name: 'Solicitar e agendar' })).toBeDisabled();
+    await dlg.getByLabel('Data da retirada').fill(day);
+    await expect(dlg.getByRole('button', { name: 'Agendar retirada' })).toBeDisabled();
     await dlg.getByLabel('Horário de chegada ao cliente').fill('16:00');
     await expect(dlg.getByText(/Janela — fim/)).toHaveCount(0);
     await dlg.getByTestId('pickup-executor').selectOption({ label: ANDRE.displayName });
@@ -145,7 +145,7 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
     await dlg.getByTestId(`trip-participant-${IZAIAS.displayName}`).check();
     await expect(dlg.getByTestId('trip-payee')).toContainText(`${ANDRE.displayName} (100%)`);
     await evidence(page, '02-retirada-horario-de-chegada');
-    await dlg.getByRole('button', { name: 'Solicitar e agendar' }).click();
+    await dlg.getByRole('button', { name: 'Agendar retirada' }).click();
     await expect(page.getByTestId('order-status')).toContainText('Retirada agendada');
     // Segunda parada, mais cedo, pela API (mesmo contrato da tela).
     await post(page, '/api/v1/pickups', {

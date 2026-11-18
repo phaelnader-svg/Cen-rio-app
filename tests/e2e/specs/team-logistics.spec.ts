@@ -95,7 +95,7 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
     });
     await page.goto(`/painel/pedidos/${order.id}`);
     await page.getByRole('button', { name: 'Solicitar retirada' }).click();
-    await page.getByLabel('Data do compromisso').fill(plus(2));
+    await page.getByLabel('Data da retirada').fill(plus(2));
     await page.getByLabel('Horário de chegada ao cliente').fill('16:00');
     const fields = page.getByTestId('trip-cost-fields');
     await expect(page.getByTestId('trip-cost-amount')).toHaveValue('80,00');
@@ -103,7 +103,7 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
     await page.getByTestId('trip-cost-amount').fill('100,00');
     await fields.getByTestId(`trip-participant-${IZAIAS.displayName}`).check();
     await evidence(page, '02-agendar-com-custo-total');
-    await page.getByRole('button', { name: 'Solicitar e agendar' }).click();
+    await page.getByRole('button', { name: 'Agendar retirada' }).click();
     await expect(page.getByTestId('order-status')).toContainText('Retirada agendada');
 
     await page.getByRole('button', { name: /RT-\d{5}/ }).click();
