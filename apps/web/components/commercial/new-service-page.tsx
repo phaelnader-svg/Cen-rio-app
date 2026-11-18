@@ -255,8 +255,15 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
     payKind === 'AVISTA'
       ? `À vista: 50% ${withPickup ? 'na retirada' : 'ao deixar as peças'} e 50% na entrega (${PAYMENT_METHOD_LABEL[entryMethod]}).`
       : `Parcelado em ${installments}× no cartão${feeBps ? ` (taxa ${(feeBps / 100).toLocaleString('pt-BR')}%)` : ''}${chargeValue ? `: ${brl(chargeValue)}` : ''}${withPickup ? ', na retirada' : ''}.`;
-  const [date, setDate] = useState('');
-  const [arrival, setArrival] = useState('');
+  // Revisão geral (item 10): o dia que o cliente escolheu no link da proposta já vem marcado.
+  const [date, setDate] = useState(fromQuote?.pickupDate ?? '');
+  const [arrival, setArrival] = useState(
+    fromQuote?.pickupShift === 'MANHA'
+      ? '08:00'
+      : fromQuote?.pickupShift === 'TARDE'
+        ? '13:00'
+        : '',
+  );
   const todayLocal = localDay(new Date());
   const promiseStart = withPickup && date ? date : todayLocal;
   const bizDaysN = Number(bizDays);

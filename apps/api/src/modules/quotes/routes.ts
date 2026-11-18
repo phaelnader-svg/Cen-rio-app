@@ -137,6 +137,8 @@ const summarySelect = {
   approvedVia: true,
   linkViewedAt: true,
   orderId: true,
+  pickupDate: true,
+  pickupShift: true,
 } satisfies Prisma.QuoteSelect;
 
 const quoteStatusOf = (v: string): QuoteStatus => (isQuoteStatus(v) ? v : 'ENVIADO');
@@ -165,6 +167,8 @@ function summaryDto(
     approvedVia: r.approvedVia === 'LINK' || r.approvedVia === 'PAINEL' ? r.approvedVia : null,
     linkViewedAt: r.linkViewedAt?.toISOString() ?? null,
     orderId: r.orderId,
+    pickupDate: r.pickupDate?.toISOString().slice(0, 10) ?? null,
+    pickupShift: r.pickupShift === 'MANHA' || r.pickupShift === 'TARDE' ? r.pickupShift : null,
   };
 }
 

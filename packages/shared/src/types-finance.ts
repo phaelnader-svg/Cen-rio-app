@@ -512,6 +512,8 @@ export interface FinanceDashboardDto {
   };
   inProgress: { orders: number; revenueCents: number; estimatedMarginCents: number };
   expensesByCategory: { category: string; amountCents: number }[];
+  /** Tudo o que foi pago no período, por categoria (equipe = "EQUIPE"). */
+  paidByCategory: { category: string; amountCents: number }[];
   /** Contas a pagar em atraso e as que vencem nos próximos dias (sempre a partir de hoje). */
   bills: { overdue: BillDueDto[]; upcoming: BillDueDto[]; upcomingDays: number };
   topServices: { serviceType: string; orders: number; revenueCents: number; marginCents: number }[];

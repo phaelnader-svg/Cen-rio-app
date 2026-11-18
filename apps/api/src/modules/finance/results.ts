@@ -291,6 +291,11 @@ export async function dashboard(
     where: { paidAt: { gte: p.fromDate, lte: p.toDate } },
     _sum: { amountCents: true },
   });
+  // Revisão geral (item 9): "Para onde foi o dinheiro" soma o que foi pago, por categoria.
+  const paidRows = await tx.payablePayment.findMany({
+    where: { paidAt: { gte: p.fromDate, lte: p.toDate } },
+    select: { amountCents: true, payable: { select: { category: true } } },
+  });
   const paidLabor = await tx.professionalPayment.aggregate({
     where: { paidAt: { gte: p.fromDate, lte: p.toDate } },
     _sum: { amountCents: true },
@@ -372,6 +377,16 @@ export async function dashboard(
         .sort((a, b) => b[1] - a[1])
         .map(([category, amountCents]) => ({ category, amountCents })),
     ],
+    paidByCategory: (() => {
+      const m = new Map<string, number>();
+      for (const r of paidRows)
+        m.set(r.payable.category, (m.get(r.payable.category) ?? 0) + r.amountCents);
+      const out = [...m.entries()]
+        .map(([category, amountCents]) => ({ category, amountCents }))
+        .sort((a, b) => b.amountCents - a.amountCents);
+      if (paidLaborCents) out.push({ category: 'EQUIPE', amountCents: paidLaborCents });
+      return out;
+    })(),
     bills: { ...(await billsDue(tx, today)), upcomingDays: BILL_UPCOMING_DAYS },
     topServices: [...services.entries()]
       .map(([serviceType, v]) => ({ serviceType, ...v }))

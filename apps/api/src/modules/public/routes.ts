@@ -123,6 +123,11 @@ export async function publicRoutes(app: FastifyInstance) {
       approvedAt: q.approvedAt?.toISOString() ?? null,
       companyPhone: q.company.phone,
       texts: s.texts ?? null,
+      pickupDate: q.pickupDate?.toISOString().slice(0, 10) ?? null,
+      pickupShift: q.pickupShift === 'MANHA' || q.pickupShift === 'TARDE' ? q.pickupShift : null,
+      canChoosePickup: q.status === 'APROVADO' && !q.orderId,
+      pickupDays:
+        q.status === 'APROVADO' && !q.orderId ? pickupChoiceDays(todaySaoPaulo()) : [],
     };
   }
 
@@ -186,6 +191,55 @@ export async function publicRoutes(app: FastifyInstance) {
             'ORCAMENTO_APROVADO',
             `orcamento-aprovado:${id}`,
             `${cur.customerName} aprovou o orçamento nº ${cur.number} pelo link. Abra Orçamentos para fechar o serviço.`,
+          );
+          return publicQuote(tx, id);
+        }),
+      );
+    },
+  );
+
+  // Revisão geral (item 10): logo depois de aprovar, o cliente escolhe o dia de buscar a peça.
+  // Fica gravado no orçamento; o "Fechar serviço" já abre com esse dia.
+  app.post(
+    '/api/public/proposta/:id/retirada',
+    { config: { access: PUBLIC } },
+    async (request, reply) => {
+      const { id } = idParam.parse(request.params);
+      const input = publicPickupChoiceSchema.parse(request.body);
+      const q = await quoteFor(id, input.t);
+      noStore(reply);
+      if (!pickupChoiceDays(todaySaoPaulo()).includes(input.date))
+        throw Errors.business('Escolha um dos dias da lista.');
+      return runAsCompany(q.companyId, () =>
+        prisma.$transaction(async (tx) => {
+          const cur = await tx.quote.findUniqueOrThrow({ where: { id } });
+          if (cur.status !== 'APROVADO' || cur.orderId)
+            throw Errors.business('O dia da retirada já foi combinado. Fale com a tapeçaria.');
+          const changed = Boolean(cur.pickupDate);
+          await tx.quote.update({
+            where: { id },
+            data: {
+              pickupDate: new Date(`${input.date}T00:00:00.000Z`),
+              pickupShift: input.shift,
+              version: { increment: 1 },
+            },
+          });
+          const day = input.date.split('-').reverse().join('/');
+          const shift = PICKUP_SHIFT_LABEL[input.shift].toLowerCase();
+          const actor = { ...CUSTOMER, ip: request.ip ?? null, requestId: request.id };
+          await audit(tx, actor, {
+            action: 'quotes.pickup_chosen_by_customer',
+            entityType: 'quote',
+            entityId: id,
+            summary: `${cur.customerName} escolheu a retirada do orçamento nº ${cur.number}: ${day}, ${shift}.`,
+          });
+          await notifyUsersWith(
+            tx,
+            actor,
+            'orcamentos.gerenciar',
+            'ORCAMENTO_APROVADO',
+            `orcamento-retirada:${id}:${input.date}:${input.shift}`,
+            `${cur.customerName} ${changed ? 'trocou' : 'escolheu'} o dia de buscar a peça (orçamento nº ${cur.number}): ${day}, ${shift}. Feche o serviço para agendar.`,
           );
           return publicQuote(tx, id);
         }),

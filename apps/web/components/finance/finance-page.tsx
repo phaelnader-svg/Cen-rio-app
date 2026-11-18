@@ -3,7 +3,7 @@
 import { plural } from '@cenario/shared';
 import {
   SERVICE_TYPE_LABEL,
-  expenseCategoryLabel,
+  payableCategoryLabel,
   type BillDueDto,
   type ServiceType,
 } from '@cenario/shared';
@@ -193,17 +193,21 @@ function Dashboard({ period, onOpenPayables }: { period: Period; onOpenPayables:
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">
           <h2 className="mb-2 text-sm font-semibold">Para onde foi o dinheiro</h2>
-          {d.expensesByCategory.length ? (
-            <ul className="space-y-1 text-sm">
-              {d.expensesByCategory.map((e) => (
+          {d.paidByCategory.length ? (
+            <ul className="space-y-1 text-sm" data-testid="fin-paid-by-category">
+              {d.paidByCategory.map((e) => (
                 <li key={e.category} className="flex justify-between">
-                  <span>{expenseCategoryLabel(e.category)}</span>
+                  <span>
+                    {e.category === 'EQUIPE'
+                      ? 'Equipe (produção)'
+                      : payableCategoryLabel(e.category)}
+                  </span>
                   <span className="tabular-nums">{money(e.amountCents)}</span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-ink-muted">Nenhuma despesa no período.</p>
+            <p className="text-sm text-ink-muted">Nada foi pago no período.</p>
           )}
         </Card>
         <Card className="p-4">

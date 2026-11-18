@@ -59,6 +59,10 @@ export function quoteStatusLine(q: QuoteSummaryDto): string {
   if (q.status === 'APROVADO' && q.approvedAt) parts.push(`Aprovado em ${brDate(q.approvedAt)}`);
   if (q.status === 'RECUSADO' && q.lostReason) parts.push(`Motivo: ${q.lostReason}`);
   if (q.status === 'ENVIADO' && q.followUpAt) parts.push(`Cobrar em ${brDate(q.followUpAt)}`);
+  if (q.pickupDate && !q.orderId)
+    parts.push(
+      `Cliente quer a retirada em ${q.pickupDate.split('-').reverse().join('/')}, ${q.pickupShift === 'MANHA' ? 'de manhã' : 'à tarde'}`,
+    );
   if (q.linkViewedAt) parts.push(`Cliente abriu o link em ${brDate(q.linkViewedAt)}`);
   return parts.join(' • ');
 }

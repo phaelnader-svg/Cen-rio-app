@@ -181,7 +181,7 @@ function SectionTitle({ children, className }: { children: React.ReactNode; clas
 
 const QUESTIONS: { q: string; a: string }[] = [
   {
-    q: 'Qual sofá precisa sair primeiro?',
+    q: 'Qual peça precisa sair primeiro?',
     a: 'Programação da semana e a fila de cada tapeceiro, na ordem, no tablet.',
   },
   {
@@ -206,31 +206,31 @@ const QUESTIONS: { q: string; a: string }[] = [
   },
 ];
 
+// Revisão geral (2026-11-18, item 11): na ordem real da oficina, como o sistema funciona hoje.
 const FLOW: { title: string; text: string }[] = [
   {
     title: 'Orçamento',
-    text: 'Materiais, mão de obra, logística, imposto e taxas calculados, com proposta e contrato prontos para imprimir ou mandar em PDF.',
-  },
-  { title: 'Pedido', text: 'Cliente, serviço e retirada numa tela só.' },
-  {
-    title: 'Retirada e chegada',
-    text: 'A retirada entra no roteiro do dia e a chegada à oficina fica registrada no pedido.',
+    text: 'Material, mão de obra, frete e taxa da maquininha calculados. A proposta sai pronta para mandar ao cliente.',
   },
   {
-    title: 'Ficha da peça',
-    text: 'Medidas, tecido e espuma registrados na própria ordem de serviço.',
+    title: 'Cliente aprova pelo link',
+    text: 'Ele abre a proposta no celular, aprova e já escolhe o dia de buscarmos a peça.',
   },
   {
-    title: 'Material',
-    text: 'Lista de materiais de cada serviço e estoque simples da oficina.',
+    title: 'Retirada na agenda',
+    text: 'O serviço é fechado com o que veio do orçamento e a retirada entra no roteiro do dia.',
   },
   {
-    title: 'Produção',
-    text: 'A programação da semana vai direto para o tablet de quem vai fazer.',
+    title: 'OS e material',
+    text: 'A peça chega, a OS é aberta com medidas e fotos, e o material comprado fica marcado.',
   },
   {
-    title: 'Qualidade e entrega',
-    text: 'Inspeção e entrega confirmada pelo celular.',
+    title: 'Semana no tablet',
+    text: 'A semana da oficina vai para o tablet de cada tapeceiro, na ordem.',
+  },
+  {
+    title: 'Entrega',
+    text: 'Inspeção, embalagem e entrega confirmada pelo celular.',
   },
 ];
 
@@ -242,10 +242,10 @@ const WORKSHOP: string[] = [
 ];
 
 const OFFICE: string[] = [
-  'O que pede atenção hoje: prazos, produção bloqueada, ocorrências e peças prontas para entrega.',
+  'O que precisa de você hoje: prazos, orçamentos aprovados, peças esperando material.',
   'O valor de cada serviço e o que o cliente já pagou.',
   'Contas a pagar de fornecedores, despesas e frete.',
-  'Custo e margem de cada serviço, com relatórios por período.',
+  'Quanto entrou, quanto saiu e quanto sobrou, e o que cada serviço deixou.',
   'Cada funcionário com o próprio acesso, vendo só o que a função dele permite.',
 ];
 

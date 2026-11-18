@@ -149,6 +149,27 @@ describe('Orçamento: situação, lembrete, funil e link do cliente', () => {
     expect(depois.linkViewedAt).not.toBeNull();
     const avisos = await db().notification.count({ where: { kind: 'ORCAMENTO_APROVADO' } });
     expect(avisos).toBeGreaterThan(0);
+
+    // Revisão geral (item 10): logo depois de aprovar, o cliente escolhe o dia de buscar a peça.
+    expect(aprovado.canChoosePickup).toBe(true);
+    expect(aprovado.pickupDays.length).toBeGreaterThan(5);
+    const fora = await anon.post(`/api/public/proposta/${q.id}/retirada`, {
+      t: query(url),
+      date: '2000-01-01',
+      shift: 'MANHA',
+    });
+    expect(fora.status).toBe(422);
+    const dia = aprovado.pickupDays[1];
+    const escolhido = ok(
+      await anon.post(`/api/public/proposta/${q.id}/retirada`, {
+        t: query(url),
+        date: dia,
+        shift: 'TARDE',
+      }),
+    );
+    expect(escolhido).toMatchObject({ pickupDate: dia, pickupShift: 'TARDE' });
+    const noPainel = ok(await admin.get(`/api/v1/quotes/${q.id}`));
+    expect(noPainel).toMatchObject({ pickupDate: dia, pickupShift: 'TARDE' });
   });
 
   it('o orçamento aprovado vira serviço uma vez só e fica ligado ao pedido', async () => {

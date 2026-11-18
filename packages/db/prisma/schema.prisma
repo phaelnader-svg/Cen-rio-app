@@ -5557,6 +5557,9 @@ model Quote {
   linkViewedAt    DateTime?       @map("link_viewed_at") @db.Timestamptz(3)
   /// Melhoria 78: pedido criado a partir deste orçamento.
   orderId         String?         @map("order_id") @db.Uuid
+  /// Revisão geral (item 10): dia e turno da retirada escolhidos pelo cliente no link da proposta.
+  pickupDate      DateTime?       @map("pickup_date") @db.Date
+  pickupShift     String?         @map("pickup_shift") @db.VarChar(10)
   version         Int             @default(1)
   createdById     String?         @map("created_by_id") @db.Uuid
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)

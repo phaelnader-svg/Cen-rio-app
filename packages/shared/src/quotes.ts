@@ -199,6 +199,9 @@ export interface QuoteSummaryDto {
   linkViewedAt: string | null;
   /** Melhoria 78: pedido criado a partir do orçamento. */
   orderId: string | null;
+  /** Dia (AAAA-MM-DD) e turno da retirada que o cliente escolheu no link da proposta. */
+  pickupDate: string | null;
+  pickupShift: 'MANHA' | 'TARDE' | null;
 }
 
 // ─────────────────────────── Situação e funil (melhorias 77 a 81) ───────────────────────────
@@ -311,6 +314,13 @@ export interface PublicQuoteDto {
   companyPhone: string | null;
   /** Melhoria 141: textos da proposta gravados no orçamento (nulo nos antigos = padrões). */
   texts: ProposalTexts | null;
+  /** Dia e turno da retirada escolhidos pelo cliente depois de aprovar. */
+  pickupDate: string | null;
+  pickupShift: 'MANHA' | 'TARDE' | null;
+  /** O cliente ainda pode escolher/trocar o dia (aprovada e o serviço ainda não foi fechado). */
+  canChoosePickup: boolean;
+  /** Dias que o cliente pode escolher (AAAA-MM-DD), sem domingos e feriados. */
+  pickupDays: string[];
 }
 
 export interface QuoteSnapshotLine {

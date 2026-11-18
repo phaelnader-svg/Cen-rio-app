@@ -48,7 +48,7 @@ export const SITE = {
 export const SCREENS = {
   inicio: {
     key: 'inicio',
-    title: 'Início do painel do gestor',
+    title: 'O que precisa de você hoje, no início do painel',
     src: '/site/inicio.webp',
     width: 1440,
     height: 900,
@@ -69,7 +69,7 @@ export const SCREENS = {
   },
   financeiro: {
     key: 'financeiro',
-    title: 'Custos e resultado por OS',
+    title: 'Quanto entrou, quanto saiu e quanto sobrou no mês',
     src: '/site/financeiro.webp',
     width: 1440,
     height: 900,
