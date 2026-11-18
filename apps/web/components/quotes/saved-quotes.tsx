@@ -18,7 +18,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
   CheckCircle2,
-  ClipboardList,
   ClipboardPlus,
   Eye,
   FileText,
@@ -43,7 +42,7 @@ import {
   TextAreaField,
   TextField,
 } from '@/components/ui/form';
-import { Alert, Badge, Card, EmptyState, Spinner } from '@/components/ui/misc';
+import { Alert, Card, EmptyState, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import {
@@ -250,11 +249,6 @@ function SavedList({
                 <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
                   <p className="font-semibold">
                     {q.customerName || 'Cliente não informado'} <QuoteStatusBadges q={q} />
-                    {q.hasWorkOrder && (
-                      <Badge tone="brand" className="ml-1 align-middle">
-                        Ficha da OS
-                      </Badge>
-                    )}
                   </p>
                   <p className="text-sm text-ink-muted">
                     Nº {q.number} • {new Date(q.createdAt).toLocaleDateString('pt-BR')} •{' '}
@@ -328,14 +322,6 @@ function SavedList({
                           </Link>
                         )
                       )}
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        icon={<ClipboardList className="size-4" aria-hidden />}
-                        onClick={() => onOpen({ kind: 'os', id: q.id })}
-                      >
-                        {q.hasWorkOrder ? 'Editar ficha da OS' : 'Ficha da OS'}
-                      </Button>
                       <Button
                         size="sm"
                         variant="outline-danger"
