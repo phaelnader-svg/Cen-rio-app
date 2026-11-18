@@ -2,10 +2,9 @@ import { z } from 'zod';
 import {
   ADJUSTMENT_KINDS,
   ELIGIBILITY_RULES,
-  EXPENSE_CATEGORIES,
+  EXPENSE_CATEGORY_NAME_MAX,
   LOGISTICS_COST_KINDS,
   LOGISTICS_MAX_CENTS,
-  PAYABLE_CATEGORIES,
   DUE_TRIGGERS,
   MAX_INSTALLMENTS,
   PAYMENT_METHODS,
@@ -23,6 +22,16 @@ const cents = (label: string) =>
     .min(1, `${label} deve ser maior que zero.`)
     .max(1_000_000_000);
 const reason = (label = 'Motivo') => trimmed(3, 500, label);
+
+/**
+ * Categoria de despesa/conta a pagar: uma das fixas (código) ou uma cadastrada pela empresa
+ * (nome). A API confere se a cadastrada existe na empresa.
+ */
+const categoryField = z
+  .string({ error: 'Escolha a categoria.' })
+  .trim()
+  .min(1, { message: 'Escolha a categoria.' })
+  .max(EXPENSE_CATEGORY_NAME_MAX, { message: 'Categoria inválida.' });
 
 /** Período opcional (de/até) das consultas do financeiro. */
 export const periodQuerySchema = z.object({
@@ -201,7 +210,7 @@ export const receivableQuerySchema = periodQuerySchema.extend({
 export const createPayableSchema = z.object({
   beneficiary: trimmed(2, 160, 'Beneficiário'),
   supplierId: idSchema.nullable().optional(),
-  category: z.enum(PAYABLE_CATEGORIES),
+  category: categoryField,
   description: trimmed(2, 200, 'Descrição'),
   amountCents: cents('Valor'),
   dueDate: dateOnly,
@@ -348,8 +357,14 @@ export const logisticsCostSchema = z
 
 // ─────────────────────────── Despesas ───────────────────────────
 
+/** Categoria cadastrada pela empresa (nome que aparece no menu de categorias). */
+export const expenseCategoryCreateSchema = z.object({
+  name: trimmed(2, EXPENSE_CATEGORY_NAME_MAX, 'Nome da categoria'),
+});
+export const expenseCategoryUpdateSchema = z.object({ active: z.boolean() });
+
 export const expenseSchema = z.object({
-  category: z.enum(EXPENSE_CATEGORIES),
+  category: categoryField,
   description: trimmed(2, 200, 'Descrição'),
   amountCents: cents('Valor'),
   competence: month,
@@ -358,7 +373,7 @@ export const expenseSchema = z.object({
 });
 
 export const recurringExpenseSchema = z.object({
-  category: z.enum(EXPENSE_CATEGORIES),
+  category: categoryField,
   description: trimmed(2, 200, 'Descrição'),
   amountCents: cents('Valor'),
   dayOfMonth: z.number().int().min(1).max(31),

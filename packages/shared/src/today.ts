@@ -18,7 +18,34 @@ export const OPERATIONAL_ALERT_KINDS = [
   'PRAZO_EM_RISCO',
   'PECA_PRONTA_SEM_ENTREGA',
   'MATERIAL_FALTANTE',
+  'PRAZO_PROXIMO',
+  'CONTA_A_VENCER',
+  'CONTA_VENCIDA',
 ] as const;
+/** Conta a pagar avisa no sininho a partir deste número de dias antes do vencimento. */
+export const BILL_ALERT_DAYS_BEFORE = 1;
+/** O Resumo do financeiro lista as contas que vencem nos próximos dias. */
+export const BILL_UPCOMING_DAYS = 7;
+/** Prazos de entrega entram no Início (e no sininho) a partir de uma semana antes. */
+export const DEADLINE_ALERT_CALENDAR_DAYS = 7;
+
+/** Serviço com prazo de entrega na próxima semana (ou já vencido), para o Início. */
+export interface TodayDeadlineDto {
+  /** OS (já gerada) ou pedido (peças ainda não chegaram / OS ainda não gerada). */
+  kind: 'OS' | 'PEDIDO';
+  id: string;
+  code: string;
+  customer: string;
+  promisedDate: string;
+  /** Dias corridos até o prazo (negativo = dias de atraso). */
+  days: number;
+  /** ATRASADO, EM_RISCO, PROXIMO (OS) ou PRAZO_VENCIDO/PRAZO_PROXIMO (pedido). */
+  state: string;
+  stateLabel: string;
+  /** Por que pode atrasar (vazio = só está chegando). */
+  reasons: string[];
+  link: string;
+}
 export type OperationalAlertKind = (typeof OPERATIONAL_ALERT_KINDS)[number];
 
 export interface TodayAlertDto {
@@ -76,6 +103,8 @@ export interface TodayDto {
     top: { title: string; description: string; link: string; category: string }[];
   } | null;
   alerts: TodayAlertDto[];
+  /** Serviços com prazo de entrega em até uma semana ou já vencido (`null` = sem permissão). */
+  deadlines?: TodayDeadlineDto[] | null;
   suggestions: TodaySuggestionDto[];
   /** Estado geral das OS ativas (regra da Fase 0), para as sugestões. */
   states?: Partial<Record<OperationalState, number>>;

@@ -12,7 +12,6 @@ import { loginAdmin } from './helpers';
 const origin = `http://localhost:${E2E.webPort}`;
 const TZ = 'America/Sao_Paulo';
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date());
-const promised = () => new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
 const LOST =
   'Não foi possível confirmar se o serviço foi salvo. Toque em salvar de novo sem alterar nada: se ele já foi registrado, o sistema mostra o mesmo serviço e não cria outro.';
 
@@ -72,7 +71,7 @@ test('Novo serviço: resposta perdida depois da gravação não duplica (mesma c
     .getByRole('button', { name: /Clara Rede Novo Serviço/ })
     .click();
   await page.getByTestId('ns-piece-desc-0').fill('Sofá da rede');
-  await page.getByTestId('ns-promised').fill(promised());
+  await page.getByTestId('ns-business-days').fill('20');
   await page.getByTestId('ns-value').fill('2.000,00');
   await expect(page.getByTestId('ns-pay-model')).toHaveValue('ENTRADA_ENTREGA');
   await page.getByTestId('ns-date').fill(today());

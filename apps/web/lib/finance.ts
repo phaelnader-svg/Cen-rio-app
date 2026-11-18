@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  ExpenseCategoryDto,
   ValueChangeRequestDto,
   ExpenseDto,
   FinanceDashboardDto,
@@ -119,6 +120,8 @@ export const useFinPeople = () => useFin<WorkerDto[]>('/people');
 export const useLogisticsCosts = () => useFin<LogisticsCostDto[]>('/logistics-costs');
 export const useExpenses = (p: Period) => useFin<ExpenseDto[]>(`/expenses${qs({ ...p })}`);
 export const useRecurring = () => useFin<RecurringExpenseDto[]>('/recurring-expenses');
+/** Categorias de despesa: fixas + cadastradas pela empresa (2026-11-18). */
+export const useExpenseCategories = () => useFin<ExpenseCategoryDto[]>('/expense-categories');
 export const useOrderResults = (p: Period) =>
   useFin<(Omit<OrderResultDto, 'labor' | 'logistics'> & { labor: number; logistics: number })[]>(
     `/service-orders${qs({ ...p })}`,

@@ -144,7 +144,6 @@ export function PickupForm({
   });
 
   const currentAddress = pickup?.address ?? order.pickupAddress;
-  const scheduling = Boolean(date);
 
   return (
     <Dialog
@@ -160,12 +159,10 @@ export function PickupForm({
           </Button>
           <Button
             loading={m.isPending}
-            disabled={
-              (!pickup && team === 'LOGISTICA_TERCEIRIZADA' && !trip.ok) || (scheduling && !start)
-            }
+            disabled={(!pickup && team === 'LOGISTICA_TERCEIRIZADA' && !trip.ok) || !date || !start}
             onClick={() => m.mutate()}
           >
-            {pickup ? 'Salvar' : scheduling ? 'Solicitar e agendar' : 'Solicitar retirada'}
+            {pickup ? 'Salvar' : 'Agendar retirada'}
           </Button>
         </>
       }
@@ -174,20 +171,19 @@ export function PickupForm({
         {error && <Alert tone="danger">{error}</Alert>}
         <FormGrid>
           <DateField
-            label="Data do compromisso"
+            label="Data da retirada"
             cols={4}
+            required
             error={errors.scheduledDate}
-            hint="Vazio = só solicitada (aguardando agendamento)"
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />
           <TimeField
             label="Horário de chegada ao cliente"
             cols={4}
-            required={scheduling}
+            required
             error={errors.windowStart}
-            hint={scheduling ? 'Obrigatório no agendamento. Sem horário de término.' : 'Com a data'}
-            disabled={!scheduling}
+            hint="Sem horário de término."
             value={start}
             onChange={(e) => setStart(e.target.value)}
           />

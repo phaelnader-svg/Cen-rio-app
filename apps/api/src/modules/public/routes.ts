@@ -14,6 +14,7 @@ import {
   type QuoteSnapshot,
   type SystemNoticeDto,
 } from '@cenario/shared';
+import { followPickupDate } from '../deadlines/promise';
 import type { PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
@@ -326,6 +327,7 @@ export async function publicRoutes(app: FastifyInstance) {
             version: { increment: 1 },
           },
         });
+        if (beforeDate !== input.date) await followPickupDate(tx, before.orderId, input.date);
         await tx.pickupEvent.create({
           data: {
             pickupId: id,

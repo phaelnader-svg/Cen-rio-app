@@ -1,5 +1,6 @@
 import { plural } from '@cenario/shared';
 import {
+  BILL_UPCOMING_DAYS,
   EXPENSE_CATEGORIES,
   contributionMargin,
   formatCents,
@@ -7,7 +8,6 @@ import {
   logisticsCostCode,
   managementResult,
   taskTimings,
-  type ExpenseCategory,
   type FinanceDashboardDto,
   type LogisticsCostKind,
   type OrderResultDto,
@@ -19,6 +19,7 @@ import type { ActorContext } from '../../core/types';
 import { serviceOrderCode } from '../commercial/common';
 import { workers } from '../production/plans';
 import { dateOnly, localDateOf, parseDate, period, shopTimezone, todayIso } from './common';
+import { billsDue } from './bills';
 import { materialSummary, syncMaterialCosts } from './costs';
 import { isEligible, laborInclude, refreshLaborOf, toLaborDto } from './labor';
 import { serviceOrderRevenue } from './revenue';
@@ -353,10 +354,18 @@ export async function dashboard(
       revenueCents: inProgressRevenue,
       estimatedMarginCents: inProgressMargin,
     },
-    expensesByCategory: EXPENSE_CATEGORIES.filter((c) => byCat.has(c)).map((c) => ({
-      category: c as ExpenseCategory,
-      amountCents: byCat.get(c)!,
-    })),
+    // Fixas na ordem da lista; depois as cadastradas pela empresa (maior valor primeiro).
+    expensesByCategory: [
+      ...EXPENSE_CATEGORIES.filter((c) => byCat.has(c)).map((c) => ({
+        category: c as string,
+        amountCents: byCat.get(c)!,
+      })),
+      ...[...byCat.entries()]
+        .filter(([c]) => !(EXPENSE_CATEGORIES as readonly string[]).includes(c))
+        .sort((a, b) => b[1] - a[1])
+        .map(([category, amountCents]) => ({ category, amountCents })),
+    ],
+    bills: { ...(await billsDue(tx, today)), upcomingDays: BILL_UPCOMING_DAYS },
     topServices: [...services.entries()]
       .map(([serviceType, v]) => ({ serviceType, ...v }))
       .sort((a, b) => b.marginCents - a.marginCents),

@@ -1,7 +1,11 @@
 import { plural } from '@cenario/shared';
 import {
+  BILL_ALERT_DAYS_BEFORE,
   DEADLINE_REASON_LABEL,
+  DEADLINE_STATE_LABEL,
   MATERIAL_ALERT_DAYS,
+  ORDER_DEADLINE_LABEL,
+  deadlineWindowEnd,
   NOTIFICATION_KIND_LABEL,
   OPERATIONAL_ALERT_KINDS,
   READY_WITHOUT_DELIVERY_DAYS,
@@ -10,6 +14,7 @@ import {
   type OperationalAlertKind,
   type OperationalState,
   type Permission,
+  type TodayDeadlineDto,
   type TodayDto,
   type TodaySuggestionDto,
 } from '@cenario/shared';
@@ -18,7 +23,8 @@ import type { FastifyInstance } from 'fastify';
 import type { ActorContext } from '../../core/types';
 import { now as clockNow } from '../../core/clock';
 import { dbDate } from '../attendance/common';
-import { serviceOrderCode } from '../commercial/common';
+import { dateOnly, orderCode, serviceOrderCode } from '../commercial/common';
+import { billsDue } from '../finance/bills';
 import { deadlineCalendar, deadlineCandidatesWhere, serviceDeadlines } from '../deadlines/service';
 import { loadAttention } from '../issues/attention';
 import { resolveNotifications } from '../notifications/notify';
@@ -124,8 +130,53 @@ async function currentFacts(db: Tx | PrismaClient) {
       },
     },
   });
-  return { cal, deadlines, risky, riskyOs, readyRows, soon };
+  // 4. Prazos de entrega até uma semana à frente (2026-11-18): OS "prazo próximo" e pedidos que
+  // ainda não viraram OS (peça não chegou ou OS não gerada).
+  const nearOs = [...deadlines.entries()].filter(([, d]) => d.state === 'PROXIMO');
+  const nearOsRows = nearOs.length
+    ? await db.serviceOrder.findMany({
+        where: { id: { in: nearOs.map(([id]) => id) } },
+        select: { id: true, number: true, customer: { select: { name: true } } },
+      })
+    : [];
+  const windowEnd = deadlineWindowEnd(cal.today, cal.workingDays);
+  const preOs = await db.commercialOrder.findMany({
+    where: {
+      status: { not: 'CANCELADO' },
+      promisedDate: { not: null, lte: dbDate(windowEnd) },
+      serviceOrders: { none: { status: { not: 'CANCELADA' } } },
+    },
+    select: {
+      id: true,
+      number: true,
+      promisedDate: true,
+      customer: { select: { name: true } },
+      items: { select: { quantity: true, receivedQuantity: true } },
+    },
+    orderBy: { promisedDate: 'asc' },
+    take: 200,
+  });
+  const orders = preOs.map((o) => {
+    const promisedDate = dateOnly(o.promisedDate)!;
+    const missing = o.items.some((i) => i.quantity > i.receivedQuantity);
+    return {
+      id: o.id,
+      number: o.number,
+      customer: o.customer.name,
+      promisedDate,
+      late: promisedDate < cal.today,
+      reason: missing ? 'Peças ainda não chegaram na oficina' : 'OS ainda não gerada',
+    };
+  });
+  // 5. Contas a pagar vencidas ou que vencem até amanhã.
+  const bills = await billsDue(db, cal.today, BILL_ALERT_DAYS_BEFORE);
+  return { cal, deadlines, risky, riskyOs, readyRows, soon, nearOsRows, orders, bills };
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const calendarDays = (from: string, to: string) =>
+  Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / DAY_MS);
+const br = (iso: string) => iso.split('-').reverse().join('/');
 
 /**
  * Recalcula os alertas internos (idempotente). Avisa quem já cuida de cada assunto: prazo →
@@ -189,6 +240,56 @@ export async function refreshOperationalAlerts(prisma: PrismaClient) {
           subject,
           `${serviceOrderCode(so.number)} (${so.customer.name}) tem produção para os próximos ${MATERIAL_ALERT_DAYS} dias e ainda falta: ${what}.`,
           so.id,
+        );
+      }
+      // 2026-11-18: prazo de entrega a uma semana (OS sem motivo de risco ainda).
+      for (const so of f.nearOsRows) {
+        const d = f.deadlines.get(so.id)!;
+        const subject = `PRAZO_PROXIMO:${so.id}`;
+        active.add(subject);
+        await notifyUsersWith(
+          tx,
+          SYSTEM,
+          'os.gerenciar',
+          'PRAZO_PROXIMO',
+          `${subject}:${d.promisedDate}`,
+          `${serviceOrderCode(so.number)} (${so.customer.name}) tem entrega combinada para ${br(d.promisedDate!)}: falta ${plural(Math.max(0, calendarDays(f.cal.today, d.promisedDate!)), 'dia', 'dias')}.`,
+          so.id,
+        );
+      }
+      // Pedidos que ainda não viraram OS: prazo chegando ou vencido.
+      for (const o of f.orders) {
+        const kind = o.late ? 'PRAZO_EM_RISCO' : 'PRAZO_PROXIMO';
+        const subject = `${kind}:${o.id}`;
+        active.add(subject);
+        await notifyUsersWith(
+          tx,
+          SYSTEM,
+          'os.gerenciar',
+          kind,
+          `${subject}:${o.promisedDate}`,
+          `${orderCode(o.number)} (${o.customer}) ${o.late ? 'passou do prazo de entrega' : 'tem entrega combinada para'} ${br(o.promisedDate)}: ${o.reason.toLowerCase()}.`,
+        );
+      }
+      // Contas a pagar: um dia antes do vencimento, no dia e depois de vencida. Sem valor no texto:
+      // o Início não mostra dinheiro (o valor fica no Resumo do financeiro).
+      for (const b of [...f.bills.overdue, ...f.bills.upcoming]) {
+        const kind = b.days < 0 ? 'CONTA_VENCIDA' : 'CONTA_A_VENCER';
+        const subject = `${kind}:${b.id}`;
+        active.add(subject);
+        await notifyUsersWith(
+          tx,
+          SYSTEM,
+          'financeiro.ver',
+          kind,
+          `${subject}:${b.dueDate}`,
+          `${b.code} · ${b.beneficiary} ${
+            b.days < 0
+              ? `venceu em ${br(b.dueDate)}`
+              : b.days === 0
+                ? 'vence hoje'
+                : `vence amanhã, ${br(b.dueDate)}`
+          }.`,
         );
       }
       // Resolve o que deixou de valer (fato corrigido, OS entregue, prazo normalizado…).
@@ -314,9 +415,51 @@ export async function loadToday(
     kind: n.kind as OperationalAlertKind,
     title: NOTIFICATION_KIND_LABEL[n.kind as OperationalAlertKind],
     body: n.body,
-    link: n.serviceOrderId ? `/painel/os/${n.serviceOrderId}` : '/painel',
+    link: n.kind.startsWith('CONTA_')
+      ? '/painel/financeiro?tab=painel'
+      : n.serviceOrderId
+        ? `/painel/os/${n.serviceOrderId}`
+        : '/painel',
     at: n.createdAt.toISOString(),
   }));
+
+  // 2026-11-18: serviços com prazo de entrega em até uma semana (ou vencido), OS e pedidos.
+  let deadlines: TodayDeadlineDto[] | null = null;
+  if (can(perms, 'os.ver', 'pedidos.ver')) {
+    const osRows = [...f.riskyOs, ...f.nearOsRows];
+    deadlines = [
+      ...osRows.map((so) => {
+        const d = f.deadlines.get(so.id)!;
+        return {
+          kind: 'OS' as const,
+          id: so.id,
+          code: serviceOrderCode(so.number),
+          customer: so.customer.name,
+          promisedDate: d.promisedDate!,
+          days: calendarDays(f.cal.today, d.promisedDate!),
+          state: d.state,
+          stateLabel: DEADLINE_STATE_LABEL[d.state],
+          reasons: d.reasons.map((r) => DEADLINE_REASON_LABEL[r]),
+          link: `/painel/os/${so.id}`,
+        };
+      }),
+      ...f.orders.map((o) => {
+        const state = o.late ? 'PRAZO_VENCIDO' : 'PRAZO_PROXIMO';
+        return {
+          kind: 'PEDIDO' as const,
+          id: o.id,
+          code: orderCode(o.number),
+          customer: o.customer,
+          promisedDate: o.promisedDate,
+          days: calendarDays(f.cal.today, o.promisedDate),
+          state,
+          stateLabel: o.late ? 'Atrasado' : ORDER_DEADLINE_LABEL[state],
+          reasons: [o.reason],
+          link: `/painel/pedidos/${o.id}`,
+        };
+      }),
+    ].sort((a, b) => a.promisedDate.localeCompare(b.promisedDate) || a.code.localeCompare(b.code));
+  }
 
   // Ações sugeridas (explicativas; nada é executado).
   const suggestions: TodaySuggestionDto[] = [];
@@ -402,6 +545,7 @@ export async function loadToday(
     readyPieces,
     pendencies,
     alerts,
+    deadlines,
     suggestions: suggestions.sort((a, b) =>
       a.priority === b.priority ? 0 : a.priority === 'ALTA' ? -1 : 1,
     ),

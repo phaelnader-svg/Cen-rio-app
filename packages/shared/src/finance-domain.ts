@@ -488,6 +488,36 @@ export const PAYABLE_CATEGORY_LABEL: Record<PayableCategory, string> = {
   SERVICOS: 'Serviços de terceiros',
 };
 
+/**
+ * Categorias de despesa da empresa (2026-11-18): além das fixas acima, cada empresa cadastra as
+ * suas. A categoria cadastrada é gravada pelo próprio nome (até 30 letras) na despesa, na
+ * recorrente e na conta a pagar; as fixas continuam gravadas pelo código.
+ */
+export const EXPENSE_CATEGORY_NAME_MAX = 30;
+const isFixedExpense = (c: string): c is ExpenseCategory => c in EXPENSE_CATEGORY_LABEL;
+const isFixedPayable = (c: string): c is PayableCategory => c in PAYABLE_CATEGORY_LABEL;
+/** Nome para mostrar de uma categoria de despesa (fixa pelo código, cadastrada pelo nome). */
+export const expenseCategoryLabel = (c: string) =>
+  isFixedExpense(c) ? EXPENSE_CATEGORY_LABEL[c] : c;
+/** Nome para mostrar de uma categoria de conta a pagar (fixas + cadastradas pela empresa). */
+export const payableCategoryLabel = (c: string) =>
+  isFixedPayable(c) ? PAYABLE_CATEGORY_LABEL[c] : c;
+/** Forma de comparar nomes de categoria (sem acento, maiúsculas, espaços simples). */
+export const categoryKey = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+/** O nome escolhido para uma categoria nova repete uma fixa (pelo código ou pelo nome)? */
+export const clashesWithFixedCategory = (name: string) => {
+  const k = categoryKey(name);
+  return (Object.entries(PAYABLE_CATEGORY_LABEL) as [string, string][]).some(
+    ([code, label]) => categoryKey(code) === k || categoryKey(label) === k,
+  );
+};
+
 /** Primeiro dia do mês (AAAA-MM-01) de uma data AAAA-MM-DD. */
 export const monthOf = (iso: string) => `${iso.slice(0, 7)}-01`;
 /** Data do vencimento de uma recorrência no mês (dia limitado ao último dia do mês). */

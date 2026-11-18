@@ -16,6 +16,7 @@ import {
 } from '../domain';
 import { isValidCnpj, isValidCpf, onlyDigits } from '../documents';
 import { idSchema, optionalText, trimmed, versionSchema } from './common';
+import { MAX_DELIVERY_BUSINESS_DAYS } from '../deadline-domain';
 import { tripCostInputSchema } from './finance';
 import {
   ELIGIBILITY_RULES,
@@ -533,9 +534,16 @@ export const newServiceItemSchema = orderItemSchema.omit({ id: true }).extend({
 
 export const newServicePickupSchema = z
   .object({
-    scheduledDate: dateOnly.nullable().optional(),
+    /** 2026-11-18: agendar a retirada exige data e horário (nada fica "aguardando agendamento"). */
+    scheduledDate: z
+      .string({ error: 'Informe a data da retirada.' })
+      .min(1, { message: 'Informe a data da retirada.' })
+      .pipe(dateOnly),
     /** Horário de CHEGADA ao endereço do cliente (não há horário de término). */
-    windowStart: timeOnly.nullable().optional(),
+    windowStart: z
+      .string({ error: 'Informe o horário de chegada ao cliente.' })
+      .min(1, { message: 'Informe o horário de chegada ao cliente.' })
+      .pipe(timeOnly),
     team: z.enum(PICKUP_TEAMS),
     /** Profissional responsável (equipe própria: padrão da empresa; terceirizada: André). */
     logisticsUserId: idSchema.nullable().optional(),
@@ -593,6 +601,17 @@ export const newServiceSchema = z
       payment: newServicePaymentSchema.nullable().optional(),
       /** Prazo de entrega combinado (obrigatório; copiado para a OS gerada na chegada). */
       promisedDate: requiredPromisedDate,
+      /**
+       * 2026-11-18: prazo em DIAS ÚTEIS. Quando vem, a API calcula `promisedDate` a partir do dia
+       * da retirada (ou de hoje, se o cliente traz as peças) e o recalcula se a retirada mudar de dia.
+       */
+      deliveryBusinessDays: z
+        .number({ message: 'Informe o prazo em dias úteis.' })
+        .int({ message: 'Informe o prazo em dias úteis.' })
+        .min(1, { message: 'O prazo precisa ter pelo menos 1 dia útil.' })
+        .max(MAX_DELIVERY_BUSINESS_DAYS, { message: 'Prazo longo demais.' })
+        .nullable()
+        .optional(),
       technicalNotes: optionalText(4000),
       notes: optionalText(2000),
       items: z.array(newServiceItemSchema).min(1, { message: 'Inclua ao menos uma peça.' }).max(50),

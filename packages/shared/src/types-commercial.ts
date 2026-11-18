@@ -366,6 +366,8 @@ export interface NewServiceDefaultsDto {
   };
   /** Valor sugerido (Fase 6). Só com permissão financeira; senão null. */
   suggestedPickupCostCents: number | null;
+  /** 2026-11-18: dias de expediente da empresa (0 = domingo), para a prévia do prazo em dias úteis. */
+  workingDays?: number[];
   canSetValues: boolean;
   canSetTripCost: boolean;
   canCreateCustomer: boolean;

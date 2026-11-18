@@ -85,7 +85,8 @@ describe('Multi-empresa: banco', () => {
     }
     expect(problemas).toEqual([]);
     // 167: + feedback_reports (melhorias rodada 2).
-    expect(tabelasComEmpresa.length).toBe(167);
+    // 168: + expense_categories (despesas, prazos e alertas).
+    expect(tabelasComEmpresa.length).toBe(168);
   });
 
   it('nenhuma unicidade de tabela de empresa vale no sistema inteiro sem motivo', async () => {

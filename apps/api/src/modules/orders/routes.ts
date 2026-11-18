@@ -615,7 +615,12 @@ export async function orderRoutes(app: FastifyInstance) {
           throw Errors.business('O prazo informado é igual ao atual.');
         await tx.commercialOrder.update({
           where: { id, version: input.version },
-          data: { promisedDate: parseDateOnly(input.promisedDate), version: { increment: 1 } },
+          // Data escolhida à mão: deixa de acompanhar o dia da retirada (prazo em dias úteis).
+          data: {
+            promisedDate: parseDateOnly(input.promisedDate),
+            deliveryBusinessDays: null,
+            version: { increment: 1 },
+          },
         });
         const code = orderCode(before.number);
         const applied: string[] = [];
