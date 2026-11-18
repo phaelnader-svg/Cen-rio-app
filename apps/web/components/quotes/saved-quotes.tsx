@@ -252,7 +252,7 @@ function SavedList({
                     {q.customerName || 'Cliente não informado'} <QuoteStatusBadges q={q} />
                     {q.hasWorkOrder && (
                       <Badge tone="brand" className="ml-1 align-middle">
-                        OS gerada
+                        Ficha da OS
                       </Badge>
                     )}
                   </p>
@@ -314,14 +314,14 @@ function SavedList({
                           Ver pedido
                         </Link>
                       ) : (
+                        // Fluxo da OS: "Fechar serviço" só depois de aprovado (link do cliente ou
+                        // botão Aprovar), em destaque como o Aprovar.
                         canCloseService &&
-                        q.status !== 'RECUSADO' && (
+                        q.status === 'APROVADO' && (
                           <Link
                             href={`/painel/servicos/novo?orcamento=${q.id}`}
-                            className={buttonClass(
-                              q.status === 'APROVADO' ? 'primary' : 'secondary',
-                              'sm',
-                            )}
+                            className={buttonClass('primary', 'sm')}
+                            data-testid={`quote-close-${q.number}`}
                           >
                             <ClipboardPlus className="size-4" aria-hidden />
                             Fechar serviço
@@ -334,7 +334,7 @@ function SavedList({
                         icon={<ClipboardList className="size-4" aria-hidden />}
                         onClick={() => onOpen({ kind: 'os', id: q.id })}
                       >
-                        {q.hasWorkOrder ? 'Editar OS' : 'Gerar OS'}
+                        {q.hasWorkOrder ? 'Editar ficha da OS' : 'Ficha da OS'}
                       </Button>
                       <Button
                         size="sm"
