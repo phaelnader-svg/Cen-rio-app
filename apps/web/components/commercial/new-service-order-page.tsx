@@ -1,6 +1,6 @@
 'use client';
 
-import { plural } from '@cenario/shared';
+import { QUOTE_DEFAULT_NOTES, plural } from '@cenario/shared';
 import type { EligibilityRule, Priority, ServiceOrderDto, ServiceType } from '@cenario/shared';
 import {
   ELIGIBILITY_LABEL,
@@ -116,7 +116,9 @@ function prefilledRow(i: Item, quote: QuoteInfo, single: boolean): Row {
     fabricName: i.fabricName ?? quote?.fabricName ?? '',
     fabricColor: i.fabricColor ?? '',
     fabricReference: i.fabricReference ?? '',
-    technicalNotes: i.technicalNotes ?? '',
+    technicalNotes:
+      i.technicalNotes ||
+      (quote?.upholsteryService ? `Serviço do tapeceiro: ${quote.upholsteryService}` : ''),
     upholstererUserId: owner,
     laborCents:
       i.plannedUpholstererUserId && i.plannedLaborUnitCents
@@ -127,7 +129,10 @@ function prefilledRow(i: Item, quote: QuoteInfo, single: boolean): Row {
 
 function quoteInstructions(order: AvailableForOs['order'], quote: QuoteInfo): string {
   const parts: string[] = [];
-  if (order.technicalNotes) parts.push(order.technicalNotes);
+  // O texto padrão da proposta (cláusulas comerciais) não é instrução para a oficina.
+  const own = (order.technicalNotes ?? '').replace(QUOTE_DEFAULT_NOTES.trim(), '').trim();
+  if (quote?.upholsteryService) parts.push(`Serviço do tapeceiro: ${quote.upholsteryService}.`);
+  if (own) parts.push(own);
   if (quote) {
     if (quote.details.length) parts.push(quote.details.join(' · '));
     if (quote.materials.length)

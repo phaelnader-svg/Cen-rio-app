@@ -1,5 +1,6 @@
 'use client';
 
+import clsx from 'clsx';
 import { plural } from '@cenario/shared';
 import { SERVICE_ORDER_STATUSES, SERVICE_ORDER_STATUS_LABEL } from '@cenario/shared';
 import { ClipboardList, Search } from 'lucide-react';
@@ -12,7 +13,7 @@ import { ExportLink } from '@/components/ui/export-link';
 import { formatDay, useServiceOrders } from '@/lib/commercial';
 import { useCan } from '@/lib/hooks';
 import { OsBulkBar } from '@/components/improvements/os-bulk';
-import { DeadlineBadge, PriorityBadge, ServiceOrderStatusBadge } from './badges';
+import { DeadlineBadge, PriorityBadge, ReworkBadge, ServiceOrderStatusBadge } from './badges';
 import { MaterialPurchasedButton } from './material-purchased';
 import { OsStateBadge } from './os-state';
 
@@ -83,7 +84,13 @@ export function ServiceOrdersPage() {
           <Card className="overflow-hidden">
             <ul className="divide-y divide-line">
               {list.data.items.map((s) => (
-                <li key={s.id} className="flex items-center">
+                <li
+                  key={s.id}
+                  className={clsx(
+                    'flex items-center',
+                    s.rework && 'border-l-4 border-l-danger-600 bg-danger-50/40',
+                  )}
+                >
                   {bulk && s.status === 'ABERTA' && (
                     <label className="flex self-stretch items-center pl-4">
                       <span className="sr-only">Selecionar {s.code}</span>
@@ -114,6 +121,7 @@ export function ServiceOrdersPage() {
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 sm:contents">
+                      <ReworkBadge rework={s.rework} />
                       <DeadlineBadge deadline={s.deadline} />
                       {s.technicalLead && (
                         <span className="flex items-center gap-1.5 text-sm text-ink-soft">

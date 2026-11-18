@@ -28,6 +28,7 @@ import {
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
+  FileText,
   Lock,
   MessageSquarePlus,
   Package,
@@ -38,6 +39,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { PhotoGallery } from '@/components/commercial/photo-gallery';
+import { ServiceOrderSheet } from '@/components/commercial/os-sheet';
 import { AudioNote } from './audio-note';
 import { TaskStatusBadge } from '@/components/production/badges';
 import { TaskHistory, TaskRefs } from '@/components/production/task-history';
@@ -534,6 +536,7 @@ export function MyTaskDetail({
   const online = useOnline();
   const { m, error } = useSend();
   const [panel, setPanel] = useState<'pause' | 'progress' | 'complete' | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [startKey, setStartKey] = useState(newIdempotencyKey);
   const [completeKey, setCompleteKey] = useState(newIdempotencyKey);
   if (q.isPending) return <Spinner />;
@@ -702,6 +705,39 @@ export function MyTaskDetail({
           {t.lastProgress.note && <p>{t.lastProgress.note}</p>}
           {t.lastProgress.step && <p>Etapa atual: {t.lastProgress.step}</p>}
           {t.lastProgress.nextStep && <p>Próximo passo: {t.lastProgress.nextStep}</p>}
+        </div>
+      )}
+
+      <Button
+        size="xl"
+        variant="secondary"
+        className="w-full"
+        icon={<FileText className="size-6" aria-hidden />}
+        onClick={() => setSheetOpen(true)}
+        data-testid="task-open-os"
+      >
+        Abrir OS {t.serviceOrder.code}
+      </Button>
+      {sheetOpen && (
+        <div
+          className="fixed inset-0 z-50 overflow-y-auto bg-canvas p-3 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`OS ${t.serviceOrder.code}`}
+        >
+          <div className="mx-auto max-w-4xl">
+            <div className="mb-3 flex justify-end">
+              <Button size="lg" variant="secondary" onClick={() => setSheetOpen(false)}>
+                Fechar
+              </Button>
+            </div>
+            <ServiceOrderSheet id={t.serviceOrder.id} />
+            <div className="mt-4 flex justify-center pb-6">
+              <Button size="xl" onClick={() => setSheetOpen(false)}>
+                Voltar para a tarefa
+              </Button>
+            </div>
+          </div>
         </div>
       )}
 

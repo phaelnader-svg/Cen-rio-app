@@ -164,6 +164,7 @@ export function receivableOverdue(r: {
 
 /** Modelos de condição do Novo serviço: geram as cobranças (sem entidade de plano). */
 export const PAYMENT_MODELS = [
+  'METADE_RETIRADA_ENTREGA',
   'ENTRADA_ENTREGA',
   'PIX_100',
   'CARTAO_100',
@@ -172,6 +173,7 @@ export const PAYMENT_MODELS = [
 ] as const;
 export type PaymentModel = (typeof PAYMENT_MODELS)[number];
 export const PAYMENT_MODEL_LABEL: Record<PaymentModel, string> = {
+  METADE_RETIRADA_ENTREGA: 'À vista: 50% na retirada e 50% na entrega',
   ENTRADA_ENTREGA: 'Entrada + saldo na entrega',
   PIX_100: '100% Pix',
   CARTAO_100: 'Cartão 100% (parcelado)',
@@ -204,11 +206,37 @@ export function paymentPlan(
     installments?: number | null;
   },
   today: string,
+  /** Sem retirada (o cliente traz as peças): a metade "da retirada" vence hoje. */
+  ctx: { customerDropOff?: boolean } = {},
 ): ReceivableDraft[] {
   const n = p.installments ?? 1;
   switch (p.model) {
     case 'MANUAL':
       return [];
+    case 'METADE_RETIRADA_ENTREGA': {
+      // 2026-11-18 (Raphael): à vista = metade na retirada e metade na entrega.
+      const first = totalCents - Math.floor(totalCents / 2);
+      const out: ReceivableDraft[] = [
+        {
+          description: ctx.customerDropOff ? '50% ao deixar as peças' : '50% na retirada',
+          amountCents: first,
+          dueTrigger: ctx.customerDropOff ? 'DATA' : 'RETIRADA',
+          dueDate: ctx.customerDropOff ? today : null,
+          expectedMethod: p.entryMethod ?? 'PIX',
+          installments: null,
+        },
+      ];
+      if (totalCents - first > 0)
+        out.push({
+          description: '50% na entrega',
+          amountCents: totalCents - first,
+          dueTrigger: 'ENTREGA',
+          dueDate: null,
+          expectedMethod: p.balanceMethod ?? p.entryMethod ?? 'PIX',
+          installments: null,
+        });
+      return out;
+    }
     case 'ENTRADA_ENTREGA': {
       const entry = p.entryCents ?? totalCents - Math.floor(totalCents / 2);
       const out: ReceivableDraft[] = [

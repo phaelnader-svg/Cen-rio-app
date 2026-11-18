@@ -1,5 +1,6 @@
 'use client';
 
+import clsx from 'clsx';
 import { ORDER_STATUSES, ORDER_STATUS_LABEL } from '@cenario/shared';
 import type { OrderSummaryDto } from '@cenario/shared';
 import { ClipboardPlus, FileSignature, Plus, Search } from 'lucide-react';
@@ -12,7 +13,7 @@ import { buttonClass } from '@/components/ui/button-styles';
 import { formatDay, useOrders } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
-import { OrderStatusBadge, ServiceStateBadge } from './badges';
+import { OrderStatusBadge, ReworkBadge, ServiceStateBadge } from './badges';
 import { MarkArrivedButton } from './order-detail';
 
 export function OrdersPage() {
@@ -90,7 +91,13 @@ export function OrdersPage() {
         <Card className="overflow-hidden">
           <ul className="divide-y divide-line">
             {orders.data.items.map((o) => (
-              <li key={o.id} className="flex flex-col sm:flex-row sm:items-center">
+              <li
+                key={o.id}
+                className={clsx(
+                  'flex flex-col sm:flex-row sm:items-center',
+                  o.rework && 'border-l-4 border-l-danger-600 bg-danger-50/40',
+                )}
+              >
                 <Link
                   href={`/painel/pedidos/${o.id}`}
                   // Melhoria 160: no celular, cartão com o cliente em cima e os selos embaixo.
@@ -111,6 +118,7 @@ export function OrdersPage() {
                         ? ` · retirada ${formatDay(o.nextPickup.scheduledDate)}${o.nextPickup.windowStart ? ` ${o.nextPickup.windowStart}` : ''}`
                         : ''}
                     </span>
+                    <ReworkBadge rework={o.rework} />
                     <OrderStatusBadge status={o.status} customerDropOff={o.customerDropOff} />
                     <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />
                   </div>

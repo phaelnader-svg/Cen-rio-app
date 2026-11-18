@@ -383,6 +383,11 @@ export interface NewServiceDefaultsDto {
   canPlanUpholsterer: boolean;
   /** Definir a mão de obra prevista (`financeiro.ver` + `financeiro.gerenciar`). */
   canPlanLabor: boolean;
+  /**
+   * 2026-11-18: taxas da maquininha da Base de dados do orçamento (só com pedidos.valores), para
+   * o parcelado do Novo serviço: valor parcelado = à vista ÷ (1 − taxa).
+   */
+  cardFees?: { installments: number; rateBps: number }[];
 }
 
 export interface NewServiceResultDto {
@@ -497,4 +502,48 @@ export interface MaterialArrivalDto {
   receivedAt: string;
   conferredBy: string | null;
   conferredAt: string | null;
+}
+
+/**
+ * 2026-11-18: página da OS para a oficina (Abrir OS no tablet e no painel). Só detalhes do
+ * serviço: nada de valores.
+ */
+export interface ServiceOrderSheetDto {
+  id: string;
+  code: string;
+  status: ServiceOrderStatus;
+  companyName: string;
+  customerName: string;
+  orderCode: string;
+  rework: { code: string; reason: string } | null;
+  promisedDate: string | null;
+  priority: Priority;
+  technicalLead: string | null;
+  createdAt: string;
+  technicalInstructions: string | null;
+  notes: string | null;
+  items: {
+    id: string;
+    code: string;
+    pieceType: PieceType;
+    serviceType: ServiceType;
+    description: string;
+    quantity: number;
+    fabricName: string | null;
+    fabricColor: string | null;
+    fabricReference: string | null;
+    foamSpecs: string | null;
+    technicalNotes: string | null;
+    measurements: MeasurementDto[];
+    measurementNotes: string | null;
+    upholsterer: string | null;
+  }[];
+  materials: {
+    description: string;
+    quantity: string | null;
+    unit: string | null;
+    available: boolean;
+  }[];
+  tasks: { title: string; assignee: string | null; status: string }[];
+  photos: { url: string; thumbUrl: string; caption: string | null; itemCode: string | null }[];
 }

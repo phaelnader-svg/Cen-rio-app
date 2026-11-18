@@ -318,6 +318,9 @@ function quotePrefill(
   const wo = (quote.workOrder ?? null) as Partial<QuoteWorkOrder> | null;
   const fabrics = (snap.fabrics ?? []).filter(Boolean);
   const details: string[] = [];
+  // 2026-11-18 (Raphael): o serviço do tapeceiro escolhido no orçamento vai para a OS.
+  const upholsteryService = snap.upholstery?.name?.trim() || null;
+  if (snap.sofaCount && snap.sofaCount > 1) details.push(`Quantidade: ${snap.sofaCount}`);
   if (wo) {
     if (wo.keepOriginal) details.push(`Manter o original: ${wo.keepOriginal}`);
     if (wo.changeFoam) details.push(`Trocar espuma: ${wo.changeFoam}`);
@@ -343,6 +346,7 @@ function quotePrefill(
   return {
     number: quote.number,
     service: snap.service ?? '',
+    upholsteryService,
     fabricName: wo?.fabricName?.trim() || fabrics.join(', '),
     details,
     notes: wo?.notes?.trim() ?? '',

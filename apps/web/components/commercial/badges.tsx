@@ -16,6 +16,7 @@ import {
   type OrderDeadlineState,
   type ServiceDeadline,
 } from '@cenario/shared';
+import Link from 'next/link';
 import { Badge } from '@/components/ui/misc';
 
 type Tone = 'neutral' | 'brand' | 'ok' | 'warn' | 'danger' | 'info' | 'bronze';
@@ -142,5 +143,25 @@ export function OrderDeadlineBadge({ state }: { state: OrderDeadlineState | null
     <Badge tone={state === 'PRAZO_VENCIDO' ? 'danger' : 'warn'}>
       {ORDER_DEADLINE_LABEL[state]} · peça não recebida
     </Badge>
+  );
+}
+
+/** 2026-11-18: tudo que nasce de um retrabalho aparece em vermelho (agenda, OS, pedidos). */
+export function ReworkBadge({ rework }: { rework?: { code: string } | null }) {
+  if (!rework) return null;
+  return <Badge tone="danger">Retrabalho {rework.code}</Badge>;
+}
+
+/** Faixa vermelha no topo do pedido e da OS de um retrabalho. */
+export function ReworkBanner({ rework }: { rework?: { code: string } | null }) {
+  if (!rework) return null;
+  return (
+    <p className="mb-4 flex items-center gap-2 rounded-lg border border-danger-600/30 bg-danger-50 px-4 py-2.5 text-sm font-medium text-danger-700">
+      <span className="size-2 rounded-full bg-danger-600" aria-hidden />
+      Retrabalho {rework.code}: serviço que voltou para ser refeito, sem cobrança.{' '}
+      <Link href="/painel/retrabalhos" className="ml-auto underline">
+        Ver retrabalhos
+      </Link>
+    </p>
   );
 }

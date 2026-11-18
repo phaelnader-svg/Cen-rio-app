@@ -15,8 +15,7 @@ import type {
 import {
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABEL,
-  PAYMENT_MODELS,
-  PAYMENT_MODEL_LABEL,
+  QUOTE_DEFAULT_NOTES,
   type PaymentMethod,
   type PaymentModel,
   CUSTOMER_KINDS,
@@ -31,7 +30,8 @@ import {
   quoteServiceToPiece,
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import clsx from 'clsx';
+import { CheckCircle2, Plus, Search, Trash2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -136,7 +136,9 @@ function quoteNotes(q: QuoteDto): string {
     parts.push(`${s.fabrics.length === 1 ? 'Tecido' : 'Tecidos'}: ${s.fabrics.join(', ')}.`);
   parts.push(`Troca de espuma: ${s.foamChange ? 'sim' : 'não'}.`);
   parts.push(`Troca de tecido: ${s.fabricChange ? 'sim' : 'não'}.`);
-  if (s.notes.trim()) parts.push(s.notes.trim());
+  // O texto padrão da proposta (cláusulas comerciais) não serve para a oficina.
+  const notes = s.notes.trim();
+  if (notes && notes !== QUOTE_DEFAULT_NOTES.trim()) parts.push(notes);
   return parts.join(' ').slice(0, 2000);
 }
 
@@ -199,20 +201,22 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
       },
     ];
   });
-  // Vindo do orçamento, o serviço aparece como resumo para conferir; "Alterar" abre os campos.
-  const [editService, setEditService] = useState(!fromQuote);
+  // 2026-11-18 (Raphael): vindo de um orçamento do sistema, o serviço fica travado (foi definido
+  // no orçamento); tecido e tapeceiro se definem na OS.
+  const editService = !fromQuote;
   const [value, setValue] = useState<number | null>(
     d.canSetValues && fromQuote ? fromQuote.totalCents : null,
   );
   const [valueOk, setValueOk] = useState(true);
-  const [terms, setTerms] = useState(fromQuote?.snapshot.paymentTerms.slice(0, 500) ?? '');
   // Cobrança (AM-1): condição estruturada — gera as cobranças junto com o pedido.
-  const [payModel, setPayModel] = useState<PaymentModel>('ENTRADA_ENTREGA');
-  const [entry, setEntry] = useState<number | null>(null);
-  const [entryOk, setEntryOk] = useState(true);
+  // 2026-11-18 (Raphael): à vista = 50% na retirada e 50% na entrega; parcelado = N× no cartão,
+  // com a taxa da maquininha da Base de dados do orçamento (e leva a maquininha na retirada).
+  const [payKind, setPayKind] = useState<'AVISTA' | 'PARCELADO'>('AVISTA');
   const [entryMethod, setEntryMethod] = useState<PaymentMethod>('PIX');
-  const [balanceMethod, setBalanceMethod] = useState<PaymentMethod>('PIX');
-  const [installments, setInstallments] = useState('1');
+  const cardFees = d.cardFees ?? [];
+  const [installments, setInstallments] = useState(() =>
+    String(cardFees.find((f) => f.installments > 1)?.installments ?? 2),
+  );
   // 2026-11-18: prazo combinado em DIAS ÚTEIS (o orçamento já fala em dias úteis); a data é
   // contada do dia da retirada (ou de hoje, se o cliente traz as peças). A API recalcula igual.
   const [bizDays, setBizDays] = useState(() =>
@@ -227,6 +231,26 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const logisticsOn = useModules().logistica;
   const delivery = logisticsOn ? deliveryChoice : 'CLIENTE_ENTREGA';
   const withPickup = delivery === 'RETIRADA';
+  const payModel: PaymentModel =
+    payKind === 'AVISTA'
+      ? 'METADE_RETIRADA_ENTREGA'
+      : withPickup
+        ? 'CARTAO_RETIRADA'
+        : 'CARTAO_100';
+  const fee =
+    payKind === 'PARCELADO'
+      ? cardFees.find((f) => f.installments === Number(installments))
+      : undefined;
+  const feeBps = fee?.rateBps ?? 0;
+  /** Valor cobrado: no parcelado, o à vista com a taxa da maquininha embutida. */
+  const chargeValue =
+    value !== null && payKind === 'PARCELADO' && feeBps > 0 && feeBps < 10_000
+      ? Math.ceil(value / (1 - feeBps / 10_000))
+      : value;
+  const payText =
+    payKind === 'AVISTA'
+      ? `À vista: 50% ${withPickup ? 'na retirada' : 'ao deixar as peças'} e 50% na entrega (${PAYMENT_METHOD_LABEL[entryMethod]}).`
+      : `Parcelado em ${installments}× no cartão${feeBps ? ` (taxa ${(feeBps / 100).toLocaleString('pt-BR')}%)` : ''}${chargeValue ? `: ${brl(chargeValue)}` : ''}${withPickup ? ', na retirada' : ''}.`;
   const [date, setDate] = useState('');
   const [arrival, setArrival] = useState('');
   const todayLocal = localDay(new Date());
@@ -247,6 +271,11 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const [instructions, setInstructions] = useState('');
   const [pickupNotes, setPickupNotes] = useState('');
   const [take, setTake] = useState<PickupTake>(emptyPickupTake);
+  // Parcelado: a equipe leva a maquininha na retirada (dá para desmarcar).
+  useEffect(() => {
+    if (payKind === 'PARCELADO' && withPickup)
+      setTake((t) => (t.bringCardMachine ? t : { ...t, bringCardMachine: true }));
+  }, [payKind, withPickup]);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -311,19 +340,15 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
       quoteId: fromQuote?.id ?? null,
       service: {
         contractedService: contractedText,
-        agreedValueCents: d?.canSetValues ? value : null,
-        paymentTerms: d?.canSetValues ? blank(terms) : null,
+        agreedValueCents: d?.canSetValues ? chargeValue : null,
+        paymentTerms: d?.canSetValues && value ? payText : null,
         payment:
           d?.canSetValues && value
             ? {
                 model: payModel,
-                entryCents: payModel === 'ENTRADA_ENTREGA' ? entry : null,
-                entryMethod: payModel === 'ENTRADA_ENTREGA' ? entryMethod : null,
-                balanceMethod: payModel === 'ENTRADA_ENTREGA' ? balanceMethod : null,
-                installments:
-                  payModel === 'CARTAO_100' || payModel === 'CARTAO_RETIRADA'
-                    ? Number(installments) || 1
-                    : null,
+                entryMethod: payKind === 'AVISTA' ? entryMethod : null,
+                balanceMethod: payKind === 'AVISTA' ? entryMethod : null,
+                installments: payKind === 'PARCELADO' ? Number(installments) || 1 : null,
               }
             : null,
         promisedDate: promised,
@@ -335,7 +360,8 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
           quantity: Number(p.quantity),
           serviceType: p.serviceType,
           fabricName: blank(p.fabricName),
-          agreedValueCents: d?.canSetValues ? p.valueCents : null,
+          // Parcelado com taxa: o total muda, então o valor por peça não vai (seria outra soma).
+          agreedValueCents: d?.canSetValues && chargeValue === value ? p.valueCents : null,
           plannedUpholstererUserId: d?.canPlanUpholsterer ? p.upholsterer || null : null,
           plannedLaborUnitCents:
             d?.canPlanLabor && p.upholsterer && laborAllowed(d, p.upholsterer)
@@ -376,11 +402,11 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
     contractedText,
     d,
     value,
-    terms,
+    chargeValue,
+    payText,
     payModel,
-    entry,
+    payKind,
     entryMethod,
-    balanceMethod,
     installments,
     promised,
     bizDaysN,
@@ -401,7 +427,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const save = useMutation({
     mutationFn: () => {
       if (!valueOk) throw new Error('Valor fechado inválido.');
-      if (!entryOk || pieces.some((p) => !p.valueOk)) throw new Error('Valor inválido.');
+      if (pieces.some((p) => !p.valueOk)) throw new Error('Valor inválido.');
       const piecesWithValue = pieces.filter((p) => p.valueCents !== null).length;
       if (piecesWithValue && piecesWithValue !== pieces.length)
         throw new Error('Informe o valor de todas as peças ou de nenhuma.');
@@ -461,17 +487,6 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   });
 
   const err = (k: string) => errors[k];
-  // Erro num campo do serviço que está só no resumo: abre os campos para corrigir.
-  if (
-    !editService &&
-    Object.keys(errors).some(
-      (k) =>
-        k.startsWith('service.') &&
-        k !== 'service.promisedDate' &&
-        k !== 'service.deliveryBusinessDays',
-    )
-  )
-    setEditService(true);
   const ownerName = (id: string) => d.upholsterers.find((u) => u.userId === id)?.displayName ?? '—';
   const setPiece = (key: string, patch: Partial<PieceRow>) =>
     setPieces((list) => list.map((p) => (p.key === key ? { ...p, ...patch } : p)));
@@ -786,23 +801,9 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
         title="Serviço fechado"
         id="ns-servico"
         description={
-          fromQuote && !editService
-            ? `Tudo veio do orçamento nº ${fromQuote.number}. Confira e, se precisar, altere.`
-            : 'Só o que já foi combinado. Detalhes técnicos ficam para quando as peças chegarem.'
-        }
-        actions={
-          fromQuote && !editService ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              icon={<Pencil className="size-4" aria-hidden />}
-              onClick={() => setEditService(true)}
-              data-testid="ns-edit-service"
-            >
-              Alterar dados
-            </Button>
-          ) : undefined
+          fromQuote
+            ? `Definido no orçamento nº ${fromQuote.number}. Tecido e tapeceiro se definem na OS.`
+            : 'Só o que já foi combinado. Tecido e tapeceiro se definem na OS.'
         }
       >
         {fromQuote && !editService ? (
@@ -810,14 +811,6 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
             pieces={pieces}
             contracted={contractedText}
             value={d.canSetValues ? value : null}
-            payment={
-              d.canSetValues && value
-                ? payModel === 'ENTRADA_ENTREGA'
-                  ? `Entrada de ${brl(entry ?? value - Math.floor(value / 2))} (${PAYMENT_METHOD_LABEL[entryMethod]}) e saldo na entrega (${PAYMENT_METHOD_LABEL[balanceMethod]})`
-                  : PAYMENT_MODEL_LABEL[payModel]
-                : null
-            }
-            terms={d.canSetValues ? terms : ''}
             notes={technicalNotes}
           />
         ) : (
@@ -867,7 +860,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
                   <TextField
                     label="Descrição"
                     required
-                    cols={4}
+                    cols={3}
                     value={p.description}
                     onChange={(e) => setPiece(p.key, { description: e.target.value })}
                     error={err(`service.items.${idx}.description`)}
@@ -883,13 +876,6 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
                     error={err(`service.items.${idx}.quantity`)}
                     data-testid={`ns-piece-qty-${idx}`}
                   />
-                  <TextField
-                    label="Tecido"
-                    cols={3}
-                    placeholder="Se já escolhido"
-                    value={p.fabricName}
-                    onChange={(e) => setPiece(p.key, { fabricName: e.target.value })}
-                  />
                   <FieldAction cols={2} className="sm:!col-span-1">
                     <Button
                       type="button"
@@ -900,31 +886,6 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
                       icon={<Trash2 className="size-4" />}
                     />
                   </FieldAction>
-                  {/* Do orçamento, o tapeceiro fica para o planejamento/OS (não se decide ao fechar). */}
-                  {d.canPlanUpholsterer && !fromQuote && (
-                    <SelectField
-                      label="Tapeceiro titular (previsto)"
-                      cols={4}
-                      value={p.upholsterer}
-                      onChange={(e) =>
-                        setPiece(p.key, {
-                          upholsterer: e.target.value,
-                          ...(laborAllowed(d, e.target.value)
-                            ? {}
-                            : { laborCents: null, laborOk: true }),
-                        })
-                      }
-                      error={err(`service.items.${idx}.plannedUpholstererUserId`)}
-                      data-testid={`ns-piece-owner-${idx}`}
-                    >
-                      <option value="">Definir no planejamento</option>
-                      {d.upholsterers.map((u) => (
-                        <option key={u.userId} value={u.userId}>
-                          {u.displayName}
-                        </option>
-                      ))}
-                    </SelectField>
-                  )}
                   {d.canSetValues && (
                     <MoneyField
                       label="Valor da peça (opcional)"
@@ -938,21 +899,6 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
                           : err(`service.items.${idx}.agreedValueCents`)
                       }
                       data-testid={`ns-piece-value-${idx}`}
-                    />
-                  )}
-                  {d.canPlanLabor && p.upholsterer && laborAllowed(d, p.upholsterer) && (
-                    <MoneyField
-                      label="Mão de obra prevista (por unidade)"
-                      cols={4}
-                      cents={p.laborCents}
-                      onCents={(v, ok) => setPiece(p.key, { laborCents: v, laborOk: ok })}
-                      hint="Previsão aplicada na OS criada ao registrar."
-                      error={
-                        !p.laborOk
-                          ? 'Valor inválido.'
-                          : err(`service.items.${idx}.plannedLaborUnitCents`)
-                      }
-                      data-testid={`ns-piece-labor-${idx}`}
                     />
                   )}
                 </FormGrid>
@@ -972,112 +918,45 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
           </>
         )}
         <FormGrid className="mt-5">
-          {editService && (
-            <>
-              {d.canSetValues && (
-                <MoneyField
-                  label="Valor total fechado"
-                  cols={4}
-                  cents={value}
-                  onCents={(v, ok) => {
-                    setValue(v);
-                    setValueOk(ok);
-                  }}
-                  error={!valueOk ? 'Valor inválido.' : err('service.agreedValueCents')}
-                  data-testid="ns-value"
-                />
-              )}
-              {d.canSetValues && (
-                <TextField
-                  label="Condições de pagamento (observação)"
-                  cols={5}
-                  value={terms}
-                  onChange={(e) => setTerms(e.target.value)}
-                />
-              )}
-              {d.canSetValues && value !== null && value > 0 && (
-                <>
-                  <SelectField
-                    label="Condição de pagamento"
-                    cols={4}
-                    value={payModel}
-                    onChange={(e) => setPayModel(e.target.value as PaymentModel)}
-                    data-testid="ns-pay-model"
-                  >
-                    {PAYMENT_MODELS.filter((m) => withPickup || m !== 'CARTAO_RETIRADA').map(
-                      (m) => (
-                        <option key={m} value={m}>
-                          {PAYMENT_MODEL_LABEL[m]}
-                        </option>
-                      ),
-                    )}
-                  </SelectField>
-                  {payModel === 'ENTRADA_ENTREGA' && (
-                    <>
-                      <MoneyField
-                        label="Entrada"
-                        cols={3}
-                        cents={entry}
-                        onCents={(v, ok) => {
-                          setEntry(v);
-                          setEntryOk(ok);
-                        }}
-                        hint={`Vazio = metade (${brl(value - Math.floor(value / 2))}). Saldo vence na entrega.`}
-                        data-testid="ns-pay-entry"
-                      />
-                      <SelectField
-                        label="Forma da entrada"
-                        cols={2}
-                        value={entryMethod}
-                        onChange={(e) => setEntryMethod(e.target.value as PaymentMethod)}
-                      >
-                        {PAYMENT_METHODS.map((m) => (
-                          <option key={m} value={m}>
-                            {PAYMENT_METHOD_LABEL[m]}
-                          </option>
-                        ))}
-                      </SelectField>
-                      <SelectField
-                        label="Forma do saldo"
-                        cols={3}
-                        value={balanceMethod}
-                        onChange={(e) => setBalanceMethod(e.target.value as PaymentMethod)}
-                      >
-                        {PAYMENT_METHODS.map((m) => (
-                          <option key={m} value={m}>
-                            {PAYMENT_METHOD_LABEL[m]}
-                          </option>
-                        ))}
-                      </SelectField>
-                    </>
-                  )}
-                  {(payModel === 'CARTAO_100' || payModel === 'CARTAO_RETIRADA') && (
-                    <SelectField
-                      label="Parcelas"
-                      cols={2}
-                      value={installments}
-                      onChange={(e) => setInstallments(e.target.value)}
-                      data-testid="ns-pay-installments"
-                    >
-                      {Array.from({ length: 12 }, (_, i) => String(i + 1)).map((n) => (
-                        <option key={n} value={n}>
-                          {n}×
-                        </option>
-                      ))}
-                    </SelectField>
-                  )}
-                  {pieces.every((p) => p.valueCents === null) && (
-                    <p
-                      className="text-xs text-warn-600 sm:col-span-12"
-                      data-testid="ns-estimated-hint"
-                    >
-                      Sem valor por peça: o Resultado de cada OS usará uma distribuição estimada
-                      (proporcional às peças).
-                    </p>
-                  )}
-                </>
-              )}
-            </>
+          {editService && d.canSetValues && (
+            <MoneyField
+              label="Valor total fechado (à vista)"
+              cols={4}
+              cents={value}
+              onCents={(v, ok) => {
+                setValue(v);
+                setValueOk(ok);
+              }}
+              error={!valueOk ? 'Valor inválido.' : err('service.agreedValueCents')}
+              data-testid="ns-value"
+            />
+          )}
+          {editService &&
+            d.canSetValues &&
+            value !== null &&
+            value > 0 &&
+            pieces.length > 1 &&
+            pieces.every((p) => p.valueCents === null) && (
+              <p
+                className="self-end pb-2 text-xs text-ink-muted sm:col-span-8"
+                data-testid="ns-estimated-hint"
+              >
+                Sem valor por peça: o Resultado de cada OS usa uma divisão estimada.
+              </p>
+            )}
+          {d.canSetValues && value !== null && value > 0 && (
+            <PaymentChoice
+              kind={payKind}
+              onKind={setPayKind}
+              method={entryMethod}
+              onMethod={setEntryMethod}
+              installments={installments}
+              onInstallments={setInstallments}
+              fees={cardFees}
+              value={value}
+              chargeValue={chargeValue ?? value}
+              withPickup={withPickup}
+            />
           )}
           <NumberField
             label="Prazo de entrega (dias úteis)"
@@ -1539,20 +1418,16 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
   );
 }
 
-/** Serviço fechado vindo do orçamento: só para conferir (os campos abrem em "Alterar dados"). */
+/** Serviço fechado vindo do orçamento: travado (definido no orçamento). */
 function QuoteServiceSummary({
   pieces,
   contracted,
   value,
-  payment,
-  terms,
   notes,
 }: {
   pieces: PieceRow[];
   contracted: string;
   value: number | null;
-  payment: string | null;
-  terms: string;
   notes: string;
 }) {
   const rows: [string, React.ReactNode][] = [
@@ -1568,23 +1443,14 @@ function QuoteServiceSummary({
         ))}
       </ul>,
     ],
-    [
-      'Tecido',
-      pieces
-        .map((p) => p.fabricName)
-        .filter(Boolean)
-        .join(', ') || 'Sem troca de tecido',
-    ],
   ];
   if (value !== null)
     rows.push([
-      'Valor fechado',
+      'Valor à vista',
       <span key="v" className="money font-semibold">
         {brl(value)}
       </span>,
     ]);
-  if (payment) rows.push(['Pagamento', payment]);
-  if (terms.trim()) rows.push(['Condições', terms]);
   if (notes.trim()) rows.push(['Observações', notes]);
   return (
     <dl
@@ -1598,5 +1464,127 @@ function QuoteServiceSummary({
         </div>
       ))}
     </dl>
+  );
+}
+
+/** 2026-11-18 (Raphael): forma de pagamento do cliente — à vista (50/50) ou parcelado. */
+function PaymentChoice({
+  kind,
+  onKind,
+  method,
+  onMethod,
+  installments,
+  onInstallments,
+  fees,
+  value,
+  chargeValue,
+  withPickup,
+}: {
+  kind: 'AVISTA' | 'PARCELADO';
+  onKind: (k: 'AVISTA' | 'PARCELADO') => void;
+  method: PaymentMethod;
+  onMethod: (m: PaymentMethod) => void;
+  installments: string;
+  onInstallments: (n: string) => void;
+  fees: { installments: number; rateBps: number }[];
+  value: number;
+  chargeValue: number;
+  withPickup: boolean;
+}) {
+  const half = value - Math.floor(value / 2);
+  const options = fees.length
+    ? fees
+    : Array.from({ length: 11 }, (_, i) => ({ installments: i + 2, rateBps: 0 }));
+  const n = Number(installments) || 1;
+  const pctText = (bps: number) => `${(bps / 100).toLocaleString('pt-BR')}%`;
+  const choice = (k: 'AVISTA' | 'PARCELADO', title: string, sub: string) => (
+    <label
+      className={clsx(
+        'flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition',
+        kind === k
+          ? 'border-brand-600 bg-brand-50 ring-1 ring-brand-600'
+          : 'border-line hover:bg-subtle',
+      )}
+    >
+      <input
+        type="radio"
+        name="ns-pay-kind"
+        className="mt-1 accent-brand-700"
+        checked={kind === k}
+        onChange={() => onKind(k)}
+        data-testid={`ns-pay-${k.toLowerCase()}`}
+      />
+      <span>
+        <span className="block font-semibold text-ink">{title}</span>
+        <span className="block text-sm text-ink-muted">{sub}</span>
+      </span>
+    </label>
+  );
+  return (
+    <div className="space-y-3 sm:col-span-12" data-testid="ns-payment">
+      <p className="text-sm font-medium text-ink">Forma de pagamento do cliente</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {choice(
+          'AVISTA',
+          'À vista',
+          `50% ${withPickup ? 'na retirada' : 'ao deixar as peças'} (${brl(half)}) e 50% na entrega (${brl(value - half)}).`,
+        )}
+        {choice(
+          'PARCELADO',
+          'Parcelado no cartão',
+          withPickup
+            ? 'Cobrado na retirada, com a taxa da maquininha. A equipe leva a maquininha.'
+            : 'Cobrado hoje, com a taxa da maquininha.',
+        )}
+      </div>
+      {kind === 'AVISTA' ? (
+        <FormGrid>
+          <SelectField
+            label="Forma"
+            cols={4}
+            value={method}
+            onChange={(e) => onMethod(e.target.value as PaymentMethod)}
+            data-testid="ns-pay-method"
+          >
+            {PAYMENT_METHODS.filter((m) => m !== 'CARTAO_CREDITO').map((m) => (
+              <option key={m} value={m}>
+                {PAYMENT_METHOD_LABEL[m]}
+              </option>
+            ))}
+          </SelectField>
+        </FormGrid>
+      ) : (
+        <FormGrid>
+          <SelectField
+            label="Parcelas"
+            cols={4}
+            value={installments}
+            onChange={(e) => onInstallments(e.target.value)}
+            data-testid="ns-pay-installments"
+          >
+            {options.map((f) => (
+              <option key={f.installments} value={String(f.installments)}>
+                {f.installments}×{f.rateBps ? ` (taxa ${pctText(f.rateBps)})` : ''}
+              </option>
+            ))}
+          </SelectField>
+          <div
+            className="self-end pb-2 text-sm sm:col-span-8"
+            data-testid="ns-pay-installment-total"
+          >
+            <strong className="money">{brl(chargeValue)}</strong> em {n}× de{' '}
+            <span className="money">{brl(Math.ceil(chargeValue / n))}</span>
+            {chargeValue !== value && (
+              <span className="block text-ink-muted">À vista seria {brl(value)}.</span>
+            )}
+            {!fees.length && (
+              <span className="block text-warn-600">
+                Sem taxas da maquininha cadastradas na Base de dados do orçamento.
+              </span>
+            )}
+          </div>
+        </FormGrid>
+      )}
+    </div>
   );
 }

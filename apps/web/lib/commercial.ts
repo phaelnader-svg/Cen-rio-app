@@ -174,6 +174,8 @@ export interface AvailableForOs {
   quote: {
     number: number;
     service: string;
+    /** Serviço do tapeceiro escolhido no orçamento (sem valor). */
+    upholsteryService?: string | null;
     fabricName: string;
     details: string[];
     notes: string;

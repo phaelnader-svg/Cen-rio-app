@@ -38,6 +38,7 @@ import {
   OrderDeadlineBadge,
   OrderStatusBadge,
   PickupStatusBadge,
+  ReworkBanner,
   ServiceOrderStatusBadge,
   ServiceStateBadge,
 } from './badges';
@@ -83,6 +84,7 @@ export function OrderDetail({ id }: { id: string }) {
   return (
     <>
       <BackLink href="/painel/pedidos" label="Pedidos comerciais" />
+      <ReworkBanner rework={o.rework} />
       <PageHeader
         title={`Pedido ${o.code}`}
         description={`${o.customer.name} · criado em ${formatDateTime(o.createdAt)}${o.createdBy ? ` por ${o.createdBy}` : ''}`}

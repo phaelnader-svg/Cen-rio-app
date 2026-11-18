@@ -112,7 +112,6 @@ export function QuoteEditor({
   const find = (id: string | null) => (id ? catalog.find((c) => c.id === id) : undefined);
   const route = find(d.logisticsId);
   const ups = find(d.upholsteryServiceId);
-  const help = find(d.helperServiceId);
 
   /** O mesmo serviço do tapeceiro busca o serviço correspondente do ajudante. */
   const helperFor = (upsId: string | null) => {
@@ -124,15 +123,6 @@ export function QuoteEditor({
       null
     );
   };
-  const helperMatch = helperFor(d.upholsteryServiceId);
-  const helperNote = !d.upholsteryServiceId
-    ? 'Ao escolher o serviço do tapeceiro, buscamos o mesmo serviço do ajudante.'
-    : helperMatch
-      ? helperMatch.priceCents === null
-        ? 'Este serviço do ajudante ainda não tem preço. Cadastre-o na Base de dados.'
-        : 'Valor do ajudante preenchido automaticamente pelo mesmo serviço do tapeceiro.'
-      : 'Não há serviço correspondente do ajudante na Base de dados. Cadastre-o para vincular automaticamente.';
-
   // Mantém o ajudante coerente com o tapeceiro (inclusive depois de mudanças na base).
   useEffect(() => {
     const id = helperFor(d.upholsteryServiceId)?.id ?? null;
@@ -300,7 +290,7 @@ export function QuoteEditor({
         <FormGrid>
           <SelectField
             label="Serviço do tapeceiro"
-            cols={8}
+            cols={6}
             value={d.upholsteryServiceId ?? ''}
             onChange={(e) => update({ upholsteryServiceId: e.target.value || null })}
           >
@@ -316,13 +306,13 @@ export function QuoteEditor({
             type="number"
             min={1}
             step={1}
-            cols={4}
+            cols={2}
             value={String(d.sofaCount)}
             onChange={(e) => {
               const v = Math.floor(Number(e.target.value));
               update({ sofaCount: Number.isFinite(v) && v >= 1 ? v : 1 });
             }}
-            hint="Quantas peças: multiplica a mão de obra do tapeceiro e do ajudante."
+            hint="Multiplica a mão de obra."
           />
           <TextField
             label="Custo do tapeceiro"
@@ -333,35 +323,6 @@ export function QuoteEditor({
               ups ? (ups.priceCents === null ? 'Não cadastrado' : formatCents(ups.priceCents)) : ''
             }
             hint="Valor definido na Base de dados."
-          />
-          <SelectField
-            label="Serviço do ajudante"
-            cols={4}
-            disabled
-            value={d.helperServiceId ?? ''}
-            onChange={() => undefined}
-          >
-            <option value="">Sem ajudante</option>
-            {helpers.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.name} —{' '}
-                {x.priceCents === null ? 'Preço não cadastrado' : formatCents(x.priceCents)}
-              </option>
-            ))}
-          </SelectField>
-          <TextField
-            label="Custo do ajudante"
-            cols={4}
-            readOnly
-            placeholder="Selecione o serviço"
-            value={
-              help
-                ? help.priceCents === null
-                  ? 'Não cadastrado'
-                  : formatCents(help.priceCents)
-                : ''
-            }
-            hint={helperNote}
           />
           <MoneyField
             label="Lucro bruto desejado"
@@ -396,7 +357,7 @@ export function QuoteEditor({
             <SummaryRow label="Materiais" value={brl(t.materials)} />
             <SummaryRow label="Logística" value={brl(t.logistics)} />
             <SummaryRow label="Tapeceiro" value={brl(t.upholstery)} />
-            <SummaryRow label="Ajudante" value={brl(t.helper)} />
+            {t.helper > 0 && <SummaryRow label="Ajudante" value={brl(t.helper)} />}
             <SummaryRow label="Mão de obra total" value={brl(t.labor)} />
             <SummaryRow label="Custo total" value={brl(t.cost)} strong />
             <SummaryRow label="Lucro bruto desejado" value={brl(t.profit)} />

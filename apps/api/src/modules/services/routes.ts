@@ -1,5 +1,7 @@
 import {
   addBusinessDays,
+  installmentsOf,
+  MAX_INSTALLMENTS,
   paymentPlan,
   paymentPlanProblem,
   EVENT_TYPES,
@@ -231,6 +233,22 @@ export async function schedulePickup(
   return { responsible, participants, pickup, cost };
 }
 
+/** Taxas da maquininha cadastradas na Base de dados do orçamento ("3X" → 3 parcelas). */
+async function cardFees(db: PrismaClient) {
+  const rows = await db.quoteCatalogItem.findMany({
+    where: { kind: 'TAXA_MAQUINA', rateBps: { not: null } },
+    select: { name: true, rateBps: true },
+  });
+  const byN = new Map<number, number>();
+  for (const r of rows) {
+    const n = installmentsOf(r.name);
+    if (n >= 1 && n <= MAX_INSTALLMENTS && !byN.has(n)) byN.set(n, r.rateBps!);
+  }
+  return [...byN.entries()]
+    .map(([installments, rateBps]) => ({ installments, rateBps }))
+    .sort((a, b) => a.installments - b.installments);
+}
+
 export async function serviceRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -263,6 +281,7 @@ export async function serviceRoutes(app: FastifyInstance) {
         upholsterers: canPlanUpholsterer(perms) ? upholsterersOf(await loadTeam(prisma)) : [],
         canPlanUpholsterer: canPlanUpholsterer(perms),
         canPlanLabor: canPlanLabor(perms),
+        cardFees: perms.has('pedidos.valores') ? await cardFees(prisma) : [],
       };
     },
   );
@@ -377,7 +396,9 @@ export async function serviceRoutes(app: FastifyInstance) {
           });
           if (problem) throw Errors.business(problem);
           const today = todayIso(await shopTimezone(tx));
-          for (const d of paymentPlan(s.agreedValueCents!, s.payment, today))
+          for (const d of paymentPlan(s.agreedValueCents!, s.payment, today, {
+            customerDropOff: !p,
+          }))
             await createReceivable(tx, actor, {
               orderId: order.id,
               description: d.description,

@@ -20,8 +20,20 @@ import {
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Ban, CheckCircle2, Circle, Clock3, Info, Pencil, Plus, Ruler, Trash2 } from 'lucide-react';
+import {
+  Ban,
+  CheckCircle2,
+  Circle,
+  Clock3,
+  FileText,
+  Info,
+  Pencil,
+  Plus,
+  Ruler,
+  Trash2,
+} from 'lucide-react';
 import Link from 'next/link';
+import { buttonClass } from '@/components/ui/button-styles';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -43,7 +55,7 @@ import { useCan } from '@/lib/hooks';
 import { useEmployees, useServiceTimeline } from '@/lib/queries';
 import { usePieces } from '@/lib/quality';
 import { OsProduction } from '@/components/production/os-production';
-import { DeadlineBadge, PriorityBadge, ServiceOrderStatusBadge } from './badges';
+import { DeadlineBadge, PriorityBadge, ReworkBanner, ServiceOrderStatusBadge } from './badges';
 import { MaterialPurchasedButton } from './material-purchased';
 import { PhotoGallery } from './photo-gallery';
 import { BackLink, Detail, Section } from './section';
@@ -177,11 +189,20 @@ export function ServiceOrderDetail({ id }: { id: string }) {
   return (
     <>
       <BackLink href="/painel/os" label="Ordens de serviço" />
+      <ReworkBanner rework={s.rework} />
       <PageHeader
         title={s.code}
         description={`${s.customer.name} · pedido ${s.order.code} · criada em ${formatDateTime(s.createdAt)}${s.createdBy ? ` por ${s.createdBy}` : ''}`}
         actions={
           <>
+            <Link
+              href={`/painel/os/${s.id}/ficha`}
+              className={buttonClass('secondary', 'md')}
+              data-testid="os-open-sheet"
+            >
+              <FileText className="size-4" aria-hidden />
+              Abrir OS
+            </Link>
             {s.status !== 'CANCELADA' && (
               <QrLabelButton
                 serviceOrderId={s.id}

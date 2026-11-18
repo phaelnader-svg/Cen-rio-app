@@ -20,7 +20,7 @@ const dateBr = (iso: string) => new Date(iso).toLocaleDateString('pt-BR');
 const dayBr = (day: string) =>
   day ? new Date(`${day}T12:00:00`).toLocaleDateString('pt-BR') : '—';
 
-function Eyebrow({ children, light }: { children: React.ReactNode; light?: boolean }) {
+export function Eyebrow({ children, light }: { children: React.ReactNode; light?: boolean }) {
   return (
     <p
       className={clsx(
@@ -40,7 +40,7 @@ function Logo({ src, className }: { src: string | null; className?: string }) {
   return <img src={src} alt="Logotipo da empresa" className={clsx('object-contain', className)} />;
 }
 
-function DocHeader({
+export function DocHeader({
   company,
   logo,
   kicker,

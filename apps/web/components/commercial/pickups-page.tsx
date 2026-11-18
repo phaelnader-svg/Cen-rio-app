@@ -12,7 +12,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { holidayOf } from '@/lib/holidays';
 import { addDays, arrivalText, formatDay, todayIso, usePickups, weekStart } from '@/lib/commercial';
-import { PickupStatusBadge } from './badges';
+import { PickupStatusBadge, ReworkBadge } from './badges';
 import { useFocusParam } from '@/lib/focus-param';
 import { PickupDetailDialog } from './pickup-detail';
 
@@ -53,17 +53,20 @@ function AgendaItem({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
         'w-full rounded-lg border px-2 py-1.5 text-left text-xs leading-snug hover:shadow-[var(--shadow-card)]',
         p.status === 'CANCELADA'
           ? 'border-line bg-subtle text-ink-muted line-through'
-          : p.status === 'COM_OCORRENCIA'
-            ? 'border-danger-600/30 bg-surface'
-            : p.status === 'RECEBIDA_NA_OFICINA'
-              ? 'border-ok-600/20 bg-ok-50'
-              : 'border-info-600/20 bg-info-50',
+          : p.rework
+            ? 'border-danger-600/40 bg-danger-50 text-danger-700'
+            : p.status === 'COM_OCORRENCIA'
+              ? 'border-danger-600/30 bg-surface'
+              : p.status === 'RECEBIDA_NA_OFICINA'
+                ? 'border-ok-600/20 bg-ok-50'
+                : 'border-info-600/20 bg-info-50',
       )}
     >
       <span className="block font-semibold">
         {p.windowStart ? `${p.windowStart}${p.windowEnd ? `–${p.windowEnd}` : ''}` : 'Sem horário'}
       </span>
       <span className="block truncate font-medium">{p.customer.name}</span>
+      {p.rework && <span className="block font-semibold">Retrabalho</span>}
       <span className="sr-only">
         {p.code} · {PICKUP_STATUS_LABEL[p.status]}
       </span>
@@ -76,7 +79,10 @@ function PickupLine({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5 text-left hover:bg-subtle/70"
+      className={clsx(
+        'flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5 text-left hover:bg-subtle/70',
+        p.rework && 'border-l-4 border-l-danger-600',
+      )}
       data-testid={`pickup-${p.code}`}
     >
       <span className="w-20 font-mono text-sm font-semibold">{p.code}</span>
@@ -99,6 +105,7 @@ function PickupLine({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
           ? `${formatDay(p.scheduledDate)}${p.windowStart ? ` · ${arrivalText(p.windowStart, p.windowEnd)}` : ''}`
           : 'Sem data'}
       </span>
+      <ReworkBadge rework={p.rework} />
       <PickupStatusBadge status={p.status} />
     </button>
   );
