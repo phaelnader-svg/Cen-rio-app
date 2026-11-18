@@ -9,7 +9,8 @@ import { loginAdmin, openTablet, registerDevice, setPin } from './helpers';
  *  2. Possível duplicidade: o cadastro encontrado é oferecido e reutilizado.
  *  3. Equipe própria sugere Thiago (configuração da Empresa).
  *  4. André no celular vê a retirada no roteiro, com horário de chegada e sem valores.
- *  5. Chegada parcial pelo painel: a OS nasce automaticamente só com as peças recebidas.
+ *  5. Fluxo da OS (2026-11-18): o fechamento não gera OS; "Peça chegou" e "Gerar ordem de
+ *     serviço" no pedido, com a tela preenchida pelos dados do serviço.
  */
 const origin = `http://localhost:${E2E.webPort}`;
 const evidence = (page: Page, name: string) =>
@@ -113,9 +114,8 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await expect(page.getByTestId('ns-done-cost')).toHaveText('R$ 100,00');
     await evidence(page, '02-novo-servico-confirmacao');
     const orderCode = (await page.getByTestId('ns-done-order').textContent())!.trim();
-    // A OS nasce no fechamento do serviço (recebimentos removidos em 16/11/2026).
-    await expect(page.getByTestId('ns-done-os')).toHaveText(/OS-\d{5}/);
-    const osCode = (await page.getByTestId('ns-done-os').textContent())!.trim();
+    // Fluxo da OS (2026-11-18): o fechamento cria o pedido e a retirada, sem OS.
+    await expect(page.getByTestId('ns-done-next')).toContainText('1 hora depois');
     await page.getByTestId('ns-open-order').click();
     await page.waitForURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
     const orderId = page.url().split('/').pop()!;
@@ -158,11 +158,18 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await evidence(andre.page, '04-celular-andre-roteiro');
     await andre.context.close();
 
-    // ── 5. A OS do fechamento tem todas as peças do serviço, com o tipo de cada uma.
+    // ── 5. A peça chegou: "Peça chegou na tapeçaria" e "Gerar ordem de serviço" no pedido.
+    await page.goto(`/painel/pedidos/${orderId}`);
+    await expect(page.getByTestId('order-waiting-arrival')).toBeVisible();
+    await page.getByTestId('order-mark-arrived').click();
+    await page.getByTestId('order-generate-os').click();
+    await page.waitForURL(/\/painel\/os\/nova/);
+    await page.getByRole('button', { name: 'Gerar OS' }).click();
+    await page.waitForURL(/\/painel\/os\/[0-9a-f-]{36}$/);
     const order = await call(page, 'GET', `/api/v1/orders/${orderId}`);
     const list = await call(page, 'GET', `/api/v1/service-orders?orderId=${orderId}`);
     const found = (Array.isArray(list) ? list : list.items) as { id: string; code: string }[];
-    expect(found.map((x) => x.code)).toEqual([osCode]);
+    expect(found).toHaveLength(1);
     const so = await call(page, 'GET', `/api/v1/service-orders/${found[0]!.id}`);
     expect(
       so.items.map((i: { description: string; quantity: number; serviceType: string }) => [
@@ -178,7 +185,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     expect(order.code).toBe(orderCode);
   });
 
-  test('cliente entrega na tapeçaria: sem retirada; OS no fechamento e peças marcadas na oficina', async ({
+  test('cliente entrega na tapeçaria: sem retirada; peça marcada no pedido e OS gerada depois', async ({
     page,
   }) => {
     await loginAdmin(page);
@@ -203,13 +210,15 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     const orderId = page.url().split('/').pop()!;
     const pickups = await call(page, 'GET', `/api/v1/pickups?orderId=${orderId}`);
     expect(Array.isArray(pickups) ? pickups : pickups.items).toHaveLength(0);
-    // O cliente chega com a peça: "Peças na oficina" no pedido (a OS já nasceu no fechamento).
+    // O cliente chega com a peça: "Peça chegou na tapeçaria" no pedido; a OS vem depois.
+    await expect(page.getByTestId('order-generate-os')).toHaveCount(0);
     await page.getByTestId('order-mark-arrived').click();
     await expect(page.getByTestId('order-mark-arrived')).toHaveCount(0);
+    await expect(page.getByTestId('order-generate-os')).toBeVisible();
     const sos = await call(page, 'GET', `/api/v1/service-orders?orderId=${orderId}`);
-    expect(Array.isArray(sos) ? sos : sos.items).toHaveLength(1);
+    expect(Array.isArray(sos) ? sos : sos.items).toHaveLength(0);
   });
-  test('titular e mão de obra previstos no fechamento; OS nasce com eles; alteração no pedido não muda a OS', async ({
+  test('titular e mão de obra previstos no fechamento; a OS gerada vem com eles; alteração no pedido não muda a OS', async ({
     page,
   }) => {
     await loginAdmin(page);
@@ -234,12 +243,18 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     const owner = page.getByTestId('order-item-owner-0');
     await expect(owner).toContainText('Titular previsto: Ricardo');
     await expect(owner).toContainText(/mão de obra prevista R\$\s250,00\/un\./);
-    // A OS nasce no fechamento, já com o titular e a mão de obra prevista.
+    // Peça chegou → Gerar OS: a tela já vem com o titular e a mão de obra prevista.
+    await page.getByTestId('order-mark-arrived').click();
+    await page.getByTestId('order-generate-os').click();
+    await page.waitForURL(/\/painel\/os\/nova/);
+    await page.getByRole('button', { name: 'Gerar OS' }).click();
+    await page.waitForURL(/\/painel\/os\/[0-9a-f-]{36}$/);
     const sos = await call(page, 'GET', `/api/v1/service-orders?orderId=${orderId}`);
     const found = (Array.isArray(sos) ? sos : sos.items) as { id: string }[];
     expect(found).toHaveLength(1);
+    await page.goto(`/painel/pedidos/${orderId}`);
 
-    // Alteração antes da chegada: Márcio, R$ 280,00 por unidade.
+    // Alteração depois da OS gerada: Márcio, R$ 280,00 por unidade.
     await page.getByTestId('order-planned-edit').click();
     const dlg = page.getByRole('dialog');
     await dlg.getByTestId('planned-owner-0').selectOption({ label: 'Márcio' });

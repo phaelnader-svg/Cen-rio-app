@@ -2,7 +2,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
-import { createCustomer, createOrder, panelUserWith } from './commercial-helpers';
+import {
+  createCustomer,
+  createOrder,
+  generateOsFromOrder,
+  panelUserWith,
+} from './commercial-helpers';
 import { day, userIdOf } from './production-helpers';
 
 /**
@@ -114,10 +119,10 @@ describe('A. Fechamento: persistência e validação', () => {
       [{ userId: ricardo, displayName: 'Ricardo' }, 30000],
       [{ userId: marcio, displayName: 'Márcio' }, 15000],
     ]);
-    // D1: a OS nasce no fechamento e já aplica o titular e a mão de obra previstos (combinada,
-    // liberada só pela regra de elegibilidade); nenhum pagamento nasce no fechamento.
-    expect(await db().serviceOrder.count()).toBe(1);
-    expect(await db().productionPayable.count()).toBe(2);
+    // Fluxo da OS (2026-11-18): o fechamento não gera OS nem obrigação; o previsto fica no
+    // pedido e preenche a OS quando ela for gerada.
+    expect(await db().serviceOrder.count()).toBe(0);
+    expect(await db().productionPayable.count()).toBe(0);
     const log = await db().auditLog.findFirstOrThrow({
       where: { action: 'order.created', entityId: r.body.order.id },
     });
@@ -211,8 +216,8 @@ describe('A. Fechamento: persistência e validação', () => {
   });
 });
 
-describe('B. Fechamento: a OS nasce junto, com o titular e a mão de obra prevista', () => {
-  it('a OS nasce no fechamento com todas as peças; previsto = unidade × quantidade; repetição não duplica', async () => {
+describe('B. A OS gerada no pedido vem com o titular e a mão de obra prevista', () => {
+  it('OS com todas as peças; previsto = unidade × quantidade; repetição do fechamento não duplica', async () => {
     const admin = await loginAdmin(app);
     const ricardo = await userIdOf('Ricardo');
     const marcio = await userIdOf('Márcio');
@@ -223,10 +228,12 @@ describe('B. Fechamento: a OS nasce junto, com o titular e a mão de obra previs
     ] as const;
     const r = await closeService(admin, intent[0], intent[1], key);
     expect(r.status, JSON.stringify(r.body)).toBe(201);
-    expect(r.body.serviceOrder).toMatchObject({ id: expect.any(String), code: expect.any(String) });
+    expect(r.body).not.toHaveProperty('serviceOrder');
     // Mesma chave: mesmo resultado, nada em dobro.
     expect((await closeService(admin, intent[0], intent[1], key)).body).toEqual(r.body);
     const orderId = r.body.order.id as string;
+    expect(await db().serviceOrder.count({ where: { orderId } })).toBe(0);
+    await generateOsFromOrder(admin, orderId);
     expect(await db().serviceOrder.count({ where: { orderId } })).toBe(1);
     const items = await osItems(orderId);
     expect(items.map((i) => [i.description, i.quantity, i.upholstererUserId])).toEqual([
@@ -240,7 +247,6 @@ describe('B. Fechamento: a OS nasce junto, com o titular e a mão de obra previs
     ]);
     // Previsto, não pago.
     expect(rows.every((p) => p.status === 'PREVISTO' && p.paidCents === 0)).toBe(true);
-    expect(rows[1]!.notes).toBe('Prevista no fechamento: 2 × 150,00 por unidade.');
     // O planejamento vê a peça com o titular (nenhuma escolha manual necessária).
     const owners = await db().serviceOrderItemOwnerChange.count({
       where: { serviceOrderItemId: { in: items.map((i) => i.id) } },
@@ -252,6 +258,7 @@ describe('B. Fechamento: a OS nasce junto, com o titular e a mão de obra previs
     const admin = await loginAdmin(app);
     const r = await closeService(admin, {}, {});
     const orderId = r.body.order.id as string;
+    await generateOsFromOrder(admin, orderId);
     const order = await orderOf(admin, orderId);
     expect(
       order.items.every((i) => !i.plannedUpholsterer && i.plannedLaborUnitCents === null),
@@ -279,6 +286,7 @@ describe('C. Alteração posterior ao fechamento — vale só para as OS futuras
       { plannedUpholstererUserId: ricardo, plannedLaborUnitCents: 15000 },
     );
     const orderId = r.body.order.id as string;
+    await generateOsFromOrder(admin, orderId);
     const order = await orderOf(admin, orderId);
     const poltronas = order.items[1]!;
     const path = `/api/v1/orders/${orderId}/planned-intent`;
@@ -301,7 +309,7 @@ describe('C. Alteração posterior ao fechamento — vale só para as OS futuras
     // Versão antiga: recusada.
     const stale = await put(admin, path, change);
     expect(stale.status).toBe(409);
-    // A OS (nascida no fechamento) e a obrigação continuam com Ricardo/15000 por unidade.
+    // A OS (já gerada) e a obrigação continuam com Ricardo/15000 por unidade.
     const rows = await payables(orderId);
     expect(rows.map((p) => [p.professionalUserId, p.agreedCents])).toEqual([[ricardo, 30000]]);
     expect((await osItems(orderId)).map((i) => i.upholstererUserId)).toEqual([null, ricardo]);

@@ -4,7 +4,13 @@ import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
-import { createCustomer, createOrder, panelUserWith, markArrived } from './commercial-helpers';
+import {
+  createCustomer,
+  createOrder,
+  generateOsFromOrder,
+  panelUserWith,
+  markArrived,
+} from './commercial-helpers';
 import { today, userIdOf } from './production-helpers';
 
 /**
@@ -79,6 +85,7 @@ async function os(
     ).status,
   ).toBe(201);
   const so = await post(admin, '/api/v1/service-orders', {
+    materialPurchased: true,
     orderId: order.id,
     promisedDate: promised,
     items: order.items.map((i: { id: string }, k: number) => ({
@@ -298,7 +305,7 @@ describe('Estado do prazo da OS na Central, na lista e no detalhe (fonte única)
     expect((await soDto(admin, frustrated.id)).deadline.state).toBe('ATRASADO');
   });
 
-  it('OS nascida no fechamento e prazo do pedido: um item por OS; "peças na oficina" encerra o prazo do pedido', async () => {
+  it('OS gerada no pedido e prazo do pedido: um item por OS; "peça chegou" encerra o prazo do pedido', async () => {
     const admin = await loginAdmin(app);
     const r = await post(admin, '/api/v1/services', {
       customer: { mode: 'NOVO', kind: 'PF', name: 'Cliente Duas OS', phone: '(11) 97777-1111' },
@@ -316,8 +323,8 @@ describe('Estado do prazo da OS na Central, na lista e no detalhe (fonte única)
       where: { id: r.body.order.id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
-    // A OS nasce no fechamento (D1) com as duas peças; a chegada é a marca "peças na oficina".
-    expect(r.body.serviceOrder).toBeTruthy();
+    // Fluxo da OS (2026-11-18): a OS é gerada no pedido, com as duas peças.
+    await generateOsFromOrder(admin, order.id);
     let items = await deadlineItems(admin);
     expect(items.map((i) => i.type).sort()).toEqual(['PRAZO_OS', 'PRAZO_PEDIDO']);
     expect(items.find((i) => i.type === 'PRAZO_PEDIDO')).toMatchObject({
@@ -403,7 +410,8 @@ describe('Atenção do pedido: peças ainda não recebidas na oficina', () => {
     items = await deadlineItems(admin);
     expect(items.filter((i) => i.type === 'PRAZO_PEDIDO')).toEqual([]);
     expect((await admin.get(`/api/v1/orders/${near}`)).body.deadline).toBeNull();
-    // A OS nascida no fechamento herdou o prazo do pedido.
+    // A OS gerada no pedido herda o prazo do pedido.
+    await generateOsFromOrder(admin, near);
     const so = await db().serviceOrder.findFirstOrThrow({ where: { orderId: near } });
     expect(so.promisedDate?.toISOString().slice(0, 10)).toBe(inWindow());
   });
@@ -455,13 +463,14 @@ describe('Prazo do pedido: edição com motivo, histórico e "aplicar às OS abe
       where: { id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
-    // A OS nasce no fechamento com as 3 peças (D1). Para ter duas OS abertas, a 2ª peça sai da
-    // OS automática (ainda sem tarefas) e vai para uma OS manual com o mesmo prazo.
-    const os1 = r.body.serviceOrder.id as string;
+    // A OS gerada no pedido com as 3 peças. Para ter duas OS abertas, a 2ª peça sai dela
+    // (ainda sem tarefas) e vai para outra OS manual com o mesmo prazo.
+    const os1 = (await generateOsFromOrder(admin, id)).id;
     await db().serviceOrderItem.deleteMany({
       where: { serviceOrderId: os1, orderItemId: { in: [order.items[1]!.id, order.items[2]!.id] } },
     });
     const manual = await post(admin, '/api/v1/service-orders', {
+      materialPurchased: true,
       orderId: id,
       promisedDate: inWindow(),
       items: [

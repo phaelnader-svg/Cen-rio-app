@@ -56,6 +56,7 @@ async function cabeceira(admin: Client, i: number) {
     '/api/v1/service-orders',
     {
       orderId: order.id,
+      materialPurchased: true,
       items: [
         {
           orderItemId: order.items[0].id,

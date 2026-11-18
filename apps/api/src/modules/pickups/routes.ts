@@ -413,7 +413,7 @@ export async function pickupRoutes(app: FastifyInstance) {
 }
 
 /** Soma as peças da retirada ao recebido de cada item do pedido (nunca além do pedido). */
-async function markPickupArrived(tx: Tx, pickupId: string) {
+export async function markPickupArrived(tx: Tx, pickupId: string) {
   const items = await tx.pickupRequestItem.findMany({
     where: { pickupId },
     include: { orderItem: { select: { quantity: true, receivedQuantity: true } } },

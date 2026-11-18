@@ -28,6 +28,7 @@ import {
   createCustomer,
   createOrder,
   createPickup,
+  generateOsFromOrder,
   panelUserWith,
   markArrived,
 } from './commercial-helpers';
@@ -102,6 +103,7 @@ async function os(
   );
   expect(rec.status).toBe(201);
   const so = await post(admin, '/api/v1/service-orders', {
+    materialPurchased: true,
     orderId: order.id,
     items: order.items.map((i: { id: string }, k: number) => ({
       orderItemId: i.id,
@@ -191,7 +193,7 @@ describe('A. Novo serviço: tipo de serviço por peça', () => {
     promisedDate: day(30),
     items,
   });
-  /** Novo serviço sem retirada (o cliente traz as peças): a OS nasce no fechamento (D1). */
+  /** Novo serviço sem retirada (o cliente traz as peças) e a OS gerada no pedido. */
   async function newService(admin: Client, name: string, items: Record<string, unknown>[]) {
     const r = await post(admin, '/api/v1/services', {
       customer: customer(name),
@@ -203,7 +205,7 @@ describe('A. Novo serviço: tipo de serviço por peça', () => {
       include: { items: { orderBy: { position: 'asc' } } },
     });
     const so = await db().serviceOrder.findUniqueOrThrow({
-      where: { id: r.body.serviceOrder.id },
+      where: { id: (await generateOsFromOrder(admin, r.body.order.id)).id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
     return { order, so };

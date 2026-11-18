@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
 import { loginAdmin, openTablet, registerDevice, setMaterialsGate, setPin } from './helpers';
+import { generateOs } from './os-helpers';
 
 /**
  * Simplificação Fase 4 — pré-planejamento no navegador (dados fictícios):
@@ -80,8 +81,8 @@ async function receivedService(page: Page, name: string, pieces: string[]) {
     },
     pickup: { scheduledDate: today(), windowStart: '23:30', team: 'EQUIPE_PROPRIA' },
   });
-  // Recebimentos removidos (16/11/2026): a OS nasce no fechamento; a chegada é a transição
-  // "Peças chegaram na oficina" da retirada.
+  // Fluxo da OS (2026-11-18): a retirada termina com "Peças chegaram na oficina" e a OS é gerada
+  // no pedido (com o material comprado, para entrar em "A planejar").
   for (const toStatus of ['EM_EXECUCAO', 'RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA']) {
     const pk = await call(page, 'GET', `/api/v1/pickups/${svc.pickup.id}`);
     await call(page, 'POST', `/api/v1/pickups/${svc.pickup.id}/transition`, {
@@ -89,8 +90,9 @@ async function receivedService(page: Page, name: string, pieces: string[]) {
       version: pk.version,
     });
   }
-  expect(svc.serviceOrder?.code).toMatch(/OS-\d{5}/);
-  return svc.serviceOrder as { id: string; code: string };
+  const so = await generateOs(page, svc.order.id);
+  expect(so.code).toMatch(/OS-\d{5}/);
+  return so as { id: string; code: string };
 }
 
 async function noHorizontalScroll(page: Page) {

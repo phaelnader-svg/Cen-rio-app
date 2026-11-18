@@ -100,6 +100,7 @@ async function pieceWithMaterials(
   const rec = await markArrived(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]);
   expect(rec.status, JSON.stringify(rec.body)).toBe(201);
   const so = await post(admin, '/api/v1/service-orders', {
+    materialPurchased: true,
     orderId: order.id,
     items: [
       {

@@ -5,6 +5,7 @@ import {
   createServiceOrderSchema,
   formatServiceOrderItemCode,
   measurementSchema,
+  serviceOrderMaterialPurchasedSchema,
   serviceOrderQuerySchema,
   updateServiceOrderItemSchema,
   updateServiceOrderSchema,
@@ -13,6 +14,9 @@ import {
   type ServiceOrderDto,
   type ServiceOrderRevisionDto,
   type ServiceOrderSummaryDto,
+  normalizeQuoteName,
+  type QuoteSnapshot,
+  type QuoteWorkOrder,
 } from '@cenario/shared';
 import { applyServicePriority, lockServicePlanning } from '../production/service-priority';
 import { serviceDeadlineOf, serviceDeadlines } from '../deadlines/service';
@@ -55,6 +59,7 @@ const fullInclude = {
   customer: true,
   technicalLead: true,
   createdBy: { select: { displayName: true } },
+  materialPurchasedBy: { select: { displayName: true } },
   items: {
     include: {
       measuredBy: { select: { displayName: true } },
@@ -102,6 +107,8 @@ export async function loadServiceOrderDto(
     itemCount: so.items.length,
     pieceCount: so.items.reduce((a, i) => a + i.quantity, 0),
     createdAt: so.createdAt.toISOString(),
+    materialPurchasedAt: so.materialPurchasedAt?.toISOString() ?? null,
+    materialPurchasedBy: so.materialPurchasedBy?.displayName ?? null,
     technicalInstructions: so.technicalInstructions,
     notes: so.notes,
     items: so.items.map((i) => ({
@@ -293,6 +300,53 @@ type AvailableCommercial = {
   serviceOrders: { code: string; revenueCents: number; pieces: number }[];
 };
 
+/**
+ * Fluxo da OS (2026-11-18): o que o orçamento aprovado já diz sobre a execução — tecido,
+ * detalhes da O.S. do orçamento, foto e o tapeceiro (ligado pelo nome ao titular).
+ */
+function quotePrefill(
+  quote: { number: number; snapshot: Prisma.JsonValue; workOrder: Prisma.JsonValue },
+  upholsterers: { userId: string; displayName: string }[],
+) {
+  const snap = (quote.snapshot ?? {}) as Partial<QuoteSnapshot>;
+  const wo = (quote.workOrder ?? null) as Partial<QuoteWorkOrder> | null;
+  const fabrics = (snap.fabrics ?? []).filter(Boolean);
+  const details: string[] = [];
+  if (wo) {
+    if (wo.keepOriginal) details.push(`Manter o original: ${wo.keepOriginal}`);
+    if (wo.changeFoam) details.push(`Trocar espuma: ${wo.changeFoam}`);
+    if (wo.changeFabric) details.push(`Trocar tecido: ${wo.changeFabric}`);
+    if (wo.repairStructure) details.push(`Reparar estrutura: ${wo.repairStructure}`);
+  } else {
+    if (snap.foamChange !== undefined)
+      details.push(`Trocar espuma: ${snap.foamChange ? 'Sim' : 'Não'}`);
+    if (snap.fabricChange !== undefined)
+      details.push(`Trocar tecido: ${snap.fabricChange ? 'Sim' : 'Não'}`);
+  }
+  if (wo?.fabricMeters) details.push(`Tecido: ${String(wo.fabricMeters).replace('.', ',')} m`);
+  const materials = (wo?.items ?? snap.lines ?? [])
+    .filter((l) => l && l.name && (('realQty' in l ? l.realQty : l.qty) ?? 0) > 0)
+    .map(
+      (l) =>
+        `${l.name} (${String('realQty' in l ? l.realQty : l.qty).replace('.', ',')} ${l.unit})`,
+    );
+  const name = wo?.responsibleName ? normalizeQuoteName(wo.responsibleName) : '';
+  const upholsterer = name
+    ? (upholsterers.find((u) => normalizeQuoteName(u.displayName) === name) ?? null)
+    : null;
+  return {
+    number: quote.number,
+    service: snap.service ?? '',
+    fabricName: wo?.fabricName?.trim() || fabrics.join(', '),
+    details,
+    notes: wo?.notes?.trim() ?? '',
+    materials,
+    responsibleName: wo?.responsibleName ?? null,
+    upholstererUserId: upholsterer?.userId ?? null,
+    photoDataUrl: wo?.photoDataUrl ?? null,
+  };
+}
+
 export async function serviceOrderRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -303,6 +357,11 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     const where: Prisma.ServiceOrderWhereInput = {
       ...(q.status ? { status: q.status } : {}),
       ...(q.orderId ? { orderId: q.orderId } : {}),
+      ...(q.material === 'AGUARDANDO'
+        ? { status: 'ABERTA', materialPurchasedAt: null }
+        : q.material === 'COMPRADO'
+          ? { materialPurchasedAt: { not: null } }
+          : {}),
       ...(q.q
         ? {
             OR: [
@@ -350,6 +409,8 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
           itemCount: so.items.length,
           pieceCount: so.items.reduce((a, i) => a + i.quantity, 0),
           createdAt: so.createdAt.toISOString(),
+          materialPurchasedAt: so.materialPurchasedAt?.toISOString() ?? null,
+          version: so.version,
           operationalState: states.get(so.id)?.state,
         }),
       ),
@@ -392,16 +453,25 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
     }
     const canPlan = perms.has('producao.planejar');
     const canLabor = perms.has('financeiro.ver') && perms.has('financeiro.gerenciar');
+    const upholsterers = canPlan ? upholsterersOf(await loadTeam(prisma)) : [];
+    // Fluxo da OS (2026-11-18): a tela de gerar OS vem preenchida com o orçamento aprovado.
+    const quote = await prisma.quote.findFirst({
+      where: { orderId, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+    });
     return {
       order: {
         id: order.id,
         code: orderCode(order.number),
         status: order.status,
         contractedService: order.contractedService,
+        promisedDate: dateOnly(order.promisedDate),
+        technicalNotes: order.technicalNotes,
       },
+      quote: quote ? quotePrefill(quote, upholsterers) : null,
       commercial,
       permissions: { upholsterer: canPlan, labor: canLabor },
-      upholsterers: canPlan ? upholsterersOf(await loadTeam(prisma)) : [],
+      upholsterers,
       customer: toCustomerSummary(order.customer),
       items: order.items.map((i) => ({
         orderItemId: i.id,
@@ -411,6 +481,13 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         receivedQuantity: i.receivedQuantity,
         inServiceOrders: alloc.inServiceOrders(i.id),
         available: i.quantity - i.returnedQuantity - alloc.inServiceOrders(i.id),
+        serviceType: i.serviceType,
+        fabricName: i.fabricName,
+        fabricColor: i.fabricColor,
+        fabricReference: i.fabricReference,
+        technicalNotes: i.technicalNotes ?? i.notes,
+        plannedUpholstererUserId: canPlan ? i.plannedUpholstererUserId : null,
+        plannedLaborUnitCents: canLabor ? i.plannedLaborUnitCents : null,
       })),
     };
   });
@@ -462,8 +539,8 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
   });
 
   /**
-   * Cria a OS técnica. Só aceita peças efetivamente recebidas e ainda não
-   * incluídas em outra OS ativa — antes do recebimento físico, a OS é bloqueada.
+   * Cria a OS técnica a partir do pedido (peças ainda não incluídas em outra OS ativa). A tela
+   * oferece a criação depois que a peça chega na tapeçaria; a API não exige a chegada.
    */
   app.post(
     '/api/v1/service-orders',
@@ -652,6 +729,55 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
   );
 
   /** Cancela a OS: as peças voltam a ficar disponíveis para outra OS. */
+  /**
+   * Fluxo da OS (2026-11-18): botão rápido "Material comprado". Marcado, a OS entra na
+   * programação da semana; desmarcar só vale enquanto ela ainda não foi programada.
+   */
+  app.post(
+    '/api/v1/service-orders/:id/material-purchased',
+    { config: { access: MANAGE } },
+    async (request) => {
+      const { id } = idParams.parse(request.params);
+      const input = serviceOrderMaterialPurchasedSchema.parse(request.body);
+      const actor = actorFrom(request);
+      await prisma.$transaction(async (tx) => {
+        await lockServicePlanning(tx, id);
+        const revision = await lockForRevision(tx, id);
+        const before = await tx.serviceOrder.findUniqueOrThrow({ where: { id } });
+        if (before.version !== input.version) throw Errors.versionConflict(before.version);
+        if (before.status === 'CANCELADA')
+          throw Errors.business('OS cancelada não pode ser alterada.');
+        if (Boolean(before.materialPurchasedAt) === input.purchased) return;
+        if (
+          !input.purchased &&
+          (await tx.productionPlanItem.count({ where: { serviceOrderId: id } })) > 0
+        )
+          throw Errors.business(
+            'Esta OS já está na programação da semana. Tire-a da programação antes de desmarcar o material.',
+          );
+        const after = await tx.serviceOrder.update({
+          where: { id, version: input.version },
+          data: input.purchased
+            ? {
+                materialPurchasedAt: new Date(),
+                materialPurchasedById: actor.userId,
+                version: { increment: 1 },
+              }
+            : { materialPurchasedAt: null, materialPurchasedById: null, version: { increment: 1 } },
+        });
+        await recordChange(tx, request, after, revision, {
+          scope: 'OS',
+          changes: { materialPurchased: { from: !input.purchased, to: input.purchased } },
+          summary: input.purchased
+            ? `OS ${serviceOrderCode(after.number)}: material comprado — liberada para a programação.`
+            : `OS ${serviceOrderCode(after.number)}: material desmarcado — aguardando material.`,
+          action: 'service_order.material_purchased',
+        });
+      });
+      return loadServiceOrderDto(prisma, id);
+    },
+  );
+
   app.post('/api/v1/service-orders/:id/cancel', { config: { access: MANAGE } }, async (request) => {
     const { id } = idParams.parse(request.params);
     const input = cancelServiceOrderSchema.parse(request.body);

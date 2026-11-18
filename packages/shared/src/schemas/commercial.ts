@@ -215,6 +215,8 @@ export type UpdateOrderPromisedDateInput = z.input<typeof updateOrderPromisedDat
 export const orderQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
   status: z.enum(ORDER_STATUSES).optional(),
+  /** Fluxo da OS (2026-11-18): SEM_OS = pedidos ativos que ainda não viraram OS. */
+  stage: z.enum(['SEM_OS', 'COM_OS']).optional(),
   customerId: idSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
@@ -382,6 +384,8 @@ export const serviceOrderItemLaborSchema = z.object({
 export const createServiceOrderSchema = z.object({
   orderId: idSchema,
   ...osHeader,
+  /** Fluxo da OS (2026-11-18): material já comprado (ou nada a comprar) na criação. */
+  materialPurchased: z.boolean().optional(),
   items: z
     .array(
       z
@@ -459,6 +463,8 @@ export const serviceOrderQuerySchema = z.object({
   q: z.string().trim().max(100).optional(),
   status: z.enum(SERVICE_ORDER_STATUSES).optional(),
   orderId: idSchema.optional(),
+  /** Fluxo da OS (2026-11-18): AGUARDANDO = aberta sem "Material comprado". */
+  material: z.enum(['AGUARDANDO', 'COMPRADO']).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).max(100_000).default(0),
 });
@@ -659,3 +665,9 @@ export const confirmPieceArrivalSchema = z.object({
     .optional(),
 });
 export type ConfirmPieceArrivalInput = z.input<typeof confirmPieceArrivalSchema>;
+
+/** Fluxo da OS (2026-11-18): botão rápido "Material comprado" (e desfazer). */
+export const serviceOrderMaterialPurchasedSchema = z.object({
+  version: z.number().int().min(1),
+  purchased: z.boolean(),
+});

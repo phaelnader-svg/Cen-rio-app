@@ -325,7 +325,6 @@ describe('F1-06 — auditoria das ações novas, na mesma transação', () => {
       customerDropOff: false,
       responsible: andre,
       tripCostId: cost.id,
-      serviceOrderId: r.body.serviceOrder.id, // a OS nasce no fechamento (D1)
     });
   });
 
@@ -519,6 +518,7 @@ describe('F1-06 — auditoria das ações novas, na mesma transação', () => {
     );
     expect(rec.status).toBe(201);
     const so = await post(admin, '/api/v1/service-orders', {
+      materialPurchased: true,
       orderId: order.id,
       items: order.items.map((i: { id: string }) => ({
         orderItemId: i.id,

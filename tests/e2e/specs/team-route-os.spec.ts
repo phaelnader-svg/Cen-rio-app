@@ -103,7 +103,7 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
     await expect(page.getByTestId('so-balance')).toHaveText('R$ 1.750,00');
     await expect(form).toContainText('Não é lucro');
     await evidence(page, '01-nova-os-completa');
-    await page.getByRole('button', { name: 'Criar OS' }).click();
+    await page.getByRole('button', { name: 'Gerar OS' }).click();
     await expect(page).toHaveURL(/\/painel\/os\/[0-9a-f-]{36}$/);
     const soId = page.url().split('/').pop()!;
     const labor = await call(page, 'GET', `/api/v1/finance/service-orders/${soId}/labor`);

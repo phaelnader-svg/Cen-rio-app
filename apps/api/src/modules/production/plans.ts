@@ -50,6 +50,10 @@ import {
 } from './common';
 import { placeServiceInQueue } from './queue-placement';
 
+/** Fluxo da OS (2026-11-18): a OS só entra na programação depois de "Material comprado". */
+export const materialPendingMessage = (code: string) =>
+  `${code}: marque "Material comprado" em Ordens de serviço antes de programar.`;
+
 // ─────────────────────────── Pessoas ───────────────────────────
 
 /** Funcionários ativos que executam tarefas (permissão `producao.executar`). */
@@ -766,7 +770,14 @@ export async function productionPlanRoutes(app: FastifyInstance) {
       });
       if (!plan) throw Errors.notFound('Planejamento');
       const sos = await prisma.serviceOrder.findMany({
-        where: { status: 'ABERTA' },
+        // Fluxo da OS (2026-11-18): só OS com "Material comprado" (ou já nesta semana).
+        where: {
+          status: 'ABERTA',
+          OR: [
+            { materialPurchasedAt: { not: null } },
+            { productionPlanItems: { some: { planId: id } } },
+          ],
+        },
         include: {
           customer: { select: { name: true } },
           items: { orderBy: { position: 'asc' } },
@@ -830,6 +841,8 @@ export async function productionPlanRoutes(app: FastifyInstance) {
         });
         if (!so) throw Errors.notFound('Ordem de serviço');
         if (so.status !== 'ABERTA') throw Errors.business('A OS não está aberta.');
+        if (!so.materialPurchasedAt)
+          throw Errors.business(materialPendingMessage(serviceOrderCode(so.number)));
         if (
           await tx.productionPlanItem.findUnique({
             where: { planId_serviceOrderId: { planId: id, serviceOrderId: so.id } },

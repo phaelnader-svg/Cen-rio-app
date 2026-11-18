@@ -63,17 +63,18 @@ model User {
   createdDevices       Device[]                 @relation("DeviceCreatedBy")
   revokedDevices       Device[]                 @relation("DeviceRevokedBy")
 
-  createdCustomers       Customer[]             @relation("CustomerCreatedBy")
-  createdOrders          CommercialOrder[]      @relation("OrderCreatedBy")
-  cancelledOrders        CommercialOrder[]      @relation("OrderCancelledBy")
-  createdPickups         PickupRequest[]        @relation("PickupCreatedBy")
-  pickupEvents           PickupEvent[]
-  registeredReceipts     Receipt[]              @relation("ReceiptRegisteredBy")
-  createdServiceOrders   ServiceOrder[]         @relation("ServiceOrderCreatedBy")
-  cancelledServiceOrders ServiceOrder[]         @relation("ServiceOrderCancelledBy")
-  measuredItems          ServiceOrderItem[]     @relation("ItemMeasuredBy")
-  serviceOrderRevisions  ServiceOrderRevision[]
-  attachments            Attachment[]
+  createdCustomers               Customer[]             @relation("CustomerCreatedBy")
+  createdOrders                  CommercialOrder[]      @relation("OrderCreatedBy")
+  cancelledOrders                CommercialOrder[]      @relation("OrderCancelledBy")
+  createdPickups                 PickupRequest[]        @relation("PickupCreatedBy")
+  pickupEvents                   PickupEvent[]
+  registeredReceipts             Receipt[]              @relation("ReceiptRegisteredBy")
+  createdServiceOrders           ServiceOrder[]         @relation("ServiceOrderCreatedBy")
+  cancelledServiceOrders         ServiceOrder[]         @relation("ServiceOrderCancelledBy")
+  materialPurchasedServiceOrders ServiceOrder[]         @relation("ServiceOrderMaterialPurchasedBy")
+  measuredItems                  ServiceOrderItem[]     @relation("ItemMeasuredBy")
+  serviceOrderRevisions          ServiceOrderRevision[]
+  attachments                    Attachment[]
 
   assignedMeasurements  Measurement[]         @relation("MeasurementAssignee")
   requestedMeasurements Measurement[]         @relation("MeasurementRequestedBy")
@@ -1315,20 +1316,24 @@ model ServiceOrder {
   cancelledAt           DateTime?          @map("cancelled_at") @db.Timestamptz(3)
   cancelledById         String?            @map("cancelled_by_id") @db.Uuid
   cancelReason          String?            @map("cancel_reason") @db.VarChar(500)
+  /// Fluxo da OS (2026-11-18): "Material comprado" libera a OS para a programação da semana.
+  materialPurchasedAt   DateTime?          @map("material_purchased_at") @db.Timestamptz(3)
+  materialPurchasedById String?            @map("material_purchased_by_id") @db.Uuid
   version               Int                @default(1)
   createdById           String?            @map("created_by_id") @db.Uuid
   createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  order         CommercialOrder        @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  customer      Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  technicalLead Employee?              @relation("ServiceOrderTechnicalLead", fields: [technicalLeadId], references: [id], onDelete: SetNull)
-  createdBy     User?                  @relation("ServiceOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  cancelledBy   User?                  @relation("ServiceOrderCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
-  items         ServiceOrderItem[]
-  revisions     ServiceOrderRevision[]
-  materials     MaterialRequirement[]
-  measurements  Measurement[]
+  order               CommercialOrder        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customer            Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  technicalLead       Employee?              @relation("ServiceOrderTechnicalLead", fields: [technicalLeadId], references: [id], onDelete: SetNull)
+  createdBy           User?                  @relation("ServiceOrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  cancelledBy         User?                  @relation("ServiceOrderCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  materialPurchasedBy User?                  @relation("ServiceOrderMaterialPurchasedBy", fields: [materialPurchasedById], references: [id], onDelete: SetNull)
+  items               ServiceOrderItem[]
+  revisions           ServiceOrderRevision[]
+  materials           MaterialRequirement[]
+  measurements        Measurement[]
 
   // Fase 4: prontidão de materiais (calculada a partir dos registros; não libera produção).
   materialsReadiness   MaterialReadiness @default(SEM_LEVANTAMENTO) @map("materials_readiness")

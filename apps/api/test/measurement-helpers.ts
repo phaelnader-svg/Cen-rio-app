@@ -51,6 +51,7 @@ export async function openServiceOrder(admin: Client, name = 'Cliente Medição'
     '/api/v1/service-orders',
     {
       orderId: order.id,
+      materialPurchased: true,
       items: [
         {
           orderItemId: order.items[0].id,

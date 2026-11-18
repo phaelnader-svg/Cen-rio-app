@@ -108,6 +108,7 @@ describe('Sincronização do fluxo comercial', () => {
       '/api/v1/service-orders',
       {
         orderId: order.id,
+        materialPurchased: true,
         items: [
           {
             orderItemId: order.items[0].id,

@@ -61,6 +61,7 @@ function osBody(
 ) {
   return {
     orderId: order.id,
+    materialPurchased: true,
     items: [
       {
         orderItemId: order.items[0]!.id,

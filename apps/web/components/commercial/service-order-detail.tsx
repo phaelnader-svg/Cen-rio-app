@@ -44,6 +44,7 @@ import { useEmployees, useServiceTimeline } from '@/lib/queries';
 import { usePieces } from '@/lib/quality';
 import { OsProduction } from '@/components/production/os-production';
 import { DeadlineBadge, PriorityBadge, ServiceOrderStatusBadge } from './badges';
+import { MaterialPurchasedButton } from './material-purchased';
 import { PhotoGallery } from './photo-gallery';
 import { BackLink, Detail, Section } from './section';
 import { OsLabor } from '@/components/finance/service-order-labor';
@@ -238,6 +239,11 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         {/* Fase 3: "Aberta" ficava ao lado de "Entregue" (a OS continua aberta no banco depois da
             entrega). A situação geral fica no quadro abaixo; aqui só o cancelamento. */}
         {s.status === 'CANCELADA' && <ServiceOrderStatusBadge status={s.status} />}
+        {s.status === 'ABERTA' && (
+          <span data-testid="os-material">
+            <MaterialPurchasedButton os={s} canManage={manage} />
+          </span>
+        )}
         <PriorityBadge priority={s.priority} always />
         {s.promisedDate && (
           <span className="text-sm text-ink-muted">

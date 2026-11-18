@@ -19,9 +19,10 @@ import { setUpholsterer } from '../production/distribution';
 import { recordChange } from './routes';
 
 /**
- * Serviço de domínio da criação da OS: a mesma função atende a criação manual
- * (`POST /api/v1/service-orders`) e a criação AUTOMÁTICA no fechamento do serviço (Novo serviço).
- * A OS aceita peças do pedido ainda não incluídas em outra OS; a chegada física não é exigida.
+ * Serviço de domínio da criação da OS (`POST /api/v1/service-orders`). Fluxo da OS (2026-11-18):
+ * a OS é gerada à mão no pedido, depois que a peça chega (o fechamento do serviço não cria OS).
+ * A OS aceita peças do pedido ainda não incluídas em outra OS. Nasce "aguardando material", salvo
+ * se `materialPurchased` vier marcado.
  */
 export type NewServiceOrderInput = z.output<typeof createServiceOrderSchema>;
 
@@ -81,6 +82,9 @@ export async function createServiceOrder(
       priority: input.priority,
       technicalLeadId: input.technicalLeadId ?? null,
       createdById: actor.userId,
+      ...(input.materialPurchased
+        ? { materialPurchasedAt: new Date(), materialPurchasedById: actor.userId }
+        : {}),
       items: {
         create: input.items.map((it, idx) => {
           const oi = order.items.find((i) => i.id === it.orderItemId)!;

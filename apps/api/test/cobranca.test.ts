@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
-import { address, createCustomer, markArrived } from './commercial-helpers';
+import { address, createCustomer, generateOsFromOrder, markArrived } from './commercial-helpers';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, loginAdmin, resetDatabase, setupTablet } from './helpers';
 import { day, today, userIdOf } from './production-helpers';
@@ -167,7 +167,8 @@ async function arriveAndOpen(
   lines: { orderItemId: string; quantity: number }[],
 ) {
   ok(await markArrived(orderId, lines), 201);
-  // Novo serviço: a OS nasce automaticamente na chegada.
+  // Fluxo da OS (2026-11-18): a OS é gerada à mão depois da chegada.
+  await generateOsFromOrder(admin, orderId);
   const sos = await db().serviceOrder.findMany({
     where: { orderId },
     include: { items: true },

@@ -188,9 +188,8 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       await page.getByTestId('ns-submit').click();
       const confirmation = page.getByTestId('ns-confirmation');
       await expect(confirmation).toContainText('Aguardando retirada');
-      // D1: a OS nasce no fechamento do serviço, com as peças, sem esperar a chegada.
-      await expect(confirmation).toContainText(/OS OS-\d{5} criada/);
-      const osCode = (await confirmation.textContent())!.match(/OS-\d{5}/)![0];
+      // Fluxo da OS (2026-11-18): o fechamento cria o pedido e a retirada; a OS vem depois.
+      await expect(confirmation).toContainText('1 hora depois do horário da retirada');
       await page.getByTestId('ns-open-order').click();
       await expect(page).toHaveURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
       const orderId = page.url().split('/').pop()!;
@@ -229,12 +228,20 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       expect(received.status).toBe('RECEBIDA_NA_OFICINA');
       const joao = await openDevice(page, browser, 'João', '591837', `Tablet João ${RUN}`);
 
-      // OS do fechamento: titular e mão de obra prevista viraram titular e mão de obra combinada.
-      const sos = await call(page, 'GET', `/api/v1/service-orders?orderId=${orderId}`);
-      const soId = ((sos.items ?? sos) as { id: string; code: string }[]).find(
-        (s) => s.code === osCode,
-      )!.id;
+      // ───── TRANSIÇÃO 1b: "Gerar ordem de serviço" no pedido, já preenchida; "Material comprado" ─────
+      // Titular e mão de obra prevista do fechamento viram titular e mão de obra combinada.
+      await page.goto(`/painel/pedidos/${orderId}`);
+      await page.getByTestId('order-generate-os').click();
+      await page.waitForURL(/\/painel\/os\/nova/);
+      await page.getByRole('button', { name: 'Gerar OS' }).click();
+      await page.waitForURL(/\/painel\/os\/[0-9a-f-]{36}$/);
+      const soId = page.url().split('/').pop()!;
       const so = await call(page, 'GET', `/api/v1/service-orders/${soId}`);
+      const osCode = so.code as string;
+      expect(so.materialPurchasedAt).toBeNull();
+      await page.goto('/painel/os');
+      await page.getByTestId(`material-buy-${osCode}`).click();
+      await expect(page.getByTestId(`material-ok-${osCode}`)).toBeVisible();
       const sofa = so.items[0] as { id: string; code: string };
       const labor = (await call(page, 'GET', `/api/v1/finance/labor?serviceOrderId=${soId}`)) as {
         id: string;

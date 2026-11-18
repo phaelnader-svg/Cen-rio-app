@@ -109,6 +109,7 @@ describe('Fluxo completo de produção (32 passos)', () => {
     // 6. OS criada.
     const so = ok2(
       await post(admin, '/api/v1/service-orders', {
+        materialPurchased: true,
         orderId: order.id,
         items: [
           {

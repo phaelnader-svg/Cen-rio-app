@@ -98,6 +98,16 @@ export function PreplanningPage({ embedded = false }: { embedded?: boolean } = {
           ]}
         >
           <div className="pt-5" data-testid={`pipeline-${tab}`}>
+            {tab === 'A_PLANEJAR' && (q.data?.awaitingMaterial ?? 0) > 0 && (
+              <Alert tone="info" className="mb-4" data-testid="pipeline-awaiting-material">
+                {q.data!.awaitingMaterial === 1
+                  ? '1 OS aguardando material: ela entra aqui depois do botão “Material comprado”.'
+                  : `${q.data!.awaitingMaterial} OS aguardando material: elas entram aqui depois do botão “Material comprado”.`}{' '}
+                <Link href="/painel/os" className="font-semibold text-brand-700 hover:underline">
+                  Ver em Ordens de serviço
+                </Link>
+              </Alert>
+            )}
             {tab === 'A_PLANEJAR' && (
               <ToPlanList
                 items={toPlan}

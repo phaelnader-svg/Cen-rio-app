@@ -76,6 +76,7 @@ async function os(
   );
   expect(rec.status).toBe(201);
   const so = await post(admin, '/api/v1/service-orders', {
+    materialPurchased: true,
     orderId: order.id,
     items: order.items.map((i: { id: string }, k: number) => ({
       orderItemId: i.id,

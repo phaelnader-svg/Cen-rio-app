@@ -14,7 +14,13 @@ import {
   ownerDb,
   naEmpresa1,
 } from './helpers';
-import { address, createCustomer, createOrder, panelUserWith } from './commercial-helpers';
+import {
+  address,
+  createCustomer,
+  createOrder,
+  generateOsFromOrder,
+  panelUserWith,
+} from './commercial-helpers';
 import { day, userIdOf } from './production-helpers';
 import { splitSql } from './sql-helpers';
 
@@ -23,7 +29,7 @@ import { splitSql } from './sql-helpers';
  *  A. Operação única: cliente novo/existente + pedido fechado + retirada + custo, atômica e
  *     idempotente (CA2-02..14).
  *  B. Equipe própria (Thiago, configurável) × terceirizada (André + Izaías, valor único).
- *  C. OS automática SOMENTE na confirmação da chegada; parcial, repetição, vínculos (CA2-15..20).
+ *  C. Fluxo da OS (2026-11-18): o fechamento não cria OS; ela é gerada no pedido depois.
  *  D. Permissões, CSRF, registros antigos e tempo real (CA2-21, 22, 24).
  */
 let app: App;
@@ -153,7 +159,7 @@ describe('A. Novo serviço: uma operação, atômica e idempotente', () => {
     expect(after.pickups - before.pickups).toBe(1);
     expect(after.costs - before.costs).toBe(1);
     // CA2-10/15: nada de OS, conta a pagar ou receita no agendamento.
-    expect(after.serviceOrders).toBe(before.serviceOrders + 1); // a OS nasce no fechamento (D1)
+    expect(after.serviceOrders).toBe(before.serviceOrders); // a OS é gerada no pedido depois
     expect(after.payables).toBe(before.payables);
     expect(after.receivables).toBe(before.receivables);
 
@@ -357,7 +363,7 @@ describe('A. Novo serviço: uma operação, atômica e idempotente', () => {
       orders: before.orders + 1,
       pickups: before.pickups + 1,
       costs: before.costs + 1,
-      serviceOrders: before.serviceOrders + 1, // a OS nasce no fechamento (D1)
+      serviceOrders: before.serviceOrders, // a OS é gerada no pedido depois
       payables: now.payables,
       receivables: before.receivables + 2,
     });
@@ -636,7 +642,7 @@ describe('B. Equipes: própria (Thiago, configurável) e terceirizada (André + 
   });
 });
 
-describe('C. OS automática no fechamento do serviço (D1: sem recebimento)', () => {
+describe('C. A OS é gerada no pedido, não no fechamento', () => {
   async function closed(
     admin: Client,
     extra: Record<string, unknown> | null = { pickup: { amountCents: 10000 } },
@@ -653,12 +659,14 @@ describe('C. OS automática no fechamento do serviço (D1: sem recebimento)', ()
     return { res: r.body, order };
   }
 
-  it('o fechamento cria a OS com vínculos e valores, sem esperar a chegada (CA2-15,16,19,20)', async () => {
+  it('o fechamento não cria OS; a OS gerada no pedido traz vínculos e valores (CA2-15,16,19,20)', async () => {
     const admin = await loginAdmin(app);
     const { res, order } = await closed(admin);
-    expect(res.serviceOrder).toMatchObject({ code: expect.stringMatching(/^OS-/) });
+    expect(res).not.toHaveProperty('serviceOrder');
+    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(0);
+    const generated = await generateOsFromOrder(admin, order.id);
     const so = await db().serviceOrder.findUniqueOrThrow({
-      where: { id: res.serviceOrder.id },
+      where: { id: generated.id },
       include: { items: { orderBy: { position: 'asc' } } },
     });
     expect(so).toMatchObject({
@@ -679,7 +687,7 @@ describe('C. OS automática no fechamento do serviço (D1: sem recebimento)', ()
       technicalNotes: 'Trocar espuma do assento',
       upholstererUserId: null,
     });
-    // As peças ainda não chegaram: a OS existe, mas nada foi marcado como recebido.
+    // Gerada antes da chegada (a API permite; a tela oferece depois): nada foi marcado.
     expect(order.items.every((i) => i.receivedQuantity === 0)).toBe(true);
     // CA2-19/CA2-06: valores do pedido preservados; receita da OS = participação do pedido.
     const revenue = (await admin.get(`/api/v1/finance/orders/${order.id}`)).body;
@@ -689,17 +697,16 @@ describe('C. OS automática no fechamento do serviço (D1: sem recebimento)', ()
     expect(await db().productionTask.count({ where: { serviceOrderId: so.id } })).toBe(0);
     expect(await db().productionPlanItem.count({ where: { serviceOrderId: so.id } })).toBe(0);
     expect(await db().productionPayable.count({ where: { serviceOrderId: so.id } })).toBe(0);
-    // Auditoria registra a origem automática.
     const log = await db().auditLog.findFirstOrThrow({
       where: { action: 'service_order.created', entityId: so.id },
     });
-    expect(log.summary).toMatch(/gerada automaticamente no fechamento/);
+    expect(log.summary).toMatch(/criada a partir do pedido/);
   });
 
-  it('a chegada das peças é só uma marca opcional: não cria outra OS (retirada ou "peças na oficina")', async () => {
+  it('a chegada das peças (retirada ou "peça chegou") não cria OS sozinha', async () => {
     const admin = await loginAdmin(app);
     const { res, order } = await closed(admin);
-    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(1);
+    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(0);
     // A retirada chega na oficina: as peças dela passam a "recebidas", sem nova OS.
     const pickup = await db().pickupRequest.findUniqueOrThrow({ where: { id: res.pickup.id } });
     for (const to of ['EM_EXECUCAO', 'RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA']) {
@@ -715,7 +722,7 @@ describe('C. OS automática no fechamento do serviço (D1: sem recebimento)', ()
     expect((await db().commercialOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe(
       'RECEBIDO',
     );
-    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(1);
+    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(0);
   });
 
   it('"Peças na oficina" no pedido sem retirada: marca a chegada uma vez e recusa repetir', async () => {
@@ -734,13 +741,13 @@ describe('C. OS automática no fechamento do serviço (D1: sem recebimento)', ()
     expect(after.items.every((i) => i.receivedQuantity === i.quantity)).toBe(true);
     expect((await mark(order.version)).status).toBe(409); // versão antiga
     expect((await mark(after.version)).status).toBe(422); // nada mais a marcar
-    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(1);
+    expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(0);
     expect(
       await db().auditLog.count({ where: { action: 'order.pieces_arrived', entityId: order.id } }),
     ).toBe(1);
   });
 
-  it('repetição do fechamento com a mesma chave devolve a mesma OS (sem duplicar)', async () => {
+  it('repetição do fechamento com a mesma chave devolve o mesmo pedido (sem duplicar)', async () => {
     const admin = await loginAdmin(app);
     await logisticsSetup(admin);
     const key = idemKey();
@@ -749,8 +756,9 @@ describe('C. OS automática no fechamento do serviço (D1: sem recebimento)', ()
     const r2 = await post(admin, '/api/v1/services', payload, key);
     expect(r1.status, JSON.stringify(r1.body)).toBe(201);
     expect(r2.status).toBe(201);
-    expect(r2.body.serviceOrder.id).toBe(r1.body.serviceOrder.id);
-    expect(await db().serviceOrder.count({ where: { orderId: r1.body.order.id } })).toBe(1);
+    expect(r2.body.order.id).toBe(r1.body.order.id);
+    expect(await db().commercialOrder.count({ where: { id: r1.body.order.id } })).toBe(1);
+    expect(await db().serviceOrder.count({ where: { orderId: r1.body.order.id } })).toBe(0);
   });
 
   it('pedidos antigos (fora do Novo serviço) continuam sem OS automática (CA2-22)', async () => {
@@ -762,6 +770,7 @@ describe('C. OS automática no fechamento do serviço (D1: sem recebimento)', ()
     expect(await db().serviceOrder.count({ where: { orderId: order.id } })).toBe(0);
     // OS manual segue funcionando como antes.
     const so = await post(admin, '/api/v1/service-orders', {
+      materialPurchased: true,
       orderId: order.id,
       items: order.items.map((i: { id: string; quantity: number; description: string }) => ({
         orderItemId: i.id,
@@ -859,7 +868,7 @@ describe('D. Segurança, permissões e tempo real', () => {
     expect(unscheduled.body.pickup.status).toBe('AGUARDANDO_AGENDAMENTO');
   });
 
-  it('eventos em tempo real: pedido, retirada e OS gerada chegam ao painel (CA2-24)', async () => {
+  it('eventos em tempo real: pedido, retirada e depois a OS gerada chegam ao painel (CA2-24)', async () => {
     const admin = await loginAdmin(app);
     await logisticsSetup(admin);
     // Outra sessão do painel (a própria sessão não recebe o eco do que ela mesma fez).
@@ -868,8 +877,9 @@ describe('D. Segurança, permissões e tempo real', () => {
     expect(r.status).toBe(201);
     await ws.waitFor((m) => m.event?.type === 'order.created');
     await ws.waitFor((m) => m.event?.type === 'pickup.created');
+    const so = await generateOsFromOrder(admin, r.body.order.id);
     const ev = await ws.waitFor((m) => m.event?.type === 'service_order.created');
-    expect(ev.event.payload.id ?? ev.event.aggregateId).toBe(r.body.serviceOrder.id);
+    expect(ev.event.payload.id ?? ev.event.aggregateId).toBe(so.id);
     await ws.close();
   });
 });
@@ -882,7 +892,7 @@ describe('E. Estabilização: serviço sem retirada (cliente entrega as peças)'
     return { ...b, pickup: null };
   };
 
-  it('sem retirada é válido: nada de retirada, custo, agenda ou endereço inventado; a OS nasce no fechamento', async () => {
+  it('sem retirada é válido: nada de retirada, custo, agenda ou endereço inventado; a OS vem depois', async () => {
     const admin = await loginAdmin(app);
     await logisticsSetup(admin);
     const before = await counts();
@@ -898,7 +908,7 @@ describe('E. Estabilização: serviço sem retirada (cliente entrega as peças)'
       pickups: before.pickups,
       costs: before.costs,
       payables: before.payables,
-      serviceOrders: before.serviceOrders + 1, // a OS do fechamento (D1)
+      serviceOrders: before.serviceOrders, // a OS é gerada no pedido depois
     });
     const order = await db().commercialOrder.findUniqueOrThrow({
       where: { id: r.body.order.id },
@@ -921,13 +931,14 @@ describe('E. Estabilização: serviço sem retirada (cliente entrega as peças)'
     expect(row.customerDropOff).toBe(true);
     // Agenda/roteiro: nenhuma parada para este pedido.
     expect(await db().pickupRequest.count({ where: { orderId: order.id } })).toBe(0);
-    // A OS nasceu no fechamento, com todas as peças (o cliente traz depois; marca opcional).
+    // A OS é gerada no pedido, com todas as peças.
+    const generated = await generateOsFromOrder(admin, order.id);
     const so = await db().serviceOrder.findMany({
       where: { orderId: order.id },
       include: { items: true },
     });
     expect(so).toHaveLength(1);
-    expect(so[0]!.id).toBe(r.body.serviceOrder.id);
+    expect(so[0]!.id).toBe(generated.id);
     expect(so[0]!.items.reduce((a, i) => a + i.quantity, 0)).toBe(3);
     expect((await counts()).payables).toBe(before.payables); // nenhum custo de transporte
   });

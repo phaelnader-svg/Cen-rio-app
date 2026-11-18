@@ -54,7 +54,7 @@ import {
 } from './common';
 import { distributeServiceOrder } from './distribution';
 import { placeServiceInQueue } from './queue-placement';
-import { reviseIfPublishedBy } from './plans';
+import { materialPendingMessage, reviseIfPublishedBy } from './plans';
 import { applyServicePriority } from './service-priority';
 
 const STARTED = ['EM_EXECUCAO', 'PAUSADA', 'CONCLUIDA'];
@@ -155,12 +155,17 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
     orderBy: [{ promisedDate: 'asc' }, { number: 'asc' }],
   });
   const items: PipelineServiceDto[] = [];
+  let awaitingMaterial = 0;
   for (const so of sos) {
-    // Remoção de Recebimentos: a OS nasce no fechamento e entra na produção sem esperar a chegada.
     if (!so.items.length) continue;
     const tasks = so.productionTasks;
     const planItem =
       [...so.productionPlanItems].sort((a, b) => +b.plan.weekStart - +a.plan.weekStart)[0] ?? null;
+    // Fluxo da OS (2026-11-18): sem "Material comprado", a OS ainda não entra na programação.
+    if (!tasks.length && !planItem && !so.materialPurchasedAt) {
+      awaitingMaterial++;
+      continue;
+    }
     let stage: PipelineStage;
     if (!tasks.length && !planItem) stage = 'A_PLANEJAR';
     else if (tasks.length && tasks.every((t) => t.status === 'CONCLUIDA')) {
@@ -263,7 +268,7 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
       items.filter((i) => i.stage === s).length,
     ]),
   ) as Record<PipelineStage, number>;
-  return { counts, items };
+  return { counts, items, awaitingMaterial };
 }
 
 /** O que "Publicar semana" vai liberar (só tarefas em rascunho do plano). */
@@ -385,6 +390,7 @@ export async function preplanningRoutes(app: FastifyInstance) {
           if (!so) throw Errors.notFound('Ordem de serviço');
           const code = serviceOrderCode(so.number);
           if (so.status !== 'ABERTA') throw Errors.business(`${code}: a OS não está aberta.`);
+          if (!so.materialPurchasedAt) throw Errors.business(materialPendingMessage(code));
           if (so.productionPlanItems.length) {
             const w = dateOnly(so.productionPlanItems[0]!.plan.weekStart)!;
             throw Errors.conflict(

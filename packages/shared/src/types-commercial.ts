@@ -105,6 +105,11 @@ export interface OrderSummaryDto {
   returnedPieces: number;
   serviceState: OrderServiceState;
   createdAt: string;
+  /** Fluxo da OS (2026-11-18): OS ativas (não canceladas) geradas deste pedido. */
+  serviceOrderCount: number;
+  /** Próxima retirada ainda não recebida (dia e horário), para os botões rápidos da lista. */
+  nextPickup: { scheduledDate: string | null; windowStart: string | null } | null;
+  version: number;
 }
 
 export interface OrderDto extends OrderSummaryDto {
@@ -280,6 +285,13 @@ export interface ServiceOrderSummaryDto {
   pieceCount: number;
   createdAt: string;
   /**
+   * Fluxo da OS (2026-11-18): quando o material foi marcado como comprado (null = aguardando
+   * material; a OS ainda não entra na programação da semana).
+   */
+  materialPurchasedAt: string | null;
+  /** Versão da OS (para o botão rápido da lista). */
+  version: number;
+  /**
    * Reformulação Fase 3: estado geral (o mesmo do cabeçalho da OS, regra da Fase 0). Só na
    * lista; o detalhe usa a rota própria.
    */
@@ -294,7 +306,7 @@ export interface ServiceOrderDto extends ServiceOrderSummaryDto {
   cancelledAt: string | null;
   cancelReason: string | null;
   createdBy: string | null;
-  version: number;
+  materialPurchasedBy: string | null;
   updatedAt: string;
 }
 
@@ -375,8 +387,6 @@ export interface NewServiceResultDto {
     /** O cliente entrega as peças na tapeçaria (sem retirada). */
     customerDropOff: boolean;
   };
-  /** OS criada no fechamento do serviço (null só se nenhuma peça ficou livre). */
-  serviceOrder: { id: string; code: string } | null;
   /** null quando o cliente entrega as peças (sem retirada). */
   pickup: {
     id: string;

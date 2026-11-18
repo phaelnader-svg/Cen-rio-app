@@ -11,7 +11,13 @@ import type { App } from '../src/app';
 import { hotp, base32Decode } from '../src/lib/totp';
 import { readCsv } from '../src/lib/sheet';
 import { sniffAudio } from '../src/modules/attachments/routes';
-import { address, createCustomer, createOrder, createPickup } from './commercial-helpers';
+import {
+  address,
+  createCustomer,
+  createOrder,
+  createPickup,
+  generateOsFromOrder,
+} from './commercial-helpers';
 import { ADMIN, Client, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -238,7 +244,7 @@ describe('Álbum de antes e depois', () => {
       }),
       201,
     );
-    const osId = r.serviceOrder.id;
+    const osId = (await generateOsFromOrder(admin, r.order.id)).id;
     const album = ok(await admin.get(`/api/v1/service-orders/${osId}/album`));
     expect(album).toMatchObject({ before: [], during: [], after: [] });
     const anon = new Client(app);

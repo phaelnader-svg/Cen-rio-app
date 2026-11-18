@@ -111,7 +111,7 @@ describe('Remoção real — Grupo B: fluxo da OS no fechamento (D1)', () => {
   beforeEach(async () => resetDatabase());
 
   futuro('S5')(
-    'S5: "Novo serviço" fechado cria a OS imediatamente, sem recebimento da peça',
+    'S5 (revisto no fluxo da OS, 2026-11-18): "Novo serviço" fechado cria só o pedido; a OS é gerada depois, no pedido',
     async () => {
       const admin = await loginAdmin(app);
       const r = await admin.post(
@@ -137,7 +137,7 @@ describe('Remoção real — Grupo B: fluxo da OS no fechamento (D1)', () => {
       );
       expect(r.status, JSON.stringify(r.body)).toBe(201);
       const os = await db().serviceOrder.count({ where: { orderId: r.body.order.id } });
-      expect(os).toBe(1);
+      expect(os).toBe(0);
     },
   );
 });

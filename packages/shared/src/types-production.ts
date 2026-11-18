@@ -414,6 +414,8 @@ export interface PipelineServiceDto {
 export interface ProductionPipelineDto {
   counts: Record<PipelineStage, number>;
   items: PipelineServiceDto[];
+  /** Fluxo da OS (2026-11-18): OS abertas ainda sem "Material comprado" (fora da lista). */
+  awaitingMaterial: number;
 }
 
 export interface PlanServicesResultDto {

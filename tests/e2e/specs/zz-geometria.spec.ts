@@ -204,6 +204,7 @@ test.describe.serial('Interface — geometria dos formulários', () => {
     await receber(paraEntrega);
     const os = await send('/api/v1/service-orders', {
       orderId: paraEntrega.id,
+      materialPurchased: true,
       items: [
         {
           orderItemId: paraEntrega.items[0].id,

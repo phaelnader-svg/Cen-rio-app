@@ -123,6 +123,7 @@ describe.sequential('Cenários integrados da Evolução (Fase 8)', () => {
       ).status,
     ).toBe(201);
     const r = await post(admin, '/api/v1/service-orders', {
+      materialPurchased: true,
       orderId: order.id,
       items: order.items.map((i: { id: string }, k: number) => ({
         orderItemId: i.id,

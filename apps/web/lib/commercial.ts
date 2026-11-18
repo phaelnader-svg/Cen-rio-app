@@ -1,6 +1,6 @@
 'use client';
 
-import type { OperationalState } from '@cenario/shared';
+import type { OperationalState, ServiceType } from '@cenario/shared';
 
 import type {
   AttachmentDto,
@@ -100,7 +100,7 @@ export const useCustomerAddresses = (id: string | null) =>
   });
 
 export const useOrders = (
-  params: { q?: string; status?: string; customerId?: string },
+  params: { q?: string; status?: string; stage?: string; customerId?: string },
   enabled = true,
 ) =>
   useQuery({
@@ -136,7 +136,7 @@ export const usePickup = (id: string | null) =>
   });
 
 export const useServiceOrders = (
-  params: { q?: string; status?: string; orderId?: string },
+  params: { q?: string; status?: string; orderId?: string; material?: string },
   enabled = true,
 ) =>
   useQuery({
@@ -162,7 +162,26 @@ export const useServiceOrderRevisions = (id: string) =>
   });
 
 export interface AvailableForOs {
-  order: { id: string; code: string; status: string; contractedService: string };
+  order: {
+    id: string;
+    code: string;
+    status: string;
+    contractedService: string;
+    promisedDate: string | null;
+    technicalNotes: string | null;
+  };
+  /** Fluxo da OS (2026-11-18): o orçamento aprovado que virou este pedido (preenche a OS). */
+  quote: {
+    number: number;
+    service: string;
+    fabricName: string;
+    details: string[];
+    notes: string;
+    materials: string[];
+    responsibleName: string | null;
+    upholstererUserId: string | null;
+    photoDataUrl: string | null;
+  } | null;
   customer: CustomerSummaryDto;
   /** null = sem permissão para ver valores do pedido. */
   commercial: {
@@ -182,6 +201,13 @@ export interface AvailableForOs {
     receivedQuantity: number;
     inServiceOrders: number;
     available: number;
+    serviceType: ServiceType | null;
+    fabricName: string | null;
+    fabricColor: string | null;
+    fabricReference: string | null;
+    technicalNotes: string | null;
+    plannedUpholstererUserId: string | null;
+    plannedLaborUnitCents: number | null;
   }[];
 }
 

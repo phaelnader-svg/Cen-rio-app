@@ -479,6 +479,7 @@ async function sameCustomerOrders(admin: Client, n: number) {
     ]);
     await markArrived(order.id, [{ orderItemId: order.items[0].id, quantity: 1 }]);
     const so = await post(admin, '/api/v1/service-orders', {
+      materialPurchased: true,
       orderId: order.id,
       items: [
         {
@@ -574,6 +575,7 @@ describe('Rateio e OS (CA6-09, 10)', () => {
       })),
     );
     const so = await post(admin, '/api/v1/service-orders', {
+      materialPurchased: true,
       orderId: order.id,
       items: order.items.map((i: { id: string; quantity: number; description?: string }) => ({
         orderItemId: i.id,

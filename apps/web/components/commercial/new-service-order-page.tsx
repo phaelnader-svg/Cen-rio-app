@@ -17,6 +17,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/field';
 import {
   DateField,
   FieldAction,
@@ -36,6 +37,7 @@ import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useAvailableForOs, type AvailableForOs } from '@/lib/commercial';
 import { money } from '@/lib/finance';
 import { useCan } from '@/lib/hooks';
+import { uploadPhoto } from '@/lib/photos';
 import { useEmployees } from '@/lib/queries';
 import { BackLink } from './section';
 
@@ -72,9 +74,12 @@ export function NewServiceOrderPage() {
   if (!orderId)
     return (
       <>
-        <PageHeader title="Nova OS técnica" description="Crie a OS das peças que já chegaram." />
+        <PageHeader
+          title="Gerar ordem de serviço"
+          description="Gere a OS das peças que já chegaram na tapeçaria."
+        />
         <Alert tone="info">
-          Abra um pedido com peças recebidas e use “Criar OS técnica”.{' '}
+          Abra um pedido com a peça já na tapeçaria e use “Gerar ordem de serviço”.{' '}
           <Link href="/painel/pedidos" className="font-semibold text-brand-700 hover:underline">
             Ir para Pedidos comerciais
           </Link>
@@ -87,7 +92,7 @@ export function NewServiceOrderPage() {
     <>
       <BackLink href={`/painel/pedidos/${orderId}`} label={`Pedido ${available.data.order.code}`} />
       <PageHeader
-        title="Nova OS técnica"
+        title="Gerar ordem de serviço"
         description={`${available.data.customer.name} · ${available.data.order.contractedService}`}
       />
       {available.data.items.every((i) => i.available <= 0) ? (
@@ -97,6 +102,39 @@ export function NewServiceOrderPage() {
       )}
     </>
   );
+}
+
+type Item = AvailableForOs['items'][number];
+type QuoteInfo = AvailableForOs['quote'];
+
+/** Fluxo da OS (2026-11-18): a peça já vem com o que o pedido e o orçamento dizem. */
+function prefilledRow(i: Item, quote: QuoteInfo, single: boolean): Row {
+  const owner = i.plannedUpholstererUserId ?? (single ? (quote?.upholstererUserId ?? '') : '');
+  return {
+    ...emptyRow(i.orderItemId, i.available, i.description),
+    serviceType: i.serviceType ?? 'REFORMA_COMPLETA',
+    fabricName: i.fabricName ?? quote?.fabricName ?? '',
+    fabricColor: i.fabricColor ?? '',
+    fabricReference: i.fabricReference ?? '',
+    technicalNotes: i.technicalNotes ?? '',
+    upholstererUserId: owner,
+    laborCents:
+      i.plannedUpholstererUserId && i.plannedLaborUnitCents
+        ? i.plannedLaborUnitCents * i.available
+        : null,
+  };
+}
+
+function quoteInstructions(order: AvailableForOs['order'], quote: QuoteInfo): string {
+  const parts: string[] = [];
+  if (order.technicalNotes) parts.push(order.technicalNotes);
+  if (quote) {
+    if (quote.details.length) parts.push(quote.details.join(' · '));
+    if (quote.materials.length)
+      parts.push(`Materiais do orçamento: ${quote.materials.join(', ')}.`);
+    if (quote.notes) parts.push(quote.notes);
+  }
+  return parts.join('\n').slice(0, 4000);
 }
 
 const emptyRow = (orderItemId: string, quantity: number, description: string): Row => ({
@@ -124,13 +162,17 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
   const employees = useEmployees(can('funcionarios.ver'));
   const usable = data.items.filter((i) => i.available > 0);
   const [rows, setRows] = useState<Row[]>(() =>
-    usable.map((i) => emptyRow(i.orderItemId, i.available, i.description)),
+    usable.map((i) => prefilledRow(i, data.quote, usable.length === 1)),
   );
   const [priority, setPriority] = useState<Priority>('NORMAL');
-  const [promisedDate, setPromisedDate] = useState('');
+  const [promisedDate, setPromisedDate] = useState(data.order.promisedDate ?? '');
   const [lead, setLead] = useState('');
-  const [instructions, setInstructions] = useState('');
+  const [instructions, setInstructions] = useState(() => quoteInstructions(data.order, data.quote));
   const [notes, setNotes] = useState('');
+  // Fotos da OS: a do orçamento (marcada por padrão) e as que forem escolhidas aqui.
+  const [useQuotePhoto, setUseQuotePhoto] = useState(Boolean(data.quote?.photoDataUrl));
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [materialPurchased, setMaterialPurchased] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const idem = useRef(newIdempotencyKey());
@@ -161,6 +203,7 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
         technicalLeadId: lead || null,
         technicalInstructions: instructions,
         notes,
+        materialPurchased,
         items: rows.map((r) => ({
           orderItemId: r.orderItemId,
           quantity: Number(r.quantity),
@@ -185,7 +228,21 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
         idempotencyKey: idem.current,
       });
     },
-    onSuccess: (so) => {
+    onSuccess: async (so) => {
+      // A OS já existe: uma foto que falhe não desfaz nada (dá para enviar de novo na OS).
+      let photoError = false;
+      const files = [...photos];
+      if (useQuotePhoto && data.quote?.photoDataUrl)
+        files.unshift(dataUrlToFile(data.quote.photoDataUrl, `orcamento-${data.quote.number}`));
+      for (const file of files) {
+        try {
+          await uploadPhoto({ entityType: 'SERVICE_ORDER', entityId: so.id, file, caption: '' });
+        } catch {
+          photoError = true;
+        }
+      }
+      if (photoError)
+        toast('danger', 'A OS foi criada, mas alguma foto não subiu. Envie de novo na OS.');
       void qc.invalidateQueries({ queryKey: ['service-orders'] });
       void qc.invalidateQueries({ queryKey: ['order', data.order.id] });
       void qc.invalidateQueries({ queryKey: ['finance'] });
@@ -222,6 +279,13 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
       {error && (
         <Alert tone="danger" title="A OS não foi criada">
           {error} Nada foi gravado: corrija e tente de novo.
+        </Alert>
+      )}
+
+      {data.quote && (
+        <Alert tone="info" title={`Preenchida com o orçamento nº ${data.quote.number}`}>
+          Tecido, detalhes, materiais e tapeceiro vieram do orçamento aprovado. Confira e complete o
+          que faltar.
         </Alert>
       )}
 
@@ -610,7 +674,60 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
         )}
       </FormSection>
 
-      <FormSection step={6} title="Resumo" id="os-resumo">
+      <FormSection
+        step={6}
+        title="Fotos e material"
+        id="os-fotos"
+        description="A foto do serviço vai junto com a OS. Depois dá para acrescentar mais fotos na própria OS."
+      >
+        <div className="space-y-4">
+          {data.quote?.photoDataUrl && (
+            <div className="flex flex-wrap items-start gap-4">
+              {/* eslint-disable-next-line @next/next/no-img-element -- foto local do orçamento */}
+              <img
+                src={data.quote.photoDataUrl}
+                alt="Foto do orçamento"
+                className="h-28 w-36 rounded-xl border border-line object-cover"
+              />
+              <Checkbox
+                label="Usar a foto do orçamento"
+                description="Fica nas fotos da OS."
+                checked={useQuotePhoto}
+                onChange={(e) => setUseQuotePhoto(e.target.checked)}
+                data-testid="so-quote-photo"
+              />
+            </div>
+          )}
+          <div>
+            <label className="label" htmlFor="so-photos">
+              {data.quote?.photoDataUrl ? 'Outras fotos do serviço' : 'Foto do serviço'}
+            </label>
+            <input
+              id="so-photos"
+              type="file"
+              accept="image/*"
+              multiple
+              className="block text-sm"
+              onChange={(e) => setPhotos(Array.from(e.target.files ?? []))}
+              data-testid="so-photos"
+            />
+            {photos.length > 0 && (
+              <p className="mt-1 text-sm text-ink-muted">
+                {plural(photos.length, 'foto escolhida', 'fotos escolhidas')}
+              </p>
+            )}
+          </div>
+          <Checkbox
+            label="Material já comprado"
+            description="Marque se não falta comprar nada. Sem isso, a OS fica aguardando o botão “Material comprado” em Ordens de serviço antes de entrar na programação da semana."
+            checked={materialPurchased}
+            onChange={(e) => setMaterialPurchased(e.target.checked)}
+            data-testid="so-material-purchased"
+          />
+        </div>
+      </FormSection>
+
+      <FormSection step={7} title="Resumo" id="os-resumo">
         <dl className="max-w-xl divide-y divide-line rounded-xl border border-line px-4">
           <SummaryRow
             label="Receita contratada (esta OS)"
@@ -641,11 +758,21 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
           Cancelar
         </Button>
         <Button type="submit" size="lg" loading={m.isPending} disabled={laborInvalid}>
-          Criar OS
+          Gerar OS
         </Button>
       </FormActions>
     </form>
   );
+}
+
+/** Foto guardada no orçamento (data URL) → arquivo para o envio normal de fotos. */
+function dataUrlToFile(dataUrl: string, name: string): File {
+  const [head, body] = dataUrl.split(',');
+  const type = /data:([^;]+)/.exec(head ?? '')?.[1] ?? 'image/jpeg';
+  const bin = atob(body ?? '');
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new File([bytes], `${name}.${type === 'image/png' ? 'png' : 'jpg'}`, { type });
 }
 
 /** Campo somente leitura com link (pedido de origem). */

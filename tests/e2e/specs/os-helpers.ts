@@ -26,6 +26,59 @@ export async function markArrived(page: Page, orderId: string, version: number) 
   return r.json();
 }
 
+/**
+ * Fluxo da OS (2026-11-18): o fechamento do serviço não gera OS. Gera a OS do pedido como a tela
+ * "Gerar ordem de serviço" (todas as peças livres, dados do pedido) com o material já comprado.
+ */
+export async function generateOs(page: Page, orderId: string) {
+  const r = await page.request.get(`/api/v1/service-orders/available?orderId=${orderId}`, {
+    headers: { origin },
+  });
+  expect(r.ok(), await r.text()).toBe(true);
+  const a = (await r.json()) as {
+    order: { technicalNotes: string | null; promisedDate: string | null };
+    items: {
+      orderItemId: string;
+      description: string;
+      available: number;
+      serviceType: string | null;
+      fabricName: string | null;
+      technicalNotes: string | null;
+      plannedUpholstererUserId: string | null;
+      plannedLaborUnitCents: number | null;
+    }[];
+  };
+  return post(page, '/api/v1/service-orders', {
+    orderId,
+    materialPurchased: true,
+    technicalInstructions: a.order.technicalNotes,
+    promisedDate: a.order.promisedDate,
+    items: a.items
+      .filter((i) => i.available > 0)
+      .map((i) => ({
+        orderItemId: i.orderItemId,
+        quantity: i.available,
+        description: i.description,
+        serviceType: i.serviceType ?? 'OUTRO',
+        fabricName: i.fabricName,
+        technicalNotes: i.technicalNotes,
+        ...(i.plannedUpholstererUserId
+          ? {
+              upholstererUserId: i.plannedUpholstererUserId,
+              ...(i.plannedLaborUnitCents
+                ? {
+                    labor: {
+                      agreedCents: i.plannedLaborUnitCents * i.available,
+                      eligibility: 'QUALIDADE_APROVADA',
+                    },
+                  }
+                : {}),
+            }
+          : {}),
+      })),
+  }) as Promise<{ id: string; code: string; items: { id: string; code: string }[] }>;
+}
+
 /** Cliente → pedido → peças na oficina → OS aberta (sofá + poltronas). */
 export async function openServiceOrder(page: Page, name: string) {
   const customer = await post(page, '/api/v1/customers', {
@@ -59,6 +112,7 @@ export async function openServiceOrder(page: Page, name: string) {
   await markArrived(page, order.id, order.version);
   return post(page, '/api/v1/service-orders', {
     orderId: order.id,
+    materialPurchased: true,
     items: [
       {
         orderItemId: order.items[0].id,

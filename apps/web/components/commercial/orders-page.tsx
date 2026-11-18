@@ -1,27 +1,33 @@
 'use client';
 
 import { ORDER_STATUSES, ORDER_STATUS_LABEL } from '@cenario/shared';
-import { FileSignature, Plus, Search } from 'lucide-react';
+import type { OrderSummaryDto } from '@cenario/shared';
+import { ClipboardPlus, FileSignature, Plus, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useDeferredValue, useState } from 'react';
 import { Input, Select } from '@/components/ui/field';
 import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { ExportLink } from '@/components/ui/export-link';
-import { useOrders } from '@/lib/commercial';
+import { buttonClass } from '@/components/ui/button-styles';
+import { formatDay, useOrders } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { OrderStatusBadge, ServiceStateBadge } from './badges';
+import { MarkArrivedButton } from './order-detail';
 
 export function OrdersPage() {
   const can = useCan();
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
-  const orders = useOrders({ q: useDeferredValue(q), status });
+  // Fluxo da OS (2026-11-18): o pedido que virou OS sai da lista principal (vai para Ordens de
+  // serviço); "Já viraram OS" e "Todos" continuam a um clique.
+  const [stage, setStage] = useState('SEM_OS');
+  const orders = useOrders({ q: useDeferredValue(q), status, stage });
   return (
     <>
       <PageHeader
         title="Pedidos"
-        description="Serviços aprovados pelo cliente."
+        description="Serviços fechados, da retirada até virar ordem de serviço."
         actions={
           <>
             <ExportLink href="/api/v1/export/pedidos.csv" testId="export-pedidos" />
@@ -36,7 +42,7 @@ export function OrdersPage() {
           </>
         }
       />
-      <Card className="mb-4 grid gap-3 p-4 sm:grid-cols-[1fr_240px]">
+      <Card className="mb-4 grid gap-3 p-4 sm:grid-cols-[1fr_200px_220px]">
         <label className="relative">
           <span className="sr-only">Pesquisar pedidos</span>
           <Search
@@ -50,6 +56,16 @@ export function OrdersPage() {
             onChange={(e) => setQ(e.target.value)}
           />
         </label>
+        <Select
+          aria-label="Etapa"
+          value={stage}
+          onChange={(e) => setStage(e.target.value)}
+          data-testid="orders-stage"
+        >
+          <option value="SEM_OS">Aguardando OS</option>
+          <option value="COM_OS">Já viraram OS</option>
+          <option value="">Todos</option>
+        </Select>
         <Select aria-label="Situação" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">Todas as situações</option>
           {ORDER_STATUSES.map((s) => (
@@ -74,11 +90,11 @@ export function OrdersPage() {
         <Card className="overflow-hidden">
           <ul className="divide-y divide-line">
             {orders.data.items.map((o) => (
-              <li key={o.id}>
+              <li key={o.id} className="flex flex-col sm:flex-row sm:items-center">
                 <Link
                   href={`/painel/pedidos/${o.id}`}
                   // Melhoria 160: no celular, cartão com o cliente em cima e os selos embaixo.
-                  className="flex flex-col gap-1.5 px-5 py-3.5 hover:bg-subtle/70 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1"
+                  className="flex min-w-0 flex-1 flex-col gap-1.5 px-5 py-3.5 hover:bg-subtle/70 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-4 sm:gap-y-1"
                   data-testid={`order-${o.code}`}
                 >
                   <span className="font-mono text-xs font-semibold text-ink-muted sm:w-24 sm:text-sm sm:text-ink">
@@ -91,6 +107,9 @@ export function OrdersPage() {
                   <div className="flex flex-wrap items-center gap-2 sm:contents">
                     <span className="text-sm text-ink-muted tabular-nums">
                       {o.receivedPieces}/{o.totalPieces} peças na oficina
+                      {o.nextPickup?.scheduledDate && o.receivedPieces < o.totalPieces
+                        ? ` · retirada ${formatDay(o.nextPickup.scheduledDate)}${o.nextPickup.windowStart ? ` ${o.nextPickup.windowStart}` : ''}`
+                        : ''}
                     </span>
                     <OrderStatusBadge status={o.status} customerDropOff={o.customerDropOff} />
                     <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />
@@ -99,6 +118,7 @@ export function OrdersPage() {
                     {formatDateTime(o.createdAt)}
                   </span>
                 </Link>
+                <OrderQuickAction order={o} />
               </li>
             ))}
           </ul>
@@ -106,4 +126,42 @@ export function OrdersPage() {
       )}
     </>
   );
+}
+
+/**
+ * Fluxo da OS (2026-11-18): o próximo passo do pedido num botão — "Peça chegou" enquanto a peça
+ * não chegou; "Gerar OS" quando ela está na tapeçaria; "Ver OS" depois.
+ */
+function OrderQuickAction({ order: o }: { order: OrderSummaryDto }) {
+  const can = useCan();
+  if (o.status === 'CANCELADO') return null;
+  const arrived = o.receivedPieces > 0;
+  const missing = o.receivedPieces < o.totalPieces - o.returnedPieces;
+  let action: React.ReactNode = null;
+  if (o.serviceOrderCount > 0) {
+    if (can('os.ver'))
+      action = (
+        <Link
+          href={`/painel/os?pedido=${o.id}`}
+          className={buttonClass('secondary', 'sm')}
+          data-testid={`order-see-os-${o.code}`}
+        >
+          Ver OS
+        </Link>
+      );
+  } else if (arrived && can('os.gerenciar')) {
+    action = (
+      <Link
+        href={`/painel/os/nova?pedido=${o.id}`}
+        className={buttonClass('primary', 'sm')}
+        data-testid={`order-generate-os-${o.code}`}
+      >
+        <ClipboardPlus className="size-4" aria-hidden /> Gerar OS
+      </Link>
+    );
+  } else if (missing && can('pedidos.gerenciar')) {
+    action = <MarkArrivedButton order={o} size="sm" />;
+  }
+  if (!action) return null;
+  return <div className="shrink-0 px-5 pb-3.5 sm:py-3.5 sm:pl-0">{action}</div>;
 }

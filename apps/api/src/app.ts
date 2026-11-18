@@ -38,6 +38,7 @@ import { authRoutes } from './modules/auth/routes';
 import { customerRoutes } from './modules/customers/routes';
 import { exportRoutes } from './modules/exports/routes';
 import { releaseDueTasks } from './modules/production/common';
+import { autoReceiveDuePickups } from './modules/pickups/arrival';
 import { productionPlanRoutes } from './modules/production/plans';
 import { productionProductivityRoutes } from './modules/production/productivity';
 import { productionTaskRoutes } from './modules/production/tasks';
@@ -330,6 +331,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   let maintenanceTimer: NodeJS.Timeout | null = null;
   let alertTimer: NodeJS.Timeout | null = null;
   let releaseTimer: NodeJS.Timeout | null = null;
+  let arrivalTimer: NodeJS.Timeout | null = null;
   let absenceTimer: NodeJS.Timeout | null = null;
   let issueTimer: NodeJS.Timeout | null = null;
   let emailTimer: NodeJS.Timeout | null = null;
@@ -374,6 +376,15 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           30_000,
         );
         releaseTimer.unref();
+        // Fluxo da OS (2026-11-18): peça da retirada "na tapeçaria" 1 hora após o horário.
+        arrivalTimer = setInterval(
+          () =>
+            void forEachCompany(system, () => autoReceiveDuePickups(prisma)).catch((err: unknown) =>
+              app.log.warn({ err }, 'Falha ao marcar as retiradas chegadas'),
+            ),
+          5 * 60_000,
+        );
+        arrivalTimer.unref();
         // Fase 7: ausência presumida após o limite configurado (idempotente).
         absenceTimer = setInterval(
           () =>
@@ -414,6 +425,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       if (maintenanceTimer) clearInterval(maintenanceTimer);
       if (alertTimer) clearInterval(alertTimer);
       if (releaseTimer) clearInterval(releaseTimer);
+      if (arrivalTimer) clearInterval(arrivalTimer);
       if (absenceTimer) clearInterval(absenceTimer);
       if (issueTimer) clearInterval(issueTimer);
       if (emailTimer) clearInterval(emailTimer);

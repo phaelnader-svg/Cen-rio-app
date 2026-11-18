@@ -1419,10 +1419,10 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
             <p className="font-semibold">
               {p ? 'Aguardando retirada' : 'Aguardando entrega do cliente'}
             </p>
-            <p className="text-sm text-ink-muted">
-              {result.serviceOrder
-                ? `OS ${result.serviceOrder.code} criada com as peças do serviço.`
-                : 'Nenhuma OS criada: não há peças livres neste pedido.'}
+            <p className="text-sm text-ink-muted" data-testid="ns-done-next">
+              {p?.scheduledDate
+                ? 'A peça passa para "na tapeçaria" 1 hora depois do horário da retirada (ou marque no pedido quando chegar). Aí é só gerar a OS no pedido.'
+                : 'Quando a peça chegar, marque no pedido e gere a OS por lá.'}
             </p>
           </div>
         </div>
@@ -1433,13 +1433,6 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
             text
           />
           <SummaryRow label="Pedido" value={result.order.code} testId="ns-done-order" />
-          {result.serviceOrder && (
-            <SummaryRow
-              label="Ordem de serviço"
-              value={result.serviceOrder.code}
-              testId="ns-done-os"
-            />
-          )}
           {p ? (
             <>
               <SummaryRow label="Retirada" value={p.code} text />
@@ -1491,21 +1484,11 @@ function Confirmation({ result, onNew }: { result: NewServiceResultDto; onNew: (
           )}
           <Button
             type="button"
-            variant={result.serviceOrder ? 'secondary' : 'primary'}
             onClick={() => router.push(`/painel/pedidos/${result.order.id}`)}
             data-testid="ns-open-order"
           >
             Abrir pedido
           </Button>
-          {result.serviceOrder && (
-            <Button
-              type="button"
-              onClick={() => router.push(`/painel/os/${result.serviceOrder!.id}`)}
-              data-testid="ns-open-os"
-            >
-              Abrir OS
-            </Button>
-          )}
         </FormActions>
       </Card>
     </div>

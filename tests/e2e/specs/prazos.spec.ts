@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { E2E } from '../env';
 import { loginAdmin } from './helpers';
+import { generateOs } from './os-helpers';
 
 /**
  * Prazos e serviços em risco no navegador (dados fictícios):
@@ -54,9 +55,9 @@ test.describe.serial('Prazos e serviços em risco', () => {
       },
     });
     const order = await call(page, 'GET', `/api/v1/orders/${svc.order.id}`);
-    // Recebimentos removidos: a OS nasce no fechamento do Novo serviço; a chegada é só uma marca.
+    // Fluxo da OS (2026-11-18): a peça chega e a OS é gerada no pedido.
     await call(page, 'POST', `/api/v1/orders/${order.id}/arrived`, { version: order.version });
-    const rec = { generatedServiceOrder: svc.serviceOrder as { id: string; code: string } };
+    const rec = { generatedServiceOrder: await generateOs(page, order.id) };
     const soId = rec.generatedServiceOrder.id as string;
     const soCode = rec.generatedServiceOrder.code as string;
 

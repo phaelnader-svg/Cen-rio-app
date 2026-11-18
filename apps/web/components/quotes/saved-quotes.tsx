@@ -17,6 +17,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
+  CheckCircle2,
   ClipboardList,
   ClipboardPlus,
   Eye,
@@ -104,6 +105,21 @@ function SavedList({
   const can = useCan();
   const canCloseService = can('pedidos.gerenciar') && can('retiradas.gerenciar');
   const focus = useFocusParam();
+  // Fluxo da OS (2026-11-18): aprovar num clique (além do link do cliente).
+  const approve = useMutation({
+    mutationFn: async (id: string) => {
+      const full = await api<QuoteDto>(`/api/v1/quotes/${id}`);
+      return api<QuoteDto>(`/api/v1/quotes/${id}/status`, {
+        method: 'POST',
+        body: { version: full.version, status: 'APROVADO' },
+      });
+    },
+    onSuccess: async (q) => {
+      toast('ok', `Orçamento nº ${q.number} aprovado. Agora é só fechar o serviço.`);
+      await qc.invalidateQueries({ queryKey: ['quotes'] });
+    },
+    onError: (e) => toast('danger', errorMessage(e)),
+  });
   const del = useMutation({
     mutationFn: (id: string) =>
       api(`/api/v1/quotes/${id}/delete`, {
@@ -271,6 +287,17 @@ function SavedList({
                           Editar
                         </Button>
                       )}
+                      {!q.orderId && q.status !== 'APROVADO' && q.status !== 'RECUSADO' && (
+                        <Button
+                          size="sm"
+                          icon={<CheckCircle2 className="size-4" aria-hidden />}
+                          loading={approve.isPending && approve.variables === q.id}
+                          onClick={() => approve.mutate(q.id)}
+                          data-testid={`quote-approve-${q.number}`}
+                        >
+                          Aprovar
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="secondary"
@@ -291,7 +318,10 @@ function SavedList({
                         q.status !== 'RECUSADO' && (
                           <Link
                             href={`/painel/servicos/novo?orcamento=${q.id}`}
-                            className={buttonClass('primary', 'sm')}
+                            className={buttonClass(
+                              q.status === 'APROVADO' ? 'primary' : 'secondary',
+                              'sm',
+                            )}
                           >
                             <ClipboardPlus className="size-4" aria-hidden />
                             Fechar serviço

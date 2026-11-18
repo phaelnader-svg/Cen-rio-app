@@ -16,6 +16,7 @@ import { Ban, ClipboardPlus, PackageCheck, Pencil, Truck } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { BUTTON_VARIANTS } from '@/components/ui/button-styles';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Select, Textarea } from '@/components/ui/field';
 import { MoneyField, SelectField } from '@/components/ui/form';
@@ -69,11 +70,15 @@ export function OrderDetail({ id }: { id: string }) {
   const pendingPickup = o.items.some(
     (i) => i.quantity - i.receivedQuantity - i.inActivePickups > 0,
   );
-  // Peças que o cliente trouxe (fora de retirada ativa) e ainda não marcadas como na oficina.
-  const pendingArrival = pendingPickup;
-  const availableForOs = o.items.some(
-    (i) => i.quantity - i.returnedQuantity - i.inServiceOrders > 0,
+  // Fluxo da OS (2026-11-18): peça que ainda não chegou na tapeçaria (em retirada ou não).
+  const pendingArrival = o.items.some(
+    (i) => i.quantity - i.returnedQuantity - i.receivedQuantity > 0,
   );
+  // Gerar a OS: peça já na tapeçaria e ainda sem OS.
+  const readyForOs = o.items.some(
+    (i) => Math.min(i.receivedQuantity, i.quantity - i.returnedQuantity) - i.inServiceOrders > 0,
+  );
+  const waitingOs = !readyForOs && pendingArrival && o.items.every((i) => i.inServiceOrders === 0);
 
   return (
     <>
@@ -93,12 +98,13 @@ export function OrderDetail({ id }: { id: string }) {
                 </Button>
               )}
               {can('pedidos.gerenciar') && pendingArrival && <MarkArrivedButton order={o} />}
-              {can('os.gerenciar') && availableForOs && (
+              {can('os.gerenciar') && readyForOs && (
                 <Link
                   href={`/painel/os/nova?pedido=${o.id}`}
-                  className={`${linkBtn} border border-line-strong bg-surface text-ink hover:bg-subtle`}
+                  className={`${linkBtn} ${BUTTON_VARIANTS.primary}`}
+                  data-testid="order-generate-os"
                 >
-                  <ClipboardPlus className="size-4" aria-hidden /> Criar OS técnica
+                  <ClipboardPlus className="size-4" aria-hidden /> Gerar ordem de serviço
                 </Link>
               )}
               {can('pedidos.gerenciar') && (
@@ -136,6 +142,13 @@ export function OrderDetail({ id }: { id: string }) {
             : ''}
         </span>
       </div>
+      {active && waitingOs && (
+        <Alert tone="info" className="mb-6" data-testid="order-waiting-arrival">
+          A ordem de serviço é gerada aqui depois que a peça chegar na tapeçaria. Com a retirada
+          agendada, isso acontece sozinho 1 hora depois do horário marcado; se chegar antes, use
+          “Peça chegou na tapeçaria”.
+        </Alert>
+      )}
       {o.status === 'CANCELADO' && (
         <Alert
           tone="danger"
@@ -788,10 +801,16 @@ function PlannedIntentDialog({ order, onClose }: { order: OrderDto; onClose: () 
 }
 
 /**
- * Recebimentos removidos: marca como já na oficina as peças que o cliente trouxe (as que não
- * estão em retirada ativa). Opcional — a OS nasce no fechamento do serviço e não depende disso.
+ * "Peça chegou na tapeçaria": marca todas as peças que faltam (as da retirada também). Depois
+ * disso o pedido oferece "Gerar ordem de serviço".
  */
-function MarkArrivedButton({ order }: { order: OrderDto }) {
+export function MarkArrivedButton({
+  order,
+  size = 'md',
+}: {
+  order: Pick<OrderDto, 'id' | 'code' | 'version'>;
+  size?: 'sm' | 'md';
+}) {
   const qc = useQueryClient();
   const toast = useToast();
   const [key] = useState(newIdempotencyKey);
@@ -805,19 +824,20 @@ function MarkArrivedButton({ order }: { order: OrderDto }) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['order', order.id] });
       void qc.invalidateQueries({ queryKey: ['orders'] });
-      toast('ok', `Peças do pedido ${order.code} marcadas como na oficina.`);
+      toast('ok', `Pedido ${order.code}: peça na tapeçaria. Já pode gerar a OS.`);
     },
     onError: (e) => toast('danger', errorMessage(e)),
   });
   return (
     <Button
       variant="secondary"
+      size={size}
       loading={m.isPending}
       icon={<PackageCheck className="size-4" aria-hidden />}
       onClick={() => m.mutate()}
-      data-testid="order-mark-arrived"
+      data-testid={size === 'sm' ? `order-mark-arrived-${order.code}` : 'order-mark-arrived'}
     >
-      Peças na oficina
+      Peça chegou na tapeçaria
     </Button>
   );
 }

@@ -51,8 +51,9 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     await expect(page.getByTestId('order-value')).toHaveText(/3\.800,00/);
     const orderUrl = page.url();
 
-    // Recebimentos removidos (16/11/2026): a OS não depende da chegada das peças.
-    await expect(page.getByRole('link', { name: 'Criar OS técnica' })).toBeVisible();
+    // Fluxo da OS (2026-11-18): a OS é gerada depois que a peça chega na tapeçaria.
+    await expect(page.getByTestId('order-generate-os')).toHaveCount(0);
+    await expect(page.getByTestId('order-waiting-arrival')).toBeVisible();
 
     // 3. Retirada agendada (todas as peças)
     await page.goto(orderUrl);
@@ -79,11 +80,11 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     await page.goto(orderUrl);
 
     // 5. OS técnica com as peças recebidas
-    await page.getByRole('link', { name: 'Criar OS técnica' }).click();
+    await page.getByTestId('order-generate-os').click();
     await expect(page.getByLabel('Quantidade').nth(1)).toHaveValue('6');
     await page.getByLabel('Tecido escolhido').first().fill('Linho');
     await page.getByLabel('Cor').first().fill('Areia');
-    await page.getByRole('button', { name: 'Criar OS' }).click();
+    await page.getByRole('button', { name: 'Gerar OS' }).click();
     await expect(page.getByRole('heading', { name: /^OS-\d{5}$/ })).toBeVisible();
     await expect(page.getByTestId('readiness')).toContainText('Programação · Pendente'); // Fase 5: sem planejamento publicado;
 

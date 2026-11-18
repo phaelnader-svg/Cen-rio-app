@@ -4,6 +4,7 @@ import { plural } from '@cenario/shared';
 import { SERVICE_ORDER_STATUSES, SERVICE_ORDER_STATUS_LABEL } from '@cenario/shared';
 import { ClipboardList, Search } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useDeferredValue, useState } from 'react';
 import { Input, Select } from '@/components/ui/field';
 import { Alert, Avatar, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
@@ -12,12 +13,22 @@ import { formatDay, useServiceOrders } from '@/lib/commercial';
 import { useCan } from '@/lib/hooks';
 import { OsBulkBar } from '@/components/improvements/os-bulk';
 import { DeadlineBadge, PriorityBadge, ServiceOrderStatusBadge } from './badges';
+import { MaterialPurchasedButton } from './material-purchased';
 import { OsStateBadge } from './os-state';
 
 export function ServiceOrdersPage() {
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState('ABERTA');
-  const list = useServiceOrders({ q: useDeferredValue(q), status });
+  // "Ver OS" na lista de pedidos abre as OS daquele pedido.
+  const orderId = useSearchParams().get('pedido') ?? undefined;
+  const [status, setStatus] = useState(orderId ? '' : 'ABERTA');
+  // Fluxo da OS (2026-11-18): "Aguardando material" = OS aberta sem "Material comprado".
+  const material = status === 'AGUARDANDO_MATERIAL' ? 'AGUARDANDO' : undefined;
+  const list = useServiceOrders({
+    q: useDeferredValue(q),
+    status: material ? 'ABERTA' : status,
+    ...(material ? { material } : {}),
+    ...(orderId ? { orderId } : {}),
+  });
   const can = useCan();
   const bulk = can('os.gerenciar');
   const [selected, setSelected] = useState<string[]>([]);
@@ -28,7 +39,7 @@ export function ServiceOrdersPage() {
       <PageHeader
         title="Ordens de serviço"
         description="Todas as OS da oficina."
-        help="OS técnicas: nascem no fechamento do serviço (Novo serviço) ou pelo pedido, com as peças ainda sem OS."
+        help="A OS é gerada no pedido depois que a peça chega na tapeçaria. Marque “Material comprado” para ela entrar na programação da semana."
         actions={<ExportLink href="/api/v1/export/os.csv" testId="export-os" />}
       />
       <Card className="mb-4 grid gap-3 p-4 sm:grid-cols-[1fr_220px]">
@@ -47,6 +58,7 @@ export function ServiceOrdersPage() {
         </label>
         <Select aria-label="Situação" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">Todas</option>
+          <option value="AGUARDANDO_MATERIAL">Aguardando material</option>
           {SERVICE_ORDER_STATUSES.map((s) => (
             <option key={s} value={s}>
               {SERVICE_ORDER_STATUS_LABEL[s]}
@@ -123,6 +135,11 @@ export function ServiceOrdersPage() {
                       )}
                     </div>
                   </Link>
+                  {s.status === 'ABERTA' && (
+                    <div className="shrink-0 pr-4">
+                      <MaterialPurchasedButton os={s} canManage={bulk} compact />
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
