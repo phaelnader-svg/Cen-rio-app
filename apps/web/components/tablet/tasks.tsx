@@ -396,9 +396,10 @@ export function TaskCard({
               <span
                 className={clsx(
                   'rounded-full px-3 py-1 font-semibold',
+                  // Revisão geral (item 7): prioridade é atenção (laranja); vermelho é atraso.
                   t.priority === 'URGENTE'
-                    ? 'bg-danger-600 text-white'
-                    : 'bg-danger-50 text-danger-600',
+                    ? 'bg-warn-600 text-white'
+                    : 'bg-warn-50 text-warn-600',
                 )}
               >
                 {PRIORITY_LABEL[t.priority]}

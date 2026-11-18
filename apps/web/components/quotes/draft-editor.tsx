@@ -14,13 +14,15 @@ import {
   quoteCategoryEnabled,
   quoteItemCost,
   type QuoteCatalogItemDto,
+  type QuoteCustomerLookupDto,
   type QuoteDraft,
   type QuoteMaterialCategory,
   type QuoteSettingsDto,
 } from '@cenario/shared';
 import clsx from 'clsx';
 import { Eye, Plus, Save, Trash2, X } from 'lucide-react';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useDeferredValue, useEffect, useId, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/field';
 import {
@@ -36,6 +38,7 @@ import {
   span,
 } from '@/components/ui/form';
 import { Alert } from '@/components/ui/misc';
+import { api } from '@/lib/api';
 import { brl, pct, qtyText, type useQuoteDraft } from '@/lib/quotes';
 import { BR_CITIES } from '@/lib/br-cities';
 
@@ -140,6 +143,17 @@ export function QuoteEditor({
           ? 'Taxa de máquina inválida.'
           : null;
 
+  // A rota de logística é cadastrada só com o nome ("Taubaté"); a busca devolve "Taubaté - SP".
+  const cityPatch = (city: string) => {
+    const bare = city.replace(/\s+-\s+[A-Z]{2}$/, '');
+    const match = routes.find(
+      (r) =>
+        normalizeQuoteName(r.name) === normalizeQuoteName(city) ||
+        normalizeQuoteName(r.name) === normalizeQuoteName(bare),
+    );
+    return match ? { city, logisticsId: match.id } : { city };
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -171,12 +185,17 @@ export function QuoteEditor({
 
       <FormSection step={1} title="Dados do cliente">
         <FormGrid>
-          <TextField
-            label="Nome do cliente"
-            placeholder="Nome ou empresa"
-            cols={6}
+          {/* Revisão geral (item 5): cliente já cadastrado aparece ao digitar e preenche tudo. */}
+          <CustomerField
             value={d.customerName}
-            onChange={(e) => update({ customerName: e.target.value })}
+            onChange={(customerName) => update({ customerName })}
+            onPick={(c) =>
+              update({
+                customerName: c.name,
+                ...(c.phone ? { phone: formatPhoneBr(c.phone) } : {}),
+                ...(c.city ? cityPatch(c.city) : {}),
+              })
+            }
           />
           <TextField
             label="Telefone / WhatsApp"
@@ -191,16 +210,7 @@ export function QuoteEditor({
           />
           <CityField
             value={d.city}
-            onChange={(city) => {
-              // A rota de logística é cadastrada só com o nome ("Taubaté"); a busca devolve "Taubaté - SP".
-              const bare = city.replace(/\s+-\s+[A-Z]{2}$/, '');
-              const match = routes.find(
-                (r) =>
-                  normalizeQuoteName(r.name) === normalizeQuoteName(city) ||
-                  normalizeQuoteName(r.name) === normalizeQuoteName(bare),
-              );
-              update(match ? { city, logisticsId: match.id } : { city });
-            }}
+            onChange={(city) => update(cityPatch(city))}
           />
           <SelectField
             label="Serviço"
@@ -503,6 +513,116 @@ export function QuoteEditor({
         )}
       </FormSection>
     </div>
+  );
+}
+
+const monthYear = (iso: string) =>
+  new Intl.DateTimeFormat('pt-BR', { month: 'short', year: 'numeric' })
+    .format(new Date(iso))
+    .replace('.', '')
+    .replace(' de ', '/');
+
+/** Resumo do que o cliente já fez, numa linha (só o que existe). */
+function customerHistory(c: QuoteCustomerLookupDto): string {
+  const parts: string[] = [];
+  if (c.phone) parts.push(formatPhoneBr(c.phone));
+  if (c.services > 0)
+    parts.push(
+      `${pluralWord(c.services, '1 serviço', `${c.services} serviços`)}${c.lastServiceAt ? ` · último em ${monthYear(c.lastServiceAt)}` : ''}`,
+    );
+  else parts.push('nenhum serviço ainda');
+  const open = c.quotes - c.quotesClosed;
+  if (open > 0) parts.push(pluralWord(open, '1 orçamento não fechado', `${open} orçamentos não fechados`));
+  return parts.join(' · ');
+}
+
+/**
+ * Revisão geral (item 5): nome do cliente com os clientes já cadastrados sugeridos (nome ou
+ * telefone). Escolher preenche nome, telefone e cidade; continuar digitando é cliente novo.
+ */
+function CustomerField({
+  value,
+  onChange,
+  onPick,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onPick: (c: QuoteCustomerLookupDto) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<string | null>(null);
+  const listId = useId();
+  const term = useDeferredValue(value.trim());
+  const q = useQuery({
+    queryKey: ['quote-customer-lookup', term],
+    queryFn: () =>
+      api<QuoteCustomerLookupDto[]>(
+        `/api/v1/quotes/customer-lookup?q=${encodeURIComponent(term)}`,
+      ),
+    enabled: term.length >= 3 && term !== picked,
+    staleTime: 30_000,
+  });
+  const found = term !== picked ? (q.data ?? []) : [];
+  const show = open && term.length >= 3 && found.length > 0;
+  return (
+    <Field label="Nome do cliente" className={span(6)}>
+      {(p) => (
+        <div className="relative">
+          <Input
+            {...p}
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={show}
+            aria-controls={listId}
+            autoComplete="off"
+            placeholder="Nome, empresa ou telefone"
+            value={value}
+            onFocus={() => setOpen(true)}
+            onBlur={() => setTimeout(() => setOpen(false), 120)}
+            onChange={(e) => {
+              onChange(e.target.value);
+              setOpen(true);
+            }}
+            onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
+            data-testid="quote-customer-name"
+          />
+          {show && (
+            <div
+              id={listId}
+              role="listbox"
+              className="absolute inset-x-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-[var(--shadow-pop)]"
+              data-testid="quote-customer-suggestions"
+            >
+              <p className="px-3 pt-1.5 pb-1 text-xs font-medium text-ink-muted">
+                Já cadastrados
+              </p>
+              {found.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  role="option"
+                  aria-selected={false}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setPicked(c.name);
+                    setOpen(false);
+                    onPick(c);
+                  }}
+                  className="block w-full rounded-lg px-3 py-2 text-left hover:bg-subtle"
+                  data-testid={`quote-customer-${c.id}`}
+                >
+                  <span className="block text-sm font-medium">{c.name}</span>
+                  <span className="block text-xs text-ink-muted">{customerHistory(c)}</span>
+                </button>
+              ))}
+              <p className="px-3 py-1.5 text-xs text-ink-muted">
+                Não é nenhum deles? Continue digitando: vira cliente novo ao fechar o serviço.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </Field>
   );
 }
 

@@ -4,12 +4,15 @@ import {
   buildQuoteSnapshot,
   calcQuote,
   quoteDraftFromSnapshot,
+  formatPhoneBr,
   quoteSaveBlocker,
+  type QuoteCustomerLookupDto,
   type QuoteDto,
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, Printer, Save } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Alert, PageHeader, Spinner } from '@/components/ui/misc';
@@ -44,6 +47,25 @@ export function QuotesPage() {
   const [savedKey, setSavedKey] = useState(0);
   const [editAsk, setEditAsk] = useState<QuoteDto | null>(null);
   const [editNote, setEditNote] = useState<string | null>(null);
+
+  // Revisão geral (item 5): "Novo orçamento" na ficha do cliente abre com o cliente preenchido.
+  const clienteId = useSearchParams().get('cliente');
+  const filled = useRef(false);
+  useEffect(() => {
+    if (!clienteId || filled.current || draftApi.editing) return;
+    if (draftApi.draft.customerName.trim() !== '') return;
+    filled.current = true;
+    api<QuoteCustomerLookupDto[]>(`/api/v1/quotes/customer-lookup?id=${clienteId}`)
+      .then(([c]) => {
+        if (!c) return;
+        draftApi.update({
+          customerName: c.name,
+          ...(c.phone ? { phone: formatPhoneBr(c.phone) } : {}),
+          ...(c.city ? { city: c.city } : {}),
+        });
+      })
+      .catch(() => undefined);
+  }, [clienteId, draftApi]);
 
   /** Abre o orçamento salvo no "Elaborar" (o que estava em elaboração é substituído). */
   const openForEdit = (q: QuoteDto) => {

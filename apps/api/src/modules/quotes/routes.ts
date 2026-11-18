@@ -4,6 +4,8 @@ import {
   QUOTE_STATUSES,
   QUOTE_STATUS_LABEL,
   buildQuoteSnapshot,
+  normalizeSearch,
+  onlyDigits,
   isQuoteStatus,
   quoteStatusSchema,
   calcQuote,
@@ -19,6 +21,7 @@ import {
   type QuoteCatalogItemDto,
   type QuoteCatalogKind,
   type QuoteDto,
+  type QuoteCustomerLookupDto,
   type QuoteFunnelDto,
   type QuoteStatus,
   type QuoteMaterialCategory,
@@ -729,6 +732,73 @@ export async function quoteRoutes(app: FastifyInstance) {
       followUpDue,
     };
     return funnel;
+  });
+
+  /**
+   * Revisão geral (item 5): ao digitar o nome ou o telefone no orçamento, os clientes já
+   * cadastrados aparecem com o histórico (serviços, último serviço, orçamentos e quanto já fechou).
+   */
+  app.get('/api/v1/quotes/customer-lookup', { config: { access: VIEW } }, async (request) => {
+    const q = z
+      .object({ q: z.string().trim().max(100).default(''), id: z.string().uuid().optional() })
+      .parse(request.query);
+    const terms = normalizeSearch(q.q).split(' ').filter(Boolean);
+    const digits = onlyDigits(q.q);
+    // `id`: "Novo orçamento" a partir da ficha do cliente já abre preenchido.
+    if (terms.length === 0 && !q.id) return [] satisfies QuoteCustomerLookupDto[];
+    const rows = await prisma.customer.findMany({
+      where: {
+        active: true,
+        ...(q.id ? { id: q.id } : {}),
+        AND: terms.map((t) => ({
+          OR: [
+            { searchText: { contains: t } },
+            ...(digits.length >= 4 && /^\d+$/.test(t) ? [{ searchText: { contains: digits } }] : []),
+          ],
+        })),
+      },
+      orderBy: { name: 'asc' },
+      take: 6,
+      include: {
+        addresses: {
+          where: { archivedAt: null },
+          orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+          take: 1,
+          select: { city: true, state: true },
+        },
+        orders: {
+          where: { status: { not: 'CANCELADO' } },
+          select: { createdAt: true, agreedValueCents: true },
+        },
+      },
+    });
+    const phones = rows.map((r) => onlyDigits(r.phone ?? '')).filter((p) => p.length >= 8);
+    const quotes = phones.length
+      ? await prisma.quote.findMany({
+          where: { deletedAt: null, phone: { not: null } },
+          select: { phone: true, orderId: true },
+        })
+      : [];
+    return rows.map((r): QuoteCustomerLookupDto => {
+      const phone = onlyDigits(r.phone ?? '');
+      const mine =
+        phone.length >= 8 ? quotes.filter((x) => onlyDigits(x.phone ?? '') === phone) : [];
+      const last = r.orders.reduce<Date | null>(
+        (a, o) => (!a || o.createdAt > a ? o.createdAt : a),
+        null,
+      );
+      return {
+        id: r.id,
+        name: r.name,
+        phone: r.phone,
+        city: r.addresses[0] ? `${r.addresses[0].city} - ${r.addresses[0].state}` : null,
+        services: r.orders.length,
+        lastServiceAt: last?.toISOString() ?? null,
+        quotes: mine.length,
+        quotesClosed: mine.filter((x) => x.orderId).length,
+        spentCents: r.orders.reduce((a, o) => a + (o.agreedValueCents ?? 0), 0),
+      };
+    });
   });
 
   app.post('/api/v1/quotes/:id/delete', { config: { access: MANAGE } }, async (request) => {

@@ -83,7 +83,7 @@ export function MyInspections({ onOpen }: { onOpen: (id: string) => void }) {
                   className={clsx(
                     'rounded-full px-3 py-1 font-semibold',
                     i.priority === 'URGENTE' || i.priority === 'ALTA'
-                      ? 'bg-danger-50 text-danger-600'
+                      ? 'bg-warn-50 text-warn-600'
                       : 'bg-subtle text-ink-soft',
                   )}
                 >

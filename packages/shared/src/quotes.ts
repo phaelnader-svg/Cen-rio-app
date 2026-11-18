@@ -245,6 +245,25 @@ export const quoteStatusSchema = z
 export type QuoteStatusInput = z.infer<typeof quoteStatusSchema>;
 
 /** Funil de vendas do período (melhoria 81). */
+/**
+ * Revisão geral (2026-11-18, item 5): cliente já cadastrado sugerido no orçamento, com o que ele
+ * já fez na tapeçaria (para não digitar de novo e para virar estatística).
+ */
+export interface QuoteCustomerLookupDto {
+  id: string;
+  name: string;
+  phone: string | null;
+  city: string | null;
+  /** Pedidos (serviços fechados) do cliente. */
+  services: number;
+  lastServiceAt: string | null;
+  /** Orçamentos com o mesmo telefone; quantos viraram serviço. */
+  quotes: number;
+  quotesClosed: number;
+  /** Soma dos valores fechados nos pedidos (centavos). */
+  spentCents: number;
+}
+
 export interface QuoteFunnelDto {
   from: string;
   to: string;

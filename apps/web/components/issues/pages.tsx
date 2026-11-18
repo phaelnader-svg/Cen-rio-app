@@ -350,10 +350,10 @@ export function IssueDetailPage({ id }: { id: string }) {
           {ISSUE_STATUS_LABEL[i.status]}
         </Badge>
         <Badge tone="neutral">{ISSUE_IMPACT_LABEL[i.impact]}</Badge>
-        <Badge tone={i.priority === 'URGENTE' || i.priority === 'ALTA' ? 'danger' : 'neutral'}>
+        <Badge tone={i.priority === 'URGENTE' || i.priority === 'ALTA' ? 'warn' : 'neutral'}>
           Prioridade {PRIORITY_LABEL[i.priority].toLowerCase()}
         </Badge>
-        {i.deadlineRisk && <Badge tone="danger">Prazo em risco</Badge>}
+        {i.deadlineRisk && <Badge tone="warn">Prazo em risco</Badge>}
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">

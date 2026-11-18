@@ -26,7 +26,8 @@ const ORDER_TONE: Record<OrderStatus, Tone> = {
   RETIRADA_AGENDADA: 'info',
   RECEBIDO_PARCIAL: 'bronze',
   RECEBIDO: 'ok',
-  CANCELADO: 'danger',
+  // Revisão geral (item 7): cancelado é informação (cinza); vermelho só atraso e retrabalho.
+  CANCELADO: 'neutral',
 };
 const PICKUP_TONE: Record<PickupStatus, Tone> = {
   AGUARDANDO_AGENDAMENTO: 'warn',
@@ -35,13 +36,14 @@ const PICKUP_TONE: Record<PickupStatus, Tone> = {
   RETIRADA_REALIZADA: 'bronze',
   RECEBIDA_NA_OFICINA: 'ok',
   CANCELADA: 'neutral',
-  COM_OCORRENCIA: 'danger',
+  COM_OCORRENCIA: 'warn',
 };
 const PRIORITY_TONE: Record<Priority, Tone> = {
   BAIXA: 'neutral',
   NORMAL: 'info',
   ALTA: 'warn',
-  URGENTE: 'danger',
+  // Revisão geral (item 7): vermelho é só atraso e retrabalho; urgente é atenção (laranja).
+  URGENTE: 'warn',
 };
 
 /** Rótulo da situação do pedido: sem retirada, "aguardando" é a entrega pelo cliente. */
@@ -120,7 +122,8 @@ export function DeadlineBadge({
   const tone: Partial<Record<ServiceDeadline['state'], Tone>> = {
     ATRASADO: 'danger',
     EM_RISCO: 'warn',
-    PROXIMO: 'neutral',
+    // Revisão geral (item 7): prazo perto é atenção (laranja), como "em risco".
+    PROXIMO: 'warn',
   };
   const t = tone[deadline.state];
   if (!t) return null;

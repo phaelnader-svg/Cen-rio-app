@@ -56,7 +56,7 @@ function AgendaItem({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
           : p.rework
             ? 'border-danger-600/40 bg-danger-50 text-danger-700'
             : p.status === 'COM_OCORRENCIA'
-              ? 'border-danger-600/30 bg-surface'
+              ? 'border-warn-600/40 bg-warn-50'
               : p.status === 'RECEBIDA_NA_OFICINA'
                 ? 'border-ok-600/20 bg-ok-50'
                 : 'border-info-600/20 bg-info-50',
@@ -203,7 +203,7 @@ export function PickupsPage() {
           </div>
           <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
             <span className="inline-flex items-center gap-1.5">
-              <span className="size-3 rounded border border-danger-600/30 bg-danger-50" />
+              <span className="size-3 rounded border border-dashed border-line-strong bg-subtle" />
               Feriado
             </span>
             <span className="inline-flex items-center gap-1.5">
@@ -237,8 +237,10 @@ export function PickupsPage() {
                   className={clsx(
                     'rounded-xl border px-3 py-2 md:min-h-28 md:p-2',
                     !inMonth && 'hidden opacity-55 md:block',
+                    // Revisão geral (item 7): vermelho é só atraso e retrabalho; feriado é cinza
+                    // (tracejado, com o nome), como dia sem expediente.
                     holiday
-                      ? 'border-danger-600/30 bg-danger-50'
+                      ? 'border-dashed border-line-strong bg-subtle'
                       : weekend
                         ? 'border-line-strong bg-subtle'
                         : 'border-line bg-surface',
@@ -249,7 +251,7 @@ export function PickupsPage() {
                     className={clsx(
                       'text-sm font-semibold',
                       holiday
-                        ? 'text-danger-700'
+                        ? 'text-ink-muted'
                         : d === today
                           ? 'text-brand-700'
                           : 'text-ink-soft',
@@ -260,7 +262,7 @@ export function PickupsPage() {
                     {d === today && <span className="ml-1.5 text-xs font-medium">hoje</span>}
                   </p>
                   {holiday && (
-                    <p className="mb-1 text-[11px] leading-tight text-danger-700">{holiday.name}</p>
+                    <p className="mb-1 text-[11px] leading-tight text-ink-muted">{holiday.name}</p>
                   )}
                   {agenda.isPending ? null : items.length === 0 ? null : (
                     <ul className="mt-1.5 space-y-1.5">

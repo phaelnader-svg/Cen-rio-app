@@ -1,6 +1,6 @@
 'use client';
 
-import { plural } from '@cenario/shared';
+import { formatCents, plural, type QuoteCustomerLookupDto } from '@cenario/shared';
 import {
   CUSTOMER_KIND_LABEL,
   SERVICE_ORDER_STATUS_LABEL,
@@ -10,7 +10,7 @@ import {
   type CustomerAddressDto,
   type OrderStatus,
 } from '@cenario/shared';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Archive, MapPin, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -115,6 +115,7 @@ export function CustomerDetail({ id }: { id: string }) {
           </>
         }
       />
+      <CustomerStats id={id} />
       {!c.active && (
         <Alert tone="warn" className="mb-4">
           Cliente arquivado: não aparece na seleção de novos pedidos.
@@ -380,5 +381,39 @@ function AddressDialog({
       )}
       <AddressFields value={value} onChange={setValue} errors={errors} showPrimary />
     </Dialog>
+  );
+}
+
+/**
+ * Revisão geral (item 5): o que o cliente já fez na tapeçaria, em números. Só para quem vê os
+ * orçamentos (é a mesma consulta que sugere o cliente no orçamento).
+ */
+function CustomerStats({ id }: { id: string }) {
+  const can = useCan();
+  const q = useQuery({
+    queryKey: ['quote-customer-lookup', 'id', id],
+    queryFn: () => api<QuoteCustomerLookupDto[]>(`/api/v1/quotes/customer-lookup?id=${id}`),
+    enabled: can('orcamentos.ver') || can('orcamentos.gerenciar'),
+  });
+  const c = q.data?.[0];
+  if (!c) return null;
+  const items: [string, string][] = [
+    ['Serviços', String(c.services)],
+    ['Orçamentos', c.quotes ? `${c.quotesClosed} de ${c.quotes} fechados` : 'nenhum'],
+    ['Já fechou', formatCents(c.spentCents)],
+    [
+      'Último serviço',
+      c.lastServiceAt ? new Date(c.lastServiceAt).toLocaleDateString('pt-BR') : '—',
+    ],
+  ];
+  return (
+    <dl className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="customer-stats">
+      {items.map(([k, v]) => (
+        <div key={k} className="rounded-xl border border-line bg-surface px-4 py-3">
+          <dt className="text-xs text-ink-muted">{k}</dt>
+          <dd className="mt-0.5 font-semibold tabular-nums">{v}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
