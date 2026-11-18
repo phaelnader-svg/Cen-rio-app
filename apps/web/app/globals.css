@@ -173,6 +173,12 @@
   .input {
     @apply block w-full rounded-xl border border-line-strong bg-surface px-3.5 text-[15px] leading-5 text-ink placeholder:text-ink-muted transition outline-none focus:border-brand-500 focus:ring-4 focus:ring-brand-100 disabled:bg-subtle disabled:text-ink-muted aria-[invalid=true]:border-danger-600 aria-[invalid=true]:ring-danger-50;
   }
+  /* Campo calculado/definido em outro lugar (readonly): mesmo visual do campo desligado, para
+     ficar claro que não se digita ali. */
+  input.input[readonly],
+  textarea.input[readonly] {
+    @apply cursor-default bg-subtle text-ink-soft focus:border-line-strong focus:ring-0;
+  }
   /* Campos de uma linha: altura FIXA (o tamanho nativo de date/time/select varia por navegador). */
   input.input,
   select.input {

@@ -676,6 +676,8 @@ model CompanySettings {
   empresaPayablePaymentReversal      PayablePaymentReversal[]      @relation("EmpresaDePayablePaymentReversal")
   empresaRecurringExpense            RecurringExpense[]            @relation("EmpresaDeRecurringExpense")
   empresaExpenseCategory             ExpenseCategory[]             @relation("EmpresaDeExpenseCategory")
+  empresaManualRevenue               ManualRevenue[]               @relation("EmpresaDeManualRevenue")
+  empresaRework                      Rework[]                      @relation("EmpresaDeRework")
   empresaOperationalExpense          OperationalExpense[]          @relation("EmpresaDeOperationalExpense")
   empresaFinancialEvent              FinancialEvent[]              @relation("EmpresaDeFinancialEvent")
   empresaValueChangeRequest          ValueChangeRequest[]          @relation("EmpresaDeValueChangeRequest")
@@ -1001,6 +1003,11 @@ model CommercialOrder {
   serviceOrders ServiceOrder[]
 
   pieceReturns PieceReturn[]
+
+  /// 2026-11-18: este pedido é o de um retrabalho (serviço a refazer de outro pedido).
+  rework        Rework?  @relation("ReworkOrder")
+  /// Retrabalhos abertos a partir deste pedido (o serviço original).
+  reworksOfThis Rework[] @relation("ReworkOriginal")
 
   // Fase 11: financeiro operacional.
   adjustments CommercialAdjustment[]
@@ -5625,4 +5632,59 @@ model StatusSample {
 
   @@index([checkedAt])
   @@map("status_samples")
+}
+
+/// 2026-11-18: receita avulsa — dinheiro que entrou sem ser cobrança de um pedido (venda de sobra
+/// de tecido, aluguel, reembolso de fornecedor...). Entra na aba Receitas do financeiro.
+model ManualRevenue {
+  id           String          @id @default(uuid()) @db.Uuid
+  companyId    Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company      CompanySettings @relation("EmpresaDeManualRevenue", fields: [companyId], references: [id])
+  receivedAt   DateTime        @map("received_at") @db.Date
+  description  String          @db.VarChar(200)
+  category     String          @db.VarChar(40)
+  amountCents  Int             @map("amount_cents")
+  method       String          @db.VarChar(20)
+  notes        String?         @db.VarChar(500)
+  cancelledAt  DateTime?       @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason String?         @map("cancel_reason") @db.VarChar(500)
+  createdById  String?         @map("created_by_id") @db.Uuid
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([receivedAt])
+  @@map("manual_revenues")
+}
+
+/// 2026-11-18: retrabalho (RT-00001) — serviço já feito que precisa ser refeito. Vira um pedido
+/// próprio (sem cobrança) com retirada e OS normais, marcados em vermelho em todo o sistema.
+model Rework {
+  id              String          @id @default(uuid()) @db.Uuid
+  companyId       Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company         CompanySettings @relation("EmpresaDeRework", fields: [companyId], references: [id])
+  number          Int             @default(dbgenerated())
+  /// Pedido do retrabalho (criado junto; leva a retirada e a OS).
+  orderId         String          @unique @map("order_id") @db.Uuid
+  /// Pedido do serviço original que voltou.
+  originalOrderId String          @map("original_order_id") @db.Uuid
+  /// O que precisa ser refeito e por quê.
+  reason          String          @db.VarChar(1000)
+  /// ERRO_EXECUCAO, DEFEITO_MATERIAL, DANO_TRANSPORTE, PEDIDO_CLIENTE, OUTRO.
+  cause           String          @db.VarChar(30)
+  /// Gasto que não passa pela OS (deslocamento, peça comprada à parte...).
+  extraCostCents  Int             @default(0) @map("extra_cost_cents")
+  extraCostNote   String?         @map("extra_cost_note") @db.VarChar(300)
+  cancelledAt     DateTime?       @map("cancelled_at") @db.Timestamptz(3)
+  cancelReason    String?         @map("cancel_reason") @db.VarChar(500)
+  version         Int             @default(1)
+  createdById     String?         @map("created_by_id") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  order         CommercialOrder @relation("ReworkOrder", fields: [orderId], references: [id], onDelete: Restrict)
+  originalOrder CommercialOrder @relation("ReworkOriginal", fields: [originalOrderId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, number])
+  @@index([originalOrderId])
+  @@index([createdAt])
+  @@map("reworks")
 }

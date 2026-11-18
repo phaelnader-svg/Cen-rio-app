@@ -92,6 +92,7 @@ describe('Multi-empresa: mapa das tabelas', () => {
       raiz: conta('empresa-raiz'),
       // Rodada 2: + feedback_reports (empresa), system_notices e status_samples (sistema).
       // 2026-11-18: + expense_categories (empresa).
-    }).toEqual({ total: 174, empresa: 160, acesso: 8, sistema: 5, raiz: 1 });
+      // 2026-11-18 (ajustes): + reworks e manual_revenues (empresa).
+    }).toEqual({ total: 176, empresa: 162, acesso: 8, sistema: 5, raiz: 1 });
   });
 });

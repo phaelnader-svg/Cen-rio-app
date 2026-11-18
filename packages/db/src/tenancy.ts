@@ -320,6 +320,12 @@ export const TENANCY: Record<string, TenancyEntry> = {
     perCompanyUnique: ['name'],
     note: 'Categoria de despesa criada pela empresa; cada empresa tem as suas.',
   },
+  // ── Retrabalhos e receitas avulsas (2026-11-18) ────────────────────────────────────
+  Rework: numbered,
+  ManualRevenue: {
+    class: 'empresa',
+    note: 'Dinheiro que entrou fora das cobranças de pedido (aba Receitas do financeiro).',
+  },
 };
 
 export function tenancyOf(model: string): TenancyEntry | undefined {

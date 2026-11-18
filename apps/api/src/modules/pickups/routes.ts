@@ -1,5 +1,6 @@
 import {
   EVENT_TYPES,
+  reworkCode,
   PICKUP_STATUS_LABEL,
   PICKUP_TRANSITIONS,
   anyPermissionAudience,
@@ -44,7 +45,7 @@ export const PICKUP_AUDIENCE = anyPermissionAudience('retiradas.ver');
 const EDITABLE: PickupStatus[] = ['AGUARDANDO_AGENDAMENTO', 'AGENDADA', 'COM_OCORRENCIA'];
 
 const fullInclude = {
-  order: { include: { customer: true } },
+  order: { include: { customer: true, rework: { select: { id: true, number: true } } } },
   logisticsUser: { select: { id: true, displayName: true } },
   tripParticipants: {
     include: { user: { select: { id: true, displayName: true } } },
@@ -80,6 +81,9 @@ export async function loadPickupDto(
       // Sem a permissão a chave nem aparece (nenhum campo de valor na resposta).
       ...(valuesVisible ? { agreedValueCents: p.order.agreedValueCents } : {}),
     },
+    rework: p.order.rework
+      ? { id: p.order.rework.id, code: reworkCode(p.order.rework.number) }
+      : null,
     customer: {
       ...toCustomerSummary(p.order.customer),
       // Contato necessário para a operação de retirada.

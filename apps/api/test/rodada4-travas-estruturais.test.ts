@@ -1701,6 +1701,9 @@ describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava 
  * Chave: "<pasta da migration>: <comando normalizado>".
  */
 const ALLOWED_DESTRUCTIVE: Record<string, string> = {
+  '20270822000000_retrabalhos_receitas: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS de retrabalhos ' +
+    'e receitas avulsas (padrão do Prisma). Nenhuma linha é alterada.',
   '20270815000000_despesas_prazos_alertas: UPDATE CASCADE':
     'Não é comando: "ON UPDATE CASCADE" da chave estrangeira da tabela NOVA de categorias de ' +
     'despesa (padrão do Prisma). Nenhuma linha é alterada.',

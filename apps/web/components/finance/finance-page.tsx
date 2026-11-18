@@ -10,6 +10,7 @@ import {
 import clsx from 'clsx';
 import { useFocusParam } from '@/lib/focus-param';
 import { Download } from 'lucide-react';
+import Link from 'next/link';
 import { useState } from 'react';
 import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { Field, Select } from '@/components/ui/field';
@@ -21,27 +22,29 @@ import {
   monthStart,
   reportCsvUrl,
   useFinDashboard,
-  useProductivity,
   useReport,
   type Period,
 } from '@/lib/finance';
 import { PeriodPicker, Stat, Table } from './common';
-import { ProductivityTable } from './productivity-table';
+import { CashLedgerTab } from './cash-ledger';
 import { CostsTab } from './costs';
 import { ExpensesTab, PayablesTab } from './payables';
 import { LaborTab } from './labor';
 import { RevenueTab } from './revenue';
 import { WeeklyClosingTab } from './weekly-closing';
 
+// 2026-11-18 (pedido do dono): Despesas e Receitas logo depois do Resumo; Produtividade virou
+// item do menu. As chaves antigas continuam (endereços salvos seguem abrindo a mesma aba).
 const TABS = [
   { key: 'painel', label: 'Resumo' },
-  { key: 'receitas', label: 'A receber' },
-  { key: 'fechamento', label: 'Semana da equipe' },
+  { key: 'saidas', label: 'Despesas' },
+  { key: 'entradas', label: 'Receitas' },
   { key: 'pagar', label: 'A pagar' },
+  { key: 'receitas', label: 'A receber' },
   { key: 'producao', label: 'Mão de obra' },
+  { key: 'fechamento', label: 'Semana da equipe' },
   { key: 'custos', label: 'Por OS' },
   { key: 'despesas', label: 'Gastos fixos' },
-  { key: 'produtividade', label: 'Produtividade' },
   { key: 'relatorios', label: 'Relatórios' },
 ];
 
@@ -56,7 +59,9 @@ export function FinancePage() {
     TABS.map((t) => t.key),
   );
   const [period, setPeriod] = useState<Period>(() => ({ from: monthStart(), to: localToday() }));
-  const withPeriod = ['painel', 'custos', 'despesas', 'produtividade', 'relatorios'].includes(tab);
+  const withPeriod = ['painel', 'saidas', 'entradas', 'custos', 'despesas', 'relatorios'].includes(
+    tab,
+  );
   return (
     <>
       <PageHeader
@@ -68,13 +73,14 @@ export function FinancePage() {
         <div className="pt-5">
           {withPeriod && <PeriodPicker value={period} onChange={setPeriod} />}
           {tab === 'painel' && <Dashboard period={period} onOpenPayables={() => setTab('pagar')} />}
+          {tab === 'saidas' && <CashLedgerTab kind="out" period={period} />}
+          {tab === 'entradas' && <CashLedgerTab kind="in" period={period} />}
           {tab === 'receitas' && <RevenueTab />}
           {tab === 'fechamento' && <WeeklyClosingTab />}
           {tab === 'pagar' && <PayablesTab />}
           {tab === 'producao' && <LaborTab />}
           {tab === 'custos' && <CostsTab period={period} />}
           {tab === 'despesas' && <ExpensesTab period={period} />}
-          {tab === 'produtividade' && <Productivity period={period} />}
           {tab === 'relatorios' && <Reports period={period} />}
         </div>
       </Tabs>
@@ -133,6 +139,35 @@ function Dashboard({ period, onOpenPayables }: { period: Period; onOpenPayables:
             label="Saldo do período"
             value={money(d.cash.netCents)}
             tone={tone(d.cash.netCents)}
+          />
+        </div>
+      </section>
+      <section data-testid="fin-reworks">
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          <h2 className="text-sm font-semibold text-ink-soft">Retrabalhos no período</h2>
+          <Link href="/painel/retrabalhos" className="text-sm font-medium text-brand-700">
+            Abrir Retrabalhos
+          </Link>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Stat
+            label="Retrabalhos"
+            value={String(d.reworks.count)}
+            hint={d.reworks.count ? 'Serviços que voltaram para refazer' : 'Nenhum no período'}
+            tone={d.reworks.count ? 'warn' : 'neutral'}
+          />
+          <Stat
+            label="Gasto com retrabalhos"
+            value={money(d.reworks.costCents)}
+            hint={`Material ${money(d.reworks.materialsCents)} · mão de obra ${money(d.reworks.laborCents)}`}
+            tone={d.reworks.costCents ? 'danger' : 'neutral'}
+            testId="fin-rework-cost"
+          />
+          <Stat label="Logística dos retrabalhos" value={money(d.reworks.logisticsCents)} />
+          <Stat
+            label="Outros gastos"
+            value={money(d.reworks.extraCents)}
+            hint="Informados no próprio retrabalho"
           />
         </div>
       </section>
@@ -211,12 +246,6 @@ function Dashboard({ period, onOpenPayables }: { period: Period; onOpenPayables:
   );
 }
 
-function Productivity({ period }: { period: Period }) {
-  const q = useProductivity(period);
-  if (q.isPending) return <Spinner />;
-  if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
-  return <ProductivityTable data={q.data} />;
-}
 
 const REPORTS: { key: string; label: string }[] = [
   { key: 'resultado-os', label: 'Resultado por OS' },

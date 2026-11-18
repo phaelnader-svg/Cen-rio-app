@@ -34,10 +34,10 @@ import {
 import { FormDialog, NEW_OPTION, PAYMENT_OPTIONS, Table } from './common';
 import { History, statusTone } from './revenue';
 
-const NEW_CATEGORY_LABEL = '+ Nova categoria…';
+export const NEW_CATEGORY_LABEL = '+ Nova categoria…';
 
 /** Opções do menu de categoria: as ativas (e a atual do registro, mesmo se escondida depois). */
-function categoryOptions(
+export function categoryOptions(
   list: ExpenseCategoryDto[] | undefined,
   opts: { payable?: boolean; current?: string } = {},
 ) {
@@ -53,7 +53,7 @@ function categoryOptions(
 }
 
 /** Categoria escolhida no formulário; "+ Nova categoria…" cadastra antes de salvar a despesa. */
-async function chosenCategory(v: Record<string, string>) {
+export async function chosenCategory(v: Record<string, string>) {
   if (v.category !== NEW_OPTION) return v.category;
   const c = await api<ExpenseCategoryDto>('/api/v1/finance/expense-categories', {
     method: 'POST',

@@ -50,6 +50,7 @@ import {
   shopTimezone,
 } from './common';
 import { assertCategory, expenseCategoryRoutes } from './categories';
+import { cashLedgerRoutes } from './cash-ledger';
 import { syncMaterialCosts } from './costs';
 import { loadTripCost, toTripCostDto, tripCostInclude } from './trip-costs';
 import {
@@ -119,6 +120,7 @@ const monthQuerySchema = z.object({
 export async function financeRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
   await app.register(expenseCategoryRoutes);
+  await app.register(cashLedgerRoutes);
   const tx = <T>(fn: (t: Prisma.TransactionClient) => Promise<T>) =>
     prisma.$transaction(fn, { timeout: 30_000 });
 

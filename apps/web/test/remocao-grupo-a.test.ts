@@ -23,7 +23,7 @@ describe('Remoção real — Grupo A (web): o que FICA', () => {
       '/painel/clientes',
       '/painel/os',
       '/painel/producao/mapa',
-      '/painel/devolucoes',
+      '/painel/retrabalhos',
       '/painel/estoque-oficina',
       '/painel/qualidade',
       '/painel/financeiro',

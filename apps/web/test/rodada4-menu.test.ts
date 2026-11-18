@@ -78,8 +78,10 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
   '/painel/estoque-oficina': { group: 'Produção', anyOf: ['estoque.ver', 'estoque.gerenciar'] },
   '/painel/qualidade': { group: 'Serviços', anyOf: ['qualidade.gerenciar'] },
   '/painel/entregas': { group: 'Serviços', anyOf: ['entregas.ver', 'entregas.gerenciar'] },
-  // B6: as mesmas permissões que a API aceita para consultar (RETURNS_VIEW).
-  '/painel/devolucoes': { group: 'Serviços', anyOf: ['devolucoes.gerenciar', 'pedidos.ver'] },
+  // 2026-11-18: Retrabalhos substitui Devoluções no menu.
+  '/painel/retrabalhos': { group: 'Serviços', anyOf: ['os.ver', 'os.gerenciar'] },
+  // 2026-11-18: Produtividade virou item próprio (antes era aba do Financeiro).
+  '/painel/produtividade': { group: 'Produção', anyOf: ['financeiro.ver'] },
   '/painel/financeiro': { group: 'Financeiro', anyOf: ['financeiro.ver'] },
   '/painel/presenca': { group: 'Produção', anyOf: ['presenca.ver', 'presenca.gerenciar'] },
   '/painel/empresa': { group: 'Administração', anyOf: ['empresa.ver'] },
@@ -89,12 +91,12 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
 };
 
 describe('F10-01 — menu por áreas', () => {
-  it('as cinco áreas, na ordem: Início, Serviços, Produção, Financeiro, Administração', () => {
+  it('as cinco áreas, na ordem: Início, Financeiro, Serviços, Produção, Administração', () => {
     expect([...NAV_GROUPS]).toEqual([
       'Início',
+      'Financeiro',
       'Serviços',
       'Produção',
-      'Financeiro',
       'Administração',
     ]);
   });
@@ -111,7 +113,7 @@ describe('F10-01 — menu por áreas', () => {
 
   it('gestor (todas as permissões): quatro cabeçalhos de área e "Início" como primeiro link', () => {
     const e = sidebar(ALL_PERMISSIONS);
-    expect(headers(e)).toEqual(['Serviços', 'Produção', 'Financeiro', 'Administração']);
+    expect(headers(e)).toEqual(['Financeiro', 'Serviços', 'Produção', 'Administração']);
     expect(e[0]).toEqual({ kind: 'link', text: 'Início', href: '/painel' });
     expect(e[1]).toEqual({ kind: 'link', text: 'Central de atenção', href: '/painel/atencao' });
     // Cabeçalho ≠ link homônimo: "Financeiro" aparece como cabeçalho E como link.
@@ -161,7 +163,7 @@ describe('F10-01 — menu por áreas', () => {
       expect(NAV.find((i) => i.href === href)).toBeUndefined();
   });
 
-  it('Reformulação Fase 3: área Produção enxuta (7 links), sem perder rotas', () => {
+  it('Reformulação Fase 3: área Produção enxuta (8 links), sem perder rotas', () => {
     const e = sidebar(ALL_PERMISSIONS);
     const start = e.findIndex((x) => x.kind === 'header' && x.text === 'Produção');
     const end = e.findIndex((x, i) => i > start && x.kind === 'header');
@@ -173,6 +175,7 @@ describe('F10-01 — menu por áreas', () => {
       'Modelos de serviço',
       'Estoque da oficina',
       'Presença da equipe',
+      'Produtividade',
     ]);
     // Saíram do menu, mas as páginas continuam existindo (abrem pelo endereço e por link).
     for (const page of [
@@ -185,8 +188,8 @@ describe('F10-01 — menu por áreas', () => {
 
   it('itens por permissão: cada perfil vê só as áreas e links que pode abrir', () => {
     const fin = sidebar(['painel.acessar', 'financeiro.ver']);
-    expect(links(fin)).toEqual(['Início', 'Financeiro']);
-    expect(headers(fin)).toEqual(['Financeiro']);
+    expect(links(fin)).toEqual(['Início', 'Financeiro', 'Produtividade']);
+    expect(headers(fin)).toEqual(['Financeiro', 'Produção']);
 
     const pres = sidebar(['painel.acessar', 'presenca.ver']);
     expect(links(pres)).toEqual(['Início', 'Presença da equipe']);
@@ -214,10 +217,11 @@ describe('Menu alinhado às permissões da API (B1, B6)', () => {
     expect(tem(['retiradas.gerenciar'], '/painel/servicos/novo')).toBe(false);
     expect(tem(['pedidos.gerenciar', 'retiradas.gerenciar'], '/painel/servicos/novo')).toBe(true);
   });
-  it('B6: "Devoluções" com devolucoes.gerenciar OU pedidos.ver (API: RETURNS_VIEW)', () => {
-    expect(tem(['pedidos.ver'], '/painel/devolucoes')).toBe(true);
-    expect(tem(['devolucoes.gerenciar'], '/painel/devolucoes')).toBe(true);
-    expect(tem(['os.ver', 'clientes.ver'], '/painel/devolucoes')).toBe(false);
+  it('Retrabalhos (substitui Devoluções no menu): com os.ver OU os.gerenciar', () => {
+    expect(NAV.find((i) => i.href === '/painel/devolucoes')).toBeUndefined();
+    expect(tem(['os.ver'], '/painel/retrabalhos')).toBe(true);
+    expect(tem(['os.gerenciar'], '/painel/retrabalhos')).toBe(true);
+    expect(tem(['pedidos.ver', 'clientes.ver'], '/painel/retrabalhos')).toBe(false);
   });
   it('nenhuma permissão nova foi criada para o menu', () => {
     for (const i of NAV)

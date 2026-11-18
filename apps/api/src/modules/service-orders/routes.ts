@@ -1,5 +1,6 @@
 import {
   EVENT_TYPES,
+  reworkCode,
   anyPermissionAudience,
   cancelServiceOrderSchema,
   createServiceOrderSchema,
@@ -54,8 +55,10 @@ const MANAGE = { session: 'WEB', permissions: ['os.gerenciar'] } as const;
 const AUDIENCE = anyPermissionAudience('os.ver', 'pedidos.ver');
 const itemParams = z.object({ id: z.guid(), itemId: z.guid() });
 
+const reworkSelect = { select: { id: true, number: true } } as const;
+
 const fullInclude = {
-  order: { select: { id: true, number: true } },
+  order: { select: { id: true, number: true, rework: reworkSelect } },
   customer: true,
   technicalLead: true,
   createdBy: { select: { displayName: true } },
@@ -99,6 +102,9 @@ export async function loadServiceOrderDto(
     code: serviceOrderCode(so.number),
     status: so.status,
     order: { id: so.order.id, code: orderCode(so.order.number) },
+    rework: so.order.rework
+      ? { id: so.order.rework.id, code: reworkCode(so.order.rework.number) }
+      : null,
     customer: toCustomerSummary(so.customer),
     priority: so.priority,
     promisedDate: dateOnly(so.promisedDate),
@@ -389,7 +395,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       prisma.serviceOrder.findMany({
         where,
         include: {
-          order: { select: { id: true, number: true } },
+          order: { select: { id: true, number: true, rework: reworkSelect } },
           customer: true,
           technicalLead: true,
           items: { select: { quantity: true } },
@@ -413,6 +419,9 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
           code: serviceOrderCode(so.number),
           status: so.status,
           order: { id: so.order.id, code: orderCode(so.order.number) },
+          rework: so.order.rework
+            ? { id: so.order.rework.id, code: reworkCode(so.order.rework.number) }
+            : null,
           customer: toCustomerSummary(so.customer),
           priority: so.priority,
           promisedDate: dateOnly(so.promisedDate),

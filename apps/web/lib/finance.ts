@@ -1,6 +1,7 @@
 'use client';
 
 import type {
+  CashLedgerDto,
   ExpenseCategoryDto,
   ValueChangeRequestDto,
   ExpenseDto,
@@ -55,6 +56,9 @@ function useFin<T>(path: string, enabled = true) {
   });
 }
 
+/** 2026-11-18: abas Receitas (entradas) e Despesas (saídas). */
+export const useCashLedger = (kind: 'in' | 'out', p: Period) =>
+  useFin<CashLedgerDto>(`/cash-${kind}${qs({ ...p })}`);
 export const useFinDashboard = (p: Period) =>
   useFin<FinanceDashboardDto>(`/dashboard${qs({ ...p })}`);
 export const useFinOrders = (search: string, open: boolean) =>

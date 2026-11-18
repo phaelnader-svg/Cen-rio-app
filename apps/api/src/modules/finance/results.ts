@@ -1,4 +1,5 @@
 import { plural } from '@cenario/shared';
+import { reworkStats } from '../reworks/routes';
 import {
   BILL_UPCOMING_DAYS,
   EXPENSE_CATEGORIES,
@@ -281,6 +282,11 @@ export async function dashboard(
     where: { receivedAt: { gte: p.fromDate, lte: p.toDate } },
     _sum: { amountCents: true },
   });
+  // 2026-11-18: receitas avulsas (aba Receitas) também são dinheiro que entrou.
+  const manualReceived = await tx.manualRevenue.aggregate({
+    where: { receivedAt: { gte: p.fromDate, lte: p.toDate }, cancelledAt: null },
+    _sum: { amountCents: true },
+  });
   const paidPayables = await tx.payablePayment.aggregate({
     where: { paidAt: { gte: p.fromDate, lte: p.toDate } },
     _sum: { amountCents: true },
@@ -308,7 +314,8 @@ export async function dashboard(
   const payableOverdue = pays
     .filter((r) => dateOnly(r.dueDate)! < today)
     .reduce((a, r) => a + r.amountCents - r.paidCents, 0);
-  const receivedCents = received._sum.amountCents ?? 0;
+  const receivedCents = (received._sum.amountCents ?? 0) + (manualReceived._sum.amountCents ?? 0);
+  const rw = await reworkStats(tx, { from: p.from, to: p.to }, true);
   const paidPayablesCents = paidPayables._sum.amountCents ?? 0;
   const paidLaborCents = paidLabor._sum.amountCents ?? 0;
   const byCat = new Map<string, number>();
@@ -369,6 +376,14 @@ export async function dashboard(
     topServices: [...services.entries()]
       .map(([serviceType, v]) => ({ serviceType, ...v }))
       .sort((a, b) => b.marginCents - a.marginCents),
+    reworks: {
+      count: rw.count,
+      costCents: rw.cost?.totalCents ?? 0,
+      materialsCents: rw.cost?.materialsCents ?? 0,
+      laborCents: rw.cost?.laborCents ?? 0,
+      logisticsCents: rw.cost?.logisticsCents ?? 0,
+      extraCents: rw.cost?.extraCents ?? 0,
+    },
     notes: [
       'Competência: contratado pela data do pedido; margem das OS concluídas (todas as peças entregues) no período; despesas pelo mês de competência.',
       'Caixa: recebimentos e pagamentos registrados no período (estornos descontados).',

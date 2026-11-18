@@ -515,6 +515,15 @@ export interface FinanceDashboardDto {
   /** Contas a pagar em atraso e as que vencem nos próximos dias (sempre a partir de hoje). */
   bills: { overdue: BillDueDto[]; upcoming: BillDueDto[]; upcomingDays: number };
   topServices: { serviceType: string; orders: number; revenueCents: number; marginCents: number }[];
+  /** 2026-11-18: retrabalhos abertos no período e quanto custaram (material, mão de obra...). */
+  reworks: {
+    count: number;
+    costCents: number;
+    materialsCents: number;
+    laborCents: number;
+    logisticsCents: number;
+    extraCents: number;
+  };
   notes: string[];
 }
 

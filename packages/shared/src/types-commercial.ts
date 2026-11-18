@@ -109,6 +109,8 @@ export interface OrderSummaryDto {
   serviceOrderCount: number;
   /** Próxima retirada ainda não recebida (dia e horário), para os botões rápidos da lista. */
   nextPickup: { scheduledDate: string | null; windowStart: string | null } | null;
+  /** 2026-11-18: pedido de um retrabalho (aparece em vermelho). */
+  rework?: { id: string; code: string } | null;
   version: number;
 }
 
@@ -168,6 +170,8 @@ export interface PickupDto {
   status: PickupStatus;
   /** `agreedValueCents`: valor do serviço; ausente sem `pedidos.valores`, null sem valor combinado. */
   order: { id: string; code: string; contractedService: string; agreedValueCents?: number | null };
+  /** 2026-11-18: retirada de um retrabalho (vermelha na agenda). */
+  rework?: { id: string; code: string } | null;
   customer: CustomerSummaryDto & { phone: string | null; whatsapp: string | null };
   address: AddressSnapshot | null;
   scheduledDate: string | null;
@@ -296,6 +300,8 @@ export interface ServiceOrderSummaryDto {
    * lista; o detalhe usa a rota própria.
    */
   operationalState?: OperationalState;
+  /** 2026-11-18: OS de um retrabalho (vermelha na lista e no detalhe). */
+  rework?: { id: string; code: string } | null;
 }
 
 export interface ServiceOrderDto extends ServiceOrderSummaryDto {

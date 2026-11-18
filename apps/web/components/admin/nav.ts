@@ -18,7 +18,8 @@ import {
   TabletSmartphone,
   PlugZap,
   Truck,
-  Undo2,
+  RotateCcw,
+  Gauge,
   Wallet,
   CreditCard,
   BadgeCheck,
@@ -55,9 +56,10 @@ export interface NavItem {
  */
 export const NAV_GROUPS = [
   'Início',
+  // 2026-11-18 (pedido do dono): Financeiro logo acima de Serviços.
+  'Financeiro',
   'Serviços',
   'Produção',
-  'Financeiro',
   'Administração',
 ] as const;
 export type NavGroup = (typeof NAV_GROUPS)[number];
@@ -73,11 +75,13 @@ const GROUP_PREFIXES: [string, NavGroup][] = [
   ['/painel/qualidade', 'Serviços'],
   ['/painel/entregas', 'Serviços'],
   ['/painel/devolucoes', 'Serviços'],
+  ['/painel/retrabalhos', 'Serviços'],
   ['/painel/producao', 'Produção'],
   ['/painel/reprogramacao', 'Produção'],
   ['/painel/competencias', 'Produção'],
   ['/painel/presenca', 'Produção'],
   ['/painel/estoque-oficina', 'Produção'],
+  ['/painel/produtividade', 'Produção'],
   ['/painel/financeiro', 'Financeiro'],
 ];
 export function navGroupOf(href: string): NavGroup {
@@ -87,12 +91,17 @@ export function navGroupOf(href: string): NavGroup {
 
 export const NAV: NavItem[] = [
   { href: '/painel', label: 'Início', icon: LayoutDashboard },
-  // Simplificação Fase 2: entrada principal do gestor (cliente + serviço + retirada).
   {
-    href: '/painel/orcamentos',
-    label: 'Orçamentos',
-    icon: Calculator,
-    anyOf: ['orcamentos.ver', 'orcamentos.gerenciar'],
+    href: '/painel/atencao',
+    label: 'Central de atenção',
+    icon: Siren,
+    anyOf: ['ocorrencias.ver', 'ocorrencias.gerenciar'],
+  },
+  {
+    href: '/painel/financeiro',
+    label: 'Financeiro',
+    icon: Wallet,
+    anyOf: ['financeiro.ver'],
   },
   {
     href: '/painel/servicos/novo',
@@ -101,43 +110,13 @@ export const NAV: NavItem[] = [
     // B1: a tela usa /api/v1/services/new-defaults e /api/v1/services, que exigem as duas.
     allOf: ['pedidos.gerenciar', 'retiradas.gerenciar'],
   },
+  // Simplificação Fase 2: entrada principal do gestor (cliente + serviço + retirada).
   {
-    href: '/painel/atencao',
-    label: 'Central de atenção',
-    icon: Siren,
-    anyOf: ['ocorrencias.ver', 'ocorrencias.gerenciar'],
+    href: '/painel/orcamentos',
+    label: 'Orçamentos',
+    icon: Calculator,
+    anyOf: ['orcamentos.ver', 'orcamentos.gerenciar'],
   },
-  { href: '/painel/funcionarios', label: 'Funcionários', icon: Users, anyOf: ['funcionarios.ver'] },
-  {
-    href: '/painel/funcoes',
-    label: 'Funções e permissões',
-    icon: ShieldCheck,
-    anyOf: ['funcoes.ver'],
-  },
-  {
-    href: '/painel/dispositivos',
-    label: 'Dispositivos e sessões',
-    icon: TabletSmartphone,
-    anyOf: ['dispositivos.ver', 'sessoes.ver'],
-  },
-  // Multi-empresa: empresas que usam o sistema (criadas pelo "Criar conta"); bloquear/liberar.
-  {
-    href: '/painel/empresas',
-    label: 'Empresas',
-    icon: Building2,
-    anyOf: ['empresa.configurar'],
-    platformOnly: true,
-  },
-  // Aplicativos com acesso delegado (ex.: Firma Viva): cadastrar, ver e revogar autorizações.
-  {
-    href: '/painel/aplicativos',
-    label: 'Aplicativos conectados',
-    icon: PlugZap,
-    anyOf: ['empresa.configurar', 'sessoes.ver'],
-    // Melhoria 157: tela técnica, só para o suporte da plataforma.
-    platformOnly: true,
-  },
-  { href: '/painel/clientes', label: 'Clientes', icon: Contact, anyOf: ['clientes.ver'] },
   // Módulo Orçamentos: proposta comercial com materiais automáticos, contrato e O.S. do orçamento.
   {
     href: '/painel/pedidos',
@@ -145,6 +124,7 @@ export const NAV: NavItem[] = [
     icon: FileSignature,
     anyOf: ['pedidos.ver'],
   },
+  { href: '/painel/os', label: 'Ordens de serviço', icon: ClipboardList, anyOf: ['os.ver'] },
   // Reformulação, Fase 1: telas operacionais da logística somem com o módulo desligado (os dados
   // e o histórico continuam lá; as entregas passam a ser confirmadas na própria OS).
   {
@@ -161,7 +141,27 @@ export const NAV: NavItem[] = [
     anyOf: ['entregas.ver', 'retiradas.ver'],
     module: 'logistica',
   },
-  { href: '/painel/os', label: 'Ordens de serviço', icon: ClipboardList, anyOf: ['os.ver'] },
+  { href: '/painel/clientes', label: 'Clientes', icon: Contact, anyOf: ['clientes.ver'] },
+  // 2026-11-18: "Retrabalhos" substitui "Devoluções" no menu (o histórico das devoluções continua
+  // guardado e abre pelo endereço antigo). Serviço a refazer: prazo, retirada e OS em vermelho.
+  {
+    href: '/painel/retrabalhos',
+    label: 'Retrabalhos',
+    icon: RotateCcw,
+    anyOf: ['os.ver', 'os.gerenciar'],
+  },
+  {
+    href: '/painel/qualidade',
+    label: 'Qualidade',
+    icon: BadgeCheck,
+    anyOf: ['qualidade.gerenciar'],
+  },
+  {
+    href: '/painel/entregas',
+    label: 'Expedição e entregas',
+    icon: PackageOpen,
+    anyOf: ['entregas.ver', 'entregas.gerenciar'],
+  },
   {
     // Reformulação, Fase 3: "A planejar" + "Planejamento de produção" numa tela só. Os endereços
     // antigos continuam abrindo as abas correspondentes; "Competências da equipe" saiu do menu e
@@ -212,36 +212,47 @@ export const NAV: NavItem[] = [
     anyOf: ['estoque.ver', 'estoque.gerenciar'],
   },
   {
-    href: '/painel/qualidade',
-    label: 'Qualidade',
-    icon: BadgeCheck,
-    anyOf: ['qualidade.gerenciar'],
-  },
-  {
-    href: '/painel/entregas',
-    label: 'Expedição e entregas',
-    icon: PackageOpen,
-    anyOf: ['entregas.ver', 'entregas.gerenciar'],
-  },
-  {
-    href: '/painel/devolucoes',
-    label: 'Devoluções',
-    icon: Undo2,
-    // B6: as mesmas permissões que a API aceita para consultar (RETURNS_VIEW); registrar,
-    // confirmar e cancelar continuam exigindo devolucoes.gerenciar (a tela esconde as ações).
-    anyOf: ['devolucoes.gerenciar', 'pedidos.ver'],
-  },
-  {
-    href: '/painel/financeiro',
-    label: 'Financeiro',
-    icon: Wallet,
-    anyOf: ['financeiro.ver'],
-  },
-  {
     href: '/painel/presenca',
     label: 'Presença da equipe',
     icon: UserCheck,
     anyOf: ['presenca.ver', 'presenca.gerenciar'],
+  },
+  // 2026-11-18: Produtividade saiu do Financeiro e virou item próprio, abaixo de Presença.
+  {
+    href: '/painel/produtividade',
+    label: 'Produtividade',
+    icon: Gauge,
+    anyOf: ['financeiro.ver'],
+  },
+  { href: '/painel/funcionarios', label: 'Funcionários', icon: Users, anyOf: ['funcionarios.ver'] },
+  {
+    href: '/painel/funcoes',
+    label: 'Funções e permissões',
+    icon: ShieldCheck,
+    anyOf: ['funcoes.ver'],
+  },
+  {
+    href: '/painel/dispositivos',
+    label: 'Dispositivos e sessões',
+    icon: TabletSmartphone,
+    anyOf: ['dispositivos.ver', 'sessoes.ver'],
+  },
+  // Multi-empresa: empresas que usam o sistema (criadas pelo "Criar conta"); bloquear/liberar.
+  {
+    href: '/painel/empresas',
+    label: 'Empresas',
+    icon: Building2,
+    anyOf: ['empresa.configurar'],
+    platformOnly: true,
+  },
+  // Aplicativos com acesso delegado (ex.: Firma Viva): cadastrar, ver e revogar autorizações.
+  {
+    href: '/painel/aplicativos',
+    label: 'Aplicativos conectados',
+    icon: PlugZap,
+    anyOf: ['empresa.configurar', 'sessoes.ver'],
+    // Melhoria 157: tela técnica, só para o suporte da plataforma.
+    platformOnly: true,
   },
   { href: '/painel/empresa', label: 'Empresa', icon: Building2, anyOf: ['empresa.ver'] },
   // Cobrança: plano, situação e pagamento da assinatura do Cenário Gestão.

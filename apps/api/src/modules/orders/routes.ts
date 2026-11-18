@@ -1,5 +1,6 @@
 import {
   EVENT_TYPES,
+  reworkCode,
   itemValuesProblem,
   anyPermissionAudience,
   cancelOrderSchema,
@@ -83,7 +84,7 @@ function toSummary(
     items: Pick<CommercialOrderItem, 'quantity' | 'receivedQuantity' | 'returnedQuantity'>[];
   },
   state: { returnedPieces: number; serviceState: OrderSummaryDto['serviceState'] },
-  flow: Pick<OrderSummaryDto, 'serviceOrderCount' | 'nextPickup'>,
+  flow: Pick<OrderSummaryDto, 'serviceOrderCount' | 'nextPickup' | 'rework'>,
 ): OrderSummaryDto {
   return {
     id: o.id,
@@ -100,13 +101,14 @@ function toSummary(
     createdAt: o.createdAt.toISOString(),
     serviceOrderCount: flow.serviceOrderCount,
     nextPickup: flow.nextPickup,
+    rework: flow.rework ?? null,
     version: o.version,
   };
 }
 
 /** Fluxo da OS (2026-11-18): OS ativas e próxima retirada de cada pedido. */
 async function orderFlow(db: PrismaClient | Tx, ids: string[]) {
-  const [sos, pickups] = await Promise.all([
+  const [sos, pickups, reworks] = await Promise.all([
     db.serviceOrder.groupBy({
       by: ['orderId'],
       where: { orderId: { in: ids }, status: { not: 'CANCELADA' } },
@@ -117,8 +119,15 @@ async function orderFlow(db: PrismaClient | Tx, ids: string[]) {
       select: { orderId: true, scheduledDate: true, windowStart: true },
       orderBy: [{ scheduledDate: 'asc' }, { number: 'asc' }],
     }),
+    db.rework.findMany({
+      where: { orderId: { in: ids } },
+      select: { id: true, number: true, orderId: true },
+    }),
   ]);
-  const out = new Map<string, Pick<OrderSummaryDto, 'serviceOrderCount' | 'nextPickup'>>();
+  const out = new Map<
+    string,
+    Pick<OrderSummaryDto, 'serviceOrderCount' | 'nextPickup' | 'rework'>
+  >();
   for (const id of ids) {
     const p = pickups.find((x) => x.orderId === id);
     out.set(id, {
@@ -126,6 +135,9 @@ async function orderFlow(db: PrismaClient | Tx, ids: string[]) {
       nextPickup: p
         ? { scheduledDate: dateOnly(p.scheduledDate), windowStart: p.windowStart }
         : null,
+      rework: ((r) => (r ? { id: r.id, code: reworkCode(r.number) } : null))(
+        reworks.find((x) => x.orderId === id),
+      ),
     });
   }
   return out;

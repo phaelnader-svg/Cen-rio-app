@@ -91,6 +91,7 @@ import { closingRoutes as officeClosingRoutes } from './modules/office/closing';
 import { directDeliveryRoutes } from './modules/quality/direct-delivery';
 import { inventoryRoutes } from './modules/inventory/routes';
 import { quoteRoutes } from './modules/quotes/routes';
+import { reworkRoutes } from './modules/reworks/routes';
 import { companyRoutes } from './modules/company/routes';
 import { platformRoutes } from './modules/platform/routes';
 import { billingRoutesPlatform } from './modules/billing/routes';
@@ -278,6 +279,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(directDeliveryRoutes);
   await app.register(inventoryRoutes);
   await app.register(quoteRoutes);
+  await app.register(reworkRoutes);
   await app.register(attachmentRoutes);
   // Fase 3 — medições e solicitações de materiais
   await app.register(productionPlanRoutes);

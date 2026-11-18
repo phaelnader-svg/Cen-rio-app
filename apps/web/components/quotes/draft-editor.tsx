@@ -312,7 +312,7 @@ export function QuoteEditor({
             ))}
           </SelectField>
           <TextField
-            label="Quantidade de sofás"
+            label="Quantidade"
             type="number"
             min={1}
             step={1}
@@ -322,7 +322,7 @@ export function QuoteEditor({
               const v = Math.floor(Number(e.target.value));
               update({ sofaCount: Number.isFinite(v) && v >= 1 ? v : 1 });
             }}
-            hint="Multiplica a mão de obra do tapeceiro e do ajudante."
+            hint="Quantas peças: multiplica a mão de obra do tapeceiro e do ajudante."
           />
           <TextField
             label="Custo do tapeceiro"
