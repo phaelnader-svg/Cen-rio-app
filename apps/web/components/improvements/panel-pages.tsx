@@ -3,7 +3,8 @@
 import { plural } from '@cenario/shared';
 import { TRASH_DAYS, TRASH_KIND_LABEL, formatCents, type TrashItemDto } from '@cenario/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowLeft, RotateCcw, Trash2 } from 'lucide-react';
+import clsx from 'clsx';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
@@ -95,6 +96,16 @@ interface WeekDto {
   delivered: { pieces: number; scheduledRest: number } | null;
   receivedCents: number | null;
   quotes: { sent: number; approved: number; approvedCents: number; followUpDue: number } | null;
+  money?: {
+    paidCents: number;
+    receivableOverdueCents: number;
+    receivableOverdueCount: number;
+    billsDueCents: number;
+    billsDueCount: number;
+    billsOverdueCount: number;
+  } | null;
+  production?: { tasksDone: number; lateOs: number; openOs: number; reworks: number } | null;
+  pickups?: { done: number; scheduledRest: number } | null;
 }
 
 const br = (d: string) => d.split('-').reverse().slice(0, 2).join('/');
@@ -104,16 +115,26 @@ function Big({
   value,
   hint,
   href,
+  tone,
 }: {
   label: string;
   value: string;
   hint?: string;
   href?: string;
+  tone?: 'ok' | 'danger';
 }) {
   const body = (
     <Card className="h-full p-5">
       <p className="text-sm font-medium text-ink-muted">{label}</p>
-      <p className="mt-1 text-4xl font-semibold tracking-tight tabular-nums">{value}</p>
+      <p
+        className={clsx(
+          'mt-1 text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl',
+          tone === 'ok' && 'text-ok-600',
+          tone === 'danger' && 'text-danger-600',
+        )}
+      >
+        {value}
+      </p>
       {hint && <p className="mt-1 text-sm text-ink-soft">{hint}</p>}
     </Card>
   );
@@ -123,6 +144,17 @@ function Big({
     </Link>
   ) : (
     body
+  );
+}
+
+function WeekGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h2 className="mb-3 text-xs font-semibold tracking-[0.12em] text-ink-muted uppercase">
+        {title}
+      </h2>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{children}</div>
+    </section>
   );
 }
 
@@ -141,42 +173,137 @@ export function WeekSummaryPage() {
       <PageHeader
         title="Resumo da semana"
         description={`De ${br(w.weekStart)} a ${br(w.weekEnd)}. Atualiza sozinho.`}
+        actions={
+          <Link
+            href="/painel"
+            className="inline-flex h-11 items-center gap-2 rounded-xl border border-line-strong bg-surface px-4 text-[15px] font-medium hover:bg-subtle"
+            data-testid="week-back"
+          >
+            <ArrowLeft className="size-4" aria-hidden />
+            Voltar
+          </Link>
+        }
       />
-      <div className="grid gap-4 sm:grid-cols-2">
-        {w.newServices && (
-          <Big
-            label="Serviços fechados"
-            value={String(w.newServices.count)}
-            hint={
-              w.newServices.valueCents !== null
-                ? `${formatCents(w.newServices.valueCents)} em serviços`
-                : undefined
-            }
-            href="/painel/pedidos"
-          />
+      <div className="space-y-8">
+        {(w.receivedCents !== null || w.money) && (
+          <WeekGroup title="Dinheiro">
+            {w.receivedCents !== null && (
+              <Big
+                label="Entrou"
+                value={formatCents(w.receivedCents)}
+                tone="ok"
+                href="/painel/financeiro?tab=entradas"
+              />
+            )}
+            {w.money && (
+              <>
+                <Big
+                  label="Saiu"
+                  value={formatCents(w.money.paidCents)}
+                  hint="Contas, gastos e mão de obra pagos"
+                  href="/painel/financeiro?tab=saidas"
+                />
+                <Big
+                  label="Clientes com pagamento atrasado"
+                  value={formatCents(w.money.receivableOverdueCents)}
+                  tone={w.money.receivableOverdueCount ? 'danger' : undefined}
+                  hint={
+                    w.money.receivableOverdueCount
+                      ? plural(
+                          w.money.receivableOverdueCount,
+                          'cobrança vencida',
+                          'cobranças vencidas',
+                        )
+                      : 'Nenhuma cobrança vencida'
+                  }
+                  href="/painel/financeiro?tab=receitas"
+                />
+                <Big
+                  label="Contas para pagar até domingo"
+                  value={formatCents(w.money.billsDueCents)}
+                  tone={w.money.billsOverdueCount ? 'danger' : undefined}
+                  hint={`${plural(w.money.billsDueCount, 'conta', 'contas')}${w.money.billsOverdueCount ? ` • ${plural(w.money.billsOverdueCount, 'vencida', 'vencidas')}` : ''}`}
+                  href="/painel/financeiro?tab=pagar"
+                />
+              </>
+            )}
+          </WeekGroup>
         )}
-        {w.receivedCents !== null && (
-          <Big label="Recebido" value={formatCents(w.receivedCents)} href="/painel/financeiro" />
+        {(w.newServices || w.quotes) && (
+          <WeekGroup title="Vendas">
+            {w.newServices && (
+              <Big
+                label="Serviços fechados"
+                value={String(w.newServices.count)}
+                hint={
+                  w.newServices.valueCents !== null
+                    ? `${formatCents(w.newServices.valueCents)} em serviços`
+                    : undefined
+                }
+                href="/painel/pedidos"
+              />
+            )}
+            {w.quotes && (
+              <Big
+                label="Orçamentos aprovados"
+                value={`${w.quotes.approved} de ${w.quotes.sent}`}
+                hint={`${formatCents(w.quotes.approvedCents)} aprovados${w.quotes.followUpDue ? ` • ${w.quotes.followUpDue} para cobrar resposta` : ''}`}
+                href="/painel/orcamentos?aba=salvos"
+              />
+            )}
+          </WeekGroup>
         )}
-        {w.delivered && (
-          <Big
-            label="Peças entregues"
-            value={String(w.delivered.pieces)}
-            hint={
-              w.delivered.scheduledRest
-                ? `${plural(w.delivered.scheduledRest, 'entrega ainda agendada', 'entregas ainda agendadas')} nesta semana`
-                : 'Nenhuma outra entrega agendada nesta semana'
-            }
-            href="/painel/entregas"
-          />
+        {w.production && (
+          <WeekGroup title="Oficina">
+            <Big
+              label="Tarefas concluídas"
+              value={String(w.production.tasksDone)}
+              hint={`${plural(w.production.openOs, 'OS em andamento', 'OS em andamento')}`}
+              href="/painel/producao"
+            />
+            <Big
+              label="OS atrasadas"
+              value={String(w.production.lateOs)}
+              tone={w.production.lateOs ? 'danger' : 'ok'}
+              hint={w.production.lateOs ? 'Passaram do prazo combinado' : 'Tudo dentro do prazo'}
+              href="/painel/os"
+            />
+            <Big
+              label="Retrabalhos abertos"
+              value={String(w.production.reworks)}
+              tone={w.production.reworks ? 'danger' : undefined}
+              hint="Nesta semana"
+              href="/painel/retrabalhos"
+            />
+          </WeekGroup>
         )}
-        {w.quotes && (
-          <Big
-            label="Orçamentos aprovados"
-            value={`${w.quotes.approved} de ${w.quotes.sent}`}
-            hint={`${formatCents(w.quotes.approvedCents)} aprovados${w.quotes.followUpDue ? ` • ${w.quotes.followUpDue} para cobrar` : ''}`}
-            href="/painel/orcamentos?aba=salvos"
-          />
+        {(w.pickups || w.delivered) && (
+          <WeekGroup title="Retiradas e entregas">
+            {w.pickups && (
+              <Big
+                label="Retiradas feitas"
+                value={String(w.pickups.done)}
+                hint={
+                  w.pickups.scheduledRest
+                    ? `${plural(w.pickups.scheduledRest, 'ainda agendada', 'ainda agendadas')} nesta semana`
+                    : 'Nenhuma outra agendada nesta semana'
+                }
+                href="/painel/retiradas"
+              />
+            )}
+            {w.delivered && (
+              <Big
+                label="Peças entregues"
+                value={String(w.delivered.pieces)}
+                hint={
+                  w.delivered.scheduledRest
+                    ? `${plural(w.delivered.scheduledRest, 'entrega ainda agendada', 'entregas ainda agendadas')} nesta semana`
+                    : 'Nenhuma outra entrega agendada nesta semana'
+                }
+                href="/painel/entregas"
+              />
+            )}
+          </WeekGroup>
         )}
       </div>
     </>

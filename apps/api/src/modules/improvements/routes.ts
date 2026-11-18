@@ -857,6 +857,17 @@ export async function improvementRoutes(app: FastifyInstance) {
           approvedCents: number;
           followUpDue: number;
         } | null;
+        /** 2026-11-18 (Raphael): mais números, só os que pedem ação ou mostram o resultado. */
+        money: {
+          paidCents: number;
+          receivableOverdueCents: number;
+          receivableOverdueCount: number;
+          billsDueCents: number;
+          billsDueCount: number;
+          billsOverdueCount: number;
+        } | null;
+        production: { tasksDone: number; lateOs: number; openOs: number; reworks: number } | null;
+        pickups: { done: number; scheduledRest: number } | null;
       } = {
         weekStart: monday,
         weekEnd: addDays(monday, 6),
@@ -864,7 +875,15 @@ export async function improvementRoutes(app: FastifyInstance) {
         delivered: null,
         receivedCents: null,
         quotes: null,
+        money: null,
+        production: null,
+        pickups: null,
       };
+      const dayRange = {
+        gte: new Date(`${monday}T00:00:00Z`),
+        lt: new Date(`${nextMonday}T00:00:00Z`),
+      };
+      const todayDate = new Date(`${today}T00:00:00Z`);
       if (has(request, 'pedidos.ver')) {
         const orders = await prisma.commercialOrder.findMany({
           where: { createdAt: { gte: from, lt: to }, status: { not: 'CANCELADO' } },
@@ -904,7 +923,69 @@ export async function improvementRoutes(app: FastifyInstance) {
           },
           _sum: { amountCents: true },
         });
-        out.receivedCents = r._sum.amountCents ?? 0;
+        const [manual, paidBills, paidLabor, recv, bills] = await Promise.all([
+          prisma.manualRevenue.aggregate({
+            where: { receivedAt: dayRange, cancelledAt: null },
+            _sum: { amountCents: true },
+          }),
+          prisma.payablePayment.aggregate({
+            where: { paidAt: dayRange },
+            _sum: { amountCents: true },
+          }),
+          prisma.professionalPayment.aggregate({
+            where: { paidAt: dayRange },
+            _sum: { amountCents: true },
+          }),
+          prisma.customerReceivable.findMany({
+            where: { status: { in: ['ABERTO', 'PARCIAL'] }, dueDate: { lt: todayDate } },
+            select: { amountCents: true, receivedCents: true },
+          }),
+          prisma.accountPayable.findMany({
+            where: { status: { in: ['ABERTO', 'PARCIAL'] }, dueDate: { lt: dayRange.lt } },
+            select: { amountCents: true, paidCents: true, dueDate: true },
+          }),
+        ]);
+        out.receivedCents = (r._sum.amountCents ?? 0) + (manual._sum.amountCents ?? 0);
+        const due = bills.filter((b) => b.dueDate >= todayDate);
+        out.money = {
+          paidCents: (paidBills._sum.amountCents ?? 0) + (paidLabor._sum.amountCents ?? 0),
+          receivableOverdueCents: recv.reduce((a, x) => a + x.amountCents - x.receivedCents, 0),
+          receivableOverdueCount: recv.length,
+          billsDueCents: due.reduce((a, x) => a + x.amountCents - x.paidCents, 0),
+          billsDueCount: due.length,
+          billsOverdueCount: bills.length - due.length,
+        };
+      }
+      if (has(request, 'os.ver')) {
+        const active = {
+          status: 'ABERTA' as const,
+          items: {
+            some: { fulfillmentStage: { notIn: ['ENTREGUE', 'DEVOLVIDA', 'CANCELADA'] } },
+          },
+        };
+        const [tasksDone, lateOs, openOs, reworks] = await Promise.all([
+          prisma.productionTask.count({
+            where: { status: 'CONCLUIDA', completedAt: { gte: from, lt: to } },
+          }),
+          prisma.serviceOrder.count({ where: { ...active, promisedDate: { lt: todayDate } } }),
+          prisma.serviceOrder.count({ where: active }),
+          prisma.rework.count({ where: { createdAt: { gte: from, lt: to }, cancelledAt: null } }),
+        ]);
+        out.production = { tasksDone, lateOs, openOs, reworks };
+      }
+      if (has(request, 'retiradas.ver', 'retiradas.gerenciar')) {
+        const [done, rest] = await Promise.all([
+          prisma.pickupRequest.count({
+            where: {
+              status: { in: ['RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA'] },
+              scheduledDate: dayRange,
+            },
+          }),
+          prisma.pickupRequest.count({
+            where: { status: 'AGENDADA', scheduledDate: { gte: todayDate, lt: dayRange.lt } },
+          }),
+        ]);
+        out.pickups = { done, scheduledRest: rest };
       }
       if (has(request, 'orcamentos.ver', 'orcamentos.gerenciar')) {
         const [sent, approved, due] = await Promise.all([
@@ -923,6 +1004,168 @@ export async function improvementRoutes(app: FastifyInstance) {
           approvedCents: approved.reduce((s, q) => s + q.totalCents, 0),
           followUpDue: due,
         };
+      }
+      return out;
+    },
+  );
+
+  // ───────────────────────── Gráficos do Início (2026-11-18) ─────────────────────────
+  /**
+   * Três gráficos, cada um só para quem pode ver aquele assunto: entrou × saiu nas últimas 8
+   * semanas (financeiro.ver), peças por etapa agora (os.ver/pedidos.ver) e orçamentos enviados ×
+   * aprovados nos últimos 6 meses (orcamentos.ver).
+   */
+  app.get(
+    '/api/v1/management/charts',
+    {
+      config: {
+        access: {
+          session: 'WEB',
+          anyPermissions: ['os.ver', 'pedidos.ver', 'financeiro.ver', 'orcamentos.ver'],
+        },
+      },
+    },
+    async (request) => {
+      const today = todayIso();
+      const weekday = new Date(`${today}T12:00:00Z`).getUTCDay();
+      const monday = addDays(today, -((weekday + 6) % 7));
+      const out: {
+        cash: { weekStart: string; inCents: number; outCents: number }[] | null;
+        stages: { key: string; label: string; pieces: number }[] | null;
+        quotes: { month: string; sent: number; approved: number }[] | null;
+      } = { cash: null, stages: null, quotes: null };
+
+      if (has(request, 'financeiro.ver')) {
+        const starts = Array.from({ length: 8 }, (_, i) => addDays(monday, -7 * (7 - i)));
+        const range = {
+          gte: new Date(`${starts[0]}T00:00:00Z`),
+          lt: new Date(`${addDays(monday, 7)}T00:00:00Z`),
+        };
+        const [inPay, inManual, outBills, outLabor] = await Promise.all([
+          prisma.customerPayment.findMany({
+            where: { receivedAt: range },
+            select: { receivedAt: true, amountCents: true },
+          }),
+          prisma.manualRevenue.findMany({
+            where: { receivedAt: range, cancelledAt: null },
+            select: { receivedAt: true, amountCents: true },
+          }),
+          prisma.payablePayment.findMany({
+            where: { paidAt: range },
+            select: { paidAt: true, amountCents: true },
+          }),
+          prisma.professionalPayment.findMany({
+            where: { paidAt: range },
+            select: { paidAt: true, amountCents: true },
+          }),
+        ]);
+        const weekOf = (d: Date) => {
+          const iso = d.toISOString().slice(0, 10);
+          return starts.filter((w) => w <= iso).pop() ?? starts[0]!;
+        };
+        const sum = (rows: { at: Date; amountCents: number }[], w: string) =>
+          rows.filter((r) => weekOf(r.at) === w).reduce((a, r) => a + r.amountCents, 0);
+        const ins = [
+          ...inPay.map((r) => ({ at: r.receivedAt, amountCents: r.amountCents })),
+          ...inManual.map((r) => ({ at: r.receivedAt, amountCents: r.amountCents })),
+        ];
+        const outs = [
+          ...outBills.map((r) => ({ at: r.paidAt, amountCents: r.amountCents })),
+          ...outLabor.map((r) => ({ at: r.paidAt, amountCents: r.amountCents })),
+        ];
+        out.cash = starts.map((w) => ({
+          weekStart: w,
+          inCents: sum(ins, w),
+          outCents: sum(outs, w),
+        }));
+      }
+
+      if (has(request, 'os.ver', 'pedidos.ver')) {
+        const [waiting, items, soItems] = await Promise.all([
+          prisma.commercialOrderItem.findMany({
+            where: {
+              order: {
+                status: { in: ['AGUARDANDO_RETIRADA', 'RETIRADA_AGENDADA', 'RECEBIDO_PARCIAL'] },
+              },
+            },
+            select: { quantity: true, receivedQuantity: true },
+          }),
+          prisma.commercialOrderItem.findMany({
+            where: { receivedQuantity: { gt: 0 }, order: { status: { not: 'CANCELADO' } } },
+            select: { id: true, receivedQuantity: true },
+          }),
+          prisma.serviceOrderItem.findMany({
+            where: { serviceOrder: { status: 'ABERTA' } },
+            select: { orderItemId: true, quantity: true, fulfillmentStage: true },
+          }),
+        ]);
+        const inOs = new Map<string, number>();
+        for (const i of soItems)
+          inOs.set(i.orderItemId, (inOs.get(i.orderItemId) ?? 0) + i.quantity);
+        const stage = (list: string[]) =>
+          soItems
+            .filter((i) => list.includes(i.fulfillmentStage))
+            .reduce((a, i) => a + i.quantity, 0);
+        out.stages = [
+          {
+            key: 'retirada',
+            label: 'Aguardando retirada',
+            pieces: waiting.reduce((a, i) => a + Math.max(0, i.quantity - i.receivedQuantity), 0),
+          },
+          {
+            key: 'oficina',
+            label: 'Na oficina, sem OS',
+            pieces: items.reduce(
+              (a, i) => a + Math.max(0, i.receivedQuantity - (inOs.get(i.id) ?? 0)),
+              0,
+            ),
+          },
+          { key: 'producao', label: 'Em produção', pieces: stage(['EM_PRODUCAO']) },
+          {
+            key: 'qualidade',
+            label: 'Na qualidade',
+            pieces: stage(['AGUARDANDO_INSPECAO', 'EM_INSPECAO', 'EM_CORRECAO']),
+          },
+          {
+            key: 'entrega',
+            label: 'Prontas para entregar',
+            pieces: stage([
+              'AGUARDANDO_EMBALAGEM',
+              'EM_EMBALAGEM',
+              'BLOQUEIO_EXPEDICAO',
+              'PRONTA_ENTREGA',
+              'ENTREGA_AGENDADA',
+              'EM_TRANSPORTE',
+            ]),
+          },
+        ];
+      }
+
+      if (has(request, 'orcamentos.ver', 'orcamentos.gerenciar')) {
+        const months: string[] = [];
+        const [y, m] = today.split('-').map(Number) as [number, number];
+        for (let i = 5; i >= 0; i--) {
+          const d = new Date(Date.UTC(y, m - 1 - i, 1));
+          months.push(d.toISOString().slice(0, 7));
+        }
+        const since = new Date(`${months[0]}-01T03:00:00.000Z`);
+        const [sent, approved] = await Promise.all([
+          prisma.quote.findMany({
+            where: { deletedAt: null, createdAt: { gte: since } },
+            select: { createdAt: true },
+          }),
+          prisma.quote.findMany({
+            where: { deletedAt: null, status: 'APROVADO', statusChangedAt: { gte: since } },
+            select: { statusChangedAt: true },
+          }),
+        ]);
+        const monthOf = (d: Date | null) =>
+          d ? new Date(d.getTime() - 3 * 3600_000).toISOString().slice(0, 7) : '';
+        out.quotes = months.map((mo) => ({
+          month: mo,
+          sent: sent.filter((q) => monthOf(q.createdAt) === mo).length,
+          approved: approved.filter((q) => monthOf(q.statusChangedAt) === mo).length,
+        }));
       }
       return out;
     },

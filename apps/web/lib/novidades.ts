@@ -12,6 +12,41 @@ export interface Novidade {
 
 export const NOVIDADES: Novidade[] = [
   {
+    id: '2026-11-18-ajustes',
+    date: '2026-11-18',
+    title: 'Retrabalhos, Receitas e Despesas, gráficos e página da OS',
+    items: [
+      'Retrabalhos no lugar de Devoluções: escolha o serviço que voltou, o prazo e a retirada. Tudo do retrabalho aparece em vermelho na agenda, nas OS e nos pedidos, com estatística e o gasto no Resumo do financeiro.',
+      'Financeiro com as abas Despesas (tudo que foi pago) e Receitas (tudo que entrou), e botões para incluir uma despesa ou receita avulsa.',
+      'Produtividade virou item do menu, abaixo de Presença da equipe. Financeiro fica acima de Serviços.',
+      'Novo serviço: quando vem de um orçamento, os dados ficam travados. A forma de pagamento é escolhida aqui: à vista (50% na retirada e 50% na entrega) ou parcelado com a taxa da maquininha, que já marca levar a maquininha.',
+      'A OS puxa o serviço do tapeceiro e os detalhes do orçamento, sem valores. Tecido e tapeceiro se definem na OS.',
+      'Página da OS organizada para a equipe: botão "Abrir OS" no tablet e na OS do painel.',
+      'Gráficos no Início (entrou e saiu, peças por etapa e orçamentos), que dá para recolher.',
+      'Resumo da semana com mais números (o que saiu, cobranças atrasadas, contas da semana, OS atrasadas, retiradas) e botão Voltar.',
+      'Orçamento mais simples: "Quantidade" no lugar de "Quantidade de sofás" e sem os campos do ajudante.',
+      'Estoque da oficina com o cadastro e as categorias alinhados.',
+    ],
+  },
+  {
+    id: '2026-11-18-fluxo-os',
+    date: '2026-11-18',
+    title: 'Fluxo da OS, despesas da empresa e prazos em dias úteis',
+    items: [
+      'Gerar a OS já preenchida com o que veio do pedido e do orçamento, com a foto do orçamento.',
+      'Categorias de despesa da própria empresa e aviso das contas que vencem nos próximos dias.',
+      'Prazo de entrega em dias úteis, contado do dia da retirada.',
+    ],
+  },
+  {
+    id: '2026-11-18-visual',
+    date: '2026-11-18',
+    title: 'Telas mais limpas e textos mais claros',
+    items: [
+      'Mais de 40 ajustes de visual e de texto em todo o sistema: nomes iguais em todas as telas ("serviço", "OS", "funcionário"), formulários alinhados e explicações longas recolhidas em "Como usar".',
+    ],
+  },
+  {
     id: '2026-11-melhorias-2',
     date: '2026-11-17',
     title: 'Orçamentos que viram serviço, busca rápida e modo escuro',

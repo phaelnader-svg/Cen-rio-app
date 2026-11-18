@@ -24,6 +24,7 @@ import { todayIso, useOrders, usePickups } from '@/lib/commercial';
 import { useAttention } from '@/lib/issues';
 import { money } from '@/lib/finance';
 import { useDevices, useEmployees, useOverview, useRecentAudit, useSessions } from '@/lib/queries';
+import { HomeCharts } from './home-charts';
 import { TodayPanel } from './today-panel';
 
 function greeting(timeZone: string) {
@@ -216,6 +217,8 @@ export function Dashboard() {
           )}
         </div>
       )}
+
+      <HomeCharts />
 
       {ops && (
         <section data-testid="dashboard-operations">

@@ -7,7 +7,7 @@ import { Archive, ArchiveRestore, History, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { MoneyInput } from '@/components/commercial/money-input';
 import { Button } from '@/components/ui/button';
-import { Input, Select } from '@/components/ui/field';
+import { Field, Input, Select } from '@/components/ui/field';
 import { Alert, Badge, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
@@ -51,18 +51,19 @@ export function InventoryPage() {
         help="Controle simples do que há na oficina: categorias próprias, materiais e rolos de tecido. Não é baixado pelas OS — a quantidade muda só por ajuste, com histórico."
       />
       <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="min-w-0 space-y-4">
+          {manage && <NewItem categories={cats.data ?? []} />}
+          <div className="flex flex-wrap items-center gap-3">
             <Input
               aria-label="Buscar"
               placeholder="Buscar material ou rolo"
-              className="max-w-xs"
+              className="w-full sm:w-64"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
             <Select
               aria-label="Categoria"
-              className="max-w-xs"
+              className="w-full sm:w-56"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
@@ -86,7 +87,6 @@ export function InventoryPage() {
               Mostrar arquivados
             </label>
           </div>
-          {manage && <NewItem categories={cats.data ?? []} />}
           {items.isPending ? (
             <Spinner />
           ) : items.isError ? (
@@ -121,7 +121,7 @@ function NewItem({ categories }: { categories: InventoryCategoryDto[] }) {
   const valid = d.name.trim().length >= 2 && d.unit.trim() && !Number.isNaN(q);
   return (
     <form
-      className="grid items-end gap-2 rounded-xl border border-line p-3 sm:grid-cols-12"
+      className="card p-5"
       data-testid="inventory-new-item"
       onSubmit={(e) => {
         e.preventDefault();
@@ -140,48 +140,65 @@ function NewItem({ categories }: { categories: InventoryCategoryDto[] }) {
         );
       }}
     >
-      <Input
-        aria-label="Novo material"
-        placeholder="Novo material (ex.: Espuma D33 5cm)"
-        className="sm:col-span-5"
-        value={d.name}
-        onChange={(e) => setD({ ...d, name: e.target.value })}
-      />
-      <Select
-        aria-label="Categoria do material"
-        className="sm:col-span-3"
-        value={d.categoryId}
-        onChange={(e) => setD({ ...d, categoryId: e.target.value })}
-      >
-        <option value="">Sem categoria</option>
-        {categories
-          .filter((c) => !c.archived)
-          .map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-      </Select>
-      <Input
-        aria-label="Quantidade inicial"
-        placeholder="Qtd."
-        inputMode="decimal"
-        className="sm:col-span-1"
-        value={d.quantity}
-        onChange={(e) => setD({ ...d, quantity: e.target.value })}
-      />
-      <Input
-        aria-label="Unidade do material"
-        placeholder="Unid."
-        className="sm:col-span-1"
-        value={d.unit}
-        onChange={(e) => setD({ ...d, unit: e.target.value })}
-      />
-      <Button type="submit" className="sm:col-span-2" disabled={!valid} loading={act.isPending}>
-        <Plus className="size-4" aria-hidden /> Cadastrar
-      </Button>
+      <h2 className="mb-3 font-semibold text-ink">Cadastrar material</h2>
+      <div className="grid items-end gap-3 sm:grid-cols-12">
+        <Field label="Material" className="sm:col-span-5">
+          {(f) => (
+            <Input
+              {...f}
+              placeholder="Ex.: Espuma D33 5cm"
+              value={d.name}
+              onChange={(e) => setD({ ...d, name: e.target.value })}
+            />
+          )}
+        </Field>
+        <Field label="Categoria" className="sm:col-span-3">
+          {(f) => (
+            <Select
+              {...f}
+              value={d.categoryId}
+              onChange={(e) => setD({ ...d, categoryId: e.target.value })}
+            >
+              <option value="">Sem categoria</option>
+              {categories
+                .filter((c) => !c.archived)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </Select>
+          )}
+        </Field>
+        <Field label="Qtd. inicial" className="sm:col-span-2">
+          {(f) => (
+            <Input
+              {...f}
+              placeholder="0"
+              inputMode="decimal"
+              value={d.quantity}
+              onChange={(e) => setD({ ...d, quantity: e.target.value })}
+            />
+          )}
+        </Field>
+        <Field label="Unidade" className="sm:col-span-2">
+          {(f) => (
+            <Input
+              {...f}
+              placeholder="un"
+              value={d.unit}
+              onChange={(e) => setD({ ...d, unit: e.target.value })}
+            />
+          )}
+        </Field>
+      </div>
+      <div className="mt-3 flex justify-end">
+        <Button type="submit" disabled={!valid} loading={act.isPending}>
+          <Plus className="size-4" aria-hidden /> Cadastrar
+        </Button>
+      </div>
       {act.error && (
-        <Alert tone="danger" className="sm:col-span-12">
+        <Alert tone="danger" className="mt-3">
           {act.error}
         </Alert>
       )}
@@ -621,8 +638,8 @@ function Categories({ manage }: { manage: boolean }) {
   const [name, setName] = useState('');
   const act = useAction(INV, 'Categoria criada.');
   return (
-    <aside className="h-fit rounded-xl border border-line p-4" data-testid="inventory-categories">
-      <h3 className="mb-2 font-semibold">Categorias</h3>
+    <aside className="card h-fit p-5" data-testid="inventory-categories">
+      <h2 className="mb-3 font-semibold text-ink">Categorias</h2>
       {q.isPending ? (
         <Spinner />
       ) : q.isError ? (
@@ -630,9 +647,12 @@ function Categories({ manage }: { manage: boolean }) {
       ) : q.data.length === 0 ? (
         <p className="text-sm text-ink-muted">Nenhuma categoria ainda.</p>
       ) : (
-        <ul className="space-y-1">
+        <ul className="divide-y divide-line">
           {q.data.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center justify-between gap-1 text-sm">
+            <li
+              key={c.id}
+              className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm first:pt-0"
+            >
               <span className={c.archived ? 'text-ink-muted line-through' : ''}>
                 {c.name} <span className="text-xs text-ink-muted">({c.itemCount})</span>
               </span>
@@ -651,7 +671,7 @@ function Categories({ manage }: { manage: boolean }) {
       )}
       {manage && (
         <form
-          className="mt-3 flex gap-2"
+          className="mt-4 flex gap-2 border-t border-line pt-4"
           onSubmit={(e) => {
             e.preventDefault();
             if (name.trim().length < 2) return;
@@ -667,7 +687,7 @@ function Categories({ manage }: { manage: boolean }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <Button type="submit" size="sm" disabled={name.trim().length < 2} loading={act.isPending}>
+          <Button type="submit" disabled={name.trim().length < 2} loading={act.isPending}>
             Criar
           </Button>
         </form>

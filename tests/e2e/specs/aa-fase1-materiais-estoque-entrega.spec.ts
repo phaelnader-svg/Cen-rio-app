@@ -77,10 +77,10 @@ test('estoque da oficina: categoria, material, ajuste com histórico e arquivame
   await expect(cats).toContainText('Espumas Fictícias');
 
   const form = page.getByTestId('inventory-new-item');
-  await form.getByLabel('Novo material').fill('Espuma D33 fictícia');
-  await form.getByLabel('Categoria do material').selectOption({ label: 'Espumas Fictícias' });
-  await form.getByLabel('Quantidade inicial').fill('4');
-  await form.getByLabel('Unidade do material').fill('placa');
+  await form.getByLabel('Material', { exact: true }).fill('Espuma D33 fictícia');
+  await form.getByLabel('Categoria', { exact: true }).selectOption({ label: 'Espumas Fictícias' });
+  await form.getByLabel('Qtd. inicial').fill('4');
+  await form.getByLabel('Unidade', { exact: true }).fill('placa');
   await form.getByRole('button', { name: 'Cadastrar' }).click();
   const item = page.getByTestId('inventory-item').filter({ hasText: 'Espuma D33 fictícia' });
   await expect(item.getByTestId('inventory-quantity')).toContainText('4');

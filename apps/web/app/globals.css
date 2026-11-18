@@ -58,6 +58,9 @@
   --color-danger-50: #fdeeee;
   --color-danger-600: #b42323;
   --color-danger-700: #911b1b;
+  /* Gráficos do Início (validados para daltonismo e contraste; 2026-11-18). */
+  --color-chart-1: #00908a;
+  --color-chart-2: #c27526;
   --color-info-50: #eef3fb;
   --color-info-600: #2c5ea8;
 
@@ -96,6 +99,8 @@
     --color-danger-50: #331617;
     --color-danger-600: #e06262;
     --color-danger-700: #b83c3c;
+    --color-chart-1: #1aa59e;
+    --color-chart-2: #c97a2c;
     --color-info-50: #152238;
     --color-info-600: #7aa7e6;
     --shadow-card: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.35);
