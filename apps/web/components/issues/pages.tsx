@@ -61,6 +61,7 @@ export function AttentionPage() {
   }));
   const q = useAttention(f);
   const set = (k: string, v: string) => setF((x) => ({ ...x, [k]: v || undefined }));
+  const [more, setMore] = useState(false);
   const orders = useMemo(() => {
     const m = new Map<string, string>();
     for (const i of q.data?.items ?? [])
@@ -70,8 +71,8 @@ export function AttentionPage() {
   return (
     <>
       <PageHeader
-        title="Central de atenção"
-        description="Só o que precisa de você agora."
+        title="Avisos e pendências"
+        description="Tudo o que pede a sua atenção, do mais urgente para o menos."
         help="Só o que pede atenção: ocorrências, reprogramações aguardando decisão, ausências com impacto, pausas por impedimento, prazos vencidos e OS atrasadas ou em risco. A operação normal não aparece aqui."
       />
       <div className="mb-4 grid gap-3 sm:grid-cols-4" data-testid="attention-counts">
@@ -93,8 +94,9 @@ export function AttentionPage() {
           </button>
         ))}
       </div>
+      {/* Revisão geral (item 2): só o filtro por tipo à vista; os outros ficam em "Mais filtros". */}
       <Card className="mb-4 grid gap-3 p-4 sm:grid-cols-3 lg:grid-cols-6">
-        <label className="field">
+        <label className="field sm:col-span-2">
           <span className="label">Tipo</span>
           <Select value={f.type ?? ''} onChange={(e) => set('type', e.target.value)}>
             <option value="">Todos</option>
@@ -105,63 +107,80 @@ export function AttentionPage() {
             ))}
           </Select>
         </label>
-        <label className="field">
-          <span className="label">Situação</span>
-          <Select value={f.status ?? ''} onChange={(e) => set('status', e.target.value)}>
-            <option value="">Todas</option>
-            {Object.entries(ISSUE_STATUS_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="field">
-          <span className="label">Funcionário</span>
-          <Select
-            value={f.employeeUserId ?? ''}
-            onChange={(e) => set('employeeUserId', e.target.value)}
+        <details className="sm:col-span-3 lg:col-span-6" open={more}>
+          <summary
+            className="cursor-pointer text-sm font-medium text-brand-700"
+            onClick={(e) => {
+              e.preventDefault();
+              setMore(!more);
+            }}
           >
-            <option value="">Todos</option>
-            {workers.data?.map((w) => (
-              <option key={w.userId} value={w.userId}>
-                {w.displayName}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="field">
-          <span className="label">Responsável pela solução</span>
-          <Select
-            value={f.solverUserId ?? ''}
-            onChange={(e) => set('solverUserId', e.target.value)}
-          >
-            <option value="">Todos</option>
-            {workers.data?.map((w) => (
-              <option key={w.userId} value={w.userId}>
-                {w.displayName}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="field">
-          <span className="label">OS</span>
-          <Select
-            value={f.serviceOrderId ?? ''}
-            onChange={(e) => set('serviceOrderId', e.target.value)}
-          >
-            <option value="">Todas</option>
-            {orders.map(([id, code]) => (
-              <option key={id} value={id}>
-                {code}
-              </option>
-            ))}
-          </Select>
-        </label>
-        <label className="field">
-          <span className="label">Data</span>
-          <Input type="date" value={f.date ?? ''} onChange={(e) => set('date', e.target.value)} />
-        </label>
+            {more ? 'Menos filtros' : 'Mais filtros'}
+          </summary>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <label className="field">
+              <span className="label">Situação</span>
+              <Select value={f.status ?? ''} onChange={(e) => set('status', e.target.value)}>
+                <option value="">Todas</option>
+                {Object.entries(ISSUE_STATUS_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="field">
+              <span className="label">Funcionário</span>
+              <Select
+                value={f.employeeUserId ?? ''}
+                onChange={(e) => set('employeeUserId', e.target.value)}
+              >
+                <option value="">Todos</option>
+                {workers.data?.map((w) => (
+                  <option key={w.userId} value={w.userId}>
+                    {w.displayName}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="field">
+              <span className="label">Responsável pela solução</span>
+              <Select
+                value={f.solverUserId ?? ''}
+                onChange={(e) => set('solverUserId', e.target.value)}
+              >
+                <option value="">Todos</option>
+                {workers.data?.map((w) => (
+                  <option key={w.userId} value={w.userId}>
+                    {w.displayName}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="field">
+              <span className="label">OS</span>
+              <Select
+                value={f.serviceOrderId ?? ''}
+                onChange={(e) => set('serviceOrderId', e.target.value)}
+              >
+                <option value="">Todas</option>
+                {orders.map(([id, code]) => (
+                  <option key={id} value={id}>
+                    {code}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="field">
+              <span className="label">Data</span>
+              <Input
+                type="date"
+                value={f.date ?? ''}
+                onChange={(e) => set('date', e.target.value)}
+              />
+            </label>
+          </div>
+        </details>
       </Card>
       {q.isPending ? (
         <Spinner />
@@ -224,10 +243,12 @@ export function AttentionPage() {
                         <dd className="inline">{i.employee.displayName}</dd>
                       </div>
                     )}
-                    <div>
-                      <dt className="inline text-ink-muted">Prioridade: </dt>
-                      <dd className="inline">{PRIORITY_LABEL[i.priority as Priority]}</dd>
-                    </div>
+                    {i.priority !== 'NORMAL' && (
+                      <div>
+                        <dt className="inline text-ink-muted">Prioridade: </dt>
+                        <dd className="inline">{PRIORITY_LABEL[i.priority as Priority]}</dd>
+                      </div>
+                    )}
                     {i.deadline && (
                       <div>
                         <dt className="inline text-ink-muted">Prazo: </dt>
@@ -238,10 +259,12 @@ export function AttentionPage() {
                         </dd>
                       </div>
                     )}
-                    <div>
-                      <dt className="inline text-ink-muted">Responsável pela solução: </dt>
-                      <dd className="inline">{i.solver?.displayName ?? '—'}</dd>
-                    </div>
+                    {i.solver && (
+                      <div>
+                        <dt className="inline text-ink-muted">Quem vai resolver: </dt>
+                        <dd className="inline">{i.solver.displayName}</dd>
+                      </div>
+                    )}
                   </dl>
                   {i.impacts.length > 0 && (
                     <p className="mt-2 text-sm">

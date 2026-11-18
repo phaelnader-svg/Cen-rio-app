@@ -152,7 +152,7 @@ test('programação semanal numa tela só; endereços antigos e menu enxuto', as
   await page.setViewportSize({ width: 1440, height: 900 });
   await loginAdmin(page);
   await page.goto('/painel/producao/programacao');
-  await expect(page.getByRole('heading', { name: 'Programação semanal', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Semana da oficina', level: 1 })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Serviços', selected: true })).toBeVisible();
   await expect(page.getByTestId('pipeline-A_PLANEJAR')).toBeVisible();
   await page.getByRole('tab', { name: 'Semana detalhada' }).click();
@@ -164,7 +164,8 @@ test('programação semanal numa tela só; endereços antigos e menu enxuto', as
   await expect(page.getByRole('tab', { name: 'Semana detalhada', selected: true })).toBeVisible();
   // Menu: uma entrada só; as páginas que saíram do menu continuam abrindo.
   const nav = page.getByRole('navigation');
-  await expect(nav.getByRole('link', { name: 'Programação semanal' })).toBeVisible();
+  // Revisão geral (item 8): a entrada do menu virou "Semana da oficina".
+  await expect(nav.getByRole('link', { name: 'Semana da oficina' })).toBeVisible();
   for (const gone of [
     'Produção — A planejar',
     'Planejamento de produção',

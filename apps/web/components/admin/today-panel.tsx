@@ -2,20 +2,10 @@
 
 import { plural, type Permission, type TodayDeadlineDto, type TodayDto } from '@cenario/shared';
 import { useQuery } from '@tanstack/react-query';
-import {
-  BellRing,
-  CalendarClock,
-  CheckCircle2,
-  Hammer,
-  Lightbulb,
-  PackageCheck,
-  TriangleAlert,
-  Users,
-} from 'lucide-react';
+import { ArrowRight, CalendarClock, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { Badge, Card, Spinner } from '@/components/ui/misc';
 import { api } from '@/lib/api';
-import { formatTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 
 /**
@@ -32,50 +22,24 @@ export const useToday = (enabled = true) =>
     refetchInterval: 60_000,
   });
 
-const hhmm = (iso: string | null) => (iso ? formatTime(iso) : '—');
-
-function Section({
-  icon,
-  title,
-  count,
-  children,
-  testid,
-  countTestId,
-}: {
-  icon: React.ReactNode;
+/** Linha extra do "Precisa de você hoje", montada no Início a partir de outras contagens. */
+export interface TodayExtra {
+  key: string;
   title: string;
-  count?: number;
-  children: React.ReactNode;
-  testid: string;
-  countTestId?: string;
-}) {
-  // Melhoria 138: o mesmo cartão dos números do Início (título em cima, número grande embaixo).
-  return (
-    <Card className="flex min-w-0 flex-col gap-3 p-5" data-testid={testid}>
-      <div>
-        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-muted">
-          <span className="rounded-lg bg-brand-50 p-1.5 text-brand-700">{icon}</span>
-          {title}
-        </h3>
-        {count !== undefined && (
-          <p
-            className="mt-3 text-3xl font-semibold tracking-tight tabular-nums"
-            data-testid={countTestId}
-          >
-            {count}
-          </p>
-        )}
-      </div>
-      {children}
-    </Card>
-  );
+  why?: string;
+  link: string;
+  tone?: 'danger' | 'warn';
 }
 
-const Empty = ({ children }: { children: React.ReactNode }) => (
-  <p className="text-sm text-ink-muted">{children}</p>
-);
-
-export function TodayPanel({ deadlines }: { deadlines?: React.ReactNode } = {}) {
+/**
+ * Revisão geral (2026-11-18): o "Hoje" virou um cartão só, "Precisa de você hoje", com as
+ * sugestões, as pendências, os alertas e as contagens que pedem ação — antes eram quatro quadros
+ * que repetiam o mesmo número. As entregas da semana continuam logo abaixo.
+ */
+export function TodayPanel({
+  deadlines,
+  extra = [],
+}: { deadlines?: React.ReactNode; extra?: TodayExtra[] } = {}) {
   const can = useCan();
   const enabled = (
     [
@@ -94,227 +58,133 @@ export function TodayPanel({ deadlines }: { deadlines?: React.ReactNode } = {}) 
   if (q.isPending) return <Spinner />;
   if (q.isError) return null;
   const t = q.data;
-  // O bloco de prazos já mostra os avisos de prazo: no cartão de alertas ficam os demais.
+  // O bloco de prazos já mostra os avisos de prazo: aqui ficam os demais.
   const alerts = t.deadlines
     ? t.alerts.filter((a) => a.kind !== 'PRAZO_PROXIMO' && a.kind !== 'PRAZO_EM_RISCO')
     : t.alerts;
-  // Tudo zerado: uma frase no lugar de vários zeros.
-  const allClear =
-    t.suggestions.length === 0 &&
-    alerts.length === 0 &&
-    (t.deadlines?.length ?? 0) === 0 &&
-    (t.inExecution?.length ?? 0) === 0 &&
-    (t.readyPieces?.length ?? 0) === 0 &&
-    (t.pendencies?.total ?? 0) === 0;
+  // Uma linha por assunto: a sugestão que aponta para a mesma tela de uma pendência fica só uma vez.
+  const seen = new Set(t.suggestions.map((s) => s.link));
+  const pendencies = (t.pendencies?.top ?? []).filter((p) => !seen.has(p.link));
+  const extras = extra;
+  const lines = t.suggestions.length + pendencies.length + alerts.length + extras.length;
 
   return (
     <section className="space-y-4" data-testid="today-panel" aria-labelledby="today-title">
-      <h2 id="today-title" className="text-xl font-semibold tracking-tight">
-        Hoje
-      </h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="today-title" className="text-xl font-semibold tracking-tight">
+          Precisa de você hoje
+        </h2>
+        {t.present && t.present.total > 0 && (
+          <Link
+            href="/painel/presenca"
+            className="text-sm text-ink-muted hover:underline"
+            data-testid="today-present"
+          >
+            {plural(t.present.total, 'pessoa', 'pessoas')} na oficina
+          </Link>
+        )}
+      </div>
 
-      {t.suggestions.length > 0 && (
-        <Card className="space-y-3 p-5" data-testid="today-suggestions">
-          <h3 className="flex items-center gap-2 text-sm font-medium text-ink-muted">
-            <span className="rounded-lg bg-brand-50 p-1.5 text-brand-700">
-              <Lightbulb className="size-4" aria-hidden />
-            </span>
-            Ações sugeridas hoje
-          </h3>
-          <ul className="divide-y divide-line">
-            {t.suggestions.map((s) => (
-              <li
-                key={s.key}
-                className="py-2.5 first:pt-0 last:pb-0"
-                data-testid="today-suggestion"
-              >
-                <Link
-                  href={s.link}
-                  className="group flex flex-wrap items-start gap-x-3 gap-y-1 rounded-lg"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-medium group-hover:underline">{s.title}</span>
-                    <span className="block text-sm text-ink-muted">{s.why}</span>
-                  </span>
-                  {s.priority === 'ALTA' && <Badge tone="warn">Prioridade</Badge>}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <p className="text-xs text-ink-muted">
-            Sugestões só indicam o caminho: nada é alterado até você decidir na tela indicada.
-          </p>
-        </Card>
-      )}
-
-      {t.deadlines && t.deadlines.length > 0 && <DeliveryDeadlines list={t.deadlines} />}
-
-      {allClear && (
-        <Card className="flex items-center gap-3 p-5" data-testid="today-all-clear">
+      {lines === 0 ? (
+        <Card className="flex flex-wrap items-center gap-3 p-5" data-testid="today-all-clear">
           <span className="rounded-lg bg-ok-50 p-1.5 text-ok-600">
             <CheckCircle2 className="size-4" aria-hidden />
           </span>
-          <p className="font-medium">
-            Tudo em dia hoje.
-            {t.present && t.present.total > 0 && (
-              <span className="font-normal text-ink-muted">
-                {' '}
-                {plural(t.present.total, 'pessoa', 'pessoas')} na oficina.
-              </span>
-            )}
-          </p>
+          <p className="font-medium">Tudo em dia hoje.</p>
           {t.pendencies && (
             <span className="sr-only" data-testid="dashboard-attention-total">
-              0
+              {t.pendencies.total}
             </span>
           )}
           {deadlines && <div className="ml-auto">{deadlines}</div>}
         </Card>
-      )}
-
-      {!allClear && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {t.inExecution && (
-            <Section
-              icon={<Hammer className="size-4" aria-hidden />}
-              title="Em execução"
-              count={t.inExecution.length}
-              testid="today-in-execution"
-            >
-              {t.inExecution.length === 0 ? (
-                <Empty>Nenhum serviço em andamento agora.</Empty>
-              ) : (
-                <ul className="space-y-1.5 text-sm">
-                  {t.inExecution.slice(0, 6).map((x) => (
-                    <li key={x.taskId} className="flex items-baseline gap-2">
-                      <Link
-                        href={`/painel/os/${x.serviceOrder.id}?tab=producao`}
-                        className="min-w-0 flex-1 truncate hover:underline"
-                      >
-                        <span className="font-mono text-xs font-semibold">
-                          {x.serviceOrder.code}
-                        </span>{' '}
-                        {x.title}
-                      </Link>
-                      <span className="shrink-0 text-ink-muted">
-                        {x.assignee ?? '—'}
-                        {x.status === 'PAUSADA' && ' · pausada'}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Section>
-          )}
-
-          {t.present && (
-            <Section
-              icon={<Users className="size-4" aria-hidden />}
-              title="Na oficina"
-              count={t.present.total}
-              testid="today-present"
-            >
-              {t.present.total === 0 ? (
-                <Empty>Ninguém com chegada registrada ainda.</Empty>
-              ) : (
-                <ul className="space-y-1 text-sm">
-                  {t.present.people.slice(0, 8).map((p) => (
-                    <li key={p.displayName} className="flex justify-between gap-2">
-                      <span className="truncate">{p.displayName}</span>
-                      <span className="text-ink-muted tabular-nums">desde {hhmm(p.arrivedAt)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Section>
-          )}
-
-          {t.readyPieces && (
-            <Section
-              icon={<PackageCheck className="size-4" aria-hidden />}
-              title="Prontas aguardando entrega"
-              count={t.readyPieces.length}
-              testid="today-ready"
-            >
-              {t.readyPieces.length === 0 ? (
-                <Empty>Nenhuma peça pronta parada.</Empty>
-              ) : (
-                <ul className="space-y-1.5 text-sm">
-                  {t.readyPieces.slice(0, 6).map((r) => (
-                    <li key={r.itemId} className="flex items-baseline gap-2">
-                      <Link
-                        href={`/painel/os/${r.serviceOrderId}?tab=qualidade`}
-                        className="min-w-0 flex-1 truncate hover:underline"
-                      >
-                        <span className="font-mono text-xs font-semibold">{r.code}</span>{' '}
-                        {r.description} · {r.customer}
-                      </Link>
-                      <span className="shrink-0 text-ink-muted tabular-nums">
-                        {r.days === 0 ? 'hoje' : `${r.days} d`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Section>
-          )}
-
+      ) : (
+        <Card className="p-5" data-testid="today-suggestions">
           {t.pendencies && (
-            <Section
-              icon={<TriangleAlert className="size-4" aria-hidden />}
-              title="Pendências"
-              count={t.pendencies.total}
-              testid="today-pendencies"
-              countTestId="dashboard-attention-total"
-            >
-              {deadlines}
-              {t.pendencies.top.length === 0 ? (
-                <Empty>Nada pedindo ação.</Empty>
-              ) : (
-                <ul className="space-y-1.5 text-sm">
-                  {t.pendencies.top.map((p, i) => (
-                    <li key={`${p.link}-${i}`}>
-                      <Link href={p.link} className="hover:underline">
-                        {p.category === 'CRITICO' && (
-                          <span className="mr-1 font-semibold text-danger-600">Crítico ·</span>
-                        )}
-                        {p.title}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <Link
-                href="/painel/atencao"
-                className="mt-auto text-sm text-brand-700 hover:underline"
-              >
-                Abrir a Central de atenção
-              </Link>
-            </Section>
-          )}
-        </div>
-      )}
-
-      {alerts.length > 0 && (
-        <Card className="space-y-2 p-5" data-testid="today-alerts">
-          <h3 className="flex items-center gap-2 text-sm font-medium text-ink-muted">
-            <span className="rounded-lg bg-brand-50 p-1.5 text-brand-700">
-              <BellRing className="size-4" aria-hidden />
+            <span className="sr-only" data-testid="dashboard-attention-total">
+              {t.pendencies.total}
             </span>
-            Alertas internos
-          </h3>
-          <ul className="space-y-1.5 text-sm">
+          )}
+          <ul className="divide-y divide-line">
+            {t.suggestions.map((s) => (
+              <Line
+                key={s.key}
+                testid="today-suggestion"
+                href={s.link}
+                title={s.title}
+                why={s.why}
+                badge={s.priority === 'ALTA' ? <Badge tone="warn">Prioridade</Badge> : null}
+              />
+            ))}
+            {pendencies.map((p, i) => (
+              <Line
+                key={`${p.link}-${i}`}
+                testid="today-pendency"
+                href={p.link}
+                title={p.title}
+                badge={p.category === 'CRITICO' ? <Badge tone="danger">Atrasado</Badge> : null}
+              />
+            ))}
+            {extras.map((x) => (
+              <Line
+                key={x.key}
+                testid={`today-extra-${x.key}`}
+                href={x.link}
+                title={x.title}
+                why={x.why}
+                badge={
+                  x.tone ? (
+                    <Badge tone={x.tone}>{x.tone === 'danger' ? 'Atrasado' : 'Atenção'}</Badge>
+                  ) : null
+                }
+              />
+            ))}
             {alerts.map((a, i) => (
-              <li key={`${a.kind}-${i}`} data-testid="today-alert" data-kind={a.kind}>
-                <Link href={a.link} className="hover:underline">
-                  <span className="font-medium">{a.title}:</span> {a.body}
-                </Link>
-              </li>
+              <Line
+                key={`${a.kind}-${i}`}
+                testid="today-alert"
+                kind={a.kind}
+                href={a.link}
+                title={a.title}
+                why={a.body}
+              />
             ))}
           </ul>
+          {deadlines && <div className="mt-3 border-t border-line pt-3">{deadlines}</div>}
         </Card>
       )}
+
+      {t.deadlines && t.deadlines.length > 0 && <DeliveryDeadlines list={t.deadlines} />}
     </section>
+  );
+}
+
+function Line({
+  href,
+  title,
+  why,
+  badge,
+  testid,
+  kind,
+}: {
+  href: string;
+  title: string;
+  why?: string;
+  badge?: React.ReactNode;
+  testid: string;
+  kind?: string;
+}) {
+  return (
+    <li className="py-2.5 first:pt-0 last:pb-0" data-testid={testid} data-kind={kind}>
+      <Link href={href} className="group flex flex-wrap items-start gap-x-3 gap-y-1 rounded-lg">
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium group-hover:underline">{title}</span>
+          {why && <span className="block text-sm text-ink-muted">{why}</span>}
+        </span>
+        {badge}
+        <ArrowRight className="mt-1 size-4 shrink-0 text-ink-muted" aria-hidden />
+      </Link>
+    </li>
   );
 }
 
@@ -381,9 +251,6 @@ function DeliveryDeadlines({ list }: { list: TodayDeadlineDto[] }) {
           );
         })}
       </ul>
-      <p className="text-xs text-ink-muted">
-        O sininho também avisa quando um serviço entra nesta lista.
-      </p>
     </Card>
   );
 }

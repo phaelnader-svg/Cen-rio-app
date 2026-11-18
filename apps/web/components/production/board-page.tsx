@@ -18,7 +18,7 @@ import { MobileFilters } from '@/components/ui/mobile-filters';
 import { RescheduleBanner } from '@/components/production/reschedule-pages';
 import { Alert, Avatar, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { addDays, formatDay, todayIso } from '@/lib/commercial';
-import { useCan, useMe } from '@/lib/hooks';
+import { useMe } from '@/lib/hooks';
 import { useBoard, useWorkers } from '@/lib/production';
 import { TaskStatusBadge, blockersText } from './badges';
 
@@ -49,7 +49,6 @@ function groupKey(t: ProductionTaskDto, by: GroupBy): string {
 /** Quadro de produção: tarefas publicadas por funcionário, OS, etapa, status ou dia. */
 export function ProductionBoardPage() {
   const me = useMe();
-  const can = useCan();
   const today = todayIso(me.data?.company.timezone);
   const [from, setFrom] = useState(() => mondayOf(today));
   const [to, setTo] = useState(() => addDays(mondayOf(today), 6));
@@ -62,6 +61,7 @@ export function ProductionBoardPage() {
   const [activity, setActivity] = useState('');
   const [os, setOs] = useState('');
   const [by, setBy] = useState<GroupBy>('funcionario');
+  const [moreFilters, setMoreFilters] = useState(false);
   const board = useBoard({
     from,
     to,
@@ -93,16 +93,6 @@ export function ProductionBoardPage() {
         title="Quadro de produção"
         description="Quem está fazendo o quê, atualizado na hora."
         help="Tarefas publicadas no planejamento semanal. Atualiza em tempo real conforme os funcionários iniciam, pausam e concluem."
-        actions={
-          can('producao.planejar') ? (
-            <Link
-              href="/painel/producao/planejamento"
-              className="text-sm font-medium text-brand-700 hover:underline"
-            >
-              Planejamento semanal →
-            </Link>
-          ) : undefined
-        }
       />
       <RescheduleBanner />
       <MobileFilters
@@ -129,46 +119,63 @@ export function ProductionBoardPage() {
               ))}
             </Select>
           </label>
-          <label className="field">
-            <span className="label">OS ou cliente</span>
-            <Input value={os} placeholder="OS-00001" onChange={(e) => setOs(e.target.value)} />
-          </label>
-          <label className="field">
-            <span className="label">Etapa</span>
-            <Select value={activity} onChange={(e) => setActivity(e.target.value)}>
-              <option value="">Todas</option>
-              {PRODUCTION_ACTIVITIES.map((a) => (
-                <option key={a} value={a}>
-                  {PRODUCTION_ACTIVITY_LABEL[a]}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="field">
-            <span className="label">Status</span>
-            <Select value={status} onChange={(e) => setStatus(e.target.value)}>
-              <option value="">Todos</option>
-              {TASK_STATUSES.filter((s) => s !== 'RASCUNHO').map((s) => (
-                <option key={s} value={s}>
-                  {TASK_STATUS_LABEL[s]}
-                </option>
-              ))}
-            </Select>
-          </label>
-          <label className="field sm:col-span-2">
-            <span className="label">Agrupar por</span>
-            <Select
-              aria-label="Agrupar por"
-              value={by}
-              onChange={(e) => setBy(e.target.value as GroupBy)}
+          {/* Revisão geral (item 8): semana e funcionário à vista; o resto em "Mais filtros". */}
+          <details
+            className="sm:col-span-2 lg:col-span-4"
+            open={moreFilters || Boolean(os || activity || status)}
+          >
+            <summary
+              className="cursor-pointer text-sm font-medium text-brand-700"
+              onClick={(e) => {
+                e.preventDefault();
+                setMoreFilters(!moreFilters);
+              }}
             >
-              {(Object.keys(GROUP_LABEL) as GroupBy[]).map((g) => (
-                <option key={g} value={g}>
-                  {GROUP_LABEL[g]}
-                </option>
-              ))}
-            </Select>
-          </label>
+              {moreFilters ? 'Menos filtros' : 'Mais filtros'}
+            </summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="field">
+                <span className="label">OS ou cliente</span>
+                <Input value={os} placeholder="OS-00001" onChange={(e) => setOs(e.target.value)} />
+              </label>
+              <label className="field">
+                <span className="label">Etapa</span>
+                <Select value={activity} onChange={(e) => setActivity(e.target.value)}>
+                  <option value="">Todas</option>
+                  {PRODUCTION_ACTIVITIES.map((a) => (
+                    <option key={a} value={a}>
+                      {PRODUCTION_ACTIVITY_LABEL[a]}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label className="field">
+                <span className="label">Status</span>
+                <Select value={status} onChange={(e) => setStatus(e.target.value)}>
+                  <option value="">Todos</option>
+                  {TASK_STATUSES.filter((s) => s !== 'RASCUNHO').map((s) => (
+                    <option key={s} value={s}>
+                      {TASK_STATUS_LABEL[s]}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+              <label className="field sm:col-span-2">
+                <span className="label">Agrupar por</span>
+                <Select
+                  aria-label="Agrupar por"
+                  value={by}
+                  onChange={(e) => setBy(e.target.value as GroupBy)}
+                >
+                  {(Object.keys(GROUP_LABEL) as GroupBy[]).map((g) => (
+                    <option key={g} value={g}>
+                      {GROUP_LABEL[g]}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            </div>
+          </details>
         </Card>
       </MobileFilters>
       {board.isPending ? (

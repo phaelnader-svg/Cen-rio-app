@@ -77,12 +77,14 @@ export function CustomerDetail({ id }: { id: string }) {
         description={`${CUSTOMER_KIND_LABEL[c.kind]}${c.tradeName ? ` · ${c.tradeName}` : ''}`}
         actions={
           <>
-            {can('pedidos.gerenciar') && c.active && (
+            {/* Revisão geral (itens 4 e 5): orçamento já com este cliente preenchido. */}
+            {can('orcamentos.gerenciar') && c.active && (
               <Link
-                href={`/painel/pedidos/novo?cliente=${c.id}`}
+                href={`/painel/orcamentos?cliente=${c.id}`}
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-700 px-4 text-[15px] font-semibold text-white hover:bg-brand-800"
+                data-testid="customer-new-quote"
               >
-                <Plus className="size-4" aria-hidden /> Novo pedido
+                <Plus className="size-4" aria-hidden /> Novo orçamento
               </Link>
             )}
             {manage && (

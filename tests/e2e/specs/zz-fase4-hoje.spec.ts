@@ -32,9 +32,12 @@ for (const vp of [
     await page.goto('/painel');
     const today = page.getByTestId('today-panel');
     await expect(today).toBeVisible();
-    await expect(today.getByRole('heading', { name: 'Hoje', exact: true })).toBeVisible();
-    for (const id of ['today-in-execution', 'today-present', 'today-ready', 'today-pendencies'])
-      await expect(page.getByTestId(id)).toBeVisible();
+    // Revisão geral (item 1): um cartão só, "Precisa de você hoje", no lugar de quatro quadros.
+    await expect(
+      today.getByRole('heading', { name: 'Precisa de você hoje', exact: true }),
+    ).toBeVisible();
+    for (const id of ['today-in-execution', 'today-ready', 'today-pendencies'])
+      await expect(page.getByTestId(id)).toHaveCount(0);
     // Nada de valores no painel "Hoje".
     expect(await today.innerText()).not.toMatch(MONEY);
     // Ações sugeridas: somente links explicativos, sem botões de ação.
@@ -46,10 +49,10 @@ for (const vp of [
     await expect(first.getByRole('link')).toHaveAttribute('href', /^\/painel\//);
     await shot(page, `inicio-hoje-${vp.name}`);
 
-    await page.goto('/painel/producao/programacao?tab=produtividade');
-    await expect(page.getByTestId('schedule-productivity')).toBeVisible();
+    // Revisão geral (item 8): quem vê o financeiro abre a produtividade em Equipe (a aba da
+    // programação fica só para quem planeja sem acesso ao financeiro).
+    await page.goto('/painel/produtividade');
     await expect(page.getByTestId('productivity-table')).toBeVisible();
-    expect(await page.getByTestId('schedule-productivity').innerText()).not.toMatch(MONEY);
     await shot(page, `programacao-produtividade-${vp.name}`);
   });
 }

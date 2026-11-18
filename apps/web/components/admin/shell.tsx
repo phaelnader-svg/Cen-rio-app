@@ -25,7 +25,7 @@ import { ApiError, api } from '@/lib/api';
 import { AMBIENTE_INTERATIVO_PATH } from '@/lib/ambiente-interativo';
 import { useMe, useModules } from '@/lib/hooks';
 import { RealtimeProvider } from '@/lib/realtime';
-import { UPCOMING, visibleNav } from './nav';
+import { UPCOMING, currentPage, familyTabs, visibleNav, visiblePages } from './nav';
 import { supportUrl } from '@/components/site/config';
 import {
   BillingLocked,
@@ -90,6 +90,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   // Cobrança desligada: o item Assinatura não aparece.
   const billingOn = data.company.subscription.billingEnabled;
   const items = visibleNav(perms, modules, data.company.platformOwner, billingOn);
+  // Revisão geral (item 3): todas as telas que o perfil abre (menu + abas), para a busca e as abas.
+  const pages = visiblePages(perms, modules, data.company.platformOwner, billingOn);
+  const tabs = familyTabs(pathname, pages);
+  const currentHref = currentPage(pathname, pages)?.href;
   // Suporte do Cenário para as empresas clientes (a Cenário Estofados é a própria dona).
   const help = data.company.platformOwner ? null : supportUrl(data.company.tradeName);
 
@@ -111,12 +115,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       </div>
       <ul className="space-y-0.5 px-3">
         {items.map((item, idx) => {
-          // Item ativo: o de prefixo mais longo (ex.: /painel/producao/planejamento).
-          const matches = (href: string) =>
-            href === '/painel' ? pathname === '/painel' : pathname.startsWith(href);
-          const active =
-            matches(item.href) &&
-            !items.some((o) => o.href.length > item.href.length && matches(o.href));
+          // Item ativo: a família da tela de prefixo mais longo (ex.: Quadro de produção marca
+          // "Semana da oficina").
+          const active = !!currentHref && item.also.includes(currentHref);
           const header = idx === 0 || items[idx - 1]!.group !== item.group;
           return (
             <li key={item.href}>
@@ -279,12 +280,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               {!locked && (
                 <CommandPalette
                   nav={[
-                    ...items.map((i) => ({ href: i.href, label: i.label, group: i.group })),
+                    ...pages.map((i) => ({ href: i.href, label: i.label, group: i.group })),
                     { href: '/painel/resumo', label: 'Resumo da semana', group: 'Início' },
                     { href: '/painel/lixeira', label: 'Lixeira', group: 'Administração' },
                     { href: '/painel/conta', label: 'Minha conta', group: 'Administração' },
                   ]}
-                  canNewService={perms.has('pedidos.gerenciar') && perms.has('retiradas.gerenciar')}
+                  canNewService={perms.has('orcamentos.gerenciar')}
                 />
               )}
               {/* Complemento "Ambiente interativo" (só o dono, quem configura a empresa): Firma Viva em outra guia. */}
@@ -316,7 +317,32 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             {locked && !pathname.startsWith(SUBSCRIPTION_PATH) ? (
               <BillingLocked canManage={perms.has('empresa.ver')} />
             ) : (
-              children
+              <>
+                {tabs && (
+                  <nav
+                    aria-label="Telas desta área"
+                    className="-mx-1 mb-6 flex gap-1 overflow-x-auto border-b border-line px-1"
+                    data-testid="family-tabs"
+                  >
+                    {tabs.tabs.map((t) => (
+                      <Link
+                        key={t.href}
+                        href={t.href}
+                        aria-current={t.href === tabs.active ? 'page' : undefined}
+                        className={clsx(
+                          '-mb-px shrink-0 border-b-2 px-3 py-2.5 text-[15px] font-medium whitespace-nowrap',
+                          t.href === tabs.active
+                            ? 'border-brand-700 text-brand-700'
+                            : 'border-transparent text-ink-soft hover:text-ink',
+                        )}
+                      >
+                        {t.label}
+                      </Link>
+                    ))}
+                  </nav>
+                )}
+                {children}
+              </>
             )}
             <WelcomeDialog me={data} />
           </main>

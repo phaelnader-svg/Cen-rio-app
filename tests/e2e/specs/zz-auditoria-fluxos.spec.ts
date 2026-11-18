@@ -547,9 +547,11 @@ test('permissões corrigidas: menu e telas por perfil (B1, B2, B5, B6)', async (
   anota(
     F,
     'B1 com as duas permissões',
-    '"Novo serviço" no menu e tela sem 403',
-    `${novoServico.menu.includes('/painel/servicos/novo') ? 'no menu' : 'fora do menu'} · 403: ${ns.r403.join(', ') || 'nenhum'}`,
-    novoServico.menu.includes('/painel/servicos/novo') && ns.r403.length === 0,
+    // Revisão geral (2026-11-18): "Novo serviço" saiu do menu (o serviço nasce do orçamento,
+    // "Fechar serviço"); a tela continua abrindo sem 403 para quem tem as duas permissões.
+    'tela sem 403 (fora do menu: o serviço nasce do orçamento)',
+    `403: ${ns.r403.join(', ') || 'nenhum'}`,
+    !novoServico.menu.includes('/painel/servicos/novo') && ns.r403.length === 0,
   );
   await novoServico.fechar();
 

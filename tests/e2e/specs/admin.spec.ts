@@ -31,10 +31,10 @@ test.describe('Painel administrativo', () => {
     await expect(
       page.getByRole('navigation').getByRole('link', { name: 'Expedição e entregas' }),
     ).toBeVisible();
-    // Liberado na Fase 9:
+    // Fase 9 / revisão geral (item 2): a Central saiu do menu e abre pelo sininho.
     await expect(
       page.getByRole('navigation').getByRole('link', { name: 'Central de atenção' }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     // Liberado na Fase 2:
     await expect(
       page.getByRole('navigation').getByRole('link', { name: 'Ordens de serviço' }),
@@ -42,7 +42,8 @@ test.describe('Painel administrativo', () => {
 
     await page
       .getByRole('navigation')
-      .getByRole('link', { name: 'Funcionários', exact: true })
+      // Revisão geral (item 3): "Equipe" reúne funcionários, presença, produtividade e funções.
+      .getByRole('link', { name: 'Equipe', exact: true })
       .click();
     await page.getByRole('button', { name: 'Novo funcionário' }).click();
     await page.getByLabel('Nome completo').fill('Pessoa de Teste E2E');
@@ -52,10 +53,9 @@ test.describe('Painel administrativo', () => {
     await page.getByRole('button', { name: 'Cadastrar' }).click();
     await expect(page.getByTestId('employee-Teste E2E')).toBeVisible();
 
-    await page
-      .getByRole('navigation')
-      .getByRole('link', { name: 'Auditoria', exact: true })
-      .click();
+    // Revisão geral (item 3): o histórico (auditoria) é uma aba de "Empresa".
+    await page.getByRole('navigation').getByRole('link', { name: 'Empresa', exact: true }).click();
+    await page.getByTestId('family-tabs').getByRole('link', { name: 'Histórico' }).click();
     await expect(page.getByText('Funcionário Teste E2E cadastrado.')).toBeVisible();
   });
 

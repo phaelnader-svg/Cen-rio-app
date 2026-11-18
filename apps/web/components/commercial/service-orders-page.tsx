@@ -21,7 +21,9 @@ export function ServiceOrdersPage() {
   const [q, setQ] = useState('');
   // "Ver OS" na lista de pedidos abre as OS daquele pedido.
   const orderId = useSearchParams().get('pedido') ?? undefined;
-  const [status, setStatus] = useState(orderId ? '' : 'ABERTA');
+  // Revisão geral: o Início abre a lista já filtrada (ex.: ?situacao=AGUARDANDO_MATERIAL).
+  const initial = useSearchParams().get('situacao');
+  const [status, setStatus] = useState(orderId ? '' : (initial ?? 'ABERTA'));
   // Fluxo da OS (2026-11-18): "Aguardando material" = OS aberta sem "Material comprado".
   const material = status === 'AGUARDANDO_MATERIAL' ? 'AGUARDANDO' : undefined;
   const list = useServiceOrders({
@@ -86,13 +88,15 @@ export function ServiceOrdersPage() {
               {list.data.items.map((s) => (
                 <li
                   key={s.id}
+                  // Revisão geral (item 6): no celular o cartão ocupa a largura toda e o botão da
+                  // etapa fica embaixo; a seleção em massa é só no computador.
                   className={clsx(
-                    'flex items-center',
+                    'flex flex-col sm:flex-row sm:items-center',
                     s.rework && 'border-l-4 border-l-danger-600 bg-danger-50/40',
                   )}
                 >
                   {bulk && s.status === 'ABERTA' && (
-                    <label className="flex self-stretch items-center pl-4">
+                    <label className="hidden items-center self-stretch pl-4 sm:flex">
                       <span className="sr-only">Selecionar {s.code}</span>
                       <input
                         type="checkbox"
@@ -113,7 +117,7 @@ export function ServiceOrdersPage() {
                       {s.code}
                     </span>
                     <div className="min-w-0 sm:flex-1">
-                      <p className="truncate font-medium">{s.customer.name}</p>
+                      <p className="font-medium sm:truncate">{s.customer.name}</p>
                       <p className="text-sm text-ink-muted">
                         Pedido {s.order.code} · {plural(s.pieceCount, 'peça', 'peças')} em{' '}
                         {plural(s.itemCount, 'item', 'itens')}
@@ -143,8 +147,9 @@ export function ServiceOrdersPage() {
                       )}
                     </div>
                   </Link>
-                  {s.status === 'ABERTA' && (
-                    <div className="shrink-0 pr-4">
+                  {/* Botão só enquanto falta o material; depois some da lista. */}
+                  {s.status === 'ABERTA' && !s.materialPurchasedAt && (
+                    <div className="shrink-0 px-5 pb-3.5 sm:px-0 sm:pr-4 sm:pb-0 [&>button]:w-full sm:[&>button]:w-auto">
                       <MaterialPurchasedButton os={s} canManage={bulk} compact />
                     </div>
                   )}

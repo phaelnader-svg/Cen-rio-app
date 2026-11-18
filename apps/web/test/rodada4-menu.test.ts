@@ -12,7 +12,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ALL_PERMISSIONS, MODULE_KEYS, isPermission, type Permission } from '@cenario/shared';
 import { describe, expect, it } from 'vitest';
-import { NAV, NAV_GROUPS, navGroupOf, visibleNav } from '../components/admin/nav';
+import {
+  NAV,
+  NAV_GROUPS,
+  familyTabs,
+  navGroupOf,
+  visibleNav,
+  visiblePages,
+} from '../components/admin/nav';
 
 const ALL_MODULES_ON = Object.fromEntries(MODULE_KEYS.map((k) => [k, true]));
 
@@ -30,6 +37,8 @@ function sidebar(perms: readonly string[]): Entry[] {
   });
   return out;
 }
+const sidebarHref = (perms: readonly string[], label: string) =>
+  sidebar(perms).find((x) => x.kind === 'link' && x.text === label)?.href;
 const headers = (e: Entry[]) => e.filter((x) => x.kind === 'header').map((x) => x.text);
 const links = (e: Entry[]) => e.filter((x) => x.kind === 'link').map((x) => x.text);
 
@@ -42,8 +51,9 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
     allOf: ['pedidos.gerenciar', 'retiradas.gerenciar'],
   },
   '/painel/atencao': { group: 'Início', anyOf: ['ocorrencias.ver', 'ocorrencias.gerenciar'] },
-  '/painel/funcionarios': { group: 'Administração', anyOf: ['funcionarios.ver'] },
-  '/painel/funcoes': { group: 'Administração', anyOf: ['funcoes.ver'] },
+  // Revisão geral (item 3): "Equipe" (funcionários, presença, produtividade, funções) em Produção.
+  '/painel/funcionarios': { group: 'Produção', anyOf: ['funcionarios.ver'] },
+  '/painel/funcoes': { group: 'Produção', anyOf: ['funcoes.ver'] },
   '/painel/dispositivos': { group: 'Administração', anyOf: ['dispositivos.ver', 'sessoes.ver'] },
   // Aplicativos conectados (autorização delegada, ex.: Firma Viva).
   '/painel/empresas': { group: 'Administração', anyOf: ['empresa.configurar'] },
@@ -71,8 +81,9 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
     ],
   },
   '/painel/reprogramacao': { group: 'Produção', anyOf: ['producao.ver', 'producao.planejar'] },
+  // Revisão geral (item 3): aba de "Empresa".
   '/painel/producao/modelos': {
-    group: 'Produção',
+    group: 'Administração',
     anyOf: ['producao.ver', 'producao.planejar', 'qualidade.gerenciar', 'os.gerenciar'],
   },
   '/painel/estoque-oficina': { group: 'Produção', anyOf: ['estoque.ver', 'estoque.gerenciar'] },
@@ -115,7 +126,8 @@ describe('F10-01 — menu por áreas', () => {
     const e = sidebar(ALL_PERMISSIONS);
     expect(headers(e)).toEqual(['Financeiro', 'Serviços', 'Produção', 'Administração']);
     expect(e[0]).toEqual({ kind: 'link', text: 'Início', href: '/painel' });
-    expect(e[1]).toEqual({ kind: 'link', text: 'Central de atenção', href: '/painel/atencao' });
+    // Revisão geral (item 2): a Central saiu do menu (abre pelo sininho).
+    expect(e[1]).toEqual({ kind: 'header', text: 'Financeiro' });
     // Cabeçalho ≠ link homônimo: "Financeiro" aparece como cabeçalho E como link.
     for (const name of ['Financeiro']) {
       const at = e.findIndex((x) => x.kind === 'header' && x.text === name);
@@ -129,7 +141,10 @@ describe('F10-01 — menu por áreas', () => {
       else expect(navGroupOf(x.href!), x.text).toBe(current);
     }
     // "Empresas" (multi-empresa) só aparece para o dono da plataforma.
-    expect(links(e)).toHaveLength(NAV.filter((i) => !i.platformOnly).length);
+    // Revisão geral (item 3): uma entrada por família (as telas com `parent` viram abas).
+    expect(links(e)).toHaveLength(
+      NAV.filter((i) => !i.platformOnly && !i.parent && !i.hidden).length,
+    );
     expect(links(e)).not.toContain('Empresas');
     const dono = visibleNav(
       new Set(ALL_PERMISSIONS) as ReadonlySet<Permission>,
@@ -163,19 +178,15 @@ describe('F10-01 — menu por áreas', () => {
       expect(NAV.find((i) => i.href === href)).toBeUndefined();
   });
 
-  it('Reformulação Fase 3: área Produção enxuta (8 links), sem perder rotas', () => {
+  it('Revisão geral: área Produção com 4 entradas, sem perder rotas', () => {
     const e = sidebar(ALL_PERMISSIONS);
     const start = e.findIndex((x) => x.kind === 'header' && x.text === 'Produção');
     const end = e.findIndex((x, i) => i > start && x.kind === 'header');
     expect(links(e.slice(start, end))).toEqual([
-      'Programação semanal',
-      'Quadro de produção',
+      'Semana da oficina',
       'Mapa da oficina',
-      'Reprogramação',
-      'Modelos de serviço',
       'Estoque da oficina',
-      'Presença da equipe',
-      'Produtividade',
+      'Equipe',
     ]);
     // Saíram do menu, mas as páginas continuam existindo (abrem pelo endereço e por link).
     for (const page of [
@@ -187,12 +198,16 @@ describe('F10-01 — menu por áreas', () => {
   });
 
   it('itens por permissão: cada perfil vê só as áreas e links que pode abrir', () => {
+    // Quem não abre a tela principal da família entra pela aba que pode (com o nome da família).
     const fin = sidebar(['painel.acessar', 'financeiro.ver']);
-    expect(links(fin)).toEqual(['Início', 'Financeiro', 'Produtividade']);
+    expect(links(fin)).toEqual(['Início', 'Financeiro', 'Equipe']);
     expect(headers(fin)).toEqual(['Financeiro', 'Produção']);
+    expect(sidebarHref(['painel.acessar', 'financeiro.ver'], 'Equipe')).toBe(
+      '/painel/produtividade',
+    );
 
     const pres = sidebar(['painel.acessar', 'presenca.ver']);
-    expect(links(pres)).toEqual(['Início', 'Presença da equipe']);
+    expect(links(pres)).toEqual(['Início', 'Equipe']);
     expect(headers(pres)).toEqual(['Produção']);
 
     const estoque = sidebar(['painel.acessar', 'estoque.ver']);
@@ -200,8 +215,8 @@ describe('F10-01 — menu por áreas', () => {
     expect(links(estoque)).toEqual(['Início', 'Estoque da oficina']);
 
     const admin = sidebar(['painel.acessar', 'funcionarios.ver', 'auditoria.ver']);
-    expect(headers(admin)).toEqual(['Administração']);
-    expect(links(admin)).toEqual(['Início', 'Funcionários', 'Auditoria']);
+    expect(headers(admin)).toEqual(['Produção', 'Administração']);
+    expect(links(admin)).toEqual(['Início', 'Equipe', 'Empresa']);
 
     // Sem nenhuma permissão de área: só "Início" (o antigo link sem filtro saiu com o módulo).
     expect(links(sidebar(['painel.acessar']))).toEqual(['Início']);
@@ -212,10 +227,29 @@ describe('F10-01 — menu por áreas', () => {
 describe('Menu alinhado às permissões da API (B1, B6)', () => {
   const tem = (perms: string[], href: string) =>
     links(sidebar(['painel.acessar', ...perms])).includes(NAV.find((i) => i.href === href)!.label);
-  it('B1: "Novo serviço" só com pedidos.gerenciar E retiradas.gerenciar', () => {
-    expect(tem(['pedidos.gerenciar'], '/painel/servicos/novo')).toBe(false);
-    expect(tem(['retiradas.gerenciar'], '/painel/servicos/novo')).toBe(false);
-    expect(tem(['pedidos.gerenciar', 'retiradas.gerenciar'], '/painel/servicos/novo')).toBe(true);
+  it('B1: "Fechar serviço" só com pedidos.gerenciar E retiradas.gerenciar, e fora do menu', () => {
+    const abre = (perms: string[]) =>
+      visiblePages(new Set(['painel.acessar', ...perms]) as ReadonlySet<Permission>, ALL_MODULES_ON)
+        .map((i) => i.href)
+        .includes('/painel/servicos/novo');
+    expect(abre(['pedidos.gerenciar'])).toBe(false);
+    expect(abre(['retiradas.gerenciar'])).toBe(false);
+    expect(abre(['pedidos.gerenciar', 'retiradas.gerenciar'])).toBe(true);
+    // Revisão geral (item 4): o serviço nasce do orçamento; a tela não aparece no menu.
+    expect(tem(['pedidos.gerenciar', 'retiradas.gerenciar'], '/painel/servicos/novo')).toBe(false);
+  });
+
+  it('Revisão geral: abas da família aparecem nas telas irmãs', () => {
+    const pages = visiblePages(new Set(ALL_PERMISSIONS) as ReadonlySet<Permission>, ALL_MODULES_ON);
+    expect(familyTabs('/painel/producao', pages)?.tabs.map((t) => t.label)).toEqual([
+      'Montar a semana',
+      'Quem está fazendo o quê',
+      'Mudanças para decidir',
+    ]);
+    expect(familyTabs('/painel/producao/tarefas/x', pages)?.active).toBe('/painel/producao');
+    expect(familyTabs('/painel/producao/mapa', pages)).toBeNull();
+    expect(familyTabs('/painel', pages)).toBeNull();
+    expect(familyTabs('/painel/atencao', pages)).toBeNull();
   });
   it('Retrabalhos (substitui Devoluções no menu): com os.ver OU os.gerenciar', () => {
     expect(NAV.find((i) => i.href === '/painel/devolucoes')).toBeUndefined();

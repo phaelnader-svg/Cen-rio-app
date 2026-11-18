@@ -32,6 +32,7 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { CheckCircle2, Plus, Search, Trash2 } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -70,7 +71,8 @@ import {
 
 interface PieceRow {
   key: string;
-  pieceType: PieceType;
+  /** Vazio até escolher: a peça não começa como "Sofá" (tapeçaria faz várias peças). */
+  pieceType: PieceType | '';
   /** Tipo de serviço DA PEÇA: define o modelo de produção dela (peças podem ter tipos diferentes). */
   serviceType: ServiceType;
   description: string;
@@ -87,7 +89,7 @@ interface PieceRow {
 
 const newPiece = (serviceType: ServiceType = 'REFORMA_COMPLETA'): PieceRow => ({
   key: crypto.randomUUID(),
-  pieceType: 'SOFA',
+  pieceType: '',
   serviceType,
   description: '',
   quantity: '1',
@@ -108,6 +110,8 @@ const brDate = (d: string | null | undefined) => (d ? d.split('-').reverse().joi
 /** Mão de obra por produção é só do tapeceiro principal (titular com corte e costura não recebe). */
 const laborAllowed = (d: NewServiceDefaultsDto | undefined, userId: string) =>
   Boolean(d?.upholsterers.find((u) => u.userId === userId)?.isTapeceiro);
+
+const pieceLabel = (t: PieceType | '') => (t ? PIECE_TYPE_LABEL[t] : 'Peça');
 
 const blank = (v: string) => (v.trim() === '' ? null : v.trim());
 
@@ -186,7 +190,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const [candidates, setCandidates] = useState<DuplicateCandidateDto[] | null>(null);
 
   // ── Serviço fechado
-  const [contracted, setContracted] = useState(fromQuote?.service ?? '');
+  const [contracted] = useState(fromQuote?.service ?? '');
   const [pieces, setPieces] = useState<PieceRow[]>(() => {
     if (!fromQuote) return [newPiece()];
     const s = fromQuote.snapshot;
@@ -269,7 +273,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const [ownCost, setOwnCost] = useState<number | null>(null);
   const [ownCostOk, setOwnCostOk] = useState(true);
   const [instructions, setInstructions] = useState('');
-  const [pickupNotes, setPickupNotes] = useState('');
+  const [pickupNotes] = useState('');
   const [take, setTake] = useState<PickupTake>(emptyPickupTake);
   // Parcelado: a equipe leva a maquininha na retirada (dá para desmarcar).
   useEffect(() => {
@@ -355,7 +359,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
         deliveryBusinessDays: promised ? bizDaysN : null,
         technicalNotes: blank(technicalNotes),
         items: pieces.map((p) => ({
-          pieceType: p.pieceType,
+          pieceType: p.pieceType as PieceType,
           description: p.description,
           quantity: Number(p.quantity),
           serviceType: p.serviceType,
@@ -509,8 +513,18 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
     >
       <PageHeader
         title="Novo serviço"
-        description="Cliente, serviço fechado e retirada em um só formulário. A OS é criada junto, ao registrar."
+        description="O que foi fechado com o cliente e o dia de buscar a peça. A OS é gerada depois, quando a peça chega na oficina."
       />
+      {/* Revisão geral (item 4): o caminho certo é o orçamento aprovado → "Fechar serviço". */}
+      {!quote && (
+        <Alert tone="info" data-testid="ns-from-quote-hint">
+          O caminho mais rápido é pelo orçamento: aprovado, o botão “Fechar serviço” traz cliente,
+          peças, valor e prazo prontos.{' '}
+          <Link href="/painel/orcamentos" className="font-semibold underline">
+            Fazer orçamento
+          </Link>
+        </Alert>
+      )}
       {fromQuote && (
         <Alert tone="info">
           Preenchido com o orçamento nº {fromQuote.number} ({fromQuote.customerName}). Confira os
@@ -815,26 +829,19 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
           />
         ) : (
           <>
-            <FormGrid>
-              <TextField
-                label="Descrição do serviço"
-                cols={12}
-                placeholder={serviceSummary}
-                hint="O tipo de serviço é escolhido em cada peça."
-                value={contracted}
-                onChange={(e) => setContracted(e.target.value)}
-                error={err('service.contractedService')}
-              />
-            </FormGrid>
-            <div className="mt-5 space-y-3" data-testid="ns-pieces">
+            <div className="space-y-3" data-testid="ns-pieces">
               {pieces.map((p, idx) => (
                 <FormGrid key={p.key} data-testid={`ns-piece-${idx}`}>
                   <SelectField
                     label="Peça"
                     cols={3}
+                    required
                     value={p.pieceType}
                     onChange={(e) => setPiece(p.key, { pieceType: e.target.value as PieceType })}
+                    error={err(`service.items.${idx}.pieceType`)}
+                    data-testid={`ns-piece-type-${idx}`}
                   >
+                    <option value="">Escolha a peça</option>
                     {PIECE_TYPES.map((t) => (
                       <option key={t} value={t}>
                         {PIECE_TYPE_LABEL[t]}
@@ -1181,18 +1188,13 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
               </fieldset>
             )}
             <FormGrid className="mt-5">
+              {/* Revisão geral: um recado só para quem vai buscar (antes eram dois campos). */}
               <TextAreaField
-                label="Instruções para a retirada"
-                cols={8}
+                label="Recado para quem vai buscar"
+                cols={12}
                 rows={2}
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
-              />
-              <TextField
-                label="Observações"
-                cols={4}
-                value={pickupNotes}
-                onChange={(e) => setPickupNotes(e.target.value)}
               />
             </FormGrid>
             <div className="mt-5">
@@ -1224,7 +1226,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
             value={pieces
               .map(
                 (p) =>
-                  `${p.quantity}× ${p.description || PIECE_TYPE_LABEL[p.pieceType]} — ${SERVICE_TYPE_LABEL[p.serviceType]}`,
+                  `${p.quantity}× ${p.description || pieceLabel(p.pieceType)} — ${SERVICE_TYPE_LABEL[p.serviceType]}`,
               )
               .join(' · ')}
             testId="ns-sum-pieces"
@@ -1240,7 +1242,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
                 .filter((p) => p.upholsterer)
                 .map(
                   (p) =>
-                    `${p.description || PIECE_TYPE_LABEL[p.pieceType]}: ${ownerName(p.upholsterer)}${
+                    `${p.description || pieceLabel(p.pieceType)}: ${ownerName(p.upholsterer)}${
                       p.laborCents ? ` (${brl(p.laborCents)}/un.)` : ''
                     }`,
                 )
@@ -1437,7 +1439,7 @@ function QuoteServiceSummary({
       <ul key="p" className="space-y-0.5">
         {pieces.map((p) => (
           <li key={p.key}>
-            {p.quantity}× {PIECE_TYPE_LABEL[p.pieceType]} — {SERVICE_TYPE_LABEL[p.serviceType]}
+            {p.quantity}× {pieceLabel(p.pieceType)} — {SERVICE_TYPE_LABEL[p.serviceType]}
             {p.description ? ` — ${p.description}` : ''}
           </li>
         ))}

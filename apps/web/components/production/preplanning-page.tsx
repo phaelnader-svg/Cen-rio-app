@@ -231,7 +231,7 @@ function ToPlanList({
         <EmptyState
           icon={<ClipboardCheck className="size-6" aria-hidden />}
           title="Nenhum serviço aguardando planejamento"
-          description="Quando as peças chegarem à oficina, a OS aparece aqui automaticamente."
+          description="A OS aparece aqui depois do “Material comprado” na lista de Ordens de serviço."
         />
       </Card>
     );

@@ -65,11 +65,10 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
     const nav = page.getByRole('navigation');
     for (const g of ['Serviços', 'Produção', 'Financeiro', 'Administração'])
       await expect(nav.getByText(g, { exact: true }).first()).toBeVisible();
-    await expect(page.getByTestId('dashboard-operations')).toBeVisible();
-    await expect(page.getByTestId('ops-production')).toHaveText(
-      String(overview.operations.pieces.production),
-    );
-    await expect(page.getByTestId('dashboard-finance')).toBeVisible();
+    // Revisão geral (item 1): o Início não mostra quadros em reais nem números repetidos dos
+    // gráficos; as contagens que pedem ação viram linhas do "Precisa de você hoje".
+    await expect(page.getByTestId('dashboard-finance')).toHaveCount(0);
+    await expect(page.getByTestId('dashboard-operations')).toHaveCount(0);
     await expect(page.getByTestId('dashboard-deadlines-late')).toHaveText(
       String(overview.operations.deadlines.late),
     );
@@ -123,14 +122,17 @@ test.describe.serial('Gestão: Início, Central e ação no contexto', () => {
     await page.goto('/painel');
     await expect(page.getByTestId('dashboard-attention-total')).toHaveText(String(central.total));
     expect(overview.attention.total).toBe(central.total);
-    await expect(page.getByTestId('ops-to-plan')).toHaveText(
-      String(overview.operations.preProduction.toPlan),
-    );
-    await expect(page.getByTestId('ops-blocked-tasks')).toHaveText(
-      String(overview.operations.blockedTasks),
-    );
-    await page.getByTestId('ops-blocked-tasks').click();
-    await expect(page).toHaveURL(/\/painel\/producao\?status=BLOQUEADA$/);
+    // Revisão geral (item 1): "A planejar" e "Bloqueios" viram linhas só quando existem.
+    const toPlan = overview.operations.preProduction.toPlan as number;
+    const blocked = overview.operations.blockedTasks as number;
+    if (toPlan > 0)
+      await expect(page.getByTestId('today-extra-to-plan')).toContainText(String(toPlan));
+    else await expect(page.getByTestId('today-extra-to-plan')).toHaveCount(0);
+    if (blocked > 0) {
+      await expect(page.getByTestId('today-extra-blocked')).toContainText(String(blocked));
+      await page.getByTestId('today-extra-blocked').getByRole('link').click();
+      await expect(page).toHaveURL(/\/painel\/producao\?status=BLOQUEADA$/);
+    } else await expect(page.getByTestId('today-extra-blocked')).toHaveCount(0);
     // Removidos (16/11/2026): Materiais aprovados, Compras e Recebimentos saem do menu.
     await page.goto('/painel');
     const nav = page.getByRole('navigation');

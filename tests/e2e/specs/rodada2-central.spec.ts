@@ -166,14 +166,12 @@ test.describe.serial('Rodada 2 — Central derivada, Meus Ganhos ao vivo e indic
     await payCard.getByRole('link', { name: /Abrir/ }).click();
     await expect(page).toHaveURL(new RegExp(`semana=${WEEK}&profissional=${ANDRE.userId}`));
 
-    // ── F10-21m/s: Início com "Entregues hoje" e "Pago na semana" (mesma fonte do Fechamento) ──
+    // ── F10-21m/s: "Pago na semana" pela mesma fonte do Fechamento. Revisão geral (item 1): o
+    // Início não mostra mais quadros em reais (o valor fica no Financeiro); a fonte segue igual.
     const paidBefore = (await call(page, 'GET', `/api/v1/finance/weekly-closings/${WEEK}`)).totals
       .paidInWeekCents as number;
     await page.goto('/painel');
-    await expect(page.getByTestId('dl-delivered')).toBeVisible();
-    await expect(page.getByTestId('fin-paid')).toBeVisible();
-    const shown = (await page.getByTestId('fin-paid').textContent()) ?? '';
-    expect(Number(shown.replace(/\D/g, ''))).toBe(paidBefore);
+    await expect(page.getByTestId('fin-paid')).toHaveCount(0);
     const overview = await call(page, 'GET', '/api/v1/management/overview');
     expect(overview.finance.paid).toEqual({ weekStart: WEEK, paidInWeekCents: paidBefore });
 

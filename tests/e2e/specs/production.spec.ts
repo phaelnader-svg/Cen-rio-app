@@ -174,6 +174,8 @@ test.describe.serial('Fase 5 — motor de produção e planejamento semanal', ()
     // 8. Quadro de produção e detalhe da tarefa no painel.
     await page.goto('/painel/producao');
     await expect(page.getByTestId('production-board')).toContainText(prep);
+    // Revisão geral: "Agrupar por" fica em "Mais filtros".
+    await page.getByText('Mais filtros').click();
     await page.getByLabel('Agrupar por').selectOption({ label: 'Status' });
     await expect(page.getByTestId('production-board')).toContainText('Concluída');
     await expect(page.getByTestId('production-board')).toContainText('Em execução');

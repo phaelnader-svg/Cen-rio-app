@@ -174,6 +174,7 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       await form.getByLabel('Logradouro').fill('Rua Transversal Fictícia');
       await form.getByLabel('Número').fill('105');
       await form.getByLabel('Cidade').fill('Cidade Teste');
+      await page.getByTestId('ns-piece-type-0').selectOption('SOFA');
       await page.getByTestId('ns-piece-desc-0').fill('Sofá transversal');
       await page.getByTestId('ns-piece-service-0').selectOption('REFORMA_COMPLETA');
       await page.getByTestId('ns-piece-owner-0').selectOption(userA);
@@ -239,7 +240,8 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       expect(so.materialPurchasedAt).toBeNull();
       await page.goto('/painel/os');
       await page.getByTestId(`material-buy-${osCode}`).click();
-      await expect(page.getByTestId(`material-ok-${osCode}`)).toBeVisible();
+      // Revisão geral: depois de marcado, o botão some da lista (a OS segue para a programação).
+      await expect(page.getByTestId(`material-buy-${osCode}`)).toBeHidden();
       const sofa = so.items[0] as { id: string; code: string };
       const labor = (await call(page, 'GET', `/api/v1/finance/labor?serviceOrderId=${soId}`)) as {
         id: string;

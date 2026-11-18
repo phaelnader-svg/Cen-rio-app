@@ -32,12 +32,13 @@ export function OrdersPage() {
         actions={
           <>
             <ExportLink href="/api/v1/export/pedidos.csv" testId="export-pedidos" />
-            {can('pedidos.gerenciar') && (
+            {/* Revisão geral (item 4): o pedido nasce do orçamento aprovado ("Fechar serviço"). */}
+            {can('orcamentos.gerenciar') && (
               <Link
-                href="/painel/pedidos/novo"
+                href="/painel/orcamentos"
                 className="inline-flex h-10 items-center gap-2 rounded-xl bg-brand-700 px-4 text-[15px] font-semibold text-white hover:bg-brand-800"
               >
-                <Plus className="size-4" aria-hidden /> Novo pedido
+                <Plus className="size-4" aria-hidden /> Novo orçamento
               </Link>
             )}
           </>

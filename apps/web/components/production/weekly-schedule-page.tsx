@@ -33,7 +33,13 @@ export function WeeklySchedulePage({ initial = 'servicos' }: { initial?: Tab }) 
 function Schedule({ initial }: { initial: Tab }) {
   const can = useCan();
   // "Semana detalhada" mantém a permissão de antes (só quem planeja).
-  const allowed: readonly Tab[] = can('producao.planejar') ? TABS : ['servicos'];
+  // Revisão geral (item 8): quem vê o financeiro já tem "Produtividade" em Equipe; a aba aqui
+  // fica só para quem planeja sem acesso ao financeiro.
+  const allowed: readonly Tab[] = can('producao.planejar')
+    ? can('financeiro.ver')
+      ? ['servicos', 'semana']
+      : TABS
+    : ['servicos'];
   const [tab, setTab] = useTabParam(allowed.includes(initial) ? initial : 'servicos', allowed, {
     'a-planejar': 'servicos',
     planejamento: 'semana',
@@ -41,29 +47,25 @@ function Schedule({ initial }: { initial: Tab }) {
   return (
     <>
       <PageHeader
-        title="Programação semanal"
-        description="Monte a semana e publique para liberar as tarefas."
+        title="Semana da oficina"
+        description="Monte a semana e publique para liberar as tarefas no tablet."
         help="Escolha o tapeceiro e a data de início de cada serviço, ajuste responsáveis, dias e dependências e publique a semana — tudo aqui. Material disponível não inicia a produção: só a programação publicada libera as tarefas."
         actions={
-          <span className="flex flex-wrap gap-3 text-sm font-medium">
-            <Link href="/painel/producao" className="text-brand-700 hover:underline">
-              Quadro de produção →
-            </Link>
-            <Link href="/painel/competencias" className="text-brand-700 hover:underline">
-              Competências da equipe →
-            </Link>
-          </span>
+          <Link
+            href="/painel/competencias"
+            className="text-sm font-medium text-brand-700 hover:underline"
+          >
+            Competências da equipe →
+          </Link>
         }
       />
       <Tabs
         tabs={[
           { key: 'servicos', label: 'Serviços' },
-          ...(allowed.length > 1
-            ? [
-                { key: 'semana', label: 'Semana detalhada' },
-                // Fase 4: produtividade operacional (sem valores) para quem planeja.
-                { key: 'produtividade', label: 'Produtividade' },
-              ]
+          ...(allowed.includes('semana') ? [{ key: 'semana', label: 'Semana detalhada' }] : []),
+          // Fase 4: produtividade operacional (sem valores) para quem planeja.
+          ...(allowed.includes('produtividade')
+            ? [{ key: 'produtividade', label: 'Produtividade' }]
             : []),
         ]}
         active={tab}

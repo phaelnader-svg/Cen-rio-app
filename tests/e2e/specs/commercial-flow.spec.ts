@@ -36,7 +36,9 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     // 2. Pedido comercial
     await page.goto('/painel/clientes');
     await page.getByTestId(`customer-${CUSTOMER}`).click();
-    await page.getByRole('link', { name: 'Novo pedido' }).click();
+    // Revisão geral: "Novo pedido" saiu do cliente (agora é "Novo orçamento"); a tela segue pelo endereço.
+    await page.waitForURL(/\/painel\/clientes\/[0-9a-f-]{36}$/);
+    await page.goto(`/painel/pedidos/novo?cliente=${page.url().split('/').pop()}`);
     await expect(page.getByTestId('order-customer')).toHaveText(CUSTOMER);
     await page.getByLabel('Serviço contratado').fill('Reforma completa com troca de tecido');
     await page.getByLabel('Valor negociado').fill('3.800,00');
@@ -112,7 +114,9 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     await loginAdmin(p2);
     await p2.goto('/painel/clientes');
     await p2.getByTestId(`customer-${CUSTOMER}`).click();
-    await p2.getByRole('link', { name: 'Novo pedido' }).click();
+    // Revisão geral: "Novo pedido" saiu do cliente (agora é "Novo orçamento"); a tela segue pelo endereço.
+    await p2.waitForURL(/\/painel\/clientes\/[0-9a-f-]{36}$/);
+    await p2.goto(`/painel/pedidos/novo?cliente=${p2.url().split('/').pop()}`);
     await p2.getByLabel('Serviço contratado').fill('Reparo de assento — sincronização');
     await p2.getByLabel('Descrição', { exact: true }).fill('Poltrona');
     await p2.getByRole('button', { name: 'Criar pedido' }).click();

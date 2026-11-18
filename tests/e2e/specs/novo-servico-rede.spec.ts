@@ -70,6 +70,7 @@ test('Novo serviço: resposta perdida depois da gravação não duplica (mesma c
     .getByTestId('ns-customer-results')
     .getByRole('button', { name: /Clara Rede Novo Serviço/ })
     .click();
+  await page.getByTestId('ns-piece-type-0').selectOption('SOFA');
   await page.getByTestId('ns-piece-desc-0').fill('Sofá da rede');
   await page.getByTestId('ns-business-days').fill('20');
   await page.getByTestId('ns-value').fill('2.000,00');

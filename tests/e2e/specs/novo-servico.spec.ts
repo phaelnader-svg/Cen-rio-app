@@ -57,10 +57,9 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     });
     const day = today();
 
-    // ── 1. Entrada direta pelo Início
-    await page.goto('/painel');
-    await page.getByTestId('dashboard-new-service').click();
-    await expect(page).toHaveURL(/\/painel\/servicos\/novo$/);
+    // ── 1. Entrada direta (revisão geral: fora do menu e do Início; o normal é pelo orçamento)
+    await page.goto('/painel/servicos/novo');
+    await expect(page.getByTestId('ns-from-quote-hint')).toBeVisible();
     const form = page.getByTestId('new-service-form');
     await expect(form.getByRole('heading', { name: 'Cliente' })).toBeVisible();
 
@@ -72,6 +71,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await form.getByLabel('Complemento').fill('Apto 12');
     await form.getByLabel('Cidade').fill('Cidade Teste');
     await form.getByLabel('Referência / instruções de acesso').fill('Portaria lateral');
+    await page.getByTestId('ns-piece-type-0').selectOption('SOFA');
     await page.getByTestId('ns-piece-desc-0').fill('Sofá retrátil');
     await page.getByTestId('ns-business-days').fill('20');
     await page.getByTestId('ns-add-piece').click();
@@ -129,6 +129,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await form.getByLabel('Logradouro').fill('Rua B');
     await form.getByLabel('Número').fill('1');
     await form.getByLabel('Cidade').fill('Cidade Teste');
+    await page.getByTestId('ns-piece-type-0').selectOption('CADEIRA');
     await page.getByTestId('ns-piece-desc-0').fill('Cadeira');
     await page.getByTestId('ns-business-days').fill('20');
     // 2026-11-18: agendar a retirada exige data e horário.
@@ -195,6 +196,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await page.getByTestId('ns-mode-new').click();
     await page.getByTestId('ns-name').fill('Cliente Entrega Fictícia E2E');
     await page.getByTestId('ns-phone').fill('(11) 94444-3322');
+    await page.getByTestId('ns-piece-type-0').selectOption('CABECEIRA');
     await page.getByTestId('ns-piece-desc-0').fill('Cabeceira entregue');
     await page.getByTestId('ns-business-days').fill('20');
     await page.getByTestId('ns-delivery-dropoff').click();
@@ -228,6 +230,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await page.getByTestId('ns-mode-new').click();
     await page.getByTestId('ns-name').fill('Cliente Titular Fictício E2E');
     await page.getByTestId('ns-phone').fill('(11) 94444-5566');
+    await page.getByTestId('ns-piece-type-0').selectOption('SOFA');
     await page.getByTestId('ns-piece-desc-0').fill('Sofá previsto');
     await page.getByTestId('ns-business-days').fill('20');
     await page.getByTestId('ns-delivery-dropoff').click();
@@ -314,8 +317,10 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await form.getByLabel('Número').fill('390');
     await form.getByLabel('Cidade').fill('Cidade Teste');
     await fits('cliente');
+    await page.getByTestId('ns-piece-type-0').selectOption('CADEIRA');
     await page.getByTestId('ns-piece-desc-0').fill('Cadeira de jantar');
     await page.getByTestId('ns-add-piece').click();
+    await page.getByTestId('ns-piece-type-1').selectOption('BANCO');
     await page.getByTestId('ns-piece-desc-1').fill('Banqueta');
     await page.getByTestId('ns-business-days').fill('20');
     await page.getByTestId('ns-value').fill('900,00');

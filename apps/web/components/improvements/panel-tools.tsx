@@ -67,7 +67,7 @@ export function CommandPalette({ nav, canNewService }: { nav: NavLink[]; canNewS
         setHelp(true);
       } else if ((e.key === 'n' || e.key === 'N') && canNewService) {
         e.preventDefault();
-        router.push('/painel/servicos/novo');
+        router.push('/painel/orcamentos');
       }
     };
     window.addEventListener('keydown', onKey);
@@ -104,7 +104,7 @@ export function CommandPalette({ nav, canNewService }: { nav: NavLink[]; canNewS
           {[
             ['Ctrl + K', 'Busca rápida'],
             ['/', 'Busca rápida'],
-            ...(canNewService ? [['N', 'Novo serviço']] : []),
+            ...(canNewService ? [['N', 'Novo orçamento']] : []),
             ['?', 'Mostrar esta lista'],
             ['Esc', 'Fechar janelas'],
           ].map(([k, label]) => (
