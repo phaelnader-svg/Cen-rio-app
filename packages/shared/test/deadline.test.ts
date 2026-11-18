@@ -39,8 +39,9 @@ describe('calendário de dias úteis (dias de trabalho da empresa)', () => {
     expect(deadlineWindowEnd(TODAY, WEEK)).toBe('2026-10-22');
     expect(addWorkingDays(TODAY, 6, WEEK)).toBe('2026-10-23');
   });
-  it('sábado como dia de trabalho encurta a janela', () => {
-    expect(deadlineWindowEnd(TODAY, [1, 2, 3, 4, 5, 6])).toBe('2026-10-21');
+  it('sábado como dia de trabalho: a janela nunca fica menor que uma semana corrida', () => {
+    expect(addWorkingDays(TODAY, 5, [1, 2, 3, 4, 5, 6])).toBe('2026-10-21');
+    expect(deadlineWindowEnd(TODAY, [1, 2, 3, 4, 5, 6])).toBe('2026-10-22');
   });
   it('dias úteis restantes e de atraso', () => {
     expect(workingDaysUntil(TODAY, TODAY, WEEK)).toBe(0);

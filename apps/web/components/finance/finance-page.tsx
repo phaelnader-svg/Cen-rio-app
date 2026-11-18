@@ -1,7 +1,13 @@
 'use client';
 
 import { plural } from '@cenario/shared';
-import { EXPENSE_CATEGORY_LABEL, SERVICE_TYPE_LABEL, type ServiceType } from '@cenario/shared';
+import {
+  SERVICE_TYPE_LABEL,
+  expenseCategoryLabel,
+  type BillDueDto,
+  type ServiceType,
+} from '@cenario/shared';
+import clsx from 'clsx';
 import { useFocusParam } from '@/lib/focus-param';
 import { Download } from 'lucide-react';
 import { useState } from 'react';
@@ -61,7 +67,7 @@ export function FinancePage() {
       <Tabs tabs={TABS} active={tab} onChange={setTab}>
         <div className="pt-5">
           {withPeriod && <PeriodPicker value={period} onChange={setPeriod} />}
-          {tab === 'painel' && <Dashboard period={period} />}
+          {tab === 'painel' && <Dashboard period={period} onOpenPayables={() => setTab('pagar')} />}
           {tab === 'receitas' && <RevenueTab />}
           {tab === 'fechamento' && <WeeklyClosingTab />}
           {tab === 'pagar' && <PayablesTab />}
@@ -76,7 +82,7 @@ export function FinancePage() {
   );
 }
 
-function Dashboard({ period }: { period: Period }) {
+function Dashboard({ period, onOpenPayables }: { period: Period; onOpenPayables: () => void }) {
   const q = useFinDashboard(period);
   if (q.isPending) return <Spinner />;
   if (q.isError) return <Alert tone="danger">{q.error.message}</Alert>;
@@ -84,6 +90,7 @@ function Dashboard({ period }: { period: Period }) {
   const tone = (v: number): 'danger' | 'ok' => (v < 0 ? 'danger' : 'ok');
   return (
     <div className="space-y-6" data-testid="finance-dashboard">
+      <Bills bills={d.bills} onOpen={onOpenPayables} />
       <section>
         <h2 className="mb-2 text-sm font-semibold text-ink-soft">O que foi vendido no período</h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -165,7 +172,7 @@ function Dashboard({ period }: { period: Period }) {
             <ul className="space-y-1 text-sm">
               {d.expensesByCategory.map((e) => (
                 <li key={e.category} className="flex justify-between">
-                  <span>{EXPENSE_CATEGORY_LABEL[e.category]}</span>
+                  <span>{expenseCategoryLabel(e.category)}</span>
                   <span className="tabular-nums">{money(e.amountCents)}</span>
                 </li>
               ))}
@@ -285,5 +292,89 @@ function Reports({ period }: { period: Period }) {
         </>
       )}
     </div>
+  );
+}
+
+const brDay = (iso: string) => iso.split('-').reverse().slice(0, 2).join('/');
+const when = (b: BillDueDto) =>
+  b.days < 0
+    ? `${plural(-b.days, 'dia', 'dias')} de atraso`
+    : b.days === 0
+      ? 'vence hoje'
+      : b.days === 1
+        ? 'vence amanhã'
+        : `vence em ${b.days} dias`;
+
+/** 2026-11-18: contas a pagar em atraso e as que vencem nos próximos dias, no topo do Resumo. */
+function Bills({
+  bills,
+  onOpen,
+}: {
+  bills: { overdue: BillDueDto[]; upcoming: BillDueDto[]; upcomingDays: number };
+  onOpen: () => void;
+}) {
+  const total = (l: BillDueDto[]) => money(l.reduce((a, b) => a + b.openCents, 0));
+  const list = (l: BillDueDto[], late: boolean, empty: string) =>
+    l.length ? (
+      <ul className="divide-y divide-line">
+        {l.map((b) => (
+          <li key={b.id}>
+            <button
+              type="button"
+              onClick={onOpen}
+              className="flex w-full items-center gap-3 py-2 text-left hover:bg-subtle"
+              data-testid={`bill-${b.code}`}
+            >
+              <span
+                className={clsx(
+                  'w-12 shrink-0 text-sm font-semibold tabular-nums',
+                  late ? 'text-danger-600' : b.days <= 1 ? 'text-warn-600' : 'text-ink-soft',
+                )}
+              >
+                {brDay(b.dueDate)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{b.beneficiary}</span>
+                <span className="block truncate text-xs text-ink-muted">
+                  {b.description} · {when(b)}
+                </span>
+              </span>
+              <span className="text-sm font-semibold tabular-nums">{money(b.openCents)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <p className="py-2 text-sm text-ink-muted">{empty}</p>
+    );
+  return (
+    <section data-testid="finance-bills">
+      <h2 className="mb-2 text-sm font-semibold text-ink-soft">Contas a pagar</h2>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <Card className={clsx('p-4', bills.overdue.length > 0 && 'border-danger-600/25')}>
+          <div className="mb-1 flex items-baseline justify-between gap-2">
+            <h3 className="font-semibold text-danger-600">Em atraso</h3>
+            {bills.overdue.length > 0 && (
+              <span className="text-sm font-semibold text-danger-600 tabular-nums">
+                {total(bills.overdue)}
+              </span>
+            )}
+          </div>
+          {list(bills.overdue, true, 'Nenhuma conta em atraso.')}
+        </Card>
+        <Card className="p-4">
+          <div className="mb-1 flex items-baseline justify-between gap-2">
+            <h3 className="font-semibold">A vencer nos próximos {bills.upcomingDays} dias</h3>
+            {bills.upcoming.length > 0 && (
+              <span className="text-sm font-semibold tabular-nums">{total(bills.upcoming)}</span>
+            )}
+          </div>
+          {list(bills.upcoming, false, 'Nenhuma conta vence nos próximos dias.')}
+        </Card>
+      </div>
+      <p className="mt-2 text-xs text-ink-muted">
+        O sininho avisa um dia antes do vencimento, no dia e enquanto a conta estiver em atraso.
+      </p>
+    </section>
   );
 }

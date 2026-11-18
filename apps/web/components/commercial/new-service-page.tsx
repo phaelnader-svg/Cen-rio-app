@@ -27,7 +27,7 @@ import {
   SERVICE_TYPES,
   SERVICE_TYPE_LABEL,
   newServiceSchema,
-  quotePromisedDate,
+  addBusinessDays,
   quoteServiceToPiece,
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -110,6 +110,11 @@ const laborAllowed = (d: NewServiceDefaultsDto | undefined, userId: string) =>
   Boolean(d?.upholsterers.find((u) => u.userId === userId)?.isTapeceiro);
 
 const blank = (v: string) => (v.trim() === '' ? null : v.trim());
+
+const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+/** "quarta, 09/12/2026". */
+const longDay = (iso: string) =>
+  `${WEEKDAYS[new Date(`${iso}T12:00:00Z`).getUTCDay()]}, ${iso.split('-').reverse().join('/')}`;
 
 export function NewServicePage() {
   const defaults = useNewServiceDefaults();
@@ -208,8 +213,10 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const [entryMethod, setEntryMethod] = useState<PaymentMethod>('PIX');
   const [balanceMethod, setBalanceMethod] = useState<PaymentMethod>('PIX');
   const [installments, setInstallments] = useState('1');
-  const [promised, setPromised] = useState(() =>
-    fromQuote ? quotePromisedDate(fromQuote.snapshot.deliveryDays, localDay(new Date())) : '',
+  // 2026-11-18: prazo combinado em DIAS ÚTEIS (o orçamento já fala em dias úteis); a data é
+  // contada do dia da retirada (ou de hoje, se o cliente traz as peças). A API recalcula igual.
+  const [bizDays, setBizDays] = useState(() =>
+    fromQuote?.snapshot.deliveryDays ? String(fromQuote.snapshot.deliveryDays) : '',
   );
   const [technicalNotes, setTechnicalNotes] = useState(fromQuote ? quoteNotes(fromQuote) : '');
 
@@ -222,6 +229,13 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const withPickup = delivery === 'RETIRADA';
   const [date, setDate] = useState('');
   const [arrival, setArrival] = useState('');
+  const todayLocal = localDay(new Date());
+  const promiseStart = withPickup && date ? date : todayLocal;
+  const bizDaysN = Number(bizDays);
+  const promised =
+    bizDays && Number.isInteger(bizDaysN) && bizDaysN > 0
+      ? addBusinessDays(promiseStart, bizDaysN, d.workingDays ?? [1, 2, 3, 4, 5])
+      : '';
   const [team, setTeam] = useState<PickupTeam>('LOGISTICA_TERCEIRIZADA');
   const [responsible, setResponsible] = useState(d.outsourced.userId ?? '');
   const [participants, setParticipants] = useState<string[]>([]);
@@ -313,6 +327,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
               }
             : null,
         promisedDate: promised,
+        deliveryBusinessDays: promised ? bizDaysN : null,
         technicalNotes: blank(technicalNotes),
         items: pieces.map((p) => ({
           pieceType: p.pieceType,
@@ -330,8 +345,8 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
       },
       pickup: withPickup
         ? {
-            scheduledDate: date || null,
-            windowStart: arrival || null,
+            scheduledDate: date,
+            windowStart: arrival,
             team,
             logisticsUserId: responsible || null,
             participantUserIds: participants,
@@ -368,6 +383,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
     balanceMethod,
     installments,
     promised,
+    bizDaysN,
     technicalNotes,
     pieces,
     date,
@@ -448,7 +464,12 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   // Erro num campo do serviço que está só no resumo: abre os campos para corrigir.
   if (
     !editService &&
-    Object.keys(errors).some((k) => k.startsWith('service.') && k !== 'service.promisedDate')
+    Object.keys(errors).some(
+      (k) =>
+        k.startsWith('service.') &&
+        k !== 'service.promisedDate' &&
+        k !== 'service.deliveryBusinessDays',
+    )
   )
     setEditService(true);
   const ownerName = (id: string) => d.upholsterers.find((u) => u.userId === id)?.displayName ?? '—';
@@ -1058,15 +1079,37 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
               )}
             </>
           )}
-          <DateField
-            label="Prazo de entrega combinado"
+          <NumberField
+            label="Prazo de entrega (dias úteis)"
             cols={3}
             required
-            value={promised}
-            onChange={(e) => setPromised(e.target.value)}
-            error={err('service.promisedDate')}
-            data-testid="ns-promised"
+            min={1}
+            max={365}
+            value={bizDays}
+            onChange={(e) => setBizDays(e.target.value)}
+            error={err('service.deliveryBusinessDays') ?? err('service.promisedDate')}
+            data-testid="ns-business-days"
           />
+          <div className="self-end pb-2 sm:col-span-9" data-testid="ns-promised">
+            {promised ? (
+              <p className="text-sm">
+                Entrega até <strong data-testid="ns-promised-date">{longDay(promised)}</strong>
+                <span className="block text-ink-muted">
+                  {withPickup
+                    ? date
+                      ? `Contando ${plural(bizDaysN, 'dia útil', 'dias úteis')} a partir da retirada em ${longDay(date)}.`
+                      : 'Contando a partir de hoje até você escolher o dia da retirada abaixo.'
+                    : `Contando ${plural(bizDaysN, 'dia útil', 'dias úteis')} a partir de hoje (o cliente traz as peças).`}{' '}
+                  Só contam os dias de trabalho da empresa; feriados nacionais ficam de fora.
+                </span>
+              </p>
+            ) : (
+              <p className="text-sm text-ink-muted">
+                Informe quantos dias úteis foram combinados: o sistema calcula a data a partir do
+                dia da retirada.
+              </p>
+            )}
+          </div>
           {editService && (
             <TextAreaField
               label="Observações técnicas"
@@ -1133,6 +1176,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
               <DateField
                 label="Data da retirada"
                 cols={4}
+                required
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
                 error={err('pickup.scheduledDate')}
@@ -1142,7 +1186,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
                 label="Horário de chegada ao cliente"
                 cols={4}
                 value={arrival}
-                required={Boolean(date)}
+                required
                 onChange={(e) => setArrival(e.target.value)}
                 error={err('pickup.windowStart')}
                 data-testid="ns-arrival"

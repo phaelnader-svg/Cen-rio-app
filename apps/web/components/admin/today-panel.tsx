@@ -1,9 +1,10 @@
 'use client';
 
-import { plural, type Permission, type TodayDto } from '@cenario/shared';
+import { plural, type Permission, type TodayDeadlineDto, type TodayDto } from '@cenario/shared';
 import { useQuery } from '@tanstack/react-query';
 import {
   BellRing,
+  CalendarClock,
   CheckCircle2,
   Hammer,
   Lightbulb,
@@ -93,10 +94,15 @@ export function TodayPanel({ deadlines }: { deadlines?: React.ReactNode } = {}) 
   if (q.isPending) return <Spinner />;
   if (q.isError) return null;
   const t = q.data;
+  // O bloco de prazos já mostra os avisos de prazo: no cartão de alertas ficam os demais.
+  const alerts = t.deadlines
+    ? t.alerts.filter((a) => a.kind !== 'PRAZO_PROXIMO' && a.kind !== 'PRAZO_EM_RISCO')
+    : t.alerts;
   // Tudo zerado: uma frase no lugar de vários zeros.
   const allClear =
     t.suggestions.length === 0 &&
-    t.alerts.length === 0 &&
+    alerts.length === 0 &&
+    (t.deadlines?.length ?? 0) === 0 &&
     (t.inExecution?.length ?? 0) === 0 &&
     (t.readyPieces?.length ?? 0) === 0 &&
     (t.pendencies?.total ?? 0) === 0;
@@ -140,6 +146,8 @@ export function TodayPanel({ deadlines }: { deadlines?: React.ReactNode } = {}) 
           </p>
         </Card>
       )}
+
+      {t.deadlines && t.deadlines.length > 0 && <DeliveryDeadlines list={t.deadlines} />}
 
       {allClear && (
         <Card className="flex items-center gap-3 p-5" data-testid="today-all-clear">
@@ -287,7 +295,7 @@ export function TodayPanel({ deadlines }: { deadlines?: React.ReactNode } = {}) 
         </div>
       )}
 
-      {t.alerts.length > 0 && (
+      {alerts.length > 0 && (
         <Card className="space-y-2 p-5" data-testid="today-alerts">
           <h3 className="flex items-center gap-2 text-sm font-medium text-ink-muted">
             <span className="rounded-lg bg-brand-50 p-1.5 text-brand-700">
@@ -296,7 +304,7 @@ export function TodayPanel({ deadlines }: { deadlines?: React.ReactNode } = {}) 
             Alertas internos
           </h3>
           <ul className="space-y-1.5 text-sm">
-            {t.alerts.map((a, i) => (
+            {alerts.map((a, i) => (
               <li key={`${a.kind}-${i}`} data-testid="today-alert" data-kind={a.kind}>
                 <Link href={a.link} className="hover:underline">
                   <span className="font-medium">{a.title}:</span> {a.body}
@@ -307,5 +315,75 @@ export function TodayPanel({ deadlines }: { deadlines?: React.ReactNode } = {}) 
         </Card>
       )}
     </section>
+  );
+}
+
+const WEEKDAY = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const dayLabel = (iso: string) =>
+  `${WEEKDAY[new Date(`${iso}T12:00:00Z`).getUTCDay()]}, ${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const LATE = new Set(['ATRASADO', 'PRAZO_VENCIDO']);
+
+/**
+ * 2026-11-18: serviços com entrega combinada nos próximos 7 dias (ou já vencida) — OS e pedidos
+ * que ainda não viraram OS —, para o gestor agir pelo menos uma semana antes.
+ */
+function DeliveryDeadlines({ list }: { list: TodayDeadlineDto[] }) {
+  const late = list.filter((d) => LATE.has(d.state)).length;
+  return (
+    <Card className="space-y-3 p-5" data-testid="today-deadlines">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="flex flex-1 items-center gap-2 text-sm font-medium text-ink-muted">
+          <span className="rounded-lg bg-brand-50 p-1.5 text-brand-700">
+            <CalendarClock className="size-4" aria-hidden />
+          </span>
+          Entregas da próxima semana
+        </h3>
+        {late > 0 && <Badge tone="danger">{plural(late, 'atrasado', 'atrasados')}</Badge>}
+      </div>
+      <ul className="divide-y divide-line">
+        {list.map((d) => {
+          const isLate = LATE.has(d.state);
+          return (
+            <li key={`${d.kind}-${d.id}`} data-testid="today-deadline" data-state={d.state}>
+              <Link
+                href={d.link}
+                className="group flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5"
+              >
+                <span
+                  className={`w-20 shrink-0 text-sm font-semibold tabular-nums ${isLate ? 'text-danger-600' : d.days <= 2 ? 'text-warn-600' : 'text-ink-soft'}`}
+                >
+                  {dayLabel(d.promisedDate)}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium group-hover:underline">
+                    <span className="font-mono text-xs font-semibold">{d.code}</span> {d.customer}
+                  </span>
+                  {d.reasons.length > 0 && (
+                    <span className="block truncate text-sm text-ink-muted">
+                      {d.reasons.join(' · ')}
+                    </span>
+                  )}
+                </span>
+                <span className="flex w-full shrink-0 items-center gap-2 pl-[5.75rem] sm:w-auto sm:pl-0">
+                  <span className="text-sm text-ink-muted tabular-nums">
+                    {d.days < 0
+                      ? `${plural(-d.days, 'dia', 'dias')} de atraso`
+                      : d.days === 0
+                        ? 'hoje'
+                        : `em ${plural(d.days, 'dia', 'dias')}`}
+                  </span>
+                  <Badge tone={isLate ? 'danger' : d.state === 'EM_RISCO' ? 'warn' : 'neutral'}>
+                    {d.stateLabel}
+                  </Badge>
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="text-xs text-ink-muted">
+        O sininho também avisa quando um serviço entra nesta lista.
+      </p>
+    </Card>
   );
 }

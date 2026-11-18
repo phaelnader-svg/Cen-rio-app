@@ -314,6 +314,12 @@ export const TENANCY: Record<string, TenancyEntry> = {
     class: 'sistema',
     note: 'Amostra da página de status (banco respondendo e tempo de resposta).',
   },
+  // ── Despesas, prazos e alertas (2026-11-18) ────────────────────────────────────────
+  ExpenseCategory: {
+    class: 'empresa',
+    perCompanyUnique: ['name'],
+    note: 'Categoria de despesa criada pela empresa; cada empresa tem as suas.',
+  },
 };
 
 export function tenancyOf(model: string): TenancyEntry | undefined {

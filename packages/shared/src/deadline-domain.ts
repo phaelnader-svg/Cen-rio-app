@@ -1,10 +1,12 @@
+import { holidayOf } from './holidays';
+
 // ─────────────────────────── Prazos e serviços em risco ───────────────────────────
 //
 // Regra única (pura) do estado do prazo prometido de uma OS e da atenção do pedido antes da OS.
 // Só LÊ fatos já gravados — nunca altera fila, prioridade, tarefas ou planejamento (D9 intacta).
 // Sem duração por etapa e sem previsão: o prazo serve para ALERTAR; o gestor decide.
 
-/** Janela fixa de "prazo próximo": de hoje até o 5º dia útil seguinte, inclusive. */
+/** Janela de "prazo próximo": de hoje até o 5º dia útil seguinte (no mínimo 7 dias corridos). */
 export const DEADLINE_WINDOW_WORKING_DAYS = 5;
 
 export const DEADLINE_STATES = [
@@ -70,9 +72,36 @@ export function addWorkingDays(date: string, n: number, workingDays: readonly nu
   return d;
 }
 
-/** Último dia da janela de prazo próximo (inclusive). */
-export const deadlineWindowEnd = (today: string, workingDays: readonly number[]) =>
-  addWorkingDays(today, DEADLINE_WINDOW_WORKING_DAYS, workingDays);
+/**
+ * Prazo de entrega em dias úteis (2026-11-18): conta a partir do dia da retirada (ou do
+ * fechamento, quando o cliente traz as peças), pulando os dias sem expediente da empresa e os
+ * feriados nacionais (pontos facultativos como Carnaval contam como dia útil). O dia da
+ * retirada não conta: 1 dia útil = o próximo dia útil.
+ */
+export function addBusinessDays(start: string, n: number, workingDays: readonly number[]): string {
+  const days = safeDays(workingDays);
+  let d = start;
+  let left = Math.max(0, Math.floor(n));
+  while (left > 0) {
+    d = shift(d, 1);
+    const h = holidayOf(d);
+    if (days.includes(weekday(d)) && !(h && !h.optional)) left -= 1;
+  }
+  return d;
+}
+
+/** Dias úteis aceitos no prazo de entrega combinado. */
+export const MAX_DELIVERY_BUSINESS_DAYS = 365;
+
+/**
+ * Último dia da janela de prazo próximo (inclusive): o 5º dia útil, mas nunca menos de uma
+ * semana corrida (2026-11-18: o gestor quer saber pelo menos uma semana antes).
+ */
+export const deadlineWindowEnd = (today: string, workingDays: readonly number[]) => {
+  const byWorkingDays = addWorkingDays(today, DEADLINE_WINDOW_WORKING_DAYS, workingDays);
+  const week = shift(today, 7);
+  return byWorkingDays > week ? byWorkingDays : week;
+};
 
 /**
  * Dias úteis entre hoje e o prazo: positivo = dias úteis restantes até o prazo (dias úteis em

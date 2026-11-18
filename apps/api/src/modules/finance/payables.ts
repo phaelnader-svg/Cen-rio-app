@@ -8,10 +8,8 @@ import {
   settlementStatus,
   splitCents,
   type ClosingItemDto,
-  type ExpenseCategory,
   type ExpenseDto,
   type LogisticsCostKind,
-  type PayableCategory,
   type PayableDto,
   type PayableStatus,
   type PaymentMethod,
@@ -59,7 +57,7 @@ export async function toPayableDto(db: Tx | PrismaClient, p: PayableRow): Promis
     code: payableCode(p.number),
     beneficiary: p.beneficiary,
     supplier: p.supplier,
-    category: p.category as PayableCategory,
+    category: p.category,
     description: p.description,
     amountCents: p.amountCents,
     paidCents: p.paidCents,
@@ -102,7 +100,7 @@ export async function createPayable(
   input: {
     beneficiary: string;
     supplierId?: string | null;
-    category: PayableCategory;
+    category: string;
     description: string;
     amountCents: number;
     dueDate: string;
@@ -278,7 +276,7 @@ export function toExpenseDto(
     id: e.id,
     number: e.number,
     code: expenseCode(e.number),
-    category: e.category as ExpenseCategory,
+    category: e.category,
     description: e.description,
     amountCents: e.amountCents,
     competence: dateOnly(e.competence)!.slice(0, 7),
@@ -301,7 +299,7 @@ export async function createExpense(
   tx: Tx,
   actor: ActorContext,
   input: {
-    category: ExpenseCategory;
+    category: string;
     description: string;
     amountCents: number;
     competence: string;
@@ -362,7 +360,7 @@ export async function generateRecurring(tx: Tx, actor: ActorContext, month: stri
     });
     if (exists) continue;
     await createExpense(tx, actor, {
-      category: t.category as ExpenseCategory,
+      category: t.category,
       description: t.description,
       amountCents: t.amountCents,
       competence: month,

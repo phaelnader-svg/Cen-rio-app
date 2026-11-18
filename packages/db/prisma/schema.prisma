@@ -675,6 +675,7 @@ model CompanySettings {
   empresaPayablePayment              PayablePayment[]              @relation("EmpresaDePayablePayment")
   empresaPayablePaymentReversal      PayablePaymentReversal[]      @relation("EmpresaDePayablePaymentReversal")
   empresaRecurringExpense            RecurringExpense[]            @relation("EmpresaDeRecurringExpense")
+  empresaExpenseCategory             ExpenseCategory[]             @relation("EmpresaDeExpenseCategory")
   empresaOperationalExpense          OperationalExpense[]          @relation("EmpresaDeOperationalExpense")
   empresaFinancialEvent              FinancialEvent[]              @relation("EmpresaDeFinancialEvent")
   empresaValueChangeRequest          ValueChangeRequest[]          @relation("EmpresaDeValueChangeRequest")
@@ -1008,15 +1009,17 @@ model CommercialOrder {
   // Simplificação Fase 2 — "Novo serviço": o pedido é o registro do serviço fechado antes da
   // chegada. Com `autoServiceOrder`, cada recebimento confirmado gera a OS das peças recebidas.
   /// Pedido criado pelo fluxo Novo serviço: a OS nasce automaticamente na chegada das peças.
-  autoServiceOrder Boolean          @default(false) @map("auto_service_order")
+  autoServiceOrder     Boolean          @default(false) @map("auto_service_order")
   /// Estabilização da Fase 2: o cliente entrega as peças na tapeçaria (Novo serviço sem retirada).
-  customerDropOff  Boolean          @default(false) @map("customer_drop_off")
+  customerDropOff      Boolean          @default(false) @map("customer_drop_off")
   /// Prazo de entrega combinado com o cliente (copiado para a OS gerada).
-  promisedDate     DateTime?        @map("promised_date") @db.Date
+  promisedDate         DateTime?        @map("promised_date") @db.Date
+  /// 2026-11-18: prazo combinado em dias úteis a partir da retirada (null = data informada à mão).
+  deliveryBusinessDays Int?             @map("delivery_business_days")
   /// Observações técnicas conhecidas no fechamento (copiadas para a OS gerada).
-  technicalNotes   String?          @map("technical_notes") @db.VarChar(4000)
-  contracts        Contract[]
-  fiscalDocs       FiscalDocument[]
+  technicalNotes       String?          @map("technical_notes") @db.VarChar(4000)
+  contracts            Contract[]
+  fiscalDocs           FiscalDocument[]
 
   @@unique([companyId, number])
   @@index([customerId])
@@ -3968,6 +3971,22 @@ model LogisticsFreeTrip {
   createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@map("logistics_free_trips")
+}
+
+/// 2026-11-18: categoria de despesa cadastrada pela empresa (além das fixas). A despesa guarda o nome.
+model ExpenseCategory {
+  id          String          @id @default(uuid()) @db.Uuid
+  companyId   Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company     CompanySettings @relation("EmpresaDeExpenseCategory", fields: [companyId], references: [id])
+  name        String          @db.VarChar(30)
+  /// Escondida = some dos menus; despesas antigas continuam com o nome.
+  active      Boolean         @default(true)
+  createdById String?         @map("created_by_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([companyId, name])
+  @@map("expense_categories")
 }
 
 /// Modelo de despesa recorrente mensal (aluguel, energia...).

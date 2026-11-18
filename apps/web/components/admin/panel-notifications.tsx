@@ -38,6 +38,11 @@ export function PanelNotifications() {
     setOpen(false);
     if (PRESENCE_KINDS.has(n.kind)) router.push('/painel/presenca');
     else if (n.taskId) router.push(`/painel/producao/tarefas/${n.taskId}`);
+    // 2026-11-18: contas a pagar vão ao Resumo do financeiro; prazos, à OS ou ao Início.
+    else if (n.kind === 'CONTA_A_VENCER' || n.kind === 'CONTA_VENCIDA')
+      router.push('/painel/financeiro?tab=painel');
+    else if (n.kind === 'PRAZO_PROXIMO' || n.kind === 'PRAZO_EM_RISCO')
+      router.push(n.serviceOrderId ? `/painel/os/${n.serviceOrderId}` : '/painel');
   };
   return (
     <>
@@ -62,7 +67,7 @@ export function PanelNotifications() {
         open={open}
         onClose={() => setOpen(false)}
         title="Avisos"
-        description="Alertas que pedem atenção: ausências presumidas, atrasos relevantes e pendências de encerramento."
+        description="Alertas que pedem atenção: prazos de entrega, contas a pagar, ausências e pendências de encerramento."
         footer={
           <>
             <Button

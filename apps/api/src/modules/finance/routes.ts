@@ -26,7 +26,6 @@ import {
   teamCostSchema,
   toCsv,
   EVENT_TYPES,
-  type ExpenseCategory,
   type RecurringExpenseDto,
   type TeamCostDto,
 } from '@cenario/shared';
@@ -50,6 +49,7 @@ import {
   period,
   shopTimezone,
 } from './common';
+import { assertCategory, expenseCategoryRoutes } from './categories';
 import { syncMaterialCosts } from './costs';
 import { loadTripCost, toTripCostDto, tripCostInclude } from './trip-costs';
 import {
@@ -118,6 +118,7 @@ const monthQuerySchema = z.object({
  */
 export async function financeRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
+  await app.register(expenseCategoryRoutes);
   const tx = <T>(fn: (t: Prisma.TransactionClient) => Promise<T>) =>
     prisma.$transaction(fn, { timeout: 30_000 });
 
@@ -365,7 +366,10 @@ export async function financeRoutes(app: FastifyInstance) {
     { config: { access: FIN_MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = createPayableSchema.parse(request.body);
-      const row = await tx((t) => createPayable(t, actorFrom(request), input));
+      const row = await tx(async (t) => {
+        await assertCategory(t, input.category, 'payable');
+        return createPayable(t, actorFrom(request), input);
+      });
       return reply.status(201).send(await payableDto(row.id));
     },
   );
@@ -583,7 +587,10 @@ export async function financeRoutes(app: FastifyInstance) {
     { config: { access: FIN_MANAGE, idempotent: true } },
     async (request, reply) => {
       const input = expenseSchema.parse(request.body);
-      const row = await tx((t) => createExpense(t, actorFrom(request), input));
+      const row = await tx(async (t) => {
+        await assertCategory(t, input.category, 'expense');
+        return createExpense(t, actorFrom(request), input);
+      });
       return reply.status(201).send(
         toExpenseDto(
           await prisma.operationalExpense.findUniqueOrThrow({
@@ -613,7 +620,7 @@ export async function financeRoutes(app: FastifyInstance) {
 
   const recurringDto = (r: Prisma.RecurringExpenseGetPayload<object>): RecurringExpenseDto => ({
     id: r.id,
-    category: r.category as ExpenseCategory,
+    category: r.category,
     description: r.description,
     amountCents: r.amountCents,
     dayOfMonth: r.dayOfMonth,
@@ -640,6 +647,7 @@ export async function financeRoutes(app: FastifyInstance) {
       if (input.endMonth && input.endMonth < input.startMonth)
         throw Errors.validation(undefined, 'O fim da recorrência é anterior ao início.');
       const row = await tx(async (t) => {
+        await assertCategory(t, input.category, 'expense');
         const r = await t.recurringExpense.create({
           data: {
             category: input.category,
@@ -683,6 +691,7 @@ export async function financeRoutes(app: FastifyInstance) {
         await lockRow(t, 'recurring_expenses', id, 'Despesa recorrente');
         const cur = await t.recurringExpense.findUniqueOrThrow({ where: { id } });
         checkVersion(cur, input.version!);
+        await assertCategory(t, input.category, 'expense', cur.category);
         // Alterar o modelo não muda despesas já geradas (histórico preservado).
         const r = await t.recurringExpense.update({
           where: { id },

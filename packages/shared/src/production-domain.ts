@@ -188,6 +188,10 @@ export const NOTIFICATION_KINDS = [
   // Melhorias da segunda rodada (2026-11-17): respostas do cliente pelos links públicos.
   'ORCAMENTO_APROVADO',
   'RETIRADA_ESCOLHIDA_CLIENTE',
+  // 2026-11-18: prazo de entrega a uma semana e contas a pagar vencendo/vencidas.
+  'PRAZO_PROXIMO',
+  'CONTA_A_VENCER',
+  'CONTA_VENCIDA',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -251,6 +255,9 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   MATERIAL_FALTANTE: 'Material faltando para a produção',
   ORCAMENTO_APROVADO: 'Orçamento aprovado pelo cliente',
   RETIRADA_ESCOLHIDA_CLIENTE: 'Cliente escolheu o dia da retirada',
+  PRAZO_PROXIMO: 'Prazo de entrega chegando',
+  CONTA_A_VENCER: 'Conta a pagar vencendo',
+  CONTA_VENCIDA: 'Conta a pagar em atraso',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

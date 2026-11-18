@@ -10,6 +10,7 @@ import {
   type PickupDto,
   type PickupStatus,
 } from '@cenario/shared';
+import { followPickupDate } from '../deadlines/promise';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { actorFrom, actorOf, audit } from '../../core/audit';
@@ -286,6 +287,9 @@ export async function pickupRoutes(app: FastifyInstance) {
           },
         },
       });
+      // Prazo em dias úteis acompanha o novo dia da retirada (enquanto não há OS).
+      if (beforeDate !== (input.scheduledDate ?? null))
+        await followPickupDate(tx, before.orderId, input.scheduledDate ?? null);
       if (scheduleChanged || status !== before.status) {
         await tx.pickupEvent.create({
           data: {

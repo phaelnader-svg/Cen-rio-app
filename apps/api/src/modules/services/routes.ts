@@ -1,4 +1,5 @@
 import {
+  addBusinessDays,
   paymentPlan,
   paymentPlanProblem,
   EVENT_TYPES,
@@ -10,6 +11,7 @@ import {
   type OwnTeamSettingsDto,
   type PickupTeam,
 } from '@cenario/shared';
+import { deadlineCalendar } from '../deadlines/service';
 import { createReceivable } from '../finance/revenue';
 import { shopTimezone, todayIso } from '../finance/common';
 import type { PrismaClient, Tx } from '@cenario/db';
@@ -169,6 +171,7 @@ export async function serviceRoutes(app: FastifyInstance) {
         suggestedPickupCostCents: perms.has('financeiro.gerenciar')
           ? settings.defaultPickupCostCents
           : null,
+        workingDays: settings.workingDays.length ? settings.workingDays : [1, 2, 3, 4, 5],
         canSetValues: perms.has('pedidos.valores'),
         canSetTripCost: perms.has('financeiro.gerenciar'),
         canCreateCustomer: perms.has('clientes.gerenciar'),
@@ -246,6 +249,17 @@ export async function serviceRoutes(app: FastifyInstance) {
 
         // 2. Pedido = serviço fechado (valores só com pedidos.valores; OS automática no fechamento).
         const s = input.service;
+        // 2026-11-18: prazo em dias úteis contado do dia da retirada (ou de hoje, se o cliente
+        // traz as peças). A data enviada pela tela é só a prévia; vale a calculada aqui.
+        let promisedDate = s.promisedDate;
+        if (s.deliveryBusinessDays) {
+          const cal = await deadlineCalendar(tx);
+          promisedDate = addBusinessDays(
+            p?.scheduledDate ?? cal.today,
+            s.deliveryBusinessDays,
+            cal.workingDays,
+          );
+        }
         const order = await createOrder(tx, actor, perms, {
           customerId,
           pickupAddressId: addressId,
@@ -254,12 +268,17 @@ export async function serviceRoutes(app: FastifyInstance) {
           agreedValueCents: s.agreedValueCents,
           paymentTerms: s.paymentTerms,
           notes: s.notes,
-          promisedDate: s.promisedDate,
+          promisedDate,
           technicalNotes: s.technicalNotes,
           autoServiceOrder: true,
           customerDropOff: !p,
           items: s.items,
         });
+        if (s.deliveryBusinessDays)
+          await tx.commercialOrder.update({
+            where: { id: order.id },
+            data: { deliveryBusinessDays: s.deliveryBusinessDays },
+          });
 
         // Cobrança (AM-1): a condição estruturada gera as cobranças NA MESMA transação (e com a
         // mesma idempotência do Novo serviço): nunca há pedido sem as cobranças da condição.

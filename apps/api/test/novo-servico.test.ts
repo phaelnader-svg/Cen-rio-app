@@ -849,7 +849,7 @@ describe('D. Segurança, permissões e tempo real', () => {
     expect((await post(admin, '/api/v1/services', await body())).status).toBe(403);
   });
 
-  it('data sem horário de chegada é recusada; sem data fica aguardando agendamento', async () => {
+  it('agendar a retirada exige data e horário (2026-11-18)', async () => {
     const admin = await loginAdmin(app);
     await logisticsSetup(admin);
     const noTime = await post(
@@ -864,8 +864,8 @@ describe('D. Segurança, permissões e tempo real', () => {
       '/api/v1/services',
       await body({ pickup: { scheduledDate: null, windowStart: null } }),
     );
-    expect(unscheduled.status, JSON.stringify(unscheduled.body)).toBe(201);
-    expect(unscheduled.body.pickup.status).toBe('AGUARDANDO_AGENDAMENTO');
+    expect(unscheduled.status).toBe(400);
+    expect(JSON.stringify(unscheduled.body)).toMatch(/data da retirada/);
   });
 
   it('eventos em tempo real: pedido, retirada e depois a OS gerada chegam ao painel (CA2-24)', async () => {
