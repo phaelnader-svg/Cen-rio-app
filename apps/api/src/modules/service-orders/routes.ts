@@ -28,6 +28,7 @@ import { emitItemTechnicalChange } from '../../core/item-changes';
 import { actorFrom, actorOf, audit } from '../../core/audit';
 import type { ActorContext } from '../../core/types';
 import { appendEvent } from '../../core/events/append';
+import { quoteWork } from './quote-work';
 import { diffObjects } from '../../lib/diff';
 import { Errors } from '../../lib/errors';
 import { notify } from '../notifications/notify';
@@ -494,7 +495,11 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
         technicalNotes: order.technicalNotes,
       },
       quote: quote
-        ? { ...quotePrefill(quote, upholsterers), technicalLeadId: await quoteLead(prisma, quote) }
+        ? {
+            ...quotePrefill(quote, upholsterers),
+            technicalLeadId: await quoteLead(prisma, quote),
+            work: quoteWork(quote),
+          }
         : null,
       commercial,
       permissions: { upholsterer: canPlan, labor: canLabor },

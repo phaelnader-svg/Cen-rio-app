@@ -508,6 +508,33 @@ export interface MaterialArrivalDto {
  * 2026-11-18: página da OS para a oficina (Abrir OS no tablet e no painel). Só detalhes do
  * serviço: nada de valores.
  */
+/**
+ * 2026-11-19 (Raphael): o que o orçamento aprovado diz sobre a execução, em partes separadas
+ * (sem texto repetido): o serviço do tapeceiro, o tecido, o que fazer na peça e os materiais
+ * com as medidas. Usado na tela de gerar OS e na página da OS do tapeceiro.
+ */
+export interface QuoteWorkDto {
+  number: number;
+  /** Serviço do tapeceiro escolhido no orçamento (ex.: "Poltrona simples"). */
+  upholsteryService: string | null;
+  fabricName: string;
+  fabricMeters: number | null;
+  /** Quantidade de peças orçadas (1 quando não informada). */
+  pieces: number;
+  /** O que fazer: Trocar tecido, Trocar espuma, Reparar estrutura, Manter o original. */
+  checks: { label: string; value: string }[];
+  /** Observação escrita no orçamento para a execução. */
+  notes: string;
+  materials: {
+    category: string;
+    name: string;
+    quantity: number;
+    unit: string;
+    /** Medidas da espuma ("190 × 60 × 10 cm"), quando houver. */
+    size: string | null;
+  }[];
+}
+
 export interface ServiceOrderSheetDto {
   id: string;
   code: string;
@@ -522,6 +549,8 @@ export interface ServiceOrderSheetDto {
   createdAt: string;
   technicalInstructions: string | null;
   notes: string | null;
+  /** 2026-11-19: o que o orçamento aprovado diz sobre a execução (null = OS sem orçamento). */
+  work: QuoteWorkDto | null;
   items: {
     id: string;
     code: string;

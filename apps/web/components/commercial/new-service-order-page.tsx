@@ -1,33 +1,22 @@
 'use client';
 
-import { QUOTE_DEFAULT_NOTES, plural } from '@cenario/shared';
-import type { EligibilityRule, Priority, ServiceOrderDto, ServiceType } from '@cenario/shared';
-import {
-  ELIGIBILITY_LABEL,
-  ELIGIBILITY_RULES,
-  PRIORITIES,
-  PRIORITY_LABEL,
-  SERVICE_TYPES,
-  SERVICE_TYPE_LABEL,
-  createServiceOrderSchema,
-} from '@cenario/shared';
+import { QUOTE_DEFAULT_NOTES } from '@cenario/shared';
+import type { Priority, ServiceOrderDto, ServiceType } from '@cenario/shared';
+import { PRIORITIES, PRIORITY_LABEL, createServiceOrderSchema } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2 } from 'lucide-react';
+import clsx from 'clsx';
+import { Camera, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/field';
 import {
   DateField,
-  FieldAction,
   FormActions,
   FormGrid,
   FormSection,
   MoneyField,
-  NumberField,
   SelectField,
-  SummaryRow,
   TextAreaField,
   TextField,
 } from '@/components/ui/form';
@@ -35,35 +24,20 @@ import { Alert, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useAvailableForOs, type AvailableForOs } from '@/lib/commercial';
-import { money } from '@/lib/finance';
 import { useCan } from '@/lib/hooks';
 import { uploadPhoto } from '@/lib/photos';
 import { useEmployees } from '@/lib/queries';
+import { fabricText, WorkChecks, WorkMaterials } from './quote-work';
 import { BackLink } from './section';
 
 /**
- * Correção global — criação da OS em seções: informações gerais, peças, responsável (titular por
- * peça), valores comerciais (do pedido, com o fluxo autorizado para ajustar), mão de obra por
- * peça e resumo. Titular e mão de obra são gravados NA MESMA operação da OS (atômica: se um
- * falhar, nada é criado). Nenhum pagamento é liberado na criação.
+ * 2026-11-19 (Raphael): gerar OS em 5 partes, cada informação uma vez só. O serviço (o que o
+ * orçamento aprovado diz: serviço do tapeceiro, peças, o que fazer, tecido, materiais com
+ * medidas, foto) aparece travado; preenche-se só o que falta: tapeceiro e mão de obra por peça,
+ * prazo, prioridade, material, fotos e um recado. O responsável da OS é o próprio tapeceiro e a
+ * mão de obra é liberada na aprovação da qualidade. Titular e mão de obra são gravados na mesma
+ * operação da OS (atômica). Nenhum pagamento é liberado na criação.
  */
-
-interface Row {
-  key: string;
-  orderItemId: string;
-  quantity: string;
-  description: string;
-  serviceType: ServiceType;
-  fabricName: string;
-  fabricColor: string;
-  fabricReference: string;
-  foamSpecs: string;
-  technicalNotes: string;
-  upholstererUserId: string;
-  laborCents: number | null;
-  laborValid: boolean;
-  eligibility: EligibilityRule;
-}
 
 export function NewServiceOrderPage() {
   const params = useSearchParams();
@@ -107,57 +81,67 @@ export function NewServiceOrderPage() {
 type Item = AvailableForOs['items'][number];
 type QuoteInfo = AvailableForOs['quote'];
 
-/** Fluxo da OS (2026-11-18): a peça já vem com o que o pedido e o orçamento dizem. */
+interface Row {
+  key: string;
+  orderItemId: string;
+  quantity: number;
+  description: string;
+  serviceType: ServiceType;
+  fabricName: string;
+  fabricColor: string;
+  fabricReference: string;
+  technicalNotes: string;
+  upholstererUserId: string;
+  laborCents: number | null;
+  laborValid: boolean;
+}
+
+/**
+ * Tipo de serviço puxado do orçamento: o que ele manda trocar. Sem orçamento, reforma completa.
+ */
+function serviceTypeOf(i: Item, quote: QuoteInfo): ServiceType {
+  if (i.serviceType) return i.serviceType;
+  const yes = (label: string) =>
+    quote?.work.checks.some((c) => c.label === label && c.value === 'Sim');
+  const fabric = yes('Trocar tecido');
+  const foam = yes('Trocar espuma');
+  if (fabric && !foam) return 'TROCA_DE_TECIDO';
+  if (foam && !fabric) return 'TROCA_DE_ESPUMA';
+  return 'REFORMA_COMPLETA';
+}
+
+/** Cada peça que chegou entra na OS com o que o pedido e o orçamento já dizem. */
 function prefilledRow(i: Item, quote: QuoteInfo, single: boolean): Row {
   const owner = i.plannedUpholstererUserId ?? (single ? (quote?.upholstererUserId ?? '') : '');
   return {
-    ...emptyRow(i.orderItemId, i.available, i.description),
-    serviceType: i.serviceType ?? 'REFORMA_COMPLETA',
-    fabricName: i.fabricName ?? quote?.fabricName ?? '',
+    key: i.orderItemId,
+    orderItemId: i.orderItemId,
+    quantity: i.available,
+    description: i.description,
+    serviceType: serviceTypeOf(i, quote),
+    fabricName: i.fabricName ?? quote?.work.fabricName ?? '',
     fabricColor: i.fabricColor ?? '',
     fabricReference: i.fabricReference ?? '',
-    technicalNotes:
-      i.technicalNotes ||
-      (quote?.upholsteryService ? `Serviço do tapeceiro: ${quote.upholsteryService}` : ''),
+    // Só o que alguém escreveu na peça (nada de texto automático repetido).
+    technicalNotes: i.technicalNotes ?? '',
     upholstererUserId: owner,
     laborCents:
       i.plannedUpholstererUserId && i.plannedLaborUnitCents
         ? i.plannedLaborUnitCents * i.available
         : null,
+    laborValid: true,
   };
 }
 
-function quoteInstructions(order: AvailableForOs['order'], quote: QuoteInfo): string {
-  const parts: string[] = [];
-  // O texto padrão da proposta (cláusulas comerciais) não é instrução para a oficina.
-  const own = (order.technicalNotes ?? '').replace(QUOTE_DEFAULT_NOTES.trim(), '').trim();
-  if (quote?.upholsteryService) parts.push(`Serviço do tapeceiro: ${quote.upholsteryService}.`);
-  if (own) parts.push(own);
-  if (quote) {
-    if (quote.details.length) parts.push(quote.details.join(' · '));
-    if (quote.materials.length)
-      parts.push(`Materiais do orçamento: ${quote.materials.join(', ')}.`);
-    if (quote.notes) parts.push(quote.notes);
-  }
-  return parts.join('\n').slice(0, 4000);
+/**
+ * Observação própria do pedido. O texto montado ao fechar o serviço ("Orçamento nº…, tecido,
+ * troca de espuma…") repete o orçamento, que já aparece em partes nesta tela: fica de fora.
+ */
+function ownOrderNotes(order: AvailableForOs['order'], quote: QuoteInfo): string {
+  const text = (order.technicalNotes ?? '').replace(QUOTE_DEFAULT_NOTES.trim(), '').trim();
+  if (quote && /^Orçamento nº/i.test(text)) return '';
+  return text;
 }
-
-const emptyRow = (orderItemId: string, quantity: number, description: string): Row => ({
-  key: crypto.randomUUID(),
-  orderItemId,
-  quantity: String(quantity),
-  description,
-  serviceType: 'REFORMA_COMPLETA',
-  fabricName: '',
-  fabricColor: '',
-  fabricReference: '',
-  foamSpecs: '',
-  technicalNotes: '',
-  upholstererUserId: '',
-  laborCents: null,
-  laborValid: true,
-  eligibility: 'QUALIDADE_APROVADA',
-});
 
 function ServiceOrderForm({ data }: { data: AvailableForOs }) {
   const router = useRouter();
@@ -165,19 +149,23 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
   const toast = useToast();
   const can = useCan();
   const employees = useEmployees(can('funcionarios.ver'));
+  const quote = data.quote;
+  const work = quote?.work ?? null;
   const usable = data.items.filter((i) => i.available > 0);
   const [rows, setRows] = useState<Row[]>(() =>
-    usable.map((i) => prefilledRow(i, data.quote, usable.length === 1)),
+    usable.map((i) => prefilledRow(i, quote, usable.length === 1)),
   );
   const [priority, setPriority] = useState<Priority>('NORMAL');
   const [promisedDate, setPromisedDate] = useState(data.order.promisedDate ?? '');
-  const [lead, setLead] = useState(data.quote?.technicalLeadId ?? '');
-  const [instructions, setInstructions] = useState(() => quoteInstructions(data.order, data.quote));
   const [notes, setNotes] = useState('');
-  // Fotos da OS: a do orçamento (marcada por padrão) e as que forem escolhidas aqui.
-  const [useQuotePhoto, setUseQuotePhoto] = useState(Boolean(data.quote?.photoDataUrl));
+  // Fotos da OS: a do orçamento (vai junto por padrão) e as que forem acrescentadas aqui.
+  const [useQuotePhoto, setUseQuotePhoto] = useState(Boolean(quote?.photoDataUrl));
   const [photos, setPhotos] = useState<File[]>([]);
-  const [materialPurchased, setMaterialPurchased] = useState(false);
+  const previews = useMemo(() => photos.map((f) => URL.createObjectURL(f)), [photos]);
+  useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
+  const [materialPurchased, setMaterialPurchased] = useState<boolean | null>(
+    work && work.materials.length === 0 ? true : null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const idem = useRef(newIdempotencyKey());
@@ -185,45 +173,54 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
     setRows((r) => r.map((x) => (x.key === key ? { ...x, ...patch } : x)));
   const perms = data.permissions;
   const byUser = new Map(data.upholsterers.map((u) => [u.userId, u]));
-
-  // Resumo: receita estimada desta OS (rateio proporcional às peças do pedido, a mesma regra do
-  // financeiro) e mão de obra combinada nesta tela. Não é lucro: faltam materiais e logística.
-  const pieces = rows.reduce((a, r) => a + (Number(r.quantity) || 0), 0);
-  const c = data.commercial;
-  const projected = useMemo(() => {
-    if (!c || c.finalCents === null) return null;
-    const others = c.serviceOrders.reduce((a, s) => a + s.pieces, 0);
-    const total = others + pieces;
-    return total > 0 ? Math.round((c.finalCents * pieces) / total) : 0;
-  }, [c, pieces]);
-  const laborTotal = rows.reduce((a, r) => a + (r.upholstererUserId ? (r.laborCents ?? 0) : 0), 0);
+  const orderNotes = ownOrderNotes(data.order, quote);
   const laborInvalid = rows.some((r) => !r.laborValid);
+  const many = rows.length > 1;
+  const service = work?.upholsteryService || data.order.contractedService;
+  // Sem repetir: a peça só aparece se for diferente do serviço; o tecido, se não estiver na
+  // lista de materiais (que já traz a metragem).
+  const showPieces = many || rows[0]?.quantity !== 1 || rows[0]?.description !== service;
+  const fabric = (rows[0]?.fabricName || work?.fabricName || '').trim().toLowerCase();
+  const showFabric =
+    !work ||
+    Boolean(rows[0]?.fabricColor) ||
+    !work.materials.some((m) => m.name.trim().toLowerCase() === fabric);
+
+  // Responsável da OS = o tapeceiro escolhido (um só lugar para escolher).
+  const leadId = useMemo(() => {
+    const owner = rows.find((r) => r.upholstererUserId)?.upholstererUserId;
+    const emp = owner ? employees.data?.find((e) => e.active && e.userId === owner) : undefined;
+    return emp?.id ?? quote?.technicalLeadId ?? null;
+  }, [rows, employees.data, quote]);
 
   const m = useMutation({
     mutationFn: () => {
+      if (materialPurchased === null)
+        throw new Error('Diga se o material já está comprado ou se falta comprar.');
       const body = createServiceOrderSchema.parse({
         orderId: data.order.id,
         priority,
         promisedDate: promisedDate || null,
-        technicalLeadId: lead || null,
-        technicalInstructions: instructions,
+        technicalLeadId: leadId,
+        technicalInstructions: orderNotes,
         notes,
         materialPurchased,
+        materialsFromQuote: Boolean(work?.materials.length),
         items: rows.map((r) => ({
           orderItemId: r.orderItemId,
-          quantity: Number(r.quantity),
+          quantity: r.quantity,
           description: r.description,
           serviceType: r.serviceType,
           fabricName: r.fabricName,
           fabricColor: r.fabricColor,
           fabricReference: r.fabricReference,
-          foamSpecs: r.foamSpecs,
+          foamSpecs: '',
           technicalNotes: r.technicalNotes,
           ...(perms.upholsterer && r.upholstererUserId
             ? { upholstererUserId: r.upholstererUserId }
             : {}),
           ...(perms.labor && r.upholstererUserId && r.laborCents
-            ? { labor: { agreedCents: r.laborCents, eligibility: r.eligibility } }
+            ? { labor: { agreedCents: r.laborCents, eligibility: 'QUALIDADE_APROVADA' } }
             : {}),
         })),
       });
@@ -237,8 +234,8 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
       // A OS já existe: uma foto que falhe não desfaz nada (dá para enviar de novo na OS).
       let photoError = false;
       const files = [...photos];
-      if (useQuotePhoto && data.quote?.photoDataUrl)
-        files.unshift(dataUrlToFile(data.quote.photoDataUrl, `orcamento-${data.quote.number}`));
+      if (useQuotePhoto && quote?.photoDataUrl)
+        files.unshift(dataUrlToFile(quote.photoDataUrl, `orcamento-${quote.number}`));
       for (const file of files) {
         try {
           await uploadPhoto({ entityType: 'SERVICE_ORDER', entityId: so.id, file, caption: '' });
@@ -263,7 +260,9 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
         setFieldErrors(map);
       }
       setError(
-        e instanceof ApiError ? e.message : (issues?.[0]?.message ?? 'Revise os dados da OS.'),
+        e instanceof ApiError
+          ? e.message
+          : (issues?.[0]?.message ?? (e instanceof Error ? e.message : 'Revise os dados da OS.')),
       );
     },
   });
@@ -287,31 +286,161 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
         </Alert>
       )}
 
-      {data.quote && (
-        <Alert tone="info" title={`Preenchida com o orçamento nº ${data.quote.number}`}>
-          Tecido, detalhes, materiais e tapeceiro vieram do orçamento aprovado. Confira e complete o
-          que faltar.
-        </Alert>
-      )}
-
-      <FormSection step={1} title="Informações gerais" id="os-geral">
-        <FormGrid>
-          <TextField label="Cliente" value={data.customer.name} readOnly cols={6} />
-          <Field2Link
-            label="Pedido de origem"
+      {/* 1. O serviço: tudo o que já foi decidido no orçamento, travado (não se digita de novo). */}
+      <FormSection
+        step={1}
+        title="O serviço"
+        id="os-servico"
+        description={
+          quote
+            ? `Vem do orçamento nº ${quote.number} aprovado pelo cliente. Para mudar, altere o pedido.`
+            : 'Vem do pedido. Para mudar, altere o pedido.'
+        }
+        actions={
+          <Link
             href={`/painel/pedidos/${data.order.id}`}
-            text={`${data.order.code} · ${data.order.contractedService}`}
-          />
-          <TextField
-            label="Identificação da OS"
-            value="Gerada ao criar (OS-número/item)"
-            readOnly
+            className="text-sm font-semibold text-brand-700 hover:underline"
+          >
+            Pedido {data.order.code}
+          </Link>
+        }
+      >
+        <div
+          className="rounded-xl border border-line bg-subtle/40 p-4 sm:p-5"
+          data-testid="so-service-summary"
+        >
+          <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-[9rem_1fr]">
+            <Fact label="Serviço">
+              <span className="text-base font-semibold">{service}</span>
+            </Fact>
+            {showPieces && (
+              <Fact label={many || (rows[0]?.quantity ?? 0) > 1 ? 'Peças' : 'Peça'}>
+                <ul className="space-y-0.5">
+                  {rows.map((r) => (
+                    <li key={r.key}>
+                      {r.quantity}× {r.description}
+                    </li>
+                  ))}
+                </ul>
+              </Fact>
+            )}
+            {work && work.checks.length > 0 && (
+              <Fact label="O que fazer">
+                <WorkChecks checks={work.checks} />
+              </Fact>
+            )}
+            {showFabric && (
+              <Fact label="Tecido">
+                {fabricText(rows[0]?.fabricName || work?.fabricName, work?.fabricMeters ?? null)}
+                {rows[0]?.fabricColor ? ` · cor ${rows[0].fabricColor}` : ''}
+              </Fact>
+            )}
+            {work && (
+              <Fact label="Materiais">
+                <WorkMaterials materials={work.materials} />
+              </Fact>
+            )}
+            {(work?.notes || orderNotes) && (
+              <Fact label="Observação">
+                <span className="whitespace-pre-line">
+                  {[work?.notes, orderNotes].filter(Boolean).join('\n')}
+                </span>
+              </Fact>
+            )}
+          </dl>
+        </div>
+      </FormSection>
+
+      {/* 2. Quem faz: o tapeceiro escolhido uma vez por peça, com a mão de obra ao lado. */}
+      <FormSection
+        step={2}
+        title="Tapeceiro"
+        id="os-tapeceiro"
+        description={
+          perms.labor
+            ? 'Quem vai fazer e quanto ele recebe. A mão de obra é paga depois que a peça passa na qualidade.'
+            : 'Quem vai fazer o serviço.'
+        }
+      >
+        {!perms.upholsterer ? (
+          <Alert tone="info">
+            Quem escolhe o tapeceiro é quem planeja a produção. A OS pode ser gerada agora e o
+            tapeceiro escolhido depois, na semana da oficina.
+          </Alert>
+        ) : (
+          <ul className="space-y-3">
+            {rows.map((r, idx) => {
+              const owner = byUser.get(r.upholstererUserId);
+              return (
+                <li key={r.key} data-testid={`so-row-${idx}`}>
+                  <FormGrid>
+                    {many && (
+                      <TextField
+                        label="Peça"
+                        cols={4}
+                        value={`${r.quantity}× ${r.description}`}
+                        readOnly
+                        tabIndex={-1}
+                      />
+                    )}
+                    <SelectField
+                      label="Tapeceiro"
+                      cols={many ? 4 : 6}
+                      data-testid={`so-owner-${idx}`}
+                      value={r.upholstererUserId}
+                      error={err(idx, 'upholstererUserId')}
+                      onChange={(e) => setRow(r.key, { upholstererUserId: e.target.value })}
+                    >
+                      <option value="">Escolher depois</option>
+                      {data.upholsterers.map((u) => (
+                        <option key={u.userId} value={u.userId}>
+                          {u.displayName}
+                        </option>
+                      ))}
+                    </SelectField>
+                    {perms.labor && (
+                      <MoneyField
+                        label="Mão de obra"
+                        cols={many ? 4 : 6}
+                        cents={r.laborCents}
+                        disabled={!owner || !owner.isTapeceiro}
+                        error={
+                          !r.laborValid
+                            ? 'Valor inválido.'
+                            : (err(idx, 'labor') ?? err(idx, 'labor.agreedCents'))
+                        }
+                        hint={
+                          !owner
+                            ? 'Escolha o tapeceiro primeiro'
+                            : !owner.isTapeceiro
+                              ? 'Só tapeceiro recebe por peça.'
+                              : 'Em branco = combinar depois'
+                        }
+                        data-testid={`so-labor-value-${idx}`}
+                        onCents={(v, ok) => setRow(r.key, { laborCents: v, laborValid: ok })}
+                      />
+                    )}
+                  </FormGrid>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </FormSection>
+
+      {/* 3. Prazo e material. */}
+      <FormSection step={3} title="Prazo e material" id="os-prazo">
+        <FormGrid>
+          <DateField
+            label="Entregar até"
             cols={4}
-            hint="Cada peça recebe um código próprio."
+            value={promisedDate}
+            hint={data.order.promisedDate ? 'Prazo combinado no serviço' : undefined}
+            onChange={(e) => setPromisedDate(e.target.value)}
           />
           <SelectField
             label="Prioridade"
-            cols={4}
+            cols={3}
             value={priority}
             onChange={(e) => setPriority(e.target.value as Priority)}
           >
@@ -321,441 +450,111 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
               </option>
             ))}
           </SelectField>
-          <DateField
-            label="Prazo prometido ao cliente"
-            hint="Opcional"
-            cols={4}
-            value={promisedDate}
-            onChange={(e) => setPromisedDate(e.target.value)}
-          />
-          <SelectField
-            label="Responsável técnico principal"
-            hint="Opcional"
-            cols={6}
-            value={lead}
-            onChange={(e) => setLead(e.target.value)}
-            disabled={!employees.data}
-          >
-            <option value="">A definir</option>
-            {employees.data
-              ?.filter((e) => e.active)
-              .map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.displayName} — {e.jobTitle}
-                </option>
+          <div className="field sm:col-span-5" role="radiogroup" aria-label="Material">
+            <span className="label">Material</span>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { v: true, label: 'Já comprado' },
+                { v: false, label: 'Falta comprar' },
+              ].map((o) => (
+                <button
+                  key={o.label}
+                  type="button"
+                  role="radio"
+                  aria-checked={materialPurchased === o.v}
+                  data-testid={o.v ? 'so-material-purchased' : 'so-material-missing'}
+                  onClick={() => setMaterialPurchased(o.v)}
+                  className={clsx(
+                    'h-11 rounded-xl border text-sm font-semibold transition-colors',
+                    materialPurchased === o.v
+                      ? o.v
+                        ? 'border-ok-600 bg-ok-50 text-ok-600'
+                        : 'border-warn-600 bg-warn-50 text-warn-600'
+                      : 'border-line bg-surface text-ink-soft hover:bg-subtle',
+                  )}
+                >
+                  {o.label}
+                </button>
               ))}
-          </SelectField>
-          <TextAreaField
-            label="Instruções técnicas"
-            cols={12}
-            rows={3}
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-          />
-          <TextAreaField
-            label="Observações"
-            cols={12}
-            rows={2}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
+            </div>
+            <div className="field-msg">
+              {materialPurchased === false && (
+                <span className="text-ink-muted">
+                  A OS entra na semana da oficina depois do “Material comprado”.
+                </span>
+              )}
+            </div>
+          </div>
         </FormGrid>
       </FormSection>
 
-      <FormSection
-        step={2}
-        title="Peças"
-        id="os-pecas"
-        description="Cada item recebe um código próprio (ex.: OS-00012/2). Divida peças iguais quando precisarem de identificação individual. As medidas são registradas depois, na OS."
-        actions={
-          <Button
-            size="sm"
-            variant="secondary"
-            icon={<Plus className="size-3.5" aria-hidden />}
-            onClick={() =>
-              setRows([
-                ...rows,
-                emptyRow(usable[0]!.orderItemId, 1, rows[0]?.description ?? usable[0]!.description),
-              ])
-            }
-          >
-            Dividir em mais itens
-          </Button>
-        }
-      >
-        <ol className="space-y-4">
-          {rows.map((r, idx) => {
-            const src = data.items.find((i) => i.orderItemId === r.orderItemId)!;
-            return (
-              <li
-                key={r.key}
-                className="rounded-xl border border-line p-4"
-                data-testid={`so-row-${idx}`}
-              >
-                <p className="mb-3 text-sm font-semibold text-ink-soft">Item {idx + 1}</p>
-                <FormGrid>
-                  <SelectField
-                    label="Peça recebida"
-                    cols={5}
-                    value={r.orderItemId}
-                    onChange={(e) => setRow(r.key, { orderItemId: e.target.value })}
-                  >
-                    {usable.map((i) => (
-                      <option key={i.orderItemId} value={i.orderItemId}>
-                        {i.description} ({plural(i.available, 'disponível', 'disponíveis')})
-                      </option>
-                    ))}
-                  </SelectField>
-                  <NumberField
-                    label="Quantidade"
-                    hint={`máx. ${src.available}`}
-                    error={err(idx, 'quantity')}
-                    cols={2}
-                    min={1}
-                    max={src.available}
-                    value={r.quantity}
-                    onChange={(e) => setRow(r.key, { quantity: e.target.value })}
-                  />
-                  <SelectField
-                    label="Tipo de serviço"
-                    cols={4}
-                    value={r.serviceType}
-                    onChange={(e) => setRow(r.key, { serviceType: e.target.value as ServiceType })}
-                  >
-                    {SERVICE_TYPES.map((s) => (
-                      <option key={s} value={s}>
-                        {SERVICE_TYPE_LABEL[s]}
-                      </option>
-                    ))}
-                  </SelectField>
-                  <FieldAction className="sm:col-span-1">
-                    <Button
-                      variant="ghost"
-                      aria-label={`Remover item ${idx + 1}`}
-                      disabled={rows.length === 1}
-                      icon={<Trash2 className="size-4" aria-hidden />}
-                      onClick={() => setRows(rows.filter((x) => x.key !== r.key))}
-                    />
-                  </FieldAction>
-                  <TextField
-                    label="Descrição na OS"
-                    cols={12}
-                    error={err(idx, 'description')}
-                    value={r.description}
-                    onChange={(e) => setRow(r.key, { description: e.target.value })}
-                  />
-                  <TextField
-                    label="Tecido escolhido"
-                    cols={4}
-                    value={r.fabricName}
-                    onChange={(e) => setRow(r.key, { fabricName: e.target.value })}
-                  />
-                  <TextField
-                    label="Cor"
-                    cols={4}
-                    value={r.fabricColor}
-                    onChange={(e) => setRow(r.key, { fabricColor: e.target.value })}
-                  />
-                  <TextField
-                    label="Referência"
-                    cols={4}
-                    value={r.fabricReference}
-                    onChange={(e) => setRow(r.key, { fabricReference: e.target.value })}
-                  />
-                  <TextField
-                    label="Espumas e especificações"
-                    cols={6}
-                    value={r.foamSpecs}
-                    onChange={(e) => setRow(r.key, { foamSpecs: e.target.value })}
-                  />
-                  <TextField
-                    label="Observações técnicas"
-                    cols={6}
-                    value={r.technicalNotes}
-                    onChange={(e) => setRow(r.key, { technicalNotes: e.target.value })}
-                  />
-                </FormGrid>
-              </li>
-            );
-          })}
-        </ol>
-      </FormSection>
-
-      <FormSection
-        step={3}
-        title="Responsável"
-        id="os-responsavel"
-        description="Tapeceiro titular de cada peça: só ele executa as etapas de tapeçaria da peça. Lista com tapeceiros ativos e com a competência de corte e costura."
-      >
-        {!perms.upholsterer ? (
-          <Alert tone="info">
-            Definir o titular exige a permissão de planejar a produção. A OS pode ser criada sem
-            titular; ele é definido depois no planejamento.
-          </Alert>
-        ) : (
-          <ul className="divide-y divide-line rounded-xl border border-line">
-            {rows.map((r, idx) => (
-              <li key={r.key} className="px-4 py-3">
-                <FormGrid>
-                  <TextField
-                    label={`Item ${idx + 1}`}
-                    cols={6}
-                    value={`${r.description} (${r.quantity || 0})`}
-                    readOnly
-                    tabIndex={-1}
-                  />
-                  <SelectField
-                    label="Tapeceiro titular"
-                    cols={6}
-                    data-testid={`so-owner-${idx}`}
-                    value={r.upholstererUserId}
-                    error={err(idx, 'upholstererUserId')}
-                    onChange={(e) => setRow(r.key, { upholstererUserId: e.target.value })}
-                  >
-                    <option value="">A definir depois</option>
-                    {data.upholsterers.map((u) => (
-                      <option key={u.userId} value={u.userId}>
-                        {u.displayName}
-                      </option>
-                    ))}
-                  </SelectField>
-                </FormGrid>
-              </li>
-            ))}
-          </ul>
-        )}
-      </FormSection>
-
+      {/* 4. Fotos da peça: um lugar que parece mesmo para pôr foto. */}
       <FormSection
         step={4}
-        title="Valores comerciais"
-        id="os-valores"
-        description="O valor cobrado do cliente é o do pedido (contratado + ajustes autorizados). A receita de cada OS é a sua parte desse valor — não há valor comercial por peça."
-      >
-        {!c ? (
-          <Alert tone="info">Você não tem permissão para ver os valores do pedido.</Alert>
-        ) : (
-          <div className="grid gap-6 lg:grid-cols-2">
-            <dl className="divide-y divide-line rounded-xl border border-line px-4">
-              <SummaryRow
-                label="Valor contratado no pedido"
-                value={c.contractedCents === null ? 'Sem valor' : money(c.contractedCents)}
-                testId="so-contracted"
-              />
-              {c.adjustmentsCents !== null && (
-                <SummaryRow label="Ajustes autorizados" value={money(c.adjustmentsCents)} />
-              )}
-              <SummaryRow
-                label="Valor final do pedido"
-                value={c.finalCents === null ? '—' : money(c.finalCents)}
-                strong
-              />
-              {c.serviceOrders.map((s) => (
-                <SummaryRow
-                  key={s.code}
-                  label={`${s.code} (já criada)`}
-                  hint={`${plural(s.pieces, 'peça', 'peças')}`}
-                  value={money(s.revenueCents)}
-                />
-              ))}
-              <SummaryRow
-                label="Esta OS (estimativa)"
-                hint={`${plural(pieces, 'peça', 'peças')} — proporcional às peças do pedido`}
-                value={projected === null ? '—' : money(projected)}
-                strong
-                testId="so-projected"
-              />
-            </dl>
-            <div className="space-y-3 text-sm">
-              {c.finalCents === null && (
-                <Alert tone="warn">
-                  O pedido não tem valor contratado: a receita da OS fica zerada.
-                </Alert>
-              )}
-              {c.manualSplit && (
-                <Alert tone="warn">
-                  A receita deste pedido foi distribuída manualmente entre as OS. Com esta nova OS,
-                  volta a ser proporcional às peças até o financeiro redistribuir.
-                </Alert>
-              )}
-              <p className="text-ink-muted">
-                Para alterar o valor cobrado use o fluxo autorizado: editar o pedido (permissão de
-                valores) ou lançar um ajuste comercial no financeiro (com justificativa). A
-                distribuição entre OS é feita no financeiro.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Link
-                  href={`/painel/pedidos/${data.order.id}/editar`}
-                  className="text-sm font-semibold text-brand-700 hover:underline"
-                >
-                  Editar valor do pedido
-                </Link>
-                <span aria-hidden className="text-ink-muted">
-                  ·
-                </span>
-                <Link
-                  href="/painel/financeiro"
-                  className="text-sm font-semibold text-brand-700 hover:underline"
-                >
-                  Ajustes e distribuição no financeiro
-                </Link>
-              </div>
-            </div>
-          </div>
-        )}
-      </FormSection>
-
-      <FormSection
-        step={5}
-        title="Mão de obra"
-        id="os-mao-de-obra"
-        description="Valor combinado com o tapeceiro titular, por peça (uma obrigação por funcionário por peça). Nada é pago agora: a obrigação só fica devida pela regra de liberação."
-      >
-        {!perms.labor ? (
-          <Alert tone="info">
-            Combinar a mão de obra exige a permissão de gerenciar o financeiro. Ela pode ser
-            combinada depois, na OS.
-          </Alert>
-        ) : (
-          <ul className="divide-y divide-line rounded-xl border border-line">
-            {rows.map((r, idx) => {
-              const owner = byUser.get(r.upholstererUserId);
-              const blocked = !owner || !owner.isTapeceiro;
-              return (
-                <li key={r.key} className="px-4 py-3" data-testid={`so-labor-${idx}`}>
-                  <FormGrid>
-                    <TextField
-                      label={`Item ${idx + 1} · recebedor`}
-                      cols={4}
-                      readOnly
-                      tabIndex={-1}
-                      value={owner ? owner.displayName : 'Defina o titular (seção 3)'}
-                    />
-                    <MoneyField
-                      label="Valor combinado"
-                      cols={3}
-                      cents={r.laborCents}
-                      disabled={blocked}
-                      error={
-                        !r.laborValid
-                          ? 'Valor inválido.'
-                          : (err(idx, 'labor') ?? err(idx, 'labor.agreedCents'))
-                      }
-                      hint={
-                        owner && !owner.isTapeceiro
-                          ? 'Pagamento por produção é só para tapeceiro.'
-                          : 'Vazio = combinar depois'
-                      }
-                      data-testid={`so-labor-value-${idx}`}
-                      onCents={(v, ok) => setRow(r.key, { laborCents: v, laborValid: ok })}
-                    />
-                    <SelectField
-                      label="Liberação para pagamento"
-                      cols={5}
-                      disabled={blocked}
-                      value={r.eligibility}
-                      onChange={(e) =>
-                        setRow(r.key, { eligibility: e.target.value as EligibilityRule })
-                      }
-                    >
-                      {ELIGIBILITY_RULES.map((x) => (
-                        <option key={x} value={x}>
-                          {ELIGIBILITY_LABEL[x]}
-                        </option>
-                      ))}
-                    </SelectField>
-                  </FormGrid>
-                  <p className="mt-2 text-xs text-ink-muted">
-                    Situação ao criar:{' '}
-                    {r.laborCents && !blocked
-                      ? 'combinada, aguardando a liberação (sem pagamento).'
-                      : 'sem valor combinado.'}{' '}
-                    Revisões e ajustes seguem as regras do financeiro.
-                  </p>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </FormSection>
-
-      <FormSection
-        step={6}
-        title="Fotos e material"
+        title="Fotos da peça"
         id="os-fotos"
-        description="A foto do serviço vai junto com a OS. Depois dá para acrescentar mais fotos na própria OS."
+        description="Ajudam o tapeceiro a ver como a peça chegou. Dá para pôr mais fotos depois, na OS."
       >
-        <div className="space-y-4">
-          {data.quote?.photoDataUrl && (
-            <div className="flex flex-wrap items-start gap-4">
-              {/* eslint-disable-next-line @next/next/no-img-element -- foto local do orçamento */}
-              <img
-                src={data.quote.photoDataUrl}
-                alt="Foto do orçamento"
-                className="h-28 w-36 rounded-xl border border-line object-cover"
-              />
-              <Checkbox
-                label="Usar a foto do orçamento"
-                description="Fica nas fotos da OS."
-                checked={useQuotePhoto}
-                onChange={(e) => setUseQuotePhoto(e.target.checked)}
-                data-testid="so-quote-photo"
-              />
-            </div>
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {quote?.photoDataUrl && useQuotePhoto && (
+            <PhotoTile
+              src={quote.photoDataUrl}
+              label="Foto do orçamento"
+              onRemove={() => setUseQuotePhoto(false)}
+            />
           )}
-          <div>
-            <label className="label" htmlFor="so-photos">
-              {data.quote?.photoDataUrl ? 'Outras fotos do serviço' : 'Foto do serviço'}
+          {previews.map((src, i) => (
+            <PhotoTile
+              key={src}
+              src={src}
+              label={photos[i]?.name ?? 'Foto'}
+              onRemove={() => setPhotos(photos.filter((_, j) => j !== i))}
+            />
+          ))}
+          <li>
+            <label
+              htmlFor="so-photos"
+              className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-line-strong bg-subtle/40 text-sm font-semibold text-brand-700 transition-colors hover:border-brand-600 hover:bg-brand-50"
+            >
+              <Camera className="size-7" aria-hidden />
+              Adicionar foto
+              <span className="text-xs font-normal text-ink-muted">tirar ou escolher</span>
             </label>
             <input
               id="so-photos"
               type="file"
               accept="image/*"
               multiple
-              className="block text-sm"
-              onChange={(e) => setPhotos(Array.from(e.target.files ?? []))}
+              className="sr-only"
+              onChange={(e) => {
+                setPhotos([...photos, ...Array.from(e.target.files ?? [])]);
+                e.target.value = '';
+              }}
               data-testid="so-photos"
             />
-            {photos.length > 0 && (
-              <p className="mt-1 text-sm text-ink-muted">
-                {plural(photos.length, 'foto escolhida', 'fotos escolhidas')}
-              </p>
-            )}
-          </div>
-          <Checkbox
-            label="Material já comprado"
-            description="Marque se não falta comprar nada. Sem isso, a OS fica aguardando o botão “Material comprado” em Ordens de serviço antes de entrar na programação da semana."
-            checked={materialPurchased}
-            onChange={(e) => setMaterialPurchased(e.target.checked)}
-            data-testid="so-material-purchased"
-          />
-        </div>
+          </li>
+        </ul>
+        {quote?.photoDataUrl && !useQuotePhoto && (
+          <button
+            type="button"
+            className="mt-3 text-sm font-semibold text-brand-700 hover:underline"
+            onClick={() => setUseQuotePhoto(true)}
+            data-testid="so-quote-photo"
+          >
+            Voltar a foto do orçamento
+          </button>
+        )}
       </FormSection>
 
-      <FormSection step={7} title="Resumo" id="os-resumo">
-        <dl className="max-w-xl divide-y divide-line rounded-xl border border-line px-4">
-          <SummaryRow
-            label="Receita contratada (esta OS)"
-            value={projected === null ? (c ? '—' : 'Sem permissão') : money(projected)}
-          />
-          <SummaryRow
-            label="Mão de obra combinada"
-            value={perms.labor ? money(laborTotal) : 'Sem permissão'}
-            testId="so-labor-total"
-          />
-          <SummaryRow
-            label="Outros custos conhecidos"
-            hint="Materiais e logística entram depois, no resultado por OS."
-            value="—"
-          />
-          <SummaryRow
-            label="Saldo estimado antes dos demais custos"
-            hint="Não é lucro: faltam materiais, logística, despesas e impostos."
-            value={projected === null || !perms.labor ? '—' : money(projected - laborTotal)}
-            strong
-            testId="so-balance"
-          />
-        </dl>
+      {/* 5. Recado para quem vai fazer (opcional). */}
+      <FormSection step={5} title="Recado para o tapeceiro" id="os-recado">
+        <TextAreaField
+          label="Recado"
+          hint="Opcional. Ex.: cliente pediu costura dupla no assento."
+          rows={2}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
       </FormSection>
 
       <FormActions>
@@ -770,6 +569,37 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
   );
 }
 
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="contents">
+      <dt className="font-medium text-ink-muted">{label}</dt>
+      <dd className="min-w-0 text-ink">{children}</dd>
+    </div>
+  );
+}
+
+function PhotoTile({ src, label, onRemove }: { src: string; label: string; onRemove: () => void }) {
+  return (
+    <li className="relative">
+      {/* eslint-disable-next-line @next/next/no-img-element -- prévia local */}
+      <img
+        src={src}
+        alt={label}
+        className="aspect-[4/3] w-full rounded-xl border border-line object-cover"
+      />
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Tirar ${label}`}
+        className="absolute top-2 right-2 flex size-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
+      >
+        <X className="size-4" aria-hidden />
+      </button>
+      <p className="mt-1 truncate text-xs text-ink-muted">{label}</p>
+    </li>
+  );
+}
+
 /** Foto guardada no orçamento (data URL) → arquivo para o envio normal de fotos. */
 function dataUrlToFile(dataUrl: string, name: string): File {
   const [head, body] = dataUrl.split(',');
@@ -778,20 +608,4 @@ function dataUrlToFile(dataUrl: string, name: string): File {
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return new File([bytes], `${name}.${type === 'image/png' ? 'png' : 'jpg'}`, { type });
-}
-
-/** Campo somente leitura com link (pedido de origem). */
-function Field2Link({ label, href, text }: { label: string; href: string; text: string }) {
-  return (
-    <div className="field sm:col-span-6">
-      <span className="label">{label}</span>
-      <Link
-        href={href}
-        className="input flex h-11 items-center truncate font-medium text-brand-700 hover:underline"
-      >
-        {text}
-      </Link>
-      <div className="field-msg" />
-    </div>
-  );
 }

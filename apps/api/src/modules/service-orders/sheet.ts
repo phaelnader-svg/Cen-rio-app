@@ -9,6 +9,7 @@ import { Errors } from '../../lib/errors';
 import { orderCode, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
 import { requireCompanyId } from '../../core/tenant';
+import { ownInstructions, ownItemNotes, quoteWork } from './quote-work';
 
 /**
  * 2026-11-18 (Raphael): a OS como uma página organizada para a oficina — "Abrir OS" no tablet e
@@ -92,6 +93,13 @@ export async function serviceOrderSheetRoutes(app: FastifyInstance) {
           orderBy: { createdAt: 'asc' },
         }),
       ]);
+      // 2026-11-19 (Raphael): o que o orçamento aprovado diz sobre a execução, em partes.
+      const quote = await prisma.quote.findFirst({
+        where: { orderId: so.orderId, deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        select: { number: true, snapshot: true, workOrder: true },
+      });
+      const work = quote ? quoteWork(quote) : null;
       const name = new Map(people.map((p) => [p.id, p.displayName]));
       const code = (itemId: string) => {
         const it = so.items.find((i) => i.id === itemId);
@@ -111,8 +119,9 @@ export async function serviceOrderSheetRoutes(app: FastifyInstance) {
         priority: so.priority,
         technicalLead: so.technicalLead?.displayName ?? null,
         createdAt: so.createdAt.toISOString(),
-        technicalInstructions: so.technicalInstructions,
+        technicalInstructions: ownInstructions(so.technicalInstructions, work),
         notes: so.notes,
+        work,
         items: so.items.map((i) => ({
           id: i.id,
           code: formatServiceOrderItemCode(so.number, i.position),
@@ -124,7 +133,7 @@ export async function serviceOrderSheetRoutes(app: FastifyInstance) {
           fabricColor: i.fabricColor,
           fabricReference: i.fabricReference,
           foamSpecs: i.foamSpecs,
-          technicalNotes: i.technicalNotes,
+          technicalNotes: ownItemNotes(i.technicalNotes, work),
           measurements: Array.isArray(i.measurements)
             ? (i.measurements as unknown as MeasurementDto[])
             : [],

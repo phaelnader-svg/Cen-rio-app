@@ -16,6 +16,7 @@ import { createLabor } from '../finance/labor';
 import { syncPickupCostsOfOrder } from '../finance/trip-costs';
 import { emitOrderEvent } from '../orders/routes';
 import { setUpholsterer } from '../production/distribution';
+import { materialDescription, quoteWork } from './quote-work';
 import { recordChange } from './routes';
 
 /**
@@ -128,6 +129,29 @@ export async function createServiceOrder(
         agreedCents: it.labor.agreedCents,
         eligibility: it.labor.eligibility,
         notes: it.labor.notes ?? null,
+      });
+  }
+  // 2026-11-19 (Raphael): os materiais do orçamento (com as medidas da espuma) entram na lista
+  // da OS, sem custo — o tapeceiro vê o que vai usar e a compra segue pelo "Material comprado".
+  if (input.materialsFromQuote) {
+    const quote = await tx.quote.findFirst({
+      where: { orderId: order.id, deletedAt: null },
+      orderBy: { createdAt: 'desc' },
+      select: { number: true, snapshot: true, workOrder: true },
+    });
+    const bought = Boolean(input.materialPurchased);
+    for (const m of quote ? quoteWork(quote).materials : [])
+      await tx.serviceOrderMaterial.create({
+        data: {
+          serviceOrderId: so.id,
+          description: materialDescription(m),
+          quantity: m.quantity,
+          unit: m.unit.slice(0, 20) || null,
+          notes: `Do orçamento nº ${quote!.number}`,
+          purchased: bought,
+          available: bought,
+          createdById: actor.userId,
+        },
       });
   }
   // Evolução Fase 6: a OS entra no rateio automático da retirada do pedido.

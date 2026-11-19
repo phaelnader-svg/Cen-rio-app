@@ -14,6 +14,7 @@ import type {
   OrderSummaryDto,
   PageDto,
   PickupDto,
+  QuoteWorkDto,
   ServiceOrderDto,
   ServiceOrderRevisionDto,
   ServiceOrderSummaryDto,
@@ -185,6 +186,8 @@ export interface AvailableForOs {
     /** Funcionário com o nome do responsável do orçamento (responsável técnico da OS). */
     technicalLeadId: string | null;
     photoDataUrl: string | null;
+    /** 2026-11-19: o orçamento em partes (serviço, tecido, o que fazer, materiais). */
+    work: QuoteWorkDto;
   } | null;
   customer: CustomerSummaryDto;
   /** null = sem permissão para ver valores do pedido. */
