@@ -237,7 +237,7 @@ async function reformaToPacked(admin: Client, tablets: Record<string, Client>, n
   await planned(admin, piece, p.ricardo);
   const t = await tasksOf(piece.itemId);
   expect(t.map((x) => [x.activity, x.assigneeUserId, x.templateId])).toEqual([
-    ['DESMONTAGEM', p.joao, REFORMA],
+    ['DESMONTAGEM', null, REFORMA], // livre: o João pega no tablet
     ['CORTE_TECIDO', p.ricardo, REFORMA],
     ['MONTAGEM', p.ricardo, REFORMA],
   ]);
@@ -318,7 +318,7 @@ describe('F5-10 — cabeceira (modelo simplificado): inspeção por habilitado e
     await planned(admin, piece, p.thiago);
     const t = await tasksOf(piece.itemId);
     expect(t.map((x) => [x.activity, x.assigneeUserId, x.templateId])).toEqual([
-      ['PREPARACAO_MDF', p.thiago, CABECEIRA],
+      ['PREPARACAO_MDF', null, CABECEIRA], // livre: o Thiago pega
       ['REVESTIMENTO', p.thiago, CABECEIRA],
     ]);
     await doTask(tablets.Thiago!, t[0]!.id);
@@ -384,7 +384,7 @@ describe('F5-10 — cabeceira (modelo simplificado): inspeção por habilitado e
     await planned(admin, piece, p.ricardo);
     const t = await tasksOf(piece.itemId);
     expect(t.map((x) => [x.activity, x.assigneeUserId])).toEqual([
-      ['PREPARACAO_MDF', p.thiago],
+      ['PREPARACAO_MDF', null], // livre: o Thiago pega
       ['REVESTIMENTO', p.ricardo],
     ]);
     // Revestimento depende da preparação.

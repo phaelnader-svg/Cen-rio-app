@@ -117,7 +117,13 @@ async function planAndStart(admin: Client, so: { id: string; items: { id: string
   });
   await db().productionTask.update({
     where: { id: first.id },
-    data: { status: 'CONCLUIDA', startedAt: new Date(), completedAt: new Date() },
+    // Primeira etapa (preparação livre) feita por quem pegou: aqui, o João.
+    data: {
+      status: 'CONCLUIDA',
+      startedAt: new Date(),
+      completedAt: new Date(),
+      assigneeUserId: first.assigneeUserId ?? (await userIdOf('João')),
+    },
   });
   return r.body.planned[0].planId as string;
 }

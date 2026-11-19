@@ -100,7 +100,7 @@ describe('Preparação livre para os ajudantes', () => {
 
     // Tocam em Iniciar ao mesmo tempo: só um fica com a tarefa.
     const [a, b] = await Promise.all([act(joao, desm.id, 'start'), act(thiago, desm.id, 'start')]);
-    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    expect([a.status, b.status].sort()).toEqual([200, 403]);
     const loser = a.status === 200 ? b : a;
     const winnerId = await userIdOf(a.status === 200 ? 'João' : 'Thiago');
     const [winner, other] = a.status === 200 ? [joao, thiago] : [thiago, joao];
@@ -114,7 +114,7 @@ describe('Preparação livre para os ajudantes', () => {
     const blocked = await other.get(`/api/v1/production-tasks/${desm.id}`);
     expect(blocked.status).toBe(403);
     expect(blocked.body.error.message).toMatch(/já pegou esta tarefa/);
-    expect((await act(other, desm.id, 'complete')).status).toBe(409);
+    expect((await act(other, desm.id, 'complete')).status).toBe(403);
 
     // Só quem pegou termina; fica registrado quem fez (estatística).
     expect((await act(winner, desm.id, 'complete')).status).toBe(200);

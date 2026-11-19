@@ -186,7 +186,8 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       await page.getByRole('tab', { name: /Planejados/ }).click();
       await page.getByTestId(`week-${WEEK}`).getByTestId('publish-week').click();
       const prev = page.getByTestId('publish-preview');
-      await expect(prev).toContainText('João');
+      // Preparação: ninguém escolhido — o ajudante disponível pega no tablet.
+      await expect(prev).toContainText('Livre para os ajudantes');
       await expect(prev).toContainText('Ricardo');
       await expect(prev).toContainText('Márcio');
       await shot(page, '05-revisar-e-publicar');
@@ -205,12 +206,13 @@ test.describe.serial('Simplificação Fase 4 — pré-planejamento', () => {
       // ── Tablets: cada um vê as suas; nada liberado antes da data de início.
       const joao = await openTablet(browser, cj, '730561', { width: 768, height: 1024 });
       const marcio = await openTablet(browser, cm, '582046');
-      await expect.poll(async () => (await mine(joao)).length).toBeGreaterThan(0);
+      await expect.poll(async () => (await mine(ricardo)).length).toBeGreaterThan(0);
       const r = await mine(ricardo);
       const m = await mine(marcio);
       const j = await mine(joao);
       expect(r.length).toBeGreaterThan(0);
       expect(m.length).toBeGreaterThan(0);
+      expect(j).toHaveLength(0); // preparação livre não entra na fila de ninguém
       // Ricardo: sofá da OS 1 + Sofá A da OS 2; Márcio: só o Sofá B.
       expect(new Set(r.map((x) => x.task.serviceOrderItem!.code))).toEqual(
         new Set([`${one.code}/1`, `${two.code}/1`]),

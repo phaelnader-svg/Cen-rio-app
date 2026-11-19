@@ -202,16 +202,23 @@ describe.sequential('Cenários integrados da Evolução (Fase 8)', () => {
     laborB = await lab('Márcio', B, 80000);
   });
 
-  it('2. João: desmontagem e preparação; titular: toda a tapeçaria da peça; Thiago inspeciona (sem autoinspeção)', async () => {
+  it('2. preparação livre (fica com o João); titular: toda a tapeçaria da peça; Thiago inspeciona (sem autoinspeção)', async () => {
     const TAP = ['CORTE_TECIDO', 'COSTURA', 'MONTAGEM', 'ACABAMENTO'];
     for (const a of TAP) {
       expect(of(A, a).assignee!.userId).toBe(ids['Ricardo']);
       expect(of(B, a).assignee!.userId).toBe(ids['Márcio']);
     }
+    // Preparação nasce livre (2026-11-19): ninguém escolhido.
     for (const a of ['DESMONTAGEM', 'PREPARACAO']) {
-      expect(of(A, a).assignee!.userId).toBe(ids['João']);
-      expect(of(B, a).assignee!.userId).toBe(ids['João']);
+      expect(of(A, a).assignee).toBeNull();
+      expect(of(B, a).assignee).toBeNull();
     }
+    // Daqui em diante o roteiro exercita a fila de quem já pegou a preparação: fica com o João.
+    await db().productionTask.updateMany({
+      where: { planId: plan.id, stepClass: 'PREPARACAO' },
+      data: { assigneeUserId: ids['João'] },
+    });
+    plan = await planOf(plan.id);
     const d = (await admin.get(`/api/v1/production-plans/${plan.id}/distribution`)).body as {
       pieces: { upholsterer: { userId: string } | null; inspector: { userId: string } | null }[];
       pendencyCount: number;

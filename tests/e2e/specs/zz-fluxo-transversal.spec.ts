@@ -212,13 +212,14 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       await expect(pjob).toBeVisible();
       // 2026-11-18: à vista = 50% na retirada; o único valor no celular é o que a equipe cobra.
       expect(
-        await andre.page.evaluate(() =>
-          [...document.querySelectorAll('body *')].filter(
-            (el) =>
-              el.children.length === 0 &&
-              /R\$/.test(el.textContent ?? '') &&
-              !el.closest('[data-testid="job-payment"]'),
-          ).length,
+        await andre.page.evaluate(
+          () =>
+            [...document.querySelectorAll('body *')].filter(
+              (el) =>
+                el.children.length === 0 &&
+                /R\$/.test(el.textContent ?? '') &&
+                !el.closest('[data-testid="job-payment"]'),
+            ).length,
         ),
       ).toBe(0);
       await pjob.getByRole('button', { name: 'Saí para a retirada' }).click();
@@ -306,9 +307,9 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
           assignee: { userId: string; displayName: string } | null;
         }[]
       ).filter((t) => t.serviceOrderItem?.id === sofa.id);
-      // Modelo simplificado da reforma: preparação (João) + 2 etapas do titular (A).
+      // Modelo simplificado da reforma: preparação livre (o ajudante pega) + 2 etapas do titular.
       expect(sofaTasks.map((t) => [t.title.split(' — ')[0], t.assignee?.displayName])).toEqual([
-        ['Desmontagem e preparação', 'João'],
+        ['Desmontagem e preparação', undefined],
         ['Corte e costura', NAME_A],
         ['Montagem e acabamento', NAME_A],
       ]);
@@ -330,14 +331,17 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
           .filter({ hasText: text })
           .filter({ hasText: osCode });
       // Execução pelo tablet ("Minha semana"): a próxima tarefa da fila é iniciada e concluída.
-      const startAndComplete = async (p: Page, title: RegExp) => {
+      const startAndComplete = async (p: Page, title: RegExp, free = false) => {
         const hl = p.getByTestId('week-highlight');
+        // Preparação livre: aparece em "Para quem estiver livre"; quem toca Iniciar fica com ela.
+        const where = free ? p.getByTestId('free-tasks') : hl;
         await expect(async () => {
           await p.reload();
-          await expect(hl).toContainText(title, { timeout: 5_000 });
+          await expect(where).toContainText(title, { timeout: 5_000 });
         }).toPass({ timeout: 30_000 });
-        await expect(hl).toContainText(osCode);
-        await hl.getByRole('button', { name: 'Iniciar' }).click();
+        await expect(where).toContainText(osCode);
+        if (free) await myCard(p, title).first().getByRole('button', { name: 'Iniciar' }).click();
+        else await hl.getByRole('button', { name: 'Iniciar' }).click();
         await expect(p.getByRole('heading', { name: 'Em execução agora' })).toBeVisible();
         await hl.getByRole('button', { name: 'Concluir' }).click();
         await hl.getByRole('button', { name: 'Toque de novo para confirmar' }).click();
@@ -358,7 +362,7 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
           })
           .toEqual(['CONCLUIDA']);
       };
-      await startAndComplete(joao.page, /Desmontagem/);
+      await startAndComplete(joao.page, /Desmontagem/, true);
       await startAndComplete(a.page, /Corte|Costura/);
       await startAndComplete(a.page, /Montagem|Acabamento/);
       // B não vê nenhuma tarefa deste serviço.

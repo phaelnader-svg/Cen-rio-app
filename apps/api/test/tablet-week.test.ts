@@ -84,7 +84,13 @@ async function workshop() {
     ],
   });
   expect(r.status).toBe(201);
-  const pub = await publish(admin, (await admin.get(`/api/v1/production-plans/${plan.id}`)).body);
+  await publish(admin, (await admin.get(`/api/v1/production-plans/${plan.id}`)).body);
+  // A preparação nasce livre (2026-11-19); aqui o João já pegou todas, para exercitar a fila dele.
+  await db().productionTask.updateMany({
+    where: { planId: plan.id, stepClass: 'PREPARACAO' },
+    data: { assigneeUserId: ids.joao },
+  });
+  const pub = (await admin.get(`/api/v1/production-plans/${plan.id}`)).body;
   const tabs = {
     joao: await tabletOf(app, admin, 'João', '271828'),
     ricardo: await tabletOf(app, admin, 'Ricardo', '482915'),

@@ -973,7 +973,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
             where: { id: t.assigneeUserId },
             select: { displayName: true },
           });
-          throw Errors.conflict(`${who?.displayName ?? 'Outro ajudante'} já pegou esta tarefa.`);
+          throw Errors.forbidden(`${who?.displayName ?? 'Outro ajudante'} já pegou esta tarefa.`);
         }
         throw Errors.forbidden('Esta tarefa é de outra pessoa.');
       }

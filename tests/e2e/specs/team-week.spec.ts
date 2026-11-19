@@ -85,6 +85,23 @@ test.describe.serial('Evolução Fase 4 — Minha semana', () => {
           { serviceOrderItemId: so.items[1]!.id, upholstererUserId: w('Márcio').userId },
         ],
       });
+      // A preparação nasce livre (2026-11-19). Aqui o gestor a entrega ao João, para o cenário
+      // da fila dele (destaque + próximas) continuar coberto.
+      const generated = await call(page, 'GET', `/api/v1/production-plans/${planId}`);
+      for (const t of generated.tasks as {
+        id: string;
+        version: number;
+        stepClass: string | null;
+        assignee: unknown;
+      }[]) {
+        if (t.stepClass !== 'PREPARACAO' || t.assignee) continue;
+        const r = await page.request.fetch(`/api/v1/production-tasks/${t.id}`, {
+          method: 'PUT',
+          data: { assigneeUserId: w('João').userId, version: t.version },
+          headers: { origin, 'idempotency-key': crypto.randomUUID().replace(/-/g, '') },
+        });
+        expect(r.ok(), await r.text()).toBe(true);
+      }
       const draft = await call(page, 'GET', `/api/v1/production-plans/${planId}`);
       await call(page, 'POST', `/api/v1/production-plans/${planId}/publish`, {
         version: draft.version,
