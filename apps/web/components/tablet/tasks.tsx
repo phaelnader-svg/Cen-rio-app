@@ -1,6 +1,6 @@
 'use client';
 
-import { plural } from '@cenario/shared';
+import { plural, taskAssigneeLabel } from '@cenario/shared';
 import type {
   MyQueueDto,
   NotificationDto,
@@ -68,7 +68,8 @@ export function useOnline() {
 /** Quantidade de tarefas de hoje ainda abertas (bloco da tela inicial). */
 export function useMyTodayCount(enabled: boolean) {
   const q = useMyTasks(enabled);
-  return q.data?.today.filter(isOpen).length;
+  // Inclui as tarefas livres que o ajudante disponível pode pegar agora.
+  return q.data ? q.data.today.filter(isOpen).length + (q.data.free?.length ?? 0) : undefined;
 }
 
 /** Aviso fixo quando a conexão cai: os dados ficam visíveis, as ações não. */
@@ -166,6 +167,8 @@ export function MyDay({
         />
       </section>
 
+      <FreeTasks tasks={q.data.free ?? []} onOpen={onOpen} />
+
       {reportUserId && <MyOpenIssues userId={reportUserId} />}
 
       {fila && <QueueSection queue={fila} onOpen={onOpen} />}
@@ -221,6 +224,35 @@ export function MyDay({
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * Tarefas livres (preparação/desmontagem): aparecem para todos os ajudantes disponíveis. O
+ * primeiro que toca em Iniciar fica com a tarefa e ela some do tablet dos outros.
+ */
+export function FreeTasks({
+  tasks,
+  onOpen,
+}: {
+  tasks: ProductionTaskDto[];
+  onOpen: (id: string) => void;
+}) {
+  if (!tasks.length) return null;
+  return (
+    <section data-testid="free-tasks">
+      <h2 className="mb-1 text-xl font-semibold">Para quem estiver livre ({tasks.length})</h2>
+      <p className="mb-3 text-base text-ink-muted">
+        Quem tocar primeiro em Iniciar fica com a tarefa. Se forem fazer juntos, só um toca.
+      </p>
+      <ul className="grid gap-4 lg:grid-cols-2">
+        {tasks.map((t) => (
+          <li key={t.id}>
+            <TaskCard t={t} onOpen={onOpen} />
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -397,9 +429,7 @@ export function TaskCard({
                 className={clsx(
                   'rounded-full px-3 py-1 font-semibold',
                   // Revisão geral (item 7): prioridade é atenção (laranja); vermelho é atraso.
-                  t.priority === 'URGENTE'
-                    ? 'bg-warn-600 text-white'
-                    : 'bg-warn-50 text-warn-600',
+                  t.priority === 'URGENTE' ? 'bg-warn-600 text-white' : 'bg-warn-50 text-warn-600',
                 )}
               >
                 {PRIORITY_LABEL[t.priority]}
@@ -415,9 +445,7 @@ export function TaskCard({
                 {formatDay(t.scheduledDate)} {t.scheduledTime}
               </span>
             )}
-            {!mine && (
-              <span className="text-ink-muted">{t.assignee?.displayName ?? 'Sem responsável'}</span>
-            )}
+            {!mine && <span className="text-ink-muted">{taskAssigneeLabel(t)}</span>}
             <MaterialsIndicator state={materialsOf(t)} />
           </span>
           {why && (
@@ -465,6 +493,7 @@ export function PieceOwnerInfo({ t }: { t: ProductionTaskDto }) {
 /** Ação rápida no próprio cartão: Iniciar (1 toque) ou Concluir (toque + confirmação). */
 function QuickAction({ t }: { t: ProductionTaskDto }) {
   const online = useOnline();
+  const qc = useQueryClient();
   const { m, error } = useSend();
   const [key, setKey] = useState(newIdempotencyKey);
   const [confirm, setConfirm] = useState(false);
@@ -486,7 +515,14 @@ function QuickAction({ t }: { t: ProductionTaskDto }) {
           }),
         ok,
       },
-      { onSuccess: () => setKey(newIdempotencyKey()) },
+      {
+        onSuccess: () => setKey(newIdempotencyKey()),
+        // Tarefa livre que outro ajudante pegou antes: a lista atualiza e ela some daqui.
+        onError: () => {
+          setKey(newIdempotencyKey());
+          void qc.invalidateQueries({ queryKey: ['my-tasks'] });
+        },
+      },
     );
   return (
     <div className="border-t border-line p-3">
@@ -573,7 +609,7 @@ export function MyTaskDetail({
         <h1 className="mt-1 text-3xl font-semibold tracking-tight">{t.title}</h1>
         <p className="mt-1 text-lg text-ink-soft">
           {PRODUCTION_ACTIVITY_LABEL[t.activity]} · {TASK_ROLE_LABEL[t.role]} ·{' '}
-          {t.assignee?.displayName ?? 'Sem responsável'}
+          {taskAssigneeLabel(t)}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-base">
           <TaskStatusBadge status={t.status} />

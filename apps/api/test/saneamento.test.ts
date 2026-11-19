@@ -381,6 +381,12 @@ describe('B. Ausência: só o trabalho do dia (modo fila)', () => {
     const nextWeek = await plan(admin, nextSo, mondayOf(plusDays(today(), 7)), p.ricardo);
     await publishWeek(admin, week);
     await publishWeek(admin, nextWeek);
+    // A preparação nasce livre (2026-11-19); aqui ela fica com o João, como se ele já tivesse
+    // pegado tudo, para exercitar a ausência de quem tem uma fila.
+    await db().productionTask.updateMany({
+      where: { stepClass: 'PREPARACAO', assigneeUserId: null },
+      data: { assigneeUserId: p.joao },
+    });
     const tablets: Record<string, Client> = {};
     for (const name of ['Ricardo', 'Márcio', 'João', 'Thiago'])
       tablets[name] = await tabletOf(app, admin, name, PINS[name]!);
@@ -816,7 +822,8 @@ describe('C. Prioridade única do serviço; prazo não reordena; D9 preservada',
     // Atalho de dados: primeira etapa já em execução (início antes da mudança).
     await db().productionTask.update({
       where: { id: first!.id },
-      data: { status: 'EM_EXECUCAO', startedAt: new Date() },
+      // Preparação livre: quem inicia fica com ela (aqui, o João).
+      data: { status: 'EM_EXECUCAO', startedAt: new Date(), assigneeUserId: p.joao },
     });
     // Dado antigo: item do planejamento divergente da OS (antes do saneamento).
     await db().productionPlanItem.update({

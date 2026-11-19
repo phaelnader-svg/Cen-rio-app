@@ -11,7 +11,7 @@ import { Alert, Spinner } from '@/components/ui/misc';
 import { formatDay } from '@/lib/commercial';
 import { useMyQueue, useMyTasks } from '@/lib/production';
 import { MyOpenIssues } from './issues';
-import { MyDay, TaskCard } from './tasks';
+import { FreeTasks, MyDay, TaskCard } from './tasks';
 
 const DONE = ['CONCLUIDA', 'CANCELADA'];
 
@@ -68,6 +68,8 @@ export function MyWeek({
           <NothingToDo q={q} reasons={s.waitReasons} onOpen={onOpen} />
         )}
       </section>
+
+      <FreeTasks tasks={mine.data?.free ?? []} onOpen={onOpen} />
 
       {reportUserId && <MyOpenIssues userId={reportUserId} />}
 

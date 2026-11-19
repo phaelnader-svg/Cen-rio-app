@@ -10,6 +10,7 @@ import {
   TASK_WAITING,
   boardQuerySchema,
   compareTasks,
+  isFreeHelperTask,
   createTaskSchema,
   evaluateRelease,
   findCycle,
@@ -55,7 +56,7 @@ import {
   taskNotBefore,
 } from './common';
 import { announceAssignments, assertWorker, reviseIfPublished } from './plans';
-import { suggestAlternative } from '../help/reschedule';
+import { ACTIVITY_SKILL, suggestAlternative } from '../help/reschedule';
 import { assertUpholstererRule } from './distribution';
 import {
   actionCancelled,
@@ -229,6 +230,39 @@ async function assertSingleActive(
     );
   }
 }
+
+// ─────────────────────── Tarefas livres (preparação) ───────────────────────
+
+/**
+ * Competências de quem pode pegar tarefas livres de preparação/desmontagem: a etapa aparece
+ * para quem tem a competência dela (cadastro de Competências da equipe), com produção ativa.
+ */
+async function skillsOf(db: Tx | PrismaClient, userId: string) {
+  const rows = await db.employeeSkill.findMany({
+    where: { employee: { userId, active: true, user: { active: true } } },
+    select: { skill: true },
+  });
+  return new Set<string>(rows.map((r) => r.skill));
+}
+const canTake = (skills: Set<string>, activity: string) =>
+  skills.has(ACTIVITY_SKILL[activity as keyof typeof ACTIVITY_SKILL]);
+
+/** Tarefa em andamento da pessoa (disponível = nenhuma). */
+function runningTaskOf(db: Tx | PrismaClient, userId: string) {
+  return db.productionTask.findFirst({
+    where: { assigneeUserId: userId, status: 'EM_EXECUCAO' },
+    select: { number: true, title: true },
+  });
+}
+
+/** Onde ficam as tarefas livres que podem ser pegas agora. */
+const FREE_NOW: Prisma.ProductionTaskWhereInput = {
+  stepClass: 'PREPARACAO',
+  assigneeUserId: null,
+  status: 'LIBERADA',
+  plan: { mode: 'FILA_SEMANAL', status: 'PUBLICADO' },
+  serviceOrder: { status: 'ABERTA' },
+};
 
 export async function productionTaskRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
@@ -728,7 +762,18 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       for (const d of dtos)
         if (d.requiresMaterials) d.osMaterialsMissing = missing.has(d.serviceOrder.id);
     }
+    // Tarefas livres de preparação: só para ajudante disponível (sem tarefa em andamento).
+    const me = request.auth!.userId;
+    const mySkills = await skillsOf(prisma, me);
+    const free =
+      mySkills.size && !(await runningTaskOf(prisma, me))
+        ? (await prisma.productionTask.findMany({ where: FREE_NOW, include: taskInclude }))
+            .filter((t) => canTake(mySkills, t.activity))
+            .map((t) => toTaskDto(t, timezone))
+            .sort(compareTasks)
+        : [];
     return {
+      free,
       today: dtos.filter(
         (t) =>
           !t.scheduledDate ||
@@ -752,8 +797,14 @@ export async function productionTaskRoutes(app: FastifyInstance) {
       const { id } = idParams.parse(request.params);
       const t = await loadTask(prisma, id);
       const me = request.auth!.userId;
-      if (!canViewAll(request) && t.assigneeUserId !== me) {
-        throw Errors.forbidden('Esta tarefa é de outra pessoa.');
+      const freeTask = isFreeHelperTask({ ...t, planMode: t.plan?.mode ?? null });
+      const helper = freeTask && canTake(await skillsOf(prisma, me), t.activity);
+      if (!canViewAll(request) && t.assigneeUserId !== me && !helper) {
+        throw Errors.forbidden(
+          t.stepClass === 'PREPARACAO' && t.assignee
+            ? `${t.assignee.displayName} já pegou esta tarefa.`
+            : 'Esta tarefa é de outra pessoa.',
+        );
       }
       // Simplificação Fase 4: rascunho (pré-planejamento) não existe para quem executa.
       if (!canViewAll(request) && t.status === 'RASCUNHO') throw Errors.notFound('Tarefa');
@@ -858,7 +909,10 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           assignee: x.assignee?.displayName ?? null,
         })),
         can: {
-          start: own && t.status === 'LIBERADA',
+          // Tarefa livre: qualquer ajudante pode tocar em Iniciar (o primeiro fica com ela).
+          start:
+            t.status === 'LIBERADA' &&
+            (own || (helper && request.auth!.permissions.has('producao.executar'))),
           pause: own && t.status === 'EM_EXECUCAO',
           // Fase 9: não retoma enquanto uma ocorrência aberta impede a tarefa.
           resume: own && t.status === 'PAUSADA' && !(await hasBlockingIssue(prisma, t.id)),
@@ -896,7 +950,31 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         },
       });
       if (!t) throw Errors.notFound('Tarefa');
-      if (t.assigneeUserId !== request.auth!.userId) {
+      const me = request.auth!.userId;
+      // Tarefa livre de preparação: o primeiro ajudante disponível que toca em Iniciar fica com
+      // ela. A linha está travada (FOR UPDATE): dois toques ao mesmo tempo nunca pegam os dois.
+      let claimed = false;
+      if (
+        action === 'start' &&
+        isFreeHelperTask({ ...t, planMode: t.plan?.mode ?? null }) &&
+        canTake(await skillsOf(tx, me), t.activity)
+      ) {
+        const busy = await runningTaskOf(tx, me);
+        if (busy)
+          throw Errors.conflict(
+            `Você já está com ${taskCode(busy.number)} · ${busy.title} em andamento: termine ou pause antes de pegar outra.`,
+          );
+        t.assigneeUserId = me;
+        claimed = true;
+      }
+      if (t.assigneeUserId !== me) {
+        if (t.stepClass === 'PREPARACAO' && t.assigneeUserId) {
+          const who = await tx.user.findUnique({
+            where: { id: t.assigneeUserId },
+            select: { displayName: true },
+          });
+          throw Errors.conflict(`${who?.displayName ?? 'Outro ajudante'} já pegou esta tarefa.`);
+        }
         throw Errors.forbidden('Esta tarefa é de outra pessoa.');
       }
       if (t.serviceOrder.status !== 'ABERTA') throw Errors.business('A OS não está ativa.');
@@ -936,6 +1014,7 @@ export async function productionTaskRoutes(app: FastifyInstance) {
         const u = await tx.productionTask.update({
           where: { id },
           data: {
+            ...(claimed ? { assigneeUserId: me } : {}),
             status: 'EM_EXECUCAO',
             startedAt: t.startedAt ?? now,
             blockers: [],
@@ -946,6 +1025,8 @@ export async function productionTaskRoutes(app: FastifyInstance) {
           kind: 'INICIADA',
           from: t.status,
           to: 'EM_EXECUCAO',
+          // Fica no histórico (e nas estatísticas) que a tarefa livre foi pega por quem iniciou.
+          ...(claimed ? { note: 'Pegou a tarefa livre', changes: { claimed: true } } : {}),
         });
         await domainTaskEvent(tx, actor, EVENT_TYPES.PRODUCTION_TASK_STARTED, u);
         if (t.issueId) await actionStarted(tx, actor, t.id);

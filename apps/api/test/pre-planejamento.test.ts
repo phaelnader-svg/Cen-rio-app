@@ -107,6 +107,9 @@ const sofa = (admin: Client, name: string) =>
 
 const planServices = (admin: Client, entries: unknown[], key = idemKey()) =>
   post(admin, '/api/v1/production/plan-services', { entries }, key);
+/** Tarefas livres de preparação que o ajudante pode pegar agora (tablet). */
+const freeOf = async (c: Client) =>
+  (await c.get('/api/v1/production-tasks/mine')).body.free as { id: string }[];
 const tasksOf = (soId: string) =>
   db().productionTask.findMany({
     where: { serviceOrderId: soId, status: { not: 'CANCELADA' } },
@@ -179,6 +182,11 @@ describe('A. Fila "A planejar"', () => {
       },
     ]);
     expect(planned.status).toBe(201);
+    // A preparação livre fica com quem a fez (o João pegou).
+    await db().productionTask.updateMany({
+      where: { serviceOrderId: d.id, assigneeUserId: null },
+      data: { assigneeUserId: p.joao },
+    });
     await db().productionTask.updateMany({
       where: { serviceOrderId: d.id },
       data: { status: 'CONCLUIDA', startedAt: new Date(), completedAt: new Date() },
@@ -194,7 +202,7 @@ describe('A. Fila "A planejar"', () => {
 });
 
 describe('B. Planejamento individual e publicação', () => {
-  it('só titular e data; rascunho invisível; publicar libera João e Ricardo (CA4-04..06, CA4-11..15)', async () => {
+  it('só titular e data; rascunho invisível; publicar libera a preparação livre e o Ricardo (CA4-04..06, CA4-11..15)', async () => {
     const admin = await loginAdmin(app);
     const p = await team();
     const so = await sofa(admin, 'Cliente Sofá Ricardo');
@@ -226,14 +234,14 @@ describe('B. Planejamento individual e publicação', () => {
     expect(e).toMatchObject({ stage: 'PLANEJADO_RASCUNHO' });
     expect(e!.plan).toMatchObject({ startDate: today(), planStatus: 'RASCUNHO' });
     expect((await pipeline(admin)).counts.A_PLANEJAR).toBe(0);
-    // Distribuição automática: preparação → João; tapeçaria → Ricardo; dependências do modelo.
+    // Distribuição automática: preparação livre (ninguém escolhido); tapeçaria → Ricardo.
     const tasks = await tasksOf(so.id);
     expect(tasks.every((t) => t.status === 'RASCUNHO')).toBe(true);
     const prep = tasks.filter((t) => t.stepClass === 'PREPARACAO');
     const tap = tasks.filter((t) => t.stepClass === 'TAPECARIA');
     expect(prep.length).toBeGreaterThan(0);
     expect(tap.length).toBeGreaterThan(0);
-    expect(prep.every((t) => t.assigneeUserId === p.joao)).toBe(true);
+    expect(prep.every((t) => t.assigneeUserId === null)).toBe(true);
     expect(tap.every((t) => t.assigneeUserId === p.ricardo)).toBe(true);
     expect(tasks.some((t) => t.dependsOn.length > 0)).toBe(true);
     expect(
@@ -262,15 +270,17 @@ describe('B. Planejamento individual e publicação', () => {
       startDates: [{ code: so.code, startDate: today() }],
     });
     expect(prev.byAssignee.map((b: { displayName: string }) => b.displayName).sort()).toEqual([
-      'João',
+      'Livre para os ajudantes',
       'Ricardo',
     ]);
     const pub = await publishWeek(admin, planned.planId);
     expect(pub.status, JSON.stringify(pub.body)).toBe(200);
     expect((await entryOf(admin, so.id))!.stage).toMatch(/PLANEJADO_PUBLICADO|AGUARDANDO_CONDICAO/);
-    const qj = await queue(joao);
-    expect(qj.items.length).toBe(prep.length);
-    expect(qj.items[0]!.executable).toBe(true); // primeira etapa de preparação liberada
+    // A primeira etapa de preparação, liberada, aparece livre no tablet do João (ajudante).
+    const free = (await joao.get('/api/v1/production-tasks/mine')).body.free as {
+      id: string;
+    }[];
+    expect(free.map((t) => t.id)).toContain(prep[0]!.id);
     const qr = await queue(ricardo);
     expect(qr.items.length).toBe(tap.length);
     // Sem o bloqueio por material (S2): só espera a etapa que depende de outra (a preparação).
@@ -297,28 +307,25 @@ describe('B. Planejamento individual e publicação', () => {
     expect(r.status).toBe(201);
     expect((await publishWeek(admin, r.body.planned[0].planId)).status).toBe(200);
     const joao = await tabletOf(app, admin, 'João', '730561');
-    const q1 = await queue(joao);
-    expect(q1.items.length).toBeGreaterThan(0);
-    expect(q1.items.some((i) => i.executable)).toBe(false);
-    expect(q1.items[0]!.task.status).toBe('PROGRAMADA');
-    // Tentar iniciar antes da data: recusado.
-    const first = q1.items[0]!.task;
-    const v = (await db().productionTask.findUniqueOrThrow({ where: { id: first.id } })).version;
-    const early = await act(joao, first.id, 'start', { version: v });
+    const freeOf = async () =>
+      (await joao.get('/api/v1/production-tasks/mine')).body.free as { id: string }[];
+    const first = (await tasksOf(so.id)).find((t) => t.stepClass === 'PREPARACAO')!;
+    expect(first.status).toBe('PROGRAMADA');
+    expect(await freeOf()).toEqual([]); // antes da data, não aparece para pegar
+    // Tentar iniciar antes da data: recusado (e ninguém fica com ela).
+    const early = await act(joao, first.id, 'start', { version: first.version });
     expect(early.status).toBe(422);
     expect(early.body.error.message).toMatch(/data de início/);
-    expect(
-      (await db().productionTask.findUniqueOrThrow({ where: { id: first.id } })).startedAt,
-    ).toBeNull();
+    const still = await db().productionTask.findUniqueOrThrow({ where: { id: first.id } });
+    expect(still.startedAt).toBeNull();
+    expect(still.assigneeUserId).toBeNull();
     expect((await entryOf(admin, so.id))!.blockers.join(' ')).toMatch(
       /Aguardando a data de início/,
     );
-    // Chega o dia: a liberação periódica libera a primeira etapa.
+    // Chega o dia: a liberação periódica libera a primeira etapa, livre para o João pegar.
     setClock(() => new Date(`${start}T12:00:00Z`));
     await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
-    const q2 = await queue(joao);
-    expect(q2.items[0]!.executable).toBe(true);
-    expect(q2.items[0]!.task.status).toBe('LIBERADA');
+    expect((await freeOf()).map((t) => t.id)).toEqual([first.id]);
   });
 
   it('OS com dois sofás: Ricardo e Márcio, titular por peça (CA4-07, CA4-14)', async () => {
@@ -486,7 +493,7 @@ describe('D. Semana publicada, reprogramação e histórico', () => {
     const planId = r1.body.planned[0].planId;
     expect((await publishWeek(admin, planId)).status).toBe(200);
     const joao = await tabletOf(app, admin, 'João', '730561');
-    const before = (await queue(joao)).items.length;
+    const before = (await freeOf(joao)).length;
     // Nova OS na semana já publicada: entra em rascunho, separada.
     const s2 = await sofa(admin, 'Cliente Semana 2');
     const r2 = await planServices(admin, [
@@ -500,7 +507,7 @@ describe('D. Semana publicada, reprogramação e histórico', () => {
     expect((await tasksOf(s2.id)).every((t) => t.status === 'RASCUNHO')).toBe(true);
     expect((await entryOf(admin, s2.id))!.stage).toBe('PLANEJADO_RASCUNHO');
     expect((await entryOf(admin, s1.id))!.stage).not.toBe('PLANEJADO_RASCUNHO');
-    expect((await queue(joao)).items.length).toBe(before);
+    expect((await freeOf(joao)).length).toBe(before);
     // Reprocessar a OS em rascunho não a publica.
     const it2 = (await entryOf(admin, s2.id))!.plan!;
     await post(admin, `/api/v1/production-plans/${planId}/items/${it2.itemId}/distribute`, {});
@@ -514,7 +521,7 @@ describe('D. Semana publicada, reprogramação e histórico', () => {
     expect(pub.status, JSON.stringify(pub.body)).toBe(200);
     await ws.waitFor((m) => m.event?.type === 'production.plan_revised');
     expect((await planDto(admin, planId)).revision).toBe(2);
-    expect((await queue(joao)).items.length).toBeGreaterThan(before);
+    expect((await freeOf(joao)).length).toBeGreaterThan(before);
   });
 
   it('reprogramar data/semana com versão; iniciada não troca de semana; concluída não reinicia (CA4-20, CA4-21)', async () => {
@@ -577,7 +584,7 @@ describe('D. Semana publicada, reprogramação e histórico', () => {
     setClock(() => new Date(`${next}T12:00:00Z`));
     await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
     const joao = await tabletOf(app, admin, 'João', '730561');
-    const t = (await queue(joao)).items.find((i) => i.executable)!.task;
+    const t = (await freeOf(joao))[0]!; // preparação livre: o João pega
     const v = (await db().productionTask.findUniqueOrThrow({ where: { id: t.id } })).version;
     expect((await act(joao, t.id, 'start', { version: v })).status).toBe(200);
     const cur = (await entryOf(admin, so.id))!;
@@ -1265,8 +1272,17 @@ describe('H. D9 (decisão C) — a data de início define a posição inicial na
     const first = await sofa(admin, 'Cliente Segunda');
     const planId = await plan(admin, later, plusDays(base(), 2), p.ricardo);
     await plan(admin, first, base(), p.ricardo);
-    // João (desmontagem): o gestor põe a OS de quarta na frente.
-    const j = await orderOf(p.joao, planId);
+    // Ricardo (titular): o gestor põe a OS de quarta na frente. A preparação (livre) já foi
+    // feita pelo João nas duas OS, para a tapeçaria só depender da data.
+    await db().productionTask.updateMany({
+      where: { serviceOrderId: { in: [later.id, first.id] }, stepClass: 'PREPARACAO' },
+      data: { assigneeUserId: p.joao },
+    });
+    await db().productionTask.updateMany({
+      where: { serviceOrderId: { in: [later.id, first.id] }, stepClass: 'PREPARACAO' },
+      data: { status: 'CONCLUIDA', startedAt: new Date(), completedAt: new Date() },
+    });
+    const j = await orderOf(p.ricardo, planId);
     expect(j.services).toEqual([first.id, later.id]);
     const ids = await db().productionTask.findMany({
       where: { id: { in: j.taskIds } },
@@ -1279,7 +1295,7 @@ describe('H. D9 (decisão C) — a data de início define a posição inicial na
     expect(
       (
         await put(admin, `/api/v1/production-plans/${planId}/queue`, {
-          userId: p.joao,
+          userId: p.ricardo,
           taskIds: manual,
           version: (await planDto(admin, planId)).version,
         })
@@ -1288,16 +1304,16 @@ describe('H. D9 (decisão C) — a data de início define a posição inicial na
     expect((await publishWeek(admin, planId)).status).toBe(200);
     setClock(() => new Date(`${base()}T12:00:00Z`));
     await naEmpresa1(() => releaseDueTasks(app.ctx.prisma));
-    const laterTask = (await tasksOf(later.id)).find((t) => t.assigneeUserId === p.joao)!;
-    const firstTask = (await tasksOf(first.id)).find((t) => t.assigneeUserId === p.joao)!;
+    const laterTask = (await tasksOf(later.id)).find((t) => t.assigneeUserId === p.ricardo)!;
+    const firstTask = (await tasksOf(first.id)).find((t) => t.assigneeUserId === p.ricardo)!;
     expect(laterTask.status).toBe('PROGRAMADA');
     expect(firstTask.status).toBe('LIBERADA');
-    const joao = await tabletOf(app, admin, 'João', '482917');
-    const q = await queue(joao);
+    const ricardo = await tabletOf(app, admin, 'Ricardo', '482917');
+    const q = await queue(ricardo);
     expect(q.items[0]!.task.id).toBe(laterTask.id); // primeira na ordem visual…
     expect(q.items[0]!.executable).toBe(false); // …mas não executável antes da data
     expect(q.items.find((i) => i.executable)!.task.id).toBe(firstTask.id);
-    expect((await act(joao, laterTask.id, 'start')).status).toBe(422);
+    expect((await act(ricardo, laterTask.id, 'start')).status).toBe(422);
   });
 
   it('semana publicada: serviço acrescentado entra na fila publicada pela data ao publicar o rascunho', async () => {

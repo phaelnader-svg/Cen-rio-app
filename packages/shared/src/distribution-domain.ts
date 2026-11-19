@@ -16,7 +16,7 @@ export const STEP_CLASSIFICATION_VERSION = 1;
 export const STEP_CLASSES = ['PREPARACAO', 'TAPECARIA', 'OUTRA'] as const;
 export type StepClass = (typeof STEP_CLASSES)[number];
 export const STEP_CLASS_LABEL: Record<StepClass, string> = {
-  PREPARACAO: 'Preparação/desmontagem',
+  PREPARACAO: 'Preparação/desmontagem (ajudante livre)',
   TAPECARIA: 'Tapeçaria (titular da peça)',
   OUTRA: 'Outra (gestor define)',
 };
@@ -99,6 +99,37 @@ export function stepAssigneeProblem(stepClass: StepClass | null | undefined): st
     : null;
 }
 
+/**
+ * Tarefa livre (2026-11-19, pedido do Raphael): etapa de preparação/desmontagem num plano em
+ * fila semanal NÃO tem responsável escolhido pelo dono. Ela aparece no tablet de todos os
+ * ajudantes disponíveis; o primeiro que toca em Iniciar fica com ela (só ele inicia, pausa e
+ * termina) e ela some do tablet dos outros. Quem pegou fica gravado como responsável.
+ */
+export function isFreeHelperTask(t: {
+  stepClass?: string | null;
+  assigneeUserId?: string | null;
+  assignee?: unknown;
+  planMode?: string | null;
+}): boolean {
+  const assigned = t.assigneeUserId !== undefined ? Boolean(t.assigneeUserId) : Boolean(t.assignee);
+  return t.stepClass === 'PREPARACAO' && !assigned && t.planMode === 'FILA_SEMANAL';
+}
+
+/** Texto do tablet/painel para quem ainda vai pegar a tarefa livre. */
+export const FREE_HELPER_TASK_LABEL = 'Livre para os ajudantes';
+
+/** Nome de quem faz a tarefa (ou "Livre para os ajudantes" / "Sem responsável"). */
+export function taskAssigneeLabel(t: {
+  stepClass?: string | null;
+  assignee?: { displayName: string } | null;
+  plan?: { mode?: string | null } | null;
+}): string {
+  if (t.assignee) return t.assignee.displayName;
+  return isFreeHelperTask({ stepClass: t.stepClass, assignee: null, planMode: t.plan?.mode })
+    ? FREE_HELPER_TASK_LABEL
+    : 'Sem responsável';
+}
+
 export const DISTRIBUTION_PENDENCIES = [
   'SEM_MODELO',
   'SEM_TITULAR',
@@ -116,7 +147,7 @@ export const DISTRIBUTION_PENDENCY_LABEL: Record<DistributionPendency, string> =
   SEM_MODELO: 'Nenhum modelo ativo para este tipo de peça e de serviço',
   SEM_TITULAR: 'Peça sem tapeceiro titular definido',
   TITULAR_INELEGIVEL: 'Titular inativo ou sem permissão de produção',
-  SEM_RESPONSAVEL_PADRAO: 'Sem responsável padrão elegível para a preparação',
+  SEM_RESPONSAVEL_PADRAO: 'Ninguém ativo com a competência para pegar a preparação',
   ETAPA_SEM_CLASSIFICACAO: 'Etapa do modelo sem classificação (revise o modelo)',
   MODELO_ALTERADO: 'Modelo alterado depois da geração (revisão manual)',
   JA_GERADA_EM_OUTRA_SEMANA: 'Tarefas desta peça já geradas em outra semana',

@@ -4,6 +4,7 @@ import {
   EVENT_TYPES,
   TASK_WAITING,
   anyPermissionAudience,
+  isFreeHelperTask,
   evaluateRelease,
   formatServiceOrderItemCode,
   issueCode,
@@ -41,6 +42,8 @@ export const READ_TASK = {
 } as const;
 
 export const MANAGEMENT = anyPermissionAudience('producao.ver', 'producao.planejar');
+/** Quem executa produção (tablets): recebe as mudanças das tarefas livres de preparação. */
+const EXECUTORS = anyPermissionAudience('producao.executar');
 export const audienceFor = (...userIds: (string | null | undefined)[]) =>
   [MANAGEMENT, ...[...new Set(userIds.filter(Boolean))].map((u) => `user:${u}`)].join(
     '|',
@@ -293,10 +296,14 @@ export async function domainTaskEvent(
     status: string;
     assigneeUserId: string | null;
     serviceOrderId: string;
+    stepClass?: string | null;
   },
   extra: Record<string, unknown> = {},
   extraUsers: (string | null)[] = [],
 ) {
+  // Preparação (livre ou recém-pegada): todos os tablets de produção atualizam, para a tarefa
+  // aparecer para quem está disponível e sumir dos outros assim que alguém pega.
+  const everyone = task.stepClass === 'PREPARACAO' ? `|${EXECUTORS}` : '';
   await appendEvent(tx, actor, {
     type,
     aggregateType: 'production_task',
@@ -309,7 +316,7 @@ export async function domainTaskEvent(
       assigneeUserId: task.assigneeUserId,
       ...extra,
     } as Prisma.InputJsonValue,
-    audience: audienceFor(task.assigneeUserId, ...extraUsers),
+    audience: `${audienceFor(task.assigneeUserId, ...extraUsers)}${everyone}` as typeof MANAGEMENT,
   });
 }
 
@@ -403,7 +410,9 @@ export async function reevaluateTasks(
       published:
         t.plan?.status === 'PUBLICADO' ||
         Boolean(t.supportForTaskId || t.issueId || t.inspectionId),
-      assigned: Boolean(t.assigneeUserId),
+      // Preparação livre: sem responsável de propósito (o primeiro ajudante disponível pega).
+      assigned:
+        Boolean(t.assigneeUserId) || isFreeHelperTask({ ...t, planMode: t.plan?.mode ?? null }),
       // Etapa cancelada (não aplicável) não segura as seguintes.
       dependenciesDone: t.dependsOn.every(
         (d) => d.dependsOn.status === 'CONCLUIDA' || d.dependsOn.status === 'CANCELADA',
@@ -530,7 +539,21 @@ export async function releaseDueTasks(prisma: PrismaClient, now = clockNow()) {
     orderBy: { id: 'asc' },
     take: 500,
   });
-  const ids = [...new Set([...byTime, ...byStart, ...byLegacy].map((t) => t.id))].sort();
+  // Tarefas livres de preparação (2026-11-19) gravadas antes com "sem responsável": liberadas
+  // aqui, sem depender de alguém mexer nelas. Idempotente.
+  const byFree = await prisma.productionTask.findMany({
+    where: {
+      status: { in: [...TASK_WAITING] },
+      stepClass: 'PREPARACAO',
+      assigneeUserId: null,
+      blockers: { has: 'SEM_RESPONSAVEL' },
+      plan: { mode: 'FILA_SEMANAL' },
+    },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+    take: 500,
+  });
+  const ids = [...new Set([...byTime, ...byStart, ...byLegacy, ...byFree].map((t) => t.id))].sort();
   if (!ids.length) return 0;
   const system: ActorContext = { userId: null, sessionId: null, ip: null, requestId: null };
   return prisma.$transaction(async (tx) => {

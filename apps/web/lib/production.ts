@@ -86,9 +86,12 @@ export const useMyTasks = (enabled = true) =>
   useQuery({
     queryKey: ['my-tasks'],
     queryFn: () =>
-      api<{ today: ProductionTaskDto[]; upcoming: ProductionTaskDto[] }>(
-        '/api/v1/production-tasks/mine',
-      ),
+      api<{
+        /** Tarefas livres de preparação (só para ajudante disponível). */
+        free?: ProductionTaskDto[];
+        today: ProductionTaskDto[];
+        upcoming: ProductionTaskDto[];
+      }>('/api/v1/production-tasks/mine'),
     enabled,
     refetchInterval: 60_000,
   });

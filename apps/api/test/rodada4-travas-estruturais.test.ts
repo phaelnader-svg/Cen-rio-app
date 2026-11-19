@@ -1701,6 +1701,13 @@ describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava 
  * Chave: "<pasta da migration>: <comando normalizado>".
  */
 const ALLOWED_DESTRUCTIVE: Record<string, string> = {
+  '20270901000000_preparacao_livre: UPDATE "production_tasks"':
+    'Pedido do dono (2026-11-19): etapas de preparação AINDA NÃO INICIADAS deixam de ter o ' +
+    'responsável escolhido automaticamente e ficam livres para o ajudante disponível pegar. ' +
+    'Nada iniciado, pausado ou concluído muda; o histórico de quem fez continua igual.',
+  '20270901000000_preparacao_livre: UPDATE "production_template_steps"':
+    'Pedido do dono (2026-11-19): as etapas de preparação dos modelos deixam de ter responsável ' +
+    'padrão (ninguém é escolhido). Nenhuma tarefa nem histórico muda.',
   '20270822000000_retrabalhos_receitas: UPDATE CASCADE':
     'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS de retrabalhos ' +
     'e receitas avulsas (padrão do Prisma). Nenhuma linha é alterada.',

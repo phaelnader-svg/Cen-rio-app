@@ -31,6 +31,7 @@ import {
   type ProductionPipelineDto,
   type PublicationPreviewDto,
   type ReleaseBlocker,
+  FREE_HELPER_TASK_LABEL,
 } from '@cenario/shared';
 import type { PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
@@ -148,6 +149,7 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
           completedAt: true,
           blockers: true,
           assigneeUserId: true,
+          stepClass: true,
           planId: true,
         },
       },
@@ -223,8 +225,9 @@ export async function loadPipeline(db: Tx | PrismaClient): Promise<ProductionPip
       else if (p.needsUpholsterer && !p.upholsterer && stage !== 'A_PLANEJAR')
         pendencies.push(`${p.code}: sem tapeceiro titular.`);
     }
+    // Preparação sem responsável é de propósito: fica livre para o ajudante disponível pegar.
     const unassigned = tasks.filter(
-      (t) => !t.assigneeUserId && !['CONCLUIDA'].includes(t.status),
+      (t) => !t.assigneeUserId && t.stepClass !== 'PREPARACAO' && !['CONCLUIDA'].includes(t.status),
     ).length;
     if (unassigned)
       pendencies.push(`${plural(unassigned, 'tarefa', 'tarefas')} sem responsável elegível.`);
@@ -294,10 +297,11 @@ export async function publicationPreview(
     { userId: string | null; displayName: string; tasks: number }
   >();
   for (const t of drafts) {
-    const k = t.assigneeUserId ?? '-';
+    const free = !t.assigneeUserId && t.stepClass === 'PREPARACAO';
+    const k = t.assigneeUserId ?? (free ? 'livre' : '-');
     const cur = byAssignee.get(k) ?? {
       userId: t.assigneeUserId,
-      displayName: t.assignee?.displayName ?? 'Sem responsável',
+      displayName: t.assignee?.displayName ?? (free ? FREE_HELPER_TASK_LABEL : 'Sem responsável'),
       tasks: 0,
     };
     cur.tasks += 1;
@@ -306,7 +310,7 @@ export async function publicationPreview(
   const code = (id: string) =>
     serviceOrderCode(drafts.find((t) => t.serviceOrderId === id)!.serviceOrder.number);
   const pendencies: string[] = [];
-  const unassigned = drafts.filter((t) => !t.assigneeUserId).length;
+  const unassigned = drafts.filter((t) => !t.assigneeUserId && t.stepClass !== 'PREPARACAO').length;
   if (unassigned)
     pendencies.push(
       `${plural(unassigned, 'tarefa', 'tarefas')} sem responsável: ficarão bloqueadas até o gestor definir.`,

@@ -7,6 +7,7 @@ import {
   TASK_STATUSES,
   TASK_STATUS_LABEL,
   mondayOf,
+  taskAssigneeLabel,
 } from '@cenario/shared';
 import { Factory } from 'lucide-react';
 import Link from 'next/link';
@@ -34,7 +35,7 @@ const GROUP_LABEL: Record<GroupBy, string> = {
 function groupKey(t: ProductionTaskDto, by: GroupBy): string {
   switch (by) {
     case 'funcionario':
-      return t.assignee?.displayName ?? 'Sem responsável';
+      return taskAssigneeLabel(t);
     case 'os':
       return `${t.serviceOrder.code} · ${t.customerName}`;
     case 'etapa':
@@ -251,7 +252,7 @@ export function BoardRow({ t }: { t: ProductionTaskDto }) {
         <span className="mt-0.5 block text-xs text-ink-muted">
           {t.code} · {t.serviceOrder.code}
           {t.serviceOrderItem ? ` · ${t.serviceOrderItem.description}` : ''} ·{' '}
-          {t.assignee?.displayName ?? 'sem responsável'}
+          {taskAssigneeLabel(t)}
           {t.scheduledDate ? ` · ${formatDay(t.scheduledDate)} ${t.scheduledTime ?? ''}` : ''}
         </span>
         {(t.blockers.length > 0 || t.blockedReason) && t.status === 'BLOQUEADA' && (

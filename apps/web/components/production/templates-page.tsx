@@ -338,7 +338,9 @@ function TemplateEditor({
                         setStep(i, {
                           stepClass: c,
                           ...(c ? { role: STEP_CLASS_ROLE[c] } : {}),
-                          ...(c === 'TAPECARIA' ? { defaultAssigneeUserId: null } : {}),
+                          ...(c === 'TAPECARIA' || c === 'PREPARACAO'
+                            ? { defaultAssigneeUserId: null }
+                            : {}),
                         });
                       }}
                     >
@@ -353,6 +355,9 @@ function TemplateEditor({
                   <td>
                     {s.stepClass === 'TAPECARIA' ? (
                       <span className="text-sm text-ink-muted">Titular da peça</span>
+                    ) : s.stepClass === 'PREPARACAO' ? (
+                      // O primeiro ajudante disponível pega no tablet (o dono não escolhe).
+                      <span className="text-sm text-ink-muted">Ajudante que estiver livre</span>
                     ) : (
                       <Select
                         className="input-sm"
@@ -362,7 +367,7 @@ function TemplateEditor({
                           setStep(i, { defaultAssigneeUserId: e.target.value || null })
                         }
                       >
-                        <option value="">Padrão da preparação</option>
+                        <option value="">Gestor define</option>
                         {s.defaultAssigneeUserId &&
                           !team.data?.some((w) => w.userId === s.defaultAssigneeUserId) && (
                             <option value={s.defaultAssigneeUserId}>

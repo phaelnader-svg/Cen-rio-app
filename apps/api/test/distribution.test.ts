@@ -146,16 +146,17 @@ async function twoSofas(published = false) {
 }
 
 describe('Distribuição automática (fila semanal)', () => {
-  it('CA3-01/02/04: titular por peça; tapeçaria inteira de cada um; preparação ao João; sem distribuição manual', async () => {
+  it('CA3-01/02/04: titular por peça; tapeçaria inteira de cada um; preparação livre; sem distribuição manual', async () => {
     const { admin, p, a, b, plan, of } = await twoSofas();
     expect(plan.tasks).toHaveLength(12); // 6 etapas × 2 peças, sem nenhuma atribuição manual
     for (const act2 of TAPECARIA) {
       expect(of(a.id, act2).assignee!.userId).toBe(p.ricardo);
       expect(of(b.id, act2).assignee!.userId).toBe(p.marcio);
     }
+    // Preparação/desmontagem: ninguém escolhido — livre para quem estiver disponível pegar.
     for (const act2 of PREP) {
-      expect(of(a.id, act2).assignee!.userId).toBe(p.joao);
-      expect(of(b.id, act2).assignee!.userId).toBe(p.joao);
+      expect(of(a.id, act2).assignee).toBeNull();
+      expect(of(b.id, act2).assignee).toBeNull();
     }
     expect(plan.tasks.every((t) => t.status === 'RASCUNHO')).toBe(true);
     // DAG do modelo: montagem depende da preparação E da costura da MESMA peça.
@@ -248,14 +249,6 @@ describe('Distribuição automática (fila semanal)', () => {
   it('CA3-07/03: sem titular, sem competência e etapa ambígua viram pendência, nunca atribuição arbitrária', async () => {
     const admin = await loginAdmin(app);
     const p = await team();
-    // Responsável padrão da preparação configurado para quem não tem a competência (Ricardo).
-    expect(
-      (
-        await admin.put('/api/v1/production/distribution-settings', {
-          preparationAssigneeUserId: p.ricardo,
-        })
-      ).status,
-    ).toBe(200);
     // Modelo com etapa ambígua (montagem como APOIO, sem classe) para cadeiras.
     const tpl = await admin.post('/api/v1/production-templates', {
       name: 'Cadeira ambígua',
@@ -288,23 +281,24 @@ describe('Distribuição automática (fila semanal)', () => {
     const d = await dist(admin, plan.id);
     const kinds = (id: string) =>
       d.pieces.find((x) => x.item.id === id)!.pendencies.map((k) => k.kind);
-    expect(kinds(sofa.id)).toEqual(
-      expect.arrayContaining(['SEM_TITULAR', 'SEM_RESPONSAVEL_PADRAO']),
-    );
-    expect(kinds(chair.id)).toEqual(
-      expect.arrayContaining(['ETAPA_SEM_CLASSIFICACAO', 'SEM_RESPONSAVEL_PADRAO']),
-    );
+    expect(kinds(sofa.id)).toEqual(expect.arrayContaining(['SEM_TITULAR']));
+    expect(kinds(chair.id)).toEqual(expect.arrayContaining(['ETAPA_SEM_CLASSIFICACAO']));
+    // Preparação livre não é pendência enquanto alguém ativo tiver a competência (João).
+    expect(kinds(sofa.id)).not.toContain('SEM_RESPONSAVEL_PADRAO');
     const tasks = await db().productionTask.findMany({ where: { serviceOrderId: so.id } });
     expect(tasks.every((t) => t.assigneeUserId === null)).toBe(true); // nada arbitrário
-    // Publicado: sem responsável continua não executável.
+    // Publicado: sem responsável continua não executável (a preparação livre não espera ninguém).
     const pub = await publish(admin, await planOf(admin, plan.id));
+    const prep = (t: T) => t.activity === 'PREPARACAO' || t.activity === 'DESMONTAGEM';
     expect(
-      pub.tasks.every((t: T) => t.status === 'BLOQUEADA' && t.blockers.includes('SEM_RESPONSAVEL')),
+      pub.tasks
+        .filter((t: T) => !prep(t))
+        .every((t: T) => t.status === 'BLOQUEADA' && t.blockers.includes('SEM_RESPONSAVEL')),
     ).toBe(true);
-    // Corrigida a configuração e definido o titular, o reprocessamento completa só o que falta.
-    await admin.put('/api/v1/production/distribution-settings', {
-      preparationAssigneeUserId: null,
-    });
+    expect(pub.tasks.filter(prep).some((t: T) => t.blockers.includes('SEM_RESPONSAVEL'))).toBe(
+      false,
+    );
+    // Definido o titular, o reprocessamento completa só o que falta.
     const def = await put(admin, `/api/v1/service-order-items/${sofa.id}/upholsterer`, {
       userId: p.marcio,
       expectedUserId: null,
@@ -326,7 +320,7 @@ describe('Distribuição automática (fila semanal)', () => {
     const who = (it: string, a: string) =>
       after.find((t) => t.serviceOrderItemId === it && t.activity === a)!.assigneeUserId;
     expect(who(sofa.id, 'COSTURA')).toBe(p.marcio);
-    expect(who(sofa.id, 'PREPARACAO')).toBe(p.joao);
+    expect(who(sofa.id, 'PREPARACAO')).toBeNull(); // livre: quem pegar no tablet
     expect(who(chair.id, 'MONTAGEM')).toBeNull(); // ambígua segue para o gestor
     expect(after).toHaveLength(tasks.length);
   });
@@ -554,13 +548,6 @@ describe('Distribuição automática (fila semanal)', () => {
           expectedUserId: p.ricardo,
           reason: 'quero',
           confirm: true,
-        })
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await tab.put('/api/v1/production/distribution-settings', {
-          preparationAssigneeUserId: p.marcio,
         })
       ).status,
     ).toBe(403);

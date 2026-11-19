@@ -21,6 +21,7 @@ import {
   type ProductionPlanDto,
   type ProductionTemplateDto,
   type WorkerDto,
+  isFreeHelperTask,
 } from '@cenario/shared';
 import { applyServicePriority, lockServicePlanning } from './service-priority';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
@@ -224,7 +225,10 @@ export async function loadPlan(db: Tx | PrismaClient, id: string): Promise<Produ
   // Conflitos (avisos para o gestor; as regras de integridade são impostas nas rotas).
   const conflicts: PlanConflictDto[] = [];
   const open = dtos.filter((t) => t.status !== 'CANCELADA' && t.status !== 'CONCLUIDA');
-  const noAssignee = open.filter((t) => !t.assignee);
+  // Preparação livre (fila semanal) não é falta de responsável: o ajudante disponível pega.
+  const noAssignee = open.filter(
+    (t) => !t.assignee && !isFreeHelperTask({ ...t, planMode: plan.mode }),
+  );
   if (noAssignee.length)
     conflicts.push({
       kind: 'SEM_RESPONSAVEL',
@@ -637,6 +641,8 @@ export async function productionPlanRoutes(app: FastifyInstance) {
           s.stepClass === undefined ? classifyStep(s.activity, s.role) : s.stepClass;
         // Simplificação Fase 5: responsável padrão da etapa — nunca em tapeçaria (titular) e
         // sempre alguém que executa tarefas de produção (a competência é conferida na geração).
+        // Preparação é livre para os ajudantes (2026-11-19): nunca guarda responsável padrão.
+        if (stepClass === 'PREPARACAO') s.defaultAssigneeUserId = null;
         if (s.defaultAssigneeUserId) {
           const problem = stepAssigneeProblem(stepClass);
           if (problem)

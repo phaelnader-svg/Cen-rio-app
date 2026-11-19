@@ -1,6 +1,6 @@
 'use client';
 
-import { plural } from '@cenario/shared';
+import { plural, taskAssigneeLabel } from '@cenario/shared';
 import type {
   PlanCandidateDto,
   PlanItemDto,
@@ -957,7 +957,7 @@ function CarryOverDialog({ plan, onClose }: { plan: ProductionPlanDto; onClose: 
         {pending.map((t) => (
           <Checkbox
             key={t.id}
-            label={`${t.code} · ${t.title} · ${t.assignee?.displayName ?? 'sem responsável'}`}
+            label={`${t.code} · ${t.title} · ${taskAssigneeLabel(t)}`}
             checked={sel.has(t.id)}
             onChange={(e) => {
               const n = new Set(sel);
