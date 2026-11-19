@@ -104,6 +104,8 @@ describe('autorização delegada de aplicativos', () => {
     expect(t.status).toBe(200);
     expect(t.body.token_type).toBe('Bearer');
     expect(t.body.company.name).toBeTruthy();
+    // A empresa vai pelo número (nomes se repetem entre empresas; é por ele que o app as separa).
+    expect(t.body.company.id).toBe(1);
     expect(t.body.scope).toBe('consulta');
     const token = t.body.access_token as string;
 
