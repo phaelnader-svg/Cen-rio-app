@@ -74,7 +74,8 @@ test('Novo serviço: resposta perdida depois da gravação não duplica (mesma c
   await page.getByTestId('ns-piece-desc-0').fill('Sofá da rede');
   await page.getByTestId('ns-business-days').fill('20');
   await page.getByTestId('ns-value').fill('2.000,00');
-  await expect(page.getByTestId('ns-pay-model')).toHaveValue('ENTRADA_ENTREGA');
+  // Pagamento (2026-11-18): à vista por padrão, 50% na retirada e 50% na entrega.
+  await expect(page.getByTestId('ns-pay-avista')).toBeChecked();
   await page.getByTestId('ns-date').fill(today());
   await page.getByTestId('ns-arrival').fill('22:30');
   await page.getByTestId('ns-team-own').click();

@@ -75,10 +75,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await page.getByTestId('ns-piece-desc-0').fill('Sofá retrátil');
     await page.getByTestId('ns-business-days').fill('20');
     await page.getByTestId('ns-add-piece').click();
-    await page
-      .getByTestId('ns-piece-1')
-      .getByLabel('Peça', { exact: true })
-      .selectOption('POLTRONA');
+    await page.getByTestId('ns-piece-type-1').selectOption('POLTRONA');
     await page.getByTestId('ns-piece-desc-1').fill('Poltronas da sala');
     await page.getByTestId('ns-piece-qty-1').fill('2');
     // Saneamento: o tipo de serviço é de cada peça (a nova herda o da anterior).
@@ -157,7 +154,17 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     });
     const stop = andre.page.getByTestId(`route-stop-${pickupCode}`);
     await expect(stop).toContainText('chegada 15:30');
-    await expect(andre.page.getByText(/R\$/)).toHaveCount(0);
+    // 2026-11-18: à vista = 50% na retirada; o único valor no celular é o que a equipe cobra.
+    expect(
+      await andre.page.evaluate(() =>
+        [...document.querySelectorAll('body *')].filter(
+          (el) =>
+            el.children.length === 0 &&
+            /R\$/.test(el.textContent ?? '') &&
+            !el.closest('[data-testid="job-payment"]'),
+        ).length,
+      ),
+    ).toBe(0);
     await evidence(andre.page, '04-celular-andre-roteiro');
     await andre.context.close();
 
@@ -222,7 +229,7 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     const sos = await call(page, 'GET', `/api/v1/service-orders?orderId=${orderId}`);
     expect(Array.isArray(sos) ? sos : sos.items).toHaveLength(0);
   });
-  test('titular e mão de obra previstos no fechamento; a OS gerada vem com eles; alteração no pedido não muda a OS', async ({
+  test('titular e mão de obra previstos no pedido; a OS gerada vem com eles; alteração no pedido não muda a OS', async ({
     page,
   }) => {
     await loginAdmin(page);
@@ -234,17 +241,19 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await page.getByTestId('ns-piece-desc-0').fill('Sofá previsto');
     await page.getByTestId('ns-business-days').fill('20');
     await page.getByTestId('ns-delivery-dropoff').click();
-    // Fechamento: titular + mão de obra prevista por unidade (previsão, não pagamento).
-    await page.getByTestId('ns-piece-owner-0').selectOption({ label: 'Ricardo' });
-    await page.getByTestId('ns-piece-labor-0').fill('250,00');
-    await expect(page.getByTestId('ns-sum-owners')).toContainText(
-      /Sofá previsto: Ricardo \(R\$\s250,00\/un\.\)/,
-    );
     await page.getByTestId('ns-submit').click();
     await expect(page.getByTestId('ns-confirmation')).toBeVisible();
     await page.getByTestId('ns-open-order').click();
     await page.waitForURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
     const orderId = page.url().split('/').pop()!;
+    // 2026-11-18: o Novo serviço não pede mais tapeceiro; titular e mão de obra prevista
+    // (previsão, não pagamento) ficam no pedido, antes de gerar a OS.
+    await page.getByTestId('order-planned-edit').click();
+    const plan = page.getByRole('dialog');
+    await plan.getByTestId('planned-owner-0').selectOption({ label: 'Ricardo' });
+    await plan.getByTestId('planned-labor-0').fill('250,00');
+    await plan.getByTestId('planned-save').click();
+    await expect(plan).toHaveCount(0);
     const owner = page.getByTestId('order-item-owner-0');
     await expect(owner).toContainText('Titular previsto: Ricardo');
     await expect(owner).toContainText(/mão de obra prevista R\$\s250,00\/un\./);

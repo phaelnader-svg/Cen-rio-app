@@ -177,8 +177,6 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       await page.getByTestId('ns-piece-type-0').selectOption('SOFA');
       await page.getByTestId('ns-piece-desc-0').fill('Sofá transversal');
       await page.getByTestId('ns-piece-service-0').selectOption('REFORMA_COMPLETA');
-      await page.getByTestId('ns-piece-owner-0').selectOption(userA);
-      await page.getByTestId('ns-piece-labor-0').fill('450,00');
       await page.getByTestId('ns-business-days').fill('100');
       await page.getByTestId('ns-value').fill('3.000,00');
       await page.getByTestId('ns-date').fill(today());
@@ -192,6 +190,13 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       await page.getByTestId('ns-open-order').click();
       await expect(page).toHaveURL(/\/painel\/pedidos\/[0-9a-f-]{36}$/);
       const orderId = page.url().split('/').pop()!;
+      // 2026-11-18: titular e mão de obra prevista são definidos no pedido (não no fechamento).
+      await page.getByTestId('order-planned-edit').click();
+      const planned = page.getByRole('dialog');
+      await planned.getByTestId('planned-owner-0').selectOption(userA);
+      await planned.getByTestId('planned-labor-0').fill('450,00');
+      await planned.getByTestId('planned-save').click();
+      await expect(planned).toHaveCount(0);
       const pickup = (await call(page, 'GET', `/api/v1/pickups?orderId=${orderId}`))[0] as {
         id: string;
         code: string;
@@ -205,7 +210,17 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       });
       const pjob = andre.page.getByTestId(`job-${pickup.code}`);
       await expect(pjob).toBeVisible();
-      await expect(andre.page.getByText(/R\$/)).toHaveCount(0);
+      // 2026-11-18: à vista = 50% na retirada; o único valor no celular é o que a equipe cobra.
+      expect(
+        await andre.page.evaluate(() =>
+          [...document.querySelectorAll('body *')].filter(
+            (el) =>
+              el.children.length === 0 &&
+              /R\$/.test(el.textContent ?? '') &&
+              !el.closest('[data-testid="job-payment"]'),
+          ).length,
+        ),
+      ).toBe(0);
       await pjob.getByRole('button', { name: 'Saí para a retirada' }).click();
       await expect(pjob.getByTestId('job-status')).toHaveText('Em execução');
       await pjob.getByRole('button', { name: 'Peças retiradas' }).click();
@@ -228,7 +243,7 @@ test.describe.serial('Rodada 4 — fluxo transversal completo', () => {
       const joao = await openDevice(page, browser, 'João', '591837', `Tablet João ${RUN}`);
 
       // ───── TRANSIÇÃO 1b: "Gerar ordem de serviço" no pedido, já preenchida; "Material comprado" ─────
-      // Titular e mão de obra prevista do fechamento viram titular e mão de obra combinada.
+      // Titular e mão de obra prevista do pedido viram titular e mão de obra combinada.
       await page.goto(`/painel/pedidos/${orderId}`);
       await page.getByTestId('order-generate-os').click();
       await page.waitForURL(/\/painel\/os\/nova/);

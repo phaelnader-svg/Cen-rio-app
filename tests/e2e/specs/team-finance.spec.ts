@@ -110,7 +110,7 @@ test.describe.serial('Fase 11 — financeiro operacional', () => {
     await expect(page.getByTestId('fin-expenses')).toContainText('Energia do galpão (E2E)');
     await page.getByRole('tab', { name: 'Resumo' }).click();
     await expect(page.getByTestId('fin-received')).not.toHaveText('R$ 0,00');
-    await expect(page.getByText('não é lucro líquido').first()).toBeVisible();
+    await expect(page.getByTestId('fin-net')).toBeVisible();
     await evidence(page, '03-painel-financeiro');
 
     // ── Custos e resultado por OS (previsto × realizado) ──

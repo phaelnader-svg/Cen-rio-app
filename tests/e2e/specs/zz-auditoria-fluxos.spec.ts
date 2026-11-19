@@ -601,9 +601,10 @@ test('permissões corrigidas: menu e telas por perfil (B1, B2, B5, B6)', async (
   anota(
     F,
     'B6 com pedidos.ver',
-    '"Devoluções" no menu, consulta sem 403 e sem botão de registrar',
+    // 2026-11-18: "Retrabalhos" substituiu "Devoluções" no menu; o histórico abre pelo endereço.
+    '"Devoluções" fora do menu, consulta pelo endereço sem 403 e sem botão de registrar',
     `${consulta.menu.includes('/painel/devolucoes') ? 'no menu' : 'fora'} · 403: ${dv.r403.join(', ') || 'nenhum'} · botão: ${/Registrar devolução/.test(dv.texto) ? 'sim' : 'não'}`,
-    consulta.menu.includes('/painel/devolucoes') &&
+    !consulta.menu.includes('/painel/devolucoes') &&
       dv.r403.length === 0 &&
       !/Registrar devolução/.test(dv.texto),
   );
