@@ -163,8 +163,9 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
   const [photos, setPhotos] = useState<File[]>([]);
   const previews = useMemo(() => photos.map((f) => URL.createObjectURL(f)), [photos]);
   useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
-  const [materialPurchased, setMaterialPurchased] = useState<boolean | null>(
-    work && work.materials.length === 0 ? true : null,
+  // Padrão: falta comprar (a OS espera o "Material comprado"); orçamento sem material = comprado.
+  const [materialPurchased, setMaterialPurchased] = useState<boolean>(
+    Boolean(work && work.materials.length === 0),
   );
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -195,8 +196,6 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
 
   const m = useMutation({
     mutationFn: () => {
-      if (materialPurchased === null)
-        throw new Error('Diga se o material já está comprado ou se falta comprar.');
       const body = createServiceOrderSchema.parse({
         orderId: data.order.id,
         priority,
@@ -478,8 +477,8 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
               ))}
             </div>
             <div className="field-msg">
-              {materialPurchased === false && (
-                <span className="text-ink-muted">
+              {!materialPurchased && (
+                <span className="text-xs text-ink-muted">
                   A OS entra na semana da oficina depois do “Material comprado”.
                 </span>
               )}

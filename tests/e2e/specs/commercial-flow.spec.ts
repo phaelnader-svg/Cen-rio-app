@@ -83,9 +83,8 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
 
     // 5. OS técnica com as peças recebidas
     await page.getByTestId('order-generate-os').click();
-    await expect(page.getByLabel('Quantidade').nth(1)).toHaveValue('6');
-    await page.getByLabel('Tecido escolhido').first().fill('Linho');
-    await page.getByLabel('Cor').first().fill('Areia');
+    // 2026-11-19: a tela mostra o serviço travado; todas as peças que chegaram entram na OS.
+    await expect(page.getByTestId('so-service-summary')).toContainText('6× Cadeiras de jantar');
     await page.getByRole('button', { name: 'Gerar OS' }).click();
     await expect(page.getByRole('heading', { name: /^OS-\d{5}$/ })).toBeVisible();
     await expect(page.getByTestId('readiness')).toContainText('Programação · Pendente'); // Fase 5: sem planejamento publicado;
@@ -93,6 +92,11 @@ test.describe.serial('Fase 2 — cliente → pedido → retirada → recebimento
     // 6. Alteração técnica com histórico
     // Fase 2 (OS unificada): "Peças e especificações" virou "Peças e fotos".
     await page.getByRole('tab', { name: /Peças e fotos/ }).click();
+    await page.getByRole('button', { name: 'Editar especificações' }).first().click();
+    await page.getByRole('dialog').getByLabel('Tecido escolhido').fill('Linho');
+    await page.getByRole('dialog').getByLabel('Motivo da alteração').fill('Tecido escolhido');
+    await page.getByRole('button', { name: 'Salvar especificações' }).click();
+    await expect(page.locator('[data-testid$="/1"]')).toContainText('Linho');
     await page.getByRole('button', { name: 'Editar especificações' }).first().click();
     await page.getByRole('dialog').getByLabel('Tecido escolhido').fill('Veludo');
     await page

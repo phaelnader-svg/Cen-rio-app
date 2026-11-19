@@ -79,16 +79,16 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
     await markArrived(page, order.id, order.version);
     await page.goto(`/painel/os/nova?pedido=${order.id}`);
     const form = page.getByTestId('new-service-order');
+    // 2026-11-19: tela em 5 partes, sem os blocos de dinheiro.
     for (const s of [
-      'Informações gerais',
-      'Peças',
-      'Responsável',
-      'Valores comerciais',
-      'Mão de obra',
-      'Resumo',
+      'O serviço',
+      'Tapeceiro',
+      'Prazo e material',
+      'Fotos da peça',
+      'Recado para o tapeceiro',
     ])
-      await expect(form.getByRole('heading', { name: s })).toBeVisible();
-    await expect(page.getByTestId('so-contracted')).toHaveText('R$ 3.000,00');
+      await expect(form.getByRole('heading', { name: s, exact: true })).toBeVisible();
+    await expect(form).not.toContainText('Valores comerciais');
     // Nomes de exibição variam (ex.: "Ricardo S."): escolhe pelo início do nome.
     const pick = async (testId: string, prefix: string) => {
       const sel = page.getByTestId(testId);
@@ -99,9 +99,6 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
     await pick('so-owner-1', 'Márcio');
     await page.getByTestId('so-labor-value-0').fill('800,00');
     await page.getByTestId('so-labor-value-1').fill('450,00');
-    await expect(page.getByTestId('so-labor-total')).toHaveText('R$ 1.250,00');
-    await expect(page.getByTestId('so-balance')).toHaveText('R$ 1.750,00');
-    await expect(form).toContainText('Não é lucro');
     await evidence(page, '01-nova-os-completa');
     await page.getByRole('button', { name: 'Gerar OS' }).click();
     await expect(page).toHaveURL(/\/painel\/os\/[0-9a-f-]{36}$/);
