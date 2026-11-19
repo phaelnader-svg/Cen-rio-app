@@ -12,6 +12,7 @@
 #   bash infra/firma-viva/teste/firma-teste.sh voltar-teste # volta ao Cenário de teste (empresa fictícia)
 #   bash infra/firma-viva/teste/firma-teste.sh exemplo         # dados "[Exemplo]" no Cenário de produção (com cópia do banco antes)
 #   bash infra/firma-viva/teste/firma-teste.sh remover-exemplo # tira só os dados "[Exemplo]"
+#   bash infra/firma-viva/teste/firma-teste.sh isolamento [conferir|corrigir] # quem de outra empresa entrou numa organização
 #   bash infra/firma-viva/teste/firma-teste.sh status | convite <email> | destruir
 #
 # Nada aqui toca a homologação ou a produção do Cenário Gestão (outra VM, outro IP, outro banco).
@@ -372,6 +373,61 @@ PROD
   fi
 }
 
+# Conferência de isolamento entre empresas (incidente de 19/11/2026: a entrada de uma empresa do
+# Cenário abria a organização de outra com o mesmo nome). Lista, por organização do jogo, quem é de
+# OUTRA empresa e o que fez; do lado do Cenário, as alterações feitas pelo jogo desde então.
+# "conferir" só lê. "corrigir" tira essas pessoas da organização errada (contas e histórico ficam).
+# Nada de dado pessoal sai dos servidores: do Cenário vêm só pares (pessoa, nº da empresa).
+isolamento() {
+  local modo="$1" mapa vals sql b64 saida
+  [[ "$modo" == conferir || "$modo" == corrigir ]] || die "Use: isolamento conferir | isolamento corrigir"
+  local CPROD=(gcloud --project="$PROJECT" --quiet compute ssh "${CENARIO_PROD_VM:-cenario-prod}"
+    --zone="${CENARIO_PROD_ZONE:-southamerica-east1-b}" --tunnel-through-iap --command='sudo bash -s')
+  say "Isolamento entre empresas: $modo"
+  echo "  • lendo no Cenário de produção a empresa de cada pessoa (só números)"
+  mapa="$("${CPROD[@]}" <<'PROD'
+set -eu
+cd /opt/cenario
+timeout 90 docker compose -f infra/prod/docker-compose.prod.yml --env-file /run/cenario/env exec -T -e PGOPTIONS='-c app.bypass_rls=on' postgres \
+  psql -U cenario -d cenario_prod -At -F, -v ON_ERROR_STOP=1 -c "SELECT id, company_id FROM users" </dev/null
+PROD
+)" || die "Não consegui ler o Cenário de produção (veja a mensagem acima). Nada foi alterado."
+  vals="$(grep -E '^[0-9a-f-]{36},[0-9]+$' <<<"$mapa" | awk -F, '{printf "%s('"'"'%s'"'"',%s)", (NR>1?",":""), $1, $2}')"
+  [[ -n "$vals" ]] || die "O Cenário não devolveu nenhuma pessoa. Nada foi alterado."
+  sql="CREATE TEMP TABLE mapa(cuid text, cid int); INSERT INTO mapa VALUES $vals;
+$(cat "$(dirname "$0")/isolamento.sql")"
+  b64="$(base64 -w0 <<<"$sql")"
+  echo "  • conferindo o banco do jogo"
+  saida="$(run_vm <<FIM
+set -eu
+echo '$b64' | base64 -d > /var/tmp/isolamento.sql
+$DC exec -T postgres psql -U app -d firma_viva -q -v ON_ERROR_STOP=1 -v modo=$modo -f - < /var/tmp/isolamento.sql
+rm -f /var/tmp/isolamento.sql
+FIM
+)" || die "A conferência parou (veja a mensagem acima). Em 'corrigir', ou tudo é feito ou nada."
+  grep -v '^ *DESDE ' <<<"$saida"
+  local linha emp desde
+  while read -r _ emp desde; do
+    [[ "$emp" =~ ^[0-9]+$ && "$desde" =~ ^[0-9T:Z-]+$ ]] || continue
+    echo
+    echo "== Alterações feitas pelo jogo no Cenário (empresa nº $emp) desde $desde"
+    "${CPROD[@]}" <<PROD || echo "  (não consegui ler a auditoria do Cenário)"
+set -eu
+cd /opt/cenario
+timeout 90 docker compose -f infra/prod/docker-compose.prod.yml --env-file /run/cenario/env exec -T -e PGOPTIONS='-c app.bypass_rls=on' postgres \
+  psql -U cenario -d cenario_prod -q -v ON_ERROR_STOP=1 \
+  -c "SELECT to_char(a.created_at AT TIME ZONE 'America/Sao_Paulo','DD/MM HH24:MI') AS quando, a.action AS acao, a.summary AS resumo
+      FROM audit_logs a JOIN oauth_grants g ON g.session_id = a.session_id JOIN oauth_clients c ON c.id = g.client_id
+      WHERE c.client_id = 'firma-viva' AND a.company_id = $emp AND a.created_at >= '$desde'
+      ORDER BY a.created_at LIMIT 200" </dev/null
+PROD
+  done < <(grep -E '^ *DESDE ' <<<"$saida")
+  if [[ "$modo" == conferir ]]; then
+    echo
+    echo "Só conferência: nada foi alterado. Para tirar essas pessoas: bash infra/firma-viva/teste/firma-teste.sh isolamento corrigir"
+  fi
+}
+
 case "${1:-}" in
   subir)
     shift; dono=""
@@ -394,6 +450,7 @@ case "${1:-}" in
   voltar-teste) voltar_teste ;;
   exemplo) dados_exemplo criar ;;
   remover-exemplo) dados_exemplo remover ;;
+  isolamento) isolamento "${2:-conferir}" ;;
   convite)
     [[ -n "${2:-}" ]] || die "uso: convite <email>"
     run_vm <<EOF

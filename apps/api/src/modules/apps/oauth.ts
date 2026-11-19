@@ -114,6 +114,7 @@ export async function oauthRoutes(app: FastifyInstance) {
   async function company() {
     const c = await prisma.companySettings.findUnique({ where: { id: 1 } });
     return {
+      id: 1, // instalação de uma empresa só (a versão multi-empresa manda o número da empresa)
       name: c?.tradeName ?? 'Empresa',
       legalName: c?.legalName ?? null,
       document: c?.document ?? null,

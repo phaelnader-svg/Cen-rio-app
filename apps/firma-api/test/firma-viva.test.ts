@@ -419,9 +419,15 @@ describe('Firma Viva', () => {
     expect(await fdb().organization.count()).toBe(1);
     expect(await fdb().cenarioLogin.count()).toBe(1);
     expect(await cenarioDb().oAuthGrant.count({ where: { revokedAt: null } })).toBe(1);
-    // Navegador já com sessão vai direto ao jogo.
+    // Navegador já com sessão NÃO vai direto ao jogo: toda entrada passa pelo Cenário (que diz
+    // quem está logado lá agora), e a sessão antiga do jogo é encerrada no clique.
     const direct = await again.b.get('/api/entrar/cenario');
-    expect(String(direct.headers.location)).toBe('http://localhost:3100/jogo');
+    expect(String(direct.headers.location)).toContain('http://localhost:3000/autorizar');
+    expect((await again.b.get('/api/auth/me')).status).toBe(401);
+    // A identidade da empresa é o número dela no Cenário, não o nome.
+    expect((await fdb().cenarioConnection.findFirstOrThrow()).companyKey).toBe(
+      'http://cenario.interno#empresa:1',
+    );
 
     // Conexão revogada no Cenário: o próximo clique religa sozinho.
     await cenarioDb().oAuthGrant.updateMany({ data: { revokedAt: new Date() } });

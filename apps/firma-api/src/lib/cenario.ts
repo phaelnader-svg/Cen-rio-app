@@ -25,11 +25,25 @@ export function isActive(c: CenarioConnection | null): c is CenarioConnection {
   return Boolean(c && c.status === 'CONECTADA' && c.accessEnc && c.refreshEnc);
 }
 
-/** Identidade da empresa no Cenário (endereço + documento/nome): uma organização por empresa. */
-export const cenarioCompanyKey = (
-  apiUrl: string,
-  company: { name: string; document: string | null },
-) => `${apiUrl}#${company.document || company.name}`.toLowerCase();
+export interface CenarioCompany {
+  id?: number | null;
+  name: string;
+  document: string | null;
+}
+
+/**
+ * Identidade da empresa no Cenário: endereço + número da empresa. Uma organização por empresa.
+ * O nome e o documento NÃO servem de identidade: duas empresas podem ter o mesmo nome (ou nenhum
+ * CNPJ), e foi assim que a entrada de uma empresa chegou a abrir a organização de outra.
+ */
+export const cenarioCompanyKey = (apiUrl: string, company: CenarioCompany) =>
+  company.id !== null && company.id !== undefined
+    ? `${apiUrl}#empresa:${company.id}`.toLowerCase()
+    : legacyCompanyKey(apiUrl, company);
+
+/** Chave antiga (documento ou nome): só para reconhecer, com conferência, as ligações de antes. */
+export const legacyCompanyKey = (apiUrl: string, company: CenarioCompany) =>
+  `${apiUrl}#${company.document || company.name}`.toLowerCase();
 
 export async function tokenRequest(app: FastifyInstance, body: Record<string, string>) {
   const { env } = app.firma;
@@ -105,6 +119,36 @@ async function refresh(app: FastifyInstance, c: CenarioConnection): Promise<Cena
   })().finally(() => refreshing.delete(c.orgId));
   refreshing.set(c.orgId, p);
   return p;
+}
+
+/**
+ * Número da empresa do Cenário a que uma conexão dá acesso, perguntado ao próprio Cenário com o
+ * token dela. `null` quando não dá para saber (conexão suspensa, Cenário fora, versão antiga).
+ */
+export async function connectionCompanyId(
+  app: FastifyInstance,
+  conn: CenarioConnection,
+): Promise<number | null> {
+  if (!isActive(conn)) return null;
+  try {
+    let c = conn;
+    if (!c.accessExpiresAt || c.accessExpiresAt.getTime() - Date.now() < 60_000)
+      c = await refresh(app, c);
+    const res = await app.cenarioFetch(`${app.firma.env.CENARIO_API_URL}/api/v1/apps/me`, {
+      headers: {
+        authorization: `Bearer ${app.firma.unseal(c.accessEnc!)}`,
+        accept: 'application/json',
+        ...(app.firma.env.FIRMA_CENARIO_COOKIE
+          ? { cookie: app.firma.env.FIRMA_CENARIO_COOKIE }
+          : {}),
+      },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { company?: { id?: unknown } };
+    return typeof body.company?.id === 'number' ? body.company.id : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Conexão ativa da organização da requisição (ou erro claro de conexão necessária/suspensa). */

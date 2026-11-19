@@ -7,7 +7,16 @@ import type { CenarioConnection } from '@firma/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { audit } from '../lib/audit';
-import { cenarioCompanyKey, cenarioJson, isActive, isReadOnly, tokenRequest } from '../lib/cenario';
+import {
+  type CenarioCompany,
+  cenarioCompanyKey,
+  cenarioJson,
+  connectionCompanyId,
+  isActive,
+  isReadOnly,
+  legacyCompanyKey,
+  tokenRequest,
+} from '../lib/cenario';
 import { pkceChallenge, randomToken } from '../lib/crypto';
 import { E } from '../lib/errors';
 import { syncOnConnect } from '../lib/sync';
@@ -129,7 +138,7 @@ export async function connectionRoutes(app: FastifyInstance) {
           'erro',
           `O Cenário Gestão recusou a autorização (${String(t.data.error_description ?? t.status)}).`,
         );
-      const company = t.data.company as { name: string; document: string | null };
+      const company = t.data.company as CenarioCompany;
       const user = t.data.user as { name: string; email: string | null };
       const companyKey = cenarioCompanyKey(env.CENARIO_API_URL, company);
       const org = await db.organization.findUniqueOrThrow({ where: { id: st.orgId } });
@@ -146,7 +155,16 @@ export async function connectionRoutes(app: FastifyInstance) {
         );
       }
       const previous = await db.cenarioConnection.findUnique({ where: { orgId: st.orgId } });
-      if (previous && previous.companyKey !== companyKey && previous.status !== 'DESCONECTADA') {
+      // Ligação antiga (chave por nome/documento) com o mesmo nome: só é a mesma empresa se o
+      // Cenário confirmar pelo número dela (nomes iguais não bastam).
+      const samePrevious =
+        !!previous &&
+        (previous.companyKey === companyKey ||
+          (company.id !== null &&
+            company.id !== undefined &&
+            previous.companyKey === legacyCompanyKey(env.CENARIO_API_URL, company) &&
+            (await connectionCompanyId(app, previous)) === company.id));
+      if (previous && !samePrevious && previous.status !== 'DESCONECTADA') {
         await revokeAtCenario(app, String(t.data.refresh_token));
         return back(
           'erro',

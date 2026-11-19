@@ -21,7 +21,14 @@ import type { OAuthState } from '@firma/db';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createHash } from 'node:crypto';
 import { audit } from '../lib/audit';
-import { cenarioCompanyKey, tokenRequest } from '../lib/cenario';
+import { SESSION_COOKIE } from '../app';
+import {
+  type CenarioCompany,
+  cenarioCompanyKey,
+  connectionCompanyId,
+  legacyCompanyKey,
+  tokenRequest,
+} from '../lib/cenario';
 import type { Role } from '../context';
 import { pkceChallenge, randomToken } from '../lib/crypto';
 import { openSession } from '../lib/session';
@@ -35,15 +42,16 @@ export async function entrarRoutes(app: FastifyInstance) {
 
   /** Início (navegador, vindo do Cenário em nova guia): manda para a tela oficial do Cenário. */
   app.get('/api/entrar/cenario', { config: { rule: { public: true } } }, async (request, reply) => {
-    // Já com sessão aberta numa organização ligada ao Cenário: vai direto para o jogo. Sessão
-    // antiga numa organização sem conexão ativa (ex.: dados de teste) passa pela entrada de novo.
-    if (request.user && request.org) {
-      const ligada = await db.cenarioConnection.findFirst({
-        where: { orgId: request.org.id, status: 'CONECTADA' },
-        select: { id: true },
+    // Toda entrada passa pelo Cenário, que diz quem está logado lá agora. Uma sessão do jogo já
+    // aberta neste navegador pode ser de outra empresa (ex.: entrou com outra conta do Cenário):
+    // ela é encerrada aqui, e o jogo só reabre depois que o Cenário confirmar a empresa.
+    if (request.user?.sessionId) {
+      await db.session.updateMany({
+        where: { id: request.user.sessionId, revokedAt: null },
+        data: { revokedAt: new Date() },
       });
-      if (ligada) return reply.redirect(`${env.FIRMA_WEB_URL}/jogo`);
     }
+    void reply.clearCookie(SESSION_COOKIE, { path: '/' });
     const state = randomToken();
     const verifier = randomToken(48);
     const browser = randomToken();
@@ -142,16 +150,33 @@ export async function finishCenarioLogin(
   const permissions = await cenarioPermissions(app, String(t.data.access_token));
   // A entrada só precisa saber quem é a pessoa: o acesso concedido é desfeito na hora.
   await revokeAtCenario(app, String(t.data.refresh_token));
-  const company = t.data.company as { name: string; document: string | null };
+  const company = t.data.company as CenarioCompany;
   const person = t.data.user as { id: string; name: string; email: string | null };
   if (!person?.id) return fail('O Cenário Gestão não informou a pessoa.');
   const companyKey = cenarioCompanyKey(env.CENARIO_API_URL, company);
+  const oldKey = legacyCompanyKey(env.CENARIO_API_URL, company);
 
   // Organização da empresa: a ligada a ela (a conectada primeiro, senão a mais recente) ou nova.
-  const known = await db.cenarioConnection.findFirst({
+  let known = await db.cenarioConnection.findFirst({
     where: { companyKey },
     orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }], // CONECTADA vem antes das demais
   });
+  // Ligação feita antes da identidade pelo número da empresa (chave por nome/documento): só vale
+  // se o Cenário confirmar que é a MESMA empresa. Duas empresas com o mesmo nome nunca se misturam.
+  let legacy = false;
+  if (!known && companyKey !== oldKey) {
+    const candidates = await db.cenarioConnection.findMany({
+      where: { companyKey: oldKey },
+      orderBy: [{ status: 'asc' }, { updatedAt: 'desc' }],
+    });
+    for (const c of candidates) {
+      if (await sameCompany(app, c, company, person)) {
+        known = await db.cenarioConnection.update({ where: { id: c.id }, data: { companyKey } });
+        legacy = true;
+        break;
+      }
+    }
+  }
   const active = known?.status === 'CONECTADA' ? known : null;
   let orgId = known?.orgId ?? null;
   let createdOrg = false;
@@ -166,9 +191,16 @@ export async function finishCenarioLogin(
 
   let userId: string | null = null;
   let created = false;
-  const link = await db.cenarioLogin.findUnique({
-    where: { companyKey_cenarioUserId: { companyKey, cenarioUserId: person.id } },
-  });
+  const link =
+    (await db.cenarioLogin.findUnique({
+      where: { companyKey_cenarioUserId: { companyKey, cenarioUserId: person.id } },
+    })) ??
+    (companyKey !== oldKey
+      ? // Ligação antiga desta mesma pessoa: só reaproveitada se ela já é desta organização.
+        await db.cenarioLogin.findUnique({
+          where: { companyKey_cenarioUserId: { companyKey: oldKey, cenarioUserId: person.id } },
+        })
+      : null);
   if (link && (await isMember(link.userId))) userId = link.userId;
 
   const email = person.email?.trim().toLowerCase() || null;
@@ -211,7 +243,7 @@ export async function finishCenarioLogin(
   request.user = { sessionId: '', id: user.id, name: user.name, email: user.email };
   await audit(request, {
     action: 'conta.entrou_pelo_cenario',
-    summary: `${person.name} entrou pelo Cenário Gestão (${company.name})${createdOrg ? '; organização criada' : ''}${created ? '; conta criada' : ''}.`,
+    summary: `${person.name} entrou pelo Cenário Gestão (${company.name})${createdOrg ? '; organização criada' : ''}${created ? '; conta criada' : ''}${legacy ? '; ligação antiga conferida com o Cenário' : ''}.`,
     company: company.name,
     orgId: org.id,
   });
@@ -233,4 +265,22 @@ export async function finishCenarioLogin(
   return reply
     .header('cache-control', 'no-store')
     .redirect(directAuthorizeUrl(app, state, verifier, { id: org.id, name: org.name }));
+}
+
+/**
+ * A conexão antiga (chave por nome/documento) é da empresa que está entrando? Pergunta ao Cenário
+ * com o token da própria conexão. Sem resposta (conexão suspensa), só aceita quando quem entra é
+ * a mesma pessoa que fez a conexão (o e-mail é único no Cenário e cada pessoa é de uma empresa só).
+ */
+async function sameCompany(
+  app: FastifyInstance,
+  conn: Parameters<typeof connectionCompanyId>[1],
+  company: CenarioCompany,
+  person: { email: string | null },
+) {
+  if (company.id === null || company.id === undefined) return true; // Cenário antigo: sem número, vale a chave antiga.
+  const id = await connectionCompanyId(app, conn);
+  if (id !== null) return id === company.id;
+  const email = person.email?.trim().toLowerCase();
+  return !!email && conn.cenarioUserEmail?.trim().toLowerCase() === email;
 }
