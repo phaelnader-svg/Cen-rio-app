@@ -114,8 +114,12 @@ export async function oauthRoutes(app: FastifyInstance) {
   }
 
   async function company() {
-    const c = await prisma.companySettings.findUnique({ where: { id: requireCompanyId() } });
+    const id = requireCompanyId();
+    const c = await prisma.companySettings.findUnique({ where: { id } });
     return {
+      // Identidade estável da empresa (o nome e o documento podem se repetir entre empresas):
+      // é por ela que os aplicativos separam uma empresa da outra.
+      id,
       name: c?.tradeName ?? 'Empresa',
       legalName: c?.legalName ?? null,
       document: c?.document ?? null,
