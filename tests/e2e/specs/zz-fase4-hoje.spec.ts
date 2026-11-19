@@ -27,26 +27,20 @@ for (const vp of [
     test.setTimeout(120_000);
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await loginAdmin(page);
-    // Uma OS recebida e ainda sem programação → sugestão "Planejar".
+    // Uma OS recebida e ainda sem programação.
     await openServiceOrder(page, `Cliente Fase 4 ${vp.name} ${Date.now().toString(36)}`);
     await page.goto('/painel');
     const today = page.getByTestId('today-panel');
     await expect(today).toBeVisible();
-    // Revisão geral (item 1): um cartão só, "Precisa de você hoje", no lugar de quatro quadros.
-    await expect(
-      today.getByRole('heading', { name: 'Precisa de você hoje', exact: true }),
-    ).toBeVisible();
-    for (const id of ['today-in-execution', 'today-ready', 'today-pendencies'])
-      await expect(page.getByTestId(id)).toHaveCount(0);
+    // 2026-11-19 (Raphael): o "Hoje" volta com os quatro quadros e sem a lista de sugestões e
+    // avisos (os avisos ficam no sininho).
+    await expect(today.getByRole('heading', { name: 'Hoje', exact: true })).toBeVisible();
+    for (const id of ['today-in-execution', 'today-present', 'today-ready', 'today-pendencies'])
+      await expect(page.getByTestId(id)).toBeVisible();
+    await expect(page.getByTestId('today-suggestions')).toHaveCount(0);
+    await expect(page.getByTestId('today-alerts')).toHaveCount(0);
     // Nada de valores no painel "Hoje".
     expect(await today.innerText()).not.toMatch(MONEY);
-    // Ações sugeridas: somente links explicativos, sem botões de ação.
-    const sugg = page.getByTestId('today-suggestions');
-    await expect(sugg).toBeVisible();
-    await expect(sugg).toContainText('Planejar');
-    await expect(sugg.getByRole('button')).toHaveCount(0);
-    const first = sugg.getByTestId('today-suggestion').first();
-    await expect(first.getByRole('link')).toHaveAttribute('href', /^\/painel\//);
     await shot(page, `inicio-hoje-${vp.name}`);
 
     // Revisão geral (item 8): quem vê o financeiro abre a produtividade em Equipe (a aba da
