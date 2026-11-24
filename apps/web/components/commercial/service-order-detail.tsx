@@ -1,6 +1,6 @@
 'use client';
 
-import { plural } from '@cenario/shared';
+import { nextStepOf, plural } from '@cenario/shared';
 import type {
   Permission,
   Priority,
@@ -31,6 +31,7 @@ import {
   Plus,
   Ruler,
   Trash2,
+  Undo2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { buttonClass } from '@/components/ui/button-styles';
@@ -57,6 +58,8 @@ import { usePieces } from '@/lib/quality';
 import { OsProduction } from '@/components/production/os-production';
 import { DeadlineBadge, PriorityBadge, ReworkBanner, ServiceOrderStatusBadge } from './badges';
 import { MaterialPurchasedButton } from './material-purchased';
+import { NextStepButton } from '@/components/production/next-step';
+import { CreateReworkDialog } from '@/components/quality/reworks-page';
 import { PhotoGallery } from './photo-gallery';
 import { BackLink, Detail, Section } from './section';
 import { OsLabor } from '@/components/finance/service-order-labor';
@@ -165,6 +168,7 @@ export function ServiceOrderDetail({ id }: { id: string }) {
   const [editItem, setEditItem] = useState<ServiceOrderItemDto | null>(null);
   const [measureItem, setMeasureItem] = useState<ServiceOrderItemDto | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [rework, setRework] = useState(false);
   const opState = useOperationalState(id, can('os.ver'));
 
   if (so.isPending) return <Spinner />;
@@ -185,10 +189,26 @@ export function ServiceOrderDetail({ id }: { id: string }) {
   const canDelivery = can('os.ver') || can('entregas.ver');
   // Evolução Fase 5: valores de mão de obra só para quem vê o financeiro.
   const canLabor = can('financeiro.ver');
+  const next = opState.data
+    ? nextStepOf({
+        state: opState.data.state,
+        reasons: opState.data.items.flatMap((i) => i.reasons),
+        materialPurchased: Boolean(s.materialPurchasedAt),
+        cancelled: !open,
+      })
+    : null;
+  // "Voltou com defeito": mesmas permissões do Novo retrabalho.
+  const canRework = can('os.gerenciar') && can('pedidos.gerenciar') && can('retiradas.gerenciar');
 
   return (
     <>
       <BackLink href="/painel/os" label="Ordens de serviço" />
+      {rework && (
+        <CreateReworkDialog
+          onClose={() => setRework(false)}
+          initialOrder={{ id: s.order.id, code: s.order.code }}
+        />
+      )}
       <ReworkBanner rework={s.rework} />
       <PageHeader
         title={s.code}
@@ -260,10 +280,41 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         {/* Fase 3: "Aberta" ficava ao lado de "Entregue" (a OS continua aberta no banco depois da
             entrega). A situação geral fica no quadro abaixo; aqui só o cancelamento. */}
         {s.status === 'CANCELADA' && <ServiceOrderStatusBadge status={s.status} />}
-        {s.status === 'ABERTA' && (
+        {s.status === 'ABERTA' && !s.materialPurchasedAt && (
           <span data-testid="os-material">
             <MaterialPurchasedButton os={s} canManage={manage} />
           </span>
+        )}
+        {/* Oficina sem tablet (2026-11-24): a próxima etapa, um clique, na ordem da oficina. */}
+        {next && (
+          <NextStepButton
+            size="md"
+            os={{
+              id: s.id,
+              code: s.code,
+              nextStep: next,
+              customer: s.customer,
+              pieces:
+                s.items.length === 1
+                  ? `o seu ${s.items[0]!.description.toLowerCase()}`
+                  : 'o seu pedido',
+            }}
+          />
+        )}
+        {s.status === 'ABERTA' && s.materialPurchasedAt && (
+          <span data-testid="os-material">
+            <MaterialPurchasedButton os={s} canManage={manage} />
+          </span>
+        )}
+        {opState.data?.state === 'ENTREGUE' && canRework && (
+          <Button
+            variant="outline-danger"
+            icon={<Undo2 className="size-4" aria-hidden />}
+            onClick={() => setRework(true)}
+            data-testid="os-back-with-defect"
+          >
+            Voltou com defeito
+          </Button>
         )}
         <PriorityBadge priority={s.priority} always />
         {s.promisedDate && (

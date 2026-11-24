@@ -13,6 +13,7 @@ import { ExportLink } from '@/components/ui/export-link';
 import { formatDay, useServiceOrders } from '@/lib/commercial';
 import { useCan } from '@/lib/hooks';
 import { OsBulkBar } from '@/components/improvements/os-bulk';
+import { NextStepButton } from '@/components/production/next-step';
 import { DeadlineBadge, PriorityBadge, ReworkBadge, ServiceOrderStatusBadge } from './badges';
 import { MaterialPurchasedButton } from './material-purchased';
 import { OsStateBadge } from './os-state';
@@ -82,7 +83,13 @@ export function ServiceOrdersPage() {
         </Card>
       ) : (
         <>
-          {bulk && <OsBulkBar ids={selected} onDone={() => setSelected([])} />}
+          {bulk && (
+            <OsBulkBar
+              ids={selected}
+              rows={list.data.items.filter((x) => selected.includes(x.id))}
+              onDone={() => setSelected([])}
+            />
+          )}
           <Card className="overflow-hidden">
             <ul className="divide-y divide-line">
               {list.data.items.map((s) => (
@@ -151,6 +158,12 @@ export function ServiceOrdersPage() {
                   {s.status === 'ABERTA' && !s.materialPurchasedAt && (
                     <div className="shrink-0 px-5 pb-3.5 sm:px-0 sm:pr-4 sm:pb-0 [&>button]:w-full sm:[&>button]:w-auto">
                       <MaterialPurchasedButton os={s} canManage={bulk} compact />
+                    </div>
+                  )}
+                  {/* Oficina sem tablet (2026-11-24): botão verde da próxima etapa, um clique. */}
+                  {s.status === 'ABERTA' && s.materialPurchasedAt && s.nextStep && (
+                    <div className="shrink-0 px-5 pb-3.5 sm:px-0 sm:pr-4 sm:pb-0">
+                      <NextStepButton os={s} />
                     </div>
                   )}
                 </li>

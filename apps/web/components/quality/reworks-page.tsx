@@ -13,7 +13,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Plus, RotateCcw, Search } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { buttonClass } from '@/components/ui/button-styles';
 import { Dialog } from '@/components/ui/dialog';
@@ -405,13 +405,29 @@ function Tile({
   );
 }
 
-function CreateReworkDialog({ onClose }: { onClose: () => void }) {
+export function CreateReworkDialog({
+  onClose,
+  initialOrder,
+}: {
+  onClose: () => void;
+  /** "Voltou com defeito" na OS entregue: o serviço já vem escolhido. */
+  initialOrder?: { id: string; code: string };
+}) {
   const can = useCan();
   const logistica = useModules().logistica;
   const finance = can('financeiro.gerenciar');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialOrder?.code ?? '');
   const [order, setOrder] = useState<ReworkCandidate | null>(null);
   const candidates = useReworkCandidates(search.trim(), !order);
+  const [autoPicked, setAutoPicked] = useState(false);
+  useEffect(() => {
+    if (autoPicked || !initialOrder || order) return;
+    const found = candidates.data?.find((o) => o.id === initialOrder.id);
+    if (found) {
+      setAutoPicked(true);
+      pick(found);
+    }
+  }, [candidates.data, initialOrder, order, autoPicked]);
   const [qty, setQty] = useState<Record<string, number>>({});
   const [reason, setReason] = useState('');
   const [cause, setCause] = useState<ReworkCause>('ERRO_EXECUCAO');

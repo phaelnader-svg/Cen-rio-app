@@ -29,6 +29,7 @@ import {
   Route,
   type LucideIcon,
   Warehouse,
+  Sun,
   Map as MapIcon,
 } from 'lucide-react';
 
@@ -179,6 +180,14 @@ export const NAV: NavItem[] = [
     anyOf: ['entregas.ver', 'entregas.gerenciar'],
   },
   { href: '/painel/clientes', label: 'Clientes', icon: Contact, anyOf: ['clientes.ver'] },
+  // Oficina sem tablet (2026-11-24): o que está na oficina hoje, por tapeceiro, com o botão da
+  // próxima etapa (feito para o celular).
+  {
+    href: '/painel/producao/hoje',
+    label: 'Hoje na oficina',
+    icon: Sun,
+    anyOf: ['os.ver', 'producao.ver', 'producao.planejar'],
+  },
   // Revisão geral (item 8): a semana da oficina numa entrada só — montar, acompanhar e decidir
   // as mudanças. "Competências da equipe" segue por link.
   {

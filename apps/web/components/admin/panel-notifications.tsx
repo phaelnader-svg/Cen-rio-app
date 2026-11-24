@@ -36,6 +36,8 @@ function look(n: NotificationDto): { chip?: [string, 'danger' | 'warn']; action:
       return { chip: ['Em risco', 'warn'], action: 'Ver OS' };
     case 'PRAZO_PROXIMO':
       return { chip: ['Prazo perto', 'warn'], action: 'Ver OS' };
+    case 'SERVICO_PARADO':
+      return { chip: ['Parado', 'warn'], action: 'Ver OS' };
     default:
       if (PRESENCE_KINDS.has(n.kind)) return { action: 'Ver presença' };
       return { action: n.taskId ? 'Ver tarefa' : 'Abrir' };
