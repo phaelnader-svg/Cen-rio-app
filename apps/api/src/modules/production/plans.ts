@@ -467,6 +467,92 @@ export async function announceAssignments(
   }
 }
 
+/**
+ * Publica a programação da semana (as tarefas passam a valer e vão para os tablets). Semana já
+ * publicada com serviços pré-planejados: publica só o rascunho, como nova revisão. Também usada
+ * pela "Oficina sem tablet" (2026-11-24): a semana planejada já vale, sem o passo de publicar.
+ */
+export async function publishPlanTx(
+  tx: Tx,
+  actor: ActorContext,
+  plan: Awaited<ReturnType<typeof lockPlan>>,
+  notes: string | null,
+) {
+  if (plan.status === 'PUBLICADO') {
+    // Simplificação Fase 4: semana publicada com serviços pré-planejados (rascunho) —
+    // "Publicar semana" publica só o rascunho, como nova revisão.
+    if (!(await tx.productionTask.count({ where: { planId: plan.id, status: 'RASCUNHO' } })))
+      throw Errors.business('A programação já foi publicada; alterações geram revisões.');
+    await publishDrafts(tx, actor, plan, notes);
+    return;
+  }
+  const tasks = await tx.productionTask.findMany({
+    where: { planId: plan.id, status: 'RASCUNHO' },
+  });
+  if (tasks.length === 0) throw Errors.business('Inclua ao menos uma tarefa antes de publicar.');
+  const { planningWeekday, timezone } = await company(tx);
+  await tx.productionTask.updateMany({
+    where: { planId: plan.id, status: 'RASCUNHO' },
+    data: { status: 'BLOQUEADA' },
+  });
+  const now = clockNow();
+  await tx.productionPlan.update({
+    where: { id: plan.id },
+    data: {
+      status: 'PUBLICADO',
+      revision: 1,
+      publishedAt: now,
+      publishedById: actor.userId,
+      notes: notes ?? plan.notes,
+      version: { increment: 1 },
+    },
+  });
+  for (const t of tasks)
+    await taskEvent(tx, actor, null, t, {
+      kind: 'PUBLICADA',
+      from: 'RASCUNHO',
+      to: 'BLOQUEADA',
+    });
+  await tx.productionPlanRevision.create({
+    data: {
+      planId: plan.id,
+      revision: 1,
+      reason: notes ?? 'Publicação inicial',
+      offSchedule: weekdayIn(timezone) !== planningWeekday,
+      snapshot: (await snapshot(tx, plan.id)) as Prisma.InputJsonValue,
+      createdById: actor.userId,
+    },
+  });
+  await audit(tx, actor, {
+    action: 'production.plan_published',
+    entityType: 'production_plan',
+    entityId: plan.id,
+    summary: `Programação da semana ${dateOnly(plan.weekStart)} publicada com ${plural(tasks.length, 'tarefa', 'tarefas')}.`,
+  });
+  await appendEvent(tx, actor, {
+    type: EVENT_TYPES.PRODUCTION_PLAN_PUBLISHED,
+    aggregateType: 'production_plan',
+    aggregateId: plan.id,
+    payload: { id: plan.id, weekStart: dateOnly(plan.weekStart), revision: 1 },
+    audience: 'all',
+  });
+  await reevaluateTasks(
+    tx,
+    actor,
+    tasks.map((t) => t.id),
+    now,
+  );
+  await announceAssignments(
+    tx,
+    actor,
+    tasks.map((t) => t.id),
+    {
+      key: `PUBLICACAO:${plan.id}`,
+      lead: `Programação da semana de ${dateOnly(plan.weekStart)!.split('-').reverse().join('/')} publicada`,
+    },
+  );
+}
+
 // ─────────────────────────── Rotas ───────────────────────────
 
 /**
@@ -1063,80 +1149,7 @@ export async function productionPlanRoutes(app: FastifyInstance) {
       await prisma.$transaction(async (tx) => {
         const plan = await lockPlan(tx, id);
         if (plan.version !== input.version) throw Errors.versionConflict(plan.version);
-        if (plan.status === 'PUBLICADO') {
-          // Simplificação Fase 4: semana publicada com serviços pré-planejados (rascunho) —
-          // "Publicar semana" publica só o rascunho, como nova revisão.
-          if (!(await tx.productionTask.count({ where: { planId: id, status: 'RASCUNHO' } })))
-            throw Errors.business('A programação já foi publicada; alterações geram revisões.');
-          await publishDrafts(tx, actor, plan, input.notes ?? null);
-          return;
-        }
-        const tasks = await tx.productionTask.findMany({
-          where: { planId: id, status: 'RASCUNHO' },
-        });
-        if (tasks.length === 0)
-          throw Errors.business('Inclua ao menos uma tarefa antes de publicar.');
-        const { planningWeekday, timezone } = await company(tx);
-        await tx.productionTask.updateMany({
-          where: { planId: id, status: 'RASCUNHO' },
-          data: { status: 'BLOQUEADA' },
-        });
-        const now = clockNow();
-        await tx.productionPlan.update({
-          where: { id },
-          data: {
-            status: 'PUBLICADO',
-            revision: 1,
-            publishedAt: now,
-            publishedById: actor.userId,
-            notes: input.notes ?? plan.notes,
-            version: { increment: 1 },
-          },
-        });
-        for (const t of tasks)
-          await taskEvent(tx, actor, null, t, {
-            kind: 'PUBLICADA',
-            from: 'RASCUNHO',
-            to: 'BLOQUEADA',
-          });
-        await tx.productionPlanRevision.create({
-          data: {
-            planId: id,
-            revision: 1,
-            reason: input.notes ?? 'Publicação inicial',
-            offSchedule: weekdayIn(timezone) !== planningWeekday,
-            snapshot: (await snapshot(tx, id)) as Prisma.InputJsonValue,
-            createdById: actor.userId,
-          },
-        });
-        await audit(tx, actor, {
-          action: 'production.plan_published',
-          entityType: 'production_plan',
-          entityId: id,
-          summary: `Programação da semana ${dateOnly(plan.weekStart)} publicada com ${plural(tasks.length, 'tarefa', 'tarefas')}.`,
-        });
-        await appendEvent(tx, actor, {
-          type: EVENT_TYPES.PRODUCTION_PLAN_PUBLISHED,
-          aggregateType: 'production_plan',
-          aggregateId: id,
-          payload: { id, weekStart: dateOnly(plan.weekStart), revision: 1 },
-          audience: 'all',
-        });
-        await reevaluateTasks(
-          tx,
-          actor,
-          tasks.map((t) => t.id),
-          now,
-        );
-        await announceAssignments(
-          tx,
-          actor,
-          tasks.map((t) => t.id),
-          {
-            key: `PUBLICACAO:${id}`,
-            lead: `Programação da semana de ${dateOnly(plan.weekStart)!.split('-').reverse().join('/')} publicada`,
-          },
-        );
+        await publishPlanTx(tx, actor, plan, input.notes ?? null);
       });
       return loadPlan(prisma, id);
     },

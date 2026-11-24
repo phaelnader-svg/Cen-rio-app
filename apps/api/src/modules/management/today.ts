@@ -31,6 +31,7 @@ import { resolveNotifications } from '../notifications/notify';
 import { loadPipeline } from '../production/pre-planning';
 import { notifyUsersWith } from '../quality/common';
 import { loadOperationalStates } from '../service-orders/operational';
+import { stoppedServices } from '../production/shop-floor';
 
 /**
  * Reformulação, Fase 4 — "Hoje" no Início, alertas internos e ações sugeridas.
@@ -170,7 +171,9 @@ async function currentFacts(db: Tx | PrismaClient) {
   });
   // 5. Contas a pagar vencidas ou que vencem até amanhã.
   const bills = await billsDue(db, cal.today, BILL_ALERT_DAYS_BEFORE);
-  return { cal, deadlines, risky, riskyOs, readyRows, soon, nearOsRows, orders, bills };
+  // 6. Oficina sem tablet (2026-11-24): serviço começado sem nenhum movimento há dias.
+  const stopped = await stoppedServices(db);
+  return { cal, deadlines, risky, riskyOs, readyRows, soon, nearOsRows, orders, bills, stopped };
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -290,6 +293,20 @@ export async function refreshOperationalAlerts(prisma: PrismaClient) {
                 ? 'vence hoje'
                 : `vence amanhã, ${br(b.dueDate)}`
           }.`,
+        );
+      }
+      // Serviço parado: começou e não teve nenhum movimento (etapa, qualidade) há dias.
+      for (const so of f.stopped) {
+        const subject = `SERVICO_PARADO:${so.id}`;
+        active.add(subject);
+        await notifyUsersWith(
+          tx,
+          SYSTEM,
+          'os.gerenciar',
+          'SERVICO_PARADO',
+          `${subject}:${so.since!.toISOString().slice(0, 10)}`,
+          `${serviceOrderCode(so.number)} (${so.customer.name}) começou e está parada há ${plural(so.days, 'dia', 'dias')}: confira se já ficou pronta.`,
+          so.id,
         );
       }
       // Resolve o que deixou de valer (fato corrigido, OS entregue, prazo normalizado…).

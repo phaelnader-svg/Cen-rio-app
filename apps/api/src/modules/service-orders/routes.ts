@@ -48,6 +48,7 @@ import { emitOrderEvent } from '../orders/routes';
 import { orderRevenue } from '../finance/revenue';
 import { loadTeam, upholsterersOf } from '../production/distribution';
 import { loadOperationalState, loadOperationalStates } from './operational';
+import { nextStepsOf } from '../production/shop-floor';
 import { createServiceOrder } from './service';
 import { requireCompanyId } from '../../core/tenant';
 
@@ -415,6 +416,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
       prisma,
       rows.map((r) => r.id),
     );
+    const nexts = await nextStepsOf(prisma, rows, states);
     return {
       total,
       items: rows.map(
@@ -438,6 +440,7 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
           materialPurchasedAt: so.materialPurchasedAt?.toISOString() ?? null,
           version: so.version,
           operationalState: states.get(so.id)?.state,
+          nextStep: nexts.get(so.id) ?? null,
         }),
       ),
     } satisfies PageDto<ServiceOrderSummaryDto>;

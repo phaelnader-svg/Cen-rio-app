@@ -42,6 +42,7 @@ import { autoReceiveDuePickups } from './modules/pickups/arrival';
 import { productionPlanRoutes } from './modules/production/plans';
 import { productionProductivityRoutes } from './modules/production/productivity';
 import { productionTaskRoutes } from './modules/production/tasks';
+import { shopFloorRoutes } from './modules/production/shop-floor';
 import { productionQueueRoutes } from './modules/production/queue';
 import { productionDistributionRoutes } from './modules/production/distribution';
 import { preplanningRoutes } from './modules/production/pre-planning';
@@ -287,6 +288,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(productionPlanRoutes);
   await app.register(productionProductivityRoutes);
   await app.register(productionTaskRoutes);
+  await app.register(shopFloorRoutes);
   await app.register(productionQueueRoutes);
   await app.register(productionDistributionRoutes);
   await app.register(preplanningRoutes);

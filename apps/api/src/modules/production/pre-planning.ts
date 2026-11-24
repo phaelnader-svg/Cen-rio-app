@@ -55,7 +55,8 @@ import {
 } from './common';
 import { distributeServiceOrder } from './distribution';
 import { placeServiceInQueue } from './queue-placement';
-import { materialPendingMessage, reviseIfPublishedBy } from './plans';
+import { materialPendingMessage, publishPlanTx, reviseIfPublishedBy } from './plans';
+import { moduleEnabled } from '../../core/modules';
 import { applyServicePriority } from './service-priority';
 
 const STARTED = ['EM_EXECUCAO', 'PAUSADA', 'CONCLUIDA'];
@@ -481,6 +482,15 @@ export async function preplanningRoutes(app: FastifyInstance) {
             tasksCreated: created.length,
           });
         }
+        // Oficina sem tablet (2026-11-24): a semana planejada já vale, sem o passo de publicar.
+        if (await moduleEnabled(tx, 'oficina_sem_tablet'))
+          for (const id of [...touchedPlans].sort())
+            await publishPlanTx(
+              tx,
+              actor,
+              await lockPlan(tx, id),
+              'Oficina sem tablet: a semana vale sem publicar',
+            );
         for (const id of touchedPlans)
           await appendEvent(tx, actor, {
             type: EVENT_TYPES.PRODUCTION_PLAN_UPDATED,

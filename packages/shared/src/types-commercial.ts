@@ -1,3 +1,4 @@
+import type { NextStep } from './shop-floor';
 import type { OperationalState } from './operational-state';
 import type { OrderDeadlineState, ServiceDeadline } from './deadline-domain';
 import type {
@@ -300,6 +301,8 @@ export interface ServiceOrderSummaryDto {
    * lista; o detalhe usa a rota própria.
    */
   operationalState?: OperationalState;
+  /** 2026-11-24 (oficina sem tablet): próxima etapa para o botão verde (só na lista). */
+  nextStep?: NextStep | null;
   /** 2026-11-18: OS de um retrabalho (vermelha na lista e no detalhe). */
   rework?: { id: string; code: string } | null;
 }

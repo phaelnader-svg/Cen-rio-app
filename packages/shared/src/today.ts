@@ -21,6 +21,7 @@ export const OPERATIONAL_ALERT_KINDS = [
   'PRAZO_PROXIMO',
   'CONTA_A_VENCER',
   'CONTA_VENCIDA',
+  'SERVICO_PARADO',
 ] as const;
 /** Conta a pagar avisa no sininho a partir deste número de dias antes do vencimento. */
 export const BILL_ALERT_DAYS_BEFORE = 1;

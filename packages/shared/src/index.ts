@@ -60,3 +60,4 @@ export * from './melhorias';
 export * from './holidays';
 export * from './text';
 export * from './reworks';
+export * from './shop-floor';

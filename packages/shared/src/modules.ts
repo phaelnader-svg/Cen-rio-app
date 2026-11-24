@@ -22,7 +22,7 @@ import { z } from 'zod';
  * existir. Registros antigos com essas chaves em `module_settings` são ignorados por
  * `resolveModules` (chave desconhecida).
  */
-export const MODULE_KEYS = ['logistica', 'ambiente_interativo'] as const;
+export const MODULE_KEYS = ['logistica', 'ambiente_interativo', 'oficina_sem_tablet'] as const;
 export type ModuleKey = (typeof MODULE_KEYS)[number];
 
 export interface ModuleDefinition {
@@ -49,6 +49,13 @@ export const MODULES: Record<ModuleKey, ModuleDefinition> = {
     defaultEnabled: false,
     configurable: false,
   },
+  oficina_sem_tablet: {
+    label: 'Oficina sem tablet',
+    description:
+      'Para quem ainda não usa o tablet: você marca o andamento pelo computador ou pelo celular (Começou, Ficou pronta, Aprovada, Saiu para entrega, Entregue). A foto e a observação das etapas viram opcionais, a semana planejada já vale sem precisar publicar e a qualidade é aprovada com um clique. Quando o tablet chegar, é só desligar.',
+    defaultEnabled: false,
+    configurable: true,
+  },
 };
 
 export type ModuleState = Record<ModuleKey, boolean>;
@@ -74,6 +81,7 @@ export function resolveModules(rows: readonly { key: string; enabled: boolean }[
 export const MODULE_NOTIFICATION_KINDS: Record<ModuleKey, readonly string[]> = {
   logistica: ['ENTREGA_ATRIBUIDA', 'ENTREGA_AGENDADA', 'ENTREGA_CONCLUIDA'],
   ambiente_interativo: [],
+  oficina_sem_tablet: [],
 };
 
 /**
