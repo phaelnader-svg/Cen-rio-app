@@ -127,7 +127,7 @@ export function NextStepButton({
   return (
     <>
       {step && canStep(step) && (
-        <span className={full ? 'flex w-full gap-2' : 'inline-flex gap-2'}>
+        <span className={full ? 'grid w-full gap-2' : 'inline-flex gap-2'}>
           <NextStepMainButton
             step={step}
             size={size}
@@ -140,6 +140,7 @@ export function NextStepButton({
             <Button
               size={size}
               variant="secondary"
+              className={full ? 'w-full' : undefined}
               loading={m.isPending && Boolean(m.variables?.pickedUpByCustomer)}
               onClick={() => m.mutate({ step: 'ENTREGUE', pickedUpByCustomer: true })}
               data-testid={`picked-up-${os.code}`}
@@ -173,7 +174,7 @@ export function NextStepMainButton({
   return (
     <Button
       size={size}
-      className={full ? 'flex-1' : undefined}
+      className={full ? 'w-full' : undefined}
       loading={loading}
       icon={<Icon className="size-4" aria-hidden />}
       onClick={onClick}
