@@ -46,18 +46,12 @@ function SheetDocument({ s }: { s: ServiceOrderSheetDto }) {
   const fabrics = new Set(s.items.map((i) => fabricOf(i, work)));
   const sameFabric = fabrics.size <= 1;
   const messages = [work?.notes, s.technicalInstructions, s.notes].filter(Boolean) as string[];
-  const materials =
-    s.materials.length > 0
-      ? s.materials.map((m) => ({
-          name: m.description,
-          amount: [m.quantity, m.unit].filter(Boolean).join(' '),
-          ready: m.available,
-        }))
-      : (work?.materials ?? []).map((m) => ({
-          name: m.size ? `${m.name} — ${m.size}` : m.name,
-          amount: `${String(m.quantity).replace('.', ',')} ${m.unit}`,
-          ready: false,
-        }));
+  // 2026-11-24 (Raphael): só a lista da própria OS — os materiais do orçamento não entram.
+  const materials = s.materials.map((m) => ({
+    name: m.description,
+    amount: [m.quantity, m.unit].filter(Boolean).join(' '),
+    ready: m.available,
+  }));
   return (
     <article
       className="print-page print-flat overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-card)]"

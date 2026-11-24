@@ -6,6 +6,7 @@ import type {
   InventoryAdjustmentDto,
   InventoryCategoryDto,
   InventoryItemDto,
+  MaterialToBuyDto,
   OsMaterialsDto,
 } from '@cenario/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -21,6 +22,16 @@ export const useOsMaterialList = (soId: string) =>
   useQuery({
     queryKey: osMaterialListKey(soId),
     queryFn: () => api<OsMaterialsDto>(`/api/v1/service-orders/${soId}/material-list`),
+  });
+
+/** Lista "Comprar" (2026-11-24): sob o prefixo da lista da OS, recarrega junto com ela. */
+export const toBuyKey = ['os-material-list', 'to-buy'] as const;
+
+export const useMaterialsToBuy = (enabled = true) =>
+  useQuery({
+    queryKey: toBuyKey,
+    queryFn: () => api<MaterialToBuyDto[]>('/api/v1/os-materials/to-buy'),
+    enabled,
   });
 
 export const useDirectDelivery = (soId: string, enabled = true) =>

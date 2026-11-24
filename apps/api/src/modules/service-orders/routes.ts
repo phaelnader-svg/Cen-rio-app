@@ -51,6 +51,7 @@ import { loadOperationalState, loadOperationalStates } from './operational';
 import { nextStepsOf } from '../production/shop-floor';
 import { createServiceOrder } from './service';
 import { requireCompanyId } from '../../core/tenant';
+import { announce as announceOsMaterials } from '../os-materials/routes';
 
 const VIEW = { session: 'any', permissions: ['os.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['os.gerenciar'] } as const;
@@ -808,6 +809,15 @@ export async function serviceOrderRoutes(app: FastifyInstance) {
             : `OS ${serviceOrderCode(after.number)}: material desmarcado — aguardando material.`,
           action: 'service_order.material_purchased',
         });
+        // 2026-11-24 (Raphael): "Material comprado" vale para a lista da OS inteira — o que ainda
+        // estava em "Comprar" sai de lá (marcado como comprado, com quem e quando no registro).
+        if (input.purchased) {
+          const pending = await tx.serviceOrderMaterial.updateMany({
+            where: { serviceOrderId: id, purchased: false, removedAt: null },
+            data: { purchased: true, updatedById: actor.userId, version: { increment: 1 } },
+          });
+          if (pending.count) await announceOsMaterials(tx, actor, id);
+        }
       });
       return loadServiceOrderDto(prisma, id);
     },

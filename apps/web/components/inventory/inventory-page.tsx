@@ -17,6 +17,7 @@ import {
   useInventoryCategories,
   useInventoryItems,
 } from '@/lib/simple-materials';
+import { ToBuyList } from './to-buy-list';
 
 /**
  * Reformulação, Fase 1 — estoque simples da oficina.
@@ -47,11 +48,12 @@ export function InventoryPage() {
     <>
       <PageHeader
         title="Estoque da oficina"
-        description="O que há na oficina: materiais e rolos de tecido."
+        description="O que falta comprar para as OS e o que há na oficina."
         help="Controle simples do que há na oficina: categorias próprias, materiais e rolos de tecido. Não é baixado pelas OS — a quantidade muda só por ajuste, com histórico."
       />
       <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
         <div className="min-w-0 space-y-4">
+          <ToBuyList />
           {manage && <NewItem categories={cats.data ?? []} />}
           <div className="flex flex-wrap items-center gap-3">
             <Input

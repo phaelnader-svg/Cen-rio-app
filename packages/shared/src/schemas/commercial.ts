@@ -387,8 +387,22 @@ export const createServiceOrderSchema = z.object({
   ...osHeader,
   /** Fluxo da OS (2026-11-18): material já comprado (ou nada a comprar) na criação. */
   materialPurchased: z.boolean().optional(),
-  /** 2026-11-19: copia os materiais do orçamento aprovado do pedido para a lista da OS. */
+  /**
+   * 2026-11-24 (Raphael): a OS NÃO copia mais os materiais do orçamento (o orçamento estima para
+   * dar preço). Campo antigo aceito e ignorado, para não recusar telas abertas antes da troca.
+   */
   materialsFromQuote: z.boolean().optional(),
+  /** Materiais que a OS vai usar, escritos ao gerar a OS (entram na lista "Comprar" se faltam). */
+  materials: z
+    .array(
+      z.object({
+        description: z.string().trim().min(2, { message: 'Escreva o material.' }).max(200),
+        quantity: z.number().positive().max(1_000_000).nullable().optional(),
+        unit: z.string().trim().max(20).nullable().optional(),
+      }),
+    )
+    .max(40)
+    .optional(),
   items: z
     .array(
       z

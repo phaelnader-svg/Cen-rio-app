@@ -281,3 +281,94 @@ describe('C e D. gerar OS e material comprado', () => {
     expect((await pipeline(admin)).items.some((i) => i.serviceOrder.id === so.id)).toBe(true);
   });
 });
+
+describe('E. materiais da OS e lista "Comprar" (2026-11-24)', () => {
+  type ToBuy = {
+    id: string;
+    description: string;
+    quantity: number | null;
+    unit: string | null;
+    version: number;
+    serviceOrder: { id: string; code: string; customerName: string; materialPurchased: boolean };
+  };
+  const toBuy = async (c: Client) => (await c.get('/api/v1/os-materials/to-buy')).body as ToBuy[];
+
+  it('a OS não copia materiais do orçamento; os escritos ao gerar vão para "Comprar"', async () => {
+    const admin = await loginAdmin(app);
+    const res = await closeService(admin, null);
+    const so = await generateOs(admin, res.order.id, {
+      materialsFromQuote: true, // campo antigo: ignorado
+      materials: [
+        { description: 'Espuma D33 5 cm', quantity: 4, unit: 'placa' },
+        { description: 'Cola de contato' },
+      ],
+    });
+    const lines = await db().serviceOrderMaterial.findMany({
+      where: { serviceOrderId: so.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(lines.map((l) => l.description)).toEqual(['Espuma D33 5 cm', 'Cola de contato']);
+    expect(lines.every((l) => !l.purchased && !l.notes)).toBe(true);
+
+    const list = await toBuy(admin);
+    expect(list.map((m) => m.description).sort()).toEqual(['Cola de contato', 'Espuma D33 5 cm']);
+    expect(list[0]!.serviceOrder.code).toBe(so.code);
+    expect(list[0]!.serviceOrder.customerName).toBe('Fulana de Tal');
+    expect(list.find((m) => m.unit === 'placa')?.quantity).toBe(4);
+
+    // Linha marcada como comprada na OS sai da lista.
+    const espuma = list.find((m) => m.description.startsWith('Espuma'))!;
+    const patch = await admin.req(
+      'PATCH',
+      `/api/v1/service-orders/${so.id}/material-list/${espuma.id}`,
+      { purchased: true, version: espuma.version },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(patch.status, JSON.stringify(patch.body)).toBe(200);
+    expect((await toBuy(admin)).map((m) => m.description)).toEqual(['Cola de contato']);
+  });
+
+  it('"Material comprado" na OS tira da lista o que faltava', async () => {
+    const admin = await loginAdmin(app);
+    const res = await closeService(admin, null);
+    const so = await generateOs(admin, res.order.id, {
+      materials: [{ description: 'Percinta', quantity: 10, unit: 'm' }],
+    });
+    expect(await toBuy(admin)).toHaveLength(1);
+    const ok = await post(admin, `/api/v1/service-orders/${so.id}/material-purchased`, {
+      version: so.version,
+      purchased: true,
+    });
+    expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+    expect(await toBuy(admin)).toHaveLength(0);
+    const line = await db().serviceOrderMaterial.findFirstOrThrow({
+      where: { serviceOrderId: so.id },
+    });
+    expect(line.purchased).toBe(true);
+  });
+
+  it('OS cancelada não aparece em "Comprar"', async () => {
+    const admin = await loginAdmin(app);
+    const res2 = await closeService(admin, null);
+    const so2 = await generateOs(admin, res2.order.id, {
+      materials: [{ description: 'Tecido linho', quantity: 6, unit: 'm' }],
+    });
+    expect(await toBuy(admin)).toHaveLength(1);
+    const cancel = await post(admin, `/api/v1/service-orders/${so2.id}/cancel`, {
+      reason: 'Cliente desistiu',
+      version: so2.version,
+    });
+    expect(cancel.status, JSON.stringify(cancel.body)).toBe(200);
+    expect(await toBuy(admin)).toHaveLength(0);
+  });
+
+  it('"Já comprado" na criação grava os materiais como comprados (fora da lista)', async () => {
+    const admin = await loginAdmin(app);
+    const res = await closeService(admin, null);
+    await generateOs(admin, res.order.id, {
+      materialPurchased: true,
+      materials: [{ description: 'Grampo 106/8' }],
+    });
+    expect(await toBuy(admin)).toHaveLength(0);
+  });
+});

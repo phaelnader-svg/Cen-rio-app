@@ -5,7 +5,7 @@ import type { Priority, ServiceOrderDto, ServiceType } from '@cenario/shared';
 import { PRIORITIES, PRIORITY_LABEL, createServiceOrderSchema } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Camera, X } from 'lucide-react';
+import { Camera, Plus, Trash2, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -27,13 +27,14 @@ import { useAvailableForOs, type AvailableForOs } from '@/lib/commercial';
 import { useCan } from '@/lib/hooks';
 import { uploadPhoto } from '@/lib/photos';
 import { useEmployees } from '@/lib/queries';
-import { fabricText, WorkChecks, WorkMaterials } from './quote-work';
+import { fabricText, WorkChecks } from './quote-work';
 import { BackLink } from './section';
 
 /**
  * 2026-11-19 (Raphael): gerar OS em 5 partes, cada informação uma vez só. O serviço (o que o
- * orçamento aprovado diz: serviço do tapeceiro, peças, o que fazer, tecido, materiais com
- * medidas, foto) aparece travado; preenche-se só o que falta: tapeceiro e mão de obra por peça,
+ * orçamento aprovado diz: serviço do tapeceiro, peças, o que fazer, tecido, foto) aparece
+ * travado. 2026-11-24: os materiais NÃO vêm do orçamento — escrevem-se aqui os que a OS vai usar
+ * (o que falta comprar vai para a lista "Comprar" do Estoque da oficina); preenche-se só o que falta: tapeceiro e mão de obra por peça,
  * prazo, prioridade, material, fotos e um recado. O responsável da OS é o próprio tapeceiro e a
  * mão de obra é liberada na aprovação da qualidade. Titular e mão de obra são gravados na mesma
  * operação da OS (atômica). Nenhum pagamento é liberado na criação.
@@ -163,10 +164,9 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
   const [photos, setPhotos] = useState<File[]>([]);
   const previews = useMemo(() => photos.map((f) => URL.createObjectURL(f)), [photos]);
   useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
-  // Padrão: falta comprar (a OS espera o "Material comprado"); orçamento sem material = comprado.
-  const [materialPurchased, setMaterialPurchased] = useState<boolean>(
-    Boolean(work && work.materials.length === 0),
-  );
+  // Padrão: falta comprar (a OS espera o "Material comprado").
+  const [materialPurchased, setMaterialPurchased] = useState<boolean>(false);
+  const [materials, setMaterials] = useState<MaterialRow[]>([emptyMaterial()]);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const idem = useRef(newIdempotencyKey());
@@ -182,10 +182,7 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
   // lista de materiais (que já traz a metragem).
   const showPieces = many || rows[0]?.quantity !== 1 || rows[0]?.description !== service;
   const fabric = (rows[0]?.fabricName || work?.fabricName || '').trim().toLowerCase();
-  const showFabric =
-    !work ||
-    Boolean(rows[0]?.fabricColor) ||
-    !work.materials.some((m) => m.name.trim().toLowerCase() === fabric);
+  const showFabric = !work || Boolean(fabric) || Boolean(rows[0]?.fabricColor);
 
   // Responsável da OS = o tapeceiro escolhido (um só lugar para escolher).
   const leadId = useMemo(() => {
@@ -204,7 +201,13 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
         technicalInstructions: orderNotes,
         notes,
         materialPurchased,
-        materialsFromQuote: Boolean(work?.materials.length),
+        materials: materials
+          .filter((x) => x.description.trim())
+          .map((x) => ({
+            description: x.description.trim(),
+            quantity: parseAmount(x.quantity),
+            unit: x.unit.trim() || null,
+          })),
         items: rows.map((r) => ({
           orderItemId: r.orderItemId,
           quantity: r.quantity,
@@ -332,11 +335,6 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
               <Fact label="Tecido">
                 {fabricText(rows[0]?.fabricName || work?.fabricName, work?.fabricMeters ?? null)}
                 {rows[0]?.fabricColor ? ` · cor ${rows[0].fabricColor}` : ''}
-              </Fact>
-            )}
-            {work && (
-              <Fact label="Materiais">
-                <WorkMaterials materials={work.materials} />
               </Fact>
             )}
             {(work?.notes || orderNotes) && (
@@ -485,6 +483,7 @@ function ServiceOrderForm({ data }: { data: AvailableForOs }) {
             </div>
           </div>
         </FormGrid>
+        <MaterialsInput rows={materials} onChange={setMaterials} missing={!materialPurchased} />
       </FormSection>
 
       {/* 4. Fotos da peça: um lugar que parece mesmo para pôr foto. */}
@@ -607,4 +606,99 @@ function dataUrlToFile(dataUrl: string, name: string): File {
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return new File([bytes], `${name}.${type === 'image/png' ? 'png' : 'jpg'}`, { type });
+}
+
+type MaterialRow = { key: string; description: string; quantity: string; unit: string };
+let materialSeq = 0;
+const emptyMaterial = (): MaterialRow => ({
+  key: `m${++materialSeq}`,
+  description: '',
+  quantity: '',
+  unit: '',
+});
+/** "4,5" → 4.5; vazio ou inválido → null (a quantidade é opcional). */
+function parseAmount(v: string): number | null {
+  const t = v.trim().replace(/\./g, '').replace(',', '.');
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * 2026-11-24 (Raphael): materiais que a OS vai usar, escritos aqui uma vez só. Com "Falta comprar",
+ * cada linha aparece na lista "Comprar" do Estoque da oficina até alguém marcar que comprou.
+ */
+function MaterialsInput({
+  rows,
+  onChange,
+  missing,
+}: {
+  rows: MaterialRow[];
+  onChange: (rows: MaterialRow[]) => void;
+  missing: boolean;
+}) {
+  const set = (key: string, patch: Partial<MaterialRow>) =>
+    onChange(rows.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  return (
+    <div className="mt-5 border-t border-line pt-4" data-testid="so-materials">
+      <p className="label">Materiais da OS</p>
+      <p className="mb-3 text-xs text-ink-muted">
+        {missing
+          ? 'O que vai usar e ainda precisa comprar. Vai para a lista “Comprar” do Estoque da oficina.'
+          : 'O que vai usar (opcional). Fica na OS como já comprado.'}
+      </p>
+      <ul className="space-y-2">
+        {rows.map((r, i) => (
+          <li key={r.key} className="grid grid-cols-[1fr_5.5rem_5.5rem_auto] items-center gap-2">
+            <input
+              className="input"
+              aria-label={`Material ${i + 1}`}
+              placeholder="Ex.: Espuma D33 5 cm"
+              maxLength={200}
+              value={r.description}
+              onChange={(e) => set(r.key, { description: e.target.value })}
+            />
+            <input
+              className="input"
+              aria-label={`Quantidade do material ${i + 1}`}
+              placeholder="Qtd."
+              inputMode="decimal"
+              value={r.quantity}
+              onChange={(e) => set(r.key, { quantity: e.target.value })}
+            />
+            <input
+              className="input"
+              aria-label={`Unidade do material ${i + 1}`}
+              placeholder="Unid."
+              maxLength={20}
+              value={r.unit}
+              onChange={(e) => set(r.key, { unit: e.target.value })}
+            />
+            <button
+              type="button"
+              className="grid size-10 place-items-center rounded-lg text-ink-muted hover:bg-subtle hover:text-danger-600 disabled:opacity-30"
+              aria-label={`Tirar material ${i + 1}`}
+              disabled={rows.length === 1 && !r.description && !r.quantity && !r.unit}
+              onClick={() =>
+                onChange(
+                  rows.length === 1 ? [emptyMaterial()] : rows.filter((x) => x.key !== r.key),
+                )
+              }
+            >
+              <Trash2 className="size-4" aria-hidden />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="mt-2"
+        onClick={() => onChange([...rows, emptyMaterial()])}
+      >
+        <Plus className="size-4" aria-hidden /> Outro material
+      </Button>
+    </div>
+  );
 }

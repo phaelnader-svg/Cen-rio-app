@@ -587,6 +587,8 @@ describe('Logística desligável e reversível', () => {
     expect(ok(await admin.get('/api/v1/modules'))).toEqual({
       logistica: true,
       ambiente_interativo: true,
+      // Oficina sem tablet (e10362e): desligada até o gestor escolher.
+      oficina_sem_tablet: false,
     });
     expect(await db().moduleSetting.count()).toBe(0);
   });

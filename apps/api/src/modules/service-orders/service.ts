@@ -16,7 +16,6 @@ import { createLabor } from '../finance/labor';
 import { syncPickupCostsOfOrder } from '../finance/trip-costs';
 import { emitOrderEvent } from '../orders/routes';
 import { setUpholsterer } from '../production/distribution';
-import { materialDescription, quoteWork } from './quote-work';
 import { recordChange } from './routes';
 
 /**
@@ -131,29 +130,21 @@ export async function createServiceOrder(
         notes: it.labor.notes ?? null,
       });
   }
-  // 2026-11-19 (Raphael): os materiais do orçamento (com as medidas da espuma) entram na lista
-  // da OS, sem custo — o tapeceiro vê o que vai usar e a compra segue pelo "Material comprado".
-  if (input.materialsFromQuote) {
-    const quote = await tx.quote.findFirst({
-      where: { orderId: order.id, deletedAt: null },
-      orderBy: { createdAt: 'desc' },
-      select: { number: true, snapshot: true, workOrder: true },
+  // 2026-11-24 (Raphael): a lista de materiais da OS é o que vai ser usado/comprado, escrito ao
+  // gerar a OS — não vem mais do orçamento. "Falta comprar" → as linhas entram na lista "Comprar".
+  const bought = Boolean(input.materialPurchased);
+  for (const m of input.materials ?? [])
+    await tx.serviceOrderMaterial.create({
+      data: {
+        serviceOrderId: so.id,
+        description: m.description,
+        quantity: m.quantity ?? null,
+        unit: m.unit?.trim() || null,
+        purchased: bought,
+        available: bought,
+        createdById: actor.userId,
+      },
     });
-    const bought = Boolean(input.materialPurchased);
-    for (const m of quote ? quoteWork(quote).materials : [])
-      await tx.serviceOrderMaterial.create({
-        data: {
-          serviceOrderId: so.id,
-          description: materialDescription(m),
-          quantity: m.quantity,
-          unit: m.unit.slice(0, 20) || null,
-          notes: `Do orçamento nº ${quote!.number}`,
-          purchased: bought,
-          available: bought,
-          createdById: actor.userId,
-        },
-      });
-  }
   // Evolução Fase 6: a OS entra no rateio automático da retirada do pedido.
   await syncPickupCostsOfOrder(tx, actor, order.id);
   await recordChange(

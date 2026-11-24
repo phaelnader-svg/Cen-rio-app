@@ -126,6 +126,27 @@ export interface OsMaterialsDto {
   pendingReconciliation?: { lines: number; realizedCents: number };
 }
 
+/**
+ * 2026-11-24 (Raphael): lista "Comprar" — todo material das OS abertas que ainda não foi comprado,
+ * num lugar só (Estoque da oficina). "Comprei" marca a linha na própria OS.
+ */
+export interface MaterialToBuyDto {
+  id: string;
+  description: string;
+  quantity: number | null;
+  unit: string | null;
+  version: number;
+  serviceOrder: {
+    id: string;
+    code: string;
+    customerName: string;
+    promisedDate: string | null;
+    /** A OS já tem o "Material comprado" (liberada para a semana). */
+    materialPurchased: boolean;
+    version: number;
+  };
+}
+
 export const MATERIALS_PENDING_NOTICE = 'Existem materiais ainda não disponíveis na oficina.';
 
 export function summarizeOsMaterials(

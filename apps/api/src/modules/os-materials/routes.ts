@@ -11,6 +11,7 @@ import {
   realizedOsMaterialCost,
   summarizeOsMaterials,
   type FormalCostRecordDto,
+  type MaterialToBuyDto,
   type OsMaterialDto,
   type OsMaterialsDto,
 } from '@cenario/shared';
@@ -28,7 +29,7 @@ import {
   reconciliationSelect,
   syncOsMaterialCosts,
 } from '../finance/costs';
-import { lockRow } from '../finance/common';
+import { dateOnly, lockRow } from '../finance/common';
 import { idParams } from '../presenters';
 
 /**
@@ -217,6 +218,46 @@ export const snapshot = (r: {
 
 export async function osMaterialRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
+
+  /**
+   * 2026-11-24 (Raphael): lista "Comprar" — material lançado nas OS abertas e ainda não comprado,
+   * da OS com prazo mais curto para a mais longa. Sem custos (quem compra não precisa ver valores).
+   */
+  app.get('/api/v1/os-materials/to-buy', { config: { access: VIEW } }, async () => {
+    const rows = await prisma.serviceOrderMaterial.findMany({
+      where: { purchased: false, removedAt: null, serviceOrder: { status: 'ABERTA' } },
+      include: {
+        serviceOrder: {
+          select: {
+            id: true,
+            number: true,
+            promisedDate: true,
+            materialPurchasedAt: true,
+            version: true,
+            customer: { select: { name: true, tradeName: true } },
+          },
+        },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    const out: MaterialToBuyDto[] = rows.map((r) => ({
+      id: r.id,
+      description: r.description,
+      quantity: num(r.quantity),
+      unit: r.unit,
+      version: r.version,
+      serviceOrder: {
+        id: r.serviceOrder.id,
+        code: serviceOrderCode(r.serviceOrder.number),
+        customerName: r.serviceOrder.customer.tradeName || r.serviceOrder.customer.name,
+        promisedDate: dateOnly(r.serviceOrder.promisedDate),
+        materialPurchased: Boolean(r.serviceOrder.materialPurchasedAt),
+        version: r.serviceOrder.version,
+      },
+    }));
+    const key = (m: MaterialToBuyDto) => m.serviceOrder.promisedDate ?? '9999-12-31';
+    return out.sort((a, b) => key(a).localeCompare(key(b)));
+  });
 
   app.get(
     '/api/v1/service-orders/:id/material-list',
