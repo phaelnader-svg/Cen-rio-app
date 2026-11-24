@@ -13,7 +13,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Plus, RotateCcw, Search } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { buttonClass } from '@/components/ui/button-styles';
 import { Dialog } from '@/components/ui/dialog';
@@ -410,25 +410,18 @@ export function CreateReworkDialog({
   initialOrder,
 }: {
   onClose: () => void;
-  /** "Voltou com defeito" na OS entregue: o serviço já vem escolhido. */
-  initialOrder?: { id: string; code: string };
+  /** "Voltou com defeito" na OS entregue: o serviço já vem escolhido, com as peças marcadas. */
+  initialOrder?: ReworkCandidate;
 }) {
   const can = useCan();
   const logistica = useModules().logistica;
   const finance = can('financeiro.gerenciar');
-  const [search, setSearch] = useState(initialOrder?.code ?? '');
-  const [order, setOrder] = useState<ReworkCandidate | null>(null);
+  const [search, setSearch] = useState('');
+  const [order, setOrder] = useState<ReworkCandidate | null>(initialOrder ?? null);
   const candidates = useReworkCandidates(search.trim(), !order);
-  const [autoPicked, setAutoPicked] = useState(false);
-  useEffect(() => {
-    if (autoPicked || !initialOrder || order) return;
-    const found = candidates.data?.find((o) => o.id === initialOrder.id);
-    if (found) {
-      setAutoPicked(true);
-      pick(found);
-    }
-  }, [candidates.data, initialOrder, order, autoPicked]);
-  const [qty, setQty] = useState<Record<string, number>>({});
+  const [qty, setQty] = useState<Record<string, number>>(() =>
+    initialOrder ? Object.fromEntries(initialOrder.items.map((i) => [i.id, i.quantity])) : {},
+  );
   const [reason, setReason] = useState('');
   const [cause, setCause] = useState<ReworkCause>('ERRO_EXECUCAO');
   const [days, setDays] = useState('10');
@@ -852,4 +845,21 @@ function CancelReworkDialog({ r, onClose }: { r: ReworkDto; onClose: () => void 
       </Field>
     </Dialog>
   );
+}
+
+/**
+ * Oficina sem tablet (2026-11-24): "Voltou com defeito" na OS entregue abre o Novo retrabalho já
+ * com o serviço e as peças marcados; falta só dizer o que precisa ser refeito.
+ */
+export function ReworkFromOrder({
+  order,
+  onClose,
+}: {
+  order: { id: string; code: string };
+  onClose: () => void;
+}) {
+  const candidates = useReworkCandidates(order.code, true);
+  if (candidates.isPending) return null;
+  const found = candidates.data?.find((o) => o.id === order.id);
+  return <CreateReworkDialog onClose={onClose} initialOrder={found} />;
 }

@@ -59,7 +59,7 @@ import { OsProduction } from '@/components/production/os-production';
 import { DeadlineBadge, PriorityBadge, ReworkBanner, ServiceOrderStatusBadge } from './badges';
 import { MaterialPurchasedButton } from './material-purchased';
 import { NextStepButton } from '@/components/production/next-step';
-import { CreateReworkDialog } from '@/components/quality/reworks-page';
+import { ReworkFromOrder } from '@/components/quality/reworks-page';
 import { PhotoGallery } from './photo-gallery';
 import { BackLink, Detail, Section } from './section';
 import { OsLabor } from '@/components/finance/service-order-labor';
@@ -204,9 +204,9 @@ export function ServiceOrderDetail({ id }: { id: string }) {
     <>
       <BackLink href="/painel/os" label="Ordens de serviço" />
       {rework && (
-        <CreateReworkDialog
+        <ReworkFromOrder
           onClose={() => setRework(false)}
-          initialOrder={{ id: s.order.id, code: s.order.code }}
+          order={{ id: s.order.id, code: s.order.code }}
         />
       )}
       <ReworkBanner rework={s.rework} />
