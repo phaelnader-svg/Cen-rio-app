@@ -214,7 +214,7 @@ const FLOW: { title: string; text: string }[] = [
   },
   {
     title: 'Cliente aprova pelo link',
-    text: 'Ele abre a proposta no celular, aprova e já escolhe o dia de buscarmos a peça.',
+    text: 'Ele abre a proposta no celular e aprova. Você recebe o aviso na hora e combina a retirada.',
   },
   {
     title: 'Retirada na agenda',

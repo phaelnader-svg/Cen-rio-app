@@ -314,13 +314,9 @@ export interface PublicQuoteDto {
   companyPhone: string | null;
   /** Melhoria 141: textos da proposta gravados no orçamento (nulo nos antigos = padrões). */
   texts: ProposalTexts | null;
-  /** Dia e turno da retirada escolhidos pelo cliente depois de aprovar. */
+  /** Dia e turno que o cliente escolheu pelo link (só orçamentos antigos; a escolha saiu em 2026-11-24). */
   pickupDate: string | null;
   pickupShift: 'MANHA' | 'TARDE' | null;
-  /** O cliente ainda pode escolher/trocar o dia (aprovada e o serviço ainda não foi fechado). */
-  canChoosePickup: boolean;
-  /** Dias que o cliente pode escolher (AAAA-MM-DD), sem domingos e feriados. */
-  pickupDays: string[];
 }
 
 export interface QuoteSnapshotLine {

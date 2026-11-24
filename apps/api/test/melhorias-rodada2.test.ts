@@ -11,6 +11,7 @@ import type { App } from '../src/app';
 import { hotp, base32Decode } from '../src/lib/totp';
 import { readCsv } from '../src/lib/sheet';
 import { sniffAudio } from '../src/modules/attachments/routes';
+import { publicLinkSignature } from '../src/core/public-links';
 import {
   address,
   createCustomer,
@@ -150,26 +151,17 @@ describe('Orçamento: situação, lembrete, funil e link do cliente', () => {
     const avisos = await db().notification.count({ where: { kind: 'ORCAMENTO_APROVADO' } });
     expect(avisos).toBeGreaterThan(0);
 
-    // Revisão geral (item 10): logo depois de aprovar, o cliente escolhe o dia de buscar a peça.
-    expect(aprovado.canChoosePickup).toBe(true);
-    expect(aprovado.pickupDays.length).toBeGreaterThan(5);
-    const fora = await anon.post(`/api/public/proposta/${q.id}/retirada`, {
+    // 2026-11-24: o cliente não escolhe mais o dia da retirada pelo link; a oficina combina.
+    expect(aprovado).not.toHaveProperty('canChoosePickup');
+    expect(aprovado).not.toHaveProperty('pickupDays');
+    const escolha = await anon.post(`/api/public/proposta/${q.id}/retirada`, {
       t: query(url),
-      date: '2000-01-01',
+      date: day(2),
       shift: 'MANHA',
     });
-    expect(fora.status).toBe(422);
-    const dia = aprovado.pickupDays[1];
-    const escolhido = ok(
-      await anon.post(`/api/public/proposta/${q.id}/retirada`, {
-        t: query(url),
-        date: dia,
-        shift: 'TARDE',
-      }),
-    );
-    expect(escolhido).toMatchObject({ pickupDate: dia, pickupShift: 'TARDE' });
+    expect(escolha.status).toBe(404);
     const noPainel = ok(await admin.get(`/api/v1/quotes/${q.id}`));
-    expect(noPainel).toMatchObject({ pickupDate: dia, pickupShift: 'TARDE' });
+    expect(noPainel).toMatchObject({ pickupDate: null, pickupShift: null });
   });
 
   it('o orçamento aprovado vira serviço uma vez só e fica ligado ao pedido', async () => {
@@ -206,39 +198,31 @@ describe('Orçamento: situação, lembrete, funil e link do cliente', () => {
   });
 });
 
-describe('Cliente escolhe o dia da retirada pelo link', () => {
-  it('agenda a retirada sem data; dia fora da lista é recusado', async () => {
+describe('Retirada pelo link (só para ver)', () => {
+  it('o cliente não escolhe o dia; links antigos só mostram a retirada', async () => {
     const admin = await loginAdmin(app);
     const customer = await createCustomer(admin);
     const order = await createOrder(admin, customer);
     const pickup = await createPickup(admin, order, null);
-    const { url } = ok(await admin.get(`/api/v1/pickups/${pickup.id}/schedule-link`));
-    const t = query(url);
+    // O painel não gera mais o link de escolha.
+    const link = await admin.get(`/api/v1/pickups/${pickup.id}/schedule-link`);
+    expect(link.status).toBe(404);
+    // Um link já enviado (assinatura válida) ainda abre, sem dias para escolher.
+    const t = publicLinkSignature(app.app.ctx.hashToken, 'agendar', pickup.id);
     const anon = new Client(app);
     const info = ok(await anon.get(`/api/public/agendar/${pickup.id}?t=${t}`));
-    expect(info.canChoose).toBe(true);
-    expect(info.days.length).toBeGreaterThan(5);
+    expect(info).toMatchObject({ open: true, scheduledDate: null });
+    expect(info).not.toHaveProperty('days');
     expect(info.address).toContain(address.street);
-
-    const fora = await anon.post(`/api/public/agendar/${pickup.id}`, {
+    const escolha = await anon.post(`/api/public/agendar/${pickup.id}`, {
       t,
-      date: day(40),
-      shift: 'MANHA',
+      date: day(2),
+      shift: 'TARDE',
     });
-    expect(fora.status).toBe(422);
-
-    const escolhido = ok(
-      await anon.post(`/api/public/agendar/${pickup.id}`, {
-        t,
-        date: info.days[0],
-        shift: 'TARDE',
-      }),
-    );
-    expect(escolhido).toMatchObject({ scheduledDate: info.days[0], shift: 'TARDE' });
+    expect(escolha.status).toBe(404);
     const row = await db().pickupRequest.findUniqueOrThrow({ where: { id: pickup.id } });
-    expect(row.status).toBe('AGENDADA');
-    expect(row.windowStart).toBe('13:00');
-    expect(row.customerScheduledAt).not.toBeNull();
+    expect(row.status).toBe('AGUARDANDO_AGENDAMENTO');
+    expect(row.customerScheduledAt).toBeNull();
   });
 });
 

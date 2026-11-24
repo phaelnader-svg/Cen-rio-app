@@ -1,13 +1,11 @@
 'use client';
 
 import {
-  PICKUP_SHIFTS,
   PICKUP_SHIFT_LABEL,
   formatCents,
   whatsappLink,
   type OsAlbumDto,
   type OsAlbumPhoto,
-  type PickupShift,
   type PublicPickupDto,
   type PublicQuoteDto,
   type PublicStatusDto,
@@ -141,7 +139,7 @@ export function ProposalPage({ id }: { id: string }) {
           <div className="mb-4">
             <p className="text-lg font-semibold">Gostou da proposta?</p>
             <p className="text-sm text-ink-muted">
-              Aprove por aqui e já escolha o melhor dia para buscarmos a peça.
+              Aprove por aqui e a tapeçaria combina com você o dia de buscar a peça.
             </p>
           </div>
         )}
@@ -152,13 +150,8 @@ export function ProposalPage({ id }: { id: string }) {
                 {p.approvedAt
                   ? `Aprovada em ${new Date(p.approvedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}. `
                   : ''}
-                {p.canChoosePickup
-                  ? 'Agora escolha o melhor dia para buscarmos a peça.'
-                  : 'A tapeçaria já foi avisada e vai combinar a retirada com você.'}
+                A tapeçaria já foi avisada e vai combinar com você o dia de buscar a peça.
               </Alert>
-              {p.canChoosePickup && (
-                <ProposalPickup p={p} onSaved={(dto) => qc.setQueryData(key, dto)} id={id} t={t} />
-              )}
             </>
           ) : p.status === 'RECUSADO' ? (
             <Alert tone="warn">Esta proposta foi encerrada. Fale com a tapeçaria.</Alert>
@@ -210,75 +203,6 @@ export function ProposalPage({ id }: { id: string }) {
       </Card>
       <Footer />
     </div>
-  );
-}
-
-/** Revisão geral (item 10): logo depois de aprovar, o cliente escolhe o dia de buscar a peça. */
-function ProposalPickup({
-  p,
-  id,
-  t,
-  onSaved,
-}: {
-  p: PublicQuoteDto;
-  id: string;
-  t: string;
-  onSaved: (dto: PublicQuoteDto) => void;
-}) {
-  const [date, setDate] = useState(p.pickupDate ?? '');
-  const [shift, setShift] = useState<PickupShift | ''>(p.pickupShift ?? '');
-  const [changing, setChanging] = useState(false);
-  const save = useMutation({
-    mutationFn: () =>
-      api<PublicQuoteDto>(`/api/public/proposta/${id}/retirada`, {
-        method: 'POST',
-        body: { t, date, shift },
-      }),
-    onSuccess: (dto) => {
-      onSaved(dto);
-      setChanging(false);
-    },
-  });
-  if (p.pickupDate && p.pickupShift && !changing)
-    return (
-      <div className="mt-4" data-testid="proposal-pickup-chosen">
-        <p className="font-medium">
-          Retirada: {weekday(p.pickupDate)}, {brDay(p.pickupDate)},{' '}
-          {PICKUP_SHIFT_LABEL[p.pickupShift].toLowerCase()}.
-        </p>
-        <p className="text-sm text-ink-muted">A tapeçaria confirma com você antes de sair.</p>
-        <Button variant="secondary" className="mt-3" onClick={() => setChanging(true)}>
-          Trocar o dia
-        </Button>
-      </div>
-    );
-  return (
-    <form
-      className="mt-5 space-y-5"
-      data-testid="proposal-pickup"
-      onSubmit={(e) => {
-        e.preventDefault();
-        save.mutate();
-      }}
-    >
-      <DayShiftPicker
-        days={p.pickupDays}
-        date={date}
-        shift={shift}
-        onDate={setDate}
-        onShift={setShift}
-      />
-      {save.error && <Alert tone="danger">{errorMessage(save.error)}</Alert>}
-      <Button
-        type="submit"
-        size="lg"
-        className="w-full"
-        disabled={!date || !shift}
-        loading={save.isPending}
-      >
-        Confirmar o dia da retirada
-      </Button>
-    </form>
   );
 }
 
@@ -368,31 +292,14 @@ export function AlbumSections({ album }: { album: OsAlbumDto }) {
 
 export function PickupChoicePage({ id }: { id: string }) {
   const t = useSearchParams().get('t') ?? '';
-  const qc = useQueryClient();
-  const key = ['agendar', id, t];
   const q = useQuery({
-    queryKey: key,
+    queryKey: ['agendar', id, t],
     queryFn: () => api<PublicPickupDto>(`/api/public/agendar/${id}?t=${encodeURIComponent(t)}`),
     retry: false,
-  });
-  const [date, setDate] = useState('');
-  const [shift, setShift] = useState<PickupShift | ''>('');
-  const [changing, setChanging] = useState(false);
-  const save = useMutation({
-    mutationFn: () =>
-      api<PublicPickupDto>(`/api/public/agendar/${id}`, {
-        method: 'POST',
-        body: { t, date, shift },
-      }),
-    onSuccess: (dto) => {
-      qc.setQueryData(key, dto);
-      setChanging(false);
-    },
   });
   if (q.isPending) return <Spinner />;
   if (q.isError) return <NotFound what="Retirada" />;
   const p = q.data;
-  const chosen = p.scheduledDate && p.shift;
   return (
     <>
       <CompanyHeader name={p.companyName} />
@@ -405,115 +312,23 @@ export function PickupChoicePage({ id }: { id: string }) {
         {p.pieces.length > 0 && (
           <p className="text-sm text-ink-soft">Peças: {p.pieces.join(', ')}</p>
         )}
-
-        {chosen && !changing ? (
-          <div className="mt-5">
-            <Alert tone="ok" title="Retirada agendada">
-              {weekday(p.scheduledDate!)}, {brDay(p.scheduledDate!)},{' '}
-              {PICKUP_SHIFT_LABEL[p.shift!].toLowerCase()}. A equipe avisa quando estiver a caminho.
-            </Alert>
-            {p.canChoose && (
-              <Button variant="secondary" className="mt-3" onClick={() => setChanging(true)}>
-                Trocar o dia
-              </Button>
-            )}
-          </div>
-        ) : !p.canChoose ? (
+        {!p.open ? (
           <Alert tone="info" className="mt-5">
             A retirada já está a caminho ou foi feita. Para mudar algo, fale com a tapeçaria.
           </Alert>
+        ) : p.scheduledDate ? (
+          <Alert tone="ok" title="Retirada agendada" className="mt-5">
+            {weekday(p.scheduledDate)}, {brDay(p.scheduledDate)}
+            {p.shift ? `, ${PICKUP_SHIFT_LABEL[p.shift].toLowerCase()}` : ''}. A equipe avisa quando
+            estiver a caminho. Para mudar o dia, fale com a tapeçaria.
+          </Alert>
         ) : (
-          <form
-            className="mt-5 space-y-5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              save.mutate();
-            }}
-          >
-            <DayShiftPicker
-              days={p.days}
-              date={date}
-              shift={shift}
-              onDate={setDate}
-              onShift={setShift}
-            />
-            {save.error && <Alert tone="danger">{errorMessage(save.error)}</Alert>}
-            <Button
-              type="submit"
-              size="lg"
-              className="w-full"
-              disabled={!date || !shift}
-              loading={save.isPending}
-            >
-              Confirmar retirada
-            </Button>
-          </form>
+          <Alert tone="info" className="mt-5">
+            A tapeçaria vai combinar com você o dia e o horário da retirada.
+          </Alert>
         )}
       </Card>
       <Footer />
-    </>
-  );
-}
-
-/** Dias e turnos para o cliente escolher (retirada pelo link e logo depois de aprovar a proposta). */
-function DayShiftPicker({
-  days,
-  date,
-  shift,
-  onDate,
-  onShift,
-}: {
-  days: string[];
-  date: string;
-  shift: PickupShift | '';
-  onDate: (d: string) => void;
-  onShift: (s: PickupShift) => void;
-}) {
-  return (
-    <>
-      <fieldset>
-        <legend className="label">Escolha o dia</legend>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {days.map((d) => (
-            <button
-              key={d}
-              type="button"
-              aria-pressed={date === d}
-              onClick={() => onDate(d)}
-              className={clsx(
-                'rounded-xl border px-3 py-2.5 text-left text-sm',
-                date === d
-                  ? 'border-brand-600 bg-brand-50 text-brand-700'
-                  : 'border-line hover:bg-subtle',
-              )}
-            >
-              <span className="block font-semibold capitalize">{weekday(d)}</span>
-              <span className="text-ink-muted">{brDay(d)}</span>
-            </button>
-          ))}
-        </div>
-      </fieldset>
-      <fieldset>
-        <legend className="label">Escolha o turno</legend>
-        <div className="grid grid-cols-2 gap-2">
-          {PICKUP_SHIFTS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              aria-pressed={shift === s}
-              onClick={() => onShift(s)}
-              className={clsx(
-                'rounded-xl border px-3 py-3 text-sm font-medium',
-                shift === s
-                  ? 'border-brand-600 bg-brand-50 text-brand-700'
-                  : 'border-line hover:bg-subtle',
-              )}
-            >
-              {PICKUP_SHIFT_LABEL[s]}
-            </button>
-          ))}
-        </div>
-      </fieldset>
     </>
   );
 }

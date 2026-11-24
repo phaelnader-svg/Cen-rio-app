@@ -29,7 +29,7 @@ export interface OsAlbumDto {
   after: OsAlbumPhoto[];
 }
 
-// ─────────────────────────── Cliente escolhe o dia da retirada (130) ───────────────────────────
+// ─────────────────────────── Retirada pelo link (130), só para ver ───────────────────────────
 
 export const PICKUP_SHIFTS = ['MANHA', 'TARDE'] as const;
 export type PickupShift = (typeof PICKUP_SHIFTS)[number];
@@ -37,12 +37,6 @@ export const PICKUP_SHIFT_LABEL: Record<PickupShift, string> = {
   MANHA: 'Manhã (8h às 12h)',
   TARDE: 'Tarde (13h às 18h)',
 };
-export const PICKUP_SHIFT_WINDOW: Record<PickupShift, { start: string; end: string }> = {
-  MANHA: { start: '08:00', end: '12:00' },
-  TARDE: { start: '13:00', end: '18:00' },
-};
-/** Quantos dias à frente o cliente pode escolher. */
-export const PICKUP_CHOICE_DAYS = 14;
 
 export interface PublicPickupDto {
   code: string;
@@ -54,17 +48,9 @@ export interface PublicPickupDto {
   /** Dia já escolhido/agendado (AAAA-MM-DD) e o turno. */
   scheduledDate: string | null;
   shift: PickupShift | null;
-  /** O cliente ainda pode escolher (a retirada não saiu nem foi feita). */
-  canChoose: boolean;
-  /** Dias disponíveis (AAAA-MM-DD), sem domingos e feriados nacionais. */
-  days: string[];
+  /** A retirada ainda não saiu nem foi feita (o dia é sempre combinado pela oficina). */
+  open: boolean;
 }
-
-export const publicPickupChoiceSchema = z.object({
-  t: z.string().max(64),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Escolha o dia.' }),
-  shift: z.enum(PICKUP_SHIFTS),
-});
 
 // ─────────────────────────── Busca rápida (83) ───────────────────────────
 

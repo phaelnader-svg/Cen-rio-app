@@ -113,12 +113,10 @@ describe('Matriz de acesso: todas as rotas', () => {
         // Links do cliente, sem conta: cada um só abre com o token HMAC do próprio registro (?t=).
         'GET /api/public/proposta/:id',
         'POST /api/public/proposta/:id/aprovar',
-        // Revisão geral (2026-11-18): o cliente escolhe o dia da retirada depois de aprovar.
-        'POST /api/public/proposta/:id/retirada',
         'GET /api/public/album/:id',
         'GET /api/public/album/:id/foto/:fileId',
+        // A retirada pelo link só mostra o dia (2026-11-24: o cliente não escolhe mais).
         'GET /api/public/agendar/:id',
-        'POST /api/public/agendar/:id',
         // Página de status e aviso de manutenção (sem dado de empresa nenhuma) e o registro de
         // erros do navegador (corpo limitado a 16 KB; vale o limite anônimo por IP de todas as rotas).
         'GET /api/public/aviso',

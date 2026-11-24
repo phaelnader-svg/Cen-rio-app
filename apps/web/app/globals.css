@@ -202,15 +202,24 @@
   .input-num {
     @apply tabular-nums;
   }
-  /* iOS/Safari: data e hora alinhadas à esquerda e sem encolher quando vazias. */
+  /* Data e hora: texto no meio do campo em todos os navegadores. O Safari centraliza a data
+     com "display: inline-flex + align-items: center" (estilo próprio do navegador); o "block"
+     do .input tirava isso e a data subia para o topo. "flex" ocupa a largura toda como o block.
+     iOS/Safari: alinhada à esquerda e sem encolher quando vazia. */
   input.input[type='date'],
   input.input[type='time'],
-  input.input[type='datetime-local'] {
-    @apply appearance-none;
+  input.input[type='datetime-local'],
+  input.input[type='month'] {
+    @apply flex appearance-none items-center;
   }
   input.input::-webkit-date-and-time-value {
     text-align: left;
     min-height: 1.25rem;
+  }
+  input.input::-webkit-datetime-edit,
+  input.input::-webkit-datetime-edit-fields-wrapper {
+    padding-top: 0;
+    padding-bottom: 0;
   }
   /* Variante compacta (mesma família visual; 36 px). */
   input.input.input-sm,

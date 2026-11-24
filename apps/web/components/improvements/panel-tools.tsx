@@ -135,7 +135,11 @@ function PaletteDialog({
   const term = useDeferredValue(q.trim());
   const search = useQuery({
     queryKey: ['busca', term],
-    queryFn: () => api<SearchResultDto[]>(`/api/v1/search?q=${encodeURIComponent(term)}`),
+    // A API responde { items: [...] }; tratar como lista quebrava a tela inteira ao digitar.
+    queryFn: () =>
+      api<{ items: SearchResultDto[] }>(`/api/v1/search?q=${encodeURIComponent(term)}`).then((r) =>
+        Array.isArray(r?.items) ? r.items : [],
+      ),
     enabled: term.length >= 2,
     staleTime: 10_000,
   });
@@ -145,7 +149,7 @@ function PaletteDialog({
       .replace(/\p{Diacritic}/gu, '')
       .toLowerCase();
   const pages = term
-    ? nav.filter((n) => norm(n.label).includes(norm(term))).slice(0, 6)
+    ? nav.filter((n) => norm(n.label ?? '').includes(norm(term))).slice(0, 6)
     : nav.slice(0, 8);
   const rows: { key: string; href: string; title: string; kind: string; sub: string | null }[] = [
     ...pages.map((p) => ({

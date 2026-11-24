@@ -1,11 +1,5 @@
 import {
-  EVENT_TYPES,
-  PICKUP_CHOICE_DAYS,
-  PICKUP_SHIFT_LABEL,
-  PICKUP_SHIFT_WINDOW,
-  holidayOf,
   isQuoteStatus,
-  publicPickupChoiceSchema,
   type AddressSnapshot,
   type PickupShift,
   type PublicPickupDto,
@@ -14,7 +8,6 @@ import {
   type QuoteSnapshot,
   type SystemNoticeDto,
 } from '@cenario/shared';
-import { followPickupDate } from '../deadlines/promise';
 import type { PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
@@ -24,11 +17,8 @@ import type { ActorContext } from '../../core/types';
 import { validPublicLink } from '../../core/public-links';
 import { thumbnail } from '../../core/storage/image';
 import { Errors } from '../../lib/errors';
-import { dateOnly, lockOrder, pickupCode } from '../commercial/common';
-import { refreshOrderStatus } from '../commercial/status';
+import { dateOnly, pickupCode } from '../commercial/common';
 import { notifyUsersWith } from '../quality/common';
-import { emitPickupEvent } from '../pickups/routes';
-import { emitOrderEvent } from '../orders/routes';
 import { albumHasFile, loadOsAlbum } from '../service-orders/album';
 import { todaySaoPaulo } from '../billing/routes';
 
@@ -53,20 +43,6 @@ function addDays(iso: string, days: number) {
   const d = new Date(`${iso}T12:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
-}
-
-/** Dias que o cliente pode escolher: de amanhã até 14 dias, sem domingos e feriados nacionais. */
-export function pickupChoiceDays(today: string): string[] {
-  const out: string[] = [];
-  for (let i = 1; i <= PICKUP_CHOICE_DAYS; i++) {
-    const day = addDays(today, i);
-    const weekday = new Date(`${day}T12:00:00.000Z`).getUTCDay();
-    if (weekday === 0) continue;
-    const h = holidayOf(day);
-    if (h && !h.optional) continue;
-    out.push(day);
-  }
-  return out;
 }
 
 function shiftOf(windowStart: string | null): PickupShift | null {
@@ -125,9 +101,6 @@ export async function publicRoutes(app: FastifyInstance) {
       texts: s.texts ?? null,
       pickupDate: q.pickupDate?.toISOString().slice(0, 10) ?? null,
       pickupShift: q.pickupShift === 'MANHA' || q.pickupShift === 'TARDE' ? q.pickupShift : null,
-      canChoosePickup: q.status === 'APROVADO' && !q.orderId,
-      pickupDays:
-        q.status === 'APROVADO' && !q.orderId ? pickupChoiceDays(todaySaoPaulo()) : [],
     };
   }
 
@@ -198,55 +171,6 @@ export async function publicRoutes(app: FastifyInstance) {
     },
   );
 
-  // Revisão geral (item 10): logo depois de aprovar, o cliente escolhe o dia de buscar a peça.
-  // Fica gravado no orçamento; o "Fechar serviço" já abre com esse dia.
-  app.post(
-    '/api/public/proposta/:id/retirada',
-    { config: { access: PUBLIC } },
-    async (request, reply) => {
-      const { id } = idParam.parse(request.params);
-      const input = publicPickupChoiceSchema.parse(request.body);
-      const q = await quoteFor(id, input.t);
-      noStore(reply);
-      if (!pickupChoiceDays(todaySaoPaulo()).includes(input.date))
-        throw Errors.business('Escolha um dos dias da lista.');
-      return runAsCompany(q.companyId, () =>
-        prisma.$transaction(async (tx) => {
-          const cur = await tx.quote.findUniqueOrThrow({ where: { id } });
-          if (cur.status !== 'APROVADO' || cur.orderId)
-            throw Errors.business('O dia da retirada já foi combinado. Fale com a tapeçaria.');
-          const changed = Boolean(cur.pickupDate);
-          await tx.quote.update({
-            where: { id },
-            data: {
-              pickupDate: new Date(`${input.date}T00:00:00.000Z`),
-              pickupShift: input.shift,
-              version: { increment: 1 },
-            },
-          });
-          const day = input.date.split('-').reverse().join('/');
-          const shift = PICKUP_SHIFT_LABEL[input.shift].toLowerCase();
-          const actor = { ...CUSTOMER, ip: request.ip ?? null, requestId: request.id };
-          await audit(tx, actor, {
-            action: 'quotes.pickup_chosen_by_customer',
-            entityType: 'quote',
-            entityId: id,
-            summary: `${cur.customerName} escolheu a retirada do orçamento nº ${cur.number}: ${day}, ${shift}.`,
-          });
-          await notifyUsersWith(
-            tx,
-            actor,
-            'orcamentos.gerenciar',
-            'ORCAMENTO_APROVADO',
-            `orcamento-retirada:${id}:${input.date}:${input.shift}`,
-            `${cur.customerName} ${changed ? 'trocou' : 'escolheu'} o dia de buscar a peça (orçamento nº ${cur.number}): ${day}, ${shift}. Feche o serviço para agendar.`,
-          );
-          return publicQuote(tx, id);
-        }),
-      );
-    },
-  );
-
   // ---------------- álbum de antes e depois (82)
   async function albumCompany(id: string, t: string | undefined) {
     if (!validPublicLink(hashToken, 'album', id, t)) throw Errors.notFound('Álbum');
@@ -307,7 +231,9 @@ export async function publicRoutes(app: FastifyInstance) {
     },
   );
 
-  // ---------------- cliente escolhe o dia da retirada (130)
+  // ---------------- retirada pelo link (130)
+  // 2026-11-24: o cliente não escolhe mais o dia nem o horário; quem agenda é a oficina. Os links
+  // já enviados continuam abrindo e só mostram a retirada (dia marcado ou "a tapeçaria vai combinar").
   async function pickupCompany(id: string, t: string | undefined) {
     if (!validPublicLink(hashToken, 'agendar', id, t)) throw Errors.notFound('Retirada');
     const p = await system.pickupRequest.findUnique({
@@ -328,7 +254,7 @@ export async function publicRoutes(app: FastifyInstance) {
       },
     });
     const a = p.addressSnapshot as unknown as AddressSnapshot | null;
-    const canChoose = PICKUP_OPEN.includes(p.status);
+    const open = PICKUP_OPEN.includes(p.status);
     return {
       code: pickupCode(p.number),
       companyName: p.company.tradeName,
@@ -337,8 +263,7 @@ export async function publicRoutes(app: FastifyInstance) {
       pieces: p.items.map((i) => i.orderItem.description),
       scheduledDate: dateOnly(p.scheduledDate),
       shift: shiftOf(p.windowStart),
-      canChoose,
-      days: canChoose ? pickupChoiceDays(todaySaoPaulo()) : [],
+      open,
     };
   }
 
@@ -348,77 +273,6 @@ export async function publicRoutes(app: FastifyInstance) {
     const companyId = await pickupCompany(id, t);
     noStore(reply);
     return runAsCompany(companyId, () => publicPickup(prisma, id));
-  });
-
-  app.post('/api/public/agendar/:id', { config: { access: PUBLIC } }, async (request, reply) => {
-    const { id } = idParam.parse(request.params);
-    const input = publicPickupChoiceSchema.parse(request.body);
-    const companyId = await pickupCompany(id, input.t);
-    noStore(reply);
-    if (!pickupChoiceDays(todaySaoPaulo()).includes(input.date))
-      throw Errors.business('Escolha um dos dias da lista.');
-    return runAsCompany(companyId, () =>
-      prisma.$transaction(async (tx) => {
-        const current = await tx.pickupRequest.findUniqueOrThrow({ where: { id } });
-        await lockOrder(tx, current.orderId);
-        const before = await tx.pickupRequest.findUniqueOrThrow({ where: { id } });
-        if (!PICKUP_OPEN.includes(before.status))
-          throw Errors.business(
-            'Esta retirada já não pode ser remarcada pelo link. Fale com a tapeçaria.',
-          );
-        const window = PICKUP_SHIFT_WINDOW[input.shift];
-        const beforeDate = dateOnly(before.scheduledDate);
-        const actor = { ...CUSTOMER, ip: request.ip ?? null, requestId: request.id };
-        await tx.pickupRequest.update({
-          where: { id },
-          data: {
-            scheduledDate: new Date(`${input.date}T00:00:00.000Z`),
-            windowStart: window.start,
-            windowEnd: window.end,
-            ...(beforeDate !== input.date ? { routeSequence: null } : {}),
-            status: 'AGENDADA',
-            customerScheduledAt: new Date(),
-            version: { increment: 1 },
-          },
-        });
-        if (beforeDate !== input.date) await followPickupDate(tx, before.orderId, input.date);
-        await tx.pickupEvent.create({
-          data: {
-            pickupId: id,
-            kind: beforeDate ? 'REAGENDADA' : 'AGENDADA',
-            fromStatus: before.status,
-            toStatus: 'AGENDADA',
-            note: `Escolhido pelo cliente no link: ${input.date.split('-').reverse().join('/')}, ${PICKUP_SHIFT_LABEL[input.shift].toLowerCase()}`,
-            recordedById: null,
-          },
-        });
-        await refreshOrderStatus(tx, before.orderId);
-        await audit(tx, actor, {
-          action: 'pickup.customer_scheduled',
-          entityType: 'pickup_request',
-          entityId: id,
-          summary: `Retirada ${pickupCode(before.number)}: o cliente escolheu ${input.date.split('-').reverse().join('/')} (${PICKUP_SHIFT_LABEL[input.shift].toLowerCase()}) pelo link.`,
-        });
-        await emitPickupEvent(
-          tx,
-          actor,
-          id,
-          before.status !== 'AGENDADA'
-            ? EVENT_TYPES.PICKUP_STATUS_CHANGED
-            : EVENT_TYPES.PICKUP_UPDATED,
-        );
-        await emitOrderEvent(tx, actor, before.orderId);
-        await notifyUsersWith(
-          tx,
-          actor,
-          'retiradas.gerenciar',
-          'RETIRADA_ESCOLHIDA_CLIENTE',
-          `retirada-cliente:${id}:${input.date}:${input.shift}`,
-          `Retirada ${pickupCode(before.number)}: o cliente escolheu ${input.date.split('-').reverse().join('/')}, ${PICKUP_SHIFT_LABEL[input.shift].toLowerCase()}.`,
-        );
-        return publicPickup(tx, id);
-      }),
-    );
   });
 
   // ---------------- aviso de manutenção (131) e página de status (100)

@@ -526,17 +526,6 @@ export async function improvementRoutes(app: FastifyInstance) {
     },
   );
 
-  app.get(
-    '/api/v1/pickups/:id/schedule-link',
-    { config: { access: { session: 'WEB', permissions: ['retiradas.gerenciar'] } } },
-    async (request) => {
-      const { id } = idParams.parse(request.params);
-      const p = await prisma.pickupRequest.findUnique({ where: { id }, select: { id: true } });
-      if (!p) throw Errors.notFound('Retirada');
-      return { url: publicLink(env, hashToken, 'agendar', id) };
-    },
-  );
-
   // ───────────────────────── Acesso de suporte (114) ─────────────────────────
   /** O dono da empresa libera (ou corta) o acesso do suporte do Cenário por algumas horas. */
   app.post(

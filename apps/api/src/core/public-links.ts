@@ -2,7 +2,7 @@ import { safeEqual } from '../lib/crypto';
 
 /**
  * Links públicos para o cliente da tapeçaria (melhorias 79, 82 e 130): proposta para aprovar,
- * álbum de fotos e escolha do dia da retirada.
+ * álbum de fotos e a retirada (só para ver; desde 2026-11-24 o cliente não escolhe o dia).
  *
  * O link leva o id do registro e uma assinatura (HMAC com o segredo do servidor). Nada é gravado:
  * o mesmo link pode ser copiado de novo a qualquer momento, e quem não tem o link certo não chega

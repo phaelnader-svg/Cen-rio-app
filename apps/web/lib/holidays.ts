@@ -1,2 +1,2 @@
-// Os feriados nacionais ficam em @cenario/shared (a API usa a mesma conta no link de retirada).
+// Os feriados nacionais ficam em @cenario/shared (a API usa a mesma conta nos prazos).
 export { easterSunday, holidaysOfYear, holidayOf, type Holiday } from '@cenario/shared';
