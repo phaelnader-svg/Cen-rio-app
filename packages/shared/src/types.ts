@@ -21,7 +21,7 @@ export interface MeDto {
     expiresAt: string;
     deviceId: string | null;
   };
-  device: { id: string; name: string } | null;
+  device: { id: string; name: string; shows: 'TUDO' | 'PRODUCAO' | 'LOGISTICA' } | null;
   permissions: Permission[];
   company: {
     tradeName: string;
@@ -98,6 +98,7 @@ export interface DeviceDto {
   status: DeviceStatus;
   assignedEmployee: EmployeeSummaryDto | null;
   restrictToAssigned: boolean;
+  shows: 'TUDO' | 'PRODUCAO' | 'LOGISTICA';
   pairedAt: string | null;
   lastSeenAt: string | null;
   online: boolean;

@@ -1,7 +1,12 @@
 'use client';
 
 import type { DeviceDto, PairingCodeDto, SessionDto } from '@cenario/shared';
-import { DEVICE_KINDS, createDeviceSchema, updateDeviceSchema } from '@cenario/shared';
+import {
+  DEVICE_KINDS,
+  DEVICE_SHOWS,
+  createDeviceSchema,
+  updateDeviceSchema,
+} from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Ban,
@@ -28,6 +33,13 @@ const KIND_LABEL: Record<(typeof DEVICE_KINDS)[number], string> = {
   TABLET: 'Tablet',
   COMPUTADOR: 'Computador',
   CELULAR: 'Celular',
+};
+
+/** O que a tela inicial do aparelho mostra (nunca mais do que o cargo da pessoa permite). */
+const SHOWS_LABEL: Record<(typeof DEVICE_SHOWS)[number], string> = {
+  TUDO: 'Tudo',
+  PRODUCAO: 'Só produção',
+  LOGISTICA: 'Só entregas e retiradas',
 };
 
 function statusBadge(d: DeviceDto) {
@@ -127,6 +139,9 @@ export function DevicesPage() {
                         <p className="text-sm text-ink-muted">
                           {KIND_LABEL[d.kind]}
                           {d.location ? ` · ${d.location}` : ''}
+                          {d.shows !== 'TUDO' && (
+                            <span data-testid="device-shows"> · {SHOWS_LABEL[d.shows]}</span>
+                          )}
                         </p>
                       </div>
                     </div>
@@ -314,6 +329,7 @@ function DeviceDialog({
   const [location, setLocation] = useState(device?.location ?? '');
   const [assigned, setAssigned] = useState(device?.assignedEmployee?.id ?? '');
   const [restrict, setRestrict] = useState(device?.restrictToAssigned ?? true);
+  const [shows, setShows] = useState<(typeof DEVICE_SHOWS)[number]>(device?.shows ?? 'TUDO');
   const [error, setError] = useState<string | null>(null);
   const idem = useRef(newIdempotencyKey());
 
@@ -325,6 +341,7 @@ function DeviceDialog({
           location,
           assignedEmployeeId: assigned || null,
           restrictToAssigned: restrict,
+          shows,
           version: device.version,
         });
         await api(`/api/devices/${device.id}`, { method: 'PUT', body });
@@ -336,6 +353,7 @@ function DeviceDialog({
         location,
         assignedEmployeeId: assigned || null,
         restrictToAssigned: restrict,
+        shows,
       });
       return api<{ device: DeviceDto; pairing: PairingCodeDto }>('/api/devices', {
         method: 'POST',
@@ -408,7 +426,7 @@ function DeviceDialog({
         <Field label="Local" hint="Ex.: bancada de corte">
           {(p) => <Input {...p} value={location} onChange={(e) => setLocation(e.target.value)} />}
         </Field>
-        <Field label="Funcionário do tablet">
+        <Field label="Funcionário do aparelho">
           {(p) => (
             <Select {...p} value={assigned} onChange={(e) => setAssigned(e.target.value)}>
               <option value="">Nenhum (compartilhado)</option>
@@ -430,6 +448,26 @@ function DeviceDialog({
           disabled={!assigned}
           onChange={(e) => setRestrict(e.target.checked)}
         />
+        <Field
+          label="O que este aparelho mostra"
+          className="sm:col-span-2"
+          hint="Ex.: o celular só com entregas e retiradas e o tablet só com a produção. Nunca mostra mais do que o cargo da pessoa permite."
+        >
+          {(p) => (
+            <Select
+              {...p}
+              value={shows}
+              onChange={(e) => setShows(e.target.value as typeof shows)}
+              data-testid="device-shows-select"
+            >
+              {DEVICE_SHOWS.map((s) => (
+                <option key={s} value={s}>
+                  {SHOWS_LABEL[s]}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
       </div>
     </Dialog>
   );

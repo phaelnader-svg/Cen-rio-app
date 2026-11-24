@@ -37,7 +37,7 @@ export async function registerDevice(page: Page, name: string, employee: string)
   await page.goto('/painel/dispositivos');
   await page.getByRole('button', { name: 'Cadastrar dispositivo' }).click();
   await page.getByLabel('Nome').fill(name);
-  await page.getByLabel('Funcionário do tablet').selectOption({ label: employee });
+  await page.getByLabel('Funcionário do aparelho').selectOption({ label: employee });
   await page.getByRole('button', { name: 'Cadastrar e gerar código' }).click();
   const code = (await page.getByTestId('pairing-code').textContent())!.trim();
   await page.getByRole('button', { name: 'Concluído' }).click();
