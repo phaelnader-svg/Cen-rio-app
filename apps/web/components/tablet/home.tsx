@@ -78,7 +78,13 @@ export function TabletHome({ me }: { me: MeDto }) {
     me.company.platformCompany && me.permissions.includes('sincronizacao.diagnosticar');
   // Fase 11: só os próprios valores de produção, se o gestor autorizar.
   const canSeeValues = me.permissions.includes('financeiro.producao_propria');
-  const canExecute = me.permissions.includes('producao.executar');
+  // 2026-11-24: cada aparelho pode mostrar só a produção ou só as entregas e retiradas (ex.: o
+  // celular do Thiago com a logística e o tablet dele com a produção). Só esconde: nunca mostra
+  // mais do que o cargo da pessoa permite.
+  const shows = me.device?.shows ?? 'TUDO';
+  const personExecutes = me.permissions.includes('producao.executar');
+  const personDrives = me.permissions.includes('logistica.executar');
+  const canExecute = personExecutes && shows !== 'LOGISTICA';
   // Fase 9: "Tenho um problema" nas próprias tarefas.
   const reportUserId = me.permissions.includes('ocorrencias.registrar') ? me.user.id : null;
   // Presença operacional (Fase 7): quem registra a própria chegada e saída.
@@ -92,8 +98,14 @@ export function TabletHome({ me }: { me: MeDto }) {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [taskFrom, setTaskFrom] = useState<Screen>('home');
   // Fase 10: inspeções de qualidade (Thiago) e logística (André, Izaías).
-  const canInspect = me.permissions.includes('qualidade.inspecionar');
-  const logisticsOnly = me.permissions.includes('logistica.executar') && !canExecute;
+  const canInspect = me.permissions.includes('qualidade.inspecionar') && shows !== 'LOGISTICA';
+  const logisticsOnly = personDrives && (!personExecutes || shows === 'LOGISTICA');
+  // Equipe própria (ex.: Thiago nas retiradas): no aparelho só de entregas, a lista do dia dele.
+  const ownTeamTrips = shows === 'LOGISTICA' && !personDrives && personExecutes;
+  // O aparelho foi separado para uma parte que o cargo desta pessoa não tem.
+  const nothingHere =
+    (shows === 'LOGISTICA' && !personDrives && !personExecutes) ||
+    (shows === 'PRODUCAO' && !personExecutes && personDrives);
   const inspectionCount = useMyInspectionCount(canInspect);
   const [inspectionId, setInspectionId] = useState<string | null>(null);
 
@@ -169,7 +181,23 @@ export function TabletHome({ me }: { me: MeDto }) {
       </header>
 
       <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">
-        {screen === 'home' && logisticsOnly ? (
+        {screen === 'home' && nothingHere ? (
+          <p
+            className="rounded-xl border border-line p-4 text-lg text-ink-soft"
+            data-testid="device-shows-nothing"
+          >
+            {shows === 'LOGISTICA'
+              ? 'Este aparelho está separado para entregas e retiradas, e você não faz entregas. Use o aparelho da produção.'
+              : 'Este aparelho está separado para a produção, e você só faz entregas e retiradas. Use o seu aparelho de entregas.'}
+          </p>
+        ) : screen === 'home' && ownTeamTrips ? (
+          <>
+            <h1 className="mb-5 text-2xl font-semibold tracking-tight">
+              Minhas retiradas e entregas de hoje
+            </h1>
+            <MyTripsToday standalone />
+          </>
+        ) : screen === 'home' && logisticsOnly ? (
           <>
             <h1 className="mb-5 text-2xl font-semibold tracking-tight">
               Minhas entregas e retiradas
@@ -269,7 +297,7 @@ export function TabletHome({ me }: { me: MeDto }) {
                 </li>
               )}
             </ul>
-            {canExecute && <MyTripsToday />}
+            {canExecute && shows !== 'PRODUCAO' && <MyTripsToday />}
           </>
         ) : screen === 'queue' ? (
           <>

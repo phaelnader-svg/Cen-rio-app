@@ -127,6 +127,63 @@ describe('Cadastro e vinculação de dispositivos', () => {
   });
 });
 
+describe('O que cada aparelho mostra', () => {
+  it('o mesmo funcionário tem um celular só de entregas e um tablet só de produção', async () => {
+    const admin = await loginAdmin(app);
+    const { tablet, device } = await setupTablet(app, admin, {
+      name: 'Tablet do Ricardo',
+      employee: 'Ricardo',
+      pin: '482193',
+    });
+    expect(device.shows).toBe('TUDO');
+    expect((await tablet.get('/api/auth/me')).body.device.shows).toBe('TUDO');
+
+    const ricardo = await employeeByName('Ricardo');
+    const celular = await admin.post(
+      '/api/devices',
+      {
+        name: 'Celular do Ricardo',
+        kind: 'CELULAR',
+        assignedEmployeeId: ricardo.id,
+        shows: 'LOGISTICA',
+      },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(celular.status).toBe(201);
+    expect(celular.body.device.shows).toBe('LOGISTICA');
+
+    const edited = await admin.put(`/api/devices/${device.id}`, {
+      name: device.name,
+      location: null,
+      assignedEmployeeId: ricardo.id,
+      restrictToAssigned: true,
+      shows: 'PRODUCAO',
+      version: (await db().device.findUniqueOrThrow({ where: { id: device.id } })).version,
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body.shows).toBe('PRODUCAO');
+    expect((await tablet.get('/api/auth/me')).body.device.shows).toBe('PRODUCAO');
+
+    // Quem edita sem mandar o campo (tela antiga) mantém o que estava escolhido.
+    const kept = await admin.put(`/api/devices/${device.id}`, {
+      name: device.name,
+      location: 'Corte',
+      assignedEmployeeId: ricardo.id,
+      restrictToAssigned: true,
+      version: edited.body.version,
+    });
+    expect(kept.status).toBe(200);
+    expect(kept.body.shows).toBe('PRODUCAO');
+
+    const bad = await admin.post(
+      '/api/devices',
+      { name: 'Outro', shows: 'FINANCEIRO' },
+      { 'idempotency-key': idemKey() },
+    );
+    expect(bad.status).toBe(400);
+  });
+});
+
 describe('Sessões persistentes e revogação', () => {
   it('sessão do tablet é persistente e vinculada ao dispositivo', async () => {
     const admin = await loginAdmin(app);

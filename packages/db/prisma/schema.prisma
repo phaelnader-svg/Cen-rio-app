@@ -315,6 +315,16 @@ enum DeviceKind {
   @@map("device_kind")
 }
 
+/// O que a tela inicial do aparelho mostra (2026-11-24, pedido do Raphael). Nunca mais do que o
+/// cargo da pessoa permite: só escolhe entre produção e entregas/retiradas.
+enum DeviceShows {
+  TUDO
+  PRODUCAO
+  LOGISTICA
+
+  @@map("device_shows")
+}
+
 enum DeviceStatus {
   PENDING_PAIRING
   ACTIVE
@@ -334,6 +344,7 @@ model Device {
   status               DeviceStatus    @default(PENDING_PAIRING)
   assignedEmployeeId   String?         @map("assigned_employee_id") @db.Uuid
   restrictToAssigned   Boolean         @default(true) @map("restrict_to_assigned")
+  shows                DeviceShows     @default(TUDO)
   /// Hash SHA-256 da credencial do dispositivo (o valor bruto fica só no cookie do tablet).
   credentialHash       String?         @unique @map("credential_hash") @db.Char(64)
   /// Hash SHA-256 do código de vinculação de uso único.

@@ -8,15 +8,28 @@ import { useLogisticsRoute } from '@/lib/quality';
  * Equipe própria (ex.: João acompanhando a retirada do Thiago): as paradas de hoje em que a
  * pessoa é responsável ou participante — só leitura, sem valores. Participar não gera pagamento.
  */
-export function MyTripsToday() {
+export function MyTripsToday({ standalone = false }: { standalone?: boolean }) {
   const route = useLogisticsRoute(todayIso(), true);
+  // Aparelho só de entregas e retiradas (2026-11-24): a lista é a tela inteira, então o dia sem
+  // nenhuma parada precisa dizer isso em vez de ficar em branco.
+  if (standalone && route.isSuccess && !route.data.stops.length)
+    return (
+      <p
+        className="rounded-xl border border-line p-4 text-lg text-ink-soft"
+        data-testid="my-trips-empty"
+      >
+        Nenhuma retirada ou entrega sua hoje.
+      </p>
+    );
   if (route.isPending || route.isError || !route.data.stops.length) return null;
   return (
-    <section className="mt-10 space-y-4" data-testid="my-trips">
-      <h2 className="flex items-center gap-2 text-lg font-semibold text-ink-soft">
-        <Truck className="size-5" aria-hidden />
-        Minhas retiradas e entregas de hoje
-      </h2>
+    <section className={standalone ? 'space-y-4' : 'mt-10 space-y-4'} data-testid="my-trips">
+      {!standalone && (
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-ink-soft">
+          <Truck className="size-5" aria-hidden />
+          Minhas retiradas e entregas de hoje
+        </h2>
+      )}
       <ol className="grid gap-4 md:grid-cols-2">
         {route.data.stops.map((s) => {
           const a = s.job.address;

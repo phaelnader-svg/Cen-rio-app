@@ -45,6 +45,7 @@ export async function deviceRoutes(app: FastifyInstance) {
       status: d.status,
       assignedEmployee: d.assignedEmployee ? toEmployeeSummary(d.assignedEmployee) : null,
       restrictToAssigned: d.restrictToAssigned,
+      shows: d.shows,
       pairedAt: d.pairedAt?.toISOString() ?? null,
       lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
       online: d.status === 'ACTIVE' && hub.isDeviceOnline(d.id),
@@ -115,6 +116,7 @@ export async function deviceRoutes(app: FastifyInstance) {
               location: input.location ?? null,
               assignedEmployeeId: input.assignedEmployeeId ?? null,
               restrictToAssigned: input.restrictToAssigned,
+              shows: input.shows,
               createdById: actor.userId,
             },
           });
@@ -163,6 +165,7 @@ export async function deviceRoutes(app: FastifyInstance) {
             location: input.location ?? null,
             assignedEmployeeId: input.assignedEmployeeId,
             restrictToAssigned: input.restrictToAssigned,
+            ...(input.shows ? { shows: input.shows } : {}),
             version: { increment: 1 },
           },
         });
@@ -188,6 +191,7 @@ export async function deviceRoutes(app: FastifyInstance) {
             'location',
             'assignedEmployeeId',
             'restrictToAssigned',
+            'shows',
           ]),
         });
         await emitUpdated(tx, actor, updated);
