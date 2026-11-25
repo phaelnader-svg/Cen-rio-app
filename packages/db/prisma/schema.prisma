@@ -5757,14 +5757,15 @@ model PushKey {
   @@map("push_keys")
 }
 
-/// App instalado (2026-11-25): aparelho que aceitou receber avisos. `userId` = quem estava
-/// entrado no aparelho quando aceitou (atualizado a cada entrada); os avisos dessa pessoa chegam
-/// nele mesmo com o app fechado.
+/// App instalado (2026-11-25): celular/tablet que aceitou receber avisos. `userId` = de quem são os
+/// avisos (no app da equipe: quem entrou no aparelho por último; no app do dono: o próprio dono).
+/// `app`: EQUIPE (aparelho vinculado, `deviceId`) ou DONO (celular do dono, sem aparelho vinculado).
 model PushSubscription {
   id        String          @id @default(uuid()) @db.Uuid
   companyId Int             @default(dbgenerated("app_company_id()")) @map("company_id")
   company   CompanySettings @relation("EmpresaDePushSubscription", fields: [companyId], references: [id])
-  deviceId  String          @map("device_id") @db.Uuid
+  deviceId  String?         @map("device_id") @db.Uuid
+  app       String          @default("EQUIPE") @db.VarChar(8)
   userId    String?         @map("user_id") @db.Uuid
   endpoint  String          @unique @db.VarChar(1000)
   p256dh    String          @db.VarChar(200)
@@ -5773,7 +5774,7 @@ model PushSubscription {
   createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([deviceId])

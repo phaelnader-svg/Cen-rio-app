@@ -1,4 +1,4 @@
-/* Service worker do app Cenário da equipe (PWA, tablet e celular).
+/* Service worker dos apps instalados do Cenário: o da equipe (/tablet) e o do dono (/dono).
  * - Nunca armazena respostas da API (/api): dados sempre vêm do servidor.
  * - Avisos (2026-11-25): mostra o aviso mandado pelo servidor mesmo com o app fechado; tocar no
  *   aviso abre (ou traz para frente) o app.
@@ -75,7 +75,8 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
       for (const c of list) {
-        if (new URL(c.url).pathname.startsWith('/tablet') && 'focus' in c) return c.focus();
+        if (new URL(c.url).pathname.startsWith(new URL(target).pathname) && 'focus' in c)
+          return c.focus();
       }
       return self.clients.openWindow(target);
     }),

@@ -79,46 +79,53 @@ function keyBytes(base64url: string) {
   return Uint8Array.from(raw, (c) => c.charCodeAt(0));
 }
 
-async function registration() {
-  const existing = await navigator.serviceWorker.getRegistration('/tablet');
-  return existing ?? navigator.serviceWorker.register('/sw.js', { scope: '/tablet' });
+/** Qual app: o da equipe (/tablet) ou o do dono (/dono). Cada um tem o seu service worker. */
+export type InstalledApp = 'equipe' | 'dono';
+const SCOPE: Record<InstalledApp, string> = { equipe: '/tablet', dono: '/dono' };
+const PUSH_API: Record<InstalledApp, string> = { equipe: '/api/tablet/push', dono: '/api/v1/push' };
+
+async function registration(which: InstalledApp) {
+  const existing = await navigator.serviceWorker.getRegistration(SCOPE[which]);
+  return existing ?? navigator.serviceWorker.register('/sw.js', { scope: SCOPE[which] });
 }
 
-async function sendSubscription(sub: PushSubscription) {
+async function sendSubscription(sub: PushSubscription, which: InstalledApp) {
   const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
-  await api('/api/tablet/push', {
+  await api(PUSH_API[which], {
     method: 'PUT',
     body: { endpoint: json.endpoint, keys: json.keys },
   });
 }
 
 /** Pede a permissão (precisa vir de um toque) e liga os avisos neste aparelho. */
-export async function enablePush(): Promise<'ok' | 'negado' | 'indisponivel'> {
+export async function enablePush(
+  which: InstalledApp = 'equipe',
+): Promise<'ok' | 'negado' | 'indisponivel'> {
   if (!pushSupported()) return 'indisponivel';
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return 'negado';
-  const reg = await registration();
+  const reg = await registration(which);
   await navigator.serviceWorker.ready;
-  const { publicKey } = await api<{ publicKey: string }>('/api/tablet/push');
+  const { publicKey } = await api<{ publicKey: string }>(PUSH_API[which]);
   const sub =
     (await reg.pushManager.getSubscription()) ??
     (await reg.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: keyBytes(publicKey),
     }));
-  await sendSubscription(sub);
+  await sendSubscription(sub, which);
   return 'ok';
 }
 
 /** A cada entrada: os avisos deste aparelho passam a ser de quem entrou (sem perguntar de novo). */
-export async function syncPush() {
+export async function syncPush(which: InstalledApp = 'equipe') {
   if (!pushSupported() || Notification.permission !== 'granted') return;
   try {
-    const reg = await navigator.serviceWorker.getRegistration('/tablet');
+    const reg = await navigator.serviceWorker.getRegistration(SCOPE[which]);
     if (!reg) return;
     const sub = await reg.pushManager.getSubscription();
-    if (sub) await sendSubscription(sub);
-    else await enablePush();
+    if (sub) await sendSubscription(sub, which);
+    else await enablePush(which);
   } catch {
     // Sem rede ou navegador recusou: o aviso continua na caixa do app.
   }

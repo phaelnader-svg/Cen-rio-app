@@ -165,4 +165,31 @@ describe('Avisos no aparelho', () => {
     ).toBe(200);
     expect(await db().pushSubscription.count()).toBe(0);
   });
+
+  it('app do dono: o celular do dono recebe os avisos do sininho dele, abrindo o app do dono', async () => {
+    const admin = await loginAdmin(app);
+    const key = await admin.get('/api/v1/push');
+    expect(key.status).toBe(200);
+    const sub = { ...SUB, endpoint: 'https://web.push.apple.com/QGdono' };
+    expect((await admin.put('/api/v1/push', sub)).status).toBe(200);
+    const row = await db().pushSubscription.findUniqueOrThrow({
+      where: { endpoint: sub.endpoint },
+    });
+    expect(row.app).toBe('DONO');
+    expect(row.deviceId).toBeNull();
+    await avisar(row.userId!, 'Compras quer pedir R$ 1.240,00');
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.message.url).toBe('/dono');
+    // Aparelho da equipe não usa a rota do dono.
+    const { tablet } = await setupTablet(app, admin, {
+      name: 'Tablet Ricardo',
+      employee: 'Ricardo',
+      pin: '246813',
+    });
+    expect((await tablet.put('/api/v1/push', SUB)).status).toBe(403);
+    expect((await admin.req('DELETE', '/api/v1/push', { endpoint: sub.endpoint })).status).toBe(
+      200,
+    );
+    expect(await db().pushSubscription.count()).toBe(0);
+  });
 });

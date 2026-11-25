@@ -29,7 +29,7 @@ import { preparePhoto } from '@/lib/photos';
 
 const KEY = ['office'] as const;
 
-function useOffice() {
+export function useOffice() {
   return useQuery({
     queryKey: KEY,
     queryFn: () => api<OfficeOverviewDto>('/api/v1/office'),
@@ -38,7 +38,7 @@ function useOffice() {
 }
 
 /** Mutação do Escritório: devolve o escritório atualizado ou recarrega. */
-function useOfficeSend() {
+export function useOfficeSend() {
   const qc = useQueryClient();
   const toast = useToast();
   const [error, setError] = useState<string | null>(null);
@@ -227,7 +227,7 @@ const AgentDot = ({ color }: { color: string }) => (
   <span className="inline-block size-2.5 shrink-0 rounded-full" style={{ background: color }} />
 );
 
-function ProposalCard({ p }: { p: OfficeProposalDto }) {
+export function ProposalCard({ p }: { p: OfficeProposalDto }) {
   const { m, error } = useOfficeSend();
   const [edit, setEdit] = useState(false);
   const [sendLink, setSendLink] = useState<string | null>(null);
@@ -619,7 +619,7 @@ function ReceiptCard({ data }: { data: OfficeOverviewDto }) {
   );
 }
 
-function AgentCard({ a }: { a: OfficeAgentDto }) {
+export function AgentCard({ a }: { a: OfficeAgentDto }) {
   const { m, error } = useOfficeSend();
   return (
     <Card className="p-4" data-testid={`office-agent-${a.roleKey}`}>

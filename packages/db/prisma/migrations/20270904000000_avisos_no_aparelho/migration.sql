@@ -3,7 +3,8 @@
 -- packages/db/rollback/20270904000000_avisos_no_aparelho.down.sql.
 --   push_keys: as chaves dos avisos (VAPID), criadas sozinhas pela API na primeira vez, iguais
 --              para todas as empresas (nenhum passo manual por empresa).
---   push_subscriptions: aparelho que aceitou receber avisos (por empresa, com trava de empresa).
+--   push_subscriptions: celular/tablet que aceitou receber avisos, do app da equipe (aparelho
+--              vinculado) ou do app do dono (por empresa, com trava de empresa).
 
 -- CreateTable
 CREATE TABLE "push_keys" (
@@ -18,7 +19,8 @@ CREATE TABLE "push_keys" (
 CREATE TABLE "push_subscriptions" (
     "id" UUID NOT NULL,
     "company_id" INTEGER NOT NULL DEFAULT app_company_id(),
-    "device_id" UUID NOT NULL,
+    "device_id" UUID,
+    "app" VARCHAR(8) NOT NULL DEFAULT 'EQUIPE',
     "user_id" UUID,
     "endpoint" VARCHAR(1000) NOT NULL,
     "p256dh" VARCHAR(200) NOT NULL,

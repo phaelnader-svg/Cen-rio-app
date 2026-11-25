@@ -88,8 +88,9 @@ export function pushConsumer(
     types: [EVENT_TYPES.NOTIFICATION_CREATED],
     async handle(event: DomainEvent, tx: Tx) {
       const userId = event.aggregateId;
+      // App da equipe: só aparelho ainda vinculado. App do dono: o celular do dono (sem aparelho).
       const subs = await tx.pushSubscription.findMany({
-        where: { userId, device: { status: 'ACTIVE' } },
+        where: { userId, OR: [{ deviceId: null }, { device: { status: 'ACTIVE' } }] },
       });
       if (!subs.length) return;
       const kind = (event.payload as { kind?: string } | null)?.kind;
@@ -101,13 +102,20 @@ export function pushConsumer(
         include: { serviceOrder: { select: { customer: { select: { name: true } } } } },
       });
       if (!n) return;
-      // Aparelho: o cliente aparece pela forma reduzida ("Maria F."), igual à caixa do tablet.
+      // Aparelho da equipe: o cliente aparece pela forma reduzida ("Maria F."), igual à caixa do
+      // tablet. O dono vê o nome completo, igual ao painel.
       const name = n.serviceOrder?.customer.name;
-      const body = name ? n.body.split(name).join(shortCustomerName(name)) : n.body;
-      const message: PushMessage = { title: n.title, body, url: '/tablet', tag: n.id };
+      const short = name ? n.body.split(name).join(shortCustomerName(name)) : n.body;
       const keys = await pushKeys(system);
       const subject = pushSubject(publicWebUrl);
       for (const s of subs) {
+        const owner = s.app === 'DONO';
+        const message: PushMessage = {
+          title: n.title,
+          body: owner ? n.body : short,
+          url: owner ? '/dono' : '/tablet',
+          tag: n.id,
+        };
         try {
           await pushSender.send(
             { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },

@@ -10,6 +10,7 @@ import {
   pushSupported,
   syncPush,
   useInstallPrompt,
+  type InstalledApp,
 } from '@/lib/app-install';
 
 /**
@@ -80,7 +81,11 @@ export function IosInstallSteps() {
 }
 
 /** Faixa "Instalar o Cenário neste aparelho" (telas de entrada). */
-export function InstallBanner() {
+export function InstallBanner({
+  subtitle = 'Ícone na tela, abre direto e recebe avisos.',
+}: {
+  subtitle?: string;
+}) {
   const ready = useClient();
   const install = useInstallPrompt();
   const [hidden, setHidden] = useState(false);
@@ -98,7 +103,7 @@ export function InstallBanner() {
         <img src="/icon-192.png" alt="" className="size-11 rounded-xl" />
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-ink">Instalar o Cenário neste aparelho</p>
-          <p className="text-sm text-ink-soft">Ícone na tela, abre direto e recebe avisos.</p>
+          <p className="text-sm text-ink-soft">{subtitle}</p>
         </div>
         <button
           type="button"
@@ -138,12 +143,18 @@ export function InstallBanner() {
  * Cartão "Receber avisos neste aparelho" (tela inicial do funcionário). Se já aceitou antes, só
  * atualiza em silêncio de quem são os avisos (quem acabou de entrar).
  */
-export function PushCard() {
+export function PushCard({
+  which = 'equipe',
+  text = 'Tarefa nova, entrega do dia e perguntas do escritório chegam mesmo com o app fechado.',
+}: {
+  which?: InstalledApp;
+  text?: string;
+}) {
   const ready = useClient();
   const [state, setState] = useState<'idle' | 'busy' | 'ok' | 'negado' | 'oculto'>('idle');
   useEffect(() => {
-    if (ready) void syncPush();
-  }, [ready]);
+    if (ready) void syncPush(which);
+  }, [ready, which]);
   if (!ready || !pushSupported() || state === 'oculto' || state === 'ok') return null;
   if (Notification.permission === 'granted') return null;
   if (isIOS() && !isStandalone()) return null; // no iPhone, avisos só com o app instalado
@@ -164,7 +175,7 @@ export function PushCard() {
         <p className="text-sm text-ink-soft">
           {blocked
             ? 'Para ligar, libere as notificações do Cenário nos ajustes do aparelho.'
-            : 'Tarefa nova, entrega do dia e perguntas do escritório chegam mesmo com o app fechado.'}
+            : text}
         </p>
       </div>
       {blocked ? (
@@ -185,7 +196,7 @@ export function PushCard() {
           loading={state === 'busy'}
           onClick={async () => {
             setState('busy');
-            const r = await enablePush().catch(() => 'indisponivel' as const);
+            const r = await enablePush(which).catch(() => 'indisponivel' as const);
             setState(r === 'ok' ? 'ok' : r === 'negado' ? 'negado' : 'oculto');
           }}
         >

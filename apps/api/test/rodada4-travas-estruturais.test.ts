@@ -1701,6 +1701,12 @@ describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava 
  * Chave: "<pasta da migration>: <comando normalizado>".
  */
 const ALLOWED_DESTRUCTIVE: Record<string, string> = {
+  '20270903000000_lgpd_pedidos: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras da tabela NOVA de pedidos sobre ' +
+    'dados pessoais (padrão do Prisma). Nenhuma linha é alterada.',
+  '20270904000000_avisos_no_aparelho: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras da tabela NOVA de avisos no ' +
+    'aparelho (padrão do Prisma). Nenhuma linha é alterada.',
   '20270901000000_preparacao_livre: UPDATE "production_tasks"':
     'Pedido do dono (2026-11-19): etapas de preparação AINDA NÃO INICIADAS deixam de ter o ' +
     'responsável escolhido automaticamente e ficam livres para o ajudante disponível pegar. ' +
@@ -1783,6 +1789,8 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
 const MULTI_EMPRESA_ETAPA2 = '20270701000000_multi_empresa_etapa2';
 /** Quantas vezes cada exceção aparece (padrão 1): a contagem exata também é travada. */
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
+  '20270903000000_lgpd_pedidos: UPDATE CASCADE': 2,
+  '20270904000000_avisos_no_aparelho: UPDATE CASCADE': 2,
   '20270822000000_retrabalhos_receitas: UPDATE CASCADE': 4,
   '20270729000000_melhorias_rodada2: UPDATE CASCADE': 2,
   '20270722000000_cobranca_planos_emails: UPDATE CASCADE': 4,
