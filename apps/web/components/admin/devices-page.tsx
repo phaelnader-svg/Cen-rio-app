@@ -18,7 +18,8 @@ import {
   TabletSmartphone,
   Trash2,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import qrcode from 'qrcode-generator';
+import { useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Checkbox, Field, Input, Select } from '@/components/ui/field';
@@ -483,29 +484,61 @@ function PairingCodeDialog({
   onClose: () => void;
 }) {
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  // App instalado (2026-11-25): o código QR abre o app já com o código; não precisa digitar.
+  const link = `${origin}/tablet?codigo=${pairing.code.replace('-', '')}`;
+  const svg = useMemo(() => {
+    const qr = qrcode(0, 'M');
+    qr.addData(link);
+    qr.make();
+    return qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  }, [link]);
   return (
     <Dialog
       open
       onClose={onClose}
-      size="sm"
-      title={`Vincular "${deviceName}"`}
+      size="md"
+      title={`Instalar no aparelho "${deviceName}"`}
       footer={<Button onClick={onClose}>Concluído</Button>}
     >
-      <ol className="list-decimal space-y-2 pl-5 text-[15px] text-ink-soft">
-        <li>
-          No tablet, abra <strong className="text-ink">{origin}/tablet</strong>.
-        </li>
-        <li>Digite o código abaixo na tela de vinculação.</li>
-      </ol>
-      <p
-        data-testid="pairing-code"
-        className="my-6 rounded-2xl bg-subtle py-6 text-center font-mono text-4xl font-semibold tracking-[0.18em] text-ink select-all"
-      >
-        {pairing.code}
+      <p className="text-[15px] text-ink-soft">
+        Abra a câmera do celular ou do tablet e aponte para o código.
       </p>
-      <Alert tone="warn">
-        Código de uso único, válido até {formatDateTime(pairing.expiresAt)}. Ele não será exibido
-        novamente; se expirar, gere outro.
+      <div className="mt-5 flex flex-col items-center gap-6 sm:flex-row sm:items-start">
+        <div
+          data-testid="pairing-qr"
+          className="size-48 shrink-0 rounded-xl border border-line bg-white p-1"
+          // SVG gerado localmente pelo qrcode-generator (só o endereço do app e o código).
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+        <ol className="w-full space-y-3 text-[15px] text-ink">
+          <li className="border-b border-line pb-3">
+            <strong>1.</strong> Aponte a câmera e abra o link
+          </li>
+          <li className="border-b border-line pb-3">
+            <strong>2.</strong> Toque em <strong>Instalar Cenário</strong>
+          </li>
+          <li>
+            <strong>3.</strong> O funcionário entra com o PIN dele
+          </li>
+          <li className="pt-1 text-sm text-ink-muted">
+            O aparelho já fica ligado à sua empresa. Não precisa digitar código.
+          </li>
+        </ol>
+      </div>
+      <details className="mt-5 text-sm text-ink-soft">
+        <summary className="cursor-pointer select-none">Sem câmera? Digite o código</summary>
+        <p className="mt-2">
+          No aparelho, abra <strong className="text-ink">{origin}/tablet</strong> e digite:
+        </p>
+        <p
+          data-testid="pairing-code"
+          className="my-3 rounded-2xl bg-subtle py-4 text-center font-mono text-3xl font-semibold tracking-[0.18em] text-ink select-all"
+        >
+          {pairing.code}
+        </p>
+      </details>
+      <Alert tone="warn" className="mt-4">
+        Vale uma vez só, até {formatDateTime(pairing.expiresAt)}. Se passar da hora, gere outro.
       </Alert>
     </Dialog>
   );

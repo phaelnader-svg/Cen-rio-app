@@ -30,6 +30,7 @@ export const ROBOTS_ALLOW = [
 export const ROBOTS_DISALLOW = [
   '/painel',
   '/tablet',
+  '/dono',
   '/entrar',
   '/api/',
   '/autorizar',

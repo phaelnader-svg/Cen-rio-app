@@ -61,4 +61,5 @@ export * from './holidays';
 export * from './text';
 export * from './reworks';
 export * from './shop-floor';
+export * from './legal';
 export * from './office-tasks';

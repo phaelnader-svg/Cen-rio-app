@@ -16,18 +16,30 @@ describe('módulos configuráveis', () => {
     expect(MODULES.logistica.defaultEnabled).toBe(true);
     // Cobrança: o jogo vem desligado e quem liga é o plano (core/modules.ts no servidor).
     expect(MODULES.ambiente_interativo.defaultEnabled).toBe(false);
-    expect(state).toEqual({ logistica: true, ambiente_interativo: false });
+    // Produção sem tablet (2026-11-24): desligada até a empresa escolher.
+    expect(state).toEqual({
+      logistica: true,
+      ambiente_interativo: false,
+      oficina_sem_tablet: false,
+    });
   });
 
   it('S1 e remoção dos módulos: só a logística é configurável; registros antigos de "embalagem", "ajuda" e "materiais" são ignorados', () => {
-    expect(MODULE_KEYS.filter((k) => MODULES[k].configurable)).toEqual(['logistica']);
+    expect(MODULE_KEYS.filter((k) => MODULES[k].configurable)).toEqual([
+      'logistica',
+      'oficina_sem_tablet',
+    ]);
     const state = resolveModules([
       { key: 'logistica', enabled: false },
       { key: 'embalagem', enabled: false },
       { key: 'ajuda', enabled: true },
       { key: 'materiais', enabled: true },
     ]);
-    expect(state).toEqual({ logistica: false, ambiente_interativo: false });
+    expect(state).toEqual({
+      logistica: false,
+      ambiente_interativo: false,
+      oficina_sem_tablet: false,
+    });
   });
 
   it('chave desconhecida (gravada por versão futura) é ignorada sem erro', () => {

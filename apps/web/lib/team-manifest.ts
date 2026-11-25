@@ -1,10 +1,13 @@
 import type { MetadataRoute } from 'next';
 
-export default function manifest(): MetadataRoute.Manifest {
+/** Manifesto do app da EQUIPE (/tablet), servido em /manifest.webmanifest. */
+export function teamManifest(): MetadataRoute.Manifest {
   return {
-    name: 'Cenário Gestão — Produção',
+    // App instalado (2026-11-25): o app da equipe, no tablet e no celular.
+    id: '/tablet',
+    name: 'Cenário',
     short_name: 'Cenário',
-    description: 'Interface de produção do Cenário Gestão',
+    description: 'App do Cenário para a equipe: produção no tablet, entregas no celular.',
     start_url: '/tablet',
     scope: '/',
     display: 'standalone',

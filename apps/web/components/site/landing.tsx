@@ -5,6 +5,7 @@ import { BrandMark } from '@/components/brand';
 import { jsonLd } from './agentes';
 import { artigosPublicados } from './blog/artigos';
 import { WebMcpTools } from './webmcp';
+import { LegalFooter, SiteConsent, SkipLink, type LegalMode } from './legal/legal';
 import { Alert, Badge, Card } from '@/components/ui/misc';
 import {
   BUTTON_BASE,
@@ -76,22 +77,8 @@ export function ContactLink({
     >
       <MessageCircle className="size-4" aria-hidden />
       {children}
+      {href && <span className="sr-only"> (abre o WhatsApp em outra aba)</span>}
     </a>
-  );
-}
-
-/** Google Analytics da landing (só com SITE.analyticsId; a CSP dessas rotas libera o Google). */
-export function Analytics({ id }: { id: string }) {
-  const safe = id.replace(/[^A-Z0-9-]/gi, '');
-  return (
-    <>
-      <script async src={`https://www.googletagmanager.com/gtag/js?id=${safe}`} />
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${safe}');document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href^="https://wa.me/"]');if(a)gtag('event','whatsapp_click',{origem:a.getAttribute('data-origem')||'site'})});`,
-        }}
-      />
-    </>
   );
 }
 
@@ -301,8 +288,11 @@ function Lines({ items }: { items: string[] }) {
 export function Landing({
   preview,
   blogOrigem,
+  legal,
 }: {
   preview: boolean;
+  /** Páginas legais no ar? (await legalMode() na página). */
+  legal?: LegalMode;
   /** Veio de um link do blog (utm_source=blog): o WhatsApp já chega com "Vim pelo blog". */
   blogOrigem?: { slug?: string; titulo?: string } | null;
 }) {
@@ -314,7 +304,8 @@ export function Landing({
   const trial = trialOffer();
   return (
     <div className="min-h-dvh bg-canvas text-ink">
-      {!preview && SITE.analyticsId && <Analytics id={SITE.analyticsId} />}
+      <SkipLink />
+      <SiteConsent preview={preview} />
       {/* Assistentes de IA: dados estruturados do produto e ferramentas WebMCP (só info pública). */}
       <script
         type="application/ld+json"
@@ -350,7 +341,7 @@ export function Landing({
         </div>
       </header>
 
-      <main>
+      <main id="conteudo">
         {/* Abertura: texto curto à esquerda, o sistema real à direita */}
         <section
           className={clsx(
@@ -624,6 +615,7 @@ export function Landing({
                 className="text-ink-soft hover:text-ink hover:underline"
               >
                 WhatsApp {formatPhone(SITE.whatsappNumber)}
+                <span className="sr-only"> (abre em outra aba)</span>
               </a>
             )}
             <a href="/entrar" className="text-ink-soft hover:text-ink hover:underline">
@@ -634,6 +626,7 @@ export function Landing({
             </a>
           </nav>
         </div>
+        <LegalFooter preview={preview} mode={legal} />
       </footer>
     </div>
   );

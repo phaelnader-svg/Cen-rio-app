@@ -64,7 +64,7 @@ export async function openTablet(
   const page = await context.newPage();
   await page.goto('/tablet');
   await page.getByLabel('Código de vinculação').fill(code);
-  await page.getByRole('button', { name: 'Vincular tablet' }).click();
+  await page.getByRole('button', { name: 'Ligar aparelho' }).click();
   await expect(page.getByText('Digite seu PIN de 6 dígitos')).toBeVisible();
   await typePin(page, pin);
   await expect(page.getByTestId('tablet-user')).toBeVisible();
