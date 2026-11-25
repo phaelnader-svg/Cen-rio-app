@@ -1,3 +1,4 @@
+import { legalMode } from '@/components/site/legal/legal';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { artigoPorSlug } from '@/components/site/blog/artigos';
@@ -45,5 +46,5 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function ArtigoPage({ params }: Props) {
   const a = artigoPorSlug((await params).slug);
   if (!a) notFound();
-  return <BlogArticle a={a} preview={siteMode() === 'preview'} />;
+  return <BlogArticle a={a} preview={siteMode() === 'preview'} legal={await legalMode()} />;
 }

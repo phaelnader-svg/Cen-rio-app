@@ -24,6 +24,7 @@ import {
   NoticesCard,
   SupportSessionButton,
 } from '@/components/improvements/platform-extras';
+import { PrivacyRequestsInbox } from '@/components/improvements/privacy-extras';
 
 interface CompanyRow {
   id: number;
@@ -100,6 +101,7 @@ export function CompaniesPage() {
       />
       <BusinessNumbersCard />
       <FeedbackInbox />
+      <PrivacyRequestsInbox />
       <NoticesCard />
       <DemoCompanyCard />
       {list.isLoading ? <Spinner /> : null}

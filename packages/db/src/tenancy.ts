@@ -326,6 +326,11 @@ export const TENANCY: Record<string, TenancyEntry> = {
     class: 'empresa',
     note: 'Dinheiro que entrou fora das cobranças de pedido (aba Receitas do financeiro).',
   },
+  // ── LGPD (2026-11-25) ───────────────────────────────────────────────────────────────
+  PrivacyRequest: {
+    class: 'empresa',
+    note: 'Pedido sobre dados pessoais. O da página pública fica na empresa da plataforma; o dono da plataforma lê todos pela tela Empresas (banco do sistema).',
+  },
   // ── App instalado: avisos no celular e no tablet (2026-11-25) ──────────────────────
   PushKey: {
     class: 'sistema',

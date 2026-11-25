@@ -1,3 +1,4 @@
+import { legalMode } from '@/components/site/legal/legal';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { artigosPublicados } from '@/components/site/blog/artigos';
@@ -30,8 +31,10 @@ export function generateMetadata(): Metadata {
   };
 }
 
-export default function BlogPage() {
+export default async function BlogPage() {
   const artigos = artigosPublicados();
   if (artigos.length === 0) notFound();
-  return <BlogList artigos={artigos} preview={siteMode() === 'preview'} />;
+  return (
+    <BlogList artigos={artigos} preview={siteMode() === 'preview'} legal={await legalMode()} />
+  );
 }

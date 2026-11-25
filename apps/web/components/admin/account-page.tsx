@@ -10,6 +10,7 @@ import { useToast } from '@/components/ui/toast';
 import { api, errorMessage } from '@/lib/api';
 import { useMe } from '@/lib/hooks';
 import { TwoFactorCard } from '@/components/improvements/two-factor';
+import { PrivacyRequestCard } from '@/components/improvements/privacy-extras';
 
 export function AccountPage() {
   const me = useMe();
@@ -93,6 +94,7 @@ export function AccountPage() {
         </form>
       </Card>
       {!me.data?.user.supportAgent && <TwoFactorCard />}
+      {!me.data?.user.supportAgent && <PrivacyRequestCard scope="MINHA_CONTA" />}
     </>
   );
 }

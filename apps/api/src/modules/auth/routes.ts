@@ -22,7 +22,7 @@ import { cookieOptions } from '../../plugins/auth';
 import { buildMe, employeeEventPayload } from '../presenters';
 import { captchaFailed } from '../../core/captcha';
 import { sendConfirmationEmail } from '../account/emails';
-import { signupExtrasSchema } from '@cenario/shared';
+import { LEGAL_VERSION, signupExtrasSchema } from '@cenario/shared';
 
 export async function authRoutes(app: FastifyInstance) {
   const { prisma, system, env, hashToken, cookies } = app.ctx;
@@ -262,7 +262,7 @@ export async function authRoutes(app: FastifyInstance) {
           action: 'auth.signup',
           entityType: 'company',
           entityId: String(company.id),
-          summary: `Conta criada pela tela de entrar (${input.email}): empresa nova nº ${company.id}.`,
+          summary: `Conta criada pela tela de entrar (${input.email}): empresa nova nº ${company.id}. Aceitou os Termos de uso e a Política de privacidade (versão ${LEGAL_VERSION}).`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.EMPLOYEE_CREATED,
