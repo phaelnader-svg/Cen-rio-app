@@ -326,6 +326,15 @@ export const TENANCY: Record<string, TenancyEntry> = {
     class: 'empresa',
     note: 'Dinheiro que entrou fora das cobranças de pedido (aba Receitas do financeiro).',
   },
+  // ── App instalado: avisos no celular e no tablet (2026-11-25) ──────────────────────
+  PushKey: {
+    class: 'sistema',
+    note: 'Chaves dos avisos (VAPID), uma linha só, iguais para todas as empresas.',
+  },
+  PushSubscription: {
+    class: 'empresa',
+    note: 'Aparelho da empresa que aceitou avisos; o endereço do aviso (endpoint) é único no sistema.',
+  },
 };
 
 export function tenancyOf(model: string): TenancyEntry | undefined {

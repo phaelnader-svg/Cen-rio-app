@@ -146,7 +146,9 @@ test.describe.serial('Tablets, sessões e sincronização', () => {
     await page.reload();
     await page.getByTestId('device-Tablet Thiago').getByRole('button', { name: 'Revogar' }).click();
     await page.getByRole('button', { name: 'Revogar dispositivo' }).click();
-    await expect(tablet.page.getByRole('heading', { name: 'Vincular este tablet' })).toBeVisible();
+    await expect(
+      tablet.page.getByRole('heading', { name: 'Ligar este aparelho à empresa' }),
+    ).toBeVisible();
     await expect(page.getByTestId('device-Tablet Thiago').getByText('Revogado')).toBeVisible();
     await tablet.context.close();
   });

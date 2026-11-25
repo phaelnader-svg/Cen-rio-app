@@ -361,10 +361,11 @@ model Device {
   createdAt            DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  assignedEmployee Employee? @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
-  createdBy        User?     @relation("DeviceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  revokedBy        User?     @relation("DeviceRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
-  sessions         Session[]
+  assignedEmployee  Employee?          @relation(fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  createdBy         User?              @relation("DeviceCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  revokedBy         User?              @relation("DeviceRevokedBy", fields: [revokedById], references: [id], onDelete: SetNull)
+  sessions          Session[]
+  pushSubscriptions PushSubscription[]
 
   @@unique([companyId, name])
   @@index([status])
@@ -569,6 +570,7 @@ model CompanySettings {
   empresaUser                        User[]                        @relation("EmpresaDeUser")
   empresaSession                     Session[]                     @relation("EmpresaDeSession")
   empresaDevice                      Device[]                      @relation("EmpresaDeDevice")
+  empresaPushSubscription            PushSubscription[]            @relation("EmpresaDePushSubscription")
   empresaOAuthCode                   OAuthCode[]                   @relation("EmpresaDeOAuthCode")
   empresaOAuthGrant                  OAuthGrant[]                  @relation("EmpresaDeOAuthGrant")
   empresaOAuthAccessToken            OAuthAccessToken[]            @relation("EmpresaDeOAuthAccessToken")
@@ -5701,4 +5703,38 @@ model Rework {
   @@index([originalOrderId])
   @@index([createdAt])
   @@map("reworks")
+}
+
+/// App instalado (2026-11-25): chaves VAPID dos avisos no celular/tablet, criadas sozinhas na
+/// primeira vez e iguais para todas as empresas (uma linha só, id = 1). Nunca sai do servidor.
+model PushKey {
+  id         Int      @id @default(1) @db.SmallInt
+  publicKey  String   @map("public_key") @db.VarChar(120)
+  privateKey String   @map("private_key") @db.VarChar(80)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("push_keys")
+}
+
+/// App instalado (2026-11-25): aparelho que aceitou receber avisos. `userId` = quem estava
+/// entrado no aparelho quando aceitou (atualizado a cada entrada); os avisos dessa pessoa chegam
+/// nele mesmo com o app fechado.
+model PushSubscription {
+  id        String          @id @default(uuid()) @db.Uuid
+  companyId Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company   CompanySettings @relation("EmpresaDePushSubscription", fields: [companyId], references: [id])
+  deviceId  String          @map("device_id") @db.Uuid
+  userId    String?         @map("user_id") @db.Uuid
+  endpoint  String          @unique @db.VarChar(1000)
+  p256dh    String          @db.VarChar(200)
+  auth      String          @db.VarChar(100)
+  lastError String?         @map("last_error") @db.VarChar(300)
+  createdAt DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  device Device @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([deviceId])
+  @@map("push_subscriptions")
 }

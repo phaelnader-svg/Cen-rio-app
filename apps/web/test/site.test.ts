@@ -80,7 +80,7 @@ describe('compartilhamento e Google', () => {
   });
 
   it('robots.txt e sitemap.xml existem e deixam o painel fora', () => {
-    expect(src('app/robots.txt/route.ts')).toMatch(/ROBOTS_DISALLOW = \[\s*'\/painel'/);
+    expect(src('components/site/robots.ts')).toMatch(/ROBOTS_DISALLOW = \[\s*'\/painel'/);
     expect(src('app/sitemap.ts')).toMatch(/SITE_URL/);
   });
 

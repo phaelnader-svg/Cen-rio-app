@@ -13,6 +13,7 @@ import { Avatar } from '@/components/ui/misc';
 import { api } from '@/lib/api';
 import { useModules } from '@/lib/hooks';
 import { useMyAttendance } from '@/lib/attendance';
+import { PushCard } from './install';
 import { MyTripsToday } from './my-trips';
 import { LogisticsJobs } from './logistics';
 import { MyValues } from './my-values';
@@ -181,6 +182,7 @@ export function TabletHome({ me }: { me: MeDto }) {
       </header>
 
       <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">
+        {screen === 'home' && <PushCard />}
         {screen === 'home' && nothingHere ? (
           <p
             className="rounded-xl border border-line p-4 text-lg text-ink-soft"

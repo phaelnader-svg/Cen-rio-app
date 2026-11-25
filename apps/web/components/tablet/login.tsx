@@ -7,6 +7,7 @@ import { ArrowLeft, Delete } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { BrandMark } from '@/components/brand';
 import { Alert, Avatar, EmptyState } from '@/components/ui/misc';
+import { InstallBanner } from './install';
 import { ApiError, api } from '@/lib/api';
 
 export function TabletLogin({
@@ -74,6 +75,9 @@ export function TabletLogin({
             </ul>
           </div>
         )}
+        <div className="mt-10 flex w-full justify-center">
+          <InstallBanner />
+        </div>
       </div>
     </main>
   );

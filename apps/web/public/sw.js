@@ -1,9 +1,11 @@
-/* Service worker da interface de produção (PWA).
+/* Service worker do app Cenário da equipe (PWA, tablet e celular).
  * - Nunca armazena respostas da API (/api): dados sempre vêm do servidor.
+ * - Avisos (2026-11-25): mostra o aviso mandado pelo servidor mesmo com o app fechado; tocar no
+ *   aviso abre (ou traz para frente) o app.
  * - Arquivos estáticos versionados (/_next/static) usam cache.
  * - Navegação: rede primeiro; sem rede, exibe página offline.
  */
-const VERSION = 'cenario-v1';
+const VERSION = 'cenario-v2';
 const OFFLINE_URL = '/offline.html';
 
 self.addEventListener('install', (event) => {
@@ -45,4 +47,37 @@ self.addEventListener('fetch', (event) => {
       ),
     );
   }
+});
+
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : '' };
+  }
+  const title = data.title || 'Cenário';
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || '',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: data.tag || undefined,
+      lang: 'pt-BR',
+      data: { url: data.url || '/tablet' },
+    }),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || '/tablet', self.location.origin).href;
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if (new URL(c.url).pathname.startsWith('/tablet') && 'focus' in c) return c.focus();
+      }
+      return self.clients.openWindow(target);
+    }),
+  );
 });

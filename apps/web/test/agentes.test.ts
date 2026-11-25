@@ -18,7 +18,7 @@ import {
   skillsIndex,
 } from '../components/site/agentes';
 import { webMcpScript } from '../components/site/webmcp';
-import { robotsTxt } from '../app/robots.txt/route';
+import { robotsTxt } from '../components/site/robots';
 import sitemap from '../app/sitemap';
 import { GET as skillsGet } from '../app/.well-known/agent-skills/index.json/route';
 import { GET as catalogGet } from '../app/.well-known/api-catalog/route';

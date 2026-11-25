@@ -110,6 +110,8 @@ import { roleRoutes } from './modules/roles/routes';
 import { sessionRoutes } from './modules/sessions/routes';
 import { syncRoutes } from './modules/sync/routes';
 import { tabletRoutes } from './modules/tablet/routes';
+import { pushConsumer } from './modules/push/push';
+import { pushRoutes } from './modules/push/routes';
 import { oauthRoutes } from './modules/apps/oauth';
 import { authPlugin } from './plugins/auth';
 import { errorHandlerPlugin } from './plugins/error-handler';
@@ -168,6 +170,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   const feed = new EventFeed(system, env.DATABASE_URL, app.log, options.feedPollIntervalMs);
   const hub = new RealtimeHub(system, feed, app.log);
   const processor = new EventProcessor(system, app.log);
+  // App instalado: avisos no celular/tablet com o app fechado.
+  processor.register(pushConsumer(system, app.log, env.PUBLIC_WEB_URL));
   const secure = env.COOKIE_SECURE;
   const ctx: AppContext = {
     env,
@@ -307,6 +311,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(confirmationRoutes);
   await app.register(valueRequestRoutes);
   await app.register(billingRoutes);
+  await app.register(pushRoutes);
   // Autorização delegada de aplicativos (OAuth 2.0 + PKCE), ex.: Firma Viva.
   await app.register(oauthRoutes);
   // Relógio de teste: só existe com ENABLE_TEST_CLOCK (validado para APP_ENV=test).
