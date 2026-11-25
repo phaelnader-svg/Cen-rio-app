@@ -66,6 +66,7 @@ import {
 import { NotSentByAgent, decideProposal } from './agents';
 import { refreshPending } from './proposal-validity';
 import { deliveryText } from './office-delivery';
+import { officeWeek, weeklyReportNotice } from './office-week';
 
 type Db = PrismaClient | Tx;
 
@@ -644,6 +645,9 @@ export async function runOfficeRound(
   }
   await notifyOwner(prisma, newAsking, today);
   await dailySummary(prisma, at, tz, today);
+  // Domingo à tarde: o relatório da semana do Gerente (só com o Gerente contratado).
+  if (hour >= SUMMARY_HOUR && agents.some((a) => a.roleKey === 'GERENTE'))
+    await weeklyReportNotice(prisma, today).catch(() => false);
   return { created, doneAlone, asking: newAsking.length };
 }
 
@@ -1052,6 +1056,20 @@ export async function officeRoutes(app: FastifyInstance) {
         });
       });
       return reply.status(201).send(await officeOverview(prisma));
+    },
+  );
+
+  // Relatório da semana (Gerente): os últimos 7 dias, com dinheiro (pede o financeiro).
+  app.get(
+    '/api/v1/office/week',
+    {
+      config: {
+        access: { session: 'WEB', permissions: [...OFFICE_ACCESS.permissions, 'financeiro.ver'] },
+      },
+    },
+    async () => {
+      await guard();
+      return officeWeek(prisma);
     },
   );
 

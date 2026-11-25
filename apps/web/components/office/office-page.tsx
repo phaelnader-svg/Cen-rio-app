@@ -11,6 +11,7 @@ import {
   type OfficeOverviewDto,
   type OfficeProposalDto,
   type OfficeTaskDto,
+  type OfficeWeekDto,
   plural,
 } from '@cenario/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -41,7 +42,7 @@ import { useRouter } from 'next/navigation';
 
 const KEY = ['office'] as const;
 
-function useOffice() {
+export function useOffice() {
   return useQuery({
     queryKey: KEY,
     queryFn: () => api<OfficeOverviewDto>('/api/v1/office'),
@@ -50,7 +51,7 @@ function useOffice() {
 }
 
 /** Mutação do Escritório: devolve o escritório atualizado ou recarrega. */
-function useOfficeSend() {
+export function useOfficeSend() {
   const qc = useQueryClient();
   const toast = useToast();
   const [error, setError] = useState<string | null>(null);
@@ -210,6 +211,7 @@ export function OfficePage() {
             </div>
           </section>
 
+          {data.agents.some((a) => a.roleKey === 'GERENTE' && a.agentId) && <WeekReport />}
           <Recent items={data.recent} />
           <ReviewLink current={data.googleReviewUrl} />
         </div>
@@ -240,7 +242,7 @@ const AgentDot = ({ color }: { color: string }) => (
   <span className="inline-block size-2.5 shrink-0 rounded-full" style={{ background: color }} />
 );
 
-function ProposalCard({ p }: { p: OfficeProposalDto }) {
+export function ProposalCard({ p }: { p: OfficeProposalDto }) {
   const { m, error } = useOfficeSend();
   const [edit, setEdit] = useState(false);
   const [sendLink, setSendLink] = useState<string | null>(null);
@@ -812,6 +814,98 @@ function QuoteRequestCard({ data }: { data: OfficeOverviewDto }) {
   );
 }
 
+/** Relatório da semana (Gerente): os últimos 7 dias; chega no sininho no domingo à tarde. */
+function WeekReport() {
+  const q = useQuery({
+    queryKey: [...KEY, 'week'],
+    queryFn: () => api<OfficeWeekDto>('/api/v1/office/week'),
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const w = q.data;
+  if (!w) return null;
+  const diff =
+    w.lastYearContractedCents && w.lastYearContractedCents > 0
+      ? Math.round(
+          ((w.contractedCents - w.lastYearContractedCents) / w.lastYearContractedCents) * 100,
+        )
+      : null;
+  const cells: [string, string, string?][] = [
+    [
+      'Fechou',
+      money(w.contractedCents),
+      `${plural(w.contractedOrders, 'pedido', 'pedidos')}${diff !== null ? ` · ${diff >= 0 ? '+' : ''}${diff}% que no ano passado` : ''}`,
+    ],
+    ['Entrou', money(w.receivedCents)],
+    ['Saiu', money(w.paidCents)],
+    [
+      'Lucro das OS entregues',
+      money(w.marginCents),
+      plural(w.completedOrders, 'OS entregue', 'OS entregues'),
+    ],
+  ];
+  return (
+    <section aria-labelledby="semana-titulo" id="semana" className="scroll-mt-20">
+      <h2 id="semana-titulo" className="mb-1 text-lg font-semibold text-ink">
+        Relatório da semana
+      </h2>
+      <p className="mb-3 text-sm text-ink-muted">
+        De {brDate(w.from)} a {brDate(w.to)}. O Gerente avisa no sininho todo domingo à tarde.
+      </p>
+      <Card className="space-y-4 p-4" data-testid="office-week">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {cells.map(([k, v, sub]) => (
+            <div key={k}>
+              <dt className="text-xs text-ink-muted">{k}</dt>
+              <dd className="text-lg font-semibold tabular-nums text-ink">{v}</dd>
+              {sub && <dd className="text-xs text-ink-muted">{sub}</dd>}
+            </div>
+          ))}
+        </dl>
+        {w.services.length > 0 && (
+          <div>
+            <p className="mb-1 text-sm font-medium text-ink">Lucro por serviço</p>
+            <ul className="divide-y divide-line text-sm">
+              {w.services.map((s) => (
+                <li key={s.label} className="flex justify-between gap-3 py-1.5">
+                  <span className="text-ink-soft">
+                    {s.label} <span className="text-ink-muted">({s.orders})</span>
+                  </span>
+                  <span className="tabular-nums text-ink">
+                    {money(s.marginCents)}{' '}
+                    <span className="text-ink-muted">de {money(s.revenueCents)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <ul className="space-y-1 text-sm text-ink-soft">
+          <li>
+            Orçamentos: {plural(w.quotesSent, 'enviado', 'enviados')},{' '}
+            {plural(w.quotesApproved, 'aprovado', 'aprovados')}.
+          </li>
+          {w.receivableOverdueCents > 0 && (
+            <li className="text-danger-600">
+              Para receber em atraso: {money(w.receivableOverdueCents)}.
+            </li>
+          )}
+          <li>
+            Semana que vem: {plural(w.nextWeek.deliveries, 'entrega', 'entregas')} e{' '}
+            {plural(w.nextWeek.billsCount, 'conta', 'contas')} a pagar
+            {w.nextWeek.billsCents ? ` (${money(w.nextWeek.billsCents)})` : ''}.
+          </li>
+          {w.reworks > 0 && (
+            <li className="text-danger-600">
+              {plural(w.reworks, 'retrabalho', 'retrabalhos')} na semana.
+            </li>
+          )}
+        </ul>
+      </Card>
+    </section>
+  );
+}
+
 /** Despesa pela foto: tirar a foto do comprovante e o Financeiro lança. */
 function ReceiptCard({ data }: { data: OfficeOverviewDto }) {
   const { m, error } = useOfficeSend();
@@ -868,7 +962,7 @@ function ReceiptCard({ data }: { data: OfficeOverviewDto }) {
   );
 }
 
-function AgentCard({ a }: { a: OfficeAgentDto }) {
+export function AgentCard({ a }: { a: OfficeAgentDto }) {
   const { m, error } = useOfficeSend();
   return (
     <Card className="p-4" data-testid={`office-agent-${a.roleKey}`}>

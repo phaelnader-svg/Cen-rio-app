@@ -197,6 +197,7 @@ export const NOTIFICATION_KINDS = [
   // 2026-11-25: agentes do escritório trabalhando sozinhos (pedidos de aprovação e resumo do dia).
   'AGENTES_PEDEM',
   'AGENTES_RESUMO',
+  'AGENTES_SEMANA',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -266,6 +267,7 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   SERVICO_PARADO: 'Serviço parado',
   AGENTES_PEDEM: 'Os agentes pedem sua aprovação',
   AGENTES_RESUMO: 'Resumo do escritório',
+  AGENTES_SEMANA: 'Relatório da semana',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

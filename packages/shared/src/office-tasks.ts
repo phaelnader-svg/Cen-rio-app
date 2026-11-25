@@ -322,6 +322,29 @@ export interface OfficeOverviewDto {
   today: { done: number; doneAlone: number; waiting: number; rejected: number };
 }
 
+/** Relatório da semana (Gerente): os últimos 7 dias, para o dono ler no domingo. */
+export interface OfficeWeekDto {
+  from: string;
+  to: string;
+  /** Fechado em (contratado) e quantos pedidos. */
+  contractedCents: number;
+  contractedOrders: number;
+  /** Mesmo período do ano passado (null sem dados). */
+  lastYearContractedCents: number | null;
+  receivedCents: number;
+  paidCents: number;
+  cashNetCents: number;
+  completedOrders: number;
+  marginCents: number;
+  /** Lucro por serviço (OS concluídas no período), do maior para o menor. */
+  services: { label: string; orders: number; revenueCents: number; marginCents: number }[];
+  quotesSent: number;
+  quotesApproved: number;
+  receivableOverdueCents: number;
+  nextWeek: { billsCount: number; billsCents: number; deliveries: number };
+  reworks: number;
+}
+
 /** Agentes do Escritório, na ordem do plano (Gerente primeiro). */
 export const OFFICE_ROLES = [
   'GERENTE',
