@@ -21,6 +21,12 @@ export function whatsappLink(phone: string | null | undefined, text: string): st
 
 const firstName = (name: string | null | undefined) => (name ?? '').trim().split(/\s+/)[0] ?? '';
 
+/** "de" + artigo: "do seu sofá", "das suas cadeiras" (nunca "de o seu sofá"). */
+const deOf = (what: string) =>
+  what
+    .replace(/^(o|a|os|as) /i, (_m, art: string) => `d${art.toLowerCase()} `)
+    .replace(/^(?!d[oa]s? )/, 'de ');
+
 export const CUSTOMER_MESSAGE_KINDS = [
   'PRONTO',
   'RETIRADA_AMANHA',
@@ -61,11 +67,11 @@ export function customerMessage(i: CustomerMessageInput): string {
     case 'PRONTO':
       return `${hi} Boa notícia: ${what}${ref} está pronto. 🎉 Podemos combinar a entrega ou a retirada?${i.balance ? ` O saldo a pagar é de ${i.balance}.` : ''}${sign}`;
     case 'RETIRADA_AMANHA':
-      return `${hi} Passando para confirmar a retirada de ${what}${ref} amanhã${i.date ? ` (${i.date})` : ''}. Alguém vai estar no local para nos receber?${sign}`;
+      return `${hi} Passando para confirmar a retirada ${deOf(what)}${ref} amanhã${i.date ? ` (${i.date})` : ''}. Alguém vai estar no local para nos receber?${sign}`;
     case 'ENTREGA_AGENDADA':
-      return `${hi} A entrega de ${what}${ref} está agendada${i.date ? ` para ${i.date}` : ''}.${i.balance ? ` O saldo de ${i.balance} pode ser pago na entrega.` : ''} Qualquer mudança, é só avisar por aqui.${sign}`;
+      return `${hi} A entrega ${deOf(what)}${ref} está agendada${i.date ? ` para ${i.date}` : ''}.${i.balance ? ` O saldo de ${i.balance} pode ser pago na entrega.` : ''} Qualquer mudança, é só avisar por aqui.${sign}`;
     case 'ORCAMENTO_ENVIADO':
-      return `${hi} Enviamos o orçamento de ${what}${ref}. Ficou alguma dúvida sobre tecido, prazo ou pagamento? Estamos à disposição.${sign}`;
+      return `${hi} Enviamos o orçamento ${deOf(what)}${ref}. Ficou alguma dúvida sobre tecido, prazo ou pagamento? Estamos à disposição.${sign}`;
     case 'EM_PRODUCAO':
       return `${hi} ${what[0]!.toUpperCase()}${what.slice(1)}${ref} já entrou em produção na nossa oficina.${i.date ? ` A previsão de entrega é ${i.date}.` : ''} Avisamos assim que ficar pronto.${sign}`;
   }

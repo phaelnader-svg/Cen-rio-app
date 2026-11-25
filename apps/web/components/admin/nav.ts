@@ -1,5 +1,6 @@
 import type { ModuleKey, Permission } from '@cenario/shared';
 import {
+  Bot,
   ClipboardPlus,
   Calculator,
   Building2,
@@ -75,6 +76,7 @@ export const NAV_GROUPS = [
 export type NavGroup = (typeof NAV_GROUPS)[number];
 const GROUP_PREFIXES: [string, NavGroup][] = [
   ['/painel/atencao', 'Início'],
+  ['/painel/escritorio', 'Início'],
   ['/painel/servicos', 'Serviços'],
   ['/painel/clientes', 'Serviços'],
   ['/painel/orcamentos', 'Serviços'],
@@ -104,6 +106,14 @@ export function navGroupOf(href: string): NavGroup {
 
 export const NAV: NavItem[] = [
   { href: '/painel', label: 'Início', icon: LayoutDashboard },
+  // 2026-11-25: agentes do escritório trabalhando sozinhos (plano com o jogo; só o dono).
+  {
+    href: '/painel/escritorio',
+    label: 'Escritório',
+    icon: Bot,
+    allOf: ['jogo.acessar', 'agentes.gerenciar'],
+    module: 'ambiente_interativo',
+  },
   // Revisão geral (item 2): os avisos ficam no sininho; esta tela abre pelo "Ver todos" dele.
   {
     href: '/painel/atencao',
