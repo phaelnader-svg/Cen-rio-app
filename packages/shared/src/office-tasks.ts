@@ -359,7 +359,10 @@ export const OFFICE_ROLES = [
 export const OFFICE_ALSO_DOES: Record<string, string[]> = {
   GERENTE: ['Avisa a entrega com prazo perto (1 semana antes).'],
   FINANCEIRO: ['Avisa a conta a pagar 1 dia antes e a conta vencida.'],
-  COMPRAS: ['Mostra a lista Comprar com o que falta nas OS.'],
+  COMPRAS: [
+    'Mostra a lista Comprar com o que falta nas OS.',
+    'Avisa quando o estoque não dá para as OS abertas (material acabando).',
+  ],
   ORCAMENTOS: [],
   ATENDIMENTO: [],
   MARKETING: ['Na próxima etapa: posts com o antes e depois das OS e os artigos do blog.'],

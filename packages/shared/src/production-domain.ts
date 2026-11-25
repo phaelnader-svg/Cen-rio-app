@@ -198,6 +198,7 @@ export const NOTIFICATION_KINDS = [
   'AGENTES_PEDEM',
   'AGENTES_RESUMO',
   'AGENTES_SEMANA',
+  'MATERIAL_ACABANDO',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -268,6 +269,7 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   AGENTES_PEDEM: 'Os agentes pedem sua aprovação',
   AGENTES_RESUMO: 'Resumo do escritório',
   AGENTES_SEMANA: 'Relatório da semana',
+  MATERIAL_ACABANDO: 'Material acabando',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

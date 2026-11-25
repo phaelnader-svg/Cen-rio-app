@@ -67,6 +67,7 @@ import { NotSentByAgent, decideProposal } from './agents';
 import { refreshPending } from './proposal-validity';
 import { deliveryText } from './office-delivery';
 import { officeWeek, weeklyReportNotice } from './office-week';
+import { stockShortageNotices } from './office-stock';
 
 type Db = PrismaClient | Tx;
 
@@ -645,6 +646,9 @@ export async function runOfficeRound(
   }
   await notifyOwner(prisma, newAsking, today);
   await dailySummary(prisma, at, tz, today);
+  // Compras: material do estoque que não dá para as OS abertas.
+  if (agents.some((a) => a.roleKey === 'COMPRAS'))
+    await stockShortageNotices(prisma, today).catch(() => 0);
   // Domingo à tarde: o relatório da semana do Gerente (só com o Gerente contratado).
   if (hour >= SUMMARY_HOUR && agents.some((a) => a.roleKey === 'GERENTE'))
     await weeklyReportNotice(prisma, today).catch(() => false);
