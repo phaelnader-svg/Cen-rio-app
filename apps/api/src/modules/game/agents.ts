@@ -21,8 +21,10 @@ import {
   agentSchema,
   decideProposalSchema,
   updateAgentSchema,
+  officeTaskOf,
 } from '@cenario/shared';
-import type { AiAgent, Prisma, PrismaClient } from '@cenario/db';
+import type { AiAgent, AiAgentProposal, Prisma, PrismaClient } from '@cenario/db';
+import type { ActorContext } from '../../core/types';
 import type { FastifyInstance } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
@@ -42,6 +44,7 @@ import { PROVIDERS, missingEnv } from '../integrations/registry';
 import { channelAgentAnswer } from './agent-channels';
 import { AGENT_TEMPLATES } from './agent-templates';
 import { obsoleteReason, refreshPending } from './proposal-validity';
+import { scheduleApprovedDelivery } from './office-delivery';
 import { goalsAnswer, isGoalsQuestion } from '../office/cash-chat';
 import { AGENT_MANAGE, AGENT_USE, GAME_ACCESS, ensureDefaultSpaces } from './common';
 
@@ -480,127 +483,183 @@ export async function gameAgentRoutes(app: FastifyInstance) {
     async (request) => {
       const { id } = idParams.parse(request.params);
       const input = decideProposalSchema.parse(request.body);
-      const actor = actorFrom(request);
-      // Revalida no momento da aprovação: se os dados mudaram, a proposta caduca (e não executa).
-      const pre = await prisma.aiAgentProposal.findUnique({ where: { id } });
-      if (pre?.status === 'PENDENTE' && input.decision === 'APROVAR') {
-        const why = await obsoleteReason(prisma, pre);
-        if (why) {
-          await prisma.$transaction(async (tx) => {
-            await tx.aiAgentProposal.updateMany({
-              where: { id, status: 'PENDENTE' },
-              data: {
-                status: 'OBSOLETA',
-                decidedAt: new Date(),
-                decisionNote: `Desatualizada: ${why}`.slice(0, 500),
-              },
-            });
-            await audit(tx, actor, {
-              action: 'game.proposal_obsolete',
-              entityType: 'ai_agent_proposal',
-              entityId: id,
-              summary: `Proposta "${pre.title}" não aprovada: ${why}`,
-            });
-            await appendEvent(tx, actor, {
-              type: EVENT_TYPES.GAME_PROPOSAL_CHANGED,
-              aggregateType: 'ai_agent',
-              aggregateId: pre.agentId,
-              payload: { id: pre.agentId },
-              audience: AGENT_AUDIENCE,
-            });
-          });
-          throw Errors.conflict(`Proposta desatualizada: ${why}`, { obsolete: true });
-        }
-      }
-      return prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT id FROM ai_agent_proposals WHERE id = ${id}::uuid FOR UPDATE`;
-        const p = await tx.aiAgentProposal.findUnique({ where: { id }, include: { agent: true } });
-        if (!p) throw Errors.notFound('Proposta');
-        if (p.status !== 'PENDENTE') throw Errors.conflict('Esta proposta já foi decidida.');
-        // Ações externas sem integração configurada: a aprovação só registra a execução de teste.
-        const external = [
-          'ENVIAR_MENSAGEM',
-          'PUBLICAR_POST',
-          'EMITIR_NOTA',
-          'REGISTRAR_PAGAMENTO',
-        ].includes(p.kind);
-        let status: 'REJEITADA' | 'EXECUTADA_TESTE' | 'APROVADA' =
-          input.decision === 'REJEITAR' ? 'REJEITADA' : external ? 'EXECUTADA_TESTE' : 'APROVADA';
-        // Tráfego: a mudança de orçamento só é aplicada no Meta Ads depois desta aprovação.
-        if (p.kind === 'ALTERAR_ORCAMENTO' && input.decision !== 'REJEITAR') {
-          if (!request.auth!.permissions.has('anuncios.gerenciar'))
-            throw Errors.forbidden('Aprovar mudança de orçamento exige a permissão de anúncios.');
-          const pl = p.payload as {
-            campaignId: string;
-            campaignName: string;
-            fromCents: number;
-            toCents: number;
-          };
-          const c = await requireConnection(tx, 'META_ADS');
-          const r = await updateDailyBudget(
-            {
-              providerKey: c.providerKey,
-              mode: c.mode,
-              config: c.config,
-              secret: c.secret as never,
-            },
-            pl.campaignId,
-            pl.toCents,
-          );
-          status = r.test ? 'EXECUTADA_TESTE' : 'APROVADA';
-          await tx.agentAction.create({
-            data: {
-              agentId: p.agentId,
-              channel: 'META_ADS',
-              accountLabel: c.accountLabel,
-              kind: 'ALTERAR_ORCAMENTO',
-              summary: `Orçamento diário de "${pl.campaignName}": ${pl.fromCents / 100} → ${pl.toCents / 100} reais`,
-              content: p.detail,
-              status: r.test ? 'EXECUTADO_TESTE' : 'EXECUTADO',
-              approvedById: actor.userId,
-              ref: { proposalId: p.id, campaignId: pl.campaignId },
-            },
-          });
-        }
-        // Mensagens pelo WhatsApp: com a empresa conectada, saem pelo número dela; senão o dono
-        // envia pelo link com o texto pronto (que volta na resposta).
-        let payload: Prisma.InputJsonValue | undefined;
-        if (
-          input.decision !== 'REJEITAR' &&
-          (p.payload as Record<string, unknown> | null)?.channel === 'WHATSAPP'
-        ) {
-          const r = await approveWhatsApp(tx, request.auth!.permissions, actor, p, input.edits);
-          status = r.status;
-          payload = r.payload as Prisma.InputJsonValue;
-        }
-        const u = await tx.aiAgentProposal.update({
-          where: { id },
+      return decideProposal(prisma, {
+        id,
+        ...input,
+        actor: actorFrom(request),
+        perms: request.auth!.permissions,
+      });
+    },
+  );
+}
+
+/** A mensagem do agente sozinho não saiu pelo WhatsApp da empresa: a proposta volta a pedir. */
+export class NotSentByAgent extends Error {}
+
+export interface DecideOptions {
+  id: string;
+  decision: 'APROVAR' | 'REJEITAR';
+  note?: string;
+  edits?: {
+    text?: string;
+    supplierId?: string;
+    scheduledDate?: string;
+    windowStart?: string;
+    windowEnd?: string;
+  };
+  actor: ActorContext;
+  perms: ReadonlySet<string>;
+  /** Decisão do próprio agente (tarefa liberada para "sozinho"). */
+  byAgent?: boolean;
+  /** Conferência extra dentro da transação, com a proposta travada (ex.: nível ainda liberado). */
+  before?: (tx: Prisma.TransactionClient, p: AiAgentProposal) => Promise<void>;
+}
+
+/**
+ * Aprovar ou recusar uma proposta (pelo dono no jogo ou no Escritório, ou pelo próprio agente
+ * quando a tarefa está liberada). Revalida antes: proposta desatualizada não executa.
+ */
+export async function decideProposal(prisma: PrismaClient, o: DecideOptions) {
+  const { id, actor, perms } = o;
+  // Revalida no momento da aprovação: se os dados mudaram, a proposta caduca (e não executa).
+  const pre = await prisma.aiAgentProposal.findUnique({ where: { id } });
+  if (pre?.status === 'PENDENTE' && o.decision === 'APROVAR') {
+    const why = await obsoleteReason(prisma, pre);
+    if (why) {
+      await prisma.$transaction(async (tx) => {
+        await tx.aiAgentProposal.updateMany({
+          where: { id, status: 'PENDENTE' },
           data: {
-            ...(payload ? { payload } : {}),
-            status,
-            decidedById: actor.userId,
+            status: 'OBSOLETA',
             decidedAt: new Date(),
-            decisionNote: input.note ?? null,
+            decisionNote: `Desatualizada: ${why}`.slice(0, 500),
           },
         });
         await audit(tx, actor, {
-          action: 'game.proposal_decided',
+          action: 'game.proposal_obsolete',
           entityType: 'ai_agent_proposal',
           entityId: id,
-          summary: `Proposta "${p.title}" do agente ${p.agent.name}: ${status}.`,
-          changes: { kind: p.kind, status },
+          summary: `Proposta "${pre.title}" não aprovada: ${why}`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.GAME_PROPOSAL_CHANGED,
           aggregateType: 'ai_agent',
-          aggregateId: p.agentId,
-          payload: { id: p.agentId },
+          aggregateId: pre.agentId,
+          payload: { id: pre.agentId },
           audience: AGENT_AUDIENCE,
         });
-        return proposalDto(u);
       });
-    },
-  );
+      throw Errors.conflict(`Proposta desatualizada: ${why}`, { obsolete: true });
+    }
+  }
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM ai_agent_proposals WHERE id = ${id}::uuid FOR UPDATE`;
+    const p = await tx.aiAgentProposal.findUnique({ where: { id }, include: { agent: true } });
+    if (!p) throw Errors.notFound('Proposta');
+    if (p.status !== 'PENDENTE') throw Errors.conflict('Esta proposta já foi decidida.');
+    await o.before?.(tx, p);
+    // Ações externas sem integração configurada: a aprovação só registra a execução de teste.
+    const external = [
+      'ENVIAR_MENSAGEM',
+      'PUBLICAR_POST',
+      'EMITIR_NOTA',
+      'REGISTRAR_PAGAMENTO',
+    ].includes(p.kind);
+    let status: 'REJEITADA' | 'EXECUTADA_TESTE' | 'APROVADA' =
+      o.decision === 'REJEITAR' ? 'REJEITADA' : external ? 'EXECUTADA_TESTE' : 'APROVADA';
+    // Tráfego: a mudança de orçamento só é aplicada no Meta Ads depois desta aprovação.
+    if (p.kind === 'ALTERAR_ORCAMENTO' && o.decision !== 'REJEITAR') {
+      if (!perms.has('anuncios.gerenciar'))
+        throw Errors.forbidden('Aprovar mudança de orçamento exige a permissão de anúncios.');
+      const pl = p.payload as {
+        campaignId: string;
+        campaignName: string;
+        fromCents: number;
+        toCents: number;
+      };
+      const c = await requireConnection(tx, 'META_ADS');
+      const r = await updateDailyBudget(
+        {
+          providerKey: c.providerKey,
+          mode: c.mode,
+          config: c.config,
+          secret: c.secret as never,
+        },
+        pl.campaignId,
+        pl.toCents,
+      );
+      status = r.test ? 'EXECUTADA_TESTE' : 'APROVADA';
+      await tx.agentAction.create({
+        data: {
+          agentId: p.agentId,
+          channel: 'META_ADS',
+          accountLabel: c.accountLabel,
+          kind: 'ALTERAR_ORCAMENTO',
+          summary: `Orçamento diário de "${pl.campaignName}": ${pl.fromCents / 100} → ${pl.toCents / 100} reais`,
+          content: p.detail,
+          status: r.test ? 'EXECUTADO_TESTE' : 'EXECUTADO',
+          approvedById: actor.userId,
+          ref: { proposalId: p.id, campaignId: pl.campaignId },
+        },
+      });
+    }
+    // Mensagens pelo WhatsApp: com a empresa conectada, saem pelo número dela; senão o dono
+    // envia pelo link com o texto pronto (que volta na resposta).
+    let payload: Prisma.InputJsonValue | undefined;
+    let edits = o.edits;
+    // Agendar a entrega (Atendimento): a entrega é criada e a mensagem leva a data final.
+    if (o.decision !== 'REJEITAR' && officeTaskOf(p) === 'AGENDAR_ENTREGA') {
+      const d = await scheduleApprovedDelivery(tx, actor, perms, p, o.edits);
+      edits = { ...o.edits, ...(d.text ? { text: d.text } : {}) };
+      p.payload = {
+        ...((p.payload ?? {}) as Record<string, unknown>),
+        deliveryId: d.deliveryId,
+        scheduledDate: d.scheduledDate,
+        windowStart: d.windowStart,
+        windowEnd: d.windowEnd,
+      };
+    }
+    if (
+      o.decision !== 'REJEITAR' &&
+      (p.payload as Record<string, unknown> | null)?.channel === 'WHATSAPP'
+    ) {
+      const r = await approveWhatsApp(tx, perms, actor, p, edits);
+      // O agente sozinho só conta como feito se a mensagem saiu pelo número da empresa.
+      if (o.byAgent && !r.payload.sent) throw new NotSentByAgent(String(r.payload.sendError ?? ''));
+      status = r.status;
+      payload = r.payload as Prisma.InputJsonValue;
+    }
+    // Aprovação com o texto mudado pelo dono não conta na sequência de acertos do agente.
+    const before = String((p.payload as Record<string, unknown> | null)?.text ?? p.detail).trim();
+    if (payload && o.edits?.text && o.edits.text.trim() !== before)
+      (payload as Record<string, unknown>).edited = true;
+    const u = await tx.aiAgentProposal.update({
+      where: { id },
+      data: {
+        ...(payload ? { payload } : {}),
+        status,
+        decidedById: actor.userId,
+        decidedAt: new Date(),
+        decisionNote: o.note ?? null,
+        decidedByAgent: !!o.byAgent,
+      },
+    });
+    await audit(tx, actor, {
+      action: 'game.proposal_decided',
+      entityType: 'ai_agent_proposal',
+      entityId: id,
+      summary: `Proposta "${p.title}" do agente ${p.agent.name}: ${status}${o.byAgent ? ' (feita sozinha pelo agente)' : ''}.`,
+      changes: { kind: p.kind, status },
+    });
+    await appendEvent(tx, actor, {
+      type: EVENT_TYPES.GAME_PROPOSAL_CHANGED,
+      aggregateType: 'ai_agent',
+      aggregateId: p.agentId,
+      payload: { id: p.agentId },
+      audience: AGENT_AUDIENCE,
+    });
+    return proposalDto(u);
+  });
 }
 
 async function assertDesk(tx: Prisma.TransactionClient, stationId: string, agentId: string | null) {

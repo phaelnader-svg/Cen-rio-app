@@ -55,6 +55,30 @@ async function currentActionOf(db: Db, serviceOrderId: string) {
 
 export async function obsoleteReason(db: Db, p: AiAgentProposal): Promise<string | null> {
   const pl = (p.payload ?? {}) as Record<string, unknown>;
+  // Tarefas do Atendimento (escritório trabalhando sozinho, 2026-11-25).
+  if (pl.task === 'AGENDAR_ENTREGA') {
+    const ids = ((pl.itemIds as string[] | undefined) ?? []).filter(Boolean);
+    const ready = await db.serviceOrderItem.count({
+      where: { id: { in: ids }, fulfillmentStage: 'PRONTA_ENTREGA' },
+    });
+    return ready === ids.length && ids.length
+      ? null
+      : 'A peça já tem entrega marcada ou não está mais pronta na expedição.';
+  }
+  if (pl.task === 'CONFIRMAR_RETIRADA') {
+    const r = await db.pickupRequest.findUnique({ where: { id: String(pl.pickupId ?? '') } });
+    if (!r || r.status !== 'AGENDADA') return 'A retirada não está mais agendada.';
+    if (r.scheduledDate?.toISOString().slice(0, 10) !== pl.date)
+      return 'A retirada mudou de dia.';
+    return null;
+  }
+  if (pl.task === 'CONFIRMAR_ENTREGA') {
+    const d = await db.delivery.findUnique({ where: { id: String(pl.deliveryId ?? '') } });
+    if (!d || d.status !== 'AGENDADA') return 'A entrega não está mais agendada.';
+    if (d.scheduledDate.toISOString().slice(0, 10) !== pl.date) return 'A entrega mudou de dia.';
+    return null;
+  }
+  if (pl.task === 'PEDIR_AVALIACAO' || pl.task === 'CLIENTE_ANTIGO') return null;
   if (p.kind === 'PLANEJAR_OS') {
     const id = String(pl.serviceOrderId ?? '');
     const so = await db.serviceOrder.findUnique({

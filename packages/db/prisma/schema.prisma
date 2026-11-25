@@ -498,6 +498,10 @@ model CompanySettings {
   timezone           String    @default("America/Sao_Paulo") @db.VarChar(64)
   /// Horário a partir do qual o botão "Cheguei" é exibido (HH:MM).
   workdayStart       String    @default("08:30") @map("workday_start") @db.Char(5)
+  /// "Parar tudo" dos agentes do escritório (nulo = trabalhando).
+  agentsPausedAt     DateTime? @map("agents_paused_at") @db.Timestamptz(3)
+  /// Link para o cliente avaliar a empresa no Google (usado pelo agente de Atendimento).
+  googleReviewUrl    String?   @map("google_review_url") @db.VarChar(500)
   /// Limite para alerta de indisponibilidade operacional presumida (HH:MM).
   arrivalAlertAt     String    @default("09:30") @map("arrival_alert_at") @db.Char(5)
   workdayEnd         String    @default("18:00") @map("workday_end") @db.Char(5)
@@ -4893,6 +4897,8 @@ model AiAgent {
   channelPolicies Json              @default("{}") @map("channel_policies")
   /// Casos de envio automático liberados pelo gestor (ex.: confirmação de recebimento de fotos).
   autoSendRules   Json              @default("[]") @map("auto_send_rules")
+  /// Nível de cada tarefa (2026-11-25): { tarefa: { nivel: 1-4, limiteCents? } }. Vazio = 2 (pede).
+  autonomy        Json              @default("{}")
   actions         AgentAction[]
 
   @@map("ai_agents")
@@ -4920,21 +4926,23 @@ model AiAgentMessage {
 
 /// Ação proposta por um agente, pronta para revisão. Nada é executado sem aprovação.
 model AiAgentProposal {
-  id           String          @id @default(uuid()) @db.Uuid
-  companyId    Int             @default(dbgenerated("app_company_id()")) @map("company_id")
-  company      CompanySettings @relation("EmpresaDeAiAgentProposal", fields: [companyId], references: [id])
-  agentId      String          @map("agent_id") @db.Uuid
-  kind         String          @db.VarChar(40)
-  title        String          @db.VarChar(200)
-  detail       String          @db.VarChar(4000)
-  payload      Json            @default("{}")
-  evidence     Json            @default("[]")
+  id             String          @id @default(uuid()) @db.Uuid
+  companyId      Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company        CompanySettings @relation("EmpresaDeAiAgentProposal", fields: [companyId], references: [id])
+  agentId        String          @map("agent_id") @db.Uuid
+  kind           String          @db.VarChar(40)
+  title          String          @db.VarChar(200)
+  detail         String          @db.VarChar(4000)
+  payload        Json            @default("{}")
+  evidence       Json            @default("[]")
   /// PENDENTE | APROVADA | REJEITADA | EXECUTADA_TESTE | OBSOLETA
-  status       String          @default("PENDENTE") @db.VarChar(20)
-  decidedById  String?         @map("decided_by_id") @db.Uuid
-  decidedAt    DateTime?       @map("decided_at") @db.Timestamptz(3)
-  decisionNote String?         @map("decision_note") @db.VarChar(500)
-  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  status         String          @default("PENDENTE") @db.VarChar(20)
+  decidedById    String?         @map("decided_by_id") @db.Uuid
+  decidedAt      DateTime?       @map("decided_at") @db.Timestamptz(3)
+  decisionNote   String?         @map("decision_note") @db.VarChar(500)
+  /// Feita pelo próprio agente (tarefa liberada para "sozinho"), sem toque do dono.
+  decidedByAgent Boolean         @default(false) @map("decided_by_agent")
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
 
   agent     AiAgent @relation(fields: [agentId], references: [id], onDelete: Restrict, onUpdate: NoAction)
   decidedBy User?   @relation("AiAgentProposalDecidedBy", fields: [decidedById], references: [id], onDelete: SetNull, onUpdate: NoAction)

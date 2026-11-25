@@ -194,6 +194,9 @@ export const NOTIFICATION_KINDS = [
   'CONTA_VENCIDA',
   // 2026-11-24: oficina sem tablet — serviço começado sem movimento há dias.
   'SERVICO_PARADO',
+  // 2026-11-25: agentes do escritório trabalhando sozinhos (pedidos de aprovação e resumo do dia).
+  'AGENTES_PEDEM',
+  'AGENTES_RESUMO',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -261,6 +264,8 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   CONTA_A_VENCER: 'Conta a pagar vencendo',
   CONTA_VENCIDA: 'Conta a pagar em atraso',
   SERVICO_PARADO: 'Serviço parado',
+  AGENTES_PEDEM: 'Os agentes pedem sua aprovação',
+  AGENTES_RESUMO: 'Resumo do escritório',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

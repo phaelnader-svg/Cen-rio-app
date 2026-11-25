@@ -221,6 +221,19 @@ export const decideProposalSchema = z.object({
     .object({
       text: z.string().trim().min(1).max(4000).optional(),
       supplierId: idSchema.optional(),
+      /** Agendar a entrega: dia e horário escolhidos pelo dono antes de aprovar. */
+      scheduledDate: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+      windowStart: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/)
+        .optional(),
+      windowEnd: z
+        .string()
+        .regex(/^\d{2}:\d{2}$/)
+        .optional(),
     })
     .optional(),
 });
