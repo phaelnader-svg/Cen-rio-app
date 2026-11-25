@@ -158,4 +158,53 @@ describe('Marketing do Escritório', () => {
       (await overview(admin)).pending.filter((x) => x.task === 'PROMOCAO_MES_FRACO'),
     ).toHaveLength(0);
   });
+
+  it('parceiros: lista quem mandou serviço e prepara a mensagem para quem parou', async () => {
+    setClock(() => new Date('2026-11-25T15:00:00Z'));
+    const admin = await loginAdmin(app);
+    ok(await send(admin, 'POST', '/api/v1/office/hire', { roleKey: 'MARKETING' }), 201);
+    const mk = (body: Record<string, unknown>) =>
+      createCustomer(admin, body) as Promise<{ id: string }>;
+    const loja = await mk({ kind: 'PJ', name: 'Casa Bela Móveis', phone: '(12) 99111-0010' });
+    const arq = await mk({ name: 'Marina Arquiteta', phone: '(12) 99111-0011' });
+    const indicado = await mk({ name: 'Carlos Dias', phone: '(12) 99111-0012' });
+    const ativa = await mk({ kind: 'PJ', name: 'Loja Ativa', phone: '(12) 99111-0013' });
+    await db().customer.update({ where: { id: indicado.id }, data: { referredById: arq.id } });
+    const order = (customerId: string, when: string, cents: number) =>
+      db().commercialOrder.create({
+        data: {
+          customerId,
+          contractedService: 'Reforma',
+          agreedValueCents: cents,
+          status: 'AGUARDANDO_RETIRADA',
+          createdAt: new Date(`${when}T12:00:00Z`),
+        },
+      });
+    await order(loja.id, '2026-03-10', 300_000);
+    await order(loja.id, '2026-06-10', 200_000);
+    await order(indicado.id, '2026-05-02', 150_000);
+    await order(ativa.id, '2026-11-01', 100_000);
+
+    await round(admin);
+    const p = (await overview(admin)).pending.find((x) => x.task === 'PARCEIROS')!;
+    expect(p.title).toBe('Lembrar 2 parceiros que não mandam serviço há 3 meses');
+    expect(p.detail).toMatch(/Casa Bela Móveis: 2 serviços/);
+    expect(p.detail).toMatch(/Loja Ativa: 1 serviço,/);
+    expect((p.payload.recipients as { name: string }[]).map((x) => x.name).sort()).toEqual([
+      'Casa Bela Móveis',
+      'Marina Arquiteta',
+    ]);
+
+    const r = ok(
+      await send(admin, 'POST', `/api/v1/game/proposals/${p.id}/decide`, { decision: 'APROVAR' }),
+    );
+    const msgs = (r.payload.sendList as { href: string }[]).map((x) => decodeURIComponent(x.href));
+    expect(msgs.some((m) => /Olá, Casa Bela Móveis!/.test(m))).toBe(true);
+    expect(msgs.some((m) => /Olá, Marina!/.test(m))).toBe(true);
+    expect(msgs.join()).toMatch(/10% de desconto/);
+
+    // No mesmo mês não propõe de novo.
+    await round(admin);
+    expect((await overview(admin)).pending.filter((x) => x.task === 'PARCEIROS')).toHaveLength(0);
+  });
 });

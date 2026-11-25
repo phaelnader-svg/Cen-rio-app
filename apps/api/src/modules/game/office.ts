@@ -75,7 +75,7 @@ import { stockShortageNotices } from './office-stock';
 import { accountantPackageNotice, cashForecast, taxReminder } from './office-finance';
 import { planEntryFor } from './office-plan';
 import { contractProposals } from './office-contract';
-import { beforeAfterProposals, slowMonthProposals } from './office-marketing';
+import { beforeAfterProposals, partnerProposals, slowMonthProposals } from './office-marketing';
 import { materialPrices, tableAdjustProposals, withSupplierPrices } from './office-prices';
 
 type Db = PrismaClient | Tx;
@@ -700,6 +700,7 @@ async function routine(db: PrismaClient, agent: AiAgent, today: string): Promise
       return [
         ...(await beforeAfterProposals(db, today, company)),
         ...(await slowMonthProposals(db, today, company)),
+        ...(await partnerProposals(db, today, company)),
       ];
     }
     default:

@@ -667,7 +667,10 @@ export async function decideProposal(prisma: PrismaClient, o: DecideOptions) {
       payload = { ...((p.payload ?? {}) as Record<string, unknown>), ...r };
     }
     // Promoção do mês fraco (Marketing): um link de WhatsApp por cliente, com o nome de cada um.
-    if (o.decision !== 'REJEITAR' && officeTaskOf(p) === 'PROMOCAO_MES_FRACO') {
+    if (
+      o.decision !== 'REJEITAR' &&
+      ['PROMOCAO_MES_FRACO', 'PARCEIROS'].includes(officeTaskOf(p) ?? '')
+    ) {
       const r = approvedPromo(p, o.edits?.text);
       payload = { ...((p.payload ?? {}) as Record<string, unknown>), ...r };
     }

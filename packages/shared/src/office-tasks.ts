@@ -48,6 +48,7 @@ export const OFFICE_TASK_KEYS = [
   'AJUSTAR_TABELA',
   'POST_ANTES_DEPOIS',
   'PROMOCAO_MES_FRACO',
+  'PARCEIROS',
   'PESQUISA_SATISFACAO',
   'ANIVERSARIO',
   'INDICACAO',
@@ -247,6 +248,16 @@ export const OFFICE_TASKS: OfficeTask[] = [
     money: false,
     maxLevel: 2,
     maxReason: 'Promoção e desconto sempre pedem a sua aprovação.',
+  },
+  {
+    key: 'PARCEIROS',
+    roles: ['MARKETING'],
+    label: 'Parcerias com lojas, arquitetos e decoradores',
+    what: 'Lista quem já mandou serviço (empresa ou quem indicou cliente) e, para quem parou há 3 meses, prepara a mensagem lembrando do desconto para os clientes deles.',
+    message: true,
+    money: false,
+    maxLevel: 2,
+    maxReason: 'O desconto para os clientes do parceiro sempre pede a sua aprovação.',
   },
   {
     key: 'LANCAR_DESPESA',
@@ -575,6 +586,14 @@ export function slowMonthMessage(i: { companyName: string; discountPct: number; 
   return [
     `Olá, {nome}! Aqui é da ${i.companyName}. Este mês estamos com ${i.discountPct}% de desconto nos serviços fechados até ${i.until}.`,
     'Se tiver alguma peça precisando de reforma, me manda uma foto aqui que eu passo o orçamento.',
+  ].join('\n\n');
+}
+
+/** Parceiro (loja, arquiteto, decorador) que parou de mandar serviço. */
+export function partnerMessage(i: { companyName: string; discountPct: number }) {
+  return [
+    `Olá, {nome}! Aqui é da ${i.companyName}. Obrigado pelos clientes que você já nos mandou.`,
+    `Quem vier por você continua com ${i.discountPct}% de desconto no serviço. Se tiver algum cliente precisando de reforma ou de uma peça sob medida, é só me passar o contato ou mandar a foto aqui que eu faço o orçamento.`,
   ].join('\n\n');
 }
 

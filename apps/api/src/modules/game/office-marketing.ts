@@ -6,10 +6,13 @@
  *   ligado, na etapa da Meta).
  * - Promoção no mês fraco: nos dias 1 a 10, se este mês costuma fechar bem menos que os outros
  *   (anos anteriores), propõe o desconto e a mensagem para os clientes que sumiram há 6 meses.
+ * - Parceiros: empresa (CNPJ) que fecha serviço ou quem indicou cliente. Uma vez por mês, lista
+ *   quanto cada um mandou e prepara a mensagem para quem parou há 3 meses.
  */
 import {
   beforeAfterCaption,
   firstName,
+  partnerMessage,
   plural,
   slowMonthMessage,
   whatsappLink,
@@ -255,6 +258,119 @@ export async function slowMonthProposals(
   ];
 }
 
+// ───────────────────────────── Parceiros ─────────────────────────────
+
+const dm = (d: Date) => d.toISOString().slice(0, 10).split('-').reverse().slice(0, 2).join('/');
+
+/**
+ * Parceiros dos últimos 2 anos: empresa (CNPJ) com pedido ou quem indicou cliente. Para cada um,
+ * os serviços que mandou (os pedidos da empresa e os dos clientes que indicou) e o último.
+ */
+export async function partnerList(db: Db, today: string) {
+  const since = daysAgo(today, 730);
+  const live = { status: { not: 'CANCELADO' as const }, createdAt: { gte: since } };
+  const rows = await db.customer.findMany({
+    where: {
+      active: true,
+      OR: [
+        { kind: 'PJ', orders: { some: live } },
+        { referrals: { some: { orders: { some: live } } } },
+      ],
+    },
+    select: {
+      id: true,
+      kind: true,
+      name: true,
+      tradeName: true,
+      phone: true,
+      whatsapp: true,
+      orders: { where: live, select: { createdAt: true, agreedValueCents: true } },
+      referrals: {
+        select: { orders: { where: live, select: { createdAt: true, agreedValueCents: true } } },
+      },
+    },
+    take: 200,
+  });
+  return rows
+    .map((c) => {
+      const orders = [
+        ...(c.kind === 'PJ' ? c.orders : []),
+        ...c.referrals.flatMap((r) => r.orders),
+      ];
+      const last = orders.reduce<Date | null>(
+        (a, o) => (!a || o.createdAt > a ? o.createdAt : a),
+        null,
+      );
+      return {
+        customerId: c.id,
+        name: c.tradeName || c.name,
+        kind: c.kind,
+        phone: whatsappNumber(c.whatsapp || c.phone),
+        services: orders.length,
+        valueCents: orders.reduce((a, o) => a + (o.agreedValueCents ?? 0), 0),
+        last,
+      };
+    })
+    .filter((p) => p.services > 0 && p.last)
+    .sort((a, b) => b.valueCents - a.valueCents);
+}
+
+export async function partnerProposals(
+  db: Db,
+  today: string,
+  company: string,
+): Promise<ProposalDraft[]> {
+  const list = await partnerList(db, today);
+  const cut = daysAgo(today, 90);
+  const quiet = list.filter((p) => p.last! < cut && p.phone);
+  if (!quiet.length) return [];
+  const s = await db.companySettings.findUnique({
+    where: { id: requireCompanyId() },
+    select: { customerDiscountPct: true },
+  });
+  const pct = s?.customerDiscountPct || 10;
+  const text = partnerMessage({ companyName: company, discountPct: pct });
+  const line = (p: (typeof list)[number]) =>
+    `- ${p.name}: ${plural(p.services, 'serviço', 'serviços')}, ${brl(p.valueCents)}, o último em ${dm(p.last!)}${p.last! < cut ? ' (parado)' : ''}`;
+  const recipients = quiet.slice(0, 30).map((p) => ({
+    customerId: p.customerId,
+    name: p.name,
+    // Empresa recebe o nome todo; pessoa, só o primeiro nome.
+    greet: p.kind === 'PJ' ? p.name : firstName(p.name) || p.name,
+    phone: p.phone!,
+  }));
+  return [
+    {
+      kind: 'PROMOCAO',
+      title: `Lembrar ${plural(recipients.length, 'parceiro que não manda', 'parceiros que não mandam')} serviço há 3 meses`,
+      detail: [
+        `Quem mandou serviço nos últimos 2 anos (${plural(list.length, 'parceiro', 'parceiros')}):`,
+        ...list.slice(0, 10).map(line),
+        ...(list.length > 10 ? [`e mais ${list.length - 10}.`] : []),
+        '',
+        text,
+      ].join('\n'),
+      payload: {
+        task: 'PARCEIROS',
+        dedupe: `PARCEIROS:${today.slice(0, 7)}`,
+        month: today.slice(0, 7),
+        discountPct: pct,
+        text,
+        partners: list.slice(0, 30).map((p) => ({
+          customerId: p.customerId,
+          name: p.name,
+          services: p.services,
+          valueCents: p.valueCents,
+          last: p.last!.toISOString().slice(0, 10),
+          quiet: p.last! < cut,
+        })),
+        recipients,
+      },
+      evidence: [],
+    },
+  ];
+}
+
 /** Aprovar: um link de WhatsApp por cliente, com o primeiro nome no lugar de {nome}. */
 export function approvedPromo(
   p: { payload: unknown; detail: string },
@@ -263,13 +379,17 @@ export function approvedPromo(
   const pl = (p.payload ?? {}) as Record<string, unknown>;
   const text = String(editedText ?? pl.text ?? '');
   if (!text.trim()) throw Errors.validation(undefined, 'Falta a mensagem da promoção.');
-  const recipients = (pl.recipients as { customerId: string; name: string; phone: string }[]) ?? [];
+  const recipients =
+    (pl.recipients as { customerId: string; name: string; greet?: string; phone: string }[]) ?? [];
   return {
     text,
     sendList: recipients.map((r) => ({
       customerId: r.customerId,
       name: r.name,
-      href: whatsappLink(r.phone, text.replaceAll('{nome}', firstName(r.name) || r.name)),
+      href: whatsappLink(
+        r.phone,
+        text.replaceAll('{nome}', r.greet || firstName(r.name) || r.name),
+      ),
     })),
   };
 }

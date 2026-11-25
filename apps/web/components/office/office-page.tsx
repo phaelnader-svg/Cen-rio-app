@@ -524,7 +524,7 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
           </p>
         </>
       )}
-      {p.task === 'PROMOCAO_MES_FRACO' && Array.isArray(pl.recipients) && (
+      {Array.isArray(pl.recipients) && (
         <p className="mt-1 text-sm text-ink-soft">
           Vai para:{' '}
           {(pl.recipients as { name: string }[])
@@ -760,7 +760,7 @@ function MessageDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
                 ? 'Deixe {link} onde o link da proposta deve entrar.'
                 : isContract
                   ? 'Deixe {link} onde o link do contrato deve entrar.'
-                  : p.task === 'PROMOCAO_MES_FRACO'
+                  : Array.isArray(p.payload.recipients)
                     ? 'Deixe {nome} onde entra o nome de cada cliente.'
                     : undefined
           }

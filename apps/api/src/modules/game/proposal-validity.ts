@@ -96,7 +96,7 @@ export async function obsoleteReason(db: Db, p: AiAgentProposal): Promise<string
     return null;
   }
   // Promoção do mês fraco: o mês já passou.
-  if (pl.task === 'PROMOCAO_MES_FRACO')
+  if (pl.task === 'PROMOCAO_MES_FRACO' || pl.task === 'PARCEIROS')
     return String(pl.month ?? '') < new Date().toISOString().slice(0, 7)
       ? 'O mês da promoção já passou.'
       : null;
