@@ -140,6 +140,7 @@ EOF
     printf "RESEND_API_KEY='%s'\n" "$em" >> "$ENV_FILE"
   fi
   unset em
+  escrever_meta >> "$ENV_FILE"
   log "Variáveis geradas em $ENV_FILE (memória, permissão 600)."
 }
 
@@ -341,11 +342,48 @@ atualizar_email() {
   mv -f "$tmp" "$ENV_FILE"
 }
 
+# WhatsApp/Meta da empresa (infra/meta/guardar-chave-meta.sh e guardar-ids-meta.sh): imprime as
+# linhas META_* do .env a partir do Secret Manager. Sem o app completo (id + chave + token do
+# webhook), não imprime nada e o botão "Conectar WhatsApp" fica esperando. Nunca mostra valores.
+escrever_meta() {
+  local s; s() { gcloud secrets versions access latest --secret="prod-meta-$1" --project="$PROJECT" 2>/dev/null || true; }
+  local id sec tok cfg
+  id="$(s app-id)"; sec="$(s app-secret)"; tok="$(s webhook-verify-token)"; cfg="$(s wa-config-id)"
+  if [[ "$id" =~ ^[0-9]{5,20}$ && "$sec" =~ ^[0-9a-fA-F]{32}$ && "$tok" =~ ^[A-Za-z0-9_-]{20,80}$ ]]; then
+    printf "META_APP_ID='%s'\nMETA_APP_SECRET='%s'\nMETA_WEBHOOK_VERIFY_TOKEN='%s'\n" "$id" "$sec" "$tok"
+    [[ "$cfg" =~ ^[0-9]{5,20}$ ]] && printf "META_WA_CONFIG_ID='%s'\n" "$cfg"
+  fi
+  unset sec tok
+}
+
+# Relê a configuração da Meta e troca só as linhas META_* no .env. Falha ao ler: nada muda.
+atualizar_meta() {
+  local tmp linhas
+  if ! gcloud secrets versions access latest --secret=prod-meta-app-secret --project="$PROJECT" >/dev/null 2>&1; then
+    log "WhatsApp (Meta): não deu para ler o segredo; nada mudou."
+    return 0
+  fi
+  linhas="$(escrever_meta)"
+  tmp="$(mktemp "$(dirname "$ENV_FILE")/.env.XXXXXX")"
+  chmod 600 "$tmp"
+  grep -v -E '^META_(APP_ID|APP_SECRET|WEBHOOK_VERIFY_TOKEN|WA_CONFIG_ID)=' "$ENV_FILE" > "$tmp" || true
+  if [[ -n "$linhas" ]]; then
+    printf '%s\n' "$linhas" >> "$tmp"
+    if grep -q '^META_WA_CONFIG_ID=' <<<"$linhas"; then log "WhatsApp (Meta): ligado."
+    else log "WhatsApp (Meta): app ligado; falta o ID da configuração do cadastro."; fi
+  else
+    log "WhatsApp (Meta): configuração incompleta; botão Conectar WhatsApp espera."
+  fi
+  unset linhas
+  mv -f "$tmp" "$ENV_FILE"
+}
+
 aplicar_config() {
   need_portao
   need_env
   atualizar_ia
   atualizar_email
+  atualizar_meta
   set -a
   # shellcheck source=/dev/null
   source "$ENV_FILE"
