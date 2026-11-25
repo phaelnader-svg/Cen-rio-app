@@ -8,6 +8,7 @@ import { BrandMark } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Alert } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
+import { InstallBanner } from './install';
 
 export function PairingScreen({
   notice,
@@ -100,6 +101,10 @@ export function PairingScreen({
             Ligar aparelho
           </Button>
         </form>
+        {/* O app da equipe se instala por aqui (tablet e celular); o do dono, pelo site. */}
+        <div className="mt-8 flex w-full justify-center">
+          <InstallBanner />
+        </div>
       </div>
     </main>
   );
