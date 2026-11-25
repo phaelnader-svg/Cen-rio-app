@@ -5,6 +5,7 @@ import {
   OFFICE_LEVEL_HINT,
   OFFICE_LEVEL_LABEL,
   type ExpenseCategoryDto,
+  type QuoteDraft,
   type OfficeAgentDto,
   type OfficeLevel,
   type OfficeOverviewDto,
@@ -14,7 +15,15 @@ import {
 } from '@cenario/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Camera, CirclePause, CirclePlay, MessageCircle, RefreshCw, UserPlus } from 'lucide-react';
+import {
+  Calculator,
+  Camera,
+  CirclePause,
+  CirclePlay,
+  MessageCircle,
+  RefreshCw,
+  UserPlus,
+} from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { buttonClass } from '@/components/ui/button-styles';
@@ -25,7 +34,10 @@ import { useToast } from '@/components/ui/toast';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { brDate, money, parseMoney } from '@/lib/finance';
 import { formatDateTime } from '@/lib/format';
+import { useMe } from '@/lib/hooks';
 import { preparePhoto } from '@/lib/photos';
+import { putDraftInEditor, shrinkImage } from '@/lib/quotes';
+import { useRouter } from 'next/navigation';
 
 const KEY = ['office'] as const;
 
@@ -140,6 +152,7 @@ export function OfficePage() {
           )}
           <Today data={data} />
           <ReceiptCard data={data} />
+          <QuoteRequestCard data={data} />
 
           <section aria-labelledby="esperando">
             <h2 id="esperando" className="mb-3 text-lg font-semibold text-ink">
@@ -256,6 +269,7 @@ function ProposalCard({ p }: { p: OfficeProposalDto }) {
   const pl = p.payload;
   const isDelivery = p.task === 'AGENDAR_ENTREGA';
   const isExpense = p.task === 'LANCAR_DESPESA';
+  const isQuote = p.task === 'MONTAR_ORCAMENTO';
   if (sendLink)
     return (
       <Card className="p-4">
@@ -293,6 +307,7 @@ function ProposalCard({ p }: { p: OfficeProposalDto }) {
         </p>
       )}
       {isExpense && <ExpenseSummary pl={pl} />}
+      {isQuote && <QuoteSummary pl={pl} />}
       {typeof pl.autoError === 'string' && pl.autoError && (
         <p className="mt-1 text-sm text-warn-600">
           O agente tentou fazer sozinho e não conseguiu: {pl.autoError}
@@ -300,7 +315,7 @@ function ProposalCard({ p }: { p: OfficeProposalDto }) {
       )}
       {!isExpense && (
         <p className="mt-2 whitespace-pre-line rounded-lg bg-subtle px-3 py-2 text-sm text-ink-soft">
-          {p.detail}
+          {isQuote ? p.detail.replace('{link}', '[link da proposta]') : p.detail}
         </p>
       )}
       {error && (
@@ -308,6 +323,7 @@ function ProposalCard({ p }: { p: OfficeProposalDto }) {
           {error}
         </Alert>
       )}
+      {isQuote && <OpenInQuotes draft={pl.draft as QuoteDraft} />}
       <div className="mt-3 grid grid-cols-3 gap-2">
         <Button loading={m.isPending} onClick={() => decide('APROVAR')}>
           Aprovar
@@ -358,6 +374,7 @@ type DialogProps = {
 
 function MessageDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
   const isDelivery = p.task === 'AGENDAR_ENTREGA';
+  const isQuote = p.task === 'MONTAR_ORCAMENTO';
   const [text, setText] = useState(String(p.payload.text ?? p.detail));
   const [date, setDate] = useState(String(p.payload.scheduledDate ?? ''));
   const [start, setStart] = useState(String(p.payload.windowStart ?? '09:00'));
@@ -412,7 +429,9 @@ function MessageDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
           hint={
             isDelivery && !textChanged
               ? 'Se mudar o dia ou o horário, a mensagem é refeita com a data nova.'
-              : undefined
+              : isQuote
+                ? 'Deixe {link} onde o link da proposta deve entrar.'
+                : undefined
           }
         >
           {(f) => (
@@ -560,6 +579,236 @@ function ExpenseDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
         />
       </div>
     </Dialog>
+  );
+}
+
+/** Orçamento montado pelo agente: o valor, como chegou nele e o que falta saber. */
+function QuoteSummary({ pl }: { pl: Record<string, unknown> }) {
+  const c = (k: string) => Number(pl[k] ?? 0);
+  const lines = Array.isArray(pl.lines) ? (pl.lines as string[]) : [];
+  const questions = Array.isArray(pl.questions) ? (pl.questions as string[]) : [];
+  const rows: [string, string][] = [
+    ['Materiais', money(c('materialsCents'))],
+    ['Mão de obra', money(c('laborCents'))],
+    ['Logística', money(c('logisticsCents'))],
+    ['Lucro', money(c('profitCents'))],
+  ];
+  return (
+    <div className="mt-2 space-y-2 rounded-lg bg-subtle p-3 text-sm">
+      <p className="text-ink">
+        <span className="text-lg font-semibold tabular-nums">{money(c('totalCents'))}</span>{' '}
+        <span className="text-ink-muted">à vista</span>
+        {typeof pl.installmentTotalCents === 'number' && c('installments') > 1 && (
+          <span className="text-ink-muted">
+            {' '}
+            · {c('installments')}x de{' '}
+            {money(Math.ceil(c('installmentTotalCents') / c('installments')))}
+          </span>
+        )}
+      </p>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-0.5 sm:grid-cols-4">
+        {rows.map(([k, v]) => (
+          <div key={k}>
+            <dt className="text-xs text-ink-muted">{k}</dt>
+            <dd className="tabular-nums text-ink">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {lines.length > 0 && (
+        <ul className="list-inside list-disc text-ink-soft">
+          {lines.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+      )}
+      {typeof pl.summary === 'string' && pl.summary && (
+        <p className="text-ink-soft">{pl.summary}</p>
+      )}
+      {questions.length > 0 && (
+        <div>
+          <p className="font-medium text-warn-600">Confirme com o cliente:</p>
+          <ul className="list-inside list-disc text-ink-soft">
+            {questions.map((q) => (
+              <li key={q}>{q}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {typeof pl.blocker === 'string' && pl.blocker && (
+        <p className="font-medium text-danger-600">
+          {pl.blocker} Abra no orçamento para completar.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Leva o rascunho do agente para a tela de Orçamentos, para mexer em tudo antes de salvar. */
+function OpenInQuotes({ draft }: { draft: QuoteDraft }) {
+  const me = useMe();
+  const router = useRouter();
+  const uid = me.data?.user.id;
+  if (!uid || !draft) return null;
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="mt-2"
+      icon={<Calculator className="size-4" aria-hidden />}
+      onClick={() => {
+        if (putDraftInEditor(uid, draft)) router.push('/painel/orcamentos');
+      }}
+    >
+      Abrir no orçamento
+    </Button>
+  );
+}
+
+/** Pedir orçamento ao agente: o dono conta o pedido (texto e fotos) e ele monta. */
+function QuoteRequestCard({ data }: { data: OfficeOverviewDto }) {
+  const { m, error, setError } = useOfficeSend();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [city, setCity] = useState('');
+  const [request, setRequest] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const agent = data.agents.find((a) => a.roleKey === 'ORCAMENTOS');
+  if (!agent?.agentId) return null;
+  const close = () => {
+    setOpen(false);
+    setError(null);
+  };
+  return (
+    <Card className="p-4" data-testid="office-quote-request">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-semibold text-ink">Pedir orçamento ao agente</p>
+          <p className="text-sm text-ink-muted">
+            {data.aiReady
+              ? 'Conte o pedido do cliente e mande fotos. O agente monta com a sua tabela e você aprova.'
+              : 'Fica disponível assim que a IA for ligada no sistema.'}
+          </p>
+        </div>
+        <Button
+          icon={<Calculator className="size-4" aria-hidden />}
+          disabled={!data.aiReady}
+          onClick={() => setOpen(true)}
+        >
+          Pedir orçamento
+        </Button>
+      </div>
+      <Dialog
+        open={open}
+        onClose={close}
+        title="Pedir orçamento ao agente"
+        description="Quanto mais detalhe (medidas, tecido, fotos), mais certo o valor."
+        footer={
+          <>
+            <Button variant="secondary" onClick={close}>
+              Voltar
+            </Button>
+            <Button
+              loading={m.isPending}
+              disabled={name.trim().length < 2 || request.trim().length < 5}
+              onClick={() =>
+                m.mutate(
+                  {
+                    ok: 'O agente montou o orçamento.',
+                    run: () =>
+                      api('/api/v1/office/quote', {
+                        method: 'POST',
+                        body: { customerName: name, phone, city, request, photos },
+                        idempotencyKey: newIdempotencyKey(),
+                      }),
+                  },
+                  {
+                    onSuccess: () => {
+                      setOpen(false);
+                      setName('');
+                      setPhone('');
+                      setCity('');
+                      setRequest('');
+                      setPhotos([]);
+                    },
+                  },
+                )
+              }
+            >
+              {m.isPending ? 'Montando…' : 'Montar orçamento'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {error && <Alert tone="danger">{error}</Alert>}
+          <Field label="Cliente">
+            {(f) => <Input {...f} value={name} onChange={(e) => setName(e.target.value)} />}
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="WhatsApp">
+              {(f) => (
+                <Input
+                  {...f}
+                  inputMode="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+              )}
+            </Field>
+            <Field label="Cidade">
+              {(f) => <Input {...f} value={city} onChange={(e) => setCity(e.target.value)} />}
+            </Field>
+          </div>
+          <Field label="O que o cliente quer">
+            {(f) => (
+              <Textarea
+                {...f}
+                rows={5}
+                placeholder="Ex.: sofá 3 lugares de 2,10 m, trocar o tecido por linho cinza e a espuma do assento."
+                value={request}
+                onChange={(e) => setRequest(e.target.value)}
+              />
+            )}
+          </Field>
+          <Field label={`Fotos (${photos.length} de 3)`}>
+            {(f) => (
+              <Input
+                {...f}
+                type="file"
+                accept="image/*"
+                multiple
+                disabled={photos.length >= 3}
+                onChange={async (e) => {
+                  const files = [...(e.target.files ?? [])].slice(0, 3 - photos.length);
+                  e.target.value = '';
+                  const urls = await Promise.all(
+                    files.map((x) => shrinkImage(x, 1280, 'image/jpeg', 0.8).catch(() => null)),
+                  );
+                  setPhotos((p) => [...p, ...urls.filter((u): u is string => !!u)].slice(0, 3));
+                }}
+              />
+            )}
+          </Field>
+          {photos.length > 0 && (
+            <div className="flex gap-2">
+              {photos.map((src, i) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={i}
+                  src={src}
+                  alt={`Foto ${i + 1}`}
+                  className="size-16 rounded-md border border-line object-cover"
+                />
+              ))}
+              <Button variant="ghost" size="sm" onClick={() => setPhotos([])}>
+                Tirar fotos
+              </Button>
+            </div>
+          )}
+        </div>
+      </Dialog>
+    </Card>
   );
 }
 

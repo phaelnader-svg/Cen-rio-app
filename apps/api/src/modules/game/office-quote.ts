@@ -269,7 +269,7 @@ async function historyText(db: Tx | Prisma.TransactionClient) {
         sofaCount?: number;
         totals?: { costCents?: number; profitCents?: number };
       };
-      return `${q.service} · ${s.sofaCount ?? 1} peça(s) · custo R$ ${((s.totals?.costCents ?? 0) / 100).toFixed(0)} · lucro R$ ${((s.totals?.profitCents ?? 0) / 100).toFixed(0)} · total R$ ${(q.totalCents / 100).toFixed(0)} · ${q.status}`;
+      return `${q.service} · ${s.sofaCount ?? 1} peças · custo R$ ${((s.totals?.costCents ?? 0) / 100).toFixed(0)} · lucro R$ ${((s.totals?.profitCents ?? 0) / 100).toFixed(0)} · total R$ ${(q.totalCents / 100).toFixed(0)} · ${q.status}`;
     })
     .join('\n');
 }
@@ -412,7 +412,7 @@ export async function quoteAgentRoutes(app: FastifyInstance) {
               lines: draft.items.map((i) => {
                 const m = catalog.find((c) => c.id === i.catalogItemId)!;
                 return m.category === 'Espumas'
-                  ? `${m.name}: ${i.qty} peça(s) ${i.heightCm}×${i.widthCm}×${i.lengthCm} cm`
+                  ? `${m.name}: ${i.qty} ${i.qty === 1 ? 'peça' : 'peças'} ${i.heightCm}×${i.widthCm}×${i.lengthCm} cm`
                   : `${m.name}: ${i.qty} ${m.unit ?? ''}`.trim();
               }),
               photoCount: input.photos.length,
