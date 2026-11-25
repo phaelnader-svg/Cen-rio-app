@@ -260,7 +260,11 @@ export async function slowMonthProposals(
 
 // ───────────────────────────── Parceiros ─────────────────────────────
 
-const dm = (d: Date) => d.toISOString().slice(0, 10).split('-').reverse().slice(0, 2).join('/');
+/** 10/07 neste ano; 09/12/2025 em outro ano. */
+const dm = (d: Date, today: string) => {
+  const [y, m, day] = d.toISOString().slice(0, 10).split('-');
+  return y === today.slice(0, 4) ? `${day}/${m}` : `${day}/${m}/${y}`;
+};
 
 /**
  * Parceiros dos últimos 2 anos: empresa (CNPJ) com pedido ou quem indicou cliente. Para cada um,
@@ -331,7 +335,7 @@ export async function partnerProposals(
   const pct = s?.customerDiscountPct || 10;
   const text = partnerMessage({ companyName: company, discountPct: pct });
   const line = (p: (typeof list)[number]) =>
-    `- ${p.name}: ${plural(p.services, 'serviço', 'serviços')}, ${brl(p.valueCents)}, o último em ${dm(p.last!)}${p.last! < cut ? ' (parado)' : ''}`;
+    `- ${p.name}: ${plural(p.services, 'serviço', 'serviços')}, ${brl(p.valueCents)}, o último em ${dm(p.last!, today)}${p.last! < cut ? ' (parado)' : ''}`;
   const recipients = quiet.slice(0, 30).map((p) => ({
     customerId: p.customerId,
     name: p.name,
