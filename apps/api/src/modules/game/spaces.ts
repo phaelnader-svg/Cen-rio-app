@@ -17,8 +17,9 @@ import {
   slotAddress,
   suggestedOffice,
   suggestedWorkshop,
+  withMoreDesks,
 } from '@cenario/shared';
-import type { Prisma, Tx } from '@cenario/db';
+import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
@@ -322,6 +323,115 @@ export async function syncStockLocations(tx: Tx, actor: ActorContext, touched: S
     changed++;
   }
   return changed;
+}
+
+/**
+ * Agente contratado pelo Escritório do Cenário (ou que ficou sem mesa) senta numa mesa livre do
+ * escritório do jogo; sem mesa livre, a planta ganha mesas novas. O Firma Viva só desenha agente
+ * que tem mesa: sem isso, quem foi contratado no Cenário não aparecia no jogo.
+ * Devolve quantos agentes ganharam mesa.
+ */
+export async function seatAgentsWithoutDesk(
+  prisma: PrismaClient,
+  actor: ActorContext,
+): Promise<number> {
+  // Atalho sem trava: quase sempre todo agente já tem mesa.
+  const loose = await prisma.aiAgent.count({
+    where: {
+      status: { not: 'DESATIVADO' },
+      OR: [{ deskStationId: null }, { desk: { active: false } }],
+    },
+  });
+  if (!loose) return 0;
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<{ id: string; version: number }[]>`
+      SELECT id, version FROM game_spaces WHERE key = 'ESCRITORIO' AND active FOR UPDATE`;
+    if (!rows[0]) return 0;
+    const agents = await tx.aiAgent.findMany({
+      where: { status: { not: 'DESATIVADO' } },
+      select: { id: true, name: true, deskStationId: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const desks = await tx.gameStation.findMany({
+      where: { kind: 'MESA_ESCRITORIO', active: true },
+      select: { id: true },
+    });
+    const deskIds = new Set(desks.map((d) => d.id));
+    const taken = new Set(
+      agents.map((a) => a.deskStationId).filter((d): d is string => !!d && deskIds.has(d)),
+    );
+    const standing = agents.filter((a) => !a.deskStationId || !deskIds.has(a.deskStationId));
+    if (!standing.length) return 0;
+    const current = await loadSpace(tx, 'ESCRITORIO');
+    if (!current) return 0;
+    const before = contentOf(current);
+    const free = before.stations
+      .filter((st) => st.kind === 'MESA_ESCRITORIO' && !taken.has(st.id))
+      .map((st) => st.id);
+    const { layout: after, added } = withMoreDesks(
+      before,
+      Math.max(0, standing.length - free.length),
+    );
+    free.push(...added.map((st) => st.id));
+    if (added.length) {
+      await applyLayout(tx, actor, rows[0].id, before, structuredClone(after), {
+        areas: {},
+        stations: {},
+        slots: {},
+      });
+      const s = await tx.gameSpace.update({
+        where: { id: rows[0].id },
+        data: {
+          widthCm: after.widthCm,
+          depthCm: after.depthCm,
+          version: { increment: 1 },
+          updatedById: actor.userId,
+        },
+      });
+      const saved = await loadSpace(tx, 'ESCRITORIO');
+      const summary = `${added.length === 1 ? 'Mesa nova' : `${added.length} mesas novas`} para agente contratado pelo Escritório.`;
+      await tx.gameLayoutRevision.create({
+        data: {
+          spaceId: rows[0].id,
+          version: s.version,
+          summary,
+          snapshot: contentOf(saved!) as unknown as Prisma.InputJsonValue,
+          createdById: actor.userId,
+        },
+      });
+      await audit(tx, actor, {
+        action: 'game.layout_saved',
+        entityType: 'game_space',
+        entityId: rows[0].id,
+        summary: `Planta "${after.name}" salva (versão ${s.version}): ${summary}`,
+      });
+      await appendEvent(tx, actor, {
+        type: EVENT_TYPES.GAME_LAYOUT_SAVED,
+        aggregateType: 'game_space',
+        aggregateId: rows[0].id,
+        payload: { key: 'ESCRITORIO', version: s.version },
+        audience: GAME_AUDIENCE,
+      });
+    }
+    let seated = 0;
+    for (const a of standing) {
+      const desk = free.shift();
+      if (!desk) break;
+      await tx.aiAgent.update({
+        where: { id: a.id },
+        data: { deskStationId: desk, version: { increment: 1 } },
+      });
+      await appendEvent(tx, actor, {
+        type: EVENT_TYPES.GAME_AGENT_CHANGED,
+        aggregateType: 'ai_agent',
+        aggregateId: a.id,
+        payload: { id: a.id },
+        audience: 'permission:agentes.usar|permission:agentes.gerenciar',
+      });
+      seated++;
+    }
+    return seated;
+  });
 }
 
 function describeChange(before: LayoutContent, after: LayoutContent) {

@@ -550,6 +550,29 @@ function moreDesks(l: LayoutContent, text: string): MestreReply {
   };
 }
 
+/**
+ * Mesas para agentes contratados fora do jogo (Escritório do Cenário): encaixa `n` mesas novas
+ * onde couber, crescendo a sala se precisar, e devolve a planta já com elas.
+ */
+export function withMoreDesks(
+  l: LayoutContent,
+  n: number,
+): { layout: LayoutContent; added: StationDef[] } {
+  if (n <= 0) return { layout: l, added: [] };
+  const patch = moreDesks(l, `${n} mesas`).suggestion?.patch ?? {};
+  const added = patch.addStations ?? [];
+  const updated = new Map((patch.updateAreas ?? []).map((a) => [a.id, a] as const));
+  return {
+    layout: {
+      ...l,
+      ...(patch.resize ?? {}),
+      areas: l.areas.map((a) => updated.get(a.id) ?? a),
+      stations: [...l.stations, ...added],
+    },
+    added,
+  };
+}
+
 function carpentryWithPath(l: LayoutContent): MestreReply {
   const existing = areaOf(l, 'MARCENARIA');
   const exp = areaOf(l, 'EXPEDICAO');

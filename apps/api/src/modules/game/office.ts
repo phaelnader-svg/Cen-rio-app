@@ -74,6 +74,7 @@ import { officeWeek, weeklyReportNotice } from './office-week';
 import { stockShortageNotices } from './office-stock';
 import { accountantPackageNotice, cashForecast, taxReminder } from './office-finance';
 import { planEntryFor } from './office-plan';
+import { seatAgentsWithoutDesk } from './spaces';
 import { contractProposals } from './office-contract';
 import { beforeAfterProposals, partnerProposals, slowMonthProposals } from './office-marketing';
 import { materialPrices, tableAdjustProposals, withSupplierPrices } from './office-prices';
@@ -1236,7 +1237,7 @@ export async function officeRoutes(app: FastifyInstance) {
     return officeOverview(prisma);
   });
 
-  // Contratar um agente que ainda não existe (modelo pronto, sem mesa; a mesa se escolhe no jogo).
+  // Contratar um agente que ainda não existe (modelo pronto; senta numa mesa livre do escritório do jogo).
   app.post(
     '/api/v1/office/hire',
     { config: { access: OFFICE_ACCESS, idempotent: true } },
@@ -1283,6 +1284,8 @@ export async function officeRoutes(app: FastifyInstance) {
           audience: AUDIENCE,
         });
       });
+      // Já com mesa no escritório do jogo (o Firma Viva só mostra agente sentado).
+      await seatAgentsWithoutDesk(prisma, actor);
       return reply.status(201).send(await officeOverview(prisma));
     },
   );

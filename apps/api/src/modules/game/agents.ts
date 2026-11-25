@@ -54,6 +54,7 @@ import { planApprovedService } from './office-plan';
 import { shopTimezone, todayIso } from '../finance/common';
 import { goalsAnswer, isGoalsQuestion } from '../office/cash-chat';
 import { AGENT_MANAGE, AGENT_USE, GAME_ACCESS, ensureDefaultSpaces } from './common';
+import { seatAgentsWithoutDesk } from './spaces';
 
 const AGENT_AUDIENCE = 'permission:agentes.usar|permission:agentes.gerenciar' as const;
 
@@ -263,8 +264,10 @@ export async function gameAgentRoutes(app: FastifyInstance) {
     () => AGENT_TEMPLATES,
   );
 
-  app.get('/api/v1/game/agents', { config: { access: GAME_ACCESS } }, async () => {
+  app.get('/api/v1/game/agents', { config: { access: GAME_ACCESS } }, async (request) => {
     await ensureDefaultAgents(prisma);
+    // Quem foi contratado pelo Escritório do Cenário ganha mesa ao abrir o jogo.
+    await seatAgentsWithoutDesk(prisma, actorFrom(request));
     const rows = await prisma.aiAgent.findMany({
       include: pendingCount,
       orderBy: { createdAt: 'asc' },

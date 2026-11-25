@@ -1707,6 +1707,15 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270904000000_avisos_no_aparelho: UPDATE CASCADE':
     'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras da tabela NOVA de avisos no ' +
     'aparelho (padrão do Prisma). Nenhuma linha é alterada.',
+  '20270906000000_atendimento_cliente: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" da chave estrangeira NOVA de quem indicou o cliente ' +
+    '(padrão do Prisma). Nenhuma linha é alterada.',
+  '20270907000000_precos_material: UPDATE CASCADE':
+    'Não é comando: "ON UPDATE CASCADE" da chave da empresa na tabela NOVA de preços de ' +
+    'material (padrão do Prisma). Nenhuma linha é alterada.',
+  '20270907000000_precos_material: UPDATE NO':
+    'Não é comando: "ON UPDATE NO ACTION" da chave do item do catálogo na tabela NOVA de preços ' +
+    'de material. Nenhuma linha é alterada.',
   '20270901000000_preparacao_livre: UPDATE "production_tasks"':
     'Pedido do dono (2026-11-19): etapas de preparação AINDA NÃO INICIADAS deixam de ter o ' +
     'responsável escolhido automaticamente e ficam livres para o ajudante disponível pegar. ' +
