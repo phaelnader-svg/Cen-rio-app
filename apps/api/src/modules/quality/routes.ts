@@ -1,7 +1,8 @@
 import {
   paymentReportSchema,
   EVENT_TYPES,
-  PICKUP_STATUS_LABEL,
+  PICKUP_KIND_LABEL,
+  pickupStatusLabel,
   approveInspectionSchema,
   assignInspectorSchema,
   assignLogisticsOccurrenceSchema,
@@ -47,6 +48,7 @@ import { asSnapshot, dateOnly, lockOrder, pickupCode } from '../commercial/commo
 import { refreshOrderStatus } from '../commercial/status';
 import { emitOrderEvent } from '../orders/routes';
 import { PICKUP_AUDIENCE } from '../pickups/routes';
+import { receivePickupAtWorkshop } from '../pickups/arrival';
 import { notify, resolvePickupAssignment } from '../notifications/notify';
 import { idParams } from '../presenters';
 import { workers } from '../production/plans';
@@ -840,6 +842,7 @@ export async function qualityRoutes(app: FastifyInstance) {
         OR: [
           { status: { in: ['AGENDADA', 'EM_EXECUCAO', 'COM_OCORRENCIA'] } },
           { status: 'RETIRADA_REALIZADA', updatedAt: { gte: since } },
+          { kind: 'NO_LOCAL', status: 'RECEBIDA_NA_OFICINA', updatedAt: { gte: since } },
         ],
       },
       include: {
@@ -855,6 +858,7 @@ export async function qualityRoutes(app: FastifyInstance) {
         return {
           id: p.id,
           kind: 'RETIRADA' as const,
+          onSite: p.kind === 'NO_LOCAL',
           code: pickupCode(p.number),
           status: p.status,
           customerName: p.order.customer.name,
@@ -1004,11 +1008,18 @@ export async function qualityRoutes(app: FastifyInstance) {
         const cur = await tx.pickupRequest.findUniqueOrThrow({ where: { id } });
         const to = input.step === 'SAIDA' ? 'EM_EXECUCAO' : 'RETIRADA_REALIZADA';
         if (cur.status === to) return;
+        // "No local": o serviço feito já passou direto para "Serviço feito" (repetição).
+        if (
+          cur.kind === 'NO_LOCAL' &&
+          to === 'RETIRADA_REALIZADA' &&
+          cur.status === 'RECEBIDA_NA_OFICINA'
+        )
+          return;
         if (cur.version !== input.version) throw Errors.versionConflict(cur.version);
         const from = input.step === 'SAIDA' ? 'AGENDADA' : 'EM_EXECUCAO';
         if (cur.status !== from)
           throw Errors.business(
-            `Retirada ${PICKUP_STATUS_LABEL[cur.status].toLowerCase()}: não é possível registrar este passo.`,
+            `${PICKUP_KIND_LABEL[cur.kind]} ${pickupStatusLabel(cur.status, cur.kind).toLowerCase()}: não é possível registrar este passo.`,
           );
         const actor = actorFrom(request);
         const u = await tx.pickupRequest.update({
@@ -1031,7 +1042,7 @@ export async function qualityRoutes(app: FastifyInstance) {
           action: 'pickup.status_changed',
           entityType: 'pickup_request',
           entityId: id,
-          summary: `Retirada ${pickupCode(p.number)}: ${PICKUP_STATUS_LABEL[cur.status]} → ${PICKUP_STATUS_LABEL[to]} (logística).`,
+          summary: `${PICKUP_KIND_LABEL[cur.kind]} ${pickupCode(p.number)}: ${pickupStatusLabel(cur.status, cur.kind)} → ${pickupStatusLabel(to, cur.kind)} (logística).`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.PICKUP_STATUS_CHANGED,
@@ -1047,6 +1058,10 @@ export async function qualityRoutes(app: FastifyInstance) {
           audience: `${PICKUP_AUDIENCE}|user:${request.auth!.userId}` as typeof PICKUP_AUDIENCE,
         });
         await syncTripCost(tx, actor, { pickupId: id });
+        // 2026-11-25: "No local" — serviço feito na casa do cliente: as peças contam como
+        // atendidas na hora (não existe "chegou na tapeçaria" depois).
+        if (cur.kind === 'NO_LOCAL' && to === 'RETIRADA_REALIZADA')
+          await receivePickupAtWorkshop(tx, actor, id, 'serviço feito no local (celular)');
         await emitOrderEvent(tx, request, p.orderId);
       });
       return { ok: true };

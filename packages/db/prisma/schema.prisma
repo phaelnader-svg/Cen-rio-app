@@ -1139,6 +1139,13 @@ enum PickupStatus {
   @@map("pickup_status")
 }
 
+enum PickupKind {
+  RETIRADA
+  NO_LOCAL
+
+  @@map("pickup_kind")
+}
+
 enum PickupTeam {
   LOGISTICA_TERCEIRIZADA
   EQUIPE_PROPRIA
@@ -1168,6 +1175,8 @@ model PickupRequest {
   /// Protocolo/identificador no sistema da logística (integração futura).
   externalReference   String?         @map("external_reference") @db.VarChar(80)
   status              PickupStatus    @default(AGUARDANDO_AGENDAMENTO)
+  /// 2026-11-25: RETIRADA (peça vem para a tapeçaria) ou NO_LOCAL (serviço feito na casa do cliente).
+  kind                PickupKind      @default(RETIRADA)
   /// Agenda de Retiradas: levar mostruário ao cliente (e qual) e levar a maquininha de cartão.
   bringSamples        Boolean         @default(false) @map("bring_samples")
   samplesDescription  String?         @map("samples_description") @db.VarChar(200)

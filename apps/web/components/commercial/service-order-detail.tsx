@@ -210,6 +210,16 @@ export function ServiceOrderDetail({ id }: { id: string }) {
         />
       )}
       <ReworkBanner rework={s.rework} />
+      {s.onSite && (
+        <Alert tone="info" className="mb-4" title="Serviço no local" data-testid="os-on-site">
+          Feito na casa do cliente
+          {s.onSite.date
+            ? ` em ${formatDay(s.onSite.date, true)}${s.onSite.windowStart ? `, chegada ${s.onSite.windowStart}` : ''}`
+            : ''}
+          {s.onSite.address ? `. Endereço: ${s.onSite.address}` : ''}. A peça não vem para a
+          tapeçaria: leve o material e as ferramentas. Ao terminar, use “Marcar como entregue”.
+        </Alert>
+      )}
       <PageHeader
         title={s.code}
         description={`${s.customer.name} · pedido ${s.order.code} · criada em ${formatDateTime(s.createdAt)}${s.createdBy ? ` por ${s.createdBy}` : ''}`}

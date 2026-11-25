@@ -95,7 +95,7 @@ test.describe.serial('Evolução Fase 6 — custos de retirada e entrega', () =>
       items: [{ pieceType: 'POLTRONA', description: 'Poltrona', quantity: 1 }],
     });
     await page.goto(`/painel/pedidos/${order.id}`);
-    await page.getByRole('button', { name: 'Solicitar retirada' }).click();
+    await page.getByRole('button', { name: 'Agendar', exact: true }).click();
     await page.getByLabel('Data da retirada').fill(plus(2));
     await page.getByLabel('Horário de chegada ao cliente').fill('16:00');
     const fields = page.getByTestId('trip-cost-fields');

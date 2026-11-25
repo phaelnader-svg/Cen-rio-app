@@ -128,6 +128,7 @@ async function collect(db: Tx | PrismaClient, date: string): Promise<Stop[]> {
     const job: LogisticsJobDto = {
       id: p.id,
       kind: 'RETIRADA',
+      onSite: p.kind === 'NO_LOCAL',
       code: pickupCode(p.number),
       status: p.status,
       customerName: p.order.customer.name,

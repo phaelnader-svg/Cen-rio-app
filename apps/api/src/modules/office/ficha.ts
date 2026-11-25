@@ -2,6 +2,7 @@
  * Ficha do sofá no escritório: junta, com estados SEPARADOS, orçamento aprovado, contrato,
  * entrada, saldo, nota, materiais, retirada e entrega — cada um vindo do seu registro oficial.
  */
+import { pickupStatusLabel } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
 import { Errors } from '../../lib/errors';
 import { orderRevenue } from '../finance/revenue';
@@ -241,11 +242,8 @@ export async function fichaOf(db: Db, serviceOrderId: string) {
       : pk
         ? {
             key: 'RETIRADA',
-            label: 'Retirada',
-            state: pk.status
-              .replace(/_/g, ' ')
-              .toLowerCase()
-              .replace(/^./, (c) => c.toUpperCase()),
+            label: pk.kind === 'NO_LOCAL' ? 'No local' : 'Retirada',
+            state: pickupStatusLabel(pk.status, pk.kind),
             tone: ['RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA'].includes(pk.status)
               ? 'ok'
               : pk.status === 'COM_OCORRENCIA'

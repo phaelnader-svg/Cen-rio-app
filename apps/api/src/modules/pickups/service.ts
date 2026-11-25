@@ -1,6 +1,7 @@
 import { plural } from '@cenario/shared';
 import {
   EVENT_TYPES,
+  PICKUP_KIND_LABEL,
   type PickupStatus,
   type PickupTeam,
   type createPickupSchema,
@@ -160,6 +161,7 @@ export async function createPickup(
   const pickup = await tx.pickupRequest.create({
     data: {
       orderId: order.id,
+      kind: input.kind ?? 'RETIRADA',
       addressId: address?.id ?? order.pickupAddressId,
       addressSnapshot: snapshot as unknown as Prisma.InputJsonValue,
       scheduledDate: parseDateOnly(input.scheduledDate),
@@ -219,8 +221,13 @@ export async function createPickup(
     action: 'pickup.created',
     entityType: 'pickup_request',
     entityId: pickup.id,
-    summary: `Retirada ${pickupCode(pickup.number)} solicitada para o pedido ${orderCode(order.number)}.`,
-    changes: { status, scheduledDate: input.scheduledDate ?? null, team: input.team },
+    summary: `${PICKUP_KIND_LABEL[pickup.kind]} ${pickupCode(pickup.number)} solicitada para o pedido ${orderCode(order.number)}.`,
+    changes: {
+      status,
+      kind: pickup.kind,
+      scheduledDate: input.scheduledDate ?? null,
+      team: input.team,
+    },
   });
   if (executor)
     await notify(tx, actor, [
@@ -228,7 +235,7 @@ export async function createPickup(
         userId: executor.id,
         kind: 'ENTREGA_ATRIBUIDA',
         dedupeKey: `RETIRADA_ATRIBUIDA:${pickup.id}:${pickup.version}`,
-        body: `Retirada ${pickupCode(pickup.number)}${input.scheduledDate ? ` em ${input.scheduledDate.split('-').reverse().join('/')}${input.windowStart ? `, chegada ${input.windowStart}` : ''}` : ''}.`,
+        body: `${pickup.kind === 'NO_LOCAL' ? 'Serviço no local' : 'Retirada'} ${pickupCode(pickup.number)}${input.scheduledDate ? ` em ${input.scheduledDate.split('-').reverse().join('/')}${input.windowStart ? `, chegada ${input.windowStart}` : ''}` : ''}.`,
         includeActor: true,
       },
     ]);

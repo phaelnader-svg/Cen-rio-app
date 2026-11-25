@@ -30,6 +30,7 @@ const deOf = (what: string) =>
 export const CUSTOMER_MESSAGE_KINDS = [
   'PRONTO',
   'RETIRADA_AMANHA',
+  'NO_LOCAL_AMANHA',
   'ENTREGA_AGENDADA',
   'ORCAMENTO_ENVIADO',
   'EM_PRODUCAO',
@@ -39,6 +40,7 @@ export type CustomerMessageKind = (typeof CUSTOMER_MESSAGE_KINDS)[number];
 export const CUSTOMER_MESSAGE_LABEL: Record<CustomerMessageKind, string> = {
   PRONTO: 'Peça pronta',
   RETIRADA_AMANHA: 'Retirada amanhã',
+  NO_LOCAL_AMANHA: 'Serviço no local amanhã',
   ENTREGA_AGENDADA: 'Entrega agendada',
   ORCAMENTO_ENVIADO: 'Orçamento enviado',
   EM_PRODUCAO: 'Entrou em produção',
@@ -68,6 +70,8 @@ export function customerMessage(i: CustomerMessageInput): string {
       return `${hi} Boa notícia: ${what}${ref} está pronto. 🎉 Podemos combinar a entrega ou a retirada?${i.balance ? ` O saldo a pagar é de ${i.balance}.` : ''}${sign}`;
     case 'RETIRADA_AMANHA':
       return `${hi} Passando para confirmar a retirada ${deOf(what)}${ref} amanhã${i.date ? ` (${i.date})` : ''}. Alguém vai estar no local para nos receber?${sign}`;
+    case 'NO_LOCAL_AMANHA':
+      return `${hi} Passando para confirmar o serviço ${deOf(what)}${ref} aí no local amanhã${i.date ? ` (${i.date})` : ''}. Alguém vai estar no local para nos receber?${sign}`;
     case 'ENTREGA_AGENDADA':
       return `${hi} A entrega ${deOf(what)}${ref} está agendada${i.date ? ` para ${i.date}` : ''}.${i.balance ? ` O saldo de ${i.balance} pode ser pago na entrega.` : ''} Qualquer mudança, é só avisar por aqui.${sign}`;
     case 'ORCAMENTO_ENVIADO':

@@ -210,7 +210,7 @@ export function Dashboard() {
             <Stat
               href="/painel/retiradas"
               icon={<Truck className="size-4" aria-hidden />}
-              label="Retiradas de hoje"
+              label="Retiradas e no local hoje"
               value={
                 pickupsToday.data
                   ? pickupsToday.data.filter((p) => p.status !== 'CANCELADA').length
@@ -218,7 +218,10 @@ export function Dashboard() {
               }
               detail={
                 pickupsToday.data
-                  ? `${pickupsToday.data.filter((p) => p.status === 'COM_OCORRENCIA').length} com ocorrência`
+                  ? [
+                      `${pickupsToday.data.filter((p) => p.status !== 'CANCELADA' && p.kind === 'NO_LOCAL').length} no local`,
+                      `${pickupsToday.data.filter((p) => p.status === 'COM_OCORRENCIA').length} com ocorrência`,
+                    ].join(' · ')
                   : ''
               }
             />

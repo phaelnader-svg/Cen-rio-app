@@ -50,6 +50,8 @@ export interface PublicPickupDto {
   shift: PickupShift | null;
   /** A retirada ainda não saiu nem foi feita (o dia é sempre combinado pela oficina). */
   open: boolean;
+  /** 2026-11-25: serviço feito na casa do cliente ("No local"), não retirada. */
+  onSite?: boolean;
 }
 
 // ─────────────────────────── Busca rápida (83) ───────────────────────────

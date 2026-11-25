@@ -9,7 +9,13 @@ import { dbDate } from '../attendance/common';
 import { dateOnly } from '../commercial/common';
 import { deadlineCalendar } from './service';
 
-export async function followPickupDate(tx: Tx, orderId: string, pickupDate: string | null) {
+export async function followPickupDate(
+  tx: Tx,
+  orderId: string,
+  pickupDate: string | null,
+  /** 2026-11-25: "No local" termina no próprio dia do serviço (o prazo é o dia agendado). */
+  kind: 'RETIRADA' | 'NO_LOCAL' = 'RETIRADA',
+) {
   if (!pickupDate) return null;
   const o = await tx.commercialOrder.findUnique({
     where: { id: orderId },
@@ -20,9 +26,16 @@ export async function followPickupDate(tx: Tx, orderId: string, pickupDate: stri
       serviceOrders: { where: { status: { not: 'CANCELADA' } }, select: { id: true }, take: 1 },
     },
   });
-  if (!o?.deliveryBusinessDays || o.status === 'CANCELADO' || o.serviceOrders.length) return null;
-  const cal = await deadlineCalendar(tx);
-  const next = addBusinessDays(pickupDate, o.deliveryBusinessDays, cal.workingDays);
+  const onSite = kind === 'NO_LOCAL';
+  if (!o || (!onSite && !o.deliveryBusinessDays)) return null;
+  if (o.status === 'CANCELADO' || o.serviceOrders.length) return null;
+  const next = onSite
+    ? pickupDate
+    : addBusinessDays(
+        pickupDate,
+        o.deliveryBusinessDays!,
+        (await deadlineCalendar(tx)).workingDays,
+      );
   if (next === dateOnly(o.promisedDate)) return null;
   await tx.commercialOrder.update({
     where: { id: orderId },

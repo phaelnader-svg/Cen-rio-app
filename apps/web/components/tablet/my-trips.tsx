@@ -18,7 +18,7 @@ export function MyTripsToday({ standalone = false }: { standalone?: boolean }) {
         className="rounded-xl border border-line p-4 text-lg text-ink-soft"
         data-testid="my-trips-empty"
       >
-        Nenhuma retirada ou entrega sua hoje.
+        Nada agendado para você hoje.
       </p>
     );
   if (route.isPending || route.isError || !route.data.stops.length) return null;
@@ -39,9 +39,15 @@ export function MyTripsToday({ standalone = false }: { standalone?: boolean }) {
               className="rounded-2xl border border-line bg-surface p-5 shadow-[var(--shadow-card)]"
               data-testid={`route-stop-${s.job.code}`}
             >
-              <p className="text-base font-semibold text-ink-soft">
-                {s.job.kind === 'ENTREGA' ? 'Entrega' : 'Retirada'} {s.job.code} ·{' '}
-                {arrivalText(s.job.windowStart, s.job.windowEnd)}
+              <p
+                className={
+                  s.job.onSite
+                    ? 'text-base font-semibold text-brand-700'
+                    : 'text-base font-semibold text-ink-soft'
+                }
+              >
+                {s.job.kind === 'ENTREGA' ? 'Entrega' : s.job.onSite ? 'No local' : 'Retirada'}{' '}
+                {s.job.code} · {arrivalText(s.job.windowStart, s.job.windowEnd)}
               </p>
               <p className="mt-1 text-xl font-semibold break-words">{s.job.customerName}</p>
               {a && (

@@ -313,6 +313,7 @@ export async function publicRoutes(app: FastifyInstance) {
       scheduledDate: dateOnly(p.scheduledDate),
       shift: shiftOf(p.windowStart),
       open,
+      onSite: p.kind === 'NO_LOCAL',
     };
   }
 

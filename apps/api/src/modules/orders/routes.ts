@@ -84,7 +84,7 @@ function toSummary(
     items: Pick<CommercialOrderItem, 'quantity' | 'receivedQuantity' | 'returnedQuantity'>[];
   },
   state: { returnedPieces: number; serviceState: OrderSummaryDto['serviceState'] },
-  flow: Pick<OrderSummaryDto, 'serviceOrderCount' | 'nextPickup' | 'rework'>,
+  flow: Pick<OrderSummaryDto, 'serviceOrderCount' | 'nextPickup' | 'rework' | 'onSite'>,
 ): OrderSummaryDto {
   return {
     id: o.id,
@@ -101,6 +101,7 @@ function toSummary(
     createdAt: o.createdAt.toISOString(),
     serviceOrderCount: flow.serviceOrderCount,
     nextPickup: flow.nextPickup,
+    onSite: flow.onSite,
     rework: flow.rework ?? null,
     version: o.version,
   };
@@ -108,7 +109,7 @@ function toSummary(
 
 /** Fluxo da OS (2026-11-18): OS ativas e próxima retirada de cada pedido. */
 async function orderFlow(db: PrismaClient | Tx, ids: string[]) {
-  const [sos, pickups, reworks] = await Promise.all([
+  const [sos, pickups, reworks, onSite] = await Promise.all([
     db.serviceOrder.groupBy({
       by: ['orderId'],
       where: { orderId: { in: ids }, status: { not: 'CANCELADA' } },
@@ -116,25 +117,31 @@ async function orderFlow(db: PrismaClient | Tx, ids: string[]) {
     }),
     db.pickupRequest.findMany({
       where: { orderId: { in: ids }, status: { in: PICKUP_ARRIVAL_PENDING } },
-      select: { orderId: true, scheduledDate: true, windowStart: true },
+      select: { orderId: true, scheduledDate: true, windowStart: true, kind: true },
       orderBy: [{ scheduledDate: 'asc' }, { number: 'asc' }],
     }),
     db.rework.findMany({
       where: { orderId: { in: ids } },
       select: { id: true, number: true, orderId: true },
     }),
+    db.pickupRequest.findMany({
+      where: { orderId: { in: ids }, kind: 'NO_LOCAL', status: { not: 'CANCELADA' } },
+      select: { orderId: true },
+      distinct: ['orderId'],
+    }),
   ]);
   const out = new Map<
     string,
-    Pick<OrderSummaryDto, 'serviceOrderCount' | 'nextPickup' | 'rework'>
+    Pick<OrderSummaryDto, 'serviceOrderCount' | 'nextPickup' | 'rework' | 'onSite'>
   >();
   for (const id of ids) {
     const p = pickups.find((x) => x.orderId === id);
     out.set(id, {
       serviceOrderCount: sos.find((x) => x.orderId === id)?._count._all ?? 0,
       nextPickup: p
-        ? { scheduledDate: dateOnly(p.scheduledDate), windowStart: p.windowStart }
+        ? { scheduledDate: dateOnly(p.scheduledDate), windowStart: p.windowStart, kind: p.kind }
         : null,
+      onSite: onSite.some((x) => x.orderId === id),
       rework: ((r) => (r ? { id: r.id, code: reworkCode(r.number) } : null))(
         reworks.find((x) => x.orderId === id),
       ),
@@ -178,6 +185,7 @@ export async function loadOrderDto(
       notes: i.notes,
       receivedQuantity: i.receivedQuantity,
       inActivePickups: alloc.inPickups(i.id),
+      inOnSiteVisits: alloc.inOnSiteVisits(i.id),
       inServiceOrders: alloc.inServiceOrders(i.id),
       returnedQuantity: i.returnedQuantity,
       plannedUpholsterer:

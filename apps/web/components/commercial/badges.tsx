@@ -5,10 +5,11 @@ import {
   ORDER_DEADLINE_LABEL,
   ORDER_SERVICE_STATE_LABEL,
   ORDER_STATUS_LABEL,
-  PICKUP_STATUS_LABEL,
+  pickupStatusLabel,
   PRIORITY_LABEL,
   SERVICE_ORDER_STATUS_LABEL,
   type OrderStatus,
+  type PickupKind,
   type PickupStatus,
   type Priority,
   type ServiceOrderStatus,
@@ -16,6 +17,7 @@ import {
   type OrderDeadlineState,
   type ServiceDeadline,
 } from '@cenario/shared';
+import { House } from 'lucide-react';
 import Link from 'next/link';
 import { Badge } from '@/components/ui/misc';
 
@@ -47,27 +49,53 @@ const PRIORITY_TONE: Record<Priority, Tone> = {
 };
 
 /** Rótulo da situação do pedido: sem retirada, "aguardando" é a entrega pelo cliente. */
-export const orderStatusLabel = (status: OrderStatus, customerDropOff?: boolean) =>
+/** 2026-11-25: pedido "No local" (serviço na casa do cliente) usa palavras próprias. */
+const ON_SITE_ORDER_LABEL: Partial<Record<OrderStatus, string>> = {
+  RETIRADA_AGENDADA: 'No local agendado',
+  RECEBIDO_PARCIAL: 'Feito no local em parte',
+  RECEBIDO: 'Feito no local',
+};
+
+export const orderStatusLabel = (
+  status: OrderStatus,
+  customerDropOff?: boolean,
+  onSite?: boolean,
+) =>
   status === 'AGUARDANDO_RETIRADA' && customerDropOff
     ? 'Aguardando entrega do cliente'
-    : ORDER_STATUS_LABEL[status];
+    : (onSite && ON_SITE_ORDER_LABEL[status]) || ORDER_STATUS_LABEL[status];
 
 export const OrderStatusBadge = ({
   status,
   customerDropOff,
+  onSite,
 }: {
   status: OrderStatus;
   customerDropOff?: boolean;
+  onSite?: boolean;
 }) => (
   <Badge tone={ORDER_TONE[status]} dot>
-    {orderStatusLabel(status, customerDropOff)}
+    {orderStatusLabel(status, customerDropOff, onSite)}
   </Badge>
 );
-export const PickupStatusBadge = ({ status }: { status: PickupStatus }) => (
+export const PickupStatusBadge = ({
+  status,
+  kind,
+}: {
+  status: PickupStatus;
+  kind?: PickupKind;
+}) => (
   <Badge tone={PICKUP_TONE[status]} dot>
-    {PICKUP_STATUS_LABEL[status]}
+    {pickupStatusLabel(status, kind)}
   </Badge>
 );
+/** 2026-11-25: etiqueta "No local" (serviço na casa do cliente); Retirada não precisa de etiqueta. */
+export const PickupKindBadge = ({ kind }: { kind: PickupKind }) =>
+  kind === 'NO_LOCAL' ? (
+    <Badge tone="brand">
+      <House className="size-3.5" aria-hidden /> No local
+    </Badge>
+  ) : null;
 /** Melhoria 161: nas listas, a prioridade só aparece quando foge do normal (alta ou urgente). */
 export const PriorityBadge = ({ priority, always }: { priority: Priority; always?: boolean }) =>
   always || priority === 'ALTA' || priority === 'URGENTE' ? (
@@ -140,11 +168,18 @@ export function DeadlineBadge({
   );
 }
 
-export function OrderDeadlineBadge({ state }: { state: OrderDeadlineState | null }) {
+export function OrderDeadlineBadge({
+  state,
+  onSite,
+}: {
+  state: OrderDeadlineState | null;
+  onSite?: boolean;
+}) {
   if (!state) return null;
   return (
     <Badge tone={state === 'PRAZO_VENCIDO' ? 'danger' : 'warn'}>
-      {ORDER_DEADLINE_LABEL[state]} · peça não recebida
+      {ORDER_DEADLINE_LABEL[state]} ·{' '}
+      {onSite ? 'serviço no local ainda não feito' : 'peça não recebida'}
     </Badge>
   );
 }

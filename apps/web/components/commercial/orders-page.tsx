@@ -114,13 +114,19 @@ export function OrdersPage() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2 sm:contents">
                     <span className="text-sm text-ink-muted tabular-nums">
-                      {o.receivedPieces}/{o.totalPieces} peças na oficina
+                      {o.onSite
+                        ? `${o.totalPieces} ${o.totalPieces === 1 ? 'peça' : 'peças'} no local`
+                        : `${o.receivedPieces}/${o.totalPieces} peças na oficina`}
                       {o.nextPickup?.scheduledDate && o.receivedPieces < o.totalPieces
-                        ? ` · retirada ${formatDay(o.nextPickup.scheduledDate)}${o.nextPickup.windowStart ? ` ${o.nextPickup.windowStart}` : ''}`
+                        ? ` · ${o.nextPickup.kind === 'NO_LOCAL' ? 'no local' : 'retirada'} ${formatDay(o.nextPickup.scheduledDate)}${o.nextPickup.windowStart ? ` ${o.nextPickup.windowStart}` : ''}`
                         : ''}
                     </span>
                     <ReworkBadge rework={o.rework} />
-                    <OrderStatusBadge status={o.status} customerDropOff={o.customerDropOff} />
+                    <OrderStatusBadge
+                      status={o.status}
+                      customerDropOff={o.customerDropOff}
+                      onSite={o.onSite}
+                    />
                     <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />
                   </div>
                   <span className="hidden w-32 text-right text-xs text-ink-muted md:block">

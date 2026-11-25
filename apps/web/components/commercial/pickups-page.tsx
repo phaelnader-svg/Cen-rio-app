@@ -2,9 +2,9 @@
 
 import { plural } from '@cenario/shared';
 import type { PickupDto } from '@cenario/shared';
-import { PICKUP_STATUSES, PICKUP_STATUS_LABEL } from '@cenario/shared';
+import { PICKUP_STATUSES, PICKUP_STATUS_LABEL, pickupStatusLabel } from '@cenario/shared';
 import clsx from 'clsx';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock, List, Truck } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Clock, House, List, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/field';
@@ -12,7 +12,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Alert, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { holidayOf } from '@/lib/holidays';
 import { addDays, arrivalText, formatDay, todayIso, usePickups, weekStart } from '@/lib/commercial';
-import { PickupStatusBadge, ReworkBadge } from './badges';
+import { PickupKindBadge, PickupStatusBadge, ReworkBadge } from './badges';
 import { useFocusParam } from '@/lib/focus-param';
 import { PickupDetailDialog } from './pickup-detail';
 
@@ -59,16 +59,23 @@ function AgendaItem({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
               ? 'border-warn-600/40 bg-warn-50'
               : p.status === 'RECEBIDA_NA_OFICINA'
                 ? 'border-ok-600/20 bg-ok-50'
-                : 'border-info-600/20 bg-info-50',
+                : p.kind === 'NO_LOCAL'
+                  ? 'border-brand-600/30 bg-brand-50'
+                  : 'border-info-600/20 bg-info-50',
       )}
     >
       <span className="block font-semibold">
         {p.windowStart ? `${p.windowStart}${p.windowEnd ? `–${p.windowEnd}` : ''}` : 'Sem horário'}
       </span>
       <span className="block truncate font-medium">{p.customer.name}</span>
+      {p.kind === 'NO_LOCAL' && (
+        <span className="flex items-center gap-1 font-semibold text-brand-700">
+          <House className="size-3" aria-hidden /> No local
+        </span>
+      )}
       {p.rework && <span className="block font-semibold">Retrabalho</span>}
       <span className="sr-only">
-        {p.code} · {PICKUP_STATUS_LABEL[p.status]}
+        {p.code} · {pickupStatusLabel(p.status, p.kind)}
       </span>
     </button>
   );
@@ -106,7 +113,8 @@ function PickupLine({ p, onOpen }: { p: PickupDto; onOpen: () => void }) {
           : 'Sem data'}
       </span>
       <ReworkBadge rework={p.rework} />
-      <PickupStatusBadge status={p.status} />
+      <PickupKindBadge kind={p.kind} />
+      <PickupStatusBadge status={p.status} kind={p.kind} />
     </button>
   );
 }
@@ -133,8 +141,8 @@ export function PickupsPage() {
     <>
       <PageHeader
         title="Retiradas"
-        description="Agenda de retiradas na casa do cliente."
-        help="Solicitações e agenda de retiradas. As confirmações da logística são registradas manualmente nesta fase."
+        description="Agenda de retiradas e de serviços no local, na casa do cliente."
+        help="Retirada: a peça vem para a tapeçaria. No local: o serviço é feito na casa do cliente. Os dois aparecem nesta agenda, no roteiro e no celular de entregas."
         actions={
           <div
             className="inline-flex rounded-xl border border-line-strong bg-surface p-1"
@@ -163,7 +171,7 @@ export function PickupsPage() {
         }
       />
       <p className="mb-4 text-sm text-ink-muted">
-        Para solicitar uma retirada, abra o pedido e use “Solicitar retirada”.
+        Para agendar uma retirada ou um serviço no local, abra o pedido e use “Agendar”.
       </p>
 
       {view === 'agenda' ? (
@@ -210,6 +218,20 @@ export function PickupsPage() {
               <span className="size-3 rounded border border-line-strong bg-subtle" />
               Sábado e domingo
             </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-3 rounded border border-brand-600/30 bg-brand-50" />
+              No local
+            </span>
+            {agenda.data && (
+              <span className="ml-auto font-medium text-ink-soft" data-testid="agenda-month-count">
+                {((m) =>
+                  `No mês: ${plural(m.filter((p) => p.kind === 'RETIRADA').length, 'retirada', 'retiradas')} · ${m.filter((p) => p.kind === 'NO_LOCAL').length} no local`)(
+                  agenda.data.filter(
+                    (p) => p.status !== 'CANCELADA' && p.scheduledDate?.slice(0, 7) === month,
+                  ),
+                )}
+              </span>
+            )}
           </div>
           {agenda.isError && <Alert tone="danger">{agenda.error.message}</Alert>}
           <div
@@ -250,11 +272,7 @@ export function PickupsPage() {
                   <p
                     className={clsx(
                       'text-sm font-semibold',
-                      holiday
-                        ? 'text-ink-muted'
-                        : d === today
-                          ? 'text-brand-700'
-                          : 'text-ink-soft',
+                      holiday ? 'text-ink-muted' : d === today ? 'text-brand-700' : 'text-ink-soft',
                     )}
                   >
                     <span className="md:hidden first-letter:uppercase">{formatDay(d)}</span>
