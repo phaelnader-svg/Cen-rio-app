@@ -90,6 +90,9 @@ describe('Despesa pela foto', () => {
     const r = ok(await sendPhoto(s.admin), 201);
     expect(r.doneAlone).toBe(false);
     const p = (await overview(s.admin)).pending.find((x) => x.task === 'LANCAR_DESPESA')!;
+    // A conversa do app usa o título para o cartão "Deixei no Aprovar".
+    expect(r.proposalId).toBe(p.id);
+    expect(r.title).toBe(p.title);
     expect(p.title).toMatch(/Posto Avenida/);
     expect(p.title).toMatch(/189,90/);
     expect(p.payload.category).toBe('COMBUSTIVEL');

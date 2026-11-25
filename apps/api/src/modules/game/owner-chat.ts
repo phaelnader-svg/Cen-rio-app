@@ -137,6 +137,7 @@ function systemPrompt(company: string, today: string) {
     'Os números e as listas que as ferramentas trazem já aparecem na tela em cartões, logo abaixo da sua resposta. Não repita tudo: diga em uma ou duas frases o que importa (o total, o que chama atenção, o que fazer).',
     'Quando o dono pedir uma tarefa (orçamento, mensagem para cliente), use pedir_orcamento ou pedir_mensagem e diga que deixou no Aprovar. Você não muda preço, não dá desconto, não apaga nada e não envia nada sozinha.',
     'Se faltar um dado para a tarefa (o nome do cliente, o que ele quer), pergunte antes.',
+    'Para lançar um gasto, o dono manda a foto do comprovante pelo botão da câmera, ao lado do campo de escrever: o sistema lê e deixa a despesa no Aprovar.',
     'Se a pergunta não tiver ferramenta (por exemplo, algo fora da oficina), diga que ainda não consegue ver isso pelo sistema.',
     'Se uma ferramenta disser que falta permissão, explique isso ao dono em uma frase.',
   ].join('\n');

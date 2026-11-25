@@ -3,14 +3,16 @@
 import type { OwnerChatCard, OwnerChatReplyDto } from '@cenario/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { ArrowUp, ChevronRight, Mic, RotateCcw } from 'lucide-react';
+import { ArrowUp, Camera, ChevronRight, Mic, RotateCcw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
+import { preparePhoto } from '@/lib/photos';
 
 /**
  * Conversar (app do dono, 2026-11-25): o dono escreve ou fala e a IA responde com os dados da
  * empresa. Os números chegam em cartões montados pelo sistema; pedidos de tarefa viram cartões
- * no Aprovar. A conversa fica guardada só neste aparelho, até "Começar de novo".
+ * no Aprovar. A foto de um comprovante vira gasto pronto para aprovar (o Financeiro lê).
+ * A conversa fica guardada só neste aparelho, até "Começar de novo".
  */
 
 type Line =
@@ -67,6 +69,7 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
   const [listening, setListening] = useState(false);
   const [canTalk, setCanTalk] = useState(false);
   const rec = useRef<Recognition | null>(null);
+  const photo = useRef<HTMLInputElement>(null);
   const end = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -102,6 +105,42 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
       save(done);
       if (r.cards.some((c) => c.kind === 'aprovar'))
         void qc.invalidateQueries({ queryKey: ['office'] });
+    } catch (e) {
+      const done: Line[] = [...next, { role: 'error', text: errorMessage(e) }];
+      setLines(done);
+      save(done);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Foto do comprovante: o Financeiro lê e deixa o gasto no Aprovar (ou lança, se liberado).
+  const sendPhoto = async (file: File) => {
+    if (busy) return;
+    const next: Line[] = [...lines, { role: 'user', text: 'Foto do comprovante' }];
+    setLines(next);
+    save(next);
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', await preparePhoto(file));
+      const r = await api<{ proposalId: string; title: string; doneAlone: boolean }>(
+        '/api/v1/office/receipt',
+        { method: 'POST', body: fd },
+      );
+      const done: Line[] = [
+        ...next,
+        r.doneAlone
+          ? { role: 'assistant', text: `Li o comprovante e já lancei: ${r.title}.`, cards: [] }
+          : {
+              role: 'assistant',
+              text: 'Li o comprovante e deixei o gasto pronto. Confira o valor e aprove.',
+              cards: [{ kind: 'aprovar', proposalId: r.proposalId, title: r.title }],
+            },
+      ];
+      setLines(done);
+      save(done);
+      void qc.invalidateQueries({ queryKey: ['office'] });
     } catch (e) {
       const done: Line[] = [...next, { role: 'error', text: errorMessage(e) }];
       setLines(done);
@@ -182,8 +221,8 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
           ))}
           <p className="px-1 pt-2 text-sm text-ink-muted">
             Ela também prepara tarefas, como &quot;faz um orçamento para a Maria&quot; ou
-            &quot;avisa o João que o sofá fica pronto sexta&quot;. Tudo vai para o Aprovar antes de
-            sair.
+            &quot;avisa o João que o sofá fica pronto sexta&quot;. Para lançar um gasto, toque na
+            câmera e mande a foto do comprovante. Tudo vai para o Aprovar antes de sair.
           </p>
         </div>
       )}
@@ -214,7 +253,9 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
         {busy && (
           <li className="flex justify-start">
             <p className="rounded-2xl rounded-bl-md border border-line bg-surface px-4 py-2.5 text-[15px] text-ink-muted">
-              Olhando no sistema…
+              {lines.at(-1)?.text === 'Foto do comprovante'
+                ? 'Lendo o comprovante…'
+                : 'Olhando no sistema…'}
             </p>
           </li>
         )}
@@ -243,6 +284,27 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
             placeholder={listening ? 'Ouvindo…' : 'Pergunte ou peça uma tarefa'}
             aria-label="Sua pergunta"
             className="max-h-32 min-h-12 flex-1 resize-none rounded-3xl border border-line-strong bg-surface px-4 py-3 text-[15px] leading-5 text-ink outline-none placeholder:text-ink-muted focus:border-brand-500"
+          />
+          <button
+            type="button"
+            onClick={() => photo.current?.click()}
+            disabled={busy}
+            aria-label="Mandar foto do comprovante"
+            className="grid size-12 shrink-0 place-items-center rounded-full border border-line-strong bg-surface text-ink disabled:opacity-40"
+          >
+            <Camera className="size-5" aria-hidden />
+          </button>
+          <input
+            ref={photo}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            data-testid="chat-photo"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) void sendPhoto(file);
+            }}
           />
           {canTalk && (
             <button

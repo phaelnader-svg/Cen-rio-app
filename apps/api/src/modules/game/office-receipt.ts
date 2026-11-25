@@ -278,9 +278,12 @@ export async function receiptRoutes(app: FastifyInstance) {
       let doneAlone = false;
       if ((await routeOfNow(prisma, agent.id, row)) === 'SOZINHO')
         doneAlone = await doAlone(prisma, row, agent, today);
-      return reply
-        .status(201)
-        .send({ proposalId: row.id, doneAlone, overview: await officeOverview(prisma) });
+      return reply.status(201).send({
+        proposalId: row.id,
+        title: row.title,
+        doneAlone,
+        overview: await officeOverview(prisma),
+      });
     },
   );
 }
