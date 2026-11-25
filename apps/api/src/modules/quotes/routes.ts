@@ -22,6 +22,7 @@ import {
   type QuoteCatalogKind,
   type QuoteDto,
   type QuoteCustomerLookupDto,
+  type QuoteDraft,
   type QuoteFunnelDto,
   type QuoteStatus,
   type QuoteMaterialCategory,
@@ -34,6 +35,7 @@ import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
+import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { idParams } from '../presenters';
 import { requireCompanyId } from '../../core/tenant';
@@ -218,6 +220,41 @@ const KIND_LABEL: Record<QuoteCatalogKind, string> = {
   TAXA_MAQUINA: 'Taxa da máquina',
   TAPECEIRO: 'Tapeceiro responsável',
 };
+
+/**
+ * Salva um orçamento novo (status "Enviado", retorno marcado): a API recalcula com a base atual.
+ * Usado pela tela e pelo agente de Orçamentos (2026-11-25), sempre com as mesmas regras.
+ */
+export async function saveNewQuote(tx: Tx, actor: ActorContext, draft: QuoteDraft) {
+  const [catalog, settings] = await Promise.all([catalogDtos(tx), settingsDto(tx)]);
+  const totals = calcQuote(draft, catalog, settings.taxRateBps);
+  const blocker = quoteSaveBlocker(draft, totals);
+  if (blocker) throw Errors.business(blocker);
+  const snapshot = buildQuoteSnapshot(draft, catalog, settings, new Date());
+  if (!snapshot.service) throw Errors.business('Informe o serviço antes de salvar.');
+  const q = await tx.quote.create({
+    data: {
+      customerName: snapshot.customerName,
+      phone: snapshot.phone || null,
+      service: snapshot.service,
+      totalCents: snapshot.totals.totalCents,
+      snapshot: snapshot as unknown as Prisma.InputJsonValue,
+      createdById: actor.userId,
+      status: 'ENVIADO',
+      statusChangedAt: new Date(),
+      followUpAt: new Date(Date.now() + QUOTE_FOLLOW_UP_DAYS * DAY_MS),
+    },
+  });
+  await audit(tx, actor, {
+    action: 'quotes.saved',
+    entityType: 'quote',
+    entityId: q.id,
+    summary: `Orçamento nº ${q.number} salvo (${q.customerName}).`,
+  });
+  return { id: q.id, number: q.number, snapshot };
+}
+
+export { catalogDtos, settingsDto };
 
 export async function quoteRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
@@ -496,34 +533,7 @@ export async function quoteRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const draft = quoteDraftSchema.parse(request.body);
       const actor = actorFrom(request);
-      const id = await prisma.$transaction(async (tx) => {
-        const [catalog, settings] = await Promise.all([catalogDtos(tx), settingsDto(tx)]);
-        const totals = calcQuote(draft, catalog, settings.taxRateBps);
-        const blocker = quoteSaveBlocker(draft, totals);
-        if (blocker) throw Errors.business(blocker);
-        const snapshot = buildQuoteSnapshot(draft, catalog, settings, new Date());
-        if (!snapshot.service) throw Errors.business('Informe o serviço antes de salvar.');
-        const q = await tx.quote.create({
-          data: {
-            customerName: snapshot.customerName,
-            phone: snapshot.phone || null,
-            service: snapshot.service,
-            totalCents: snapshot.totals.totalCents,
-            snapshot: snapshot as unknown as Prisma.InputJsonValue,
-            createdById: actor.userId,
-            status: 'ENVIADO',
-            statusChangedAt: new Date(),
-            followUpAt: new Date(Date.now() + QUOTE_FOLLOW_UP_DAYS * DAY_MS),
-          },
-        });
-        await audit(tx, actor, {
-          action: 'quotes.saved',
-          entityType: 'quote',
-          entityId: q.id,
-          summary: `Orçamento nº ${q.number} salvo (${q.customerName}).`,
-        });
-        return q.id;
-      });
+      const id = await prisma.$transaction(async (tx) => (await saveNewQuote(tx, actor, draft)).id);
       return reply.status(201).send(await loadQuote(prisma, id));
     },
   );
@@ -757,7 +767,9 @@ export async function quoteRoutes(app: FastifyInstance) {
         AND: terms.map((t) => ({
           OR: [
             { searchText: { contains: t } },
-            ...(digits.length >= 4 && /^\d+$/.test(t) ? [{ searchText: { contains: digits } }] : []),
+            ...(digits.length >= 4 && /^\d+$/.test(t)
+              ? [{ searchText: { contains: digits } }]
+              : []),
           ],
         })),
       },

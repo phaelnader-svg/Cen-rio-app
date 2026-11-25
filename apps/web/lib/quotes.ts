@@ -82,6 +82,17 @@ function readEditing(userId: string): QuoteEditing | null {
   }
 }
 
+/** Leva um rascunho pronto (ex.: o montado pelo agente) para a tela "Elaborar" desta pessoa. */
+export function putDraftInEditor(userId: string, draft: QuoteDraft) {
+  try {
+    localStorage.setItem(storageKey(userId), JSON.stringify(draft));
+    localStorage.removeItem(editingKey(userId));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function useQuoteDraft() {
   const me = useMe();
   const userId = me.data?.user.id ?? null;
