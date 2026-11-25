@@ -148,7 +148,7 @@ export async function accountantPackageNotice(prisma: PrismaClient, today: strin
       'financeiro.ver',
       'AGENTES_CONTADOR',
       `AGENTES_CONTADOR:${month}`,
-      `Pacote de ${m} para o contador: entrou ${brl(c.totals.receivedCents)}, saiu ${brl(c.totals.paidCents)}.${falta} Toque para baixar.`.slice(
+      `Pacote de ${m} para o contador: entrou ${brl(c.totals.receivedCents)}, saiu ${brl(c.totals.paidCents)}.${falta}`.slice(
         0,
         300,
       ),
