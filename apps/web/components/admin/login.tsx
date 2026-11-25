@@ -13,13 +13,7 @@ import { Alert } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
 import { Honeypot, Turnstile, useSignupConfig } from '@/components/account/turnstile';
 import { trialOffer } from '@/components/site/config';
-import { legalPending } from '@cenario/shared';
-
-/** Os links legais só aparecem quando as páginas existem (em produção, com os dados preenchidos). */
-const legalLinksReady = () =>
-  process.env.NODE_ENV !== 'production' ||
-  legalPending().length === 0 ||
-  (typeof window !== 'undefined' && /^teste\./i.test(window.location.hostname));
+import { legalLinksReady } from '@/components/site/legal/links-ready';
 
 const REASONS: Record<string, string> = {
   'sessao-encerrada': 'Sua sessão foi encerrada. Entre novamente para continuar.',
