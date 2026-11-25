@@ -18,6 +18,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { FormGrid, SelectField, TextAreaField } from '@/components/ui/form';
 import { Alert, Badge, Card, Spinner } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
+import { legalLinksReady } from '@/components/site/legal/links-ready';
 
 const day = (iso: string) => new Date(iso).toLocaleDateString('pt-BR');
 
@@ -54,9 +55,12 @@ export function PrivacyRequestCard({ scope }: { scope: 'MINHA_CONTA' | 'EMPRESA'
           ? 'Para encerrar a conta e apagar os dados da empresa, faça o pedido aqui. Antes, baixe todos os dados acima: depois de apagados, não dá para recuperar.'
           : 'Peça para ver, corrigir, receber uma cópia ou apagar os seus dados pessoais.'}{' '}
         A resposta chega no seu e-mail em até {PRIVACY_RESPONSE_DAYS} dias.{' '}
-        <a href="/privacidade" target="_blank" className="font-medium text-brand-700 underline">
-          Política de privacidade
-        </a>
+        {/* Em produção, o link só aparece quando a página existe (dados da empresa preenchidos). */}
+        {legalLinksReady() && (
+          <a href="/privacidade" target="_blank" className="font-medium text-brand-700 underline">
+            Política de privacidade
+          </a>
+        )}
       </p>
       <Button
         variant={empresa ? 'outline-danger' : 'secondary'}
