@@ -32,7 +32,7 @@ const csp = [
 ].join('; ');
 
 /**
- * Landing com Google Analytics (SITE.analyticsId preenchido): só / e /conheca liberam os
+ * Landing com Google Analytics (SITE.analyticsId preenchido): só /, /conheca e o blog liberam os
  * endereços do Google; painel, tablet e o resto do sistema continuam sem nenhuma origem externa.
  */
 const GA =
@@ -42,7 +42,7 @@ const siteCsp = csp
   .replace("img-src 'self' data: blob:", `img-src 'self' data: blob: ${GA}`)
   .replace("connect-src 'self' ws: wss:", `connect-src 'self' ws: wss: ${GA}`);
 const siteHeaders = SITE.analyticsId
-  ? ['/', '/conheca'].map((source) => ({
+  ? ['/', '/conheca', '/blog', '/blog/:slug'].map((source) => ({
       source,
       headers: [{ key: 'Content-Security-Policy', value: siteCsp }],
     }))

@@ -16,6 +16,7 @@ import {
   trialOffer,
   whatsappUrl,
 } from './config';
+import { artigosPublicados } from './blog/artigos';
 
 /** Versão dos documentos para agentes (muda quando o conteúdo público muda). */
 export const AGENT_DOCS_VERSION = '1.0.0';
@@ -238,6 +239,15 @@ export function skillsIndex(digest: string) {
 // ---------------------------------------------------------------------------------------------
 // llms.txt (resumo em Markdown para modelos de linguagem)
 
+/** Artigos publicados do blog (sem rascunhos em produção). */
+function blogSection(): string {
+  const artigos = artigosPublicados();
+  if (artigos.length === 0) return '';
+  return `## Blog\n\n${artigos
+    .map((a) => `- [${a.titulo}](${SITE_URL}/blog/${a.slug}): ${a.resumo}`)
+    .join('\n')}\n\n`;
+}
+
 export function llmsTxt(info = productInfo()): string {
   return `# Cenário Gestão
 
@@ -259,7 +269,7 @@ ${info.testeGratis ? `\n${info.testeGratis}\n` : ''}
 
 ${info.perguntas.map((p) => `- ${p.pergunta} ${p.resposta}`).join('\n')}
 
-## Links
+${blogSection()}## Links
 
 - [Página do Cenário Gestão](${info.site})
 - [Criar conta](${info.criarConta})

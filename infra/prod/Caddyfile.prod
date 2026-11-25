@@ -35,10 +35,11 @@
 	}
 
 	# Sistema interno da oficina: não deve aparecer em buscadores. Única exceção: a página
-	# comercial pública (raiz "/" e /conheca), as imagens dela (/site/*) e os arquivos que os
-	# buscadores leem (robots.txt, que já bloqueia /painel, e sitemap.xml). O próprio Next.js só
-	# libera a página para indexação quando está publicada (SITE_COMERCIAL=1 e sem pendências).
-	@privado not path / /conheca /site/* /robots.txt /sitemap.xml
+	# comercial pública (raiz "/" e /conheca), as imagens dela (/site/*), o blog (/blog e os
+	# artigos, com as imagens em /blog-img/*) e os arquivos que os buscadores e assistentes de IA
+	# leem (robots.txt, que já bloqueia /painel, sitemap.xml e llms.txt). O próprio Next.js só
+	# libera essas páginas para indexação quando estão publicadas (SITE_COMERCIAL=1).
+	@privado not path / /conheca /site/* /blog /blog/* /blog-img/* /robots.txt /sitemap.xml /llms.txt
 	header @privado X-Robots-Tag "noindex, nofollow"
 
 	request_body {

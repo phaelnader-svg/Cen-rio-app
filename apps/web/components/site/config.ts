@@ -151,9 +151,25 @@ export function annualOffer(
   return `No anual, R$ ${brl(discounted)} por mês (R$ ${brl((monthlyCents - discounted) * 12)} a menos no ano).`;
 }
 
-export function whatsappUrl(site: typeof SITE = SITE): string | null {
+/** De onde a pessoa veio quando chama no WhatsApp (o blog marca a mensagem pronta). */
+export interface WhatsappOrigem {
+  /** Veio do blog (lista ou artigo). */
+  blog: true;
+  /** Título do artigo, quando veio de um artigo. */
+  artigo?: string;
+}
+
+/** Mensagem pronta do WhatsApp; quem veio do blog já chega dizendo de qual artigo. */
+export function whatsappMessage(site: typeof SITE = SITE, origem?: WhatsappOrigem): string {
+  if (!origem?.blog) return site.whatsappMessage;
+  return origem.artigo
+    ? `Olá! Vim pelo blog, do artigo "${origem.artigo}". Quero conhecer o Cenário Gestão.`
+    : 'Olá! Vim pelo blog. Quero conhecer o Cenário Gestão.';
+}
+
+export function whatsappUrl(site: typeof SITE = SITE, origem?: WhatsappOrigem): string | null {
   if (!site.whatsappNumber) return null;
-  return `https://wa.me/${site.whatsappNumber}?text=${encodeURIComponent(site.whatsappMessage)}`;
+  return `https://wa.me/${site.whatsappNumber}?text=${encodeURIComponent(whatsappMessage(site, origem))}`;
 }
 
 /** WhatsApp do suporte, usado no painel das empresas clientes (botão Ajuda e suporte). */

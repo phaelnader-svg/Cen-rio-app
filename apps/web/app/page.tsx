@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { Landing } from '@/components/site/landing';
+import { blogOrigemDe } from '@/components/site/blog/artigos';
 import { siteMetadata, siteMode } from '@/components/site/config';
 
 /**
@@ -15,7 +16,9 @@ export function generateMetadata(): Metadata {
   return siteMetadata(true);
 }
 
-export default function Home() {
+type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
+
+export default async function Home({ searchParams }: Props) {
   if (siteMode() !== 'live') redirect('/painel');
-  return <Landing preview={false} />;
+  return <Landing preview={false} blogOrigem={blogOrigemDe(await searchParams)} />;
 }

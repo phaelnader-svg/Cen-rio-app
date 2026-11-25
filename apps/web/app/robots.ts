@@ -13,6 +13,7 @@ export default function robots(): MetadataRoute.Robots {
           '/$',
           '/conheca',
           '/site/',
+          '/blog',
           '/llms.txt',
           '/.well-known/',
           '/info/',

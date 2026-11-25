@@ -1,7 +1,9 @@
 import clsx from 'clsx';
+import Link from 'next/link';
 import { ImageOff, LogIn, MessageCircle, UserPlus } from 'lucide-react';
 import { BrandMark } from '@/components/brand';
 import { jsonLd } from './agentes';
+import { artigosPublicados } from './blog/artigos';
 import { WebMcpTools } from './webmcp';
 import { Alert, Badge, Card } from '@/components/ui/misc';
 import {
@@ -34,7 +36,7 @@ const CTA_LABEL = 'Chamar no WhatsApp';
 const shortPrice = (v: string) => v.replace(/,00$/, '');
 
 /** 5512996520615 → (12) 99652-0615. */
-function formatPhone(n: string | null): string {
+export function formatPhone(n: string | null): string {
   const d = (n ?? '').replace(/^55/, '');
   return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d;
 }
@@ -47,22 +49,28 @@ function Pending({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ContactLink({
+export function ContactLink({
   variant = 'primary',
   size = 'lg',
   className,
   children = CTA_LABEL,
+  href = whatsappUrl(),
+  origem,
 }: {
   variant?: ButtonVariant;
   size?: ButtonSize;
   className?: string;
   children?: React.ReactNode;
+  /** Link do WhatsApp (com a mensagem pronta de quem veio do blog, se for o caso). */
+  href?: string | null;
+  /** Marca de origem para o Analytics (ex.: "blog" ou "blog:nome-do-artigo"). */
+  origem?: string;
 }) {
-  const href = whatsappUrl();
   return (
     <a
       href={href ?? '#contato'}
       {...(href ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      {...(origem ? { 'data-origem': origem } : {})}
       className={clsx(BUTTON_BASE, BUTTON_VARIANTS[variant], BUTTON_SIZES[size], className)}
       data-testid="site-cta"
     >
@@ -73,14 +81,14 @@ function ContactLink({
 }
 
 /** Google Analytics da landing (só com SITE.analyticsId; a CSP dessas rotas libera o Google). */
-function Analytics({ id }: { id: string }) {
+export function Analytics({ id }: { id: string }) {
   const safe = id.replace(/[^A-Z0-9-]/gi, '');
   return (
     <>
       <script async src={`https://www.googletagmanager.com/gtag/js?id=${safe}`} />
       <script
         dangerouslySetInnerHTML={{
-          __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${safe}');`,
+          __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','${safe}');document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[href^="https://wa.me/"]');if(a)gtag('event','whatsapp_click',{origem:a.getAttribute('data-origem')||'site'})});`,
         }}
       />
     </>
@@ -166,7 +174,7 @@ function Screen({
 }
 
 /** Largura e respiro comuns a todas as seções. */
-const WRAP = 'mx-auto max-w-7xl px-4 sm:px-6 lg:px-8';
+export const WRAP = 'mx-auto max-w-7xl px-4 sm:px-6 lg:px-8';
 
 function SectionTitle({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
@@ -290,7 +298,16 @@ function Lines({ items }: { items: string[] }) {
   );
 }
 
-export function Landing({ preview }: { preview: boolean }) {
+export function Landing({
+  preview,
+  blogOrigem,
+}: {
+  preview: boolean;
+  /** Veio de um link do blog (utm_source=blog): o WhatsApp já chega com "Vim pelo blog". */
+  blogOrigem?: { slug?: string; titulo?: string } | null;
+}) {
+  const wa = whatsappUrl(SITE, blogOrigem ? { blog: true, artigo: blogOrigem.titulo } : undefined);
+  const origem = blogOrigem ? (blogOrigem.slug ? `blog:${blogOrigem.slug}` : 'blog') : undefined;
   const price = SITE.monthlyPrice;
   const annual = annualOffer();
   const gameAnnual = annualOffer(SITE, SITE.gameMonthlyPrice);
@@ -315,7 +332,13 @@ export function Landing({ preview }: { preview: boolean }) {
         <BrandMark subtitle="Cenário Estofados" />
         <div className="flex items-center gap-2">
           {/* No celular o botão de contato já aparece logo abaixo, na abertura; o topo fica só com Entrar. */}
-          <ContactLink variant="secondary" size="sm" className="max-sm:hidden" />
+          <ContactLink
+            href={wa}
+            origem={origem}
+            variant="secondary"
+            size="sm"
+            className="max-sm:hidden"
+          />
           <a
             href="/entrar"
             className={clsx(BUTTON_BASE, BUTTON_VARIANTS.primary, BUTTON_SIZES.sm)}
@@ -344,7 +367,7 @@ export function Landing({ preview }: { preview: boolean }) {
               uma tapeçaria.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <ContactLink />
+              <ContactLink href={wa} origem={origem} />
               <SignupLink />
               {preview && !SITE.whatsappNumber && (
                 <p className="mt-2">
@@ -529,7 +552,7 @@ export function Landing({ preview }: { preview: boolean }) {
                 )
               )}
               <div className="mt-6 flex flex-wrap gap-3">
-                <ContactLink />
+                <ContactLink href={wa} origem={origem} />
                 <SignupLink />
               </div>
             </div>
@@ -567,7 +590,7 @@ export function Landing({ preview }: { preview: boolean }) {
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <ContactLink />
+              <ContactLink href={wa} origem={origem} />
               <SignupLink />
             </div>
           </div>
@@ -587,9 +610,15 @@ export function Landing({ preview }: { preview: boolean }) {
             <p className="mt-3">O Cenário Gestão é feito pela Cenário Estofados.</p>
           </div>
           <nav aria-label="Rodapé" className="flex flex-wrap gap-x-5 gap-y-2 font-medium">
-            {whatsappUrl() && (
+            {artigosPublicados().length > 0 && (
+              <Link href="/blog" className="text-ink-soft hover:text-ink hover:underline">
+                Blog
+              </Link>
+            )}
+            {wa && (
               <a
-                href={whatsappUrl()!}
+                href={wa}
+                {...(origem ? { 'data-origem': origem } : {})}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-ink-soft hover:text-ink hover:underline"

@@ -3,7 +3,7 @@
  * só informação pública do produto e nunca rotas autenticadas ou dados de empresas.
  */
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   HOME_LINK_HEADER,
   MCP_TOOLS,
@@ -70,8 +70,16 @@ describe('assistentes de IA: só informação pública', () => {
     expect(r.sitemap).toBe('https://cenariogestao.com.br/sitemap.xml');
   });
 
-  it('sitemap só com a página pública', () => {
-    expect(sitemap().map((u) => u.url)).toEqual(['https://cenariogestao.com.br/']);
+  it('sitemap só com páginas públicas (raiz e blog), sem rascunhos em produção', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    try {
+      const urls = sitemap().map((u) => u.url);
+      expect(urls[0]).toBe('https://cenariogestao.com.br/');
+      for (const u of urls) expect(u).toMatch(/^https:\/\/cenariogestao\.com\.br\/(blog(\/[a-z0-9-]+)?)?$/);
+      expect(urls.some((u) => u.includes('exemplo-'))).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('digest do índice de habilidades confere com o SKILL.md servido', async () => {

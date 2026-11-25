@@ -116,6 +116,8 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
       '/conheca-x',
       '/x',
       '/robots.txt.bak',
+      '/blogx',
+      '/mcp',
     ]) {
       const r = await get(port, path);
       expect(r.headers['x-robots-tag'], path).toBe('noindex, nofollow');
@@ -123,8 +125,18 @@ describe.skipIf(!CADDY && !REQUIRED)('Caddy de produção: indexação', () => {
     }
   });
 
-  it('a página comercial, as imagens dela, robots.txt e sitemap.xml não recebem o noindex do proxy', async () => {
-    for (const path of ['/', '/conheca', '/site/inicio.webp', '/robots.txt', '/sitemap.xml']) {
+  it('a página comercial, as imagens dela, o blog, robots.txt, sitemap.xml e llms.txt não recebem o noindex do proxy', async () => {
+    for (const path of [
+      '/',
+      '/conheca',
+      '/site/inicio.webp',
+      '/blog',
+      '/blog/um-artigo',
+      '/blog-img/um-artigo/capa.webp',
+      '/robots.txt',
+      '/sitemap.xml',
+      '/llms.txt',
+    ]) {
       const r = await get(port, path);
       expect(r.statusCode, path).toBe(200);
       expect(r.headers['x-robots-tag'], path).toBeUndefined();
