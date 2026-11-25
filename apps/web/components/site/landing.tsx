@@ -1,6 +1,8 @@
 import clsx from 'clsx';
 import { ImageOff, LogIn, MessageCircle, UserPlus } from 'lucide-react';
 import { BrandMark } from '@/components/brand';
+import { jsonLd } from './agentes';
+import { WebMcpTools } from './webmcp';
 import { Alert, Badge, Card } from '@/components/ui/misc';
 import {
   BUTTON_BASE,
@@ -296,6 +298,12 @@ export function Landing({ preview }: { preview: boolean }) {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
       {!preview && SITE.analyticsId && <Analytics id={SITE.analyticsId} />}
+      {/* Assistentes de IA: dados estruturados do produto e ferramentas WebMCP (só info pública). */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd()).replace(/</g, '\\u003c') }}
+      />
+      <WebMcpTools />
       {preview && (
         <div className="border-b border-warn-600/20 bg-warn-50 px-4 py-2 text-center text-xs font-medium text-warn-600">
           Pré-visualização de desenvolvimento. Em produção esta página só abre com SITE_COMERCIAL=1

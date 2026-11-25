@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import { HOME_LINK_HEADER } from './components/site/agentes';
 import { SITE } from './components/site/config';
 
 /**
@@ -83,6 +84,12 @@ const nextConfig: NextConfig = {
       },
       // Depois da regra geral: a CSP da landing substitui a padrão nessas duas rotas.
       ...siteHeaders,
+      // Descoberta por agentes de IA (RFC 8288/9727): a página inicial aponta para o catálogo de
+      // APIs, os cartões do MCP e do A2A e o llms.txt. Só endereços públicos do produto.
+      ...['/', '/conheca'].map((source) => ({
+        source,
+        headers: [{ key: 'Link', value: HOME_LINK_HEADER }],
+      })),
     ];
   },
 };

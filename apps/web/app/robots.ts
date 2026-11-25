@@ -7,7 +7,17 @@ export default function robots(): MetadataRoute.Robots {
     rules: [
       {
         userAgent: '*',
-        allow: ['/$', '/conheca', '/site/'],
+        // Inclui o que os assistentes de IA leem: llms.txt, /.well-known (cartões do MCP, do A2A,
+        // habilidades e catálogo de APIs), a ficha pública do produto e a descrição OpenAPI.
+        allow: [
+          '/$',
+          '/conheca',
+          '/site/',
+          '/llms.txt',
+          '/.well-known/',
+          '/info/',
+          '/openapi.json',
+        ],
         // Links dos clientes (proposta, álbum, retirada) também ficam fora.
         disallow: [
           '/painel',
