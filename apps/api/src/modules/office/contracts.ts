@@ -106,6 +106,13 @@ const docFmt = (d: string | null) =>
       ? d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
       : d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
 
+const phoneFmt = (p: string | null) => {
+  const d = (p ?? '').replace(/\D/g, '').replace(/^55(?=\d{10,11}$)/, '');
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return p || null;
+};
+
 /** Preenche o modelo; devolve o texto e a lista do que falta para assinar. */
 export async function fillContract(
   db: Tx | PrismaClient,
@@ -127,7 +134,10 @@ export async function fillContract(
   const items = order.items
     .map((i) => {
       const fabric = [i.fabricName, i.fabricColor, i.fabricReference].filter(Boolean).join(' · ');
-      return `- ${i.quantity}× ${i.description} — ${SERVICE[i.serviceType ?? i.serviceOrderItems[0]?.serviceType ?? 'OUTRO']}${fabric ? `; tecido: ${fabric}` : ''}${i.technicalNotes ? `; ${i.technicalNotes}` : ''}${i.agreedValueCents ? ` (${brl(i.agreedValueCents)})` : ''}`;
+      const type = i.serviceType ?? i.serviceOrderItems[0]?.serviceType ?? null;
+      // Sem o tipo na peça: vale o serviço fechado no pedido ("Reforma completa com troca de tecido").
+      const service = type ? SERVICE[type] : order.contractedService.toLowerCase() || SERVICE.OUTRO;
+      return `- ${i.quantity}× ${i.description} — ${service}${fabric ? `; tecido: ${fabric}` : ''}${i.technicalNotes ? `; ${i.technicalNotes}` : ''}${i.agreedValueCents ? ` (${brl(i.agreedValueCents)})` : ''}`;
     })
     .join('\n');
   const planned = order.receivables.length
@@ -141,12 +151,12 @@ export async function fillContract(
   const map: Record<string, string> = {
     pedido: orderCodeOf(order.number),
     empresa: company?.legalName || company?.tradeName || 'Cenário Estofados',
-    empresa_cnpj: val(company?.document, 'CNPJ da Cenário'),
+    empresa_cnpj: val(docFmt(company?.document ?? null), 'CNPJ da Cenário'),
     empresa_endereco: val(company?.address, 'endereço da Cenário'),
     cliente: c.name,
     cliente_documento: val(docFmt(c.document), 'CPF/CNPJ do cliente'),
     cliente_endereco: val(addr(c.addresses[0]), 'endereço do cliente'),
-    cliente_telefone: c.whatsapp ?? c.phone ?? '—',
+    cliente_telefone: phoneFmt(c.whatsapp ?? c.phone) ?? '—',
     cliente_email:
       opts.emailOptional && !c.email
         ? 'não informado'
@@ -160,7 +170,7 @@ export async function fillContract(
     prazo: val(
       fmt(
         order.promisedDate ?? order.serviceOrders.find((s) => s.promisedDate)?.promisedDate ?? null,
-      ),
+      ) ?? (order.deliveryBusinessDays ? `${order.deliveryBusinessDays} dias úteis` : null),
       'prazo prometido',
     ),
     retirada: order.customerDropOff

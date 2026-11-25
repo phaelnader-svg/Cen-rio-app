@@ -69,6 +69,10 @@ describe('Contrato do serviço fechado', () => {
       where: { id: order.id },
       data: { promisedDate: new Date('2026-12-15T00:00:00Z') },
     });
+    // A rodada seguinte já mostra que não falta mais nada.
+    await round(admin);
+    const again = (await overview(admin)).pending.find((x) => x.id === p.id)!;
+    expect(again.payload.missing).toBeUndefined();
     const d = ok(
       await send(admin, 'POST', `/api/v1/game/proposals/${p.id}/decide`, { decision: 'APROVAR' }),
     );

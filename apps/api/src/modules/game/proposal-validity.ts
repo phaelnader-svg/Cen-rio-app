@@ -7,6 +7,7 @@ import type { AiAgentProposal, PrismaClient, Tx } from '@cenario/db';
 import { FULFILLMENT_STAGE_LABEL, type FulfillmentStage } from '@cenario/shared';
 import { serviceOrderCode } from '../commercial/common';
 import { orderRevenue } from '../finance/revenue';
+import { contractMissing } from './office-contract';
 
 type Db = PrismaClient | Tx;
 const money = (c: number) =>
@@ -78,6 +79,31 @@ export async function obsoleteReason(db: Db, p: AiAgentProposal): Promise<string
     return null;
   }
   if (pl.task === 'PEDIR_AVALIACAO' || pl.task === 'CLIENTE_ANTIGO') return null;
+  // Contrato: o pedido foi cancelado ou o contrato já foi feito por outro caminho.
+  if (pl.task === 'ENVIAR_CONTRATO') {
+    const o = await db.commercialOrder.findUnique({
+      where: { id: String(pl.orderId ?? '') },
+      select: {
+        status: true,
+        contracts: {
+          where: { status: { in: ['RASCUNHO', 'ENVIADO', 'ASSINADO'] } },
+          select: { id: true },
+        },
+      },
+    });
+    if (!o || o.status === 'CANCELADO') return 'O pedido foi cancelado.';
+    if (o.contracts.length) return 'O contrato deste pedido já foi feito.';
+    return null;
+  }
+  // Ajustar a tabela: alguém já mudou o preço deste material.
+  if (pl.task === 'AJUSTAR_TABELA') {
+    const c = await db.quoteCatalogItem.findUnique({
+      where: { id: String(pl.catalogItemId ?? '') },
+    });
+    if (!c) return 'O material saiu da tabela.';
+    if (c.priceCents !== Number(pl.fromCents)) return 'O preço deste material já mudou na tabela.';
+    return null;
+  }
   if (p.kind === 'PLANEJAR_OS') {
     const id = String(pl.serviceOrderId ?? '');
     const so = await db.serviceOrder.findUnique({
@@ -141,13 +167,31 @@ export async function obsoleteReason(db: Db, p: AiAgentProposal): Promise<string
   return null;
 }
 
+/** Contrato: o que falta no cadastro muda quando o dono completa (a proposta mostra o atual). */
+async function refreshMissing(db: Db, p: AiAgentProposal) {
+  const pl = (p.payload ?? {}) as Record<string, unknown>;
+  if (pl.task !== 'ENVIAR_CONTRATO' || pl.contractId) return;
+  const missing = await contractMissing(db, String(pl.orderId ?? ''));
+  const before = Array.isArray(pl.missing) ? (pl.missing as string[]) : [];
+  if (missing === null || missing.join('|') === before.join('|')) return;
+  const { missing: _old, ...rest } = pl;
+  void _old;
+  await db.aiAgentProposal.updateMany({
+    where: { id: p.id, status: 'PENDENTE' },
+    data: { payload: (missing.length ? { ...rest, missing } : rest) as never },
+  });
+}
+
 /** Marca como OBSOLETA (com o motivo) as propostas pendentes que não valem mais. */
 export async function refreshPending(db: Db, agentId: string) {
   const pending = await db.aiAgentProposal.findMany({ where: { agentId, status: 'PENDENTE' } });
   let changed = 0;
   for (const p of pending) {
     const why = await obsoleteReason(db, p);
-    if (!why) continue;
+    if (!why) {
+      await refreshMissing(db, p);
+      continue;
+    }
     await db.aiAgentProposal.updateMany({
       where: { id: p.id, status: 'PENDENTE' },
       data: {

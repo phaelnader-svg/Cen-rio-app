@@ -266,7 +266,7 @@ export function ContractPage({ id }: { id: string }) {
         {c.signed ? ' • assinado' : ''}
       </p>
       <Card className="mt-5 p-4">
-        <p className="whitespace-pre-line text-sm leading-relaxed text-ink">{c.body}</p>
+        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink">{c.body}</p>
       </Card>
       <div className="mt-4 grid gap-2 sm:grid-cols-2">
         <a href={c.pdfUrl} className={buttonClass('secondary', 'md')}>

@@ -78,6 +78,15 @@ export async function contractProposals(
   return out;
 }
 
+/** O que falta no cadastro para o contrato deste pedido (null: pedido não encontrado). */
+export async function contractMissing(db: Db, orderId: string) {
+  const order = await loadOrder(db, orderId);
+  if (!order) return null;
+  const t = await db.contractTemplate.findFirst({ where: { key: 'PADRAO', current: true } });
+  return (await fillContract(db, order, t?.body ?? DEFAULT_TEMPLATE, { emailOptional: true }))
+    .missing;
+}
+
 /** Aprovar: prepara o contrato e põe o link do PDF na mensagem (que sai pelo WhatsApp a seguir). */
 export async function prepareApprovedContract(
   tx: Tx,
