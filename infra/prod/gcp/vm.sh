@@ -134,6 +134,12 @@ EOF
     printf "ANTHROPIC_API_KEY='%s'\nGAME_AI_PROVIDER='anthropic'\n" "$ia" >> "$ENV_FILE"
   fi
   unset ia
+  # Chave do e-mail (opcional, infra/email/guardar-chave-email.sh): sem ela os e-mails ficam na fila.
+  local em; em="$(s prod-resend-api-key 2>/dev/null || true)"
+  if [[ "$em" == re_* ]]; then
+    printf "RESEND_API_KEY='%s'\n" "$em" >> "$ENV_FILE"
+  fi
+  unset em
   log "Variáveis geradas em $ENV_FILE (memória, permissão 600)."
 }
 
@@ -313,10 +319,33 @@ atualizar_ia() {
   mv -f "$tmp" "$ENV_FILE"
 }
 
+# Chave do e-mail (infra/email/guardar-chave-email.sh): relê o segredo e troca só a linha
+# RESEND_API_KEY no .env, sem mostrar a chave. Falha ao ler: nada muda. Segredo inválido: tira a
+# linha e os e-mails voltam a ficar na fila.
+atualizar_email() {
+  local em tmp
+  if ! em="$(gcloud secrets versions access latest --secret=prod-resend-api-key --project="$PROJECT" 2>/dev/null)"; then
+    log "Chave do e-mail: não deu para ler o segredo; nada mudou."
+    return 0
+  fi
+  tmp="$(mktemp "$(dirname "$ENV_FILE")/.env.XXXXXX")"
+  chmod 600 "$tmp"
+  grep -v -E '^RESEND_API_KEY=' "$ENV_FILE" > "$tmp" || true
+  if [[ "$em" == re_* ]]; then
+    printf "RESEND_API_KEY='%s'\n" "$em" >> "$tmp"
+    log "Chave do e-mail: ligada."
+  else
+    log "Chave do e-mail: segredo inválido; e-mails ficam na fila."
+  fi
+  unset em
+  mv -f "$tmp" "$ENV_FILE"
+}
+
 aplicar_config() {
   need_portao
   need_env
   atualizar_ia
+  atualizar_email
   set -a
   # shellcheck source=/dev/null
   source "$ENV_FILE"
