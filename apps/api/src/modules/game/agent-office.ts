@@ -674,6 +674,7 @@ export async function approveWhatsApp(
       pl.sendError = e instanceof Error ? e.message.slice(0, 300) : 'Falha no envio';
     }
   }
+  if (!sent && !phone) pl.sendError = 'Sem WhatsApp cadastrado para este contato.';
   pl.sent = sent;
   await tx.agentAction.create({
     data: {
