@@ -4,6 +4,7 @@ import {
   OFFICE_LEVELS,
   OFFICE_LEVEL_HINT,
   OFFICE_LEVEL_LABEL,
+  type ExpenseCategoryDto,
   type OfficeAgentDto,
   type OfficeLevel,
   type OfficeOverviewDto,
@@ -13,17 +14,18 @@ import {
 } from '@cenario/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { CirclePause, CirclePlay, MessageCircle, RefreshCw, UserPlus } from 'lucide-react';
-import { useState } from 'react';
+import { Camera, CirclePause, CirclePlay, MessageCircle, RefreshCw, UserPlus } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { buttonClass } from '@/components/ui/button-styles';
 import { Dialog } from '@/components/ui/dialog';
-import { Field, Input, Textarea } from '@/components/ui/field';
+import { Checkbox, Field, Input, Select, Textarea } from '@/components/ui/field';
 import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { brDate, money, parseMoney } from '@/lib/finance';
 import { formatDateTime } from '@/lib/format';
+import { preparePhoto } from '@/lib/photos';
 
 const KEY = ['office'] as const;
 
@@ -137,6 +139,7 @@ export function OfficePage() {
             </Alert>
           )}
           <Today data={data} />
+          <ReceiptCard data={data} />
 
           <section aria-labelledby="esperando">
             <h2 id="esperando" className="mb-3 text-lg font-semibold text-ink">
@@ -228,7 +231,7 @@ function ProposalCard({ p }: { p: OfficeProposalDto }) {
   const { m, error } = useOfficeSend();
   const [edit, setEdit] = useState(false);
   const [sendLink, setSendLink] = useState<string | null>(null);
-  const decide = (decision: 'APROVAR' | 'REJEITAR', edits?: Record<string, string>) =>
+  const decide = (decision: 'APROVAR' | 'REJEITAR', edits?: Record<string, unknown>) =>
     m.mutate({
       ok: decision === 'APROVAR' ? 'Aprovado.' : 'Recusado.',
       run: async () => {
@@ -252,6 +255,7 @@ function ProposalCard({ p }: { p: OfficeProposalDto }) {
     });
   const pl = p.payload;
   const isDelivery = p.task === 'AGENDAR_ENTREGA';
+  const isExpense = p.task === 'LANCAR_DESPESA';
   if (sendLink)
     return (
       <Card className="p-4">
@@ -288,14 +292,17 @@ function ProposalCard({ p }: { p: OfficeProposalDto }) {
             : ''}
         </p>
       )}
+      {isExpense && <ExpenseSummary pl={pl} />}
       {typeof pl.autoError === 'string' && pl.autoError && (
         <p className="mt-1 text-sm text-warn-600">
           O agente tentou fazer sozinho e não conseguiu: {pl.autoError}
         </p>
       )}
-      <p className="mt-2 whitespace-pre-line rounded-lg bg-subtle px-3 py-2 text-sm text-ink-soft">
-        {p.detail}
-      </p>
+      {!isExpense && (
+        <p className="mt-2 whitespace-pre-line rounded-lg bg-subtle px-3 py-2 text-sm text-ink-soft">
+          {p.detail}
+        </p>
+      )}
       {error && (
         <Alert tone="danger" className="mt-3">
           {error}
@@ -334,8 +341,22 @@ function EditDialog({
   p: OfficeProposalDto;
   busy: boolean;
   onClose: () => void;
-  onApprove: (edits: Record<string, string>) => void;
+  onApprove: (edits: Record<string, unknown>) => void;
 }) {
+  if (p.task === 'LANCAR_DESPESA')
+    return <ExpenseDialog open={open} p={p} busy={busy} onClose={onClose} onApprove={onApprove} />;
+  return <MessageDialog open={open} p={p} busy={busy} onClose={onClose} onApprove={onApprove} />;
+}
+
+type DialogProps = {
+  open: boolean;
+  p: OfficeProposalDto;
+  busy: boolean;
+  onClose: () => void;
+  onApprove: (edits: Record<string, unknown>) => void;
+};
+
+function MessageDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
   const isDelivery = p.task === 'AGENDAR_ENTREGA';
   const [text, setText] = useState(String(p.payload.text ?? p.detail));
   const [date, setDate] = useState(String(p.payload.scheduledDate ?? ''));
@@ -400,6 +421,201 @@ function EditDialog({
         </Field>
       </div>
     </Dialog>
+  );
+}
+
+/** Despesa pela foto: o que o Financeiro leu do comprovante, com a foto ao lado. */
+function ExpenseSummary({ pl }: { pl: Record<string, unknown> }) {
+  const amount = Number(pl.totalCents ?? 0);
+  const rows: [string, string][] = [
+    ['Valor', amount > 0 ? money(amount) : 'Não deu para ler: toque em Mudar'],
+    ['Data', brDate(String(pl.date ?? ''))],
+    ['Quem recebeu', String(pl.beneficiary || 'Não deu para ler')],
+    ['Categoria', String(pl.categoryLabel ?? pl.category ?? '')],
+    ['Situação', pl.paid ? 'Já pago (dá baixa junto)' : 'A pagar (vai para Contas a pagar)'],
+  ];
+  return (
+    <div className="mt-2 flex gap-3 rounded-lg bg-subtle p-3">
+      {typeof pl.thumbUrl === 'string' && (
+        <a
+          href={String(pl.photoUrl)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0"
+          aria-label="Ver a foto do comprovante"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={pl.thumbUrl}
+            alt="Comprovante"
+            className="size-20 rounded-md border border-line object-cover"
+          />
+        </a>
+      )}
+      <dl className="grid min-w-0 flex-1 grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
+        {rows.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-ink-muted">{k}</dt>
+            <dd className="min-w-0 truncate text-ink">{v}</dd>
+          </div>
+        ))}
+        {typeof pl.description === 'string' && pl.description && (
+          <dd className="col-span-2 mt-1 text-ink-soft">{pl.description}</dd>
+        )}
+      </dl>
+    </div>
+  );
+}
+
+function ExpenseDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
+  const pl = p.payload;
+  const cats = useQuery({
+    queryKey: ['finance', 'expense-categories'],
+    queryFn: () => api<ExpenseCategoryDto[]>('/api/v1/finance/expense-categories'),
+    enabled: open,
+  });
+  const [amount, setAmount] = useState(
+    Number(pl.totalCents ?? 0) > 0
+      ? (Number(pl.totalCents) / 100).toFixed(2).replace('.', ',')
+      : '',
+  );
+  const [date, setDate] = useState(String(pl.date ?? ''));
+  const [who, setWho] = useState(String(pl.beneficiary ?? ''));
+  const [what, setWhat] = useState(String(pl.description ?? ''));
+  const [category, setCategory] = useState(String(pl.category ?? 'OUTRAS'));
+  const [paid, setPaid] = useState(pl.paid === true);
+  const cents = parseMoney(amount);
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Conferir a despesa"
+      description="Corrija o que o Financeiro leu errado e aprove."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Voltar
+          </Button>
+          <Button
+            loading={busy}
+            disabled={!cents || !date || who.trim().length < 2}
+            onClick={() =>
+              onApprove({
+                amountCents: cents,
+                date,
+                beneficiary: who.trim(),
+                ...(what.trim().length >= 2 ? { description: what.trim() } : {}),
+                category,
+                paid,
+              })
+            }
+          >
+            Lançar despesa
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Valor (R$)">
+            {(f) => (
+              <Input
+                {...f}
+                inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+              />
+            )}
+          </Field>
+          <Field label="Data">
+            {(f) => (
+              <Input {...f} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            )}
+          </Field>
+        </div>
+        <Field label="Quem recebeu">
+          {(f) => <Input {...f} value={who} onChange={(e) => setWho(e.target.value)} />}
+        </Field>
+        <Field label="O que foi">
+          {(f) => <Input {...f} value={what} onChange={(e) => setWhat(e.target.value)} />}
+        </Field>
+        <Field label="Categoria">
+          {(f) => (
+            <Select {...f} value={category} onChange={(e) => setCategory(e.target.value)}>
+              {(cats.data ?? [{ value: category, label: String(pl.categoryLabel ?? category) }])
+                .filter((c) => !('active' in c) || c.active || c.value === category)
+                .map((c) => (
+                  <option key={c.value} value={c.value}>
+                    {c.label}
+                  </option>
+                ))}
+            </Select>
+          )}
+        </Field>
+        <Checkbox
+          label="Já está pago"
+          description="Dá baixa na conta junto. Sem marcar, vai para Contas a pagar."
+          checked={paid}
+          onChange={(e) => setPaid(e.target.checked)}
+        />
+      </div>
+    </Dialog>
+  );
+}
+
+/** Despesa pela foto: tirar a foto do comprovante e o Financeiro lança. */
+function ReceiptCard({ data }: { data: OfficeOverviewDto }) {
+  const { m, error } = useOfficeSend();
+  const input = useRef<HTMLInputElement>(null);
+  const finance = data.agents.find((a) => a.roleKey === 'FINANCEIRO');
+  if (!finance?.agentId) return null;
+  return (
+    <Card className="p-4" data-testid="office-receipt">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-semibold text-ink">Lançar despesa pela foto</p>
+          <p className="text-sm text-ink-muted">
+            {data.aiReady
+              ? 'Tire a foto da nota, do cupom ou do comprovante do Pix. O Financeiro lê e prepara a despesa.'
+              : 'Fica disponível assim que a IA for ligada no sistema.'}
+          </p>
+        </div>
+        <Button
+          icon={<Camera className="size-4" aria-hidden />}
+          loading={m.isPending}
+          disabled={!data.aiReady}
+          onClick={() => input.current?.click()}
+        >
+          Tirar foto
+        </Button>
+        <input
+          ref={input}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = '';
+            if (!file) return;
+            m.mutate({
+              ok: 'O Financeiro leu o comprovante.',
+              run: async () => {
+                const fd = new FormData();
+                fd.append('file', await preparePhoto(file));
+                return api('/api/v1/office/receipt', { method: 'POST', body: fd });
+              },
+            });
+          }}
+        />
+      </div>
+      {m.isPending && <p className="mt-2 text-sm text-ink-muted">Lendo o comprovante…</p>}
+      {error && (
+        <Alert tone="danger" className="mt-3">
+          {error}
+        </Alert>
+      )}
+    </Card>
   );
 }
 
