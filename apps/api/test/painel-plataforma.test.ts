@@ -67,16 +67,15 @@ describe('Acesso do painel', () => {
     ).toBe(401);
     // Gestor de outra empresa: não cria.
     const { c } = await criarConta();
-    expect(
-      (
-        await c.post('/api/plataforma/primeiro-acesso', {
-          email: 'x@x.local',
-          displayName: 'X',
-          password: 'Senha12345',
-          passwordConfirm: 'Senha12345',
-        })
-      ).status,
-    ).toBe(403);
+    const outra = await c.post('/api/plataforma/primeiro-acesso', {
+      email: 'x@x.local',
+      displayName: 'X',
+      password: 'Senha12345',
+      passwordConfirm: 'Senha12345',
+    });
+    expect(outra.status).toBe(403);
+    // A mensagem diz em qual empresa o navegador está logado (o engano comum).
+    expect(JSON.stringify(outra.body)).toMatch(/Este navegador está logado na empresa/);
     const painel = await loginPlatform(app);
     expect(ok(await painel.get('/api/plataforma/eu')).email).toBe(PLATFORM_ADMIN.email);
     // Segunda vez: recusa.

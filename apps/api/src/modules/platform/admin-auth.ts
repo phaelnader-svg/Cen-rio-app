@@ -101,10 +101,20 @@ export async function platformAuthRoutes(app: FastifyInstance) {
     '/api/plataforma/primeiro-acesso',
     { config: { access: { session: 'WEB', permissions: ['empresa.configurar'] } } },
     async (request, reply) => {
-      if (request.auth?.companyId !== PLATFORM_COMPANY_ID || request.auth.app)
+      if (request.auth?.companyId !== PLATFORM_COMPANY_ID || request.auth.app) {
+        // Diz em qual empresa o navegador está logado: o erro comum é estar numa conta de teste.
+        const other = request.auth?.companyId
+          ? await system.companySettings.findUnique({
+              where: { id: request.auth.companyId },
+              select: { tradeName: true },
+            })
+          : null;
         throw Errors.forbidden(
-          'O primeiro acesso do painel é criado por quem administra a Cenário Estofados.',
+          other && !request.auth?.app
+            ? `Este navegador está logado na empresa "${other.tradeName}" (${request.auth!.email}). Saia do painel, entre com a conta da Cenário Estofados e volte aqui.`
+            : 'O primeiro acesso do painel é criado por quem administra a Cenário Estofados.',
         );
+      }
       const input = firstAccessSchema.parse(request.body);
       const passwordHash = await hashSecret(input.password);
       const admin = await system.$transaction(async (tx) => {
