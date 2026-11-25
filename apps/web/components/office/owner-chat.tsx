@@ -240,7 +240,7 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
             }}
             rows={1}
             maxLength={2000}
-            placeholder={listening ? 'Ouvindo…' : 'Escreva sua pergunta'}
+            placeholder={listening ? 'Ouvindo…' : 'Pergunte ou peça uma tarefa'}
             aria-label="Sua pergunta"
             className="max-h-32 min-h-12 flex-1 resize-none rounded-3xl border border-line-strong bg-surface px-4 py-3 text-[15px] leading-5 text-ink outline-none placeholder:text-ink-muted focus:border-brand-500"
           />
