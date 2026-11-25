@@ -19,6 +19,7 @@ import {
   CirclePause,
   CirclePlay,
   House,
+  MessageCircle,
   Settings,
   Wallet,
   Wrench,
@@ -32,6 +33,7 @@ import {
   useOffice,
   useOfficeSend,
 } from '@/components/office/office-page';
+import { OwnerChat } from '@/components/office/owner-chat';
 import { InstallBanner, PushCard } from '@/components/tablet/install';
 import { Button } from '@/components/ui/button';
 import { Alert, EmptyState, Spinner } from '@/components/ui/misc';
@@ -41,15 +43,16 @@ import { formatHourMinute, relativeTime } from '@/lib/format';
 import { useMe } from '@/lib/hooks';
 
 /**
- * App do dono (2026-11-25, pedido do Raphael): simples, sem a cara do sistema da web. Quatro telas
- * (Hoje, Aprovar, Oficina, Dinheiro) e "O que a IA pode fazer". Só lê das rotas que o painel já usa
+ * App do dono (2026-11-25, pedido do Raphael): simples, sem a cara do sistema da web. Cinco telas
+ * (Hoje, Aprovar, Conversar, Oficina, Dinheiro) e "O que a IA pode fazer". Só lê das rotas que o painel já usa
  * (Início, Hoje na oficina, Financeiro, Escritório, sininho): nada é calculado duas vezes.
  */
 
-type Tab = 'hoje' | 'aprovar' | 'oficina' | 'dinheiro' | 'ia';
+type Tab = 'hoje' | 'aprovar' | 'conversar' | 'oficina' | 'dinheiro' | 'ia';
 const TABS: { key: Exclude<Tab, 'ia'>; label: string; icon: typeof House }[] = [
   { key: 'hoje', label: 'Hoje', icon: House },
   { key: 'aprovar', label: 'Aprovar', icon: CircleCheckBig },
+  { key: 'conversar', label: 'Conversar', icon: MessageCircle },
   { key: 'oficina', label: 'Oficina', icon: Wrench },
   { key: 'dinheiro', label: 'Dinheiro', icon: Wallet },
 ];
@@ -57,7 +60,7 @@ const TABS: { key: Exclude<Tab, 'ia'>; label: string; icon: typeof House }[] = [
 function readTab(): Tab {
   if (typeof window === 'undefined') return 'hoje';
   const h = window.location.hash.replace('#', '');
-  return (['hoje', 'aprovar', 'oficina', 'dinheiro', 'ia'] as const).includes(h as Tab)
+  return (['hoje', 'aprovar', 'conversar', 'oficina', 'dinheiro', 'ia'] as const).includes(h as Tab)
     ? (h as Tab)
     : 'hoje';
 }
@@ -108,7 +111,9 @@ export function DonoApp() {
     );
 
   const tabs = TABS.filter(
-    (t) => (t.key !== 'aprovar' || officeOk) && (t.key !== 'dinheiro' || seesMoney),
+    (t) =>
+      (!['aprovar', 'conversar'].includes(t.key) || officeOk) &&
+      (t.key !== 'dinheiro' || seesMoney),
   );
   const pending = office.data?.pending.filter((p) => !p.suggestion).length ?? 0;
   const firstName = me.data!.user.displayName.split(' ')[0];
@@ -128,6 +133,7 @@ export function DonoApp() {
             />
           )}
           {tab === 'aprovar' && <Aprovar />}
+          {tab === 'conversar' && officeOk && <OwnerChat onApprove={() => setTab('aprovar')} />}
           {tab === 'oficina' && <Oficina />}
           {tab === 'dinheiro' && seesMoney && <Dinheiro />}
           {tab === 'ia' && <Ia onBack={() => setTab('hoje')} />}

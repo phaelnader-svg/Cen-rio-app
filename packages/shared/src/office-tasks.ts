@@ -53,6 +53,7 @@ export const OFFICE_TASK_KEYS = [
   'ANIVERSARIO',
   'INDICACAO',
   'AGRADECER_INDICACAO',
+  'MENSAGEM_PEDIDA',
 ] as const;
 export type OfficeTaskKey = (typeof OFFICE_TASK_KEYS)[number];
 
@@ -181,6 +182,16 @@ export const OFFICE_TASKS: OfficeTask[] = [
     message: true,
     money: false,
     maxLevel: 4,
+  },
+  {
+    key: 'MENSAGEM_PEDIDA',
+    roles: ['ATENDIMENTO', 'WHATSAPP', 'GERENTE'],
+    label: 'Mensagem que você pediu na conversa',
+    what: 'Você pede na aba Conversar ("manda uma mensagem para a Ana…"); ele escreve e deixa para você aprovar.',
+    message: true,
+    money: false,
+    maxLevel: 2,
+    maxReason: 'O que você pede na conversa sempre volta para você aprovar antes de sair.',
   },
   {
     key: 'CLIENTE_ANTIGO',
@@ -642,4 +653,41 @@ export function returningCustomerMessage(i: {
     `${hi} Aqui é da ${i.companyName}. Já faz um ano que fizemos ${what} para você. Como está?`,
     'Se precisar de uma limpeza, uma revisão ou de reformar outra peça, é só responder aqui que passamos o orçamento sem compromisso.',
   ].join('\n\n');
+}
+
+// ───────────────────────────── Conversar (app do dono) ─────────────────────────────
+
+/** Pergunta para a IA na aba Conversar: o histórico da conversa vai junto (até 20 falas). */
+export const ownerChatRequestSchema = z.object({
+  messages: z
+    .array(
+      z.object({
+        role: z.enum(['user', 'assistant']),
+        text: z.string().trim().min(1).max(4000),
+      }),
+    )
+    .min(1)
+    .max(20)
+    .refine((l) => l[l.length - 1]!.role === 'user', 'A última fala tem que ser sua.'),
+});
+export type OwnerChatRequest = z.infer<typeof ownerChatRequestSchema>;
+
+/** Os números e listas vêm do sistema (não da IA), em cartões; a IA só escreve o texto. */
+export type OwnerChatCard =
+  | {
+      kind: 'numeros';
+      title: string;
+      rows: { label: string; value: string; tone?: 'bom' | 'ruim' }[];
+    }
+  | {
+      kind: 'lista';
+      title: string;
+      items: { title: string; detail?: string; href?: string }[];
+      empty?: string;
+    }
+  | { kind: 'aprovar'; proposalId: string; title: string };
+
+export interface OwnerChatReplyDto {
+  reply: string;
+  cards: OwnerChatCard[];
 }

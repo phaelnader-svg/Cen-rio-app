@@ -20,9 +20,10 @@ import {
   whatsappLink,
   whatsappNumber,
   type QuoteCatalogItemDto,
+  type OfficeQuoteRequest,
   type QuoteDraft,
 } from '@cenario/shared';
-import type { Prisma, Tx } from '@cenario/db';
+import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
@@ -300,6 +301,136 @@ export async function saveApprovedQuote(
   };
 }
 
+/**
+ * Monta o orçamento pelo pedido e deixa o cartão no Aprovar (a tela do Escritório e a conversa
+ * com a IA usam a mesma função).
+ */
+export async function planQuoteProposal(
+  prisma: PrismaClient,
+  actor: ActorContext,
+  input: OfficeQuoteRequest,
+): Promise<{ proposalId: string; title: string; doneAlone: boolean }> {
+  const agent = await prisma.aiAgent.findFirst({
+    where: { status: 'ATIVO', roleKey: 'ORCAMENTOS' },
+    orderBy: { createdAt: 'asc' },
+  });
+  if (!agent)
+    throw Errors.conflict('Contrate o agente de Orçamentos no Escritório para montar pelo pedido.');
+  if (!aiAvailable() && planner === anthropicPlanner)
+    throw Errors.conflict('Montar orçamento pelo pedido precisa da IA ligada no servidor.');
+  const [catalog, settings, history, company] = await Promise.all([
+    catalogDtos(prisma),
+    settingsDto(prisma),
+    historyText(prisma),
+    companyName(prisma),
+  ]);
+  if (!catalog.some((c) => c.kind === 'MATERIAL' && c.priceCents !== null))
+    throw Errors.business(
+      'Cadastre os materiais com preço na Base de dados do orçamento antes de pedir ao agente.',
+    );
+  let plan: QuotePlan;
+  try {
+    plan = await planner({
+      request: input.request,
+      city: input.city,
+      photos: input.photos.map((d) => ({
+        mime: d.slice(5, d.indexOf(';')),
+        data: d.slice(d.indexOf(',') + 1),
+      })),
+      catalog,
+      history,
+    });
+  } catch {
+    throw Errors.business('A IA não conseguiu montar agora. Tente de novo em instantes.');
+  }
+  const draft = draftFromPlan(plan, input, catalog);
+  const totals = calcQuote(draft, catalog, settings.taxRateBps);
+  const blocker = quoteSaveBlocker(draft, totals);
+  const totalCents = Math.round((totals.total ?? 0) * 100);
+  const service = draft.service === QUOTE_OTHER_SERVICE ? draft.serviceOther : draft.service;
+  const fee = draft.feeId ? catalog.find((c) => c.id === draft.feeId) : null;
+  const text = quoteSendMessage({
+    customerName: input.customerName,
+    service,
+    totalCents,
+    installments:
+      totals.installments > 1 && totals.installmentTotal
+        ? {
+            count: totals.installments,
+            totalCents: Math.round(totals.installmentTotal * 100),
+          }
+        : null,
+    companyName: company,
+  });
+  const brl = (c: number) =>
+    (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const phone = input.phone ? whatsappNumber(input.phone) : null;
+  const today = todayIso(await shopTimezone(prisma));
+  const row = await prisma.$transaction(async (tx) => {
+    const p = await tx.aiAgentProposal.create({
+      data: {
+        agentId: agent.id,
+        kind: 'MONTAR_ORCAMENTO',
+        title:
+          `Orçamento para ${input.customerName}: ${service} · ${totalCents ? brl(totalCents) : 'faltam preços'}`.slice(
+            0,
+            200,
+          ),
+        detail: text,
+        payload: {
+          task: 'MONTAR_ORCAMENTO',
+          draft,
+          request: input.request,
+          customerName: input.customerName,
+          phone,
+          text,
+          channel: 'WHATSAPP',
+          totalCents,
+          costCents: Math.round(totals.cost * 100),
+          profitCents: Math.round(totals.profit * 100),
+          materialsCents: Math.round(totals.materials * 100),
+          laborCents: Math.round(totals.labor * 100),
+          logisticsCents: Math.round(totals.logistics * 100),
+          installments: totals.installments,
+          installmentTotalCents: totals.installmentTotal
+            ? Math.round(totals.installmentTotal * 100)
+            : null,
+          feeName: fee?.name ?? null,
+          summary: plan.summary.slice(0, 1000),
+          questions: plan.questions,
+          blocker,
+          lines: draft.items.map((i) => {
+            const m = catalog.find((c) => c.id === i.catalogItemId)!;
+            return m.category === 'Espumas'
+              ? `${m.name}: ${i.qty} ${i.qty === 1 ? 'peça' : 'peças'} ${i.heightCm}×${i.widthCm}×${i.lengthCm} cm`
+              : `${m.name}: ${i.qty} ${m.unit ?? ''}`.trim();
+          }),
+          photoCount: input.photos.length,
+        } as Prisma.InputJsonValue,
+        evidence: [] as Prisma.InputJsonValue,
+      },
+    });
+    await audit(tx, actor, {
+      action: 'game.quote_planned',
+      entityType: 'ai_agent_proposal',
+      entityId: p.id,
+      summary: `Orçamento montado pelo agente para ${input.customerName} (${service}).`,
+    });
+    await appendEvent(tx, actor, {
+      type: EVENT_TYPES.GAME_PROPOSAL_CHANGED,
+      aggregateType: 'ai_agent',
+      aggregateId: agent.id,
+      payload: { id: agent.id },
+      audience: 'permission:agentes.usar|permission:agentes.gerenciar',
+    });
+    return p;
+  });
+  let doneAlone = false;
+  if (!blocker && (await routeOfNow(prisma, agent.id, row)) === 'SOZINHO')
+    doneAlone = await doAlone(prisma, row, agent, today);
+  return { proposalId: row.id, title: row.title, doneAlone };
+}
+
 export async function quoteAgentRoutes(app: FastifyInstance) {
   const { prisma, env, hashToken } = app.ctx;
   proposalLink = (id) => publicLink(env, hashToken, 'proposta', id);
@@ -319,130 +450,15 @@ export async function quoteAgentRoutes(app: FastifyInstance) {
     async (request, reply) => {
       await officeGuard(prisma);
       const input = officeQuoteRequestSchema.parse(request.body);
-      const agent = await prisma.aiAgent.findFirst({
-        where: { status: 'ATIVO', roleKey: 'ORCAMENTOS' },
-        orderBy: { createdAt: 'asc' },
-      });
-      if (!agent)
-        throw Errors.conflict(
-          'Contrate o agente de Orçamentos no Escritório para montar pelo pedido.',
-        );
-      if (!aiAvailable() && planner === anthropicPlanner)
-        throw Errors.conflict('Montar orçamento pelo pedido precisa da IA ligada no servidor.');
-      const [catalog, settings, history, company] = await Promise.all([
-        catalogDtos(prisma),
-        settingsDto(prisma),
-        historyText(prisma),
-        companyName(prisma),
-      ]);
-      if (!catalog.some((c) => c.kind === 'MATERIAL' && c.priceCents !== null))
-        throw Errors.business(
-          'Cadastre os materiais com preço na Base de dados do orçamento antes de pedir ao agente.',
-        );
-      let plan: QuotePlan;
-      try {
-        plan = await planner({
-          request: input.request,
-          city: input.city,
-          photos: input.photos.map((d) => ({
-            mime: d.slice(5, d.indexOf(';')),
-            data: d.slice(d.indexOf(',') + 1),
-          })),
-          catalog,
-          history,
-        });
-      } catch {
-        throw Errors.business('A IA não conseguiu montar agora. Tente de novo em instantes.');
-      }
-      const draft = draftFromPlan(plan, input, catalog);
-      const totals = calcQuote(draft, catalog, settings.taxRateBps);
-      const blocker = quoteSaveBlocker(draft, totals);
-      const totalCents = Math.round((totals.total ?? 0) * 100);
-      const service = draft.service === QUOTE_OTHER_SERVICE ? draft.serviceOther : draft.service;
-      const fee = draft.feeId ? catalog.find((c) => c.id === draft.feeId) : null;
-      const text = quoteSendMessage({
-        customerName: input.customerName,
-        service,
-        totalCents,
-        installments:
-          totals.installments > 1 && totals.installmentTotal
-            ? {
-                count: totals.installments,
-                totalCents: Math.round(totals.installmentTotal * 100),
-              }
-            : null,
-        companyName: company,
-      });
-      const brl = (c: number) =>
-        (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-      const phone = input.phone ? whatsappNumber(input.phone) : null;
       const actor = actorFrom(request);
-      const today = todayIso(await shopTimezone(prisma));
-      const row = await prisma.$transaction(async (tx) => {
-        const p = await tx.aiAgentProposal.create({
-          data: {
-            agentId: agent.id,
-            kind: 'MONTAR_ORCAMENTO',
-            title:
-              `Orçamento para ${input.customerName}: ${service} · ${totalCents ? brl(totalCents) : 'faltam preços'}`.slice(
-                0,
-                200,
-              ),
-            detail: text,
-            payload: {
-              task: 'MONTAR_ORCAMENTO',
-              draft,
-              request: input.request,
-              customerName: input.customerName,
-              phone,
-              text,
-              channel: 'WHATSAPP',
-              totalCents,
-              costCents: Math.round(totals.cost * 100),
-              profitCents: Math.round(totals.profit * 100),
-              materialsCents: Math.round(totals.materials * 100),
-              laborCents: Math.round(totals.labor * 100),
-              logisticsCents: Math.round(totals.logistics * 100),
-              installments: totals.installments,
-              installmentTotalCents: totals.installmentTotal
-                ? Math.round(totals.installmentTotal * 100)
-                : null,
-              feeName: fee?.name ?? null,
-              summary: plan.summary.slice(0, 1000),
-              questions: plan.questions,
-              blocker,
-              lines: draft.items.map((i) => {
-                const m = catalog.find((c) => c.id === i.catalogItemId)!;
-                return m.category === 'Espumas'
-                  ? `${m.name}: ${i.qty} ${i.qty === 1 ? 'peça' : 'peças'} ${i.heightCm}×${i.widthCm}×${i.lengthCm} cm`
-                  : `${m.name}: ${i.qty} ${m.unit ?? ''}`.trim();
-              }),
-              photoCount: input.photos.length,
-            } as Prisma.InputJsonValue,
-            evidence: [] as Prisma.InputJsonValue,
-          },
-        });
-        await audit(tx, actor, {
-          action: 'game.quote_planned',
-          entityType: 'ai_agent_proposal',
-          entityId: p.id,
-          summary: `Orçamento montado pelo agente para ${input.customerName} (${service}).`,
-        });
-        await appendEvent(tx, actor, {
-          type: EVENT_TYPES.GAME_PROPOSAL_CHANGED,
-          aggregateType: 'ai_agent',
-          aggregateId: agent.id,
-          payload: { id: agent.id },
-          audience: 'permission:agentes.usar|permission:agentes.gerenciar',
-        });
-        return p;
-      });
-      let doneAlone = false;
-      if (!blocker && (await routeOfNow(prisma, agent.id, row)) === 'SOZINHO')
-        doneAlone = await doAlone(prisma, row, agent, today);
+      const r = await planQuoteProposal(prisma, actor, input);
       return reply
         .status(201)
-        .send({ proposalId: row.id, doneAlone, overview: await officeOverview(prisma) });
+        .send({
+          proposalId: r.proposalId,
+          doneAlone: r.doneAlone,
+          overview: await officeOverview(prisma),
+        });
     },
   );
 }
