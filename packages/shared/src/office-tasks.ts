@@ -149,12 +149,11 @@ export const OFFICE_TASKS: OfficeTask[] = [
   {
     key: 'PLANEJAR_OS',
     roles: ['GERENTE'],
-    label: 'Planejar OS na semana',
-    what: 'Avisa a OS sem planejamento e quem é o tapeceiro de cada peça.',
+    label: 'Encaixar OS na semana',
+    what: 'OS com material comprado e sem planejamento: escolhe o início e o tapeceiro de cada peça e coloca na semana (em rascunho).',
     message: false,
     money: false,
-    maxLevel: 2,
-    maxReason: 'Encaixar a OS na semana sozinho vem na próxima etapa.',
+    maxLevel: 4,
   },
   {
     key: 'MONTAR_ORCAMENTO',

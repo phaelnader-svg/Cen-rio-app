@@ -310,6 +310,9 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
       )}
       {isExpense && <ExpenseSummary pl={pl} />}
       {isQuote && <QuoteSummary pl={pl} />}
+      {typeof pl.planProblem === 'string' && (
+        <p className="mt-1 text-sm text-warn-600">{pl.planProblem}</p>
+      )}
       {typeof pl.autoError === 'string' && pl.autoError && (
         <p className="mt-1 text-sm text-warn-600">
           O agente tentou fazer sozinho e não conseguiu: {pl.autoError}
@@ -363,6 +366,8 @@ function EditDialog({
 }) {
   if (p.task === 'LANCAR_DESPESA')
     return <ExpenseDialog open={open} p={p} busy={busy} onClose={onClose} onApprove={onApprove} />;
+  if (p.task === 'PLANEJAR_OS' && p.payload.entry)
+    return <PlanDialog open={open} p={p} busy={busy} onClose={onClose} onApprove={onApprove} />;
   return <MessageDialog open={open} p={p} busy={busy} onClose={onClose} onApprove={onApprove} />;
 }
 
@@ -373,6 +378,36 @@ type DialogProps = {
   onClose: () => void;
   onApprove: (edits: Record<string, unknown>) => void;
 };
+
+/** Semana da produção: o dono só muda o dia de começar; os tapeceiros ficam como o Gerente propôs. */
+function PlanDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
+  const [date, setDate] = useState(String(p.payload.startDate ?? ''));
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Mudar antes de aprovar"
+      description={p.title}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Voltar
+          </Button>
+          <Button loading={busy} onClick={() => onApprove({ scheduledDate: date })}>
+            Aprovar com a mudança
+          </Button>
+        </>
+      }
+    >
+      <Field
+        label="Começa em"
+        hint="Quem fica com cada peça dá para trocar depois na Semana da oficina."
+      >
+        {(f) => <Input {...f} type="date" value={date} onChange={(e) => setDate(e.target.value)} />}
+      </Field>
+    </Dialog>
+  );
+}
 
 function MessageDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
   const isDelivery = p.task === 'AGENDAR_ENTREGA';

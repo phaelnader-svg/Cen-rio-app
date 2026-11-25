@@ -47,6 +47,8 @@ import { obsoleteReason, refreshPending } from './proposal-validity';
 import { scheduleApprovedDelivery } from './office-delivery';
 import { type ExpenseEdits, launchApprovedExpense } from './office-expense';
 import { saveApprovedQuote } from './office-quote';
+import { planApprovedService } from './office-plan';
+import { shopTimezone, todayIso } from '../finance/common';
 import { goalsAnswer, isGoalsQuestion } from '../office/cash-chat';
 import { AGENT_MANAGE, AGENT_USE, GAME_ACCESS, ensureDefaultSpaces } from './common';
 
@@ -632,6 +634,22 @@ export async function decideProposal(prisma: PrismaClient, o: DecideOptions) {
         link: q.link,
         text: q.text,
         ...(q.href ? { href: q.href } : {}),
+      };
+    }
+    // Semana da produção (Gerente): planeja a OS na semana, em rascunho.
+    if (
+      o.decision !== 'REJEITAR' &&
+      officeTaskOf(p) === 'PLANEJAR_OS' &&
+      (p.payload as Record<string, unknown> | null)?.entry
+    ) {
+      const today = todayIso(await shopTimezone(tx));
+      const r = await planApprovedService(tx, actor, perms, p, o.edits, today);
+      payload = {
+        ...((p.payload ?? {}) as Record<string, unknown>),
+        planId: r.planId,
+        startDate: r.startDate,
+        weekStart: r.weekStart,
+        tasksCreated: r.tasksCreated,
       };
     }
     // Despesa pela foto (Financeiro): lança a despesa com o que o dono conferiu.
