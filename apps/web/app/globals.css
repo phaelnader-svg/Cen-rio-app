@@ -125,6 +125,16 @@
   }
 }
 
+/* Celular e tablet: campo com letra menor que 16px faz o iPhone dar zoom sozinho ao tocar (e o
+   zoom ficava preso). Em tela de toque todo campo usa 16px; no computador continua igual. */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;

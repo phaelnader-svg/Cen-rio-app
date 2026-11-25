@@ -9,12 +9,14 @@ import Anthropic from '@anthropic-ai/sdk';
 import {
   DELIVERY_STATUS_LABEL,
   EVENT_TYPES,
+  PICKUP_STATUS_LABEL,
   FULFILLMENT_STAGE_LABEL,
   normalizeSearch,
   ownerChatRequestSchema,
   whatsappNumber,
   type DeliveryStatus,
   type FulfillmentStage,
+  type PickupStatus,
   type OwnerChatCard,
   type OwnerChatReplyDto,
   type OwnerChatRequest,
@@ -25,7 +27,7 @@ import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
-import { orderCode, serviceOrderCode } from '../commercial/common';
+import { asSnapshot, orderCode, serviceOrderCode } from '../commercial/common';
 import { shopTimezone, todayIso } from '../finance/common';
 import { dashboard } from '../finance/results';
 import { aiAvailable, companyName, purchaseNeeds } from './agent-office';
@@ -65,6 +67,31 @@ const brl = (c: number) =>
   (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const br = (iso: string) => iso.split('-').reverse().join('/');
 const d10 = (d: Date) => d.toISOString().slice(0, 10);
+const addDays = (iso: string, n: number) =>
+  d10(new Date(new Date(`${iso}T00:00:00Z`).getTime() + n * 86_400_000));
+const WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+const weekday = (iso: string) => WEEKDAYS[new Date(`${iso}T00:00:00Z`).getUTCDay()]!;
+const day = (iso: string) => `${weekday(iso)} ${br(iso).slice(0, 5)}`;
+const isIso = (v: string | undefined): v is string => /^\d{4}-\d{2}-\d{2}$/.test(v ?? '');
+/** Período pedido pela IA (de/até); sem data, hoje; "até" antes do "de" vira o mesmo dia. Até 62 dias. */
+function period(c: { today: string }, input: Record<string, string>) {
+  const from = isIso(input.de) ? input.de : c.today;
+  let to = isIso(input.ate) ? input.ate : from;
+  if (to < from) to = from;
+  if (to > addDays(from, 62)) to = addDays(from, 62);
+  return {
+    from,
+    to,
+    title: (what: string) =>
+      from === to
+        ? `${what} de ${day(from)}`
+        : `${what} de ${br(from).slice(0, 5)} a ${br(to).slice(0, 5)}`,
+  };
+}
+const dayRange = (from: string, to: string) => ({
+  gte: new Date(`${from}T00:00:00Z`),
+  lte: new Date(`${to}T00:00:00Z`),
+});
 const isoDate = { type: 'string', description: 'Data no formato AAAA-MM-DD.' } as const;
 const tool = (
   name: string,
@@ -92,10 +119,30 @@ const TOOLS: Tools = [
     'caixa_proximas_semanas',
     'O que vai entrar e sair do caixa nas próximas 4 semanas (parcelas de clientes, contas a pagar, maquininha).',
   ),
+  tool(
+    'agenda',
+    'Tudo o que está marcado num dia ou período: retiradas, entregas, serviços com prazo de entrega para o cliente e contas a pagar que vencem. Use para "o que tem amanhã?", "como está a semana?", "tem alguma coisa sábado?".',
+    { de: isoDate, ate: isoDate },
+  ),
+  tool(
+    'retiradas',
+    'Retiradas (buscar peças na casa do cliente) marcadas entre duas datas, com cliente, horário, bairro e o que levar (maquininha, mostruário). Também diz quantas ainda esperam data marcada.',
+    { de: isoDate, ate: isoDate },
+  ),
   tool('entregas', 'Entregas marcadas entre duas datas, com cliente, horário e situação.', {
     de: isoDate,
     ate: isoDate,
   }),
+  tool(
+    'prazos',
+    'Serviços com prazo de entrega prometido ao cliente entre duas datas e que ainda não foram entregues, com a etapa em que estão.',
+    { de: isoDate, ate: isoDate },
+  ),
+  tool(
+    'contas_a_pagar',
+    'Contas a pagar (fornecedores, aluguel, impostos e outras) que vencem entre duas datas e ainda não foram pagas.',
+    { de: isoDate, ate: isoDate },
+  ),
   tool(
     'atrasados',
     'Serviços com o prazo prometido vencido e ainda não entregues, e clientes com pagamento vencido.',
@@ -131,7 +178,9 @@ const TOOLS: Tools = [
 function systemPrompt(company: string, today: string) {
   return [
     `Você é a assistente da ${company}, uma tapeçaria. Quem fala com você é o dono, pelo celular.`,
-    `Hoje é ${br(today)}.`,
+    `Hoje é ${weekday(today)}, ${br(today)}. Amanhã é ${weekday(addDays(today, 1))}, ${br(addDays(today, 1))}.`,
+    'Quando o dono falar de um dia ("hoje", "amanhã", "sábado", "semana que vem"), calcule as datas a partir de hoje e chame a ferramenta com essas datas. Para "o que tem" num dia, use agenda; para uma coisa só (retirada, entrega, prazo, conta), use a ferramenta dela.',
+    'Responda o que foi perguntado com os nomes e horários que a ferramenta trouxe. Se não tiver nada no dia, diga isso claramente (por exemplo: "Amanhã não tem retirada marcada").',
     'Responda em português simples, como se fala numa oficina: frases curtas, sem jargão, sem inglês, sem "(s)" para plural.',
     'Para qualquer número, prazo, cliente ou lista, use as ferramentas. Nunca invente nem estime um valor que a ferramenta não trouxe.',
     'Os números e as listas que as ferramentas trazem já aparecem na tela em cartões, logo abaixo da sua resposta. Não repita tudo: diga em uma ou duas frases o que importa (o total, o que chama atenção, o que fazer).',
@@ -230,9 +279,167 @@ async function runTool(c: Ctx, name: string, input: Record<string, string>): Pro
       });
       return JSON.stringify(f);
     }
+    case 'agenda': {
+      const p = period(c, input);
+      const one = { de: p.from, ate: p.to };
+      const parts: Record<string, unknown> = { periodo: one };
+      const sub: [string, string, string][] = [
+        ['retiradas', 'retiradas.ver', 'retiradas'],
+        ['entregas', '', 'entregas'],
+        ['prazos', '', 'prazos'],
+        ['contas_a_pagar', 'financeiro.ver', 'contas_a_pagar'],
+      ];
+      const before = c.cards.length;
+      for (const [toolName, perm, key] of sub) {
+        if (perm && !c.perms.has(perm)) continue;
+        parts[key] = JSON.parse(await runTool(c, toolName, one));
+      }
+      // Na tela, só os cartões com alguma coisa; dia sem nada vira um cartão só.
+      const added = c.cards.splice(before);
+      const filled = added.filter((k) => k.kind !== 'lista' || k.items.length > 0);
+      c.cards.push(
+        ...(filled.length
+          ? filled
+          : [
+              {
+                kind: 'lista' as const,
+                title: p.title('Agenda'),
+                items: [],
+                empty: 'Nada marcado.',
+              },
+            ]),
+      );
+      return JSON.stringify(parts);
+    }
+    case 'retiradas': {
+      need(c, 'retiradas.ver', 'as retiradas');
+      const p = period(c, input);
+      const rows = await prisma.pickupRequest.findMany({
+        where: { status: { not: 'CANCELADA' }, scheduledDate: dayRange(p.from, p.to) },
+        orderBy: [{ scheduledDate: 'asc' }, { routeSequence: 'asc' }, { windowStart: 'asc' }],
+        select: {
+          scheduledDate: true,
+          windowStart: true,
+          windowEnd: true,
+          status: true,
+          bringCardMachine: true,
+          bringSamples: true,
+          addressSnapshot: true,
+          order: { select: { number: true, customer: { select: { name: true } } } },
+        },
+        take: 40,
+      });
+      const waiting = await prisma.pickupRequest.count({
+        where: { status: 'AGUARDANDO_AGENDAMENTO' },
+      });
+      const items = rows.map((r) => {
+        const a = asSnapshot(r.addressSnapshot);
+        const when =
+          `${p.from === p.to ? '' : `${day(d10(r.scheduledDate!))} `}${r.windowStart ? `${r.windowStart}${r.windowEnd ? ` às ${r.windowEnd}` : ''}` : 'sem horário'}`.trim();
+        const take = [
+          r.bringCardMachine && 'levar maquininha',
+          r.bringSamples && 'levar mostruário',
+        ]
+          .filter(Boolean)
+          .join(', ');
+        return {
+          title: `${r.order.customer.name} · ${orderCode(r.order.number)}`,
+          detail: [
+            when,
+            a ? [a.district, a.city].filter(Boolean).join(', ') : '',
+            PICKUP_STATUS_LABEL[r.status as PickupStatus] ?? r.status,
+            take,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        };
+      });
+      c.cards.push({
+        kind: 'lista',
+        title: p.title('Retiradas'),
+        items,
+        empty: 'Nenhuma retirada marcada.',
+      });
+      return JSON.stringify({
+        retiradas: items,
+        total: items.length,
+        esperando_data_marcada: waiting,
+      });
+    }
+    case 'prazos': {
+      const p = period(c, input);
+      const orders = await prisma.commercialOrder.findMany({
+        where: { status: { not: 'CANCELADO' }, promisedDate: dayRange(p.from, p.to) },
+        orderBy: { promisedDate: 'asc' },
+        select: {
+          id: true,
+          number: true,
+          promisedDate: true,
+          contractedService: true,
+          customer: { select: { name: true } },
+          serviceOrders: { select: { items: { select: { fulfillmentStage: true } } } },
+        },
+        take: 60,
+      });
+      const label = (s: string) => FULFILLMENT_STAGE_LABEL[s as FulfillmentStage] ?? s;
+      const open = orders
+        .map((o) => ({ o, items: o.serviceOrders.flatMap((s) => s.items) }))
+        .filter(
+          ({ items }) => !items.length || items.some((i) => !GONE.includes(i.fulfillmentStage)),
+        );
+      const items = open.slice(0, 30).map(({ o, items: its }) => {
+        const stages = [
+          ...new Set(
+            its
+              .filter((i) => !GONE.includes(i.fulfillmentStage))
+              .map((i) => label(i.fulfillmentStage)),
+          ),
+        ];
+        return {
+          title: `${orderCode(o.number)} · ${o.customer.name}`,
+          detail: `${o.contractedService} · prazo ${day(d10(o.promisedDate!))} · ${stages.length ? stages.join(', ') : 'OS ainda não gerada'}`,
+          href: `/painel/pedidos/${o.id}`,
+        };
+      });
+      c.cards.push({
+        kind: 'lista',
+        title: p.title('Prazos'),
+        items,
+        empty: 'Nenhum serviço com prazo nesse dia.',
+      });
+      return JSON.stringify(items);
+    }
+    case 'contas_a_pagar': {
+      need(c, 'financeiro.ver', 'o financeiro');
+      const p = period(c, input);
+      const rows = await prisma.accountPayable.findMany({
+        where: { status: { in: ['ABERTO', 'PARCIAL'] }, dueDate: dayRange(p.from, p.to) },
+        orderBy: { dueDate: 'asc' },
+        select: {
+          beneficiary: true,
+          description: true,
+          amountCents: true,
+          paidCents: true,
+          dueDate: true,
+        },
+        take: 40,
+      });
+      const total = rows.reduce((t, r) => t + r.amountCents - r.paidCents, 0);
+      const items = rows.map((r) => ({
+        title: `${r.beneficiary} · ${brl(r.amountCents - r.paidCents)}`,
+        detail: `${r.description} · vence ${day(d10(r.dueDate))}`,
+      }));
+      c.cards.push({
+        kind: 'lista',
+        title: `${p.title('Contas a pagar')}${rows.length ? ` · ${brl(total)}` : ''}`,
+        items,
+        empty: 'Nenhuma conta vencendo.',
+      });
+      return JSON.stringify({ contas: items, total: brl(total) });
+    }
     case 'entregas': {
-      const from = /^\d{4}-\d{2}-\d{2}$/.test(input.de ?? '') ? input.de! : c.today;
-      const to = /^\d{4}-\d{2}-\d{2}$/.test(input.ate ?? '') ? input.ate! : from;
+      const p = period(c, input);
+      const { from, to } = p;
       const rows = await prisma.delivery.findMany({
         where: {
           status: { not: 'CANCELADA' },
@@ -249,11 +456,11 @@ async function runTool(c: Ctx, name: string, input: Record<string, string>): Pro
       });
       const items = rows.map((r) => ({
         title: r.customer.name,
-        detail: `${br(d10(r.scheduledDate))}${r.windowStart ? ` a partir das ${r.windowStart}` : ''} · ${DELIVERY_STATUS_LABEL[r.status as DeliveryStatus] ?? r.status}`,
+        detail: `${day(d10(r.scheduledDate))}${r.windowStart ? ` a partir das ${r.windowStart}` : ''} · ${DELIVERY_STATUS_LABEL[r.status as DeliveryStatus] ?? r.status}`,
       }));
       c.cards.push({
         kind: 'lista',
-        title: from === to ? `Entregas de ${br(from)}` : `Entregas de ${br(from)} a ${br(to)}`,
+        title: p.title('Entregas'),
         items,
         empty: 'Nenhuma entrega marcada.',
       });

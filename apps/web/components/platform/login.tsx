@@ -39,9 +39,9 @@ function Frame({
   return (
     <main className="grid min-h-dvh place-items-center bg-canvas px-5 py-12">
       <div className="w-full max-w-sm">
-        <BrandMark subtitle="Painel da plataforma" className="mb-10" />
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        <p className="mt-1 text-[15px] text-ink-muted">{text}</p>
+        <BrandMark subtitle="Painel da plataforma" className="mx-auto mb-10 w-fit" />
+        <h1 className="text-center text-2xl font-semibold tracking-tight">{title}</h1>
+        <p className="mt-1 text-center text-[15px] text-ink-muted">{text}</p>
         {children}
       </div>
     </main>
