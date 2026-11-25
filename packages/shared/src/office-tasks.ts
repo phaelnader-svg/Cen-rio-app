@@ -342,6 +342,29 @@ export interface OfficeWeekDto {
   receivableOverdueCents: number;
   nextWeek: { billsCount: number; billsCents: number; deliveries: number };
   reworks: number;
+  /** O mês até hoje: fechado, o mesmo período do ano passado e o mês inteiro do ano passado (a meta). */
+  month: {
+    contractedCents: number;
+    lastYearSoFarCents: number | null;
+    lastYearMonthCents: number | null;
+  };
+}
+
+/** Previsão do caixa (Financeiro): o que entra e sai em cada uma das próximas semanas. */
+export interface OfficeForecastDto {
+  today: string;
+  /** A receber vencido (cliente atrasado) e a pagar vencido, fora das semanas. */
+  overdueInCents: number;
+  overdueOutCents: number;
+  weeks: {
+    from: string;
+    to: string;
+    inCents: number;
+    outCents: number;
+    /** Maiores valores da semana (até 4 de cada lado). */
+    ins: { label: string; amountCents: number; date: string }[];
+    outs: { label: string; amountCents: number; date: string }[];
+  }[];
 }
 
 /** Agentes do Escritório, na ordem do plano (Gerente primeiro). */
@@ -357,7 +380,12 @@ export const OFFICE_ROLES = [
 /** O que cada agente já acompanhava (avisos do sininho que já existem no sistema). */
 export const OFFICE_ALSO_DOES: Record<string, string[]> = {
   GERENTE: ['Avisa a entrega com prazo perto (1 semana antes).'],
-  FINANCEIRO: ['Avisa a conta a pagar 1 dia antes e a conta vencida.'],
+  FINANCEIRO: [
+    'Avisa a conta a pagar 1 dia antes e a conta vencida.',
+    'Mostra o que entra e sai do caixa nas próximas 4 semanas.',
+    'Lembra o DAS do mês (vence dia 20) se ainda não estiver lançado.',
+    'No começo do mês, avisa que o pacote do contador está pronto.',
+  ],
   COMPRAS: [
     'Mostra a lista Comprar com o que falta nas OS.',
     'Avisa quando o estoque não dá para as OS abertas (material acabando).',

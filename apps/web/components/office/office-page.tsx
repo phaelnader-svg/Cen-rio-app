@@ -11,6 +11,7 @@ import {
   type OfficeOverviewDto,
   type OfficeProposalDto,
   type OfficeTaskDto,
+  type OfficeForecastDto,
   type OfficeWeekDto,
   plural,
 } from '@cenario/shared';
@@ -212,6 +213,7 @@ export function OfficePage() {
           </section>
 
           {data.agents.some((a) => a.roleKey === 'GERENTE' && a.agentId) && <WeekReport />}
+          {data.agents.some((a) => a.roleKey === 'FINANCEIRO' && a.agentId) && <CashForecast />}
           <Recent items={data.recent} />
           <ReviewLink current={data.googleReviewUrl} />
         </div>
@@ -850,6 +852,88 @@ function QuoteRequestCard({ data }: { data: OfficeOverviewDto }) {
 }
 
 /** Relatório da semana (Gerente): os últimos 7 dias; chega no sininho no domingo à tarde. */
+/** Financeiro: o que entra e sai nas próximas 4 semanas, com os maiores valores de cada uma. */
+function CashForecast() {
+  const q = useQuery({
+    queryKey: [...KEY, 'forecast'],
+    queryFn: () => api<OfficeForecastDto>('/api/v1/office/forecast-weeks'),
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const f = q.data;
+  if (!f) return null;
+  // Saldo somando as semanas (sem contar o vencido).
+  const running = f.weeks.map((_, k) =>
+    f.weeks.slice(0, k + 1).reduce((a, w) => a + w.inCents - w.outCents, 0),
+  );
+  return (
+    <section aria-labelledby="caixa-titulo" id="caixa" className="scroll-mt-20">
+      <h2 id="caixa-titulo" className="mb-1 text-lg font-semibold text-ink">
+        Caixa das próximas semanas
+      </h2>
+      <p className="mb-3 text-sm text-ink-muted">
+        O que está para receber dos clientes e da maquininha, e as contas a pagar já lançadas.
+      </p>
+      <Card className="divide-y divide-line p-0" data-testid="office-forecast">
+        {(f.overdueInCents > 0 || f.overdueOutCents > 0) && (
+          <div className="px-4 py-3 text-sm">
+            {f.overdueInCents > 0 && (
+              <p className="text-danger-600">
+                Clientes em atraso: {money(f.overdueInCents)} para receber.
+              </p>
+            )}
+            {f.overdueOutCents > 0 && (
+              <p className="text-danger-600">Contas vencidas: {money(f.overdueOutCents)}.</p>
+            )}
+          </div>
+        )}
+        {f.weeks.map((w, k) => {
+          const net = w.inCents - w.outCents;
+          const sum = running[k]!;
+          return (
+            <div key={w.from} className="px-4 py-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <p className="font-medium text-ink">
+                  {k === 0
+                    ? 'Esta semana'
+                    : `${brDate(w.from).slice(0, 5)} a ${brDate(w.to).slice(0, 5)}`}
+                </p>
+                <p
+                  className={clsx(
+                    'tabular-nums font-semibold',
+                    net < 0 ? 'text-danger-600' : 'text-ink',
+                  )}
+                >
+                  {net >= 0 ? '+' : '−'}
+                  {money(Math.abs(net))}
+                </p>
+              </div>
+              <p className="text-sm text-ink-muted">
+                Entra {money(w.inCents)} · sai {money(w.outCents)}
+                {k > 0 && ` · somando as semanas: ${sum < 0 ? '−' : ''}${money(Math.abs(sum))}`}
+              </p>
+              {(w.ins.length > 0 || w.outs.length > 0) && (
+                <ul className="mt-1 space-y-0.5 text-sm text-ink-soft">
+                  {w.ins.slice(0, 2).map((l) => (
+                    <li key={`i${l.label}${l.date}`}>
+                      + {money(l.amountCents)} {l.label} ({brDate(l.date).slice(0, 5)})
+                    </li>
+                  ))}
+                  {w.outs.slice(0, 2).map((l) => (
+                    <li key={`o${l.label}${l.date}`}>
+                      − {money(l.amountCents)} {l.label} ({brDate(l.date).slice(0, 5)})
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </Card>
+    </section>
+  );
+}
+
 function WeekReport() {
   const q = useQuery({
     queryKey: [...KEY, 'week'],
@@ -865,6 +949,9 @@ function WeekReport() {
           ((w.contractedCents - w.lastYearContractedCents) / w.lastYearContractedCents) * 100,
         )
       : null;
+  const mo = w.month;
+  const goalLeft =
+    mo.lastYearMonthCents !== null ? Math.max(0, mo.lastYearMonthCents - mo.contractedCents) : null;
   const cells: [string, string, string?][] = [
     [
       'Fechou',
@@ -915,6 +1002,24 @@ function WeekReport() {
             </ul>
           </div>
         )}
+        <div className="rounded-lg bg-subtle px-3 py-2 text-sm">
+          <p className="font-medium text-ink">No mês: fechou {money(mo.contractedCents)}</p>
+          {mo.lastYearMonthCents === null ? (
+            <p className="text-ink-muted">Sem pedidos do mesmo mês do ano passado para comparar.</p>
+          ) : (
+            <p className="text-ink-soft">
+              Ano passado, até o mesmo dia: {money(mo.lastYearSoFarCents ?? 0)}. No mês inteiro:{' '}
+              {money(mo.lastYearMonthCents)}
+              {goalLeft ? (
+                <>
+                  . Para passar dele, faltam <strong>{money(goalLeft)}</strong>.
+                </>
+              ) : (
+                <span className="text-ok-600">. Já passou do ano passado.</span>
+              )}
+            </p>
+          )}
+        </div>
         <ul className="space-y-1 text-sm text-ink-soft">
           <li>
             Orçamentos: {plural(w.quotesSent, 'enviado', 'enviados')},{' '}

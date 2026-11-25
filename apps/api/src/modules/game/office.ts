@@ -68,6 +68,7 @@ import { refreshPending } from './proposal-validity';
 import { deliveryText } from './office-delivery';
 import { officeWeek, weeklyReportNotice } from './office-week';
 import { stockShortageNotices } from './office-stock';
+import { accountantPackageNotice, cashForecast, taxReminder } from './office-finance';
 import { planEntryFor } from './office-plan';
 
 type Db = PrismaClient | Tx;
@@ -676,6 +677,11 @@ export async function runOfficeRound(
   // Compras: material do estoque que não dá para as OS abertas.
   if (agents.some((a) => a.roleKey === 'COMPRAS'))
     await stockShortageNotices(prisma, today).catch(() => 0);
+  // Financeiro: DAS do mês (15 a 20) e pacote do contador (1 a 5), de manhã.
+  if (hour >= 8 && agents.some((a) => a.roleKey === 'FINANCEIRO')) {
+    await taxReminder(prisma, today).catch(() => false);
+    await accountantPackageNotice(prisma, today).catch(() => false);
+  }
   // Domingo à tarde: o relatório da semana do Gerente (só com o Gerente contratado).
   if (hour >= SUMMARY_HOUR && agents.some((a) => a.roleKey === 'GERENTE'))
     await weeklyReportNotice(prisma, today).catch(() => false);
@@ -1101,6 +1107,20 @@ export async function officeRoutes(app: FastifyInstance) {
     async () => {
       await guard();
       return officeWeek(prisma);
+    },
+  );
+
+  // Previsão do caixa (Financeiro): o que entra e sai nas próximas 4 semanas.
+  app.get(
+    '/api/v1/office/forecast-weeks',
+    {
+      config: {
+        access: { session: 'WEB', permissions: [...OFFICE_ACCESS.permissions, 'financeiro.ver'] },
+      },
+    },
+    async () => {
+      await guard();
+      return cashForecast(prisma, todayIso(await shopTimezone(prisma)));
     },
   );
 

@@ -46,6 +46,10 @@ function look(n: NotificationDto): { chip?: [string, 'danger' | 'warn']; action:
       return { action: 'Ver o relatório' };
     case 'MATERIAL_ACABANDO':
       return { chip: ['Acabando', 'warn'], action: 'Ver o estoque' };
+    case 'AGENTES_IMPOSTO':
+      return { chip: ['Vence dia 20', 'warn'], action: 'Lançar a despesa' };
+    case 'AGENTES_CONTADOR':
+      return { action: 'Baixar o pacote' };
     default:
       if (PRESENCE_KINDS.has(n.kind)) return { action: 'Ver presença' };
       return { action: n.taskId ? 'Ver tarefa' : 'Abrir' };
@@ -72,7 +76,15 @@ export function PanelNotifications() {
       router.push('/painel/escritorio');
     else if (n.kind === 'AGENTES_SEMANA') router.push('/painel/escritorio#semana');
     else if (n.kind === 'MATERIAL_ACABANDO') router.push('/painel/estoque-oficina');
-    else if (n.taskId) router.push(`/painel/producao/tarefas/${n.taskId}`);
+    else if (n.kind === 'AGENTES_IMPOSTO') router.push('/painel/financeiro?tab=pagar');
+    // Pacote do mês anterior ao aviso (o aviso sai do dia 1 ao 5).
+    else if (n.kind === 'AGENTES_CONTADOR') {
+      const d = new Date(n.createdAt);
+      d.setDate(1);
+      d.setMonth(d.getMonth() - 1);
+      const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      window.location.assign(`/api/v1/office/accounting/${month}/package`);
+    } else if (n.taskId) router.push(`/painel/producao/tarefas/${n.taskId}`);
     // 2026-11-18: contas a pagar vão ao Resumo do financeiro; prazos, à OS ou ao Início.
     else if (n.kind === 'CONTA_A_VENCER' || n.kind === 'CONTA_VENCIDA')
       router.push('/painel/financeiro?tab=painel');

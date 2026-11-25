@@ -43,6 +43,27 @@ export async function officeWeek(prisma: PrismaClient, today?: string): Promise<
         select: { agreedValueCents: true },
       });
       const fromTs = period({ from, to }, tz).fromTs;
+      // O mês até hoje × o mesmo período e o mês inteiro do ano passado (a meta é passar dele).
+      const monthStart = `${to.slice(0, 7)}-01`;
+      const lyStart = lastYear(monthStart);
+      const lyEndDate = new Date(`${lyStart}T12:00:00Z`);
+      lyEndDate.setUTCMonth(lyEndDate.getUTCMonth() + 1);
+      lyEndDate.setUTCDate(0);
+      const lyEnd = lyEndDate.toISOString().slice(0, 10);
+      const lySoFar = lastYear(to) > lyEnd ? lyEnd : lastYear(to);
+      const contracted = async (a: string, b: string) => {
+        const p = period({ from: a, to: b }, tz);
+        const r = await tx.commercialOrder.findMany({
+          where: { status: { not: 'CANCELADO' }, createdAt: { gte: p.fromTs, lt: p.toExclusive } },
+          select: { agreedValueCents: true },
+        });
+        return { n: r.length, cents: r.reduce((x, o) => x + (o.agreedValueCents ?? 0), 0) };
+      };
+      const [mNow, mLySoFar, mLy] = await Promise.all([
+        contracted(monthStart, to),
+        contracted(lyStart, lySoFar),
+        contracted(lyStart, lyEnd),
+      ]);
       const [quotesSent, quotesApproved, next, deliveries] = await Promise.all([
         tx.quote.count({ where: { deletedAt: null, createdAt: { gte: fromTs } } }),
         tx.quote.count({
@@ -88,6 +109,11 @@ export async function officeWeek(prisma: PrismaClient, today?: string): Promise<
           deliveries,
         },
         reworks: d.reworks.count,
+        month: {
+          contractedCents: mNow.cents,
+          lastYearSoFarCents: mLy.n ? mLySoFar.cents : null,
+          lastYearMonthCents: mLy.n ? mLy.cents : null,
+        },
       };
     },
     { timeout: 30_000 },
