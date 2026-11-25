@@ -182,6 +182,23 @@ test('capturas: correções do app no celular', async ({ page, browser }) => {
     );
   await db2.end();
   await page.setViewportSize({ width: 1440, height: 1150 });
+
+  // Início: enquanto o "Hoje" carrega, o espaço dele já aparece no lugar (sem pular a página).
+  let release: () => void = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  await page.route('**/api/v1/management/today*', async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto('/painel');
+  await expect(page.getByTestId('today-skeleton')).toBeVisible();
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: `${OUT}/12-inicio-carregando.png` });
+  release();
+  await expect(page.getByTestId('today-panel')).toBeVisible();
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: `${OUT}/13-inicio-pronto.png` });
+  await page.unroute('**/api/v1/management/today*');
   await page.goto('/painel/escritorio');
   await expect(page.getByRole('tab', { name: /Para aprovar/ })).toBeVisible();
   await expect(page.getByTestId('office-proposal').first()).toBeVisible();

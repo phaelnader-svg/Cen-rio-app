@@ -11,7 +11,7 @@ import {
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
-import { Badge, Card, Spinner } from '@/components/ui/misc';
+import { Badge, Card } from '@/components/ui/misc';
 import { api } from '@/lib/api';
 import { formatTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
@@ -73,6 +73,30 @@ const Empty = ({ children }: { children: React.ReactNode }) => (
   <p className="text-sm text-ink-muted">{children}</p>
 );
 
+/**
+ * 2026-11-25 (Raphael): o Início abria com o "Carregando…" pequeno e, quando o "Hoje" chegava,
+ * tudo pulava para baixo. Agora o espaço do "Hoje" já aparece no lugar certo, em cinza, enquanto
+ * carrega: a página abre no desenho final.
+ */
+function TodaySkeleton() {
+  return (
+    <section
+      className="space-y-4"
+      aria-busy="true"
+      aria-label="Carregando o dia"
+      data-testid="today-skeleton"
+    >
+      <h2 className="text-xl font-semibold tracking-tight">Hoje</h2>
+      <Card className="h-56 animate-pulse bg-subtle/60" />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <Card key={i} className="h-72 animate-pulse bg-subtle/60" />
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function TodayPanel({ deadlines }: { deadlines?: React.ReactNode } = {}) {
   const can = useCan();
   const enabled = (
@@ -89,7 +113,7 @@ export function TodayPanel({ deadlines }: { deadlines?: React.ReactNode } = {}) 
   ).some((p) => can(p));
   const q = useToday(enabled);
   if (!enabled) return null;
-  if (q.isPending) return <Spinner />;
+  if (q.isPending) return <TodaySkeleton />;
   if (q.isError) return null;
   const t = q.data;
   // 2026-11-19: os avisos (contas, cobranças) ficam no sininho; aqui só os números do dia.

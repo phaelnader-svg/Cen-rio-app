@@ -287,21 +287,23 @@ function OfficeInner() {
     { key: 'feito', label: 'O que fizeram' },
     { key: 'agentes', label: 'Agentes e permissões' },
   ];
-  const [tab, setTab] = useState('aprovar');
-  // Links antigos com âncora (#semana do sininho, #caixa, #precos) abrem a aba certa.
-  useEffect(() => {
-    if (!data) return;
-    const hash = window.location.hash.slice(1);
-    const target = ['semana', 'caixa', 'precos'].includes(hash)
+  // Links antigos com âncora (#semana do sininho, #caixa, #precos) abrem a aba certa. As abas só
+  // aparecem depois que os dados chegam (no navegador), então ler o endereço aqui é seguro.
+  const [tab, setTab] = useState(() => {
+    const hash = typeof window === 'undefined' ? '' : window.location.hash.slice(1);
+    return ['semana', 'caixa', 'precos'].includes(hash)
       ? 'relatorios'
       : hash === 'recentes'
         ? 'feito'
-        : null;
-    if (!target) return;
-    setTab(target);
+        : 'aprovar';
+  });
+  const loaded = !!data;
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    if (!loaded || !hash) return;
     const t = setTimeout(() => document.getElementById(hash)?.scrollIntoView(), 50);
     return () => clearTimeout(t);
-  }, [data]);
+  }, [loaded]);
   return (
     <>
       <PageHeader
