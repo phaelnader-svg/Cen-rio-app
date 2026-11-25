@@ -452,13 +452,11 @@ export async function quoteAgentRoutes(app: FastifyInstance) {
       const input = officeQuoteRequestSchema.parse(request.body);
       const actor = actorFrom(request);
       const r = await planQuoteProposal(prisma, actor, input);
-      return reply
-        .status(201)
-        .send({
-          proposalId: r.proposalId,
-          doneAlone: r.doneAlone,
-          overview: await officeOverview(prisma),
-        });
+      return reply.status(201).send({
+        proposalId: r.proposalId,
+        doneAlone: r.doneAlone,
+        overview: await officeOverview(prisma),
+      });
     },
   );
 }

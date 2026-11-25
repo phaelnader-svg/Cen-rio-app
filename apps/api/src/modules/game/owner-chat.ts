@@ -179,10 +179,6 @@ async function runTool(c: Ctx, name: string, input: Record<string, string>): Pro
           value: brl(cash.netCents),
           tone: cash.netCents < 0 ? 'ruim' : 'bom',
         },
-        {
-          label: `Lucro dos ${a.completedOrders} ${a.completedOrders === 1 ? 'serviço entregue' : 'serviços entregues'}`,
-          value: brl(a.contributionMarginCents),
-        },
         { label: 'Despesas da oficina', value: brl(a.operationalExpensesCents + a.fixedTeamCents) },
         {
           label: 'Resultado do período',
@@ -190,6 +186,12 @@ async function runTool(c: Ctx, name: string, input: Record<string, string>): Pro
           tone: a.managementResultCents < 0 ? 'ruim' : 'bom',
         },
       ];
+      // Sem serviço entregue no período não tem lucro de serviço para mostrar.
+      if (a.completedOrders)
+        rows.splice(4, 0, {
+          label: `Lucro dos ${a.completedOrders} ${a.completedOrders === 1 ? 'serviço entregue' : 'serviços entregues'}`,
+          value: brl(a.contributionMarginCents),
+        });
       if (d.open.receivableOverdueCents)
         rows.push({
           label: 'Clientes atrasados',
@@ -452,10 +454,15 @@ async function runTool(c: Ctx, name: string, input: Record<string, string>): Pro
       if (!phone) return `${customer.name} não tem WhatsApp no cadastro.`;
       const text = (input.mensagem ?? '').trim().slice(0, 2000);
       if (!text) return 'Falta o texto da mensagem.';
-      const agent = await prisma.aiAgent.findFirst({
+      // Quem fala com cliente é o Atendimento; sem ele, o WhatsApp ou o Gerente.
+      const agents = await prisma.aiAgent.findMany({
         where: { status: 'ATIVO', roleKey: { in: ['ATENDIMENTO', 'WHATSAPP', 'GERENTE'] } },
         orderBy: { createdAt: 'asc' },
       });
+      const agent =
+        ['ATENDIMENTO', 'WHATSAPP', 'GERENTE']
+          .map((k) => agents.find((a) => a.roleKey === k))
+          .find(Boolean) ?? null;
       if (!agent)
         return 'Contrate o Atendimento ou o Gerente no Escritório para preparar mensagens.';
       const title = `Mensagem para ${customer.name}`;
