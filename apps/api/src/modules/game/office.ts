@@ -67,6 +67,8 @@ import { NotSentByAgent, decideProposal } from './agents';
 import { refreshPending } from './proposal-validity';
 import { deliveryText } from './office-delivery';
 import { officeWeek, weeklyReportNotice } from './office-week';
+import { stockShortageNotices } from './office-stock';
+import { planEntryFor } from './office-plan';
 
 type Db = PrismaClient | Tx;
 
@@ -154,6 +156,8 @@ export function routeOf(
   if (!t || !key) return 'PEDE';
   const s = taskSetting(agent, key);
   if (s.nivel === 1) return 'SUGERE';
+  // Planejar sem a proposta completa (material não comprado, sem tapeceiro): sempre pede.
+  if (key === 'PLANEJAR_OS' && !(p.payload as Record<string, unknown> | null)?.entry) return 'PEDE';
   if (ctx.paused || s.nivel === 2) return 'PEDE';
   if (maxLevelNow(t, ctx.whatsapp).level < 3) return 'PEDE';
   if (s.nivel === 3) {
@@ -500,7 +504,7 @@ async function routine(db: PrismaClient, agent: AiAgent, today: string): Promise
     ps.map((p) => ({ ...p, payload: { ...p.payload, task: officeTaskOf(p) } }));
   switch (agent.roleKey) {
     case 'GERENTE':
-      return tag((await managerAnswer(ctx, '')).proposals);
+      return withPlans(db, tag((await managerAnswer(ctx, '')).proposals), today);
     case 'COMPRAS':
       return tag((await purchasingAnswer(ctx, '')).proposals);
     case 'FINANCEIRO':
@@ -513,6 +517,30 @@ async function routine(db: PrismaClient, agent: AiAgent, today: string): Promise
     default:
       return [];
   }
+}
+
+/** Gerente: a OS sem planejamento ganha o início e o tapeceiro de cada peça (semana da produção). */
+async function withPlans(db: PrismaClient, ps: ProposalDraft[], today: string) {
+  const out: ProposalDraft[] = [];
+  for (const p of ps) {
+    if (p.kind !== 'PLANEJAR_OS') {
+      out.push(p);
+      continue;
+    }
+    const r = await planEntryFor(db, String(p.payload.serviceOrderId ?? ''), today);
+    const code = p.title.replace(/^Planejar /, '');
+    if ('problem' in r) {
+      out.push({ ...p, payload: { ...p.payload, planProblem: r.problem } });
+      continue;
+    }
+    out.push({
+      ...p,
+      title: `Encaixar ${code} na semana (começa ${br(r.entry.startDate).slice(0, 5)})`,
+      detail: ['Quem fica com cada peça:', ...r.lines].join('\n'),
+      payload: { ...p.payload, entry: r.entry, startDate: r.entry.startDate },
+    });
+  }
+  return out;
 }
 
 /** Já existe uma proposta igual (pendente; ou a mesma tarefa única em qualquer estado). */
@@ -645,6 +673,9 @@ export async function runOfficeRound(
   }
   await notifyOwner(prisma, newAsking, today);
   await dailySummary(prisma, at, tz, today);
+  // Compras: material do estoque que não dá para as OS abertas.
+  if (agents.some((a) => a.roleKey === 'COMPRAS'))
+    await stockShortageNotices(prisma, today).catch(() => 0);
   // Domingo à tarde: o relatório da semana do Gerente (só com o Gerente contratado).
   if (hour >= SUMMARY_HOUR && agents.some((a) => a.roleKey === 'GERENTE'))
     await weeklyReportNotice(prisma, today).catch(() => false);

@@ -35,6 +35,7 @@ import {
 } from '@cenario/shared';
 import type { PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
+import type { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { now as clockNow } from '../../core/clock';
 import { appendEvent } from '../../core/events/append';
@@ -68,7 +69,7 @@ async function todayIn(db: Tx | PrismaClient) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(clockNow());
 }
 
-async function activeTemplates(db: Tx | PrismaClient) {
+export async function activeTemplates(db: Tx | PrismaClient) {
   return db.productionTemplate.findMany({
     where: { active: true },
     include: { steps: { select: { stepClass: true } } },
@@ -77,7 +78,7 @@ async function activeTemplates(db: Tx | PrismaClient) {
 }
 type Templates = Awaited<ReturnType<typeof activeTemplates>>;
 /** Simplificação Fase 5: mesma regra da geração (tipo de peça + tipo de serviço). */
-const templateOf = (all: Templates, piece: { pieceType: string; serviceType: string }) =>
+export const templateOf = (all: Templates, piece: { pieceType: string; serviceType: string }) =>
   selectProductionTemplate(all, piece);
 
 /** Trava por OS (dois gestores planejando a mesma OS) e por semana (criação do plano). */
@@ -345,6 +346,151 @@ export async function publicationPreview(
 
 // ─────────────────────────── Rotas ───────────────────────────
 
+/**
+ * Planeja OS na semana (rascunho), tudo ou nada: usado pela tela e pelo Gerente do Escritório
+ * (2026-11-25), com as mesmas regras.
+ */
+type PlanServicesInput = z.infer<typeof planServicesSchema>;
+
+export async function planServicesTx(
+  tx: Tx,
+  actor: ActorContext,
+  input: PlanServicesInput,
+): Promise<PlanServicesResultDto> {
+  const today = await todayIn(tx);
+  const weeks = input.entries.map((e) => mondayOf(e.startDate));
+  await advisory(tx, [
+    ...input.entries.map((e) => `so-plan:${e.serviceOrderId}`),
+    ...weeks.map((w) => `plan:${w}`),
+  ]);
+  const templates = await activeTemplates(tx);
+  const out: PlanServicesResultDto['planned'] = [];
+  const touchedPlans = new Set<string>();
+  for (const entry of [...input.entries].sort((a, b) =>
+    a.serviceOrderId.localeCompare(b.serviceOrderId),
+  )) {
+    if (entry.startDate < today)
+      throw Errors.validation(
+        [{ path: 'startDate', message: 'A data de início não pode estar no passado.' }],
+        'A data de início não pode estar no passado.',
+      );
+    const so = await tx.serviceOrder.findUnique({
+      where: { id: entry.serviceOrderId },
+      include: {
+        items: { orderBy: { position: 'asc' } },
+        productionPlanItems: { include: { plan: { select: { weekStart: true } } } },
+      },
+    });
+    if (!so) throw Errors.notFound('Ordem de serviço');
+    const code = serviceOrderCode(so.number);
+    if (so.status !== 'ABERTA') throw Errors.business(`${code}: a OS não está aberta.`);
+    if (!so.materialPurchasedAt) throw Errors.business(materialPendingMessage(code));
+    if (so.productionPlanItems.length) {
+      const w = dateOnly(so.productionPlanItems[0]!.plan.weekStart)!;
+      throw Errors.conflict(
+        `${code} já foi planejada (semana de ${w.split('-').reverse().join('/')}). Atualize a lista.`,
+      );
+    }
+    if (
+      await tx.productionTask.count({
+        where: { serviceOrderId: so.id, status: { not: 'CANCELADA' } },
+      })
+    )
+      throw Errors.conflict(`${code} já tem tarefas de produção. Atualize a lista.`);
+    // Titular obrigatório para cada peça com tapeçaria (escolha nova ou já definido).
+    for (const p of entry.pieces)
+      if (!so.items.some((i) => i.id === p.serviceOrderItemId))
+        throw Errors.validation(undefined, `${code}: peça não pertence à OS.`);
+    for (const i of so.items) {
+      const tpl = templateOf(templates, i);
+      const needs = Boolean(tpl?.steps.some((s) => s.stepClass === 'TAPECARIA'));
+      const chosen = entry.pieces.find((p) => p.serviceOrderItemId === i.id);
+      if (needs && !chosen && !i.upholstererUserId)
+        throw Errors.validation(
+          [{ path: 'pieces', message: 'Escolha o tapeceiro responsável.' }],
+          `${formatServiceOrderItemCode(so.number, i.position)}: escolha o tapeceiro responsável.`,
+        );
+    }
+    const weekStart = mondayOf(entry.startDate);
+    const plan = await weekPlan(tx, actor, weekStart);
+    const priority = entry.priority ?? so.priority;
+    // Saneamento: a prioridade é do serviço — escolhida no planejamento, vale também na OS.
+    if (priority !== so.priority)
+      await tx.serviceOrder.update({
+        where: { id: so.id },
+        data: { priority, version: { increment: 1 } },
+      });
+    await tx.productionPlanItem.create({
+      data: {
+        planId: plan.id,
+        serviceOrderId: so.id,
+        priority,
+        startDate: parseDateOnly(entry.startDate)!,
+        plannedById: actor.userId,
+      },
+    });
+    const { created } = await distributeServiceOrder(tx, actor, {
+      planId: plan.id,
+      serviceOrderId: so.id,
+      priority,
+      proposedUpholsterer: null,
+      pieces: entry.pieces.map((p) => ({
+        serviceOrderItemId: p.serviceOrderItemId,
+        upholstererUserId: p.upholstererUserId,
+      })),
+      draft: true,
+    });
+    // D9 (decisão C): a data de início define a posição inicial na fila de cada pessoa.
+    await placeServiceInQueue(tx, plan.id, so.id);
+    const owners = await tx.serviceOrderItem.findMany({
+      where: { serviceOrderId: so.id },
+      include: { upholsterer: { select: { displayName: true } } },
+      orderBy: { position: 'asc' },
+    });
+    await audit(tx, actor, {
+      action: 'production.service_planned',
+      entityType: 'service_order',
+      entityId: so.id,
+      summary: `${code} planejada para ${entry.startDate.split('-').reverse().join('/')} (semana de ${weekStart.split('-').reverse().join('/')}, rascunho): ${plural(created.length, 'tarefa', 'tarefas')}.`,
+      changes: {
+        planId: plan.id,
+        startDate: entry.startDate,
+        owners: owners.map((o) => ({
+          piece: formatServiceOrderItemCode(so.number, o.position),
+          upholsterer: o.upholsterer?.displayName ?? null,
+        })),
+      },
+    });
+    touchedPlans.add(plan.id);
+    out.push({
+      serviceOrderId: so.id,
+      code,
+      planId: plan.id,
+      weekStart,
+      startDate: entry.startDate,
+      tasksCreated: created.length,
+    });
+  }
+  // Oficina sem tablet (2026-11-24): a semana planejada já vale, sem o passo de publicar.
+  if (await moduleEnabled(tx, 'oficina_sem_tablet'))
+    for (const id of [...touchedPlans].sort())
+      await publishPlanTx(
+        tx,
+        actor,
+        await lockPlan(tx, id),
+        'Oficina sem tablet: a semana vale sem publicar',
+      );
+  for (const id of touchedPlans)
+    await appendEvent(tx, actor, {
+      type: EVENT_TYPES.PRODUCTION_PLAN_UPDATED,
+      aggregateType: 'production_plan',
+      aggregateId: id,
+      payload: { id },
+      audience: MANAGEMENT,
+    });
+  return { planned: out } satisfies PlanServicesResultDto;
+}
+
 export async function preplanningRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -367,140 +513,7 @@ export async function preplanningRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const input = planServicesSchema.parse(request.body);
       const actor = actorFrom(request);
-      const result = await prisma.$transaction(async (tx) => {
-        const today = await todayIn(tx);
-        const weeks = input.entries.map((e) => mondayOf(e.startDate));
-        await advisory(tx, [
-          ...input.entries.map((e) => `so-plan:${e.serviceOrderId}`),
-          ...weeks.map((w) => `plan:${w}`),
-        ]);
-        const templates = await activeTemplates(tx);
-        const out: PlanServicesResultDto['planned'] = [];
-        const touchedPlans = new Set<string>();
-        for (const entry of [...input.entries].sort((a, b) =>
-          a.serviceOrderId.localeCompare(b.serviceOrderId),
-        )) {
-          if (entry.startDate < today)
-            throw Errors.validation(
-              [{ path: 'startDate', message: 'A data de início não pode estar no passado.' }],
-              'A data de início não pode estar no passado.',
-            );
-          const so = await tx.serviceOrder.findUnique({
-            where: { id: entry.serviceOrderId },
-            include: {
-              items: { orderBy: { position: 'asc' } },
-              productionPlanItems: { include: { plan: { select: { weekStart: true } } } },
-            },
-          });
-          if (!so) throw Errors.notFound('Ordem de serviço');
-          const code = serviceOrderCode(so.number);
-          if (so.status !== 'ABERTA') throw Errors.business(`${code}: a OS não está aberta.`);
-          if (!so.materialPurchasedAt) throw Errors.business(materialPendingMessage(code));
-          if (so.productionPlanItems.length) {
-            const w = dateOnly(so.productionPlanItems[0]!.plan.weekStart)!;
-            throw Errors.conflict(
-              `${code} já foi planejada (semana de ${w.split('-').reverse().join('/')}). Atualize a lista.`,
-            );
-          }
-          if (
-            await tx.productionTask.count({
-              where: { serviceOrderId: so.id, status: { not: 'CANCELADA' } },
-            })
-          )
-            throw Errors.conflict(`${code} já tem tarefas de produção. Atualize a lista.`);
-          // Titular obrigatório para cada peça com tapeçaria (escolha nova ou já definido).
-          for (const p of entry.pieces)
-            if (!so.items.some((i) => i.id === p.serviceOrderItemId))
-              throw Errors.validation(undefined, `${code}: peça não pertence à OS.`);
-          for (const i of so.items) {
-            const tpl = templateOf(templates, i);
-            const needs = Boolean(tpl?.steps.some((s) => s.stepClass === 'TAPECARIA'));
-            const chosen = entry.pieces.find((p) => p.serviceOrderItemId === i.id);
-            if (needs && !chosen && !i.upholstererUserId)
-              throw Errors.validation(
-                [{ path: 'pieces', message: 'Escolha o tapeceiro responsável.' }],
-                `${formatServiceOrderItemCode(so.number, i.position)}: escolha o tapeceiro responsável.`,
-              );
-          }
-          const weekStart = mondayOf(entry.startDate);
-          const plan = await weekPlan(tx, actor, weekStart);
-          const priority = entry.priority ?? so.priority;
-          // Saneamento: a prioridade é do serviço — escolhida no planejamento, vale também na OS.
-          if (priority !== so.priority)
-            await tx.serviceOrder.update({
-              where: { id: so.id },
-              data: { priority, version: { increment: 1 } },
-            });
-          await tx.productionPlanItem.create({
-            data: {
-              planId: plan.id,
-              serviceOrderId: so.id,
-              priority,
-              startDate: parseDateOnly(entry.startDate)!,
-              plannedById: actor.userId,
-            },
-          });
-          const { created } = await distributeServiceOrder(tx, actor, {
-            planId: plan.id,
-            serviceOrderId: so.id,
-            priority,
-            proposedUpholsterer: null,
-            pieces: entry.pieces.map((p) => ({
-              serviceOrderItemId: p.serviceOrderItemId,
-              upholstererUserId: p.upholstererUserId,
-            })),
-            draft: true,
-          });
-          // D9 (decisão C): a data de início define a posição inicial na fila de cada pessoa.
-          await placeServiceInQueue(tx, plan.id, so.id);
-          const owners = await tx.serviceOrderItem.findMany({
-            where: { serviceOrderId: so.id },
-            include: { upholsterer: { select: { displayName: true } } },
-            orderBy: { position: 'asc' },
-          });
-          await audit(tx, actor, {
-            action: 'production.service_planned',
-            entityType: 'service_order',
-            entityId: so.id,
-            summary: `${code} planejada para ${entry.startDate.split('-').reverse().join('/')} (semana de ${weekStart.split('-').reverse().join('/')}, rascunho): ${plural(created.length, 'tarefa', 'tarefas')}.`,
-            changes: {
-              planId: plan.id,
-              startDate: entry.startDate,
-              owners: owners.map((o) => ({
-                piece: formatServiceOrderItemCode(so.number, o.position),
-                upholsterer: o.upholsterer?.displayName ?? null,
-              })),
-            },
-          });
-          touchedPlans.add(plan.id);
-          out.push({
-            serviceOrderId: so.id,
-            code,
-            planId: plan.id,
-            weekStart,
-            startDate: entry.startDate,
-            tasksCreated: created.length,
-          });
-        }
-        // Oficina sem tablet (2026-11-24): a semana planejada já vale, sem o passo de publicar.
-        if (await moduleEnabled(tx, 'oficina_sem_tablet'))
-          for (const id of [...touchedPlans].sort())
-            await publishPlanTx(
-              tx,
-              actor,
-              await lockPlan(tx, id),
-              'Oficina sem tablet: a semana vale sem publicar',
-            );
-        for (const id of touchedPlans)
-          await appendEvent(tx, actor, {
-            type: EVENT_TYPES.PRODUCTION_PLAN_UPDATED,
-            aggregateType: 'production_plan',
-            aggregateId: id,
-            payload: { id },
-            audience: MANAGEMENT,
-          });
-        return { planned: out } satisfies PlanServicesResultDto;
-      });
+      const result = await prisma.$transaction((tx) => planServicesTx(tx, actor, input));
       return reply.status(201).send(result);
     },
   );

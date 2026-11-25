@@ -44,6 +44,8 @@ function look(n: NotificationDto): { chip?: [string, 'danger' | 'warn']; action:
       return { action: 'Abrir o Escritório' };
     case 'AGENTES_SEMANA':
       return { action: 'Ver o relatório' };
+    case 'MATERIAL_ACABANDO':
+      return { chip: ['Acabando', 'warn'], action: 'Ver o estoque' };
     default:
       if (PRESENCE_KINDS.has(n.kind)) return { action: 'Ver presença' };
       return { action: n.taskId ? 'Ver tarefa' : 'Abrir' };
@@ -69,6 +71,7 @@ export function PanelNotifications() {
     else if (n.kind === 'AGENTES_PEDEM' || n.kind === 'AGENTES_RESUMO')
       router.push('/painel/escritorio');
     else if (n.kind === 'AGENTES_SEMANA') router.push('/painel/escritorio#semana');
+    else if (n.kind === 'MATERIAL_ACABANDO') router.push('/painel/estoque-oficina');
     else if (n.taskId) router.push(`/painel/producao/tarefas/${n.taskId}`);
     // 2026-11-18: contas a pagar vão ao Resumo do financeiro; prazos, à OS ou ao Início.
     else if (n.kind === 'CONTA_A_VENCER' || n.kind === 'CONTA_VENCIDA')
