@@ -536,9 +536,7 @@ async function withPlans(db: PrismaClient, ps: ProposalDraft[], today: string) {
     out.push({
       ...p,
       title: `Encaixar ${code} na semana (começa ${br(r.entry.startDate).slice(0, 5)})`,
-      detail: [`Início em ${br(r.entry.startDate)}. Quem fica com cada peça:`, ...r.lines].join(
-        '\n',
-      ),
+      detail: ['Quem fica com cada peça:', ...r.lines].join('\n'),
       payload: { ...p.payload, entry: r.entry, startDate: r.entry.startDate },
     });
   }
