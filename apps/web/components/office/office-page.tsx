@@ -82,7 +82,16 @@ export function useOfficeSend() {
  * "Esperando você" assim que o escritório recarrega, então o botão de enviar fica aqui em cima,
  * fora do cartão, até ser tocado.
  */
-type ToSend = { id: string; title: string; href: string };
+type ToSend = {
+  id: string;
+  title: string;
+  /** Mensagem para um cliente. */
+  href?: string;
+  /** Post pronto para postar (antes e depois). */
+  post?: { caption: string; photos: { label: string; url: string; thumbUrl: string }[] };
+  /** Uma mensagem para cada cliente (promoção). */
+  list?: { customerId: string; name: string; href: string }[];
+};
 const ToSendContext = createContext<{
   items: ToSend[];
   add: (t: ToSend) => void;
@@ -112,10 +121,123 @@ export function ToSendList() {
     <ul className="space-y-3" data-testid="office-to-send">
       {ctx.items.map((t) => (
         <li key={t.id}>
-          <SendCard title={t.title} href={t.href} onSent={() => ctx.remove(t.id)} />
+          <ReadyCard t={t} onDone={() => ctx.remove(t.id)} />
         </li>
       ))}
     </ul>
+  );
+}
+
+function ReadyCard({ t, onDone }: { t: ToSend; onDone: () => void }) {
+  if (t.post) return <PostCard title={t.title} post={t.post} onDone={onDone} />;
+  if (t.list) return <SendListCard title={t.title} list={t.list} onDone={onDone} />;
+  return <SendCard title={t.title} href={t.href ?? ''} onSent={onDone} />;
+}
+
+/** Post aprovado: baixar as fotos e copiar a legenda para postar no Instagram. */
+function PostCard({
+  title,
+  post,
+  onDone,
+}: {
+  title: string;
+  post: NonNullable<ToSend['post']>;
+  onDone: () => void;
+}) {
+  const toast = useToast();
+  return (
+    <Card className="p-4" data-testid="office-post-ready">
+      <p className="font-medium text-ink">{title}</p>
+      <p className="mt-1 text-sm text-ink-muted">
+        Aprovado. Baixe as fotos, copie a legenda e poste no Instagram.
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        {post.photos.map((f) => (
+          <a
+            key={f.url}
+            href={f.url}
+            download
+            className="block"
+            aria-label={`Baixar a foto de ${f.label.toLowerCase()}`}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={f.thumbUrl}
+              alt={f.label}
+              className="aspect-square w-full rounded-lg border border-line object-cover"
+            />
+            <span className="mt-1 block text-center text-sm text-ink-soft">
+              Baixar {f.label.toLowerCase()}
+            </span>
+          </a>
+        ))}
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Button
+          onClick={() =>
+            navigator.clipboard
+              ?.writeText(post.caption)
+              .then(() => toast('ok', 'Legenda copiada.'))
+              .catch(() => toast('danger', 'Não deu para copiar.'))
+          }
+        >
+          Copiar legenda
+        </Button>
+        <Button variant="secondary" onClick={onDone}>
+          Já postei
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/** Promoção aprovada: uma mensagem para cada cliente, com o nome de cada um. */
+function SendListCard({
+  title,
+  list,
+  onDone,
+}: {
+  title: string;
+  list: NonNullable<ToSend['list']>;
+  onDone: () => void;
+}) {
+  const [sent, setSent] = useState<string[]>([]);
+  const left = list.length - sent.length;
+  return (
+    <Card className="p-4" data-testid="office-send-list">
+      <p className="font-medium text-ink">{title}</p>
+      <p className="mt-1 text-sm text-ink-muted">
+        Aprovado. Toque em cada cliente para abrir o WhatsApp com a mensagem pronta
+        {left ? ` (faltam ${left})` : ''}.
+      </p>
+      <ul className="mt-3 divide-y divide-line">
+        {list.map((c) => (
+          <li key={c.customerId} className="flex items-center justify-between gap-3 py-2">
+            <span
+              className={clsx(
+                'text-sm',
+                sent.includes(c.customerId) ? 'text-ink-muted line-through' : 'text-ink',
+              )}
+            >
+              {c.name}
+            </span>
+            <a
+              href={c.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setSent((l) => [...new Set([...l, c.customerId])])}
+              className={buttonClass(sent.includes(c.customerId) ? 'ghost' : 'secondary', 'sm')}
+            >
+              <MessageCircle className="size-4" aria-hidden />
+              {sent.includes(c.customerId) ? 'Enviado' : 'Enviar'}
+            </a>
+          </li>
+        ))}
+      </ul>
+      <Button variant="ghost" className="mt-2 w-full" onClick={onDone}>
+        {left ? 'Parar por aqui' : 'Pronto'}
+      </Button>
+    </Card>
   );
 }
 
@@ -319,7 +441,7 @@ const AgentDot = ({ color }: { color: string }) => (
 export function ProposalCard({ p }: { p: OfficeProposalDto }) {
   const { m, error } = useOfficeSend();
   const [edit, setEdit] = useState(false);
-  const [sendLink, setSendLink] = useState<string | null>(null);
+  const [ready, setReady] = useState<ToSend | null>(null);
   const toSend = useContext(ToSendContext);
   const decide = (decision: 'APROVAR' | 'REJEITAR', edits?: Record<string, unknown>) =>
     m.mutate({
@@ -333,14 +455,26 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
             idempotencyKey: newIdempotencyKey(),
           },
         );
-        // Sem o WhatsApp da empresa: o dono aperta enviar no próprio WhatsApp.
-        if (
-          decision === 'APROVAR' &&
-          r.payload.sent === false &&
-          typeof r.payload.href === 'string'
-        )
-          if (toSend) toSend.add({ id: p.id, title: p.title, href: r.payload.href });
-          else setSendLink(r.payload.href);
+        // Sem o WhatsApp da empresa: o dono aperta enviar no próprio WhatsApp (ou posta).
+        const pr = r.payload;
+        const next: ToSend | null =
+          decision !== 'APROVAR'
+            ? null
+            : typeof pr.postId === 'string'
+              ? {
+                  id: p.id,
+                  title: p.title,
+                  post: { caption: String(pr.text ?? ''), photos: (pr.photos ?? []) as never },
+                }
+              : Array.isArray(pr.sendList)
+                ? { id: p.id, title: p.title, list: pr.sendList as never }
+                : pr.sent === false && typeof pr.href === 'string'
+                  ? { id: p.id, title: p.title, href: pr.href }
+                  : null;
+        if (next) {
+          if (toSend) toSend.add(next);
+          else setReady(next);
+        }
         setEdit(false);
       },
     });
@@ -350,8 +484,7 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
   const isQuote = p.task === 'MONTAR_ORCAMENTO';
   const isContract = p.task === 'ENVIAR_CONTRATO';
   const missing = Array.isArray(pl.missing) ? (pl.missing as string[]) : [];
-  if (sendLink)
-    return <SendCard title={p.title} href={sendLink} onSent={() => setSendLink(null)} />;
+  if (ready) return <ReadyCard t={ready} onDone={() => setReady(null)} />;
   return (
     <Card className="p-4" data-testid="office-proposal">
       <div className="flex items-center gap-2 text-sm text-ink-muted">
@@ -371,6 +504,39 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
       )}
       {isExpense && <ExpenseSummary pl={pl} />}
       {isQuote && <QuoteSummary pl={pl} />}
+      {p.task === 'POST_ANTES_DEPOIS' && Array.isArray(pl.photos) && (
+        <>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {(pl.photos as { label: string; url: string; thumbUrl: string }[]).map((f) => (
+              <a key={f.url} href={f.url} target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={f.thumbUrl}
+                  alt={f.label}
+                  className="aspect-square w-full rounded-lg border border-line object-cover"
+                />
+                <span className="mt-1 block text-center text-sm text-ink-soft">{f.label}</span>
+              </a>
+            ))}
+          </div>
+          <p className="mt-2 text-sm text-warn-600">
+            Aprove só se o cliente deixou divulgar as fotos.
+          </p>
+        </>
+      )}
+      {p.task === 'PROMOCAO_MES_FRACO' && Array.isArray(pl.recipients) && (
+        <p className="mt-1 text-sm text-ink-soft">
+          Vai para:{' '}
+          {(pl.recipients as { name: string }[])
+            .slice(0, 6)
+            .map((c) => c.name)
+            .join(', ')}
+          {(pl.recipients as unknown[]).length > 6
+            ? ` e mais ${(pl.recipients as unknown[]).length - 6}`
+            : ''}
+          .
+        </p>
+      )}
       {isContract && missing.length > 0 && (
         <p className="mt-1 text-sm text-warn-600">
           Antes de aprovar, falta no cadastro: {missing.join(', ')}.{' '}
@@ -401,7 +567,7 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
             ? p.detail.replace('{link}', '[link da proposta]')
             : isContract
               ? p.detail.replace('{link}', '[link do contrato]')
-              : p.detail}
+              : p.detail.replaceAll('{nome}', '[nome do cliente]')}
         </p>
       )}
       {error && (
@@ -594,7 +760,9 @@ function MessageDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
                 ? 'Deixe {link} onde o link da proposta deve entrar.'
                 : isContract
                   ? 'Deixe {link} onde o link do contrato deve entrar.'
-                  : undefined
+                  : p.task === 'PROMOCAO_MES_FRACO'
+                    ? 'Deixe {nome} onde entra o nome de cada cliente.'
+                    : undefined
           }
         >
           {(f) => (

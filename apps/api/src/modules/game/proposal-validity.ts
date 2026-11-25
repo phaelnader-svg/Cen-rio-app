@@ -95,6 +95,12 @@ export async function obsoleteReason(db: Db, p: AiAgentProposal): Promise<string
     if (o.contracts.length) return 'O contrato deste pedido já foi feito.';
     return null;
   }
+  // Promoção do mês fraco: o mês já passou.
+  if (pl.task === 'PROMOCAO_MES_FRACO')
+    return String(pl.month ?? '') < new Date().toISOString().slice(0, 7)
+      ? 'O mês da promoção já passou.'
+      : null;
+  if (pl.task === 'POST_ANTES_DEPOIS') return null;
   // Ajustar a tabela: alguém já mudou o preço deste material.
   if (pl.task === 'AJUSTAR_TABELA') {
     const c = await db.quoteCatalogItem.findUnique({

@@ -46,6 +46,8 @@ export const OFFICE_TASK_KEYS = [
   'MONTAR_ORCAMENTO',
   'ENVIAR_CONTRATO',
   'AJUSTAR_TABELA',
+  'POST_ANTES_DEPOIS',
+  'PROMOCAO_MES_FRACO',
   'PESQUISA_SATISFACAO',
   'ANIVERSARIO',
   'INDICACAO',
@@ -224,6 +226,27 @@ export const OFFICE_TASKS: OfficeTask[] = [
     money: false,
     maxLevel: 2,
     maxReason: 'Mudar preço sempre pede a sua aprovação.',
+  },
+  {
+    key: 'POST_ANTES_DEPOIS',
+    roles: ['MARKETING'],
+    label: 'Post com o antes e depois',
+    what: 'Serviço entregue com fotos de antes e depois: separa as fotos e escreve a legenda. Aprovar é dizer que o cliente deixou divulgar.',
+    message: false,
+    money: false,
+    maxLevel: 2,
+    maxReason:
+      'Postar sozinho precisa do Instagram da empresa ligado (etapa da Meta). Até lá, você aprova e posta.',
+  },
+  {
+    key: 'PROMOCAO_MES_FRACO',
+    roles: ['MARKETING'],
+    label: 'Promoção no mês fraco',
+    what: 'Olha os anos anteriores; se este mês costuma ser fraco, propõe um desconto e a mensagem para os clientes antigos.',
+    message: true,
+    money: false,
+    maxLevel: 2,
+    maxReason: 'Promoção e desconto sempre pedem a sua aprovação.',
   },
   {
     key: 'LANCAR_DESPESA',
@@ -466,7 +489,7 @@ export const OFFICE_ALSO_DOES: Record<string, string[]> = {
   ],
   ORCAMENTOS: [],
   ATENDIMENTO: [],
-  MARKETING: ['Na próxima etapa: posts com o antes e depois das OS e os artigos do blog.'],
+  MARKETING: ['Com o Instagram ligado (etapa da Meta), posta sozinho o que você liberar.'],
 };
 
 const first = (name: string | null | undefined) => (name ?? '').trim().split(/\s+/)[0] ?? '';
@@ -523,6 +546,39 @@ export function birthdayMessage(i: {
       : 'Qualquer coisa que precisar, é só chamar por aqui.',
   ].join('\n\n');
 }
+
+/** Legenda do post de antes e depois (sem o nome do cliente). */
+export function beforeAfterCaption(i: {
+  companyName: string;
+  pieces: string[];
+  service: string | null;
+  phone: string | null;
+}) {
+  const what =
+    i.pieces.length === 1
+      ? i.pieces[0]!.toLowerCase()
+      : i.pieces.length
+        ? `${i.pieces
+            .slice(0, -1)
+            .map((p) => p.toLowerCase())
+            .join(', ')} e ${i.pieces.at(-1)!.toLowerCase()}`
+        : 'peça';
+  return [
+    `Antes e depois: ${what}${i.service ? ` (${i.service.toLowerCase()})` : ''}, feito aqui na ${i.companyName}.`,
+    `Quer dar vida nova ao seu estofado? Mande uma foto pelo WhatsApp${i.phone ? ` ${i.phone}` : ''} que a gente faz o orçamento.`,
+    `#tapecaria #estofados #reforma #antesedepois`,
+  ].join('\n\n');
+}
+
+/** Promoção do mês fraco para os clientes antigos ({nome} vira o primeiro nome de cada um). */
+export function slowMonthMessage(i: { companyName: string; discountPct: number; until: string }) {
+  return [
+    `Olá, {nome}! Aqui é da ${i.companyName}. Este mês estamos com ${i.discountPct}% de desconto nos serviços fechados até ${i.until}.`,
+    'Se tiver alguma peça precisando de reforma, me manda uma foto aqui que eu passo o orçamento.',
+  ].join('\n\n');
+}
+
+export const firstName = (name: string | null | undefined) => first(name);
 
 /** Duas semanas depois da entrega: convite para indicar (os dois ganham o desconto). */
 export function referralMessage(i: {

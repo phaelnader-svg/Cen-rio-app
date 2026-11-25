@@ -49,6 +49,7 @@ import { type ExpenseEdits, launchApprovedExpense } from './office-expense';
 import { saveApprovedQuote } from './office-quote';
 import { prepareApprovedContract } from './office-contract';
 import { applyTableAdjust } from './office-prices';
+import { approvedPromo, saveApprovedPost } from './office-marketing';
 import { planApprovedService } from './office-plan';
 import { shopTimezone, todayIso } from '../finance/common';
 import { goalsAnswer, isGoalsQuestion } from '../office/cash-chat';
@@ -659,6 +660,16 @@ export async function decideProposal(prisma: PrismaClient, o: DecideOptions) {
         appliedCents: r.priceCents,
         ...(r.edited ? { edited: true } : {}),
       };
+    }
+    // Antes e depois (Marketing): o dono confirma que o cliente deixou divulgar; o post fica salvo.
+    if (o.decision !== 'REJEITAR' && officeTaskOf(p) === 'POST_ANTES_DEPOIS') {
+      const r = await saveApprovedPost(tx, actor, perms, p, o.edits?.text);
+      payload = { ...((p.payload ?? {}) as Record<string, unknown>), ...r };
+    }
+    // Promoção do mês fraco (Marketing): um link de WhatsApp por cliente, com o nome de cada um.
+    if (o.decision !== 'REJEITAR' && officeTaskOf(p) === 'PROMOCAO_MES_FRACO') {
+      const r = approvedPromo(p, o.edits?.text);
+      payload = { ...((p.payload ?? {}) as Record<string, unknown>), ...r };
     }
     // Semana da produção (Gerente): planeja a OS na semana, em rascunho.
     if (
