@@ -98,6 +98,7 @@ import { companyRoutes } from './modules/company/routes';
 import { platformRoutes } from './modules/platform/routes';
 import { billingRoutesPlatform } from './modules/billing/routes';
 import { accountRoutes } from './modules/account/routes';
+import { privacyRoutes } from './modules/privacy/routes';
 import { EmailSender } from './core/mailer';
 import { turnstileVerifier } from './core/captcha';
 import { setBillingEnvironment } from './core/billing';
@@ -246,6 +247,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(platformRoutes);
   await app.register(billingRoutesPlatform);
   await app.register(accountRoutes);
+  await app.register(privacyRoutes);
   await app.register(auditRoutes);
   await app.register(managementRoutes);
   await app.register(todayRoutes);

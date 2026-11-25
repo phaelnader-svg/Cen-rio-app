@@ -1,3 +1,4 @@
+import { legalMode } from '@/components/site/legal/legal';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { Landing } from '@/components/site/landing';
@@ -20,5 +21,11 @@ type Props = { searchParams: Promise<Record<string, string | string[] | undefine
 
 export default async function Home({ searchParams }: Props) {
   if (siteMode() !== 'live') redirect('/painel');
-  return <Landing preview={false} blogOrigem={blogOrigemDe(await searchParams)} />;
+  return (
+    <Landing
+      preview={false}
+      blogOrigem={blogOrigemDe(await searchParams)}
+      legal={await legalMode()}
+    />
+  );
 }

@@ -4,7 +4,8 @@ import { ArrowLeft, LogIn } from 'lucide-react';
 import { BrandMark } from '@/components/brand';
 import { BUTTON_BASE, BUTTON_SIZES, BUTTON_VARIANTS } from '@/components/ui/button-styles';
 import { SIGNUP_PATH, SITE, SITE_URL, whatsappUrl } from '../config';
-import { Analytics, ContactLink, WRAP, formatPhone } from '../landing';
+import { ContactLink, WRAP, formatPhone } from '../landing';
+import { LegalFooter, SiteConsent, SkipLink, type LegalMode } from '../legal/legal';
 import { type Artigo, dataPorExtenso, minutosDeLeitura } from './artigos';
 import { Markdown } from './markdown';
 
@@ -22,7 +23,9 @@ function Shell({
   wa,
   origem,
   preview,
+  legal,
 }: {
+  legal?: LegalMode;
   children: React.ReactNode;
   wa: string | null;
   origem: string;
@@ -30,7 +33,8 @@ function Shell({
 }) {
   return (
     <div className="min-h-dvh bg-canvas text-ink">
-      {!preview && SITE.analyticsId && <Analytics id={SITE.analyticsId} />}
+      <SkipLink />
+      <SiteConsent preview={preview} />
       <header className={clsx(WRAP, 'flex items-center justify-between gap-4 py-5')}>
         <a href={blogHref()} aria-label="Cenário Gestão, página principal">
           <BrandMark subtitle="Cenário Estofados" />
@@ -49,7 +53,7 @@ function Shell({
           </a>
         </div>
       </header>
-      <main>{children}</main>
+      <main id="conteudo">{children}</main>
       <footer className="mt-16 border-t border-line">
         <div
           className={clsx(
@@ -74,6 +78,7 @@ function Shell({
                 className="text-ink-soft hover:text-ink hover:underline"
               >
                 WhatsApp {formatPhone(SITE.whatsappNumber)}
+                <span className="sr-only"> (abre em outra aba)</span>
               </a>
             )}
             <a href={SIGNUP_PATH} className="text-ink-soft hover:text-ink hover:underline">
@@ -81,6 +86,7 @@ function Shell({
             </a>
           </nav>
         </div>
+        <LegalFooter preview={preview} mode={legal} />
       </footer>
     </div>
   );
@@ -98,10 +104,18 @@ function Meta({ a }: { a: Artigo }) {
   );
 }
 
-export function BlogList({ artigos, preview }: { artigos: Artigo[]; preview: boolean }) {
+export function BlogList({
+  artigos,
+  preview,
+  legal,
+}: {
+  artigos: Artigo[];
+  preview: boolean;
+  legal?: LegalMode;
+}) {
   const wa = whatsappUrl(SITE, { blog: true });
   return (
-    <Shell wa={wa} origem="blog" preview={preview}>
+    <Shell wa={wa} origem="blog" preview={preview} legal={legal}>
       <section className={clsx(WRAP, 'pt-8 pb-4 sm:pt-12')}>
         <h1 className="text-4xl leading-[1.1] font-semibold tracking-tight text-balance sm:text-5xl">
           Blog do Cenário Gestão
@@ -159,11 +173,19 @@ export function articleJsonLd(a: Artigo) {
   };
 }
 
-export function BlogArticle({ a, preview }: { a: Artigo; preview: boolean }) {
+export function BlogArticle({
+  a,
+  preview,
+  legal,
+}: {
+  a: Artigo;
+  preview: boolean;
+  legal?: LegalMode;
+}) {
   const wa = whatsappUrl(SITE, { blog: true, artigo: a.titulo });
   const origem = `blog:${a.slug}`;
   return (
-    <Shell wa={wa} origem={origem} preview={preview}>
+    <Shell wa={wa} origem={origem} preview={preview} legal={legal}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{

@@ -87,7 +87,8 @@ describe('Multi-empresa: banco', () => {
     // 167: + feedback_reports (melhorias rodada 2).
     // 168: + expense_categories (despesas, prazos e alertas).
     // 170: + reworks e manual_revenues (retrabalhos e receitas avulsas).
-    expect(tabelasComEmpresa.length).toBe(170);
+    // 171: + privacy_requests (LGPD, pedidos sobre dados pessoais).
+    expect(tabelasComEmpresa.length).toBe(171);
   });
 
   it('nenhuma unicidade de tabela de empresa vale no sistema inteiro sem motivo', async () => {

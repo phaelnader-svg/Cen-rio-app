@@ -118,7 +118,7 @@ describe('isolamento e promessas', () => {
   it('a raiz mostra a landing só quando publicada; senão continua indo para o painel', () => {
     const root = src('app/page.tsx');
     expect(root).toMatch(/if \(siteMode\(\) !== 'live'\) redirect\('\/painel'\)/);
-    expect(root).toMatch(/<Landing preview=\{false\} blogOrigem=/);
+    expect(root).toMatch(/<Landing\s+preview=\{false\}\s+blogOrigem=/);
     expect(root).toMatch(/force-dynamic/);
   });
 

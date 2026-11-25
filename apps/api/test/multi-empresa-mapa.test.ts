@@ -93,6 +93,7 @@ describe('Multi-empresa: mapa das tabelas', () => {
       // Rodada 2: + feedback_reports (empresa), system_notices e status_samples (sistema).
       // 2026-11-18: + expense_categories (empresa).
       // 2026-11-18 (ajustes): + reworks e manual_revenues (empresa).
-    }).toEqual({ total: 176, empresa: 162, acesso: 8, sistema: 5, raiz: 1 });
+      // 2026-11-25 (LGPD): + privacy_requests (empresa).
+    }).toEqual({ total: 177, empresa: 163, acesso: 8, sistema: 5, raiz: 1 });
   });
 });

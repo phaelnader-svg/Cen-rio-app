@@ -13,6 +13,13 @@ import { Alert } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
 import { Honeypot, Turnstile, useSignupConfig } from '@/components/account/turnstile';
 import { trialOffer } from '@/components/site/config';
+import { legalPending } from '@cenario/shared';
+
+/** Os links legais só aparecem quando as páginas existem (em produção, com os dados preenchidos). */
+const legalLinksReady = () =>
+  process.env.NODE_ENV !== 'production' ||
+  legalPending().length === 0 ||
+  (typeof window !== 'undefined' && /^teste\./i.test(window.location.hostname));
 
 const REASONS: Record<string, string> = {
   'sessao-encerrada': 'Sua sessão foi encerrada. Entre novamente para continuar.',
@@ -168,7 +175,7 @@ export function AdminLogin() {
           height={900}
           className="w-full max-w-lg rounded-xl border border-white/10 shadow-2xl"
         />
-        <p className="text-xs text-white/50">Cada empresa vê só os próprios dados.</p>
+        <p className="text-xs text-white/75">Cada empresa vê só os próprios dados.</p>
       </section>
 
       <section className="flex items-center justify-center px-5 py-12">
@@ -362,6 +369,28 @@ export function AdminLogin() {
               >
                 Criar conta
               </Button>
+              {/* LGPD: quem cria a conta vê, antes do botão, a que está aceitando. */}
+              {legalLinksReady() && (
+                <p className="text-center text-sm text-ink-muted" data-testid="signup-termos">
+                  Ao criar a conta, você concorda com os{' '}
+                  <a
+                    href="/termos"
+                    target="_blank"
+                    className="font-medium text-brand-700 underline"
+                  >
+                    Termos de uso
+                  </a>{' '}
+                  e com a{' '}
+                  <a
+                    href="/privacidade"
+                    target="_blank"
+                    className="font-medium text-brand-700 underline"
+                  >
+                    Política de privacidade
+                  </a>
+                  .
+                </p>
+              )}
               <p className="text-center text-sm text-ink-muted">
                 Já tem conta?{' '}
                 <button

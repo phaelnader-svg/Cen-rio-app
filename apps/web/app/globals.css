@@ -35,7 +35,8 @@
   --color-line-strong: #cfcac0;
   --color-ink: #1d2523;
   --color-ink-soft: #4a5552;
-  --color-ink-muted: #7a8481;
+  /* LGPD/acessibilidade (2026-11-25): #7a8481 tinha contraste 3,5:1; agora passa de 4,5:1 (WCAG AA). */
+  --color-ink-muted: #646e6b;
 
   /* Marca: verde petróleo profundo + bronze (couro/estofado) */
   /* Melhoria 136: escala montada a partir do verde da logo do sofá (#064a4b = brand-700). */
@@ -87,7 +88,7 @@
     --color-brand-200: #225758;
     --color-brand-500: #5eaaa9;
     --color-brand-600: #4b9b9b;
-    --color-brand-700: #3f8f8f;
+    --color-brand-700: #52a3a3;
     --color-brand-800: #2f7576;
     --color-bronze-100: #2e2418;
     --color-bronze-500: #c8925a;

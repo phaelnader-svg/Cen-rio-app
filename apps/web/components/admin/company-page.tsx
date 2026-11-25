@@ -11,10 +11,11 @@ import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, errorMessage, fieldErrors, newIdempotencyKey } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
-import { useCan } from '@/lib/hooks';
+import { useCan, useMe } from '@/lib/hooks';
 import { useCompany } from '@/lib/queries';
 import { useOwnTeamSettings } from '@/lib/commercial';
 import { ExportDataCard, SupportAccessCard } from '@/components/improvements/company-extras';
+import { PrivacyRequestCard } from '@/components/improvements/privacy-extras';
 
 const TIMEZONES = [
   { value: 'America/Sao_Paulo', label: 'Horário de Brasília' },
@@ -52,6 +53,7 @@ function toForm(c: CompanySettingsDto): Form {
 
 export function CompanyPage() {
   const can = useCan();
+  const me = useMe();
   const company = useCompany();
   const qc = useQueryClient();
   const toast = useToast();
@@ -280,6 +282,7 @@ export function CompanyPage() {
         <>
           <SupportAccessCard />
           <ExportDataCard />
+          {!me.data?.company.platformOwner && <PrivacyRequestCard scope="EMPRESA" />}
         </>
       )}
       <p className="mt-4 text-xs text-ink-muted">

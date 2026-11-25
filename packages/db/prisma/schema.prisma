@@ -205,6 +205,7 @@ model User {
   // Módulo Orçamentos.
   quotesCreated         Quote[]                @relation("QuoteCreatedBy")
   feedbackReports       FeedbackReport[]       @relation("FeedbackReportUser")
+  privacyRequests       PrivacyRequest[]       @relation("PrivacyRequestUser")
   quotesDeleted         Quote[]                @relation("QuoteDeletedBy")
 
   @@map("users")
@@ -669,6 +670,7 @@ model CompanySettings {
   empresaQuoteSettings               QuoteSettings[]               @relation("EmpresaDeQuoteSettings")
   empresaQuote                       Quote[]                       @relation("EmpresaDeQuote")
   empresaFeedbackReport              FeedbackReport[]              @relation("EmpresaDeFeedbackReport")
+  empresaPrivacyRequest              PrivacyRequest[]              @relation("EmpresaDePrivacyRequest")
   empresaCustomerReceivable          CustomerReceivable[]          @relation("EmpresaDeCustomerReceivable")
   empresaCustomerPayment             CustomerPayment[]             @relation("EmpresaDeCustomerPayment")
   empresaCustomerPaymentReport       CustomerPaymentReport[]       @relation("EmpresaDeCustomerPaymentReport")
@@ -5701,4 +5703,35 @@ model Rework {
   @@index([originalOrderId])
   @@index([createdAt])
   @@map("reworks")
+}
+
+/// LGPD (2026-11-25): pedido sobre dados pessoais (apagar, acessar, corrigir...). Feito pela página
+/// pública (fica na empresa da plataforma) ou de dentro do painel (fica na empresa de quem pediu).
+/// Nada é apagado sozinho: o encarregado de dados atende e marca o andamento.
+model PrivacyRequest {
+  id          String          @id @default(uuid()) @db.Uuid
+  companyId   Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company     CompanySettings @relation("EmpresaDePrivacyRequest", fields: [companyId], references: [id])
+  userId      String?         @map("user_id") @db.Uuid
+  /// PUBLICO | MINHA_CONTA | EMPRESA
+  scope       String          @db.VarChar(12)
+  /// EXCLUIR | ACESSAR | CORRIGIR | PORTABILIDADE | REVOGAR | OUTRO
+  kind        String          @db.VarChar(14)
+  /// USUARIO | CLIENTE_TAPECARIA | OUTRO (só nos pedidos públicos)
+  requester   String?         @db.VarChar(20)
+  name        String          @db.VarChar(120)
+  email       String          @db.VarChar(254)
+  /// Tapeçaria citada por quem é cliente de uma.
+  companyName String?         @map("company_name") @db.VarChar(120)
+  message     String?         @db.VarChar(2000)
+  /// NOVO | EM_ANDAMENTO | ATENDIDO | RECUSADO
+  status      String          @default("NOVO") @db.VarChar(14)
+  dueAt       DateTime        @map("due_at") @db.Timestamptz(3)
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User? @relation("PrivacyRequestUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("privacy_requests")
 }
