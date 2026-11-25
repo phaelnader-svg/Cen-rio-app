@@ -110,6 +110,9 @@ describe('Matriz de acesso: todas as rotas', () => {
         // Melhorias rodada 2 (2026-11-17): segundo passo do login com verificação em duas etapas
         // (só vale com o desafio assinado do primeiro passo, que expira em minutos).
         'POST /api/auth/login/2fa',
+        // LGPD (2026-11-25): pedido sobre dados pessoais pelo formulário público, com limite por IP
+        // e global, campo isca e anti-robô; só grava o pedido, não devolve dado nenhum.
+        'POST /api/v1/privacy/requests',
         // Links do cliente, sem conta: cada um só abre com o token HMAC do próprio registro (?t=).
         'GET /api/public/proposta/:id',
         'POST /api/public/proposta/:id/aprovar',
