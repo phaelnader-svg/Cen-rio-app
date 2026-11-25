@@ -7,7 +7,9 @@ export const metadata: Metadata = {
   title: { default: 'Cenário Gestão', template: '%s · Cenário Gestão' },
   description: 'Gestão de produção para tapeçarias',
   applicationName: 'Cenário Gestão',
-  manifest: '/manifest.webmanifest',
+  // Instalar a partir do site ou do painel instala o app do DONO (/dono). O app da equipe se
+  // instala pela tela /tablet (e pelo código QR de Dispositivos), que tem o próprio manifesto.
+  manifest: '/dono/manifest',
   // Ícone da aba: o sofá da Cenário Gestão. `?v=2` força os navegadores a trocar o "C" antigo em cache.
   icons: {
     icon: [

@@ -145,7 +145,8 @@ test('capturas: app do dono no celular', async ({ page, browser }) => {
   );
   const manifest = await (await phone.request.get('/dono/manifest')).json();
   expect(manifest.start_url).toBe('/dono');
-  expect(manifest.scope).toBe('/dono');
+  expect(manifest.scope).toBe('/');
+  expect(manifest.id).toBe('/dono');
   await phone.waitForLoadState('networkidle');
   await shot('5-dono-hoje');
 

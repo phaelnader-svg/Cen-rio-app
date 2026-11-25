@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 
-export default function manifest(): MetadataRoute.Manifest {
+/** Manifesto do app da EQUIPE (/tablet), servido em /manifest.webmanifest. */
+export function teamManifest(): MetadataRoute.Manifest {
   return {
     // App instalado (2026-11-25): o app da equipe, no tablet e no celular.
     id: '/tablet',

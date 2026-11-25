@@ -1,4 +1,4 @@
-import manifest from '../../manifest';
+import { teamManifest as manifest } from '@/lib/team-manifest';
 
 /**
  * App instalado (2026-11-25): o mesmo manifesto do app, mas abrindo já com o código de vinculação
