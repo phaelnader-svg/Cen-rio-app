@@ -432,7 +432,7 @@ function ExpenseSummary({ pl }: { pl: Record<string, unknown> }) {
     ['Data', brDate(String(pl.date ?? ''))],
     ['Quem recebeu', String(pl.beneficiary || 'Não deu para ler')],
     ['Categoria', String(pl.categoryLabel ?? pl.category ?? '')],
-    ['Situação', pl.paid ? 'Já pago (dá baixa junto)' : 'A pagar (vai para Contas a pagar)'],
+    ['Situação', pl.paid ? 'Já pago' : 'A pagar'],
   ];
   return (
     <div className="mt-2 flex gap-3 rounded-lg bg-subtle p-3">
