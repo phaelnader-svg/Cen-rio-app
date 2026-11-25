@@ -95,6 +95,7 @@ describe('Multi-empresa: mapa das tabelas', () => {
       // 2026-11-18 (ajustes): + reworks e manual_revenues (empresa).
       // 2026-11-25 (LGPD): + privacy_requests (empresa).
       // 2026-11-25 (app instalado): + push_subscriptions (empresa) e push_keys (sistema).
-    }).toEqual({ total: 179, empresa: 164, acesso: 8, sistema: 6, raiz: 1 });
+      // 2026-11-25 (preço dos fornecedores): + material_prices (empresa).
+    }).toEqual({ total: 180, empresa: 165, acesso: 8, sistema: 6, raiz: 1 });
   });
 });

@@ -264,6 +264,7 @@ export const TENANCY: Record<string, TenancyEntry> = {
   AiAgent: E,
   AiAgentMessage: E,
   AiAgentProposal: E,
+  MaterialPrice: E,
   AgentAction: E,
   IntegrationConnection: {
     class: 'empresa',

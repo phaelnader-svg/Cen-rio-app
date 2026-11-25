@@ -90,7 +90,8 @@ describe('Multi-empresa: banco', () => {
     // 170: + reworks e manual_revenues (retrabalhos e receitas avulsas).
     // 171: + privacy_requests (LGPD, pedidos sobre dados pessoais).
     // 172: + push_subscriptions (avisos no aparelho do app instalado).
-    expect(tabelasComEmpresa.length).toBe(172);
+    // 173: + material_prices (preço que cada fornecedor cobrou, Escritório).
+    expect(tabelasComEmpresa.length).toBe(173);
   });
 
   it('nenhuma unicidade de tabela de empresa vale no sistema inteiro sem motivo', async () => {
