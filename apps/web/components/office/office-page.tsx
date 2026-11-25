@@ -785,7 +785,8 @@ function ExpenseSummary({ pl }: { pl: Record<string, unknown> }) {
     ['Situação', pl.paid ? 'Já pago' : 'A pagar'],
   ];
   return (
-    <div className="mt-2 flex gap-3 rounded-lg bg-subtle p-3">
+    // Em celular estreito a foto fica em cima e os dados embaixo, sem espremer as palavras.
+    <div className="mt-2 flex flex-wrap gap-3 rounded-lg bg-subtle p-3">
       {typeof pl.thumbUrl === 'string' && (
         <a
           href={String(pl.photoUrl)}
@@ -802,11 +803,11 @@ function ExpenseSummary({ pl }: { pl: Record<string, unknown> }) {
           />
         </a>
       )}
-      <dl className="grid min-w-0 flex-1 grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
+      <dl className="grid min-w-[13rem] flex-1 grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm">
         {rows.map(([k, v]) => (
           <div key={k} className="contents">
             <dt className="text-ink-muted">{k}</dt>
-            <dd className="min-w-0 truncate text-ink">{v}</dd>
+            <dd className="min-w-0 break-words text-ink">{v}</dd>
           </div>
         ))}
         {typeof pl.description === 'string' && pl.description && (

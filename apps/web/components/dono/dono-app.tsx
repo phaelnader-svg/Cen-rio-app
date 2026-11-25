@@ -220,7 +220,10 @@ function Row({
         />
       )}
       <span className="min-w-0 flex-1 text-ink">{left}</span>
-      {right !== undefined && <span className="shrink-0 text-sm text-ink-muted">{right}</span>}
+      {right !== undefined && (
+        // Lado direito curto (valor, prazo); se for maior, quebra a linha em vez de empurrar a tela.
+        <span className="max-w-[55%] shrink-0 text-right text-sm text-ink-muted">{right}</span>
+      )}
     </li>
   );
 }
@@ -405,8 +408,12 @@ function Hoje({
                 <Row
                   key={b.title + b.at}
                   dot={b.kind === 'CONTA_VENCIDA' ? 'danger' : 'warn'}
-                  left={b.title}
-                  right={b.body}
+                  left={
+                    <>
+                      {b.title}
+                      <span className="block text-sm text-ink-muted">{b.body}</span>
+                    </>
+                  }
                 />
               ))}
             </ul>
