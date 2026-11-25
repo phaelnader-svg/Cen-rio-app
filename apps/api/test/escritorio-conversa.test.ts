@@ -5,7 +5,7 @@ import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import { setChatModel, type ChatModel } from '../src/modules/game/owner-chat';
 import { type Client, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
-import { createCustomer } from './commercial-helpers';
+import { createCustomer, createOrder, createPickup } from './commercial-helpers';
 
 /**
  * Conversar (app do dono, 2026-11-25): a IA responde chamando as ferramentas; os números vêm do
@@ -65,7 +65,7 @@ describe('Conversar com a IA', () => {
     });
     const seen: string[] = [];
     const script: ChatModel = async ({ messages, system }) => {
-      expect(system).toMatch(/Hoje é 25\/11\/2026/);
+      expect(system).toMatch(/Hoje é quarta, 25\/11\/2026. Amanhã é quinta, 26\/11\/2026/);
       if (messages.length === 1) return use('dinheiro', { de: '2026-10-01', ate: '2026-10-31' });
       seen.push(lastResult(messages));
       return say('Em outubro fechou R$ 2.500,00.');
@@ -116,6 +116,49 @@ describe('Conversar com a IA', () => {
     expect(decodeURIComponent(String(d.payload.href))).toMatch(
       /wa\.me\/5512991110001\?text=Olá, Ana! Seu sofá fica pronto na sexta\./,
     );
+  });
+
+  it('"tem retirada amanhã?": a IA olha as retiradas do dia e responde com nome e horário', async () => {
+    const admin = await loginAdmin(app);
+    const bia = (await createCustomer(admin, { name: 'Bia Fictícia' })) as never;
+    const order = (await createOrder(admin, bia)) as never;
+    await createPickup(admin, order, '2026-11-26');
+    await createPickup(admin, (await createOrder(admin, bia)) as never, '2026-11-28');
+    const seen: string[] = [];
+    setChatModel(async ({ messages, tools }) => {
+      expect(tools.map((t) => t.name)).toEqual(
+        expect.arrayContaining(['agenda', 'retiradas', 'prazos', 'contas_a_pagar']),
+      );
+      if (messages.length === 1) return use('retiradas', { de: '2026-11-26', ate: '2026-11-26' });
+      seen.push(lastResult(messages));
+      return say('Amanhã tem uma retirada: Bia Fictícia, das 09:00 às 12:00.');
+    });
+    const r = ok<OwnerChatReplyDto>(await ask(admin, 'tem retirada amanhã?'));
+    expect(seen[0]).toMatch(/Bia Fictícia/);
+    expect(seen[0]).toMatch(/09:00 às 12:00/);
+    expect(seen[0]).toMatch(/"total":1/);
+    const card = r.cards[0]!;
+    expect(card.kind).toBe('lista');
+    if (card.kind !== 'lista') return;
+    expect(card.title).toBe('Retiradas de quinta 26/11');
+    expect(card.items).toHaveLength(1);
+  });
+
+  it('agenda do dia junta retiradas, entregas, prazos e contas; sem nada, diz que está vazio', async () => {
+    const admin = await loginAdmin(app);
+    const seen: string[] = [];
+    setChatModel(async ({ messages }) => {
+      if (messages.length === 1) return use('agenda', { de: '2026-11-27', ate: '2026-11-27' });
+      seen.push(lastResult(messages));
+      return say('Sexta não tem nada marcado.');
+    });
+    const r = ok<OwnerChatReplyDto>(await ask(admin, 'o que tem sexta?'));
+    const out = JSON.parse(seen[0]!);
+    expect(Object.keys(out)).toEqual(
+      expect.arrayContaining(['retiradas', 'entregas', 'prazos', 'contas_a_pagar']),
+    );
+    // Dia sem nada: um cartão só, em vez de quatro cartões vazios.
+    expect(r.cards.map((c) => c.title)).toEqual(['Agenda de sexta 27/11']);
   });
 
   it('sem a IA ligada no servidor, avisa em vez de inventar', async () => {

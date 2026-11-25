@@ -174,11 +174,11 @@ export function AdminLogin() {
 
       <section className="flex items-center justify-center px-5 py-12">
         <div className="w-full max-w-sm">
-          <BrandMark className="mb-10 lg:hidden" />
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <BrandMark className="mx-auto mb-10 w-fit lg:hidden" />
+          <h1 className="text-center text-2xl font-semibold tracking-tight">
             {mode === 'login' ? 'Entrar no painel' : 'Criar conta'}
           </h1>
-          <p className="mt-1 text-[15px] text-ink-muted">
+          <p className="mt-1 text-center text-[15px] text-ink-muted">
             {mode === 'login'
               ? 'Use seu e-mail e senha.'
               : 'Crie a conta da sua empresa. Os dados dela ficam separados de todas as outras.'}

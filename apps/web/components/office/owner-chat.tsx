@@ -51,7 +51,7 @@ type Recognition = {
   continuous: boolean;
   onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
   onend: (() => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((e: { error?: string }) => void) | null;
   start: () => void;
   stop: () => void;
 };
@@ -67,7 +67,7 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
-  const [canTalk, setCanTalk] = useState(false);
+  const [voiceTip, setVoiceTip] = useState<string | null>(null);
   const rec = useRef<Recognition | null>(null);
   const photo = useRef<HTMLInputElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
@@ -75,7 +75,6 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
 
   useEffect(() => {
     setLines(load());
-    setCanTalk(!!recognitionCtor());
   }, []);
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
@@ -159,33 +158,72 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
     }
   };
 
+  // Plano B da voz: abre o teclado no campo e explica como ditar pelo microfone do teclado.
+  // No app instalado no iPhone o reconhecimento de voz do navegador muitas vezes não funciona
+  // (o botão ficava vermelho e nada acontecia); o ditado do teclado funciona sempre.
+  const keyboardDictation = (motivo?: string) => {
+    setListening(false);
+    setVoiceTip(
+      motivo === 'not-allowed'
+        ? 'O microfone está bloqueado para o app. Libere em Ajustes do celular, ou toque no microfone do teclado e fale.'
+        : 'Toque no microfone do teclado e fale. Depois toque na seta para enviar.',
+    );
+    field.current?.focus();
+  };
+
   const talk = () => {
     if (listening) {
       rec.current?.stop();
       return;
     }
+    setVoiceTip(null);
     const Ctor = recognitionCtor();
-    if (!Ctor) return;
-    const r = new Ctor();
+    if (!Ctor) {
+      keyboardDictation();
+      return;
+    }
+    let r: Recognition;
+    try {
+      r = new Ctor();
+    } catch {
+      keyboardDictation();
+      return;
+    }
     r.lang = 'pt-BR';
     r.interimResults = false;
     r.continuous = false;
     let heard = '';
+    let failed = false;
+    const startedAt = Date.now();
     r.onresult = (e) => {
       heard = Array.from(e.results)
         .map((x) => x[0]?.transcript ?? '')
         .join(' ');
       setText(heard);
     };
-    r.onerror = () => setListening(false);
+    r.onerror = (e) => {
+      failed = true;
+      // Ficou em silêncio ou parou de propósito: só desliga. Outro erro: plano B (teclado).
+      if (e?.error === 'no-speech' || e?.error === 'aborted') setListening(false);
+      else keyboardDictation(e?.error);
+    };
     r.onend = () => {
       setListening(false);
       // Falou e parou: já pergunta, sem precisar tocar em enviar.
-      if (heard.trim()) void ask(heard);
+      if (heard.trim()) {
+        void ask(heard);
+        return;
+      }
+      // Terminou na hora, sem erro e sem ouvir nada: o reconhecimento não funciona aqui.
+      if (!failed && Date.now() - startedAt < 1200) keyboardDictation();
     };
     rec.current = r;
     setListening(true);
-    r.start();
+    try {
+      r.start();
+    } catch {
+      keyboardDictation();
+    }
   };
 
   const restart = () => {
@@ -278,11 +316,23 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
         }}
         className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 border-t border-line bg-canvas/95 px-4 py-2 backdrop-blur"
       >
+        {voiceTip && (
+          <p
+            role="status"
+            data-testid="voice-tip"
+            className="mx-auto mb-2 max-w-xl rounded-xl bg-brand-50 px-3 py-2 text-sm leading-5 text-brand-800"
+          >
+            {voiceTip}
+          </p>
+        )}
         <div className="mx-auto flex max-w-xl items-end gap-2">
           <textarea
             ref={field}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (voiceTip) setVoiceTip(null);
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -316,7 +366,7 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
               if (file) void sendPhoto(file);
             }}
           />
-          {canTalk && (!typed || listening) ? (
+          {!typed || listening ? (
             <button
               type="button"
               onClick={talk}

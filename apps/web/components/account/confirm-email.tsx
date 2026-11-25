@@ -26,7 +26,9 @@ export function ConfirmEmail() {
           <Alert tone="danger">{errorMessage(q.error)}</Alert>
         ) : (
           <>
-            <Alert tone="ok">E-mail confirmado. Obrigado!</Alert>
+            <Alert tone="ok" className="justify-center">
+              E-mail confirmado. Obrigado!
+            </Alert>
             <a
               href="/painel"
               className="mt-4 inline-flex h-12 w-full items-center justify-center rounded-xl bg-brand-700 font-semibold text-white hover:bg-brand-800"

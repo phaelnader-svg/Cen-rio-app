@@ -71,15 +71,15 @@ export function PlatformLogin() {
   return (
     <main className="grid min-h-dvh place-items-center bg-canvas px-5 py-12">
       <div className="w-full max-w-sm">
-        <BrandMark subtitle="Painel da plataforma" className="mb-10" />
+        <BrandMark subtitle="Painel da plataforma" className="mx-auto mb-10 w-fit" />
         {estado.isPending ? (
           <Spinner />
         ) : (
           <>
-            <h1 className="text-2xl font-semibold tracking-tight">
+            <h1 className="text-center text-2xl font-semibold tracking-tight">
               {first ? 'Criar o acesso do painel' : 'Entrar no painel da plataforma'}
             </h1>
-            <p className="mt-1 text-[15px] text-ink-muted">
+            <p className="mt-1 text-center text-[15px] text-ink-muted">
               {first
                 ? 'Um e-mail e uma senha só deste painel, separados do login da Cenário Estofados. Você faz isso uma vez.'
                 : 'Empresas, cobrança, preços e avisos do Cenário Gestão.'}
