@@ -639,6 +639,9 @@ case "${1:-}" in
   verificar) verificar ;;
   credencial) credencial ;;
   emergencia) emergencia ;;
+  # Só grava no bucket de versões (runner e scripts da VM do commit atual); não toca a VM. Quem aplica
+  # é o operador, depois da homologação: vm_scripts_diff → vm_scripts_update → apply_stack_config.
+  publicar-scripts) requisitos; publicar_versoes ;;
   tudo) infraestrutura; promover; preparar_vm; operador; dns; verificar; credencial
         echo; echo "PROVISIONAMENTO CONCLUÍDO. Próximo passo (sessão no ambiente de PRODUÇÃO do Claude Code): primeiro deploy de $TAG_APP." ;;
   *) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 2 ;;
