@@ -1,9 +1,8 @@
-import { SITE_URL } from './config';
+import { SITE_URL } from '@/components/site/config';
 
 /**
  * robots.txt (RFC 9309) escrito à mão, porque o gerador do Next.js não aceita a linha
- * Content-Signal (https://contentsignals.org/). Fica aqui (e não no arquivo da rota) porque uma
- * rota do Next.js só pode exportar GET e as opções da rota.
+ * Content-Signal (https://contentsignals.org/).
  *
  * Buscadores e assistentes de IA podem ler só a landing e os arquivos públicos para agentes;
  * painel, tablet, API e os links dos clientes (proposta, álbum, retirada) ficam fora.

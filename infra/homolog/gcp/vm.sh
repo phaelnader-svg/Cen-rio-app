@@ -128,6 +128,12 @@ HOMOLOG_GATE_TOKEN='$gate'
 CENARIO_API_IMAGE='$REGION-docker.pkg.dev/$PROJECT/$REPO/api:$TAG'
 CENARIO_WEB_IMAGE='$REGION-docker.pkg.dev/$PROJECT/$REPO/web:$TAG'
 EOF
+  # Chave da IA (opcional, infra/ia/guardar-chave-ia.sh): sem ela os agentes usam as regras.
+  local ia; ia="$(s homolog-anthropic-api-key 2>/dev/null || true)"
+  if [[ "$ia" == sk-ant-* ]]; then
+    printf "ANTHROPIC_API_KEY='%s'\nGAME_AI_PROVIDER='anthropic'\n" "$ia" >> "$ENV_FILE"
+  fi
+  unset ia
   log "Variáveis geradas em $ENV_FILE (memória, permissão 600)."
 }
 

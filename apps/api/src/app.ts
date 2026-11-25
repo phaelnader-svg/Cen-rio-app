@@ -75,6 +75,8 @@ import { workshopMapRoutes } from './modules/workshop-map/routes';
 import { gameSpaceRoutes } from './modules/game/spaces';
 import { gameSnapshotRoutes } from './modules/game/snapshot';
 import { gameAgentRoutes } from './modules/game/agents';
+import { officeRoutes, runOfficeRound } from './modules/game/office';
+import { receiptRoutes } from './modules/game/office-receipt';
 import { gameCommandRoutes } from './modules/game/command';
 import { gameSupplierRoutes } from './modules/game/suppliers';
 import { connectionRoutes } from './modules/integrations/connections';
@@ -271,6 +273,8 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(gameSpaceRoutes);
   await app.register(gameSnapshotRoutes);
   await app.register(gameAgentRoutes);
+  await app.register(officeRoutes);
+  await app.register(receiptRoutes);
   await app.register(gameCommandRoutes);
   await app.register(gameSupplierRoutes);
   await app.register(connectionRoutes);
@@ -349,6 +353,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   let issueTimer: NodeJS.Timeout | null = null;
   let emailTimer: NodeJS.Timeout | null = null;
   let statusTimer: NodeJS.Timeout | null = null;
+  let officeTimer: NodeJS.Timeout | null = null;
   let started = false;
 
   return {
@@ -431,6 +436,16 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           );
         statusTimer = setInterval(sample, 5 * 60_000);
         statusTimer.unref();
+        // 2026-11-25: agentes do escritório trabalhando sozinhos (meia hora, no horário da oficina;
+        // só nas empresas com o plano que inclui o jogo).
+        officeTimer = setInterval(
+          () =>
+            void forEachCompany(system, () => runOfficeRound(prisma)).catch((err: unknown) =>
+              app.log.warn({ err }, 'Falha na rodada dos agentes do escritório'),
+            ),
+          30 * 60_000,
+        );
+        officeTimer.unref();
         sample();
       }
     },
@@ -443,6 +458,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       if (issueTimer) clearInterval(issueTimer);
       if (emailTimer) clearInterval(emailTimer);
       if (statusTimer) clearInterval(statusTimer);
+      if (officeTimer) clearInterval(officeTimer);
       processor.stop();
       hub.stop();
       await feed.stop();

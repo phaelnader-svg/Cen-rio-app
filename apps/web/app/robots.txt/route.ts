@@ -1,6 +1,9 @@
-import { robotsTxt } from '@/components/site/robots';
+import { robotsTxt } from '@/lib/robots';
 
-/** robots.txt: o conteúdo é montado em components/site/robots.ts. */
+/**
+ * robots.txt (o texto e as regras ficam em lib/robots.ts: uma rota do Next.js só pode exportar
+ * os campos de rota, e outro export aqui quebra o `next build`).
+ */
 export const dynamic = 'force-static';
 
 export function GET() {

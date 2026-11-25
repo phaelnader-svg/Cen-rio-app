@@ -38,6 +38,10 @@ function look(n: NotificationDto): { chip?: [string, 'danger' | 'warn']; action:
       return { chip: ['Prazo perto', 'warn'], action: 'Ver OS' };
     case 'SERVICO_PARADO':
       return { chip: ['Parado', 'warn'], action: 'Ver OS' };
+    case 'AGENTES_PEDEM':
+      return { chip: ['Aprovar', 'warn'], action: 'Abrir o Escritório' };
+    case 'AGENTES_RESUMO':
+      return { action: 'Abrir o Escritório' };
     default:
       if (PRESENCE_KINDS.has(n.kind)) return { action: 'Ver presença' };
       return { action: n.taskId ? 'Ver tarefa' : 'Abrir' };
@@ -60,6 +64,8 @@ export function PanelNotifications() {
       m.mutate({ run: () => api(`/api/v1/notifications/${n.id}/read`, { method: 'POST' }) });
     setOpen(false);
     if (PRESENCE_KINDS.has(n.kind)) router.push('/painel/presenca');
+    else if (n.kind === 'AGENTES_PEDEM' || n.kind === 'AGENTES_RESUMO')
+      router.push('/painel/escritorio');
     else if (n.taskId) router.push(`/painel/producao/tarefas/${n.taskId}`);
     // 2026-11-18: contas a pagar vão ao Resumo do financeiro; prazos, à OS ou ao Início.
     else if (n.kind === 'CONTA_A_VENCER' || n.kind === 'CONTA_VENCIDA')

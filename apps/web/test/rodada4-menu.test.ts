@@ -45,6 +45,8 @@ const links = (e: Entry[]) => e.filter((x) => x.kind === 'link').map((x) => x.te
 /** Área e permissões esperadas de cada item (trava: mudar exige atualizar aqui). */
 const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string[] }> = {
   '/painel': { group: 'Início' },
+  // Escritório dos agentes (plano com o jogo): logo abaixo do Início.
+  '/painel/escritorio': { group: 'Início', allOf: ['jogo.acessar', 'agentes.gerenciar'] },
   // B1 (homologação funcional): a tela exige as DUAS permissões na API.
   '/painel/servicos/novo': {
     group: 'Serviços',
@@ -52,6 +54,11 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
   },
   '/painel/atencao': { group: 'Início', anyOf: ['ocorrencias.ver', 'ocorrencias.gerenciar'] },
   // Revisão geral (item 3): "Equipe" (funcionários, presença, produtividade, funções) em Produção.
+  // Produção sem tablet: o dia da oficina no celular.
+  '/painel/producao/hoje': {
+    group: 'Produção',
+    anyOf: ['os.ver', 'producao.ver', 'producao.planejar'],
+  },
   '/painel/funcionarios': { group: 'Produção', anyOf: ['funcionarios.ver'] },
   '/painel/funcoes': { group: 'Produção', anyOf: ['funcoes.ver'] },
   '/painel/dispositivos': { group: 'Administração', anyOf: ['dispositivos.ver', 'sessoes.ver'] },
@@ -126,8 +133,10 @@ describe('F10-01 — menu por áreas', () => {
     const e = sidebar(ALL_PERMISSIONS);
     expect(headers(e)).toEqual(['Financeiro', 'Serviços', 'Produção', 'Administração']);
     expect(e[0]).toEqual({ kind: 'link', text: 'Início', href: '/painel' });
+    // Escritório dos agentes logo abaixo do Início (sem cabeçalho próprio).
+    expect(e[1]).toEqual({ kind: 'link', text: 'Escritório', href: '/painel/escritorio' });
     // Revisão geral (item 2): a Central saiu do menu (abre pelo sininho).
-    expect(e[1]).toEqual({ kind: 'header', text: 'Financeiro' });
+    expect(e[2]).toEqual({ kind: 'header', text: 'Financeiro' });
     // Cabeçalho ≠ link homônimo: "Financeiro" aparece como cabeçalho E como link.
     for (const name of ['Financeiro']) {
       const at = e.findIndex((x) => x.kind === 'header' && x.text === name);
@@ -178,11 +187,12 @@ describe('F10-01 — menu por áreas', () => {
       expect(NAV.find((i) => i.href === href)).toBeUndefined();
   });
 
-  it('Revisão geral: área Produção com 4 entradas, sem perder rotas', () => {
+  it('Revisão geral: área Produção com 5 entradas, sem perder rotas', () => {
     const e = sidebar(ALL_PERMISSIONS);
     const start = e.findIndex((x) => x.kind === 'header' && x.text === 'Produção');
     const end = e.findIndex((x, i) => i > start && x.kind === 'header');
     expect(links(e.slice(start, end))).toEqual([
+      'Hoje na oficina',
       'Semana da oficina',
       'Mapa da oficina',
       'Estoque da oficina',
