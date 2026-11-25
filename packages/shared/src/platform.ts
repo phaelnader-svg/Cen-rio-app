@@ -103,6 +103,8 @@ export const platformCompanyEditSchema = z.object({
   plan: z.enum(PLAN_KEYS).optional(),
   cycle: z.enum(BILLING_CYCLES).optional(),
   courtesy: z.boolean().optional(),
+  /** Liberar as conexões do servidor (WhatsApp, Instagram, cobrança e notas): uma empresa só. */
+  serverConnections: z.boolean().optional(),
   /** Valor combinado por ciclo, em centavos. `null` = preço da tabela. */
   billingPriceCents: cents.nullable().optional(),
   paidUntil: day,
@@ -155,7 +157,8 @@ export interface PlatformCompanyDto {
   users: number;
   orders: number;
   lastOrderAt: string | null;
-  isPlatform: boolean;
+  /** Usa as conexões do servidor (liberado no painel; no máximo uma empresa). */
+  serverConnections: boolean;
   isDemo: boolean;
   blockedAt: string | null;
   blockedReason: string | null;
@@ -245,3 +248,19 @@ export interface ManualPaymentDto {
   /** O valor desta empresa por ciclo. */
   amountCents: number;
 }
+
+/** "Esqueci a senha" do painel da plataforma. */
+export const platformForgotSchema = z.object({
+  email: z.string().trim().toLowerCase().email({ message: 'E-mail inválido.' }).max(EMAIL_MAX),
+});
+
+export const platformResetSchema = z
+  .object({
+    token: z.string().min(20).max(200),
+    password: passwordPolicySchema,
+    passwordConfirm: z.string().max(128),
+  })
+  .refine((v) => v.password === v.passwordConfirm, {
+    message: 'As senhas não conferem.',
+    path: ['passwordConfirm'],
+  });

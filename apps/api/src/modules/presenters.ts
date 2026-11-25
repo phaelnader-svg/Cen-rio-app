@@ -91,7 +91,10 @@ export async function buildMe(
   const [user, device, company] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: auth.userId }, include: { employee: true } }),
     auth.deviceId
-      ? db.device.findUnique({ where: { id: auth.deviceId }, select: { id: true, name: true, shows: true } })
+      ? db.device.findUnique({
+          where: { id: auth.deviceId },
+          select: { id: true, name: true, shows: true },
+        })
       : null,
     db.companySettings.findUnique({ where: { id: requireCompanyId() } }),
   ]);
@@ -123,8 +126,8 @@ export async function buildMe(
       arrivalAlertAt: company?.arrivalAlertAt ?? '09:30',
       workdayEnd: company?.workdayEnd ?? '18:00',
       arrivalWindowStart: company?.arrivalWindowStart ?? '07:00',
-      platformOwner: company?.id === 1 && permissions.includes('empresa.configurar'),
-      platformCompany: company?.id === 1,
+      platformOwner: !!company?.serverConnections && permissions.includes('empresa.configurar'),
+      platformCompany: !!company?.serverConnections,
       needsWelcome:
         company?.tradeName === PROVISIONAL_TRADE_NAME &&
         permissions.includes('empresa.configurar') &&

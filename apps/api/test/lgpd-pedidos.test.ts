@@ -6,7 +6,7 @@
 import { LEGAL_VERSION, annualRefundCents, planPriceCents } from '@cenario/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
-import { Client, createTestApp, db, loginAdmin, resetDatabase, loginPlatform } from './helpers';
+import { Client, createTestApp, db, resetDatabase, loginPlatform } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = any;
@@ -52,7 +52,7 @@ describe('Pedido público sobre dados', () => {
     expect(dias).toBeGreaterThan(14.9);
     expect(dias).toBeLessThan(15.1);
     const row = await db().privacyRequest.findFirstOrThrow();
-    expect(row).toMatchObject({ scope: 'PUBLICO', kind: 'EXCLUIR', status: 'NOVO', companyId: 1 });
+    expect(row).toMatchObject({ scope: 'PUBLICO', kind: 'EXCLUIR', status: 'NOVO', companyId: 0 });
     const mail = await db().outboundEmail.findFirstOrThrow({
       where: { kind: 'lgpd-pedido-recebido' },
     });

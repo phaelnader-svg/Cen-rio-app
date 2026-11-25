@@ -159,7 +159,7 @@ describe('Criar conta (empresa nova)', () => {
     const diferente = await criarConta({ ...NOVA, passwordConfirm: 'senha124' });
     expect(diferente.r.status).toBe(400);
     expect(await db().user.count({ where: { email: 'nova@tapecaria.local' } })).toBe(0);
-    expect(await db().companySettings.count()).toBe(1);
+    expect(await db().companySettings.count({ where: { isPlatform: false } })).toBe(1);
   });
 
   it('e-mail já cadastrado é recusado, não cria empresa e não altera a conta existente', async () => {
@@ -173,7 +173,7 @@ describe('Criar conta (empresa nova)', () => {
     const depois = await db().user.findUniqueOrThrow({ where: { id: existente.id } });
     expect(depois.passwordHash).toBe(existente.passwordHash);
     expect(depois.companyId).toBe(1);
-    expect(await db().companySettings.count()).toBe(1);
+    expect(await db().companySettings.count({ where: { isPlatform: false } })).toBe(1);
   });
 
   it('limita a quantidade de contas criadas', async () => {
@@ -204,7 +204,10 @@ describe('Painel do dono da plataforma', () => {
     expect(lista.status).toBe(200);
     const nova = lista.body.items.find((e: { id: number }) => e.id === companyId);
     expect(nova).toMatchObject({ ownerEmail: 'nova@tapecaria.local', users: 1, blockedAt: null });
-    expect(lista.body.items[0]).toMatchObject({ id: 1, isPlatform: true });
+    expect(lista.body.items.map((e: { id: number }) => e.id)).not.toContain(0);
+    expect(lista.body.items.find((e: { id: number }) => e.id === 1)).toMatchObject({
+      serverConnections: true,
+    });
 
     const bloqueio = await admin.post(`/api/v1/platform/companies/${companyId}/block`, {
       reason: 'Teste',
@@ -230,9 +233,11 @@ describe('Painel do dono da plataforma', () => {
     expect(volta.status).toBe(200);
   });
 
-  it('a Cenário Estofados não pode ser bloqueada', async () => {
+  it('o registro da plataforma (nº 0) não é empresa: não se bloqueia nem se edita', async () => {
     const admin = await loginPlatform(app);
-    expect((await admin.post('/api/v1/platform/companies/1/block', {})).status).toBe(422);
+    expect((await admin.post('/api/v1/platform/companies/0/block', {})).status).toBe(404);
+    expect((await admin.put('/api/v1/platform/companies/0', { note: 'x' })).status).toBe(404);
+    expect(await db().companySettings.count({ where: { blockedAt: { not: null } } })).toBe(0);
   });
 
   it('nenhum login de empresa (nem o da Cenário Estofados) enxerga o painel da plataforma', async () => {

@@ -20,6 +20,8 @@ export interface PlatformConfig {
   pixBank: string | null;
   whatsapp: string | null;
   paymentMessage: string | null;
+  /** A tapeçaria liberada pelo painel para usar as conexões do servidor (ou nenhuma). */
+  serverConnectionsCompanyId: number | null;
 }
 
 export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
@@ -34,6 +36,7 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   pixBank: null,
   whatsapp: null,
   paymentMessage: null,
+  serverConnectionsCompanyId: null,
 };
 
 const TTL_MS = 30_000;
@@ -43,8 +46,12 @@ let loading: Promise<PlatformConfig> | null = null;
 
 type Row = NonNullable<Awaited<ReturnType<PrismaClient['platformSettings']['findUnique']>>>;
 
-export function configFromRow(r: Row): PlatformConfig {
+export function configFromRow(
+  r: Row,
+  serverConnectionsCompanyId: number | null = null,
+): PlatformConfig {
   return {
+    serverConnectionsCompanyId,
     prices: { gestao: r.priceGestaoCents, gestao_jogo: r.priceJogoCents },
     annualDiscountBps: r.annualDiscountBps,
     trialDays: r.trialDays,
@@ -73,8 +80,17 @@ export async function refreshPlatformConfig(
   if (loading && !force) return loading;
   loading = (async () => {
     try {
-      const row = await system.platformSettings.findUnique({ where: { id: 1 } });
-      current = row ? configFromRow(row) : DEFAULT_PLATFORM_CONFIG;
+      const [row, conn] = await Promise.all([
+        system.platformSettings.findUnique({ where: { id: 1 } }),
+        system.companySettings.findFirst({
+          where: { serverConnections: true, isPlatform: false },
+          select: { id: true },
+        }),
+      ]);
+      const connId = conn?.id ?? null;
+      current = row
+        ? configFromRow(row, connId)
+        : { ...DEFAULT_PLATFORM_CONFIG, serverConnectionsCompanyId: connId };
       loadedAt = Date.now();
     } finally {
       loading = null;
@@ -112,4 +128,9 @@ export function whatsappLink(text: string, cfg = current): string | null {
   if (digits.length < 10) return null;
   const full = digits.length <= 11 ? `55${digits}` : digits;
   return `https://wa.me/${full}?text=${encodeURIComponent(text)}`;
+}
+
+/** A tapeçaria liberada para usar as conexões do servidor (WhatsApp, Instagram…), ou nenhuma. */
+export function serverConnectionsCompanyId(): number | null {
+  return current.serverConnectionsCompanyId;
 }

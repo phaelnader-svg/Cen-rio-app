@@ -5,11 +5,11 @@ import { Errors } from '../lib/errors';
 import { loadUserPermissions } from '../core/permissions';
 import { sessionExpiry } from '../core/sessions';
 import type { AccessRule } from '../core/types';
-import { PLATFORM_COMPANY_ID } from '../core/tenant';
+import { PLATFORM_RECORD_ID } from '../core/tenant';
 import { COMPANY_BILLING_SELECT, billingLocked } from '../core/billing';
 import { AppError } from '../lib/errors';
 import { ERROR_CODES } from '@cenario/shared';
-import { refreshPlatformConfig } from '../core/platform-config';
+import { refreshPlatformConfig, serverConnectionsCompanyId } from '../core/platform-config';
 
 /** Painel da plataforma: 12 horas sem uso encerram a sessão; no máximo 30 dias. */
 export const PLATFORM_IDLE_MS = 12 * 3_600_000;
@@ -82,20 +82,21 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
   app.addHook('onRequest', async (request, reply) => {
     const access = request.routeOptions.config?.access;
     if (!access) return; // 404 e rotas fora de /api
-
-    // Webhooks de provedores (Meta, Asaas, Clicksign): sem cookie e sem Origin. A autenticação é a
-    // assinatura/token do provedor, verificada no handler (falha fechada se não configurada).
-    // Multi-empresa: as chaves e os webhooks do servidor são da Cenário Estofados (empresa nº 1),
-    // a única que pode ligar conexões externas por enquanto.
-    if ('webhook' in access) {
-      if (request.tenant) request.tenant.companyId = PLATFORM_COMPANY_ID;
-      return;
-    }
-    if ('public' in access && access.serverToServer) return;
-    // Configuração da plataforma (bloqueio automático, tolerância): cópia em memória de 30 s.
+    // Configuração da plataforma (bloqueio automático, tolerância, empresa da plataforma): cópia
+    // em memória de 30 s. Antes dos webhooks, que gravam na empresa da plataforma.
     await refreshPlatformConfig(prisma).catch((err: unknown) =>
       request.log.warn({ err }, 'Falha ao ler a configuração da plataforma'),
     );
+
+    // Webhooks de provedores (Meta, Asaas, Clicksign): sem cookie e sem Origin. A autenticação é a
+    // assinatura/token do provedor, verificada no handler (falha fechada se não configurada).
+    // Multi-empresa: as chaves e os webhooks do servidor são da tapeçaria que o painel liberou
+    // ("conexões do servidor"); sem nenhuma liberada, o webhook roda sem empresa.
+    if ('webhook' in access) {
+      if (request.tenant) request.tenant.companyId = serverConnectionsCompanyId();
+      return;
+    }
+    if ('public' in access && access.serverToServer) return;
 
     // Painel da plataforma: cookie próprio, nunca o login das empresas (e vice-versa).
     if ('platform' in access) {
@@ -107,8 +108,8 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
         throw Errors.forbidden('Este acesso não está disponível para aplicativos conectados.');
       await resolvePlatformSession(request, reply);
       if (!request.platformAdmin) throw Errors.unauthenticated();
-      // O que o painel grava fica na empresa da plataforma (auditoria, avisos, e-mails).
-      if (request.tenant) request.tenant.companyId = PLATFORM_COMPANY_ID;
+      // O que o painel grava fica no registro interno da plataforma (nunca numa tapeçaria).
+      if (request.tenant) request.tenant.companyId = PLATFORM_RECORD_ID;
       return;
     }
 

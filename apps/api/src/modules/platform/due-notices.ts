@@ -4,7 +4,7 @@ import { COMPANY_BILLING_SELECT, cycleOf, planOf, statusOf } from '../../core/bi
 import { now as clockNow } from '../../core/clock';
 import { enqueueEmail, simpleEmail } from '../../core/mailer';
 import { companyPriceCents, refreshPlatformConfig } from '../../core/platform-config';
-import { PLATFORM_COMPANY_ID, runAsCompany } from '../../core/tenant';
+import { PLATFORM_RECORD_ID, runAsCompany } from '../../core/tenant';
 import { daysBetween } from './routes';
 
 const fmtDay = (d: Date) => d.toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
@@ -27,7 +27,7 @@ export async function sendDueNotices(system: PrismaClient, webUrl: string): Prom
   const now = clockNow();
   const companies = await system.companySettings.findMany({
     where: {
-      id: { not: PLATFORM_COMPANY_ID },
+      isPlatform: false,
       isDemo: false,
       billingCourtesy: false,
       canceledAt: null,
@@ -67,10 +67,10 @@ export async function sendDueNotices(system: PrismaClient, webUrl: string): Prom
       ],
       button: { label: 'Abrir a Cobrança', url: `${webUrl}/plataforma/cobranca` },
     });
-    await runAsCompany(PLATFORM_COMPANY_ID, () =>
+    await runAsCompany(PLATFORM_RECORD_ID, () =>
       system.$transaction(async (tx) => {
         // Os e-mails ficam na fila da empresa da plataforma.
-        await tx.$executeRaw`SELECT set_config('app.company_id', ${String(PLATFORM_COMPANY_ID)}, true)`;
+        await tx.$executeRaw`SELECT set_config('app.company_id', ${String(PLATFORM_RECORD_ID)}, true)`;
         await tx.companySettings.update({ where: { id: c.id }, data: { dueNoticeFor: due } });
         for (const a of admins)
           await enqueueEmail(tx, { to: a.email, subject, kind: 'plataforma-vencimento', ...body });

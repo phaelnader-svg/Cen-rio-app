@@ -92,6 +92,20 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
         tradeName: 'Cenário Estofados',
         plan: 'gestao_jogo',
         billingCourtesy: true,
+        // A tapeçaria da instalação usa as chaves e webhooks do servidor (liberado no painel).
+        serverConnections: true,
+      },
+      update: {},
+    });
+    // Registro interno da plataforma (id 0): e-mails do painel, LGPD do site, registros. Não é
+    // tapeçaria e ninguém entra nele (migration 20270909000000_plataforma_separada).
+    await prisma.companySettings.upsert({
+      where: { id: 0 },
+      create: {
+        id: 0,
+        tradeName: 'Cenário Gestão (plataforma)',
+        isPlatform: true,
+        billingCourtesy: true,
       },
       update: {},
     });

@@ -4,7 +4,8 @@
  * Segredos ficam cifrados no servidor; o navegador só recebe estado e rótulos.
  */
 import { plural } from '@cenario/shared';
-import { PLATFORM_COMPANY_ID, requireCompanyId } from '../../core/tenant';
+import { requireCompanyId } from '../../core/tenant';
+import { serverConnectionsCompanyId } from '../../core/platform-config';
 import { EVENT_TYPES, anyPermissionAudience } from '@cenario/shared';
 import type { IntegrationConnection, Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
@@ -40,12 +41,12 @@ const AUDIENCE = anyPermissionAudience('conexoes.gerenciar', 'jogo.acessar');
 const keyParams = z.object({ key: z.string().regex(/^[A-Z_]{2,40}$/) });
 
 /**
- * Multi-empresa: as conexões externas usam chaves e webhooks do servidor, que são da Cenário
- * Estofados (empresa nº 1). Até cada empresa poder ligar as próprias contas (com o webhook
- * separado por empresa), só a empresa 1 conecta, testa ou desconecta.
+ * Multi-empresa: as conexões externas usam chaves e webhooks do servidor. Até cada empresa poder
+ * ligar as próprias contas (com o webhook separado por empresa), só a empresa que o painel da
+ * plataforma liberou ("conexões do servidor") conecta, testa ou desconecta.
  */
 export function assertPlatformConnections() {
-  if (requireCompanyId() !== PLATFORM_COMPANY_ID)
+  if (requireCompanyId() !== serverConnectionsCompanyId())
     throw Errors.business(
       'As conexões externas (WhatsApp, Instagram, cobrança, assinatura e notas) ainda não estão disponíveis para a sua empresa.',
     );

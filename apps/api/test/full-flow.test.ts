@@ -25,6 +25,7 @@ import {
 } from './production-helpers';
 import { PINS, decideInspection, finish, post, prepareCompany, setClock } from './audit-helpers';
 import { coverLabor } from './labor-helpers';
+import { provarExclusaoDaEmpresa } from './excluir-empresa-helper';
 
 /**
  * Fase 12 — fluxo completo de produção, ponta a ponta pela API real (sessões reais de painel,
@@ -440,5 +441,9 @@ describe('Fluxo completo de produção (32 passos)', () => {
     await panelWs.waitFor((x) => x.event?.type === 'delivery.updated');
     await panelWs.close();
     void idemKey;
+    // A empresa inteira, cheia de dados de ponta a ponta, pode ser apagada de vez sem sobrar nada.
+    const log = await provarExclusaoDaEmpresa(1);
+    expect(log).toMatch(/apagados de service_orders/);
+    expect(log).toMatch(/apagados de production_task_events/);
   });
 });

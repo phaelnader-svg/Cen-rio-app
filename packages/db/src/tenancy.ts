@@ -321,6 +321,7 @@ export const TENANCY: Record<string, TenancyEntry> = {
     note: 'Login do dono da plataforma; não pertence a nenhuma empresa.',
   },
   PlatformAdminSession: { class: 'sistema', note: 'Sessão do painel da plataforma.' },
+  PlatformAdminReset: { class: 'sistema', note: '"Esqueci a senha" do painel da plataforma.' },
   PlatformAuditLog: {
     class: 'sistema',
     note: 'O que o dono da plataforma fez no painel (resumo, sem dados de clientes).',

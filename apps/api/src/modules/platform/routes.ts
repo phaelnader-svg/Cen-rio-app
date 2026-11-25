@@ -21,7 +21,7 @@ import { searchTextFor } from '../customers/service';
 import { z } from 'zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Errors } from '../../lib/errors';
-import { PLATFORM_COMPANY_ID } from '../../core/tenant';
+import { PLATFORM_RECORD_ID } from '../../core/tenant';
 import { COMPANY_BILLING_SELECT, blocksAt, cycleOf, planOf, statusOf } from '../../core/billing';
 import { now as clockNow } from '../../core/clock';
 import {
@@ -57,6 +57,7 @@ export function daysBetween(from: Date, to: Date): number {
 const COMPANY_SELECT = {
   ...COMPANY_BILLING_SELECT,
   tradeName: true,
+  serverConnections: true,
   email: true,
   phone: true,
   document: true,
@@ -83,7 +84,8 @@ export async function platformRoutes(app: FastifyInstance) {
 
   async function companyRows(where?: { id: number }): Promise<PlatformCompanyDto[]> {
     const companies = await system.companySettings.findMany({
-      where,
+      // O registro interno da plataforma não é uma empresa cliente.
+      where: { ...where, isPlatform: false },
       orderBy: { id: 'asc' },
       select: COMPANY_SELECT,
     });
@@ -175,7 +177,7 @@ export async function platformRoutes(app: FastifyInstance) {
         users: u?._count._all ?? 0,
         orders: ord.get(c.id)?._count._all ?? 0,
         lastOrderAt: ord.get(c.id)?._max.createdAt?.toISOString() ?? null,
-        isPlatform: c.id === PLATFORM_COMPANY_ID,
+        serverConnections: c.serverConnections,
         isDemo: c.isDemo,
         blockedAt: c.blockedAt?.toISOString() ?? null,
         blockedReason: c.blockedReason,
@@ -295,8 +297,7 @@ export async function platformRoutes(app: FastifyInstance) {
     const input = platformCompanyEditSchema.parse(request.body ?? {});
     const before = await system.companySettings.findUnique({ where: { id } });
     if (!before) throw Errors.notFound('Empresa');
-    if (id === PLATFORM_COMPANY_ID && input.courtesy === false)
-      throw Errors.business('A Cenário Estofados não paga mensalidade.');
+    if (before.isPlatform) throw Errors.notFound('Empresa');
     const data = {
       ...(input.tradeName !== undefined ? { tradeName: input.tradeName } : {}),
       ...(input.email !== undefined ? { email: input.email } : {}),
@@ -343,14 +344,27 @@ export async function platformRoutes(app: FastifyInstance) {
     if (data.document !== undefined && data.document !== before.document) changes.push('CPF/CNPJ');
     if (data.platformNote !== undefined && data.platformNote !== before.platformNote)
       changes.push('anotação');
+    const conn = input.serverConnections;
+    if (conn !== undefined && conn !== before.serverConnections)
+      changes.push(conn ? 'conexões do servidor liberadas' : 'conexões do servidor retiradas');
     await system.$transaction(async (tx) => {
-      await tx.companySettings.update({ where: { id }, data });
+      // Conexões do servidor: uma empresa só. Liberar aqui tira da que tinha.
+      if (conn === true && !before.serverConnections)
+        await tx.companySettings.updateMany({
+          where: { serverConnections: true, id: { not: id } },
+          data: { serverConnections: false },
+        });
+      await tx.companySettings.update({
+        where: { id },
+        data: { ...data, ...(conn !== undefined ? { serverConnections: conn } : {}) },
+      });
       await platformLog(tx, request, {
         action: 'platform.company_edited',
         companyId: id,
         summary: `${before.tradeName}: ${changes.join(', ') || 'sem mudança'}.`,
       });
     });
+    if (conn !== undefined) await refreshPlatformConfig(system, true);
     const [row] = await companyRows({ id });
     return row;
   });
@@ -361,8 +375,6 @@ export async function platformRoutes(app: FastifyInstance) {
     async (request) => {
       const id = companyId(request);
       const input = blockSchema.parse(request.body ?? {});
-      if (id === PLATFORM_COMPANY_ID)
-        throw Errors.business('A Cenário Estofados não pode ser bloqueada por aqui.');
       return setBlocked(request, id, true, input.reason ?? null);
     },
   );
@@ -410,8 +422,6 @@ export async function platformRoutes(app: FastifyInstance) {
     async (request) => {
       const id = companyId(request);
       const input = platformPaymentSchema.parse(request.body ?? {});
-      if (id === PLATFORM_COMPANY_ID)
-        throw Errors.business('A Cenário Estofados não paga mensalidade.');
       const result = await system.$transaction(async (tx) => {
         const c = await tx.companySettings.findUnique({ where: { id }, select: COMPANY_SELECT });
         if (!c) throw Errors.notFound('Empresa');
@@ -456,7 +466,7 @@ export async function platformRoutes(app: FastifyInstance) {
             summary: `Pagamento de ${fmtBRL(input.amountCents)} recebido pelo Cenário Gestão: liberado até ${fmtDay(periodEnd)}.`,
           },
         });
-        await tx.$executeRaw`SELECT set_config('app.company_id', ${String(PLATFORM_COMPANY_ID)}, true)`;
+        await tx.$executeRaw`SELECT set_config('app.company_id', ${String(PLATFORM_RECORD_ID)}, true)`;
         await platformLog(tx, request, {
           action: 'platform.payment',
           companyId: id,
@@ -540,7 +550,7 @@ export async function platformRoutes(app: FastifyInstance) {
 
   // ───────────────────────── Início ─────────────────────────
   app.get('/api/v1/platform/dashboard', { config: { access: PLATFORM } }, async () => {
-    const rows = (await companyRows()).filter((c) => !c.isPlatform && !c.isDemo);
+    const rows = (await companyRows()).filter((c) => !c.isDemo);
     const now = clockNow();
     const cfg = platformConfig();
     const month = daySP(now).slice(0, 7);
@@ -623,7 +633,7 @@ export async function platformRoutes(app: FastifyInstance) {
     const cfg = await refreshPlatformConfig(system, true);
     // Quem ficaria bloqueado já, se o bloqueio automático fosse ligado agora.
     const all = await system.companySettings.findMany({
-      where: { id: { not: PLATFORM_COMPANY_ID }, blockedAt: null },
+      where: { isPlatform: false, blockedAt: null },
       select: { ...COMPANY_BILLING_SELECT, tradeName: true },
     });
     const now = clockNow();

@@ -51,45 +51,83 @@ const ymd = (d: Date) => d.toISOString().slice(0, 10);
 const daysFromNow = (n: number) => new Date(Date.now() + n * 86_400_000);
 
 describe('Acesso do painel', () => {
-  it('o primeiro acesso é criado uma vez, pelo gestor da Cenário Estofados', async () => {
+  it('o painel não depende de nenhuma tapeçaria: sem primeiro acesso pela conta da empresa', async () => {
     const anon = new Client(app);
     expect(ok(await anon.get('/api/plataforma/estado')).hasAdmin).toBe(false);
-    // Sem login de empresa: não cria.
-    expect(
-      (
-        await anon.post('/api/plataforma/primeiro-acesso', {
-          email: 'x@x.local',
-          displayName: 'X',
-          password: 'Senha12345',
-          passwordConfirm: 'Senha12345',
-        })
-      ).status,
-    ).toBe(401);
-    // Gestor de outra empresa: não cria.
-    const { c } = await criarConta();
-    const outra = await c.post('/api/plataforma/primeiro-acesso', {
+    // A rota antiga (criar o acesso logado como gestor da Cenário Estofados) não existe mais.
+    const gestor = await loginAdmin(app);
+    const antigo = await gestor.post('/api/plataforma/primeiro-acesso', {
       email: 'x@x.local',
       displayName: 'X',
       password: 'Senha12345',
       passwordConfirm: 'Senha12345',
     });
-    expect(outra.status).toBe(403);
-    // A mensagem diz em qual empresa o navegador está logado (o engano comum).
-    expect(JSON.stringify(outra.body)).toMatch(/Este navegador está logado na empresa/);
+    expect(antigo.status).toBe(404);
+    expect(await db().platformAdmin.count()).toBe(0);
+    // O registro da plataforma (nº 0) existe e não aparece como empresa cliente.
+    const plat = await db().companySettings.findUniqueOrThrow({ where: { id: 0 } });
+    expect(plat.isPlatform).toBe(true);
     const painel = await loginPlatform(app);
-    expect(ok(await painel.get('/api/plataforma/eu')).email).toBe(PLATFORM_ADMIN.email);
-    // Segunda vez: recusa.
-    const gestor = await loginAdmin(app);
+    expect(ok(await anon.get('/api/plataforma/estado')).hasAdmin).toBe(true);
+    const list = ok(await painel.get('/api/v1/platform/companies'));
+    const items: J[] = list.items ?? list;
+    expect(items.map((x) => x.id)).not.toContain(0);
+    expect(items.find((x) => x.id === 1)?.serverConnections).toBe(true);
+  });
+
+  it('"Esqueci a senha" do painel: link por e-mail, vale uma vez, derruba as sessões', async () => {
+    const painel = await loginPlatform(app);
+    const anon = new Client(app);
+    // E-mail que não é do painel: mesma resposta, nenhum e-mail.
+    expect((await anon.post('/api/plataforma/esqueci', { email: 'ninguem@x.local' })).status).toBe(
+      204,
+    );
+    expect(await db().outboundEmail.count({ where: { kind: 'plataforma-senha' } })).toBe(0);
+    expect(
+      (await anon.post('/api/plataforma/esqueci', { email: PLATFORM_ADMIN.email })).status,
+    ).toBe(204);
+    const mail = await db().outboundEmail.findFirstOrThrow({ where: { kind: 'plataforma-senha' } });
+    expect(mail.to).toBe(PLATFORM_ADMIN.email);
+    // O e-mail fica guardado no registro da plataforma, não em nenhuma tapeçaria.
+    expect(mail.companyId).toBe(0);
+    const token = decodeURIComponent(/nova-senha\?token=([^\s"&<]+)/.exec(mail.text)![1]!);
+    // Senhas diferentes: recusa sem gastar o link.
     expect(
       (
-        await gestor.post('/api/plataforma/primeiro-acesso', {
-          email: 'outro@x.local',
-          displayName: 'Outro',
-          password: 'Senha12345',
-          passwordConfirm: 'Senha12345',
+        await anon.post('/api/plataforma/nova-senha', {
+          token,
+          password: 'NovaSenha123',
+          passwordConfirm: 'Outra123456',
         })
       ).status,
-    ).toBe(409);
+    ).toBe(400);
+    const nova = new Client(app);
+    ok(
+      await nova.post('/api/plataforma/nova-senha', {
+        token,
+        password: 'NovaSenha123',
+        passwordConfirm: 'NovaSenha123',
+      }),
+    );
+    expect(ok(await nova.get('/api/plataforma/eu')).email).toBe(PLATFORM_ADMIN.email);
+    // A sessão antiga caiu; o link não vale de novo; a senha antiga não entra mais.
+    expect((await painel.get('/api/plataforma/eu')).status).toBe(401);
+    expect(
+      (
+        await anon.post('/api/plataforma/nova-senha', {
+          token,
+          password: 'OutraSenha123',
+          passwordConfirm: 'OutraSenha123',
+        })
+      ).status,
+    ).toBe(422);
+    expect((await new Client(app).post('/api/plataforma/entrar', PLATFORM_ADMIN)).status).toBe(401);
+    ok(
+      await new Client(app).post('/api/plataforma/entrar', {
+        email: PLATFORM_ADMIN.email,
+        password: 'NovaSenha123',
+      }),
+    );
   });
 
   it('o login do painel é separado: não abre o painel das empresas, e vice-versa', async () => {
@@ -337,5 +375,35 @@ describe('Aviso antes do vencimento', () => {
       data: { paidUntil: daysFromNow(20), dueNoticeFor: null },
     });
     expect(await sendDueNotices(app.ctx.system, 'https://painel.teste')).toBe(0);
+  });
+
+  it('"Liberar as conexões do servidor": uma empresa por vez, escolhida no painel', async () => {
+    const painel = await loginPlatform(app);
+    const { c, companyId } = await criarConta('dono@segunda.local');
+    let me = ok(await c.get('/api/auth/me'));
+    expect(me.company.platformCompany).toBe(false);
+    expect(me.company.subscription.status).toBe('TESTE');
+    ok(await painel.put(`/api/v1/platform/companies/${companyId}`, { serverConnections: true }));
+    me = ok(await c.get('/api/auth/me'));
+    expect(me.company.platformCompany).toBe(true);
+    expect(me.company.platformOwner).toBe(true);
+    // Continua cliente comum: a cobrança não muda por isso.
+    expect(me.company.subscription.status).toBe('TESTE');
+    // Só uma: a nº 1 perdeu.
+    const list = ok(await painel.get('/api/v1/platform/companies'));
+    const items: J[] = list.items ?? list;
+    expect(items.find((x) => x.id === companyId)?.serverConnections).toBe(true);
+    expect(items.find((x) => x.id === 1)?.serverConnections).toBe(false);
+    expect(await db().companySettings.count({ where: { serverConnections: true } })).toBe(1);
+    const hist = ok(await painel.get('/api/plataforma/historico'));
+    expect(JSON.stringify(hist)).toMatch(/conexões do servidor liberadas/);
+    // O registro da plataforma não se edita como empresa.
+    expect(
+      (await painel.put('/api/v1/platform/companies/0', { serverConnections: true })).status,
+    ).toBe(404);
+    // Sem o login do painel: nada feito.
+    expect(
+      (await c.put(`/api/v1/platform/companies/${companyId}`, { serverConnections: false })).status,
+    ).toBe(401);
   });
 });

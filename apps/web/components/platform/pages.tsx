@@ -335,7 +335,7 @@ export function PlatformCompanies() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-semibold text-ink">{c.tradeName}</p>
-                  {c.isPlatform && <Badge tone="brand">Sua tapeçaria</Badge>}
+                  {c.serverConnections && <Badge tone="brand">Conexões do servidor</Badge>}
                   {c.isDemo && <Badge tone="bronze">Demonstração</Badge>}
                   <DueBadge c={c} />
                   {c.canceledAt && (
@@ -367,14 +367,12 @@ export function PlatformCompanies() {
                 >
                   Editar
                 </Button>
-                {!c.isPlatform && (
-                  <SupportSessionButton
-                    companyId={c.id}
-                    tradeName={c.tradeName}
-                    until={c.supportAccessUntil}
-                  />
-                )}
-                {!c.isPlatform && (
+                <SupportSessionButton
+                  companyId={c.id}
+                  tradeName={c.tradeName}
+                  until={c.supportAccessUntil}
+                />
+                {
                   <Button
                     size="sm"
                     variant={c.blockedAt ? 'secondary' : 'outline-danger'}
@@ -390,7 +388,7 @@ export function PlatformCompanies() {
                   >
                     {c.blockedAt ? 'Liberar' : 'Bloquear'}
                   </Button>
-                )}
+                }
               </div>
             </div>
           </Card>
@@ -423,6 +421,7 @@ function EditCompanyDialog({
     paidUntil: ymdOf(company.paidUntil),
     trialEndsAt: ymdOf(company.trialEndsAt),
     note: company.note ?? '',
+    serverConnections: company.serverConnections,
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((s) => ({ ...s, [k]: v }));
@@ -534,10 +533,17 @@ function EditCompanyDialog({
         <div className="flex items-end sm:col-span-4">
           <Checkbox
             checked={f.courtesy}
-            disabled={company.isPlatform}
             onChange={(e) => set('courtesy', e.target.checked)}
             label="Cortesia"
             description="Não paga e nunca bloqueia."
+          />
+        </div>
+        <div className="sm:col-span-12">
+          <Checkbox
+            checked={f.serverConnections}
+            onChange={(e) => set('serverConnections', e.target.checked)}
+            label="Liberar as conexões do servidor"
+            description="Esta empresa passa a usar as contas ligadas no servidor (WhatsApp e outras). Só uma empresa por vez: marcar aqui tira da outra."
           />
         </div>
         <TextAreaField
@@ -752,7 +758,7 @@ export function PlatformBilling() {
     onError: (e) => toast('danger', errorMessage(e)),
   });
   const rows = (list.data?.items ?? [])
-    .filter((c) => !c.isPlatform && !c.isDemo && !c.courtesy && !c.canceledAt)
+    .filter((c) => !c.isDemo && !c.courtesy && !c.canceledAt)
     .sort((a, b) => ORDER[a.tone] - ORDER[b.tone] || (a.dueAt ?? '').localeCompare(b.dueAt ?? ''));
   const lastPaymentOf = new Map<number, string>();
   for (const p of payments.data?.items ?? [])
@@ -1354,7 +1360,7 @@ export function PlatformAccount() {
     <>
       <PageHeader
         title="Minha conta"
-        description="A senha do painel e tudo o que foi feito nele."
+        description="Sua tapeçaria, a senha do painel e tudo o que foi feito nele."
       />
       <FormSection title="Trocar a senha do painel">
         <FormGrid>

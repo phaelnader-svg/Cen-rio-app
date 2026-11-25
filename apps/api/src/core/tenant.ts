@@ -19,8 +19,12 @@ import { scopedPrismaClient, type PrismaClient } from '@cenario/db';
  * usuário pelo e-mail no login, a fila de eventos, os testes). Usá-lo é sempre uma decisão
  * explícita no código.
  */
-/** A empresa da instalação (Cenário Estofados): dona da plataforma e das chaves do servidor. */
-export const PLATFORM_COMPANY_ID = 1;
+/**
+ * Registro interno da plataforma (Cenário Gestão), id 0 (2026-11-25). Não é uma tapeçaria: guarda
+ * só o que é do painel (e-mails ao dono, pedidos de LGPD que chegam pelo site, registros). A
+ * plataforma não depende de nenhuma tapeçaria (nem da Cenário Estofados, que é cliente comum).
+ */
+export const PLATFORM_RECORD_ID = 0;
 
 export interface TenantStore {
   companyId: number | null;
@@ -63,7 +67,10 @@ export async function forEachCompany(
   system: PrismaClient,
   fn: () => Promise<unknown>,
 ): Promise<void> {
-  const companies = await system.companySettings.findMany({ select: { id: true } });
+  const companies = await system.companySettings.findMany({
+    where: { isPlatform: false },
+    select: { id: true },
+  });
   const errors: unknown[] = [];
   for (const c of companies) {
     await runAsCompany(c.id, fn).catch((err: unknown) => errors.push(err));

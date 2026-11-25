@@ -72,8 +72,7 @@ export function billingLocked(
   env: Pick<Env, 'BILLING_ENABLED'>,
   now = new Date(),
 ): boolean {
-  // A empresa da plataforma (Cenário Estofados) nunca é bloqueada pela cobrança.
-  if (c.id === 1) return false;
+  // Cortesia (marcada no painel) nunca é bloqueada: statusOf devolve CORTESIA.
   return billingOn(env) && statusOf(c, env, now) === 'VENCIDA';
 }
 

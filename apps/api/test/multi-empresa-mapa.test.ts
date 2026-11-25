@@ -98,6 +98,6 @@ describe('Multi-empresa: mapa das tabelas', () => {
       // 2026-11-25 (preço dos fornecedores): + material_prices (empresa).
       // 2026-11-25 (painel da plataforma): + platform_admins, platform_admin_sessions,
       // platform_audit_logs e platform_settings (sistema).
-    }).toEqual({ total: 184, empresa: 165, acesso: 8, sistema: 10, raiz: 1 });
+    }).toEqual({ total: 185, empresa: 165, acesso: 8, sistema: 11, raiz: 1 });
   });
 });

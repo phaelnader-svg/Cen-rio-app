@@ -11,6 +11,7 @@ import {
   tenantStorage,
   type TenantStore,
 } from './core/tenant';
+import { refreshPlatformConfig } from './core/platform-config';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { randomUUID } from 'node:crypto';
 import type { Env } from './config/env';
@@ -369,6 +370,10 @@ export async function buildApp(options: BuildOptions): Promise<App> {
     app,
     ctx,
     async startBackground() {
+      // A empresa da plataforma e os preços vêm do banco antes de qualquer rotina rodar.
+      await refreshPlatformConfig(system, true).catch((err: unknown) =>
+        app.log.warn({ err }, 'Falha ao ler a configuração da plataforma'),
+      );
       if (started) return;
       started = true;
       await feed.start();

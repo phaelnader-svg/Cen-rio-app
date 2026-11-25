@@ -136,6 +136,10 @@ describe('Matriz de acesso: todas as rotas', () => {
         // (só sim/não) e o login próprio do painel, com os mesmos limites do login das empresas.
         'GET /api/plataforma/estado',
         'POST /api/plataforma/entrar',
+        // "Esqueci a senha" do painel (sempre 204, limite por IP e por e-mail) e a senha nova pelo
+        // link do e-mail (vale 1 hora e uma vez só).
+        'POST /api/plataforma/esqueci',
+        'POST /api/plataforma/nova-senha',
       ].sort(),
     );
   });

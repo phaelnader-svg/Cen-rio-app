@@ -1,3 +1,4 @@
+import { hashSecret } from '../src/lib/crypto';
 import { resetPlatformConfigCache } from '../src/core/platform-config';
 import { runSeed } from '@cenario/db/seed';
 import { createPrismaClient, scopedPrismaClient, type PrismaClient } from '@cenario/db';
@@ -306,22 +307,20 @@ export function naEmpresa1<T>(fn: () => Promise<T>): Promise<T> {
 export const PLATFORM_ADMIN = { email: 'dono@plataforma.local', password: 'PainelDono123' };
 
 /**
- * Painel da plataforma (/plataforma): cria o acesso do painel uma vez (pelo gestor da Cenário
- * Estofados, como na publicação) e devolve um cliente logado só no painel.
+ * Painel da plataforma (/plataforma): cria o acesso do painel direto no banco (como o comando do
+ * suporte numa instalação nova; nenhuma conta de tapeçaria entra nisso) e devolve um cliente
+ * logado só no painel.
  */
 export async function loginPlatform(app: App, creds = PLATFORM_ADMIN): Promise<Client> {
   const c = new Client(app);
-  const estado = await c.get('/api/plataforma/estado');
-  if (!estado.body.hasAdmin) {
-    const gestor = await loginAdmin(app);
-    const r = await gestor.post('/api/plataforma/primeiro-acesso', {
-      email: creds.email,
-      displayName: 'Dono da plataforma',
-      password: creds.password,
-      passwordConfirm: creds.password,
+  if (!(await rawDb().platformAdmin.findUnique({ where: { email: creds.email } })))
+    await rawDb().platformAdmin.create({
+      data: {
+        email: creds.email,
+        displayName: 'Dono da plataforma',
+        passwordHash: await hashSecret(creds.password),
+      },
     });
-    if (r.status !== 200) throw new Error(`primeiro acesso falhou: ${JSON.stringify(r.body)}`);
-  }
   const res = await c.post('/api/plataforma/entrar', creds);
   if (res.status !== 200)
     throw new Error(`login do painel falhou: ${res.status} ${JSON.stringify(res.body)}`);

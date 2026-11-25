@@ -1721,6 +1721,13 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270908000000_painel_plataforma: UPDATE NO':
     'Não é comando: "ON UPDATE NO ACTION" das chaves estrangeiras das tabelas NOVAS do painel da ' +
     'plataforma (sessões e histórico do painel). Nenhuma linha é alterada.',
+  '20270909000000_plataforma_separada: UPDATE NO':
+    'Não é comando: "ON UPDATE NO ACTION" da chave da tabela NOVA de links de senha nova do ' +
+    'painel da plataforma. Nenhuma linha é alterada.',
+  '20270909000000_plataforma_separada: UPDATE "company_settings"':
+    'Pedido do dono (2026-11-25): painel separado da Cenário Estofados. Só marca a empresa nº 1 ' +
+    'com a coluna NOVA "conexões do servidor" (o mesmo que o sistema já fazia por número); o ' +
+    'dono troca no painel. Nenhum dado existente muda.',
   '20270901000000_preparacao_livre: UPDATE "production_tasks"':
     'Pedido do dono (2026-11-19): etapas de preparação AINDA NÃO INICIADAS deixam de ter o ' +
     'responsável escolhido automaticamente e ficam livres para o ajudante disponível pegar. ' +

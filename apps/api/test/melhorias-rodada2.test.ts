@@ -396,7 +396,9 @@ describe('Números do negócio e cancelar/pausar', () => {
     const lista = ok(await admin.get('/api/v1/platform/companies'));
     expect(lista.items.find((x: J) => x.id === demo.companyId).isDemo).toBe(true);
     const n = ok(await admin.get('/api/v1/platform/business-numbers'));
-    expect(n.trial + n.paying + n.courtesy).toBe(0);
+    // Só a Cenário Estofados (cortesia, cliente como as outras); a demonstração fica fora.
+    expect(n.trial + n.paying).toBe(0);
+    expect(n.courtesy).toBe(1);
     expect(
       (await admin.post('/api/v1/platform/demo-company', { email: 'demo@cenario.local' })).status,
     ).toBe(409);

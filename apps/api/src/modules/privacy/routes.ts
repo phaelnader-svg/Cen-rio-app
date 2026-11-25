@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { captchaFailed } from '../../core/captcha';
 import { enqueueEmail, simpleEmail } from '../../core/mailer';
-import { PLATFORM_COMPANY_ID, requireCompanyId, runAsCompany } from '../../core/tenant';
+import { PLATFORM_RECORD_ID, requireCompanyId, runAsCompany } from '../../core/tenant';
 import { AuthThrottle, clientIpKey } from '../../core/throttle';
 import { Errors } from '../../lib/errors';
 import { idParams } from '../presenters';
@@ -54,14 +54,15 @@ export async function privacyRoutes(app: FastifyInstance) {
   const throttle = new AuthThrottle(system);
   const webUrl = () => (env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0] || '').replace(/\/$/, '');
 
-  /** Para onde vão os avisos: o e-mail do encarregado; sem ele, o e-mail da empresa da plataforma. */
+  /** Para onde vão os avisos: o e-mail do encarregado; sem ele, o do dono do painel da plataforma. */
   async function officerEmail(): Promise<string | null> {
     if (LEGAL.emailPrivacidade) return LEGAL.emailPrivacidade;
-    const c = await system.companySettings.findUnique({
-      where: { id: PLATFORM_COMPANY_ID },
+    const a = await system.platformAdmin.findFirst({
+      where: { active: true },
+      orderBy: { createdAt: 'asc' },
       select: { email: true },
     });
-    return c?.email ?? null;
+    return a?.email ?? null;
   }
 
   async function notify(
@@ -117,7 +118,7 @@ export async function privacyRoutes(app: FastifyInstance) {
       // Teto do sistema inteiro (vale também quando o IP real é desconhecido).
       await throttle.registerFailure('privacy:global', PUBLIC_GLOBAL_POLICY);
       const dueAt = new Date(Date.now() + PRIVACY_RESPONSE_DAYS * DAY_MS);
-      const row = await runAsCompany(PLATFORM_COMPANY_ID, () =>
+      const row = await runAsCompany(PLATFORM_RECORD_ID, () =>
         prisma.$transaction(async (tx) => {
           const r = await tx.privacyRequest.create({
             data: {

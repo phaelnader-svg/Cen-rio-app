@@ -1,15 +1,15 @@
 import {
   platformLoginSchema,
   platformPasswordSchema,
-  passwordPolicySchema,
-  EMAIL_MAX,
+  platformForgotSchema,
+  platformResetSchema,
   type PlatformAuditDto,
   type PlatformMeDto,
 } from '@cenario/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { z } from 'zod';
 import { AuthThrottle, POLICIES, clientIpKey } from '../../core/throttle';
-import { PLATFORM_COMPANY_ID } from '../../core/tenant';
+import { PLATFORM_RECORD_ID, runAsCompany } from '../../core/tenant';
+import { enqueueEmail, simpleEmail } from '../../core/mailer';
 import { burnVerification, hashSecret, randomToken, verifySecret } from '../../lib/crypto';
 import { Errors } from '../../lib/errors';
 import { cookieOptions, platformSessionExpiry } from '../../plugins/auth';
@@ -34,22 +34,10 @@ export async function platformLog(
   });
 }
 
-const firstAccessSchema = z
-  .object({
-    email: z.string().trim().toLowerCase().email({ message: 'E-mail inválido.' }).max(EMAIL_MAX),
-    displayName: z.string().trim().min(2, { message: 'Informe o seu nome.' }).max(80),
-    password: passwordPolicySchema,
-    passwordConfirm: z.string().max(128),
-  })
-  .refine((v) => v.password === v.passwordConfirm, {
-    message: 'As senhas não conferem.',
-    path: ['passwordConfirm'],
-  });
-
 /**
  * Login do painel da plataforma (/plataforma). Separado do login das empresas: tabela, cookie e
- * sessão próprios. O primeiro acesso é criado uma vez, por quem já administra a Cenário Estofados
- * (empresa nº 1) — sem comando no servidor. Depois disso o painel não depende daquela conta.
+ * sessão próprios. Não depende de nenhuma tapeçaria (2026-11-25): a senha esquecida volta por
+ * e-mail; numa instalação nova, o primeiro acesso é criado no servidor (comando do suporte).
  */
 export async function platformAuthRoutes(app: FastifyInstance) {
   const { system, env, hashToken, cookies } = app.ctx;
@@ -92,50 +80,121 @@ export async function platformAuthRoutes(app: FastifyInstance) {
     return { id: admin.id, email: admin.email, displayName: admin.displayName };
   }
 
-  /** A tela de entrar mostra "Criar o acesso" enquanto ninguém foi cadastrado. */
+  /** A tela de entrar avisa quando o acesso do painel ainda não foi criado (instalação nova). */
   app.get('/api/plataforma/estado', { config: { access: { public: true } } }, async () => ({
     hasAdmin: (await system.platformAdmin.count()) > 0,
   }));
 
+  /**
+   * Esqueci a senha do painel. A resposta é sempre 204, exista o e-mail ou não. O link vale 1 hora
+   * e só uma vez. Não depende de nenhuma conta de tapeçaria (pedido do dono em 25/11/2026).
+   */
   app.post(
-    '/api/plataforma/primeiro-acesso',
-    { config: { access: { session: 'WEB', permissions: ['empresa.configurar'] } } },
+    '/api/plataforma/esqueci',
+    { config: { access: { public: true } } },
     async (request, reply) => {
-      if (request.auth?.companyId !== PLATFORM_COMPANY_ID || request.auth.app) {
-        // Diz em qual empresa o navegador está logado: o erro comum é estar numa conta de teste.
-        const other = request.auth?.companyId
-          ? await system.companySettings.findUnique({
-              where: { id: request.auth.companyId },
-              select: { tradeName: true },
-            })
-          : null;
-        throw Errors.forbidden(
-          other && !request.auth?.app
-            ? `Este navegador está logado na empresa "${other.tradeName}" (${request.auth!.email}). Saia do painel, entre com a conta da Cenário Estofados e volte aqui.`
-            : 'O primeiro acesso do painel é criado por quem administra a Cenário Estofados.',
+      const { email } = platformForgotSchema.parse(request.body);
+      const ipKey = clientIpKey(request, 'plataforma-esqueci');
+      const emailKey = `plataforma-esqueci:${email}`;
+      await throttle.assertAllowed([ipKey]);
+      await throttle.registerFailure(ipKey, POLICIES.forgot);
+      const locked = await throttle
+        .assertAllowed([emailKey])
+        .then(() => false)
+        .catch(() => true);
+      if (locked) return reply.status(204).send();
+      await throttle.registerFailure(emailKey, POLICIES.forgotEmail);
+      const admin = await system.platformAdmin.findUnique({ where: { email } });
+      if (!admin?.active) return reply.status(204).send();
+      const token = randomToken();
+      const url = `${(env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0] || '').replace(/\/$/, '')}/plataforma/nova-senha?token=${encodeURIComponent(token)}`;
+      const body = simpleEmail({
+        title: 'Senha nova do painel',
+        paragraphs: [
+          'Recebemos um pedido para trocar a senha do painel da plataforma do Cenário Gestão.',
+          'O link vale por 1 hora e só pode ser usado uma vez.',
+        ],
+        button: { label: 'Criar senha nova', url },
+        footer: 'Se não foi você que pediu, ignore este e-mail: a senha atual continua valendo.',
+      });
+      await runAsCompany(PLATFORM_RECORD_ID, () =>
+        system.$transaction(async (tx) => {
+          await tx.$executeRaw`SELECT set_config('app.company_id', ${String(PLATFORM_RECORD_ID)}, true)`;
+          await tx.platformAdminReset.updateMany({
+            where: { adminId: admin.id, usedAt: null },
+            data: { usedAt: new Date() },
+          });
+          await tx.platformAdminReset.create({
+            data: {
+              adminId: admin.id,
+              tokenHash: hashToken(token),
+              expiresAt: new Date(Date.now() + 60 * 60_000),
+            },
+          });
+          await enqueueEmail(tx, {
+            to: admin.email,
+            subject: 'Senha nova do painel — Cenário Gestão',
+            kind: 'plataforma-senha',
+            ...body,
+          });
+          await tx.platformAuditLog.create({
+            data: {
+              adminId: admin.id,
+              action: 'platform.password_reset_requested',
+              summary: 'Pedido de senha nova pela tela de entrar do painel.',
+              ipAddress: request.ip ?? null,
+            },
+          });
+        }),
+      );
+      app.ctx.mailer.kick();
+      return reply.status(204).send();
+    },
+  );
+
+  /** Senha nova pelo link do e-mail: troca a senha e encerra todas as sessões do painel. */
+  app.post(
+    '/api/plataforma/nova-senha',
+    { config: { access: { public: true } } },
+    async (request, reply) => {
+      const input = platformResetSchema.parse(request.body);
+      const ipKey = clientIpKey(request, 'plataforma-nova-senha');
+      await throttle.assertAllowed([ipKey]);
+      const row = await system.platformAdminReset.findUnique({
+        where: { tokenHash: hashToken(input.token) },
+        include: { admin: true },
+      });
+      if (!row || row.usedAt || row.expiresAt <= new Date() || !row.admin.active) {
+        await throttle.registerFailure(ipKey, POLICIES.ip);
+        throw Errors.business(
+          'Este link não vale mais (já foi usado ou passou de 1 hora). Peça outro em "Esqueci a senha".',
         );
       }
-      const input = firstAccessSchema.parse(request.body);
       const passwordHash = await hashSecret(input.password);
-      const admin = await system.$transaction(async (tx) => {
-        // Trava: só existe um "primeiro acesso" (duas abas ao mesmo tempo não criam dois).
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('platform-first-admin'))`;
-        if ((await tx.platformAdmin.count()) > 0)
-          throw Errors.conflict('O acesso do painel já foi criado. Entre com ele.');
-        const created = await tx.platformAdmin.create({
-          data: { email: input.email, displayName: input.displayName, passwordHash },
+      await system.$transaction(async (tx) => {
+        const burned = await tx.platformAdminReset.updateMany({
+          where: { id: row.id, usedAt: null },
+          data: { usedAt: new Date() },
+        });
+        if (burned.count !== 1) throw Errors.business('Este link já foi usado.');
+        await tx.platformAdmin.update({
+          where: { id: row.adminId },
+          data: { passwordHash, credentialsChangedAt: new Date() },
+        });
+        await tx.platformAdminSession.updateMany({
+          where: { adminId: row.adminId, revokedAt: null },
+          data: { revokedAt: new Date() },
         });
         await tx.platformAuditLog.create({
           data: {
-            adminId: created.id,
-            action: 'platform.first_access',
-            summary: `Acesso do painel criado para ${input.email} (por ${request.auth!.displayName}, da Cenário Estofados).`,
+            adminId: row.adminId,
+            action: 'platform.password_reset',
+            summary: 'Senha do painel trocada pelo link do e-mail.',
             ipAddress: request.ip ?? null,
           },
         });
-        return created;
       });
-      return startSession(request, reply, admin);
+      return startSession(request, reply, row.admin);
     },
   );
 

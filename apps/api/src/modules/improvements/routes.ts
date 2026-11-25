@@ -29,7 +29,7 @@ import { COMPANY_BILLING_SELECT, cycleOf, planOf, statusOf } from '../../core/bi
 import { now as clockNow } from '../../core/clock';
 import { publicLink } from '../../core/public-links';
 import { createSession, revokeSessions } from '../../core/sessions';
-import { PLATFORM_COMPANY_ID, requireCompanyId, runAsCompany } from '../../core/tenant';
+import { requireCompanyId, runAsCompany } from '../../core/tenant';
 import { cookieOptions } from '../../plugins/auth';
 import { Errors } from '../../lib/errors';
 import { MANAGE_PERMISSIONS, allowed } from '../attachments/policy';
@@ -533,8 +533,6 @@ export async function improvementRoutes(app: FastifyInstance) {
     { config: { access: { session: 'WEB', permissions: ['empresa.configurar'] } } },
     async (request) => {
       const { hours } = supportAccessSchema.parse(request.body);
-      if (request.auth!.companyId === PLATFORM_COMPANY_ID)
-        throw Errors.business('A empresa da plataforma não precisa liberar o suporte.');
       const companyId = requireCompanyId();
       const until = hours ? new Date(Date.now() + hours * 3_600_000) : null;
       const actor = actorFrom(request);
@@ -575,8 +573,7 @@ export async function improvementRoutes(app: FastifyInstance) {
     async (request, reply) => {
       assertPlatformOwner(request);
       const id = Number((request.params as { id: string }).id);
-      if (!Number.isInteger(id) || id === PLATFORM_COMPANY_ID)
-        throw Errors.business('Escolha uma empresa cliente.');
+      if (!Number.isInteger(id) || id < 1) throw Errors.business('Escolha uma empresa cliente.');
       const company = await system.companySettings.findUnique({
         where: { id },
         select: { supportAccessUntil: true, tradeName: true, blockedAt: true },
@@ -646,7 +643,7 @@ export async function improvementRoutes(app: FastifyInstance) {
       assertPlatformOwner(request);
       const now = clockNow();
       const companies = await system.companySettings.findMany({
-        where: { id: { not: PLATFORM_COMPANY_ID }, isDemo: false },
+        where: { isPlatform: false, isDemo: false },
         select: {
           ...COMPANY_BILLING_SELECT,
           billingPriceCents: true,
@@ -753,7 +750,7 @@ export async function improvementRoutes(app: FastifyInstance) {
         where: { id: companyId },
         select: { ...COMPANY_BILLING_SELECT, asaasSubscriptionId: true, canceledAt: true },
       });
-      if (company.billingCourtesy || companyId === PLATFORM_COMPANY_ID)
+      if (company.billingCourtesy)
         throw Errors.business('Esta empresa tem cortesia: não há assinatura para cancelar.');
       // A cobrança recorrente para no Asaas (as próximas mensalidades não são geradas).
       if (company.asaasSubscriptionId && asaas)
@@ -1209,7 +1206,7 @@ export async function improvementRoutes(app: FastifyInstance) {
         canceledAt: c.canceledAt?.toISOString() ?? null,
         pausedUntil: c.pausedUntil?.toISOString() ?? null,
         cancelReason: c.cancelReason,
-        courtesy: c.billingCourtesy || requireCompanyId() === PLATFORM_COMPANY_ID,
+        courtesy: c.billingCourtesy,
       };
     },
   );
