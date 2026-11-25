@@ -24,7 +24,14 @@ import {
   Wrench,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { AgentCard, ProposalCard, useOffice, useOfficeSend } from '@/components/office/office-page';
+import {
+  AgentCard,
+  ProposalCard,
+  ToSendList,
+  ToSendProvider,
+  useOffice,
+  useOfficeSend,
+} from '@/components/office/office-page';
 import { InstallBanner, PushCard } from '@/components/tablet/install';
 import { Button } from '@/components/ui/button';
 import { Alert, EmptyState, Spinner } from '@/components/ui/misc';
@@ -106,54 +113,58 @@ export function DonoApp() {
   const pending = office.data?.pending.filter((p) => !p.suggestion).length ?? 0;
   const firstName = me.data!.user.displayName.split(' ')[0];
 
+  // Aprovado sem o WhatsApp da empresa: o "Enviar no WhatsApp" fica guardado aqui, fora do
+  // cartão (que some da lista quando o pedido deixa de estar pendente), até o dono tocar.
   return (
-    <div className="mx-auto flex min-h-dvh max-w-xl flex-col bg-canvas" data-testid="dono-app">
-      <main className="flex-1 px-4 pt-[max(env(safe-area-inset-top),16px)] pb-28">
-        {tab === 'hoje' && (
-          <Hoje
-            name={firstName ?? ''}
-            pending={officeOk ? pending : null}
-            onApprove={() => setTab('aprovar')}
-            onIa={officeOk ? () => setTab('ia') : null}
-          />
-        )}
-        {tab === 'aprovar' && <Aprovar />}
-        {tab === 'oficina' && <Oficina />}
-        {tab === 'dinheiro' && seesMoney && <Dinheiro />}
-        {tab === 'ia' && <Ia onBack={() => setTab('hoje')} />}
-      </main>
-      <nav
-        className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]"
-        aria-label="Telas"
-      >
-        <ul
-          className="mx-auto grid max-w-xl"
-          style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}
+    <ToSendProvider>
+      <div className="mx-auto flex min-h-dvh max-w-xl flex-col bg-canvas" data-testid="dono-app">
+        <main className="flex-1 px-4 pt-[max(env(safe-area-inset-top),16px)] pb-28">
+          {tab === 'hoje' && (
+            <Hoje
+              name={firstName ?? ''}
+              pending={officeOk ? pending : null}
+              onApprove={() => setTab('aprovar')}
+              onIa={officeOk ? () => setTab('ia') : null}
+            />
+          )}
+          {tab === 'aprovar' && <Aprovar />}
+          {tab === 'oficina' && <Oficina />}
+          {tab === 'dinheiro' && seesMoney && <Dinheiro />}
+          {tab === 'ia' && <Ia onBack={() => setTab('hoje')} />}
+        </main>
+        <nav
+          className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]"
+          aria-label="Telas"
         >
-          {tabs.map(({ key, label, icon: Icon }) => (
-            <li key={key}>
-              <button
-                type="button"
-                onClick={() => setTab(key)}
-                aria-current={tab === key ? 'page' : undefined}
-                className={clsx(
-                  'relative flex h-16 w-full flex-col items-center justify-center gap-0.5 text-xs font-semibold',
-                  tab === key ? 'text-brand-700' : 'text-ink-muted',
-                )}
-              >
-                <Icon className="size-6" aria-hidden />
-                {label}
-                {key === 'aprovar' && pending > 0 && (
-                  <span className="absolute top-1.5 left-1/2 ml-1 rounded-full bg-danger-600 px-1.5 text-[11px] text-white">
-                    {pending}
-                  </span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </nav>
-    </div>
+          <ul
+            className="mx-auto grid max-w-xl"
+            style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}
+          >
+            {tabs.map(({ key, label, icon: Icon }) => (
+              <li key={key}>
+                <button
+                  type="button"
+                  onClick={() => setTab(key)}
+                  aria-current={tab === key ? 'page' : undefined}
+                  className={clsx(
+                    'relative flex h-16 w-full flex-col items-center justify-center gap-0.5 text-xs font-semibold',
+                    tab === key ? 'text-brand-700' : 'text-ink-muted',
+                  )}
+                >
+                  <Icon className="size-6" aria-hidden />
+                  {label}
+                  {key === 'aprovar' && pending > 0 && (
+                    <span className="absolute top-1.5 left-1/2 ml-1 rounded-full bg-danger-600 px-1.5 text-[11px] text-white">
+                      {pending}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </div>
+    </ToSendProvider>
   );
 }
 
@@ -416,6 +427,9 @@ function Aprovar() {
               : `${pending.length} pedidos da IA`
         }
       />
+      <div className="mb-3 empty:hidden">
+        <ToSendList />
+      </div>
       {office.isPending && <Spinner />}
       {office.data?.paused && (
         <Alert tone="warn" className="mb-3">

@@ -113,7 +113,14 @@ test('capturas: app do dono no celular', async ({ page, browser }) => {
         'ATENDIMENTO',
         `Pedir a avaliação de ${n}`,
         text(n),
-        JSON.stringify({ task: 'PEDIR_AVALIACAO', customerName: n, text: text(n) }),
+        JSON.stringify({
+          task: 'PEDIR_AVALIACAO',
+          customerName: n,
+          phone: '5511900000000',
+          text: text(n),
+          href: `https://wa.me/5511900000000?text=${encodeURIComponent(text(n))}`,
+          channel: 'WHATSAPP',
+        }),
       ],
     );
   await db2.end();
@@ -148,6 +155,18 @@ test('capturas: app do dono no celular', async ({ page, browser }) => {
     .click();
   await expect(phone.getByTestId('office-proposal').first()).toBeVisible();
   await shot('6-dono-aprovar');
+  // Sem o WhatsApp da empresa: aprovou, o "Enviar no WhatsApp" fica na tela mesmo depois que o
+  // pedido sai da lista (a lista recarrega sozinha).
+  await phone
+    .getByTestId('office-proposal')
+    .first()
+    .getByRole('button', { name: 'Aprovar' })
+    .click();
+  await expect(phone.getByTestId('office-to-send')).toBeVisible();
+  await expect(phone.getByTestId('office-proposal')).toHaveCount(1);
+  await phone.waitForLoadState('networkidle');
+  await expect(phone.getByTestId('office-to-send')).toContainText('Enviar no WhatsApp');
+  await shot('6b-dono-aprovado-enviar');
 
   await phone
     .getByRole('button', { name: /Oficina/ })

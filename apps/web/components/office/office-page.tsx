@@ -25,7 +25,7 @@ import {
   RefreshCw,
   UserPlus,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { createContext, useContext, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { buttonClass } from '@/components/ui/button-styles';
 import { Dialog } from '@/components/ui/dialog';
@@ -75,7 +75,76 @@ export function useOfficeSend() {
  * Escritório (2026-11-25): o que os agentes fizeram e o que espera o dono, no celular. Aprovar,
  * mudar ou recusar cada pedido; escolher o nível de cada tarefa; parar tudo.
  */
+/**
+ * Aprovado sem o WhatsApp da empresa: falta o dono apertar enviar. A proposta sai da lista
+ * "Esperando você" assim que o escritório recarrega, então o botão de enviar fica aqui em cima,
+ * fora do cartão, até ser tocado.
+ */
+type ToSend = { id: string; title: string; href: string };
+const ToSendContext = createContext<{
+  items: ToSend[];
+  add: (t: ToSend) => void;
+  remove: (id: string) => void;
+} | null>(null);
+
+export function ToSendProvider({ children }: { children: React.ReactNode }) {
+  const [items, setItems] = useState<ToSend[]>([]);
+  return (
+    <ToSendContext.Provider
+      value={{
+        items,
+        add: (t) => setItems((l) => [...l.filter((x) => x.id !== t.id), t]),
+        remove: (id) => setItems((l) => l.filter((x) => x.id !== id)),
+      }}
+    >
+      {children}
+    </ToSendContext.Provider>
+  );
+}
+
+/** Os aprovados que falta enviar no WhatsApp (dentro do ToSendProvider). */
+export function ToSendList() {
+  const ctx = useContext(ToSendContext);
+  if (!ctx?.items.length) return null;
+  return (
+    <ul className="space-y-3" data-testid="office-to-send">
+      {ctx.items.map((t) => (
+        <li key={t.id}>
+          <SendCard title={t.title} href={t.href} onSent={() => ctx.remove(t.id)} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SendCard({ title, href, onSent }: { title: string; href: string; onSent: () => void }) {
+  return (
+    <Card className="p-4">
+      <p className="font-medium text-ink">{title}</p>
+      <p className="mt-1 text-sm text-ink-muted">Aprovado. Falta só apertar enviar no WhatsApp.</p>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={() => setTimeout(onSent, 500)}
+        className={clsx(buttonClass('primary', 'md'), 'mt-3 w-full sm:w-auto')}
+      >
+        <MessageCircle className="size-4" aria-hidden />
+        Enviar no WhatsApp
+      </a>
+    </Card>
+  );
+}
+
 export function OfficePage() {
+  return (
+    <ToSendProvider>
+      <OfficeInner />
+    </ToSendProvider>
+  );
+}
+
+function OfficeInner() {
   const q = useOffice();
   const { m, error } = useOfficeSend();
   const data = q.data;
@@ -151,6 +220,7 @@ export function OfficePage() {
               Nada sai sozinho.
             </Alert>
           )}
+          <ToSendList />
           <Today data={data} />
           <ReceiptCard data={data} />
           <QuoteRequestCard data={data} />
@@ -246,6 +316,7 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
   const { m, error } = useOfficeSend();
   const [edit, setEdit] = useState(false);
   const [sendLink, setSendLink] = useState<string | null>(null);
+  const toSend = useContext(ToSendContext);
   const decide = (decision: 'APROVAR' | 'REJEITAR', edits?: Record<string, unknown>) =>
     m.mutate({
       ok: decision === 'APROVAR' ? 'Aprovado.' : 'Recusado.',
@@ -264,7 +335,8 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
           r.payload.sent === false &&
           typeof r.payload.href === 'string'
         )
-          setSendLink(r.payload.href);
+          if (toSend) toSend.add({ id: p.id, title: p.title, href: r.payload.href });
+          else setSendLink(r.payload.href);
         setEdit(false);
       },
     });
@@ -273,24 +345,7 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
   const isExpense = p.task === 'LANCAR_DESPESA';
   const isQuote = p.task === 'MONTAR_ORCAMENTO';
   if (sendLink)
-    return (
-      <Card className="p-4">
-        <p className="font-medium text-ink">{p.title}</p>
-        <p className="mt-1 text-sm text-ink-muted">
-          Aprovado. Falta só apertar enviar no WhatsApp.
-        </p>
-        <a
-          href={sendLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={() => setTimeout(() => setSendLink(null), 500)}
-          className={clsx(buttonClass('primary', 'md'), 'mt-3 w-full sm:w-auto')}
-        >
-          <MessageCircle className="size-4" aria-hidden />
-          Enviar no WhatsApp
-        </a>
-      </Card>
-    );
+    return <SendCard title={p.title} href={sendLink} onSent={() => setSendLink(null)} />;
   return (
     <Card className="p-4" data-testid="office-proposal">
       <div className="flex items-center gap-2 text-sm text-ink-muted">
