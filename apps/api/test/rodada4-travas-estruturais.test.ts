@@ -1453,6 +1453,8 @@ const split = (key: string) => {
 /** O que a regra permite para uma sessão de painel (mesma lógica do plugin de autenticação). */
 function webAllows(access: BaselineAccess, perms: ReadonlySet<string>): boolean {
   if ('public' in access || 'device' in access || 'webhook' in access) return true;
+  // Painel da plataforma: nenhuma sessão de empresa entra (login próprio, cookie próprio).
+  if ('platform' in access) return false;
   if (access.session !== 'any' && access.session !== 'WEB') return false;
   const required = [
     ...(access.surfaceExempt ? [] : ['painel.acessar']),
@@ -1716,6 +1718,9 @@ const ALLOWED_DESTRUCTIVE: Record<string, string> = {
   '20270907000000_precos_material: UPDATE NO':
     'Não é comando: "ON UPDATE NO ACTION" da chave do item do catálogo na tabela NOVA de preços ' +
     'de material. Nenhuma linha é alterada.',
+  '20270908000000_painel_plataforma: UPDATE NO':
+    'Não é comando: "ON UPDATE NO ACTION" das chaves estrangeiras das tabelas NOVAS do painel da ' +
+    'plataforma (sessões e histórico do painel). Nenhuma linha é alterada.',
   '20270901000000_preparacao_livre: UPDATE "production_tasks"':
     'Pedido do dono (2026-11-19): etapas de preparação AINDA NÃO INICIADAS deixam de ter o ' +
     'responsável escolhido automaticamente e ficam livres para o ajudante disponível pegar. ' +
@@ -1800,6 +1805,7 @@ const MULTI_EMPRESA_ETAPA2 = '20270701000000_multi_empresa_etapa2';
 const ALLOWED_DESTRUCTIVE_TIMES: Record<string, number> = {
   '20270903000000_lgpd_pedidos: UPDATE CASCADE': 2,
   '20270904000000_avisos_no_aparelho: UPDATE CASCADE': 2,
+  '20270908000000_painel_plataforma: UPDATE NO': 2,
   '20270822000000_retrabalhos_receitas: UPDATE CASCADE': 4,
   '20270729000000_melhorias_rodada2: UPDATE CASCADE': 2,
   '20270722000000_cobranca_planos_emails: UPDATE CASCADE': 4,

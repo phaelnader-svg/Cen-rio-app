@@ -63,7 +63,6 @@ const EXPECTED: Record<string, { group: string; anyOf?: string[]; allOf?: string
   '/painel/funcoes': { group: 'Produção', anyOf: ['funcoes.ver'] },
   '/painel/dispositivos': { group: 'Administração', anyOf: ['dispositivos.ver', 'sessoes.ver'] },
   // Aplicativos conectados (autorização delegada, ex.: Firma Viva).
-  '/painel/empresas': { group: 'Administração', anyOf: ['empresa.configurar'] },
   '/painel/aplicativos': { group: 'Administração', anyOf: ['empresa.configurar', 'sessoes.ver'] },
   '/painel/clientes': { group: 'Serviços', anyOf: ['clientes.ver'] },
   '/painel/orcamentos': { group: 'Serviços', anyOf: ['orcamentos.ver', 'orcamentos.gerenciar'] },
@@ -160,7 +159,8 @@ describe('F10-01 — menu por áreas', () => {
       ALL_MODULES_ON,
       true,
     );
-    expect(dono.map((i) => i.href)).toContain('/painel/empresas');
+    // Empresas e cobrança ficam no painel da plataforma (/plataforma), não no da Cenário Estofados.
+    expect(dono.map((i) => i.href)).not.toContain('/painel/empresas');
   });
 
   it('cada item do menu está na área e com as permissões esperadas', () => {

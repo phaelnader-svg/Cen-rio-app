@@ -1,8 +1,6 @@
-import type { Metadata } from 'next';
-import { CompaniesPage } from '@/components/admin/companies-page';
+import { redirect } from 'next/navigation';
 
-export const metadata: Metadata = { title: 'Empresas' };
-
+/** A lista de empresas saiu do painel da Cenário Estofados: agora fica no painel da plataforma. */
 export default function Page() {
-  return <CompaniesPage />;
+  redirect('/plataforma/empresas');
 }

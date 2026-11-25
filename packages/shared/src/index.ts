@@ -63,3 +63,4 @@ export * from './reworks';
 export * from './shop-floor';
 export * from './legal';
 export * from './office-tasks';
+export * from './platform';

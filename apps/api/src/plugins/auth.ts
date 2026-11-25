@@ -9,6 +9,15 @@ import { PLATFORM_COMPANY_ID } from '../core/tenant';
 import { COMPANY_BILLING_SELECT, billingLocked } from '../core/billing';
 import { AppError } from '../lib/errors';
 import { ERROR_CODES } from '@cenario/shared';
+import { refreshPlatformConfig } from '../core/platform-config';
+
+/** Painel da plataforma: 12 horas sem uso encerram a sessão; no máximo 30 dias. */
+export const PLATFORM_IDLE_MS = 12 * 3_600_000;
+export function platformSessionExpiry(createdAt: Date, now = new Date()): Date {
+  return new Date(
+    Math.min(now.getTime() + PLATFORM_IDLE_MS, createdAt.getTime() + 30 * 86_400_000),
+  );
+}
 
 function subscriptionRequired(tablet: boolean) {
   return new AppError(
@@ -54,6 +63,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
 
   app.decorateRequest('auth', null);
   app.decorateRequest('device', null);
+  app.decorateRequest('platformAdmin', null);
 
   // Catálogo das regras de acesso (auditoria automática de todas as rotas — Fase 12).
   const routeCatalog: { method: string; url: string; access: AccessRule }[] = [];
@@ -82,6 +92,25 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
       return;
     }
     if ('public' in access && access.serverToServer) return;
+    // Configuração da plataforma (bloqueio automático, tolerância): cópia em memória de 30 s.
+    await refreshPlatformConfig(prisma).catch((err: unknown) =>
+      request.log.warn({ err }, 'Falha ao ler a configuração da plataforma'),
+    );
+
+    // Painel da plataforma: cookie próprio, nunca o login das empresas (e vice-versa).
+    if ('platform' in access) {
+      if (!SAFE_METHODS.has(request.method)) {
+        const origin = request.headers.origin?.replace(/\/$/, '');
+        if (!origin || !allowedOrigins.has(origin)) throw Errors.originNotAllowed();
+      }
+      if (request.headers.authorization)
+        throw Errors.forbidden('Este acesso não está disponível para aplicativos conectados.');
+      await resolvePlatformSession(request, reply);
+      if (!request.platformAdmin) throw Errors.unauthenticated();
+      // O que o painel grava fica na empresa da plataforma (auditoria, avisos, e-mails).
+      if (request.tenant) request.tenant.companyId = PLATFORM_COMPANY_ID;
+      return;
+    }
 
     // 0. Acesso delegado de aplicativo (Authorization: Bearer). Sem cookies: não há CSRF;
     // a origem não se aplica. Rotas de login/sessão e a própria autorização nunca aceitam token.
@@ -122,6 +151,35 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
     // 4. Regra de acesso
     enforce(request, access);
   });
+
+  async function resolvePlatformSession(request: FastifyRequest, reply: FastifyReply) {
+    const token = request.cookies[cookies.platform];
+    if (!token) return;
+    const s = await prisma.platformAdminSession.findUnique({
+      where: { tokenHash: hashToken(token) },
+      include: { admin: true },
+    });
+    const now = new Date();
+    if (!s || s.revokedAt || s.expiresAt <= now || !s.admin.active) {
+      void reply.clearCookie(cookies.platform, { path: '/' });
+      return;
+    }
+    if (now.getTime() - s.lastSeenAt.getTime() > TOUCH_INTERVAL_MS) {
+      const expiresAt = platformSessionExpiry(s.createdAt, now);
+      await prisma.platformAdminSession.update({
+        where: { id: s.id },
+        data: { lastSeenAt: now, expiresAt },
+      });
+      const maxAge = Math.max(1, Math.floor((expiresAt.getTime() - now.getTime()) / 1000));
+      void reply.setCookie(cookies.platform, token, cookieOptions(env.COOKIE_SECURE, maxAge));
+    }
+    request.platformAdmin = {
+      id: s.admin.id,
+      email: s.admin.email,
+      displayName: s.admin.displayName,
+      sessionId: s.id,
+    };
+  }
 
   async function resolveDevice(request: FastifyRequest, reply: FastifyReply) {
     const token = request.cookies[cookies.device];
@@ -308,7 +366,7 @@ export const authPlugin = fp(async (app: FastifyInstance) => {
   }
 
   function enforce(request: FastifyRequest, access: AccessRule) {
-    if ('public' in access || 'webhook' in access) return;
+    if ('public' in access || 'webhook' in access || 'platform' in access) return;
     if ('device' in access) {
       if (!request.device) throw Errors.deviceRequired();
       if (request.device.billingLocked) throw subscriptionRequired(true);

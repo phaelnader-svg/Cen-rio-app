@@ -220,10 +220,10 @@ export async function privacyRoutes(app: FastifyInstance) {
   );
 
   // ───────────── Dono da plataforma: todos os pedidos (banco do sistema) ─────────────
-  const PLATFORM = { session: 'WEB', permissions: ['empresa.configurar'] } as const;
+  // Painel da plataforma (/plataforma): login próprio, separado das empresas.
+  const PLATFORM = { platform: true } as const;
   function assertPlatformOwner(request: FastifyRequest) {
-    if (request.auth?.companyId !== PLATFORM_COMPANY_ID || request.auth.kind !== 'WEB')
-      throw Errors.notFound('Página');
+    if (!request.platformAdmin) throw Errors.notFound('Página');
   }
 
   app.get(

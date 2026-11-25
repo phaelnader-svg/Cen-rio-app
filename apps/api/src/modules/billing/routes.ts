@@ -1,10 +1,10 @@
 import { timingSafeEqual } from 'node:crypto';
 import {
   PLANS,
+  PROVISIONAL_TRADE_NAME,
   SUBSCRIPTION_STATUS_LABEL,
   addCycle,
   isPlanKey,
-  planPriceCents,
   subscribeSchema,
   type BillingCycle,
   type InvoiceStatus,
@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import {
   COMPANY_BILLING_SELECT,
+  billingOn,
   blocksAt,
   cycleOf,
   planOf,
@@ -25,6 +26,12 @@ import {
   type CompanyBillingRow,
 } from '../../core/billing';
 import { now as clockNow } from '../../core/clock';
+import {
+  companyPriceCents,
+  listPriceCents,
+  platformConfig,
+  whatsappLink,
+} from '../../core/platform-config';
 import { enqueueEmail, simpleEmail } from '../../core/mailer';
 import { requireCompanyId, runAsCompany } from '../../core/tenant';
 import { Errors } from '../../lib/errors';
@@ -82,7 +89,7 @@ export async function billingRoutesPlatform(app: FastifyInstance) {
   async function subscriptionDto(db: PrismaClient): Promise<SubscriptionDto> {
     const c = await db.companySettings.findUniqueOrThrow({
       where: { id: requireCompanyId() },
-      select: COMPANY_BILLING_SELECT,
+      select: { ...COMPANY_BILLING_SELECT, billingPriceCents: true, tradeName: true },
     });
     const invoices = await db.subscriptionInvoice.findMany({
       orderBy: { dueDate: 'desc' },
@@ -100,7 +107,7 @@ export async function billingRoutesPlatform(app: FastifyInstance) {
       trialEndsAt: c.trialEndsAt?.toISOString() ?? null,
       paidUntil: c.paidUntil?.toISOString() ?? null,
       blocksAt: end?.toISOString() ?? null,
-      billingEnabled: env.BILLING_ENABLED,
+      billingEnabled: billingOn(env),
       canPayOnline: asaas !== null,
       includesGame: PLANS[plan].includesGame,
       invoices: invoices.map((i) => ({
@@ -115,6 +122,33 @@ export async function billingRoutesPlatform(app: FastifyInstance) {
         periodEnd: i.periodEnd?.toISOString() ?? null,
       })),
       plans: plansCatalog(),
+      annualDiscountPct: platformConfig().annualDiscountBps / 100,
+      manual: manualPayment(c, plan),
+    };
+  }
+
+  /** Cobrança feita pelo dono da plataforma: PIX e WhatsApp do painel /plataforma. */
+  function manualPayment(
+    c: CompanyBillingRow & { billingPriceCents: number | null; tradeName: string },
+    plan: PlanKey,
+  ): SubscriptionDto['manual'] {
+    const cfg = platformConfig();
+    if (!cfg.pixKey && !cfg.whatsapp) return null;
+    const amountCents = companyPriceCents({
+      plan,
+      cycle: cycleOf(c),
+      billingPriceCents: c.billingPriceCents,
+    });
+    const name = c.tradeName && c.tradeName !== PROVISIONAL_TRADE_NAME ? ` da ${c.tradeName}` : '';
+    return {
+      pixKey: cfg.pixKey,
+      pixName: cfg.pixName,
+      pixBank: cfg.pixBank,
+      message: cfg.paymentMessage,
+      amountCents,
+      whatsappUrl: whatsappLink(
+        `Olá! Sou${name} e quero continuar com o Cenário Gestão (${PLANS[plan].label}, ${fmtBRL(amountCents)} ${cycleOf(c) === 'ANUAL' ? 'por ano' : 'por mês'}). Segue o comprovante do PIX.`,
+      ),
     };
   }
 
@@ -153,7 +187,7 @@ export async function billingRoutesPlatform(app: FastifyInstance) {
       if (!email)
         throw Errors.business('Cadastre o e-mail da empresa em Empresa antes de assinar.');
       const name = company.legalName || company.tradeName;
-      const value = planPriceCents(input.plan, input.cycle);
+      const value = listPriceCents(input.plan, input.cycle);
 
       try {
         let customerId = company.asaasCustomerId;

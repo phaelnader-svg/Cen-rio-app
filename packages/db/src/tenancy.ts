@@ -315,6 +315,20 @@ export const TENANCY: Record<string, TenancyEntry> = {
     class: 'sistema',
     note: 'Amostra da página de status (banco respondendo e tempo de resposta).',
   },
+  // ── Painel da plataforma (2026-11-25) ─────────────────────────────────────────────
+  PlatformAdmin: {
+    class: 'sistema',
+    note: 'Login do dono da plataforma; não pertence a nenhuma empresa.',
+  },
+  PlatformAdminSession: { class: 'sistema', note: 'Sessão do painel da plataforma.' },
+  PlatformAuditLog: {
+    class: 'sistema',
+    note: 'O que o dono da plataforma fez no painel (resumo, sem dados de clientes).',
+  },
+  PlatformSettings: {
+    class: 'sistema',
+    note: 'Preços, teste, bloqueio e PIX do dono da plataforma (uma linha).',
+  },
   // ── Despesas, prazos e alertas (2026-11-18) ────────────────────────────────────────
   ExpenseCategory: {
     class: 'empresa',

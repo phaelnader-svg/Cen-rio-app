@@ -7,7 +7,15 @@ import { DEFAULT_ROLES, GESTOR_ROLE_KEY } from '@cenario/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { createCustomer } from './commercial-helpers';
-import { Client, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  Client,
+  loginPlatform,
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  resetDatabase,
+} from './helpers';
 
 let app: App;
 beforeAll(async () => {
@@ -184,8 +192,9 @@ describe('Criar conta (empresa nova)', () => {
 });
 
 describe('Painel do dono da plataforma', () => {
-  it('o gestor da Cenário Estofados vê as empresas e bloqueia/libera uma delas', async () => {
-    const admin = await loginAdmin(app);
+  it('o painel da plataforma vê as empresas e bloqueia/libera uma delas', async () => {
+    const admin = await loginPlatform(app);
+    const estofados = await loginAdmin(app);
     const { c } = await criarConta();
     const { companyId } = await db().user.findUniqueOrThrow({
       where: { email: 'nova@tapecaria.local' },
@@ -209,7 +218,7 @@ describe('Painel do dono da plataforma', () => {
     });
     expect(login.status).toBe(403);
     // A Cenário Estofados segue normal.
-    expect((await admin.get('/api/auth/me')).status).toBe(200);
+    expect((await estofados.get('/api/auth/me')).status).toBe(200);
 
     expect((await admin.post(`/api/v1/platform/companies/${companyId}/unblock`, {})).status).toBe(
       200,
@@ -222,14 +231,16 @@ describe('Painel do dono da plataforma', () => {
   });
 
   it('a Cenário Estofados não pode ser bloqueada', async () => {
-    const admin = await loginAdmin(app);
+    const admin = await loginPlatform(app);
     expect((await admin.post('/api/v1/platform/companies/1/block', {})).status).toBe(422);
   });
 
-  it('o gestor de uma empresa nova não enxerga o painel do dono', async () => {
+  it('nenhum login de empresa (nem o da Cenário Estofados) enxerga o painel da plataforma', async () => {
     const { c } = await criarConta();
-    expect((await c.get('/api/v1/platform/companies')).status).toBe(404);
-    expect((await c.post('/api/v1/platform/companies/1/block', {})).status).toBe(404);
+    expect((await c.get('/api/v1/platform/companies')).status).toBe(401);
+    expect((await c.post('/api/v1/platform/companies/1/block', {})).status).toBe(401);
+    const estofados = await loginAdmin(app);
+    expect((await estofados.get('/api/v1/platform/companies')).status).toBe(401);
     expect(await db().companySettings.count({ where: { blockedAt: { not: null } } })).toBe(0);
   });
 });

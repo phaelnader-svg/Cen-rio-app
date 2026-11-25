@@ -106,6 +106,8 @@ import { privacyRoutes } from './modules/privacy/routes';
 import { EmailSender } from './core/mailer';
 import { turnstileVerifier } from './core/captcha';
 import { setBillingEnvironment } from './core/billing';
+import { platformAuthRoutes } from './modules/platform/admin-auth';
+import { sendDueNotices } from './modules/platform/due-notices';
 import { deviceRoutes } from './modules/devices/routes';
 import { employeeRoutes } from './modules/employees/routes';
 import { fileRoutes } from './modules/files/routes';
@@ -190,6 +192,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
     cookies: {
       session: secure ? '__Host-cen_sid' : 'cen_sid',
       device: secure ? '__Host-cen_dev' : 'cen_dev',
+      platform: secure ? '__Host-cen_plat' : 'cen_plat',
     },
     clientIp,
     mailer: new EmailSender(system, env, app.log),
@@ -253,6 +256,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(sessionRoutes);
   await app.register(companyRoutes);
   await app.register(platformRoutes);
+  await app.register(platformAuthRoutes);
   await app.register(billingRoutesPlatform);
   await app.register(accountRoutes);
   await app.register(privacyRoutes);
@@ -358,6 +362,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   let emailTimer: NodeJS.Timeout | null = null;
   let statusTimer: NodeJS.Timeout | null = null;
   let officeTimer: NodeJS.Timeout | null = null;
+  let dueTimer: NodeJS.Timeout | null = null;
   let started = false;
 
   return {
@@ -450,6 +455,16 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           30 * 60_000,
         );
         officeTimer.unref();
+        // Painel da plataforma: aviso por e-mail ao dono da plataforma antes de cada vencimento.
+        const dueRound = () =>
+          void sendDueNotices(system, env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!)
+            .then((n) => n > 0 && ctx.mailer.kick())
+            .catch((err: unknown) =>
+              app.log.warn({ err }, 'Falha ao avisar os vencimentos da plataforma'),
+            );
+        dueTimer = setInterval(dueRound, 30 * 60_000);
+        dueTimer.unref();
+        dueRound();
         sample();
       }
     },
@@ -463,6 +478,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       if (emailTimer) clearInterval(emailTimer);
       if (statusTimer) clearInterval(statusTimer);
       if (officeTimer) clearInterval(officeTimer);
+      if (dueTimer) clearInterval(dueTimer);
       processor.stop();
       hub.stop();
       await feed.stop();

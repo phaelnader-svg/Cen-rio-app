@@ -6,7 +6,7 @@
 import { addCycle, planPriceCents, subscriptionStatus } from '@cenario/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
-import { Client, createTestApp, db, loginAdmin, resetDatabase } from './helpers';
+import { Client, createTestApp, db, loginAdmin, loginPlatform, resetDatabase } from './helpers';
 
 const WEBHOOK = 'token-do-webhook-de-teste-com-32-caracteres!!';
 let app: App;
@@ -395,28 +395,30 @@ describe('Assinatura pelo Asaas e bloqueio', () => {
   });
 });
 
-describe('Painel do dono: Empresas', () => {
+describe('Painel da plataforma: Empresas', () => {
   it('mostra plano, situação, pedidos e e-mail confirmado; troca plano e registra pagamento', async () => {
     const { companyId } = await criarConta();
-    const admin = await loginAdmin(app);
+    const admin = await loginPlatform(app);
     const list = await admin.get('/api/v1/platform/companies');
     const row = list.body.items.find((x: { id: number }) => x.id === companyId);
     expect(row).toMatchObject({
       orders: 0,
       ownerEmailConfirmed: false,
-      subscription: { plan: 'gestao', status: 'TESTE' },
+      plan: 'gestao',
+      status: 'TESTE',
+      tone: 'trial',
     });
-    const r = await admin.put(`/api/v1/platform/companies/${companyId}/subscription`, {
+    const r = await admin.put(`/api/v1/platform/companies/${companyId}`, {
       plan: 'gestao_jogo',
       paidUntil: '2099-01-31',
     });
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ status: 'ATIVA', plan: 'gestao_jogo' });
-    const audit = await db().auditLog.findFirstOrThrow({
-      where: { action: 'platform.company_subscription' },
+    const log = await db().platformAuditLog.findFirstOrThrow({
+      where: { action: 'platform.company_edited' },
     });
-    expect(audit.companyId).toBe(1);
-    expect(audit.summary).toContain('pago até 31/01/2099');
+    expect(log.targetCompanyId).toBe(companyId);
+    expect(log.summary).toContain('pago até 31/01/2099');
   });
 });
 

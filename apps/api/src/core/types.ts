@@ -59,6 +59,8 @@ export type AccessRule =
     }
   /** Webhook de provedor externo: sem sessão nem Origin; o handler EXIGE a assinatura/token do provedor. */
   | { webhook: true }
+  /** Painel da plataforma (/plataforma): só com a sessão do dono da plataforma (cookie próprio). */
+  | { platform: true }
   | { device: true }
   | {
       session: 'any' | SessionKind;
@@ -88,7 +90,7 @@ export interface AppContext {
   hub: RealtimeHub;
   storage: FileStorage;
   processor: EventProcessor;
-  cookies: { session: string; device: string };
+  cookies: { session: string; device: string; platform: string };
   /** Proxy confiável e avisos de configuração do IP real (core/client-ip.ts). */
   clientIp: ClientIpConfig;
   /** Fila de e-mails (core/mailer.ts). */
@@ -113,6 +115,8 @@ declare module 'fastify' {
   interface FastifyRequest {
     auth: AuthContext | null;
     device: DeviceContext | null;
+    /** Dono da plataforma logado no painel /plataforma (só nas rotas `{ platform: true }`). */
+    platformAdmin: { id: string; email: string; displayName: string; sessionId: string } | null;
     tenant: TenantStore | null;
   }
   interface FastifyInstance {

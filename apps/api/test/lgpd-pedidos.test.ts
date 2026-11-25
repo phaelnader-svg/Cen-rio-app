@@ -6,7 +6,7 @@
 import { LEGAL_VERSION, annualRefundCents, planPriceCents } from '@cenario/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
-import { Client, createTestApp, db, loginAdmin, resetDatabase } from './helpers';
+import { Client, createTestApp, db, loginAdmin, resetDatabase, loginPlatform } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = any;
@@ -93,9 +93,9 @@ describe('Pedido de dentro do painel', () => {
       201,
     );
     expect(r.protocol).toHaveLength(8);
-    expect((await nova.get('/api/v1/platform/privacy-requests')).status).toBe(404);
+    expect((await nova.get('/api/v1/platform/privacy-requests')).status).toBe(401);
 
-    const admin = await loginAdmin(app);
+    const admin = await loginPlatform(app);
     const list = ok(await admin.get('/api/v1/platform/privacy-requests'));
     expect(list.items).toHaveLength(1);
     expect(list.items[0]).toMatchObject({

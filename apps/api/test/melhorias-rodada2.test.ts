@@ -19,7 +19,16 @@ import {
   createPickup,
   generateOsFromOrder,
 } from './commercial-helpers';
-import { ADMIN, Client, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  ADMIN,
+  Client,
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  resetDatabase,
+  loginPlatform,
+} from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type J = any;
@@ -291,8 +300,8 @@ describe('Busca rápida, lixeira e sugestões', () => {
       }),
       201,
     );
-    expect((await nova.get('/api/v1/platform/feedback')).status).toBe(404);
-    const admin = await loginAdmin(app);
+    expect((await nova.get('/api/v1/platform/feedback')).status).toBe(401);
+    const admin = await loginPlatform(app);
     const list = ok(await admin.get('/api/v1/platform/feedback'));
     expect(list.items[0]).toMatchObject({ kind: 'SUGESTAO', status: 'NOVO' });
   });
@@ -300,7 +309,7 @@ describe('Busca rápida, lixeira e sugestões', () => {
 
 describe('Aviso de manutenção e página de status', () => {
   it('o aviso aparece para todos no horário e some quando é encerrado', async () => {
-    const admin = await loginAdmin(app);
+    const admin = await loginPlatform(app);
     const n = ok(
       await admin.post('/api/v1/platform/notices', {
         message: 'O sistema atualiza hoje às 22h.',
@@ -325,12 +334,12 @@ describe('Acesso de suporte', () => {
     const novaId = (
       await db().user.findFirstOrThrow({ where: { email: 'suporte@tapecaria.local' } })
     ).companyId;
-    const admin = await loginAdmin(app);
+    const admin = await loginPlatform(app);
     const negado = await admin.post(`/api/v1/platform/companies/${novaId}/support-session`);
     expect(negado.status).toBe(422);
 
     ok(await nova.post('/api/v1/company/support-access', { hours: 2 }));
-    const suporte = await loginAdmin(app);
+    const suporte = await loginPlatform(app);
     ok(await suporte.post(`/api/v1/platform/companies/${novaId}/support-session`));
     const me = ok(await suporte.get('/api/auth/me'));
     expect(me.user).toMatchObject({ displayName: 'Suporte Cenário', supportAgent: true });
@@ -351,14 +360,15 @@ describe('Números do negócio e cancelar/pausar', () => {
         details: 'Por enquanto',
       }),
     );
-    const admin = await loginAdmin(app);
+    const admin = await loginPlatform(app);
+    const estofados = await loginAdmin(app);
     const n = ok(await admin.get('/api/v1/platform/business-numbers'));
     expect(n.canceled).toBe(1);
     expect(n.cancelReasons).toEqual([{ reason: 'Ficou caro', count: 1 }]);
     expect(n.trial).toBe(1);
     expect(
       (
-        await admin.post('/api/v1/subscription/cancel', {
+        await estofados.post('/api/v1/subscription/cancel', {
           action: 'PAUSAR',
           reason: 'Outro motivo',
         })
@@ -372,7 +382,7 @@ describe('Números do negócio e cancelar/pausar', () => {
   });
 
   it('a conta de demonstração é separada, entra com a senha mostrada e fica fora dos números', async () => {
-    const admin = await loginAdmin(app);
+    const admin = await loginPlatform(app);
     const demo = ok(
       await admin.post('/api/v1/platform/demo-company', { email: 'demo@cenario.local' }),
     );

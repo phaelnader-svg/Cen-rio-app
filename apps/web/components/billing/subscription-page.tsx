@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  ANNUAL_DISCOUNT_BPS,
-  type BillingCycle,
-  type PlanKey,
-  type SubscriptionDto,
-} from '@cenario/shared';
+import { type BillingCycle, type PlanKey, type SubscriptionDto } from '@cenario/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { Check, CreditCard, ExternalLink, Gamepad2 } from 'lucide-react';
@@ -18,6 +13,7 @@ import { api, errorMessage } from '@/lib/api';
 import { formatCents, formatDay } from '@/lib/billing';
 import { useMe } from '@/lib/hooks';
 import { CancelSubscriptionCard } from '@/components/improvements/company-extras';
+import { ManualPaymentCard } from './billing-notice';
 
 const STATUS_TONE = {
   CORTESIA: 'info',
@@ -116,6 +112,17 @@ export function SubscriptionPage() {
         )}
       </Card>
 
+      {/* Cobrança feita pelo Cenário Gestão (sem pagamento online): PIX e WhatsApp. */}
+      {s.status !== 'CORTESIA' && !s.canPayOnline && s.manual && canManage && (
+        <div className="mb-6 max-w-md">
+          <h2 className="mb-2 text-lg font-semibold">Como pagar</h2>
+          <ManualPaymentCard manual={s.manual} cycle={s.cycle} planLabel={s.planLabel} />
+          <p className="mt-2 text-sm text-ink-muted">
+            Para mudar de plano ou passar para o anual, é só falar pelo WhatsApp.
+          </p>
+        </div>
+      )}
+
       {s.status !== 'CORTESIA' && (
         <>
           <div className="mb-4 flex items-center gap-3">
@@ -141,7 +148,7 @@ export function SubscriptionPage() {
               ))}
             </div>
             <span className="text-sm text-ink-muted">
-              No anual, {ANNUAL_DISCOUNT_BPS / 100}% de desconto.
+              No anual, {s.annualDiscountPct}% de desconto.
             </span>
           </div>
 
@@ -182,7 +189,7 @@ export function SubscriptionPage() {
                       </li>
                     )}
                   </ul>
-                  {canManage && (
+                  {canManage && s.canPayOnline && (
                     <Button
                       className="mt-5"
                       variant={current ? 'primary' : 'secondary'}
@@ -228,16 +235,18 @@ export function SubscriptionPage() {
             </Card>
           )}
 
-          {!s.canPayOnline && (
+          {!s.canPayOnline && !s.manual && (
             <Alert tone="info" className="mt-4">
               O pagamento online ainda não está ligado. Para assinar agora, fale com o Cenário
               Gestão pelo WhatsApp.
             </Alert>
           )}
-          <p className="mt-4 text-sm text-ink-muted">
-            O pagamento é feito no Asaas, por Pix, boleto ou cartão. Mudar de plano gera uma
-            cobrança nova; o plano novo vale assim que ela for paga.
-          </p>
+          {s.canPayOnline && (
+            <p className="mt-4 text-sm text-ink-muted">
+              O pagamento é feito no Asaas, por Pix, boleto ou cartão. Mudar de plano gera uma
+              cobrança nova; o plano novo vale assim que ela for paga.
+            </p>
+          )}
         </>
       )}
 

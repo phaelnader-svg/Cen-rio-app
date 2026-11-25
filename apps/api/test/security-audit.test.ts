@@ -51,6 +51,8 @@ function allows(
   perms: ReadonlySet<Permission>,
 ): boolean {
   if ('public' in access || 'device' in access || 'webhook' in access) return true;
+  // Painel da plataforma: nenhuma sessão de empresa entra (login próprio, cookie próprio).
+  if ('platform' in access) return false;
   if (access.session !== 'any' && access.session !== kind) return false;
   const surface: Permission = kind === 'WEB' ? 'painel.acessar' : 'producao.acessar';
   const required = [...(access.surfaceExempt ? [] : [surface]), ...(access.permissions ?? [])];
@@ -75,7 +77,9 @@ async function probeDenied(client: Client, kind: 'WEB' | 'DEVICE', userId: strin
       },
     );
     checked += 1;
-    if (res.status !== 403) leaks.push(`${r.method} ${r.url} → ${res.status}`);
+    // Painel da plataforma: login próprio; a sessão da empresa nem conta (401, não 403).
+    const denied = 'platform' in r.access ? 401 : 403;
+    if (res.status !== denied) leaks.push(`${r.method} ${r.url} → ${res.status}`);
   }
   return { checked, leaks };
 }
@@ -128,6 +132,10 @@ describe('Matriz de acesso: todas as rotas', () => {
         'GET /api/public/aviso',
         'GET /api/public/status',
         'POST /api/public/client-error',
+        // Painel da plataforma (2026-11-25): a tela de entrar pergunta se o acesso já foi criado
+        // (só sim/não) e o login próprio do painel, com os mesmos limites do login das empresas.
+        'GET /api/plataforma/estado',
+        'POST /api/plataforma/entrar',
       ].sort(),
     );
   });

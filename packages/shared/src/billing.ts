@@ -1,3 +1,5 @@
+import type { ManualPaymentDto } from './platform';
+
 /**
  * Cobrança e planos (melhorias 1, 2 e 7 — 2026-11-17).
  *
@@ -144,6 +146,10 @@ export interface SubscriptionDto {
   canPayOnline: boolean;
   includesGame: boolean;
   invoices: SubscriptionInvoiceDto[];
+  /** Desconto do anual (%), da tabela do painel da plataforma. */
+  annualDiscountPct: number;
+  /** Cobrança feita pelo dono da plataforma (PIX e WhatsApp). Null = sem dados para pagar. */
+  manual: ManualPaymentDto | null;
   plans: {
     key: PlanKey;
     label: string;

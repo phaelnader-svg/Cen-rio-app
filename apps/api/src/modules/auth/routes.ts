@@ -21,6 +21,7 @@ import { Errors } from '../../lib/errors';
 import { cookieOptions } from '../../plugins/auth';
 import { buildMe, employeeEventPayload } from '../presenters';
 import { captchaFailed } from '../../core/captcha';
+import { platformConfig } from '../../core/platform-config';
 import { sendConfirmationEmail } from '../account/emails';
 import { LEGAL_VERSION, signupExtrasSchema } from '@cenario/shared';
 
@@ -216,7 +217,7 @@ export async function authRoutes(app: FastifyInstance) {
             tradeName: PROVISIONAL_TRADE_NAME,
             email: input.email,
             plan: 'gestao',
-            trialEndsAt: new Date(Date.now() + env.BILLING_TRIAL_DAYS * 86_400_000),
+            trialEndsAt: new Date(Date.now() + platformConfig().trialDays * 86_400_000),
           },
         });
         // Daqui em diante a transação é da empresa nova, com a trava do banco ligada: tudo o que

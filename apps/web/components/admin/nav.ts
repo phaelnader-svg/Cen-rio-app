@@ -316,14 +316,7 @@ export const NAV: NavItem[] = [
     anyOf: ['auditoria.ver'],
     parent: '/painel/empresa',
   },
-  // Multi-empresa: empresas que usam o sistema (criadas pelo "Criar conta"); bloquear/liberar.
-  {
-    href: '/painel/empresas',
-    label: 'Empresas',
-    icon: Building2,
-    anyOf: ['empresa.configurar'],
-    platformOnly: true,
-  },
+  // Empresas, cobrança e preços saíram daqui (2026-11-25): painel da plataforma em /plataforma.
   // Aplicativos com acesso delegado (ex.: Firma Viva): cadastrar, ver e revogar autorizações.
   {
     href: '/painel/aplicativos',

@@ -309,7 +309,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 <ThemeToggle />
               </div>
               {!locked && <PanelNotifications />}
-              <ConnectionIndicator compact />
+              {!locked && <ConnectionIndicator compact />}
             </div>
           </header>
           <main id="conteudo" className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-10">

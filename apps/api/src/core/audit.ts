@@ -3,6 +3,15 @@ import type { FastifyRequest } from 'fastify';
 import type { ActorContext } from './types';
 
 export function actorFrom(request: FastifyRequest): ActorContext {
+  // Painel da plataforma: não é usuário de nenhuma empresa; a auditoria diz quem foi pelo e-mail.
+  if (request.platformAdmin)
+    return {
+      userId: null,
+      sessionId: null,
+      ip: request.ip ?? null,
+      requestId: request.id ?? null,
+      via: `Painel da plataforma (${request.platformAdmin.email})`,
+    };
   return {
     userId: request.auth?.userId ?? null,
     sessionId: request.auth?.sessionId ?? null,

@@ -9,7 +9,6 @@ import {
   feedbackCreateSchema,
   isQuoteStatus,
   normalizeSearch,
-  planPriceCents,
   subscriptionCancelSchema,
   supportAccessSchema,
   systemNoticeSchema,
@@ -38,6 +37,7 @@ import { orderCode, pickupCode, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
 import { loadOsAlbum } from '../service-orders/album';
 import { AsaasClient } from '../billing/asaas';
+import { companyPriceCents } from '../../core/platform-config';
 
 /**
  * Melhorias da segunda rodada (2026-11-17) que não pertencem a um módulo só: busca rápida (83),
@@ -47,7 +47,8 @@ import { AsaasClient } from '../billing/asaas';
  */
 const DAY_MS = 86_400_000;
 const ANY_WEB = { session: 'WEB' } as const;
-const PLATFORM = { session: 'WEB', permissions: ['empresa.configurar'] } as const;
+/** Painel da plataforma (/plataforma): só com o login do painel, separado das empresas. */
+const PLATFORM = { platform: true } as const;
 
 function has(request: FastifyRequest, ...perms: Permission[]) {
   return perms.some((p) => request.auth!.permissions.has(p));
@@ -57,8 +58,7 @@ export async function improvementRoutes(app: FastifyInstance) {
   const { prisma, system, env, hashToken, cookies } = app.ctx;
 
   function assertPlatformOwner(request: FastifyRequest) {
-    if (request.auth?.companyId !== PLATFORM_COMPANY_ID || request.auth.kind !== 'WEB')
-      throw Errors.notFound('Página');
+    if (!request.platformAdmin) throw Errors.notFound('Página');
   }
 
   // ───────────────────────── Busca rápida (83) ─────────────────────────
@@ -618,7 +618,7 @@ export async function improvementRoutes(app: FastifyInstance) {
               action: 'support.session_started',
               entityType: 'session',
               entityId: created.session.id,
-              summary: `Suporte do Cenário entrou na empresa (${request.auth!.displayName}).`,
+              summary: `Suporte do Cenário entrou na empresa (${request.platformAdmin!.displayName}).`,
             },
           );
           return created;
@@ -649,6 +649,7 @@ export async function improvementRoutes(app: FastifyInstance) {
         where: { id: { not: PLATFORM_COMPANY_ID }, isDemo: false },
         select: {
           ...COMPANY_BILLING_SELECT,
+          billingPriceCents: true,
           tradeName: true,
           createdAt: true,
           canceledAt: true,
@@ -703,7 +704,11 @@ export async function improvementRoutes(app: FastifyInstance) {
         if (status === 'ATIVA' || status === 'ATRASADA') {
           if (!c.canceledAt) {
             dto.paying++;
-            const cents = planPriceCents(planOf(c), cycleOf(c));
+            const cents = companyPriceCents({
+              plan: planOf(c),
+              cycle: cycleOf(c),
+              billingPriceCents: c.billingPriceCents,
+            });
             dto.mrrCents += cycleOf(c) === 'ANUAL' ? Math.round(cents / 12) : cents;
           }
         }

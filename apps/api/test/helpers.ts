@@ -1,3 +1,4 @@
+import { resetPlatformConfigCache } from '../src/core/platform-config';
 import { runSeed } from '@cenario/db/seed';
 import { createPrismaClient, scopedPrismaClient, type PrismaClient } from '@cenario/db';
 import { currentCompanyId, runAsCompany } from '../src/core/tenant';
@@ -57,6 +58,8 @@ export async function resetDatabase() {
     }
   }
   await runSeed({ withTeam: true, log: () => undefined });
+  // Painel da plataforma: a configuração (preços, bloqueio) volta aos valores de fábrica.
+  resetPlatformConfigCache();
 }
 
 export async function createTestApp(overrides: Record<string, string> = {}): Promise<App> {
@@ -298,4 +301,29 @@ export function ownerDb(): PrismaClient {
  */
 export function naEmpresa1<T>(fn: () => Promise<T>): Promise<T> {
   return runAsCompany(1, fn);
+}
+
+export const PLATFORM_ADMIN = { email: 'dono@plataforma.local', password: 'PainelDono123' };
+
+/**
+ * Painel da plataforma (/plataforma): cria o acesso do painel uma vez (pelo gestor da Cenário
+ * Estofados, como na publicação) e devolve um cliente logado só no painel.
+ */
+export async function loginPlatform(app: App, creds = PLATFORM_ADMIN): Promise<Client> {
+  const c = new Client(app);
+  const estado = await c.get('/api/plataforma/estado');
+  if (!estado.body.hasAdmin) {
+    const gestor = await loginAdmin(app);
+    const r = await gestor.post('/api/plataforma/primeiro-acesso', {
+      email: creds.email,
+      displayName: 'Dono da plataforma',
+      password: creds.password,
+      passwordConfirm: creds.password,
+    });
+    if (r.status !== 200) throw new Error(`primeiro acesso falhou: ${JSON.stringify(r.body)}`);
+  }
+  const res = await c.post('/api/plataforma/entrar', creds);
+  if (res.status !== 200)
+    throw new Error(`login do painel falhou: ${res.status} ${JSON.stringify(res.body)}`);
+  return c;
 }

@@ -3,7 +3,6 @@ import {
   SUBSCRIPTION_STATUS_LABEL,
   accessEndsAt,
   isPlanKey,
-  planPriceCents,
   subscriptionStatus,
   type BillingCycle,
   type PlanKey,
@@ -12,6 +11,7 @@ import {
   type SubscriptionStatus,
 } from '@cenario/shared';
 import type { Env } from '../config/env';
+import { listPriceCents, platformConfig } from './platform-config';
 
 /**
  * Cobrança da assinatura (melhoria 1). A situação sai das datas gravadas na empresa; não existe
@@ -46,27 +46,41 @@ export const factsOf = (c: CompanyBillingRow): SubscriptionFacts => ({
   paidUntil: c.paidUntil,
 });
 
+/**
+ * Painel da plataforma (2026-11-25): a tolerância (dias até bloquear) vem do painel. O parâmetro
+ * `env` fica por compatibilidade das chamadas.
+ */
 export function statusOf(
   c: CompanyBillingRow,
-  env: Pick<Env, 'BILLING_GRACE_DAYS'>,
+  _env?: unknown,
   now = new Date(),
 ): SubscriptionStatus {
-  return subscriptionStatus(factsOf(c), now, env.BILLING_GRACE_DAYS);
+  return subscriptionStatus(factsOf(c), now, platformConfig().graceDays);
+}
+
+/**
+ * Cobrança ligada: pelo servidor (BILLING_ENABLED, com o Asaas) ou pelo "bloqueio automático" do
+ * painel da plataforma (cobrança feita pelo dono, por PIX).
+ */
+export function billingOn(env: Pick<Env, 'BILLING_ENABLED'>): boolean {
+  return env.BILLING_ENABLED || platformConfig().autoBlock;
 }
 
 /** Bloqueio por falta de pagamento: só com a cobrança ligada e passada a tolerância. */
 export function billingLocked(
   c: CompanyBillingRow,
-  env: Pick<Env, 'BILLING_ENABLED' | 'BILLING_GRACE_DAYS'>,
+  env: Pick<Env, 'BILLING_ENABLED'>,
   now = new Date(),
 ): boolean {
-  return env.BILLING_ENABLED && statusOf(c, env, now) === 'VENCIDA';
+  // A empresa da plataforma (Cenário Estofados) nunca é bloqueada pela cobrança.
+  if (c.id === 1) return false;
+  return billingOn(env) && statusOf(c, env, now) === 'VENCIDA';
 }
 
-export function blocksAt(c: CompanyBillingRow, env: Pick<Env, 'BILLING_GRACE_DAYS'>): Date | null {
+export function blocksAt(c: CompanyBillingRow, _env?: unknown): Date | null {
   const end = accessEndsAt(factsOf(c));
   if (!end) return null;
-  const grace = c.paidUntil ? env.BILLING_GRACE_DAYS * 86_400_000 : 0;
+  const grace = c.paidUntil ? platformConfig().graceDays * 86_400_000 : 0;
   return new Date(end.getTime() + grace);
 }
 
@@ -75,8 +89,8 @@ export function plansCatalog(): SubscriptionDto['plans'] {
     key: p.key,
     label: p.label,
     description: p.description,
-    monthlyCents: planPriceCents(p.key, 'MENSAL'),
-    annualCents: planPriceCents(p.key, 'ANUAL'),
+    monthlyCents: listPriceCents(p.key, 'MENSAL'),
+    annualCents: listPriceCents(p.key, 'ANUAL'),
     includesGame: p.includesGame,
   }));
 }
@@ -104,4 +118,7 @@ export function setBillingEnvironment(
 let emailDelivery: () => boolean = () => false;
 /** Há envio de e-mail configurado (Resend)? Sem ele, nada pede confirmação nem oferece link. */
 export const emailDeliveryEnabled = () => emailDelivery();
-export const billingEnvironment = () => currentBillingEnv;
+export const billingEnvironment = () => ({
+  BILLING_ENABLED: billingOn(currentBillingEnv),
+  BILLING_GRACE_DAYS: platformConfig().graceDays,
+});

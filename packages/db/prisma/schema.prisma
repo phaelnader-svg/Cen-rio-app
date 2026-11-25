@@ -548,6 +548,12 @@ model CompanySettings {
   supportAccessUntil  DateTime? @map("support_access_until") @db.Timestamptz(3)
   /// Melhoria 128: empresa de demonstração (fica fora dos números do negócio).
   isDemo              Boolean   @default(false) @map("is_demo")
+  /// Painel da plataforma (2026-11-25): valor combinado da mensalidade/anuidade (vazio = preço do plano).
+  billingPriceCents   Int?      @map("billing_price_cents")
+  /// Painel da plataforma: anotação do dono da plataforma sobre a empresa (o cliente não vê).
+  platformNote        String?   @map("platform_note") @db.VarChar(500)
+  /// Painel da plataforma: data (pago até / fim do teste) já avisada ao dono da plataforma.
+  dueNoticeFor        DateTime? @map("due_notice_for") @db.Timestamptz(3)
 
   /// Fase 10: inspetor principal da qualidade (vazio = quem tem a competência de inspeção).
   qualityInspectorUserId    String? @map("quality_inspector_user_id") @db.Uuid
@@ -5818,4 +5824,82 @@ model PushSubscription {
   @@index([userId])
   @@index([deviceId])
   @@map("push_subscriptions")
+}
+
+/// Painel da plataforma (2026-11-25): quem administra o Cenário Gestão como produto (o dono da
+/// plataforma). Login separado das empresas: não pertence a nenhuma empresa e não entra no painel
+/// de nenhuma delas.
+model PlatformAdmin {
+  id                   String    @id @default(uuid()) @db.Uuid
+  email                String    @unique @db.VarChar(254)
+  displayName          String    @map("display_name") @db.VarChar(80)
+  passwordHash         String    @map("password_hash")
+  active               Boolean   @default(true)
+  credentialsChangedAt DateTime  @default(now()) @map("credentials_changed_at") @db.Timestamptz(3)
+  lastLoginAt          DateTime? @map("last_login_at") @db.Timestamptz(3)
+  createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  sessions PlatformAdminSession[]
+  actions  PlatformAuditLog[]
+
+  @@map("platform_admins")
+}
+
+/// Sessão do painel da plataforma (cookie próprio, separado do login das empresas).
+model PlatformAdminSession {
+  id         String    @id @default(uuid()) @db.Uuid
+  adminId    String    @map("admin_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(3)
+  ipAddress  String?   @map("ip_address") @db.VarChar(64)
+  userAgent  String?   @map("user_agent") @db.VarChar(300)
+
+  admin PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([adminId, revokedAt])
+  @@index([expiresAt])
+  @@map("platform_admin_sessions")
+}
+
+/// Histórico do que foi feito no painel da plataforma (Minha conta → Histórico).
+model PlatformAuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  adminId   String?  @map("admin_id") @db.Uuid
+  action    String   @db.VarChar(80)
+  /// Empresa sobre a qual foi a ação (sem vínculo: é só referência no histórico).
+  targetCompanyId Int? @map("target_company_id")
+  summary   String   @db.VarChar(300)
+  ipAddress String?  @map("ip_address") @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  admin PlatformAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([createdAt])
+  @@map("platform_audit_logs")
+}
+
+/// Configuração da plataforma editada no painel (uma linha só, id 1): preços, teste, bloqueio e
+/// como o dono da plataforma recebe (PIX e WhatsApp).
+model PlatformSettings {
+  id                Int      @id @default(1)
+  priceGestaoCents  Int      @default(39900) @map("price_gestao_cents")
+  priceJogoCents    Int      @default(59900) @map("price_jogo_cents")
+  annualDiscountBps Int      @default(1500) @map("annual_discount_bps")
+  trialDays         Int      @default(7) @map("trial_days")
+  graceDays         Int      @default(5) @map("grace_days")
+  /// Bloqueio automático por falta de pagamento (cobrança feita pelo dono, sem Asaas).
+  autoBlock         Boolean  @default(false) @map("auto_block")
+  pixKey            String?  @map("pix_key") @db.VarChar(140)
+  pixName           String?  @map("pix_name") @db.VarChar(120)
+  pixBank           String?  @map("pix_bank") @db.VarChar(80)
+  whatsapp          String?  @db.VarChar(30)
+  paymentMessage    String?  @map("payment_message") @db.VarChar(500)
+  /// Dias antes do vencimento em que o dono da plataforma é avisado.
+  noticeDays        Int      @default(3) @map("notice_days")
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("platform_settings")
 }
