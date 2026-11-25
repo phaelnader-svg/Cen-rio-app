@@ -208,10 +208,7 @@ export function QuoteEditor({
             value={d.phone}
             onChange={(e) => update({ phone: formatPhoneBr(e.target.value) })}
           />
-          <CityField
-            value={d.city}
-            onChange={(city) => update(cityPatch(city))}
-          />
+          <CityField value={d.city} onChange={(city) => update(cityPatch(city))} />
           <SelectField
             label="Serviço"
             cols={6}
@@ -532,7 +529,8 @@ function customerHistory(c: QuoteCustomerLookupDto): string {
     );
   else parts.push('nenhum serviço ainda');
   const open = c.quotes - c.quotesClosed;
-  if (open > 0) parts.push(pluralWord(open, '1 orçamento não fechado', `${open} orçamentos não fechados`));
+  if (open > 0)
+    parts.push(pluralWord(open, '1 orçamento não fechado', `${open} orçamentos não fechados`));
   return parts.join(' · ');
 }
 
@@ -556,9 +554,7 @@ function CustomerField({
   const q = useQuery({
     queryKey: ['quote-customer-lookup', term],
     queryFn: () =>
-      api<QuoteCustomerLookupDto[]>(
-        `/api/v1/quotes/customer-lookup?q=${encodeURIComponent(term)}`,
-      ),
+      api<QuoteCustomerLookupDto[]>(`/api/v1/quotes/customer-lookup?q=${encodeURIComponent(term)}`),
     enabled: term.length >= 3 && term !== picked,
     staleTime: 30_000,
   });
@@ -593,9 +589,7 @@ function CustomerField({
               className="absolute inset-x-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-[var(--shadow-pop)]"
               data-testid="quote-customer-suggestions"
             >
-              <p className="px-3 pt-1.5 pb-1 text-xs font-medium text-ink-muted">
-                Já cadastrados
-              </p>
+              <p className="px-3 pt-1.5 pb-1 text-xs font-medium text-ink-muted">Já cadastrados</p>
               {found.map((c) => (
                 <button
                   key={c.id}

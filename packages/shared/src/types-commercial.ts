@@ -7,6 +7,7 @@ import type {
   MeasurementKind,
   OrderServiceState,
   OrderStatus,
+  PickupKind,
   PickupStatus,
   PickupTeam,
   PieceCondition,
@@ -79,6 +80,8 @@ export interface OrderItemDto {
   receivedQuantity: number;
   /** Quantidade em retiradas ativas (ainda não recebidas). */
   inActivePickups: number;
+  /** 2026-11-25: peças com serviço "No local" agendado (a OS já pode ser gerada). */
+  inOnSiteVisits: number;
   /** Quantidade recebida já incluída em OS ativas. */
   inServiceOrders: number;
   /** Fase 12: quantidade devolvida ao cliente. */
@@ -112,7 +115,13 @@ export interface OrderSummaryDto {
   /** Fluxo da OS (2026-11-18): OS ativas (não canceladas) geradas deste pedido. */
   serviceOrderCount: number;
   /** Próxima retirada ainda não recebida (dia e horário), para os botões rápidos da lista. */
-  nextPickup: { scheduledDate: string | null; windowStart: string | null } | null;
+  nextPickup: {
+    scheduledDate: string | null;
+    windowStart: string | null;
+    kind: PickupKind;
+  } | null;
+  /** 2026-11-25: o serviço é feito na casa do cliente ("No local" agendado, não cancelado). */
+  onSite: boolean;
   /** 2026-11-18: pedido de um retrabalho (aparece em vermelho). */
   rework?: { id: string; code: string } | null;
   version: number;
@@ -172,6 +181,8 @@ export interface PickupDto {
   number: number;
   code: string;
   status: PickupStatus;
+  /** 2026-11-25: Retirada ou No local (serviço na casa do cliente). */
+  kind: PickupKind;
   /** `agreedValueCents`: valor do serviço; ausente sem `pedidos.valores`, null sem valor combinado. */
   order: { id: string; code: string; contractedService: string; agreedValueCents?: number | null };
   /** 2026-11-18: retirada de um retrabalho (vermelha na agenda). */
@@ -311,6 +322,11 @@ export interface ServiceOrderSummaryDto {
 }
 
 export interface ServiceOrderDto extends ServiceOrderSummaryDto {
+  /**
+   * 2026-11-25: serviço "No local" (feito na casa do cliente): dia, horário de chegada e
+   * endereço do agendamento. null = a peça vem para a tapeçaria.
+   */
+  onSite?: { date: string | null; windowStart: string | null; address: string | null } | null;
   technicalInstructions: string | null;
   notes: string | null;
   items: ServiceOrderItemDto[];

@@ -131,7 +131,7 @@ test.describe.serial('Correção global — OS completa e roteiro da logística'
       { pieceType: 'CADEIRA', description: 'Cadeira', quantity: 1 },
     ]);
     await page.goto(`/painel/pedidos/${tarde.order.id}`);
-    await page.getByRole('button', { name: 'Solicitar retirada' }).click();
+    await page.getByRole('button', { name: 'Agendar', exact: true }).click();
     const dlg = page.getByRole('dialog');
     await dlg.getByLabel('Data da retirada').fill(day);
     await expect(dlg.getByRole('button', { name: 'Agendar retirada' })).toBeDisabled();

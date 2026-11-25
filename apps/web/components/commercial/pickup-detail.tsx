@@ -1,7 +1,14 @@
 'use client';
 
 import type { PickupDto, PickupStatus } from '@cenario/shared';
-import { PICKUP_STATUS_LABEL, PICKUP_TEAM_LABEL, formatMoney, formatPhone } from '@cenario/shared';
+import {
+  PICKUP_KIND_LABEL,
+  PICKUP_STATUS_LABEL,
+  PICKUP_TEAM_LABEL,
+  formatMoney,
+  formatPhone,
+  pickupStatusLabel,
+} from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Pencil } from 'lucide-react';
 import { useState } from 'react';
@@ -15,7 +22,7 @@ import { formatDay, useOrder, usePickup, arrivalText } from '@/lib/commercial';
 import { formatDateTime } from '@/lib/format';
 import { useCan } from '@/lib/hooks';
 import { addressLines } from './address-form';
-import { PickupStatusBadge } from './badges';
+import { PickupKindBadge, PickupStatusBadge } from './badges';
 import { PhotoGallery } from './photo-gallery';
 import { PickupForm } from './pickup-form';
 import { Detail } from './section';
@@ -37,7 +44,21 @@ const EVENT_LABEL: Record<string, string> = {
   REAGENDADA: 'Reagendada',
   AGENDA_REMOVIDA: 'Data removida',
   DADOS_ALTERADOS: 'Dados alterados',
+  TIPO_ALTERADO: 'Retirada ↔ No local',
 };
+
+/** 2026-11-25: botões do serviço "No local" (a peça não vem para a tapeçaria). */
+const ON_SITE_ACTION_LABEL: Partial<Record<PickupStatus, string>> = {
+  AGENDADA: 'Marcar como agendado',
+  EM_EXECUCAO: 'Equipe chegou / fazendo no local',
+  RETIRADA_REALIZADA: 'Serviço feito no local',
+  RECEBIDA_NA_OFICINA: 'Serviço feito no local',
+  CANCELADA: 'Cancelar serviço no local',
+};
+const actionLabel = (p: Pick<PickupDto, 'kind'>, s: PickupStatus) =>
+  (p.kind === 'NO_LOCAL' ? ON_SITE_ACTION_LABEL[s] : undefined) ??
+  ACTION_LABEL[s] ??
+  pickupStatusLabel(s, p.kind);
 
 export function PickupDetailDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const can = useCan();
@@ -57,7 +78,7 @@ export function PickupDetailDialog({ id, onClose }: { id: string; onClose: () =>
       open
       onClose={onClose}
       size="lg"
-      title={p ? `Retirada ${p.code}` : 'Retirada'}
+      title={p ? `${PICKUP_KIND_LABEL[p.kind]} ${p.code}` : 'Agendamento'}
       description={p ? `${p.customer.name} · pedido ${p.order.code}` : undefined}
     >
       {!p ? (
@@ -70,7 +91,8 @@ export function PickupDetailDialog({ id, onClose }: { id: string; onClose: () =>
         <div className="space-y-5" data-testid="pickup-detail">
           <TripCostCard pickupId={p.id} />
           <div className="flex flex-wrap items-center gap-2">
-            <PickupStatusBadge status={p.status} />
+            <PickupKindBadge kind={p.kind} />
+            <PickupStatusBadge status={p.status} kind={p.kind} />
             {manage &&
               ['AGUARDANDO_AGENDAMENTO', 'AGENDADA', 'COM_OCORRENCIA'].includes(p.status) &&
               order.data && (
@@ -95,7 +117,7 @@ export function PickupDetailDialog({ id, onClose }: { id: string; onClose: () =>
                   }
                   onClick={() => setTarget(s)}
                 >
-                  {ACTION_LABEL[s] ?? PICKUP_STATUS_LABEL[s]}
+                  {actionLabel(p, s)}
                 </Button>
               ))}
             </div>
@@ -107,7 +129,7 @@ export function PickupDetailDialog({ id, onClose }: { id: string; onClose: () =>
                 : 'Aguardando agendamento'}
             </Detail>
             <Detail label="Equipe">{`${PICKUP_TEAM_LABEL[p.team]}${p.teamNotes ? ` · ${p.teamNotes}` : ''}`}</Detail>
-            <Detail label="Quem vai retirar">
+            <Detail label={p.kind === 'NO_LOCAL' ? 'Quem vai fazer' : 'Quem vai retirar'}>
               {[p.executor?.displayName, ...p.participants.map((x) => x.displayName)]
                 .filter(Boolean)
                 .filter((n, i, all) => all.indexOf(n) === i)
@@ -195,7 +217,10 @@ function TransitionDialog({
     onSuccess: (p) => {
       qc.setQueryData(['pickup', p.id], p);
       void qc.invalidateQueries({ queryKey: ['pickups'] });
-      toast('ok', `Retirada ${p.code}: ${PICKUP_STATUS_LABEL[p.status]}.`);
+      toast(
+        'ok',
+        `${PICKUP_KIND_LABEL[p.kind]} ${p.code}: ${pickupStatusLabel(p.status, p.kind)}.`,
+      );
       onClose();
     },
     onError: (e) => setError(errorMessage(e)),
@@ -205,8 +230,8 @@ function TransitionDialog({
       open
       onClose={onClose}
       size="sm"
-      title={ACTION_LABEL[target] ?? PICKUP_STATUS_LABEL[target]}
-      description={`${PICKUP_STATUS_LABEL[pickup.status]} → ${PICKUP_STATUS_LABEL[target]}`}
+      title={actionLabel(pickup, target)}
+      description={`${pickupStatusLabel(pickup.status, pickup.kind)} → ${pickupStatusLabel(target, pickup.kind)}`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>

@@ -35,6 +35,7 @@ import { notify } from '../notifications/notify';
 import { protectCancelledServiceOrder } from '../production/cancellation';
 import { idParams, toEmployeeSummary } from '../presenters';
 import {
+  asSnapshot,
   can,
   dateOnly,
   lockOrderItems,
@@ -99,11 +100,33 @@ export async function loadServiceOrderDto(
       status: { notIn: ['RASCUNHO', 'CANCELADA'] },
     },
   });
+  // 2026-11-25: serviço "No local" — a equipe vê dia, horário e endereço na própria OS.
+  const visit = await db.pickupRequest.findFirst({
+    where: { orderId: so.orderId, kind: 'NO_LOCAL', status: { not: 'CANCELADA' } },
+    orderBy: [{ scheduledDate: 'asc' }, { number: 'asc' }],
+    select: { scheduledDate: true, windowStart: true, addressSnapshot: true },
+  });
+  const visitAddress = visit ? asSnapshot(visit.addressSnapshot) : null;
   return {
     id: so.id,
     number: so.number,
     code: serviceOrderCode(so.number),
     status: so.status,
+    onSite: visit
+      ? {
+          date: dateOnly(visit.scheduledDate),
+          windowStart: visit.windowStart,
+          address: visitAddress
+            ? [
+                `${visitAddress.street}, ${visitAddress.number}`,
+                visitAddress.district,
+                `${visitAddress.city}/${visitAddress.state}`,
+              ]
+                .filter(Boolean)
+                .join(' · ')
+            : null,
+        }
+      : null,
     order: { id: so.order.id, code: orderCode(so.order.number) },
     rework: so.order.rework
       ? { id: so.order.rework.id, code: reworkCode(so.order.rework.number) }

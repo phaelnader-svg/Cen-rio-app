@@ -156,13 +156,14 @@ test.describe.serial('Simplificação Fase 2 — Novo serviço', () => {
     await expect(stop).toContainText('chegada 15:30');
     // 2026-11-18: à vista = 50% na retirada; o único valor no celular é o que a equipe cobra.
     expect(
-      await andre.page.evaluate(() =>
-        [...document.querySelectorAll('body *')].filter(
-          (el) =>
-            el.children.length === 0 &&
-            /R\$/.test(el.textContent ?? '') &&
-            !el.closest('[data-testid="job-payment"]'),
-        ).length,
+      await andre.page.evaluate(
+        () =>
+          [...document.querySelectorAll('body *')].filter(
+            (el) =>
+              el.children.length === 0 &&
+              /R\$/.test(el.textContent ?? '') &&
+              !el.closest('[data-testid="job-payment"]'),
+          ).length,
       ),
     ).toBe(0);
     await evidence(andre.page, '04-celular-andre-roteiro');

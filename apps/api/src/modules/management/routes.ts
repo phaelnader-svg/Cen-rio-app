@@ -9,6 +9,7 @@ import {
   type ServiceTimelineDto,
   type TimelineDomain,
   type TimelineEntryDto,
+  pickupStatusLabel,
 } from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
 import { Errors } from '../../lib/errors';
@@ -304,7 +305,7 @@ export async function managementRoutes(app: FastifyInstance) {
         orderId
           ? prisma.pickupEvent.findMany({
               where: { pickup: { orderId } },
-              include: { pickup: { select: { number: true } } },
+              include: { pickup: { select: { number: true, kind: true } } },
               orderBy: { occurredAt: 'desc' },
               take,
             })
@@ -406,7 +407,7 @@ export async function managementRoutes(app: FastifyInstance) {
           e.occurredAt,
           'RETIRADA',
           e.kind,
-          `Retirada ${pickupCode(e.pickup.number)}${e.toStatus ? ` → ${e.toStatus}` : ''}`,
+          `${e.pickup.kind === 'NO_LOCAL' ? 'No local' : 'Retirada'} ${pickupCode(e.pickup.number)}${e.toStatus ? ` → ${pickupStatusLabel(e.toStatus, e.pickup.kind)}` : ''}`,
           e.note,
           who(e.recordedById),
         );

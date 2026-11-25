@@ -206,6 +206,7 @@ export async function schedulePickup(
   // 4. Retirada das peças, com o custo total único da viagem (Fase 6).
   const pickup = await createPickup(tx, actor, perms, {
     orderId: input.orderId,
+    kind: p.kind,
     addressId,
     scheduledDate: p.scheduledDate ?? null,
     windowStart: p.windowStart ?? null,
@@ -356,7 +357,9 @@ export async function serviceRoutes(app: FastifyInstance) {
         // 2026-11-18: prazo em dias úteis contado do dia da retirada (ou de hoje, se o cliente
         // traz as peças). A data enviada pela tela é só a prévia; vale a calculada aqui.
         let promisedDate = s.promisedDate;
-        if (s.deliveryBusinessDays) {
+        // 2026-11-25: "No local" termina no próprio dia do serviço.
+        if (p?.kind === 'NO_LOCAL' && p.scheduledDate) promisedDate = p.scheduledDate;
+        else if (s.deliveryBusinessDays) {
           const cal = await deadlineCalendar(tx);
           promisedDate = addBusinessDays(
             p?.scheduledDate ?? cal.today,
@@ -456,7 +459,7 @@ export async function serviceRoutes(app: FastifyInstance) {
           action: 'service.created',
           entityType: 'commercial_order',
           entityId: order.id,
-          summary: `Novo serviço: ${customerName} — pedido ${orderCode(order.number)} e ${pickup ? `retirada ${pickupCode(pickup.number)}` : 'entrega das peças pelo cliente (sem retirada)'}${created ? ' (cliente novo)' : ''}.`,
+          summary: `Novo serviço: ${customerName} — pedido ${orderCode(order.number)} e ${pickup ? `${pickup.kind === 'NO_LOCAL' ? 'serviço no local' : 'retirada'} ${pickupCode(pickup.number)}` : 'entrega das peças pelo cliente (sem retirada)'}${created ? ' (cliente novo)' : ''}.`,
           changes: {
             customerId,
             customerCreated: created,

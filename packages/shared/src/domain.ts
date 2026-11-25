@@ -127,6 +127,28 @@ export const PICKUP_TRANSITIONS: Record<PickupStatus, readonly PickupStatus[]> =
   CANCELADA: [],
 };
 
+/**
+ * 2026-11-25: o agendamento pode ser RETIRADA (a peça vem para a tapeçaria) ou NO_LOCAL (o
+ * serviço é feito na casa do cliente: a peça não sai de lá). Mesma agenda, roteiro e celular.
+ */
+export const PICKUP_KINDS = ['RETIRADA', 'NO_LOCAL'] as const;
+export type PickupKind = (typeof PICKUP_KINDS)[number];
+export const PICKUP_KIND_LABEL: Record<PickupKind, string> = {
+  RETIRADA: 'Retirada',
+  NO_LOCAL: 'No local',
+};
+
+/** Situação do agendamento com as palavras certas para "No local" (a peça não vem). */
+export function pickupStatusLabel(status: PickupStatus, kind: PickupKind | undefined | null) {
+  if (kind === 'NO_LOCAL') {
+    if (status === 'AGENDADA') return 'Agendado';
+    if (status === 'EM_EXECUCAO') return 'Fazendo no local';
+    if (status === 'RETIRADA_REALIZADA' || status === 'RECEBIDA_NA_OFICINA') return 'Serviço feito';
+    if (status === 'CANCELADA') return 'Cancelado';
+  }
+  return PICKUP_STATUS_LABEL[status];
+}
+
 export const PICKUP_TEAMS = ['LOGISTICA_TERCEIRIZADA', 'EQUIPE_PROPRIA'] as const;
 export type PickupTeam = (typeof PICKUP_TEAMS)[number];
 export const PICKUP_TEAM_LABEL: Record<PickupTeam, string> = {

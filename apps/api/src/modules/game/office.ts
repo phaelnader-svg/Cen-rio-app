@@ -276,8 +276,9 @@ async function confirmPickupProposals(c: AttendanceCtx): Promise<ProposalDraft[]
       p.items.length === 1
         ? `o seu ${p.items[0]!.orderItem.description.toLowerCase()}`
         : 'as suas peças';
+    const onSite = p.kind === 'NO_LOCAL';
     const text = customerMessage({
-      kind: 'RETIRADA_AMANHA',
+      kind: onSite ? 'NO_LOCAL_AMANHA' : 'RETIRADA_AMANHA',
       customerName: cu.name,
       companyName: c.company,
       piece,
@@ -285,7 +286,9 @@ async function confirmPickupProposals(c: AttendanceCtx): Promise<ProposalDraft[]
     });
     return {
       kind: 'ENVIAR_MENSAGEM',
-      title: `Confirmar a retirada de amanhã com ${cu.name}`,
+      title: onSite
+        ? `Confirmar o serviço no local de amanhã com ${cu.name}`
+        : `Confirmar a retirada de amanhã com ${cu.name}`,
       detail: text,
       payload: {
         task: 'CONFIRMAR_RETIRADA',
@@ -299,7 +302,12 @@ async function confirmPickupProposals(c: AttendanceCtx): Promise<ProposalDraft[]
         channel: 'WHATSAPP',
       },
       evidence: [
-        { type: 'OS', id: p.id, label: `Retirada de ${cu.name}`, href: '/painel/retiradas' },
+        {
+          type: 'OS',
+          id: p.id,
+          label: `${onSite ? 'No local' : 'Retirada'} de ${cu.name}`,
+          href: '/painel/retiradas',
+        },
       ],
     };
   });

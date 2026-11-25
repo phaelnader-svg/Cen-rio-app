@@ -3,6 +3,7 @@ import {
   BR_STATES,
   CUSTOMER_KINDS,
   ORDER_STATUSES,
+  PICKUP_KINDS,
   SERVICE_ORDER_STATUSES,
   MATERIAL_KINDS,
   MATERIAL_SOURCINGS,
@@ -253,6 +254,8 @@ export const orderQuerySchema = z.object({
 // ───────────────────────────── Retiradas ─────────────────────────────
 
 const pickupFields = {
+  /** 2026-11-25: Retirada ou No local (serviço na casa do cliente). Ausente = mantém / Retirada. */
+  kind: z.enum(PICKUP_KINDS).optional(),
   addressId: idSchema.nullable().optional(),
   scheduledDate: dateOnly.nullable().optional(),
   windowStart: timeOnly.nullable().optional(),
@@ -577,6 +580,8 @@ export const newServiceItemSchema = orderItemSchema.omit({ id: true }).extend({
 
 export const newServicePickupSchema = z
   .object({
+    /** 2026-11-25: Retirada (padrão) ou No local (serviço feito na casa do cliente). */
+    kind: z.enum(PICKUP_KINDS).default('RETIRADA'),
     /** 2026-11-18: agendar a retirada exige data e horário (nada fica "aguardando agendamento"). */
     scheduledDate: z
       .string({ error: 'Informe a data da retirada.' })

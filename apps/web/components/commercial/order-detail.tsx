@@ -37,6 +37,7 @@ import { addressLines } from './address-form';
 import {
   OrderDeadlineBadge,
   OrderStatusBadge,
+  PickupKindBadge,
   PickupStatusBadge,
   ReworkBanner,
   ServiceOrderStatusBadge,
@@ -72,12 +73,16 @@ export function OrderDetail({ id }: { id: string }) {
     (i) => i.quantity - i.receivedQuantity - i.inActivePickups > 0,
   );
   // Fluxo da OS (2026-11-18): peça que ainda não chegou na tapeçaria (em retirada ou não).
+  // 2026-11-25: peça com serviço "No local" agendado não vem para a tapeçaria.
   const pendingArrival = o.items.some(
-    (i) => i.quantity - i.returnedQuantity - i.receivedQuantity > 0,
+    (i) => i.quantity - i.returnedQuantity - i.receivedQuantity - i.inOnSiteVisits > 0,
   );
-  // Gerar a OS: peça já na tapeçaria e ainda sem OS.
+  // Gerar a OS: peça já na tapeçaria (ou com serviço No local agendado) e ainda sem OS.
   const readyForOs = o.items.some(
-    (i) => Math.min(i.receivedQuantity, i.quantity - i.returnedQuantity) - i.inServiceOrders > 0,
+    (i) =>
+      Math.min(i.receivedQuantity + i.inOnSiteVisits, i.quantity - i.returnedQuantity) -
+        i.inServiceOrders >
+      0,
   );
   const waitingOs = !readyForOs && pendingArrival && o.items.every((i) => i.inServiceOrders === 0);
 
@@ -96,7 +101,7 @@ export function OrderDetail({ id }: { id: string }) {
                   icon={<Truck className="size-4" aria-hidden />}
                   onClick={() => setRequesting(true)}
                 >
-                  Solicitar retirada
+                  Agendar
                 </Button>
               )}
               {can('pedidos.gerenciar') && pendingArrival && <MarkArrivedButton order={o} />}
@@ -132,13 +137,19 @@ export function OrderDetail({ id }: { id: string }) {
       />
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <span data-testid="order-status">
-          <OrderStatusBadge status={o.status} customerDropOff={o.customerDropOff} />
+          <OrderStatusBadge
+            status={o.status}
+            customerDropOff={o.customerDropOff}
+            onSite={o.onSite}
+          />
         </span>
         <span data-testid="order-service-state">
           <ServiceStateBadge state={o.serviceState} returned={o.returnedPieces} />
         </span>
         <span className="text-sm text-ink-muted">
-          {o.receivedPieces} de {plural(o.totalPieces, 'peça', 'peças')} na oficina
+          {o.onSite
+            ? `${plural(o.totalPieces, 'peça', 'peças')} com serviço no local`
+            : `${o.receivedPieces} de ${plural(o.totalPieces, 'peça', 'peças')} na oficina`}
           {o.returnedPieces > 0
             ? ` · ${plural(o.returnedPieces, 'devolvida', 'devolvidas')} ao cliente`
             : ''}
@@ -182,7 +193,7 @@ export function OrderDetail({ id }: { id: string }) {
                 data-testid="order-promised"
               >
                 <span>{o.promisedDate ? formatDay(o.promisedDate, true) : 'Sem prazo'}</span>
-                <OrderDeadlineBadge state={o.deadline} />
+                <OrderDeadlineBadge state={o.deadline} onSite={o.onSite} />
                 {active && can('pedidos.gerenciar') && (
                   <Button
                     size="sm"
@@ -222,7 +233,7 @@ export function OrderDetail({ id }: { id: string }) {
             ) : (
               <p className="text-sm text-ink-muted">Valores restritos.</p>
             )}
-            <Detail label="Endereço da retirada">
+            <Detail label={o.onSite ? 'Endereço do serviço' : 'Endereço da retirada'}>
               {o.pickupAddress
                 ? `${o.pickupAddress.label}\n${addressLines(o.pickupAddress)}`
                 : 'Não definido'}
@@ -300,7 +311,7 @@ export function OrderDetail({ id }: { id: string }) {
         )}
 
         {can('retiradas.ver') && (
-          <Section title="Retiradas" className="lg:col-span-5" bodyClassName="p-0">
+          <Section title="Agendamentos" className="lg:col-span-5" bodyClassName="p-0">
             {pickups.data?.length ? (
               <ul className="divide-y divide-line">
                 {pickups.data.map((p) => (
@@ -311,7 +322,8 @@ export function OrderDetail({ id }: { id: string }) {
                       onClick={() => setOpenPickup(p.id)}
                     >
                       <span className="font-mono text-sm font-semibold">{p.code}</span>
-                      <PickupStatusBadge status={p.status} />
+                      <PickupKindBadge kind={p.kind} />
+                      <PickupStatusBadge status={p.status} kind={p.kind} />
                       <span className="text-sm text-ink-soft">
                         {p.scheduledDate
                           ? `${formatDay(p.scheduledDate, true)}${p.windowStart ? ` · ${arrivalText(p.windowStart, p.windowEnd)}` : ''}`

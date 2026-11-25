@@ -236,6 +236,8 @@ export interface PaymentInstructionDto {
 export interface LogisticsJobDto {
   id: string;
   kind: 'ENTREGA' | 'RETIRADA';
+  /** 2026-11-25: parada "No local" (serviço feito na casa do cliente; a peça não vem). */
+  onSite?: boolean;
   code: string;
   status: string;
   customerName: string;

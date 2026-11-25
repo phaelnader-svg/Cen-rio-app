@@ -1,7 +1,9 @@
 import {
   EVENT_TYPES,
   reworkCode,
+  PICKUP_KIND_LABEL,
   PICKUP_STATUS_LABEL,
+  pickupStatusLabel,
   PICKUP_TRANSITIONS,
   anyPermissionAudience,
   createPickupSchema,
@@ -74,6 +76,7 @@ export async function loadPickupDto(
     number: p.number,
     code: pickupCode(p.number),
     status: p.status,
+    kind: p.kind,
     order: {
       id: p.orderId,
       code: orderCode(p.order.number),
@@ -124,7 +127,13 @@ export async function loadPickupDto(
       recordedBy: e.recordedBy?.displayName ?? null,
       occurredAt: e.occurredAt.toISOString(),
     })),
-    allowedTransitions: [...PICKUP_TRANSITIONS[p.status]],
+    // "No local": "serviço feito" já conta as peças; não existe o passo "chegou na oficina".
+    allowedTransitions: PICKUP_TRANSITIONS[p.status].filter(
+      (s) =>
+        p.kind !== 'NO_LOCAL' ||
+        s !== 'RECEBIDA_NA_OFICINA' ||
+        !PICKUP_TRANSITIONS[p.status].includes('RETIRADA_REALIZADA'),
+    ),
     version: p.version,
     createdAt: p.createdAt.toISOString(),
   };
@@ -266,6 +275,7 @@ export async function pickupRoutes(app: FastifyInstance) {
                 addressSnapshot: snapshotAddress(address) as unknown as Prisma.InputJsonValue,
               }
             : {}),
+          ...(input.kind ? { kind: input.kind } : {}),
           scheduledDate: parseDateOnly(input.scheduledDate),
           windowStart: input.windowStart ?? null,
           windowEnd: input.windowEnd ?? null,
@@ -292,8 +302,9 @@ export async function pickupRoutes(app: FastifyInstance) {
         },
       });
       // Prazo em dias úteis acompanha o novo dia da retirada (enquanto não há OS).
-      if (beforeDate !== (input.scheduledDate ?? null))
-        await followPickupDate(tx, before.orderId, input.scheduledDate ?? null);
+      const kindAfter = input.kind ?? before.kind;
+      if (beforeDate !== (input.scheduledDate ?? null) || kindAfter !== before.kind)
+        await followPickupDate(tx, before.orderId, input.scheduledDate ?? null, kindAfter);
       if (scheduleChanged || status !== before.status) {
         await tx.pickupEvent.create({
           data: {
@@ -312,6 +323,15 @@ export async function pickupRoutes(app: FastifyInstance) {
           data: { pickupId: id, kind: 'DADOS_ALTERADOS', recordedById: actor.userId },
         });
       }
+      if (input.kind && input.kind !== before.kind)
+        await tx.pickupEvent.create({
+          data: {
+            pickupId: id,
+            kind: 'TIPO_ALTERADO',
+            note: `${PICKUP_KIND_LABEL[before.kind]} → ${PICKUP_KIND_LABEL[input.kind]}`,
+            recordedById: actor.userId,
+          },
+        });
       await refreshOrderStatus(tx, before.orderId);
       await audit(tx, actor, {
         action: 'pickup.updated',
@@ -332,6 +352,9 @@ export async function pickupRoutes(app: FastifyInstance) {
               }
             : {}),
           ...(status !== before.status ? { status: { from: before.status, to: status } } : {}),
+          ...(input.kind && input.kind !== before.kind
+            ? { kind: { from: before.kind, to: input.kind } }
+            : {}),
         },
       });
       await emitPickupEvent(
@@ -387,30 +410,35 @@ export async function pickupRoutes(app: FastifyInstance) {
         );
       }
       const actor = actorFrom(request);
+      // 2026-11-25: "No local" — serviço feito na casa do cliente = peças atendidas de uma vez
+      // (não há "chegou na oficina" depois): conta as peças e libera a OS para terminar.
+      const toStatus: PickupStatus =
+        before.kind === 'NO_LOCAL' && input.toStatus === 'RETIRADA_REALIZADA'
+          ? 'RECEBIDA_NA_OFICINA'
+          : input.toStatus;
       await tx.pickupRequest.update({
         where: { id, version: input.version },
-        data: { status: input.toStatus, version: { increment: 1 } },
+        data: { status: toStatus, version: { increment: 1 } },
       });
       await tx.pickupEvent.create({
         data: {
           pickupId: id,
-          kind: input.toStatus,
+          kind: toStatus,
           fromStatus: before.status,
-          toStatus: input.toStatus,
+          toStatus,
           note: input.note ?? null,
           recordedById: actor.userId,
         },
       });
-      if (input.toStatus === 'RECEBIDA_NA_OFICINA') await markPickupArrived(tx, id);
+      if (toStatus === 'RECEBIDA_NA_OFICINA') await markPickupArrived(tx, id);
       await refreshOrderStatus(tx, before.orderId);
-      if (PICKUP_ASSIGNMENT_DONE.includes(input.toStatus))
-        await resolvePickupAssignment(tx, actor, id);
+      if (PICKUP_ASSIGNMENT_DONE.includes(toStatus)) await resolvePickupAssignment(tx, actor, id);
       await audit(tx, actor, {
         action: 'pickup.status_changed',
         entityType: 'pickup_request',
         entityId: id,
-        summary: `Retirada ${pickupCode(before.number)}: ${PICKUP_STATUS_LABEL[before.status]} → ${PICKUP_STATUS_LABEL[input.toStatus]}.`,
-        changes: { status: { from: before.status, to: input.toStatus }, note: input.note ?? null },
+        summary: `${PICKUP_KIND_LABEL[before.kind]} ${pickupCode(before.number)}: ${pickupStatusLabel(before.status, before.kind)} → ${pickupStatusLabel(toStatus, before.kind)}.`,
+        changes: { status: { from: before.status, to: toStatus }, note: input.note ?? null },
       });
       await emitPickupEvent(tx, request, id, EVENT_TYPES.PICKUP_STATUS_CHANGED);
       await syncTripCost(tx, actor, { pickupId: id }, input.note ?? undefined);

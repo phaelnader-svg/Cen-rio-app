@@ -4,8 +4,8 @@
  * retirada, vale 18h do dia agendado. Retirada cancelada, com ocorrência ou ainda sem data não
  * muda sozinha. Idempotente: cada retirada só é recebida uma vez.
  */
-import { PICKUP_STATUS_LABEL, EVENT_TYPES, zonedDateTime } from '@cenario/shared';
-import type { PickupStatus, PrismaClient, Tx } from '@cenario/db';
+import { PICKUP_KIND_LABEL, EVENT_TYPES, pickupStatusLabel, zonedDateTime } from '@cenario/shared';
+import type { PickupKind, PickupStatus, PrismaClient, Tx } from '@cenario/db';
 import { audit } from '../../core/audit';
 import { now as clockNow } from '../../core/clock';
 import type { ActorContext } from '../../core/types';
@@ -63,7 +63,7 @@ export async function receivePickupAtWorkshop(
     action: 'pickup.status_changed',
     entityType: 'pickup_request',
     entityId: pickupId,
-    summary: `Retirada ${pickupCode(before.number)}: ${PICKUP_STATUS_LABEL[before.status]} → ${PICKUP_STATUS_LABEL.RECEBIDA_NA_OFICINA} (${note}).`,
+    summary: `${PICKUP_KIND_LABEL[before.kind]} ${pickupCode(before.number)}: ${pickupStatusLabel(before.status, before.kind)} → ${pickupStatusLabel('RECEBIDA_NA_OFICINA', before.kind)} (${note}).`,
     changes: { status: { from: before.status, to: 'RECEBIDA_NA_OFICINA' }, note },
   });
   await emitPickupEvent(tx, actor, pickupId, EVENT_TYPES.PICKUP_STATUS_CHANGED);
@@ -71,14 +71,27 @@ export async function receivePickupAtWorkshop(
   return true;
 }
 
-/** Quando a retirada passa sozinha para "na tapeçaria" (null = sem data). */
+/**
+ * Quando a retirada passa sozinha para "na tapeçaria" (null = sem data).
+ * "No local" (2026-11-25): o serviço é feito na casa do cliente e leva o dia; vira "Serviço feito"
+ * 1 hora depois do fim do dia (18h) — ou do fim da janela, se for mais tarde.
+ */
 export function autoArrivalAt(
-  p: { scheduledDate: Date | null; windowStart: string | null },
+  p: {
+    scheduledDate: Date | null;
+    windowStart: string | null;
+    windowEnd?: string | null;
+    kind?: PickupKind;
+  },
   timezone: string,
 ): Date | null {
   const day = dateOnly(p.scheduledDate);
   if (!day) return null;
-  const at = zonedDateTime(day, p.windowStart ?? PICKUP_DEFAULT_TIME, timezone);
+  const time =
+    p.kind === 'NO_LOCAL'
+      ? [PICKUP_DEFAULT_TIME, p.windowStart ?? '', p.windowEnd ?? ''].sort().at(-1)!
+      : (p.windowStart ?? PICKUP_DEFAULT_TIME);
+  const at = zonedDateTime(day, time, timezone);
   return new Date(at.getTime() + PICKUP_AUTO_ARRIVAL_MS);
 }
 
@@ -91,7 +104,14 @@ export async function autoReceiveDuePickups(prisma: PrismaClient, now = clockNow
       status: { in: AUTO_FROM },
       scheduledDate: { lte: new Date(now.getTime() + 86_400_000) },
     },
-    select: { id: true, orderId: true, scheduledDate: true, windowStart: true },
+    select: {
+      id: true,
+      orderId: true,
+      kind: true,
+      scheduledDate: true,
+      windowStart: true,
+      windowEnd: true,
+    },
     orderBy: { id: 'asc' },
     take: 500,
   });
@@ -109,7 +129,9 @@ export async function autoReceiveDuePickups(prisma: PrismaClient, now = clockNow
         tx,
         SYSTEM,
         p.id,
-        'automático, 1 hora depois do horário agendado',
+        p.kind === 'NO_LOCAL'
+          ? 'serviço no local: automático, no fim do dia agendado'
+          : 'automático, 1 hora depois do horário agendado',
       );
       if (ok) await emitOrderEvent(tx, SYSTEM, p.orderId);
       return ok;

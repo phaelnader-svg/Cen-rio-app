@@ -357,11 +357,15 @@ export function PickupChoicePage({ id }: { id: string }) {
   if (q.isPending) return <Spinner />;
   if (q.isError) return <NotFound what="Retirada" />;
   const p = q.data;
+  // 2026-11-25: serviço feito na casa do cliente usa as palavras dele.
+  const what = p.onSite ? 'do serviço no local' : 'da retirada';
   return (
     <>
       <CompanyHeader name={p.companyName} />
       <Card className="p-5 sm:p-6">
-        <h1 className="text-xl font-semibold">Retirada das suas peças</h1>
+        <h1 className="text-xl font-semibold">
+          {p.onSite ? 'Serviço no seu endereço' : 'Retirada das suas peças'}
+        </h1>
         <p className="text-sm text-ink-muted">
           {p.customerName} • {p.code}
         </p>
@@ -371,17 +375,22 @@ export function PickupChoicePage({ id }: { id: string }) {
         )}
         {!p.open ? (
           <Alert tone="info" className="mt-5">
-            A retirada já está a caminho ou foi feita. Para mudar algo, fale com a tapeçaria.
+            {p.onSite ? 'O serviço' : 'A retirada'} já está a caminho ou foi feito. Para mudar algo,
+            fale com a tapeçaria.
           </Alert>
         ) : p.scheduledDate ? (
-          <Alert tone="ok" title="Retirada agendada" className="mt-5">
+          <Alert
+            tone="ok"
+            title={p.onSite ? 'Serviço no local agendado' : 'Retirada agendada'}
+            className="mt-5"
+          >
             {weekday(p.scheduledDate)}, {brDay(p.scheduledDate)}
             {p.shift ? `, ${PICKUP_SHIFT_LABEL[p.shift].toLowerCase()}` : ''}. A equipe avisa quando
             estiver a caminho. Para mudar o dia, fale com a tapeçaria.
           </Alert>
         ) : (
           <Alert tone="info" className="mt-5">
-            A tapeçaria vai combinar com você o dia e o horário da retirada.
+            A tapeçaria vai combinar com você o dia e o horário {what}.
           </Alert>
         )}
       </Card>

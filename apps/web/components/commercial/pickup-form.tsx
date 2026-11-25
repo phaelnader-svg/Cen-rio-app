@@ -1,7 +1,7 @@
 'use client';
 
 import { plural } from '@cenario/shared';
-import type { OrderDto, PickupDto } from '@cenario/shared';
+import type { OrderDto, PickupDto, PickupKind } from '@cenario/shared';
 import {
   PICKUP_TEAMS,
   PICKUP_TEAM_LABEL,
@@ -29,8 +29,9 @@ import {
 import { addressLines } from './address-form';
 import { TripCostFields, type TripCostValue } from '@/components/finance/trip-cost';
 import { PickupTakeFields, pickupTakeBody, type PickupTake } from './pickup-take-fields';
+import { PickupKindChoice, pickupWords } from './pickup-kind-choice';
 
-/** Solicitar (a partir do pedido) ou editar/reagendar uma retirada. */
+/** Solicitar (a partir do pedido) ou editar/reagendar uma retirada ou um serviço no local. */
 export function PickupForm({
   order,
   pickup,
@@ -40,6 +41,8 @@ export function PickupForm({
   pickup?: PickupDto;
   onClose: () => void;
 }) {
+  const [kind, setKind] = useState<PickupKind>(pickup?.kind ?? 'RETIRADA');
+  const words = pickupWords(kind);
   const qc = useQueryClient();
   const toast = useToast();
   const addresses = useCustomerAddresses(order.customer.id);
@@ -89,6 +92,7 @@ export function PickupForm({
         .map(([orderItemId, q]) => ({ orderItemId, quantity: Number(q) }))
         .filter((i) => i.quantity > 0);
       const base = {
+        kind,
         addressId: addressId || null,
         scheduledDate: date || null,
         windowStart: start || null,
@@ -123,7 +127,12 @@ export function PickupForm({
       void qc.invalidateQueries({ queryKey: ['pickups'] });
       void qc.invalidateQueries({ queryKey: ['order', order.id] });
       qc.setQueryData(['pickup', p.id], p);
-      toast('ok', pickup ? 'Retirada atualizada.' : `Retirada ${p.code} solicitada.`);
+      toast(
+        'ok',
+        pickup
+          ? `${pickupWords(p.kind).noun} atualizado.`
+          : `${pickupWords(p.kind).noun} ${p.code} agendado.`,
+      );
       onClose();
     },
     onError: (e) => {
@@ -150,7 +159,7 @@ export function PickupForm({
       open
       onClose={onClose}
       size="lg"
-      title={pickup ? `Retirada ${pickup.code}` : `Solicitar retirada — ${order.code}`}
+      title={pickup ? `${words.noun} ${pickup.code}` : `Agendar — ${order.code}`}
       description={`${order.customer.name} · ${order.contractedService}`}
       footer={
         <>
@@ -162,16 +171,17 @@ export function PickupForm({
             disabled={(!pickup && team === 'LOGISTICA_TERCEIRIZADA' && !trip.ok) || !date || !start}
             onClick={() => m.mutate()}
           >
-            {pickup ? 'Salvar' : 'Agendar retirada'}
+            {pickup ? 'Salvar' : words.schedule}
           </Button>
         </>
       }
     >
       <div className="space-y-5" data-testid="pickup-form">
         {error && <Alert tone="danger">{error}</Alert>}
+        <PickupKindChoice value={kind} onChange={setKind} />
         <FormGrid>
           <DateField
-            label="Data da retirada"
+            label={words.date}
             cols={4}
             required
             error={errors.scheduledDate}
@@ -263,7 +273,7 @@ export function PickupForm({
         )}
         <PickupTakeFields value={take} onChange={setTake} error={errors.samplesDescription} />
         <fieldset>
-          <legend className="mb-2 text-sm font-semibold">Peças a retirar</legend>
+          <legend className="mb-2 text-sm font-semibold">{words.pieces}</legend>
           {errors.items && <p className="mb-2 text-sm text-danger-600">{errors.items}</p>}
           <ul className="divide-y divide-line rounded-xl border border-line">
             {order.items.map((i) => (
@@ -278,7 +288,7 @@ export function PickupForm({
                   type="number"
                   min={0}
                   max={Math.max(0, available(i.id))}
-                  aria-label={`Quantidade a retirar de ${i.description}`}
+                  aria-label={`${words.qty} ${i.description}`}
                   className="input input-sm w-24"
                   value={qty[i.id]}
                   onChange={(e) => setQty({ ...qty, [i.id]: e.target.value })}
@@ -294,7 +304,11 @@ export function PickupForm({
             rows={2}
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
-            placeholder="Acesso, portaria, cuidados no transporte…"
+            placeholder={
+              kind === 'NO_LOCAL'
+                ? 'Acesso, portaria, o que levar para fazer no local…'
+                : 'Acesso, portaria, cuidados no transporte…'
+            }
           />
         </FormGrid>
       </div>

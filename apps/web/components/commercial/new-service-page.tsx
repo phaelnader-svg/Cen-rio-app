@@ -229,12 +229,18 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const [technicalNotes, setTechnicalNotes] = useState(fromQuote ? quoteNotes(fromQuote) : '');
 
   // ── Retirada (opcional: o cliente pode entregar as peças na tapeçaria)
-  const [deliveryChoice, setDelivery] = useState<'RETIRADA' | 'CLIENTE_ENTREGA'>('RETIRADA');
+  // 2026-11-25: NO_LOCAL = o serviço é feito na casa do cliente (agenda igual à retirada).
+  const [deliveryChoice, setDelivery] = useState<'RETIRADA' | 'NO_LOCAL' | 'CLIENTE_ENTREGA'>(
+    'RETIRADA',
+  );
   // Reformulação, Fase 1: com a logística desligada não há retirada agendada (o servidor também
   // recusa); as peças chegam pelo cliente.
   const logisticsOn = useModules().logistica;
   const delivery = logisticsOn ? deliveryChoice : 'CLIENTE_ENTREGA';
-  const withPickup = delivery === 'RETIRADA';
+  const onSite = delivery === 'NO_LOCAL';
+  const withPickup = delivery === 'RETIRADA' || onSite;
+  /** "na retirada" ou "no dia do serviço" (No local). */
+  const atVisit = onSite ? 'no dia do serviço' : 'na retirada';
   const payModel: PaymentModel =
     payKind === 'AVISTA'
       ? 'METADE_RETIRADA_ENTREGA'
@@ -253,8 +259,8 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
       : value;
   const payText =
     payKind === 'AVISTA'
-      ? `À vista: 50% ${withPickup ? 'na retirada' : 'ao deixar as peças'} e 50% na entrega (${PAYMENT_METHOD_LABEL[entryMethod]}).`
-      : `Parcelado em ${installments}× no cartão${feeBps ? ` (taxa ${(feeBps / 100).toLocaleString('pt-BR')}%)` : ''}${chargeValue ? `: ${brl(chargeValue)}` : ''}${withPickup ? ', na retirada' : ''}.`;
+      ? `À vista: 50% ${withPickup ? atVisit : 'ao deixar as peças'} e 50% ${onSite ? 'ao terminar' : 'na entrega'} (${PAYMENT_METHOD_LABEL[entryMethod]}).`
+      : `Parcelado em ${installments}× no cartão${feeBps ? ` (taxa ${(feeBps / 100).toLocaleString('pt-BR')}%)` : ''}${chargeValue ? `: ${brl(chargeValue)}` : ''}${withPickup ? `, ${atVisit}` : ''}.`;
   // Revisão geral (item 10): o dia que o cliente escolheu no link da proposta já vem marcado.
   const [date, setDate] = useState(fromQuote?.pickupDate ?? '');
   const [arrival, setArrival] = useState(
@@ -267,8 +273,10 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const todayLocal = localDay(new Date());
   const promiseStart = withPickup && date ? date : todayLocal;
   const bizDaysN = Number(bizDays);
-  const promised =
-    bizDays && Number.isInteger(bizDaysN) && bizDaysN > 0
+  // 2026-11-25: No local termina no próprio dia do serviço (sem prazo em dias úteis).
+  const promised = onSite
+    ? date
+    : bizDays && Number.isInteger(bizDaysN) && bizDaysN > 0
       ? addBusinessDays(promiseStart, bizDaysN, d.workingDays ?? [1, 2, 3, 4, 5])
       : '';
   const [team, setTeam] = useState<PickupTeam>('LOGISTICA_TERCEIRIZADA');
@@ -363,7 +371,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
               }
             : null,
         promisedDate: promised,
-        deliveryBusinessDays: promised ? bizDaysN : null,
+        deliveryBusinessDays: promised && !onSite ? bizDaysN : null,
         technicalNotes: blank(technicalNotes),
         items: pieces.map((p) => ({
           pieceType: p.pieceType as PieceType,
@@ -382,6 +390,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
       },
       pickup: withPickup
         ? {
+            kind: onSite ? 'NO_LOCAL' : 'RETIRADA',
             scheduledDate: date,
             windowStart: arrival,
             team,
@@ -396,6 +405,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
     };
   }, [
     withPickup,
+    onSite,
     mode,
     kind,
     name,
@@ -972,37 +982,54 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
               withPickup={withPickup}
             />
           )}
-          <NumberField
-            label="Prazo de entrega (dias úteis)"
-            cols={3}
-            required
-            min={1}
-            max={365}
-            value={bizDays}
-            onChange={(e) => setBizDays(e.target.value)}
-            error={err('service.deliveryBusinessDays') ?? err('service.promisedDate')}
-            data-testid="ns-business-days"
-          />
-          <div className="self-end pb-2 sm:col-span-9" data-testid="ns-promised">
-            {promised ? (
-              <p className="text-sm">
-                Entrega até <strong data-testid="ns-promised-date">{longDay(promised)}</strong>
-                <span className="block text-ink-muted">
-                  {withPickup
-                    ? date
-                      ? `Contando ${plural(bizDaysN, 'dia útil', 'dias úteis')} a partir da retirada em ${longDay(date)}.`
-                      : 'Contando a partir de hoje até você escolher o dia da retirada abaixo.'
-                    : `Contando ${plural(bizDaysN, 'dia útil', 'dias úteis')} a partir de hoje (o cliente traz as peças).`}{' '}
-                  Só contam os dias de trabalho da empresa; feriados nacionais ficam de fora.
-                </span>
-              </p>
-            ) : (
-              <p className="text-sm text-ink-muted">
-                Informe quantos dias úteis foram combinados: o sistema calcula a data a partir do
-                dia da retirada.
-              </p>
-            )}
-          </div>
+          {onSite ? (
+            <p className="self-end pb-2 text-sm sm:col-span-12" data-testid="ns-promised-onsite">
+              No local: o serviço termina no dia agendado
+              {date ? (
+                <>
+                  {' '}
+                  (<strong>{longDay(date)}</strong>)
+                </>
+              ) : (
+                ', escolhido abaixo'
+              )}
+              .
+            </p>
+          ) : (
+            <>
+              <NumberField
+                label="Prazo de entrega (dias úteis)"
+                cols={3}
+                required
+                min={1}
+                max={365}
+                value={bizDays}
+                onChange={(e) => setBizDays(e.target.value)}
+                error={err('service.deliveryBusinessDays') ?? err('service.promisedDate')}
+                data-testid="ns-business-days"
+              />
+              <div className="self-end pb-2 sm:col-span-9" data-testid="ns-promised">
+                {promised ? (
+                  <p className="text-sm">
+                    Entrega até <strong data-testid="ns-promised-date">{longDay(promised)}</strong>
+                    <span className="block text-ink-muted">
+                      {withPickup
+                        ? date
+                          ? `Contando ${plural(bizDaysN, 'dia útil', 'dias úteis')} a partir da retirada em ${longDay(date)}.`
+                          : 'Contando a partir de hoje até você escolher o dia da retirada abaixo.'
+                        : `Contando ${plural(bizDaysN, 'dia útil', 'dias úteis')} a partir de hoje (o cliente traz as peças).`}{' '}
+                      Só contam os dias de trabalho da empresa; feriados nacionais ficam de fora.
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-ink-muted">
+                    Informe quantos dias úteis foram combinados: o sistema calcula a data a partir
+                    do dia da retirada.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
           {editService && (
             <TextAreaField
               label="Observações técnicas"
@@ -1015,30 +1042,27 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
         </FormGrid>
       </FormSection>
 
-      {/* 3. Retirada (opcional) */}
+      {/* 3. Agendamento: retirada, no local ou o cliente traz */}
       <FormSection
         step={3}
-        title="Retirada"
+        title="Agendamento"
         id="ns-retirada"
         description={
           withPickup
             ? 'O horário é o de CHEGADA ao endereço do cliente.'
-            : 'O cliente traz as peças até a tapeçaria: nenhuma retirada é agendada.'
+            : 'O cliente traz as peças até a tapeçaria: nada é agendado.'
         }
       >
         <div
-          className="mb-5 grid gap-2 sm:grid-cols-2"
+          className="mb-5 grid gap-2 sm:grid-cols-3"
           role="radiogroup"
-          aria-label="Como as peças chegam"
+          aria-label="Onde o serviço é feito"
         >
           {(
             [
-              ['RETIRADA', 'Buscar na casa do cliente', 'Agenda a retirada com a equipe'],
-              [
-                'CLIENTE_ENTREGA',
-                'Cliente entrega na tapeçaria',
-                'Sem retirada, sem custo de logística',
-              ],
+              ['RETIRADA', 'Retirada', 'Busca a peça na casa do cliente'],
+              ['NO_LOCAL', 'No local', 'O serviço é feito na casa do cliente'],
+              ['CLIENTE_ENTREGA', 'Cliente traz', 'O cliente entrega a peça na tapeçaria'],
             ] as const
           ).map(([k, title, hint]) => (
             <button
@@ -1048,7 +1072,13 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
               aria-checked={delivery === k}
               onClick={() => setDelivery(k)}
               className="rounded-xl border border-line p-3 text-left aria-checked:border-brand-500 aria-checked:ring-4 aria-checked:ring-brand-100"
-              data-testid={k === 'RETIRADA' ? 'ns-delivery-pickup' : 'ns-delivery-dropoff'}
+              data-testid={
+                k === 'RETIRADA'
+                  ? 'ns-delivery-pickup'
+                  : k === 'NO_LOCAL'
+                    ? 'ns-delivery-onsite'
+                    : 'ns-delivery-dropoff'
+              }
             >
               <span className="block font-medium">{title}</span>
               <span className="text-sm text-ink-muted">{hint}</span>
@@ -1067,7 +1097,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
           <>
             <FormGrid>
               <DateField
-                label="Data da retirada"
+                label={onSite ? 'Data do serviço' : 'Data da retirada'}
                 cols={4}
                 required
                 value={date}
@@ -1197,7 +1227,9 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
             <FormGrid className="mt-5">
               {/* Revisão geral: um recado só para quem vai buscar (antes eram dois campos). */}
               <TextAreaField
-                label="Recado para quem vai buscar"
+                label={
+                  onSite ? 'Recado para quem vai fazer o serviço' : 'Recado para quem vai buscar'
+                }
                 cols={12}
                 rows={2}
                 value={instructions}
@@ -1259,7 +1291,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
             />
           )}
           <SummaryRow
-            label="Retirada"
+            label={onSite ? 'No local' : 'Retirada'}
             value={
               !withPickup
                 ? 'Cliente entrega na tapeçaria'
