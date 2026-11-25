@@ -125,6 +125,25 @@ test('capturas: instalar o app pelo código QR e ligar avisos', async ({ page, b
   await shot(pp, '1-painel-instalar-no-aparelho');
   await pp.getByRole('button', { name: 'Concluído' }).click();
 
+  // 1b. Tela que pede o código (sem QR): o botão de instalar o app da equipe está ali, com o
+  // manifesto da equipe (o do dono é o padrão do site).
+  const fresh = await phone(browser, ANDROID);
+  await fresh.page.goto('/tablet');
+  await expect(fresh.page.getByRole('button', { name: 'Ligar aparelho' })).toBeVisible();
+  await expect(fresh.page.locator('link[rel="manifest"]').first()).toHaveAttribute(
+    'href',
+    '/manifest.webmanifest',
+  );
+  await fresh.page.evaluate(() => {
+    const e = new Event('beforeinstallprompt') as Event & Record<string, unknown>;
+    e.prompt = async () => undefined;
+    e.userChoice = Promise.resolve({ outcome: 'dismissed' });
+    window.dispatchEvent(e);
+  });
+  await expect(fresh.page.getByTestId('instalar-app')).toBeVisible();
+  await shot(fresh.page, '1b-tela-do-codigo-instalar', true);
+  await fresh.context.close();
+
   // 2. Celular Android abre o link do código QR: liga sozinho, sem digitar código.
   const android = await phone(browser, ANDROID);
   await android.page.goto(androidLink);
