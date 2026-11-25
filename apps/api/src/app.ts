@@ -82,6 +82,7 @@ import { receiptRoutes } from './modules/game/office-receipt';
 import { gameCommandRoutes } from './modules/game/command';
 import { gameSupplierRoutes } from './modules/game/suppliers';
 import { connectionRoutes } from './modules/integrations/connections';
+import { whatsappEmpresaRoutes } from './modules/integrations/whatsapp-empresa';
 import { inboxRoutes } from './modules/integrations/inbox';
 import { marketingRoutes } from './modules/integrations/marketing';
 import { officeWebhookRoutes } from './modules/integrations/office-webhooks';
@@ -286,6 +287,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(gameCommandRoutes);
   await app.register(gameSupplierRoutes);
   await app.register(connectionRoutes);
+  await app.register(whatsappEmpresaRoutes);
   await app.register(inboxRoutes);
   await app.register(marketingRoutes);
   await app.register(officeWebhookRoutes);

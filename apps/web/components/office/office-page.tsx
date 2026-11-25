@@ -41,6 +41,7 @@ import { useMe } from '@/lib/hooks';
 import { preparePhoto } from '@/lib/photos';
 import { putDraftInEditor, shrinkImage } from '@/lib/quotes';
 import { useRouter } from 'next/navigation';
+import { WhatsappCard } from './whatsapp-card';
 
 const KEY = ['office'] as const;
 
@@ -388,6 +389,8 @@ function OfficeInner() {
               </ul>
             </section>
           )}
+
+          <WhatsappCard />
 
           <section aria-labelledby="agentes">
             <h2 id="agentes" className="mb-1 text-lg font-semibold text-ink">

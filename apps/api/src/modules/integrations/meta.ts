@@ -216,6 +216,14 @@ export async function sendWhatsApp(
   return { externalId: r.messages[0]?.id ?? '', test: false };
 }
 
+/**
+ * Assina o app nos webhooks da conta do WhatsApp (WABA) escolhida: sem isso as mensagens que
+ * chegam no número não são entregues ao Cenário.
+ */
+export async function subscribeWaba(wabaId: string, token: string) {
+  await graph<{ success: boolean }>(`/${wabaId}/subscribed_apps`, { method: 'POST', token });
+}
+
 /** Instagram Direct e Messenger: resposta dentro da janela padrão de 24 h. */
 export async function sendPageMessage(
   c: ConnLike,
@@ -386,6 +394,8 @@ export function verifySignature(secret: string | null, raw: Buffer, header: stri
 
 export interface InboundMessage {
   channel: 'WHATSAPP' | 'INSTAGRAM' | 'MESSENGER';
+  /** Conta da empresa que recebeu: phone_number_id (WhatsApp) ou id da página/Instagram. */
+  account: string;
   threadId: string;
   contactName: string | null;
   externalId: string;
@@ -412,6 +422,9 @@ export function parseWebhook(body: Record<string, unknown>): InboundMessage[] {
             : [];
           out.push({
             channel: 'WHATSAPP',
+            account: String(
+              (v.metadata as { phone_number_id?: string } | undefined)?.phone_number_id ?? '',
+            ),
             threadId: String(m.from),
             contactName: contacts.find((c) => c.wa_id === m.from)?.profile?.name ?? null,
             externalId: String(m.id),
@@ -441,6 +454,7 @@ export function parseWebhook(body: Record<string, unknown>): InboundMessage[] {
         if (!msg || msg.is_echo) continue;
         out.push({
           channel,
+          account: String(e.id ?? ''),
           threadId: String((ev.sender as { id: string }).id),
           contactName: null,
           externalId: msg.mid,

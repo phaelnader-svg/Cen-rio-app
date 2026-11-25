@@ -8,7 +8,7 @@
  * nos casos liberados pelo gestor e nunca com a conversa assumida por uma pessoa.
  */
 import { companyName } from '../game/agent-office';
-import { requireCompanyId } from '../../core/tenant';
+import { PLATFORM_COMPANY_ID, requireCompanyId, runAsCompany } from '../../core/tenant';
 import { EVENT_TYPES, anyPermissionAudience } from '@cenario/shared';
 import type { InboxConversation, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
@@ -19,7 +19,7 @@ import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { registerOfficeHook } from '../game/command';
 import { idParams } from '../presenters';
-import { assertPlatformConnections, connectionOf, requireConnection } from './connections';
+import { connectionOf, requireConnection } from './connections';
 import {
   type InboundMessage,
   parseWebhook,
@@ -361,6 +361,38 @@ registerOfficeHook(async (ctx, intent) => {
   };
 });
 
+const ACCOUNT_FIELD: Record<InboundMessage['channel'], string[]> = {
+  WHATSAPP: ['phoneNumberId'],
+  INSTAGRAM: ['instagramId', 'pageId'],
+  MESSENGER: ['pageId'],
+};
+
+/**
+ * Empresa dona da conta que recebeu a mensagem (número do WhatsApp, Instagram ou página). Conexões
+ * antigas da empresa nº 1 sem a conta gravada continuam recebendo o que não for de ninguém; fora
+ * isso, mensagem de conta desconhecida é ignorada (nunca cai em outra empresa).
+ */
+export async function companyForInbound(
+  system: PrismaClient,
+  m: Pick<InboundMessage, 'channel' | 'account'>,
+): Promise<number | null> {
+  const rows = await system.integrationConnection.findMany({
+    where: { providerKey: CHANNEL_KEY[m.channel]!, status: 'CONECTADA' },
+    select: { companyId: true, config: true },
+  });
+  const fields = ACCOUNT_FIELD[m.channel];
+  const value = (r: (typeof rows)[number], f: string) =>
+    (r.config as Record<string, unknown> | null)?.[f];
+  const owner = m.account
+    ? rows.find((r) => fields.some((f) => String(value(r, f) ?? '') === m.account))
+    : undefined;
+  if (owner) return owner.companyId;
+  const legacy = rows.find(
+    (r) => r.companyId === PLATFORM_COMPANY_ID && fields.every((f) => !value(r, f)),
+  );
+  return legacy ? PLATFORM_COMPANY_ID : null;
+}
+
 export async function inboxRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
 
@@ -410,8 +442,24 @@ export async function inboxRoutes(app: FastifyInstance) {
             .send({ error: { code: 'UNAUTHENTICATED', message: 'Assinatura inválida.' } });
         const messages = parseWebhook(JSON.parse(raw.toString('utf8') || '{}'));
         const results = [];
-        for (const m of messages) results.push(await ingest(prisma, m));
-        return { received: messages.length, duplicates: results.filter((r) => r.duplicate).length };
+        let ignored = 0;
+        for (const m of messages) {
+          const companyId = await companyForInbound(app.ctx.system, m);
+          if (companyId === null) {
+            ignored++;
+            request.log.warn(
+              { channel: m.channel, account: m.account },
+              'Mensagem da Meta para conta que nenhuma empresa ligou: ignorada.',
+            );
+            continue;
+          }
+          results.push(await runAsCompany(companyId, () => ingest(prisma, m)));
+        }
+        return {
+          received: messages.length,
+          duplicates: results.filter((r) => r.duplicate).length,
+          ignored,
+        };
       },
     );
   });
@@ -421,7 +469,6 @@ export async function inboxRoutes(app: FastifyInstance) {
     '/api/v1/connections/:key/simulate',
     { config: { access: { session: 'WEB', permissions: ['jogo.acessar', 'conexoes.gerenciar'] } } },
     async (request) => {
-      assertPlatformConnections();
       const { key } = z
         .object({ key: z.enum(['WHATSAPP', 'INSTAGRAM', 'MESSENGER']) })
         .parse(request.params);
@@ -454,7 +501,7 @@ export async function inboxRoutes(app: FastifyInstance) {
                       field: 'messages',
                       value: {
                         messaging_product: 'whatsapp',
-                        metadata: { phone_number_id: 'pn-teste' },
+                        metadata: { phone_number_id: String(c.config.phoneNumberId ?? 'pn-teste') },
                         contacts: [{ wa_id: b.from, profile: { name: b.name ?? b.from } }],
                         messages: [
                           b.image
@@ -487,7 +534,11 @@ export async function inboxRoutes(app: FastifyInstance) {
               object: key === 'INSTAGRAM' ? 'instagram' : 'page',
               entry: [
                 {
-                  id: 'page-teste',
+                  id: String(
+                    (key === 'INSTAGRAM' ? c.config.instagramId : null) ??
+                      c.config.pageId ??
+                      'page-teste',
+                  ),
                   time: Date.now(),
                   messaging: [
                     {

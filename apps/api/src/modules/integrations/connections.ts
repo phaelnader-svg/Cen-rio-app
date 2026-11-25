@@ -19,6 +19,7 @@ import {
   authorizeUrl,
   discoverAccounts,
   exchangeCode,
+  subscribeWaba,
   testConnection,
 } from './meta';
 import {
@@ -36,18 +37,24 @@ export const CONN_MANAGE = {
   session: 'WEB',
   permissions: ['jogo.acessar', 'conexoes.gerenciar'],
 } as const;
+/** WhatsApp da empresa pelo painel do Cenário (o dono, sem precisar do jogo). */
+export const WA_MANAGE = { session: 'WEB', permissions: ['conexoes.gerenciar'] } as const;
 const AUDIENCE = anyPermissionAudience('conexoes.gerenciar', 'jogo.acessar');
 const keyParams = z.object({ key: z.string().regex(/^[A-Z_]{2,40}$/) });
 
 /**
- * Multi-empresa: as conexões externas usam chaves e webhooks do servidor, que são da Cenário
- * Estofados (empresa nº 1). Até cada empresa poder ligar as próprias contas (com o webhook
- * separado por empresa), só a empresa 1 conecta, testa ou desconecta.
+ * Multi-empresa: WhatsApp, Instagram, Messenger e anúncios da Meta são de cada empresa (cada uma
+ * autoriza a própria conta; o webhook acha a empresa pelo número/página que recebeu). As demais
+ * conexões externas usam chaves do servidor, que são da Cenário Estofados (empresa nº 1): só ela
+ * conecta, testa ou desconecta essas.
  */
-export function assertPlatformConnections() {
+export const COMPANY_OWN_CONNECTIONS = new Set(['WHATSAPP', 'INSTAGRAM', 'MESSENGER', 'META_ADS']);
+
+export function assertPlatformConnections(key?: string) {
+  if (key && COMPANY_OWN_CONNECTIONS.has(key)) return;
   if (requireCompanyId() !== PLATFORM_COMPANY_ID)
     throw Errors.business(
-      'As conexões externas (WhatsApp, Instagram, cobrança, assinatura e notas) ainda não estão disponíveis para a sua empresa.',
+      'As conexões externas (cobrança, assinatura e notas) ainda não estão disponíveis para a sua empresa.',
     );
 }
 
@@ -115,6 +122,62 @@ async function upsert(
     audience: AUDIENCE,
   });
   return row;
+}
+
+/** Desliga a conexão da empresa (apaga token e conta; o histórico fica na auditoria). */
+export async function disconnectConnection(prisma: PrismaClient, actor: ActorContext, key: string) {
+  await prisma.$transaction((tx) =>
+    upsert(tx, actor, key, {
+      status: 'DESCONECTADA',
+      secret: null,
+      accountLabel: null,
+      accountId: null,
+      config: {},
+      lastError: null,
+    }),
+  );
+}
+
+/** Prefixo do `state` quando a autorização começou no painel do Cenário (volta para o Escritório). */
+export const PAINEL_STATE = 'p.';
+
+/**
+ * Liga o número do WhatsApp escolhido à empresa da requisição: confere que nenhuma outra empresa
+ * usa o mesmo número (o webhook acha a empresa por ele), assina o app nos webhooks da conta e
+ * grava a conexão.
+ */
+export async function connectWhatsappNumber(
+  prisma: PrismaClient,
+  system: PrismaClient,
+  actor: ActorContext,
+  phone: { id: string; display: string; name: string },
+  waba: { id: string },
+  userToken: string | undefined,
+) {
+  const others = await system.integrationConnection.findMany({
+    where: { providerKey: 'WHATSAPP', status: 'CONECTADA', NOT: { companyId: requireCompanyId() } },
+    select: { config: true },
+  });
+  if (others.some((o) => (o.config as Record<string, unknown> | null)?.phoneNumberId === phone.id))
+    throw Errors.business('Este número já está ligado em outra empresa do Cenário.');
+  if (!userToken)
+    throw Errors.business('Autorização da Meta expirada. Clique em Conectar de novo.');
+  await subscribeWaba(waba.id, userToken);
+  await prisma.$transaction((tx) =>
+    upsert(tx, actor, 'WHATSAPP', {
+      accountId: waba.id,
+      accountLabel: `${phone.display} · ${phone.name}`,
+      config: {
+        phoneNumberId: phone.id,
+        wabaId: waba.id,
+        display: phone.display,
+        coexistence: true,
+      },
+      status: 'CONECTADA',
+      lastSyncAt: new Date(),
+      lastError: null,
+    }),
+  );
 }
 
 const TEST_ACCOUNTS: Record<
@@ -291,7 +354,8 @@ function card(
 export async function connectionRoutes(app: FastifyInstance) {
   const { prisma } = app.ctx;
   app.addHook('preHandler', async (request) => {
-    if (request.routeOptions.config?.access === CONN_MANAGE) assertPlatformConnections();
+    if (request.routeOptions.config?.access !== CONN_MANAGE) return;
+    assertPlatformConnections((request.params as { key?: string } | undefined)?.key);
   });
 
   app.get('/api/v1/connections', { config: { access: CONN_VIEW } }, async (request) => {
@@ -411,7 +475,7 @@ export async function connectionRoutes(app: FastifyInstance) {
   /** Retorno do OAuth da Meta: troca o código, descobre as contas e pede a escolha da conta da Cenário. */
   app.get(
     '/api/v1/connections/meta/callback',
-    { config: { access: CONN_MANAGE } },
+    { config: { access: WA_MANAGE } },
     async (request, reply) => {
       const q = z
         .object({
@@ -435,6 +499,9 @@ export async function connectionRoutes(app: FastifyInstance) {
         data: { usedAt: new Date() },
       });
       const actor = actorFrom(request);
+      const back = q.state.startsWith(PAINEL_STATE)
+        ? `${app.ctx.env.PUBLIC_WEB_URL}/painel/escritorio?whatsapp=1#whatsapp`
+        : `${app.ctx.env.GAME_WEB_URL}/jogo?central=${st.providerKey}`;
       if (!q.code) {
         await prisma.$transaction((tx) =>
           upsert(tx, actor, st.providerKey, {
@@ -442,7 +509,7 @@ export async function connectionRoutes(app: FastifyInstance) {
             lastError: q.error_description ?? 'Autorização cancelada na Meta.',
           }),
         );
-        return reply.redirect(`${app.ctx.env.GAME_WEB_URL}/jogo?central=${st.providerKey}`);
+        return reply.redirect(back);
       }
       try {
         const token = await exchangeCode(q.code);
@@ -461,6 +528,17 @@ export async function connectionRoutes(app: FastifyInstance) {
             lastError: null,
           }),
         );
+        // Um único número autorizado (o caso normal da oficina): liga direto, sem escolher.
+        const phones = accounts.wabas.flatMap((w) => w.phones.map((ph) => ({ w, ph })));
+        if (st.providerKey === 'WHATSAPP' && phones.length === 1)
+          await connectWhatsappNumber(
+            prisma,
+            app.ctx.system,
+            actor,
+            phones[0]!.ph,
+            phones[0]!.w,
+            token.access_token,
+          );
       } catch (e) {
         await prisma.$transaction((tx) =>
           upsert(tx, actor, st.providerKey, {
@@ -469,7 +547,7 @@ export async function connectionRoutes(app: FastifyInstance) {
           }),
         );
       }
-      return reply.redirect(`${app.ctx.env.GAME_WEB_URL}/jogo?central=${st.providerKey}`);
+      return reply.redirect(back);
     },
   );
 
@@ -488,14 +566,19 @@ export async function connectionRoutes(app: FastifyInstance) {
         .flatMap((w) => w.phones.map((ph) => ({ w, ph })))
         .find((x) => x.ph.id === body.id);
       const ad = acc.adAccounts.find((a) => a.id === body.id);
+      if (key === 'WHATSAPP' && phone) {
+        await connectWhatsappNumber(
+          prisma,
+          app.ctx.system,
+          actorFrom(request),
+          phone.ph,
+          phone.w,
+          c.secret?.userToken as string | undefined,
+        );
+        return { ok: true };
+      }
       let data: Parameters<typeof upsert>[3];
-      if (key === 'WHATSAPP' && phone)
-        data = {
-          accountId: phone.w.id,
-          accountLabel: `${phone.ph.display} · ${phone.ph.name}`,
-          config: { phoneNumberId: phone.ph.id, wabaId: phone.w.id, display: phone.ph.display },
-        };
-      else if ((key === 'INSTAGRAM' || key === 'MESSENGER') && page)
+      if ((key === 'INSTAGRAM' || key === 'MESSENGER') && page)
         data = {
           accountId: key === 'INSTAGRAM' ? (page.instagram?.id ?? page.id) : page.id,
           accountLabel:
@@ -589,13 +672,21 @@ export async function connectionRoutes(app: FastifyInstance) {
       if (!p?.testMode || !testModeAllowed())
         throw Errors.business('Modo de teste indisponível para esta conexão ou neste ambiente.');
       const t = TEST_ACCOUNTS[key]!;
+      // Contas de teste por empresa: o webhook acha a empresa pelo número/página.
+      const sfx = `-${requireCompanyId()}`;
+      const config = Object.fromEntries(
+        Object.entries(t.config).map(([k, v]) => [
+          k,
+          typeof v === 'string' && v.endsWith('-teste') ? v + sfx : v,
+        ]),
+      );
       await prisma.$transaction((tx) =>
         upsert(tx, actorFrom(request), key, {
           status: 'CONECTADA',
           mode: 'TESTE_LOCAL',
           accountId: t.accountId,
           accountLabel: t.label,
-          config: t.config,
+          config,
           secret: null,
           lastSyncAt: new Date(),
           lastError: null,
