@@ -18,7 +18,7 @@ import {
   skillsIndex,
 } from '../components/site/agentes';
 import { webMcpScript } from '../components/site/webmcp';
-import robots from '../app/robots';
+import { robotsTxt } from '../app/robots.txt/route';
 import sitemap from '../app/sitemap';
 import { GET as skillsGet } from '../app/.well-known/agent-skills/index.json/route';
 import { GET as catalogGet } from '../app/.well-known/api-catalog/route';
@@ -61,13 +61,15 @@ describe('assistentes de IA: só informação pública', () => {
     expect(text).toContain('7 dias grátis');
   });
 
-  it('robots continua bloqueando o sistema e libera os arquivos dos agentes', () => {
-    const r = robots();
-    const rule = Array.isArray(r.rules) ? r.rules[0]! : r.rules;
+  it('robots continua bloqueando o sistema, libera blog e arquivos dos agentes e tem Content-Signal', () => {
+    const txt = robotsTxt();
     for (const p of ['/painel', '/tablet', '/api/', '/proposta/', '/album/', '/agendar/'])
-      expect(rule.disallow).toContain(p);
-    for (const p of ['/llms.txt', '/.well-known/']) expect(rule.allow).toContain(p);
-    expect(r.sitemap).toBe('https://cenariogestao.com.br/sitemap.xml');
+      expect(txt).toContain(`Disallow: ${p}\n`);
+    for (const p of ['/blog', '/llms.txt', '/.well-known/']) expect(txt).toContain(`Allow: ${p}\n`);
+    expect(txt).toMatch(
+      /^User-Agent: \*\nContent-Signal: search=yes, ai-input=yes, ai-train=yes\n/,
+    );
+    expect(txt).toContain('Sitemap: https://cenariogestao.com.br/sitemap.xml');
   });
 
   it('sitemap só com páginas públicas (raiz e blog), sem rascunhos em produção', () => {
@@ -75,7 +77,8 @@ describe('assistentes de IA: só informação pública', () => {
     try {
       const urls = sitemap().map((u) => u.url);
       expect(urls[0]).toBe('https://cenariogestao.com.br/');
-      for (const u of urls) expect(u).toMatch(/^https:\/\/cenariogestao\.com\.br\/(blog(\/[a-z0-9-]+)?)?$/);
+      for (const u of urls)
+        expect(u).toMatch(/^https:\/\/cenariogestao\.com\.br\/(blog(\/[a-z0-9-]+)?)?$/);
       expect(urls.some((u) => u.includes('exemplo-'))).toBe(false);
     } finally {
       vi.unstubAllEnvs();
