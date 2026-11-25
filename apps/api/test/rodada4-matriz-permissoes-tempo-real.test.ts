@@ -362,6 +362,10 @@ describe('Matriz — tipo de sessão: tablet não usa rota do painel e painel n�
     );
     expect(deviceOnly.map((r) => r.url).sort()).toEqual(
       [
+        // App instalado (2026-11-25): avisos no aparelho da equipe (GET, PUT e DELETE).
+        '/api/tablet/push',
+        '/api/tablet/push',
+        '/api/tablet/push',
         '/api/v1/finance/my-earnings',
         '/api/v1/finance/my-earnings/confirm',
         '/api/v1/finance/my-earnings/requests',
