@@ -46,6 +46,7 @@ import { AGENT_TEMPLATES } from './agent-templates';
 import { obsoleteReason, refreshPending } from './proposal-validity';
 import { scheduleApprovedDelivery } from './office-delivery';
 import { type ExpenseEdits, launchApprovedExpense } from './office-expense';
+import { saveApprovedQuote } from './office-quote';
 import { goalsAnswer, isGoalsQuestion } from '../office/cash-chat';
 import { AGENT_MANAGE, AGENT_USE, GAME_ACCESS, ensureDefaultSpaces } from './common';
 
@@ -618,6 +619,19 @@ export async function decideProposal(prisma: PrismaClient, o: DecideOptions) {
         scheduledDate: d.scheduledDate,
         windowStart: d.windowStart,
         windowEnd: d.windowEnd,
+      };
+    }
+    // Orçamento pelo pedido (Orçamentos): salva o orçamento e a mensagem leva o link da proposta.
+    if (o.decision !== 'REJEITAR' && officeTaskOf(p) === 'MONTAR_ORCAMENTO') {
+      const q = await saveApprovedQuote(tx, actor, perms, p, o.edits?.text);
+      edits = { ...o.edits, text: q.text };
+      p.payload = {
+        ...((p.payload ?? {}) as Record<string, unknown>),
+        quoteId: q.quoteId,
+        quoteNumber: q.quoteNumber,
+        link: q.link,
+        text: q.text,
+        ...(q.href ? { href: q.href } : {}),
       };
     }
     // Despesa pela foto (Financeiro): lança a despesa com o que o dono conferiu.

@@ -68,8 +68,7 @@ export async function obsoleteReason(db: Db, p: AiAgentProposal): Promise<string
   if (pl.task === 'CONFIRMAR_RETIRADA') {
     const r = await db.pickupRequest.findUnique({ where: { id: String(pl.pickupId ?? '') } });
     if (!r || r.status !== 'AGENDADA') return 'A retirada não está mais agendada.';
-    if (r.scheduledDate?.toISOString().slice(0, 10) !== pl.date)
-      return 'A retirada mudou de dia.';
+    if (r.scheduledDate?.toISOString().slice(0, 10) !== pl.date) return 'A retirada mudou de dia.';
     return null;
   }
   if (pl.task === 'CONFIRMAR_ENTREGA') {

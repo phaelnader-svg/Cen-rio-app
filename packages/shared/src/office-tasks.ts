@@ -43,6 +43,7 @@ export const OFFICE_TASK_KEYS = [
   'CLIENTE_ANTIGO',
   'PLANEJAR_OS',
   'LANCAR_DESPESA',
+  'MONTAR_ORCAMENTO',
 ] as const;
 export type OfficeTaskKey = (typeof OFFICE_TASK_KEYS)[number];
 
@@ -156,6 +157,15 @@ export const OFFICE_TASKS: OfficeTask[] = [
     maxReason: 'Encaixar a OS na semana sozinho vem na próxima etapa.',
   },
   {
+    key: 'MONTAR_ORCAMENTO',
+    roles: ['ORCAMENTOS'],
+    label: 'Montar orçamento pelo pedido',
+    what: 'Você conta o pedido do cliente (texto e fotos); ele monta o orçamento com a sua tabela e manda o link.',
+    message: true,
+    money: true,
+    maxLevel: 4,
+  },
+  {
     key: 'LANCAR_DESPESA',
     roles: ['FINANCEIRO'],
     label: 'Lançar despesa pela foto',
@@ -177,6 +187,7 @@ export function officeTaskOf(p: { kind: string; payload: unknown }): OfficeTaskK
   if (p.kind === 'COBRAR_CLIENTE') return 'COBRAR_CLIENTE';
   if (p.kind === 'PLANEJAR_OS') return 'PLANEJAR_OS';
   if (p.kind === 'LANCAR_DESPESA') return 'LANCAR_DESPESA';
+  if (p.kind === 'MONTAR_ORCAMENTO') return 'MONTAR_ORCAMENTO';
   if (p.kind === 'ENVIAR_MENSAGEM' && pl.quoteId) return 'RETORNO_ORCAMENTO';
   if (p.kind === 'ENVIAR_MENSAGEM' && pl.serviceOrderId) return 'AVISAR_PRONTO';
   return null;
@@ -198,6 +209,37 @@ export const updateOfficeTaskSchema = z.object({
   task: z.enum(OFFICE_TASK_KEYS),
   setting: officeTaskSettingSchema,
 });
+
+/** Pedido de orçamento contado ao agente de Orçamentos (texto e até 3 fotos já reduzidas). */
+export const officeQuoteRequestSchema = z.object({
+  customerName: z.string().trim().min(2, 'Informe o nome do cliente.').max(160),
+  phone: z.string().trim().max(20).default(''),
+  city: z.string().trim().max(120).default(''),
+  request: z.string().trim().min(5, 'Conte o pedido do cliente.').max(3000),
+  photos: z
+    .array(z.string().regex(/^data:image\/(jpeg|png|webp);base64,/, 'Foto inválida.'))
+    .max(3)
+    .default([]),
+});
+export type OfficeQuoteRequest = z.infer<typeof officeQuoteRequestSchema>;
+
+/** Texto do envio do orçamento; {link} vira o link da proposta quando o orçamento é salvo. */
+export function quoteSendMessage(i: {
+  customerName: string;
+  service: string;
+  totalCents: number;
+  installments?: { count: number; totalCents: number } | null;
+  companyName: string;
+}): string {
+  const brl = (c: number) =>
+    (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const name = first(i.customerName);
+  const parc =
+    i.installments && i.installments.count > 1
+      ? ` ou ${i.installments.count}x de ${brl(Math.ceil(i.installments.totalCents / i.installments.count))}`
+      : '';
+  return `Olá${name ? `, ${name}` : ''}! Segue o orçamento de ${i.service.toLowerCase()}: {link}\n\nO valor é ${brl(i.totalCents)} à vista${parc}. Qualquer dúvida sobre tecido, prazo ou pagamento, é só chamar.\n\n${i.companyName}`;
+}
 
 export const officeSettingsSchema = z.object({
   /** true = parar tudo (todos voltam a pedir aprovação). */
