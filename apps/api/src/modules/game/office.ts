@@ -56,6 +56,7 @@ import { notifyUsersWith } from '../quality/common';
 import type { AgentContext, ProposalDraft } from './agent-engines';
 import { managerAnswer } from './agent-engines';
 import {
+  aiAvailable,
   companyName,
   financeAnswer,
   purchasingAnswer,
@@ -647,7 +648,12 @@ export async function runOfficeRound(
 }
 
 /** O agente faz a tarefa liberada. Se a mensagem não sair, volta a pedir ao dono. */
-async function doAlone(prisma: PrismaClient, p: AiAgentProposal, agent: AiAgent, today: string) {
+export async function doAlone(
+  prisma: PrismaClient,
+  p: AiAgentProposal,
+  agent: AiAgent,
+  today: string,
+) {
   try {
     await decideProposal(prisma, {
       id: p.id,
@@ -894,12 +900,37 @@ export async function officeOverview(prisma: PrismaClient): Promise<OfficeOvervi
     paused,
     pausedAt: company.agentsPausedAt?.toISOString() ?? null,
     whatsappConnected: whatsapp,
+    aiReady: aiAvailable(),
     googleReviewUrl: company.googleReviewUrl,
     agents: office,
     pending: pending.map((p) => proposalDto(p, byId.get(p.agentId)!, ctx)),
     recent: recent.map((p) => proposalDto(p, byId.get(p.agentId)!, ctx)),
     today: await todayCounts(prisma, today, tz),
   };
+}
+
+/** O Escritório só existe no plano com o jogo. */
+export const officeGuard = (prisma: PrismaClient) =>
+  assertModuleEnabled(prisma, 'ambiente_interativo');
+
+/** Rota de uma proposta recém-criada, com o nível, o "parar tudo" e o WhatsApp de agora. */
+export async function routeOfNow(
+  prisma: PrismaClient,
+  agentId: string,
+  p: { kind: string; payload: unknown },
+) {
+  const [agent, co, conn] = await Promise.all([
+    prisma.aiAgent.findUniqueOrThrow({ where: { id: agentId } }),
+    prisma.companySettings.findUniqueOrThrow({
+      where: { id: requireCompanyId() },
+      select: { agentsPausedAt: true },
+    }),
+    connectionOf(prisma, 'WHATSAPP'),
+  ]);
+  return routeOf(agent, p, {
+    paused: !!co.agentsPausedAt,
+    whatsapp: conn?.status === 'CONECTADA',
+  });
 }
 
 export async function officeRoutes(app: FastifyInstance) {

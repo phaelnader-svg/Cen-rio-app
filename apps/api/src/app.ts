@@ -76,6 +76,7 @@ import { gameSpaceRoutes } from './modules/game/spaces';
 import { gameSnapshotRoutes } from './modules/game/snapshot';
 import { gameAgentRoutes } from './modules/game/agents';
 import { officeRoutes, runOfficeRound } from './modules/game/office';
+import { receiptRoutes } from './modules/game/office-receipt';
 import { gameCommandRoutes } from './modules/game/command';
 import { gameSupplierRoutes } from './modules/game/suppliers';
 import { connectionRoutes } from './modules/integrations/connections';
@@ -267,6 +268,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(gameSnapshotRoutes);
   await app.register(gameAgentRoutes);
   await app.register(officeRoutes);
+  await app.register(receiptRoutes);
   await app.register(gameCommandRoutes);
   await app.register(gameSupplierRoutes);
   await app.register(connectionRoutes);

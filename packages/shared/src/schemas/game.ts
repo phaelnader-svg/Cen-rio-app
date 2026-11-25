@@ -234,6 +234,16 @@ export const decideProposalSchema = z.object({
         .string()
         .regex(/^\d{2}:\d{2}$/)
         .optional(),
+      /** Despesa pela foto: o que o dono corrigiu do que o agente leu. */
+      amountCents: z.number().int().min(1).max(100_000_000).optional(),
+      date: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+      beneficiary: z.string().trim().min(2).max(160).optional(),
+      description: z.string().trim().min(2).max(200).optional(),
+      category: z.string().trim().min(1).max(30).optional(),
+      paid: z.boolean().optional(),
     })
     .optional(),
 });

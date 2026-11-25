@@ -42,6 +42,7 @@ export const OFFICE_TASK_KEYS = [
   'PEDIR_AVALIACAO',
   'CLIENTE_ANTIGO',
   'PLANEJAR_OS',
+  'LANCAR_DESPESA',
 ] as const;
 export type OfficeTaskKey = (typeof OFFICE_TASK_KEYS)[number];
 
@@ -154,6 +155,15 @@ export const OFFICE_TASKS: OfficeTask[] = [
     maxLevel: 2,
     maxReason: 'Encaixar a OS na semana sozinho vem na próxima etapa.',
   },
+  {
+    key: 'LANCAR_DESPESA',
+    roles: ['FINANCEIRO'],
+    label: 'Lançar despesa pela foto',
+    what: 'Você manda a foto do comprovante; ele lê o valor, a data e quem recebeu e lança a despesa.',
+    message: false,
+    money: true,
+    maxLevel: 4,
+  },
 ];
 
 export const officeTask = (key: string) => OFFICE_TASKS.find((t) => t.key === key) ?? null;
@@ -166,6 +176,7 @@ export function officeTaskOf(p: { kind: string; payload: unknown }): OfficeTaskK
   if (p.kind === 'PEDIR_FORNECEDOR') return 'PEDIR_FORNECEDOR';
   if (p.kind === 'COBRAR_CLIENTE') return 'COBRAR_CLIENTE';
   if (p.kind === 'PLANEJAR_OS') return 'PLANEJAR_OS';
+  if (p.kind === 'LANCAR_DESPESA') return 'LANCAR_DESPESA';
   if (p.kind === 'ENVIAR_MENSAGEM' && pl.quoteId) return 'RETORNO_ORCAMENTO';
   if (p.kind === 'ENVIAR_MENSAGEM' && pl.serviceOrderId) return 'AVISAR_PRONTO';
   return null;
@@ -258,6 +269,8 @@ export interface OfficeOverviewDto {
   paused: boolean;
   pausedAt: string | null;
   whatsappConnected: boolean;
+  /** IA ligada no servidor (ler foto de comprovante, montar orçamento). */
+  aiReady: boolean;
   googleReviewUrl: string | null;
   agents: OfficeAgentDto[];
   pending: OfficeProposalDto[];

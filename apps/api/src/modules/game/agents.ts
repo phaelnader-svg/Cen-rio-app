@@ -45,6 +45,7 @@ import { channelAgentAnswer } from './agent-channels';
 import { AGENT_TEMPLATES } from './agent-templates';
 import { obsoleteReason, refreshPending } from './proposal-validity';
 import { scheduleApprovedDelivery } from './office-delivery';
+import { type ExpenseEdits, launchApprovedExpense } from './office-expense';
 import { goalsAnswer, isGoalsQuestion } from '../office/cash-chat';
 import { AGENT_MANAGE, AGENT_USE, GAME_ACCESS, ensureDefaultSpaces } from './common';
 
@@ -506,7 +507,7 @@ export interface DecideOptions {
     scheduledDate?: string;
     windowStart?: string;
     windowEnd?: string;
-  };
+  } & ExpenseEdits;
   actor: ActorContext;
   perms: ReadonlySet<string>;
   /** Decisão do próprio agente (tarefa liberada para "sozinho"). */
@@ -618,6 +619,19 @@ export async function decideProposal(prisma: PrismaClient, o: DecideOptions) {
         windowStart: d.windowStart,
         windowEnd: d.windowEnd,
       };
+    }
+    // Despesa pela foto (Financeiro): lança a despesa com o que o dono conferiu.
+    if (o.decision !== 'REJEITAR' && officeTaskOf(p) === 'LANCAR_DESPESA') {
+      const e = await launchApprovedExpense(tx, actor, perms, p, o.edits);
+      payload = { ...((p.payload ?? {}) as Record<string, unknown>), ...e };
+      const pl = (p.payload ?? {}) as Record<string, unknown>;
+      if (
+        (o.edits?.amountCents !== undefined && o.edits.amountCents !== pl.totalCents) ||
+        (o.edits?.category !== undefined && o.edits.category !== pl.category) ||
+        (o.edits?.beneficiary !== undefined && o.edits.beneficiary !== pl.beneficiary) ||
+        (o.edits?.date !== undefined && o.edits.date !== pl.date)
+      )
+        (payload as Record<string, unknown>).edited = true;
     }
     if (
       o.decision !== 'REJEITAR' &&
