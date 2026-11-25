@@ -149,6 +149,21 @@ export function CustomerDetail({ id }: { id: string }) {
                 <Detail label="Telefone">{formatPhone(c.phone)}</Detail>
                 <Detail label="WhatsApp">{formatPhone(c.whatsapp)}</Detail>
                 <Detail label="E-mail">{c.email}</Detail>
+                {c.birthDay && c.birthMonth && (
+                  <Detail label="Aniversário">
+                    {String(c.birthDay).padStart(2, '0')}/{String(c.birthMonth).padStart(2, '0')}
+                  </Detail>
+                )}
+                {c.referredBy && (
+                  <Detail label="Indicado por">
+                    <Link
+                      href={`/painel/clientes/${c.referredBy.id}`}
+                      className="text-brand-700 hover:underline"
+                    >
+                      {c.referredBy.name}
+                    </Link>
+                  </Detail>
+                )}
                 <Detail label="Observações">{c.notes}</Detail>
                 <Detail label="Cadastrado em">{formatDateTime(c.createdAt)}</Detail>
               </dl>
