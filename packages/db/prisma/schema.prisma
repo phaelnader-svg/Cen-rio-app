@@ -488,40 +488,42 @@ model SubscriptionInvoice {
 
 /// Configurações da empresa (registro único, id = 1).
 model CompanySettings {
-  id                 Int       @id @default(autoincrement())
-  tradeName          String    @map("trade_name") @db.VarChar(120)
-  legalName          String?   @map("legal_name") @db.VarChar(160)
-  document           String?   @db.VarChar(20)
-  phone              String?   @db.VarChar(30)
-  email              String?   @db.VarChar(254)
-  address            String?   @db.VarChar(240)
-  timezone           String    @default("America/Sao_Paulo") @db.VarChar(64)
+  id                  Int       @id @default(autoincrement())
+  tradeName           String    @map("trade_name") @db.VarChar(120)
+  legalName           String?   @map("legal_name") @db.VarChar(160)
+  document            String?   @db.VarChar(20)
+  phone               String?   @db.VarChar(30)
+  email               String?   @db.VarChar(254)
+  address             String?   @db.VarChar(240)
+  timezone            String    @default("America/Sao_Paulo") @db.VarChar(64)
   /// Horário a partir do qual o botão "Cheguei" é exibido (HH:MM).
-  workdayStart       String    @default("08:30") @map("workday_start") @db.Char(5)
+  workdayStart        String    @default("08:30") @map("workday_start") @db.Char(5)
   /// "Parar tudo" dos agentes do escritório (nulo = trabalhando).
-  agentsPausedAt     DateTime? @map("agents_paused_at") @db.Timestamptz(3)
+  agentsPausedAt      DateTime? @map("agents_paused_at") @db.Timestamptz(3)
   /// Link para o cliente avaliar a empresa no Google (usado pelo agente de Atendimento).
-  googleReviewUrl    String?   @map("google_review_url") @db.VarChar(500)
+  googleReviewUrl     String?   @map("google_review_url") @db.VarChar(500)
+  /// Desconto (%) do aniversário e da indicação, nas mensagens do Atendimento.
+  customerDiscountPct Int       @default(10) @map("customer_discount_pct") @db.SmallInt
   /// Limite para alerta de indisponibilidade operacional presumida (HH:MM).
-  arrivalAlertAt     String    @default("09:30") @map("arrival_alert_at") @db.Char(5)
-  workdayEnd         String    @default("18:00") @map("workday_end") @db.Char(5)
+  arrivalAlertAt      String    @default("09:30") @map("arrival_alert_at") @db.Char(5)
+  workdayEnd          String    @default("18:00") @map("workday_end") @db.Char(5)
   /// Fase 7: início da janela em que o botão "Cheguei" aceita confirmação (HH:MM).
-  arrivalWindowStart String    @default("07:00") @map("arrival_window_start") @db.Char(5)
+  arrivalWindowStart  String    @default("07:00") @map("arrival_window_start") @db.Char(5)
   /// Fase 7: atraso (minutos) a partir do qual o gestor é avisado.
-  lateAlertMinutes   Int       @default(15) @map("late_alert_minutes")
+  lateAlertMinutes    Int       @default(15) @map("late_alert_minutes")
   /// Dias úteis (0 = domingo ... 6 = sábado).
-  workingDays        Int[]     @default([1, 2, 3, 4, 5]) @map("working_days")
+  workingDays         Int[]     @default([1, 2, 3, 4, 5]) @map("working_days")
   /// Dia habitual de programação da semana seguinte.
-  planningWeekday    Int       @default(5) @map("planning_weekday")
+  planningWeekday     Int       @default(5) @map("planning_weekday")
   /// Dia habitual de medição de tecidos e espumas.
-  measurementWeekday Int       @default(5) @map("measurement_weekday")
-  version            Int       @default(1)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  measurementWeekday  Int       @default(5) @map("measurement_weekday")
+  version             Int       @default(1)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   /// Multi-empresa etapa 4: bloqueada pelo dono da plataforma (ninguém da empresa entra).
-  blockedAt          DateTime? @map("blocked_at") @db.Timestamptz(3)
-  blockedReason      String?   @map("blocked_reason") @db.VarChar(200)
-  updatedById        String?   @map("updated_by_id") @db.Uuid
+  blockedAt           DateTime? @map("blocked_at") @db.Timestamptz(3)
+  blockedReason       String?   @map("blocked_reason") @db.VarChar(200)
+  updatedById         String?   @map("updated_by_id") @db.Uuid
 
   // Cobrança e planos (2026-11-17). A situação é calculada pelas datas (packages/shared/billing.ts).
   /// Plano contratado: 'gestao' (R$ 399) ou 'gestao_jogo' (R$ 599, com o Firma Viva).
@@ -893,37 +895,46 @@ enum CustomerKind {
 
 /// Cliente (pessoa física ou jurídica). Dados pessoais restritos por permissão.
 model Customer {
-  id          String          @id @default(uuid()) @db.Uuid
-  companyId   Int             @default(dbgenerated("app_company_id()")) @map("company_id")
-  company     CompanySettings @relation("EmpresaDeCustomer", fields: [companyId], references: [id])
-  kind        CustomerKind
-  name        String          @db.VarChar(160)
-  tradeName   String?         @map("trade_name") @db.VarChar(160)
+  id           String          @id @default(uuid()) @db.Uuid
+  companyId    Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company      CompanySettings @relation("EmpresaDeCustomer", fields: [companyId], references: [id])
+  kind         CustomerKind
+  name         String          @db.VarChar(160)
+  tradeName    String?         @map("trade_name") @db.VarChar(160)
   /// CPF/CNPJ somente dígitos. Único quando informado (duplicidade evidente).
-  document    String?         @db.VarChar(14)
-  phone       String?         @db.VarChar(13)
-  whatsapp    String?         @db.VarChar(13)
-  email       String?         @db.VarChar(254)
-  notes       String?         @db.VarChar(2000)
+  document     String?         @db.VarChar(14)
+  phone        String?         @db.VarChar(13)
+  whatsapp     String?         @db.VarChar(13)
+  email        String?         @db.VarChar(254)
+  notes        String?         @db.VarChar(2000)
+  /// Aniversário (dia e mês, sem ano): o Atendimento manda os parabéns com o desconto.
+  birthDay     Int?            @map("birth_day") @db.SmallInt
+  birthMonth   Int?            @map("birth_month") @db.SmallInt
+  /// Quem indicou este cliente (o Atendimento agradece quem indicou).
+  referredById String?         @map("referred_by_id") @db.Uuid
   /// Texto normalizado (sem acentos, minúsculo) para pesquisa.
-  searchText  String          @map("search_text") @db.VarChar(800)
-  active      Boolean         @default(true)
-  version     Int             @default(1)
-  createdById String?         @map("created_by_id") @db.Uuid
-  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  searchText   String          @map("search_text") @db.VarChar(800)
+  active       Boolean         @default(true)
+  version      Int             @default(1)
+  createdById  String?         @map("created_by_id") @db.Uuid
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   createdBy     User?             @relation("CustomerCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   addresses     CustomerAddress[]
   orders        CommercialOrder[]
   serviceOrders ServiceOrder[]
 
+  referredBy Customer?  @relation("CustomerReferral", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals  Customer[] @relation("CustomerReferral")
   deliveries Delivery[]
 
   // Fase 11: financeiro operacional.
   receivables        CustomerReceivable[]
   inboxConversations InboxConversation[]
 
+  @@index([referredById])
+  @@index([birthMonth, birthDay])
   @@index([phone])
   @@index([whatsapp])
   @@index([email])

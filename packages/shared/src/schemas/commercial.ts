@@ -100,7 +100,28 @@ const customerFields = {
     .nullable()
     .optional(),
   notes: optionalText(2000),
+  /** Aniversário (dia e mês, sem ano). */
+  birthDay: z.number().int().min(1).max(31).nullable().optional(),
+  birthMonth: z.number().int().min(1).max(12).nullable().optional(),
+  /** Quem indicou este cliente. */
+  referredById: z.string().uuid().nullable().optional(),
 };
+
+const MONTH_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function refineBirthday(
+  v: { birthDay?: number | null; birthMonth?: number | null },
+  ctx: z.RefinementCtx,
+) {
+  const d = v.birthDay ?? null;
+  const m = v.birthMonth ?? null;
+  if (d === null && m === null) return;
+  if (d === null || m === null || d > MONTH_DAYS[m - 1]!)
+    ctx.addIssue({
+      code: 'custom',
+      path: ['birthDay'],
+      message: 'Aniversário inválido (dia/mês).',
+    });
+}
 
 function refineDocument<T extends { kind: 'PF' | 'PJ'; document?: string | null }>(
   v: T,
@@ -124,12 +145,18 @@ export const createCustomerSchema = z
     /** Confirma o cadastro mesmo havendo clientes com contato/nome semelhantes. */
     allowSimilar: z.boolean().default(false),
   })
-  .superRefine(refineDocument);
+  .superRefine((v, ctx) => {
+    refineDocument(v, ctx);
+    refineBirthday(v, ctx);
+  });
 export type CreateCustomerInput = z.input<typeof createCustomerSchema>;
 
 export const updateCustomerSchema = z
   .object({ ...customerFields, version: versionSchema, allowSimilar: z.boolean().default(false) })
-  .superRefine(refineDocument);
+  .superRefine((v, ctx) => {
+    refineDocument(v, ctx);
+    refineBirthday(v, ctx);
+  });
 export type UpdateCustomerInput = z.input<typeof updateCustomerSchema>;
 
 export const customerQuerySchema = z.object({

@@ -7,7 +7,7 @@ import {
   formatPhone,
   updateCustomerSchema,
 } from '@cenario/shared';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -25,6 +25,98 @@ const REASON: Record<DuplicateCandidateDto['reasons'][number], string> = {
   email: 'mesmo e-mail',
   nome: 'mesmo nome',
 };
+
+class BirthdayError extends Error {}
+
+/** "15/03" → dia e mês; vazio → null; inválido → 'erro'. */
+function parseBirthday(v: string): { day: number; month: number } | null | 'erro' {
+  if (!v.trim()) return null;
+  const m = /^(\d{1,2})\/(\d{1,2})$/.exec(v.trim());
+  if (!m) return 'erro';
+  const day = Number(m[1]);
+  const month = Number(m[2]);
+  const max = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (!max || day < 1 || day > max) return 'erro';
+  return { day, month };
+}
+
+function maskBirthday(v: string) {
+  const d = v.replace(/\D/g, '').slice(0, 4);
+  return d.length > 2 ? `${d.slice(0, 2)}/${d.slice(2)}` : d;
+}
+
+/** Quem indicou: busca no cadastro de clientes pelo nome ou telefone. */
+function ReferrerField({
+  value,
+  onChange,
+  excludeId,
+  error,
+}: {
+  value: { id: string; name: string } | null;
+  onChange: (v: { id: string; name: string } | null) => void;
+  excludeId?: string;
+  error?: string;
+}) {
+  const [q, setQ] = useState('');
+  const term = q.trim();
+  const list = useQuery({
+    queryKey: ['customers', 'referrer', term],
+    queryFn: () =>
+      api<{ items: CustomerDto[] }>(`/api/v1/customers?limit=5&q=${encodeURIComponent(term)}`),
+    enabled: term.length >= 2 && !value,
+    staleTime: 30_000,
+  });
+  const found = (list.data?.items ?? []).filter((c) => c.id !== excludeId);
+  return (
+    <Field
+      label="Quem indicou"
+      hint="Se alguém indicou este cliente, o Atendimento agradece quando ele fechar."
+      error={error}
+    >
+      {(p) =>
+        value ? (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-line px-3 py-2 text-sm">
+            <span className="text-ink">{value.name}</span>
+            <button
+              type="button"
+              className="text-brand-700 underline-offset-2 hover:underline"
+              onClick={() => onChange(null)}
+            >
+              Trocar
+            </button>
+          </div>
+        ) : (
+          <div>
+            <Input
+              {...p}
+              placeholder="Nome ou telefone de quem indicou"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            {found.length > 0 && (
+              <ul className="mt-1 divide-y divide-line rounded-lg border border-line text-sm">
+                {found.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2 text-left hover:bg-subtle"
+                      onClick={() => {
+                        onChange({ id: c.id, name: c.name });
+                        setQ('');
+                      }}
+                    >
+                      {c.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )
+      }
+    </Field>
+  );
+}
 
 function issuesToMap(e: unknown): Record<string, string> {
   const map: Record<string, string> = {};
@@ -52,6 +144,14 @@ export function CustomerForm({
   const [whatsapp, setWhatsapp] = useState(formatPhone(customer?.whatsapp));
   const [email, setEmail] = useState(customer?.email ?? '');
   const [notes, setNotes] = useState(customer?.notes ?? '');
+  const [birthday, setBirthday] = useState(
+    customer?.birthDay && customer.birthMonth
+      ? `${String(customer.birthDay).padStart(2, '0')}/${String(customer.birthMonth).padStart(2, '0')}`
+      : '',
+  );
+  const [referrer, setReferrer] = useState<{ id: string; name: string } | null>(
+    customer?.referredBy ?? null,
+  );
   const [address, setAddress] = useState<AddressState>(emptyAddress());
   const [withAddress, setWithAddress] = useState(true);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -61,7 +161,22 @@ export function CustomerForm({
 
   const m = useMutation({
     mutationFn: async (allowSimilar: boolean) => {
-      const base = { kind, name, tradeName, document, phone, whatsapp, email, notes, allowSimilar };
+      const bd = parseBirthday(birthday);
+      if (bd === 'erro') throw new BirthdayError();
+      const base = {
+        kind,
+        name,
+        tradeName,
+        document,
+        phone,
+        whatsapp,
+        email,
+        notes,
+        allowSimilar,
+        birthDay: bd?.day ?? null,
+        birthMonth: bd?.month ?? null,
+        referredById: referrer?.id ?? null,
+      };
       if (customer) {
         const body = updateCustomerSchema.parse({ ...base, version: customer.version });
         return api<CustomerDto>(`/api/v1/customers/${customer.id}`, { method: 'PUT', body });
@@ -82,6 +197,11 @@ export function CustomerForm({
     },
     onError: (e) => {
       idem.current = newIdempotencyKey();
+      if (e instanceof BirthdayError) {
+        setErrors({ birthDay: 'Use dia/mês, por exemplo 15/03.' });
+        setError('Revise os campos destacados.');
+        return;
+      }
       if (!(e instanceof ApiError)) {
         setErrors(issuesToMap(e));
         setError('Revise os campos destacados.');
@@ -220,6 +340,28 @@ export function CustomerForm({
               <Input {...p} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             )}
           </Field>
+          <Field
+            label="Aniversário"
+            hint="Dia e mês (ex.: 15/03). O Atendimento manda os parabéns com desconto."
+            error={errors.birthDay}
+          >
+            {(p) => (
+              <Input
+                {...p}
+                inputMode="numeric"
+                placeholder="dd/mm"
+                maxLength={5}
+                value={birthday}
+                onChange={(e) => setBirthday(maskBirthday(e.target.value))}
+              />
+            )}
+          </Field>
+          <ReferrerField
+            value={referrer}
+            onChange={setReferrer}
+            excludeId={customer?.id}
+            error={errors.referredById}
+          />
           <Field label="Observações" error={errors.notes} className="sm:col-span-2">
             {(p) => (
               <Textarea {...p} rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />

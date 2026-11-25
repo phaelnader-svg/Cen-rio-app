@@ -115,8 +115,13 @@ export async function createCustomer(
   if (addresses.filter((a) => a.isPrimary).length > 1) {
     throw Errors.validation(undefined, 'Apenas um endereço pode ser o principal.');
   }
+  if (input.referredById && !(await tx.customer.count({ where: { id: input.referredById } })))
+    throw Errors.validation(undefined, 'Quem indicou não está no cadastro de clientes.');
   const customer = await tx.customer.create({
     data: {
+      birthDay: input.birthDay ?? null,
+      birthMonth: input.birthMonth ?? null,
+      referredById: input.referredById ?? null,
       kind: input.kind,
       name: input.name,
       tradeName: input.tradeName ?? null,

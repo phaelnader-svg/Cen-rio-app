@@ -44,6 +44,10 @@ export const OFFICE_TASK_KEYS = [
   'PLANEJAR_OS',
   'LANCAR_DESPESA',
   'MONTAR_ORCAMENTO',
+  'PESQUISA_SATISFACAO',
+  'ANIVERSARIO',
+  'INDICACAO',
+  'AGRADECER_INDICACAO',
 ] as const;
 export type OfficeTaskKey = (typeof OFFICE_TASK_KEYS)[number];
 
@@ -133,6 +137,42 @@ export const OFFICE_TASKS: OfficeTask[] = [
     roles: ['ATENDIMENTO', 'WHATSAPP'],
     label: 'Pedir avaliação depois da entrega',
     what: 'Dois dias depois da entrega, agradece e pede a avaliação no Google.',
+    message: true,
+    money: false,
+    maxLevel: 4,
+  },
+  {
+    key: 'PESQUISA_SATISFACAO',
+    roles: ['ATENDIMENTO', 'WHATSAPP'],
+    label: 'Perguntar se ficou tudo certo',
+    what: 'No dia seguinte à entrega, pergunta se ficou do jeito que o cliente queria.',
+    message: true,
+    money: false,
+    maxLevel: 4,
+  },
+  {
+    key: 'ANIVERSARIO',
+    roles: ['ATENDIMENTO', 'WHATSAPP'],
+    label: 'Parabéns de aniversário com desconto',
+    what: 'No aniversário do cliente, manda os parabéns com o desconto da empresa.',
+    message: true,
+    money: false,
+    maxLevel: 4,
+  },
+  {
+    key: 'INDICACAO',
+    roles: ['ATENDIMENTO', 'WHATSAPP'],
+    label: 'Pedir indicação com desconto',
+    what: 'Duas semanas depois da entrega, convida a indicar alguém: os dois ganham o desconto.',
+    message: true,
+    money: false,
+    maxLevel: 4,
+  },
+  {
+    key: 'AGRADECER_INDICACAO',
+    roles: ['ATENDIMENTO', 'WHATSAPP'],
+    label: 'Agradecer quem indicou',
+    what: 'Quando o cliente indicado fecha o serviço, agradece quem indicou e guarda o desconto.',
     message: true,
     money: false,
     maxLevel: 4,
@@ -243,6 +283,8 @@ export function quoteSendMessage(i: {
 export const officeSettingsSchema = z.object({
   /** true = parar tudo (todos voltam a pedir aprovação). */
   paused: z.boolean().optional(),
+  /** Desconto do aniversário e da indicação (%). */
+  customerDiscountPct: z.number().int().min(0).max(50).optional(),
   googleReviewUrl: z
     .string()
     .trim()
@@ -313,6 +355,7 @@ export interface OfficeOverviewDto {
   /** IA ligada no servidor (ler foto de comprovante, montar orçamento). */
   aiReady: boolean;
   googleReviewUrl: string | null;
+  customerDiscountPct: number;
   agents: OfficeAgentDto[];
   pending: OfficeProposalDto[];
   /** Últimas decisões (do dono e do próprio agente). */
@@ -410,6 +453,61 @@ export function reviewRequestMessage(i: {
       ? `Se gostou do resultado, uma avaliação sua no Google ajuda muito o nosso trabalho: ${i.reviewUrl}`
       : 'Se gostou do resultado, conta pra gente? Sua opinião ajuda muito o nosso trabalho.',
     'Qualquer coisa que precisar, é só chamar por aqui.',
+  ].join('\n\n');
+}
+
+/** Dia seguinte à entrega: ficou tudo certo? (a reclamação volta para o dono resolver). */
+export function satisfactionMessage(i: { customerName: string | null; companyName: string }) {
+  const hi = `Olá${first(i.customerName) ? `, ${first(i.customerName)}` : ''}!`;
+  return [
+    `${hi} Aqui é da ${i.companyName}. Passando para saber: ficou tudo do jeito que você queria?`,
+    'Se alguma coisa não ficou boa, me conta aqui que a gente resolve.',
+  ].join('\n\n');
+}
+
+/** Aniversário do cliente: parabéns com o desconto da empresa. */
+export function birthdayMessage(i: {
+  customerName: string | null;
+  companyName: string;
+  discountPct: number;
+}) {
+  const hi = `Olá${first(i.customerName) ? `, ${first(i.customerName)}` : ''}!`;
+  return [
+    `${hi} Aqui é da ${i.companyName}. Feliz aniversário! Muita saúde e alegria para você.`,
+    i.discountPct > 0
+      ? `De presente, você tem ${i.discountPct}% de desconto em qualquer serviço fechado até o fim do mês que vem. É só falar aqui.`
+      : 'Qualquer coisa que precisar, é só chamar por aqui.',
+  ].join('\n\n');
+}
+
+/** Duas semanas depois da entrega: convite para indicar (os dois ganham o desconto). */
+export function referralMessage(i: {
+  customerName: string | null;
+  companyName: string;
+  discountPct: number;
+}) {
+  const hi = `Olá${first(i.customerName) ? `, ${first(i.customerName)}` : ''}!`;
+  return [
+    `${hi} Aqui é da ${i.companyName}. Espero que esteja aproveitando o serviço!`,
+    i.discountPct > 0
+      ? `Se você indicar alguém, quem você indicar ganha ${i.discountPct}% de desconto e você também ganha ${i.discountPct}% no seu próximo serviço. É só a pessoa falar o seu nome quando chamar a gente.`
+      : 'Se conhecer alguém que precise reformar uma peça, ficamos felizes com a sua indicação. É só a pessoa falar o seu nome quando chamar a gente.',
+  ].join('\n\n');
+}
+
+/** O indicado fechou: agradece quem indicou. */
+export function referralThanksMessage(i: {
+  customerName: string | null;
+  companyName: string;
+  referredName: string;
+  discountPct: number;
+}) {
+  const hi = `Olá${first(i.customerName) ? `, ${first(i.customerName)}` : ''}!`;
+  return [
+    `${hi} Aqui é da ${i.companyName}. Muito obrigado por indicar ${first(i.referredName) || i.referredName}, já fechamos o serviço!`,
+    i.discountPct > 0
+      ? `Seu desconto de ${i.discountPct}% está guardado para o próximo serviço.`
+      : 'Ficamos muito felizes com a confiança.',
   ].join('\n\n');
 }
 

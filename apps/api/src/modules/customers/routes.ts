@@ -52,6 +52,7 @@ function toAddressDto(a: CustomerAddress): CustomerAddressDto {
 
 type CustomerFull = Customer & {
   addresses: CustomerAddress[];
+  referredBy: { id: string; name: string } | null;
   _count: { orders: number; serviceOrders: number };
 };
 
@@ -61,6 +62,7 @@ const fullInclude = {
     orderBy: [{ isPrimary: 'desc' as const }, { createdAt: 'asc' as const }],
   },
   _count: { select: { orders: true, serviceOrders: true } },
+  referredBy: { select: { id: true, name: true } },
 } satisfies Prisma.CustomerInclude;
 
 function toDto(c: CustomerFull): CustomerDto {
@@ -71,6 +73,9 @@ function toDto(c: CustomerFull): CustomerDto {
     whatsapp: c.whatsapp,
     email: c.email,
     notes: c.notes,
+    birthDay: c.birthDay,
+    birthMonth: c.birthMonth,
+    referredBy: c.referredBy,
     active: c.active,
     addresses: c.addresses.map(toAddressDto),
     orderCount: c._count.orders,
@@ -263,6 +268,10 @@ export async function customerRoutes(app: FastifyInstance) {
         if (!rows.length) throw Errors.notFound('Cliente');
         const before = await tx.customer.findUniqueOrThrow({ where: { id } });
         if (before.version !== input.version) throw Errors.versionConflict(before.version);
+        if (input.referredById === id)
+          throw Errors.validation(undefined, 'O cliente não pode ter indicado a si mesmo.');
+        if (input.referredById && !(await tx.customer.count({ where: { id: input.referredById } })))
+          throw Errors.validation(undefined, 'Quem indicou não está no cadastro de clientes.');
         const dup = await findDuplicates(tx, input, id);
         // Só alerta sobre semelhança se o dado relevante mudou.
         const changedContact =
@@ -284,6 +293,10 @@ export async function customerRoutes(app: FastifyInstance) {
             whatsapp: input.whatsapp ?? null,
             email: input.email ?? null,
             notes: input.notes ?? null,
+            // Só muda o que veio (telas antigas não mandam e não apagam).
+            birthDay: input.birthDay,
+            birthMonth: input.birthMonth,
+            referredById: input.referredById,
             searchText: searchTextFor(input),
             version: { increment: 1 },
           },

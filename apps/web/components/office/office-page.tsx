@@ -215,7 +215,7 @@ export function OfficePage() {
           {data.agents.some((a) => a.roleKey === 'GERENTE' && a.agentId) && <WeekReport />}
           {data.agents.some((a) => a.roleKey === 'FINANCEIRO' && a.agentId) && <CashForecast />}
           <Recent items={data.recent} />
-          <ReviewLink current={data.googleReviewUrl} />
+          <ReviewLink current={data.googleReviewUrl} discount={data.customerDiscountPct} />
         </div>
       )}
     </>
@@ -1300,21 +1300,25 @@ function Recent({ items }: { items: OfficeProposalDto[] }) {
   );
 }
 
-function ReviewLink({ current }: { current: string | null }) {
+function ReviewLink({ current, discount }: { current: string | null; discount: number }) {
   const { m, error } = useOfficeSend();
   const [url, setUrl] = useState(current ?? '');
+  const [pct, setPct] = useState(String(discount));
+  const pctN = Number(pct);
+  const pctOk = /^\d{1,2}$/.test(pct.trim()) && pctN <= 50;
   return (
     <section aria-labelledby="avaliacao">
       <h2 id="avaliacao" className="mb-1 text-lg font-semibold text-ink">
-        Link de avaliação no Google
+        Avaliação e desconto do Atendimento
       </h2>
       <p className="mb-3 text-sm text-ink-muted">
-        O Atendimento manda este link quando pede a avaliação depois da entrega. Sem ele, só
-        agradece e pede a opinião do cliente.
+        O link vai junto quando o Atendimento pede a avaliação depois da entrega. Sem ele, só
+        agradece e pede a opinião do cliente. O desconto vale para o aniversário do cliente e para a
+        indicação (quem indica e quem foi indicado).
       </p>
       <Card className="p-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <Field label="Link" className="flex-1">
+        <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end">
+          <Field label="Link de avaliação no Google">
             {(f) => (
               <Input
                 {...f}
@@ -1324,16 +1328,27 @@ function ReviewLink({ current }: { current: string | null }) {
               />
             )}
           </Field>
+          <Field label="Desconto (%)" error={pctOk ? undefined : 'De 0 a 50'}>
+            {(f) => (
+              <Input
+                {...f}
+                inputMode="numeric"
+                value={pct}
+                onChange={(e) => setPct(e.target.value.replace(/\D/g, '').slice(0, 2))}
+              />
+            )}
+          </Field>
           <Button
             className="sm:mb-[22px]"
             loading={m.isPending}
+            disabled={!pctOk}
             onClick={() =>
               m.mutate({
-                ok: 'Link salvo.',
+                ok: 'Salvo.',
                 run: () =>
                   api('/api/v1/office/settings', {
                     method: 'PUT',
-                    body: { googleReviewUrl: url.trim() || null },
+                    body: { googleReviewUrl: url.trim() || null, customerDiscountPct: pctN },
                   }),
               })
             }

@@ -37,6 +37,10 @@ import {
   updateOfficeTaskSchema,
   whatsappLink,
   whatsappNumber,
+  satisfactionMessage,
+  birthdayMessage,
+  referralMessage,
+  referralThanksMessage,
 } from '@cenario/shared';
 import type { AiAgent, AiAgentProposal, Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
@@ -178,6 +182,7 @@ interface AttendanceCtx {
   today: string;
   reviewUrl: string | null;
   logistics: boolean;
+  discountPct: number;
 }
 
 /** Peça pronta sem entrega marcada: propõe o próximo dia útil (manhã) e a mensagem ao cliente. */
@@ -364,7 +369,8 @@ async function confirmDeliveryProposals(c: AttendanceCtx): Promise<ProposalDraft
 /** Dois a sete dias depois da entrega concluída: agradecer e pedir a avaliação (uma vez por cliente). */
 async function reviewProposals(c: AttendanceCtx): Promise<ProposalDraft[]> {
   const from = new Date(`${addDays(c.today, -7)}T00:00:00Z`);
-  const to = new Date(`${addDays(c.today, -1)}T00:00:00Z`);
+  // A partir do 2º dia (no 1º dia, o Atendimento só pergunta se ficou tudo certo).
+  const to = new Date(`${addDays(c.today, -2)}T00:00:00Z`);
   const rows = await c.db.delivery.findMany({
     where: { status: 'CONCLUIDA', completedAt: { gte: from, lt: to } },
     include: { customer: { select: { id: true, name: true, phone: true, whatsapp: true } } },
@@ -463,17 +469,180 @@ async function returningProposals(c: AttendanceCtx): Promise<ProposalDraft[]> {
   return out;
 }
 
+type CustomerLite = { id: string; name: string; phone: string | null; whatsapp: string | null };
+const CUSTOMER_LITE = { id: true, name: true, phone: true, whatsapp: true } as const;
+
+function messageDraft(
+  task: string,
+  title: string,
+  dedupe: string,
+  cu: CustomerLite,
+  text: string,
+  extra: Record<string, unknown> = {},
+): ProposalDraft | null {
+  const phone = cu.whatsapp || cu.phone;
+  if (!whatsappNumber(phone)) return null;
+  return {
+    kind: 'ENVIAR_MENSAGEM',
+    title,
+    detail: text,
+    payload: {
+      task,
+      dedupe,
+      customerId: cu.id,
+      customerName: cu.name,
+      phone: whatsappNumber(phone),
+      text,
+      href: whatsappLink(phone, text),
+      channel: 'WHATSAPP',
+      ...extra,
+    },
+    evidence: [{ type: 'OS', id: cu.id, label: cu.name, href: `/painel/clientes/${cu.id}` }],
+  };
+}
+
+/** Entregas concluídas num intervalo de dias atrás (de `fromDays` a `toDays`, sem incluir `toDays`). */
+async function deliveredBetween(c: AttendanceCtx, fromDays: number, toDays: number) {
+  const rows = await c.db.delivery.findMany({
+    where: {
+      status: 'CONCLUIDA',
+      completedAt: {
+        gte: new Date(`${addDays(c.today, -fromDays)}T00:00:00Z`),
+        lt: new Date(`${addDays(c.today, -toDays)}T00:00:00Z`),
+      },
+    },
+    include: { customer: { select: { ...CUSTOMER_LITE, active: true } } },
+    orderBy: { completedAt: 'asc' },
+    take: 30,
+  });
+  const seen = new Set<string>();
+  return rows.filter((d) => {
+    if (seen.has(d.customer.id) || !d.customer.active) return false;
+    seen.add(d.customer.id);
+    return true;
+  });
+}
+
+/** Dia seguinte à entrega: ficou tudo certo? (uma vez por entrega). */
+async function satisfactionProposals(c: AttendanceCtx): Promise<ProposalDraft[]> {
+  const out: ProposalDraft[] = [];
+  for (const d of await deliveredBetween(c, 1, 0)) {
+    const text = satisfactionMessage({ customerName: d.customer.name, companyName: c.company });
+    const p = messageDraft(
+      'PESQUISA_SATISFACAO',
+      `Perguntar a ${d.customer.name} se ficou tudo certo`,
+      `PESQUISA_SATISFACAO:${d.id}`,
+      d.customer,
+      text,
+      { deliveryId: d.id },
+    );
+    if (p) out.push(p);
+    if (out.length >= 5) break;
+  }
+  return out;
+}
+
+/** Aniversário de hoje: parabéns com o desconto (cliente que já fez serviço; uma vez por ano). */
+async function birthdayProposals(c: AttendanceCtx): Promise<ProposalDraft[]> {
+  const day = Number(c.today.slice(8, 10));
+  const month = Number(c.today.slice(5, 7));
+  const rows = await c.db.customer.findMany({
+    where: {
+      active: true,
+      birthDay: day,
+      birthMonth: month,
+      OR: [{ orders: { some: {} } }, { serviceOrders: { some: {} } }],
+    },
+    select: CUSTOMER_LITE,
+    take: 10,
+  });
+  const out: ProposalDraft[] = [];
+  for (const cu of rows) {
+    const text = birthdayMessage({
+      customerName: cu.name,
+      companyName: c.company,
+      discountPct: c.discountPct,
+    });
+    const p = messageDraft(
+      'ANIVERSARIO',
+      `Parabéns de aniversário para ${cu.name}`,
+      `ANIVERSARIO:${cu.id}:${c.today.slice(0, 4)}`,
+      cu,
+      text,
+    );
+    if (p) out.push(p);
+  }
+  return out;
+}
+
+/** Duas semanas depois da entrega: convite para indicar (uma vez por cliente). */
+async function referralProposals(c: AttendanceCtx): Promise<ProposalDraft[]> {
+  const out: ProposalDraft[] = [];
+  for (const d of await deliveredBetween(c, 21, 14)) {
+    const text = referralMessage({
+      customerName: d.customer.name,
+      companyName: c.company,
+      discountPct: c.discountPct,
+    });
+    const p = messageDraft(
+      'INDICACAO',
+      `Pedir uma indicação a ${d.customer.name}`,
+      `INDICACAO:${d.customer.id}`,
+      d.customer,
+      text,
+    );
+    if (p) out.push(p);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
+/** O cliente indicado fechou o primeiro pedido nos últimos 7 dias: agradecer quem indicou. */
+async function referralThanksProposals(c: AttendanceCtx): Promise<ProposalDraft[]> {
+  const since = new Date(`${addDays(c.today, -7)}T00:00:00Z`);
+  const rows = await c.db.customer.findMany({
+    where: {
+      referredById: { not: null },
+      orders: { some: { status: { not: 'CANCELADO' }, createdAt: { gte: since } } },
+    },
+    select: { id: true, name: true, referredBy: { select: { ...CUSTOMER_LITE, active: true } } },
+    take: 10,
+  });
+  const out: ProposalDraft[] = [];
+  for (const r of rows) {
+    const by = r.referredBy;
+    if (!by?.active) continue;
+    const text = referralThanksMessage({
+      customerName: by.name,
+      companyName: c.company,
+      referredName: r.name,
+      discountPct: c.discountPct,
+    });
+    const p = messageDraft(
+      'AGRADECER_INDICACAO',
+      `Agradecer ${by.name} por indicar ${r.name}`,
+      `AGRADECER_INDICACAO:${r.id}`,
+      by,
+      text,
+      { referredId: r.id },
+    );
+    if (p) out.push(p);
+  }
+  return out;
+}
+
 /** O que o Atendimento deixa pronto numa rodada. */
 export async function attendanceProposals(db: Db, today: string): Promise<ProposalDraft[]> {
   const s = await db.companySettings.findUnique({
     where: { id: requireCompanyId() },
-    select: { googleReviewUrl: true },
+    select: { googleReviewUrl: true, customerDiscountPct: true },
   });
   const c: AttendanceCtx = {
     db,
     company: await companyName(db),
     today,
     reviewUrl: s?.googleReviewUrl ?? null,
+    discountPct: s?.customerDiscountPct ?? 10,
     logistics: await moduleEnabled(db, 'logistica'),
   };
   const schedule = await scheduleDeliveryProposals(c);
@@ -487,7 +656,11 @@ export async function attendanceProposals(db: Db, today: string): Promise<Propos
     ...ready.map((p) => ({ ...p, payload: { ...p.payload, task: 'AVISAR_PRONTO' } })),
     ...(await confirmPickupProposals(c)),
     ...(await confirmDeliveryProposals(c)),
+    ...(await satisfactionProposals(c)),
     ...(await reviewProposals(c)),
+    ...(await referralThanksProposals(c)),
+    ...(await referralProposals(c)),
+    ...(await birthdayProposals(c)),
     ...(await returningProposals(c)),
   ];
 }
@@ -853,7 +1026,7 @@ export async function officeOverview(prisma: PrismaClient): Promise<OfficeOvervi
   const [company, conn, agents] = await Promise.all([
     prisma.companySettings.findUniqueOrThrow({
       where: { id: requireCompanyId() },
-      select: { agentsPausedAt: true, googleReviewUrl: true },
+      select: { agentsPausedAt: true, googleReviewUrl: true, customerDiscountPct: true },
     }),
     connectionOf(prisma, 'WHATSAPP'),
     prisma.aiAgent.findMany({
@@ -943,6 +1116,7 @@ export async function officeOverview(prisma: PrismaClient): Promise<OfficeOvervi
     whatsappConnected: whatsapp,
     aiReady: aiAvailable(),
     googleReviewUrl: company.googleReviewUrl,
+    customerDiscountPct: company.customerDiscountPct,
     agents: office,
     pending: pending.map((p) => proposalDto(p, byId.get(p.agentId)!, ctx)),
     recent: recent.map((p) => proposalDto(p, byId.get(p.agentId)!, ctx)),
@@ -1031,6 +1205,8 @@ export async function officeRoutes(app: FastifyInstance) {
       const data: Prisma.CompanySettingsUpdateInput = {};
       if (input.paused !== undefined) data.agentsPausedAt = input.paused ? clockNow() : null;
       if (input.googleReviewUrl !== undefined) data.googleReviewUrl = input.googleReviewUrl || null;
+      if (input.customerDiscountPct !== undefined)
+        data.customerDiscountPct = input.customerDiscountPct;
       await tx.companySettings.update({ where: { id }, data });
       if (input.paused !== undefined)
         await audit(tx, actor, {

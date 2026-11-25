@@ -49,6 +49,9 @@ export interface CustomerDto extends CustomerSummaryDto {
   whatsapp: string | null;
   email: string | null;
   notes: string | null;
+  birthDay: number | null;
+  birthMonth: number | null;
+  referredBy: { id: string; name: string } | null;
   active: boolean;
   addresses: CustomerAddressDto[];
   orderCount: number;
