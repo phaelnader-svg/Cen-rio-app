@@ -12,6 +12,7 @@ import {
   type OfficeProposalDto,
   type OfficeTaskDto,
   type OfficeForecastDto,
+  type OfficeMaterialPricesDto,
   type OfficeWeekDto,
   plural,
 } from '@cenario/shared';
@@ -214,6 +215,7 @@ export function OfficePage() {
 
           {data.agents.some((a) => a.roleKey === 'GERENTE' && a.agentId) && <WeekReport />}
           {data.agents.some((a) => a.roleKey === 'FINANCEIRO' && a.agentId) && <CashForecast />}
+          {data.agents.some((a) => a.roleKey === 'COMPRAS' && a.agentId) && <SupplierPrices />}
           <Recent items={data.recent} />
           <ReviewLink current={data.googleReviewUrl} discount={data.customerDiscountPct} />
         </div>
@@ -322,6 +324,14 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
           </a>
         </p>
       )}
+      {Array.isArray(pl.cheaperElsewhere) && (
+        <div className="mt-1 text-sm text-warn-600">
+          <p className="font-medium">Já saiu mais barato em outro fornecedor:</p>
+          {(pl.cheaperElsewhere as string[]).map((h) => (
+            <p key={h}>{h}</p>
+          ))}
+        </div>
+      )}
       {typeof pl.planProblem === 'string' && (
         <p className="mt-1 text-sm text-warn-600">{pl.planProblem}</p>
       )}
@@ -382,6 +392,8 @@ function EditDialog({
 }) {
   if (p.task === 'LANCAR_DESPESA')
     return <ExpenseDialog open={open} p={p} busy={busy} onClose={onClose} onApprove={onApprove} />;
+  if (p.task === 'AJUSTAR_TABELA')
+    return <PriceDialog open={open} p={p} busy={busy} onClose={onClose} onApprove={onApprove} />;
   if (p.task === 'PLANEJAR_OS' && p.payload.entry)
     return <PlanDialog open={open} p={p} busy={busy} onClose={onClose} onApprove={onApprove} />;
   return <MessageDialog open={open} p={p} busy={busy} onClose={onClose} onApprove={onApprove} />;
@@ -420,6 +432,46 @@ function PlanDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
         hint="Quem fica com cada peça dá para trocar depois na Semana da oficina."
       >
         {(f) => <Input {...f} type="date" value={date} onChange={(e) => setDate(e.target.value)} />}
+      </Field>
+    </Dialog>
+  );
+}
+
+/** Ajustar a tabela: o dono pode escolher outro custo antes de aprovar. */
+function PriceDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
+  const [amount, setAmount] = useState(
+    (Number(p.payload.toCents ?? 0) / 100).toFixed(2).replace('.', ','),
+  );
+  const cents = parseMoney(amount);
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Mudar antes de aprovar"
+      description={p.title}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Voltar
+          </Button>
+          <Button loading={busy} disabled={!cents} onClick={() => onApprove({ priceCents: cents })}>
+            Atualizar a tabela
+          </Button>
+        </>
+      }
+    >
+      <Field
+        label={`Custo novo de ${String(p.payload.catalogName ?? 'material')} (R$)`}
+        hint={`Hoje na tabela: ${money(Number(p.payload.fromCents ?? 0))}.`}
+      >
+        {(f) => (
+          <Input
+            {...f}
+            inputMode="decimal"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        )}
       </Field>
     </Dialog>
   );
@@ -536,6 +588,19 @@ function ExpenseSummary({ pl }: { pl: Record<string, unknown> }) {
         ))}
         {typeof pl.description === 'string' && pl.description && (
           <dd className="col-span-2 mt-1 text-ink-soft">{pl.description}</dd>
+        )}
+        {Array.isArray(pl.items) && pl.items.length > 0 && (
+          <dd className="col-span-2 mt-1 text-ink-soft">
+            {(pl.items as { description: string; unit: string | null; unitPriceCents: number }[])
+              .slice(0, 4)
+              .map(
+                (i) => `${i.description}: ${money(i.unitPriceCents)}${i.unit ? `/${i.unit}` : ''}`,
+              )
+              .join(' · ')}
+            <span className="block text-ink-muted">
+              O preço de cada material fica guardado para comparar os fornecedores.
+            </span>
+          </dd>
         )}
       </dl>
     </div>
@@ -946,6 +1011,68 @@ function CashForecast() {
             </div>
           );
         })}
+      </Card>
+    </section>
+  );
+}
+
+const UNIT_LABEL: Record<string, string> = { m: 'metro', kg: 'kg', un: 'unidade', l: 'litro' };
+
+/** Compras: o que cada fornecedor cobrou da última vez (das notas lidas pela foto). */
+function SupplierPrices() {
+  const q = useQuery({
+    queryKey: [...KEY, 'material-prices'],
+    queryFn: () => api<OfficeMaterialPricesDto>('/api/v1/office/material-prices'),
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+  const list = q.data?.materials ?? [];
+  if (!list.length) return null;
+  return (
+    <section aria-labelledby="precos-titulo" id="precos" className="scroll-mt-20">
+      <h2 id="precos-titulo" className="mb-1 text-lg font-semibold text-ink">
+        Preço dos fornecedores
+      </h2>
+      <p className="mb-3 text-sm text-ink-muted">
+        Quanto cada um cobrou na última compra, pelas notas que você mandou na foto. O mais barato
+        vem primeiro.
+      </p>
+      <Card className="divide-y divide-line p-0" data-testid="office-prices">
+        {list.map((m) => (
+          <div key={`${m.name}${m.unit}`} className="px-4 py-3">
+            <p className="font-medium text-ink">
+              {m.name}
+              {m.unit && (
+                <span className="font-normal text-ink-muted">
+                  {' '}
+                  · {UNIT_LABEL[m.unit] ?? m.unit}
+                </span>
+              )}
+            </p>
+            <ul className="mt-1 space-y-0.5 text-sm">
+              {m.suppliers.map((s, i) => (
+                <li key={s.supplierName} className="flex justify-between gap-3">
+                  <span
+                    className={clsx(
+                      i === 0 && m.suppliers.length > 1 ? 'text-ok-600' : 'text-ink-soft',
+                    )}
+                  >
+                    {s.supplierName}{' '}
+                    <span className="text-ink-muted">({brDate(s.date).slice(0, 5)})</span>
+                  </span>
+                  <span
+                    className={clsx(
+                      'tabular-nums',
+                      i === 0 && m.suppliers.length > 1 ? 'font-semibold text-ok-600' : 'text-ink',
+                    )}
+                  >
+                    {money(s.unitPriceCents)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </Card>
     </section>
   );

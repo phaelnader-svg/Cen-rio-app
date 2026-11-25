@@ -48,6 +48,7 @@ import { scheduleApprovedDelivery } from './office-delivery';
 import { type ExpenseEdits, launchApprovedExpense } from './office-expense';
 import { saveApprovedQuote } from './office-quote';
 import { prepareApprovedContract } from './office-contract';
+import { applyTableAdjust } from './office-prices';
 import { planApprovedService } from './office-plan';
 import { shopTimezone, todayIso } from '../finance/common';
 import { goalsAnswer, isGoalsQuestion } from '../office/cash-chat';
@@ -511,6 +512,7 @@ export interface DecideOptions {
     scheduledDate?: string;
     windowStart?: string;
     windowEnd?: string;
+    priceCents?: number;
   } & ExpenseEdits;
   actor: ActorContext;
   perms: ReadonlySet<string>;
@@ -647,6 +649,15 @@ export async function decideProposal(prisma: PrismaClient, o: DecideOptions) {
         link: c.link,
         text: c.text,
         ...(c.href ? { href: c.href } : {}),
+      };
+    }
+    // Ajustar a tabela (Orçamentos): o material subiu; muda o custo na tabela do orçamento.
+    if (o.decision !== 'REJEITAR' && officeTaskOf(p) === 'AJUSTAR_TABELA') {
+      const r = await applyTableAdjust(tx, actor, perms, p, o.edits);
+      payload = {
+        ...((p.payload ?? {}) as Record<string, unknown>),
+        appliedCents: r.priceCents,
+        ...(r.edited ? { edited: true } : {}),
       };
     }
     // Semana da produção (Gerente): planeja a OS na semana, em rascunho.

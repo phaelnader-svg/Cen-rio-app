@@ -45,6 +45,7 @@ export const OFFICE_TASK_KEYS = [
   'LANCAR_DESPESA',
   'MONTAR_ORCAMENTO',
   'ENVIAR_CONTRATO',
+  'AJUSTAR_TABELA',
   'PESQUISA_SATISFACAO',
   'ANIVERSARIO',
   'INDICACAO',
@@ -213,6 +214,16 @@ export const OFFICE_TASKS: OfficeTask[] = [
     message: true,
     money: false,
     maxLevel: 4,
+  },
+  {
+    key: 'AJUSTAR_TABELA',
+    roles: ['ORCAMENTOS'],
+    label: 'Ajustar a tabela quando o material sobe',
+    what: 'A nota da compra mostrou o material mais caro que o custo da tabela: propõe o preço novo.',
+    message: false,
+    money: false,
+    maxLevel: 2,
+    maxReason: 'Mudar preço sempre pede a sua aprovação.',
   },
   {
     key: 'LANCAR_DESPESA',
@@ -420,6 +431,15 @@ export interface OfficeForecastDto {
   }[];
 }
 
+/** Preço que cada fornecedor cobrou da última vez, por material (mais barato primeiro). */
+export interface OfficeMaterialPricesDto {
+  materials: {
+    name: string;
+    unit: string | null;
+    suppliers: { supplierName: string; unitPriceCents: number; date: string }[];
+  }[];
+}
+
 /** Agentes do Escritório, na ordem do plano (Gerente primeiro). */
 export const OFFICE_ROLES = [
   'GERENTE',
@@ -442,6 +462,7 @@ export const OFFICE_ALSO_DOES: Record<string, string[]> = {
   COMPRAS: [
     'Mostra a lista Comprar com o que falta nas OS.',
     'Avisa quando o estoque não dá para as OS abertas (material acabando).',
+    'Compara o preço de cada fornecedor (pelas notas das compras) e avisa no pedido quando outro saiu mais barato.',
   ],
   ORCAMENTOS: [],
   ATENDIMENTO: [],

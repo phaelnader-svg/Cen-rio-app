@@ -9,6 +9,7 @@ import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
 import { assertCategory } from '../finance/categories';
 import { createExpense, payPayable } from '../finance/payables';
+import { type ReceiptItem, saveReceiptPrices } from './office-prices';
 
 export interface ExpenseEdits {
   amountCents?: number;
@@ -54,6 +55,16 @@ export async function launchApprovedExpense(
     dueDate: v.date,
     beneficiary: v.beneficiary.slice(0, 160),
   });
+  // Os materiais da nota guardam o preço de cada um (comparar fornecedores e ajustar a tabela).
+  const prices = Array.isArray(pl.items)
+    ? await saveReceiptPrices(tx, {
+        items: pl.items as ReceiptItem[],
+        supplierName: v.beneficiary,
+        date: v.date,
+        expenseId: e.id,
+        fileId: typeof pl.fileId === 'string' ? pl.fileId : null,
+      })
+    : 0;
   if (v.paid && e.payableId) {
     const method = (PAYMENT_METHODS as readonly string[]).includes(String(pl.method))
       ? (pl.method as PaymentMethod)
@@ -66,5 +77,5 @@ export async function launchApprovedExpense(
       version: 1,
     });
   }
-  return { expenseId: e.id, ...v, totalCents: v.amountCents };
+  return { expenseId: e.id, ...v, totalCents: v.amountCents, pricesSaved: prices };
 }

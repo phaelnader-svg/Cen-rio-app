@@ -35,6 +35,13 @@ export interface ReceiptReading {
   category: string | null;
   paid: boolean;
   method: string | null;
+  /** Materiais da nota com o preço de cada um (vazio quando não é nota de material). */
+  items?: {
+    description: string;
+    quantity: number | null;
+    unit: string | null;
+    unitPriceCents: number;
+  }[];
   /** Por que não deu para ler (foto ruim, não é comprovante). */
   problem: string | null;
 }
@@ -58,6 +65,21 @@ const RECEIPT_TOOL = {
       categoria: { type: ['string', 'null'], description: 'valor exato de uma das categorias' },
       pago: { type: 'boolean', description: 'true se o comprovante mostra que já foi pago' },
       forma: { type: ['string', 'null'], enum: [...PAYMENT_METHODS, null] },
+      itens: {
+        type: 'array',
+        description:
+          'itens da nota com preço unitário (tecido, espuma, cola, grampo, madeira...); vazio se não tiver itens',
+        items: {
+          type: 'object',
+          properties: {
+            descricao: { type: 'string' },
+            quantidade: { type: ['number', 'null'] },
+            unidade: { type: ['string', 'null'], description: 'm, kg, un, rolo, folha, l' },
+            preco_unitario_reais: { type: ['number', 'null'] },
+          },
+          required: ['descricao', 'preco_unitario_reais'],
+        },
+      },
       problema: { type: ['string', 'null'], description: 'se não deu para ler, por quê' },
     },
     required: ['ok', 'valor_reais', 'data', 'quem_recebeu', 'descricao', 'categoria', 'pago'],
@@ -76,6 +98,7 @@ const anthropicReader: Reader = async (image, ctx) => {
       `Hoje é ${ctx.today}. Datas sem ano são deste ano.`,
       `Categorias (use o valor exato): ${ctx.categories.map((c) => `${c.value} (${c.label})`).join('; ')}.`,
       `Formas de pagamento: ${PAYMENT_METHODS.map((m) => `${m} (${PAYMENT_METHOD_LABEL[m]})`).join('; ')}.`,
+      'Em nota de material, liste os itens com quantidade, unidade e preço de cada unidade.',
       'Não invente: o que não estiver legível vai como null.',
     ].join('\n'),
     messages: [
@@ -108,6 +131,16 @@ const anthropicReader: Reader = async (image, ctx) => {
     category: str(i.categoria),
     paid: i.pago === true,
     method: str(i.forma),
+    items: (Array.isArray(i.itens) ? (i.itens as Record<string, unknown>[]) : [])
+      .map((x) => ({
+        description: str(x.descricao) ?? '',
+        quantity: typeof x.quantidade === 'number' && x.quantidade > 0 ? x.quantidade : null,
+        unit: str(x.unidade),
+        unitPriceCents:
+          typeof x.preco_unitario_reais === 'number' ? Math.round(x.preco_unitario_reais * 100) : 0,
+      }))
+      .filter((x) => x.description && x.unitPriceCents > 0)
+      .slice(0, 40),
     problem: str(i.problema),
   };
 };
@@ -221,6 +254,7 @@ export async function receiptRoutes(app: FastifyInstance) {
               categoryLabel: label,
               paid: read.paid,
               method: read.method,
+              items: read.items ?? [],
             } as Prisma.InputJsonValue,
             evidence: [] as Prisma.InputJsonValue,
           },

@@ -244,6 +244,8 @@ export const decideProposalSchema = z.object({
       description: z.string().trim().min(2).max(200).optional(),
       category: z.string().trim().min(1).max(30).optional(),
       paid: z.boolean().optional(),
+      /** Ajustar a tabela: o custo novo que o dono escolheu. */
+      priceCents: z.number().int().min(1).max(100_000_000).optional(),
     })
     .optional(),
 });

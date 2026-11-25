@@ -75,6 +75,7 @@ import { stockShortageNotices } from './office-stock';
 import { accountantPackageNotice, cashForecast, taxReminder } from './office-finance';
 import { planEntryFor } from './office-plan';
 import { contractProposals } from './office-contract';
+import { materialPrices, tableAdjustProposals, withSupplierPrices } from './office-prices';
 
 type Db = PrismaClient | Tx;
 
@@ -681,13 +682,14 @@ async function routine(db: PrismaClient, agent: AiAgent, today: string): Promise
     case 'GERENTE':
       return withPlans(db, tag((await managerAnswer(ctx, '')).proposals), today);
     case 'COMPRAS':
-      return tag((await purchasingAnswer(ctx, '')).proposals);
+      return withSupplierPrices(db, tag((await purchasingAnswer(ctx, '')).proposals), today);
     case 'FINANCEIRO':
       return tag((await financeAnswer(ctx, '')).proposals);
     case 'ORCAMENTOS':
       return [
         ...tag((await quotesAnswer(ctx, '')).proposals),
         ...(await contractProposals(db, today, await companyName(db))),
+        ...(await tableAdjustProposals(db, today)),
       ];
     case 'ATENDIMENTO':
     case 'WHATSAPP':
@@ -1301,6 +1303,20 @@ export async function officeRoutes(app: FastifyInstance) {
     async () => {
       await guard();
       return cashForecast(prisma, todayIso(await shopTimezone(prisma)));
+    },
+  );
+
+  // Compras: o preço que cada fornecedor cobrou da última vez (das notas lidas).
+  app.get(
+    '/api/v1/office/material-prices',
+    {
+      config: {
+        access: { session: 'WEB', permissions: [...OFFICE_ACCESS.permissions, 'financeiro.ver'] },
+      },
+    },
+    async () => {
+      await guard();
+      return materialPrices(prisma, todayIso(await shopTimezone(prisma)));
     },
   );
 
