@@ -70,6 +70,7 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
   const [canTalk, setCanTalk] = useState(false);
   const rec = useRef<Recognition | null>(null);
   const photo = useRef<HTMLInputElement>(null);
+  const field = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -79,6 +80,14 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });
   }, [lines, busy]);
+  // O campo cresce com o texto (até umas 5 linhas), sem cortar o que foi escrito.
+  useEffect(() => {
+    const el = field.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
+  }, [text]);
+  const typed = text.trim().length > 0;
 
   const ask = async (q: string) => {
     const question = q.trim();
@@ -271,6 +280,7 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
       >
         <div className="mx-auto flex max-w-xl items-end gap-2">
           <textarea
+            ref={field}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
@@ -283,14 +293,14 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
             maxLength={2000}
             placeholder={listening ? 'Ouvindo…' : 'Pergunte ou peça uma tarefa'}
             aria-label="Sua pergunta"
-            className="max-h-32 min-h-12 flex-1 resize-none rounded-3xl border border-line-strong bg-surface px-4 py-3 text-[15px] leading-5 text-ink outline-none placeholder:text-ink-muted focus:border-brand-500"
+            className="max-h-32 min-h-11 min-w-0 flex-1 resize-none overflow-y-auto rounded-3xl border border-line-strong bg-surface px-3.5 py-[11px] text-[15px] leading-5 text-ink outline-none placeholder:text-[14px] placeholder:text-ink-muted focus:border-brand-500"
           />
           <button
             type="button"
             onClick={() => photo.current?.click()}
             disabled={busy}
             aria-label="Mandar foto do comprovante"
-            className="grid size-12 shrink-0 place-items-center rounded-full border border-line-strong bg-surface text-ink disabled:opacity-40"
+            className="grid size-11 shrink-0 place-items-center rounded-full border border-line-strong bg-surface text-ink disabled:opacity-40"
           >
             <Camera className="size-5" aria-hidden />
           </button>
@@ -306,14 +316,14 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
               if (file) void sendPhoto(file);
             }}
           />
-          {canTalk && (
+          {canTalk && (!typed || listening) ? (
             <button
               type="button"
               onClick={talk}
               aria-label={listening ? 'Parar de ouvir' : 'Falar'}
               aria-pressed={listening}
               className={clsx(
-                'grid size-12 shrink-0 place-items-center rounded-full border',
+                'grid size-11 shrink-0 place-items-center rounded-full border',
                 listening
                   ? 'animate-pulse border-danger-600 bg-danger-600 text-white'
                   : 'border-line-strong bg-surface text-ink',
@@ -321,15 +331,16 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
             >
               <Mic className="size-5" aria-hidden />
             </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={busy || !typed}
+              aria-label="Enviar"
+              className="grid size-11 shrink-0 place-items-center rounded-full bg-brand-700 text-white disabled:opacity-40"
+            >
+              <ArrowUp className="size-5" aria-hidden />
+            </button>
           )}
-          <button
-            type="submit"
-            disabled={busy || !text.trim()}
-            aria-label="Enviar"
-            className="grid size-12 shrink-0 place-items-center rounded-full bg-brand-700 text-white disabled:opacity-40"
-          >
-            <ArrowUp className="size-5" aria-hidden />
-          </button>
         </div>
       </form>
     </div>
