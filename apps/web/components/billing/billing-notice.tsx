@@ -144,7 +144,7 @@ export function ManualPaymentCard({
         <>
           <p className="mt-4 text-sm text-ink-muted">Chave PIX</p>
           <div className="mt-1 flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-lg bg-subtle px-3 py-2 text-[15px]">
+            <code className="min-w-0 flex-1 truncate rounded-lg bg-subtle px-3 py-2.5 text-[15px]">
               {manual.pixKey}
             </code>
             <Button
@@ -168,14 +168,18 @@ export function ManualPaymentCard({
       )}
       {manual.message && <p className="mt-4 text-[15px] text-ink-soft">{manual.message}</p>}
       {manual.whatsappUrl && (
-        <a
-          href={manual.whatsappUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-ok-600 px-4 py-2 text-center font-semibold text-white hover:opacity-90"
-        >
-          <MessageCircle className="size-4 shrink-0" aria-hidden /> Mandar o comprovante
-        </a>
+        <div className="mt-5 border-t border-line pt-5">
+          <a
+            href={manual.whatsappUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-h-14 w-full items-center justify-center gap-2.5 rounded-xl bg-ok-600 px-6 py-3 text-center text-[17px] font-semibold text-white shadow-sm transition hover:opacity-90"
+          >
+            <MessageCircle className="size-5 shrink-0" aria-hidden />
+            Mandar o comprovante
+          </a>
+          <p className="mt-2 text-center text-sm text-ink-muted">Abre uma conversa no WhatsApp</p>
+        </div>
       )}
     </div>
   );
