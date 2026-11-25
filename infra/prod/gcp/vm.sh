@@ -291,9 +291,32 @@ semear() {
 # Aplica uma mudança no Caddyfile recriando SÓ o proxy (banco, API, web e dados intocados; os
 # certificados ficam no volume caddy_data). Valida a configuração antes; segredos vão ao
 # contêiner por nome de variável (nunca nos argumentos).
+# Chave da IA (infra/ia/guardar-chave-ia.sh): relê o segredo e troca só as linhas da IA no .env, sem
+# mostrar a chave. Segredo inválido: tira as linhas e os agentes voltam às regras.
+atualizar_ia() {
+  local ia tmp
+  # Falha ao ler (rede, segredo ainda não criado): deixa o .env como está.
+  if ! ia="$(gcloud secrets versions access latest --secret=prod-anthropic-api-key --project="$PROJECT" 2>/dev/null)"; then
+    log "Chave da IA: não deu para ler o segredo; nada mudou."
+    return 0
+  fi
+  tmp="$(mktemp "$(dirname "$ENV_FILE")/.env.XXXXXX")"
+  chmod 600 "$tmp"
+  grep -v -E '^(ANTHROPIC_API_KEY|GAME_AI_PROVIDER)=' "$ENV_FILE" > "$tmp" || true
+  if [[ "$ia" == sk-ant-* ]]; then
+    printf "ANTHROPIC_API_KEY='%s'\nGAME_AI_PROVIDER='anthropic'\n" "$ia" >> "$tmp"
+    log "Chave da IA: ligada."
+  else
+    log "Chave da IA: segredo inválido; agentes pelas regras."
+  fi
+  unset ia
+  mv -f "$tmp" "$ENV_FILE"
+}
+
 aplicar_config() {
   need_portao
   need_env
+  atualizar_ia
   set -a
   # shellcheck source=/dev/null
   source "$ENV_FILE"
