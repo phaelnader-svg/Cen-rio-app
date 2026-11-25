@@ -232,6 +232,63 @@ export function AlbumPage({ id }: { id: string }) {
   );
 }
 
+// ─────────────────────────── Contrato ───────────────────────────
+
+interface PublicContract {
+  code: string;
+  companyName: string;
+  companyPhone: string | null;
+  body: string;
+  signed: boolean;
+  pdfUrl: string;
+}
+
+/** Contrato do serviço (mandado pelo WhatsApp): o cliente lê, baixa o PDF e responde. */
+export function ContractPage({ id }: { id: string }) {
+  const t = useSearchParams().get('t') ?? '';
+  const q = useQuery({
+    queryKey: ['contrato-publico', id, t],
+    queryFn: () => api<PublicContract>(`/api/public/contrato/${id}?t=${encodeURIComponent(t)}`),
+    retry: false,
+  });
+  if (q.isPending) return <Spinner />;
+  if (q.isError) return <NotFound what="Contrato" />;
+  const c = q.data;
+  const reply = c.companyPhone
+    ? whatsappLink(c.companyPhone, `Li o contrato do serviço ${c.code} e estou de acordo.`)
+    : null;
+  return (
+    <>
+      <CompanyHeader name={c.companyName} />
+      <h1 className="text-xl font-semibold">Contrato do seu serviço</h1>
+      <p className="text-sm text-ink-muted">
+        {c.code}
+        {c.signed ? ' • assinado' : ''}
+      </p>
+      <Card className="mt-5 p-4">
+        <p className="whitespace-pre-line text-sm leading-relaxed text-ink">{c.body}</p>
+      </Card>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <a href={c.pdfUrl} className={buttonClass('secondary', 'md')}>
+          Baixar em PDF
+        </a>
+        {reply && !c.signed && (
+          <a
+            href={reply}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={buttonClass('primary', 'md')}
+          >
+            <MessageCircle className="size-4" aria-hidden />
+            Responder que estou de acordo
+          </a>
+        )}
+      </div>
+      <Footer />
+    </>
+  );
+}
+
 /** Seções antes / durante / depois (usada também na O.S. dentro do painel). */
 export function AlbumSections({ album }: { album: OsAlbumDto }) {
   const [zoom, setZoom] = useState<OsAlbumPhoto | null>(null);

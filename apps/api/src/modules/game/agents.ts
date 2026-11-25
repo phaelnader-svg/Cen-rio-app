@@ -47,6 +47,7 @@ import { obsoleteReason, refreshPending } from './proposal-validity';
 import { scheduleApprovedDelivery } from './office-delivery';
 import { type ExpenseEdits, launchApprovedExpense } from './office-expense';
 import { saveApprovedQuote } from './office-quote';
+import { prepareApprovedContract } from './office-contract';
 import { planApprovedService } from './office-plan';
 import { shopTimezone, todayIso } from '../finance/common';
 import { goalsAnswer, isGoalsQuestion } from '../office/cash-chat';
@@ -634,6 +635,18 @@ export async function decideProposal(prisma: PrismaClient, o: DecideOptions) {
         link: q.link,
         text: q.text,
         ...(q.href ? { href: q.href } : {}),
+      };
+    }
+    // Contrato do serviço fechado (Orçamentos): prepara o contrato e a mensagem leva o link do PDF.
+    if (o.decision !== 'REJEITAR' && officeTaskOf(p) === 'ENVIAR_CONTRATO') {
+      const c = await prepareApprovedContract(tx, actor, perms, p, o.edits?.text);
+      edits = { ...o.edits, text: c.text };
+      p.payload = {
+        ...((p.payload ?? {}) as Record<string, unknown>),
+        contractId: c.contractId,
+        link: c.link,
+        text: c.text,
+        ...(c.href ? { href: c.href } : {}),
       };
     }
     // Semana da produção (Gerente): planeja a OS na semana, em rascunho.

@@ -74,6 +74,7 @@ import { officeWeek, weeklyReportNotice } from './office-week';
 import { stockShortageNotices } from './office-stock';
 import { accountantPackageNotice, cashForecast, taxReminder } from './office-finance';
 import { planEntryFor } from './office-plan';
+import { contractProposals } from './office-contract';
 
 type Db = PrismaClient | Tx;
 
@@ -684,7 +685,10 @@ async function routine(db: PrismaClient, agent: AiAgent, today: string): Promise
     case 'FINANCEIRO':
       return tag((await financeAnswer(ctx, '')).proposals);
     case 'ORCAMENTOS':
-      return tag((await quotesAnswer(ctx, '')).proposals);
+      return [
+        ...tag((await quotesAnswer(ctx, '')).proposals),
+        ...(await contractProposals(db, today, await companyName(db))),
+      ];
     case 'ATENDIMENTO':
     case 'WHATSAPP':
       return attendanceProposals(db, today);

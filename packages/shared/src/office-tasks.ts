@@ -44,6 +44,7 @@ export const OFFICE_TASK_KEYS = [
   'PLANEJAR_OS',
   'LANCAR_DESPESA',
   'MONTAR_ORCAMENTO',
+  'ENVIAR_CONTRATO',
   'PESQUISA_SATISFACAO',
   'ANIVERSARIO',
   'INDICACAO',
@@ -202,6 +203,15 @@ export const OFFICE_TASKS: OfficeTask[] = [
     what: 'Você conta o pedido do cliente (texto e fotos); ele monta o orçamento com a sua tabela e manda o link.',
     message: true,
     money: true,
+    maxLevel: 4,
+  },
+  {
+    key: 'ENVIAR_CONTRATO',
+    roles: ['ORCAMENTOS'],
+    label: 'Mandar o contrato do serviço fechado',
+    what: 'Serviço fechado sem contrato: preenche o contrato com os dados do pedido e manda o link para o cliente ler.',
+    message: true,
+    money: false,
     maxLevel: 4,
   },
   {
@@ -453,6 +463,19 @@ export function reviewRequestMessage(i: {
       ? `Se gostou do resultado, uma avaliação sua no Google ajuda muito o nosso trabalho: ${i.reviewUrl}`
       : 'Se gostou do resultado, conta pra gente? Sua opinião ajuda muito o nosso trabalho.',
     'Qualquer coisa que precisar, é só chamar por aqui.',
+  ].join('\n\n');
+}
+
+/** Contrato do serviço fechado: o link do PDF entra no lugar de {link} ao aprovar. */
+export function contractMessage(i: {
+  customerName: string | null;
+  companyName: string;
+  orderCode: string;
+}) {
+  const hi = `Olá${first(i.customerName) ? `, ${first(i.customerName)}` : ''}!`;
+  return [
+    `${hi} Aqui é da ${i.companyName}. Segue o contrato do seu serviço (${i.orderCode}) para você ler com calma: {link}`,
+    'Se estiver tudo certo, é só responder "de acordo" aqui. Qualquer dúvida, me chama.',
   ].join('\n\n');
 }
 

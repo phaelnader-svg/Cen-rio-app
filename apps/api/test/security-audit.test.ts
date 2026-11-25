@@ -117,6 +117,9 @@ describe('Matriz de acesso: todas as rotas', () => {
         'GET /api/public/album/:id/foto/:fileId',
         // A retirada pelo link só mostra o dia (2026-11-24: o cliente não escolhe mais).
         'GET /api/public/agendar/:id',
+        // Contrato do serviço para o cliente ler e baixar (2026-11-25), também pelo token ?t=.
+        'GET /api/public/contrato/:id',
+        'GET /api/public/contrato/:id/pdf',
         // Página de status e aviso de manutenção (sem dado de empresa nenhuma) e o registro de
         // erros do navegador (corpo limitado a 16 KB; vale o limite anônimo por IP de todas as rotas).
         'GET /api/public/aviso',

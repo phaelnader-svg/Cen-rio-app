@@ -32,6 +32,7 @@ import { Errors } from '../../lib/errors';
 import { shopTimezone, todayIso } from '../finance/common';
 import { catalogDtos, saveNewQuote, settingsDto } from '../quotes/routes';
 import { aiAvailable, companyName } from './agent-office';
+import { setContractLinker } from './office-contract';
 import { OFFICE_ACCESS, doAlone, officeGuard, officeOverview, routeOfNow } from './office';
 
 /** O que a IA devolve (ids conferidos depois contra a tabela). */
@@ -302,6 +303,7 @@ export async function saveApprovedQuote(
 export async function quoteAgentRoutes(app: FastifyInstance) {
   const { prisma, env, hashToken } = app.ctx;
   proposalLink = (id) => publicLink(env, hashToken, 'proposta', id);
+  setContractLinker((id) => publicLink(env, hashToken, 'contrato', id));
 
   app.post(
     '/api/v1/office/quote',

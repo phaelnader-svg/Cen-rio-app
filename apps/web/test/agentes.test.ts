@@ -26,7 +26,7 @@ import { POST as mcpPost } from '../app/mcp/route';
 import { POST as a2aPost } from '../app/a2a/route';
 
 const PRIVATE =
-  /\/(painel|tablet|proposta|album|agendar|autorizar|ambiente-interativo)\b|\/api\/v1/;
+  /\/(painel|tablet|proposta|album|agendar|contrato|autorizar|ambiente-interativo)\b|\/api\/v1/;
 const everything = () =>
   JSON.stringify([
     productInfo(),
@@ -63,7 +63,15 @@ describe('assistentes de IA: só informação pública', () => {
 
   it('robots continua bloqueando o sistema, libera blog e arquivos dos agentes e tem Content-Signal', () => {
     const txt = robotsTxt();
-    for (const p of ['/painel', '/tablet', '/api/', '/proposta/', '/album/', '/agendar/'])
+    for (const p of [
+      '/painel',
+      '/tablet',
+      '/api/',
+      '/proposta/',
+      '/album/',
+      '/agendar/',
+      '/contrato/',
+    ])
       expect(txt).toContain(`Disallow: ${p}\n`);
     for (const p of ['/blog', '/llms.txt', '/.well-known/']) expect(txt).toContain(`Allow: ${p}\n`);
     expect(txt).toMatch(

@@ -21,6 +21,8 @@ import { dateOnly, pickupCode } from '../commercial/common';
 import { notifyUsersWith } from '../quality/common';
 import { albumHasFile, loadOsAlbum } from '../service-orders/album';
 import { todaySaoPaulo } from '../billing/routes';
+import { textPdf } from '../office/docs';
+import { orderCodeOf } from '../office/common';
 
 /**
  * Páginas que o CLIENTE da tapeçaria abre sem login (melhorias 79, 82, 100, 130 e 131).
@@ -103,6 +105,53 @@ export async function publicRoutes(app: FastifyInstance) {
       pickupShift: q.pickupShift === 'MANHA' || q.pickupShift === 'TARDE' ? q.pickupShift : null,
     };
   }
+
+  // ---------------- contrato (Orçamentos do Escritório, 2026-11-25): o cliente lê e baixa o PDF.
+  async function contractFor(id: string, t: string | undefined) {
+    if (!validPublicLink(hashToken, 'contrato', id, t)) throw Errors.notFound('Contrato');
+    const c = await system.contract.findFirst({
+      where: { id, status: { in: ['RASCUNHO', 'ENVIADO', 'ASSINADO'] } },
+      select: {
+        body: true,
+        status: true,
+        order: { select: { number: true } },
+        company: { select: { legalName: true, tradeName: true, phone: true } },
+      },
+    });
+    if (!c) throw Errors.notFound('Contrato');
+    return c;
+  }
+
+  app.get('/api/public/contrato/:id', { config: { access: PUBLIC } }, async (request, reply) => {
+    const { id } = idParam.parse(request.params);
+    const { t } = tokenQuery.parse(request.query);
+    const c = await contractFor(id, t);
+    noStore(reply);
+    return {
+      code: orderCodeOf(c.order.number),
+      companyName: c.company.tradeName || c.company.legalName || '',
+      companyPhone: c.company.phone,
+      body: c.body,
+      signed: c.status === 'ASSINADO',
+      pdfUrl: `/api/public/contrato/${id}/pdf?t=${t}`,
+    };
+  });
+
+  app.get(
+    '/api/public/contrato/:id/pdf',
+    { config: { access: PUBLIC } },
+    async (request, reply) => {
+      const { id } = idParam.parse(request.params);
+      const { t } = tokenQuery.parse(request.query);
+      const c = await contractFor(id, t);
+      const code = orderCodeOf(c.order.number);
+      noStore(reply);
+      return reply
+        .header('content-type', 'application/pdf')
+        .header('content-disposition', `inline; filename="contrato-${code}.pdf"`)
+        .send(textPdf(`Contrato ${code}`, c.body));
+    },
+  );
 
   app.get('/api/public/proposta/:id', { config: { access: PUBLIC } }, async (request, reply) => {
     const { id } = idParam.parse(request.params);

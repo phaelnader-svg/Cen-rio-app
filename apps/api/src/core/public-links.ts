@@ -9,7 +9,7 @@ import { safeEqual } from '../lib/crypto';
  * a nada (96 bits de assinatura). O tipo entra na assinatura, então o link de um álbum nunca abre
  * uma proposta com o mesmo id.
  */
-export type PublicLinkKind = 'proposta' | 'album' | 'agendar';
+export type PublicLinkKind = 'proposta' | 'album' | 'agendar' | 'contrato';
 
 export function publicLinkSignature(
   hashToken: (token: string) => string,

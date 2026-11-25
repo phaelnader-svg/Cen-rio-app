@@ -274,6 +274,8 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
   const isDelivery = p.task === 'AGENDAR_ENTREGA';
   const isExpense = p.task === 'LANCAR_DESPESA';
   const isQuote = p.task === 'MONTAR_ORCAMENTO';
+  const isContract = p.task === 'ENVIAR_CONTRATO';
+  const missing = Array.isArray(pl.missing) ? (pl.missing as string[]) : [];
   if (sendLink)
     return (
       <Card className="p-4">
@@ -312,6 +314,14 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
       )}
       {isExpense && <ExpenseSummary pl={pl} />}
       {isQuote && <QuoteSummary pl={pl} />}
+      {isContract && missing.length > 0 && (
+        <p className="mt-1 text-sm text-warn-600">
+          Antes de aprovar, falta no cadastro: {missing.join(', ')}.{' '}
+          <a href={`/painel/pedidos/${String(pl.orderId)}`} className="underline">
+            Abrir o pedido
+          </a>
+        </p>
+      )}
       {typeof pl.planProblem === 'string' && (
         <p className="mt-1 text-sm text-warn-600">{pl.planProblem}</p>
       )}
@@ -322,7 +332,11 @@ export function ProposalCard({ p }: { p: OfficeProposalDto }) {
       )}
       {!isExpense && (
         <p className="mt-2 whitespace-pre-line rounded-lg bg-subtle px-3 py-2 text-sm text-ink-soft">
-          {isQuote ? p.detail.replace('{link}', '[link da proposta]') : p.detail}
+          {isQuote
+            ? p.detail.replace('{link}', '[link da proposta]')
+            : isContract
+              ? p.detail.replace('{link}', '[link do contrato]')
+              : p.detail}
         </p>
       )}
       {error && (
@@ -414,6 +428,7 @@ function PlanDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
 function MessageDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
   const isDelivery = p.task === 'AGENDAR_ENTREGA';
   const isQuote = p.task === 'MONTAR_ORCAMENTO';
+  const isContract = p.task === 'ENVIAR_CONTRATO';
   const [text, setText] = useState(String(p.payload.text ?? p.detail));
   const [date, setDate] = useState(String(p.payload.scheduledDate ?? ''));
   const [start, setStart] = useState(String(p.payload.windowStart ?? '09:00'));
@@ -470,7 +485,9 @@ function MessageDialog({ open, p, busy, onClose, onApprove }: DialogProps) {
               ? 'Se mudar o dia ou o horário, a mensagem é refeita com a data nova.'
               : isQuote
                 ? 'Deixe {link} onde o link da proposta deve entrar.'
-                : undefined
+                : isContract
+                  ? 'Deixe {link} onde o link do contrato deve entrar.'
+                  : undefined
           }
         >
           {(f) => (

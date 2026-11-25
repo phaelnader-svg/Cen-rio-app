@@ -65,7 +65,7 @@ ______________________________          ______________________________
 {{empresa}}                              {{cliente}}`;
 
 type OrderFull = NonNullable<Awaited<ReturnType<typeof loadOrder>>>;
-async function loadOrder(db: Tx | PrismaClient, id: string) {
+export async function loadOrder(db: Tx | PrismaClient, id: string) {
   return db.commercialOrder.findUnique({
     where: { id },
     include: {
@@ -107,7 +107,13 @@ const docFmt = (d: string | null) =>
       : d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
 
 /** Preenche o modelo; devolve o texto e a lista do que falta para assinar. */
-export async function fillContract(db: Tx | PrismaClient, order: OrderFull, template: string) {
+export async function fillContract(
+  db: Tx | PrismaClient,
+  order: OrderFull,
+  template: string,
+  /** Contrato só para ler (link no WhatsApp): o e-mail, que só a assinatura digital usa, pode faltar. */
+  opts: { emailOptional?: boolean } = {},
+) {
   const company = await db.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const c = order.customer;
   const missing: string[] = [];
@@ -141,7 +147,10 @@ export async function fillContract(db: Tx | PrismaClient, order: OrderFull, temp
     cliente_documento: val(docFmt(c.document), 'CPF/CNPJ do cliente'),
     cliente_endereco: val(addr(c.addresses[0]), 'endereço do cliente'),
     cliente_telefone: c.whatsapp ?? c.phone ?? '—',
-    cliente_email: val(c.email, 'e-mail do cliente (assinatura)'),
+    cliente_email:
+      opts.emailOptional && !c.email
+        ? 'não informado'
+        : val(c.email, 'e-mail do cliente (assinatura)'),
     servicos: items || val(null, 'itens do pedido'),
     valor: val(
       order.agreedValueCents !== null ? brl(order.agreedValueCents) : null,
@@ -230,6 +239,7 @@ export async function prepareContract(
   tx: Tx,
   actor: { userId: string | null } & Parameters<typeof audit>[1],
   orderId: string,
+  opts: { emailOptional?: boolean } = {},
 ) {
   await tx.$queryRaw`SELECT id FROM commercial_orders WHERE id = ${orderId}::uuid FOR UPDATE`;
   const order = await loadOrder(tx, orderId);
@@ -251,7 +261,7 @@ export async function prepareContract(
     });
   const last = await tx.contract.findFirst({ where: { orderId }, orderBy: { revision: 'desc' } });
   const template = await currentTemplate(tx, actor.userId);
-  const { body, missing } = await fillContract(tx, order, template.body);
+  const { body, missing } = await fillContract(tx, order, template.body, opts);
   const company = await tx.companySettings.findUnique({ where: { id: requireCompanyId() } });
   const signers: Signer[] = [
     {
