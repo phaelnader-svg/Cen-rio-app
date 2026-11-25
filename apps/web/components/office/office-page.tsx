@@ -27,12 +27,13 @@ import {
   RefreshCw,
   UserPlus,
 } from 'lucide-react';
-import { createContext, useContext, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { buttonClass } from '@/components/ui/button-styles';
 import { Dialog } from '@/components/ui/dialog';
 import { Checkbox, Field, Input, Select, Textarea } from '@/components/ui/field';
 import { Alert, Badge, Card, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
+import { Tabs, type TabDef } from '@/components/ui/tabs';
 import { useToast } from '@/components/ui/toast';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { brDate, money, parseMoney } from '@/lib/finance';
@@ -274,6 +275,33 @@ function OfficeInner() {
   const data = q.data;
   const asking = data?.pending.filter((p) => !p.suggestion) ?? [];
   const suggestions = data?.pending.filter((p) => p.suggestion) ?? [];
+  const hired = (role: string) => !!data?.agents.some((a) => a.roleKey === role && a.agentId);
+  const hasWeek = hired('GERENTE');
+  const hasCash = hired('FINANCEIRO');
+  const hasPrices = hired('COMPRAS');
+  // Escritório separado por menu (2026-11-25, pedido do Raphael): cada assunto na sua aba.
+  const tabs: TabDef[] = [
+    { key: 'aprovar', label: 'Para aprovar', count: asking.length || undefined },
+    { key: 'pedir', label: 'Pedir aos agentes' },
+    ...(hasWeek || hasCash || hasPrices ? [{ key: 'relatorios', label: 'Relatórios' }] : []),
+    { key: 'feito', label: 'O que fizeram' },
+    { key: 'agentes', label: 'Agentes e permissões' },
+  ];
+  const [tab, setTab] = useState('aprovar');
+  // Links antigos com âncora (#semana do sininho, #caixa, #precos) abrem a aba certa.
+  useEffect(() => {
+    if (!data) return;
+    const hash = window.location.hash.slice(1);
+    const target = ['semana', 'caixa', 'precos'].includes(hash)
+      ? 'relatorios'
+      : hash === 'recentes'
+        ? 'feito'
+        : null;
+    if (!target) return;
+    setTab(target);
+    const t = setTimeout(() => document.getElementById(hash)?.scrollIntoView(), 50);
+    return () => clearTimeout(t);
+  }, [data]);
   return (
     <>
       <PageHeader
@@ -337,79 +365,95 @@ function OfficeInner() {
         </Alert>
       )}
       {data && (
-        <div className="space-y-8">
+        <div className="space-y-6">
           {data.paused && (
             <Alert tone="warn" title="Tudo parado">
               Desde {formatDateTime(data.pausedAt)}, os agentes só preparam e pedem sua aprovação.
               Nada sai sozinho.
             </Alert>
           )}
-          <ToSendList />
           <Today data={data} />
-          <ReceiptCard data={data} />
-          <QuoteRequestCard data={data} />
-
-          <section aria-labelledby="esperando">
-            <h2 id="esperando" className="mb-3 text-lg font-semibold text-ink">
-              Esperando você
-            </h2>
-            {asking.length ? (
-              <ul className="space-y-3">
-                {asking.map((p) => (
-                  <li key={p.id}>
-                    <ProposalCard p={p} />
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <Card>
-                <EmptyState
-                  title="Nada esperando você"
-                  description="Quando um agente precisar da sua aprovação, aparece aqui e no sininho."
-                />
-              </Card>
-            )}
-          </section>
-
-          {suggestions.length > 0 && (
-            <section aria-labelledby="sugestoes">
-              <h2 id="sugestoes" className="mb-1 text-lg font-semibold text-ink">
-                Sugestões
-              </h2>
-              <p className="mb-3 text-sm text-ink-muted">
-                Tarefas em &quot;só sugere&quot;: ficam aqui, sem aviso no celular.
-              </p>
-              <ul className="space-y-3">
-                {suggestions.map((p) => (
-                  <li key={p.id}>
-                    <ProposalCard p={p} />
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          <section aria-labelledby="agentes">
-            <h2 id="agentes" className="mb-1 text-lg font-semibold text-ink">
-              Agentes e o que cada um pode fazer
-            </h2>
-            <p className="mb-3 text-sm text-ink-muted">
-              {data.whatsappConnected
-                ? 'O WhatsApp da empresa está ligado: as mensagens podem sair sozinhas.'
-                : 'Sem o WhatsApp da empresa ligado, as mensagens ficam em "pede aprovação": você aprova e aperta enviar.'}
-            </p>
-            <div className="grid gap-4 lg:grid-cols-2">
-              {data.agents.map((a) => (
-                <AgentCard key={a.roleKey} a={a} />
-              ))}
+          <Tabs tabs={tabs} active={tab} onChange={setTab}>
+            <div className="space-y-8 pt-6">
+              {tab === 'aprovar' && (
+                <>
+                  <ToSendList />
+                  <section aria-labelledby="esperando">
+                    <h2 id="esperando" className="mb-3 text-lg font-semibold text-ink">
+                      Esperando você
+                    </h2>
+                    {asking.length ? (
+                      <ul className="space-y-3">
+                        {asking.map((p) => (
+                          <li key={p.id}>
+                            <ProposalCard p={p} />
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <Card>
+                        <EmptyState
+                          title="Nada esperando você"
+                          description="Quando um agente precisar da sua aprovação, aparece aqui e no sininho."
+                        />
+                      </Card>
+                    )}
+                  </section>
+                  {suggestions.length > 0 && (
+                    <section aria-labelledby="sugestoes">
+                      <h2 id="sugestoes" className="mb-1 text-lg font-semibold text-ink">
+                        Sugestões
+                      </h2>
+                      <p className="mb-3 text-sm text-ink-muted">
+                        Tarefas em &quot;só sugere&quot;: ficam aqui, sem aviso no celular.
+                      </p>
+                      <ul className="space-y-3">
+                        {suggestions.map((p) => (
+                          <li key={p.id}>
+                            <ProposalCard p={p} />
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
+                </>
+              )}
+              {tab === 'pedir' && (
+                <>
+                  <ReceiptCard data={data} />
+                  <QuoteRequestCard data={data} />
+                </>
+              )}
+              {tab === 'relatorios' && (
+                <>
+                  {hasWeek && <WeekReport />}
+                  {hasCash && <CashForecast />}
+                  {hasPrices && <SupplierPrices />}
+                </>
+              )}
+              {tab === 'feito' && <Recent items={data.recent} />}
+              {tab === 'agentes' && (
+                <>
+                  <section aria-labelledby="agentes">
+                    <h2 id="agentes" className="mb-1 text-lg font-semibold text-ink">
+                      Agentes e o que cada um pode fazer
+                    </h2>
+                    <p className="mb-3 text-sm text-ink-muted">
+                      {data.whatsappConnected
+                        ? 'O WhatsApp da empresa está ligado: as mensagens podem sair sozinhas.'
+                        : 'Sem o WhatsApp da empresa ligado, as mensagens ficam em "pede aprovação": você aprova e aperta enviar.'}
+                    </p>
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      {data.agents.map((a) => (
+                        <AgentCard key={a.roleKey} a={a} />
+                      ))}
+                    </div>
+                  </section>
+                  <ReviewLink current={data.googleReviewUrl} discount={data.customerDiscountPct} />
+                </>
+              )}
             </div>
-          </section>
-
-          {data.agents.some((a) => a.roleKey === 'GERENTE' && a.agentId) && <WeekReport />}
-          {data.agents.some((a) => a.roleKey === 'FINANCEIRO' && a.agentId) && <CashForecast />}
-          {data.agents.some((a) => a.roleKey === 'COMPRAS' && a.agentId) && <SupplierPrices />}
-          <Recent items={data.recent} />
-          <ReviewLink current={data.googleReviewUrl} discount={data.customerDiscountPct} />
+          </Tabs>
         </div>
       )}
     </>

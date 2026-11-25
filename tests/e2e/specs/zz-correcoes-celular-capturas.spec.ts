@@ -145,4 +145,56 @@ test('capturas: correções do app no celular', async ({ page, browser }) => {
   await mp.goto('/entrar');
   await mp.waitForLoadState('networkidle');
   await mp.screenshot({ path: `${OUT}/6-entrar-celular.png` });
+
+  // Escritório na web separado por menu (abas).
+  for (const role of ['ATENDIMENTO', 'GERENTE', 'FINANCEIRO']) {
+    const r = await page.request.post('/api/v1/office/hire', {
+      data: { roleKey: role },
+      headers: {
+        origin: new URL(page.url()).origin,
+        'idempotency-key': crypto.randomUUID().replace(/-/g, ''),
+      },
+    });
+    expect(r.ok(), await r.text()).toBe(true);
+  }
+  const db2 = new pg.Client({ connectionString: rootEnv().E2E_DATABASE_URL });
+  await db2.connect();
+  await db2.query(`SELECT set_config('app.company_id', '1', false)`);
+  const text = (n: string) =>
+    `Oi, ${n}! Aqui é da tapeçaria. Ficamos felizes com o seu serviço. Pode deixar uma avaliação para a gente?`;
+  for (const n of ['Sílvia Moraes', 'Paulo Nogueira'])
+    await db2.query(
+      `INSERT INTO ai_agent_proposals (id, company_id, agent_id, kind, title, detail, payload)
+       SELECT gen_random_uuid(), company_id, id, 'ENVIAR_MENSAGEM', $2, $3, $4::jsonb FROM ai_agents WHERE role_key = $1 AND status = 'ATIVO'`,
+      [
+        'ATENDIMENTO',
+        `Pedir a avaliação de ${n}`,
+        text(n),
+        JSON.stringify({
+          task: 'PEDIR_AVALIACAO',
+          customerName: n,
+          phone: '5511900000000',
+          text: text(n),
+          href: `https://wa.me/5511900000000?text=${encodeURIComponent(text(n))}`,
+          channel: 'WHATSAPP',
+        }),
+      ],
+    );
+  await db2.end();
+  await page.setViewportSize({ width: 1440, height: 1150 });
+  await page.goto('/painel/escritorio');
+  await expect(page.getByRole('tab', { name: /Para aprovar/ })).toBeVisible();
+  await expect(page.getByTestId('office-proposal').first()).toBeVisible();
+  await page.screenshot({ path: `${OUT}/7-escritorio-para-aprovar.png` });
+  const tabs: [RegExp, string][] = [
+    [/Pedir aos agentes/, '8-escritorio-pedir'],
+    [/Relatórios/, '9-escritorio-relatorios'],
+    [/O que fizeram/, '10-escritorio-o-que-fizeram'],
+    [/Agentes e permissões/, '11-escritorio-agentes'],
+  ];
+  for (const [name, file] of tabs) {
+    await page.getByRole('tab', { name }).click();
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: `${OUT}/${file}.png` });
+  }
 });
