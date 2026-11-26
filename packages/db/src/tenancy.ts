@@ -265,6 +265,13 @@ export const TENANCY: Record<string, TenancyEntry> = {
   AiAgentMessage: E,
   AiAgentProposal: E,
   MaterialPrice: E,
+  // 2026-11-26 (começo guiado): convite do funcionário, explicações vistas e pedidos de ajuda.
+  EmployeeInvite: {
+    class: 'empresa',
+    note: 'token_hash é aleatório e continua único no sistema (o link público acha a empresa por ele).',
+  },
+  UserSeenTip: E,
+  ContactRequest: E,
   AgentAction: E,
   IntegrationConnection: {
     class: 'empresa',
