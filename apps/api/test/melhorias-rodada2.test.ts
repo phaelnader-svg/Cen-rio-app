@@ -28,6 +28,7 @@ import {
   loginAdmin,
   resetDatabase,
   loginPlatform,
+  EMPRESA_NOVA,
 } from './helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -79,7 +80,12 @@ async function savedQuote(c: Client, customerName = 'Maria Proposta') {
 async function criarConta(email = 'nova@tapecaria.local') {
   const c = new Client(app);
   ok(
-    await c.post('/api/auth/signup', { email, password: 'senha123', passwordConfirm: 'senha123' }),
+    await c.post('/api/auth/signup', {
+      ...EMPRESA_NOVA,
+      email,
+      password: 'senha123',
+      passwordConfirm: 'senha123',
+    }),
     201,
   );
   return c;

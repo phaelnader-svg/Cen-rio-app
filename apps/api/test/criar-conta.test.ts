@@ -15,6 +15,7 @@ import {
   idemKey,
   loginAdmin,
   resetDatabase,
+  EMPRESA_NOVA,
 } from './helpers';
 
 let app: App;
@@ -25,7 +26,12 @@ beforeAll(async () => {
 afterAll(() => app.close());
 beforeEach(resetDatabase);
 
-const NOVA = { email: 'Nova@Tapecaria.local', password: 'senha123', passwordConfirm: 'senha123' };
+const NOVA = {
+  ...EMPRESA_NOVA,
+  email: 'Nova@Tapecaria.local',
+  password: 'senha123',
+  passwordConfirm: 'senha123',
+};
 
 async function criarConta(dados = NOVA) {
   const c = new Client(app);
@@ -90,6 +96,7 @@ describe('Criar conta (empresa nova)', () => {
   it('duas contas criam duas empresas diferentes, cada uma com a própria numeração', async () => {
     const a = await criarConta();
     const b = await criarConta({
+      ...EMPRESA_NOVA,
       email: 'outra@tapecaria.local',
       password: 'senha1234',
       passwordConfirm: 'senha1234',
@@ -154,6 +161,15 @@ describe('Criar conta (empresa nova)', () => {
   });
 
   it('valida senha de no mínimo 8 caracteres e a confirmação', async () => {
+    // 26/11/2026: sem WhatsApp (ou sem DDD), sem nome da empresa ou sem nome, não cria.
+    for (const falta of [
+      { whatsapp: '' },
+      { whatsapp: '98765-4321' },
+      { companyName: '' },
+      { companyName: 'Minha empresa' },
+      { ownerName: '' },
+    ])
+      expect((await criarConta({ ...NOVA, ...falta })).r.status).toBe(400);
     const curta = await criarConta({ ...NOVA, password: 'abc1234', passwordConfirm: 'abc1234' });
     expect(curta.r.status).toBe(400);
     const diferente = await criarConta({ ...NOVA, passwordConfirm: 'senha124' });
@@ -165,6 +181,7 @@ describe('Criar conta (empresa nova)', () => {
   it('e-mail já cadastrado é recusado, não cria empresa e não altera a conta existente', async () => {
     const existente = await db().user.findFirstOrThrow({ where: { email: { not: null } } });
     const { r } = await criarConta({
+      ...EMPRESA_NOVA,
       email: existente.email!,
       password: 'outrasenha1',
       passwordConfirm: 'outrasenha1',
@@ -180,6 +197,7 @@ describe('Criar conta (empresa nova)', () => {
     let ultimo = 0;
     for (let i = 0; i < 45; i++) {
       const { r } = await criarConta({
+        ...EMPRESA_NOVA,
         email: `conta${i}@teste.local`,
         password: 'senha12345',
         passwordConfirm: 'senha12345',

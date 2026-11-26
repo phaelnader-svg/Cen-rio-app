@@ -15,6 +15,7 @@ export function Dialog({
   children,
   footer,
   size = 'md',
+  dismissible = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -23,6 +24,8 @@ export function Dialog({
   children: React.ReactNode;
   footer?: React.ReactNode;
   size?: 'sm' | 'md' | 'lg' | 'xl';
+  /** false: sem o X e sem fechar pelo Esc (pergunta obrigatória). */
+  dismissible?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -44,7 +47,7 @@ export function Dialog({
       aria-describedby={description ? descId : undefined}
       onCancel={(e) => {
         e.preventDefault();
-        onClose();
+        if (dismissible) onClose();
       }}
       className={`m-auto w-[calc(100%-1.5rem)] ${width} rounded-2xl border border-line bg-surface p-0 text-ink shadow-[var(--shadow-pop)]`}
     >
@@ -61,14 +64,16 @@ export function Dialog({
                 </p>
               )}
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="-mr-2 rounded-lg p-2 text-ink-muted hover:bg-subtle hover:text-ink"
-              aria-label="Fechar"
-            >
-              <X className="size-5" aria-hidden />
-            </button>
+            {dismissible && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="-mr-2 rounded-lg p-2 text-ink-muted hover:bg-subtle hover:text-ink"
+                aria-label="Fechar"
+              >
+                <X className="size-5" aria-hidden />
+              </button>
+            )}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-6">
             {children}

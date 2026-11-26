@@ -326,3 +326,10 @@ export async function loginPlatform(app: App, creds = PLATFORM_ADMIN): Promise<C
     throw new Error(`login do painel falhou: ${res.status} ${JSON.stringify(res.body)}`);
   return c;
 }
+
+/** Campos obrigatórios do Criar conta (26/11/2026): nome da empresa, de quem cria e WhatsApp. */
+export const EMPRESA_NOVA = {
+  companyName: 'Tapeçaria Teste',
+  ownerName: 'Ana Teste',
+  whatsapp: '(11) 98765-4321',
+};

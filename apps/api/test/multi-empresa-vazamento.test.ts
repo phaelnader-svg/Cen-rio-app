@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import type { AccessRule } from '../src/core/types';
 import { createCustomer, createOrder, createPickup } from './commercial-helpers';
-import { Client, createTestApp, db, loginAdmin, resetDatabase } from './helpers';
+import { Client, createTestApp, db, loginAdmin, resetDatabase, EMPRESA_NOVA } from './helpers';
 
 /**
  * Multi-empresa — detector de vazamento entre empresas.
@@ -184,6 +184,7 @@ describe('Multi-empresa: detector de vazamento', () => {
 async function criarEmpresaB() {
   const client = new Client(app);
   const r = await client.post('/api/auth/signup', {
+    ...EMPRESA_NOVA,
     email: 'gestor@empresa-b.local',
     password: 'SenhaDaEmpresaB1',
     passwordConfirm: 'SenhaDaEmpresaB1',

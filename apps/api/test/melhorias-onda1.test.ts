@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
 import { createCustomer } from './commercial-helpers';
-import { Client, createTestApp, db, loginAdmin, resetDatabase } from './helpers';
+import { Client, createTestApp, db, loginAdmin, resetDatabase, EMPRESA_NOVA } from './helpers';
 
 let app: App;
 beforeAll(async () => {
@@ -18,6 +18,7 @@ beforeEach(resetDatabase);
 async function criarConta() {
   const c = new Client(app);
   const r = await c.post('/api/auth/signup', {
+    ...EMPRESA_NOVA,
     email: 'boasvindas@tapecaria.local',
     password: 'senha123',
     passwordConfirm: 'senha123',
@@ -27,12 +28,46 @@ async function criarConta() {
 }
 
 describe('Boas-vindas da empresa nova', () => {
+  it('o Criar conta já grava o nome da empresa, de quem criou e o WhatsApp: sem perguntar de novo', async () => {
+    const c = await criarConta();
+    const me = await c.get('/api/auth/me');
+    expect(me.body.company.tradeName).toBe('Tapeçaria Teste');
+    expect(me.body.company.needsWelcome).toBe(false);
+    expect(me.body.company.needsWhatsapp).toBe(false);
+    expect(me.body.user.displayName).toBe('Ana Teste');
+    const empresa = await db().companySettings.findFirstOrThrow({
+      where: { email: 'boasvindas@tapecaria.local' },
+    });
+    expect(empresa.phone).toBe('(11) 98765-4321');
+  });
+
+  it('empresa antiga sem WhatsApp precisa informar ao entrar (número com DDD)', async () => {
+    const c = await criarConta();
+    await db().companySettings.updateMany({
+      where: { email: 'boasvindas@tapecaria.local' },
+      data: { phone: null },
+    });
+    expect((await c.get('/api/auth/me')).body.company.needsWhatsapp).toBe(true);
+    expect((await c.post('/api/company/contact', { whatsapp: '98765-4321' })).status).toBe(400);
+    const ok = await c.post('/api/company/contact', { whatsapp: '+55 21 99876-5432' });
+    expect(ok.status).toBe(200);
+    expect((await c.get('/api/auth/me')).body.company.needsWhatsapp).toBe(false);
+    const empresa = await db().companySettings.findFirstOrThrow({
+      where: { email: 'boasvindas@tapecaria.local' },
+    });
+    expect(empresa.phone).toBe('(21) 99876-5432');
+  });
+
   it('pede o nome da empresa e da pessoa uma vez só, e grava os dois', async () => {
     const c = await criarConta();
+    // Empresa criada antes de o cadastro pedir o nome: ainda com o nome provisório.
+    await db().companySettings.updateMany({
+      where: { email: 'boasvindas@tapecaria.local' },
+      data: { tradeName: 'Minha empresa' },
+    });
     const me = await c.get('/api/auth/me');
     expect(me.body.company.tradeName).toBe('Minha empresa');
     expect(me.body.company.needsWelcome).toBe(true);
-    expect(me.body.user.displayName).toBe('boasvindas');
 
     const provisorio = await c.post('/api/company/welcome', {
       tradeName: 'Minha empresa',

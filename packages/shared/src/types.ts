@@ -36,6 +36,8 @@ export interface MeDto {
     platformCompany: boolean;
     /** Empresa recém-criada pelo Criar conta, ainda com o nome provisório: mostra as boas-vindas. */
     needsWelcome: boolean;
+    /** Empresa sem WhatsApp cadastrado: o gestor informa ao entrar (obrigatório). */
+    needsWhatsapp: boolean;
     /** Melhoria 114: acesso de suporte liberado até (null = não liberado). */
     supportAccessUntil: string | null;
     /** Melhoria 128: empresa de demonstração. */

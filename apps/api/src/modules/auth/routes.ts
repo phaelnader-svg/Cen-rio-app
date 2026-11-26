@@ -2,7 +2,6 @@ import {
   DEFAULT_ROLE_SKILLS,
   EVENT_TYPES,
   GESTOR_ROLE_KEY,
-  PROVISIONAL_TRADE_NAME,
   adminLoginSchema,
   changePasswordSchema,
   signupSchema,
@@ -207,14 +206,17 @@ export async function authRoutes(app: FastifyInstance) {
     if (taken) throw Errors.conflict('Já existe uma conta com este e-mail. Entre com a sua senha.');
 
     const passwordHash = await hashSecret(input.password);
-    const displayName = (input.email.split('@')[0] || 'Gestor').slice(0, 40).padEnd(2, '_');
+    // Nome da empresa, de quem cria e WhatsApp vêm do próprio cadastro (decisão do dono,
+    // 26/11/2026): o dono da plataforma sempre tem como entrar em contato.
+    const displayName = input.ownerName;
     let created;
     try {
       created = await system.$transaction(async (tx) => {
         // Cobrança: teste grátis (7 dias, decisão do dono), no plano Cenário Gestão.
         const company = await tx.companySettings.create({
           data: {
-            tradeName: PROVISIONAL_TRADE_NAME,
+            tradeName: input.companyName,
+            phone: input.whatsapp,
             email: input.email,
             plan: 'gestao',
             trialEndsAt: new Date(Date.now() + platformConfig().trialDays * 86_400_000),
@@ -241,6 +243,7 @@ export async function authRoutes(app: FastifyInstance) {
             userId: user.id,
             fullName: displayName,
             displayName,
+            phone: input.whatsapp,
             jobTitle: 'Gestor',
             color: '#1D4ED8',
           },
@@ -263,7 +266,7 @@ export async function authRoutes(app: FastifyInstance) {
           action: 'auth.signup',
           entityType: 'company',
           entityId: String(company.id),
-          summary: `Conta criada pela tela de entrar (${input.email}): empresa nova nº ${company.id}. Aceitou os Termos de uso e a Política de privacidade (versão ${LEGAL_VERSION}).`,
+          summary: `Conta criada pela tela de entrar (${input.email}, WhatsApp ${input.whatsapp}): empresa nova nº ${company.id} "${input.companyName}". Aceitou os Termos de uso e a Política de privacidade (versão ${LEGAL_VERSION}).`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.EMPLOYEE_CREATED,

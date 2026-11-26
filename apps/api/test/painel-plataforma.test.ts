@@ -15,6 +15,7 @@ import {
   loginAdmin,
   loginPlatform,
   resetDatabase,
+  EMPRESA_NOVA,
 } from './helpers';
 
 let app: App;
@@ -36,6 +37,7 @@ async function criarConta(email = 'cliente@tapecaria.local') {
   const c = new Client(app);
   ok(
     await c.post('/api/auth/signup', {
+      ...EMPRESA_NOVA,
       email,
       password: 'SenhaBoa123',
       passwordConfirm: 'SenhaBoa123',
@@ -183,6 +185,21 @@ describe('Acesso do painel', () => {
 });
 
 describe('Empresas e cobrança', () => {
+  it('empresa criada pelo site aparece com o nome de quem criou, WhatsApp e e-mail', async () => {
+    const { companyId } = await criarConta('nova@tapecaria.local');
+    const painel = await loginPlatform(app);
+    const list = ok(await painel.get('/api/v1/platform/companies'));
+    const nova = (list.items as J[]).find((x) => x.id === companyId)!;
+    expect(nova).toMatchObject({
+      tradeName: 'Tapeçaria Teste',
+      ownerName: 'Ana Teste',
+      ownerEmail: 'nova@tapecaria.local',
+      phone: '(11) 98765-4321',
+    });
+    expect(nova.contactWhatsappUrl).toContain('wa.me/5511987654321');
+    expect(decodeURIComponent(nova.contactWhatsappUrl)).toContain('Olá, Ana!');
+  });
+
   it('cadastra uma empresa com senha provisória, edita e o cliente entra', async () => {
     const painel = await loginPlatform(app);
     const r = ok(

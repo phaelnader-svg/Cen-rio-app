@@ -1,3 +1,5 @@
+import { formatPhoneBr } from '@cenario/shared';
+
 const dateTime = new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short',
   timeStyle: 'short',
@@ -73,4 +75,10 @@ export function describeUserAgent(ua: string | null): string {
           ? 'Safari'
           : 'Navegador';
   return `${browser} · ${os}`;
+}
+
+/** Máscara do WhatsApp; o preenchimento automático com +55 na frente também vira (DDD) número. */
+export function typedWhatsapp(v: string): string {
+  const d = v.replace(/\D/g, '');
+  return formatPhoneBr(d.length > 11 && d.startsWith('55') ? d.slice(2) : d);
 }

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/field';
 import { Alert } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
+import { typedWhatsapp } from '@/lib/format';
 import { Honeypot, Turnstile, useSignupConfig } from '@/components/account/turnstile';
 import { trialOffer } from '@/components/site/config';
 import { legalLinksReady } from '@/components/site/legal/links-ready';
@@ -46,6 +47,9 @@ export function AdminLogin() {
     params.get('criar') === '1' ? 'signup' : 'login',
   );
   const [showPassword, setShowPassword] = useState(false);
+  const [companyName, setCompanyName] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
@@ -74,7 +78,14 @@ export function AdminLogin() {
   async function onSignup(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
-    const parsed = signupSchema.safeParse({ email, password, passwordConfirm });
+    const parsed = signupSchema.safeParse({
+      companyName,
+      ownerName,
+      whatsapp,
+      email,
+      password,
+      passwordConfirm,
+    });
     if (!parsed.success) {
       const map: Record<string, string> = {};
       for (const i of parsed.error.issues) map[String(i.path[0])] ??= i.message;
@@ -304,6 +315,47 @@ export function AdminLogin() {
             </form>
           ) : (
             <form onSubmit={onSignup} noValidate className="mt-6 space-y-4">
+              {/* 26/11/2026: nome da empresa, de quem cria e WhatsApp, para o contato da plataforma. */}
+              <Field label="Nome da empresa" error={errors.companyName}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    autoComplete="organization"
+                    placeholder="Ex.: Tapeçaria Silva"
+                    maxLength={120}
+                    value={companyName}
+                    onChange={(e) => setCompanyName(e.target.value)}
+                    data-testid="signup-empresa"
+                    autoFocus
+                  />
+                )}
+              </Field>
+              <Field label="Seu nome" error={errors.ownerName}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    autoComplete="name"
+                    maxLength={40}
+                    value={ownerName}
+                    onChange={(e) => setOwnerName(e.target.value)}
+                    data-testid="signup-nome"
+                  />
+                )}
+              </Field>
+              <Field label="WhatsApp com DDD" error={errors.whatsapp}>
+                {(p) => (
+                  <Input
+                    {...p}
+                    type="tel"
+                    autoComplete="tel-national"
+                    inputMode="tel"
+                    placeholder="(11) 98765-4321"
+                    value={whatsapp}
+                    onChange={(e) => setWhatsapp(typedWhatsapp(e.target.value))}
+                    data-testid="signup-whatsapp"
+                  />
+                )}
+              </Field>
               <Field label="E-mail" error={errors.email}>
                 {(p) => (
                   <Input
@@ -313,7 +365,6 @@ export function AdminLogin() {
                     inputMode="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    autoFocus
                   />
                 )}
               </Field>

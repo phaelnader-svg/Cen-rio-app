@@ -298,7 +298,8 @@ export function PlatformCompanies() {
         !s ||
         c.tradeName.toLowerCase().includes(s) ||
         (c.ownerEmail ?? '').toLowerCase().includes(s) ||
-        (c.ownerName ?? '').toLowerCase().includes(s),
+        (c.ownerName ?? '').toLowerCase().includes(s) ||
+        (c.phone ?? '').replace(/\D/g, '').includes(s.replace(/\D/g, '') || '~'),
     );
   }, [list.data, search]);
 
@@ -315,7 +316,7 @@ export function PlatformCompanies() {
       />
       <Input
         className="mb-4 max-w-sm"
-        placeholder="Buscar por nome ou e-mail"
+        placeholder="Buscar por nome, e-mail ou WhatsApp"
         aria-label="Buscar empresa"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -342,23 +343,53 @@ export function PlatformCompanies() {
                     <Badge tone="danger">Cancelou em {formatDay(c.canceledAt)}</Badge>
                   )}
                 </div>
-                <p className="mt-1 text-sm text-ink-muted">
-                  {c.ownerName ? `${c.ownerName} · ` : ''}
-                  {c.ownerEmail ?? 'sem e-mail'}
-                  {c.ownerEmail && !c.ownerEmailConfirmed ? ' (e-mail não confirmado)' : ''}
-                  {c.phone ? ` · ${c.phone}` : ''}
+                {/* Contato de quem criou a conta (26/11/2026): nome, WhatsApp e e-mail. */}
+                <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-ink-muted">
+                  {c.ownerName && <span className="font-medium text-ink-soft">{c.ownerName}</span>}
+                  {c.phone ? (
+                    <span data-testid="empresa-whatsapp">{c.phone}</span>
+                  ) : (
+                    <Badge tone="danger">Sem WhatsApp</Badge>
+                  )}
+                  {c.ownerEmail ? (
+                    <a
+                      href={`mailto:${c.ownerEmail}`}
+                      className="underline-offset-4 hover:text-ink hover:underline"
+                      data-testid="empresa-email"
+                    >
+                      {c.ownerEmail}
+                      {!c.ownerEmailConfirmed ? ' (não confirmado)' : ''}
+                    </a>
+                  ) : (
+                    <span>sem e-mail</span>
+                  )}
                 </p>
                 <p className="text-sm text-ink-muted">
                   {c.planLabel} ·{' '}
                   {c.courtesy ? 'não paga' : `${formatCents(c.priceCents)}${perCycle(c)}`}
                   {c.billingPriceCents ? ' (valor combinado)' : ''} · {c.users}{' '}
                   {c.users === 1 ? 'usuário' : 'usuários'} · {c.orders}{' '}
-                  {c.orders === 1 ? 'pedido' : 'pedidos'} · último acesso{' '}
+                  {c.orders === 1 ? 'pedido' : 'pedidos'}
+                </p>
+                <p className="text-sm text-ink-muted">
+                  Cadastro em {formatDateTime(c.createdAt)} · último acesso{' '}
                   {c.lastLoginAt ? formatDateTime(c.lastLoginAt) : 'nunca'}
                 </p>
                 {c.note && <p className="mt-1 text-sm text-ink-soft">Anotação: {c.note}</p>}
               </div>
               <div className="flex flex-wrap gap-2 sm:justify-end">
+                {c.contactWhatsappUrl && (
+                  <a
+                    href={c.contactWhatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`Chamar ${c.ownerName ?? c.tradeName} no WhatsApp`}
+                    data-testid="empresa-chamar-whatsapp"
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-ok-600 px-3 text-sm font-semibold text-white hover:bg-ok-600/90"
+                  >
+                    <MessageCircle className="size-4" aria-hidden /> WhatsApp
+                  </a>
+                )}
                 <Button
                   size="sm"
                   variant="secondary"

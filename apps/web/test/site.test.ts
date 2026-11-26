@@ -122,10 +122,18 @@ describe('isolamento e promessas', () => {
     expect(root).toMatch(/force-dynamic/);
   });
 
-  it('o topo da landing tem o botão Entrar indo para /entrar', () => {
+  it('o topo da landing tem Criar conta (principal) e, do lado, Entrar indo para /entrar', () => {
     const landing = src('components/site/landing.tsx');
     expect(landing).toMatch(
-      /href="\/entrar"[\s\S]{0,200}BUTTON_VARIANTS\.primary[\s\S]{0,200}Entrar/,
+      /href="\/entrar"[\s\S]{0,200}BUTTON_VARIANTS\.secondary[\s\S]{0,200}Entrar/,
     );
+    expect(landing).toMatch(/<SignupLink size="sm"[\s\S]{0,80}Criar conta[\s\S]{0,80}<LoginLink/);
+  });
+
+  it('o WhatsApp fica flutuando no canto de baixo, à direita, escrito Dúvidas', () => {
+    const landing = src('components/site/landing.tsx');
+    expect(landing).toMatch(/fixed right-4 bottom-4[\s\S]{0,600}Dúvidas/);
+    expect(landing).toMatch(/<WhatsappFloat href=\{wa\}/);
+    expect(landing).not.toMatch(/subtitle="Cenário Estofados"/);
   });
 });

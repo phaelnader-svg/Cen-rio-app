@@ -3,6 +3,7 @@ import {
   MODULES,
   MODULE_KEYS,
   companySettingsSchema,
+  companyContactSchema,
   companyWelcomeSchema,
   PROVISIONAL_TRADE_NAME,
   isModuleKey,
@@ -288,6 +289,7 @@ export async function companyRoutes(app: FastifyInstance) {
           where: { id: requireCompanyId() },
           data: {
             tradeName: input.tradeName,
+            ...(input.whatsapp ? { phone: input.whatsapp } : {}),
             updatedById: actor.userId,
             version: { increment: 1 },
           },
@@ -332,6 +334,37 @@ export async function companyRoutes(app: FastifyInstance) {
             lateAlertMinutes: updated.lateAlertMinutes,
             version: updated.version,
           },
+        });
+      });
+      return { ok: true };
+    },
+  );
+  /**
+   * WhatsApp da empresa (26/11/2026): empresa criada antes de o cadastro pedir o WhatsApp informa
+   * ao entrar. O dono da plataforma vê o número no painel, aba Empresas.
+   */
+  app.post(
+    '/api/company/contact',
+    { config: { access: { session: 'WEB', permissions: ['empresa.configurar'] } } },
+    async (request) => {
+      const input = companyContactSchema.parse(request.body);
+      const actor = actorFrom(request);
+      await prisma.$transaction(async (tx) => {
+        if (!(await lockRow(tx, 'company_settings', requireCompanyId())))
+          throw Errors.notFound('Configuração da empresa');
+        const before = await tx.companySettings.findUniqueOrThrow({
+          where: { id: requireCompanyId() },
+        });
+        const updated = await tx.companySettings.update({
+          where: { id: requireCompanyId() },
+          data: { phone: input.whatsapp, updatedById: actor.userId, version: { increment: 1 } },
+        });
+        await audit(tx, actor, {
+          action: 'company.contact',
+          entityType: 'company_settings',
+          entityId: String(updated.id),
+          summary: `WhatsApp da empresa informado: ${input.whatsapp}.`,
+          changes: { phone: { from: before.phone, to: updated.phone } },
         });
       });
       return { ok: true };

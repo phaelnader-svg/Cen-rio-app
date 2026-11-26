@@ -6,7 +6,15 @@
 import { addCycle, planPriceCents, subscriptionStatus } from '@cenario/shared';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
-import { Client, createTestApp, db, loginAdmin, loginPlatform, resetDatabase } from './helpers';
+import {
+  Client,
+  createTestApp,
+  db,
+  loginAdmin,
+  loginPlatform,
+  resetDatabase,
+  EMPRESA_NOVA,
+} from './helpers';
 
 const WEBHOOK = 'token-do-webhook-de-teste-com-32-caracteres!!';
 let app: App;
@@ -65,6 +73,7 @@ beforeEach(async () => {
 async function criarConta(email = 'nova@tapecaria.local') {
   const c = new Client(app);
   const r = await c.post('/api/auth/signup', {
+    ...EMPRESA_NOVA,
     email,
     password: 'senha123',
     passwordConfirm: 'senha123',
@@ -287,6 +296,7 @@ describe('Esqueci minha senha', () => {
 describe('Anti-robô', () => {
   it('campo-isca preenchido é recusado e não gasta o limite', async () => {
     const r = await new Client(app).post('/api/auth/signup', {
+      ...EMPRESA_NOVA,
       email: 'robo@x.local',
       password: 'senha123',
       passwordConfirm: 'senha123',
@@ -302,10 +312,21 @@ describe('Anti-robô', () => {
     const original = app.ctx.captcha;
     app.ctx.captcha = async (token) => token === 'ok';
     try {
-      const base = { email: 'a@x.local', password: 'senha123', passwordConfirm: 'senha123' };
+      const base = {
+        ...EMPRESA_NOVA,
+        email: 'a@x.local',
+        password: 'senha123',
+        passwordConfirm: 'senha123',
+      };
       expect((await new Client(app).post('/api/auth/signup', base)).status).toBe(400);
       expect(
-        (await new Client(app).post('/api/auth/signup', { ...base, captcha: 'ok' })).status,
+        (
+          await new Client(app).post('/api/auth/signup', {
+            ...EMPRESA_NOVA,
+            ...base,
+            captcha: 'ok',
+          })
+        ).status,
       ).toBe(201);
     } finally {
       app.ctx.captcha = original;

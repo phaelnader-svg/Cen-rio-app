@@ -82,16 +82,63 @@ export function ContactLink({
   );
 }
 
-/** Abre a tela de entrar já no modo Criar conta. */
-function SignupLink({ className }: { className?: string }) {
+/**
+ * Abre a tela de entrar já no modo Criar conta. Ação principal da página (pedido do dono,
+ * 26/11/2026): o cadastro pede o WhatsApp, então o contato chega do mesmo jeito.
+ */
+function SignupLink({
+  className,
+  size = 'lg',
+  children = 'Criar minha conta',
+}: {
+  className?: string;
+  size?: ButtonSize;
+  children?: React.ReactNode;
+}) {
   return (
     <a
       href={SIGNUP_PATH}
-      className={clsx(BUTTON_BASE, BUTTON_VARIANTS.secondary, BUTTON_SIZES.lg, className)}
+      className={clsx(BUTTON_BASE, BUTTON_VARIANTS.primary, BUTTON_SIZES[size], className)}
       data-testid="site-criar-conta"
     >
       <UserPlus className="size-4" aria-hidden />
-      Criar minha conta
+      {children}
+    </a>
+  );
+}
+
+/** Entrar, ao lado do Criar conta. */
+function LoginLink({ size = 'lg', testId }: { size?: ButtonSize; testId?: string }) {
+  return (
+    <a
+      href="/entrar"
+      className={clsx(BUTTON_BASE, BUTTON_VARIANTS.secondary, BUTTON_SIZES[size])}
+      {...(testId ? { 'data-testid': testId } : {})}
+    >
+      <LogIn className="size-4" aria-hidden />
+      Entrar
+    </a>
+  );
+}
+
+/**
+ * WhatsApp flutuante (pedido do dono, 26/11/2026): sempre no canto de baixo, à direita, escrito
+ * "Dúvidas", acompanhando a rolagem da página.
+ */
+function WhatsappFloat({ href, origem }: { href: string | null; origem?: string }) {
+  if (!href) return null;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      {...(origem ? { 'data-origem': origem } : {})}
+      className="fixed right-4 bottom-4 z-40 inline-flex h-12 items-center gap-2 rounded-full bg-ok-600 px-5 font-semibold text-white shadow-[var(--shadow-pop)] hover:bg-ok-600/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ok-600 sm:right-6 sm:bottom-6"
+      data-testid="site-cta"
+    >
+      <MessageCircle className="size-5" aria-hidden />
+      Dúvidas
+      <span className="sr-only"> (abre o WhatsApp em outra aba)</span>
     </a>
   );
 }
@@ -320,24 +367,14 @@ export function Landing({
       )}
 
       <header className={clsx(WRAP, 'flex items-center justify-between gap-4 py-5')}>
-        <BrandMark subtitle="Cenário Estofados" />
+        {/* Cenário Gestão e Cenário Estofados são empresas diferentes: o topo mostra só o sistema. */}
+        <BrandMark />
         <div className="flex items-center gap-2">
-          {/* No celular o botão de contato já aparece logo abaixo, na abertura; o topo fica só com Entrar. */}
-          <ContactLink
-            href={wa}
-            origem={origem}
-            variant="secondary"
-            size="sm"
-            className="max-sm:hidden"
-          />
-          <a
-            href="/entrar"
-            className={clsx(BUTTON_BASE, BUTTON_VARIANTS.primary, BUTTON_SIZES.sm)}
-            data-testid="site-entrar"
-          >
-            <LogIn className="size-4" aria-hidden />
-            Entrar
-          </a>
+          {/* No celular o Criar conta já aparece logo abaixo, na abertura; o topo fica só com Entrar. */}
+          <SignupLink size="sm" className="max-sm:hidden">
+            Criar conta
+          </SignupLink>
+          <LoginLink size="sm" testId="site-entrar" />
         </div>
       </header>
 
@@ -358,14 +395,14 @@ export function Landing({
               uma tapeçaria.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <ContactLink href={wa} origem={origem} />
               <SignupLink />
-              {preview && !SITE.whatsappNumber && (
-                <p className="mt-2">
-                  <Pending>WhatsApp [PENDENTE]</Pending>
-                </p>
-              )}
+              <LoginLink />
             </div>
+            {preview && !SITE.whatsappNumber && (
+              <p className="mt-2">
+                <Pending>WhatsApp [PENDENTE]</Pending>
+              </p>
+            )}
             <p className="mt-6 text-sm text-ink-muted">
               Criado a partir da operação real da Cenário Estofados. As telas desta página usam
               dados de exemplo.
@@ -543,7 +580,6 @@ export function Landing({
                 )
               )}
               <div className="mt-6 flex flex-wrap gap-3">
-                <ContactLink href={wa} origem={origem} />
                 <SignupLink />
               </div>
             </div>
@@ -576,13 +612,13 @@ export function Landing({
             <div>
               <SectionTitle>Quer ver o sistema funcionando?</SectionTitle>
               <p className="mt-2 text-[15px] text-ink-soft sm:text-base">
-                Chame no WhatsApp e a gente mostra o Cenário Gestão com calma, ou crie a sua conta e
-                comece agora.
+                Crie a sua conta e comece agora. Ficou com dúvida? Toque em Dúvidas, no canto da
+                tela, e a gente responde no WhatsApp.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <ContactLink href={wa} origem={origem} />
               <SignupLink />
+              <LoginLink />
             </div>
           </div>
         </section>
@@ -597,7 +633,7 @@ export function Landing({
           )}
         >
           <div>
-            <BrandMark subtitle="Cenário Estofados" />
+            <BrandMark />
             <p className="mt-3">O Cenário Gestão é feito pela Cenário Estofados.</p>
           </div>
           <nav aria-label="Rodapé" className="flex flex-wrap gap-x-5 gap-y-2 font-medium">
@@ -627,7 +663,10 @@ export function Landing({
           </nav>
         </div>
         <LegalFooter preview={preview} mode={legal} />
+        {/* Espaço para o botão Dúvidas não cobrir o fim do rodapé. */}
+        <div className="h-20" aria-hidden />
       </footer>
+      <WhatsappFloat href={wa} origem={origem} />
     </div>
   );
 }

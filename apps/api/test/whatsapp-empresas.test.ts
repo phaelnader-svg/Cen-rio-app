@@ -3,7 +3,15 @@ import type { App } from '../src/app';
 import { setClock } from '../src/core/clock';
 import { companyForInbound } from '../src/modules/integrations/inbox';
 import { signBody, webhookSecret } from '../src/modules/integrations/meta';
-import { Client, createTestApp, db, idemKey, loginAdmin, resetDatabase } from './helpers';
+import {
+  Client,
+  createTestApp,
+  db,
+  idemKey,
+  loginAdmin,
+  resetDatabase,
+  EMPRESA_NOVA,
+} from './helpers';
 
 /**
  * WhatsApp de cada empresa: cada tapeçaria liga o próprio número; a mensagem que chega pelo webhook
@@ -26,6 +34,7 @@ const post = (c: Client, url: string, body: unknown) =>
 async function novaEmpresa() {
   const c = new Client(app);
   const r = await c.post('/api/auth/signup', {
+    ...EMPRESA_NOVA,
     email: 'nova@tapecaria.local',
     password: 'senha123',
     passwordConfirm: 'senha123',

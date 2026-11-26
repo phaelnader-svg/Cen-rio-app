@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { App } from '../src/app';
-import { Client, createTestApp, idemKey, loginAdmin, ownerDb, resetDatabase } from './helpers';
+import {
+  Client,
+  createTestApp,
+  idemKey,
+  loginAdmin,
+  ownerDb,
+  resetDatabase,
+  EMPRESA_NOVA,
+} from './helpers';
 import { day } from './production-helpers';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,6 +32,7 @@ const post = (c: Client, path: string, body: unknown = {}) =>
 async function criarEmpresaB() {
   const client = new Client(app);
   const r = await client.post('/api/auth/signup', {
+    ...EMPRESA_NOVA,
     email: 'gestor@empresa-b.local',
     password: 'SenhaDaEmpresaB1',
     passwordConfirm: 'SenhaDaEmpresaB1',

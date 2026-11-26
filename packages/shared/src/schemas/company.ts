@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { optionalText, trimmed } from './common';
+import { optionalText, trimmed, whatsappSchema } from './common';
 
 const timeSchema = z
   .string()
@@ -94,8 +94,13 @@ export const companyWelcomeSchema = z
       message: 'Escreva o nome da sua empresa.',
     }),
     displayName: trimmed(2, 40, 'Seu nome'),
+    whatsapp: whatsappSchema.optional(),
   })
   .strict();
+/** Empresa antiga sem WhatsApp: o gestor informa ao entrar (uma vez). */
+export const companyContactSchema = z.object({ whatsapp: whatsappSchema }).strict();
+export type CompanyContactInput = z.input<typeof companyContactSchema>;
+
 export type CompanyWelcomeInput = z.input<typeof companyWelcomeSchema>;
 
 export type CompanySettingsInput = z.input<typeof companySettingsSchema>;

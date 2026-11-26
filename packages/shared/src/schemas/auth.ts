@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { trimmed, whatsappSchema } from './common';
+import { PROVISIONAL_TRADE_NAME } from './company';
 
 export const EMAIL_MAX = 254;
 
@@ -64,6 +66,12 @@ export const SIGNUP_PASSWORD_MIN = PASSWORD_MIN;
  */
 export const signupSchema = z
   .object({
+    // Decisão do dono (26/11/2026): toda empresa nova deixa um jeito de ser contatada.
+    companyName: trimmed(2, 120, 'Nome da empresa').refine((v) => v !== PROVISIONAL_TRADE_NAME, {
+      message: 'Escreva o nome da sua empresa.',
+    }),
+    ownerName: trimmed(2, 40, 'Seu nome'),
+    whatsapp: whatsappSchema,
     email: z.string().trim().toLowerCase().email({ message: 'E-mail inválido.' }).max(EMAIL_MAX),
     password: passwordPolicySchema,
     passwordConfirm: z.string().max(128),

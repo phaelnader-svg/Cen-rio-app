@@ -2,36 +2,47 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import type { MeDto } from '@cenario/shared';
+import { hasWhatsapp, type MeDto } from '@cenario/shared';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input } from '@/components/ui/field';
 import { Alert } from '@/components/ui/misc';
 import { api } from '@/lib/api';
+import { typedWhatsapp } from '@/lib/format';
 
 /**
  * Boas-vindas do primeiro acesso de uma empresa criada pelo Criar conta: troca o nome provisório
  * ("Minha empresa") pelo nome real e o nome do gestor (que nasce do começo do e-mail).
+ *
+ * 26/11/2026: empresa sem WhatsApp (criada antes de o cadastro pedir) informa o número ao entrar.
+ * É obrigatório: o dono da plataforma precisa ter como falar com cada empresa.
  */
 export function WelcomeDialog({ me }: { me: MeDto }) {
   const qc = useQueryClient();
   const [later, setLater] = useState(false);
   const [tradeName, setTradeName] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  if (!me.company.needsWelcome || later) return null;
+  const welcome = me.company.needsWelcome && !later;
+  const askWhatsapp = me.company.needsWhatsapp;
+  if (!welcome && !askWhatsapp) return null;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
     try {
-      await api('/api/company/welcome', {
-        method: 'POST',
-        body: { tradeName, displayName },
-      });
+      if (welcome) {
+        await api('/api/company/welcome', {
+          method: 'POST',
+          body: { tradeName, displayName, ...(askWhatsapp ? { whatsapp } : {}) },
+        });
+      } else {
+        await api('/api/company/contact', { method: 'POST', body: { whatsapp } });
+      }
       await qc.invalidateQueries();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível salvar.');
@@ -40,49 +51,79 @@ export function WelcomeDialog({ me }: { me: MeDto }) {
     }
   }
 
+  const ready =
+    (!welcome || (tradeName.trim().length >= 2 && displayName.trim().length >= 2)) &&
+    (!askWhatsapp || hasWhatsapp(whatsapp));
+
   return (
     <Dialog
       open
+      dismissible={!askWhatsapp}
       onClose={() => setLater(true)}
-      title="Boas-vindas ao Cenário Gestão"
-      description="Antes de começar, conte como se chama a sua empresa e como você quer ser chamado. Dá para mudar depois na tela Empresa."
+      title={welcome ? 'Boas-vindas ao Cenário Gestão' : 'Qual é o WhatsApp da empresa?'}
+      description={
+        welcome
+          ? 'Antes de começar, conte como se chama a sua empresa e como você quer ser chamado. Dá para mudar depois na tela Empresa.'
+          : 'É por ele que o Cenário Gestão fala com você sobre a sua conta. Dá para mudar depois na tela Empresa.'
+      }
     >
       <form onSubmit={save} className="space-y-4" data-testid="welcome-form">
-        <Field label="Nome da empresa" required>
-          {(p) => (
-            <Input
-              {...p}
-              value={tradeName}
-              onChange={(e) => setTradeName(e.target.value)}
-              placeholder="Ex.: Tapeçaria Silva"
-              maxLength={120}
-              autoFocus
-              required
-            />
-          )}
-        </Field>
-        <Field label="Seu nome" required>
-          {(p) => (
-            <Input
-              {...p}
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Como aparece no painel e para a equipe"
-              maxLength={40}
-              required
-            />
-          )}
-        </Field>
+        {welcome && (
+          <>
+            <Field label="Nome da empresa" required>
+              {(p) => (
+                <Input
+                  {...p}
+                  value={tradeName}
+                  onChange={(e) => setTradeName(e.target.value)}
+                  placeholder="Ex.: Tapeçaria Silva"
+                  maxLength={120}
+                  autoFocus
+                  required
+                />
+              )}
+            </Field>
+            <Field label="Seu nome" required>
+              {(p) => (
+                <Input
+                  {...p}
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Como aparece no painel e para a equipe"
+                  maxLength={40}
+                  required
+                />
+              )}
+            </Field>
+          </>
+        )}
+        {askWhatsapp && (
+          <Field label="WhatsApp com DDD" required>
+            {(p) => (
+              <Input
+                {...p}
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel-national"
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(typedWhatsapp(e.target.value))}
+                placeholder="(11) 98765-4321"
+                autoFocus={!welcome}
+                required
+                data-testid="welcome-whatsapp"
+              />
+            )}
+          </Field>
+        )}
         {error && <Alert tone="danger">{error}</Alert>}
         <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={() => setLater(true)}>
-            Depois
-          </Button>
-          <Button
-            type="submit"
-            disabled={saving || tradeName.trim().length < 2 || displayName.trim().length < 2}
-          >
-            Começar
+          {!askWhatsapp && (
+            <Button type="button" variant="ghost" onClick={() => setLater(true)}>
+              Depois
+            </Button>
+          )}
+          <Button type="submit" disabled={saving || !ready}>
+            {welcome ? 'Começar' : 'Salvar'}
           </Button>
         </div>
       </form>

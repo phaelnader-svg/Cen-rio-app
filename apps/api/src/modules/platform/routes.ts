@@ -13,6 +13,8 @@ import {
   type PlatformDueTone,
   type PlatformPaymentDto,
   type PlatformSettingsDto,
+  formatWhatsapp,
+  whatsappDigits,
 } from '@cenario/shared';
 import { createCompanyContent, isUniqueViolation } from '@cenario/db';
 import { randomBytes } from 'node:crypto';
@@ -159,7 +161,9 @@ export async function platformRoutes(app: FastifyInstance) {
         status === 'TESTE'
           ? `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. O teste grátis da ${c.tradeName} vai até ${dueAt ? fmtDay(dueAt) : ''}. Para continuar, o valor é ${fmtBRL(priceCents)} ${cycle === 'ANUAL' ? 'por ano' : 'por mês'}${cfg.pixKey ? `, pelo PIX ${cfg.pixKey}` : ''}.`
           : `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. A mensalidade da ${c.tradeName} (${fmtBRL(priceCents)}) ${daysToDue !== null && daysToDue < 0 ? 'venceu' : 'vence'} em ${dueAt ? fmtDay(dueAt) : ''}.${cfg.pixKey ? ` A chave PIX é ${cfg.pixKey}.` : ''} Qualquer dúvida, é só chamar.`;
-      const digits = (phone ?? '').replace(/\D/g, '');
+      // Primeiro contato com quem criou a conta (sem falar de cobrança).
+      const contactText = `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. Vi que a ${c.tradeName} criou uma conta no sistema. Posso ajudar a começar?`;
+      const digits = whatsappDigits(phone);
       const u = usr.get(c.id);
       const p = pay.get(c.id);
       return {
@@ -169,7 +173,7 @@ export async function platformRoutes(app: FastifyInstance) {
         ownerEmail: o?.email ?? c.email ?? null,
         ownerEmailConfirmed: !!o?.emailConfirmedAt,
         email: c.email,
-        phone: c.phone,
+        phone: phone ? formatWhatsapp(phone) : null,
         document: c.document,
         note: c.platformNote,
         createdAt: c.createdAt.toISOString(),
@@ -200,6 +204,10 @@ export async function platformRoutes(app: FastifyInstance) {
         billingPriceCents: c.billingPriceCents,
         paidTotalCents: p?._sum.amountCents ?? 0,
         lastPaymentAt: p?._max.paidAt?.toISOString() ?? null,
+        contactWhatsappUrl:
+          digits.length >= 10
+            ? `https://wa.me/${digits.length <= 11 ? `55${digits}` : digits}?text=${encodeURIComponent(contactText)}`
+            : null,
         chargeWhatsappUrl:
           digits.length >= 10
             ? `https://wa.me/${digits.length <= 11 ? `55${digits}` : digits}?text=${encodeURIComponent(chargeText)}`

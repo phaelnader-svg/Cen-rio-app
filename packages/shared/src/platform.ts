@@ -187,6 +187,8 @@ export interface PlatformCompanyDto {
   /** Quanto ela já pagou no total. */
   paidTotalCents: number;
   lastPaymentAt: string | null;
+  /** WhatsApp para o primeiro contato (boas-vindas, sem cobrança; null = sem telefone). */
+  contactWhatsappUrl: string | null;
   /** Link do WhatsApp do dono da empresa com a cobrança pronta (null = sem telefone). */
   chargeWhatsappUrl: string | null;
 }
