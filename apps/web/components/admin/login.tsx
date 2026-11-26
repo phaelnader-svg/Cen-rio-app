@@ -170,8 +170,8 @@ export function AdminLogin() {
         <p className="text-xs text-white/75">Cada empresa vê só os próprios dados.</p>
       </section>
 
-      <section className="flex items-center justify-center px-5 py-12">
-        <div className="w-full max-w-sm">
+      <section className="flex min-h-dvh flex-col px-5 pt-12 pb-6 lg:min-h-0">
+        <div className="mx-auto my-auto w-full max-w-sm">
           <BrandMark className="mx-auto mb-10 w-fit lg:hidden" />
           <h1 className="text-center text-2xl font-semibold tracking-tight">
             {mode === 'login' ? 'Entrar' : 'Criar conta'}
@@ -315,27 +315,28 @@ export function AdminLogin() {
               >
                 Entrar
               </Button>
-              {/* 26/11/2026: o convite para quem ainda não tem conta, já avisando que é pago. */}
-              <div className="border-t border-line pt-5 text-center" data-testid="convite-cadastro">
-                <p className="font-semibold text-ink">Ainda não tem conta?</p>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="lg"
-                  className="mt-3 w-full"
-                  icon={<UserPlus className="size-4" aria-hidden />}
-                  onClick={() => switchMode('signup')}
-                  data-testid="criar-conta"
-                >
-                  Cadastre-se e teste {pricing.trialDays} dias grátis
-                </Button>
-                <p className="mt-2 text-sm text-ink-muted">
-                  Cadastro sem custo. Depois do teste, a partir de {reais(cheapest(pricing))} por
-                  mês.
-                </p>
-              </div>
             </form>
-          ) : (
+          ) : null}
+          {mode === 'login' && !challenge && (
+            /* 26/11/2026: o cadastro logo embaixo do Entrar, já avisando que é pago. */
+            <div className="mt-4 text-center" data-testid="convite-cadastro">
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                className="w-full"
+                icon={<UserPlus className="size-4" aria-hidden />}
+                onClick={() => switchMode('signup')}
+                data-testid="criar-conta"
+              >
+                Cadastre-se e teste {pricing.trialDays} dias grátis
+              </Button>
+              <p className="mt-2 text-sm text-balance text-ink-muted">
+                Cadastro sem custo. Depois do teste, a partir de {reais(cheapest(pricing))} por mês.
+              </p>
+            </div>
+          )}
+          {mode === 'signup' ? (
             <form onSubmit={onSignup} noValidate className="mt-6 space-y-4">
               {/* 26/11/2026: nome da empresa e de quem cria. O telefone é pedido ao entrar no sistema. */}
               <Field label="Nome da empresa" error={errors.companyName}>
@@ -454,25 +455,24 @@ export function AdminLogin() {
                 </button>
               </p>
             </form>
-          )}
-          <p className="mt-8 text-center text-sm">
-            <a
-              href="/tablet"
-              className="font-medium text-brand-700 underline-offset-4 hover:underline"
-            >
-              Abrir o tablet da oficina
-            </a>
-          </p>
-          <p className="mt-3 text-center text-sm">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1 text-ink-muted underline-offset-4 hover:text-ink hover:underline"
-              data-testid="voltar-site"
-            >
-              <ArrowLeft className="size-3.5" aria-hidden /> Voltar ao site
-            </Link>
-          </p>
+          ) : null}
         </div>
+        <nav className="mt-12 flex items-center justify-center gap-3 text-sm text-ink-muted">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1 underline-offset-4 hover:text-ink hover:underline"
+            data-testid="voltar-site"
+          >
+            <ArrowLeft className="size-3.5" aria-hidden /> Voltar ao site
+          </Link>
+          <span aria-hidden>·</span>
+          <a
+            href="/tablet"
+            className="font-medium text-brand-700 underline-offset-4 hover:underline"
+          >
+            Abrir o tablet da oficina
+          </a>
+        </nav>
       </section>
     </main>
   );

@@ -133,15 +133,17 @@ describe('isolamento e promessas', () => {
   it('a tarja do topo leva ao WhatsApp, fecha no X e não volta para quem fechou', () => {
     const bar = src('components/site/top-bar.tsx');
     expect(bar).toMatch(/localStorage\.setItem\(KEY, '1'\)/);
-    expect(bar).toMatch(/Falar agora/);
+    expect(bar).toMatch(/Agende uma demonstração/);
+    expect(bar).not.toMatch(/Fale com quem usa/);
     expect(bar).not.toMatch(/sticky|fixed/);
-    expect(src('components/site/landing.tsx')).toMatch(/<TopBar href=\{wa\}/);
+    expect(src('components/site/landing.tsx')).toMatch(/<TopBar href=\{demo\}/);
   });
 
   it('o WhatsApp fica flutuando no canto de baixo, à direita, escrito Agendar demonstração', () => {
     const landing = src('components/site/landing.tsx');
     expect(landing).toMatch(/fixed right-4 bottom-4[\s\S]{0,600}Agendar demonstração/);
-    expect(landing).toMatch(/<WhatsappFloat\s+href=\{demoWhatsappUrl\(/);
+    expect(landing).toMatch(/const demo = demoWhatsappUrl\(/);
+    expect(landing).toMatch(/<WhatsappFloat\s+href=\{demo\}/);
     expect(landing).not.toMatch(/subtitle="Cenário Estofados"/);
   });
 });

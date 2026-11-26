@@ -355,6 +355,10 @@ export function Landing({
   blogOrigem?: { slug?: string; titulo?: string } | null;
 }) {
   const wa = whatsappUrl(SITE, blogOrigem ? { blog: true, artigo: blogOrigem.titulo } : undefined);
+  const demo = demoWhatsappUrl(
+    SITE,
+    blogOrigem ? { blog: true, artigo: blogOrigem.titulo } : undefined,
+  );
   const origem = blogOrigem ? (blogOrigem.slug ? `blog:${blogOrigem.slug}` : 'blog') : undefined;
   const price = SITE.monthlyPrice;
   const annual = annualOffer();
@@ -377,7 +381,7 @@ export function Landing({
         </div>
       )}
 
-      <TopBar href={wa} origem={origem} />
+      <TopBar href={demo} origem={origem} />
       <header className={clsx(WRAP, 'flex items-center justify-between gap-4 py-5')}>
         {/* Cenário Gestão e Cenário Estofados são empresas diferentes: o topo mostra só o sistema. */}
         <BrandMark />
@@ -678,13 +682,7 @@ export function Landing({
         {/* Espaço para o botão flutuante não cobrir o fim do rodapé. */}
         <div className="h-20" aria-hidden />
       </footer>
-      <WhatsappFloat
-        href={demoWhatsappUrl(
-          SITE,
-          blogOrigem ? { blog: true, artigo: blogOrigem.titulo } : undefined,
-        )}
-        origem={origem}
-      />
+      <WhatsappFloat href={demo} origem={origem} />
     </div>
   );
 }

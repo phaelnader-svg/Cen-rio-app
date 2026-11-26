@@ -57,6 +57,8 @@ test('cadastro com WhatsApp, empresa antiga e painel da plataforma', async ({ br
     await expect(p.getByTestId('criar-conta')).toBeVisible();
     if (name === '0-entrar-computador')
       await expect(p.getByTestId('entrar-boas-vindas')).toContainText('Bom te ver de novo');
+    if (name === '0-entrar-computador')
+      await expect(p.getByTestId('dica-do-dia')).toContainText('Dica do dia');
     await expect(p.getByTestId('criar-conta')).toContainText('7 dias grátis');
     await p.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
     await ctx.close();
