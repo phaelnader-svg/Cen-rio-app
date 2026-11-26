@@ -132,7 +132,7 @@ describe('isolamento e promessas', () => {
 
   it('o WhatsApp fica flutuando no canto de baixo, à direita, escrito Dúvidas', () => {
     const landing = src('components/site/landing.tsx');
-    expect(landing).toMatch(/fixed right-4 bottom-4[\s\S]{0,600}Dúvidas/);
+    expect(landing).toMatch(/fixed right-4 bottom-4[\s\S]{0,600}Dúvidas\?/);
     expect(landing).toMatch(/<WhatsappFloat href=\{wa\}/);
     expect(landing).not.toMatch(/subtitle="Cenário Estofados"/);
   });

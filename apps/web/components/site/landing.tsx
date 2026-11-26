@@ -132,7 +132,7 @@ function WhatsappIcon({ className }: { className?: string }) {
 
 /**
  * WhatsApp flutuante (pedido do dono, 26/11/2026): sempre no canto de baixo, à direita, escrito
- * "Dúvidas", acompanhando a rolagem da página.
+ * "Dúvidas?", acompanhando a rolagem da página.
  */
 function WhatsappFloat({ href, origem }: { href: string | null; origem?: string }) {
   if (!href) return null;
@@ -146,7 +146,7 @@ function WhatsappFloat({ href, origem }: { href: string | null; origem?: string 
       data-testid="site-cta"
     >
       <WhatsappIcon className="size-5" />
-      Dúvidas
+      Dúvidas?
       <span className="sr-only"> (abre o WhatsApp em outra aba)</span>
     </a>
   );
@@ -621,8 +621,8 @@ export function Landing({
             <div>
               <SectionTitle>Quer ver o sistema funcionando?</SectionTitle>
               <p className="mt-2 text-[15px] text-ink-soft sm:text-base">
-                Crie a sua conta e comece agora. Ficou com dúvida? Toque em Dúvidas, no canto da
-                tela, e a gente responde no WhatsApp.
+                Crie a sua conta e comece agora. Ficou com alguma dúvida? Toque no botão do
+                WhatsApp, no canto da tela, e a gente responde.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
