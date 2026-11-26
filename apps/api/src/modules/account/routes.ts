@@ -1,7 +1,15 @@
-import { confirmEmailSchema, forgotPasswordSchema, resetPasswordSchema } from '@cenario/shared';
+import {
+  PLANS,
+  PLAN_KEYS,
+  confirmEmailSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+  type SignupPricingDto,
+} from '@cenario/shared';
 import type { FastifyInstance } from 'fastify';
 import { actorFrom, audit } from '../../core/audit';
 import { captchaFailed } from '../../core/captcha';
+import { refreshPlatformConfig } from '../../core/platform-config';
 import { revokeSessions } from '../../core/sessions';
 import { AuthThrottle, POLICIES, clientIpKey } from '../../core/throttle';
 import { runAsCompany } from '../../core/tenant';
@@ -18,11 +26,27 @@ export async function accountRoutes(app: FastifyInstance) {
   const throttle = new AuthThrottle(system);
 
   /** Chave pública do anti-robô (Turnstile); vazia = desligado. */
-  app.get('/api/auth/signup-config', { config: { access: { public: true } } }, async () => ({
-    captchaSiteKey: app.ctx.captcha ? env.TURNSTILE_SITE_KEY || null : null,
-    // Sem envio de e-mail, a tela de entrar não oferece "Esqueci minha senha".
-    emailEnabled: app.ctx.mailer.configured,
-  }));
+  app.get('/api/auth/signup-config', { config: { access: { public: true } } }, async () => {
+    // 26/11/2026: o Criar conta mostra os preços do painel (Planos e preços) antes do cadastro,
+    // para ninguém entrar sem saber que, depois do teste grátis, o sistema é pago.
+    const cfg = await refreshPlatformConfig(system);
+    const pricing: SignupPricingDto = {
+      trialDays: cfg.trialDays,
+      annualDiscountPct: Math.round(cfg.annualDiscountBps / 100),
+      plans: PLAN_KEYS.map((key) => ({
+        key,
+        label: PLANS[key].label,
+        description: PLANS[key].description,
+        monthlyCents: cfg.prices[key],
+      })),
+    };
+    return {
+      captchaSiteKey: app.ctx.captcha ? env.TURNSTILE_SITE_KEY || null : null,
+      // Sem envio de e-mail, a tela de entrar não oferece "Esqueci minha senha".
+      emailEnabled: app.ctx.mailer.configured,
+      pricing,
+    };
+  });
 
   /**
    * Esqueci minha senha. A resposta é sempre a mesma (204), exista o e-mail ou não, para ninguém

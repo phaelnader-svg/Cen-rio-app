@@ -59,6 +59,20 @@ test('cadastro com WhatsApp, empresa antiga e painel da plataforma', async ({ br
     await ctx.close();
   }
 
+  // 1c) Tela Entrar: fala com quem já tem conta e convida quem ainda não tem.
+  for (const [name, opts] of [
+    ['0-entrar-computador', DESK],
+    ['0b-entrar-celular', PHONE],
+  ] as const) {
+    const ctx = await browser.newContext({ ...opts, baseURL: origin });
+    const p = await ctx.newPage();
+    await p.goto('/entrar');
+    await expect(p.getByText('Bom te ver de novo')).toBeVisible();
+    await expect(p.getByTestId('criar-conta')).toContainText('7 dias grátis');
+    await p.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
+    await ctx.close();
+  }
+
   // 2) Criar conta preenchido (computador e celular).
   for (const [name, opts] of [
     ['3-criar-conta-computador', DESK],
@@ -74,6 +88,7 @@ test('cadastro com WhatsApp, empresa antiga e painel da plataforma', async ({ br
     await p.getByLabel('Senha', { exact: true }).fill('SenhaBoa123');
     await p.getByLabel('Confirmar senha').fill('SenhaBoa123');
     await expect(p.getByTestId('signup-whatsapp')).toHaveValue('(31) 99123-4567');
+    await expect(p.getByTestId('signup-trial')).toContainText('R$ 399 por mês');
     await p.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
     if (name === '4-criar-conta-celular') {
       // Sem o WhatsApp: o cadastro não passa.

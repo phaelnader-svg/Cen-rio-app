@@ -13,8 +13,14 @@ import { Alert } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
 import { typedWhatsapp } from '@/lib/format';
 import { Honeypot, Turnstile, useSignupConfig } from '@/components/account/turnstile';
-import { trialOffer } from '@/components/site/config';
 import { legalLinksReady } from '@/components/site/legal/links-ready';
+import {
+  SignupPricingPanel,
+  cheapest,
+  pricingOrDefault,
+  reais,
+  signupPriceNotice,
+} from './signup-pricing';
 
 const REASONS: Record<string, string> = {
   'sessao-encerrada': 'Sua sessão foi encerrada. Entre novamente para continuar.',
@@ -40,6 +46,7 @@ function RevealButton({ shown, onToggle }: { shown: boolean; onToggle: () => voi
 export function AdminLogin() {
   const router = useRouter();
   const signupConfig = useSignupConfig();
+  const pricing = pricingOrDefault(signupConfig.data?.pricing);
   const params = useSearchParams();
   const qc = useQueryClient();
   // ?criar=1 (botões da landing e anúncios) abre direto no Criar conta.
@@ -161,25 +168,31 @@ export function AdminLogin() {
     <main className="grid min-h-dvh lg:grid-cols-[1.05fr_1fr]">
       <section className="relative hidden overflow-hidden bg-brand-800 p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <BrandMark inverted />
-        {/* Melhoria 149: a mesma voz da landing e um print do sistema no lugar do enfeite. */}
-        <div className="max-w-md">
-          <h2 className="text-4xl leading-tight font-semibold tracking-tight text-balance">
-            Feito dentro de uma tapeçaria, para tapeçarias.
-          </h2>
-          <p className="mt-4 text-white/75">
-            O tapeceiro vê o dia dele no tablet. O escritório acompanha cada serviço, do orçamento à
-            entrega.
-          </p>
-        </div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/site/inicio.webp"
-          alt=""
-          aria-hidden
-          width={1440}
-          height={900}
-          className="w-full max-w-lg rounded-xl border border-white/10 shadow-2xl"
-        />
+        {mode === 'signup' ? (
+          <SignupPricingPanel pricing={pricing} />
+        ) : (
+          <>
+            {/* Melhoria 149: a mesma voz da landing e um print do sistema no lugar do enfeite. */}
+            <div className="max-w-md">
+              <h2 className="text-4xl leading-tight font-semibold tracking-tight text-balance">
+                Feito dentro de uma tapeçaria, para tapeçarias.
+              </h2>
+              <p className="mt-4 text-white/75">
+                O tapeceiro vê o dia dele no tablet. O escritório acompanha cada serviço, do
+                orçamento à entrega.
+              </p>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/site/inicio.webp"
+              alt=""
+              aria-hidden
+              width={1440}
+              height={900}
+              className="w-full max-w-lg rounded-xl border border-white/10 shadow-2xl"
+            />
+          </>
+        )}
         <p className="text-xs text-white/75">Cada empresa vê só os próprios dados.</p>
       </section>
 
@@ -187,13 +200,40 @@ export function AdminLogin() {
         <div className="w-full max-w-sm">
           <BrandMark className="mx-auto mb-10 w-fit lg:hidden" />
           <h1 className="text-center text-2xl font-semibold tracking-tight">
-            {mode === 'login' ? 'Entrar no painel' : 'Criar conta'}
+            {mode === 'login' ? 'Bom te ver de novo' : 'Criar conta'}
           </h1>
           <p className="mt-1 text-center text-[15px] text-ink-muted">
             {mode === 'login'
-              ? 'Use seu e-mail e senha.'
+              ? 'Entre com o seu e-mail e senha. A oficina está te esperando.'
               : 'Crie a conta da sua empresa. Os dados dela ficam separados de todas as outras.'}
           </p>
+
+          {/* No celular (sem o lado esquerdo), os planos aparecem aqui, antes do cadastro. */}
+          {mode === 'signup' && (
+            <div
+              className="mt-5 rounded-xl border border-line bg-surface p-4 text-sm lg:hidden"
+              data-testid="signup-precos-celular"
+            >
+              <p className="font-semibold text-ink">
+                {pricing.trialDays} dias grátis. Depois, o sistema é pago:
+              </p>
+              <ul className="mt-2 space-y-1 text-ink-soft">
+                {pricing.plans.map((p) => (
+                  <li key={p.key} className="flex justify-between gap-3">
+                    <span>{p.label}</span>
+                    <span className="font-semibold whitespace-nowrap text-ink">
+                      {reais(p.monthlyCents)}/mês
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {pricing.annualDiscountPct > 0 && (
+                <p className="mt-2 text-ink-muted">
+                  No plano anual, {pricing.annualDiscountPct}% de desconto.
+                </p>
+              )}
+            </div>
+          )}
 
           {mode === 'login' && reason && REASONS[reason] && (
             <Alert tone="info" className="mt-6">
@@ -301,17 +341,25 @@ export function AdminLogin() {
               >
                 Entrar
               </Button>
-              <Button
-                type="button"
-                variant="secondary"
-                size="lg"
-                className="w-full"
-                icon={<UserPlus className="size-4" aria-hidden />}
-                onClick={() => switchMode('signup')}
-                data-testid="criar-conta"
-              >
-                Criar conta
-              </Button>
+              {/* 26/11/2026: o convite para quem ainda não tem conta, já avisando que é pago. */}
+              <div className="border-t border-line pt-5 text-center" data-testid="convite-cadastro">
+                <p className="font-semibold text-ink">Ainda não tem conta?</p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="lg"
+                  className="mt-3 w-full"
+                  icon={<UserPlus className="size-4" aria-hidden />}
+                  onClick={() => switchMode('signup')}
+                  data-testid="criar-conta"
+                >
+                  Cadastre-se e teste {pricing.trialDays} dias grátis
+                </Button>
+                <p className="mt-2 text-sm text-ink-muted">
+                  Cadastro sem custo. Depois do teste, a partir de {reais(cheapest(pricing))} por
+                  mês.
+                </p>
+              </div>
             </form>
           ) : (
             <form onSubmit={onSignup} noValidate className="mt-6 space-y-4">
@@ -400,11 +448,10 @@ export function AdminLogin() {
               <Honeypot value={website} onChange={setWebsite} />
               <Turnstile onToken={setCaptcha} />
               {/* Melhoria 151: a mesma promessa da landing, logo antes do botão. */}
-              {trialOffer() && (
-                <p className="text-sm font-medium text-brand-700" data-testid="signup-trial">
-                  {trialOffer()}
-                </p>
-              )}
+              {/* 26/11/2026: deixa claro, antes do botão, que depois do teste o sistema é pago. */}
+              <p className="text-sm font-medium text-brand-700" data-testid="signup-trial">
+                {signupPriceNotice(pricing)}
+              </p>
               <Button
                 type="submit"
                 size="lg"

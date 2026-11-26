@@ -331,6 +331,11 @@ describe('Planos, preços e como eu recebo', () => {
     const dias = (nova.trialEndsAt!.getTime() - Date.now()) / 86_400_000;
     expect(dias).toBeGreaterThan(13.9);
     expect(dias).toBeLessThan(14.1);
+    // A tela Criar conta mostra os mesmos preços e dias, antes do cadastro (sem login).
+    const cfg = ok(await new Client(app).get('/api/auth/signup-config'));
+    expect(cfg.pricing).toMatchObject({ trialDays: 14, annualDiscountPct: 20 });
+    expect(cfg.pricing.plans.find((p: J) => p.key === 'gestao').monthlyCents).toBe(44900);
+    expect(cfg.pricing.plans.find((p: J) => p.key === 'gestao_jogo').monthlyCents).toBe(59900);
   });
 
   it('com o bloqueio automático, o teste vencido bloqueia; "Recebi" libera na hora', async () => {

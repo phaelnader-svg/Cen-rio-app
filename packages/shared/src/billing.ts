@@ -159,3 +159,10 @@ export interface SubscriptionDto {
     includesGame: boolean;
   }[];
 }
+
+/** Preços públicos do Criar conta (vêm do painel Planos e preços). */
+export interface SignupPricingDto {
+  trialDays: number;
+  annualDiscountPct: number;
+  plans: { key: PlanKey; label: string; description: string; monthlyCents: number }[];
+}

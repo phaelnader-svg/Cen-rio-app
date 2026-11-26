@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
+import type { SignupPricingDto } from '@cenario/shared';
 import { api } from '@/lib/api';
 
 declare global {
@@ -25,7 +26,11 @@ export function useSignupConfig() {
   return useQuery({
     queryKey: ['signup-config'],
     queryFn: () =>
-      api<{ captchaSiteKey: string | null; emailEnabled: boolean }>('/api/auth/signup-config'),
+      api<{
+        captchaSiteKey: string | null;
+        emailEnabled: boolean;
+        pricing?: SignupPricingDto;
+      }>('/api/auth/signup-config'),
     staleTime: Infinity,
   });
 }

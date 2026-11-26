@@ -472,7 +472,7 @@ describe('Fila de e-mails (Resend)', () => {
 describe('Sem as chaves (Resend, Turnstile): publica desligado sem quebrar nada', () => {
   it('cria conta e entra sem confirmar e-mail, sem anti-robô e sem link de esqueci a senha', async () => {
     const cfg = await new Client(app).get('/api/auth/signup-config');
-    expect(cfg.body).toEqual({ captchaSiteKey: null, emailEnabled: false });
+    expect(cfg.body).toMatchObject({ captchaSiteKey: null, emailEnabled: false });
     const { c } = await criarConta();
     const me = await c.get('/api/auth/me');
     expect(me.status).toBe(200);
