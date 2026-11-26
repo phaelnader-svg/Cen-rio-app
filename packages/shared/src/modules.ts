@@ -79,7 +79,7 @@ export function resolveModules(rows: readonly { key: string; enabled: boolean }[
 
 /** Avisos de tablet/painel que pertencem a um módulo (escondidos quando ele está desligado). */
 export const MODULE_NOTIFICATION_KINDS: Record<ModuleKey, readonly string[]> = {
-  logistica: ['ENTREGA_ATRIBUIDA', 'ENTREGA_AGENDADA', 'ENTREGA_CONCLUIDA'],
+  logistica: ['ENTREGA_ATRIBUIDA', 'ENTREGA_AGENDADA', 'ENTREGA_CONCLUIDA', 'RETIRADA_CANCELADA'],
   ambiente_interativo: [],
   oficina_sem_tablet: [],
 };

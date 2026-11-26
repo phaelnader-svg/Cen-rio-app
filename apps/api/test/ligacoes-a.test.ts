@@ -220,16 +220,29 @@ describe('1. Cancelar o pedido', () => {
       .not.toContain('Tecido linho');
   });
 
-  it('1.4 peça já "chegou" sozinha (1 h depois da retirada): ainda dá para cancelar o pedido', async () => {
+  it('1.4 peça "chegou" sozinha sem a retirada acontecer: desfaz e aí sim cancela o pedido', async () => {
     const admin = await loginAdmin(app);
     const res = await closeService(admin, { date: day(-1) });
     await runAuto(new Date());
     expect((await pickup(admin, res.pickup!.id)).status).toBe('RECEBIDA_NA_OFICINA');
+    // Raphael: depois da retirada feita o cliente não cancela — o pedido recusa.
+    expect((await cancelOrder(admin, res.order.id)).status).toBe(422);
+    const undo = await transition(admin, res.pickup!.id, 'COM_OCORRENCIA', 'Cliente não estava');
+    expect(undo.status, JSON.stringify(undo.body)).toBe(200);
+    expect((await order(admin, res.order.id)).receivedPieces).toBe(0);
     const r = await cancelOrder(admin, res.order.id);
-    // Hoje: recusado ("Há peças deste pedido na oficina ... fase futura"). Sem saída no sistema.
-    expect
-      .soft(r.status, `cancelar pedido com peça na oficina: ${JSON.stringify(r.body)}`)
-      .toBe(200);
+    expect.soft(r.status, JSON.stringify(r.body)).toBe(200);
+  });
+
+  it('1.4b "a retirada não aconteceu" com a peça já numa OS: pede para cancelar a OS antes', async () => {
+    const admin = await loginAdmin(app);
+    const res = await closeService(admin, { date: day(-1) });
+    await runAuto(new Date());
+    await generateOs(admin, res.order.id);
+    const undo = await transition(admin, res.pickup!.id, 'COM_OCORRENCIA', 'Não foi feita');
+    expect(undo.status).toBe(422);
+    expect(JSON.stringify(undo.body)).toContain('Cancele a OS');
+    expect((await order(admin, res.order.id)).receivedPieces).toBe(1);
   });
 
   it('1.5 cancelar o pedido com pagamento recebido exige decidir reembolso/retenção (nada se perde)', async () => {
@@ -287,18 +300,34 @@ describe('2. Retirada: cancelar, reagendar, não aconteceu', () => {
 
   it('2.3 retirada "chegou" sozinha mas NÃO aconteceu: dá para desfazer e reagendar', async () => {
     const admin = await loginAdmin(app);
-    const res = await closeService(admin, { date: day(-1) });
+    const res = await closeService(admin, {
+      date: day(-1),
+      payment: { model: 'METADE_RETIRADA_ENTREGA' },
+    });
     await runAuto(new Date());
     const p = await pickup(admin, res.pickup!.id);
     expect(p.status).toBe('RECEBIDA_NA_OFICINA');
-    // Esperado: alguma saída (voltar para agendada / com ocorrência) para reagendar.
+    expect(p.allowedTransitions).toEqual(['COM_OCORRENCIA']);
+    const undo = await transition(admin, res.pickup!.id, 'COM_OCORRENCIA', 'Cliente não estava');
+    expect(undo.status, JSON.stringify(undo.body)).toBe(200);
+    expect(undo.body.status).toBe('COM_OCORRENCIA');
+    expect(undo.body.events.at(-1)).toMatchObject({ kind: 'NAO_ACONTECEU' });
+    const o = await order(admin, res.order.id);
+    expect.soft(o.receivedPieces, 'peça sai da tapeçaria').toBe(0);
+    // a cobrança "na retirada" deixa de contar como retirada feita
+    const rc = (await db().customerReceivable.findMany({ where: { orderId: res.order.id } })).find(
+      (x) => x.dueTrigger === 'RETIRADA',
+    )!;
     expect
-      .soft(p.allowedTransitions.length, 'retirada "na tapeçaria" sem nenhuma ação possível')
-      .toBeGreaterThan(0);
+      .soft((await admin.get(`/api/v1/finance/receivables/${rc.id}`)).body.effectiveDueDate)
+      .toBeNull();
     const re = await reschedule(admin, res.pickup!.id, day(5));
-    expect
-      .soft(re.status, `reagendar depois da chegada automática: ${JSON.stringify(re.body)}`)
-      .toBe(200);
+    expect.soft(re.status, JSON.stringify(re.body)).toBe(200);
+    expect.soft(re.body.status).toBe('AGENDADA');
+    expect.soft((await order(admin, res.order.id)).status).toBe('RETIRADA_AGENDADA');
+    // e volta a chegar sozinha no novo dia
+    await runAuto(farFuture());
+    expect.soft((await pickup(admin, res.pickup!.id)).status).toBe('RECEBIDA_NA_OFICINA');
   });
 
   it('2.4 retirada com ocorrência (cliente não estava) não chega sozinha e pode ser reagendada', async () => {
@@ -348,8 +377,10 @@ describe('2. Retirada: cancelar, reagendar, não aconteceu', () => {
     const recs = await db().customerReceivable.findMany({ where: { orderId: res.order.id } });
     const entrada = recs.find((x) => x.dueTrigger === 'RETIRADA')!;
     const rc = (await admin.get(`/api/v1/finance/receivables/${entrada.id}`)).body;
-    // A entrada tinha de vencer no dia em que a peça foi retirada/chegou.
-    expect.soft(rc.effectiveDueDate, 'entrada "na retirada" nunca vence').not.toBeNull();
+    // Raphael: o Pix dos 50% costuma vir depois — vence 3 dias depois da chegada (2 dias atrás).
+    expect.soft(rc.effectiveDueDate, 'entrada "na retirada" nunca vence').toBe(day(1));
+    expect.soft(rc.overdue).toBe(false);
+    expect.soft(rc.openCents).toBe(100000);
   });
 });
 
@@ -376,8 +407,11 @@ describe('3. No local', () => {
     expect
       .soft(s.onSite, `OS ainda mostra o No local cancelado: ${JSON.stringify(s.onSite)}`)
       .toBeNull();
-    // O prazo da OS era o dia do No local cancelado: tem de sair (ou avisar que falta marcar dia).
-    expect.soft(s.promisedDate, 'OS fica com o prazo do No local cancelado').not.toBe(day(3));
+    // A Central avisa que a OS está sem dia marcado para o serviço no local.
+    const central = (await admin.get('/api/v1/attention')).body;
+    expect
+      .soft(JSON.stringify(central), 'Central não avisa o No local sem dia')
+      .toContain(`LOGISTICA:no-local-sem-dia:${os.id}`);
   });
 
   it('3.3 No local vira "feito" sozinho às 19h do dia, nunca antes', async () => {

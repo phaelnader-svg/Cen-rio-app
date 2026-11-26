@@ -63,6 +63,7 @@ describe('módulos configuráveis', () => {
       'ENTREGA_AGENDADA',
       'ENTREGA_ATRIBUIDA',
       'ENTREGA_CONCLUIDA',
+      'RETIRADA_CANCELADA',
     ]);
     for (const k of hidden) expect(NOTIFICATION_KINDS as readonly string[]).toContain(k);
   });

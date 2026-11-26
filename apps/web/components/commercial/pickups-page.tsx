@@ -246,7 +246,9 @@ export function PickupsPage() {
           </div>
           <div className="grid gap-2 md:grid-cols-7" data-testid="agenda">
             {days.map((d) => {
-              const items = agenda.data?.filter((p) => p.scheduledDate === d) ?? [];
+              // 2026-11-26 (Raphael): cancelada some da agenda (fica na lista, filtro "Cancelada", e no pedido).
+              const items =
+                agenda.data?.filter((p) => p.scheduledDate === d && p.status !== 'CANCELADA') ?? [];
               const inMonth = d.slice(0, 7) === month;
               const holiday = holidayOf(d);
               const weekend = isWeekend(d);

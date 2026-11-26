@@ -40,7 +40,8 @@ describe('Regras do fluxo', () => {
       .map(([from]) => from)
       .sort();
     expect(into).toEqual(['COM_OCORRENCIA', 'RETIRADA_REALIZADA']);
-    expect(PICKUP_TRANSITIONS.RECEBIDA_NA_OFICINA).toEqual([]);
+    // 2026-11-26: só "A retirada não aconteceu" (volta para com ocorrência).
+    expect(PICKUP_TRANSITIONS.RECEBIDA_NA_OFICINA).toEqual(['COM_OCORRENCIA']);
     expect(PICKUP_TRANSITIONS.CANCELADA).toEqual([]);
   });
   it('tecido é sempre comprado para a OS', () => {

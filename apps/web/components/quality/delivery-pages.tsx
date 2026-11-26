@@ -127,7 +127,8 @@ function Agenda() {
   const q = useDeliveries({ from, to });
   const groups = useMemo(() => {
     const byDate = new Map<string, Map<string, DeliveryDto[]>>();
-    for (const d of q.data ?? []) {
+    // 2026-11-26 (Raphael): entrega cancelada some da agenda (fica no histórico da OS).
+    for (const d of (q.data ?? []).filter((x) => x.status !== 'CANCELADA')) {
       if (!byDate.has(d.scheduledDate)) byDate.set(d.scheduledDate, new Map());
       const r = byDate.get(d.scheduledDate)!;
       if (!r.has(d.region)) r.set(d.region, []);

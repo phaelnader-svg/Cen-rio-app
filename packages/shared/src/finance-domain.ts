@@ -139,7 +139,18 @@ export function effectiveDueDate(r: {
   dueDate: string | null;
   eventDate: string | null;
 }): string | null {
-  return r.dueTrigger === 'DATA' ? r.dueDate : r.eventDate;
+  if (r.dueTrigger === 'DATA') return r.dueDate;
+  // 2026-11-26 (Raphael): o Pix dos 50% "na retirada" costuma vir depois, outro dia — vence 3 dias
+  // depois que a peça chegou (ou do serviço feito no local); até lá fica só "a cobrar".
+  if (r.dueTrigger === 'RETIRADA' && r.eventDate)
+    return addDaysIso(r.eventDate, PICKUP_PAYMENT_GRACE_DAYS);
+  return r.eventDate;
+}
+export const PICKUP_PAYMENT_GRACE_DAYS = 3;
+function addDaysIso(iso: string, n: number) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
 }
 
 /**
@@ -154,7 +165,7 @@ export function receivableOverdue(r: {
   today: string;
 }) {
   if (r.cancelled || r.openCents <= 0 || !r.effectiveDue) return { overdue: false, daysOverdue: 0 };
-  const overdue = r.dueTrigger === 'DATA' ? r.effectiveDue < r.today : r.effectiveDue <= r.today;
+  const overdue = r.dueTrigger === 'ENTREGA' ? r.effectiveDue <= r.today : r.effectiveDue < r.today;
   if (!overdue) return { overdue: false, daysOverdue: 0 };
   const days = Math.round(
     (Date.parse(`${r.today}T00:00:00Z`) - Date.parse(`${r.effectiveDue}T00:00:00Z`)) / 86_400_000,

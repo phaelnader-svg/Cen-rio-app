@@ -365,7 +365,8 @@ describe('Retirada com cartão, instrução de pagamento e registro da equipe (A
     ])
       expect((await andre.get(path)).status, path).toBe(403);
 
-    // Retirada realizada: a cobrança vence (evento real) — Central acusa retirado com saldo.
+    // Retirada realizada: a cobrança passa a contar (evento real). 2026-11-26 (Raphael): o Pix dos
+    // 50% costuma vir outro dia — vence 3 dias depois da chegada; até lá é só "a cobrar".
     const v1 = (await db().pickupRequest.findUniqueOrThrow({ where: { id: pickupId! } })).version;
     const s1 = ok<unknown>(
       await post(andre, `/api/v1/logistics/pickups/${pickupId}/step`, {
@@ -382,13 +383,11 @@ describe('Retirada com cartão, instrução de pagamento e registro da equipe (A
       }),
     );
     const [r] = await recs(admin, orderId);
-    expect(r).toMatchObject({ effectiveDueDate: today(), overdue: true, daysOverdue: 0 });
+    expect(r).toMatchObject({ effectiveDueDate: day(3), overdue: false, daysOverdue: 0 });
     const att = ok<{ items: { key: string; category: string; title: string }[] }>(
       await admin.get('/api/v1/attention'),
     );
-    expect(att.items.find((i) => i.key === `COBRANCA:VENCIDA:${r!.id}`)).toMatchObject({
-      category: 'CRITICO',
-    });
+    expect(att.items.find((i) => i.key === `COBRANCA:VENCIDA:${r!.id}`)).toBeUndefined();
 
     // A equipe informa: registro operacional, nenhum recebimento.
     const key = idemKey();

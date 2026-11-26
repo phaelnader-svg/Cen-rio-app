@@ -74,11 +74,13 @@ export function ProductionBoardPage() {
 
   const groups = useMemo(() => {
     const term = os.trim().toLowerCase();
+    // 2026-11-26 (Raphael): tarefa cancelada some do quadro; aparece só no filtro "Cancelada".
     const rows = (board.data ?? []).filter(
       (t) =>
-        !term ||
-        t.serviceOrder.code.toLowerCase().includes(term) ||
-        t.customerName.toLowerCase().includes(term),
+        (status === 'CANCELADA' || t.status !== 'CANCELADA') &&
+        (!term ||
+          t.serviceOrder.code.toLowerCase().includes(term) ||
+          t.customerName.toLowerCase().includes(term)),
     );
     const map = new Map<string, ProductionTaskDto[]>();
     for (const t of rows) {
@@ -86,7 +88,7 @@ export function ProductionBoardPage() {
       map.set(k, [...(map.get(k) ?? []), t]);
     }
     return [...map.entries()];
-  }, [board.data, by, os]);
+  }, [board.data, by, os, status]);
 
   return (
     <>

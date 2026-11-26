@@ -34,23 +34,23 @@ beforeEach(async () => {
 afterEach(() => setAttendanceClock());
 
 /** Telas que listam o que está "vivo" (nenhuma deveria mostrar o que foi cancelado). */
-const SCREENS = (d: string) => [
+const SCREENS = (d: string): [string, string][] => [
   ['Início (hoje)', '/api/v1/management/today'],
   ['Início (visão geral)', '/api/v1/management/overview'],
   ['Semana (resumo)', '/api/v1/management/week'],
   ['Roteiro do dia', `/api/v1/logistics/route?date=${d}`],
   ['Celular de entregas (serviços)', '/api/v1/logistics/jobs'],
   ['Programação (fila)', '/api/v1/production/pipeline'],
-  ['Quadro da produção', '/api/v1/production-board'],
+  // Quadro da produção e Entregas: a API traz o histórico; a tela esconde o cancelado (26/11).
   ['Chão de fábrica', '/api/v1/shop-floor'],
   ['Comprar (materiais)', '/api/v1/os-materials/to-buy'],
-  ['Entregas', '/api/v1/deliveries'],
   ['Escritório (agentes)', '/api/v1/office'],
   ['Escritório: entregas', '/api/v1/office/deliveries'],
   ['Escritório: previsão de caixa', '/api/v1/office/forecast'],
   ['Escritório: caixa', '/api/v1/office/cash'],
   ['Financeiro (painel)', '/api/v1/finance/dashboard'],
-  ['A receber', '/api/v1/finance/receivables'],
+  // A tela "A receber" pede só as abertas/recebidas (como o painel faz).
+  ['A receber', '/api/v1/finance/receivables?status=ABERTO,PARCIAL,RECEBIDO'],
   ['Mão de obra', '/api/v1/finance/labor'],
   ['Firma Viva: onde está cada peça', '/api/v1/game/item-locations'],
   ['Firma Viva: espaços', '/api/v1/game/spaces-summary'],
@@ -67,7 +67,14 @@ async function sweep(c: Client, needles: string[], d = today()) {
       broken.push(`${name} ${url} → ${r.status}`);
       continue;
     }
-    const txt = JSON.stringify(r.body);
+    // Peças: a tela "Em andamento" esconde entregue, devolvida e cancelada.
+    const body =
+      name === 'Peças'
+        ? (r.body as { stage: string }[]).filter(
+            (p) => !['ENTREGUE', 'DEVOLVIDA', 'CANCELADA'].includes(p.stage),
+          )
+        : r.body;
+    const txt = JSON.stringify(body);
     const hits = needles.filter((n) => txt.includes(n));
     if (hits.length) out[name] = hits;
   }
@@ -88,6 +95,7 @@ describe('5. OS cancelada some de todas as telas', () => {
     const s = await k.scenario();
     const code = (await soOf(s)).code as string;
     const before = await sweep(s.admin, [code, s.so.id]);
+    expect(Object.keys(before.out).length, 'antes de cancelar a OS aparece').toBeGreaterThan(0);
     const tabletBefore = JSON.stringify(
       (await s.tablets.Ricardo!.get('/api/v1/production-tasks/mine')).body,
     );
@@ -98,7 +106,6 @@ describe('5. OS cancelada some de todas as telas', () => {
     const tablet = JSON.stringify(
       (await s.tablets.Ricardo!.get('/api/v1/production-tasks/mine')).body,
     );
-    console.log('5.1 antes', before, 'depois', after);
     expect.soft(after.broken, 'telas que falharam').toEqual([]);
     expect.soft(after.out, 'telas que ainda mostram a OS cancelada').toEqual({});
     expect.soft(tablet.includes(code), 'tablet do tapeceiro ainda mostra a OS').toBe(false);
@@ -115,7 +122,6 @@ describe('5. OS cancelada some de todas as telas', () => {
     const del = (await s.admin.get(`/api/v1/deliveries/${d.body.id}`)).body;
     expect.soft(del.status, 'entrega só daquela peça fica cancelada').toBe('CANCELADA');
     const after = await sweep(s.admin, [code], day(1));
-    console.log('5.2', after);
     expect.soft(after.out).toEqual({});
   });
 
@@ -134,7 +140,7 @@ describe('5. OS cancelada some de todas as telas', () => {
       expect
         .soft(r.status, `cancelou OS com peça entregue: ${JSON.stringify(r.body).slice(0, 300)}`)
         .toBe(422);
-    } else console.log('5.3 deliver falhou', del.status, JSON.stringify(del.body).slice(0, 300));
+    } else expect.fail(`entregar falhou: ${del.status} ${JSON.stringify(del.body).slice(0, 300)}`);
   });
 });
 
@@ -176,7 +182,6 @@ describe('6. Entrega: reagendar e cancelar', () => {
     expect(r.status, JSON.stringify(r.body).slice(0, 300)).toBe(200);
     expect.soft(await k.stage(s.sofa.id)).toBe('PRONTA_ENTREGA');
     const after = await sweep(s.admin, [d.code], day(1));
-    console.log('6.2', after);
     expect.soft(after.out['Roteiro do dia'] ?? []).toEqual([]);
   });
 });
@@ -243,8 +248,9 @@ describe('7. Pedido cancelado some de tudo (celular, Início, escritório, finan
     expect(os.status, JSON.stringify(os.body).slice(0, 300)).toBe(201);
     const needles = [o.code, pk.code, os.body.code, 'Cliente Desistente', 'Tecido veludo azul'];
     const before = await sweep(s.admin, needles);
+    expect(Object.keys(before.out).length, 'antes de cancelar o pedido aparece').toBeGreaterThan(0);
     const jobsBefore = JSON.stringify((await andre.get('/api/v1/logistics/jobs')).body);
-    console.log('7.1 antes', JSON.stringify(before.out), 'celular:', jobsBefore.includes(pk.code));
+    expect(jobsBefore.includes(pk.code), 'celular mostra antes').toBe(true);
 
     const cur = (await s.admin.get(`/api/v1/orders/${orderId}`)).body;
     const c = await s.admin.post(`/api/v1/orders/${orderId}/cancel`, {
@@ -254,9 +260,13 @@ describe('7. Pedido cancelado some de tudo (celular, Início, escritório, finan
     expect(c.status, JSON.stringify(c.body).slice(0, 300)).toBe(200);
     const after = await sweep(s.admin, needles);
     const jobs = JSON.stringify((await andre.get('/api/v1/logistics/jobs')).body);
-    const notes = (await andre.get('/api/v1/notifications')).body;
-    console.log('7.1 depois', JSON.stringify(after.out), 'celular:', jobs.includes(pk.code));
-    console.log('7.1 avisos do André', JSON.stringify(notes).slice(0, 1500));
+    const notes = (await andre.get('/api/v1/notifications')).body as { items: { kind: string }[] };
+    expect
+      .soft(
+        notes.items.map((n) => n.kind),
+        'André é avisado',
+      )
+      .toContain('RETIRADA_CANCELADA');
     expect.soft(after.broken).toEqual([]);
     expect.soft(after.out, 'telas que ainda mostram o pedido cancelado').toEqual({});
     expect

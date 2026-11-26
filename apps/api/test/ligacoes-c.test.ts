@@ -96,7 +96,6 @@ describe('8. Números não contam o cancelado', () => {
       if (JSON.stringify(r.body).includes('Cliente Sai') && u !== '/api/v1/customers')
         problems.push(`${u}: mostra "Cliente Sai"`);
     }
-    console.log('8.1', problems);
     expect.soft(problems).toEqual([]);
   });
 });
@@ -151,7 +150,6 @@ describe('9. Cliente e orçamento ligados a serviço em andamento', () => {
       reason: 'Saiu da empresa',
     });
     const p = (await admin.get(`/api/v1/pickups/${r.body.pickup.id}`)).body;
-    console.log('9.2', d.status, JSON.stringify(d.body).slice(0, 300), 'responsável:', p.executor);
     if (d.status === 200)
       expect.soft(p.executor, 'retirada continua com funcionário desligado').toBeNull();
   });

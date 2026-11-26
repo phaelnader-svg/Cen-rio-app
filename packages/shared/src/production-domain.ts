@@ -172,6 +172,8 @@ export const NOTIFICATION_KINDS = [
   'ENTREGA_ATRIBUIDA',
   'ENTREGA_CONCLUIDA',
   'OCORRENCIA_LOGISTICA',
+  // 2026-11-26: retirada / serviço no local cancelado (aviso ao responsável e a quem ia junto).
+  'RETIRADA_CANCELADA',
   // Fase 12 — devoluções e compras
   'REVISAO_DEVOLUCAO',
   'SALDO_COMPRA_ENCERRADO',
@@ -253,6 +255,7 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   ENTREGA_ATRIBUIDA: 'Entrega ou retirada atribuída',
   ENTREGA_CONCLUIDA: 'Entrega concluída',
   OCORRENCIA_LOGISTICA: 'Ocorrência logística',
+  RETIRADA_CANCELADA: 'Retirada cancelada',
   REVISAO_DEVOLUCAO: 'Devolução: revisar reservas ou valores',
   SALDO_COMPRA_ENCERRADO: 'Saldo de compra encerrado',
   VALOR_SOLICITADO: 'Pedido de alteração de valor',

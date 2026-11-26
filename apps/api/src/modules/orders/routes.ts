@@ -55,6 +55,8 @@ import { cancelServiceOrder, changeServiceOrderPromisedDate } from '../service-o
 import { cancelOrderFinance, lockOrderReceivables, recordAgreedValue } from '../finance/revenue';
 import { resolvePickupAssignment } from '../notifications/notify';
 import { PICKUP_ARRIVAL_PENDING, receivePickupAtWorkshop } from '../pickups/arrival';
+import { emitPickupEvent } from '../pickups/routes';
+import { announcePickupChange } from '../pickups/service';
 
 const PROMISED_ACTION = 'order.promised_date_changed';
 const br = (d: string | null) => (d ? d.split('-').reverse().join('/') : 'sem prazo');
@@ -812,6 +814,34 @@ export async function orderRoutes(app: FastifyInstance) {
           });
           await syncTripCost(tx, actor, { pickupId: p.id }, `pedido cancelado: ${input.reason}`);
           await resolvePickupAssignment(tx, actor, p.id);
+          // 2026-11-26: agenda e celular abertos se atualizam; o responsável é avisado.
+          await emitPickupEvent(tx, actor, p.id, EVENT_TYPES.PICKUP_STATUS_CHANGED);
+          await announcePickupChange(tx, actor, p.id, 'CANCELADA', input.reason);
+        }
+        // 2026-11-26: o orçamento que virou este pedido fica solto (volta a "Enviado") e pode
+        // virar serviço de novo ou ser recusado; o histórico guarda o pedido cancelado.
+        const quotes = await tx.quote.findMany({
+          where: { orderId: id },
+          select: { id: true, number: true },
+        });
+        for (const q of quotes) {
+          await tx.quote.update({
+            where: { id: q.id },
+            data: {
+              orderId: null,
+              status: 'ENVIADO',
+              statusChangedAt: new Date(),
+              approvedAt: null,
+              approvedVia: null,
+              version: { increment: 1 },
+            },
+          });
+          await audit(tx, actor, {
+            action: 'quotes.released',
+            entityType: 'quote',
+            entityId: q.id,
+            summary: `Orçamento nº ${q.number} voltou para "Enviado": o pedido ${orderCode(before.number)} foi cancelado.`,
+          });
         }
         await audit(tx, actor, {
           action: 'order.cancelled',

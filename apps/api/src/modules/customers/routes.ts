@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import { diffObjects } from '../../lib/diff';
+import { serviceStates } from '../commercial/status';
 import { Errors } from '../../lib/errors';
 import { loadOperationalStates } from '../service-orders/operational';
 import { idParams } from '../presenters';
@@ -348,6 +349,27 @@ export async function customerRoutes(app: FastifyInstance) {
       const before = await tx.customer.findUnique({ where: { id } });
       if (!before) throw Errors.notFound('Cliente');
       if (before.version !== input.version) throw Errors.versionConflict(before.version);
+      // 2026-11-26: cliente com serviço em andamento não vai para a lixeira (o pedido, a agenda
+      // e a OS dele continuariam valendo sem o cliente na lista).
+      if (!input.active) {
+        const orders = await tx.commercialOrder.findMany({
+          where: { customerId: id, status: { not: 'CANCELADO' } },
+          select: {
+            id: true,
+            number: true,
+            status: true,
+            items: { select: { receivedQuantity: true, returnedQuantity: true } },
+          },
+        });
+        const states = await serviceStates(tx, orders);
+        const open = orders.filter((o) => states.get(o.id)?.serviceState === 'EM_ANDAMENTO');
+        if (open.length)
+          throw Errors.business(
+            `${before.name} tem serviço em andamento (${open
+              .map((o) => orderCode(o.number))
+              .join(', ')}). Termine ou cancele o pedido antes de excluir o cliente.`,
+          );
+      }
       const after = await tx.customer.update({
         where: { id, version: input.version },
         data: { active: input.active, version: { increment: 1 } },

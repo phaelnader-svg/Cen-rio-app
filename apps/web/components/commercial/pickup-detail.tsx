@@ -45,6 +45,8 @@ const EVENT_LABEL: Record<string, string> = {
   AGENDA_REMOVIDA: 'Data removida',
   DADOS_ALTERADOS: 'Dados alterados',
   TIPO_ALTERADO: 'Retirada ↔ No local',
+  NAO_ACONTECEU: 'Não aconteceu',
+  RESPONSAVEL: 'Responsável',
 };
 
 /** 2026-11-25: botões do serviço "No local" (a peça não vem para a tapeçaria). */
@@ -55,7 +57,13 @@ const ON_SITE_ACTION_LABEL: Partial<Record<PickupStatus, string>> = {
   RECEBIDA_NA_OFICINA: 'Serviço feito no local',
   CANCELADA: 'Cancelar serviço no local',
 };
-const actionLabel = (p: Pick<PickupDto, 'kind'>, s: PickupStatus) =>
+const actionLabel = (p: Pick<PickupDto, 'kind' | 'status'>, s: PickupStatus) =>
+  // 2026-11-26: desfaz a chegada (automática ou não) quando a retirada não foi feita.
+  (p.status === 'RECEBIDA_NA_OFICINA' && s === 'COM_OCORRENCIA'
+    ? p.kind === 'NO_LOCAL'
+      ? 'O serviço no local não aconteceu'
+      : 'A retirada não aconteceu'
+    : undefined) ??
   (p.kind === 'NO_LOCAL' ? ON_SITE_ACTION_LABEL[s] : undefined) ??
   ACTION_LABEL[s] ??
   pickupStatusLabel(s, p.kind);
@@ -231,7 +239,11 @@ function TransitionDialog({
       onClose={onClose}
       size="sm"
       title={actionLabel(pickup, target)}
-      description={`${pickupStatusLabel(pickup.status, pickup.kind)} → ${pickupStatusLabel(target, pickup.kind)}`}
+      description={
+        pickup.status === 'RECEBIDA_NA_OFICINA'
+          ? 'As peças saem da tapeçaria e a retirada fica "com ocorrência". Depois é só reagendar (ou cancelar).'
+          : `${pickupStatusLabel(pickup.status, pickup.kind)} → ${pickupStatusLabel(target, pickup.kind)}`
+      }
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
