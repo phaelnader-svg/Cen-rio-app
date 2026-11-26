@@ -17,6 +17,7 @@ import {
   ThemeToggle,
   WhatsNew,
 } from '@/components/improvements/panel-tools';
+import { SetupRedirect } from '@/components/onboarding/getting-started';
 import { WelcomeDialog } from './welcome-dialog';
 import { useThemeScope } from '@/lib/theme';
 import { Button } from '@/components/ui/button';
@@ -345,6 +346,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               </>
             )}
             <WelcomeDialog me={data} />
+            <SetupRedirect ready={!data.company.needsWelcome && !data.company.needsWhatsapp} />
           </main>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { Save } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox, Field, Input, Select } from '@/components/ui/field';
+import { MoneyField } from '@/components/ui/form';
 import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { ApiError, api, errorMessage, fieldErrors, newIdempotencyKey } from '@/lib/api';
@@ -130,6 +131,7 @@ export function CompanyPage() {
       <PageHeader
         title="Empresa"
         description="Dados da empresa e horários da oficina."
+        help="Os dados que saem na proposta e na OS (nome, telefone, endereço) e o horário da oficina. O horário de trabalho é usado para calcular os prazos e a semana da oficina."
         actions={
           editable && (
             <Button
@@ -273,6 +275,25 @@ export function CompanyPage() {
                 </Select>
               )}
             </Field>
+          </div>
+          {/* Perguntas do começo (26/11/2026): dá para mudar a resposta aqui depois. */}
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <Checkbox
+              label="Faço serviço na casa do cliente"
+              description="Desligado, a opção “No local” some do fechamento do serviço."
+              disabled={!editable}
+              checked={form.servesOnSite}
+              onChange={(e) => set('servesOnSite', e.target.checked)}
+              data-testid="company-serves-on-site"
+            />
+            <MoneyField
+              label="Meta de faturamento do mês"
+              hint="Aparece no Financeiro. Deixe em branco para não usar."
+              disabled={!editable}
+              cents={form.monthlyGoalCents}
+              onCents={(v) => set('monthlyGoalCents', v)}
+              data-testid="company-monthly-goal"
+            />
           </div>
         </Card>
       </div>

@@ -28,6 +28,7 @@ export function RolesPage() {
       <PageHeader
         title="Funções e permissões"
         description="O que cada função pode ver e fazer."
+        help="Cada pessoa da equipe tem uma função, e a função diz o que ela vê e faz no sistema. O tapeceiro, por exemplo, não vê preço nem lucro."
         actions={
           manage && (
             <Button

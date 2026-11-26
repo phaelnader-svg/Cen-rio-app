@@ -172,6 +172,8 @@ export interface QuoteSettingsDto {
   proposalThanks: string | null;
   /** Número que o próximo orçamento salvo vai receber (a empresa pode adiantar a numeração). */
   nextNumber: number;
+  /** Prazo de entrega que entra sozinho no orçamento novo (pergunta do começo). */
+  defaultDeliveryDays: number | null;
   version: number;
 }
 

@@ -67,6 +67,17 @@ export function QuotesPage() {
       .catch(() => undefined);
   }, [clienteId, draftApi]);
 
+  // Perguntas do começo: o prazo de entrega de costume entra sozinho no orçamento novo.
+  const defaultDays = settings.data?.defaultDeliveryDays ?? null;
+  const pristine =
+    !draftApi.editing &&
+    draftApi.draft.customerName === '' &&
+    draftApi.draft.items.length === 0 &&
+    draftApi.draft.deliveryDays === null;
+  useEffect(() => {
+    if (defaultDays && pristine) draftApi.update({ deliveryDays: defaultDays });
+  }, [defaultDays, pristine, draftApi]);
+
   /** Abre o orçamento salvo no "Elaborar" (o que estava em elaboração é substituído). */
   const openForEdit = (q: QuoteDto) => {
     if (!catalog.data) return;
@@ -166,6 +177,7 @@ export function QuotesPage() {
       <PageHeader
         title="Orçamentos"
         description="Proposta comercial com materiais, mão de obra, logística, imposto e taxas calculados automaticamente pela base de dados."
+        help="Escolha o cliente, a peça e o tecido: o material, a mão de obra, o frete, o imposto e a taxa da maquininha entram sozinhos, puxados da aba Base. Salve, mande pelo WhatsApp e, quando o cliente aprovar, use “Fechar serviço”. Os preços da sua mão de obra ficam na aba Base."
       />
       <Tabs tabs={tabs} active={tab} onChange={setTab}>
         <div className="pt-6">

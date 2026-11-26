@@ -27,6 +27,7 @@ import { todayIso, useOrders, usePickups } from '@/lib/commercial';
 import { useAttention } from '@/lib/issues';
 import { money } from '@/lib/finance';
 import { useDevices, useEmployees, useOverview, useRecentAudit, useSessions } from '@/lib/queries';
+import { GettingStartedCard } from '@/components/onboarding/getting-started';
 import { HomeCharts } from './home-charts';
 import { TodayPanel } from './today-panel';
 
@@ -154,6 +155,8 @@ export function Dashboard() {
           )}
         </div>
       </div>
+
+      <GettingStartedCard />
 
       {/* 2026-11-19 (Raphael): o Início volta a ter todas as informações de antes e os gráficos;
           sai só a lista longa de sugestões. Prazos entram no cartão Pendências do "Hoje". */}

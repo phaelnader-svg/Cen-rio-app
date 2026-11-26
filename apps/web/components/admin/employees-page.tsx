@@ -2,13 +2,14 @@
 
 import type { EmployeeDto } from '@cenario/shared';
 import { PASSWORD_RULE_HINT, pinSchema, setAdminCredentialsSchema } from '@cenario/shared';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Camera,
   KeyRound,
   MonitorCog,
   Pencil,
   Plus,
+  Send,
   Power,
   Trash2,
   UserPlus,
@@ -26,6 +27,7 @@ import { api, errorMessage } from '@/lib/api';
 import { useCan, useMe } from '@/lib/hooks';
 import { useEmployees } from '@/lib/queries';
 import { preparePhoto } from '@/lib/photos';
+import { createEmployeeInvite } from '@/lib/onboarding';
 import { EmployeeForm } from './employee-form';
 
 type Action =
@@ -34,6 +36,7 @@ type Action =
   | { kind: 'pin'; employee: EmployeeDto }
   | { kind: 'panel'; employee: EmployeeDto }
   | { kind: 'photo'; employee: EmployeeDto }
+  | { kind: 'invite'; employee: EmployeeDto }
   | { kind: 'status'; employee: EmployeeDto };
 
 export function EmployeesPage() {
@@ -49,6 +52,7 @@ export function EmployeesPage() {
       <PageHeader
         title="Funcionários"
         description="Equipe da oficina e do escritório."
+        help="Cadastre cada pessoa com o nome, a função e o celular. Use “Mandar link de cadastro” para a pessoa colocar a foto e criar a senha de 6 números dela pelo celular, sem você precisar digitar nada."
         actions={
           manage && (
             <Button
@@ -99,7 +103,10 @@ export function EmployeesPage() {
                         </Badge>
                       ))}
                       {e.extraPermissions.length > 0 && (
-                        <Badge tone="bronze">+{e.extraPermissions.length} permissão(ões)</Badge>
+                        <Badge tone="bronze">
+                          +{e.extraPermissions.length}{' '}
+                          {e.extraPermissions.length === 1 ? 'permissão' : 'permissões'}
+                        </Badge>
                       )}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-1.5">
@@ -114,6 +121,17 @@ export function EmployeesPage() {
                 </div>
                 {manage && (
                   <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-4">
+                    {/* Item 4 (26/11/2026): quem ainda não tem PIN termina o cadastro pelo link. */}
+                    {e.active && !e.hasPin && e.userId !== me.data?.user.id && (
+                      <Button
+                        size="sm"
+                        icon={<Send className="size-3.5" aria-hidden />}
+                        onClick={() => setAction({ kind: 'invite', employee: e })}
+                        data-testid={`invite-${e.displayName}`}
+                      >
+                        Mandar link de cadastro
+                      </Button>
+                    )}
                     <Button
                       size="sm"
                       variant="secondary"
@@ -192,6 +210,7 @@ export function EmployeesPage() {
       {action?.kind === 'panel' && <PanelAccessDialog employee={action.employee} onClose={close} />}
       {action?.kind === 'photo' && <PhotoDialog employee={action.employee} onClose={close} />}
       {action?.kind === 'status' && <StatusDialog employee={action.employee} onClose={close} />}
+      {action?.kind === 'invite' && <InviteDialog employee={action.employee} onClose={close} />}
     </>
   );
 }
@@ -513,6 +532,75 @@ function StatusDialog({ employee, onClose }: { employee: EmployeeDto; onClose: (
           ? 'A pessoa perde o acesso imediatamente: todas as sessões abertas no painel e nos tablets são encerradas. O histórico é preservado.'
           : 'O cadastro volta a ficar disponível. As credenciais existentes voltam a funcionar.'}
       </p>
+    </Dialog>
+  );
+}
+
+/**
+ * Item 4 (26/11/2026): o dono manda o link pelo WhatsApp e a pessoa coloca a foto e cria a
+ * senha de 6 números dela pelo celular. O link vale 7 dias e uma vez só.
+ */
+function InviteDialog({ employee, onClose }: { employee: EmployeeDto; onClose: () => void }) {
+  const toast = useToast();
+  const invite = useQuery({
+    queryKey: ['employee-invite', employee.id],
+    queryFn: () => createEmployeeInvite(employee.id),
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+  });
+  const copy = async () => {
+    if (!invite.data) return;
+    try {
+      await navigator.clipboard.writeText(invite.data.url);
+      toast('ok', 'Link copiado.');
+    } catch {
+      toast('danger', 'Não deu para copiar. Segure o dedo no link para copiar.');
+    }
+  };
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Link de cadastro de ${employee.displayName}`}
+      description="Pelo link, a pessoa coloca a foto dela e cria a senha de 6 números para entrar no tablet. Vale por 7 dias e uma vez só."
+      footer={
+        <Button variant="ghost" onClick={onClose}>
+          Fechar
+        </Button>
+      }
+    >
+      {invite.isPending ? (
+        <Spinner />
+      ) : invite.isError ? (
+        <Alert tone="danger">{errorMessage(invite.error)}</Alert>
+      ) : (
+        <div className="space-y-4" data-testid="invite-dialog">
+          <div className="flex gap-2">
+            <Input readOnly value={invite.data.url} data-testid="invite-url" />
+            <Button variant="secondary" onClick={copy}>
+              Copiar
+            </Button>
+          </div>
+          {invite.data.whatsappUrl ? (
+            <a
+              href={invite.data.whatsappUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-ok-600 px-4 text-[15px] font-semibold text-white hover:opacity-90"
+              data-testid="invite-whatsapp"
+            >
+              <Send className="size-4" aria-hidden />
+              Mandar pelo WhatsApp
+            </a>
+          ) : (
+            <Alert tone="info">
+              Sem celular no cadastro de {employee.displayName}. Copie o link e mande para a pessoa,
+              ou coloque o celular em Editar.
+            </Alert>
+          )}
+        </div>
+      )}
     </Dialog>
   );
 }

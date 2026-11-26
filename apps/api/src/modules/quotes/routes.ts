@@ -118,6 +118,7 @@ async function settingsDto(db: Tx | PrismaClient): Promise<QuoteSettingsDto> {
     proposalIntro: s.proposalIntro,
     proposalThanks: s.proposalThanks,
     nextNumber: numbers.next,
+    defaultDeliveryDays: s.defaultDeliveryDays,
     version: s.version,
   };
 }

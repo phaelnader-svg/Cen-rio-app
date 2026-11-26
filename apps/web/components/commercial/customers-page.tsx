@@ -36,6 +36,7 @@ export function CustomersPage() {
       <PageHeader
         title="Clientes"
         description="Pessoas e empresas atendidas."
+        help="Todo cliente que entra por um orçamento fica aqui sozinho, com os serviços e os pagamentos dele. Abra o cliente para ver o histórico e falar com ele pelo WhatsApp."
         actions={
           <>
             <ExportLink href="/api/v1/export/clientes.csv" testId="export-clientes" />

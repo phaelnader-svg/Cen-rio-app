@@ -54,7 +54,7 @@ import {
 import { Alert, Card, PageHeader, Spinner } from '@/components/ui/misc';
 import { ApiError, api, newIdempotencyKey } from '@/lib/api';
 import { useCustomerAddresses, useCustomerLookup, useNewServiceDefaults } from '@/lib/commercial';
-import { useModules } from '@/lib/hooks';
+import { useMe, useModules } from '@/lib/hooks';
 import { localDay, useSavedQuote } from '@/lib/quotes';
 import { AddressFields, addressLines, emptyAddress, type AddressState } from './address-form';
 import {
@@ -238,6 +238,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
   const logisticsOn = useModules().logistica;
   const delivery = logisticsOn ? deliveryChoice : 'CLIENTE_ENTREGA';
   const onSite = delivery === 'NO_LOCAL';
+  const servesOnSite = useMe().data?.company.servesOnSite ?? true;
   const withPickup = delivery === 'RETIRADA' || onSite;
   /** "na retirada" ou "no dia do serviço" (No local). */
   const atVisit = onSite ? 'no dia do serviço' : 'na retirada';
@@ -1054,7 +1055,7 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
         }
       >
         <div
-          className="mb-5 grid gap-2 sm:grid-cols-3"
+          className={clsx('mb-5 grid gap-2', servesOnSite ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}
           role="radiogroup"
           aria-label="Onde o serviço é feito"
         >
@@ -1064,26 +1065,29 @@ function NewServiceForm({ d, quote }: { d: NewServiceDefaultsDto; quote: QuoteDt
               ['NO_LOCAL', 'No local', 'O serviço é feito na casa do cliente'],
               ['CLIENTE_ENTREGA', 'Cliente traz', 'O cliente entrega a peça na tapeçaria'],
             ] as const
-          ).map(([k, title, hint]) => (
-            <button
-              key={k}
-              type="button"
-              role="radio"
-              aria-checked={delivery === k}
-              onClick={() => setDelivery(k)}
-              className="rounded-xl border border-line p-3 text-left aria-checked:border-brand-500 aria-checked:ring-4 aria-checked:ring-brand-100"
-              data-testid={
-                k === 'RETIRADA'
-                  ? 'ns-delivery-pickup'
-                  : k === 'NO_LOCAL'
-                    ? 'ns-delivery-onsite'
-                    : 'ns-delivery-dropoff'
-              }
-            >
-              <span className="block font-medium">{title}</span>
-              <span className="text-sm text-ink-muted">{hint}</span>
-            </button>
-          ))}
+          )
+            // Perguntas do começo: quem não faz serviço na casa do cliente não vê "No local".
+            .filter(([k]) => servesOnSite || k !== 'NO_LOCAL' || delivery === 'NO_LOCAL')
+            .map(([k, title, hint]) => (
+              <button
+                key={k}
+                type="button"
+                role="radio"
+                aria-checked={delivery === k}
+                onClick={() => setDelivery(k)}
+                className="rounded-xl border border-line p-3 text-left aria-checked:border-brand-500 aria-checked:ring-4 aria-checked:ring-brand-100"
+                data-testid={
+                  k === 'RETIRADA'
+                    ? 'ns-delivery-pickup'
+                    : k === 'NO_LOCAL'
+                      ? 'ns-delivery-onsite'
+                      : 'ns-delivery-dropoff'
+                }
+              >
+                <span className="block font-medium">{title}</span>
+                <span className="text-sm text-ink-muted">{hint}</span>
+              </button>
+            ))}
         </div>
         {!withPickup && (
           <div data-testid="ns-dropoff-info">

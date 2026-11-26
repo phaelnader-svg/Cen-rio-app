@@ -291,6 +291,15 @@ export function PlatformCompanies() {
     },
     onError: (e) => toast('danger', errorMessage(e)),
   });
+  const helpDone = useMutation({
+    mutationFn: (id: number) =>
+      api(`/api/v1/platform/companies/${id}/help-done`, { method: 'POST', body: {} }),
+    onSuccess: () => {
+      toast('ok', 'Pedido de ajuda marcado como atendido.');
+      void qc.invalidateQueries({ queryKey: ['platform-companies'] });
+    },
+    onError: (e) => toast('danger', errorMessage(e)),
+  });
   const items = useMemo(() => {
     const s = search.trim().toLowerCase();
     return (list.data?.items ?? []).filter(
@@ -375,6 +384,51 @@ export function PlatformCompanies() {
                   Cadastro em {formatDateTime(c.createdAt)} · último acesso{' '}
                   {c.lastLoginAt ? formatDateTime(c.lastLoginAt) : 'nunca'}
                 </p>
+                {/* Item 42 (26/11/2026): em que passo do começo a empresa parou. */}
+                {c.gettingStarted && (
+                  <p className="text-sm text-ink-muted" data-testid="empresa-comeco">
+                    Começo: {c.gettingStarted.done} de {c.gettingStarted.total}
+                    {c.gettingStarted.nextLabel ? (
+                      <>
+                        {' '}
+                        · falta:{' '}
+                        <span className="font-medium text-ink-soft">
+                          {c.gettingStarted.nextLabel}
+                        </span>
+                      </>
+                    ) : (
+                      ' · fez tudo'
+                    )}
+                  </p>
+                )}
+                {c.helpRequestedFor && (
+                  <div
+                    className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-warn-50 px-3 py-2 text-sm"
+                    data-testid="empresa-pediu-ajuda"
+                  >
+                    <span className="font-medium text-ink">
+                      Pediu ajuda para começar: ligar{' '}
+                      {new Date(c.helpRequestedFor).toLocaleString('pt-BR', {
+                        timeZone: 'America/Sao_Paulo',
+                        weekday: 'long',
+                        day: '2-digit',
+                        month: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon={<CircleCheck className="size-4" aria-hidden />}
+                      loading={helpDone.isPending && helpDone.variables === c.id}
+                      onClick={() => helpDone.mutate(c.id)}
+                      data-testid="empresa-ajuda-feita"
+                    >
+                      Atendido
+                    </Button>
+                  </div>
+                )}
                 {c.note && <p className="mt-1 text-sm text-ink-soft">Anotação: {c.note}</p>}
               </div>
               <div className="flex flex-wrap gap-2 sm:justify-end">

@@ -29,6 +29,7 @@ export function OrdersPage() {
       <PageHeader
         title="Pedidos"
         description="Serviços fechados, da retirada até virar ordem de serviço."
+        help="O pedido nasce quando o cliente aprova o orçamento e você fecha o serviço. Daqui você agenda a retirada da peça e, quando ela chega, gera a OS para a oficina."
         actions={
           <>
             <ExportLink href="/api/v1/export/pedidos.csv" testId="export-pedidos" />

@@ -32,6 +32,7 @@ import { ExpensesTab, PayablesTab } from './payables';
 import { LaborTab } from './labor';
 import { RevenueTab } from './revenue';
 import { WeeklyClosingTab } from './weekly-closing';
+import { useCompany } from '@/lib/queries';
 
 // 2026-11-18 (pedido do dono): Despesas e Receitas logo depois do Resumo. Revisão geral
 // (2026-11-18, item 9): de 10 abas para 4; as outras viraram vistas dentro delas. As chaves antigas
@@ -131,6 +132,7 @@ function Dashboard({ period, onOpenPayables }: { period: Period; onOpenPayables:
   const tone = (v: number): 'danger' | 'ok' => (v < 0 ? 'danger' : 'ok');
   return (
     <div className="space-y-6" data-testid="finance-dashboard">
+      {period.from === monthStart() && <MonthGoal receivedCents={d.cash.receivedCents} />}
       <section>
         <h2 className="mb-2 text-sm font-semibold text-ink-soft">No período</h2>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -391,5 +393,30 @@ function Bills({
         O sininho avisa um dia antes do vencimento, no dia e enquanto a conta estiver em atraso.
       </p>
     </section>
+  );
+}
+
+/** Meta do mês (pergunta do começo, 26/11/2026): quanto já entrou perto da meta. */
+function MonthGoal({ receivedCents }: { receivedCents: number }) {
+  const company = useCompany();
+  const goal = company.data?.monthlyGoalCents;
+  if (!goal) return null;
+  const pct = Math.min(100, Math.round((receivedCents / goal) * 100));
+  return (
+    <Card className="p-4" data-testid="fin-goal">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-sm font-semibold text-ink-soft">Meta do mês</p>
+        <p className="text-sm text-ink-muted">
+          <span className="font-semibold text-ink tabular-nums">{money(receivedCents)}</span> de{' '}
+          {money(goal)} · {pct}%
+        </p>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-subtle">
+        <div
+          className={clsx('h-full rounded-full', pct >= 100 ? 'bg-ok-600' : 'bg-brand-700')}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </Card>
   );
 }

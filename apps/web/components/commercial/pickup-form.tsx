@@ -17,7 +17,7 @@ import { useToast } from '@/components/ui/toast';
 import { ApiError, api, fieldErrors, newIdempotencyKey } from '@/lib/api';
 import { useCustomerAddresses } from '@/lib/commercial';
 import { useLogisticsPeople } from '@/lib/quality';
-import { useCan } from '@/lib/hooks';
+import { useCan, useMe } from '@/lib/hooks';
 import {
   DateField,
   FormGrid,
@@ -42,6 +42,7 @@ export function PickupForm({
   onClose: () => void;
 }) {
   const [kind, setKind] = useState<PickupKind>(pickup?.kind ?? 'RETIRADA');
+  const servesOnSite = useMe().data?.company.servesOnSite ?? true;
   const words = pickupWords(kind);
   const qc = useQueryClient();
   const toast = useToast();
@@ -178,7 +179,9 @@ export function PickupForm({
     >
       <div className="space-y-5" data-testid="pickup-form">
         {error && <Alert tone="danger">{error}</Alert>}
-        <PickupKindChoice value={kind} onChange={setKind} />
+        {(servesOnSite || kind === 'NO_LOCAL') && (
+          <PickupKindChoice value={kind} onChange={setKind} />
+        )}
         <FormGrid>
           <DateField
             label={words.date}

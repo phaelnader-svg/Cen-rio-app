@@ -204,7 +204,7 @@ export function gettingStartedSteps(f: GettingStartedFacts): GettingStartedStep[
         f.laborItems > 0
           ? `${f.laborPriced} de ${f.laborItems} peças com preço.`
           : 'As peças aparecem aqui depois das perguntas.',
-      href: '/painel/orcamentos?aba=base',
+      href: '/painel/orcamentos?tab=base',
       done: priced,
     },
     {

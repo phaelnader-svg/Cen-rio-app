@@ -81,6 +81,7 @@ export function SubscriptionPage() {
       <PageHeader
         title="Assinatura"
         description="O plano do Cenário Gestão da sua empresa, as cobranças e o pagamento."
+        help="Aqui você vê o seu plano, quando vence e como pagar. Depois de pagar pelo PIX, mande o comprovante por esta tela."
       />
 
       <Card className="mb-6 flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
