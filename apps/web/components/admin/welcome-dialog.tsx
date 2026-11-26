@@ -14,8 +14,9 @@ import { typedWhatsapp } from '@/lib/format';
  * Boas-vindas do primeiro acesso de uma empresa criada pelo Criar conta: troca o nome provisório
  * ("Minha empresa") pelo nome real e o nome do gestor (que nasce do começo do e-mail).
  *
- * 26/11/2026: empresa sem WhatsApp (criada antes de o cadastro pedir) informa o número ao entrar.
- * É obrigatório: o dono da plataforma precisa ter como falar com cada empresa.
+ * 26/11/2026: toda empresa sem telefone (celular com DDD) informa o número ao entrar, antes de
+ * mexer no sistema, inclusive as contas novas (o cadastro não pede). É obrigatório: o dono da
+ * plataforma precisa ter como falar com cada empresa.
  */
 export function WelcomeDialog({ me }: { me: MeDto }) {
   const qc = useQueryClient();
@@ -51,6 +52,11 @@ export function WelcomeDialog({ me }: { me: MeDto }) {
     }
   }
 
+  const digits = whatsapp.replace(/\D/g, '');
+  const phoneError =
+    digits.length >= 10 && !hasWhatsapp(whatsapp)
+      ? 'Escreva o celular com DDD e 9 números. Ex.: (11) 98765-4321.'
+      : undefined;
   const ready =
     (!welcome || (tradeName.trim().length >= 2 && displayName.trim().length >= 2)) &&
     (!askWhatsapp || hasWhatsapp(whatsapp));
@@ -60,11 +66,11 @@ export function WelcomeDialog({ me }: { me: MeDto }) {
       open
       dismissible={!askWhatsapp}
       onClose={() => setLater(true)}
-      title={welcome ? 'Boas-vindas ao Cenário Gestão' : 'Qual é o WhatsApp da empresa?'}
+      title={welcome ? 'Boas-vindas ao Cenário Gestão' : 'Qual é o seu telefone?'}
       description={
         welcome
           ? 'Antes de começar, conte como se chama a sua empresa e como você quer ser chamado. Dá para mudar depois na tela Empresa.'
-          : 'É por ele que o Cenário Gestão fala com você sobre a sua conta. Dá para mudar depois na tela Empresa.'
+          : 'Antes de começar, deixe um telefone com DDD. Ele só é usado para assuntos da sua conta.'
       }
     >
       <form onSubmit={save} className="space-y-4" data-testid="welcome-form">
@@ -98,7 +104,7 @@ export function WelcomeDialog({ me }: { me: MeDto }) {
           </>
         )}
         {askWhatsapp && (
-          <Field label="WhatsApp com DDD" required>
+          <Field label="Telefone" required hint="Celular com DDD." error={phoneError}>
             {(p) => (
               <Input
                 {...p}
@@ -123,7 +129,7 @@ export function WelcomeDialog({ me }: { me: MeDto }) {
             </Button>
           )}
           <Button type="submit" disabled={saving || !ready}>
-            {welcome ? 'Começar' : 'Salvar'}
+            {welcome ? 'Começar' : 'Confirmar'}
           </Button>
         </div>
       </form>

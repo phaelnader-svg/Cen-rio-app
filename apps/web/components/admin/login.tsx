@@ -11,9 +11,9 @@ import { Button } from '@/components/ui/button';
 import { Field, Input } from '@/components/ui/field';
 import { Alert } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
-import { typedWhatsapp } from '@/lib/format';
 import { Honeypot, Turnstile, useSignupConfig } from '@/components/account/turnstile';
 import { legalLinksReady } from '@/components/site/legal/links-ready';
+import { WelcomeBackPanel } from './welcome-back';
 import {
   SignupPricingPanel,
   cheapest,
@@ -56,7 +56,6 @@ export function AdminLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const [companyName, setCompanyName] = useState('');
   const [ownerName, setOwnerName] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
@@ -88,7 +87,6 @@ export function AdminLogin() {
     const parsed = signupSchema.safeParse({
       companyName,
       ownerName,
-      whatsapp,
       email,
       password,
       passwordConfirm,
@@ -168,31 +166,7 @@ export function AdminLogin() {
     <main className="grid min-h-dvh lg:grid-cols-[1.05fr_1fr]">
       <section className="relative hidden overflow-hidden bg-brand-800 p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <BrandMark inverted />
-        {mode === 'signup' ? (
-          <SignupPricingPanel pricing={pricing} />
-        ) : (
-          <>
-            {/* Melhoria 149: a mesma voz da landing e um print do sistema no lugar do enfeite. */}
-            <div className="max-w-md">
-              <h2 className="text-4xl leading-tight font-semibold tracking-tight text-balance">
-                Feito dentro de uma tapeçaria, para tapeçarias.
-              </h2>
-              <p className="mt-4 text-white/75">
-                O tapeceiro vê o dia dele no tablet. O escritório acompanha cada serviço, do
-                orçamento à entrega.
-              </p>
-            </div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/site/inicio.webp"
-              alt=""
-              aria-hidden
-              width={1440}
-              height={900}
-              className="w-full max-w-lg rounded-xl border border-white/10 shadow-2xl"
-            />
-          </>
-        )}
+        {mode === 'signup' ? <SignupPricingPanel pricing={pricing} /> : <WelcomeBackPanel />}
         <p className="text-xs text-white/75">Cada empresa vê só os próprios dados.</p>
       </section>
 
@@ -200,11 +174,11 @@ export function AdminLogin() {
         <div className="w-full max-w-sm">
           <BrandMark className="mx-auto mb-10 w-fit lg:hidden" />
           <h1 className="text-center text-2xl font-semibold tracking-tight">
-            {mode === 'login' ? 'Bom te ver de novo' : 'Criar conta'}
+            {mode === 'login' ? 'Entrar' : 'Criar conta'}
           </h1>
           <p className="mt-1 text-center text-[15px] text-ink-muted">
             {mode === 'login'
-              ? 'Entre com o seu e-mail e senha. A oficina está te esperando.'
+              ? 'Use seu e-mail e senha.'
               : 'Crie a conta da sua empresa. Os dados dela ficam separados de todas as outras.'}
           </p>
 
@@ -363,7 +337,7 @@ export function AdminLogin() {
             </form>
           ) : (
             <form onSubmit={onSignup} noValidate className="mt-6 space-y-4">
-              {/* 26/11/2026: nome da empresa, de quem cria e WhatsApp, para o contato da plataforma. */}
+              {/* 26/11/2026: nome da empresa e de quem cria. O telefone é pedido ao entrar no sistema. */}
               <Field label="Nome da empresa" error={errors.companyName}>
                 {(p) => (
                   <Input
@@ -387,20 +361,6 @@ export function AdminLogin() {
                     value={ownerName}
                     onChange={(e) => setOwnerName(e.target.value)}
                     data-testid="signup-nome"
-                  />
-                )}
-              </Field>
-              <Field label="WhatsApp com DDD" error={errors.whatsapp}>
-                {(p) => (
-                  <Input
-                    {...p}
-                    type="tel"
-                    autoComplete="tel-national"
-                    inputMode="tel"
-                    placeholder="(11) 98765-4321"
-                    value={whatsapp}
-                    onChange={(e) => setWhatsapp(typedWhatsapp(e.target.value))}
-                    data-testid="signup-whatsapp"
                   />
                 )}
               </Field>

@@ -206,8 +206,8 @@ export async function authRoutes(app: FastifyInstance) {
     if (taken) throw Errors.conflict('Já existe uma conta com este e-mail. Entre com a sua senha.');
 
     const passwordHash = await hashSecret(input.password);
-    // Nome da empresa, de quem cria e WhatsApp vêm do próprio cadastro (decisão do dono,
-    // 26/11/2026): o dono da plataforma sempre tem como entrar em contato.
+    // Nome da empresa e de quem cria vêm do próprio cadastro (decisão do dono, 26/11/2026). O
+    // telefone é pedido na primeira entrada (needsWhatsapp), antes de mexer no sistema.
     const displayName = input.ownerName;
     let created;
     try {
@@ -216,7 +216,7 @@ export async function authRoutes(app: FastifyInstance) {
         const company = await tx.companySettings.create({
           data: {
             tradeName: input.companyName,
-            phone: input.whatsapp,
+            phone: input.whatsapp ?? null,
             email: input.email,
             plan: 'gestao',
             trialEndsAt: new Date(Date.now() + platformConfig().trialDays * 86_400_000),
@@ -243,7 +243,7 @@ export async function authRoutes(app: FastifyInstance) {
             userId: user.id,
             fullName: displayName,
             displayName,
-            phone: input.whatsapp,
+            phone: input.whatsapp ?? null,
             jobTitle: 'Gestor',
             color: '#1D4ED8',
           },
@@ -266,7 +266,7 @@ export async function authRoutes(app: FastifyInstance) {
           action: 'auth.signup',
           entityType: 'company',
           entityId: String(company.id),
-          summary: `Conta criada pela tela de entrar (${input.email}, WhatsApp ${input.whatsapp}): empresa nova nº ${company.id} "${input.companyName}". Aceitou os Termos de uso e a Política de privacidade (versão ${LEGAL_VERSION}).`,
+          summary: `Conta criada pela tela de entrar (${input.email}): empresa nova nº ${company.id} "${input.companyName}". Aceitou os Termos de uso e a Política de privacidade (versão ${LEGAL_VERSION}).`,
         });
         await appendEvent(tx, actor, {
           type: EVENT_TYPES.EMPLOYEE_CREATED,

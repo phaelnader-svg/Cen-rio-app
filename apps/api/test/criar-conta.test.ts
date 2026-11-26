@@ -161,10 +161,10 @@ describe('Criar conta (empresa nova)', () => {
   });
 
   it('valida senha de no mínimo 8 caracteres e a confirmação', async () => {
-    // 26/11/2026: sem WhatsApp (ou sem DDD), sem nome da empresa ou sem nome, não cria.
+    // 26/11/2026: sem nome da empresa ou sem nome, não cria. Telefone (se vier) é celular com DDD.
     for (const falta of [
-      { whatsapp: '' },
       { whatsapp: '98765-4321' },
+      { whatsapp: '(11) 3333-4444' },
       { companyName: '' },
       { companyName: 'Minha empresa' },
       { ownerName: '' },

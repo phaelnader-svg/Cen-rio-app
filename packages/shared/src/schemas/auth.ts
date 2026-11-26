@@ -66,12 +66,17 @@ export const SIGNUP_PASSWORD_MIN = PASSWORD_MIN;
  */
 export const signupSchema = z
   .object({
-    // Decisão do dono (26/11/2026): toda empresa nova deixa um jeito de ser contatada.
+    // Decisão do dono (26/11/2026): nome da empresa e de quem cria vêm do próprio cadastro.
     companyName: trimmed(2, 120, 'Nome da empresa').refine((v) => v !== PROVISIONAL_TRADE_NAME, {
       message: 'Escreva o nome da sua empresa.',
     }),
     ownerName: trimmed(2, 40, 'Seu nome'),
-    whatsapp: whatsappSchema,
+    // O telefone não é pedido no cadastro: a janela ao entrar no sistema pede (decisão do dono,
+    // 26/11/2026). Se vier (outras telas), é conferido.
+    whatsapp: z.preprocess(
+      (v) => (v === '' || v === null ? undefined : v),
+      whatsappSchema.optional(),
+    ),
     email: z.string().trim().toLowerCase().email({ message: 'E-mail inválido.' }).max(EMAIL_MAX),
     password: passwordPolicySchema,
     passwordConfirm: z.string().max(128),

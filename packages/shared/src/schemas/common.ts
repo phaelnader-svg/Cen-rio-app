@@ -42,10 +42,13 @@ export function whatsappDigits(v: string | null | undefined): string {
   return d;
 }
 
-/** Tem um WhatsApp com DDD que dá para chamar (10 ou 11 dígitos). */
+/**
+ * Tem um celular com DDD que dá para chamar no WhatsApp: DDD + 9 números, começando com 9
+ * (decisão do dono, 26/11/2026).
+ */
 export function hasWhatsapp(v: string | null | undefined): boolean {
-  const n = whatsappDigits(v).length;
-  return n === 10 || n === 11;
+  const d = whatsappDigits(v);
+  return d.length === 11 && d[2] === '9';
 }
 
 /** "(11) 98765-4321" — como o número fica gravado e aparece no painel. */
@@ -56,12 +59,12 @@ export function formatWhatsapp(v: string | null | undefined): string {
   return String(v ?? '').trim();
 }
 
-/** WhatsApp obrigatório (Criar conta e empresas antigas sem telefone, 26/11/2026). */
+/** Telefone (celular) obrigatório ao entrar no sistema (26/11/2026). */
 export const whatsappSchema = z
-  .string({ message: 'Escreva o WhatsApp com DDD.' })
+  .string({ message: 'Escreva o celular com DDD.' })
   .trim()
-  .max(30, { message: 'Escreva o WhatsApp com DDD.' })
+  .max(30, { message: 'Escreva o celular com DDD.' })
   .refine((v) => hasWhatsapp(v), {
-    message: 'Escreva o WhatsApp com DDD. Ex.: (11) 98765-4321.',
+    message: 'Escreva o celular com DDD e 9 números. Ex.: (11) 98765-4321.',
   })
   .transform((v) => formatWhatsapp(v));

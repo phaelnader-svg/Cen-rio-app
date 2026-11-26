@@ -1,5 +1,5 @@
 import { mkdirSync } from 'node:fs';
-import { expect, test, type Browser } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import pg from 'pg';
 import { hashSecret } from '../../../apps/api/src/lib/crypto';
 import { E2E, rootEnv } from '../env';
@@ -13,19 +13,6 @@ const OUT = process.env.CAPTURAS_DIR ?? 'test-results/cadastro-whatsapp';
 const origin = `http://localhost:${E2E.webPort}`;
 const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true };
 const DESK = { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 };
-
-async function signup(
-  browser: Browser,
-  d: { companyName: string; ownerName: string; whatsapp: string; email: string },
-) {
-  const ctx = await browser.newContext({ baseURL: origin });
-  const r = await ctx.request.post('/api/auth/signup', {
-    data: { ...d, password: 'SenhaBoa123', passwordConfirm: 'SenhaBoa123' },
-    headers: { origin },
-  });
-  expect(r.status(), await r.text()).toBe(201);
-  return ctx;
-}
 
 test('cadastro com WhatsApp, empresa antiga e painel da plataforma', async ({ browser }) => {
   test.setTimeout(180_000);
@@ -67,13 +54,15 @@ test('cadastro com WhatsApp, empresa antiga e painel da plataforma', async ({ br
     const ctx = await browser.newContext({ ...opts, baseURL: origin });
     const p = await ctx.newPage();
     await p.goto('/entrar');
-    await expect(p.getByText('Bom te ver de novo')).toBeVisible();
+    await expect(p.getByTestId('criar-conta')).toBeVisible();
+    if (name === '0-entrar-computador')
+      await expect(p.getByTestId('entrar-boas-vindas')).toContainText('Bom te ver de novo');
     await expect(p.getByTestId('criar-conta')).toContainText('7 dias grátis');
     await p.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
     await ctx.close();
   }
 
-  // 2) Criar conta preenchido (computador e celular).
+  // 2) Criar conta preenchido (computador e celular): sem telefone no cadastro.
   for (const [name, opts] of [
     ['3-criar-conta-computador', DESK],
     ['4-criar-conta-celular', PHONE],
@@ -83,45 +72,18 @@ test('cadastro com WhatsApp, empresa antiga e painel da plataforma', async ({ br
     await p.goto('/entrar?criar=1');
     await p.getByTestId('signup-empresa').fill('Tapeçaria Bom Assento');
     await p.getByTestId('signup-nome').fill('Carla Mendes');
-    await p.getByTestId('signup-whatsapp').pressSequentially('31991234567');
     await p.getByLabel('E-mail').fill('carla@bomassento.exemplo');
     await p.getByLabel('Senha', { exact: true }).fill('SenhaBoa123');
     await p.getByLabel('Confirmar senha').fill('SenhaBoa123');
-    await expect(p.getByTestId('signup-whatsapp')).toHaveValue('(31) 99123-4567');
+    await expect(p.getByTestId('signup-whatsapp')).toHaveCount(0);
     await expect(p.getByTestId('signup-trial')).toContainText('R$ 399 por mês');
     await p.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
-    if (name === '4-criar-conta-celular') {
-      // Sem o WhatsApp: o cadastro não passa.
-      await p.getByTestId('signup-whatsapp').fill('');
-      await p.getByRole('button', { name: 'Criar conta' }).click();
-      await expect(p.getByText(/WhatsApp com DDD/).last()).toBeVisible();
-      await p.screenshot({ path: `${OUT}/5-criar-conta-sem-whatsapp.png`, fullPage: true });
-    }
     await ctx.close();
   }
 
-  // 3) Duas empresas: uma nova (com WhatsApp) e uma "antiga" (sem WhatsApp).
-  await (
-    await signup(browser, {
-      companyName: 'Tapeçaria Bom Assento',
-      ownerName: 'Carla Mendes',
-      whatsapp: '(31) 99123-4567',
-      email: 'carla@bomassento.exemplo',
-    })
-  ).close();
-  await (
-    await signup(browser, {
-      companyName: 'Estofados Primavera',
-      ownerName: 'Jorge Lima',
-      whatsapp: '(41) 98877-6655',
-      email: 'jorge@primavera.exemplo',
-    })
-  ).close();
+  // 3) Conta criada pela tela; a primeira coisa no sistema é a janela do telefone.
   const db = new pg.Client({ connectionString: rootEnv().E2E_DATABASE_URL });
   await db.connect();
-  await db.query(
-    `UPDATE company_settings SET phone = NULL WHERE email = 'jorge@primavera.exemplo'`,
-  );
   await db.query(
     `INSERT INTO platform_admins (id, email, display_name, password_hash)
      VALUES (gen_random_uuid(), 'dono@plataforma.exemplo', 'Dono', $1)
@@ -129,30 +91,58 @@ test('cadastro com WhatsApp, empresa antiga e painel da plataforma', async ({ br
     [await hashSecret('PainelBom123')],
   );
   await db.end();
-
-  // 4) Empresa antiga entra e precisa informar o WhatsApp.
-  for (const [name, opts] of [
-    ['6-empresa-antiga-pede-whatsapp', DESK],
-    ['7-empresa-antiga-pede-whatsapp-celular', PHONE],
+  for (const [prefix, opts, d] of [
+    [
+      '6',
+      DESK,
+      {
+        empresa: 'Tapeçaria Bom Assento',
+        nome: 'Carla Mendes',
+        email: 'carla@bomassento.exemplo',
+        tel: '31991234567',
+      },
+    ],
+    [
+      '7',
+      PHONE,
+      {
+        empresa: 'Estofados Primavera',
+        nome: 'Jorge Lima',
+        email: 'jorge@primavera.exemplo',
+        tel: '41988776655',
+      },
+    ],
   ] as const) {
     const ctx = await browser.newContext({ ...opts, baseURL: origin });
-    const login = await ctx.request.post('/api/auth/login', {
-      data: { email: 'jorge@primavera.exemplo', password: 'SenhaBoa123' },
-      headers: { origin },
-    });
-    expect(login.ok(), await login.text()).toBe(true);
     const p = await ctx.newPage();
-    await p.goto('/painel');
-    await expect(p.getByTestId('welcome-whatsapp')).toBeVisible();
-    await p.getByTestId('welcome-whatsapp').pressSequentially('41988776655');
-    const salvar = p.getByRole('button', { name: 'Salvar' });
-    await expect(salvar).toBeEnabled();
+    await p.goto('/entrar?criar=1');
+    await p.getByTestId('signup-empresa').fill(d.empresa);
+    await p.getByTestId('signup-nome').fill(d.nome);
+    await p.getByLabel('E-mail').fill(d.email);
+    await p.getByLabel('Senha', { exact: true }).fill('SenhaBoa123');
+    await p.getByLabel('Confirmar senha').fill('SenhaBoa123');
+    await p.getByRole('button', { name: 'Criar conta' }).click();
+    const tel = p.getByTestId('welcome-whatsapp');
+    await expect(tel).toBeVisible({ timeout: 20_000 });
+    await expect(p.getByRole('dialog')).not.toContainText(/whatsapp/i);
+    const confirmar = p.getByRole('button', { name: 'Confirmar' });
+    await expect(confirmar).toBeDisabled();
     await p.waitForTimeout(300);
-    await p.screenshot({ path: `${OUT}/${name}.png` });
-    if (name === '7-empresa-antiga-pede-whatsapp-celular') {
-      await salvar.click();
-      await expect(p.getByTestId('welcome-whatsapp')).toBeHidden();
-    }
+    await p.screenshot({ path: `${OUT}/${prefix}-pede-telefone-vazio.png` });
+    // Telefone fixo não passa: tem que ser celular com DDD e 9 números.
+    await tel.pressSequentially('1133334444');
+    await expect(
+      p.getByText('Escreva o celular com DDD e 9 números', { exact: false }),
+    ).toBeVisible();
+    await expect(confirmar).toBeDisabled();
+    await p.screenshot({ path: `${OUT}/${prefix}b-pede-telefone-fixo-nao-passa.png` });
+    await tel.fill('');
+    await tel.pressSequentially(d.tel);
+    await expect(confirmar).toBeEnabled();
+    await p.waitForTimeout(300);
+    await p.screenshot({ path: `${OUT}/${prefix}c-pede-telefone-preenchido.png` });
+    await confirmar.click();
+    await expect(tel).toBeHidden();
     await ctx.close();
   }
 

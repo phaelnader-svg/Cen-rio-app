@@ -28,6 +28,24 @@ async function criarConta() {
 }
 
 describe('Boas-vindas da empresa nova', () => {
+  it('conta nova sem telefone precisa informar o celular ao entrar, antes de mexer no sistema', async () => {
+    const c = new Client(app);
+    const { whatsapp: _sem, ...semTelefone } = EMPRESA_NOVA;
+    const r = await c.post('/api/auth/signup', {
+      ...semTelefone,
+      email: 'semtelefone@tapecaria.local',
+      password: 'senha123',
+      passwordConfirm: 'senha123',
+    });
+    expect(r.status).toBe(201);
+    const me = await c.get('/api/auth/me');
+    expect(me.body.company.needsWelcome).toBe(false);
+    expect(me.body.company.needsWhatsapp).toBe(true);
+    expect((await c.post('/api/company/contact', { whatsapp: '(11) 3333-4444' })).status).toBe(400);
+    expect((await c.post('/api/company/contact', { whatsapp: '11987654321' })).status).toBe(200);
+    expect((await c.get('/api/auth/me')).body.company.needsWhatsapp).toBe(false);
+  });
+
   it('o Criar conta já grava o nome da empresa, de quem criou e o WhatsApp: sem perguntar de novo', async () => {
     const c = await criarConta();
     const me = await c.get('/api/auth/me');

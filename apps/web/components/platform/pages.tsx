@@ -316,7 +316,7 @@ export function PlatformCompanies() {
       />
       <Input
         className="mb-4 max-w-sm"
-        placeholder="Buscar por nome, e-mail ou WhatsApp"
+        placeholder="Buscar por nome, e-mail ou telefone"
         aria-label="Buscar empresa"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
@@ -349,7 +349,7 @@ export function PlatformCompanies() {
                   {c.phone ? (
                     <span data-testid="empresa-whatsapp">{c.phone}</span>
                   ) : (
-                    <Badge tone="danger">Sem WhatsApp</Badge>
+                    <Badge tone="danger">Sem telefone</Badge>
                   )}
                   {c.ownerEmail ? (
                     <a
