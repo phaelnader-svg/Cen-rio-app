@@ -4,7 +4,7 @@ import type { App } from '../src/app';
 import { setAttendanceClock } from '../src/modules/attendance/common';
 import type { Client } from './helpers';
 import { createTestApp, db, idemKey, resetDatabase } from './helpers';
-import { day, today } from './production-helpers';
+import { day, today, uploadPhoto } from './production-helpers';
 import { post, qualityKit } from './quality-helpers';
 
 /**
@@ -131,16 +131,20 @@ describe('5. OS cancelada some de todas as telas', () => {
     const d = (await k.schedule(s, { scheduledDate: today() })).body;
     const c = await k.andreTablet(s);
     const v = await k.toDestination(c, d);
-    const del = await post(c, `/api/v1/deliveries/${d.id}/deliver`, {
+    const items = await post(c, `/api/v1/deliveries/${d.id}/items`, {
       version: v,
       items: [{ serviceOrderItemId: s.sofa.id, status: 'ENTREGUE' }],
     });
-    if (del.status === 200) {
-      const r = await cancelOs(s);
-      expect
-        .soft(r.status, `cancelou OS com peça entregue: ${JSON.stringify(r.body).slice(0, 300)}`)
-        .toBe(422);
-    } else expect.fail(`entregar falhou: ${del.status} ${JSON.stringify(del.body).slice(0, 300)}`);
+    expect(items.status, JSON.stringify(items.body).slice(0, 300)).toBe(200);
+    expect((await uploadPhoto(app, c, 'DELIVERY', d.id)).status).toBe(201);
+    const del = await post(c, `/api/v1/deliveries/${d.id}/complete`, {
+      version: items.body.version,
+    });
+    expect(del.status, JSON.stringify(del.body).slice(0, 300)).toBe(200);
+    const r = await cancelOs(s);
+    expect
+      .soft(r.status, `cancelou OS com peça entregue: ${JSON.stringify(r.body).slice(0, 300)}`)
+      .toBe(422);
   });
 });
 
