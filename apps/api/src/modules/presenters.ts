@@ -145,6 +145,7 @@ export async function buildMe(
           ? company.supportAccessUntil.toISOString()
           : null,
       isDemo: company?.isDemo ?? false,
+      servesOnSite: company?.servesOnSite ?? true,
       subscription: company
         ? {
             plan: company.plan,

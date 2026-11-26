@@ -94,6 +94,11 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
         billingCourtesy: true,
         // A tapeçaria da instalação usa as chaves e webhooks do servidor (liberado no painel).
         serverConnections: true,
+        // A tapeçaria da instalação já está montada: sem perguntas do começo nem e-mails do teste.
+        setupDoneAt: new Date(),
+        gettingStartedHiddenAt: new Date(),
+        onboardingEmails: ['boas-vindas', 'dia-2', 'dia-5', 'fim-teste'],
+        platformNewNoticeAt: new Date(),
       },
       update: {},
     });
@@ -106,6 +111,9 @@ export async function runSeed(options: { withTeam?: boolean; log?: (m: string) =
         tradeName: 'Cenário Gestão (plataforma)',
         isPlatform: true,
         billingCourtesy: true,
+        setupDoneAt: new Date(),
+        gettingStartedHiddenAt: new Date(),
+        platformNewNoticeAt: new Date(),
       },
       update: {},
     });

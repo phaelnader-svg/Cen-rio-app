@@ -1,4 +1,5 @@
 import {
+  gettingStartedSteps,
   DEFAULT_ROLE_SKILLS,
   GESTOR_ROLE_KEY,
   PLANS,
@@ -23,7 +24,8 @@ import { searchTextFor } from '../customers/service';
 import { z } from 'zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { Errors } from '../../lib/errors';
-import { PLATFORM_RECORD_ID } from '../../core/tenant';
+import { PLATFORM_RECORD_ID, runAsCompany } from '../../core/tenant';
+import { gettingStartedFacts } from '../onboarding/routes';
 import { COMPANY_BILLING_SELECT, blocksAt, cycleOf, planOf, statusOf } from '../../core/billing';
 import { now as clockNow } from '../../core/clock';
 import {
@@ -73,6 +75,8 @@ const COMPANY_SELECT = {
   cancelReason: true,
   billingPriceCents: true,
   platformNote: true,
+  setupDoneAt: true,
+  gettingStartedHiddenAt: true,
 } as const;
 
 /**
@@ -125,6 +129,24 @@ export async function platformRoutes(app: FastifyInstance) {
       _sum: { amountCents: true },
       _max: { paidAt: true },
     });
+    // Item 42: passos do começo de cada empresa nova (as antigas não passaram por ele).
+    const started = new Map<number, ReturnType<typeof gettingStartedSteps>>();
+    for (const c of companies)
+      if (
+        !c.isDemo &&
+        (c.setupDoneAt === null ||
+          c.gettingStartedHiddenAt === null ||
+          c.createdAt.getTime() > clockNow().getTime() - 30 * 86_400_000)
+      )
+        started.set(
+          c.id,
+          gettingStartedSteps(await runAsCompany(c.id, () => gettingStartedFacts(app.ctx.prisma))),
+        );
+    const helps = await system.contactRequest.findMany({
+      where: { companyId: { in: ids }, kind: 'AJUDA_COMECAR', status: 'PENDENTE' },
+      select: { companyId: true, preferredAt: true },
+    });
+    const help = new Map(helps.map((h) => [h.companyId, h.preferredAt]));
     const ord = new Map(orders.map((o) => [o.companyId, o]));
     const usr = new Map(users.map((u) => [u.companyId, u]));
     const pay = new Map(paid.map((p) => [p.companyId, p]));
@@ -162,12 +184,24 @@ export async function platformRoutes(app: FastifyInstance) {
           ? `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. O teste grátis da ${c.tradeName} vai até ${dueAt ? fmtDay(dueAt) : ''}. Para continuar, o valor é ${fmtBRL(priceCents)} ${cycle === 'ANUAL' ? 'por ano' : 'por mês'}${cfg.pixKey ? `, pelo PIX ${cfg.pixKey}` : ''}.`
           : `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. A mensalidade da ${c.tradeName} (${fmtBRL(priceCents)}) ${daysToDue !== null && daysToDue < 0 ? 'venceu' : 'vence'} em ${dueAt ? fmtDay(dueAt) : ''}.${cfg.pixKey ? ` A chave PIX é ${cfg.pixKey}.` : ''} Qualquer dúvida, é só chamar.`;
       // Primeiro contato com quem criou a conta (sem falar de cobrança).
-      const contactText = `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. Vi que a ${c.tradeName} criou uma conta no sistema. Posso ajudar a começar?`;
+      const steps = started.get(c.id) ?? null;
+      const next = steps?.find((x) => !x.done) ?? null;
+      const contactText = next
+        ? `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. Vi que a ${c.tradeName} ainda não fez o passo "${next.label}". Quer que eu te ajude agora? É rapidinho.`
+        : `Olá${firstName ? `, ${firstName}` : ''}! Aqui é do Cenário Gestão. Vi que a ${c.tradeName} criou uma conta no sistema. Posso ajudar a começar?`;
       const digits = whatsappDigits(phone);
       const u = usr.get(c.id);
       const p = pay.get(c.id);
       return {
         id: c.id,
+        gettingStarted: steps
+          ? {
+              done: steps.filter((x) => x.done).length,
+              total: steps.length,
+              nextLabel: next?.label ?? null,
+            }
+          : null,
+        helpRequestedFor: help.get(c.id)?.toISOString() ?? null,
         tradeName: c.tradeName,
         ownerName: o?.displayName ?? null,
         ownerEmail: o?.email ?? c.email ?? null,
@@ -246,6 +280,8 @@ export async function platformRoutes(app: FastifyInstance) {
               input.trialDays > 0 ? new Date(Date.now() + input.trialDays * DAY_MS) : null,
             // Sem teste: começa "vencendo hoje" até o primeiro pagamento ser registrado.
             paidUntil: input.trialDays > 0 ? null : endOfDay(daySP(new Date())),
+            // Cadastrada pelo próprio dono da plataforma: sem aviso de "empresa nova" para ele.
+            platformNewNoticeAt: new Date(),
           },
         });
         await tx.$executeRaw`SELECT set_config('app.company_id', ${String(company.id)}, true),
@@ -376,6 +412,29 @@ export async function platformRoutes(app: FastifyInstance) {
     const [row] = await companyRows({ id });
     return row;
   });
+
+  /** Item 6: o pedido de ajuda para começar foi atendido. */
+  app.post(
+    '/api/v1/platform/companies/:id/help-done',
+    { config: { access: PLATFORM } },
+    async (request) => {
+      const id = companyId(request);
+      await system.$transaction(async (tx) => {
+        const r = await tx.contactRequest.updateMany({
+          where: { companyId: id, kind: 'AJUDA_COMECAR', status: 'PENDENTE' },
+          data: { status: 'FEITO', doneAt: new Date() },
+        });
+        if (r.count > 0)
+          await platformLog(tx, request, {
+            action: 'platform.help_done',
+            companyId: id,
+            summary: 'Pedido de ajuda para começar atendido.',
+          });
+      });
+      const [row] = await companyRows({ id });
+      return row;
+    },
+  );
 
   app.post(
     '/api/v1/platform/companies/:id/block',
@@ -743,6 +802,9 @@ export async function platformRoutes(app: FastifyInstance) {
             plan: 'gestao_jogo',
             billingCourtesy: true,
             isDemo: true,
+            setupDoneAt: new Date(),
+            gettingStartedHiddenAt: new Date(),
+            platformNewNoticeAt: new Date(),
           },
         });
         await tx.$executeRaw`SELECT set_config('app.company_id', ${String(company.id)}, true),

@@ -111,6 +111,8 @@ import { turnstileVerifier } from './core/captcha';
 import { setBillingEnvironment } from './core/billing';
 import { platformAuthRoutes } from './modules/platform/admin-auth';
 import { sendDueNotices } from './modules/platform/due-notices';
+import { onboardingRoutes } from './modules/onboarding/routes';
+import { sendOnboardingEmails } from './modules/onboarding/emails';
 import { deviceRoutes } from './modules/devices/routes';
 import { employeeRoutes } from './modules/employees/routes';
 import { fileRoutes } from './modules/files/routes';
@@ -258,6 +260,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(deviceRoutes);
   await app.register(sessionRoutes);
   await app.register(companyRoutes);
+  await app.register(onboardingRoutes);
   await app.register(platformRoutes);
   await app.register(platformAuthRoutes);
   await app.register(billingRoutesPlatform);
@@ -368,6 +371,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   let statusTimer: NodeJS.Timeout | null = null;
   let officeTimer: NodeJS.Timeout | null = null;
   let dueTimer: NodeJS.Timeout | null = null;
+  let onboardingTimer: NodeJS.Timeout | null = null;
   let started = false;
 
   return {
@@ -471,6 +475,14 @@ export async function buildApp(options: BuildOptions): Promise<App> {
             .catch((err: unknown) =>
               app.log.warn({ err }, 'Falha ao avisar os vencimentos da plataforma'),
             );
+        // 2026-11-26: e-mails do teste grátis para as empresas e aviso de empresa nova.
+        const onboardingRound = () =>
+          void sendOnboardingEmails(system, env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!)
+            .then((n) => n > 0 && ctx.mailer.kick())
+            .catch((err: unknown) => app.log.warn({ err }, 'Falha nos e-mails do teste grátis'));
+        onboardingTimer = setInterval(onboardingRound, 15 * 60_000);
+        onboardingTimer.unref();
+        onboardingRound();
         dueTimer = setInterval(dueRound, 30 * 60_000);
         dueTimer.unref();
         dueRound();
@@ -488,6 +500,7 @@ export async function buildApp(options: BuildOptions): Promise<App> {
       if (statusTimer) clearInterval(statusTimer);
       if (officeTimer) clearInterval(officeTimer);
       if (dueTimer) clearInterval(dueTimer);
+      if (onboardingTimer) clearInterval(onboardingTimer);
       processor.stop();
       hub.stop();
       await feed.stop();

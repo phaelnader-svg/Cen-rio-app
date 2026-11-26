@@ -142,8 +142,20 @@ export type PlatformPaymentInput = z.infer<typeof platformPaymentSchema>;
 
 export type PlatformDueTone = 'ok' | 'soon' | 'late' | 'blocked' | 'trial' | 'courtesy';
 
+/** Item 42 (26/11/2026): em que passo do começo cada empresa está. */
+export interface PlatformGettingStartedDto {
+  done: number;
+  total: number;
+  /** Primeiro passo que falta (nulo = fez tudo). */
+  nextLabel: string | null;
+}
+
 export interface PlatformCompanyDto {
   id: number;
+  /** Item 42: começo guiado (nulo nas empresas antigas, que não passaram por ele). */
+  gettingStarted: PlatformGettingStartedDto | null;
+  /** Item 6: pediu ajuda para começar e ainda não foi atendida (data e hora escolhidas). */
+  helpRequestedFor: string | null;
   tradeName: string;
   ownerName: string | null;
   ownerEmail: string | null;

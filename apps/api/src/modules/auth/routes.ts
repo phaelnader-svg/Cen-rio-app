@@ -220,6 +220,7 @@ export async function authRoutes(app: FastifyInstance) {
             email: input.email,
             plan: 'gestao',
             trialEndsAt: new Date(Date.now() + platformConfig().trialDays * 86_400_000),
+            onboardingEmails: ['boas-vindas'],
           },
         });
         // Daqui em diante a transação é da empresa nova, com a trava do banco ligada: tudo o que
@@ -275,11 +276,13 @@ export async function authRoutes(app: FastifyInstance) {
           payload: employeeEventPayload(employee),
         });
         // Melhoria 3: link para confirmar o e-mail (a conta já funciona; o painel mostra o aviso).
-        await sendConfirmationEmail(tx, env, hashToken, {
-          id: user.id,
-          companyId: company.id,
-          email: input.email,
-        });
+        await sendConfirmationEmail(
+          tx,
+          env,
+          hashToken,
+          { id: user.id, companyId: company.id, email: input.email },
+          { name: displayName, companyName: input.companyName },
+        );
         return { ...session, userId: user.id };
       });
     } catch (error) {

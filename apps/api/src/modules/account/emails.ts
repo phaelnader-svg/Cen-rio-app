@@ -42,9 +42,32 @@ export async function sendConfirmationEmail(
   env: Env,
   hashToken: (t: string) => string,
   user: { id: string; companyId: number; email: string },
+  /** 26/11/2026: no cadastro, o mesmo e-mail dá as boas-vindas e os 3 primeiros passos. */
+  welcome?: { name: string; companyName: string },
 ) {
   const token = await issueToken(tx, hashToken, user, 'CONFIRMAR_EMAIL');
   const url = `${webUrl(env)}/entrar/confirmar?token=${encodeURIComponent(token)}`;
+  if (welcome) {
+    const first = welcome.name.trim().split(/\s+/)[0] || '';
+    await enqueueEmail(tx, {
+      to: user.email,
+      subject: `Boas-vindas ao Cenário Gestão, ${first || welcome.companyName}`,
+      kind: 'boas-vindas',
+      ...simpleEmail({
+        title: `Boas-vindas, ${first || welcome.companyName}!`,
+        paragraphs: [
+          `A ${welcome.companyName} já está no Cenário Gestão. Para começar com o pé direito:`,
+          '1. Responda as perguntas do começo (uns 3 minutos). Com elas o sistema monta os seus preços, o frete e o horário da oficina.',
+          '2. Coloque o preço da sua mão de obra e faça o primeiro orçamento.',
+          '3. Cadastre a sua equipe: você digita o nome e o celular, e a pessoa termina o cadastro pelo link.',
+          'Antes, confirme que este e-mail é seu no botão abaixo. É por ele que você recupera a senha e recebe os avisos da assinatura.',
+        ],
+        button: { label: 'Confirmar e-mail e começar', url },
+        footer: 'Se não foi você que criou a conta, ignore este e-mail.',
+      }),
+    });
+    return;
+  }
   const body = simpleEmail({
     title: 'Confirme o seu e-mail',
     paragraphs: [

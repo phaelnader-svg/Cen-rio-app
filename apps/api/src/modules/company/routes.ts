@@ -43,6 +43,8 @@ function toDto(c: CompanySettings): CompanySettingsDto {
     workingDays: [...c.workingDays].sort(),
     planningWeekday: c.planningWeekday,
     measurementWeekday: c.measurementWeekday,
+    servesOnSite: c.servesOnSite,
+    monthlyGoalCents: c.monthlyGoalCents,
     version: c.version,
     updatedAt: c.updatedAt.toISOString(),
   };
@@ -232,6 +234,10 @@ export async function companyRoutes(app: FastifyInstance) {
             workingDays: [...new Set(input.workingDays)].sort(),
             planningWeekday: input.planningWeekday,
             measurementWeekday: input.measurementWeekday,
+            ...(input.servesOnSite !== undefined ? { servesOnSite: input.servesOnSite } : {}),
+            ...(input.monthlyGoalCents !== undefined
+              ? { monthlyGoalCents: input.monthlyGoalCents }
+              : {}),
             updatedById: actor.userId,
             version: { increment: 1 },
           },

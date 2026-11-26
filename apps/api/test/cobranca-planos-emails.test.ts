@@ -188,11 +188,12 @@ describe('Conta nova: teste grátis, jogo desligado e e-mail de confirmação', 
     expect(put.status).toBe(422);
     expect(put.body.error.message).toContain('Assinatura');
 
-    // E-mail de confirmação na fila, com link de uso único.
+    // Boas-vindas com os 3 primeiros passos e o link de confirmar (uso único), num e-mail só.
     const mail = await db().outboundEmail.findFirstOrThrow({
       where: { to: 'nova@tapecaria.local' },
     });
-    expect(mail.kind).toBe('confirmar-email');
+    expect(mail.kind).toBe('boas-vindas');
+    expect(mail.text).toContain('Responda as perguntas do começo');
     expect(mail.companyId).toBe(companyId);
     const token = linkDe(mail.text, '/entrar/confirmar')!;
     expect(token).toBeTruthy();
@@ -461,7 +462,8 @@ describe('Fila de e-mails (Resend)', () => {
       expect(await app.ctx.mailer.drain()).toBe(0);
       falhar = false;
       expect(await app.ctx.mailer.drain(new Date(Date.now() + 2 * 60_000))).toBe(1);
-      expect(enviados).toEqual(['nova@tapecaria.local|Confirme o seu e-mail — Cenário Gestão']);
+      expect(enviados).toHaveLength(1);
+      expect(enviados[0]).toMatch(/^nova@tapecaria\.local\|Boas-vindas ao Cenário Gestão, /);
       expect((await db().outboundEmail.findFirstOrThrow()).sentAt).not.toBeNull();
     } finally {
       app.ctx.mailer.useTransport(null);

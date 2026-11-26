@@ -42,6 +42,8 @@ export interface MeDto {
     supportAccessUntil: string | null;
     /** Melhoria 128: empresa de demonstração. */
     isDemo: boolean;
+    /** 26/11/2026: atende na casa do cliente (mostra "No local" nas retiradas). */
+    servesOnSite: boolean;
     /** Assinatura (cobrança): situação para o aviso do painel e o bloqueio. */
     subscription: {
       plan: string;
@@ -140,6 +142,8 @@ export interface CompanySettingsDto {
   workingDays: number[];
   planningWeekday: number;
   measurementWeekday: number;
+  servesOnSite: boolean;
+  monthlyGoalCents: number | null;
   version: number;
   updatedAt: string;
 }

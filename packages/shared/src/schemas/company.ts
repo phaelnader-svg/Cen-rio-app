@@ -70,6 +70,10 @@ export const companySettingsSchema = z
     workingDays: z.array(z.number().int().min(0).max(6)).min(1).max(7),
     planningWeekday: z.number().int().min(0).max(6),
     measurementWeekday: z.number().int().min(0).max(6),
+    /** 26/11/2026: atende na casa do cliente ("No local" nas retiradas). */
+    servesOnSite: z.boolean().optional(),
+    /** 26/11/2026: quanto quer faturar por mês (centavos). Vazio = sem meta. */
+    monthlyGoalCents: z.number().int().min(0).max(100_000_000).nullable().optional(),
     version: z.number().int().min(1),
   })
   .refine((v) => toMinutes(v.arrivalWindowStart) <= toMinutes(v.workdayStart), {

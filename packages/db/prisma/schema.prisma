@@ -205,6 +205,9 @@ model User {
   // Módulo Orçamentos.
   quotesCreated         Quote[]                @relation("QuoteCreatedBy")
   feedbackReports       FeedbackReport[]       @relation("FeedbackReportUser")
+  employeeInvites       EmployeeInvite[]       @relation("EmployeeInviteCreatedBy")
+  seenTips              UserSeenTip[]          @relation("UserSeenTipUser")
+  contactRequests       ContactRequest[]       @relation("ContactRequestCreatedBy")
   privacyRequests       PrivacyRequest[]       @relation("PrivacyRequestUser")
   quotesDeleted         Quote[]                @relation("QuoteDeletedBy")
 
@@ -238,6 +241,7 @@ model Employee {
   attendances     OperationalAttendance[]
   skills          EmployeeSkill[]
   leaves          AttendanceLeave[]
+  invites         EmployeeInvite[]
 
   @@index([active])
   @@map("employees")
@@ -560,6 +564,24 @@ model CompanySettings {
   /// Painel da plataforma: data (pago até / fim do teste) já avisada ao dono da plataforma.
   dueNoticeFor        DateTime? @map("due_notice_for") @db.Timestamptz(3)
 
+  // 2026-11-26: primeiro dia de uma empresa nova (itens 1, 2 e 42) e e-mails do teste grátis.
+  /// Respondeu as perguntas do primeiro acesso (vazio = ainda não).
+  setupDoneAt            DateTime? @map("setup_done_at") @db.Timestamptz(3)
+  /// Respostas do primeiro acesso, como foram dadas (para consulta e suporte).
+  setupAnswers           Json?     @map("setup_answers")
+  /// Começo guiado escondido (concluído ou "Já sei usar").
+  gettingStartedHiddenAt DateTime? @map("getting_started_hidden_at") @db.Timestamptz(3)
+  /// Quantas pessoas trabalham na oficina (resposta do primeiro acesso).
+  teamSize               Int?      @map("team_size") @db.SmallInt
+  /// Quanto a empresa quer faturar por mês (centavos). Vazio = sem meta.
+  monthlyGoalCents       Int?      @map("monthly_goal_cents")
+  /// Atende na casa do cliente ("No local"). Falso = a opção some das retiradas.
+  servesOnSite           Boolean   @default(true) @map("serves_on_site")
+  /// E-mails do teste grátis já enviados (boas-vindas, dia-2, dia-5, fim-teste).
+  onboardingEmails       String[]  @default([]) @map("onboarding_emails")
+  /// Aviso de empresa nova já mandado ao dono da plataforma.
+  platformNewNoticeAt    DateTime? @map("platform_new_notice_at") @db.Timestamptz(3)
+
   /// Fase 10: inspetor principal da qualidade (vazio = quem tem a competência de inspeção).
   qualityInspectorUserId    String? @map("quality_inspector_user_id") @db.Uuid
   /// Evolução Fase 3: responsável padrão das etapas de preparação/desmontagem (vazio = único
@@ -660,7 +682,7 @@ model CompanySettings {
   empresaProductionTaskMaterial      ProductionTaskMaterial[]      @relation("EmpresaDeProductionTaskMaterial")
   empresaPlanningAction              PlanningAction[]              @relation("EmpresaDePlanningAction")
   empresaRescheduleProposal          RescheduleProposal[]          @relation("EmpresaDeRescheduleProposal")
-  empresaHelpRequest                 HelpRequest[]                 @relation("EmpresaDeHelpRequest")
+  empresaContactRequest              ContactRequest[]              @relation("EmpresaDeContactRequest")
   empresaHelpRequestEvent            HelpRequestEvent[]            @relation("EmpresaDeHelpRequestEvent")
   empresaProductionIssue             ProductionIssue[]             @relation("EmpresaDeProductionIssue")
   empresaProductionIssueEvent        ProductionIssueEvent[]        @relation("EmpresaDeProductionIssueEvent")
@@ -689,6 +711,9 @@ model CompanySettings {
   empresaQuoteSettings               QuoteSettings[]               @relation("EmpresaDeQuoteSettings")
   empresaQuote                       Quote[]                       @relation("EmpresaDeQuote")
   empresaFeedbackReport              FeedbackReport[]              @relation("EmpresaDeFeedbackReport")
+  empresaEmployeeInvite              EmployeeInvite[]              @relation("EmpresaDeEmployeeInvite")
+  empresaUserSeenTip                 UserSeenTip[]                 @relation("EmpresaDeUserSeenTip")
+  empresaHelpRequest                 HelpRequest[]                 @relation("EmpresaDeHelpRequest")
   empresaPrivacyRequest              PrivacyRequest[]              @relation("EmpresaDePrivacyRequest")
   empresaCustomerReceivable          CustomerReceivable[]          @relation("EmpresaDeCustomerReceivable")
   empresaCustomerPayment             CustomerPayment[]             @relation("EmpresaDeCustomerPayment")
@@ -5578,6 +5603,8 @@ model QuoteSettings {
   proposalTitle       String?         @map("proposal_title") @db.VarChar(120)
   proposalIntro       String?         @map("proposal_intro") @db.VarChar(400)
   proposalThanks      String?         @map("proposal_thanks") @db.VarChar(600)
+  /// Prazo de entrega (dias) que já vem no orçamento novo. Vazio = em branco.
+  defaultDeliveryDays Int?            @map("default_delivery_days") @db.SmallInt
   version             Int             @default(1)
   updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -5896,14 +5923,14 @@ model PlatformAdminSession {
 
 /// Histórico do que foi feito no painel da plataforma (Minha conta → Histórico).
 model PlatformAuditLog {
-  id        String   @id @default(uuid()) @db.Uuid
-  adminId   String?  @map("admin_id") @db.Uuid
-  action    String   @db.VarChar(80)
+  id              String   @id @default(uuid()) @db.Uuid
+  adminId         String?  @map("admin_id") @db.Uuid
+  action          String   @db.VarChar(80)
   /// Empresa sobre a qual foi a ação (sem vínculo: é só referência no histórico).
-  targetCompanyId Int? @map("target_company_id")
-  summary   String   @db.VarChar(300)
-  ipAddress String?  @map("ip_address") @db.VarChar(64)
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  targetCompanyId Int?     @map("target_company_id")
+  summary         String   @db.VarChar(300)
+  ipAddress       String?  @map("ip_address") @db.VarChar(64)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   admin PlatformAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
@@ -5932,4 +5959,60 @@ model PlatformSettings {
   updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("platform_settings")
+}
+
+/// 2026-11-26 (item 4): convite para o funcionário criar o próprio PIN e pôr a foto pelo celular.
+model EmployeeInvite {
+  id          String          @id @default(uuid()) @db.Uuid
+  companyId   Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company     CompanySettings @relation("EmpresaDeEmployeeInvite", fields: [companyId], references: [id])
+  employeeId  String          @map("employee_id") @db.Uuid
+  tokenHash   String          @unique @map("token_hash") @db.VarChar(128)
+  expiresAt   DateTime        @map("expires_at") @db.Timestamptz(3)
+  usedAt      DateTime?       @map("used_at") @db.Timestamptz(3)
+  createdById String?         @map("created_by_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  employee  Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("EmployeeInviteCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([employeeId])
+  @@map("employee_invites")
+}
+
+/// 2026-11-26 (item 5): explicação de cada tela já vista (some para sempre depois do X).
+model UserSeenTip {
+  companyId Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company   CompanySettings @relation("EmpresaDeUserSeenTip", fields: [companyId], references: [id])
+  userId    String          @map("user_id") @db.Uuid
+  key       String          @db.VarChar(60)
+  seenAt    DateTime        @default(now()) @map("seen_at") @db.Timestamptz(3)
+
+  user User @relation("UserSeenTipUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, key])
+  @@map("user_seen_tips")
+}
+
+/// 2026-11-26 (item 6): "Quero ajuda para começar" e, depois, as demonstrações do site (item 44).
+model ContactRequest {
+  id          String          @id @default(uuid()) @db.Uuid
+  companyId   Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company     CompanySettings @relation("EmpresaDeContactRequest", fields: [companyId], references: [id])
+  /// AJUDA_COMECAR | DEMONSTRACAO
+  kind        String          @db.VarChar(20)
+  name        String          @db.VarChar(120)
+  phone       String?         @db.VarChar(30)
+  preferredAt DateTime        @map("preferred_at") @db.Timestamptz(3)
+  note        String?         @db.VarChar(500)
+  /// PENDENTE | FEITO | CANCELADO
+  status      String          @default("PENDENTE") @db.VarChar(10)
+  doneAt      DateTime?       @map("done_at") @db.Timestamptz(3)
+  createdById String?         @map("created_by_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  createdBy User? @relation("ContactRequestCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([status, preferredAt])
+  @@map("contact_requests")
 }
