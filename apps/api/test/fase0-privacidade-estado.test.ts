@@ -70,7 +70,7 @@ async function workshop() {
   return { s, customerId };
 }
 
-type Catalog = { method: string; url: string; access: { session?: string } }[];
+type Catalog = { method: string; url: string; access: { session?: string; public?: boolean } }[];
 
 /** Chama toda rota GET de tablet com cada id do cenário; devolve [rota, corpo] das respostas 200. */
 async function sweep(c: Client, ids: string[], date: string) {
@@ -78,14 +78,15 @@ async function sweep(c: Client, ids: string[], date: string) {
   const routes = catalog.filter(
     (r) => r.method === 'GET' && r.access.session !== 'WEB' && !r.url.includes('/realtime'),
   );
-  const out: { url: string; body: string }[] = [];
+  const out: { url: string; body: string; public: boolean }[] = [];
   for (const r of routes) {
     const urls = r.url.includes(':')
       ? ids.map((id) => r.url.replace(/:[a-zA-Z]+/g, id))
       : [r.url, `${r.url}?date=${date}`];
     for (const u of urls) {
       const res = await c.get(u);
-      if (res.status === 200) out.push({ url: r.url, body: JSON.stringify(res.body) });
+      if (res.status === 200)
+        out.push({ url: r.url, body: JSON.stringify(res.body), public: !!r.access.public });
     }
   }
   return out;
@@ -129,7 +130,10 @@ describe('Privacidade do cliente nos tablets (varredura de todas as rotas de tab
         routesSeen.add(r.url);
         for (const marker of PII)
           expect(r.body, `${name} ${r.url} vazou "${marker}"`).not.toContain(marker);
-        expect(r.body, `${name} ${r.url} trouxe valores`).not.toMatch(/"[a-zA-Z]*Cents"/);
+        // Rota pública (igual para qualquer visitante, sem dado da empresa) pode trazer valor: o
+        // signup-config mostra os preços de venda dos planos, os mesmos da página de vendas.
+        if (!r.public)
+          expect(r.body, `${name} ${r.url} trouxe valores`).not.toMatch(/"[a-zA-Z]*Cents"/);
       }
     expect(checked).toBeGreaterThan(40);
     // A varredura alcançou as telas onde o vazamento existia (qualidade e avisos) e a produção.
