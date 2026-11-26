@@ -141,7 +141,7 @@ describe('Perguntas do primeiro acesso e começo guiado', () => {
     expect(depois.body.askSetup).toBe(false);
     const passo = (k: string) => depois.body.steps.find((s: { key: string }) => s.key === k);
     expect(passo('perguntas').done).toBe(true);
-    expect(passo('precos')).toMatchObject({ done: false, hint: '0 de 5 peças com preço.' });
+    expect(passo('precos')).toMatchObject({ done: false, hint: '0 de 5 preços colocados.' });
 
     // Preços colocados: o passo se marca sozinho.
     for (const i of de('MAO_TAPECEIRO'))
