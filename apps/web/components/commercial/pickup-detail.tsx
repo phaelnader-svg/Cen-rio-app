@@ -216,6 +216,7 @@ function TransitionDialog({
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const needsNote = target === 'COM_OCORRENCIA' || target === 'CANCELADA';
+  const undo = pickup.status === 'RECEBIDA_NA_OFICINA';
   const m = useMutation({
     mutationFn: () =>
       api<PickupDto>(`/api/v1/pickups/${pickup.id}/transition`, {
@@ -240,8 +241,10 @@ function TransitionDialog({
       size="sm"
       title={actionLabel(pickup, target)}
       description={
-        pickup.status === 'RECEBIDA_NA_OFICINA'
-          ? 'As peças saem da tapeçaria e a retirada fica "com ocorrência". Depois é só reagendar (ou cancelar).'
+        undo
+          ? pickup.kind === 'NO_LOCAL'
+            ? 'O serviço volta a ficar "com ocorrência". Depois é só reagendar (ou cancelar).'
+            : 'As peças saem da tapeçaria e a retirada fica "com ocorrência". Depois é só reagendar (ou cancelar).'
           : `${pickupStatusLabel(pickup.status, pickup.kind)} → ${pickupStatusLabel(target, pickup.kind)}`
       }
       footer={
@@ -265,7 +268,15 @@ function TransitionDialog({
           {error}
         </Alert>
       )}
-      <Field label={needsNote ? 'Motivo / descrição (obrigatório)' : 'Observação (opcional)'}>
+      <Field
+        label={
+          undo
+            ? 'O que aconteceu? (obrigatório)'
+            : needsNote
+              ? 'Motivo / descrição (obrigatório)'
+              : 'Observação (opcional)'
+        }
+      >
         {(p) => (
           <Textarea
             {...p}
@@ -276,10 +287,12 @@ function TransitionDialog({
           />
         )}
       </Field>
-      <p className="mt-2 text-xs text-ink-muted">
-        Registro manual da confirmação pelo gestor. A execução pela logística (saída e retirada
-        realizada) é registrada pelo responsável no celular.
-      </p>
+      {!undo && (
+        <p className="mt-2 text-xs text-ink-muted">
+          Registro manual da confirmação pelo gestor. A execução pela logística (saída e retirada
+          realizada) é registrada pelo responsável no celular.
+        </p>
+      )}
     </Dialog>
   );
 }
