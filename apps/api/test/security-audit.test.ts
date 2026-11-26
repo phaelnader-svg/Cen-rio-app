@@ -134,6 +134,12 @@ describe('Matriz de acesso: todas as rotas', () => {
         'POST /api/public/client-error',
         // Painel da plataforma (2026-11-25): a tela de entrar pergunta se o acesso já foi criado
         // (só sim/não) e o login próprio do painel, com os mesmos limites do login das empresas.
+        // Funcionário termina o cadastro pelo link (2026-11-26): token aleatório de uso único que
+        // vale 7 dias (só o hash fica guardado); só mostra nome, função e empresa da própria pessoa
+        // e só grava a foto e o PIN dela. Vale o limite anônimo por IP de todas as rotas.
+        'GET /api/public/convite/:token',
+        'POST /api/public/convite/:token',
+        'POST /api/public/convite/:token/foto',
         'GET /api/plataforma/estado',
         'POST /api/plataforma/entrar',
         // "Esqueci a senha" do painel (sempre 204, limite por IP e por e-mail) e a senha nova pelo
