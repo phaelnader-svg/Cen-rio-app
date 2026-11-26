@@ -130,6 +130,14 @@ describe('isolamento e promessas', () => {
     expect(landing).toMatch(/<SignupLink size="sm"[\s\S]{0,80}Criar conta[\s\S]{0,80}<LoginLink/);
   });
 
+  it('a tarja do topo leva ao WhatsApp, fecha no X e não volta para quem fechou', () => {
+    const bar = src('components/site/top-bar.tsx');
+    expect(bar).toMatch(/localStorage\.setItem\(KEY, '1'\)/);
+    expect(bar).toMatch(/Falar agora/);
+    expect(bar).not.toMatch(/sticky|fixed/);
+    expect(src('components/site/landing.tsx')).toMatch(/<TopBar href=\{wa\}/);
+  });
+
   it('o WhatsApp fica flutuando no canto de baixo, à direita, escrito Dúvidas', () => {
     const landing = src('components/site/landing.tsx');
     expect(landing).toMatch(/fixed right-4 bottom-4[\s\S]{0,600}Dúvidas\?/);

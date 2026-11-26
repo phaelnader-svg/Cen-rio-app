@@ -4,6 +4,7 @@ import { ImageOff, LogIn, MessageCircle, UserPlus } from 'lucide-react';
 import { BrandMark } from '@/components/brand';
 import { jsonLd } from './agentes';
 import { artigosPublicados } from './blog/artigos';
+import { TopBar } from './top-bar';
 import { WebMcpTools } from './webmcp';
 import { LegalFooter, SiteConsent, SkipLink, type LegalMode } from './legal/legal';
 import { Alert, Badge, Card } from '@/components/ui/misc';
@@ -375,6 +376,7 @@ export function Landing({
         </div>
       )}
 
+      <TopBar href={wa} origem={origem} />
       <header className={clsx(WRAP, 'flex items-center justify-between gap-4 py-5')}>
         {/* Cenário Gestão e Cenário Estofados são empresas diferentes: o topo mostra só o sistema. */}
         <BrandMark />

@@ -46,6 +46,15 @@ test('cadastro com WhatsApp, empresa antiga e painel da plataforma', async ({ br
       await p.mouse.wheel(0, 2400);
       await p.waitForTimeout(400);
       await p.screenshot({ path: `${OUT}/1b-landing-rolada-duvidas-continua.png` });
+      // A tarja do topo some ao rolar e, fechada no X, não volta mais.
+      await expect(p.getByTestId('site-tarja')).not.toBeInViewport();
+      await p.mouse.wheel(0, -4000);
+      await p.getByTestId('site-tarja-fechar').click();
+      await expect(p.getByTestId('site-tarja')).toBeHidden();
+      await p.reload();
+      await expect(p.getByTestId('site-cta')).toBeVisible();
+      await expect(p.getByTestId('site-tarja')).toBeHidden();
+      await p.screenshot({ path: `${OUT}/1e-landing-depois-de-fechar-a-tarja.png` });
     }
     await ctx.close();
   }
