@@ -97,6 +97,7 @@ services:
       ASAAS_BASE_URL: ${ASAAS_BASE_URL:-https://api-sandbox.asaas.com/v3}
       ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SPEECH_API_KEY: ${SPEECH_API_KEY:-}
       # IA dos agentes (Secret Manager <ambiente>-anthropic-api-key). Vazio = regras, sem IA.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GAME_AI_PROVIDER: ${GAME_AI_PROVIDER:-regras}

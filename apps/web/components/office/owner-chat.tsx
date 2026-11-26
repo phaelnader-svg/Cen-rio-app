@@ -1,12 +1,13 @@
 'use client';
 
 import type { OwnerChatCard, OwnerChatReplyDto } from '@cenario/shared';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { ArrowUp, Camera, ChevronRight, Mic, RotateCcw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
 import { preparePhoto } from '@/lib/photos';
+import { canRecord, startRecording, type Recording } from '@/lib/voice-recorder';
 
 /**
  * Conversar (app do dono, 2026-11-25): o dono escreve ou fala e a IA responde com os dados da
@@ -68,7 +69,20 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [voiceTip, setVoiceTip] = useState<string | null>(null);
+  // Segurar para falar (2026-11-26): 'hold' = solta para enviar; 'tap' = toca de novo para enviar.
+  const [holdMode, setHoldMode] = useState<'hold' | 'tap' | null>(null);
+  const [transcribing, setTranscribing] = useState(false);
   const rec = useRef<Recognition | null>(null);
+  const recording = useRef<Recording | null>(null);
+  const pressedAt = useRef(0);
+  const stopTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // Voz pelo servidor (Google): funciona no app do iPhone. Sem ela, voz do navegador ou teclado.
+  const serverVoice = useQuery({
+    queryKey: ['office', 'voice'],
+    queryFn: () => api<{ available: boolean }>('/api/v1/office/voice'),
+    staleTime: Infinity,
+    retry: false,
+  });
   const photo = useRef<HTMLInputElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
   const end = useRef<HTMLDivElement>(null);
@@ -163,6 +177,7 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
   // (o botão ficava vermelho e nada acontecia); o ditado do teclado funciona sempre.
   const keyboardDictation = (motivo?: string) => {
     setListening(false);
+    setHoldMode(null);
     setVoiceTip(
       motivo === 'not-allowed'
         ? 'O microfone está bloqueado para o app. Libere em Ajustes do celular, ou toque no microfone do teclado e fale.'
@@ -171,12 +186,46 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
     field.current?.focus();
   };
 
-  const talk = () => {
-    if (listening) {
-      rec.current?.stop();
+  const stopServer = async () => {
+    const r = recording.current;
+    recording.current = null;
+    clearTimeout(stopTimer.current);
+    setListening(false);
+    setHoldMode(null);
+    if (!r) return;
+    setTranscribing(true);
+    try {
+      const audio = await r.stop();
+      if (!audio) return;
+      const { text: heard } = await api<{ text: string }>('/api/v1/office/voice', {
+        method: 'POST',
+        body: { audio },
+        idempotencyKey: newIdempotencyKey(),
+      });
+      if (heard.trim()) void ask(heard);
+      else setVoiceTip('Não deu para ouvir. Segure o botão, fale perto do celular e solte.');
+    } catch (e) {
+      setVoiceTip(errorMessage(e));
+    } finally {
+      setTranscribing(false);
+    }
+  };
+
+  /** Começa a ouvir: grava para o servidor, ou usa a voz do navegador, ou o teclado. */
+  const startTalking = async () => {
+    setVoiceTip(null);
+    if (serverVoice.data?.available && canRecord()) {
+      try {
+        setListening(true);
+        recording.current = await startRecording();
+        // Até 55 s por vez (o Google transcreve até 60 s de uma vez).
+        stopTimer.current = setTimeout(() => void stopServer(), 55_000);
+      } catch {
+        recording.current = null;
+        keyboardDictation('not-allowed');
+      }
       return;
     }
-    setVoiceTip(null);
     const Ctor = recognitionCtor();
     if (!Ctor) {
       keyboardDictation();
@@ -190,8 +239,8 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
       return;
     }
     r.lang = 'pt-BR';
-    r.interimResults = false;
-    r.continuous = false;
+    r.interimResults = true;
+    r.continuous = true;
     let heard = '';
     let failed = false;
     const startedAt = Date.now();
@@ -209,6 +258,8 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
     };
     r.onend = () => {
       setListening(false);
+      setHoldMode(null);
+      rec.current = null;
       // Falou e parou: já pergunta, sem precisar tocar em enviar.
       if (heard.trim()) {
         void ask(heard);
@@ -224,6 +275,33 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
     } catch {
       keyboardDictation();
     }
+  };
+
+  const stopTalking = () => {
+    if (recording.current) void stopServer();
+    else rec.current?.stop();
+  };
+
+  // Apertou o microfone: começa a ouvir na hora. Se já estava ouvindo (modo toque), este toque
+  // é para enviar.
+  const onMicDown = (e: React.PointerEvent) => {
+    e.preventDefault();
+    if (busy || transcribing) return;
+    if (listening) {
+      stopTalking();
+      return;
+    }
+    pressedAt.current = Date.now();
+    setHoldMode('hold');
+    void startTalking();
+  };
+  // Soltou: se segurou (mais de meio segundo), envia; se só tocou, continua ouvindo até tocar de novo.
+  const onMicUp = () => {
+    if (!pressedAt.current) return;
+    const held = Date.now() - pressedAt.current >= 500;
+    pressedAt.current = 0;
+    if (held) stopTalking();
+    else setHoldMode('tap');
   };
 
   const restart = () => {
@@ -269,7 +347,8 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
           <p className="px-1 pt-2 text-sm text-ink-muted">
             Ela também prepara tarefas, como &quot;faz um orçamento para a Maria&quot; ou
             &quot;avisa o João que o sofá fica pronto sexta&quot;. Para lançar um gasto, toque na
-            câmera e mande a foto do comprovante. Tudo vai para o Aprovar antes de sair.
+            câmera e mande a foto do comprovante. Para falar, segure o microfone e solte quando
+            terminar. Tudo vai para o Aprovar antes de sair.
           </p>
         </div>
       )}
@@ -316,6 +395,22 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
         }}
         className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-10 border-t border-line bg-canvas/95 px-4 py-2 backdrop-blur"
       >
+        {(listening || transcribing) && (
+          <p
+            role="status"
+            data-testid="voice-status"
+            className="mx-auto mb-2 flex max-w-xl items-center justify-center gap-2 rounded-xl bg-danger-50 px-3 py-2 text-sm leading-5 font-medium text-danger-600"
+          >
+            {!transcribing && (
+              <span className="size-2 animate-pulse rounded-full bg-danger-600" aria-hidden />
+            )}
+            {transcribing
+              ? 'Entendendo o que você falou…'
+              : holdMode === 'tap'
+                ? 'Ouvindo… toque no microfone para enviar'
+                : 'Ouvindo… solte para enviar'}
+          </p>
+        )}
         {voiceTip && (
           <p
             role="status"
@@ -341,7 +436,9 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
             }}
             rows={1}
             maxLength={2000}
-            placeholder={listening ? 'Ouvindo…' : 'Pergunte ou peça uma tarefa'}
+            placeholder={
+              transcribing ? 'Entendendo…' : listening ? '' : 'Pergunte ou segure o microfone'
+            }
             aria-label="Sua pergunta"
             className="max-h-32 min-h-11 min-w-0 flex-1 resize-none overflow-y-auto rounded-3xl border border-line-strong bg-surface px-3.5 py-[11px] text-[15px] leading-5 text-ink outline-none placeholder:text-[14px] placeholder:text-ink-muted focus:border-brand-500"
           />
@@ -369,14 +466,32 @@ export function OwnerChat({ onApprove }: { onApprove?: () => void }) {
           {!typed || listening ? (
             <button
               type="button"
-              onClick={talk}
-              aria-label={listening ? 'Parar de ouvir' : 'Falar'}
+              onPointerDown={onMicDown}
+              onPointerUp={onMicUp}
+              onPointerCancel={onMicUp}
+              onPointerLeave={(e) => {
+                if (e.buttons) onMicUp();
+              }}
+              onContextMenu={(e) => e.preventDefault()}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+                if (listening) stopTalking();
+                else {
+                  setHoldMode('tap');
+                  void startTalking();
+                }
+              }}
+              disabled={transcribing}
+              aria-label={listening ? 'Parar e enviar' : 'Segure para falar'}
               aria-pressed={listening}
+              data-testid="chat-mic"
+              style={{ WebkitTouchCallout: 'none', touchAction: 'none' }}
               className={clsx(
-                'grid size-11 shrink-0 place-items-center rounded-full border',
+                'grid shrink-0 touch-none place-items-center rounded-full border transition-all select-none',
                 listening
-                  ? 'animate-pulse border-danger-600 bg-danger-600 text-white'
-                  : 'border-line-strong bg-surface text-ink',
+                  ? 'size-14 -my-1.5 animate-pulse border-danger-600 bg-danger-600 text-white'
+                  : 'size-11 border-line-strong bg-surface text-ink disabled:opacity-40',
               )}
             >
               <Mic className="size-5" aria-hidden />

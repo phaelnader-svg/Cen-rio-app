@@ -73,6 +73,12 @@ const envSchema = z
     ASAAS_WEBHOOK_TOKEN: z.string().default(''),
     /** E-mail pelo Resend (decisão do dono). Vazio = os e-mails ficam na fila sem enviar. */
     RESEND_API_KEY: z.string().default(''),
+    /** Voz da Conversar (Google Speech-to-Text, infra/voz/ligar-voz.sh). Vazio = voz do navegador. */
+    SPEECH_API_KEY: z.string().default(''),
+    SPEECH_BASE_URL: z
+      .string()
+      .default('https://speech.googleapis.com')
+      .transform((v) => v.replace(/\/$/, '')),
     EMAIL_FROM: z.string().default('Cenário Gestão <nao-responda@cenariogestao.com.br>'),
     /** Anti-robô do Criar conta e do "esqueci minha senha" (Cloudflare Turnstile). Vazio = desligado. */
     TURNSTILE_SITE_KEY: z.string().default(''),

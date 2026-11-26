@@ -140,6 +140,12 @@ EOF
     printf "RESEND_API_KEY='%s'\n" "$em" >> "$ENV_FILE"
   fi
   unset em
+  # Voz da Conversar (opcional, infra/voz/ligar-voz.sh): sem ela o app usa a voz do navegador.
+  local vz; vz="$(s prod-speech-api-key 2>/dev/null || true)"
+  if [[ "$vz" == AIza* ]]; then
+    printf "SPEECH_API_KEY='%s'\n" "$vz" >> "$ENV_FILE"
+  fi
+  unset vz
   escrever_meta >> "$ENV_FILE"
   log "Variáveis geradas em $ENV_FILE (memória, permissão 600)."
 }
@@ -320,6 +326,27 @@ atualizar_ia() {
   mv -f "$tmp" "$ENV_FILE"
 }
 
+# Voz da Conversar (infra/voz/ligar-voz.sh): relê o segredo e troca só a linha SPEECH_API_KEY no
+# .env, sem mostrar a chave. Falha ao ler: nada muda. Sem segredo válido: o app usa a voz do navegador.
+atualizar_voz() {
+  local vz tmp
+  if ! vz="$(gcloud secrets versions access latest --secret=prod-speech-api-key --project="$PROJECT" 2>/dev/null)"; then
+    log "Voz da Conversar: segredo ainda não existe; o app usa a voz do navegador."
+    return 0
+  fi
+  tmp="$(mktemp "$(dirname "$ENV_FILE")/.env.XXXXXX")"
+  chmod 600 "$tmp"
+  grep -v -E '^SPEECH_API_KEY=' "$ENV_FILE" > "$tmp" || true
+  if [[ "$vz" == AIza* ]]; then
+    printf "SPEECH_API_KEY='%s'\n" "$vz" >> "$tmp"
+    log "Voz da Conversar: ligada."
+  else
+    log "Voz da Conversar: segredo inválido; o app usa a voz do navegador."
+  fi
+  unset vz
+  mv -f "$tmp" "$ENV_FILE"
+}
+
 # Chave do e-mail (infra/email/guardar-chave-email.sh): relê o segredo e troca só a linha
 # RESEND_API_KEY no .env, sem mostrar a chave. Falha ao ler: nada muda. Segredo inválido: tira a
 # linha e os e-mails voltam a ficar na fila.
@@ -383,6 +410,7 @@ aplicar_config() {
   need_env
   atualizar_ia
   atualizar_email
+  atualizar_voz
   atualizar_meta
   set -a
   # shellcheck source=/dev/null
