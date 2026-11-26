@@ -41,6 +41,7 @@ const UNICAS_NO_SISTEMA = new Set([
   'company_counters_pkey',
   'domain_events_seq_key', // posição técnica na fila de eventos
   'push_subscriptions_endpoint_key', // endereço do aviso, gerado pelo navegador: único no mundo
+  'employee_invites_token_hash_key', // link de cadastro do funcionário: token aleatório, só o hash
   'quote_settings_pkey', // id automático (uma linha por empresa, UNIQUE company_id)
   'integration_oauth_states_pkey', // "state" aleatório da autorização OAuth
   // Ids gerados pelo provedor externo (assinatura, cobrança, nota, pagamento): únicos no mundo.
@@ -91,7 +92,8 @@ describe('Multi-empresa: banco', () => {
     // 171: + privacy_requests (LGPD, pedidos sobre dados pessoais).
     // 172: + push_subscriptions (avisos no aparelho do app instalado).
     // 173: + material_prices (preço que cada fornecedor cobrou, Escritório).
-    expect(tabelasComEmpresa.length).toBe(173);
+    // 176: + employee_invites, user_seen_tips e contact_requests (começo guiado, 2026-11-26).
+    expect(tabelasComEmpresa.length).toBe(176);
   });
 
   it('nenhuma unicidade de tabela de empresa vale no sistema inteiro sem motivo', async () => {
