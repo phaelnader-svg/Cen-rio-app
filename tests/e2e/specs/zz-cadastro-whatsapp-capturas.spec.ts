@@ -7,7 +7,7 @@ import { E2E, rootEnv } from '../env';
 /**
  * 2026-11-26 — Criar conta pede nome da empresa, nome e WhatsApp; empresa antiga sem WhatsApp
  * informa ao entrar; painel da plataforma mostra o contato; landing com Criar conta + Entrar e o
- * botão Dúvidas flutuando. Dados fictícios. Prints em CAPTURAS_DIR.
+ * botão Agendar demonstração flutuando. Dados fictícios. Prints em CAPTURAS_DIR.
  */
 const OUT = process.env.CAPTURAS_DIR ?? 'test-results/cadastro-whatsapp';
 const origin = `http://localhost:${E2E.webPort}`;

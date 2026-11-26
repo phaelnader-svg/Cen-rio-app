@@ -138,10 +138,10 @@ describe('isolamento e promessas', () => {
     expect(src('components/site/landing.tsx')).toMatch(/<TopBar href=\{wa\}/);
   });
 
-  it('o WhatsApp fica flutuando no canto de baixo, à direita, escrito Dúvidas', () => {
+  it('o WhatsApp fica flutuando no canto de baixo, à direita, escrito Agendar demonstração', () => {
     const landing = src('components/site/landing.tsx');
-    expect(landing).toMatch(/fixed right-4 bottom-4[\s\S]{0,600}Dúvidas\?/);
-    expect(landing).toMatch(/<WhatsappFloat href=\{wa\}/);
+    expect(landing).toMatch(/fixed right-4 bottom-4[\s\S]{0,600}Agendar demonstração/);
+    expect(landing).toMatch(/<WhatsappFloat\s+href=\{demoWhatsappUrl\(/);
     expect(landing).not.toMatch(/subtitle="Cenário Estofados"/);
   });
 });

@@ -21,6 +21,7 @@ import {
   SITE,
   annualOffer,
   trialOffer,
+  demoWhatsappUrl,
   whatsappUrl,
   type ScreenSlot,
 } from './config';
@@ -133,7 +134,7 @@ function WhatsappIcon({ className }: { className?: string }) {
 
 /**
  * WhatsApp flutuante (pedido do dono, 26/11/2026): sempre no canto de baixo, à direita, escrito
- * "Dúvidas?", acompanhando a rolagem da página.
+ * "Agendar demonstração" (antes "Dúvidas?"), acompanhando a rolagem da página.
  */
 function WhatsappFloat({ href, origem }: { href: string | null; origem?: string }) {
   if (!href) return null;
@@ -147,7 +148,7 @@ function WhatsappFloat({ href, origem }: { href: string | null; origem?: string 
       data-testid="site-cta"
     >
       <WhatsappIcon className="size-5" />
-      Dúvidas?
+      Agendar demonstração
       <span className="sr-only"> (abre o WhatsApp em outra aba)</span>
     </a>
   );
@@ -623,8 +624,8 @@ export function Landing({
             <div>
               <SectionTitle>Quer ver o sistema funcionando?</SectionTitle>
               <p className="mt-2 text-[15px] text-ink-soft sm:text-base">
-                Crie a sua conta e comece agora. Ficou com alguma dúvida? Toque no botão do
-                WhatsApp, no canto da tela, e a gente responde.
+                Crie a sua conta e comece agora. Se preferir ver antes, toque em Agendar
+                demonstração, no canto da tela, e a gente mostra pelo WhatsApp.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -674,10 +675,16 @@ export function Landing({
           </nav>
         </div>
         <LegalFooter preview={preview} mode={legal} />
-        {/* Espaço para o botão Dúvidas não cobrir o fim do rodapé. */}
+        {/* Espaço para o botão flutuante não cobrir o fim do rodapé. */}
         <div className="h-20" aria-hidden />
       </footer>
-      <WhatsappFloat href={wa} origem={origem} />
+      <WhatsappFloat
+        href={demoWhatsappUrl(
+          SITE,
+          blogOrigem ? { blog: true, artigo: blogOrigem.titulo } : undefined,
+        )}
+        origem={origem}
+      />
     </div>
   );
 }
