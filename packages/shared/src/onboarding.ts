@@ -202,9 +202,9 @@ export function gettingStartedSteps(f: GettingStartedFacts): GettingStartedStep[
       label: GETTING_STARTED_LABEL.precos,
       hint:
         f.laborItems > 0
-          ? `${f.laborPriced} de ${f.laborItems} peças com preço.`
+          ? `${f.laborPriced} de ${f.laborItems} preços colocados.`
           : 'As peças aparecem aqui depois das perguntas.',
-      href: '/painel/orcamentos?tab=base',
+      href: '/painel/orcamentos?tab=base&base=mao',
       done: priced,
     },
     {

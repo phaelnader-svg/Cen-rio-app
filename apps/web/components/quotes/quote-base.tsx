@@ -15,7 +15,8 @@ import {
 } from '@cenario/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Download, ImagePlus, Plus, Save, Trash2, Upload } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { MoneyInput } from '@/components/commercial/money-input';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
@@ -98,11 +99,18 @@ export function QuoteBase({
   catalog: QuoteCatalogItemDto[];
   settings: QuoteSettingsDto;
 }) {
-  const [tab, setTab] = useState<BaseTab>('Tecidos');
+  // Começo guiado: "Colocar o preço da sua mão de obra" abre direto na mão de obra.
+  const toLabor = useSearchParams().get('base') === 'mao';
+  const [tab, setTab] = useState<BaseTab>(toLabor ? 'MAO_TAPECEIRO' : 'Tecidos');
+  const baseRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (toLabor) baseRef.current?.scrollIntoView({ block: 'start' });
+  }, [toLabor]);
   return (
     <div className="space-y-6">
       <CompanyCard key={settings.nextNumber} settings={settings} />
       <ProposalTextsCard key={`textos-${settings.version}`} settings={settings} />
+      <div ref={baseRef} className="scroll-mt-24" />
       <FormSection
         title="Base de dados"
         description="Alterações de preços passam a valer na hora nos cálculos dos orçamentos. Os orçamentos já salvos guardam os valores da época e não mudam."
