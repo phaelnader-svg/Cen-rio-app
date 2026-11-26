@@ -1703,6 +1703,10 @@ describe('F1-12b — todos os endpoints de 9fb1786 continuam registrados (trava 
  * Chave: "<pasta da migration>: <comando normalizado>".
  */
 const ALLOWED_DESTRUCTIVE: Record<string, string> = {
+  '20270912000000_comeco_guiado_recentes: UPDATE "company_settings"':
+    'Pedido do dono (2026-11-26): as empresas cadastradas pelo site a partir de 24/11 que ainda ' +
+    'não responderam as perguntas voltam a ter o começo guiado e os e-mails do teste. Só mexe nas ' +
+    'colunas criadas pela migration anterior; nenhum dado da empresa muda.',
   '20270911000000_comeco_guiado: UPDATE CASCADE':
     'Não é comando: "ON UPDATE CASCADE" das chaves estrangeiras das tabelas NOVAS do começo ' +
     'guiado (convites, explicações vistas e pedidos de ajuda). Nenhuma linha é alterada.',
