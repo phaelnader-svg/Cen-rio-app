@@ -87,9 +87,7 @@ describe('assistentes de IA: só informação pública', () => {
       const urls = sitemap().map((u) => u.url);
       expect(urls[0]).toBe('https://cenariogestao.com.br/');
       for (const u of urls)
-        expect(u).toMatch(
-          /^https:\/\/cenariogestao\.com\.br\/(blog(\/[a-z0-9-]+)?|calculadora)?$/,
-        );
+        expect(u).toMatch(/^https:\/\/cenariogestao\.com\.br\/(blog(\/[a-z0-9-]+)?|calculadora)?$/);
       expect(urls).toContain('https://cenariogestao.com.br/calculadora');
       expect(urls.some((u) => u.includes('exemplo-'))).toBe(false);
     } finally {

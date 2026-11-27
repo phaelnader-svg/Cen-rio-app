@@ -92,7 +92,10 @@ test('capturas: segurar para falar', async ({ page, browser }) => {
   const phone = await context.newPage();
   const shot = (name: string) => phone.screenshot({ path: `${OUT}/${name}.png` });
   await phone.goto('/dono');
-  await phone.getByRole('navigation').getByRole('button', { name: /Conversar/ }).click();
+  await phone
+    .getByRole('navigation')
+    .getByRole('button', { name: /Conversar/ })
+    .click();
   await expect(phone.getByTestId('owner-chat')).toBeVisible();
   await shot('1-segure-o-microfone');
 

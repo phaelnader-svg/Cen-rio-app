@@ -104,7 +104,10 @@ test('capturas: correções do app no celular', async ({ page, browser }) => {
 
   await phone.goto('/dono');
   await expect(phone.getByTestId('dono-app')).toBeVisible();
-  await phone.getByRole('navigation').getByRole('button', { name: /Conversar/ }).click();
+  await phone
+    .getByRole('navigation')
+    .getByRole('button', { name: /Conversar/ })
+    .click();
   await expect(phone.getByTestId('owner-chat')).toBeVisible();
 
   // Campo de escrever com 16px no celular: o iPhone não dá mais zoom sozinho ao tocar.
