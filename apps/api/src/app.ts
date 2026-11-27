@@ -105,6 +105,7 @@ import { reviewRoutes } from './modules/quality/reviews';
 import { houseStandardRoutes } from './modules/production/house-standards';
 import { leaveImpactRoutes } from './modules/attendance/calendar';
 import { rainRound } from './modules/quality/rain';
+import { sendIdleNotices } from './modules/platform/usage';
 import { reworkRoutes } from './modules/reworks/routes';
 import { serviceOrderSheetRoutes } from './modules/service-orders/sheet';
 import { companyRoutes } from './modules/company/routes';
@@ -496,6 +497,10 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           void sendWeeklySummaries(system, env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!)
             .then((n) => n > 0 && ctx.mailer.kick())
             .catch((err: unknown) => app.log.warn({ err }, 'Falha no resumo da semana'));
+          // Termômetro: empresa em teste que parou de entrar vira aviso no celular do dono.
+          void sendIdleNotices(system, env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!).catch(
+            (err: unknown) => app.log.warn({ err }, 'Falha no aviso de empresa parada'),
+          );
           // Item 16 (lista de 53): aviso de chuva na véspera das entregas e retiradas.
           void forEachCompany(system, () => rainRound(prisma)).catch((err: unknown) =>
             app.log.warn({ err }, 'Falha ao olhar a previsão de chuva'),

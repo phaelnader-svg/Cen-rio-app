@@ -39,6 +39,7 @@ import {
   refreshPlatformConfig,
 } from '../../core/platform-config';
 import { pushKeys } from '../push/push';
+import { usageOf } from './usage';
 import { enqueueEmail, simpleEmail } from '../../core/mailer';
 import { platformLog } from './admin-auth';
 
@@ -259,6 +260,7 @@ export async function platformRoutes(app: FastifyInstance) {
       _count: { _all: true },
     });
     const proof = new Map(proofs.map((p) => [p.companyId, p._count._all]));
+    const usage = await usageOf(system, companies, clockNow());
     const ord = new Map(orders.map((o) => [o.companyId, o]));
     const usr = new Map(users.map((u) => [u.companyId, u]));
     const pay = new Map(paid.map((p) => [p.companyId, p]));
@@ -316,10 +318,18 @@ export async function platformRoutes(app: FastifyInstance) {
         fill,
       );
       const digits = whatsappDigits(phone);
+      const idleText = fillTemplate(messageTemplate('parado', cfg), fill);
       const u = usr.get(c.id);
       const p = pay.get(c.id);
       return {
         id: c.id,
+        usage: {
+          ...usage.get(c.id)!,
+          helpWhatsappUrl:
+            digits.length >= 10
+              ? `https://wa.me/${digits.length <= 11 ? `55${digits}` : digits}?text=${encodeURIComponent(idleText)}`
+              : null,
+        },
         gettingStarted: steps
           ? {
               done: steps.filter((x) => x.done).length,

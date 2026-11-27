@@ -237,6 +237,7 @@ export const MESSAGE_TEMPLATE_KEYS = [
   'cobrancaTeste',
   'cobranca',
   'comprovante',
+  'parado',
 ] as const;
 export type MessageTemplateKey = (typeof MESSAGE_TEMPLATE_KEYS)[number];
 
@@ -258,6 +259,10 @@ export const MESSAGE_TEMPLATE_LABEL: Record<MessageTemplateKey, { label: string;
     label: 'Mensagem do cliente para você',
     hint: 'O texto que já vem pronto quando o cliente toca em falar com você pelo WhatsApp.',
   },
+  parado: {
+    label: 'Parou de entrar',
+    hint: 'Botão WhatsApp de quem está no teste e ficou 2 dias ou mais sem entrar no sistema.',
+  },
 };
 
 export const DEFAULT_MESSAGE_TEMPLATES: Record<MessageTemplateKey, string> = {
@@ -271,6 +276,8 @@ export const DEFAULT_MESSAGE_TEMPLATES: Record<MessageTemplateKey, string> = {
     'Olá, {nome}! Aqui é do Cenário Gestão. A mensalidade da {empresa} ({valor}) vence em {vencimento}. O PIX já vem com o valor certo na tela Assinatura. Qualquer dúvida, é só chamar.',
   comprovante:
     'Olá! Sou da {empresa} e quero continuar com o Cenário Gestão ({valor}). Tenho uma dúvida sobre o pagamento.',
+  parado:
+    'Olá, {nome}! Aqui é do Cenário Gestão. Vi que faz uns dias que a {empresa} não entra no sistema. Travou em alguma coisa? Posso te mostrar em 10 minutos como fazer o primeiro orçamento, por aqui ou numa chamada.',
 };
 
 export const MESSAGE_PLACEHOLDERS = ['{nome}', '{empresa}', '{valor}', '{vencimento}', '{passo}'];
@@ -299,6 +306,7 @@ export const messageTemplatesSchema = z
     cobrancaTeste: templateText,
     cobranca: templateText,
     comprovante: templateText,
+    parado: templateText,
   })
   .strict();
 

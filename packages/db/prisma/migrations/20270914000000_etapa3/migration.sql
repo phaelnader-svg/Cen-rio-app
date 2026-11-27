@@ -28,6 +28,9 @@ ALTER TABLE "house_standards" ADD CONSTRAINT "house_standards_file_id_fkey" FORE
 -- AddForeignKey
 ALTER TABLE "house_standards" ADD CONSTRAINT "house_standards_updated_by_id_fkey" FOREIGN KEY ("updated_by_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
+-- Termômetro do painel: quando o dono da plataforma foi avisado de que a empresa parou de entrar.
+ALTER TABLE "company_settings" ADD COLUMN "idle_notice_at" TIMESTAMPTZ(3);
+
 -- Trava do banco (Row-Level Security) na tabela nova das empresas, igual às demais.
 ALTER TABLE "house_standards" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "house_standards" FORCE ROW LEVEL SECURITY;

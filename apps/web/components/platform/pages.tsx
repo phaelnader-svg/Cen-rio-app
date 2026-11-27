@@ -57,6 +57,7 @@ import {
 } from '@/components/improvements/platform-extras';
 import { PrivacyRequestsInbox } from '@/components/improvements/privacy-extras';
 import { PixQr } from '@/components/billing/pix-proof';
+import { UsageThermometer } from './usage-thermometer';
 import {
   CloseCompanyDialog,
   ClosedCompanyBar,
@@ -352,9 +353,15 @@ export function PlatformCompanies() {
     },
     onError: (e) => toast('danger', errorMessage(e)),
   });
+  // Aviso "parou de entrar" no celular: abre aqui com ?parada=<empresa>.
+  const [parada] = useState<number | null>(() =>
+    typeof window === 'undefined'
+      ? null
+      : Number(new URLSearchParams(window.location.search).get('parada')) || null,
+  );
   const items = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return (list.data?.items ?? []).filter(
+    const all = (list.data?.items ?? []).filter(
       (c) =>
         !s ||
         c.tradeName.toLowerCase().includes(s) ||
@@ -362,7 +369,11 @@ export function PlatformCompanies() {
         (c.ownerName ?? '').toLowerCase().includes(s) ||
         (c.phone ?? '').replace(/\D/g, '').includes(s.replace(/\D/g, '') || '~'),
     );
-  }, [list.data, search]);
+    // Aviso de empresa parada (celular): ela aparece primeiro.
+    return parada
+      ? [...all].sort((x, y) => Number(y.id === parada) - Number(x.id === parada))
+      : all;
+  }, [list.data, search, parada]);
 
   return (
     <>
@@ -392,7 +403,11 @@ export function PlatformCompanies() {
       )}
       <div className="space-y-3">
         {items.map((c) => (
-          <Card key={c.id} className="p-4" data-testid="platform-company">
+          <Card
+            key={c.id}
+            className={clsx('p-4', c.id === parada && 'ring-2 ring-danger-600/40')}
+            data-testid="platform-company"
+          >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -450,6 +465,7 @@ export function PlatformCompanies() {
                   Cadastro em {formatDateTime(c.createdAt)} · último acesso{' '}
                   {c.lastLoginAt ? formatDateTime(c.lastLoginAt) : 'nunca'}
                 </p>
+                <UsageThermometer c={c} />
                 {/* Item 42 (26/11/2026): em que passo do começo a empresa parou. */}
                 {c.gettingStarted && (
                   <p className="text-sm text-ink-muted" data-testid="empresa-comeco">

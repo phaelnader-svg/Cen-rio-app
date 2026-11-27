@@ -606,6 +606,8 @@ model CompanySettings {
   /// Item 16 (lista de 53): dia da entrega/retirada cuja chuva já foi avisada, e onde fica a
   /// oficina (achado uma vez pela cidade, para a previsão do tempo).
   rainNoticeFor      DateTime? @map("rain_notice_for") @db.Date
+  /// Termômetro (2026-11-27): quando o dono da plataforma foi avisado de que a empresa parou de entrar.
+  idleNoticeAt       DateTime? @map("idle_notice_at") @db.Timestamptz(3)
   weatherPlace       String?   @map("weather_place") @db.VarChar(120)
   weatherLat         Float?    @map("weather_lat")
   weatherLon         Float?    @map("weather_lon")

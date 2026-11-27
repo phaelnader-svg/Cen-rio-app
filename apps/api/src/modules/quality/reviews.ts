@@ -60,8 +60,9 @@ async function reviewDto(db: Tx | PrismaClient, id: string): Promise<PublicRevie
     include: {
       company: { select: { tradeName: true } },
       customer: { select: { name: true } },
+      // Todas as peças da entrega (depois de concluída a peça deixa de estar "ativa" nela).
       items: {
-        where: { active: true },
+        where: { status: { not: 'NAO_ENTREGUE' } },
         include: { serviceOrderItem: { select: { description: true, fabricName: true } } },
       },
     },

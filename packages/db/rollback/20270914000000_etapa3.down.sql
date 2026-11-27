@@ -8,6 +8,7 @@ ALTER TABLE "deliveries"
   DROP COLUMN IF EXISTS "rating_comment",
   DROP COLUMN IF EXISTS "rating_stars";
 ALTER TABLE "company_settings"
+  DROP COLUMN IF EXISTS "idle_notice_at",
   DROP COLUMN IF EXISTS "rain_notice_for",
   DROP COLUMN IF EXISTS "weather_lat",
   DROP COLUMN IF EXISTS "weather_lon",

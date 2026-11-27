@@ -20,7 +20,6 @@ import {
   type SignupSource,
   type TimelineItemDto,
 } from '@cenario/shared';
-import type { PrismaClient } from '@cenario/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';

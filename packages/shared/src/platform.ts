@@ -169,8 +169,37 @@ export interface PlatformGettingStartedDto {
   nextLabel: string | null;
 }
 
+/**
+ * Termômetro de uso (2026-11-27): os passos que mostram que a tapeçaria está usando de verdade, e
+ * quando ela entrou pela última vez.
+ */
+export interface PlatformUsageDto {
+  steps: { key: UsageStepKey; label: string; at: string | null }[];
+  /** Dias diferentes em que alguém da empresa abriu o sistema. */
+  activeDays: number;
+  /** Última vez que alguém da empresa abriu o sistema. */
+  lastSeenAt: string | null;
+  /** Dias sem entrar (quem nunca voltou conta desde a criação da conta). */
+  idleDays: number;
+  /** Quente (4 ou 5 passos), morno (2 ou 3) ou frio (0 ou 1). */
+  level: 'quente' | 'morno' | 'frio';
+  /** WhatsApp com a mensagem "Parou de entrar" pronta (null = sem telefone). */
+  helpWhatsappUrl: string | null;
+}
+export const USAGE_STEPS = [
+  { key: 'orcamento', label: 'Fez o 1º orçamento' },
+  { key: 'aprovou', label: 'Aprovou um orçamento' },
+  { key: 'os', label: 'Gerou uma OS' },
+  { key: 'funcionario', label: 'Chamou um funcionário' },
+  { key: 'voltou', label: 'Voltou no dia seguinte' },
+] as const;
+export type UsageStepKey = (typeof USAGE_STEPS)[number]['key'];
+/** Empresa em teste sem entrar há estes dias recebe o aviso no seu celular. */
+export const IDLE_NOTICE_DAYS = 2;
+
 export interface PlatformCompanyDto {
   id: number;
+  usage: PlatformUsageDto;
   /** Item 42: começo guiado (nulo nas empresas antigas, que não passaram por ele). */
   gettingStarted: PlatformGettingStartedDto | null;
   /** Item 6: pediu ajuda para começar e ainda não foi atendida (data e hora escolhidas). */
