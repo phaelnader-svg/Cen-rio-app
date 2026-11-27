@@ -517,7 +517,10 @@ export async function buildApp(options: BuildOptions): Promise<App> {
             webUrl: env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!,
             log: app.log,
           })
-            .then((r) => (r.notices || r.purged) && ctx.mailer.kick())
+            .then((r) => {
+              if (r.copies || r.notices || r.purged) app.log.info(r, 'Cópias das empresas');
+              if (r.notices || r.purged) ctx.mailer.kick();
+            })
             .catch((err: unknown) => app.log.warn({ err }, 'Falha na cópia diária das empresas'));
           // Item 16 (lista de 53): aviso de chuva na véspera das entregas e retiradas.
           void forEachCompany(system, () => rainRound(prisma)).catch((err: unknown) =>
