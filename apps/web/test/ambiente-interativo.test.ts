@@ -35,15 +35,20 @@ describe('ambiente interativo', () => {
   it('botão Firma Viva ao lado do sininho, em nova guia', () => {
     const shell = readFileSync(resolve(__dirname, '../components/admin/shell.tsx'), 'utf8');
     const header = shell.slice(shell.indexOf('<header'), shell.indexOf('</header>'));
-    const button = header.indexOf('data-testid="ambiente-interativo"');
+    // Etapa 5 (lista de 53): o botão virou o componente FirmaHeaderButton (com o teste de 7 dias).
+    const button = header.indexOf('<FirmaHeaderButton');
     expect(button).toBeGreaterThan(-1);
     expect(button).toBeLessThan(header.indexOf('<PanelNotifications />'));
+    // Complemento "Ambiente interativo": o botão segue a funcionalidade da empresa e só o dono vê.
+    expect(header).toContain('gameOn={modules.ambiente_interativo}');
+    expect(header).toContain("perms.has('empresa.configurar')");
+    const comp = readFileSync(resolve(__dirname, '../components/billing/firma-trial.tsx'), 'utf8');
+    const link = comp.slice(comp.indexOf('export function FirmaHeaderButton'));
+    expect(link).toContain('data-testid="ambiente-interativo"');
     // Melhoria 159: o botão leva o nome do produto e o verde da marca.
-    expect(header).toContain('Firma Viva');
-    expect(header).toContain('target="_blank"');
-    expect(header).toContain('rel="noopener noreferrer"');
-    expect(header).toContain('bg-brand-700');
-    // Complemento "Ambiente interativo": o botão segue a funcionalidade da empresa.
-    expect(header).toContain("modules.ambiente_interativo && perms.has('empresa.configurar') && (");
+    expect(link).toContain('Firma Viva');
+    expect(link).toContain('target="_blank"');
+    expect(link).toContain('rel="noopener noreferrer"');
+    expect(comp).toMatch(/const OPEN_LINK =[^;]*bg-brand-700/);
   });
 });
