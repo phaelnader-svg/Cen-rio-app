@@ -13,6 +13,40 @@ export class AppError extends Error {
   }
 }
 
+/** Palavras femininas usadas em `Errors.notFound` ("Entrega não encontrada"). */
+const FEMININE = new Set([
+  'Autorização',
+  'Categoria',
+  'Cobrança',
+  'Configuração',
+  'Conta',
+  'Conversa',
+  'Demonstração',
+  'Devolução',
+  'Empresa',
+  'Entrega',
+  'Folga',
+  'Foto',
+  'Função',
+  'Funcionalidade',
+  'Inspeção',
+  'Localização',
+  'Meta',
+  'Miniatura',
+  'Nota',
+  'Notificação',
+  'Ocorrência',
+  'Ordem',
+  'OS',
+  'Página',
+  'Peça',
+  'Proposta',
+  'Receita',
+  'Retirada',
+  'Sessão',
+  'Tarefa',
+]);
+
 export const Errors = {
   validation: (details: unknown, message = 'Dados inválidos.') =>
     new AppError(400, ERROR_CODES.VALIDATION_ERROR, message, details),
@@ -49,7 +83,11 @@ export const Errors = {
   deviceNotAllowed: (message = 'Este funcionário não pode entrar neste dispositivo.') =>
     new AppError(403, ERROR_CODES.DEVICE_NOT_ALLOWED, message),
   notFound: (what = 'Registro') =>
-    new AppError(404, ERROR_CODES.NOT_FOUND, `${what} não encontrado.`),
+    new AppError(
+      404,
+      ERROR_CODES.NOT_FOUND,
+      `${what} não ${FEMININE.has(what.split(/[\s/]/)[0]!) ? 'encontrada' : 'encontrado'}.`,
+    ),
   conflict: (message: string, details?: unknown) =>
     new AppError(409, ERROR_CODES.CONFLICT, message, details),
   versionConflict: (currentVersion?: number) =>
