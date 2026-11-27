@@ -50,6 +50,10 @@ function look(n: NotificationDto): { chip?: [string, 'danger' | 'warn']; action:
       return { chip: ['Vence dia 20', 'warn'], action: 'Lançar a despesa' };
     case 'AGENTES_CONTADOR':
       return { action: 'Baixar o pacote' };
+    case 'AVALIACAO_BAIXA':
+      return { chip: ['Nota baixa', 'danger'], action: 'Ver as notas' };
+    case 'CHUVA_AMANHA':
+      return { chip: ['Chuva', 'warn'], action: 'Ver o roteiro' };
     default:
       if (PRESENCE_KINDS.has(n.kind)) return { action: 'Ver presença' };
       return { action: n.taskId ? 'Ver tarefa' : 'Abrir' };
@@ -76,6 +80,8 @@ export function PanelNotifications() {
       router.push('/painel/escritorio');
     else if (n.kind === 'AGENTES_SEMANA') router.push('/painel/escritorio#semana');
     else if (n.kind === 'MATERIAL_ACABANDO') router.push('/painel/estoque-oficina');
+    else if (n.kind === 'AVALIACAO_BAIXA') router.push('/painel/qualidade?tab=ratings');
+    else if (n.kind === 'CHUVA_AMANHA') router.push('/painel/roteiro');
     else if (n.kind === 'AGENTES_IMPOSTO') router.push('/painel/financeiro?tab=pagar');
     // Pacote do mês anterior ao aviso (o aviso sai do dia 1 ao 5).
     else if (n.kind === 'AGENTES_CONTADOR') {

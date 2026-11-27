@@ -274,6 +274,7 @@ export const TENANCY: Record<string, TenancyEntry> = {
   ContactRequest: E,
   PaymentProof: E,
   ScreenView: E,
+  HouseStandard: E,
   AgentAction: E,
   IntegrationConnection: {
     class: 'empresa',

@@ -174,6 +174,8 @@ export interface QuoteSettingsDto {
   nextNumber: number;
   /** Prazo de entrega que entra sozinho no orçamento novo (pergunta do começo). */
   defaultDeliveryDays: number | null;
+  /** Item 13: lucro mínimo sobre os custos, em pontos-base (3000 = 30%). Vazio = sem aviso. */
+  minProfitBps: number | null;
   version: number;
 }
 
@@ -254,6 +256,56 @@ export type QuoteStatusInput = z.infer<typeof quoteStatusSchema>;
  * Revisão geral (2026-11-18, item 5): cliente já cadastrado sugerido no orçamento, com o que ele
  * já fez na tapeçaria (para não digitar de novo e para virar estatística).
  */
+/** Item 17 (lista de 53): tempo real de cada etapa por tipo de peça (minutos por peça). */
+export interface StageTimesDto {
+  days: number;
+  samples: number;
+  pieces: {
+    pieceType: string;
+    label: string;
+    totalMinutes: number;
+    stages: { activity: string; label: string; minutes: number; samples: number }[];
+  }[];
+}
+
+/** Item 12 (lista de 53): data de entrega pela fila da oficina. */
+export interface DeliverySuggestionDto {
+  /** Peças na frente (OS em produção + pedidos aprovados sem OS). */
+  aheadPieces: number;
+  /** Peças que a oficina termina por semana (média das últimas 8 semanas). */
+  weeklyPieces: number;
+  /** Nulo quando ainda não há histórico suficiente. */
+  businessDays: number | null;
+  date: string | null;
+}
+
+/** Item 18 (lista de 53): lucro por tipo de peça. */
+export interface PieceProfitDto {
+  pieceType: string;
+  label: string;
+  pieces: number;
+  services: number;
+  revenueCents: number;
+  profitCents: number;
+  profitPerPieceCents: number;
+  marginPct: number | null;
+  reworks: number;
+}
+
+/** Item 7 (lista de 53): o último orçamento do cliente, para "Repetir do último". */
+export interface QuoteLastOfCustomerDto {
+  id: string;
+  number: number;
+  createdAt: string;
+  service: string;
+  totalCents: number;
+  /** Fechou serviço (virou pedido). */
+  closed: boolean;
+  /** Peças e materiais, para a pessoa reconhecer o orçamento. */
+  lines: string[];
+  snapshot: QuoteSnapshot;
+}
+
 export interface QuoteCustomerLookupDto {
   id: string;
   name: string;
@@ -481,6 +533,7 @@ export type QuoteCatalogUpdateInput = z.infer<typeof quoteCatalogUpdateSchema>;
 export const quoteSettingsUpdateSchema = z.object({
   version: z.number().int().min(1),
   taxRateBps: bps.nullable().optional(),
+  minProfitBps: z.number().int().min(0).max(1_000_000).nullable().optional(),
   companyNameOverride: z.string().trim().max(90).nullable().optional(),
   proposalTitle: z.string().trim().max(120).nullable().optional(),
   proposalIntro: z.string().trim().max(400).nullable().optional(),

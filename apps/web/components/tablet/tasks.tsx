@@ -45,6 +45,7 @@ import { TaskStatusBadge } from '@/components/production/badges';
 import { TaskHistory, TaskRefs } from '@/components/production/task-history';
 import { useSend } from '@/components/production/use-send';
 import { useMe } from '@/lib/hooks';
+import { HouseStandardButton } from '@/components/production/house-standards';
 import { Button } from '@/components/ui/button';
 import { Alert, Spinner } from '@/components/ui/misc';
 import { api, errorMessage, newIdempotencyKey } from '@/lib/api';
@@ -627,6 +628,7 @@ export function MyTaskDetail({
         <SupportInfo t={t} large />
         <IssueInfo t={t} large />
         <QualityInfo t={t} large />
+        <HouseStandardButton activity={t.activity} />
       </div>
 
       {error && <Alert tone="danger">{error}</Alert>}

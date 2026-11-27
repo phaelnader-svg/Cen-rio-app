@@ -94,7 +94,8 @@ describe('Multi-empresa: banco', () => {
     // 173: + material_prices (preço que cada fornecedor cobrou, Escritório).
     // 176: + employee_invites, user_seen_tips e contact_requests (começo guiado, 2026-11-26).
     // 178: + payment_proofs e screen_views (painel da plataforma, etapa 2, 2026-11-27).
-    expect(tabelasComEmpresa.length).toBe(178);
+    // 179: + house_standards (padrão da casa, etapa 3 da lista de 53, 2026-11-27).
+    expect(tabelasComEmpresa.length).toBe(179);
   });
 
   it('nenhuma unicidade de tabela de empresa vale no sistema inteiro sem motivo', async () => {

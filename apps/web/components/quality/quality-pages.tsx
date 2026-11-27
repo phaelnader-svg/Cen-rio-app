@@ -24,6 +24,7 @@ import { BackLink, Section } from '@/components/commercial/section';
 import { PhotoGallery } from '@/components/commercial/photo-gallery';
 import { useSend } from '@/components/production/use-send';
 import { InspectionDetail } from '@/components/tablet/quality';
+import { RatingsCard } from './ratings';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Checkbox, Field, Input, Select, Textarea } from '@/components/ui/field';
@@ -63,6 +64,7 @@ export function QualityPage() {
     'history',
     'templates',
     'settings',
+    'ratings',
   ]);
   const open = useInspections({ scope: 'open' });
   return (
@@ -76,6 +78,7 @@ export function QualityPage() {
         tabs={[
           { key: 'inspections', label: 'Inspeções', count: open.data?.length },
           { key: 'history', label: 'Histórico' },
+          { key: 'ratings', label: 'Notas dos clientes' },
           { key: 'templates', label: 'Checklists' },
           { key: 'settings', label: 'Inspetor e localizações' },
         ]}
@@ -86,6 +89,7 @@ export function QualityPage() {
         {tab === 'history' && <InspectionList scope="all" />}
         {tab === 'templates' && <Templates />}
         {tab === 'settings' && <Settings />}
+        {tab === 'ratings' && <RatingsCard />}
       </Tabs>
     </>
   );

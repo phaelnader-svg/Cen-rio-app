@@ -18,6 +18,7 @@ import { Download, ImagePlus, Plus, Save, Trash2, Upload } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { MoneyInput } from '@/components/commercial/money-input';
+import { CareTexts } from './care-texts';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Input, Select } from '@/components/ui/field';
@@ -43,6 +44,7 @@ type BaseTab =
   | 'MAO_AJUDANTE'
   | 'TAPECEIRO'
   | 'ALIQUOTA'
+  | 'CUIDADOS'
   | 'TAXA_MAQUINA';
 
 const TABS: [BaseTab, string][] = [
@@ -56,6 +58,7 @@ const TABS: [BaseTab, string][] = [
   ['TAPECEIRO', 'Cadastro de tapeceiros'],
   ['ALIQUOTA', 'Alíquota do serviço'],
   ['TAXA_MAQUINA', 'Taxas da máquina'],
+  ['CUIDADOS', 'Cuidados com os tecidos'],
 ];
 
 const isMaterialTab = (t: BaseTab): t is QuoteMaterialCategory =>
@@ -137,7 +140,16 @@ export function QuoteBase({
         >
           <div className="pt-5">
             {tab === 'ALIQUOTA' ? (
-              <TaxRate settings={settings} />
+              <div className="space-y-8">
+                <TaxRate settings={settings} />
+                <MinProfit settings={settings} />
+              </div>
+            ) : tab === 'CUIDADOS' ? (
+              <CareTexts
+                fabrics={catalog
+                  .filter((c) => c.kind === 'MATERIAL' && c.category === 'Tecidos')
+                  .map((c) => c.name)}
+              />
             ) : tab === 'TAPECEIRO' ? (
               <Upholsterers items={catalog.filter((c) => c.kind === 'TAPECEIRO')} />
             ) : (
@@ -436,11 +448,57 @@ function TaxRate({ settings }: { settings: QuoteSettingsDto }) {
   );
 }
 
+/** Item 13 (lista de 53): abaixo deste lucro, o orçamento mostra um aviso amarelo antes de enviar. */
+function MinProfit({ settings }: { settings: QuoteSettingsDto }) {
+  const act = useCatalogAction('Lucro mínimo salvo.');
+  const [text, setText] = useState(bpsText(settings.minProfitBps));
+  const raw = text.trim() === '' ? null : Number(text.replace(',', '.'));
+  const bad = raw !== null && (!Number.isFinite(raw) || raw < 0 || raw > 1000);
+  const bps = raw === null ? null : Math.round(raw * 100);
+  return (
+    <div className="max-w-xl" data-testid="lucro-minimo">
+      <FormGrid>
+        <TextField
+          label="Lucro mínimo sobre os custos (%)"
+          inputMode="decimal"
+          placeholder="Ex.: 30"
+          cols={8}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          error={bad ? 'Informe um percentual entre 0 e 1000%.' : undefined}
+          hint="Abaixo disso, o orçamento avisa em amarelo antes de enviar. O cliente nunca vê. Vazio = sem aviso."
+        />
+        <FieldAction cols={4}>
+          <Button
+            className="w-full"
+            loading={act.isPending}
+            disabled={bad}
+            onClick={() =>
+              act.mutate({
+                path: '/api/v1/quotes/settings',
+                method: 'PATCH',
+                body: { version: settings.version, minProfitBps: bps },
+              })
+            }
+          >
+            Salvar lucro mínimo
+          </Button>
+        </FieldAction>
+      </FormGrid>
+      {act.error && (
+        <Alert tone="danger" className="mt-3">
+          {act.error}
+        </Alert>
+      )}
+    </div>
+  );
+}
+
 function CatalogTable({
   tab,
   items,
 }: {
-  tab: Exclude<BaseTab, 'ALIQUOTA' | 'TAPECEIRO'>;
+  tab: Exclude<BaseTab, 'ALIQUOTA' | 'TAPECEIRO' | 'CUIDADOS'>;
   items: QuoteCatalogItemDto[];
 }) {
   const material = isMaterialTab(tab);

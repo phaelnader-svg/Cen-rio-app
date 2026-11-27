@@ -127,6 +127,9 @@ describe('Matriz de acesso: todas as rotas', () => {
         // Contrato do serviço para o cliente ler e baixar (2026-11-25), também pelo token ?t=.
         'GET /api/public/contrato/:id',
         'GET /api/public/contrato/:id/pdf',
+        // "Como ficou?" depois da entrega (etapa 3, 2026-11-27): nota de 1 a 5, pelo token ?t=.
+        'GET /api/public/avaliar/:id',
+        'POST /api/public/avaliar/:id',
         // Página de status e aviso de manutenção (sem dado de empresa nenhuma) e o registro de
         // erros do navegador (corpo limitado a 16 KB; vale o limite anônimo por IP de todas as rotas).
         'GET /api/public/aviso',

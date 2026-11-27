@@ -5,6 +5,7 @@ import { Alert, PageHeader, Spinner } from '@/components/ui/misc';
 import { localToday, monthStart, useProductivity, type Period } from '@/lib/finance';
 import { PeriodPicker } from './common';
 import { ProductivityTable } from './productivity-table';
+import { StageTimesCard } from './stage-times';
 
 /** 2026-11-18: Produtividade virou item do menu (antes era uma aba do Financeiro). */
 export function ProductivityPage() {
@@ -24,6 +25,7 @@ export function ProductivityPage() {
       ) : (
         <ProductivityTable data={q.data} />
       )}
+      <StageTimesCard />
     </>
   );
 }

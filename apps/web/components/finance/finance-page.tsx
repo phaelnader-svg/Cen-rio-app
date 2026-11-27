@@ -32,6 +32,7 @@ import { ExpensesTab, PayablesTab } from './payables';
 import { LaborTab } from './labor';
 import { RevenueTab } from './revenue';
 import { WeeklyClosingTab } from './weekly-closing';
+import { PieceProfitTab } from './piece-profit';
 import { useCompany } from '@/lib/queries';
 
 // 2026-11-18 (pedido do dono): Despesas e Receitas logo depois do Resumo. Revisão geral
@@ -44,6 +45,7 @@ const GROUPS: { key: string; label: string; views: { key: string; label: string 
     views: [
       { key: 'painel', label: 'Números do mês' },
       { key: 'custos', label: 'Por OS' },
+      { key: 'pecas', label: 'Por tipo de peça' },
       { key: 'relatorios', label: 'Relatórios' },
     ],
   },
@@ -116,6 +118,7 @@ export function FinancePage() {
               {view === 'custos' && <CostsTab period={period} />}
               {view === 'despesas' && <ExpensesTab period={period} />}
               {view === 'relatorios' && <Reports period={period} />}
+              {view === 'pecas' && <PieceProfitTab />}
             </div>
           </Tabs>
         </div>

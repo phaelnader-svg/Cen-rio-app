@@ -1,7 +1,9 @@
 'use client';
 
 import type { LogisticsJobDto, LogisticsKind, PaymentMethod } from '@cenario/shared';
+import { whatsappLink } from '@cenario/shared';
 import { MapsLinks } from '@/components/improvements/maps-links';
+import { AskReview } from '@/components/quality/review-link';
 import { addDays, arrivalText, todayIso } from '@/lib/commercial';
 import {
   DELIVERY_ITEM_STATUS_LABEL,
@@ -14,7 +16,7 @@ import {
   type PickupStatus,
 } from '@cenario/shared';
 import clsx from 'clsx';
-import { House, MapPin, Phone, Truck } from 'lucide-react';
+import { House, MapPin, MessageCircle, Phone, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { useSend } from '@/components/production/use-send';
 import { Button } from '@/components/ui/button';
@@ -337,6 +339,8 @@ function JobCard({ j }: { j: LogisticsJobDto }) {
         </p>
       )}
       {error && <Alert tone="danger">{error}</Alert>}
+      <OnTheWay j={j} />
+      {j.kind === 'ENTREGA' && j.status === 'CONCLUIDA' && <AskReview deliveryId={j.id} large />}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {j.kind === 'RETIRADA' && j.status === 'AGENDADA' && (
@@ -660,5 +664,45 @@ function KindPanel({
         Registrar
       </Button>
     </div>
+  );
+}
+
+/** Minutos de viagem que a mensagem usa (o motorista ajusta no WhatsApp antes de mandar). */
+const TRAVEL_MINUTES = 40;
+
+/**
+ * Item 21 (lista de 53): "Estamos a caminho". Depois de tocar em "Saí", o motorista manda a
+ * previsão de chegada para o cliente com um toque (o WhatsApp abre com a mensagem pronta).
+ */
+function OnTheWay({ j }: { j: LogisticsJobDto }) {
+  const going =
+    (j.kind === 'ENTREGA' && j.status === 'EM_TRANSPORTE') ||
+    (j.kind === 'RETIRADA' && j.status === 'EM_EXECUCAO');
+  if (!going || !j.contactPhone) return null;
+  const from = j.departedAt ? new Date(j.departedAt) : new Date();
+  const eta = new Date(from.getTime() + TRAVEL_MINUTES * 60_000).toLocaleTimeString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const name = (j.contactName || j.customerName || '').split(' ')[0];
+  const what =
+    j.kind === 'ENTREGA'
+      ? 'Saímos agora com a sua peça'
+      : j.onSite
+        ? 'Saímos agora para fazer o serviço'
+        : 'Saímos agora para buscar a sua peça';
+  const text = `Olá${name ? `, ${name}` : ''}! ${what} e devemos chegar por volta das ${eta}. Qualquer coisa, é só responder aqui.`;
+  return (
+    <a
+      href={whatsappLink(j.contactPhone, text)}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-ok-600 px-4 text-lg font-semibold text-white hover:bg-ok-600/90"
+      data-testid="a-caminho"
+    >
+      <MessageCircle className="size-6" aria-hidden /> Avisar o cliente: chegamos por volta das{' '}
+      {eta}
+    </a>
   );
 }

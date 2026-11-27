@@ -17,6 +17,8 @@ const READ_POLICIES: Record<
 > = {
   // Fotos de identificação: visíveis a qualquer sessão autenticada (painel e tablets).
   'employee-photo': (request) => request.auth !== null,
+  // Item 20 (lista de 53): padrão da casa (foto ou vídeo curto), visto no painel e nos tablets.
+  'house-standard': (request) => request.auth !== null,
   // Documentos do escritório do jogo (contratos, notas, comprovantes): financeiro ou pedidos.
   'office-document': (request) =>
     Boolean(
@@ -86,6 +88,33 @@ export async function fileRoutes(app: FastifyInstance) {
         .header('content-length', clean.length)
         .header('content-disposition', disposition)
         .send(clean);
+    }
+    // Vídeo do padrão da casa: o Safari do iPad só toca vídeo com pedidos por partes (Range).
+    if (file.mimeType.startsWith('video/')) {
+      const data = await toBuffer((await ler(file.storageKey)).stream);
+      const m = /^bytes=(\d*)-(\d*)$/.exec(String(request.headers.range ?? ''));
+      reply
+        .headers(secureHeaders)
+        .header('content-type', file.mimeType)
+        .header('accept-ranges', 'bytes')
+        .header('content-disposition', disposition);
+      if (m && (m[1] || m[2])) {
+        const total = data.length;
+        let start = m[1] ? Number(m[1]) : Math.max(0, total - Number(m[2]));
+        let end = m[1] && m[2] ? Math.min(Number(m[2]), total - 1) : total - 1;
+        if (start >= total || start > end) {
+          return reply.code(416).header('content-range', `bytes */${total}`).send();
+        }
+        start = Math.max(0, start);
+        end = Math.max(start, end);
+        const part = data.subarray(start, end + 1);
+        return reply
+          .code(206)
+          .header('content-range', `bytes ${start}-${end}/${total}`)
+          .header('content-length', part.length)
+          .send(part);
+      }
+      return reply.header('content-length', data.length).send(data);
     }
     const { stream, size } = await ler(file.storageKey);
     return reply

@@ -66,3 +66,4 @@ export * from './office-tasks';
 export * from './platform';
 export * from './onboarding';
 export * from './painel';
+export * from './etapa3';

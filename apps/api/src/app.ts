@@ -99,6 +99,12 @@ import { closingRoutes as officeClosingRoutes } from './modules/office/closing';
 import { directDeliveryRoutes } from './modules/quality/direct-delivery';
 import { inventoryRoutes } from './modules/inventory/routes';
 import { quoteRoutes } from './modules/quotes/routes';
+import { quoteInsightRoutes } from './modules/quotes/insights';
+import { stageTimeRoutes } from './modules/production/stage-times';
+import { reviewRoutes } from './modules/quality/reviews';
+import { houseStandardRoutes } from './modules/production/house-standards';
+import { leaveImpactRoutes } from './modules/attendance/calendar';
+import { rainRound } from './modules/quality/rain';
 import { reworkRoutes } from './modules/reworks/routes';
 import { serviceOrderSheetRoutes } from './modules/service-orders/sheet';
 import { companyRoutes } from './modules/company/routes';
@@ -310,6 +316,11 @@ export async function buildApp(options: BuildOptions): Promise<App> {
   await app.register(directDeliveryRoutes);
   await app.register(inventoryRoutes);
   await app.register(quoteRoutes);
+  await app.register(quoteInsightRoutes);
+  await app.register(stageTimeRoutes);
+  await app.register(reviewRoutes);
+  await app.register(houseStandardRoutes);
+  await app.register(leaveImpactRoutes);
   await app.register(reworkRoutes);
   await app.register(serviceOrderSheetRoutes);
   await app.register(attachmentRoutes);
@@ -485,6 +496,10 @@ export async function buildApp(options: BuildOptions): Promise<App> {
           void sendWeeklySummaries(system, env.PUBLIC_WEB_URL || env.ALLOWED_ORIGINS[0]!)
             .then((n) => n > 0 && ctx.mailer.kick())
             .catch((err: unknown) => app.log.warn({ err }, 'Falha no resumo da semana'));
+          // Item 16 (lista de 53): aviso de chuva na véspera das entregas e retiradas.
+          void forEachCompany(system, () => rainRound(prisma)).catch((err: unknown) =>
+            app.log.warn({ err }, 'Falha ao olhar a previsão de chuva'),
+          );
         };
         // 2026-11-26: e-mails do teste grátis para as empresas e aviso de empresa nova.
         const onboardingRound = () =>

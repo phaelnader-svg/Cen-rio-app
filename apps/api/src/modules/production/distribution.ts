@@ -34,6 +34,7 @@ import {
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
+import { learnedStageMinutes } from './stage-times';
 import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
@@ -275,6 +276,8 @@ export async function distributeServiceOrder(
     orderBy: { position: 'asc' },
   });
   const team = await loadTeam(tx);
+  // Item 17 (lista de 53): as tarefas novas já nascem com o tempo real aprendido no tablet.
+  const minutesFor = await learnedStageMinutes(tx);
   const created: string[] = [];
   const assigned: string[] = [];
   for (const item of items) {
@@ -389,6 +392,7 @@ export async function distributeServiceOrder(
           sequence: item.position * 100 + step.position,
           requiresMaterials: step.requiresMaterials,
           completionRequirement: step.completionRequirement,
+          estimatedMinutes: minutesFor(step.activity, item.pieceType, item.quantity),
           stepClass: cls,
           templateId: template.id,
           templateVersion: template.version,

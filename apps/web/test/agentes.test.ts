@@ -26,7 +26,7 @@ import { POST as mcpPost } from '../app/mcp/route';
 import { POST as a2aPost } from '../app/a2a/route';
 
 const PRIVATE =
-  /\/(painel|tablet|proposta|album|agendar|contrato|autorizar|ambiente-interativo)\b|\/api\/v1/;
+  /\/(painel|tablet|proposta|album|agendar|contrato|avaliar|autorizar|ambiente-interativo)\b|\/api\/v1/;
 const everything = () =>
   JSON.stringify([
     productInfo(),
@@ -71,6 +71,7 @@ describe('assistentes de IA: só informação pública', () => {
       '/album/',
       '/agendar/',
       '/contrato/',
+      '/avaliar/',
     ])
       expect(txt).toContain(`Disallow: ${p}\n`);
     for (const p of ['/blog', '/llms.txt', '/.well-known/']) expect(txt).toContain(`Allow: ${p}\n`);

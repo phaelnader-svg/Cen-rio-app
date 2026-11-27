@@ -8,18 +8,20 @@ import {
   type OsAlbumPhoto,
   type PublicPickupDto,
   type PublicQuoteDto,
+  type PublicReviewDto,
   type PublicStatusDto,
   type QuoteSnapshot,
 } from '@cenario/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { CheckCircle2, MessageCircle } from 'lucide-react';
+import { CheckCircle2, MessageCircle, Star } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { LogoMark } from '@/components/brand';
 import { ProposalDocument } from '@/components/quotes/documents';
 import { Button } from '@/components/ui/button';
 import { buttonClass } from '@/components/ui/button-styles';
+import { Textarea } from '@/components/ui/field';
 import { Alert, Card, Spinner } from '@/components/ui/misc';
 import { api, errorMessage } from '@/lib/api';
 
@@ -393,6 +395,150 @@ export function PickupChoicePage({ id }: { id: string }) {
             A tapeçaria vai combinar com você o dia e o horário {what}.
           </Alert>
         )}
+      </Card>
+      <Footer />
+    </>
+  );
+}
+
+// ─────────────────────────── "Como ficou?" (itens 22 e 23) ───────────────────────────
+
+const STAR_WORD = ['', 'Ruim', 'Fraco', 'Mais ou menos', 'Bom', 'Ótimo'];
+
+function Stars({ value, onPick }: { value: number; onPick?: (n: number) => void }) {
+  return (
+    <div className="flex gap-1" role={onPick ? 'radiogroup' : undefined} aria-label="Nota">
+      {[1, 2, 3, 4, 5].map((n) => {
+        const icon = (
+          <Star
+            className={clsx(
+              'size-9',
+              n <= value ? 'fill-amber-400 text-amber-400' : 'text-ink-muted/40',
+            )}
+          />
+        );
+        return onPick ? (
+          <button
+            key={n}
+            type="button"
+            role="radio"
+            aria-checked={n === value}
+            aria-label={`${n} de 5`}
+            data-testid={`estrela-${n}`}
+            onClick={() => onPick(n)}
+            className="rounded-lg p-0.5 focus-visible:outline-2"
+          >
+            {icon}
+          </button>
+        ) : (
+          <span key={n}>{icon}</span>
+        );
+      })}
+    </div>
+  );
+}
+
+export function ReviewPage({ id }: { id: string }) {
+  const t = useSearchParams().get('t') ?? '';
+  const qc = useQueryClient();
+  const key = ['avaliar', id, t];
+  const q = useQuery({
+    queryKey: key,
+    queryFn: () => api<PublicReviewDto>(`/api/public/avaliar/${id}?t=${encodeURIComponent(t)}`),
+    retry: false,
+  });
+  const [stars, setStars] = useState(0);
+  const [comment, setComment] = useState('');
+  const [website, setWebsite] = useState('');
+  const send = useMutation({
+    mutationFn: () =>
+      api<PublicReviewDto>(`/api/public/avaliar/${id}`, {
+        method: 'POST',
+        body: {
+          t,
+          stars,
+          ...(comment.trim() ? { comment: comment.trim() } : {}),
+          ...(website ? { website } : {}),
+        },
+      }),
+    onSuccess: (dto) => qc.setQueryData(key, dto),
+  });
+  if (q.isPending) return <Spinner />;
+  if (q.isError) return <NotFound what="Entrega" />;
+  const r = q.data;
+  return (
+    <>
+      <CompanyHeader name={r.companyName} logo={r.logoDataUrl} />
+      <Card className="p-5 sm:p-6" data-testid="avaliar-pagina">
+        <h1 className="text-xl font-semibold">
+          {r.customerFirstName ? `${r.customerFirstName}, como ficou?` : 'Como ficou?'}
+        </h1>
+        {r.pieces.length > 0 && (
+          <p className="mt-1 text-sm text-ink-muted">
+            {r.pieces.map((p) => p.description).join(', ')}
+            {r.deliveredOn ? ` • entregue em ${brDay(r.deliveredOn)}` : ''}
+          </p>
+        )}
+        {r.review ? (
+          <div className="mt-5 space-y-3" data-testid="avaliar-obrigado">
+            <Stars value={r.review.stars} />
+            <Alert tone="ok" title="Obrigado pela resposta!">
+              {r.review.stars <= 3
+                ? 'A tapeçaria já recebeu sua nota e vai falar com você para resolver.'
+                : 'Sua nota ajuda a tapeçaria a fazer cada peça melhor.'}
+            </Alert>
+          </div>
+        ) : (
+          <div className="mt-5 space-y-4">
+            <div>
+              <p className="mb-2 text-sm font-medium">Que nota você dá para o serviço?</p>
+              <Stars value={stars} onPick={setStars} />
+              <p className="mt-1 h-5 text-sm text-ink-soft">{STAR_WORD[stars]}</p>
+            </div>
+            <label className="block text-sm">
+              <span className="font-medium">Quer contar mais alguma coisa? (não precisa)</span>
+              <Textarea
+                className="mt-1"
+                rows={3}
+                maxLength={500}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                data-testid="avaliar-comentario"
+              />
+            </label>
+            {/* Campo-isca: invisível para pessoas, só robô preenche. */}
+            <input
+              type="text"
+              name="website"
+              tabIndex={-1}
+              autoComplete="off"
+              aria-hidden="true"
+              className="hidden"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+            />
+            {send.isError && <Alert tone="danger">{errorMessage(send.error)}</Alert>}
+            <Button
+              disabled={stars === 0}
+              loading={send.isPending}
+              onClick={() => send.mutate()}
+              data-testid="avaliar-enviar"
+            >
+              Enviar nota
+            </Button>
+          </div>
+        )}
+      </Card>
+      <Card className="mt-4 p-5 sm:p-6" data-testid="avaliar-cuidados">
+        <h2 className="text-lg font-semibold">Cuidados com a sua peça</h2>
+        <div className="mt-3 space-y-3">
+          {r.care.map((c) => (
+            <div key={c.fabric}>
+              <p className="text-sm font-medium">{c.fabric}</p>
+              <p className="text-sm text-ink-soft">{c.text}</p>
+            </div>
+          ))}
+        </div>
       </Card>
       <Footer />
     </>

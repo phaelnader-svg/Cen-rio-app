@@ -39,6 +39,7 @@ export const ROBOTS_DISALLOW = [
   '/album/',
   '/agendar/',
   '/contrato/',
+  '/avaliar/',
 ];
 
 export function robotsTxt(): string {

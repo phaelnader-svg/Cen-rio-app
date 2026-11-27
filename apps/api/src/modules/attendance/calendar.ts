@@ -1,4 +1,4 @@
-import { plural } from '@cenario/shared';
+import { plural, type LeaveImpactDto } from '@cenario/shared';
 import {
   EVENT_TYPES,
   LEAVE_KIND_LABEL,
@@ -17,11 +17,12 @@ import {
 } from '@cenario/shared';
 import type { Prisma, PrismaClient, Tx } from '@cenario/db';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { actorFrom, audit } from '../../core/audit';
 import { appendEvent } from '../../core/events/append';
 import type { ActorContext } from '../../core/types';
 import { Errors } from '../../lib/errors';
-import { dateOnly } from '../commercial/common';
+import { dateOnly, serviceOrderCode } from '../commercial/common';
 import { idParams } from '../presenters';
 import { notify } from '../notifications/notify';
 import { MANAGE, MANAGERS_AUDIENCE, VIEW, attendanceConfig, brDate, dbDate, team } from './common';
@@ -442,4 +443,65 @@ export async function calendarRoutes(app: FastifyInstance) {
       );
     },
   );
+}
+
+/**
+ * Item 19 (lista de 53, 2026-11-27): folga e férias com efeito nos prazos. Ao marcar a folga, o
+ * sistema mostra as OS com prazo entre o início da folga e uma semana depois do fim que ainda têm
+ * trabalho com a pessoa.
+ */
+export async function leaveImpactRoutes(app: FastifyInstance) {
+  const { prisma } = app.ctx;
+  app.get('/api/v1/attendance/leave-impact', { config: { access: VIEW } }, async (request) => {
+    const q = z
+      .object({
+        employeeId: z.guid(),
+        start: z.iso.date(),
+        end: z.iso.date(),
+      })
+      .parse(request.query);
+    if (q.end < q.start) throw Errors.business('A data final vem antes da inicial.');
+    assertRange(q.start, q.end);
+    const e = await prisma.employee.findUnique({
+      where: { id: q.employeeId },
+      select: { userId: true, displayName: true },
+    });
+    if (!e) throw Errors.notFound('Funcionário');
+    const until = new Date(`${q.end}T12:00:00.000Z`);
+    until.setUTCDate(until.getUTCDate() + 7);
+    const orders = await prisma.serviceOrder.findMany({
+      where: {
+        status: 'ABERTA',
+        promisedDate: { gte: dbDate(q.start), lte: dbDate(until.toISOString().slice(0, 10)) },
+        productionTasks: {
+          some: { assigneeUserId: e.userId, status: { notIn: ['CONCLUIDA', 'CANCELADA'] } },
+        },
+      },
+      select: {
+        id: true,
+        number: true,
+        promisedDate: true,
+        customer: { select: { name: true } },
+        productionTasks: {
+          where: { assigneeUserId: e.userId, status: { notIn: ['CONCLUIDA', 'CANCELADA'] } },
+          select: { id: true },
+        },
+      },
+      orderBy: { promisedDate: 'asc' },
+      take: 50,
+    });
+    const out: LeaveImpactDto = {
+      employeeName: e.displayName,
+      start: q.start,
+      end: q.end,
+      tight: orders.map((o) => ({
+        serviceOrderId: o.id,
+        code: serviceOrderCode(o.number),
+        customerName: o.customer.name,
+        promisedDate: o.promisedDate ? o.promisedDate.toISOString().slice(0, 10) : null,
+        openTasks: o.productionTasks.length,
+      })),
+    };
+    return out;
+  });
 }

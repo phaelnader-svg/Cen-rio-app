@@ -201,6 +201,9 @@ export const NOTIFICATION_KINDS = [
   'MATERIAL_ACABANDO',
   'AGENTES_IMPOSTO',
   'AGENTES_CONTADOR',
+  // Etapa 3 da lista de 53 (2026-11-27): nota baixa do cliente e chuva no dia de entrega.
+  'AVALIACAO_BAIXA',
+  'CHUVA_AMANHA',
 ] as const;
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
@@ -274,6 +277,8 @@ export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   MATERIAL_ACABANDO: 'Material acabando',
   AGENTES_IMPOSTO: 'Imposto do mês',
   AGENTES_CONTADOR: 'Pacote do contador',
+  AVALIACAO_BAIXA: 'Cliente deu nota baixa',
+  CHUVA_AMANHA: 'Chuva no dia de entrega',
 };
 
 export const PLAN_STATUSES = ['RASCUNHO', 'PUBLICADO'] as const;

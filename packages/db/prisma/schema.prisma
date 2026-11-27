@@ -209,6 +209,7 @@ model User {
   seenTips              UserSeenTip[]          @relation("UserSeenTipUser")
   contactRequests       ContactRequest[]       @relation("ContactRequestCreatedBy")
   paymentProofs         PaymentProof[]         @relation("PaymentProofCreatedBy")
+  houseStandardsUpdated HouseStandard[]        @relation("HouseStandardUpdatedBy")
   privacyRequests       PrivacyRequest[]       @relation("PrivacyRequestUser")
   quotesDeleted         Quote[]                @relation("QuoteDeletedBy")
 
@@ -602,6 +603,12 @@ model CompanySettings {
   weeklyEmailFor     DateTime? @map("weekly_email_for") @db.Date
   /// Vencimento já avisado ao dono da plataforma como atrasado.
   lateNoticeFor      DateTime? @map("late_notice_for") @db.Timestamptz(3)
+  /// Item 16 (lista de 53): dia da entrega/retirada cuja chuva já foi avisada, e onde fica a
+  /// oficina (achado uma vez pela cidade, para a previsão do tempo).
+  rainNoticeFor      DateTime? @map("rain_notice_for") @db.Date
+  weatherPlace       String?   @map("weather_place") @db.VarChar(120)
+  weatherLat         Float?    @map("weather_lat")
+  weatherLon         Float?    @map("weather_lon")
 
   /// Fase 10: inspetor principal da qualidade (vazio = quem tem a competência de inspeção).
   qualityInspectorUserId    String? @map("quality_inspector_user_id") @db.Uuid
@@ -706,6 +713,7 @@ model CompanySettings {
   empresaContactRequest              ContactRequest[]              @relation("EmpresaDeContactRequest")
   empresaPaymentProof                PaymentProof[]                @relation("EmpresaDePaymentProof")
   empresaScreenView                  ScreenView[]                  @relation("EmpresaDeScreenView")
+  empresaHouseStandard               HouseStandard[]               @relation("EmpresaDeHouseStandard")
   empresaHelpRequestEvent            HelpRequestEvent[]            @relation("EmpresaDeHelpRequestEvent")
   empresaProductionIssue             ProductionIssue[]             @relation("EmpresaDeProductionIssue")
   empresaProductionIssueEvent        ProductionIssueEvent[]        @relation("EmpresaDeProductionIssueEvent")
@@ -937,6 +945,7 @@ model StoredFile {
   processedAt       DateTime?       @map("processed_at") @db.Timestamptz(3)
   width             Int?
   height            Int?
+  houseStandards    HouseStandard[] @relation("HouseStandardFile")
   thumbKey          String?         @unique @map("thumb_key") @db.VarChar(200)
   thumbSizeBytes    Int?            @map("thumb_size_bytes")
   originalSizeBytes Int?            @map("original_size_bytes")
@@ -3364,6 +3373,10 @@ model Delivery {
   revertedAt           DateTime?                  @map("reverted_at") @db.Timestamptz(3)
   revertedById         String?                    @map("reverted_by_id") @db.Uuid
   revertReason         String?                    @map("revert_reason") @db.VarChar(500)
+  /// Item 22 (lista de 53): "Como ficou?" respondido pelo cliente no link (1 a 5).
+  ratingStars          Int?                       @map("rating_stars") @db.SmallInt
+  ratingComment        String?                    @map("rating_comment") @db.VarChar(500)
+  ratedAt              DateTime?                  @map("rated_at") @db.Timestamptz(3)
   createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime                   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -5628,6 +5641,10 @@ model QuoteSettings {
   proposalThanks      String?         @map("proposal_thanks") @db.VarChar(600)
   /// Prazo de entrega (dias) que já vem no orçamento novo. Vazio = em branco.
   defaultDeliveryDays Int?            @map("default_delivery_days") @db.SmallInt
+  /// Item 13 (lista de 53): lucro mínimo sobre os custos (pontos-base). Abaixo disso, aviso amarelo.
+  minProfitBps        Int?            @map("min_profit_bps")
+  /// Item 23 (lista de 53): cuidados com a peça por tecido ({ "Suede": "Aspire..." }).
+  careTexts           Json            @default("{}") @map("care_texts")
   version             Int             @default(1)
   updatedAt           DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -6104,4 +6121,22 @@ model PlatformPushSubscription {
 
   @@index([adminId])
   @@map("platform_push_subscriptions")
+}
+
+/// Item 20 (lista de 53): padrão da casa — como a oficina faz cada etapa (texto e foto ou vídeo
+/// curto), mostrado no tablet na tarefa daquela etapa.
+model HouseStandard {
+  companyId   Int             @default(dbgenerated("app_company_id()")) @map("company_id")
+  company     CompanySettings @relation("EmpresaDeHouseStandard", fields: [companyId], references: [id])
+  activity    String          @db.VarChar(30)
+  text        String          @default("") @db.VarChar(1500)
+  fileId      String?         @map("file_id") @db.Uuid
+  updatedById String?         @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  file      StoredFile? @relation("HouseStandardFile", fields: [fileId], references: [id], onDelete: SetNull)
+  updatedBy User?       @relation("HouseStandardUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@id([companyId, activity])
+  @@map("house_standards")
 }

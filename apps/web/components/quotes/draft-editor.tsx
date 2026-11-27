@@ -11,16 +11,19 @@ import {
   formatCents,
   formatPhoneBr,
   normalizeQuoteName,
+  quoteDraftFromSnapshot,
   quoteCategoryEnabled,
   quoteItemCost,
   type QuoteCatalogItemDto,
   type QuoteCustomerLookupDto,
+  type QuoteLastOfCustomerDto,
+  type DeliverySuggestionDto,
   type QuoteDraft,
   type QuoteMaterialCategory,
   type QuoteSettingsDto,
 } from '@cenario/shared';
 import clsx from 'clsx';
-import { Eye, Plus, Save, Trash2, X } from 'lucide-react';
+import { Eye, History, Plus, Save, Trash2, X } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useDeferredValue, useEffect, useId, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -208,10 +211,7 @@ export function QuoteEditor({
             value={d.phone}
             onChange={(e) => update({ phone: formatPhoneBr(e.target.value) })}
           />
-          <CityField
-            value={d.city}
-            onChange={(city) => update(cityPatch(city))}
-          />
+          <CityField value={d.city} onChange={(city) => update(cityPatch(city))} />
           <SelectField
             label="Serviço"
             cols={6}
@@ -252,6 +252,7 @@ export function QuoteEditor({
             <option>Sim</option>
           </SelectField>
         </FormGrid>
+        {!api.editing && <RepeatLast api={api} catalog={catalog} />}
       </FormSection>
 
       <MaterialsSection api={api} catalog={catalog} />
@@ -356,6 +357,16 @@ export function QuoteEditor({
             value={t.profitPct === null ? '—' : pct(t.profitPct)}
           />
         </FormGrid>
+        {settings.minProfitBps !== null &&
+          t.cost > 0 &&
+          t.profitPct !== null &&
+          t.profitPct * 100 < settings.minProfitBps && (
+            <Alert tone="warn" className="mt-4" data-testid="lucro-baixo">
+              Lucro baixo: {pct(t.profitPct)} sobre os custos. O seu mínimo é{' '}
+              {pct(settings.minProfitBps / 100)}. Para chegar lá, o lucro precisa ser de pelo menos{' '}
+              {brl((t.cost * settings.minProfitBps) / 10000)}. Só você vê este aviso.
+            </Alert>
+          )}
         <p className="mt-4 text-sm text-ink-muted">
           O lucro desejado é somado aos custos. O imposto é calculado sobre o preço de venda, com a
           alíquota embutida para preservar o valor líquido previsto. O parcelamento utiliza o valor
@@ -448,12 +459,19 @@ export function QuoteEditor({
             }
           >
             <option value="">Selecione o prazo</option>
-            {QUOTE_DELIVERY_DAYS.map((n) => (
-              <option key={n} value={n}>
-                {n} dias úteis
-              </option>
-            ))}
+            {[...new Set([...QUOTE_DELIVERY_DAYS, ...(d.deliveryDays ? [d.deliveryDays] : [])])]
+              .sort((a, b) => a - b)
+              .map((n) => (
+                <option key={n} value={n}>
+                  {n} dias úteis
+                </option>
+              ))}
           </SelectField>
+          <DeliveryHint
+            pieces={Math.max(1, d.sofaCount)}
+            chosen={d.deliveryDays}
+            onUse={(n) => update({ deliveryDays: n })}
+          />
           <TextField
             label="Validade da proposta (dias)"
             type="number"
@@ -532,7 +550,8 @@ function customerHistory(c: QuoteCustomerLookupDto): string {
     );
   else parts.push('nenhum serviço ainda');
   const open = c.quotes - c.quotesClosed;
-  if (open > 0) parts.push(pluralWord(open, '1 orçamento não fechado', `${open} orçamentos não fechados`));
+  if (open > 0)
+    parts.push(pluralWord(open, '1 orçamento não fechado', `${open} orçamentos não fechados`));
   return parts.join(' · ');
 }
 
@@ -556,9 +575,7 @@ function CustomerField({
   const q = useQuery({
     queryKey: ['quote-customer-lookup', term],
     queryFn: () =>
-      api<QuoteCustomerLookupDto[]>(
-        `/api/v1/quotes/customer-lookup?q=${encodeURIComponent(term)}`,
-      ),
+      api<QuoteCustomerLookupDto[]>(`/api/v1/quotes/customer-lookup?q=${encodeURIComponent(term)}`),
     enabled: term.length >= 3 && term !== picked,
     staleTime: 30_000,
   });
@@ -593,9 +610,7 @@ function CustomerField({
               className="absolute inset-x-0 top-full z-20 mt-1 max-h-72 overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-[var(--shadow-pop)]"
               data-testid="quote-customer-suggestions"
             >
-              <p className="px-3 pt-1.5 pb-1 text-xs font-medium text-ink-muted">
-                Já cadastrados
-              </p>
+              <p className="px-3 pt-1.5 pb-1 text-xs font-medium text-ink-muted">Já cadastrados</p>
               {found.map((c) => (
                 <button
                   key={c.id}
@@ -1032,6 +1047,136 @@ function WoodRow({
           </>
         )}
       </FormGrid>
+    </div>
+  );
+}
+
+/**
+ * Item 7 (lista de 53): cliente que já veio. Pelo telefone, o sistema acha o último orçamento e
+ * oferece trazer as peças, o tecido e as medidas de novo. Nada digitado duas vezes.
+ */
+function RepeatLast({ api: draftApi, catalog }: { api: DraftApi; catalog: QuoteCatalogItemDto[] }) {
+  const d = draftApi.draft;
+  const digits = d.phone.replace(/\D/g, '');
+  const ready = digits.length >= 10;
+  const q = useQuery({
+    queryKey: ['quotes', 'last-of', digits],
+    queryFn: () =>
+      api<{ item: QuoteLastOfCustomerDto | null }>(
+        `/api/v1/quotes/last-of?phone=${encodeURIComponent(digits)}`,
+      ),
+    enabled: ready,
+    staleTime: 60_000,
+  });
+  const [note, setNote] = useState<string | null>(null);
+  const last = ready ? q.data?.item : null;
+  if (!last) return null;
+  const when = new Date(last.createdAt).toLocaleDateString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+  });
+  const repeat = () => {
+    const { draft, missing } = quoteDraftFromSnapshot(last.snapshot, catalog);
+    draftApi.update({
+      service: draft.service,
+      serviceOther: draft.serviceOther,
+      fabricChange: draft.fabricChange,
+      foamChange: draft.foamChange,
+      items: draft.items,
+      upholsteryServiceId: draft.upholsteryServiceId,
+      helperServiceId: draft.helperServiceId,
+      sofaCount: draft.sofaCount,
+      profitCents: draft.profitCents,
+      ...(d.logisticsId ? {} : { logisticsId: draft.logisticsId }),
+    });
+    setNote(
+      missing.length
+        ? `Trouxe o orçamento nº ${last.number}. Não estão mais na base e ficaram de fora: ${missing.join(', ')}.`
+        : `Trouxe as peças, o tecido e as medidas do orçamento nº ${last.number}. Os preços são os de hoje.`,
+    );
+  };
+  return (
+    <div
+      className="mt-4 flex flex-col gap-3 rounded-xl border border-line bg-subtle px-4 py-3 sm:flex-row sm:items-center"
+      data-testid="repetir-ultimo"
+    >
+      <div className="min-w-0 flex-1 text-sm">
+        <p className="font-semibold text-ink">
+          Cliente que já veio: orçamento nº {last.number}, de {when}
+          {last.closed ? ' (fechou serviço)' : ''}
+        </p>
+        <p className="text-ink-muted">
+          {[last.service, ...last.lines].filter(Boolean).join(' · ')} ·{' '}
+          {formatCents(last.totalCents)}
+        </p>
+        {note && <p className="mt-1 font-medium text-ok-600">{note}</p>}
+      </div>
+      {d.items.length === 0 && (
+        <Button
+          variant="secondary"
+          icon={<History className="size-4" aria-hidden />}
+          onClick={repeat}
+          data-testid="repetir-ultimo-botao"
+        >
+          Repetir do último
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/** Item 12 (lista de 53): a fila da oficina diz quando dá para entregar. */
+function DeliveryHint({
+  pieces,
+  chosen,
+  onUse,
+}: {
+  pieces: number;
+  chosen: number | null;
+  onUse: (businessDays: number) => void;
+}) {
+  const q = useQuery({
+    queryKey: ['quotes', 'delivery-suggestion', pieces],
+    queryFn: () =>
+      api<DeliverySuggestionDto>(`/api/v1/quotes/delivery-suggestion?pieces=${pieces}`),
+    staleTime: 5 * 60_000,
+  });
+  const s = q.data;
+  if (!s) return null;
+  if (s.businessDays === null || !s.date)
+    return (
+      <p className="text-sm text-ink-muted sm:col-span-12" data-testid="prazo-fila">
+        A data pela fila da oficina aparece aqui depois de algumas semanas usando o tablet (ainda
+        sem histórico de quanto a oficina termina por semana).
+      </p>
+    );
+  const date = new Date(`${s.date}T12:00:00Z`).toLocaleDateString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+  });
+  const tight = chosen !== null && chosen < s.businessDays;
+  return (
+    <div
+      className={clsx(
+        'flex flex-col gap-2 rounded-xl px-4 py-3 text-sm sm:col-span-12 sm:flex-row sm:items-center',
+        tight ? 'bg-warn-50' : 'bg-subtle',
+      )}
+      data-testid="prazo-fila"
+    >
+      <p className="min-w-0 flex-1 text-ink-soft">
+        <span className="font-semibold text-ink">
+          Pela fila da oficina, dá para entregar por volta de {date} ({s.businessDays} dias úteis).
+        </span>{' '}
+        {s.aheadPieces} {s.aheadPieces === 1 ? 'peça' : 'peças'} na frente; a oficina termina umas{' '}
+        {s.weeklyPieces.toLocaleString('pt-BR')} por semana.
+        {tight && ' O prazo escolhido é menor: risco de atrasar.'}
+      </p>
+      {chosen !== s.businessDays && (
+        <Button variant="secondary" size="sm" onClick={() => onUse(s.businessDays!)}>
+          Usar {s.businessDays} dias úteis
+        </Button>
+      )}
     </div>
   );
 }

@@ -17,6 +17,7 @@ import { ProductionTemplatesPanel } from '@/components/production/templates-page
 import { QualityChecklistsPanel } from '@/components/quality/quality-pages';
 import { Button } from '@/components/ui/button';
 import { Input, Select } from '@/components/ui/field';
+import { HouseStandardsPanel } from '@/components/production/house-standards';
 import { Alert, Badge, EmptyState, PageHeader, Spinner } from '@/components/ui/misc';
 import { Tabs } from '@/components/ui/tabs';
 import { useCan } from '@/lib/hooks';
@@ -37,7 +38,7 @@ import { useTabParam } from '@/lib/tab-param';
  * continuam também em seus lugares originais), e a visão por serviço mostra o efeito combinado
  * pelas mesmas regras do planejamento e da inspeção. Cada parte só aparece para quem já podia vê-la.
  */
-const TABS = ['servico', 'etapas', 'checklists', 'materiais'] as const;
+const TABS = ['servico', 'etapas', 'checklists', 'materiais', 'padrao'] as const;
 
 export function ServiceModelsPage() {
   const can = useCan();
@@ -46,6 +47,7 @@ export function ServiceModelsPage() {
     etapas: can('producao.ver') || can('producao.planejar'),
     checklists: can('qualidade.gerenciar'),
     materiais: can('producao.planejar') || can('os.gerenciar') || can('qualidade.gerenciar'),
+    padrao: can('producao.planejar') || can('os.gerenciar'),
   };
   const allowed = TABS.filter((t) => show[t]);
   const [tab, setTab] = useTabParam('servico', allowed);
@@ -68,6 +70,7 @@ export function ServiceModelsPage() {
           ...(show.etapas ? [{ key: 'etapas', label: 'Etapas de produção' }] : []),
           ...(show.checklists ? [{ key: 'checklists', label: 'Checklists de qualidade' }] : []),
           ...(show.materiais ? [{ key: 'materiais', label: 'Materiais padrão' }] : []),
+          ...(show.padrao ? [{ key: 'padrao', label: 'Padrão da casa' }] : []),
         ]}
         active={tab}
         onChange={(k) => go(k as (typeof TABS)[number])}
@@ -77,6 +80,7 @@ export function ServiceModelsPage() {
         )}
         {tab === 'etapas' && <ProductionTemplatesPanel focusId={focus} />}
         {tab === 'checklists' && <QualityChecklistsPanel focusId={focus} />}
+        {tab === 'padrao' && <HouseStandardsPanel />}
         {tab === 'materiais' && (
           <DefaultMaterials pieceType={pieceType} onPieceType={setPieceType} />
         )}

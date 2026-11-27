@@ -44,6 +44,7 @@ import {
 } from '@/lib/quality';
 import { TripCostCard, TripCostFields, type TripCostValue } from '@/components/finance/trip-cost';
 import { BalanceWarning, useDeliveryBalance } from '@/components/finance/balance-warning';
+import { AskReview } from './review-link';
 import {
   DateField,
   FormGrid,
@@ -878,6 +879,11 @@ export function DeliveryDetailPage({ id }: { id: string }) {
           onAck={d.status === 'PROVISORIA' && manage ? setBalanceAck : undefined}
         />
         <TripCostCard deliveryId={d.id} />
+        {d.status === 'CONCLUIDA' && (
+          <div className="flex">
+            <AskReview deliveryId={d.id} />
+          </div>
+        )}
       </div>
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="space-y-6">

@@ -27,6 +27,7 @@ import {
   type QuoteStatus,
   type QuoteMaterialCategory,
   type QuoteSettingsDto,
+  type QuoteLastOfCustomerDto,
   type QuoteSnapshot,
   type QuoteSummaryDto,
   type QuoteWorkOrder,
@@ -119,6 +120,7 @@ async function settingsDto(db: Tx | PrismaClient): Promise<QuoteSettingsDto> {
     proposalThanks: s.proposalThanks,
     nextNumber: numbers.next,
     defaultDeliveryDays: s.defaultDeliveryDays,
+    minProfitBps: s.minProfitBps,
     version: s.version,
   };
 }
@@ -467,6 +469,7 @@ export async function quoteRoutes(app: FastifyInstance) {
           where: { companyId: requireCompanyId() },
           data: {
             ...(input.taxRateBps !== undefined ? { taxRateBps: input.taxRateBps } : {}),
+            ...(input.minProfitBps !== undefined ? { minProfitBps: input.minProfitBps } : {}),
             ...(input.companyNameOverride !== undefined
               ? { companyNameOverride: input.companyNameOverride || null }
               : {}),
@@ -489,11 +492,14 @@ export async function quoteRoutes(app: FastifyInstance) {
           entityId: '1',
           summary: numberChange
             ? `Orçamento — numeração: o próximo orçamento passa a ser o nº ${numberChange.to}.`
-            : 'Orçamento — configuração alterada (alíquota, nome, logotipo ou textos da proposta).',
+            : 'Orçamento — configuração alterada (alíquota, lucro mínimo, nome, logotipo ou textos da proposta).',
           changes: {
             ...(numberChange ? { nextNumber: numberChange } : {}),
             ...(input.taxRateBps !== undefined
               ? { taxRateBps: { from: before.taxRateBps, to: input.taxRateBps } }
+              : {}),
+            ...(input.minProfitBps !== undefined
+              ? { minProfitBps: { from: before.minProfitBps, to: input.minProfitBps } }
               : {}),
             ...(input.companyNameOverride !== undefined
               ? { companyName: { from: before.companyNameOverride, to: input.companyNameOverride } }
@@ -753,6 +759,42 @@ export async function quoteRoutes(app: FastifyInstance) {
    * Revisão geral (item 5): ao digitar o nome ou o telefone no orçamento, os clientes já
    * cadastrados aparecem com o histórico (serviços, último serviço, orçamentos e quanto já fechou).
    */
+  // Item 7 (lista de 53): "Repetir do último" — o orçamento mais recente com o mesmo telefone.
+  app.get('/api/v1/quotes/last-of', { config: { access: VIEW } }, async (request) => {
+    const q = z.object({ phone: z.string().trim().max(30) }).parse(request.query);
+    const digits = onlyDigits(q.phone).replace(/^55(?=\d{10,11}$)/, '');
+    if (digits.length < 10) return { item: null };
+    const rows = await prisma.quote.findMany({
+      where: { deletedAt: null, phone: { contains: digits.slice(-4) } },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        number: true,
+        createdAt: true,
+        service: true,
+        totalCents: true,
+        orderId: true,
+        phone: true,
+        snapshot: true,
+      },
+    });
+    const r = rows.find((x) => onlyDigits(x.phone ?? '').endsWith(digits));
+    if (!r) return { item: null };
+    const s = r.snapshot as unknown as QuoteSnapshot;
+    const item: QuoteLastOfCustomerDto = {
+      id: r.id,
+      number: r.number,
+      createdAt: r.createdAt.toISOString(),
+      service: r.service,
+      totalCents: r.totalCents,
+      closed: Boolean(r.orderId),
+      lines: (s.lines ?? []).map((l) => l.name).slice(0, 6),
+      snapshot: s,
+    };
+    return { item };
+  });
+
   app.get('/api/v1/quotes/customer-lookup', { config: { access: VIEW } }, async (request) => {
     const q = z
       .object({ q: z.string().trim().max(100).default(''), id: z.string().uuid().optional() })
