@@ -122,7 +122,9 @@ export function OrderDetail({ id }: { id: string }) {
                   <Pencil className="size-4" aria-hidden /> Editar
                 </Link>
               )}
-              {can('pedidos.cancelar') && (
+              {/* 2026-11-26 (Raphael): depois da retirada feita o cliente não cancela. Se a peça
+                  foi marcada sem a retirada acontecer, o caminho é "A retirada não aconteceu". */}
+              {can('pedidos.cancelar') && o.receivedPieces === 0 && (
                 <Button
                   variant="ghost"
                   icon={<Ban className="size-4" aria-hidden />}
@@ -397,6 +399,14 @@ export function OrderDetail({ id }: { id: string }) {
           id={o.id}
           version={o.version}
           code={o.code}
+          also={[
+            ...(pickups.data ?? [])
+              .filter((p) => !['CANCELADA', 'RECEBIDA_NA_OFICINA'].includes(p.status))
+              .map((p) => `${p.kind === 'NO_LOCAL' ? 'No local' : 'Retirada'} ${p.code}`),
+            ...(serviceOrders.data?.items ?? [])
+              .filter((s) => s.status === 'ABERTA')
+              .map((s) => `${s.code} (com as tarefas da semana e o material a comprar)`),
+          ]}
           onClose={() => setCancelling(false)}
         />
       )}
@@ -553,11 +563,13 @@ function CancelOrderDialog({
   id,
   version,
   code,
+  also,
   onClose,
 }: {
   id: string;
   version: number;
   code: string;
+  also: string[];
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -612,7 +624,9 @@ function CancelOrderDialog({
       onClose={onClose}
       size="sm"
       title={`Cancelar o pedido ${code}?`}
-      description="Retiradas ainda ativas também serão canceladas. O registro é mantido no histórico."
+      description={`${
+        also.length ? `Também serão cancelados: ${also.join(', ')}. ` : ''
+      }Cobranças sem pagamento também são canceladas. Nada é apagado: tudo fica no histórico.`}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>

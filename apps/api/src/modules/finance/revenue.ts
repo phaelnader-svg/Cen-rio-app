@@ -183,7 +183,15 @@ export async function dueContext(db: Tx | PrismaClient, orderIds: string[]): Pro
   for (const id of ids) events.set(id, { pickup: null, delivery: null });
   if (ids.length) {
     const picked = await db.pickupEvent.findMany({
-      where: { toStatus: 'RETIRADA_REALIZADA', pickup: { orderId: { in: ids } } },
+      // 2026-11-26: a peça também chega sozinha (1 h depois), pelo "Peça chegou" ou pelo serviço
+      // feito no local — todos contam; retirada desfeita ("não aconteceu") deixa de contar.
+      where: {
+        toStatus: { in: ['RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA'] },
+        pickup: {
+          orderId: { in: ids },
+          status: { in: ['RETIRADA_REALIZADA', 'RECEBIDA_NA_OFICINA'] },
+        },
+      },
       select: { occurredAt: true, pickup: { select: { orderId: true } } },
     });
     for (const p of picked) {

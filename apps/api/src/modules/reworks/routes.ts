@@ -28,6 +28,8 @@ import { resolvePickupAssignment } from '../notifications/notify';
 import { createOrder } from '../orders/service';
 import { idParams } from '../presenters';
 import { schedulePickup } from '../services/routes';
+import { emitPickupEvent } from '../pickups/routes';
+import { announcePickupChange } from '../pickups/service';
 
 /**
  * Retrabalhos (2026-11-18). Um serviço já feito que volta para ser refeito vira um PEDIDO próprio
@@ -638,6 +640,8 @@ export async function reworkRoutes(app: FastifyInstance) {
             `retrabalho cancelado: ${input.reason}`,
           );
           await resolvePickupAssignment(tx, actor, p.id);
+          await emitPickupEvent(tx, actor, p.id, EVENT_TYPES.PICKUP_STATUS_CHANGED);
+          await announcePickupChange(tx, actor, p.id, 'CANCELADA', input.reason);
         }
       }
       await tx.rework.update({

@@ -872,6 +872,14 @@ export async function cancelServiceOrder(
   if (expectedVersion !== undefined && before.version !== expectedVersion)
     throw Errors.versionConflict(before.version);
   if (before.status === 'CANCELADA') throw Errors.business('A OS já está cancelada.');
+  // 2026-11-26 (ligações): peça já entregue ao cliente não volta — a OS não pode ser cancelada.
+  const delivered = await tx.serviceOrderItem.count({
+    where: { serviceOrderId: id, fulfillmentStage: 'ENTREGUE' },
+  });
+  if (delivered > 0)
+    throw Errors.business(
+      `A OS ${serviceOrderCode(before.number)} já tem peça entregue ao cliente e não pode ser cancelada. Se o cliente devolveu, registre a devolução.`,
+    );
   await lockOrderItems(tx, before.orderId);
   const after = await tx.serviceOrder.update({
     where: { id },

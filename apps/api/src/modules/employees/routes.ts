@@ -26,6 +26,8 @@ import {
   toEmployeeDto,
 } from '../presenters';
 import { assertActiveGestorRemains, lockGestorInvariant } from './guards';
+import type { ActorContext } from '../../core/types';
+import { emitPickupEvent } from '../pickups/routes';
 
 const VIEW = { session: 'WEB', permissions: ['funcionarios.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['funcionarios.gerenciar'] } as const;
@@ -252,6 +254,9 @@ export async function employeeRoutes(app: FastifyInstance) {
       if (!input.active) {
         await assertActiveGestorRemains(tx);
         await revokeSessions(tx, actor, { userId: before.userId }, 'user_deactivated');
+        // 2026-11-26: retiradas por fazer saem do desligado (ficam sem responsável e aparecem
+        // na Central para o gestor escolher outro); ele também sai de quem ia junto.
+        await releasePickupsOf(tx, actor, before.userId, updated.displayName);
       }
       await audit(tx, actor, {
         action: input.active ? 'employee.activated' : 'employee.deactivated',
@@ -504,5 +509,32 @@ export async function employeeRoutes(app: FastifyInstance) {
     });
     if (oldFile) await storage.remove(oldFile.storageKey).catch(() => undefined);
     return toEmployeeDto(employee);
+  });
+}
+
+async function releasePickupsOf(tx: Tx, actor: ActorContext, userId: string, name: string) {
+  const open = ['AGUARDANDO_AGENDAMENTO', 'AGENDADA', 'EM_EXECUCAO', 'COM_OCORRENCIA'] as const;
+  const mine = await tx.pickupRequest.findMany({
+    where: { status: { in: [...open] }, logisticsUserId: userId },
+    select: { id: true },
+  });
+  for (const p of mine) {
+    await tx.pickupRequest.update({
+      where: { id: p.id },
+      data: { logisticsUserId: null, version: { increment: 1 } },
+    });
+    await tx.pickupEvent.create({
+      data: {
+        pickupId: p.id,
+        kind: 'RESPONSAVEL',
+        note: `Responsável removido: ${name} foi desligado`,
+        source: 'SISTEMA',
+        recordedById: actor.userId,
+      },
+    });
+    await emitPickupEvent(tx, actor, p.id, EVENT_TYPES.PICKUP_UPDATED);
+  }
+  await tx.logisticsTripParticipant.deleteMany({
+    where: { userId, pickup: { status: { in: [...open] } } },
   });
 }

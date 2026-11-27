@@ -123,7 +123,9 @@ export const PICKUP_TRANSITIONS: Record<PickupStatus, readonly PickupStatus[]> =
     'RECEBIDA_NA_OFICINA',
     'CANCELADA',
   ],
-  RECEBIDA_NA_OFICINA: [],
+  // 2026-11-26: "A retirada não aconteceu" — a chegada automática (1 h depois) marcou a peça na
+  // tapeçaria, mas a retirada não foi feita: volta para "com ocorrência" e pode ser reagendada.
+  RECEBIDA_NA_OFICINA: ['COM_OCORRENCIA'],
   CANCELADA: [],
 };
 

@@ -10,7 +10,8 @@ import { audit } from '../../core/audit';
 import { now as clockNow } from '../../core/clock';
 import type { ActorContext } from '../../core/types';
 import { dateOnly, lockOrder, pickupCode } from '../commercial/common';
-import { refreshOrderStatus } from '../commercial/status';
+import { itemAllocations, refreshOrderStatus } from '../commercial/status';
+import { Errors } from '../../lib/errors';
 import { syncTripCost } from '../finance/trip-costs';
 import { shopTimezone } from '../finance/common';
 import { resolvePickupAssignment } from '../notifications/notify';
@@ -39,6 +40,8 @@ export async function receivePickupAtWorkshop(
   actor: ActorContext,
   pickupId: string,
   note: string,
+  /** Quando a peça chegou (automático: horário agendado + 1 h); padrão agora. */
+  occurredAt?: Date,
 ) {
   const before = await tx.pickupRequest.findUniqueOrThrow({ where: { id: pickupId } });
   if (!PICKUP_ARRIVAL_PENDING.includes(before.status)) return false;
@@ -54,6 +57,7 @@ export async function receivePickupAtWorkshop(
       toStatus: 'RECEBIDA_NA_OFICINA',
       note,
       recordedById: actor.userId,
+      ...(occurredAt ? { occurredAt } : {}),
     },
   });
   await markPickupArrived(tx, pickupId);
@@ -132,6 +136,7 @@ export async function autoReceiveDuePickups(prisma: PrismaClient, now = clockNow
         p.kind === 'NO_LOCAL'
           ? 'serviço no local: automático, no fim do dia agendado'
           : 'automático, 1 hora depois do horário agendado',
+        autoArrivalAt(fresh, timezone) ?? undefined,
       );
       if (ok) await emitOrderEvent(tx, SYSTEM, p.orderId);
       return ok;
@@ -139,4 +144,75 @@ export async function autoReceiveDuePickups(prisma: PrismaClient, now = clockNow
     if (done) received++;
   }
   return received;
+}
+
+/**
+ * 2026-11-26 (Raphael): "A retirada não aconteceu". A chegada automática (1 h depois) ou o botão
+ * marcaram a peça na tapeçaria, mas a retirada não foi feita (cliente não estava, motorista não
+ * foi). Tira as peças desta retirada da tapeçaria e volta a retirada para "com ocorrência", com o
+ * motivo — daí ela pode ser reagendada (e volta a chegar sozinha no novo dia) ou cancelada.
+ * Peça que já está numa OS (retirada) não volta: a OS tem de ser cancelada antes. No "No local" a
+ * OS pode existir antes do dia, então ela fica (o serviço só não foi feito ainda).
+ * O pedido já está travado (pedido + peças) pelo chamador.
+ */
+export async function undoPickupArrival(
+  tx: Tx,
+  actor: ActorContext,
+  pickupId: string,
+  reason: string,
+) {
+  const before = await tx.pickupRequest.findUniqueOrThrow({
+    where: { id: pickupId },
+    include: { items: { include: { orderItem: true } } },
+  });
+  if (before.status !== 'RECEBIDA_NA_OFICINA')
+    throw Errors.business('Só a retirada marcada como "na tapeçaria" pode ser desfeita.');
+  const alloc = await itemAllocations(tx, before.orderId);
+  const changes: { orderItemId: string; from: number; to: number }[] = [];
+  for (const i of before.items) {
+    const oi = i.orderItem;
+    const to = Math.max(0, oi.receivedQuantity - i.quantity);
+    if (to === oi.receivedQuantity) continue;
+    if (before.kind === 'RETIRADA' && alloc.inServiceOrders(oi.id) > to)
+      throw Errors.business(
+        `"${oi.description}" já está numa OS. Cancele a OS antes de dizer que a retirada não aconteceu.`,
+      );
+    changes.push({ orderItemId: oi.id, from: oi.receivedQuantity, to });
+  }
+  for (const c of changes)
+    await tx.commercialOrderItem.update({
+      where: { id: c.orderItemId },
+      data: { receivedQuantity: c.to },
+    });
+  await tx.pickupRequest.update({
+    where: { id: pickupId },
+    data: { status: 'COM_OCORRENCIA', version: { increment: 1 } },
+  });
+  const label =
+    before.kind === 'NO_LOCAL' ? 'O serviço no local não aconteceu' : 'A retirada não aconteceu';
+  await tx.pickupEvent.create({
+    data: {
+      pickupId,
+      kind: 'NAO_ACONTECEU',
+      fromStatus: 'RECEBIDA_NA_OFICINA',
+      toStatus: 'COM_OCORRENCIA',
+      note: `${label}: ${reason}`,
+      recordedById: actor.userId,
+    },
+  });
+  await refreshOrderStatus(tx, before.orderId);
+  await audit(tx, actor, {
+    action: 'pickup.arrival_undone',
+    entityType: 'pickup_request',
+    entityId: pickupId,
+    summary: `${PICKUP_KIND_LABEL[before.kind]} ${pickupCode(before.number)}: ${label.toLowerCase()} (${reason}).`,
+    changes: {
+      status: { from: 'RECEBIDA_NA_OFICINA', to: 'COM_OCORRENCIA' },
+      items: changes,
+      reason,
+    },
+  });
+  await emitPickupEvent(tx, actor, pickupId, EVENT_TYPES.PICKUP_STATUS_CHANGED);
+  await emitOrderEvent(tx, actor, before.orderId);
+  return true;
 }

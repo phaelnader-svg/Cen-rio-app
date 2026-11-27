@@ -15,6 +15,8 @@ export async function followPickupDate(
   pickupDate: string | null,
   /** 2026-11-25: "No local" termina no próprio dia do serviço (o prazo é o dia agendado). */
   kind: 'RETIRADA' | 'NO_LOCAL' = 'RETIRADA',
+  /** 2026-11-26: No local remarcado com OS já aberta — o prazo do pedido acompanha mesmo assim. */
+  opts: { withServiceOrders?: boolean } = {},
 ) {
   if (!pickupDate) return null;
   const o = await tx.commercialOrder.findUnique({
@@ -28,7 +30,8 @@ export async function followPickupDate(
   });
   const onSite = kind === 'NO_LOCAL';
   if (!o || (!onSite && !o.deliveryBusinessDays)) return null;
-  if (o.status === 'CANCELADO' || o.serviceOrders.length) return null;
+  if (o.status === 'CANCELADO') return null;
+  if (o.serviceOrders.length && !(onSite && opts.withServiceOrders)) return null;
   const next = onSite
     ? pickupDate
     : addBusinessDays(

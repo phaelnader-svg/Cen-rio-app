@@ -39,7 +39,14 @@ import { refreshOrderStatus } from '../commercial/status';
 import { PICKUP_ASSIGNMENT_DONE, resolvePickupAssignment } from '../notifications/notify';
 import { emitOrderEvent } from '../orders/routes';
 import { syncTripCost } from '../finance/trip-costs';
-import { createPickup, setTripParticipants, validatePickupItems } from './service';
+import {
+  announcePickupChange,
+  createPickup,
+  setTripParticipants,
+  validatePickupItems,
+} from './service';
+import { undoPickupArrival } from './arrival';
+import { changeServiceOrderPromisedDate } from '../service-orders/routes';
 
 const VIEW = { session: 'WEB', permissions: ['retiradas.ver'] } as const;
 const MANAGE = { session: 'WEB', permissions: ['retiradas.gerenciar'] } as const;
@@ -263,6 +270,10 @@ export async function pickupRoutes(app: FastifyInstance) {
       let status = before.status;
       if (input.scheduledDate && before.status === 'AGUARDANDO_AGENDAMENTO') status = 'AGENDADA';
       if (!input.scheduledDate && before.status === 'AGENDADA') status = 'AGUARDANDO_AGENDAMENTO';
+      // 2026-11-26: ocorrência (cliente não estava) remarcada = agendada de novo — e volta a chegar
+      // sozinha no novo dia. Sem data, fica aguardando agendamento.
+      if (before.status === 'COM_OCORRENCIA' && scheduleChanged)
+        status = input.scheduledDate ? 'AGENDADA' : 'AGUARDANDO_AGENDAMENTO';
 
       const actor = actorFrom(request);
       await tx.pickupRequestItem.deleteMany({ where: { pickupId: id } });
@@ -304,7 +315,28 @@ export async function pickupRoutes(app: FastifyInstance) {
       // Prazo em dias úteis acompanha o novo dia da retirada (enquanto não há OS).
       const kindAfter = input.kind ?? before.kind;
       if (beforeDate !== (input.scheduledDate ?? null) || kindAfter !== before.kind)
-        await followPickupDate(tx, before.orderId, input.scheduledDate ?? null, kindAfter);
+        await followPickupDate(tx, before.orderId, input.scheduledDate ?? null, kindAfter, {
+          withServiceOrders: kindAfter === 'NO_LOCAL',
+        });
+      // 2026-11-26: No local remarcado com OS aberta — o prazo da OS que era o dia antigo vai
+      // junto (prazo combinado à mão para outro dia fica como está).
+      if (kindAfter === 'NO_LOCAL' && input.scheduledDate && beforeDate !== input.scheduledDate) {
+        const open = await tx.serviceOrder.findMany({
+          where: { orderId: before.orderId, status: 'ABERTA' },
+          select: { id: true, promisedDate: true },
+          orderBy: { number: 'asc' },
+        });
+        for (const so of open)
+          if (!so.promisedDate || dateOnly(so.promisedDate) === beforeDate)
+            await changeServiceOrderPromisedDate(
+              tx,
+              actor,
+              so.id,
+              input.scheduledDate,
+              'Serviço no local remarcado',
+              `No local ${pickupCode(before.number)}`,
+            );
+      }
       if (scheduleChanged || status !== before.status) {
         await tx.pickupEvent.create({
           data: {
@@ -374,6 +406,7 @@ export async function pickupRoutes(app: FastifyInstance) {
           now.logisticsUserId,
         );
       }
+      if (scheduleChanged) await announcePickupChange(tx, actor, id, 'REAGENDADA');
       await emitOrderEvent(tx, request, before.orderId);
     });
     return loadPickupDto(prisma, id, can(request, 'pedidos.valores'));
@@ -410,6 +443,12 @@ export async function pickupRoutes(app: FastifyInstance) {
         );
       }
       const actor = actorFrom(request);
+      // 2026-11-26: "A retirada não aconteceu" (desfaz a chegada, automática ou não).
+      if (before.status === 'RECEBIDA_NA_OFICINA') {
+        await lockOrderItems(tx, before.orderId);
+        await undoPickupArrival(tx, actor, id, input.note!);
+        return;
+      }
       // 2026-11-25: "No local" — serviço feito na casa do cliente = peças atendidas de uma vez
       // (não há "chegou na oficina" depois): conta as peças e libera a OS para terminar.
       const toStatus: PickupStatus =
@@ -442,6 +481,8 @@ export async function pickupRoutes(app: FastifyInstance) {
       });
       await emitPickupEvent(tx, request, id, EVENT_TYPES.PICKUP_STATUS_CHANGED);
       await syncTripCost(tx, actor, { pickupId: id }, input.note ?? undefined);
+      if (toStatus === 'CANCELADA')
+        await announcePickupChange(tx, actor, id, 'CANCELADA', input.note);
       await emitOrderEvent(tx, request, before.orderId);
     });
     return loadPickupDto(prisma, id, can(request, 'pedidos.valores'));

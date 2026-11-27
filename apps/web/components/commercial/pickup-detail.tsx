@@ -45,6 +45,8 @@ const EVENT_LABEL: Record<string, string> = {
   AGENDA_REMOVIDA: 'Data removida',
   DADOS_ALTERADOS: 'Dados alterados',
   TIPO_ALTERADO: 'Retirada ↔ No local',
+  NAO_ACONTECEU: 'Não aconteceu',
+  RESPONSAVEL: 'Responsável',
 };
 
 /** 2026-11-25: botões do serviço "No local" (a peça não vem para a tapeçaria). */
@@ -55,7 +57,13 @@ const ON_SITE_ACTION_LABEL: Partial<Record<PickupStatus, string>> = {
   RECEBIDA_NA_OFICINA: 'Serviço feito no local',
   CANCELADA: 'Cancelar serviço no local',
 };
-const actionLabel = (p: Pick<PickupDto, 'kind'>, s: PickupStatus) =>
+const actionLabel = (p: Pick<PickupDto, 'kind' | 'status'>, s: PickupStatus) =>
+  // 2026-11-26: desfaz a chegada (automática ou não) quando a retirada não foi feita.
+  (p.status === 'RECEBIDA_NA_OFICINA' && s === 'COM_OCORRENCIA'
+    ? p.kind === 'NO_LOCAL'
+      ? 'O serviço no local não aconteceu'
+      : 'A retirada não aconteceu'
+    : undefined) ??
   (p.kind === 'NO_LOCAL' ? ON_SITE_ACTION_LABEL[s] : undefined) ??
   ACTION_LABEL[s] ??
   pickupStatusLabel(s, p.kind);
@@ -208,6 +216,7 @@ function TransitionDialog({
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
   const needsNote = target === 'COM_OCORRENCIA' || target === 'CANCELADA';
+  const undo = pickup.status === 'RECEBIDA_NA_OFICINA';
   const m = useMutation({
     mutationFn: () =>
       api<PickupDto>(`/api/v1/pickups/${pickup.id}/transition`, {
@@ -231,7 +240,13 @@ function TransitionDialog({
       onClose={onClose}
       size="sm"
       title={actionLabel(pickup, target)}
-      description={`${pickupStatusLabel(pickup.status, pickup.kind)} → ${pickupStatusLabel(target, pickup.kind)}`}
+      description={
+        undo
+          ? pickup.kind === 'NO_LOCAL'
+            ? 'O serviço volta a ficar "com ocorrência". Depois é só reagendar (ou cancelar).'
+            : 'As peças saem da tapeçaria e a retirada fica "com ocorrência". Depois é só reagendar (ou cancelar).'
+          : `${pickupStatusLabel(pickup.status, pickup.kind)} → ${pickupStatusLabel(target, pickup.kind)}`
+      }
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -253,7 +268,15 @@ function TransitionDialog({
           {error}
         </Alert>
       )}
-      <Field label={needsNote ? 'Motivo / descrição (obrigatório)' : 'Observação (opcional)'}>
+      <Field
+        label={
+          undo
+            ? 'O que aconteceu? (obrigatório)'
+            : needsNote
+              ? 'Motivo / descrição (obrigatório)'
+              : 'Observação (opcional)'
+        }
+      >
         {(p) => (
           <Textarea
             {...p}
@@ -264,10 +287,12 @@ function TransitionDialog({
           />
         )}
       </Field>
-      <p className="mt-2 text-xs text-ink-muted">
-        Registro manual da confirmação pelo gestor. A execução pela logística (saída e retirada
-        realizada) é registrada pelo responsável no celular.
-      </p>
+      {!undo && (
+        <p className="mt-2 text-xs text-ink-muted">
+          Registro manual da confirmação pelo gestor. A execução pela logística (saída e retirada
+          realizada) é registrada pelo responsável no celular.
+        </p>
+      )}
     </Dialog>
   );
 }
